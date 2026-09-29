@@ -350,7 +350,7 @@ void SplitClipCommand::restoreState(const ClipInfo& state) {
         *clip = state;  // Full restoration - no missing fields!
         // Deleting the right clip only drives structural synchronization. The
         // restored left clip also changed length/offset/loop state and must be
-        // pushed back into the engine or Tracktion retains the split state.
+        // pushed back into the engine or it retains the split state.
         clipManager.forceNotifyClipPropertyChanged(clipId_);
         clipManager.forceNotifyClipsChanged();
     }
@@ -1062,7 +1062,7 @@ void JoinClipsCommand::performAction() {
     clipManager.deleteClip(rightClipId_);
 
     // The left clip is mutated in place. Deleting the right clip only emits a structural
-    // notification, whose sync planner does not resync already-mapped TE clips.
+    // notification, whose sync planner does not resync already-mapped clips.
     clipManager.forceNotifyClipPropertyChanged(leftClipId_);
 }
 

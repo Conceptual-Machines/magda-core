@@ -20,7 +20,7 @@ namespace magda::daw::audio {
  * Implements ITU-R BS.1770-4 K-weighted loudness (momentary / short-term /
  * gated-integrated LUFS), sample + optional oversampled true-peak, stereo
  * correlation and width, and the derived dynamics figures (PLR / PSR). It is
- * the pure DSP core: no Tracktion Engine, no plugin lifecycle, no enablement
+ * the pure DSP core: no engine, no plugin lifecycle, no enablement
  * policy - the always-on TrackMeasurementPlugin owns those and simply feeds
  * blocks here while a consumer (Levels meter or mixing agent) is listening.
  *

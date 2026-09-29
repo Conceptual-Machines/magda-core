@@ -559,7 +559,7 @@ void PluginBrowserContent::onPanelExpanded() {
 
 std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     std::vector<PluginBrowserInfo> list;
-    // Native + TE internal devices: the registry is the single source of truth.
+    // Internal devices: the registry is the single source of truth.
     // A device appears here by setting showInBrowser on its InternalPluginSpec -
     // no separate hand-maintained list to keep in sync.
     // Under the MAGDA engine a device it cannot play would arrive silent, so it
@@ -584,7 +584,7 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     };
     std::ranges::transform(audio::compiled::getAllCompiledPluginSpecs(), std::back_inserter(list),
                            asCompiledBrowserEntry);
-    // External hardware insert: one registry kind (te::InsertPlugin), surfaced as
+    // External hardware insert: one registry kind, surfaced as
     // two browser entries — External FX (audio send/return) and External
     // Instrument (MIDI send + audio return). The split is carried by isInstrument
     // on the created DeviceInfo; the send/return picker lives in the device slot.

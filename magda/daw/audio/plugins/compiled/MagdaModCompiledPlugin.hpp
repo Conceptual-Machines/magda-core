@@ -13,7 +13,7 @@ namespace magda::daw::audio::compiled {
  *
  * One LFO drives three switchable mode bodies; rate is either free (Hz) or
  * synced to project tempo via a musical-division menu. The hidden BPM slot
- * ([idx:63]) is populated each block from TE's transport so sync mode tracks
+ * ([idx:63]) is populated each block from the transport so sync mode tracks
  * the live tempo — same plumbing the delay uses.
  */
 class MagdaModCompiledPlugin : public MagdaCompiledEffect {

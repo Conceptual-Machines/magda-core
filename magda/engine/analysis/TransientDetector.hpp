@@ -10,9 +10,8 @@
  *
  * Warp markers come from somewhere. A user places them, or `autoDetectBeats`
  * puts them at the transients this finds, and the second is what a loop dropped
- * onto a track gets before anyone has opened it. MAGDA gets this from Tracktion
- * today (`WarpTimeManager::detectTransients`), which is why it is here: an
- * analysis is a thing the engine does, not a thing it binds to.
+ * onto a track gets before anyone has opened it. An analysis is a thing the engine does, not a
+ * thing it binds to.
  *
  * Not on the audio thread, and not incrementally: it reads a whole file and
  * returns a vector. Two passes over it, because the detection is threshold

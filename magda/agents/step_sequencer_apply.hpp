@@ -17,8 +17,8 @@ class PluginApi;
  * setters (setStepNote / setStepOctaveShift / setStepGate / setStepAccent /
  * setStepGlide / setStepTie / clearStep).
  *
- * Must be called on the message thread (TE asserts this for ValueTree
- * writes). The SoundDesignAgent wrapper handles the thread hop.
+ * Must be called on the message thread (ValueTree writes assert this).
+ * The SoundDesignAgent wrapper handles the thread hop.
  *
  * Returns a one-line status (e.g. "applied 16 steps to Step Sequencer") or
  * an error string starting with "()" if the path doesn't resolve to a

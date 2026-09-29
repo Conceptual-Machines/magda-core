@@ -16,7 +16,7 @@ namespace magda {
 
 // Per-plugin user preferences that travel with the user, not the project.
 // Persisted keys must name the real MAGDA device/plugin, not runtime wrapper
-// plugins from Tracktion. Use identifierForDevice() to derive those keys from
+// plugins. Use identifierForDevice() to derive those keys from
 // DeviceInfo instead of reading pluginId/uniqueId directly at call sites.
 class PluginPreferences {
   public:

@@ -80,12 +80,7 @@ SourceLoopInfo loopInfoFrom(const juce::StringPairArray& metadata, double sample
     if (!info.numBeats)
         info.numBeats = positiveDoubleOf(metadata, "beat count");
 
-    // Numerator before the slash, which is how a time signature is written and
-    // NOT how the fork reads one: tracktion_LoopInfo.cpp assigns the left side
-    // to the denominator and the right to the numerator, so a 6/8 file becomes
-    // 8/6 there. Diverging deliberately -- none of these fields reaches the
-    // audio, so nothing in the null-diff corpus moves for it, and reproducing a
-    // swap would only spread it.
+    // Numerator before the slash, which is how a time signature is written (6/8 is six over eight).
     if (const auto timeSignature = valueOf(metadata, "time signature")) {
         if (!info.numerator)
             info.numerator = timeSignature->upToFirstOccurrenceOf("/", false, false).getIntValue();

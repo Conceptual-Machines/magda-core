@@ -493,7 +493,6 @@ TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(au
     // Start timer for metering updates (30 FPS)
     startTimerHz(30);
 
-    // Refresh MIDI selectors immediately (Tracktion Engine loads devices async)
     refreshInputSelectors();
 
     // Listen for MIDI device list changes (e.g. QWERTY keyboard toggled)
@@ -576,7 +575,7 @@ void TrackHeadersPanel::timerCallback() {
             header->lastMidiCounter = counter;
 
             // Only show activity when the track is actually receiving MIDI.
-            // Same predicate as the TE-level routing (MidiInputRouter): monitor
+            // Same predicate as MidiInputRouter: monitor
             // enabled or record-armed - never gated on selection.
             bool showActivity = false;
             if (auto* trackInfo = TrackManager::getInstance().getTrack(header->trackId)) {
@@ -727,7 +726,7 @@ void TrackHeadersPanel::setupRoutingCallbacks(TrackHeader& header, TrackId track
                                                                "track:" + juce::String(it->second));
             }
         } else if (selectedId >= 10) {
-            // Map to specific TE wave device name
+            // Map to a specific input device name
             auto it = inputChannelMapping_.find(selectedId);
             if (it != inputChannelMapping_.end())
                 TrackManager::getInstance().setTrackAudioInput(trackId, it->second);
@@ -1554,7 +1553,7 @@ void TrackHeadersPanel::automationLanePropertyChanged(AutomationLaneId /*laneId*
 void TrackHeadersPanel::automationValueChanged(AutomationLaneId laneId, double normalizedValue) {
     // Pure-callback path that keeps volume/pan faders following automation
     // without polling. Fires on drag preview, stopped-rebake commits, and
-    // TE-driven playback writes (via AutomationPlaybackEngine's parameter
+    // playback writes (via AutomationPlaybackEngine's parameter
     // listener). We only care about track-level lanes — device parameter
     // lanes route through DeviceSlotComponent.
     const auto* lane = AutomationManager::getInstance().getLane(laneId);

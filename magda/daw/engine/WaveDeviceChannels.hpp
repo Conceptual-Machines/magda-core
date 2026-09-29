@@ -6,7 +6,7 @@ namespace magda {
 
 /** @brief Enable each wave device that carries a channel the predicate accepts.
  *
- *  A TE wave device owns a slice of the interface's channels, so it belongs in
+ *  A wave device owns a slice of the interface's channels, so it belongs in
  *  the enabled set when any one of its channels does (#2148).
  */
 void enableDevicesForChannels(const auto& devices, auto wantsChannel) {

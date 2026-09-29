@@ -81,7 +81,7 @@ void showAutomationMenu(
     }
 
     // Tempo — edit-scoped/global, so it is offered only on the master channel.
-    // The lane edits te::Edit::tempoSequence and renders in the master
+    // The lane edits the tempo map and renders in the master
     // automation band alongside master volume.
     if (trackId == MASTER_TRACK_ID) {
         addNewMenu.addItem(3, "Tempo", true, isTargetShown(ControlTarget::tempo()));
@@ -203,9 +203,8 @@ void showAutomationMenu(
                                 target.kind = ControlTarget::Kind::PluginParam;
                                 target.devicePath.trackId = trackId;
                                 target.devicePath = devicePath;
-                                // Address by TE index, not array position —
-                                // wrapper params live in a separate bucket so
-                                // the array no longer mirrors TE indices 1:1.
+                                // Address by parameter index, not array position:
+                                // wrapper params live in a separate bucket.
                                 target.paramIndex = p.paramIndex;
 
                                 int itemId =
@@ -419,7 +418,7 @@ void showAutomationMenu(
             }
         } else if (result == 3) {
             // Create the edit-scoped Tempo lane (master automation band).
-            // TempoLaneSync binds it to te::Edit::tempoSequence.
+            // TempoLaneSync binds it to the tempo map.
             auto laneId = automationManager.getOrCreateLane(ControlTarget::tempo(),
                                                             AutomationLaneType::Absolute);
             automationManager.setLaneVisible(laneId, true);

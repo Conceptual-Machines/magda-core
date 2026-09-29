@@ -466,7 +466,7 @@ void FaustPlugin::process(DeviceProcessContext& context) {
     if (!active || !active->dsp)
         return;
 
-    // Audio-thread contract: read pool param values (TE wait-free) and
+    // Audio-thread contract: read pool param values (wait-free) and
     // each binding's frozen metadata (immutable for the state's
     // lifetime). Never read the pool's slot table here — that's
     // mutated on the message thread by `loadDspSource`.

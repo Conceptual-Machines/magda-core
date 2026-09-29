@@ -36,8 +36,7 @@ void storeMarkers(ClipId clipId, const std::vector<WarpMarker>& markers) {
     }
 }
 
-// Match the stretch limits used by Tracktion's WarpTimeManager. Intersect both
-// neighbours' ranges so dragging cannot cross a marker or collapse a segment.
+// Intersect both neighbours' ranges so dragging cannot cross a marker or collapse a segment.
 double constrainWarpTime(const std::vector<WarpMarker>& markers, int index, double time) {
     constexpr double minRatio = 0.10001;
     constexpr double maxRatio = 19.9999;

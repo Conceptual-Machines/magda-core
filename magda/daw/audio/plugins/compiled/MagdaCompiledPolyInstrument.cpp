@@ -468,7 +468,7 @@ void MagdaCompiledPolyInstrument::handleMonoNoteOff(int note) {
 }
 
 void MagdaCompiledPolyInstrument::reset() {
-    // Called from the message thread (TE plugin API, resetSynthsOnTrack after a
+    // Called from the message thread (resetSynthsOnTrack after a
     // record pass). Defer the actual voice flush to the audio thread — see
     // pendingVoiceFlush_.
     pendingVoiceFlush_.store(true, std::memory_order_release);

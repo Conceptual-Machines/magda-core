@@ -42,7 +42,7 @@ void magda_shutdown() {
     DBG("Shutting down MAGDA...");
 
     try {
-        // Shutdown Tracktion Engine
+        // Shut down the audio engine
         if (g_engine) {
             g_engine->shutdown();
             g_engine.reset();

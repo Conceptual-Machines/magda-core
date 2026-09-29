@@ -15,7 +15,7 @@ namespace magda::device_state {
  * Before v2, `DeviceInfo::pluginState` for an internal device was the engine's
  * own plugin ValueTree serialized as XML: a `<PLUGIN type="..." id="...">` tree
  * carrying engine object ids and engine-side child trees. That made project
- * files and device presets the one place where a Tracktion-shaped blob leaked
+ * files and device presets the one place where an engine-shaped blob leaked
  * into MAGDA's own format, so the engine could not be replaced without
  * rewriting every user file.
  *
@@ -36,10 +36,8 @@ namespace magda::device_state {
  * entries the file is missing - and encode drops it when a build writes the
  * document back.
  *
- * The document is engine-neutral by construction: nothing here knows what a
- * `te::Plugin` is. The engine adapter converts between a live device and this
- * document (`TracktionDeviceStateBridge.hpp` today, the native device state
- * contract later).
+ * The document is engine-neutral by construction. The engine adapter converts
+ * between a live device and this document.
  *
  * v1 (engine XML) is still read: `looksLikeLegacyEngineState()` routes an old
  * string down the legacy path so existing projects and presets load unchanged.

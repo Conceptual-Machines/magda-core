@@ -147,8 +147,8 @@ EffectiveFades effectiveFadesOf(const ClipInfo& clip, const std::vector<const Cl
     }
 
     // A short clip with a neighbour on each side can be asked for a fade-in and
-    // a fade-out that together outrun it. Scale them to fit, the same clamp TE
-    // applies, so the curve drawn is the curve played.
+    // a fade-out that together outrun it. Scale them to fit, so the curve drawn is the curve
+    // played.
     const double lengthSeconds = clip.placement.lengthBeats * secondsPerBeat;
     const double total = fades.fadeInSeconds + fades.fadeOutSeconds;
     if (lengthSeconds > 0.0 && total > lengthSeconds) {

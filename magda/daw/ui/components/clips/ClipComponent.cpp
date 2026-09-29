@@ -2140,7 +2140,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                     previewEvent->loopStartSamples = previewEvent->sourceAnchorSamples;
             }
 
-            // Throttled: sync to TE for waveform/audio playback
+            // Throttled: sync to the engine for waveform/audio playback
             if (resizeThrottle_.check()) {
                 auto& cm = magda::ClipManager::getInstance();
                 if (auto* mutableClip = cm.getClip(clipId_)) {
@@ -3771,7 +3771,7 @@ void ClipComponent::showContextMenu() {
 
         // Loop-record take selection (IDs 300+): front the chosen pass as the
         // clip source and re-sync. ClipSynchronizer detects the source change,
-        // rebuilds the TE clip, and re-attaches the take alternates.
+        // rebuilds the clip, and re-attaches the take alternates.
         if (result >= kTakeMenuBaseId && result < kTakeMenuBaseId + kTakeMenuMaxItems) {
             const int takeIndex = result - kTakeMenuBaseId;
             auto* c = clipManager.getClip(clipId_);

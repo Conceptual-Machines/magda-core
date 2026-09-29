@@ -1794,7 +1794,7 @@ void WaveformGridComponent::paintWarpMarkers(juce::Graphics& g, const magda::Cli
     int visibleLeft = 0;
     int visibleRight = getWidth();
 
-    // Skip first and last markers (TE's boundary markers at 0 and sourceLen)
+    // Skip first and last markers (boundary markers at 0 and sourceLen)
     // Only draw user-created markers
     int numMarkers = static_cast<int>(warpMarkers_.size());
     for (int i = 1; i < numMarkers - 1; ++i) {
@@ -1849,7 +1849,7 @@ int WaveformGridComponent::findMarkerAtPixel(int x) const {
 
     double displayStartTime = getDisplayStartTime();
 
-    // Skip first and last markers (TE's boundary markers)
+    // Skip first and last markers (boundary markers)
     // Only allow interaction with user-created markers
     int numMarkers = static_cast<int>(warpMarkers_.size());
     for (int i = 1; i < numMarkers - 1; ++i) {

@@ -49,9 +49,8 @@ namespace magda::engine {
 /** @brief What the model says one envelope follower is. */
 struct FollowerSettings {
     /// Applied to the source before the band limits and before detection, so
-    /// what the filters and the peak see is the gained signal. The fork holds
-    /// TE's own gain at unity and does this on the source side for the same
-    /// reason: a gain after detection cannot be band limited.
+    /// what the filters and the peak see is the gained signal. A gain after
+    /// detection cannot be band limited.
     float gainDb = 0.0f;
 
     /// How fast the envelope rises to a louder source, in milliseconds.

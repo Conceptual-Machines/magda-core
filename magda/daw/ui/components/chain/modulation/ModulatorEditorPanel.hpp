@@ -146,7 +146,7 @@ class WaveformDisplay : public juce::Component, private juce::Timer {
  * Draws the attack/decay/sustain/release shape from the mod's envelope fields
  * and a moving dot at the current value, with the active stage shown as a
  * label. Read-only (the A/D/S/R/curve sliders edit the values); the stage and
- * value are overlaid from the live TE modifier by the audio bridge.
+ * value are overlaid from the live modifier by the audio bridge.
  */
 class EnvelopeDisplay : public juce::Component, private juce::Timer {
   public:
@@ -217,8 +217,7 @@ class EnvelopeDisplay : public juce::Component, private juce::Timer {
         }
 
         // Current-value dot, placed on the segment for the active stage.
-        // Stage ordinals match te::ADSRModifier::Stage (idle/attack/decay/
-        // sustain/release).
+        // Stage ordinals: idle/attack/decay/sustain/release.
         const float v = mod->value;
         float dotX = x0;
         switch (mod->envStage) {
@@ -257,8 +256,8 @@ class EnvelopeDisplay : public juce::Component, private juce::Timer {
     }
 
   private:
-    // Append a quadratic segment whose bow is controlled by `curve` (-0.5..0.5,
-    // matching the TE convention). Zero curve draws a straight line.
+    // Append a quadratic segment whose bow is controlled by `curve` (-0.5..0.5).
+    // Zero curve draws a straight line.
     static void appendCurve(juce::Path& p, float x1, float y1, float x2, float y2, float curve) {
         if (std::abs(curve) < 1e-3f) {
             p.lineTo(x2, y2);
@@ -282,7 +281,7 @@ class EnvelopeDisplay : public juce::Component, private juce::Timer {
  *
  * The random output has no deterministic waveform to draw, so we scroll a
  * short ring buffer of recent output values left-to-right (oldest -> newest),
- * fed from ModInfo::value (overlaid from te::RandomModifier on the audio
+ * fed from ModInfo::value (overlaid from the live modifier on the audio
  * thread) on each 30fps tick.
  */
 class RandomDisplay : public juce::Component, private juce::Timer {

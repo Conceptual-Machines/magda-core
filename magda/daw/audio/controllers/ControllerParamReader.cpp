@@ -33,10 +33,9 @@ std::optional<float> DefaultControllerParamReader::read(const ResolveResult& res
     return std::nullopt;
 }
 
-// Read from TrackInfo, which is what the writer wrote. The te::AutomatableParameter
-// behind a track fader holds a TE fader *position* rather than the linear gain
-// TrackManager keeps, so inverting through it would convert across two different
-// curves and the round trip would not close.
+// Read from TrackInfo, which is what the writer wrote. The engine parameter
+// behind a track fader holds a fader *position* rather than the linear gain
+// TrackManager keeps, so inverting through it would not close the round trip.
 std::optional<float> DefaultControllerParamReader::readTrackLevel(const ControlTarget& target) {
     const auto trackId = target.devicePath.trackId;
     if (trackId == INVALID_TRACK_ID)

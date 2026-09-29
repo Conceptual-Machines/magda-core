@@ -15,7 +15,7 @@ namespace magda {
  * per-track digest while RackSyncManager works rack-by-rack.
  *
  * Lives in core/ (not audio/) so tests can construct fingerprints from pure
- * MAGDA model data without pulling in tracktion_engine.h.
+ * MAGDA model data.
  */
 struct ChainFingerprint {
     int modCount = 0;        ///< enabled mods with at least one link
@@ -47,7 +47,7 @@ struct ChainFingerprint {
  * @brief Compute a structural fingerprint for one ChainNode.
  *
  * Counts only enabled mods that have at least one link, and macros with at
- * least one link. An enabled-but-linkless mod still creates a TE modifier
+ * least one link. An enabled-but-linkless mod still creates a modifier
  * (so a macro can target its rate) but the fingerprint doesn't bump for it
  * — the structural rebuild fires when the first link appears.
  */

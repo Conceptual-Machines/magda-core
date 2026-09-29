@@ -18,7 +18,7 @@ namespace magda::daw::ui {
  * behaviour (native macOS close can race a window's owner during teardown) and a
  * consistent themed look across every popout. Subclasses own their content and
  * their close semantics (the analyzer hides and reuses the window; the plugin
- * editor defers to Tracktion's window teardown).
+ * editor defers to the engine's window teardown).
  */
 class FloatingHostWindow : public juce::DocumentWindow {
   public:

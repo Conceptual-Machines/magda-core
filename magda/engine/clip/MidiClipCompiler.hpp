@@ -16,8 +16,7 @@
  * reads messages, so something has to decide how many. **On every change of the
  * quantised value, and no closer together than the floor.**
  *
- * Not the 1/16-beat grid the sync layer uses when it writes into Tracktion, and
- * not per sample or per block either.
+ * Not a fixed 1/16-beat grid, and not per sample or per block either.
  *
  * Per block is not available: RenderContext.hpp requires a shorter block to
  * render identically, so a curve resolved per callback would make the offline

@@ -1388,11 +1388,9 @@ void TrackChainContent::initGlobalModsPanel() {
                     if (magda::isDevice(element)) {
                         const auto& device = magda::getDevice(element);
                         if (device.id == deviceId && paramIndex >= 0) {
-                            // paramIndex is the TE index — search both buckets
-                            // by ParameterInfo::paramIndex, not by array
-                            // position, since the wrapper dry/wet pair lives
-                            // in wrapperParameters (so the array no longer
-                            // mirrors TE indices 1:1).
+                            // Search both buckets by ParameterInfo::paramIndex, not
+                            // array position: the wrapper dry/wet pair lives in
+                            // wrapperParameters.
                             for (const auto& p : device.parameters)
                                 if (p.paramIndex == paramIndex)
                                     return p.name;
@@ -1519,11 +1517,9 @@ void TrackChainContent::initGlobalMacrosPanel() {
                     if (magda::isDevice(element)) {
                         const auto& device = magda::getDevice(element);
                         if (device.id == deviceId && paramIndex >= 0) {
-                            // paramIndex is the TE index — search both buckets
-                            // by ParameterInfo::paramIndex, not by array
-                            // position, since the wrapper dry/wet pair lives
-                            // in wrapperParameters (so the array no longer
-                            // mirrors TE indices 1:1).
+                            // Search both buckets by ParameterInfo::paramIndex, not
+                            // array position: the wrapper dry/wet pair lives in
+                            // wrapperParameters.
                             for (const auto& p : device.parameters)
                                 if (p.paramIndex == paramIndex)
                                     return p.name;

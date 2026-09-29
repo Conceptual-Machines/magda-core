@@ -9,8 +9,7 @@ namespace magda::daw::audio::compiled {
 // Per-device specs are defined alongside each plugin's wrapper (in its own
 // .cpp). The accessors below are the single point of contact between this
 // host catalog and the plugin TUs — no static self-registration, no link-order
-// magic. This aggregation intentionally lives in the Tracktion compatibility
-// target until every listed device is neutral. To add a new compiled plugin:
+// magic. To add a new compiled plugin:
 // write its spec accessor next to the wrapper and add a line below.
 const CompiledPluginSpec& getMagdaFilterSpec();
 const CompiledPluginSpec& getMagdaSaturatorSpec();

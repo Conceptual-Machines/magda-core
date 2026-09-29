@@ -1714,7 +1714,7 @@ void TrackInspector::populateRoutingSelectors() {
                     selectedTrackId_, "track:" + juce::String(it->second));
             }
         } else if (selectedId >= 10) {
-            // Map to specific TE wave device name
+            // Map to a specific input device name
             auto it = inputChannelMapping_.find(selectedId);
             if (it != inputChannelMapping_.end()) {
                 // Copy the string — the map can be repopulated during setTrackAudioInput

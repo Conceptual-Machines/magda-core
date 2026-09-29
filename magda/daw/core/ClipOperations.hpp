@@ -23,7 +23,7 @@ namespace magda {
  * - Compound operations (both container and content)
  * - Coordinate transformations and boundary constraints
  *
- * TE-aligned model behavior:
+ * Model behavior:
  * - Non-looped resize left: adjusts offset to keep content at timeline position
  * - Looped resize left: adjusts offset (wrapped within loop region) to keep content at timeline
  * position
@@ -227,7 +227,7 @@ class ClipOperations {
     /**
      * @brief Resize clip container from left edge
      *
-     * TE-aligned behavior:
+     * Behavior:
      * - Non-looped: adjusts offset so audio content stays at its timeline position
      * - Looped: adjusts offset (wrapped within loop region) so audio content stays at its timeline
      * position
@@ -679,9 +679,9 @@ class ClipOperations {
     // ========================================================================
 
     /**
-     * @brief Calculate the beat-based loop range for Tracktion Engine sync
+     * @brief Calculate the beat-based loop range for engine sync
      *
-     * TE's loopStartBeats/loopLengthBeats are in source-file beats (clamped to
+     * loopStartBeats/loopLengthBeats are in source-file beats (clamped to
      * loopInfo.getNumBeats()), which is exactly the beat view of the event's
      * source-domain loop region.
      *
@@ -697,7 +697,7 @@ class ClipOperations {
         if (length <= 0.0)
             return {0.0, 0.0};
 
-        // TE's setLoopRangeBeats clamps the end to loopInfo.getNumBeats(). In
+        // The loop end clamps to the file's beat count. In
         // time-based mode loops can wrap past the file end, beat-based mode
         // cannot, so shift the start back until the whole region fits.
         if (event.interpTotalBeats > 0.0) {
@@ -850,7 +850,7 @@ class ClipOperations {
                                                 event->interpBpm);
             }
 
-            // Force speedRatio to 1.0 (TE requirement for autoTempo)
+            // Force speedRatio to 1.0 (autoTempo requirement)
             event->speedRatio = 1.0;
         } else if (clip.loopEnabled && event->loopLengthSamples > 0) {
             // Timeline placement remains beat-domain. The source region is
@@ -1201,7 +1201,7 @@ class ClipOperations {
         }
 
         // The notes now ARE the unrolled loop, so the clip has to stop looping.
-        // Leaving the flag on made TE loop the first cycle over the whole clip
+        // Leaving the flag on made the engine loop the first cycle over the whole clip
         // and made getMidiVisibleRange clip the note list to one loop length,
         // so a flattened clip played only its first loop no matter how many
         // cycles had just been written into it.

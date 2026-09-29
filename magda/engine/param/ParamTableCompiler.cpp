@@ -189,10 +189,8 @@ RandomSettings randomSettingsOf(const magda::ModInfo& mod) {
 FollowerSettings followerSettingsOf(const magda::ModInfo& mod) {
     FollowerSettings settings;
 
-    // The gain belongs before the band limits and before detection, which is
-    // where the fork puts it too: its own source cache applies this and holds
-    // TE's post-detection gain at unity, because a level that has already been
-    // detected has no frequency content left for a filter to act on.
+    // The gain belongs before the band limits and before detection: a level that
+    // has already been detected has no frequency content left for a filter to act on.
     settings.gainDb = mod.followerGainDb;
     settings.attackMs = mod.followerAttackMs;
     settings.holdMs = mod.followerHoldMs;

@@ -792,7 +792,7 @@ void ClipManager::replaceClipState(const ClipInfo& clipInfo) {
     // reflect (it is regenerated async); regenerate it from the restored sections.
     if (it->second.isAudio() && it->second.audio().compActive && !it->second.audio().comp.empty())
         CompService::getInstance().renderComp(clipInfo.id);
-    // Listeners (AudioBridge -> ClipSynchronizer) re-push notes/source to TE.
+    // Listeners (AudioBridge -> ClipSynchronizer) re-push notes/source to the engine.
     forceNotifyClipPropertyChanged(clipInfo.id);
 }
 
@@ -823,7 +823,7 @@ void ClipManager::setMidiClipCurrentTake(ClipId clipId, int takeIndex) {
     midi.compActive = false;
     midi.comp.clear();
     clip->frontMidiTake(takeIndex);
-    // Listeners (AudioBridge -> ClipSynchronizer) re-push the new notes to TE.
+    // Listeners (AudioBridge -> ClipSynchronizer) re-push the new notes to the engine.
     forceNotifyClipPropertyChanged(clipId);
     pushClipStateSnapshot("Select Take", before);
 }
@@ -1675,7 +1675,7 @@ void ClipManager::setClipEnabled(ClipId clipId, bool enabled) {
 
 void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double projectBPM) {
     if (auto* clip = getClip(clipId)) {
-        // Invariant: autoTempo (beat mode) requires loopEnabled. TE's
+        // Invariant: autoTempo (beat mode) requires loopEnabled. The
         // autoTempo beat range only operates over a loop region, and
         // ClipOperations' resize / offset math for autoTempo clips assumes
         // loopLengthBeats / loopStartBeats are live. Allowing loop-off while
@@ -3375,11 +3375,9 @@ void ClipManager::resolveOverlaps(ClipId dominantClipId) {
     // moving the covering clip away brings the covered part back on its own.
     //
     // The one edit that survived until now was splitting an audio clip a drop
-    // landed inside, into head / covered slice / tail. That existed because the
-    // Tracktion mirror holds one engine clip per model clip and cannot express
-    // a hole in the middle of one. Playback moves to the native engine, whose
-    // clip snapshot carries the silenced ranges directly (#1890), so the split
-    // has nothing left to buy and the lane keeps whole clips in every case.
+    // landed inside, into head / covered slice / tail. The clip snapshot
+    // carries the silenced ranges directly (#1890), so the split has nothing
+    // left to buy and the lane keeps whole clips in every case.
     bringToFrontOfStack(*dominant);
 }
 

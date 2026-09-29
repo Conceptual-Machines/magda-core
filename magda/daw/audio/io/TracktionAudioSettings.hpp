@@ -2,7 +2,7 @@
 
 /**
  * @file TracktionAudioSettings.hpp
- * @brief The audio interface Tracktion saved, read for AudioIOService's first run (#2746).
+ * @brief The audio interface an earlier version saved, read for AudioIOService's first run (#2746).
  */
 
 #include <juce_core/juce_core.h>
@@ -14,9 +14,9 @@
 namespace magda {
 
 /**
- * @brief What @p settingsFile says was open, or nothing if Tracktion never saved an interface.
+ * @brief What @p settingsFile says was open, or nothing if no interface was ever saved.
  *
- * A channel is kept where both JUCE's stream mask and Tracktion's wave-device mask (what
+ * A channel is kept where both JUCE's stream mask and the wave-device mask (what
  * Audio Settings toggled) had it on. AudioIOService drops bits past the interface's channels.
  */
 std::optional<AudioIOSettings> readTracktionAudioSettings(const juce::File& settingsFile);

@@ -17,7 +17,7 @@ namespace magda::daw::ui {
 /**
  * @brief Magnitude-response visualisation for the 8-band compiled EQ.
  *
- * Polls the live plugin (via te::Plugin) for each band's {Enabled, Type,
+ * Polls the live plugin for each band's {Enabled, Type,
  * Freq, Gain, Q}, sums enabled biquad magnitude responses across log-spaced
  * frequency bins, and renders the resulting curve plus per-band dots. Bands
  * set to HP / LP / Notch ignore Gain and draw a dot anchored to 0 dB;

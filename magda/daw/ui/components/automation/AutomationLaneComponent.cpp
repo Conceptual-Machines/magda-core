@@ -742,7 +742,7 @@ void AutomationLaneComponent::paintScaleLabelsFor(juce::Graphics& g, juce::Recta
     } else if (paramInfo.scale == ParameterScale::Discrete && !paramInfo.choices.empty()) {
         if (!paramInfo.labelTicks.empty()) {
             // Curated subset — use the parameter's hand-picked tick set so a
-            // dense `choices` array (e.g., TE-ordinal aligned sync divisions)
+            // dense `choices` array (e.g., ordinal-aligned sync divisions)
             // can keep its full value→string lookup while the axis only shows
             // the meaningful musical divisions.
             for (const auto& [realValue, label] : paramInfo.labelTicks) {
@@ -789,9 +789,9 @@ void AutomationLaneComponent::paintScaleLabelsFor(juce::Graphics& g, juce::Recta
                 labelBounds.setY(area.getBottom() - 10);
 
             // Show the real value using the plugin's display text if available,
-            // otherwise unit or fallback percentage. displayText wraps TE's
-            // valueToString, which expects the plugin-native value — project
-            // `clamped` (in info range) back to TE raw via teMin/teMax so it
+            // otherwise unit or fallback percentage. displayText expects
+            // the plugin-native value - project `clamped` (in info range)
+            // back to raw via teMin/teMax so it
             // matches the device-side formatter and the plugin's own UI.
             juce::String label;
             if (paramInfo.displayText) {
@@ -881,8 +881,8 @@ juce::String AutomationLaneComponent::formatScaleValue(double normalizedValue) c
 
     // Live plugin display text — single source of truth with the device
     // slot and the plugin's own UI. Project MAGDA-normalized [0,1] to the
-    // TE-native range (teMinValue/teMaxValue) before handing to the
-    // provider — its format() wraps TE::valueToString which expects raw.
+    // plugin-native range (teMinValue/teMaxValue) before handing to the
+    // provider, which expects a raw value.
     if (paramInfo.displayText) {
         float teRaw = paramInfo.teMinValue + static_cast<float>(normalizedValue) *
                                                  (paramInfo.teMaxValue - paramInfo.teMinValue);

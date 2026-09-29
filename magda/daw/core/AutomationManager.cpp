@@ -170,8 +170,8 @@ std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& target) 
             // normalized value is interpreted, so the two stay in lockstep.
             if (target.modParamIndex == 0) {
                 if (mod->tempoSync) {
-                    // Lane stores 0-based display index (TE ordinal − 1) so
-                    // it never resolves "Hertz" (TE ordinal 0) at the bottom.
+                    // Lane stores 0-based display index (rate ordinal - 1) so
+                    // it never resolves "Hertz" (ordinal 0) at the bottom.
                     auto displayIdx =
                         static_cast<float>(syncDivisionToTeRateOrdinal(mod->syncDivision) - 1);
                     return static_cast<double>(

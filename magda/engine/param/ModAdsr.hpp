@@ -44,10 +44,8 @@ namespace magda::engine {
 /**
  * @brief Which part of the envelope is running.
  *
- * The ordinals are te::ADSRModifier::Stage's, because the model carries this
- * back to the UI as an ordinal (ModInfo::envStage) and the stage readout is
- * shared with the fork. A display that renumbered them would light the wrong
- * segment in one of the two engines.
+ * The ordinals are fixed because the model carries this back to the UI as an
+ * ordinal (ModInfo::envStage); renumbering them would light the wrong segment.
  */
 enum class AdsrStage : std::uint8_t { Idle, Attack, Decay, Sustain, Release };
 

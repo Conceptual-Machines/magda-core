@@ -15,14 +15,8 @@
  * model does -- so they're answered once, off the audio thread, and what
  * reaches the callback is one sorted array of short messages.
  *
- * The same move `AudioEventPlayback` makes with `WarpMap`, and the same move
- * the fork makes by a longer road: it builds a playback sequence per clip
- * (`MidiList::createDefaultPlaybackMidiSequence`) and its node walks that.
- * What differs is where the sequence lives and what rebuilding it costs. The
- * fork's lives inside `te::MidiClip`, so editing a curve clears and rebuilds
- * it, TE's TreeWatcher sees the tree change and restarts playback, and the
- * graph is rebuilt under a rolling transport. This one is a value in an
- * immutable snapshot, so an edit compiles a new one and swaps it in.
+ * The same move `AudioEventPlayback` makes with `WarpMap`. The sequence is a
+ * value in an immutable snapshot, so an edit compiles a new one and swaps it in.
  *
  * Groove is the one thing not resolved here: it can't be, since it's
  * anchored to the project grid, so a looped clip grooves each pass

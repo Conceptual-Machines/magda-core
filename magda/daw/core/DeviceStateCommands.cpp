@@ -49,8 +49,8 @@ void LoadImpulseResponseCommand::performAction() {
     // The convolution device's own state property names
     // (MagdaConvolutionPlugin::StateIDs). Spelled out here because core must
     // not include a concrete device header; the spellings are a frozen
-    // persistence surface either way - they are the retired Tracktion
-    // device's, and saved projects carry them.
+    // persistence surface either way - they are the retired device's,
+    // and saved projects carry them.
     static const juce::Identifier irNameProp("name");
     static const juce::Identifier irFileDataProp("irFileData");
 

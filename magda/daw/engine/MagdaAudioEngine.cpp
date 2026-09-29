@@ -153,7 +153,7 @@ bool MagdaAudioEngine::initialize() {
     plugins.openList(!app_services::isHeadless(headless_) &&
                      Config::getInstance().getScanPluginsOnStartup());
 
-    // Where Tracktion kept them, so switching engines keeps the list (#2761).
+    // The same file earlier versions kept them in (#2761).
     grooveStore_ = std::make_unique<GrooveStore>(tracktionSettingsFile());
     GrooveLibrary::getInstance().setStore(
         [this] { return grooveStore_->grooves(); },

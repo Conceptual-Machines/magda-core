@@ -22,7 +22,7 @@
  * @file RenderThreadPool.hpp
  * @brief The threads a block is rendered across.
  *
- * Tracktion's lock-free player's pool (ThreadPoolSemHybrid), copied (#2786): workers loop
+ * A lock-free hybrid pool (#2786): workers loop
  * taking ready work and wait when there is none, pausing, then yielding, then sleeping on a
  * lightweight semaphore. A block signals as many workers as it has ops ready. Which op a
  * thread takes is the job's business; all this owns is the threads.
@@ -65,7 +65,7 @@ class RenderThreadPool {
     /**
      * @brief @p numWorkers threads, besides whoever calls render().
      *
-     * @p realtime sets them the scheduling Tracktion's workers get (SCHED_RR at the top of its
+     * @p realtime sets them realtime scheduling (SCHED_RR at the top of its
      * range); false leaves them at an ordinary high priority, for an offline render.
      */
     explicit RenderThreadPool(int numWorkers, bool realtime = true);
@@ -86,11 +86,11 @@ class RenderThreadPool {
      * @brief Render @p job, signalling up to @p ready workers, and return when it is done.
      *
      * @p ready is how many ops the job has ready to take, which is how many workers
-     * Tracktion's player signals. Audio thread.
+     * are signalled. Audio thread.
      */
     void render(Job& job, int ready);
 
-    /// Tracktion's core::pause(), twice: what a thread with nothing ready does before yielding.
+    /// A CPU pause, twice: what a thread with nothing ready does before yielding.
     static void pause();
 
     /// Count @p count ops made ready or taken (negative), which is what a waiting worker reads.
@@ -121,7 +121,7 @@ class RenderThreadPool {
     /// Take one op of the current job on @p worker, if any is ready.
     bool takeWork(Worker& worker);
 
-    /// Pause, yield, then sleep, as Tracktion's hybrid pool does. Returns at once while work
+    /// Pause, yield, then sleep. Returns at once while work
     /// is queued, and true when it slept.
     bool wait(int& pauses);
 

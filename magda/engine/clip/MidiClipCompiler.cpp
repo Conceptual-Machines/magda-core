@@ -33,7 +33,7 @@ constexpr std::uint8_t kMpePressureRest = 0;
 /// and is kept.
 constexpr int kPitchWheelRest = 8192;
 
-/// TE's fixed MPE conversion range, which is what the model's semitones mean.
+/// The fixed MPE conversion range, which is what the model's semitones mean.
 constexpr double kMpeSemitoneRange = 48.0;
 
 /// Lower zone: master on channel 1, members on 2 to 16.
@@ -354,10 +354,8 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
 
         // ---- Per-note pitch expression -------------------------------------
         //
-        // Densified like any other curve rather than on the sync layer's
-        // 1/16-beat grid: that grid is not TE's rule, TE emits one raw wheel per
-        // expression point with no interpolation at all. Expression is pitch,
-        // which is where a coarse grid is heard most directly.
+        // Densified like any other curve rather than on a coarse
+        // grid: expression is pitch, which is where a coarse grid is heard most directly.
         if (list.mpe && note.hasPitchExpression()) {
             auto points = note.pitchExpression;
             const auto beatOf = [](const auto& point) { return point.beat; };

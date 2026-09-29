@@ -7,7 +7,7 @@ namespace magda {
 
 namespace {
 // Matches the bake loop's kStepEpsilon: hold points sit this close before a
-// jump so TE's linear iterator renders a near-vertical edge.
+// jump so the linear iterator renders a near-vertical edge.
 constexpr double kEdgeEpsilon = 0.0001;
 
 // Guard against a pathologically small positive loopLengthBeats: past the cap

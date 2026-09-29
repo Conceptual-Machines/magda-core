@@ -74,7 +74,7 @@ ParameterInfo makeSyncDivisionInfo(const juce::String& name) {
 
 ParameterInfo makeTempoInfo(const juce::String& name) {
     // Global tempo lane. Linear BPM scale covering the usual musical range;
-    // the actual write into te::TempoSequence happens in the BPM bridge epic.
+    // the write into the tempo map happens in the BPM bridge epic.
     ParameterInfo info;
     info.paramIndex = -1;
     info.name = name;

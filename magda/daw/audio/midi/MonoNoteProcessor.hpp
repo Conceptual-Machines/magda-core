@@ -10,7 +10,7 @@ namespace magda::daw::audio {
  *
  * Extracted from StepSequencerPlugin::applyToBuffer to enable unit testing.
  * Handles note-on/off generation, gate length countdown, tie/glide logic,
- * and stuck-note safety — without any JUCE/TE dependencies.
+ * and stuck-note safety, without any JUCE dependencies.
  *
  * Usage: call processBlock() each audio buffer with step events from StepClock.
  * Collect the emitted MidiOutput events and forward to your MIDI buffer.
@@ -27,7 +27,7 @@ class MonoNoteProcessor {
         bool tie = false;
     };
 
-    // --- Step event (mirrors StepClock::StepEvent, no TE deps) ---
+    // --- Step event (mirrors StepClock::StepEvent) ---
     struct StepEvent {
         int stepIndex;
         double timeInBlock;  // seconds from block start

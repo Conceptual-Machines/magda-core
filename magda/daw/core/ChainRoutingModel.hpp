@@ -15,7 +15,7 @@ enum class AudioRole { Processor, InstrumentInjector, NestedRack };
 
 /**
  * Source-of-truth routing policy for one visible chain element. Runtime code
- * can compile this into Tracktion plugin order, rack graph connections, or
+ * can compile this into device order, rack graph connections, or
  * helper plugins without re-deriving sidechain/MIDI-thru rules locally.
  *
  * MIDI output policies:

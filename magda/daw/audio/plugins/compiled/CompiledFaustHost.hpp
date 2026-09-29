@@ -18,7 +18,7 @@ namespace magda::daw::audio::compiled {
  * controls — sliders, nentries, buttons, checkboxes — as paths into a
  * `UI` interface. This concrete UI implementation just stores each
  * control's address (the float zone), label, range, and metadata so a
- * MAGDA plugin can later wrap them as `te::AutomatableParameter`s.
+ * MAGDA plugin can later wrap them as parameters.
  *
  * Group / metadata calls are recorded but otherwise ignored — bespoke
  * MAGDA UIs (like `MagdaDriveCurveView`) handle styling, this layer

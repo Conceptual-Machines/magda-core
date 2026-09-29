@@ -18,36 +18,20 @@
  * @file EngineMagdaDevice.hpp
  * @brief A MAGDA device, as the native engine's executor sees it (#2174).
  *
- * The twin of TracktionMagdaDevicePlugin, and deliberately its twin: one device
- * implementation, two hosts, and the corpus comparing what the two hosts do
- * with it. A device written twice would only ever prove that a device can be
- * written twice, which is the thing the null-diff corpus has refused since
- * #2040 and the reason the gain in tests/NullDiffGain.hpp was as far as it
- * could go.
+ * A parameter is read once per block: ParamValues::value(), the value at the block's
+ * first sample, written before process(). A device may ask for segment accuracy
+ * (ParamSpec::segmentAccurate), which nothing does yet.
  *
- * What the two adapters owe each other is the reading of a parameter, and they
- * pay it the same way. The fork settles an AutomatableParameter at a block
- * boundary and holds it for the block; this reads ParamValues::value(), which
- * is the value at the block's first sample, and writes it once before
- * process(). Neither is a choice about precision -- a device is free to ask for
- * segment accuracy (ParamSpec::segmentAccurate) and nothing does during the
- * port, because a device resolved per sample against a curve the fork reads
- * once would differ from it by however much the curve moves across a block, on
- * every automated parameter, in every project.
- *
- * One thing the device SDK does not carry yet, named here rather than silently
- * dropped, because it is a divergence the day a device wants it:
+ * One thing the device SDK does not carry yet:
  *
  * - **Further output pairs.** A MagdaDevice declares no channel layout beyond
  *   what it writes into the buffer it is handed, so DeviceBlock::extraOutputs
- *   is left cleared. Multi-out is a te::RackType wrapper in the incumbent and
- *   an op with extra ports in the plan; a device that owned pairs of its own
- *   would need the SDK to say so.
+ *   is left cleared. A device that owned pairs of its own would need the SDK
+ *   to say so.
  *
- * The panic flag used to be a second. The fork carries it on its MIDI container
- * (MidiMessageArray::isAllNotesOff) and a juce::MidiBuffer has no room for it,
- * so the engine carries it beside the port instead: DeviceBlock::midiInAllNotesOff
- * on the way in, DeviceBlock::midiOutAllNotesOff on the way out (#2418).
+ * The all-notes-off panic flag is carried beside the MIDI port, since a
+ * juce::MidiBuffer has no room for it: DeviceBlock::midiInAllNotesOff on the
+ * way in, DeviceBlock::midiOutAllNotesOff on the way out (#2418).
  *
  * Sidechain audio is neither: DeviceBlock::sidechain is the plan's own slot and
  * DeviceProcessContext::sidechain is the SDK's, so the key crosses here as a

@@ -195,8 +195,7 @@ double barFractionOf(int rateType);
 /**
  * @brief How many beats one cycle of a tempo-synced LFO lasts.
  *
- * Matches the TE modifiers' corrected bar arithmetic rather than the
- * reverse (#2128).
+ * Bar arithmetic is corrected per #2128.
  */
 double cycleBeats(int rateType, int numerator, int denominator);
 

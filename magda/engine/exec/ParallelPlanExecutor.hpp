@@ -162,11 +162,11 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     bool takeOne() override;
 
     /// Ready ops until the block is finished, on the thread that called render(), pausing
-    /// while none is ready as Tracktion's player waits for its final node.
+    /// while none is ready.
     void finishOnCaller() override;
 
     /// Render @p op and everything it releases that this thread carries straight on with.
-    /// Tracktion's rule: a released consumer is carried when it is the op's only consumer or
+    /// A released consumer is carried when it is the op's only consumer or
     /// its last one, and queued for another thread otherwise.
     void runChain(OpId op);
 
@@ -240,7 +240,7 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// copied in at the top of every block.
     std::vector<std::atomic<std::uint16_t>> pending_;
 
-    /// The ready set, first in first out, as Tracktion's player keeps it. Sized to the plan at
+    /// The ready set, first in first out. Sized to the plan at
     /// prepare: an op is queued at most once a block.
     std::unique_ptr<rigtorp::MPMCQueue<OpId>> ready_;
 

@@ -1149,13 +1149,13 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setModAudioAttack(const ChainNodePath& path, int modIndex, float ms);
     void setModAudioRelease(const ChainNodePath& path, int modIndex, float ms);
     // Copies the ADSR envelope fields (attack/decay/sustain/release + per-segment
-    // curves) from `src` into the stored mod and re-syncs the TE modifier.
+    // curves) from `src` into the stored mod and re-syncs the modifier.
     void setModEnvelope(const ChainNodePath& path, int modIndex, const ModInfo& src);
     // Copies the Random distribution fields (type/shape/smooth/stepDepth) from
-    // `src` into the stored mod and re-syncs the TE modifier.
+    // `src` into the stored mod and re-syncs the modifier.
     void setModRandom(const ChainNodePath& path, int modIndex, const ModInfo& src);
     // Copies the envelope follower fields (gain/attack/hold/release) from `src`
-    // into the stored mod and re-syncs the TE modifier.
+    // into the stored mod and re-syncs the modifier.
     void setModFollower(const ChainNodePath& path, int modIndex, const ModInfo& src);
     void removeModLink(const ChainNodePath& path, int modIndex, const ControlTarget& target);
     void clearAllModLinks(const ChainNodePath& path, int modIndex);

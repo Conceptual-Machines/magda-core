@@ -20,7 +20,7 @@ class DawProjectXmlAdapter {
 
     // Raw bytes of a device's state file and the relative path it gets stored
     // under inside the archive. For VST3 this is the .vstpreset (Steinberg preset,
-    // loadable by other hosts); for other devices it's MAGDA's opaque TE plugin-
+    // loadable by other hosts); for other devices it's MAGDA's opaque plugin-
     // state blob. The <State> fileReference points at this path.
     struct EmbeddedDeviceState {
         juce::MemoryBlock bytes;   // exact file contents to write into the archive

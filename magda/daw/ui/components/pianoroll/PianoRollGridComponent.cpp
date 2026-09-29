@@ -2922,8 +2922,8 @@ void PianoRollGridComponent::setPitchExpressionMode(bool enabled) {
 
 double PianoRollGridComponent::evaluatePitchExpression(
     const std::vector<MidiPitchExpressionPoint>& points, double relBeat) {
-    // The shape lives in core (#2198) because the compiler and the Tracktion
-    // bridge have to draw the same one, and a curve the editor renders
+    // The shape lives in core (#2198) so the compiler and the editor
+    // share one, and a curve the editor renders
     // differently from what plays is not an editor.
     return evaluatePitchExpressionCurve(points, relBeat);
 }

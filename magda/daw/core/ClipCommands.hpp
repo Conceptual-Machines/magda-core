@@ -33,7 +33,7 @@ struct BounceRange {
 };
 
 /**
- * @brief A bounce range resolved for Tracktion's seconds-based renderer.
+ * @brief A bounce range resolved for the seconds-based renderer.
  *
  * Placement remains beat-based; seconds are derived from a TempoMap only for
  * the renderer and external-insert capture pass.

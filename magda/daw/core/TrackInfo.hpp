@@ -26,7 +26,7 @@ struct MultiOutTrackLink {
  * @brief Describes a send from this track to an aux track
  */
 struct SendInfo {
-    int busIndex = 0;                        // TE aux bus index
+    int busIndex = 0;                        // aux bus index
     float level = 1.0f;                      // Send level (0.0 - 1.0)
     bool preFader = false;                   // Pre/post fader
     TrackId destTrackId = INVALID_TRACK_ID;  // Target aux track (for display)
@@ -265,7 +265,7 @@ struct TrackInfo {
     //
     // Single source of truth for "does this track listen to live MIDI input".
     // Gated purely on the track's own monitor/arm state - NOT on selection - so
-    // the TE routing (MidiInputRouter) and the UI activity light agree. A track
+    // the MIDI routing (MidiInputRouter) and the UI activity light agree. A track
     // listens when input monitoring is enabled (In/Auto) or it is record-armed.
     bool receivesLiveMidiInput() const {
         return inputMonitor != InputMonitorMode::Off || recordArmed;

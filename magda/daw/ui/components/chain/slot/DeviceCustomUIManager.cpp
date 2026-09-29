@@ -2106,7 +2106,7 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
 // =============================================================================
 
 void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
-    // Native-engine faceplates have no Tracktion plugin to poll. Populate the
+    // Native-engine faceplates: populate the
     // saved pattern on creation/full updates, not only after a parameter edit.
     refreshSequencerState(device);
 
@@ -2125,7 +2125,7 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
         float level = -12.0f;
         int waveform = 0;
 
-        // ToneGeneratorProcessor exposes params in TE order: 0=oscType, 1=bandLimit,
+        // ToneGeneratorProcessor exposes params in this order: 0=oscType, 1=bandLimit,
         // 2=frequency, 3=level. Match that here.
         if (device.parameters.size() >= 4) {
             waveform = static_cast<int>(device.parameters[0].currentValue);

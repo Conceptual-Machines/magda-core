@@ -52,7 +52,8 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
     AudioIOService& operator=(const AudioIOService&) = delete;
 
     /**
-     * @brief Open what was saved, else what Tracktion saved, else stereo out and no input.
+     * @brief Open what was saved, else what Tracktion-based versions saved, else stereo out
+     *        and no input.
      *
      * A failure is logged and leaves nothing open, so the app still launches.
      */

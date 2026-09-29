@@ -15,9 +15,8 @@ namespace magda::daw::audio {
  *
  * Loads a user-supplied impulse response and convolves the track signal with
  * it, followed by a high pass / low pass pair and an output trim, mixed back
- * against the dry signal. It replaced the fork's ImpulseResponsePlugin, the last
- * browser-visible stock Tracktion effect (#1980), and is a MagdaDevice since
- * #2299: one DSP hosted by whichever engine is running it.
+ * against the dry signal. It replaced the stock ImpulseResponsePlugin (#1980) and is a
+ * MagdaDevice since #2299.
  *
  * Faust is not an option for this device: `fi.conv` takes a compile-time
  * constant kernel, so a user-loadable IR cannot be expressed as a compiled

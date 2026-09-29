@@ -91,7 +91,7 @@ class PolyStepSequencerSoundDesignAgent : public SoundDesignAgent {
         if (result.hasError)
             return juce::String("error: ") + juce::String(result.error);
 
-        // Apply must run on the message thread (TE ValueTree asserts it).
+        // Apply must run on the message thread (ValueTree asserts it).
         auto& mm = *juce::MessageManager::getInstance();
         if (mm.isThisTheMessageThread())
             return applyPolyStepSequencerPresetToPath(*plugins_, result.preset, path);
@@ -192,7 +192,7 @@ class StepSequencerSoundDesignAgent : public SoundDesignAgent {
         if (result.hasError)
             return juce::String("error: ") + juce::String(result.error);
 
-        // Apply must run on the message thread (TE ValueTree asserts it).
+        // Apply must run on the message thread (ValueTree asserts it).
         auto& mm = *juce::MessageManager::getInstance();
         if (mm.isThisTheMessageThread())
             return applyStepSequencerPresetToPath(*plugins_, result.preset, path);

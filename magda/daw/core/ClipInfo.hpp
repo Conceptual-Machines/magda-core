@@ -37,10 +37,7 @@ inline double wrapPhase(double value, double period) {
  * Fade curve type.
  *
  * PINNED: persisted in project files as these integers, and MAGDA-owned. The
- * values happen to equal tracktion::AudioFadeCurve::Type today so the engine
- * bridge is a cast; a static_assert in audio/EngineEnumPins.cpp holds that
- * equality, and if the engine ever renumbers, the bridge grows a mapping rather
- * than these values changing.
+ * values do not move.
  */
 enum class FadeCurve : int { Linear = 1, Convex = 2, Concave = 3, SCurve = 4 };
 
@@ -48,8 +45,7 @@ enum class FadeCurve : int { Linear = 1, Convex = 2, Concave = 3, SCurve = 4 };
  * @brief Per-note pitch expression point (MPE pitch glide)
  *
  * Beat position is relative to the note's start. Value is a pitch offset in
- * semitones from the note's base pitch (MPE pitchbend, ±48 semitone range —
- * matches Tracktion Engine's fixed MPE conversion range).
+ * semitones from the note's base pitch (MPE pitchbend, ±48 semitone range).
  */
 struct MidiPitchExpressionPoint {
     double beat = 0.0;       // Position relative to note start (0..note length)
@@ -681,9 +677,8 @@ struct AudioEvent {
         return sourceToTimeline(loopStartSeconds() + sourceLengthSeconds(eventTimelineSeconds));
     }
 
-    /// Seed the interpretation from what the file itself says (Tracktion
-    /// loopInfo, an ACID chunk). Fills gaps only: TE reports a project default
-    /// when the file says nothing, so a value already here always wins. A beat
+    /// Seed the interpretation from what the file itself says (loop info,
+    /// an ACID chunk). Fills gaps only, so a value already here always wins. A beat
     /// count without a tempo is not taken.
     void seedInterpretation(double numBeats, double bpm, Provenance from) {
         if (bpm <= 0.0)
@@ -715,8 +710,8 @@ struct AudioEvent {
 /**
  * @brief One loop-record take: a single recorded pass over the loop range.
  *
- * Loop recording captures each pass as its own audio file (Tracktion splits the
- * continuous recording at the loop boundaries). filePath is the on-disk source
+ * Loop recording captures each pass as its own audio file (the continuous
+ * recording is split at the loop boundaries). filePath is the on-disk source
  * for that pass; durationSeconds is its audio length.
  *
  * Takes have no per-take time offset: they are loop-aligned alternatives that
@@ -892,8 +887,8 @@ struct ClipInfo {
     // Timeline position. This is the canonical placement model for every clip type.
     ClipPlacement placement;
 
-    // Enable/disable toggle (#1736). Disabled clips do not play — synced to
-    // te::Clip::disabled, which excludes the clip from the playback graph.
+    // Enable/disable toggle (#1736). Disabled clips do not play - excluded
+    // from the playback graph.
     // Per-instance (NOT ghost-shared): disabling one link-group member must
     // not silence its siblings.
     bool enabled = true;
@@ -1087,8 +1082,8 @@ struct ClipInfo {
     // BETWEEN events inside one clip are an event-level concern.
     bool autoCrossfade = false;
 
-    // launchFadeSamples: ramp on the stopped→playing transition. Default 256
-    // matches TE's prior hard-coded behaviour; 0 preserves the leading transient.
+    // launchFadeSamples: ramp on the stopped→playing transition. Default 256;
+    // 0 preserves the leading transient.
     int launchFadeSamples = 256;
 
     // MIDI-specific properties
@@ -1192,7 +1187,7 @@ struct ClipInfo {
     double midiTrimOffset = 0.0;  // Left-resize trim offset in beats (content origin on timeline)
 
     // Groove/Shuffle/Swing (MIDI clips)
-    juce::String grooveTemplate;  // TE groove template name (empty = none)
+    juce::String grooveTemplate;  // groove template name (empty = none)
     float grooveStrength = 0.0f;  // 0.0–1.0, amount of groove to apply
 
     // Session view properties

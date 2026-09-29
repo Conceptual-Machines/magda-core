@@ -45,8 +45,7 @@ class ModulatorEngine {
     /**
      * @brief Install a hook that runs after the local visual sim updates
      * each tick, used to overlay the audio thread's authoritative LFO
-     * phase + value (from te::LFOModifier::getCurrentPhase / getCurrentValue)
-     * onto MAGDA's ModInfo. Without it, the visual sim and audio LFO
+     * phase + value onto MAGDA's ModInfo. Without it, the visual sim and audio LFO
      * free-run independently and drift apart even at matching rates.
      * AudioBridge installs this on construction.
      */
@@ -203,7 +202,7 @@ class ModulatorEngine {
 
         updateAllMods(deltaTime);
 
-        // Overlay TE LFO phase + value onto MAGDA ModInfo so the visual
+        // Overlay the audio LFO phase + value onto MAGDA ModInfo so the visual
         // marker tracks the audio LFO exactly (no free-run drift).
         if (postUpdateHook_)
             postUpdateHook_();

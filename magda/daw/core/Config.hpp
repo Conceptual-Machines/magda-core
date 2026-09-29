@@ -416,8 +416,8 @@ class Config {
     }
 
     // Hardware ports auto-enabled for External FX / Instrument inserts
-    // (owned by ExternalInsertDeviceEnablement, name-keyed). TE persists
-    // device enablement globally, so without this set a port MAGDA
+    // (owned by ExternalInsertDeviceEnablement, name-keyed). Device
+    // enablement persists globally, so without this set a port MAGDA
     // auto-enabled would come back after a restart looking user-enabled and
     // never be auto-disabled again.
     std::vector<std::string> getAutoEnabledInsertInputs() const {

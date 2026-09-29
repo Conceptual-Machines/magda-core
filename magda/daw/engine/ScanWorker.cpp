@@ -75,7 +75,7 @@ bool ScanWorker::launchSubprocess() {
     // own random pipe, so the same ID is safe for parallel workers.
     // streamFlags = 0: do NOT capture stdout/stderr — the scanner writes log lines
     // to stdout, and if the pipe buffer fills up the subprocess blocks, deadlocking
-    // both processes (same fix as Tracktion Engine's own scanner).
+    // both processes.
     connected_ = launchWorkerProcess(scannerExe_, "magda-plugin-scanner", 10000, 0);
     return connected_;
 }

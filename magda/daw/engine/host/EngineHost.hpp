@@ -123,13 +123,13 @@ class EngineHost {
     /// playing clip keeps the one it was compiled with until this asks again.
     void refreshGrooves();
 
-    /// Supply the Tracktion wave-device names behind persisted output routes.
+    /// Supply the wave-device names behind persisted output routes.
     void setHardwareOutputProvider(HardwareChannelProvider provider);
 
     /// Re-read output enablement and names after the device catalog changes.
     void refreshHardwareOutputs();
 
-    /// Supply the Tracktion wave-device names behind persisted input routes (#2553).
+    /// Supply the wave-device names behind persisted input routes (#2553).
     void setHardwareInputProvider(HardwareChannelProvider provider);
 
     /// Re-read input enablement and names after the device catalog changes.

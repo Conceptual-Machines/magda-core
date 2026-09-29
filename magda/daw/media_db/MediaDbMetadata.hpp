@@ -1,4 +1,4 @@
-// Two-way binding between the media DB and tracktion clips for
+// Two-way binding between the media DB and clips for
 // user-editable per-file metadata (issue #768).
 //
 // The DB stores two slots per editable property: the scanner-detected

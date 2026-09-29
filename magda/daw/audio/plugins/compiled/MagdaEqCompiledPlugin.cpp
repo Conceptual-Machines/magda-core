@@ -110,7 +110,7 @@ float processRbj(float x, const RbjCoeffs& c, MagdaEqCompiledPlugin::BiquadState
     return y;
 }
 
-// Identifier-safe band name used in TE state ids.
+// Identifier-safe band name used in state ids.
 juce::String bandIdPrefix(int band) {
     return "band" + juce::String(band + 1);
 }

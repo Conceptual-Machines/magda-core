@@ -99,7 +99,7 @@ bool DawProjectArchive::writeToFile(const juce::File& file, const ProjectDocumen
         for (const auto& audio : DawProjectXmlAdapter::collectEmbeddedAudio(document))
             builder.addFile(juce::File(audio.sourcePath), 0, audio.archivePath);
 
-        // Embed device state files (a VST3 .vstpreset, or the opaque TE blob for
+        // Embed device state files (a VST3 .vstpreset, or the opaque plugin-state blob for
         // other devices) as the files their <State> references point at.
         for (const auto& state : DawProjectXmlAdapter::collectDeviceStates(document))
             builder.addEntry(new juce::MemoryInputStream(state.bytes, true), 9, state.archivePath,
@@ -198,7 +198,7 @@ bool DawProjectArchive::readFromFile(const juce::File& file, ProjectDocument& ou
     // Pull embedded device state back into the model. fromProjectXml left the
     // archive path in pluginState; resolve it to the stored bytes. A .vstpreset
     // entry becomes vst3Preset (base64, applied via setPreset on load); anything
-    // else is the opaque TE blob, restored verbatim as a string.
+    // else is the opaque plugin-state blob, restored verbatim as a string.
     for (auto& track : outDocument.tracks) {
         for (auto& element : track.chain.fxChainElements) {
             if (!isDevice(element))

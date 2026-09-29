@@ -17,12 +17,11 @@ namespace magda {
  * Ramer-Douglas-Peucker simplification. Pure: no singletons, no engine state.
  *
  * Only LFO modulators have a phase that is deterministic at a given timeline
- * position (tempo-synced: locked to beats; Hz: locked to edit time, matching
- * TE's transport-sync path). Random needs the audio-thread RNG, Follower needs
- * rendered audio, and Envelope depends on gate events, so none of those can be
- * evaluated offline. isBakeable() encodes that rule.
+ * position (tempo-synced: locked to beats; Hz: locked to project time). Random needs the
+ * audio-thread RNG, Follower needs rendered audio, and Envelope depends on gate events, so none of
+ * those can be evaluated offline. isBakeable() encodes that rule.
  *
- * The per-link contribution formula matches both the live TE assignment
+ * The per-link contribution formula matches both the live assignment
  * mapping (ModifierHelpers.hpp::mapLinkAssignment) and the UI preview math
  * (ParamLinkResolver::computeTotalModModulation):
  *   contribution = (bipolar ? v * 2 - 1 : v) * amount

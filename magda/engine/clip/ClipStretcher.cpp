@@ -707,14 +707,11 @@ std::unique_ptr<ClipStretcher> makeStretcher(const StretchSetup& setup) {
 
         default:
             // A mode this build has no engine for, which is every value
-            // Tracktion's enum holds that MAGDA never wrote. The incumbent
-            // answers this with its default engine (TimeStretcher::
-            // checkModeIsAvailable) and so does this: the clip is asking to be
-            // stretched, and the position map has already decided how much
-            // material a block will consume. Returning nothing here would leave
-            // a block reading that material at unity and the next one starting
-            // where the ratio says, which is a skip at every block boundary
-            // rather than a fallback.
+            // a saved v0 project may hold that MAGDA never wrote. Fall back to the
+            // default engine: the clip is asking to be stretched, and the position map has already
+            // decided how much material a block will consume. Returning nothing here would leave a
+            // block reading that material at unity and the next one starting where the ratio says,
+            // which is a skip at every block boundary rather than a fallback.
             return std::make_unique<SignalsmithClipStretcher>(setup);
     }
 }

@@ -12,10 +12,8 @@
  * @file FadeCurves.hpp
  * @brief The four fade shapes, and the ramp that is not a fade.
  *
- * The shapes are the incumbent's, sample for sample. FadeCurve's values are
- * pinned project-file integers that happen to equal Tracktion's own
- * (ClipInfo.hpp), and the curves behind them have to match too: a fade that
- * differs by a hair is a null-diff render that never nulls (#2040).
+ * FadeCurve's values are pinned project-file integers (ClipInfo.hpp), so the
+ * curves behind them must not change: saved projects would sound different.
  *
  * A fade is a gain envelope over a stretch of the timeline, so nothing here
  * knows about blocks or streams. Where a curve is applied is the voice's

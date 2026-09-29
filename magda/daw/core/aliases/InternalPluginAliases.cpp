@@ -7,7 +7,7 @@ namespace magda {
 // Every internal device that curates parameter aliases now does so next to
 // itself: compiled devices declare an `AliasSpec` table in their wrapper, which
 // the base device pack registers into the plugin registry. This used to hold a
-// hand-written table for the stock Tracktion effects (EQ, Compressor, Reverb,
+// hand-written table for the stock effects (EQ, Compressor, Reverb,
 // Delay, Chorus, Phaser, Pitch Shift, Lowpass) because those had no such table
 // of their own; they have since been retired in favour of their compiled
 // successors, so nothing is authored here any more.

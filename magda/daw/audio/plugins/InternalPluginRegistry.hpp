@@ -91,7 +91,7 @@ const InternalPluginSpec* findInternalPluginSpecForLoadType(const juce::String& 
  *        carries the registered canonical id instead.
  *
  * Resolving an alias is only half of a device rename. The plugin keeps this
- * tree, and `te::Plugin::getPluginType()` reads `type` straight back out of it
+ * tree, and its plugin type is read straight back out of `type`
  * — which is where `DeviceInfo::pluginId` comes from. Left alone, every
  * downstream comparison against the canonical id (inline UI selection, slot
  * traits, the agent catalogue) would silently miss for projects saved under an

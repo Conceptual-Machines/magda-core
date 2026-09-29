@@ -424,7 +424,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
         timeSigDen = 4;
 
     // Determine export range in timeline beats. MIDI file ticks are beat-based,
-    // so seconds should only appear at external Tracktion API boundaries.
+    // so seconds should only appear at external API boundaries.
     double rangeStartBeats = 0.0;
     double rangeEndBeats = 0.0;
 

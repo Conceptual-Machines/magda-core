@@ -17,7 +17,7 @@ namespace magda::daw::audio {
  * shared set of 1/3-octave bands, it finds pairs of tracks that compete for the
  * same frequency region ("kick and bass masking at 80-120 Hz"). This is the
  * agent-side DSP that feeds the mixing agent (#886); it has no audio-thread or
- * Tracktion dependency, so it is unit-testable in isolation. The per-track band
+ * engine dependency, so it is unit-testable in isolation. The per-track band
  * energies are produced upstream by the measurement layer's taps (#1388).
  */
 

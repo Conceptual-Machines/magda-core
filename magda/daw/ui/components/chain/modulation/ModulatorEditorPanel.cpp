@@ -700,7 +700,7 @@ void ModulatorEditorPanel::setModInfo(const magda::ModInfo& mod, const magda::Mo
     // Use live mod pointer if available (for animation), otherwise use local copy
     // Pass the getter too so the waveform display can refetch on each paint
     // — the raw `liveMod` pointer dangles after a mod-vector reallocation
-    // (notifyDeviceModifiersChanged → resync → new TE state can shift things
+    // (notifyDeviceModifiersChanged → resync → new engine state can shift things
     // and any code that mutates track->mods invalidates pointers into it).
     waveformDisplay_.setModInfo(liveMod ? liveMod : &currentMod_, liveModGetter_);
     updateFromMod();

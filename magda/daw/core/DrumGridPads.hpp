@@ -19,14 +19,13 @@ struct RackInfo;
  *
  * A Drum Grid's pads are a rack of chains the device owns: `DeviceInfo::pads`.
  * The model holds them, the project file saves them, every edit writes them,
- * and the plugin is filled from them the way `RackSyncManager` fills a
- * `te::RackType` from a `RackInfo`. One direction, so nothing can drift.
+ * and the plugin is filled from them. One direction, so nothing can drift.
  *
  * They were a projection of the plugin's saved state until #2207 (#2192, #2200,
  * #2205): decoded from `pluginState` and rebuilt on every capture, which made
  * the plugin the truth and the model a lagging mirror of it. A pad added since
  * the last capture was missing from the plan, a pad removed since was still in
- * it, and neither showed under Tracktion because the plugin played itself.
+ * it, and neither showed because the plugin played itself.
  * `readLegacyPads()` is all that is left of that reader, and it runs once, at
  * load, on a project saved before the pads moved.
  */
@@ -36,12 +35,9 @@ constexpr int kPadCount = 64;
 constexpr int kPadBaseNote = 24;
 
 /// How many outputs a pad can be sent to: 0 is the grid's own mix, 1 upwards
-/// are multi-out buses. `DrumGridPlugin::maxBusOutputs` is the same number,
-/// from the same limit (a TE RackType carries 64 audio pins, so 32 stereo
-/// pairs). Here as well because the model is what the plan compiler routes
-/// from, and the two engines have to agree on which buses exist: the live
-/// plugin clamps what it is given, and the plan takes the model's value as it
-/// finds it, so an out-of-range one reaches no track and silences its pads.
+/// are multi-out buses. Equals `DrumGridPlugin::maxBusOutputs`. The plugin
+/// clamps what it is given, but the plan takes the model's value as it finds
+/// it, so an out-of-range one reaches no track and silences its pads.
 constexpr int kPadBusCount = 32;
 
 /// True when devices of this type keep their chains as pads.

@@ -437,11 +437,11 @@ std::vector<AutomationGridTick> automationGridTicks(const AutomationTarget& targ
         gridValues = kQuarterNorms | std::views::transform(asUnitTick) |
                      toStd<std::vector<AutomationGridTick>>();
     } else if (paramInfo.displayText) {
-        // displayText wraps TE's valueToString, which expects a
+        // displayText expects a
         // plugin-native value — NOT normalized [0,1]. Sample the
         // REAL value at each visual position so any scaleAnchor
         // skew is honoured, then project from info-range onto the
-        // TE-native range so the provider sees what it expects.
+        // plugin-native range so the provider sees what it expects.
         const float teSpan = paramInfo.teMaxValue - paramInfo.teMinValue;
         const float infoSpan = paramInfo.maxValue - paramInfo.minValue;
         const auto asDisplayTick = [&](double norm) {

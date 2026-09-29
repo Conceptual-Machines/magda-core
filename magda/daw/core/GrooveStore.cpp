@@ -20,7 +20,7 @@ constexpr int kMinNotes = 2;
 constexpr int kMaxNotes = 1024;
 constexpr int kMaxNotesPerBeat = 8;
 
-// Added by name when missing, whatever the list holds, as Tracktion does.
+// Added by name when missing, whatever the list holds.
 constexpr const char* kBasicSwings[] = {
     R"(<GROOVETEMPLATE name="Basic 8th Swing" numberOfNotes="2" notesPerBeat="2" parameterized="1"><SHIFT delta="0.0"/><SHIFT delta="0.66"/></GROOVETEMPLATE>)",
     R"(<GROOVETEMPLATE name="Basic 16th Swing" numberOfNotes="2" notesPerBeat="4" parameterized="1"><SHIFT delta="0.0"/><SHIFT delta="0.66"/></GROOVETEMPLATE>)",

@@ -77,7 +77,7 @@ void removePlugins(TrackChain& chain) {
     chain.postFxChainElements.clear();
 }
 
-/// Tracktion's fader is a plugin, so a chain rendered without plugins renders at unity.
+/// A chain rendered without plugins renders at unity.
 void faderToUnity(TrackInfo& track) {
     track.volume = 1.0f;
     track.pan = 0.0f;

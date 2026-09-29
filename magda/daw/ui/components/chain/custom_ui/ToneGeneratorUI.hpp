@@ -25,14 +25,14 @@ class ToneGeneratorUI : public juce::Component {
      * @brief Update UI from device parameters
      * @param frequency Frequency in Hz (20-20000)
      * @param level Level in dB (-60 to 0)
-     * @param waveform TE oscType enum (0=Sine, 1=Triangle, 2=Saw Up, 3=Saw Down, 4=Square, 5=Noise)
+     * @param waveform oscType enum (0=Sine, 1=Triangle, 2=Saw Up, 3=Saw Down, 4=Square, 5=Noise)
      */
     void updateParameters(float frequency, float level, int waveform);
 
     /**
      * @brief Callback when a parameter changes (paramIndex, actualValue)
-     * ParamIndex matches TE's ToneGeneratorPlugin ordering:
-     *   0=oscType (TE enum 0-5), 2=frequency (Hz), 3=level (dB)
+     * ParamIndex matches ToneGeneratorProcessor ordering:
+     *   0=oscType (enum 0-5), 2=frequency (Hz), 3=level (dB)
      * bandLimit (index 1) is not exposed in this UI.
      */
     std::function<void(int paramIndex, float actualValue)> onParameterChanged;

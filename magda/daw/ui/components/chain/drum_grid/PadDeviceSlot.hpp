@@ -53,7 +53,6 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
         magda::ChainNodePath devicePath;
         /// The instance rendering the device, on either engine. Null while none does.
         std::function<std::shared_ptr<daw::audio::MagdaDevice>()> renderedDevice;
-        /// Tracktion's plugin for the device, where that engine hosts one.
     };
 
     /** @brief Show a sampler, a MAGDA faceplate or a hosted plugin's parameters for @p binding. */
@@ -171,7 +170,7 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
     // the other way, to the model at devicePath_, and reach it by projection (#2379).
     void setupForSampler();
     void refreshSamplerDisplay(const std::shared_ptr<daw::audio::MagdaSamplerPlugin>& sampler);
-    /// A hosted plugin no Tracktion plugin stands for: its parameters as the engine describes them.
+    /// A hosted plugin's parameters as the engine describes them.
     void setupForHostedParameters();
     bool setupForSharedDeviceUi(const magda::DeviceInfo& device);
     void resetSharedInlineUi();

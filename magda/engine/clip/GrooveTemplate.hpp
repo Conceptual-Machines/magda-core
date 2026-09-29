@@ -9,10 +9,7 @@
  * @file GrooveTemplate.hpp
  * @brief What a groove template does to a beat, and where the templates live.
  *
- * A native port of the one thing MAGDA still takes from Tracktion here: a
- * lateness table, a notes-per-beat grid and one formula. Small enough to
- * reimplement exactly rather than approximately, which is the same call slice 5
- * made for the transient detector.
+ * A lateness table, a notes-per-beat grid and one formula.
  *
  * Compiled the way the warp map is (WarpMap.hpp): the clip's strength is folded
  * into the table when the snapshot is compiled, because whether strength applies

@@ -48,9 +48,7 @@ class RightClickForwarder : public juce::MouseListener {
 };
 
 // True if the track's model-level primary instrument has its preferred clip
-// editor set to Drum Grid. This deliberately uses TrackInfo/DeviceInfo rather
-// than the TE plugin graph, where instruments are hidden behind a shared "rack"
-// wrapper id.
+// editor set to Drum Grid.
 bool trackPrefersDrumGrid(TrackId trackId) {
     const auto* instrument = TrackManager::getInstance().getPrimaryInstrument(trackId);
     if (instrument == nullptr)
