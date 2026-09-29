@@ -216,8 +216,12 @@ TEST_CASE("Volume/Pan carries gain and pan onto the Utility", "[devices][legacy]
     REQUIRE(legacy_devices::migrateRetiredDevice(device));
 
     CHECK(device.pluginId == "magda_utility");
-    CHECK(slot(device, 0).value() == Approx(-6.0206f).margin(0.001f));
+    CHECK(slot(device, 0).value() == Approx(-7.863f).margin(0.001f));
     CHECK(slot(device, 1).value() == Approx(-0.25f));
+
+    auto unity = retiredDevice("volume", {param(0, 0.7408f)});
+    REQUIRE(legacy_devices::migrateRetiredDevice(unity));
+    CHECK(slot(unity, 0).value() == Approx(0.0f).margin(0.01f));
 }
 
 TEST_CASE("Pitch Shift keeps its transposition and stays fully wet", "[devices][legacy][aliases]") {
