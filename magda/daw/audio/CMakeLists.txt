@@ -282,6 +282,9 @@ set(_magda_device_sdk_sources
 )
 
 set(_magda_engine_device_adapter_sources
+    # Keep lookup with its factory caller for single-pass static linkers on Linux.
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugin_manager/ExternalPluginLookup.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugin_manager/ExternalPluginLookup.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineDeviceFactory.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineDeviceFactory.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/ControlExecutor.cpp"
@@ -451,14 +454,7 @@ target_sources(magda_daw PRIVATE
     WarpMarkerManager.cpp
     # Compile-time pins between MAGDA's persisted enums and the engine's (#1887)
     # Phase 3: Core controllers
-    # Which installed plugin a saved device meant (#2243). One answer, asked by
-    # the sync path here and by the native engine's device factory, which
-    # resolves it at the final link the way it resolves findCompiledPluginSpec.
-    plugin_manager/ExternalPluginLookup.cpp
-    plugin_manager/ExternalPluginLookup.hpp
-    # A project's record of a plugin onto a live instance: array, then chunk,
-    # then what that left behind, for whoever owns the model (#2243). Same
-    # arrangement as the lookup above -- one answer, both engines.
+    # Restore persisted parameters and plugin state onto a live instance (#2243).
     plugin_manager/ExternalPluginState.cpp
     plugin_manager/ExternalPluginState.hpp
     automation/AutomationCurveSimplifier.cpp

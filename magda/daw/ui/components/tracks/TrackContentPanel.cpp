@@ -105,6 +105,8 @@ std::optional<ImportedMidiFile> readMidiTracks(const juce::File& file, double pr
     const double beatsPerTick = format > 0 ? 1.0 / format : projectTempo / 60.0;
     if (format <= 0)
         midi.convertTimestampTicksToSeconds();
+    // End-of-track markers preserve trailing silence, including conductor-only tracks.
+    imported.lengthBeats = midi.getLastTimestamp() * beatsPerTick;
 
     for (int trackIndex = 0; trackIndex < midi.getNumTracks(); ++trackIndex) {
         const auto* source = midi.getTrack(trackIndex);

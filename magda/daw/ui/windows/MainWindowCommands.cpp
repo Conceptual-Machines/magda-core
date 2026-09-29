@@ -22,6 +22,7 @@
 #include "../views/SessionView.hpp"
 #include "MainWindow.hpp"
 #include "core/LinkModeManager.hpp"
+#include "core/TempoAutomationCommands.hpp"
 #include "core/ViewModeController.hpp"
 #include "engine/AudioEngine.hpp"
 #include "project/ProjectManager.hpp"
@@ -94,6 +95,12 @@ bool overlapsTimelineRange(const ClipInfo& clip, double startSeconds, double end
                            double bpm) {
     return timelineStartSeconds(clip, bpm) < endSeconds &&
            timelineEndSeconds(clip, bpm) > startSeconds;
+}
+
+void rippleTempoAutomation(RippleTempoAutomationCommand::Mode mode, double startBeat,
+                           double endBeat) {
+    UndoManager::getInstance().executeCommand(
+        std::make_unique<RippleTempoAutomationCommand>(mode, startBeat, endBeat));
 }
 
 }  // namespace
@@ -1145,6 +1152,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 return true;
             std::vector<AutomationLaneId> laneIds(sel.automationLaneIds.begin(),
                                                   sel.automationLaneIds.end());
+            if (!sel.automationOnly && sel.isAllTracks())
+                laneIds.clear();
 
             UndoManager::getInstance().beginCompoundOperation("Insert Time");
             if (!sel.automationOnly) {
@@ -1159,6 +1168,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             if (!sel.automationOnly && sel.isAllTracks()) {
                 UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                     RippleMarkersCommand::Mode::Insert, startBeat, sel.endBeats));
+                rippleTempoAutomation(RippleTempoAutomationCommand::Mode::Insert, startBeat,
+                                      sel.endBeats);
             }
             UndoManager::getInstance().endCompoundOperation();
             return true;
@@ -1181,6 +1192,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 return true;
             std::vector<AutomationLaneId> laneIds(sel.automationLaneIds.begin(),
                                                   sel.automationLaneIds.end());
+            if (!sel.automationOnly && sel.isAllTracks())
+                laneIds.clear();
 
             // Capture the source content before mutating the arrangement.
             if (!sel.automationOnly)
@@ -1214,6 +1227,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             if (!sel.automationOnly && sel.isAllTracks()) {
                 UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                     RippleMarkersCommand::Mode::Duplicate, startBeat, endBeat));
+                rippleTempoAutomation(RippleTempoAutomationCommand::Mode::Duplicate, startBeat,
+                                      endBeat);
             }
             UndoManager::getInstance().endCompoundOperation();
 
@@ -1276,6 +1291,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             // Loop ops are global, so markers always ripple.
             UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                 RippleMarkersCommand::Mode::Duplicate, startBeat, endBeat));
+            rippleTempoAutomation(RippleTempoAutomationCommand::Mode::Duplicate, startBeat,
+                                  endBeat);
 
             UndoManager::getInstance().endCompoundOperation();
 
@@ -1332,6 +1349,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             if (rippleMarkers) {
                 UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                     RippleMarkersCommand::Mode::Delete, startBeat, endBeat));
+                rippleTempoAutomation(RippleTempoAutomationCommand::Mode::Delete, startBeat,
+                                      endBeat);
 
                 UndoManager::getInstance().endCompoundOperation();
             }
@@ -1365,7 +1384,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             }
             if (info.commandID == cutLoopRange)
                 clipManager.copyBeatRangeToClipboard(startBeat, endBeat, allTracks, bpm);
-            // Loop ops are global, so markers and tempo/pitch always ripple
+            // Loop ops are global, so markers and tempo always ripple
             // (one undo step).
             UndoManager::getInstance().beginCompoundOperation(
                 info.commandID == cutLoopRange ? "Cut Loop Range" : "Delete Loop Range");
@@ -1373,6 +1392,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 std::make_unique<RippleDeleteRangeCommand>(startBeat, endBeat, allTracks, bpm));
             UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                 RippleMarkersCommand::Mode::Delete, startBeat, endBeat));
+            rippleTempoAutomation(RippleTempoAutomationCommand::Mode::Delete, startBeat, endBeat);
 
             UndoManager::getInstance().endCompoundOperation();
             return true;
@@ -1407,9 +1427,11 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 std::make_unique<InsertTimeCommand>(targetBeat, span, std::vector<TrackId>{}, bpm));
             UndoManager::getInstance().executeCommand(
                 std::make_unique<PasteClipCommand>(BeatPosition{targetBeat}, rippleTarget.trackId));
-            // Paste ripples all tracks, so markers and tempo/pitch shift too.
+            // Paste ripples all tracks, so markers and tempo shift too.
             UndoManager::getInstance().executeCommand(std::make_unique<RippleMarkersCommand>(
                 RippleMarkersCommand::Mode::Insert, targetBeat, targetBeat + span));
+            rippleTempoAutomation(RippleTempoAutomationCommand::Mode::Insert, targetBeat,
+                                  targetBeat + span);
 
             UndoManager::getInstance().endCompoundOperation();
             return true;

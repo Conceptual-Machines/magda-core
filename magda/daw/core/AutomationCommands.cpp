@@ -260,6 +260,9 @@ bool DuplicateAutomationTimeSelectionCommand::shouldDuplicateLane(
     const AutomationLaneInfo& lane) const {
     if (!lane.visible || !lane.isAbsolute())
         return false;
+    // Global tempo ripple is handled separately from track-scoped automation.
+    if (lane.target.kind == ControlTarget::Kind::Tempo && laneIds_.empty())
+        return false;
     if (!laneIds_.empty()) {
         return std::ranges::find(laneIds_, lane.id) != laneIds_.end();
     }
@@ -730,6 +733,9 @@ void DuplicateAutomationTimeSelectionCommand::undo() {
 
 bool InsertTimeAutomationCommand::shouldShiftLane(const AutomationLaneInfo& lane) const {
     if (!lane.visible || !lane.isAbsolute())
+        return false;
+    // Global tempo ripple is handled separately from track-scoped automation.
+    if (lane.target.kind == ControlTarget::Kind::Tempo && laneIds_.empty())
         return false;
     if (!laneIds_.empty()) {
         return std::ranges::find(laneIds_, lane.id) != laneIds_.end();

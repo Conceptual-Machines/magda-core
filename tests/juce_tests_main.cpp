@@ -48,6 +48,11 @@ int main(int argc, char* argv[]) {
     const auto tests = argc > 1 ? juce::UnitTest::getTestsWithName(argv[1])
                                 : juce::UnitTest::getTestsInCategory("magda");
 
+    if (tests.isEmpty()) {
+        std::cerr << "No JUCE tests matched: " << (argc > 1 ? argv[1] : "magda") << '\n';
+        return 1;
+    }
+
     // UnitTestRunner normally runs every suite in one loop. Running one suite
     // at a time lets us enforce the async teardown boundary between suites.
     for (auto* test : tests) {

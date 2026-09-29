@@ -1030,31 +1030,19 @@ add_test(NAME user_theme_juce
 add_test(NAME syntax_highlighting_juce
          COMMAND magda_juce_tests "Syntax Highlighting Tests")
 
-# The null-diff corpus (#2040): every case rendered through both engines. Two
-# entries because they fail for different reasons and one of them is much
-# cheaper: a mapping disagreement moves every clip in every project, so it is
-# worth seeing on its own before any waveform is compared.
-    add_test(NAME null_diff_maps_juce
-             COMMAND magda_juce_tests "Null Diff Maps")
-    add_test(NAME null_diff_corpus_juce
-             COMMAND magda_juce_tests "Null Diff Corpus")
-    add_test(NAME trimmed_session_launch_juce
-             COMMAND magda_juce_tests "Trimmed Session Launch")
+# Native corpus, state/schema and convolution gates are discovered from Catch2.
+add_test(NAME juce_unknown_suite_rejected
+         COMMAND magda_juce_tests "__missing_suite__")
+set_tests_properties(juce_unknown_suite_rejected PROPERTIES WILL_FAIL TRUE)
+
+add_test(NAME trimmed_session_launch_juce
+         COMMAND magda_juce_tests "Trimmed Session Launch")
 
 add_test(NAME midi_bridge_note_events_juce
          COMMAND magda_juce_tests "MidiBridge Note Events Tests")
 
 add_test(NAME chord_progression_converter_juce
          COMMAND magda_juce_tests "Chord Progression Converter Tests")
-
-add_test(NAME device_param_schema_juce
-         COMMAND magda_juce_tests "Device Param Schema Freeze")
-
-add_test(NAME device_state_schema_juce
-         COMMAND magda_juce_tests "Device State Schema")
-
-add_test(NAME convolution_device_juce
-         COMMAND magda_juce_tests "Convolution Device")
 
 # Remote API against the live facade. Runs here rather than in magda_tests
 # because executing an undoable command constructs ProjectManager through
