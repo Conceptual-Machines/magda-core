@@ -1,7 +1,5 @@
 #include "drum_grid/PadChainPanel.hpp"
 
-#include <tracktion_engine/tracktion_engine.h>
-
 #include <algorithm>
 
 #include "core/TrackManager.hpp"

@@ -96,14 +96,8 @@ class MagdaApiLive : public MagdaApi {
         project_.setEngineTempoMap(std::move(getter));
     }
 
-    /** Wire the current-Edit accessor into the live TransportApi. */
-    void setEditAccessor(TransportApiLive::EditGetter g) {
-        transport_.setEditGetter(std::move(g));
-    }
-
-    /** Wire play / stop dispatchers so script-driven transport calls
-     *  flow through TimelineController (matching the on-screen
-     *  buttons). With no dispatcher set, calls go straight to Tracktion. */
+    /** Wire transport dispatchers through TimelineController in the application,
+     *  or through engine callbacks when no window is attached. */
     void setTransportPlayDispatcher(TransportApiLive::TransportFn fn) {
         transport_.setPlayDispatcher(std::move(fn));
     }

@@ -33,8 +33,7 @@ std::vector<ParameterWrite> resolveParameterWrites(
  * @brief Device-agnostic "design me a preset" agent driven by parameter
  *        introspection.
  *
- * Unlike `FourOscAgent`, which hard-codes its parameter schema in the system
- * prompt, this reads the target device's eligible automatable parameters at runtime
+ * Reads the target device's eligible automatable parameters at runtime
  * (names, units, real-unit ranges, discrete choices) and builds the prompt from
  * that. The LLM picks values in REAL units (Hz, ms, dB, semitones) — the same
  * space the device's `ParameterInfo` already reports — so there's no

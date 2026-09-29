@@ -35,7 +35,6 @@ class ConsoleAgentOrchestrator;
 class AutomationAgent;
 class CommandAgent;
 class ControllerProfileAgent;
-class FourOscAgent;
 class ThemeAgent;
 class DrummerAgent;
 class MagdaApi;
@@ -229,7 +228,6 @@ class AIChatConsoleContent : public PanelContent,
     std::unique_ptr<magda::AutomationAgent> automationAgent_;
     std::unique_ptr<magda::agent::ConsoleAgentOrchestrator> agentOrchestrator_;
     std::unique_ptr<magda::ControllerProfileAgent> controllerAgent_;
-    std::unique_ptr<magda::FourOscAgent> fourOscAgent_;
     std::unique_ptr<magda::ThemeAgent> themeAgent_;
     std::unique_ptr<RequestThread> requestThread_;
 
@@ -252,28 +250,10 @@ class AIChatConsoleContent : public PanelContent,
     void finishControllerGeneration(bool success, const juce::String& errorOrJson,
                                     juce::String profileId, juce::String profileName);
 
-    // /design <description> — kick the FourOscAgent on a background thread
-    // and dump the parsed JSON into chat. Kept on its own thread so a
-    // long preset generation can't block the main agent
-    // pipeline running in requestThread_.
-    class FourOscRequestThread : public juce::Thread {
-      public:
-        FourOscRequestThread(AIChatConsoleContent& owner, juce::String description);
-        void run() override;
-
-      private:
-        AIChatConsoleContent& owner_;
-        juce::String description_;
-    };
-    std::unique_ptr<FourOscRequestThread> fourOscThread_;
-    void startPresetGeneration(const juce::String& description);
-    void finishPresetGeneration(bool success, const juce::String& errorOrPretty,
-                                juce::String presetName);
-
     // /theme <description> - kick the ThemeAgent on a background thread. On
     // success the generated JSON is written into paths::themesDir() and
     // selected via Config, so the app's existing apply + hot-reload path
-    // renders it. Its own thread for the same reason as FourOsc.
+    // renders it. Its own thread so it cannot block requestThread_.
     class ThemeRequestThread : public juce::Thread {
       public:
         ThemeRequestThread(AIChatConsoleContent& owner, juce::String description);
@@ -290,12 +270,6 @@ class AIChatConsoleContent : public PanelContent,
     void finishThemeGeneration(bool success, const juce::String& jsonOrError, juce::String name,
                                juce::String base, int colourCount, int syntaxCount,
                                int streamAnchor);
-
-    // Optional category override set by `/design --category=<cat>`. When
-    // non-empty, finishPresetGeneration substitutes this value for the
-    // category the agent picked (so the saved preset folders match what
-    // the user asked for). Cleared after the design completes.
-    juce::String pendingCategoryOverride_;
 
     // Clear the input box's text AND force a repaint. Document mutations
     // alone don't always invalidate the CodeEditorComponent's glyph

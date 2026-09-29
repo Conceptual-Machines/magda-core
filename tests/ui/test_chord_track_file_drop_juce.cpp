@@ -3,6 +3,7 @@
 #include "JuceTestStateGuard.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
+#include "magda/daw/project/ProjectManager.hpp"
 #include "magda/daw/ui/components/tracks/TrackContentPanel.hpp"
 #include "magda/daw/ui/state/TimelineController.hpp"
 
@@ -82,9 +83,137 @@ class ChordTrackFileDropTest final : public juce::UnitTest {
 
     void runTest() override {
         testPlainMidiBecomesChords();
+        testNativeMidiChannels();
+        testMidiTrailingSilence();
     }
 
   private:
+    void testMidiTrailingSilence() {
+        for (bool separateConductor : {false, true}) {
+            for (bool smpte : {false, true}) {
+                beginTest(juce::String("Trailing MIDI silence survives ") +
+                          (separateConductor ? "a conductor track" : "the note track") +
+                          (smpte ? " in SMPTE time" : " in musical ticks"));
+                magda::test::runWithCleanJuceState([this, separateConductor, smpte] {
+                    const double ticksPerBeat = smpte ? 500.0 : 960.0;
+                    juce::MidiMessageSequence notes;
+                    notes.addEvent(juce::MidiMessage::noteOn(1, 60, 0.8f), 0.0);
+                    notes.addEvent(juce::MidiMessage::noteOff(1, 60), ticksPerBeat);
+                    juce::MidiMessageSequence conductor;
+                    auto& ending = separateConductor ? conductor : notes;
+                    ending.addEvent(juce::MidiMessage::endOfTrack(), 16.0 * ticksPerBeat);
+                    juce::MidiFile midi;
+                    if (smpte)
+                        midi.setSmpteTimeFormat(25, 40);
+                    else
+                        midi.setTicksPerQuarterNote(960);
+                    if (separateConductor)
+                        midi.addTrack(conductor);
+                    midi.addTrack(notes);
+                    const auto file = juce::File::createTempFile(".mid");
+                    {
+                        auto output = file.createOutputStream();
+                        expect(output != nullptr);
+                        if (!output)
+                            return;
+                        expect(midi.writeTo(*output));
+                    }
+                    auto& project = ProjectManager::getInstance();
+                    const auto previousTempo = project.getCurrentProjectInfo().tempo;
+                    project.setTempo(120.0);
+                    TimelineController controller;
+                    TrackContentPanel panel;
+                    panel.setSize(2000, 400);
+                    panel.setTempo(120.0);
+                    panel.setZoom(testZoomPixelsPerBeat);
+                    panel.setController(&controller);
+                    panel.filesDropped({file.getFullPathName()}, 200, 300);
+                    const auto& tracks = TrackManager::getInstance().getTracks();
+                    expectEquals(static_cast<int>(tracks.size()), 1);
+                    if (tracks.size() == 1) {
+                        const auto clips = ClipManager::getInstance().getClipsOnTrack(tracks[0].id);
+                        expectEquals(static_cast<int>(clips.size()), 1);
+                        if (clips.size() == 1) {
+                            const auto* clip = ClipManager::getInstance().getClip(clips[0]);
+                            expectWithinAbsoluteError(clip->lengthBeats, 16.0, 1e-9);
+                            expectEquals(static_cast<int>(clip->midiNotes.size()), 1);
+                            if (!clip->midiNotes.empty())
+                                expectWithinAbsoluteError(clip->midiNotes[0].lengthBeats, 1.0,
+                                                          1e-9);
+                        }
+                    }
+                    project.setTempo(previousTempo);
+                    file.deleteFile();
+                });
+            }
+        }
+    }
+
+    void testNativeMidiChannels() {
+        beginTest("Native MIDI import keeps channel notes, CC and pitch bend in musical time");
+        magda::test::runWithCleanJuceState([this] {
+            juce::MidiMessageSequence sequence;
+            sequence.addEvent(juce::MidiMessage::timeSignatureMetaEvent(3, 4), 0.0);
+            sequence.addEvent(juce::MidiMessage::textMetaEvent(3, "Keys"), 0.0);
+            sequence.addEvent(juce::MidiMessage::noteOn(1, 60, 0.8f), 480.0);
+            sequence.addEvent(juce::MidiMessage::noteOff(1, 60), 1440.0);
+            sequence.addEvent(juce::MidiMessage::controllerEvent(1, 64, 99), 960.0);
+            sequence.addEvent(juce::MidiMessage::pitchWheel(1, 10000), 1200.0);
+            sequence.addEvent(juce::MidiMessage::noteOn(2, 72, 0.5f), 0.0);
+            sequence.addEvent(juce::MidiMessage::noteOff(2, 72), 1920.0);
+            juce::MidiFile midi;
+            midi.setTicksPerQuarterNote(960);
+            midi.addTrack(sequence);
+            const auto file = juce::File::createTempFile(".mid");
+            {
+                auto stream = std::unique_ptr<juce::FileOutputStream>(file.createOutputStream());
+                expect(stream != nullptr);
+                if (stream == nullptr)
+                    return;
+                expect(midi.writeTo(*stream));
+            }
+            TimelineController controller;
+            TrackContentPanel panel;
+            panel.setSize(2000, 400);
+            panel.setTempo(testTempoBPM);
+            panel.setZoom(testZoomPixelsPerBeat);
+            panel.setController(&controller);
+            panel.filesDropped({file.getFullPathName()}, 200, 300);
+            const auto& tracks = TrackManager::getInstance().getTracks();
+            expectEquals(static_cast<int>(tracks.size()), 2);
+            if (tracks.size() == 2) {
+                expectEquals(tracks[0].name, juce::String("Keys 1"));
+                expectEquals(tracks[1].name, juce::String("Keys 2"));
+                const auto first = ClipManager::getInstance().getClipsOnTrack(tracks[0].id);
+                const auto second = ClipManager::getInstance().getClipsOnTrack(tracks[1].id);
+                expect(first.size() == 1 && second.size() == 1);
+                if (first.size() == 1 && second.size() == 1) {
+                    const auto* a = ClipManager::getInstance().getClip(first.front());
+                    const auto* b = ClipManager::getInstance().getClip(second.front());
+                    expect(a->midiNotes.size() == 1 && b->midiNotes.size() == 1);
+                    if (!a->midiNotes.empty() && !b->midiNotes.empty()) {
+                        expectEquals(a->midiNotes[0].noteNumber, 60);
+                        expectEquals(b->midiNotes[0].noteNumber, 72);
+                        expectWithinAbsoluteError(a->midiNotes[0].startBeat, 0.5, 1e-9);
+                        expectWithinAbsoluteError(a->midiNotes[0].lengthBeats, 1.0, 1e-9);
+                        expectWithinAbsoluteError(a->lengthBeats, 3.0, 1e-9);
+                    }
+                    expect(a->midiCCData.size() == 1 && a->midiPitchBendData.size() == 1);
+                    expect(b->midiCCData.empty() && b->midiPitchBendData.empty());
+                    if (!a->midiCCData.empty()) {
+                        expectEquals(a->midiCCData[0].value, 99);
+                        expectWithinAbsoluteError(a->midiCCData[0].beatPosition, 1.0, 1e-9);
+                    }
+                    if (!a->midiPitchBendData.empty()) {
+                        expectEquals(a->midiPitchBendData[0].value, 10000);
+                        expectWithinAbsoluteError(a->midiPitchBendData[0].beatPosition, 1.25, 1e-9);
+                    }
+                }
+            }
+            file.deleteFile();
+        });
+    }
+
     void testPlainMidiBecomesChords() {
         beginTest("A .mid of bare notes dropped on the chord track arrives as chords");
 

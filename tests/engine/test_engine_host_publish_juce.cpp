@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <memory>
 #include <ranges>
 
@@ -12,8 +13,10 @@
 #include "exec/EngineSession.hpp"
 #include "exec/PlanValues.hpp"
 #include "io/PrefetchThread.hpp"
+#include "magda/daw/audio/AudioThumbnailManager.hpp"
 #include "magda/daw/audio/DeviceMeters.hpp"
 #include "magda/daw/audio/MidiBridge.hpp"
+#include "magda/daw/audio/WarpMarkerManager.hpp"
 #include "magda/daw/audio/plugins/AnalysisTelemetry.hpp"
 #include "magda/daw/audio/plugins/FaustPlugin.hpp"
 #include "magda/daw/audio/plugins/OscilloscopePlugin.hpp"
@@ -25,6 +28,7 @@
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/DeviceState.hpp"
 #include "magda/daw/core/TrackManager.hpp"
+#include "magda/daw/core/UndoManager.hpp"
 #include "magda/daw/core/controllers/BindingRegistry.hpp"
 #include "magda/daw/engine/host/EngineHost.hpp"
 #include "magda/daw/engine/host/EngineProject.hpp"
@@ -1578,4 +1582,117 @@ class EngineHostPublishTest final : public juce::UnitTest {
 
 EngineHostPublishTest engineHostPublishTest;
 
+}  // namespace
+
+namespace {
+class NativeTransientCacheTest final : public juce::UnitTest {
+  public:
+    NativeTransientCacheTest() : juce::UnitTest("Native Transient Cache", "magda") {}
+    void runTest() override {
+        magda::test::runWithCleanJuceState([this] {
+            beginTest("Native file detection reaches the waveform cache");
+            const auto file = juce::File::createTempFile(".wav");
+            juce::AudioBuffer<float> audio(1, 44100);
+            audio.clear();
+            audio.setSample(0, 11025, 1.0f);
+            audio.setSample(0, 33075, 1.0f);
+            {
+                juce::WavAudioFormat format;
+                auto stream = std::unique_ptr<juce::OutputStream>(file.createOutputStream());
+                auto writer = format.createWriterFor(stream, juce::AudioFormatWriterOptions()
+                                                                 .withSampleRate(44100.0)
+                                                                 .withNumChannels(1)
+                                                                 .withBitsPerSample(24));
+                expect(writer != nullptr);
+                if (writer == nullptr)
+                    return;
+                expect(writer->writeFromAudioSampleBuffer(audio, 0, audio.getNumSamples()));
+            }
+            const auto path = file.getFullPathName();
+            const auto detected = host::EngineHost::detectSourceTransients(path, 0.5f);
+            expectEquals(static_cast<int>(detected.size()), 2);
+            if (detected.size() == 2) {
+                expectWithinAbsoluteError(detected[0], (11025.0 - 23.0) / 44100.0, 1e-4);
+                expectWithinAbsoluteError(detected[1], (33075.0 - 23.0) / 44100.0, 1e-4);
+            }
+            auto& cache = magda::AudioThumbnailManager::getInstance();
+            auto& manager = magda::WarpMarkerManager::getInstance();
+            manager.stopBackgroundWork();
+            cache.clearCachedTransients(path);
+            const auto track = magda::TrackManager::getInstance().createTrack("Transient source");
+            const auto clip =
+                magda::ClipManager::getInstance().createAudioClipBeats(track, 0, 2, path);
+            expect(!manager.getTransientTimes(clip));
+            expect(waitForCache(path));
+            if (const auto* cached = cache.getCachedTransients(path)) {
+                expectEquals(cached->size(), static_cast<int>(detected.size()));
+                for (int i = 0; i < cached->size() && i < static_cast<int>(detected.size()); ++i)
+                    expectWithinAbsoluteError((*cached)[i], detected[static_cast<size_t>(i)], 1e-9);
+            }
+            beginTest("Sensitivity invalidates the cache before its debounce expires");
+            manager.setTransientSensitivity(clip, 0.8f);
+            expect(cache.getCachedTransients(path) == nullptr);
+            expect(!manager.getTransientTimes(clip));
+            beginTest("A settled sensitivity is one undoable edit, and undo re-detects");
+            expect(waitForSettledSensitivity());
+            expect(waitForCache(path));
+            expectWithinAbsoluteError(beatSensitivityOf(clip), 0.8f, 1.0e-6f);
+            magda::UndoManager::getInstance().undo();
+            expectWithinAbsoluteError(beatSensitivityOf(clip), 0.5f, 1.0e-6f);
+            expect(cache.getCachedTransients(path) == nullptr);
+            expect(waitForCache(path));
+            beginTest("Deleting a debounced clip does not strand its source analysis");
+            manager.setTransientSensitivity(clip, 0.3f);
+            magda::ClipManager::getInstance().deleteClip(clip);
+            expect(waitForSettledSensitivity());
+            const auto another =
+                magda::ClipManager::getInstance().createAudioClipBeats(track, 0, 2, path);
+            expect(!manager.getTransientTimes(another));
+            expect(waitForCache(path));
+            beginTest("Stopping analysis prevents later cache writes");
+            cache.clearCachedTransients(path);
+            expect(!manager.getTransientTimes(another));
+            manager.stopBackgroundWork();
+            drainMessageQueue();
+            expect(cache.getCachedTransients(path) == nullptr);
+            file.deleteFile();
+        });
+    }
+
+  private:
+    static float beatSensitivityOf(magda::ClipId clip) {
+        const auto* event = magda::primaryEventOf(magda::ClipManager::getInstance().getClip(clip));
+        return event != nullptr ? event->beatSensitivity : -1.0f;
+    }
+
+    static bool waitForSettledSensitivity() {
+        const auto deadline = juce::Time::getMillisecondCounter() + 3000;
+        auto& manager = magda::WarpMarkerManager::getInstance();
+        while (manager.hasPendingSensitivity()) {
+            if (juce::Time::getMillisecondCounter() >= deadline)
+                return false;
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+        }
+        return true;
+    }
+
+    // Runs every callback posted before this one.
+    static void drainMessageQueue() {
+        auto drained = std::make_shared<std::atomic<bool>>(false);
+        juce::MessageManager::callAsync([drained] { drained->store(true); });
+        while (!drained->load())
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(1);
+    }
+
+    static bool waitForCache(const juce::String& path) {
+        const auto deadline = juce::Time::getMillisecondCounter() + 3000;
+        while (juce::Time::getMillisecondCounter() < deadline) {
+            if (magda::AudioThumbnailManager::getInstance().getCachedTransients(path))
+                return true;
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
+        }
+        return false;
+    }
+};
+NativeTransientCacheTest nativeTransientCacheTest;
 }  // namespace

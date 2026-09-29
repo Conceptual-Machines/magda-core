@@ -4,15 +4,15 @@
 #include <vector>
 
 #include "JuceTestStateGuard.hpp"
+#include "TestAudioEngine.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/engine/PlaybackPositionTimer.hpp"
-#include "magda/daw/engine/TracktionEngineWrapper.hpp"
 #include "magda/daw/ui/state/TimelineController.hpp"
 
 namespace {
 
-class TimerEngine final : public magda::TracktionEngineWrapper {
+class TimerEngine final : public magda::test::TestAudioEngine {
   public:
     double getCurrentPosition() const override {
         return transportSeconds;

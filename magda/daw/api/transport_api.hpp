@@ -13,9 +13,8 @@ namespace magda {
  * coordinate system. Implementations are responsible for the seconds↔beats
  * conversion via the project's tempo sequence; callers don't see it.
  *
- * The live impl reaches into `edit->getTransport()`; in headless / no-edit
- * states queries return safe defaults (false, 0.0) and writes are no-ops
- * rather than crashes.
+ * The live implementation uses engine-owned callbacks. Without an engine,
+ * queries return safe defaults (false, 0.0) and writes are no-ops.
  */
 class TransportApi {
   public:
@@ -38,7 +37,7 @@ class TransportApi {
     virtual bool isLoopEnabled() const = 0;
     virtual void setLoopEnabled(bool enabled) = 0;
 
-    /** Edit position in beats. Returns 0 if no edit is loaded. */
+    /** Edit position in beats. Returns 0 if no engine is attached. */
     virtual double getPositionBeats() const = 0;
     virtual void setPositionBeats(double beats) = 0;
 
@@ -49,7 +48,7 @@ class TransportApi {
      * The one thing relative seeking needs that absolute positioning does not:
      * how long a bar is, which is a property of the project rather than of the
      * caller. Implementations answer it; `seekBars` below is written once on
-     * top. Returns `beats` unchanged when there is no edit to ask.
+     * top. Returns `beats` unchanged when there is no engine to ask.
      */
     virtual double beatsAtBarOffset(double beats, int deltaBars) const = 0;
 
@@ -64,7 +63,7 @@ class TransportApi {
     }
     virtual void removeStateListener(int) {}
 
-    /** Reattach listeners after the current project/Edit is replaced. */
+    /** Refresh engine-owned observation after the current project is replaced. */
     virtual void refreshStateSource() {}
 
     // ------------------------------------------------------------------

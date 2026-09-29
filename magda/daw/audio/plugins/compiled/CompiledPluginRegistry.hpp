@@ -6,10 +6,6 @@
 #include "core/TypeIds.hpp"
 #include "plugins/DevicePluginHandle.hpp"
 
-namespace magda {
-class DeviceProcessor;
-}
-
 namespace magda::daw::audio {
 class MagdaDevice;
 }
@@ -38,8 +34,6 @@ struct CompiledPluginSpec {
     const char* browserCategory;  // "Modulation" / "Delay" / ...
     const char* description;      // tooltip / catalog blurb
     std::unique_ptr<MagdaDevice> (*createDevice)(const DevicePluginCreationContext&) = nullptr;
-    // Transitional hook for compiled devices not yet migrated to MagdaDevice.
-    DevicePluginPtr (*createPlugin)(const DevicePluginCreationContext&) = nullptr;
     const char* aliasKey = nullptr;  // defaults to pluginId when null
     const AliasSpec* aliases = nullptr;
     int aliasCount = 0;

@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "JuceTestStateGuard.hpp"
+#include "TestAudioEngine.hpp"
 #include "magda/agents/generic_sound_design_agent.hpp"
 #include "magda/daw/api/osc_command_sink_live.hpp"
 #include "magda/daw/audio/DeviceParameterList.hpp"
@@ -16,7 +17,6 @@
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/aliases/ChainContext.hpp"
 #include "magda/daw/core/controllers/BindingRegistry.hpp"
-#include "magda/daw/engine/TracktionEngineWrapper.hpp"
 #include "param/ParamBlock.hpp"
 
 using namespace magda;
@@ -98,7 +98,7 @@ class StubPlugin final : public juce::AudioPluginInstance {
     std::vector<StubParameter*> parameters;
 };
 
-class FixtureEngine final : public TracktionEngineWrapper {
+class FixtureEngine final : public magda::test::TestAudioEngine {
   public:
     explicit FixtureEngine(adapter::EngineExternalDevice& d) : device(d) {}
     HostParameters describeDeviceParameters(const ChainNodePath&) const override {

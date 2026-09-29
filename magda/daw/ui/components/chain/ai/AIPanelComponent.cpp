@@ -300,8 +300,7 @@ void AIPanelComponent::setDevicePluginId(const juce::String& pluginId) {
             ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.4f));
     }
 
-    // The Faust MCP strip is only relevant to coder (Faust) devices — a 4OSC
-    // panel doesn't touch faust-mcp, so it shouldn't advertise it.
+    // The Faust MCP strip is only relevant to coder (Faust) devices.
     mcpStripVisible_ = coderSupported;
     mcpStatusLabel_.setVisible(mcpStripVisible_);
     updateMcpStatus();
@@ -566,7 +565,7 @@ void AIPanelComponent::onGenerationFinished(juce::String status, juce::String co
         // Prefer the FINAL assistant turn from the conversation: after a retry
         // the stream holds several JSON blobs, and the first (failed) one's
         // description would be wrong. Fall back to the streamed text for agents
-        // with no conversation (4OSC sound design).
+        // with no conversation.
         juce::String description;
         auto conv = llm::Conversation::fromVar(juce::JSON::parse(conversationJson));
         for (auto& message : std::views::reverse(conv.messages)) {
@@ -637,7 +636,7 @@ void AIPanelComponent::onGenerationFinished(juce::String status, juce::String co
     updateMcpStatus();
 
     // Now that the final text is in place and persisted, fire the
-    // tree-changed notification four_osc_apply intentionally skipped. The
+    // tree-changed notification the apply step skipped. The
     // resulting rebuild tears this panel down; the replacement panel reads
     // aiPanelOutput on setDevicePath and shows the same status + disclaimer.
     if (succeeded && path_.trackId != INVALID_TRACK_ID)

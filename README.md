@@ -14,10 +14,9 @@
 <p align="center">
   Multi-Agent Digital Audio
 </p>
-<p align="center"><img src="assets/treaktion-engine-logo.png" alt="Powered by Tracktion Engine" width="250" height="80"></p>
 
 ---
-MAGDA is a free, open-source DAW with AI integrated from the ground up. Built on C++23, JUCE, and Tracktion Engine.
+MAGDA is a free, open-source DAW with AI integrated from the ground up. Built on C++23, JUCE, and MAGDA’s native audio engine.
  - **English** | [简体中文](README_CN.md)
 
 ### Features
@@ -134,7 +133,7 @@ magda/
 ├── daw/        # DAW application (C++/JUCE)
 │   ├── audio/      # Audio processing
 │   ├── core/       # Track, clip, selection management
-│   ├── engine/     # Tracktion Engine wrapper
+│   ├── engine/     # Native engine host
 │   ├── interfaces/ # Abstract interfaces
 │   ├── profiling/  # Performance profiling
 │   ├── project/    # Project management and serialization
@@ -148,7 +147,6 @@ docs/           # Documentation
 
 ## Dependencies
 
-- [Tracktion Engine](https://github.com/Tracktion/tracktion_engine) - Audio engine
 - [JUCE](https://juce.com/) - C++ application framework (GUI, audio I/O, plugin hosting, MIDI, DSP)
 - [juce-llm](https://github.com/Conceptual-Machines/juce-llm) - LLM API client module
 - [llama.cpp](https://github.com/ggml-org/llama.cpp) - Embedded local LLM inference

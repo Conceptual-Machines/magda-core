@@ -1512,9 +1512,6 @@ class MockPluginApi : public PluginApi {
                                            const PolySequencerPattern&) override {
         return {};
     }
-    juce::String applyFourOscUpdate(const ChainNodePath&, const FourOscUpdate&) override {
-        return {};
-    }
     juce::String applyFaustSource(const ChainNodePath&, const juce::String&, const juce::String&,
                                   bool) override {
         return {};

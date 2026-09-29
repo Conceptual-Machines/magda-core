@@ -6,6 +6,7 @@
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/SelectionManager.hpp"
+#include "magda/daw/core/TempoAutomationCommands.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/UndoManager.hpp"
 
@@ -440,4 +441,151 @@ TEST_CASE("AutomationManager::BatchScope destructor survives a throwing listener
 
     mgr.removeListener(&listener);
     REQUIRE(listener.called);
+}
+
+TEST_CASE("Native tempo automation follows insert and duplicate with undo",
+          "[automation][commands][tempo]") {
+    resetState();
+    auto& mgr = AutomationManager::getInstance();
+    const auto laneId = mgr.createLane(ControlTarget::tempo(), AutomationLaneType::Absolute);
+    REQUIRE(laneId != INVALID_AUTOMATION_LANE_ID);
+    mgr.addPoint(laneId, 2.0, 0.4, AutomationCurveType::Linear);
+    InsertTimeAutomationCommand insert(1.0, 3.0, {}, {laneId});
+    REQUIRE(insert.canShiftPoints());
+    insert.execute();
+    REQUIRE(findPointAt(mgr.getLane(laneId), 5.0) != nullptr);
+    REQUIRE(findPointAt(mgr.getLane(laneId), 2.0) == nullptr);
+    insert.undo();
+    REQUIRE(findPointAt(mgr.getLane(laneId), 2.0) != nullptr);
+    DuplicateAutomationTimeSelectionCommand duplicate(1.0, 3.0, {}, 5.0, {laneId});
+    REQUIRE(duplicate.canDuplicatePoints());
+    duplicate.execute();
+    const auto* point = findPointAt(mgr.getLane(laneId), 6.0);
+    REQUIRE(point != nullptr);
+    REQUIRE(point->value == Catch::Approx(0.4));
+    duplicate.undo();
+    REQUIRE(findPointAt(mgr.getLane(laneId), 6.0) == nullptr);
+    REQUIRE(findPointAt(mgr.getLane(laneId), 2.0) != nullptr);
+}
+
+TEST_CASE("Global time edits move hidden tempo with actual track IDs",
+          "[automation][commands][tempo][2928]") {
+    resetState();
+    auto& mgr = AutomationManager::getInstance();
+    const auto track = makeTrack("Arrangement");
+    const auto tempo = mgr.createLane(ControlTarget::tempo(), AutomationLaneType::Absolute);
+    const auto volume = mgr.createLane(volumeTarget(track), AutomationLaneType::Absolute);
+    const auto tempoPoint = mgr.addPoint(tempo, 2.0, 0.4, AutomationCurveType::Linear);
+    mgr.addPoint(volume, 2.0, 0.7, AutomationCurveType::Linear);
+    mgr.getLane(tempo)->visible = false;
+
+    InsertTimeAutomationCommand tracks(1.0, 3.0, {track});
+    RippleTempoAutomationCommand global(RippleTempoAutomationCommand::Mode::Insert, 1.0, 4.0);
+    tracks.execute();
+    REQUIRE(findPointAt(mgr.getLane(volume), 5.0) != nullptr);
+    REQUIRE(findPointAt(mgr.getLane(tempo), 2.0) != nullptr);
+    global.execute();
+    REQUIRE(findPointAt(mgr.getLane(tempo), 2.0) == nullptr);
+    REQUIRE(findPointAt(mgr.getLane(tempo), 5.0)->id == tempoPoint);
+    REQUIRE(findPointAt(mgr.getLane(tempo), 0.0) != nullptr);
+    global.undo();
+    tracks.undo();
+    REQUIRE(findPointAt(mgr.getLane(tempo), 2.0)->id == tempoPoint);
+    REQUIRE(findPointAt(mgr.getLane(volume), 2.0) != nullptr);
+    tracks.execute();
+    global.execute();
+    REQUIRE(findPointAt(mgr.getLane(tempo), 5.0)->id == tempoPoint);
+}
+
+TEST_CASE("Global tempo ripple preserves curve data and undo across range operations",
+          "[automation][commands][tempo][2928]") {
+    resetState();
+    auto& mgr = AutomationManager::getInstance();
+    const auto lane = mgr.createLane(ControlTarget::tempo(), AutomationLaneType::Absolute);
+    mgr.addPoint(lane, 0.0, 0.2, AutomationCurveType::Linear);
+    const auto pointId = mgr.addPoint(lane, 2.0, 0.4, AutomationCurveType::Linear);
+    mgr.setPointTension(lane, pointId, 0.6);
+    mgr.setPointHandles(lane, pointId, {-0.2, -0.1, false}, {0.3, 0.1, false});
+    mgr.addPoint(lane, 4.0, 0.6, AutomationCurveType::Linear);
+    mgr.addPoint(lane, 8.0, 0.8, AutomationCurveType::Linear);
+    mgr.getLane(lane)->visible = false;
+    const auto before = mgr.getLane(lane)->absolutePoints;
+    using Mode = RippleTempoAutomationCommand::Mode;
+    auto mode = Mode::Insert;
+    double start = 0.0, end = 3.0;
+    SECTION("Insert at zero retains the initial tempo") {
+        RippleTempoAutomationCommand command(mode, start, end);
+        command.execute();
+        REQUIRE(findPointAt(mgr.getLane(lane), 0.0)->value == Catch::Approx(0.2));
+        REQUIRE(findPointAt(mgr.getLane(lane), 5.0)->id == pointId);
+        command.undo();
+    }
+    SECTION("Duplicate copies the initial tempo and shifts the range-end point") {
+        RippleTempoAutomationCommand command(Mode::Duplicate, 0.0, 4.0);
+        command.execute();
+        REQUIRE(mgr.getLane(lane)->absolutePoints.size() == 6);
+        REQUIRE(findPointAt(mgr.getLane(lane), 4.0)->value == Catch::Approx(0.2));
+        const auto* copy = findPointAt(mgr.getLane(lane), 6.0);
+        REQUIRE(copy != nullptr);
+        REQUIRE(copy->id != pointId);
+        REQUIRE(copy->tension == Catch::Approx(0.6));
+        REQUIRE(copy->inHandle.beatOffset == Catch::Approx(-0.2));
+        REQUIRE(copy->outHandle.value == Catch::Approx(0.1));
+        REQUIRE(findPointAt(mgr.getLane(lane), 8.0)->value == Catch::Approx(0.6));
+        REQUIRE(findPointAt(mgr.getLane(lane), 12.0)->value == Catch::Approx(0.8));
+        const auto copyId = copy->id;
+        command.undo();
+        command.execute();
+        REQUIRE(findPointAt(mgr.getLane(lane), 6.0)->id == copyId);
+        command.undo();
+    }
+    SECTION("Delete removes enclosed points and closes the gap") {
+        RippleTempoAutomationCommand command(Mode::Delete, 1.0, 3.0);
+        command.execute();
+        REQUIRE(mgr.getLane(lane)->absolutePoints.size() == 3);
+        REQUIRE(findPointAt(mgr.getLane(lane), 2.0)->value == Catch::Approx(0.6));
+        REQUIRE(findPointAt(mgr.getLane(lane), 6.0)->value == Catch::Approx(0.8));
+        command.undo();
+    }
+    SECTION("Deleting from zero keeps a single boundary point") {
+        RippleTempoAutomationCommand command(Mode::Delete, 0.0, 4.0);
+        command.execute();
+        REQUIRE(mgr.getLane(lane)->absolutePoints.size() == 2);
+        REQUIRE(findPointAt(mgr.getLane(lane), 0.0)->value == Catch::Approx(0.6));
+        REQUIRE(findPointAt(mgr.getLane(lane), 4.0)->value == Catch::Approx(0.8));
+        command.undo();
+    }
+    const auto& restored = mgr.getLane(lane)->absolutePoints;
+    REQUIRE(restored.size() == before.size());
+    for (size_t i = 0; i < before.size(); ++i) {
+        REQUIRE(restored[i].id == before[i].id);
+        REQUIRE(restored[i].beatPosition == before[i].beatPosition);
+        REQUIRE(restored[i].value == before[i].value);
+        REQUIRE(restored[i].tension == before[i].tension);
+        REQUIRE(restored[i].inHandle.beatOffset == before[i].inHandle.beatOffset);
+        REQUIRE(restored[i].outHandle.value == before[i].outHandle.value);
+    }
+}
+
+TEST_CASE("Track-scoped automation edits leave global tempo alone",
+          "[automation][commands][tempo][2928]") {
+    resetState();
+    auto& mgr = AutomationManager::getInstance();
+    const auto track = makeTrack("Only this track");
+    const auto tempo = mgr.createLane(ControlTarget::tempo(), AutomationLaneType::Absolute);
+    mgr.addPoint(tempo, 2.0, 0.4, AutomationCurveType::Linear);
+    SECTION("Selected tracks") {
+        InsertTimeAutomationCommand command(1.0, 3.0, {track});
+        command.execute();
+    }
+    SECTION("All-track pass before the separate global ripple") {
+        InsertTimeAutomationCommand command(1.0, 3.0, {});
+        command.execute();
+    }
+    SECTION("Track duplication") {
+        DuplicateAutomationTimeSelectionCommand command(1.0, 3.0, {}, 5.0);
+        command.execute();
+    }
+    REQUIRE(findPointAt(mgr.getLane(tempo), 2.0) != nullptr);
+    REQUIRE(mgr.getLane(tempo)->absolutePoints.size() == 2);
 }

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "SharedTestEngine.hpp"
-#include "magda/daw/audio/AudioBridge.hpp"
 #include "magda/daw/audio/MidiBridge.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
@@ -12,12 +11,6 @@
 namespace magda::test {
 
 inline void drainJuceAsyncWork() {
-    // Timed best-effort isolation, not a shutdown barrier; see specs/tla/LIFECYCLE.md.
-    if (auto* engine = getSharedEngineIfInitialized()) {
-        if (auto* teEngine = engine->getEngine())
-            teEngine->getBackgroundJobs().getPool().removeAllJobs(false, 10000);
-    }
-
     if (auto* messageManager = juce::MessageManager::getInstanceWithoutCreating())
         messageManager->runDispatchLoopUntil(10);
 }
@@ -42,16 +35,6 @@ inline void resetJuceProjectState() {
     trackManager.setAudioEngine(nullptr);
 
     MidiBridge::getInstance().resetTestState();
-
-    if (engine) {
-        if (auto* audioBridge = engine->getAudioBridge())
-            audioBridge->resetTestState();
-        if (auto* edit = engine->getEdit()) {
-            if (auto* ctx = edit->getCurrentPlaybackContext();
-                ctx && ctx->isPlaybackGraphAllocated())
-                ctx->reallocate();
-        }
-    }
 }
 
 inline void cleanJuceTestState() {

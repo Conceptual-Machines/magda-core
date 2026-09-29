@@ -66,6 +66,14 @@ void clearNonFinite(juce::AudioBuffer<float>& audio, int numSamples) {
  *
  * Its close button tells the owner rather than deleting itself.
  */
+namespace {
+juce::ApplicationCommandManager* editorCommandManager = nullptr;
+}
+
+void EngineExternalDevice::setApplicationCommandManager(juce::ApplicationCommandManager* manager) {
+    editorCommandManager = manager;
+}
+
 class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
   public:
     EditorWindow(juce::AudioPluginInstance& plugin, std::function<void()> closed)
@@ -83,6 +91,11 @@ class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
     /// The editor goes while the plugin is still there to be told.
     ~EditorWindow() override {
         clearContentComponent();
+    }
+
+    bool keyPressed(const juce::KeyPress& key) override {
+        return editorCommandManager != nullptr &&
+               editorCommandManager->getKeyMappings()->keyPressed(key, this);
     }
 
     void closeButtonPressed() override {

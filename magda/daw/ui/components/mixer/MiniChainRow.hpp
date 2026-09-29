@@ -1,7 +1,6 @@
 #pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
-#include <tracktion_engine/tracktion_engine.h>
 
 #include <functional>
 #include <memory>
@@ -19,7 +18,6 @@ class SvgButton;
 namespace daw::ui {
 class TextSlider;
 }
-namespace te = tracktion;
 
 /**
  * @brief Compact one-device row for the mini FX chain on a mixer strip.

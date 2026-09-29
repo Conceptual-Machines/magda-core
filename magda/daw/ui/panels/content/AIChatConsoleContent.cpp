@@ -17,8 +17,6 @@
 #include "../../../../agents/controller_profile_agent.hpp"
 #include "../../../../agents/drummer_agent.hpp"
 #include "../../../../agents/dsl_interpreter.hpp"
-#include "../../../../agents/four_osc_agent.hpp"
-#include "../../../../agents/four_osc_apply.hpp"
 #include "../../../../agents/internal_plugins.hpp"
 #include "../../../../agents/llama_model_manager.hpp"
 #include "../../../../agents/llm_presets.hpp"
@@ -56,7 +54,6 @@
 #include "../../themes/ThemePrompt.hpp"
 #include "BinaryData.h"
 #include "PluginBrowserContent.hpp"
-#include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/DrumGridRoles.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "engine/AudioEngine.hpp"
@@ -1234,7 +1231,6 @@ AIChatConsoleContent::AIChatConsoleContent() {
     agentOrchestrator_ = std::make_unique<magda::agent::ConsoleAgentOrchestrator>(
         *commandAgent_, *musicAgent_, *automationAgent_, *drummerAgent_);
     controllerAgent_ = std::make_unique<magda::ControllerProfileAgent>();
-    fourOscAgent_ = std::make_unique<magda::FourOscAgent>();
     themeAgent_ = std::make_unique<magda::ThemeAgent>();
 }
 
@@ -1362,7 +1358,7 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
 
     // Other slash commands — dispatch through the central registry. Returns
     // true when the message was fully consumed (intercepting commands like
-    // /controller, /design, or any meta-flag like --help). Returns false
+    // /controller, /theme, or any meta-flag like --help). Returns false
     // when the message should continue down the normal AI path (e.g.
     // /groove, whose handler returns false so rewriteSlashCommand below
     // can transform the prompt before sending it to the LLM).
@@ -2860,53 +2856,6 @@ void AIChatConsoleContent::buildSlashCommands() {
                        const juce::String&) { return false; };
     slashRegistry_->add(std::move(agent));
 
-    // /design — 4OSC sound design. The handler reads --category=<cat> if
-    // present, stashes it as the override that finishPresetGeneration
-    // applies, then kicks the agent thread.
-    SlashCommand design;
-    design.name = "design";
-    design.description = "Design a 4OSC preset from a description";
-    design.usage = "/design [--category=<cat>] <description>";
-    design.details =
-        "Generate a preset for the focused 4OSC device from a natural-language description.\n"
-        "Focus a 4OSC device first; the preset applies directly to it.\n"
-        "The result is a starting point - tweak by ear, then save from the device header.\n"
-        "\n"
-        "Flags:\n"
-        "  --category=<Bass|Lead|Pad|Pluck|Keys|FX|Other>  override the agent's category pick";
-    design.examples = {
-        {"Bass",
-         {"deep sub bass", "fat reese bass with movement", "acid bass with resonant filter",
-          "808-style bass with sub and click", "dub-style bass with delay"}},
-        {"Lead",
-         {"fat detuned saw lead with octave layer", "trance supersaw lead",
-          "bright square lead with chorus", "legato mono synth lead with portamento",
-          "screaming acid lead"}},
-        {"Pad",
-         {"warm analog pad", "evolving ambient pad with slow filter", "string ensemble pad",
-          "dark cinematic drone", "lush chord pad"}},
-        {"Pluck", {"snappy saw pluck", "muted soft pluck for arpeggios", "FM-style bell pluck"}},
-        {"Keys", {"electric piano with chorus", "synth keys with subtle vibrato"}},
-        {"FX", {"rising white noise sweep", "impact hit with reverb tail", "alarm-style siren"}},
-    };
-    design.handler = [this](const juce::String& originalText,
-                            const std::map<juce::String, juce::String>& flags,
-                            const juce::String& positional) {
-        appendToChat(juce::String::charToString(0x25CF) + " " + originalText);
-        if (positional.isEmpty()) {
-            appendToChat(juce::String::charToString(0x25C6) +
-                         " Usage: /design <description>  (run /design --help for examples)");
-            return true;
-        }
-        // Save the user's --category pick so finishPresetGeneration can
-        // override whatever the agent chose. Cleared on completion.
-        auto catIt = flags.find("category");
-        pendingCategoryOverride_ = catIt != flags.end() ? catIt->second.trim() : juce::String();
-        startPresetGeneration(positional);
-        return true;
-    };
-    slashRegistry_->add(std::move(design));
-
     // /theme - generate a UI colour theme. The handler kicks the agent
     // thread; on success the theme is written to the Themes folder, selected,
     // and rendered live via the existing apply + hot-reload path.
@@ -3290,84 +3239,6 @@ void AIChatConsoleContent::finishControllerGeneration(bool success, const juce::
     writeAndPromptPort(errorOrJson, profileId, profileName);
 }
 
-// ============================================================================
-// /design — 4OSC sound design (JSON only for now; apply / save coming next)
-// ============================================================================
-
-AIChatConsoleContent::FourOscRequestThread::FourOscRequestThread(AIChatConsoleContent& owner,
-                                                                 juce::String description)
-    : juce::Thread("MAGDA-FourOscAgent"), owner_(owner), description_(std::move(description)) {}
-
-void AIChatConsoleContent::FourOscRequestThread::run() {
-    auto safeThis = juce::Component::SafePointer<AIChatConsoleContent>(&owner_);
-
-    if (threadShouldExit() || !owner_.fourOscAgent_)
-        return;
-
-    auto result = owner_.fourOscAgent_->generate(description_.toStdString());
-    if (threadShouldExit())
-        return;
-
-    bool success = !result.hasError;
-    juce::String pretty;
-    juce::String presetName;
-    if (success) {
-        // Re-encode the parsed Preset so what the chat shows is what the
-        // executor will see — sidesteps any markdown fences / stray prose
-        // the model emits and gives us a stable schema to render.
-        auto* obj = new juce::DynamicObject();
-        obj->setProperty("name", juce::String(result.preset.name));
-        if (!result.preset.category.empty())
-            obj->setProperty("category", juce::String(result.preset.category));
-        obj->setProperty("description", juce::String(result.preset.description));
-        auto* waves = new juce::DynamicObject();
-        for (const auto& [n, name] : result.preset.waves)
-            waves->setProperty(juce::Identifier(juce::String(n)), juce::String(name));
-        obj->setProperty("waves", juce::var(waves));
-        if (!result.preset.filterType.empty())
-            obj->setProperty("filter_type", juce::String(result.preset.filterType));
-        if (!result.preset.voiceMode.empty())
-            obj->setProperty("voice_mode", juce::String(result.preset.voiceMode));
-        if (!result.preset.fx.empty()) {
-            auto* fx = new juce::DynamicObject();
-            for (const auto& [k, v] : result.preset.fx)
-                fx->setProperty(juce::Identifier(juce::String(k)), v);
-            obj->setProperty("fx", juce::var(fx));
-        }
-        auto* params = new juce::DynamicObject();
-        for (const auto& [k, v] : result.preset.params)
-            params->setProperty(juce::Identifier(juce::String(k)), v);
-        obj->setProperty("params", juce::var(params));
-        pretty = juce::JSON::toString(juce::var(obj), false /*allOnOneLine=false → pretty*/);
-        presetName = juce::String(result.preset.name);
-    } else {
-        pretty = juce::String(result.error);
-    }
-
-    juce::MessageManager::callAsync([safeThis, success, pretty, presetName]() {
-        if (!safeThis)
-            return;
-        safeThis->finishPresetGeneration(success, pretty, presetName);
-    });
-}
-
-void AIChatConsoleContent::startPresetGeneration(const juce::String& description) {
-    if (fourOscThread_ && fourOscThread_->isThreadRunning()) {
-        if (fourOscAgent_)
-            fourOscAgent_->requestCancel();
-        fourOscThread_->signalThreadShouldExit();
-        fourOscThread_->stopThread(2000);
-        fourOscThread_.reset();
-    }
-    if (fourOscAgent_)
-        fourOscAgent_->resetCancel();
-
-    appendToChat(juce::String::charToString(0x25C6) + " Designing 4OSC preset...");
-
-    fourOscThread_ = std::make_unique<FourOscRequestThread>(*this, description);
-    fourOscThread_->startThread();
-}
-
 AIChatConsoleContent::ThemeRequestThread::ThemeRequestThread(AIChatConsoleContent& owner,
                                                              juce::String description)
     : juce::Thread("MAGDA-ThemeAgent"), owner_(owner), description_(std::move(description)) {}
@@ -3551,303 +3422,6 @@ void AIChatConsoleContent::finishThemeGeneration(bool success, const juce::Strin
     body << "  saved to " << file.getFullPathName() << "\n";
     body << "  applied - edit the file to tweak it live, or switch under "
             "Preferences > Appearance";
-    appendToChat(body);
-}
-
-// Format a seconds value as a compact human-readable string ("5ms",
-// "150ms", "1.2s", "12s"). Used for ADSR display in the pretty-print.
-namespace {
-juce::String formatSeconds(float s) {
-    s = std::max(s, 0.0f);
-    if (s < 1.0f)
-        return juce::String(static_cast<int>(std::round(s * 1000.0f))) + "ms";
-    if (s < 10.0f)
-        return juce::String(s, 1) + "s";
-    return juce::String(static_cast<int>(std::round(s))) + "s";
-}
-
-// Format a normalized 0..1 value as 2-decimal text.
-juce::String formatNorm(float v) {
-    return {juce::jlimit(0.0f, 1.0f, v), 2};
-}
-
-// Render a parsed preset as a categorized multi-line summary suitable
-// for the chat. Hides empty/zero categories. Time params (ADSR) are
-// formatted as ms/s; everything else as 2-decimal normalized values.
-juce::String prettyPrintPreset(const magda::FourOscAgent::Preset& preset) {
-    // Lookup helper: preset.params is keyed on the alias suffix
-    // ("amp_attack", "tune_1", …). Returns a sentinel when absent so
-    // callers can decide whether to print or skip.
-    auto get = [&](const std::string& key, float fallback = -1.0f) {
-        auto it = preset.params.find(key);
-        return it != preset.params.end() ? it->second : fallback;
-    };
-    auto has = [&](const std::string& key) { return preset.params.count(key) > 0; };
-
-    juce::String out;
-    if (!preset.description.empty())
-        out << "  " << juce::String(preset.description) << "\n";
-    out << "\n";
-
-    // Oscillators (only print rows where wave != "none"). Show level,
-    // tune, detune, pan, pulse-width, spread if any are set.
-    for (int i = 1; i <= 4; ++i) {
-        auto wIt = preset.waves.find(i);
-        const bool hasWave = wIt != preset.waves.end() && wIt->second != "none";
-        const auto suffix = std::to_string(i);
-        const bool anyParam = has("level_" + suffix) || has("tune_" + suffix) ||
-                              has("detune_" + suffix) || has("pan_" + suffix) ||
-                              has("pulse_width_" + suffix) || has("spread_" + suffix);
-        if (!hasWave && !anyParam)
-            continue;
-        out << "  osc " << i << "  ";
-        out << (hasWave ? juce::String(wIt->second) : juce::String("(unchanged)"));
-        if (has("level_" + suffix))
-            out << "  lvl " << formatNorm(get("level_" + suffix));
-        if (has("tune_" + suffix)) {
-            const int st = static_cast<int>(std::round(get("tune_" + suffix)));
-            out << "  tune " << (st >= 0 ? "+" : "") << st << "st";
-        }
-        if (has("fine_tune_" + suffix)) {
-            const int c = static_cast<int>(std::round(get("fine_tune_" + suffix)));
-            out << "  fine " << (c >= 0 ? "+" : "") << c << "c";
-        }
-        if (has("detune_" + suffix))
-            out << "  det " << formatNorm(get("detune_" + suffix));
-        if (has("pan_" + suffix))
-            out << "  pan " << formatNorm(get("pan_" + suffix));
-        if (has("pulse_width_" + suffix))
-            out << "  pw " << formatNorm(get("pulse_width_" + suffix));
-        if (has("spread_" + suffix))
-            out << "  spr " << formatNorm(get("spread_" + suffix));
-        out << "\n";
-    }
-
-    // Filter row
-    if (!preset.filterType.empty() || has("filter_freq") || has("filter_resonance") ||
-        has("filter_amount") || has("filter_attack") || has("filter_decay") ||
-        has("filter_sustain") || has("filter_release")) {
-        out << "  filter  ";
-        out << (preset.filterType.empty() ? juce::String("(unchanged)")
-                                          : juce::String(preset.filterType));
-        if (has("filter_freq"))
-            out << "  freq " << formatNorm(get("filter_freq"));
-        if (has("filter_resonance"))
-            out << "  res " << formatNorm(get("filter_resonance"));
-        if (has("filter_amount"))
-            out << "  amt " << formatNorm(get("filter_amount"));
-        out << "\n";
-        if (has("filter_attack") || has("filter_decay") || has("filter_sustain") ||
-            has("filter_release")) {
-            out << "  filter env  ";
-            if (has("filter_attack"))
-                out << "A " << formatSeconds(get("filter_attack")) << "  ";
-            if (has("filter_decay"))
-                out << "D " << formatSeconds(get("filter_decay")) << "  ";
-            if (has("filter_sustain"))
-                out << "S " << formatNorm(get("filter_sustain")) << "  ";
-            if (has("filter_release"))
-                out << "R " << formatSeconds(get("filter_release"));
-            out << "\n";
-        }
-    }
-
-    // Amp envelope row
-    if (has("amp_attack") || has("amp_decay") || has("amp_sustain") || has("amp_release") ||
-        has("amp_velocity")) {
-        out << "  amp env  ";
-        if (has("amp_attack"))
-            out << "A " << formatSeconds(get("amp_attack")) << "  ";
-        if (has("amp_decay"))
-            out << "D " << formatSeconds(get("amp_decay")) << "  ";
-        if (has("amp_sustain"))
-            out << "S " << formatNorm(get("amp_sustain")) << "  ";
-        if (has("amp_release"))
-            out << "R " << formatSeconds(get("amp_release"));
-        if (has("amp_velocity"))
-            out << "  vel " << formatNorm(get("amp_velocity"));
-        out << "\n";
-    }
-
-    // Voice mode + legato row (only print if either is set)
-    if (!preset.voiceMode.empty() || has("legato")) {
-        out << "  voice  ";
-        if (!preset.voiceMode.empty())
-            out << juce::String(preset.voiceMode);
-        if (has("legato"))
-            out << "  legato " << formatNorm(get("legato"));
-        out << "\n";
-    }
-
-    // Modulators (LFO rate + depth)
-    for (int i = 1; i <= 2; ++i) {
-        const auto suffix = std::to_string(i);
-        if (has("rate_" + suffix) || has("depth_" + suffix)) {
-            out << "  mod " << i << "  ";
-            if (has("rate_" + suffix))
-                out << "rate " << formatNorm(get("rate_" + suffix)) << "  ";
-            if (has("depth_" + suffix))
-                out << "depth " << formatNorm(get("depth_" + suffix));
-            out << "\n";
-        }
-    }
-
-    // FX / global. Only print if at least one is set.
-    juce::String fxLine;
-    auto addFx = [&](const char* label, const std::string& key) {
-        if (has(key))
-            fxLine << label << " " << formatNorm(get(key)) << "  ";
-    };
-    addFx("level", "level");
-    addFx("dist", "distortion");
-    addFx("mix", "mix");
-    addFx("size", "size");
-    addFx("speed", "speed");
-    addFx("feedback", "feedback");
-    addFx("width", "width");
-    if (fxLine.isNotEmpty())
-        out << "  master  " << fxLine.trim() << "\n";
-
-    // FX gate state — show which FX blocks are actually enabled. Without
-    // this row the user can't tell at a glance whether a `dist 0.4` or
-    // `size 0.7` is audible or sitting behind a closed gate.
-    if (!preset.fx.empty()) {
-        juce::String gates;
-        auto addGate = [&](const char* label, const std::string& key) {
-            auto it = preset.fx.find(key);
-            if (it != preset.fx.end())
-                gates << label << " " << (it->second ? "on" : "off") << "  ";
-        };
-        addGate("dist", "distortion");
-        addGate("reverb", "reverb");
-        addGate("delay", "delay");
-        addGate("chorus", "chorus");
-        if (gates.isNotEmpty())
-            out << "  fx      " << gates.trim() << "\n";
-    }
-
-    return out;
-}
-
-// Apply a parsed preset to the currently focused 4OSC device. If there
-// isn't one (no selection, selection isn't a device, or focused device
-// is something other than 4OSC), spin up a new track with a fresh 4OSC
-// instance and apply there — wasting the LLM's output to "no device
-// focused" was just bad UX. Returns a one-line status string for the
-// chat. Delegates the actual write to magda::applyFourOscPresetToPath.
-juce::String applyFourOscPresetToFocusedDevice(magda::MagdaApi& api,
-                                               const magda::FourOscAgent::Preset& preset) {
-    auto& sel = magda::SelectionManager::getInstance();
-    auto& tm = magda::TrackManager::getInstance();
-
-    magda::ChainNodePath path;
-    magda::DeviceInfo* device = nullptr;
-    if (sel.hasChainNodeSelection()) {
-        path = sel.getSelectedChainNode();
-        if (auto* d = tm.getDeviceInChainByPath(path);
-            d != nullptr && d->pluginId.equalsIgnoreCase("4osc"))
-            device = d;
-    }
-
-    juce::String preamble;
-    if (device == nullptr) {
-        magda::DeviceInfo newDevice;
-        const juce::String trackName =
-            preset.name.empty() ? juce::String("4OSC") : juce::String(preset.name);
-        newDevice.name = "4OSC";
-        newDevice.manufacturer = "MAGDA";
-        newDevice.pluginId = "4osc";
-        newDevice.uniqueId = "4osc";
-        newDevice.fileOrIdentifier = "4osc";
-        newDevice.isInstrument = true;
-        newDevice.deviceType = magda::DeviceType::Instrument;
-        newDevice.format = magda::PluginFormat::Internal;
-
-        const auto trackId = tm.createTrack(trackName, magda::TrackType::Media);
-        if (trackId == magda::INVALID_TRACK_ID)
-            return "(could not create track for preset)";
-        const auto deviceId = tm.addDeviceToTrack(trackId, newDevice);
-        if (deviceId == magda::INVALID_DEVICE_ID)
-            return "(could not add 4OSC to new track)";
-
-        path = magda::ChainNodePath{};
-        path.trackId = trackId;
-        path.topLevelDeviceId = deviceId;
-        device = tm.getDeviceInChainByPath(path);
-        if (device == nullptr)
-            return "(created 4OSC but could not resolve its path)";
-
-        sel.selectChainNode(path);
-        preamble = "created 4OSC on '" + trackName + "', ";
-    }
-
-    return preamble + magda::applyFourOscPresetToPath(api.plugins(), preset, path);
-}
-}  // namespace
-
-void AIChatConsoleContent::finishPresetGeneration(bool success, const juce::String& errorOrPretty,
-                                                  juce::String presetName) {
-    if (!success) {
-        appendToChat(juce::String::charToString(0x25C6) + " Error: " + errorOrPretty);
-        return;
-    }
-    // Re-parse the JSON we just rendered to recover a typed Preset for the
-    // applier. (We could thread the original Preset through callAsync, but
-    // that means promoting the agent header into the .hpp — re-parse keeps
-    // this layer slimmer; the JSON is small.)
-    auto parsed = juce::JSON::parse(errorOrPretty);
-    auto* obj = parsed.getDynamicObject();
-    if (obj == nullptr)
-        return;
-    magda::FourOscAgent::Preset preset;
-    if (auto n = obj->getProperty("name"); n.isString())
-        preset.name = n.toString().toStdString();
-    if (auto c = obj->getProperty("category"); c.isString())
-        preset.category = c.toString().toStdString();
-    if (auto d = obj->getProperty("description"); d.isString())
-        preset.description = d.toString().toStdString();
-    if (auto* params = obj->getProperty("params").getDynamicObject()) {
-        for (const auto& kv : params->getProperties()) {
-            if (kv.value.isDouble() || kv.value.isInt())
-                preset.params.emplace(kv.name.toString().toStdString(),
-                                      static_cast<float>(static_cast<double>(kv.value)));
-        }
-    }
-    if (auto* waves = obj->getProperty("waves").getDynamicObject()) {
-        for (const auto& kv : waves->getProperties()) {
-            if (!kv.value.isString())
-                continue;
-            const int oscNum = kv.name.toString().getIntValue();
-            if (oscNum < 1 || oscNum > 4)
-                continue;
-            preset.waves.emplace(oscNum, kv.value.toString().toStdString());
-        }
-    }
-    if (auto ft = obj->getProperty("filter_type"); ft.isString())
-        preset.filterType = ft.toString().toStdString();
-    if (auto vm = obj->getProperty("voice_mode"); vm.isString())
-        preset.voiceMode = vm.toString().toStdString();
-    if (auto* fx = obj->getProperty("fx").getDynamicObject()) {
-        for (const auto& kv : fx->getProperties()) {
-            if (kv.value.isBool() || kv.value.isInt() || kv.value.isDouble())
-                preset.fx.emplace(kv.name.toString().toStdString(), static_cast<bool>(kv.value));
-        }
-    }
-    // /design --category=<cat> wins over whatever the agent picked. Cleared
-    // here so a subsequent /design without the flag falls back to inference.
-    if (pendingCategoryOverride_.isNotEmpty()) {
-        preset.category = pendingCategoryOverride_.toStdString();
-        pendingCategoryOverride_.clear();
-    }
-
-    // Render the preset itself (header + categorized summary), then the
-    // apply status as the tail line. Done together so the chat shows
-    // one block per /design call instead of split JSON + status.
-    auto header = presetName.isEmpty() ? juce::String("Preset") : presetName;
-    juce::String body = juce::String::charToString(0x25C6) + " " + header + "\n";
-    body << prettyPrintPreset(preset);
-    body << "\n  " << applyFourOscPresetToFocusedDevice(*magdaApi_, preset);
-    body << "\n  starting point - tweak by ear, then save from the device header";
     appendToChat(body);
 }
 

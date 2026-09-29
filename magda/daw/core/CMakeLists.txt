@@ -50,6 +50,7 @@ target_sources(magda_daw PRIVATE
     PadCommands.cpp
     TrackPropertyCommands.cpp
     AutomationCommands.cpp
+    TempoAutomationCommands.cpp
     ClipLaneFlattener.cpp
     MidiNoteCommands.cpp
     ParameterInfo.cpp  # device-layer display provider registration seam

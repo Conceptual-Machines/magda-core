@@ -14,8 +14,7 @@ namespace magda {
 /**
  * @brief What is open on the audio interface, and word when that changes.
  *
- * AudioIOService answers under the native engine, and an adapter over Tracktion's wave devices
- * under Tracktion, so the menus hold nothing of either.
+ * AudioIOService answers it, so the menus hold nothing engine-specific.
  */
 class HardwareChannels {
   public:

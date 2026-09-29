@@ -1,7 +1,6 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_gui_basics/juce_gui_basics.h>
-#include <tracktion_engine/tracktion_engine.h>
 
 #include <algorithm>
 #include <cstdlib>
@@ -35,15 +34,14 @@
 #include "core/UpdateChecker.hpp"
 #include "core/controllers/ControllerActivation.hpp"
 #include "core/controllers/ControllerProfileRegistry.hpp"
+#include "engine/AudioEngine.hpp"
 #include "engine/PluginService.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
 #include "magda/scripting/LuaController.hpp"
 #include "magda/scripting/LuaScriptStore.hpp"
 #include "media_db/MediaDbContext.hpp"
 #include "osc_app.hpp"
 #include "project/ProjectManager.hpp"
 #include "scripting_app.hpp"
-#include "ui/dialogs/MagdaEnginePrompt.hpp"
 #include "ui/dialogs/SplashScreen.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -115,16 +113,10 @@ class MagdaDAWApplication : public JUCEApplication {
     std::unique_ptr<magda::MainWindow> mainWindow_;
     std::unique_ptr<magda::MainLookAndFeel> lookAndFeel_;
     std::unique_ptr<magda::SplashScreen> splashScreen_;
-    // True once this process has committed to running as the DAW. Two kinds of
-    // process never do, yet JUCE still calls shutdown() on them: plugin scanner
-    // children, which return from initialise() immediately, and a second launch
-    // that the single-instance gate turns away before initialise() runs at all.
-    // Neither has anything to tear down. Latched early, not at the end of
-    // initialise(), so a failed engine init still gets the full teardown.
+    // False for a second launch the single-instance gate turns away before
+    // initialise() runs; JUCE still calls shutdown() on it. Latched early so a
+    // failed engine init still gets the full teardown.
     bool runningAsApp_ = false;
-    // This process is a TE plugin scanner child, so it has third-party plugin
-    // dylibs loaded. Matters only for how it terminates: see shutdown().
-    bool isPluginScanChild_ = false;
 
   public:
     /** Convenience accessor used by the free functions in scripting_app.hpp. */
@@ -182,27 +174,12 @@ class MagdaDAWApplication : public JUCEApplication {
         audio device (most ASIO drivers are single-client, so the second one
         gets no audio at all) and race each other writing the shared config,
         log and caches under the user data dir.
-
-        The out-of-process plugin scanner is exempt. TE launches it as a child
-        of this same binary with "--PluginScan:<pipe>", and JUCE applies this
-        gate before initialise() runs, so without the exemption every scanner
-        child would forward its pipe name to the main app and exit, breaking
-        plugin scanning outright. Prefix per tracktion_PluginScanHelpers.h
-        (commandLineUID) plus ChildProcessWorker's "--<uid>:" convention; that
-        header is module-internal, so the string is reproduced here.
     */
     bool moreThanOneInstanceAllowed() override {
-        return getCommandLineParameters().trim().startsWith("--PluginScan:");
+        return false;
     }
 
     void initialise(const String& commandLine) override {
-        // Check if we're being launched as a plugin scanner subprocess
-        if (tracktion::PluginManager::startChildProcessPluginScan(commandLine)) {
-            // This process is a plugin scanner - it will exit when done
-            isPluginScanChild_ = true;
-            return;
-        }
-
         runningAsApp_ = true;
 
         // 0. Configurable user-data paths. Two-phase resolution (issue:
@@ -285,17 +262,13 @@ class MagdaDAWApplication : public JUCEApplication {
         juce::Desktop::getInstance().setGlobalScaleFactor(static_cast<float>(uiScale));
         juce::Logger::writeToLog("UI scale: " + juce::String(uiScale, 2) + "x");
 
-        // Before the splash, which sits on top of every window, and before the
-        // engine is built, so a yes renders through the MAGDA engine this launch.
-        magda::daw::ui::offerMagdaEngineAtLaunch([this] {
-            // 2b. Show splash screen
-            splashScreen_ = magda::SplashScreen::create();
+        // 2b. Show splash screen
+        splashScreen_ = magda::SplashScreen::create();
 
-            // Defer heavy initialization so the message loop can paint the splash.
-            // A short timer delay gives macOS time to composite the window.
-            initTimer_ = std::make_unique<InitTimer>(*this);
-            initTimer_->startTimer(100);
-        });
+        // Defer heavy initialization so the message loop can paint the splash.
+        // A short timer delay gives macOS time to composite the window.
+        initTimer_ = std::make_unique<InitTimer>(*this);
+        initTimer_->startTimer(100);
     }
 
     void finishInitialisation() {
@@ -328,7 +301,7 @@ class MagdaDAWApplication : public JUCEApplication {
 
         juce::Logger::writeToLog("Calling daw_engine_->initialize()...");
         if (!daw_engine_->initialize()) {
-            juce::Logger::writeToLog("ERROR: Failed to initialize Tracktion Engine");
+            juce::Logger::writeToLog("ERROR: Failed to initialize MAGDA Engine");
             quit();
             return;
         }
@@ -555,26 +528,10 @@ class MagdaDAWApplication : public JUCEApplication {
     }
 
     void shutdown() override {
-        // Nothing was built, so there is nothing to tear down: a plugin scanner
-        // child, or a second launch that the single-instance gate turned away
-        // before initialise() ran. Both still land here. Running the teardown
-        // below would lazily construct every singleton purely to shut it down.
+        // A second launch the single-instance gate turned away built nothing;
+        // the teardown below would construct every singleton just to shut it down.
         if (!runningAsApp_) {
             DBG("=== SHUTDOWN (uninitialised process) ===");
-
-            // A scanner child has third-party plugin dylibs loaded, so it needs the
-            // same _exit() the full teardown ends with, for the same reason: buggy
-            // static destructors corrupting the heap on the way out. It normally
-            // terminates inside TE instead of here (PluginScanChildProcess::
-            // handleConnectionLost calls std::exit), so this is belt and braces.
-            //
-            // A second launch that the gate turned away deliberately does not get
-            // this. It has loaded nothing worth skipping, and it has just posted the
-            // broadcast carrying its command line to the running instance, so it
-            // should unwind normally rather than be shot in the head.
-            if (isPluginScanChild_)
-                _exit(0);
-
             return;
         }
 
@@ -659,7 +616,7 @@ class MagdaDAWApplication : public JUCEApplication {
         // Some third-party plugins (e.g. "Kick 3") have buggy static destructors
         // that cause heap corruption during normal exit(). Since all our own
         // cleanup is already done above, _exit() is safe here.
-        _exit(0);
+        std::_Exit(0);
     }
 
     void anotherInstanceStarted(const String& commandLine) override {

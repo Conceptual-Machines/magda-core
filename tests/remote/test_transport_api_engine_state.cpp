@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <limits>
 
 #include "magda/daw/api/transport_api_live.hpp"
 
@@ -81,4 +82,136 @@ TEST_CASE("Bar seeks on an engine with no Edit follow its meter and clamp at the
     CHECK(seekedTo == 13.5);
     transport.seekBars(-5);
     CHECK(seekedTo == 0.0);
+}
+
+TEST_CASE("An unwired transport is safe without an engine", "[remote][transport][2918]") {
+    magda::TransportApiLive transport;
+    CHECK_FALSE(transport.isPlaying());
+    CHECK_FALSE(transport.isRecording());
+    CHECK_FALSE(transport.isLoopEnabled());
+    CHECK(transport.getPositionBeats() == 0.0);
+    CHECK(transport.beatsAtBarOffset(7.5, 2) == 7.5);
+    transport.play();
+    transport.stop();
+    transport.setRecording(true);
+    transport.setLoopEnabled(true);
+    transport.setPositionBeats(12.0);
+    transport.seekBars(2);
+    CHECK(transport.getPositionBeats() == 0.0);
+}
+
+TEST_CASE("Transport dispatchers preserve state and application overrides",
+          "[remote][transport][2918]") {
+    FakeEngine engine;
+    magda::TransportApiLive transport;
+    transport.setEngineState(engine.state());
+    transport.setPlayDispatcher([&] { engine.playing = true; });
+    transport.setStopDispatcher([&] {
+        engine.playing = false;
+        engine.recording = false;
+    });
+    transport.setLoopDispatcher([&](bool enabled) { engine.looping = enabled; });
+    transport.setRecordDispatcher([&](bool enabled) { engine.recording = enabled; });
+    transport.setSeekDispatcher([&](double beats) { engine.positionBeats = beats; });
+
+    transport.play();
+    CHECK(transport.isPlaying());
+    transport.setRecording(true);
+    CHECK(transport.isRecording());
+    transport.setLoopEnabled(true);
+    CHECK(transport.isLoopEnabled());
+    transport.setLoopEnabled(false);
+    CHECK_FALSE(transport.isLoopEnabled());
+    transport.setPositionBeats(10.0);
+    CHECK(transport.getPositionBeats() == 10.0);
+    transport.stop();
+    CHECK_FALSE(transport.isPlaying());
+    CHECK_FALSE(transport.isRecording());
+
+    // MainWindow replaces the engine dispatcher with TimelineController's path.
+    bool controllerCalled = false;
+    transport.setPlayDispatcher([&] { controllerCalled = true; });
+    transport.play();
+    CHECK(controllerCalled);
+    CHECK_FALSE(engine.playing);
+}
+
+TEST_CASE("Transport listeners may unsubscribe during notification", "[remote][transport][2918]") {
+    magda::TransportApiLive transport;
+    int firstCalls = 0;
+    int secondCalls = 0;
+    int firstToken = 0;
+    firstToken = transport.addStateListener([&] {
+        ++firstCalls;
+        transport.removeStateListener(firstToken);
+    });
+    transport.addStateListener([&] { ++secondCalls; });
+    transport.notifyStateChanged();
+    transport.notifyStateChanged();
+    CHECK(firstCalls == 1);
+    CHECK(secondCalls == 2);
+}
+
+TEST_CASE("Native transport bar seeks retain the offset within the bar",
+          "[remote][transport][2918]") {
+    FakeEngine engine;
+    engine.positionBeats = 10.5;
+    magda::TransportApiLive transport;
+    transport.setEngineState(engine.state());
+    transport.setSeekDispatcher([&](double beats) { engine.positionBeats = beats; });
+
+    transport.seekBars(-1);
+    CHECK(engine.positionBeats == 6.5);
+    transport.seekBars(2);
+    CHECK(engine.positionBeats == 14.5);
+    transport.seekBars(0);
+    CHECK(engine.positionBeats == 14.5);
+}
+
+TEST_CASE("Native transport bar seeks bound extreme requests", "[remote][transport][2918]") {
+    FakeEngine engine;
+    engine.positionBeats = 8.0;
+    magda::TransportApiLive transport;
+    transport.setEngineState(engine.state());
+    transport.setSeekDispatcher([&](double beats) { engine.positionBeats = beats; });
+
+    transport.seekBars(std::numeric_limits<long long>::max());
+    CHECK(engine.positionBeats == 8.0 + magda::TransportApi::kMaxBarOffset * 4.0);
+    engine.positionBeats = 8.0;
+    transport.seekBars(std::numeric_limits<long long>::min());
+    CHECK(engine.positionBeats == 0.0);
+}
+
+TEST_CASE("Native transport notifications use the replacement state callbacks",
+          "[remote][transport][2918]") {
+    FakeEngine first;
+    first.playing = true;
+    FakeEngine second;
+    second.recording = true;
+    second.positionBeats = 12.5;
+    magda::TransportApiLive transport;
+    transport.setEngineState(first.state());
+    int notifications = 0;
+    bool playing = false;
+    bool recording = false;
+    const auto token = transport.addStateListener([&] {
+        ++notifications;
+        playing = transport.isPlaying();
+        recording = transport.isRecording();
+    });
+    CHECK(transport.addStateListener({}) == 0);
+    transport.notifyStateChanged();
+    CHECK(playing);
+    CHECK_FALSE(recording);
+
+    transport.setEngineState(second.state());
+    transport.notifyStateChanged();
+    CHECK_FALSE(playing);
+    CHECK(recording);
+    CHECK(transport.getPositionBeats() == 12.5);
+    CHECK(notifications == 2);
+
+    transport.removeStateListener(token);
+    transport.notifyStateChanged();
+    CHECK(notifications == 2);
 }

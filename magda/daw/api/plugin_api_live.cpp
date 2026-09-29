@@ -1,9 +1,5 @@
 #include "plugin_api_live.hpp"
 
-#include <tracktion_engine/tracktion_engine.h>
-
-#include <set>
-
 #include "../audio/faust/FaustModelEdits.hpp"
 #include "../audio/plugins/FaustInstrumentPlugin.hpp"
 #include "../audio/plugins/FaustPlugin.hpp"
@@ -12,14 +8,11 @@
 #include "../audio/plugins/StepSequencerPlugin.hpp"
 #include "../core/ChainWalk.hpp"
 #include "../core/DrumGridPads.hpp"
-#include "../core/ParameterUtils.hpp"
 #include "../core/PresetManager.hpp"
 #include "../core/StepPatternCommands.hpp"
 #include "../core/TrackManager.hpp"
-#include "../core/aliases/ParamNameNormalize.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "../engine/PluginService.hpp"
-#include "../engine/TracktionFork.hpp"
 
 namespace magda {
 namespace {
@@ -52,49 +45,6 @@ std::vector<DeviceInfo> toDeviceInfo(const juce::Array<juce::PluginDescription>&
 float deviceParameterValue(const DeviceInfo& device, int index, float fallback) {
     const auto* parameter = device.findParameterByIndex(index);
     return parameter != nullptr ? parameter->currentValue : fallback;
-}
-
-int waveNameToShapeInt(const juce::String& name) {
-    const auto key = name.trim().toLowerCase();
-    if (key == "none" || key == "off")
-        return 0;
-    if (key == "sine")
-        return 1;
-    if (key == "square")
-        return 2;
-    if (key == "saw" || key == "saw_up" || key == "saw_down")
-        return 3;
-    if (key == "triangle")
-        return 4;
-    if (key == "noise" || key == "random")
-        return 5;
-    return -1;
-}
-
-int filterTypeNameToInt(const juce::String& name) {
-    const auto key = name.trim().toLowerCase();
-    if (key == "off" || key == "bypass" || key == "none")
-        return 0;
-    if (key == "lp" || key == "lowpass" || key == "low_pass")
-        return 1;
-    if (key == "hp" || key == "highpass" || key == "high_pass")
-        return 2;
-    if (key == "bp" || key == "bandpass" || key == "band_pass")
-        return 3;
-    if (key == "notch" || key == "bandreject" || key == "band_reject")
-        return 4;
-    return -1;
-}
-
-int voiceModeNameToInt(const juce::String& name) {
-    const auto key = name.trim().toLowerCase();
-    if (key == "mono")
-        return 0;
-    if (key == "leg" || key == "legato")
-        return 1;
-    if (key == "poly" || key == "polyphonic")
-        return 2;
-    return -1;
 }
 
 }  // namespace
@@ -296,124 +246,6 @@ juce::String PluginApiLive::applyPolySequencerPattern(const ChainNodePath& path,
         PresetManager::getInstance().setSuggestedPresetName(device->id, pattern.description);
     return "applied " + juce::String(stepsWritten) + " step(s), " + juce::String(notesWritten) +
            " note(s) to " + device->name;
-}
-
-juce::String PluginApiLive::applyFourOscUpdate(const ChainNodePath& path,
-                                               const FourOscUpdate& update) {
-    auto& trackManager = TrackManager::getInstance();
-    auto* device = trackManager.getDeviceInChainByPath(path);
-    if (device == nullptr || !device->pluginId.equalsIgnoreCase("4osc"))
-        return "(target device is not a 4OSC)";
-
-    std::map<juce::String, int> indexByName;
-    for (int i = 0; i < static_cast<int>(device->parameters.size()); ++i) {
-        const auto key = normalizeParamName(device->parameters[static_cast<size_t>(i)].name);
-        if (key.isNotEmpty())
-            indexByName[key] = i;
-    }
-
-    static const std::set<juce::String> realValueParameters = {
-        "amp_attack",     "amp_decay",   "amp_release", "filter_attack", "filter_decay",
-        "filter_release", "tune_1",      "tune_2",      "tune_3",        "tune_4",
-        "fine_tune_1",    "fine_tune_2", "fine_tune_3", "fine_tune_4",
-    };
-
-    int parametersApplied = 0;
-    int parametersSkipped = 0;
-    for (const auto& [name, value] : update.parameters) {
-        const auto found = indexByName.find(name);
-        if (found == indexByName.end()) {
-            ++parametersSkipped;
-            continue;
-        }
-        const auto& info = device->parameters[static_cast<size_t>(found->second)];
-        const float real =
-            realValueParameters.count(name) ? value : ParameterUtils::normalizedToReal(value, info);
-        trackManager.setDeviceParameterValue(path, found->second, real);
-        ++parametersApplied;
-    }
-
-    // 4OSC is the fork's own synth, so its waves, filter and effects are too.
-    auto plugin = tracktion_fork::pluginAt(path);
-    auto* fourOsc = dynamic_cast<tracktion::engine::FourOscPlugin*>(plugin.get());
-
-    int wavesApplied = 0;
-    int wavesSkipped = 0;
-    if (fourOsc != nullptr) {
-        for (const auto& [oscillator, wave] : update.waves) {
-            const int shape = waveNameToShapeInt(wave);
-            if (shape < 0) {
-                ++wavesSkipped;
-                continue;
-            }
-            fourOsc->state.setProperty("waveShape" + juce::String(oscillator), shape, nullptr);
-            ++wavesApplied;
-        }
-    } else {
-        wavesSkipped = static_cast<int>(update.waves.size());
-    }
-
-    bool filterTypeApplied = false;
-    bool voiceModeApplied = false;
-    int effectsToggled = 0;
-    if (fourOsc != nullptr) {
-        if (update.filterType.isNotEmpty()) {
-            const int filterType = filterTypeNameToInt(update.filterType);
-            if (filterType >= 0) {
-                fourOsc->state.setProperty("filterType", filterType, nullptr);
-                filterTypeApplied = true;
-            }
-        }
-        if (update.voiceMode.isNotEmpty()) {
-            const int voiceMode = voiceModeNameToInt(update.voiceMode);
-            if (voiceMode >= 0) {
-                fourOsc->state.setProperty("voiceMode", voiceMode, nullptr);
-                voiceModeApplied = true;
-            }
-        }
-
-        static const std::map<juce::String, juce::Identifier> effectProperties = {
-            {"distortion", juce::Identifier("distortionOn")},
-            {"reverb", juce::Identifier("reverbOn")},
-            {"delay", juce::Identifier("delayOn")},
-            {"chorus", juce::Identifier("chorusOn")},
-        };
-        for (const auto& [name, enabled] : update.effects) {
-            const auto found = effectProperties.find(name);
-            if (found == effectProperties.end())
-                continue;
-            fourOsc->state.setProperty(found->second, enabled, nullptr);
-            ++effectsToggled;
-        }
-    }
-
-    PluginService::getInstance().capturePluginStateAt(path);
-
-    if (update.name.isNotEmpty()) {
-        auto suggestedName = update.name;
-        if (update.category.isNotEmpty())
-            suggestedName = update.category + "/" + suggestedName;
-        PresetManager::getInstance().setSuggestedPresetName(device->id, suggestedName);
-    }
-
-    juce::String status = "applied " + juce::String(parametersApplied) + " params";
-    if (wavesApplied > 0)
-        status += ", " + juce::String(wavesApplied) + " waves";
-    if (filterTypeApplied)
-        status += ", filter " + update.filterType;
-    if (voiceModeApplied)
-        status += ", voice " + update.voiceMode;
-    if (effectsToggled > 0)
-        status += ", " + juce::String(effectsToggled) + " fx gates";
-    status += " to " + device->name;
-    if (parametersSkipped > 0 || wavesSkipped > 0) {
-        status += ", skipped";
-        if (parametersSkipped > 0)
-            status += " " + juce::String(parametersSkipped) + " params";
-        if (wavesSkipped > 0)
-            status += " " + juce::String(wavesSkipped) + " waves";
-    }
-    return status;
 }
 
 juce::String PluginApiLive::applyFaustSource(const ChainNodePath& path,

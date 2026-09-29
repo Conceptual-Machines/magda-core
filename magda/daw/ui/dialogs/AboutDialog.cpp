@@ -3,7 +3,6 @@
 #include "BinaryData.h"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
-#include "engine/AudioEngineChoice.hpp"
 #include "magda.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -41,16 +40,6 @@ class AboutDialog::ContentComponent : public juce::Component {
             if (conceptualMachinesBadge_) {
                 conceptualMachinesBadge_->replaceColour(
                     juce::Colour(0xFFE7DFD2), ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-            }
-        }
-
-        // Load Tracktion Engine logo
-        if (auto xml = juce::XmlDocument::parse(juce::String::fromUTF8(
-                BinaryData::fadlogotracktion_svg, BinaryData::fadlogotracktion_svgSize))) {
-            teLogo_ = juce::Drawable::createFromSVG(*xml);
-            if (teLogo_) {
-                teLogo_->replaceColour(juce::Colour(0xFF000000),
-                                       ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
             }
         }
 
@@ -118,7 +107,7 @@ class AboutDialog::ContentComponent : public juce::Component {
         // one: a report from somebody running the native engine says which, and
         // every other about box reads as it always did (#2559).
         auto versionText = tr("about.version_prefix") + MAGDA_VERSION;
-        if (engineName_.isNotEmpty() && engineName_ != nameOf(AudioEngineChoice::Tracktion))
+        if (engineName_.isNotEmpty())
             versionText << " (" << engineName_ << ")";
 
         g.setFont(fm.getUIFont(12.0f));
@@ -151,38 +140,24 @@ class AboutDialog::ContentComponent : public juce::Component {
 
         // Credit line is intentionally English-only — brand attributions stay
         // as-shipped in every locale, so these are literals rather than tr keys.
-        const juce::String poweredBy = "powered by";
-        const juce::String tracktionName = "Tracktion Engine";
         const juce::String madeWith = "made with";
         const juce::String juceName = "JUCE";
         const juce::String dspBy = "DSP by";
 
-        // Faust wordmark SVG viewBox is 160x28. Sized smaller than the round JUCE/TE
+        // Faust wordmark SVG viewBox is 160x28. Sized smaller than the round JUCE
         // icons so the bold all-caps wordmark doesn't visually outweigh them.
         const int faustLogoH = 9;
         const int faustLogoW = faustLogoH * 160 / 28;
 
-        int powW = measure(poweredBy);
-        int teW = measure(tracktionName);
         int dotW = measure("|");
         int madeW = measure(madeWith);
         int juceW = measure(juceName);
         int dspW = measure(dspBy);
 
-        int totalW = powW + gap + teW + gap + logoSize + dotGap + dotW + dotGap + madeW + gap +
-                     juceW + gap + logoSize + dotGap + dotW + dotGap + dspW + gap + faustLogoW;
+        int totalW =
+            madeW + gap + juceW + gap + logoSize + dotGap + dotW + dotGap + dspW + gap + faustLogoW;
         auto centred = row.withSizeKeepingCentre(totalW, 20);
 
-        g.drawText(poweredBy, centred.removeFromLeft(powW), juce::Justification::centred);
-        centred.removeFromLeft(gap);
-        g.drawText(tracktionName, centred.removeFromLeft(teW), juce::Justification::centred);
-        centred.removeFromLeft(gap);
-        if (teLogo_)
-            teLogo_->drawWithin(g, centred.removeFromLeft(logoSize).toFloat(),
-                                juce::RectanglePlacement::centred, 1.0f);
-        centred.removeFromLeft(dotGap);
-        g.drawText("|", centred.removeFromLeft(dotW), juce::Justification::centred);
-        centred.removeFromLeft(dotGap);
         g.drawText(madeWith, centred.removeFromLeft(madeW), juce::Justification::centred);
         centred.removeFromLeft(gap);
         g.drawText(juceName, centred.removeFromLeft(juceW), juce::Justification::centred);
@@ -252,7 +227,6 @@ class AboutDialog::ContentComponent : public juce::Component {
     const juce::String engineName_;
     std::unique_ptr<juce::Drawable> logo_;
     std::unique_ptr<juce::Drawable> conceptualMachinesBadge_;
-    std::unique_ptr<juce::Drawable> teLogo_;
     std::unique_ptr<juce::Drawable> juceLogo_;
     std::unique_ptr<juce::Drawable> faustLogo_;
     std::unique_ptr<juce::HyperlinkButton> titleLink_;

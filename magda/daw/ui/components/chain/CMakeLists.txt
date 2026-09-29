@@ -77,7 +77,6 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/FaustUI.cpp
     custom_ui/FaustCodeEditorWindow.cpp
     custom_ui/FaustCustomUIRegistry.cpp
-    custom_ui/FourOscUI.cpp
     custom_ui/PolySynthUI.cpp
     custom_ui/FMUI.cpp
     custom_ui/MateriaUI.cpp
@@ -183,7 +182,6 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/FaustCodeEditorWindow.hpp
     custom_ui/FaustCustomUIRegistry.hpp
     custom_ui/LayoutStableTabbedComponent.hpp
-    custom_ui/FourOscUI.hpp
     custom_ui/HaloUI.hpp
     custom_ui/NimbusUI.hpp
     custom_ui/DeviceTelemetrySources.hpp

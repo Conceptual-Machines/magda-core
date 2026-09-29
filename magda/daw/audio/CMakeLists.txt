@@ -258,17 +258,8 @@ add_custom_target(magda_compiled_dsps
         "${MAGDA_BITCRUSHER_GENERATED_CPP}"
 )
 add_dependencies(magda_base_devices magda_compiled_dsps)
-add_dependencies(magda_tracktion_compat_devices magda_compiled_dsps)
 target_include_directories(magda_base_devices PRIVATE "${CMAKE_BINARY_DIR}/compiled_dsps")
-target_include_directories(magda_tracktion_compat_devices
-    PRIVATE "${CMAKE_BINARY_DIR}/compiled_dsps")
 
-file(GLOB_RECURSE _magda_device_pack_sources CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/*.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/processors/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/processors/*.hpp"
-)
 set(_magda_device_sdk_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceParameterHandle.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DevicePluginDefaults.hpp"
@@ -289,29 +280,11 @@ set(_magda_device_sdk_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/InternalPluginRegistry.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MagdaDevice.hpp"
 )
-list(REMOVE_ITEM _magda_device_pack_sources ${_magda_device_sdk_sources})
 
-set(_magda_tracktion_device_adapter_sources
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/tracktion/CompiledFaustTracktionAdapter.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionDeviceAdapters.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionDeviceStateBridge.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionDeviceStateBridge.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionInternalPluginAdapter.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionMagdaDevicePlugin.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/processors/DeviceProcessorFactory.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/processors/DeviceProcessorFactory.hpp"
-)
-list(REMOVE_ITEM _magda_device_pack_sources ${_magda_tracktion_device_adapter_sources})
-
-# The native engine's half of the same job (#2174): one device implementation,
-# hosted by whichever engine is running it. Kept out of the pack sweep above for
-# the same reason the Tracktion adapters are -- an adapter is host code, not a
-# device -- and out of magda_tracktion_compat_devices as well, since the whole
-# point of it is that it names no Tracktion type.
 set(_magda_engine_device_adapter_sources
+    # Keep lookup with its factory caller for single-pass static linkers on Linux.
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugin_manager/ExternalPluginLookup.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugin_manager/ExternalPluginLookup.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineDeviceFactory.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineDeviceFactory.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/ControlExecutor.cpp"
@@ -325,21 +298,16 @@ set(_magda_engine_device_adapter_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/PluginAssignments.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/PluginAssignments.hpp"
 )
-list(REMOVE_ITEM _magda_device_pack_sources ${_magda_engine_device_adapter_sources})
 
 set(_magda_base_device_support_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/FaustResources.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/FaustResources.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/TracktionHelpers.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis/AudioTapBuffer.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis/BandSpectrum.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis/BandSpectrum.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis/MaskingDetector.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis/TrackMeasurer.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/insert_capture/CaptureWindowMath.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/midi/MidiBroadcastBus.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/session/SessionMonitorPlugin.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/session/SessionMonitorPlugin.hpp"
 )
 file(GLOB _magda_device_dsp_sources CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/*.dsp")
@@ -414,44 +382,24 @@ foreach(_magda_neutral_device IN ITEMS
     )
 endforeach()
 
-# TE-native devices and the host's all-device registry aggregation remain host
-# compatibility code until their DSP classes are migrated to MagdaDevice.
-# Keeping them out of the SDK pack makes the build boundary honest:
-# magda_base_devices can be compiled and linked without references to
-# compatibility-device symbols, while magda_daw owns every current-engine
-# lifecycle adapter and the transitional combined catalog.
-set(_magda_legacy_tracktion_device_sources
-    ${_magda_device_pack_sources}
-    ${_magda_base_device_support_sources}
-)
-list(REMOVE_ITEM _magda_legacy_tracktion_device_sources
-    ${_magda_neutral_base_device_sources})
-
 target_sources(magda_devices PRIVATE
     ${_magda_device_sdk_sources}
 )
 
+# All shipped device implementations are native and compile without TE.
+file(GLOB_RECURSE _magda_native_device_sources CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/*.hpp")
+list(REMOVE_ITEM _magda_native_device_sources
+    ${_magda_device_sdk_sources} ${_magda_engine_device_adapter_sources})
 target_sources(magda_base_devices PRIVATE
-    ${_magda_neutral_base_device_sources}
-    ${_magda_device_dsp_sources}
-)
+    ${_magda_native_device_sources}
+    ${_magda_base_device_support_sources}
+    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/MonoStepSequencer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/PolyStepSequencer.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/StepClock.cpp"
+    ${_magda_device_dsp_sources})
 
-target_sources(magda_tracktion_compat_devices PRIVATE
-    ${_magda_legacy_tracktion_device_sources}
-)
-
-# The device layer under the native engine (#2174).
-#
-# Its own static library rather than sources in magda_daw, because the app does
-# not link the engine yet and this is the one piece of host code that has to see
-# both sides: the frozen device SDK and the engine's executor. The symmetry with
-# magda_tracktion_compat_devices is the point -- each target is one engine's
-# lifecycle adapter over the same MagdaDevice.
-#
-# It reaches findCompiledPluginSpec(), which the compatibility target still
-# owns; the declaration is in a neutral header and the definition resolves at
-# the final link, the same arrangement magda_engine has with the JUCE modules.
-if(MAGDA_BUILD_NATIVE_ENGINE)
     add_library(magda_engine_devices STATIC ${_magda_engine_device_adapter_sources})
     add_library(magda::engine_devices ALIAS magda_engine_devices)
 
@@ -465,10 +413,8 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         magda_device_sdk
         magda_engine
     )
-endif()
 
 target_sources(magda_daw PRIVATE
-    AudioBridge.cpp
     DeviceParameterDisplayTextProvider.cpp
     DeviceParameterDisplayTextProvider.hpp
     DeviceParameterList.cpp
@@ -477,8 +423,6 @@ target_sources(magda_daw PRIVATE
     FourOscMigration.cpp
     FourOscTranslation.cpp
     TrackMeasurementManager.cpp
-    AudioBridgeMixer.cpp
-    AudioBridgeMixer.hpp
     CompService.cpp
     CompService.hpp
     # The one owner of hardware audio I/O (#2746)
@@ -490,72 +434,31 @@ target_sources(magda_daw PRIVATE
     io/TracktionAudioSettings.hpp
     AudioThumbnailManager.cpp
     WaveformPeakCache.cpp
-    DeviceMeteringManager.cpp
     analysis/MixAnalysisInput.cpp
     analysis/OfflineMixAnalysis.cpp
     MidiBridge.cpp
     midi/ActiveMidiInputs.cpp
     midi/ActiveMidiInputs.hpp
     midi/MidiDeviceMatch.cpp
-    midi/MidiInputRouter.cpp
-    midi/MidiInputRouter.hpp
     faust/FaustModelEdits.cpp
     faust/FaustModelEdits.hpp
     sampling/SamplerMedia.cpp
     sampling/SamplerModelEdits.cpp
     sampling/SamplerModelEdits.hpp
-    sidechain/SidechainRoutingManager.cpp
-    sidechain/SidechainRoutingManager.hpp
     midi/QwertyMidiKeyboard.cpp
-    session/SessionClipScheduler.cpp
-    session/SessionClipAudioMonitor.cpp
-    session/SessionRecorder.cpp
     # Phase 1: Pure data managers
     transport/TransportStateManager.cpp
     midi/MidiActivityMonitor.cpp
     params/ParameterManager.cpp
     # Phase 2: Independent features
-    PluginWindowBridge.cpp
     WarpMarkerManager.cpp
     # Compile-time pins between MAGDA's persisted enums and the engine's (#1887)
-    EngineEnumPins.cpp
     # Phase 3: Core controllers
-    TrackController.cpp
-    plugin_manager/PluginManager.cpp
-    plugin_manager/PluginManagerSync.cpp
-    # Which installed plugin a saved device meant (#2243). One answer, asked by
-    # the sync path here and by the native engine's device factory, which
-    # resolves it at the final link the way it resolves findCompiledPluginSpec.
-    plugin_manager/ExternalPluginLookup.cpp
-    plugin_manager/ExternalPluginLookup.hpp
-    # A project's record of a plugin onto a live instance: array, then chunk,
-    # then what that left behind, for whoever owns the model (#2243). Same
-    # arrangement as the lookup above -- one answer, both engines.
+    # Restore persisted parameters and plugin state onto a live instance (#2243).
     plugin_manager/ExternalPluginState.cpp
     plugin_manager/ExternalPluginState.hpp
-    plugin_manager/PluginManagerMacros.cpp
-    plugin_manager/PluginManagerModifiers.cpp
-    plugin_manager/PluginManagerSidechain.cpp
-    plugin_manager/PluginManagerMeasurement.cpp
-    ${_magda_tracktion_device_adapter_sources}
-    racks/InstrumentRackManager.cpp
-    racks/RackSyncManager.cpp
-    modifiers/ModifierSync.cpp
-    automation/AutomationBake.cpp
-    automation/AutomationBake.hpp
-    automation/ControlTargetResolver.cpp
-    automation/ControlTargetResolver.hpp
-    automation/AutomationPlaybackEngine.cpp
-    automation/AutomationRecordingEngine.cpp
     automation/AutomationCurveSimplifier.cpp
     automation/ModulationBaker.cpp
-    session/ArrangementClipSyncPlanner.cpp
-    session/ClipEngineIdMap.cpp
-    session/ClipLaunchQuantization.cpp
-    session/ClipSynchronizer.cpp
-    session/ClipWarpSynchronizer.cpp
-    insert_capture/InsertRenderCaptureService.cpp
-    ExternalInsertDeviceEnablement.cpp
     # Controller routing (issue #1050 -- Phase C)
     controllers/ControllerParamReader.cpp
     controllers/ControllerParamWriter.cpp
@@ -568,10 +471,6 @@ target_sources(magda_daw PRIVATE
     osc/OscRouter.cpp
     osc/OscService.cpp
     # Headers (listed for IDE visibility)
-    AudioBridge.hpp
-    session/SessionClipScheduler.hpp
-    session/SessionClipAudioMonitor.hpp
-    session/SessionClipCommandQueue.hpp
     session/SessionClipStateQueue.hpp
     MeteringBuffer.hpp
     TrackMeters.hpp
@@ -579,19 +478,7 @@ target_sources(magda_daw PRIVATE
     transport/TransportStateManager.hpp
     midi/MidiActivityMonitor.hpp
     params/ParameterManager.hpp
-    PluginWindowBridge.hpp
     WarpMarkerManager.hpp
-    TrackController.hpp
-    plugin_manager/PluginManager.hpp
-    racks/InstrumentRackManager.hpp
-    racks/RackSyncManager.hpp
-    automation/AutomationPlaybackEngine.hpp
-    session/ArrangementClipSyncPlanner.hpp
-    session/ClipEngineIdMap.hpp
-    session/ClipLaunchQuantization.hpp
-    session/ClipSynchronizer.hpp
-    session/ClipWarpSynchronizer.hpp
-    midi/MidiBroadcastBus.hpp
     analysis/AudioTapBuffer.hpp
 )
 
@@ -603,7 +490,6 @@ magda_validate_device_pack_sources(
     ${_magda_neutral_base_device_sources}
 )
 unset(_magda_neutral_base_device_sources)
-unset(_magda_legacy_tracktion_device_sources)
 
 target_sources(magda_daw_app PRIVATE
     AudioEngineOptimizer.cpp

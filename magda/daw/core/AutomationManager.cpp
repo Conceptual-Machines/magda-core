@@ -12,8 +12,6 @@
 #include "ParameterUtils.hpp"
 #include "RangesHelpers.hpp"
 #include "TrackManager.hpp"
-#include "audio/automation/ControlTargetResolver.hpp"
-#include "engine/TracktionFork.hpp"
 
 namespace magda {
 
@@ -98,15 +96,6 @@ std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& target) 
             return static_cast<double>(ParameterUtils::realToNormalized(db, paramInfo));
         }
         case ControlTarget::Kind::PluginParam: {
-            // Prefer the live engine parameter: DeviceInfo::currentValue can
-            // go stale when a UI writes the engine without updating the model
-            // (observed with the compiled Faust custom UIs, #162 bake), and a
-            // stale value here seeds lanes and bake bases at the wrong height.
-            // Base value, NOT getCurrentValue(): the current value includes
-            // live modifier output, and a bake/seed must ride on the knob
-            // position, not on whatever the LFO happened to output right now.
-            if (auto* teParam = tracktion_fork::parameterFor(target))
-                return laneNormalizedFromTEValue(target, teParam, teParam->getCurrentBaseValue());
             auto resolved = TrackManager::getInstance().resolvePath(target.devicePath);
             if (!resolved.valid || !resolved.device)
                 return std::nullopt;

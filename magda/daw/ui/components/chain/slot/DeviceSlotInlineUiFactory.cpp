@@ -4,7 +4,6 @@
 #include "audio/plugins/FaustParamPool.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/IFaustEditorModel.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/ControlTarget.hpp"
 #include "core/LinkModeManager.hpp"
@@ -27,22 +26,6 @@ std::shared_ptr<daw::audio::MagdaDevice> getRenderedDevice(const magda::ChainNod
     return {};
 }
 
-/**
- * @brief The device behind this slot, preferring the caller's own plugin (#2585).
- *
- * A Drum Grid pad has no bridge-resolvable path, so it supplies the plugin and
- * the device comes off that.
- */
-std::shared_ptr<daw::audio::MagdaDevice> resolveRenderedDevice(
-    const magda::ChainNodePath& path, const DeviceSlotInlineUiCallbacks& callbacks) {
-    if (callbacks.getLivePlugin) {
-        if (auto device =
-                daw::audio::tracktion_adapter::deviceHandleFromPlugin(callbacks.getLivePlugin()))
-            return device;
-    }
-    return getRenderedDevice(path);
-}
-
 DeviceCustomUIManager::Callbacks makeCustomUiCallbacks(DeviceSlotInlineUiCallbacks callbacks) {
     DeviceCustomUIManager::Callbacks customCallbacks;
     customCallbacks.onParameterChanged = std::move(callbacks.onParameterChanged);
@@ -51,7 +34,6 @@ DeviceCustomUIManager::Callbacks makeCustomUiCallbacks(DeviceSlotInlineUiCallbac
     customCallbacks.onUpdateModsPanel = std::move(callbacks.onUpdateModsPanel);
     customCallbacks.onUpdateMacroPanel = std::move(callbacks.onUpdateMacroPanel);
     customCallbacks.getNodePath = std::move(callbacks.getNodePath);
-    customCallbacks.getLivePlugin = std::move(callbacks.getLivePlugin);
     return customCallbacks;
 }
 
@@ -144,7 +126,6 @@ DeviceSlotInlineUiCallbacks makeDeviceSlotInlineUiCallbacks(
     };
     callbacks.onShowAutomationLane = context.onShowAutomationLane;
     callbacks.getNodePath = context.getNodePath;
-    callbacks.getLivePlugin = context.getLivePlugin;
     return callbacks;
 }
 
@@ -165,7 +146,7 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
         if (callbacks.onLayoutChanged)
             storage.compiledPanel->setOnLayoutChanged(callbacks.onLayoutChanged);
 
-        storage.compiledPanel->bindDevice(resolveRenderedDevice(nodePath, callbacks));
+        storage.compiledPanel->bindDevice(getRenderedDevice(nodePath));
         storage.compiledPanel->updateFromDevice(device);
         parent.addAndMakeVisible(storage.compiledPanel->component());
         return DeviceSlotInlineUiKind::Compiled;
@@ -177,7 +158,7 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
         device.pluginId.equalsIgnoreCase(daw::audio::FaustInstrumentPlugin::xmlTypeName)) {
         storage.faustUI = std::make_unique<FaustUI>();
 
-        auto device = resolveRenderedDevice(nodePath, callbacks);
+        auto device = getRenderedDevice(nodePath);
         if (auto* faustModel = dynamic_cast<daw::audio::IFaustEditorModel*>(device.get())) {
             storage.faustUI->setDevice(device);
             storage.faustCustomView = FaustCustomUIRegistry::getInstance().create(
@@ -270,11 +251,6 @@ void refreshDeviceSlotInlineUiParameterValues(const magda::DeviceInfo& device,
         compiledPanel->updateFromDevice(device);
 
     customUI.refreshParameterValues(device);
-}
-
-void readAndPushDeviceSlotInlineUiModMatrix(magda::DeviceId deviceId,
-                                            DeviceCustomUIManager& customUI) {
-    customUI.readAndPushModMatrix(deviceId);
 }
 
 void configureDeviceSlotLinkableSliders(

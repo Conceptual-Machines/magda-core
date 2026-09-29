@@ -22,7 +22,6 @@ struct DeviceSlotContentPaintState {
     bool hasCustomUI = false;
     juce::String manufacturer;
     juce::String deviceName;
-    juce::Drawable* tracktionLogo = nullptr;
     DeviceSlotStepRecordingPaintState stepRecording;
 };
 

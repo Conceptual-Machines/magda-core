@@ -1,35 +1,17 @@
 #include "AudioSettingsDialog.hpp"
 
-#include <cstdlib>
-
 #include "../../audio/AudioDriverUtils.hpp"
 #include "../../audio/MidiBridge.hpp"
 #include "../../audio/io/AudioIOControl.hpp"
 #include "../../core/Config.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../engine/AudioEngine.hpp"
-#include "../../engine/AudioEngineChoice.hpp"
 #include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
 #include "../utils/ChannelLabels.hpp"
 
 namespace magda {
-
-namespace {
-
-/// A JUCE item id of zero means "nothing selected", so the engine ids are the
-/// enum shifted by one rather than the enum itself (#2559).
-int engineItemId(AudioEngineChoice choice) {
-    return static_cast<int>(choice) + 1;
-}
-
-AudioEngineChoice engineForItemId(int itemId) {
-    return itemId == engineItemId(AudioEngineChoice::Magda) ? AudioEngineChoice::Magda
-                                                            : AudioEngineChoice::Tracktion;
-}
-
-}  // namespace
 
 // ============================================================================
 // CustomChannelSelector Implementation
@@ -446,33 +428,6 @@ AudioSettingsDialog::AudioSettingsDialog(AudioEngine* audioEngine)
     setAsPreferredCheckbox_.setToggleState(inputMatches && outputMatches,
                                            juce::dontSendNotification);
 
-    // Which engine renders. An audio-device-level choice, so it sits with the
-    // devices rather than in a preferences pane of its own (#2559).
-    engineLabel_.setText("Audio Engine:", juce::dontSendNotification);
-    engineLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
-    addAndMakeVisible(engineLabel_);
-
-    engineComboBox_.addItem("Tracktion Engine", engineItemId(AudioEngineChoice::Tracktion));
-    engineComboBox_.addItem("MAGDA Engine (beta)", engineItemId(AudioEngineChoice::Magda));
-    engineComboBox_.setSelectedId(
-        engineItemId(
-            parseAudioEngine(config.getAudioEngine()).value_or(AudioEngineChoice::Tracktion)),
-        juce::dontSendNotification);
-    engineComboBox_.onChange = [this]() { onAudioEngineSelected(); };
-    addAndMakeVisible(engineComboBox_);
-
-    // Said rather than implied. The engine is chosen once on the way up, and
-    // swapping one under a loaded project with open plugin editors is not a
-    // thing to do quietly for a setting used twice.
-    const auto* engineOverride = std::getenv("MAGDA_AUDIO_ENGINE");
-    engineRestartLabel_.setText(engineOverride != nullptr
-                                    ? "MAGDA_AUDIO_ENGINE overrides this for the current run"
-                                    : "Takes effect after a restart",
-                                juce::dontSendNotification);
-    engineRestartLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    engineRestartLabel_.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.72f));
-    addAndMakeVisible(engineRestartLabel_);
-
     // The stream the chosen interface runs at. Both apply through the choice, so what is
     // picked is what opens rather than something read back off the device afterwards.
     sampleRateLabel_.setText("Sample Rate:", juce::dontSendNotification);
@@ -641,15 +596,6 @@ void AudioSettingsDialog::resized() {
     streamArea.removeFromLeft(10);  // spacing
     bufferSizeComboBox_.setBounds(streamArea.removeFromLeft(110));
     bounds.removeFromTop(5);  // spacing
-
-    // Engine choice, with its restart note beside it rather than under it
-    auto engineArea = bounds.removeFromTop(28);
-    engineLabel_.setBounds(engineArea.removeFromLeft(120));
-    engineArea.removeFromLeft(10);  // spacing
-    engineComboBox_.setBounds(engineArea.removeFromLeft(220));
-    engineArea.removeFromLeft(10);  // spacing
-    engineRestartLabel_.setBounds(engineArea);
-    bounds.removeFromTop(15);  // spacing
 
     // Close button at bottom
     const int buttonHeight = 28;
@@ -1022,12 +968,6 @@ void AudioSettingsDialog::savePreferencesIfNeeded() {
     DBG("Saved preferred devices: Input=" << preferredInputDevice << " (" << inputChannelCount
                                           << " ch), Output=" << preferredOutputDevice << " ("
                                           << outputChannelCount << " ch)");
-}
-
-void AudioSettingsDialog::onAudioEngineSelected() {
-    auto& config = magda::Config::getInstance();
-    config.setAudioEngine(settingWordFor(engineForItemId(engineComboBox_.getSelectedId())));
-    config.save();
 }
 
 void AudioSettingsDialog::showDialog(juce::Component* parent, AudioEngine* audioEngine) {

@@ -230,7 +230,7 @@ class TextSlider : public juce::Component,
 
     // Custom value formatter — takes the slider's real value, returns
     // display string. Sticky against setParameterInfo() so custom UIs
-    // (e.g. FourOscUI's "L50"/"R50" pan label) survive the refresh cycle
+    // (e.g. an "L50"/"R50" pan label) survive the refresh cycle
     // DeviceSlotComponent runs whenever the device's ParameterInfo
     // republishes.
     void setValueFormatter(std::function<juce::String(double)> formatter) {
@@ -750,7 +750,7 @@ class TextSlider : public juce::Component,
     bool hasParamInfo_ = false;
     // True if a custom formatter was installed via setValueFormatter().
     // Stops setParameterInfo() from clobbering it on every refresh —
-    // FourOscUI installs format-specific labels (e.g. "L50"/"R50" for pan)
+    // custom UIs install format-specific labels (e.g. "L50"/"R50" for pan)
     // at construction that the generic ParameterUtils formatter cannot
     // produce. The parser is still replaced — only the display side is
     // sticky.

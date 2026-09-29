@@ -1,193 +1,119 @@
 #include "WarpMarkerManager.hpp"
 
-#include <juce_events/juce_events.h>
-
-#include "../core/ClipManager.hpp"
+#include "../core/ClipPropertyCommands.hpp"
+#include "../core/UndoManager.hpp"
+#include "../engine/host/EngineHost.hpp"
 #include "AudioThumbnailManager.hpp"
 
 namespace magda {
 
-namespace {
-// Helper to find WaveAudioClip from a TE engine ID.
-// Searches both arrangement clips on the timeline and session clips in slots.
-te::WaveAudioClip* findWaveAudioClipByEngineId(te::Edit& edit, const std::string& engineId) {
-    if (engineId.empty())
-        return nullptr;
-    for (auto* track : te::getAudioTracks(edit)) {
-        // Search arrangement clips on the timeline
-        for (auto* teClip : track->getClips()) {
-            if (teClip->itemID.toString().toStdString() == engineId) {
-                return dynamic_cast<te::WaveAudioClip*>(teClip);
-            }
-        }
-        // Search session clips in clip slots
-        for (auto* slot : track->getClipSlotList().getClipSlots()) {
-            if (auto* teClip = slot->getClip()) {
-                if (teClip->itemID.toString().toStdString() == engineId) {
-                    return dynamic_cast<te::WaveAudioClip*>(teClip);
-                }
-            }
-        }
-    }
-    return nullptr;
+WarpMarkerManager& WarpMarkerManager::getInstance() {
+    static WarpMarkerManager manager;
+    return manager;
 }
 
-// Convenience wrapper: resolve via the caller's clipIdToEngineId map.
-te::WaveAudioClip* findWaveAudioClip(te::Edit& edit,
-                                     const std::map<ClipId, std::string>& clipIdToEngineId,
-                                     ClipId clipId) {
-    auto it = clipIdToEngineId.find(clipId);
-    if (it == clipIdToEngineId.end())
-        return nullptr;
-    return findWaveAudioClipByEngineId(edit, it->second);
+WarpMarkerManager::WarpMarkerManager() {
+    ClipManager::getInstance().addListener(this);
 }
-
-}  // namespace
 
 WarpMarkerManager::~WarpMarkerManager() {
-    stopTimer();
-    for (auto& [_, active] : activeDetections_) {
-        if (active.warpManager != nullptr)
-            active.warpManager->removeListener(this);
-    }
+    ClipManager::getInstance().removeListener(this);
+    stopBackgroundWork();
 }
 
-void WarpMarkerManager::setTransientSensitivity(
-    te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId, ClipId clipId,
-    float sensitivity) {
-    // Resolve the engineId at queue time (a single map lookup) instead
-    // of snapshotting the whole clipIdToEngineId map per call.
-    auto& pending = pendingDetections_[clipId];
-    pending.sensitivity = sensitivity;
-    auto it = clipIdToEngineId.find(clipId);
-    pending.engineId = (it != clipIdToEngineId.end()) ? it->second : std::string{};
-    pending.edit = &edit;
+void WarpMarkerManager::stopBackgroundWork() {
+    stopTimer();
+    pending_.clear();
+    active_.clear();
+    detectedWith_.clear();
+    ++generation_;
+    workers_.removeAllJobs(true, -1);
+}
 
-    // A drag can generate dozens of values per second. Restart the quiet-period
-    // timer so only the final value clears the cache and launches detection.
+bool WarpMarkerManager::getTransientTimes(ClipId clipId) {
+    const auto* event = primaryEventOf(ClipManager::getInstance().getClip(clipId));
+    if (event == nullptr || event->sourceFilePath().isEmpty())
+        return false;
+    if (pending_.contains(clipId))
+        return false;
+    if (AudioThumbnailManager::getInstance().getCachedTransients(event->sourceFilePath()))
+        return true;
+    if (!active_.contains(event->sourceFilePath()))
+        startDetection(clipId);
+    return false;
+}
+
+void WarpMarkerManager::setTransientSensitivity(ClipId clipId, float sensitivity) {
+    pending_[clipId] = juce::jlimit(0.0f, 1.0f, sensitivity);
+    // Invalidate an earlier result before the slider's quiet period finishes.
+    if (const auto* event = primaryEventOf(ClipManager::getInstance().getClip(clipId))) {
+        active_.erase(event->sourceFilePath());
+        detectedWith_.erase(event->sourceFilePath());
+        AudioThumbnailManager::getInstance().clearCachedTransients(event->sourceFilePath());
+    }
     startTimer(150);
 }
 
 void WarpMarkerManager::timerCallback() {
     stopTimer();
-
-    auto pending = std::move(pendingDetections_);
-    pendingDetections_.clear();
-
-    for (const auto& [clipId, detection] : pending) {
-        if (detection.edit != nullptr && !detection.engineId.empty())
-            applySensitivityNow(*detection.edit, detection.engineId, clipId, detection.sensitivity);
+    auto pending = std::move(pending_);
+    pending_.clear();
+    for (const auto& [clipId, sensitivity] : pending) {
+        const auto* event = primaryEventOf(ClipManager::getInstance().getClip(clipId));
+        if (event == nullptr)
+            continue;
+        const auto path = event->sourceFilePath();
+        if (event->beatSensitivity != sensitivity)
+            UndoManager::getInstance().executeCommand(std::make_unique<SetClipPropertyCommand>(
+                clipId, "Set Transient Sensitivity",
+                [sensitivity](ClipManager& manager, ClipId id) {
+                    manager.setBeatSensitivity(id, sensitivity);
+                }));
+        if (!active_.contains(path))
+            startDetection(clipId);
     }
 }
 
-void WarpMarkerManager::applySensitivityNow(te::Edit& edit, const std::string& engineId,
-                                            ClipId clipId, float sensitivity) {
-    startDetection(edit, engineId, clipId, sensitivity);
-}
-
-bool WarpMarkerManager::startDetection(te::Edit& edit, const std::string& engineId, ClipId clipId,
-                                       std::optional<float> sensitivity) {
+void WarpMarkerManager::clipPropertyChanged(ClipId clipId) {
+    if (pending_.contains(clipId))
+        return;
     const auto* event = primaryEventOf(ClipManager::getInstance().getClip(clipId));
     if (event == nullptr || event->sourceFilePath().isEmpty())
-        return false;
-    const auto sourcePath = event->sourceFilePath();
-
-    te::WaveAudioClip* audioClipPtr = findWaveAudioClipByEngineId(edit, engineId);
-    if (!audioClipPtr)
-        return false;
-
-    auto& warpManager = audioClipPtr->getWarpTimeManager();
-    if (sensitivity.has_value())
-        warpManager.setTransientSensitivity(*sensitivity);
-
-    auto active = activeDetections_.find(clipId);
-    if (active != activeDetections_.end() && active->second.warpManager != nullptr) {
-        active->second.warpManager->removeListener(this);
-        clipByWarpManager_.erase(active->second.warpManager);
-    }
-
-    warpManager.addListener(this);
-    detectionInFlight_.insert(clipId);
-    activeDetections_[clipId] = {sourcePath, te::WarpTimeManager::Ptr(&warpManager)};
-    clipByWarpManager_[&warpManager] = clipId;
-
-    // Clear cache so listeners know the displayed transients are stale.
-    AudioThumbnailManager::getInstance().clearCachedTransients(sourcePath);
-
-    warpManager.detectTransients();
-
-    return true;
+        return;
+    const auto found = detectedWith_.find(event->sourceFilePath());
+    if (found == detectedWith_.end() || found->second == event->beatSensitivity)
+        return;
+    startDetection(clipId);
 }
 
-bool WarpMarkerManager::getTransientTimes(te::Edit& edit,
-                                          const std::map<ClipId, std::string>& clipIdToEngineId,
-                                          ClipId clipId) {
-    // Get clip info for file path
+void WarpMarkerManager::startDetection(ClipId clipId) {
     const auto* event = primaryEventOf(ClipManager::getInstance().getClip(clipId));
     if (event == nullptr || event->sourceFilePath().isEmpty())
-        return false;
+        return;
+    const auto path = event->sourceFilePath();
+    const auto sensitivity = event->beatSensitivity;
+    const auto generation = ++generation_;
+    active_[path] = generation;
+    detectedWith_[path] = sensitivity;
+    AudioThumbnailManager::getInstance().clearCachedTransients(path);
 
-    // Check cache first
-    auto& thumbnailManager = AudioThumbnailManager::getInstance();
-    if (thumbnailManager.getCachedTransients(event->sourceFilePath()) != nullptr)
-        return true;
-
-    if (pendingDetections_.count(clipId))
-        return false;
-
-    if (detectionInFlight_.count(clipId))
-        return false;
-
-    // Find TE WaveAudioClip via shared helper
-    te::WaveAudioClip* audioClipPtr = findWaveAudioClip(edit, clipIdToEngineId, clipId);
-    if (!audioClipPtr)
-        return false;
-
-    startDetection(edit, clipIdToEngineId.at(clipId), clipId, std::nullopt);
-    return false;
-}
-
-void WarpMarkerManager::transientDetectionFinished(te::WarpTimeManager& warpManager,
-                                                   bool completedOk) {
-    if (!juce::MessageManager::getInstance()->isThisTheMessageThread()) {
-        juce::WeakReference<WarpMarkerManager> weakThis(this);
-        juce::MessageManager::callAsync([weakThis, warpManagerPtr = &warpManager, completedOk]() {
-            if (auto* self = weakThis.get(); self != nullptr && warpManagerPtr != nullptr)
-                self->transientDetectionFinished(*warpManagerPtr, completedOk);
+    juce::WeakReference<WarpMarkerManager> weakThis(this);
+    workers_.addJob([weakThis, path, sensitivity, generation] {
+        const auto detected =
+            daw::engine_host::EngineHost::detectSourceTransients(path, sensitivity);
+        juce::MessageManager::callAsync([weakThis, path, generation, detected] {
+            auto* self = weakThis.get();
+            if (self == nullptr)
+                return;
+            const auto found = self->active_.find(path);
+            if (found == self->active_.end() || found->second != generation)
+                return;
+            self->active_.erase(found);
+            juce::Array<double> times;
+            times.addArray(detected.data(), static_cast<int>(detected.size()));
+            AudioThumbnailManager::getInstance().cacheTransients(path, times);
         });
-        return;
-    }
-
-    auto it = clipByWarpManager_.find(&warpManager);
-    if (it == clipByWarpManager_.end())
-        return;
-
-    finishDetection(it->second, warpManager, completedOk);
-}
-
-void WarpMarkerManager::finishDetection(ClipId clipId, te::WarpTimeManager& warpManager,
-                                        bool completedOk) {
-    const bool replacementPending = pendingDetections_.count(clipId) != 0;
-    warpManager.removeListener(this);
-    clipByWarpManager_.erase(&warpManager);
-    detectionInFlight_.erase(clipId);
-
-    auto active = activeDetections_.find(clipId);
-    const juce::String filePath =
-        active != activeDetections_.end() ? active->second.filePath : juce::String();
-    activeDetections_.erase(clipId);
-
-    auto [complete, transientPositions] = warpManager.getTransientTimes();
-    if (replacementPending || !completedOk || !complete || filePath.isEmpty())
-        return;
-
-    juce::Array<double> times;
-    times.ensureStorageAllocated(transientPositions.size());
-    for (const auto& tp : transientPositions) {
-        times.add(tp.inSeconds());
-    }
-
-    AudioThumbnailManager::getInstance().cacheTransients(filePath, times);
+    });
 }
 
 }  // namespace magda

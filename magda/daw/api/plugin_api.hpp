@@ -1,6 +1,5 @@
 #pragma once
 
-#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -61,16 +60,6 @@ struct SequencerRuntimeContext {
     std::vector<std::pair<int, juce::String>> laneNames;
 };
 
-struct FourOscUpdate {
-    juce::String name;
-    juce::String category;
-    std::map<juce::String, float> parameters;
-    std::map<int, juce::String> waves;
-    juce::String filterType;
-    juce::String voiceMode;
-    std::map<juce::String, bool> effects;
-};
-
 /** Engine-neutral plugin catalog and live-device operations exposed through MagdaApi. */
 class PluginApi {
   public:
@@ -91,8 +80,6 @@ class PluginApi {
                                                    const StepSequencerPattern& pattern) = 0;
     virtual juce::String applyPolySequencerPattern(const ChainNodePath& path,
                                                    const PolySequencerPattern& pattern) = 0;
-    virtual juce::String applyFourOscUpdate(const ChainNodePath& path,
-                                            const FourOscUpdate& update) = 0;
     virtual juce::String applyFaustSource(const ChainNodePath& path,
                                           const juce::String& displayName,
                                           const juce::String& source, bool verified) = 0;

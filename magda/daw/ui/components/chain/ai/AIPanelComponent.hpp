@@ -107,8 +107,7 @@ class AIPanelComponent : public juce::Component, private juce::Timer {
     // raw JSON the model emits with a clean status line on completion.
     int streamingStart_ = -1;
 
-    // Background generation. juce::Thread + SafePointer pattern matches the
-    // /design slash command flow in AIChatConsoleContent.
+    // Background generation on a juce::Thread, results posted back via SafePointer.
     class GenerateThread;
     std::unique_ptr<GenerateThread> thread_;
 

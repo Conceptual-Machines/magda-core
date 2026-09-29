@@ -31,8 +31,7 @@ using sound_design_detail::ParameterSnapshot;
 
 // Runs `fn` on the message thread and blocks until it finishes, polling in
 // short slices so a cancel returns promptly. Returns false if cancelled or the
-// hop timed out. Mirrors the apply-side hop in four_osc_apply — live device
-// state must only be touched on the message thread.
+// hop timed out. Live device state must only be touched on the message thread.
 bool runOnMessageThreadBlocking(std::atomic<bool>& stop, std::function<void()> fn) {
     auto& mm = *juce::MessageManager::getInstance();
     if (mm.isThisTheMessageThread()) {

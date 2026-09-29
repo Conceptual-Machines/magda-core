@@ -1,15 +1,12 @@
 #include <juce_core/juce_core.h>
-#include <tracktion_engine/tracktion_engine.h>
 
 #include <memory>
 #include <optional>
 
-#include "SharedTestEngine.hpp"
 #include "exec/EngineDevice.hpp"
 #include "exec/RenderContext.hpp"
 #include "magda/daw/audio/plugins/ArpeggiatorPlugin.hpp"
 #include "magda/daw/audio/plugins/engine/EngineMagdaDevice.hpp"
-#include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
 
 // Input read at event time, through both adapters (#2415).
 //
@@ -23,7 +20,6 @@ namespace {
 
 namespace audio = magda::daw::audio;
 namespace adapter = magda::daw::audio::engine_adapter;
-namespace te = tracktion::engine;
 
 constexpr double kSampleRate = 44100.0;
 constexpr int kBlockSize = 64;
@@ -36,53 +32,6 @@ juce::MidiMessage noteOn(int note) {
 
 /// Where the arp put the note-off closing what it was sounding, in samples from
 /// the start of the block that carried the panic, or nothing if it sent none.
-std::optional<int> teLegNoteOffSample(te::Edit& edit) {
-    juce::ValueTree state(te::IDs::PLUGIN);
-    state.setProperty(te::IDs::type, audio::ArpeggiatorPlugin::xmlTypeName, nullptr);
-    auto plugin = edit.getPluginCache().createNewPlugin(state);
-    if (plugin == nullptr)
-        return {};
-
-    te::PluginInitialisationInfo initInfo;
-    initInfo.startTime = tracktion::TimePosition();
-    initInfo.sampleRate = kSampleRate;
-    initInfo.blockSizeSamples = kBlockSize;
-    plugin->baseClassInitialise(initInfo);
-
-    juce::AudioBuffer<float> buffer(2, kBlockSize);
-    const auto blockSeconds = kBlockSize / kSampleRate;
-
-    const auto runBlock = [&](int blockIndex, te::MidiMessageArray& midi) {
-        buffer.clear();
-        te::PluginRenderContext context(
-            &buffer, juce::AudioChannelSet::stereo(), 0, kBlockSize, &midi, 0.0,
-            tracktion::TimeRange(
-                tracktion::TimePosition::fromSeconds(blockIndex * blockSeconds),
-                tracktion::TimePosition::fromSeconds((blockIndex + 1) * blockSeconds)),
-            true, false, false, false);
-        plugin->applyToBuffer(context);
-    };
-
-    // A key, so the arp has something to sound.
-    te::MidiMessageArray held;
-    held.addMidiMessage(noteOn(60), 0.0, te::MPESourceID());
-    runBlock(0, held);
-
-    // The panic, nine tenths of the way through the block that follows.
-    te::MidiMessageArray panic;
-    panic.addMidiMessage(juce::MidiMessage::allNotesOff(1), kPanicSample / kSampleRate,
-                         te::MPESourceID());
-    runBlock(1, panic);
-
-    std::optional<int> found;
-    for (const auto& message : panic) {
-        if (message.isNoteOff())
-            found = juce::roundToInt(message.getTimeStamp() * kSampleRate);
-    }
-
-    plugin->deleteFromParent();
-    return found;
-}
 
 /// The same phrase through the engine's adapter, whose ports carry samples.
 std::optional<int> engineLegNoteOffSample() {
@@ -130,21 +79,7 @@ class ArpeggiatorEventTimeTest final : public juce::UnitTest {
     ArpeggiatorEventTimeTest() : juce::UnitTest("Arpeggiator Event Time", "magda") {}
 
     void runTest() override {
-        beginTest("Engine setup");
-
-        auto& wrapper = magda::test::getSharedEngine();
-        auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
-        expect(edit != nullptr);
-        if (edit == nullptr)
-            return;
-
-        beginTest("Both adapters close the note where the panic reached the device");
-
-        const auto teLeg = teLegNoteOffSample(*edit);
-        expect(teLeg.has_value(), "The fork's leg should close the sounding note");
-        expect(teLeg.value_or(-1) == kPanicSample,
-               "The fork's leg put the note-off at sample " + juce::String(teLeg.value_or(-1)) +
-                   " rather than at the panic's " + juce::String(kPanicSample));
+        beginTest("The native adapter close the note where the panic reached the device");
 
         const auto engineLeg = engineLegNoteOffSample();
         expect(engineLeg.has_value(), "The engine's leg should close the sounding note");

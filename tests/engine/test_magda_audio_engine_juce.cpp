@@ -40,6 +40,12 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
     MagdaAudioEngineTest() : juce::UnitTest("Magda Audio Engine Tests", "magda") {}
 
     void runTest() override {
+        beginTest("The default v1 factory constructs the native engine");
+        {
+            auto engine = magda::createDefaultAudioEngine({.headless = true});
+            expect(dynamic_cast<magda::MagdaAudioEngine*>(engine.get()) != nullptr);
+            expect(engine->engineName() == "magda::engine");
+        }
         magda::test::runWithCleanJuceState([this] { testAnswersWithoutAnEdit(); });
         magda::test::runWithCleanJuceState([this] { testSessionRecordingCapabilities(); });
         magda::test::runWithCleanJuceState([this] { testUnwiredMethodsNameThemselves(); });

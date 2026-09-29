@@ -14,7 +14,6 @@
 
 #include "audio/DeviceMeters.hpp"
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
-#include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/DrumGridRoles.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"
 #include "audio/plugins/LevelsPlugin.hpp"
@@ -31,9 +30,6 @@
 #include "audio/plugins/compiled/MagdaCompiledPolyInstrument.hpp"
 #include "audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "audio/plugins/mutable/MutableCloudsPlugin.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
-#include "audio/processors/DeviceProcessorFactory.hpp"
-#include "audio/processors/base/DeviceProcessor.hpp"
 #include "audio/sampling/SamplerModelEdits.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/ChainWalk.hpp"
@@ -48,7 +44,6 @@
 #include "custom_ui/DeviceTelemetrySources.hpp"
 #include "custom_ui/DrumVoiceUI.hpp"
 #include "custom_ui/FMUI.hpp"
-#include "custom_ui/FourOscUI.hpp"
 #include "custom_ui/HaloUI.hpp"
 #include "custom_ui/ImpulseResponseUI.hpp"
 #include "custom_ui/LevelsUI.hpp"
@@ -66,14 +61,11 @@
 #include "custom_ui/ToneGeneratorUI.hpp"
 #include "drum_grid/DrumGridUI.hpp"
 #include "engine/AudioEngine.hpp"
-#include "engine/AudioEngineChoice.hpp"
 #include "engine/PluginService.hpp"
-#include "engine/TracktionFork.hpp"
 #include "media_db/ClapAudioEncoder.hpp"
 #include "media_db/ClapTextEncoder.hpp"
 #include "media_db/MediaDbContext.hpp"
 #include "media_db/RobertaTokenizer.hpp"
-#include "processors/internal/NativeDeviceProcessors.hpp"
 #include "project/ProjectManager.hpp"
 #include "slot/ExternalInsertUI.hpp"
 #include "slot/StepSequencerClipExport.hpp"
@@ -257,7 +249,7 @@ RoleAnalysisResult classifyDrumRole(const juce::File& file, double startSeconds,
 }
 
 bool isDrumGridPluginId(const juce::String& pluginId) {
-    return pluginId.equalsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName);
+    return pluginId.equalsIgnoreCase("drumgrid");
 }
 
 bool isInstrumentDrop(const juce::DynamicObject& obj) {
@@ -386,25 +378,6 @@ magda::PluginFormat pluginFormatFromDescription(const juce::PluginDescription& d
     return magda::pluginFormatFromName(desc.pluginFormatName);
 }
 
-/** @brief Tracktion's plugin for a pad device, and where its grid meters it. */
-struct PadPlugin {
-    tracktion::engine::Plugin::Ptr plugin;
-    int chainIndex = -1;
-    int pluginIndex = -1;
-};
-
-/** @brief The plugin @p grid hosts for the pad device @p deviceId, or none. */
-PadPlugin findPadPlugin(daw::audio::DrumGridPlugin& grid, magda::DeviceId deviceId) {
-    for (const auto& chain : grid.getChains()) {
-        if (chain == nullptr)
-            continue;
-        for (int index = 0; index < static_cast<int>(chain->plugins.size()); ++index)
-            if (grid.getPluginDeviceId(chain->index, index) == deviceId)
-                return {chain->plugins[static_cast<size_t>(index)], chain->index, index};
-    }
-    return {};
-}
-
 /// The device an internal plugin id names.
 ///
 /// Both registries, because a compiled device (the drum voices, the Faust FX)
@@ -470,8 +443,6 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return samplerUI_.get();
     if (drumGridUI_)
         return drumGridUI_.get();
-    if (fourOscUI_)
-        return fourOscUI_.get();
     if (polySynthUI_)
         return polySynthUI_.get();
     if (fmUI_)
@@ -510,8 +481,6 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
 }
 
 std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() const {
-    if (fourOscUI_)
-        return fourOscUI_->getLinkableSliders();
     if (polySynthUI_)
         return polySynthUI_->getLinkableSliders();
     if (fmUI_)
@@ -546,16 +515,14 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
 }
 
 bool DeviceCustomUIManager::hasAnyUI() const {
-    return externalInsertUI_ || toneGeneratorUI_ || samplerUI_ || drumGridUI_ || fourOscUI_ ||
-           polySynthUI_ || fmUI_ || materiaUI_ || haloUI_ || nimbusUI_ || struckUI_ ||
-           drumVoiceUI_ || impulseResponseUI_ || sidechainUI_ || chordEngineUI_ || arpeggiatorUI_ ||
-           strumUI_ || stepSequencerUI_ || polyStepSequencerUI_ || oscilloscopeUI_ ||
-           spectrumAnalyzerUI_ || levelsUI_;
+    return externalInsertUI_ || toneGeneratorUI_ || samplerUI_ || drumGridUI_ || polySynthUI_ ||
+           fmUI_ || materiaUI_ || haloUI_ || nimbusUI_ || struckUI_ || drumVoiceUI_ ||
+           impulseResponseUI_ || sidechainUI_ || chordEngineUI_ || arpeggiatorUI_ || strumUI_ ||
+           stepSequencerUI_ || polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ ||
+           levelsUI_;
 }
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
-    if (fourOscUI_)
-        return 500;
     if (polySynthUI_)
         return 860;  // four oscillator columns + filter + stacked envelope column
     if (fmUI_)
@@ -595,37 +562,7 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     return 0;
 }
 
-int DeviceCustomUIManager::getCustomUITabIndex() const {
-    if (fourOscUI_)
-        return fourOscUI_->getCurrentTabIndex();
-    return 0;
-}
-
-void DeviceCustomUIManager::setCustomUITabIndex(int index) {
-    if (fourOscUI_) {
-        fourOscUI_->setCurrentTabIndex(index);
-    } else {
-        pendingCustomUITabIndex_ = index;
-    }
-}
-
-tracktion::engine::Plugin::Ptr DeviceCustomUIManager::getLivePlugin() const {
-    if (livePluginProvider_) {
-        if (auto plugin = livePluginProvider_())
-            return plugin;
-    }
-
-    return magda::tracktion_fork::pluginAt(devicePath_);
-}
-
 std::shared_ptr<daw::audio::MagdaDevice> DeviceCustomUIManager::liveDevice() const {
-    // The Drum Grid pad override hands over a fork plugin; everywhere else the
-    // rendering engine answers for the path, fork or native (#2585).
-    if (livePluginProvider_) {
-        if (auto plugin = livePluginProvider_())
-            return daw::audio::tracktion_adapter::deviceHandleFromPlugin(plugin);
-    }
-
     if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine())
         return audioEngine->renderedDevice(devicePath_);
 
@@ -750,46 +687,6 @@ void DeviceCustomUIManager::refreshChordEngineMidiActivity(magda::MidiNoteStrip&
     lastChordCount = count;
 }
 
-// =============================================================================
-// readAndPushModMatrix
-// =============================================================================
-
-void DeviceCustomUIManager::readAndPushModMatrix(magda::DeviceId /*deviceId*/) {
-    if (!fourOscUI_)
-        return;
-    auto plugin = getLivePlugin();
-    auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get());
-    if (!fourOsc)
-        return;
-
-    auto autoParams = fourOsc->getAutomatableParameters();
-
-    // Build parameter name list for the add-popup destination dropdown
-    std::vector<std::pair<int, juce::String>> paramNames;
-    paramNames.reserve(autoParams.size());
-    for (int pi = 0; pi < autoParams.size(); ++pi)
-        paramNames.emplace_back(pi, autoParams[pi]->getParameterName());
-    fourOscUI_->setModMatrixParameterNames(paramNames);
-
-    // Read mod matrix entries
-    std::vector<ModMatrixEntry> matrixEntries;
-    for (auto& [param, assign] : fourOsc->modMatrix) {
-        if (!assign.isModulated())
-            continue;
-        int paramIdx = autoParams.indexOf(param);
-        if (paramIdx < 0)
-            continue;
-        for (int s = 0; s < static_cast<int>(te::FourOscPlugin::numModSources); ++s) {
-            if (assign.depths[s] >= -1.0f) {
-                auto src = static_cast<te::FourOscPlugin::ModSource>(s);
-                matrixEntries.push_back({paramIdx, autoParams[paramIdx]->getParameterName(), s,
-                                         fourOsc->modulationSourceToName(src), assign.depths[s]});
-            }
-        }
-    }
-    fourOscUI_->updateModMatrix(matrixEntries);
-}
-
 void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& device) {
     if (polySynthUI_ && device.pluginId.equalsIgnoreCase("magda_polysynth"))
         polySynthUI_->updateFromParameters(device.parameters);
@@ -822,8 +719,6 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         polyStepSequencerUI_->updateFromParameters(device.parameters);
     if (impulseResponseUI_ && device.pluginId == daw::audio::MagdaConvolutionPlugin::xmlTypeName)
         impulseResponseUI_->updateFromParameters(device.parameters);
-    if (fourOscUI_ && device.pluginId.containsIgnoreCase("4osc"))
-        fourOscUI_->updateFromParameters(device.parameters);
 }
 
 void DeviceCustomUIManager::refreshSequencerState(const magda::DeviceInfo& device) {
@@ -1040,64 +935,6 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
     return false;
 }
 
-bool DeviceCustomUIManager::createFourOscUI(const magda::DeviceInfo& device,
-                                            juce::Component& parent, const Callbacks& callbacks) {
-    if (!device.pluginId.containsIgnoreCase("4osc"))
-        return false;
-
-    // Every control here writes through a te::FourOscPlugin, which the MAGDA
-    // engine never builds. The slot shows the device and nothing to turn
-    // (#2437).
-    if (chosenAudioEngine() == AudioEngineChoice::Magda)
-        return false;
-
-    fourOscUI_ = std::make_unique<FourOscUI>();
-    fourOscUI_->onParameterChanged = [cb = callbacks](int paramIndex, float value) {
-        writeParameterChange(cb, paramIndex, value);
-    };
-    fourOscUI_->onPluginStateChanged = [this](const juce::String& propertyId, juce::var value) {
-        auto plugin = getLivePlugin();
-        if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get()))
-            fourOsc->state.setProperty(juce::Identifier(propertyId), value, nullptr);
-    };
-    fourOscUI_->onModDepthChanged = [this](int paramIndex, int modSourceId, float depth) {
-        auto plugin = getLivePlugin();
-        if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get())) {
-            auto params = fourOsc->getAutomatableParameters();
-            if (paramIndex >= 0 && paramIndex < params.size()) {
-                auto src = static_cast<te::FourOscPlugin::ModSource>(modSourceId);
-                fourOsc->setModulationDepth(src, params[paramIndex], depth);
-                static_cast<te::Plugin*>(fourOsc)->flushPluginStateToValueTree();
-            }
-        }
-    };
-    fourOscUI_->onModEntryRemoved = [this](int paramIndex, int modSourceId) {
-        auto plugin = getLivePlugin();
-        if (auto* fourOsc = dynamic_cast<te::FourOscPlugin*>(plugin.get())) {
-            auto params = fourOsc->getAutomatableParameters();
-            if (paramIndex >= 0 && paramIndex < params.size()) {
-                auto src = static_cast<te::FourOscPlugin::ModSource>(modSourceId);
-                fourOsc->clearModulation(src, params[paramIndex]);
-                static_cast<te::Plugin*>(fourOsc)->flushPluginStateToValueTree();
-            }
-            readAndPushModMatrix(devicePath_.getDeviceId());
-        }
-    };
-    fourOscUI_->onModMatrixStructureChanged = [this]() {
-        readAndPushModMatrix(devicePath_.getDeviceId());
-    };
-    parent.addAndMakeVisible(*fourOscUI_);
-    update(device);
-    readAndPushModMatrix(device.id);
-    // Restore saved tab index after rebuild
-    if (pendingCustomUITabIndex_ != NO_PENDING_TAB) {
-        fourOscUI_->setCurrentTabIndex(pendingCustomUITabIndex_);
-        pendingCustomUITabIndex_ = NO_PENDING_TAB;
-    }
-
-    return true;
-}
-
 bool DeviceCustomUIManager::createCustomInstrumentUI(const magda::DeviceInfo& device,
                                                      juce::Component& parent,
                                                      const Callbacks& callbacks) {
@@ -1237,17 +1074,10 @@ void DeviceCustomUIManager::showPad(int padIndex, const magda::ChainInfo* pad) {
 
 bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
                                              juce::Component& parent, const Callbacks& callbacks) {
-    if (!device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName))
+    if (!device.pluginId.containsIgnoreCase("drumgrid"))
         return false;
 
     drumGridUI_ = std::make_unique<DrumGridUI>();
-
-    // Helper to get DrumGridPlugin pointer. Reads only: what a pad holds is
-    // edited through TrackManager and reaches the plugin by sync (#2207).
-    auto getDrumGrid = [this]() -> daw::audio::DrumGridPlugin* {
-        auto plugin = getLivePlugin();
-        return dynamic_cast<daw::audio::DrumGridPlugin*>(plugin.get());
-    };
 
     // The grid's own path, resolved at callback time: the slot may not know it
     // yet when this UI is built.
@@ -1411,8 +1241,6 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
     // Plugin drag and drop onto pads: an instrument replaces the pad
     drumGridUI_->onPluginDropped = [postPadEdit, updatePadFromModel,
                                     loadSampleToPad](int padIndex, const juce::DynamicObject& obj) {
-        auto& tm = magda::TrackManager::getInstance();
-
         bool isExternal = obj.getProperty("isExternal");
         juce::String uniqueId = obj.getProperty("uniqueId").toString();
 
@@ -1479,8 +1307,7 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             });
     };
 
-    drumGridUI_->onAnalyzePadRoleRequested = [this, cb = callbacks, getDrumGrid,
-                                              gridPath](int padIndex) {
+    drumGridUI_->onAnalyzePadRoleRequested = [this, cb = callbacks, gridPath](int padIndex) {
         if (!cb.getNodePath)
             return;
         auto nodePath = cb.getNodePath();
@@ -1497,10 +1324,7 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
                     continue;
 
                 std::shared_ptr<daw::audio::MagdaDevice> rendered;
-                if (auto* dg = getDrumGrid())
-                    rendered = daw::audio::tracktion_adapter::deviceHandleFromPlugin(
-                        findPadPlugin(*dg, device->id).plugin);
-                else if (auto* engine = magda::TrackManager::getInstance().getAudioEngine())
+                if (auto* engine = magda::TrackManager::getInstance().getAudioEngine())
                     rendered =
                         engine->renderedDevice(magda::chain_walk::deviceIn(padPath, device->id));
 
@@ -1602,10 +1426,7 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
                                   .busOutput = pad->outputIndex};
     };
 
-    drumGridUI_->consumePadTrigger = [getDrumGrid, gridPath](int padIndex) {
-        if (auto* dg = getDrumGrid())
-            return dg->consumePadTrigger(padIndex);
-
+    drumGridUI_->consumePadTrigger = [gridPath](int padIndex) {
         auto* engine = magda::TrackManager::getInstance().getAudioEngine();
         return engine != nullptr &&
                engine->deviceMeters().takePadNote(gridPath(), magda::padNoteFor(padIndex));
@@ -1635,8 +1456,8 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
     auto& padChain = drumGridUI_->getPadChainPanel();
 
     // A pad's devices as the model holds them, each bound to what renders it.
-    padChain.getPluginSlots = [getDrumGrid, gridPath, postPadEdit](
-                                  int padIndex) -> std::vector<PadChainPanel::PluginSlotInfo> {
+    padChain.getPluginSlots =
+        [gridPath, postPadEdit](int padIndex) -> std::vector<PadChainPanel::PluginSlotInfo> {
         std::vector<PadChainPanel::PluginSlotInfo> result;
         auto& tm = magda::TrackManager::getInstance();
         const auto grid = gridPath();
@@ -1646,7 +1467,6 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
 
         const auto padPath = magda::TrackManager::padChainPath(grid, pad->id);
         const auto padChainId = pad->id;
-        auto* dg = getDrumGrid();
 
         for (const auto* device : pad->getDevices()) {
             PadChainPanel::PluginSlotInfo info;
@@ -1661,39 +1481,18 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             binding.device = *device;
             binding.devicePath = magda::chain_walk::deviceIn(padPath, device->id);
 
-            // Tracktion hosts a pad plugin inside its grid, where the bridge
-            // resolves no pad path, so that engine's plugin is handed over.
-            const auto hosted = dg != nullptr ? findPadPlugin(*dg, device->id) : PadPlugin{};
-            if (hosted.plugin != nullptr) {
-                binding.plugin = hosted.plugin.get();
-                binding.livePlugin = [plugin = hosted.plugin]() { return plugin; };
-                binding.renderedDevice = [plugin = hosted.plugin]() {
-                    return daw::audio::tracktion_adapter::deviceHandleFromPlugin(plugin);
-                };
-
-                // It runs inside the grid, off the track's metering taps, so the
-                // grid meters each one as it processes it (#2211).
-                info.getMeterLevels = [getDrumGrid, chainIndex = hosted.chainIndex,
-                                       pluginIndex = hosted.pluginIndex]() {
-                    auto* drumGrid = getDrumGrid();
-                    return drumGrid != nullptr
-                               ? drumGrid->consumeChainPluginPeak(chainIndex, pluginIndex)
-                               : std::pair<float, float>{0.0f, 0.0f};
-                };
-            } else {
-                binding.renderedDevice =
-                    [path = binding.devicePath]() -> std::shared_ptr<daw::audio::MagdaDevice> {
-                    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
-                    return engine != nullptr ? engine->renderedDevice(path) : nullptr;
-                };
-                info.getMeterLevels = [path = binding.devicePath]() {
-                    magda::DeviceMeters::Levels levels;
-                    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
-                    if (engine != nullptr && engine->deviceMeters().devicePeak(path, levels))
-                        return std::pair<float, float>{levels.peakL, levels.peakR};
-                    return std::pair<float, float>{0.0f, 0.0f};
-                };
-            }
+            binding.renderedDevice =
+                [path = binding.devicePath]() -> std::shared_ptr<daw::audio::MagdaDevice> {
+                auto* engine = magda::TrackManager::getInstance().getAudioEngine();
+                return engine != nullptr ? engine->renderedDevice(path) : nullptr;
+            };
+            info.getMeterLevels = [path = binding.devicePath]() {
+                magda::DeviceMeters::Levels levels;
+                auto* engine = magda::TrackManager::getInstance().getAudioEngine();
+                if (engine != nullptr && engine->deviceMeters().devicePeak(path, levels))
+                    return std::pair<float, float>{levels.peakL, levels.peakR};
+                return std::pair<float, float>{0.0f, 0.0f};
+            };
 
             info.onPowerChanged = [postPadEdit, padChainId, deviceId = device->id](bool powered) {
                 postPadEdit(powered ? "Enable Pad Device" : "Disable Pad Device",
@@ -2047,7 +1846,6 @@ juce::var DeviceCustomUIManager::executeCustomUiCommand(const juce::Identifier& 
 
 void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Component* parent,
                                    const Callbacks& callbacks) {
-    livePluginProvider_ = callbacks.getLivePlugin;
     deviceUiContext_ = callbacks.deviceUiContext;
     if (deviceUiContext_ == nullptr) {
         magda::ChainNodePath initialPath;
@@ -2075,8 +1873,6 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
     } else if (createSamplerUI(device, *parent, uiCallbacks)) {
         // handled by helper
     } else if (createDrumGridUI(device, *parent, uiCallbacks)) {
-        // handled by helper
-    } else if (createFourOscUI(device, *parent, uiCallbacks)) {
         // handled by helper
     } else if (createCustomInstrumentUI(device, *parent, uiCallbacks)) {
         // handled by helper
@@ -2109,12 +1905,6 @@ void DeviceCustomUIManager::setDevicePath(const magda::ChainNodePath& path) {
     // create() bound the analyzer UIs while the path was still invalid; now that
     // it is set, resolve their plugin for real.
     refreshLivePluginBindings();
-
-    // 4OSC's modulation destination dropdown is built from the live TE plugin,
-    // and create() can run before the slot has a valid path. Repopulate it once
-    // the path is bound so LFO/Mod Env destination lists are not left empty.
-    if (fourOscUI_ && devicePath_.isValid())
-        readAndPushModMatrix(devicePath_.getDeviceId());
 
     // Same create-before-path situation for the Sidechain faceplate: its curve
     // editor binds to the live model through the path, so rebind now.
@@ -2220,7 +2010,6 @@ void DeviceCustomUIManager::detachFromLivePlugin() {
     if (struckUI_ != nullptr)
         struckUI_->setLivePlugin(nullptr);
 
-    livePluginProvider_ = {};
     devicePath_ = {};
     boundDevice_.reset();
     analyzerDevice_ = nullptr;
@@ -2403,8 +2192,7 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
                                      velAmount, sampleName, rootNote, voiceMode, glide);
     }
 
-    if (drumGridUI_ &&
-        device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName)) {
+    if (drumGridUI_ && device.pluginId.containsIgnoreCase("drumgrid")) {
         drumGridUI_->restoreDetailCollapsed(!device.padDetailOpen);
 
         for (int padIndex = 0; padIndex < magda::kPadCount; ++padIndex)
@@ -2412,14 +2200,6 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
                     device.pads ? magda::findPadChain(*device.pads.get(), padIndex) : nullptr);
 
         drumGridUI_->getPadChainPanel().showPadChain(drumGridUI_->getSelectedPad());
-    }
-
-    if (fourOscUI_ && device.pluginId.containsIgnoreCase("4osc")) {
-        fourOscUI_->updateFromParameters(device.parameters);
-
-        auto plugin = getLivePlugin();
-        if (auto state = magda::FourOscProcessor::capturePluginState(plugin.get()))
-            fourOscUI_->updatePluginState(*state);
     }
 
     if (polySynthUI_ && device.pluginId.equalsIgnoreCase("magda_polysynth")) {

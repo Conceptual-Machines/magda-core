@@ -9,7 +9,6 @@
 #include "DeviceSlotComponent.hpp"
 #include "NodeComponent.hpp"
 #include "RackComponent.hpp"
-#include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "core/DeviceInfo.hpp"

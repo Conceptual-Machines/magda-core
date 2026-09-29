@@ -120,7 +120,6 @@ void Config::save() {
     // Transport
     root->setProperty("openPluginWindowOnDrop", openPluginWindowOnDrop);
     root->setProperty("skipFourOscConversionPrompt", skipFourOscConversionPrompt);
-    root->setProperty("skipMagdaEnginePrompt", skipMagdaEnginePrompt);
     root->setProperty("transportShowBothFormats", transportShowBothFormats);
     root->setProperty("transportDefaultBarsBeats", transportDefaultBarsBeats);
 
@@ -224,7 +223,6 @@ void Config::save() {
     root->setProperty("preferredAudioDevice", toJuceString(preferredAudioDevice));
     root->setProperty("preferredInputDevice", toJuceString(preferredInputDevice));
     root->setProperty("preferredOutputDevice", toJuceString(preferredOutputDevice));
-    root->setProperty("audioEngine", toJuceString(audioEngine));
     root->setProperty("preferredInputChannels", preferredInputChannels);
     root->setProperty("preferredOutputChannels", preferredOutputChannels);
     if (audioIO)
@@ -539,7 +537,6 @@ void Config::load() {
     openPluginWindowOnDrop = getBool("openPluginWindowOnDrop", openPluginWindowOnDrop);
     skipFourOscConversionPrompt =
         getBool("skipFourOscConversionPrompt", skipFourOscConversionPrompt);
-    skipMagdaEnginePrompt = getBool("skipMagdaEnginePrompt", skipMagdaEnginePrompt);
     transportShowBothFormats = getBool("transportShowBothFormats", transportShowBothFormats);
     transportDefaultBarsBeats = getBool("transportDefaultBarsBeats", transportDefaultBarsBeats);
 
@@ -628,7 +625,6 @@ void Config::load() {
     preferredAudioDevice = getString("preferredAudioDevice", preferredAudioDevice);
     preferredInputDevice = getString("preferredInputDevice", preferredInputDevice);
     preferredOutputDevice = getString("preferredOutputDevice", preferredOutputDevice);
-    audioEngine = getString("audioEngine", audioEngine);
     preferredInputChannels = getInt("preferredInputChannels", preferredInputChannels);
     preferredOutputChannels = getInt("preferredOutputChannels", preferredOutputChannels);
     if (auto* audioIOObj = obj->getProperty("audioIO").getDynamicObject())

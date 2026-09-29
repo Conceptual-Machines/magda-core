@@ -1,43 +1,21 @@
-# Tracktion Engine wrapper and out-of-process plugin scanner.
+# Native audio engine and out-of-process plugin scanner.
 # magda_plugin_scanner uses plugin_scanner_main.cpp directly via the
 # parent CMakeLists; everything else is library code linked into magda_daw.
 
 target_sources(magda_daw PRIVATE
-    TempoLaneBridge.cpp
-    TempoLaneSync.cpp
-    TempoSequenceRippleCommand.cpp
-    OfflineRenderHelper.cpp
-    AudioEngineChoice.cpp
     AppServices.cpp
     DeviceParameterScan.cpp
-    TracktionEngineWrapper.cpp
-    TracktionEngineWrapperInit.cpp
-    TracktionEngineWrapperDevices.cpp
-    TracktionAudioIO.cpp
-    TracktionEngineWrapperTransport.cpp
-    TracktionEngineWrapperTracks.cpp
-    TracktionEngineWrapperClips.cpp
-    TracktionEngineWrapperRecording.cpp
-    TracktionEngineWrapperPlugins.cpp
-    TracktionFork.cpp
-    MagdaUIBehaviour.cpp
     PluginExclusions.cpp
     PluginMetadataStore.cpp
     PluginScanner.cpp
     PluginService.cpp
     PluginScanCoordinator.cpp
     ScanWorker.cpp
-    PluginWindowManager.cpp
     # Headers (listed for IDE visibility)
     AudioEngine.hpp
     PluginService.hpp
     DeviceParameterScan.hpp
-    AudioEngineChoice.hpp
     AppServices.hpp
-    OfflineRenderHelper.hpp
-    TracktionEngineWrapper.hpp
-    TracktionFork.hpp
-    MagdaUIBehaviour.hpp
 )
 
 target_sources(magda_daw_app PRIVATE
@@ -50,11 +28,6 @@ target_sources(magda_daw_app PRIVATE
 # one: it names both the engine's headers and the app's, and magda_daw sees
 # neither of the engine's. MagdaAudioEngine reaches it through one pimpl'd
 # header, which is all that crosses that line.
-if(MAGDA_BUILD_NATIVE_ENGINE)
-    # MagdaAudioEngine is only a choice while there is a second engine to
-    # choose. Without one it would be a class whose whole reason to exist was
-    # not built, so it is compiled on the same switch rather than left as a
-    # shell that forwards everything.
     target_sources(magda_daw PRIVATE MagdaAudioEngine.cpp MagdaAudioEngine.hpp)
 
     add_library(magda_engine_host STATIC
@@ -129,7 +102,6 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         target_compile_definitions(magda_engine_host PRIVATE
             $<TARGET_PROPERTY:${_juce_module},INTERFACE_COMPILE_DEFINITIONS>)
     endforeach()
-endif()
 
 # --- One construction site ----------------------------------------------------
 #
@@ -157,7 +129,7 @@ foreach(_caller_source ${MAGDA_ENGINE_CALLER_SOURCES})
     endif()
 
     file(STRINGS "${_caller_source}" _engine_construction
-        REGEX "(make_unique|make_shared)<[ \t]*(magda::)?(TracktionEngineWrapper|MagdaAudioEngine)")
+        REGEX "(make_unique|make_shared)<[ \t]*(magda::)?MagdaAudioEngine")
 
     if(_engine_construction)
         message(FATAL_ERROR

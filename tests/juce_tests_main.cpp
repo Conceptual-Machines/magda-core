@@ -7,7 +7,6 @@
 #include "AssertionWatch.hpp"
 #include "JuceTestStateGuard.hpp"
 #include "magda/daw/audio/FaustResources.hpp"
-#include "magda/daw/engine/AudioEngineChoice.hpp"
 
 /**
  * @brief Main entry point for JUCE unit tests
@@ -18,21 +17,6 @@
  */
 
 int main(int argc, char* argv[]) {
-    // This is the native-engine suite (#2556). Keep the environment override so
-    // every construction site, including one hidden behind an app service,
-    // makes the same choice. The null-diff corpus owns its explicit incumbent
-    // leg and remains intentionally unaffected until #2557 removes it.
-#if JUCE_WINDOWS
-    _putenv_s("MAGDA_AUDIO_ENGINE", "magda");
-#else
-    setenv("MAGDA_AUDIO_ENGINE", "magda", 1);
-#endif
-
-    if (magda::chosenAudioEngine() != magda::AudioEngineChoice::Magda) {
-        std::cerr << "magda_juce_tests requires the native engine\n";
-        return 2;
-    }
-
     // Before anything else, and before anything can have started a thread.
     //
     // This installs the process-wide logger that lets a test read the engine's
@@ -63,6 +47,11 @@ int main(int argc, char* argv[]) {
     int numFailures = 0;
     const auto tests = argc > 1 ? juce::UnitTest::getTestsWithName(argv[1])
                                 : juce::UnitTest::getTestsInCategory("magda");
+
+    if (tests.isEmpty()) {
+        std::cerr << "No JUCE tests matched: " << (argc > 1 ? argv[1] : "magda") << '\n';
+        return 1;
+    }
 
     // UnitTestRunner normally runs every suite in one loop. Running one suite
     // at a time lets us enforce the async teardown boundary between suites.
@@ -97,7 +86,10 @@ int main(int argc, char* argv[]) {
 
     std::cout << "========================================\n";
 
-    // Use std::_Exit() to avoid SIGSEGV during static destruction of TE/JUCE singletons.
+    if (auto* engine = magda::test::getSharedEngineIfInitialized())
+        engine->shutdown();
+
+    // Results are flushed before exiting; GUI singletons outlive the test run.
     // All test results have already been collected and printed above.
     std::cout.flush();
     int exitCode = numFailures > 0 ? 1 : 0;
