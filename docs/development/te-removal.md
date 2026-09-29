@@ -9,7 +9,7 @@ adapter, the engine preference and startup prompt, the compatibility-device arch
 the TE-only tests and the dual-engine parity benchmark. Live 4OSC editing is retired.
 
 What stayed: the v0-to-v1 project translator, 4OSC-to-Poly-Synth conversion,
-`SavedDeviceState` and legacy aliases. `TracktionAudioSettings` reads old audio
+`SavedDeviceState` and legacy aliases. `LegacyAudioSettings` reads old audio
 preferences with JUCE only. Groove assets keep their own provenance.
 
 Check for regressions:

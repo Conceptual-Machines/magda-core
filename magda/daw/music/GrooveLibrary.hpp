@@ -24,7 +24,7 @@ struct GrooveTemplateData {
  * @brief The named grooves, owned here rather than by whichever engine renders.
  *
  * The engine compiles the entries into an engine::GrooveTemplateSet at publish. The list
- * persists through GrooveStore, in the Settings.xml format earlier versions wrote (#2761).
+ * persists through GrooveStore, in MAGDA's own grooves.xml (#2761).
  */
 class GrooveLibrary {
   public:

@@ -1,7 +1,7 @@
 #pragma once
 
 /**
- * @file TracktionAudioSettings.hpp
+ * @file LegacyAudioSettings.hpp
  * @brief The audio interface an earlier version saved, read for AudioIOService's first run (#2746).
  */
 
@@ -19,9 +19,9 @@ namespace magda {
  * A channel is kept where both JUCE's stream mask and the wave-device mask (what
  * Audio Settings toggled) had it on. AudioIOService drops bits past the interface's channels.
  */
-std::optional<AudioIOSettings> readTracktionAudioSettings(const juce::File& settingsFile);
+std::optional<AudioIOSettings> readLegacyAudioSettings(const juce::File& settingsFile);
 
 /** @brief Tracktion's Settings.xml for MAGDA, where PropertyStorage keeps it. */
-juce::File tracktionSettingsFile();
+juce::File legacySettingsFile();
 
 }  // namespace magda

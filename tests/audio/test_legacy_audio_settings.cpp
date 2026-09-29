@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <numeric>
 
-#include "magda/daw/audio/io/TracktionAudioSettings.hpp"
+#include "magda/daw/audio/io/LegacyAudioSettings.hpp"
 #include "magda/daw/core/Config.hpp"
 
 /// @file Tracktion's saved audio interface, read for AudioIOService's first run (#2746).
@@ -14,7 +14,7 @@ std::optional<magda::AudioIOSettings> migrate(const juce::String& values) {
     REQUIRE(file.getFile().replaceWithText(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<PROPERTIES>\n" + values +
         "\n</PROPERTIES>\n"));
-    return magda::readTracktionAudioSettings(file.getFile());
+    return magda::readLegacyAudioSettings(file.getFile());
 }
 
 std::vector<int> firstChannels(int count) {
@@ -94,7 +94,7 @@ TEST_CASE("A backend with one interface for both directions names it for both",
 
 TEST_CASE("An interface Tracktion never opened migrates nothing", "[audio-io][2746]") {
     CHECK_FALSE(migrate(R"(<VALUE name="cpu" val="8"/>)").has_value());
-    CHECK_FALSE(magda::readTracktionAudioSettings(juce::File()).has_value());
+    CHECK_FALSE(magda::readLegacyAudioSettings(juce::File()).has_value());
 
     const auto noInput = migrate(R"(
       <VALUE name="audio_device_setup">

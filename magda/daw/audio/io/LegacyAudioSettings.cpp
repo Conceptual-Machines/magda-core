@@ -1,11 +1,11 @@
-#include "TracktionAudioSettings.hpp"
+#include "LegacyAudioSettings.hpp"
 
 namespace magda {
 
 namespace {
 
 /// The saved wave masks start all-on over this many channels, and MAGDA asked JUCE for as many.
-constexpr int kTracktionChannelRange = 256;
+constexpr int kLegacyChannelRange = 256;
 
 /** @brief The mask in @p attribute, or every channel the range covers when it was never saved. */
 juce::BigInteger maskOrAll(const juce::XmlElement* element, const juce::String& attribute) {
@@ -13,7 +13,7 @@ juce::BigInteger maskOrAll(const juce::XmlElement* element, const juce::String& 
     if (element != nullptr && element->hasAttribute(attribute))
         mask.parseString(element->getStringAttribute(attribute), 2);
     else
-        mask.setRange(0, kTracktionChannelRange, true);
+        mask.setRange(0, kLegacyChannelRange, true);
     return mask;
 }
 
@@ -35,7 +35,7 @@ std::vector<int> channelsOf(const juce::BigInteger& mask) {
 
 }  // namespace
 
-std::optional<AudioIOSettings> readTracktionAudioSettings(const juce::File& settingsFile) {
+std::optional<AudioIOSettings> readLegacyAudioSettings(const juce::File& settingsFile) {
     const auto properties = juce::parseXMLIfTagMatches(settingsFile, "PROPERTIES");
     if (properties == nullptr)
         return std::nullopt;
@@ -71,7 +71,7 @@ std::optional<AudioIOSettings> readTracktionAudioSettings(const juce::File& sett
                            .outputChannels = channelsOf(outputs)};
 }
 
-juce::File tracktionSettingsFile() {
+juce::File legacySettingsFile() {
     return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
         .getChildFile("MAGDA")
         .getChildFile("Settings.xml");

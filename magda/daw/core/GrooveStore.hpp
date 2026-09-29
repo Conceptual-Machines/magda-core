@@ -14,15 +14,15 @@
 namespace magda {
 
 /**
- * @brief The "GrooveTemplates" key of the legacy Settings.xml, kept in the format v0 wrote
- * so existing groove lists still load.
+ * @brief The groove list, kept in MAGDA's own file as a GROOVETEMPLATES element.
  *
- * Seeded with the shipped grooves when the file holds none, the
- * parameterized set when the list has no parameterized groove, then the two basic swings.
+ * With no file yet, the list is imported once from the "GrooveTemplates" key of the legacy
+ * Settings.xml and saved. A list that is empty is seeded with the shipped grooves, the
+ * parameterized set when it has no parameterized groove, then the two basic swings.
  */
 class GrooveStore {
   public:
-    explicit GrooveStore(juce::File settingsFile);
+    GrooveStore(juce::File grooveFile, const juce::File& legacySettingsFile = {});
 
     const std::vector<GrooveTemplateData>& grooves() const {
         return grooves_;
@@ -39,7 +39,7 @@ class GrooveStore {
   private:
     void save() const;
 
-    juce::File settingsFile_;
+    juce::File grooveFile_;
     std::vector<GrooveTemplateData> grooves_;
 };
 
