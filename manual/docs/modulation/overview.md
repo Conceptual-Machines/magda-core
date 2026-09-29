@@ -36,7 +36,7 @@ Each track's modulators and macros are managed from the modulation panel in the 
 
 ## Internal Device Modulation
 
-Some built-in devices have their own internal modulation routing that operates inside the device's audio processing. For example, the [4OSC Synth](../devices/4osc.md) has two LFOs and two modulation envelopes that can be routed to any of its parameters via an internal mod matrix.
+Some built-in devices have their own internal modulation routing that operates inside the device's audio processing.
 
 Internal modulation and track-level modulation are independent and can be used together.
 

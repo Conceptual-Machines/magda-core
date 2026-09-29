@@ -51,7 +51,7 @@ def is_include_used(content: str, include_path: str, include_line: str) -> bool:
         return True  # Assume local includes are used
 
     # Skip system/standard library includes
-    if not any(x in include_path for x in ['juce', 'tracktion', 'magda', '../']):
+    if not any(x in include_path for x in ['juce', 'magda', '../']):
         return True
 
     # Skip the include line itself

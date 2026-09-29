@@ -183,16 +183,13 @@ The chat shows a categorised summary of what changed, plus a one-line apply stat
 
 Built-in safeguards:
 
-- On 4OSC, a **master-level safety cap** estimates worst-case peak gain from the active oscillator count, distortion drive, and filter resonance, then clamps the master `level` to keep peaks in a sensible range. The AI's choices are only overridden when they would clip.
 - The result is a **starting point**, not a final preset. Tweak by ear before saving.
-
-For example prompts and recipes, see the [4OSC Synth — AI Sound Design](../devices/4osc.md#ai-sound-design-design) section.
 
 ## Per-Device AI Panel
 
 Sound-design generation is also available without leaving the device chain. Every device slot exposes an **AI** icon in its header — click it to open a docked panel attached to that device.
 
-![4OSC with the AI panel docked on its left, showing a prompt echo, the model's preset description, an apply status, and a yellow "starting point only" disclaimer.](../assets/images/panels/4osc-ai-panel.png)
+![A synth with the AI panel docked on its left, showing a prompt echo, the model's preset description, an apply status, and a yellow "starting point only" disclaimer.](../assets/images/panels/4osc-ai-panel.png)
 
 The panel has three rows:
 
@@ -208,13 +205,12 @@ This is the same engine as the chat-based `/design` command — same agent, same
 
 | Device | What the agent writes |
 |--------|-----------------------|
-| **[4OSC](../devices/4osc.md)** | Waves, filter type, voice mode, FX gates, ADSR, levels |
 | **MAGDA sound generators** — [Poly Synth](../devices/poly-synth.md), [FM0](../devices/fm0.md), [Physical Models](../devices/physical-models.md), [Mutable ports](../devices/mutable.md) | Any of the device's own parameters |
 | **[Step Sequencer](../devices/step-sequencer.md)** and **[Poly Sequencer](../devices/poly-sequencer.md)** | A pattern rather than a preset |
 | **[Faust](../devices/effects.md) devices** | DSP code — the prompt reads *describe an effect or instrument...* |
 | **Third-party plugins** | The parameters you nominate — see [below](#ai-sound-design-for-third-party-plugins) |
 
-Beyond 4OSC and the sequencers, which keep purpose-written agents, sound design works by **parameter introspection**: the agent reads the device's parameters at runtime — names, units, real-world ranges, and discrete choices — and asks the model for values in those real units (Hz, ms, dB, semitones) rather than in normalised 0–1 terms. That is why it generalises across devices without per-device tuning.
+Beyond the sequencers, which keep purpose-written agents, sound design works by **parameter introspection**: the agent reads the device's parameters at runtime — names, units, real-world ranges, and discrete choices — and asks the model for values in those real units (Hz, ms, dB, semitones) rather than in normalised 0–1 terms. That is why it generalises across devices without per-device tuning.
 
 The [Sampler](../devices/sampler.md), [Drum Grid](../devices/drum-grid.md), and effects devices have no sound-design agent.
 

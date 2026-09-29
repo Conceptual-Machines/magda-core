@@ -88,7 +88,6 @@ nav:
           - Drum Kit: devices/drum-kit.md
           - Physical Models: devices/physical-models.md
           - Mutable Ports: devices/mutable.md
-          - 4OSC Synth: devices/4osc.md
           - Drum Grid: devices/drum-grid.md
           - Sampler: devices/sampler.md
           - Faust Instrument: devices/faust-instrument.md

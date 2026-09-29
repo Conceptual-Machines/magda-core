@@ -1,11 +1,11 @@
 ---
 name: valuetree
-description: JUCE ValueTree and serialization patterns for Tracktion Engine plugins. Use when working with plugin state, CachedValue properties, ValueTree listeners, or state persistence/restoration.
+description: JUCE ValueTree patterns as used in MAGDA. Use when working with device state (MagdaDevice::flushState/restoreState, DeviceState), ValueTree listeners, or the few remaining CachedValue bindings.
 ---
 
 # JUCE ValueTree & Serialization Patterns
 
-ValueTree is the core data model in JUCE and Tracktion Engine. Every plugin, track, and edit stores its state as a ValueTree. This skill covers the patterns used throughout the MAGDA codebase.
+ValueTree is JUCE's tree-of-properties container. In MAGDA it is not the project model: the project model is plain C++ (TrackManager, ClipManager, DeviceInfo) with its own undo system. ValueTree appears at the device state boundary (`MagdaDevice::flushState`/`restoreState`, `magda/daw/core/DeviceState.*`) and in a handful of UI and agent helpers. Automatable parameters are not stored in it; `DeviceInfo::parameters` is their persisted authority.
 
 ## ValueTree Basics
 
@@ -15,7 +15,7 @@ ValueTree is the core data model in JUCE and Tracktion Engine. Every plugin, tra
 #include <juce_data_structures/juce_data_structures.h>
 
 // Create a tree with an Identifier type
-juce::ValueTree tree(juce::Identifier("MyPlugin"));
+juce::ValueTree tree(juce::Identifier("MyDevice"));
 
 // Set properties
 tree.setProperty("gain", 0.5f, nullptr);       // no undo
@@ -77,7 +77,7 @@ Always define Identifiers as static constants to avoid repeated string hashing:
 
 **Header (.h):**
 ```cpp
-class MyPlugin : public te::Plugin {
+class MyDevice : public MagdaDevice {
     static const juce::Identifier gainId;
     static const juce::Identifier chainId;
     static const juce::Identifier muteId;
@@ -86,138 +86,56 @@ class MyPlugin : public te::Plugin {
 
 **Source (.cpp):**
 ```cpp
-const juce::Identifier MyPlugin::gainId("gain");
-const juce::Identifier MyPlugin::chainId("CHAIN");
-const juce::Identifier MyPlugin::muteId("mute");
+const juce::Identifier MyDevice::gainId("gain");
+const juce::Identifier MyDevice::chainId("CHAIN");
+const juce::Identifier MyDevice::muteId("mute");
 ```
 
 ## CachedValue<T>
 
-`CachedValue<T>` binds a C++ variable to a ValueTree property. It caches the value locally so reads are thread-safe (no locking), making it suitable for audio-thread reads.
-
-### Binding to a Property
+`CachedValue<T>` binds a C++ variable to a ValueTree property and caches the value locally. Almost none remain in `magda/`. New device code does not use it: parameters are read through the engine's resolved parameter values, and non-parameter state goes through `flushState`/`restoreState`. Do not read a CachedValue from the audio thread; the cache is updated by a listener on whichever thread writes the tree.
 
 ```cpp
-class MyPlugin : public te::Plugin {
-    juce::CachedValue<float> level;
-    juce::CachedValue<float> pan;
-    juce::CachedValue<bool> mute;
-    juce::CachedValue<bool> solo;
+juce::CachedValue<float> level;
+level.referTo(tree, "level", nullptr, 1.0f);  // tree, property, undo manager, default
 
-    MyPlugin(te::PluginCreationInfo info) : te::Plugin(info) {
-        // referTo(tree, propertyId, undoManager, defaultValue)
-        level.referTo(state, "level", nullptr, 1.0f);
-        pan.referTo(state, "pan", nullptr, 0.0f);
-        mute.referTo(state, "mute", nullptr, false);
-        solo.referTo(state, "solo", nullptr, false);
-    }
-};
+float v = level.get();
+level = 0.75f;                                // writes the property, fires listeners
 ```
 
-### Reading and Writing
+After replacing the tree's properties wholesale, call `forceUpdateOfCachedValue()` so the cache re-reads.
+
+## Device State
+
+`MagdaDevice` (`magda/daw/audio/plugins/MagdaDevice.hpp`) exchanges non-parameter state as a plain ValueTree:
 
 ```cpp
-// Read — thread-safe, returns cached copy
-float currentLevel = level.get();
-
-// Can also use implicit conversion
-float val = level;
-
-// Write — updates the ValueTree property (triggers listeners)
-level = 0.75f;
-
-// Equivalent to:
-state.setProperty("level", 0.75f, nullptr);
+void flushState(juce::ValueTree& state) override;          // write into state
+void restoreState(const juce::ValueTree& state) override;  // read it back
 ```
 
-### Force Update After State Restore
-
-After `restorePluginStateFromValueTree()` copies new values into the `state` tree, the CachedValues may still hold stale data. You must call `forceUpdateOfCachedValue()`:
+`magda/daw/core/DeviceState.hpp` defines the persisted document (schema v2): a MAGDA-owned tree with the device's own property names, no engine ids. `toValueTree(node)` in the `device_state` namespace gives the tree `restoreState` takes. Automatable parameter values are excluded from it.
 
 ```cpp
-void restorePluginStateFromValueTree(const juce::ValueTree& v) override {
-    // This copies matching properties from v into this->state
-    te::copyPropertiesToCachedValues(state, v, nullptr);
-
-    // Force each CachedValue to re-read from the tree
-    level.forceUpdateOfCachedValue();
-    pan.forceUpdateOfCachedValue();
-    mute.forceUpdateOfCachedValue();
-    solo.forceUpdateOfCachedValue();
-}
-```
-
-## Serialization Pattern in Tracktion Engine Plugins
-
-### Plugin `state` Member
-
-Every `te::Plugin` has a `state` member which is a `juce::ValueTree`. This is the single source of truth for all plugin data.
-
-### Full Plugin Pattern
-
-```cpp
-// Header
-class MyPlugin : public te::Plugin {
-public:
-    MyPlugin(te::PluginCreationInfo);
-    ~MyPlugin() override;
-
-    static const char* xmlTypeName;
-
-    // te::Plugin overrides
-    void restorePluginStateFromValueTree(const juce::ValueTree&) override;
-    juce::String getName() const override { return "My Plugin"; }
-
-private:
-    static const juce::Identifier levelId;
-    static const juce::Identifier panId;
-    static const juce::Identifier chainTreeId;
-
-    juce::CachedValue<float> level;
-    juce::CachedValue<float> pan;
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MyPlugin)
-};
-
-// Source
-const juce::Identifier MyPlugin::levelId("level");
-const juce::Identifier MyPlugin::panId("pan");
-const juce::Identifier MyPlugin::chainTreeId("CHAIN");
-
-MyPlugin::MyPlugin(te::PluginCreationInfo info)
-    : te::Plugin(info)
-{
-    // Bind CachedValues to state
-    level.referTo(state, levelId, nullptr, 1.0f);
-    pan.referTo(state, panId, nullptr, 0.0f);
-
-    // Initialize child trees if not present
-    if (!state.getChildWithName(chainTreeId).isValid()) {
-        juce::ValueTree chainTree(chainTreeId);
-        chainTree.setProperty("index", 0, nullptr);
-        state.addChild(chainTree, -1, nullptr);
+void MyDevice::flushState(juce::ValueTree& state) {
+    state.setProperty(samplePathId, samplePath, nullptr);
+    for (auto& step : steps) {
+        juce::ValueTree t(stepId);
+        t.setProperty(indexId, step.index, nullptr);
+        state.addChild(t, -1, nullptr);
     }
 }
 
-MyPlugin::~MyPlugin() {
-    notifyListenersOfDeletion();
-}
-
-void MyPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
-    te::copyPropertiesToCachedValues(state, v, nullptr);
-
-    level.forceUpdateOfCachedValue();
-    pan.forceUpdateOfCachedValue();
-
-    // Restore child trees
-    for (int i = state.getNumChildren(); --i >= 0;)
-        state.removeChild(i, nullptr);
-
-    for (auto child : v) {
-        state.addChild(child.createCopy(), -1, nullptr);
-    }
+void MyDevice::restoreState(const juce::ValueTree& state) {
+    samplePath = state.getProperty(samplePathId, "").toString();
+    steps.clear();
+    for (auto t : state)
+        if (t.hasType(stepId))
+            steps.push_back({(int)t.getProperty(indexId, 0)});
 }
 ```
+
+`flushState`/`restoreState` run on the message thread. Rebuild what the audio thread reads off-thread and publish it atomically (see the audio-thread skill).
 
 ## ValueTree::Listener
 
@@ -242,8 +160,8 @@ private:
     void valueTreePropertyChanged(juce::ValueTree& tree,
                                   const juce::Identifier& property) override
     {
-        if (property == MyPlugin::levelId) {
-            // Update UI — but check what thread you're on!
+        if (property == MyDevice::levelId) {
+            // Update UI, but check what thread you're on!
             // If changed from audio thread, use AsyncUpdater
             triggerAsyncUpdate();
         }
@@ -268,32 +186,20 @@ private:
 
 ### Thread Safety Warning
 
-Listeners fire on the thread that made the change. If a property is set from the audio thread, the listener callback runs on the audio thread. Never do UI work directly in a listener that might be called from the audio thread. Use `juce::AsyncUpdater` or `juce::MessageManager::callAsync()` to bounce to the message thread.
+Listeners fire on the thread that made the change. Never do UI work directly in a listener that might be called from the audio thread. Use `juce::AsyncUpdater` or `juce::MessageManager::callAsync()` to bounce to the message thread.
 
-## UndoManager Integration
+## Undo
 
-```cpp
-// With undo support (UI-driven changes)
-state.setProperty("gain", newValue, &edit.getUndoManager());
-state.addChild(child, -1, &edit.getUndoManager());
-
-// Without undo (initialization, audio-thread, internal state)
-state.setProperty("gain", newValue, nullptr);
-state.addChild(child, -1, nullptr);
-
-// In TE plugins, get the undo manager via:
-auto* um = getUndoManager();
-state.setProperty("gain", newValue, um);
-```
+Pass `nullptr` as the ValueTree undo manager. Project undo is MAGDA's own `magda::UndoManager` (`magda/daw/core/UndoManager.hpp`): wrap the change in an `UndoableCommand` and run it with `UndoManager::getInstance().executeCommand(...)`, or group several with `CompoundOperationScope`. Do not mutate device state on the ValueTree with an undo manager and expect it to be undoable.
 
 ## Common Patterns in This Codebase
 
 ### Chain Properties
 
-Plugins with multiple chains (e.g., drum grid, multi-output) store per-chain state as child trees:
+Devices with multiple chains (e.g., drum grid, multi-output) write per-chain state as child trees in `flushState`:
 
 ```cpp
-// Setting up chain state
+// In flushState(state)
 for (int i = 0; i < numChains; ++i) {
     juce::ValueTree chainTree("CHAIN");
     chainTree.setProperty("index", i, nullptr);
@@ -304,7 +210,7 @@ for (int i = 0; i < numChains; ++i) {
     state.addChild(chainTree, -1, nullptr);
 }
 
-// Reading chain state
+// In restoreState(state)
 for (int i = 0; i < state.getNumChildren(); ++i) {
     auto child = state.getChild(i);
     if (child.hasType("CHAIN")) {
@@ -313,35 +219,6 @@ for (int i = 0; i < state.getNumChildren(); ++i) {
         bool chainMute = child.getProperty("mute", false);
     }
 }
-```
-
-### CachedValue Arrays for Chains
-
-When you need audio-thread-safe reads for multiple chains:
-
-```cpp
-struct ChainState {
-    juce::CachedValue<float> level;
-    juce::CachedValue<float> pan;
-    juce::CachedValue<bool> mute;
-    juce::CachedValue<bool> solo;
-
-    void referTo(juce::ValueTree& chainTree) {
-        level.referTo(chainTree, "level", nullptr, 1.0f);
-        pan.referTo(chainTree, "pan", nullptr, 0.0f);
-        mute.referTo(chainTree, "mute", nullptr, false);
-        solo.referTo(chainTree, "solo", nullptr, false);
-    }
-
-    void forceUpdate() {
-        level.forceUpdateOfCachedValue();
-        pan.forceUpdateOfCachedValue();
-        mute.forceUpdateOfCachedValue();
-        solo.forceUpdateOfCachedValue();
-    }
-};
-
-std::vector<ChainState> chainStates;
 ```
 
 ### Finding Child Trees by Type
@@ -371,9 +248,9 @@ std::vector<juce::ValueTree> getChains(const juce::ValueTree& parentState) {
 
 ## Common Pitfalls
 
-1. **Forgetting `forceUpdateOfCachedValue()`** after `restorePluginStateFromValueTree()` — CachedValues will hold stale data
-2. **Setting properties from the audio thread** — Triggers listeners on the audio thread; use CachedValue for reads, avoid writes from audio thread when possible
-3. **Not removing listeners in destructors** — Dangling listener = crash
-4. **Using string literals instead of Identifier constants** — Creates a new Identifier each time, wastes CPU on hashing
-5. **Passing `undoManager` during initialization** — Use `nullptr` for initial setup; only pass undoManager for user-driven changes
-6. **Forgetting `isValid()` checks** — `getChildWithName()` returns an invalid ValueTree if not found; always check before use
+1. **Stale CachedValues** after replacing properties wholesale: call `forceUpdateOfCachedValue()`
+2. **Touching a ValueTree from the audio thread**: listeners fire on the writing thread, and tree access is not real-time safe; publish plain data via atomics instead
+3. **Not removing listeners in destructors**: dangling listener = crash
+4. **String literals instead of Identifier constants**: a new Identifier is hashed on every use
+5. **Passing an undo manager to `setProperty`**: pass `nullptr`; undo goes through `magda::UndoManager`
+6. **Missing `isValid()` checks**: `getChildWithName()` returns an invalid ValueTree if not found

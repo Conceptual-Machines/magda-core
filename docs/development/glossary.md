@@ -187,9 +187,9 @@ This comprehensive glossary defines all terminology used throughout the MAGDA pr
 
 ## Engine Components
 
-### **Tracktion Engine Wrapper**
-- Wraps Tracktion Engine for DAW functionality
-- Handles audio processing and routing
+### **Native Engine**
+- The render plan, executors, clips and launcher in `magda/engine/`
+- Driven by `EngineHost` in `magda/daw/engine/host/`
 
 ### **Command System**
 - Handles user actions and undo/redo
@@ -249,7 +249,7 @@ This comprehensive glossary defines all terminology used throughout the MAGDA pr
 
 ### **Third Party**
 - External libraries and dependencies
-- Tracktion Engine, audio libraries
+- JUCE, audio libraries
 
 ---
 
@@ -310,7 +310,7 @@ This comprehensive glossary defines all terminology used throughout the MAGDA pr
 2. **"Arrangement"** → Use **"Sections"** (timeline blocks) vs **"Track Content"** (main area)
 3. **"Tracks"** → In Timeline Component = sections, in Track Content = actual audio/MIDI tracks
 4. **"Panel"** vs **"Component"** → Panel = larger UI section, Component = individual UI element
-5. **"Engine"** → Specify **"Audio Engine"** (processing) vs **"Tracktion Engine"** (framework)
+5. **"Engine"** → Specify **"Native Engine"** (`magda/engine/`, the renderer) vs **"AudioEngine"** (the app-facing interface in `magda/daw/engine/`)
 6. **"Interface"** → Specify **"UI Interface"** (visual) vs **"Code Interface"** (abstract class)
 
 ---

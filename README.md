@@ -76,8 +76,8 @@ See [Issues](https://github.com/Conceptual-Machines/magda-core/issues) for known
 ### Quick Start
 
 ```bash
-# Clone with submodules and LFS assets
-git clone --recursive https://github.com/Conceptual-Machines/magda-core.git
+# Clone, then make setup initialises the submodules
+git clone https://github.com/Conceptual-Machines/magda-core.git
 cd magda-core
 git lfs pull  # safety net if git-lfs wasn't installed at clone time
 
@@ -154,7 +154,7 @@ docs/           # Documentation
 
 ## Issues
 
-> **Heads up:** MAGDA is in early v0. Development started in January 2026 — internal iteration first, public release more recently — and is very much active. Expect bugs and missing pieces. The best way to help the project is to file an issue.
+> **Heads up:** MAGDA is under very active development, which started in January 2026 with internal iteration before a public release. Expect bugs and missing pieces. The best way to help the project is to file an issue.
 
 Found a bug or have a feature request? Please [open an issue](https://github.com/Conceptual-Machines/magda-core/issues/new) on GitHub.
 

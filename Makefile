@@ -90,7 +90,8 @@ setup:
 		exit 1; \
 	fi
 	@echo "📦 Initializing git submodules..."
-	@git submodule update --init --recursive
+	@git submodule update --init
+	@git -C third_party/faust submodule update --init libraries
 	@echo "✅ Project setup complete!"
 
 # Debug build

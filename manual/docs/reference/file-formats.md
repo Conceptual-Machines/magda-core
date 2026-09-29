@@ -2,7 +2,7 @@
 
 ## Project Files
 
-MAGDA saves projects in Tracktion Engine's Edit format (`.tracktionedit`), an XML-based format that stores:
+MAGDA saves projects as `.mgd` files, which store:
 
 - Track layout and settings
 - Clip references and positions
@@ -11,7 +11,7 @@ MAGDA saves projects in Tracktion Engine's Edit format (`.tracktionedit`), an XM
 
 ## DAWproject Interchange
 
-MAGDA can import and export the **DAWproject** format (`.dawproject`), an open interchange format for moving a project between different DAWs. Use **File → Import DAWproject...** to open one, or **File → Export DAWproject...** to write the current project out. It carries tracks, clips, and basic plugin/automation data — use it to hand a session to another DAW that supports the format, and use the native `.tracktionedit` for full-fidelity MAGDA projects.
+MAGDA can import and export the **DAWproject** format (`.dawproject`), an open interchange format for moving a project between different DAWs. Use **File → Import DAWproject...** to open one, or **File → Export DAWproject...** to write the current project out. It carries tracks, clips, and basic plugin/automation data — use it to hand a session to another DAW that supports the format, and use the native `.mgd` for full-fidelity MAGDA projects.
 
 The archive's `metadata.xml` carries the song's title and credits, and MAGDA maps the whole set both ways: Title, Artist, Album, Original artist, Composer, Songwriter, Producer, Arranger, Year, Genre, Copyright, Website and Comment. Edit them under **File → Project Settings**. A project with no title of its own exports its project name as the Title, which is what other DAWs look for.
 

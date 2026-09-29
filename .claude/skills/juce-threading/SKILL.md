@@ -12,9 +12,9 @@ This skill covers thread safety and component lifecycle patterns critical for av
 ### Three Thread Contexts
 
 ```
-MessageThread (UI)     — Component::paint, resized, mouse events, Timer callbacks, callAsync lambdas
-Audio Thread (RT)      — processBlock, no allocations, no locks, no MessageManager calls
-Background Threads     — juce::Thread, juce::ThreadPool, long-running tasks
+MessageThread (UI)    , Component::paint, resized, mouse events, Timer callbacks, callAsync lambdas
+Audio Thread (RT)     , processBlock, no allocations, no locks, no MessageManager calls
+Background Threads    , juce::Thread, juce::ThreadPool, long-running tasks
 ```
 
 ### Check Which Thread You're On
@@ -33,7 +33,7 @@ if (juce::MessageManager::getInstance()->isThisTheMessageThread())
 ```cpp
 // Audio thread → UI thread (fire-and-forget)
 juce::MessageManager::callAsync([this] {
-    // Runs on message thread. WARNING: `this` may be dead — see SafePointer below.
+    // Runs on message thread. WARNING: `this` may be dead, see SafePointer below.
     label.setText("Done", juce::dontSendNotification);
 });
 
@@ -76,7 +76,7 @@ void processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) over
     // NEVER do any of these on the audio thread:
     // - new / delete / malloc
     // - juce::String construction or concatenation
-    // - MessageManager::callAsync (allocates — use AsyncUpdater instead)
+    // - MessageManager::callAsync (allocates, use AsyncUpdater instead)
     // - Lock acquisition (mutex, CriticalSection)
     // - File I/O
     // - DBG() in release builds
@@ -103,7 +103,7 @@ struct ParentComp : juce::Component {
     }
 
     ChildComp child;  // Destroyed BEFORE ParentComp destructor body runs?
-                      // NO — members are destroyed AFTER destructor body.
+                      // NO, members are destroyed AFTER destructor body.
                       // So stopTimer() in destructor body is safe.
 };
 ```
@@ -113,18 +113,18 @@ struct ParentComp : juce::Component {
 ### SafePointer for Async Safety
 
 ```cpp
-// DANGEROUS — `this` may be deleted before lambda runs
+// DANGEROUS, `this` may be deleted before lambda runs
 juce::MessageManager::callAsync([this] {
     setText("done");  // CRASH if component was deleted
 });
 
-// SAFE — SafePointer becomes nullptr if component is deleted
+// SAFE, SafePointer becomes nullptr if component is deleted
 juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer<MyComp>(this)] {
     if (auto* self = safeThis.getComponent())
         self->setText("done");
 });
 
-// SAFE — shorter form
+// SAFE, shorter form
 auto safeThis = juce::Component::SafePointer<MyComp>(this);
 juce::MessageManager::callAsync([safeThis]() mutable {
     if (safeThis != nullptr)
@@ -139,11 +139,11 @@ struct MyComp : juce::Component, juce::Timer {
     MyComp() { startTimerHz(30); }
 
     ~MyComp() override {
-        stopTimer();  // MANDATORY — timer callback must not fire after destruction
+        stopTimer();  // MANDATORY, timer callback must not fire after destruction
     }
 
     void timerCallback() override {
-        // Safe to access members here — guaranteed on message thread,
+        // Safe to access members here, guaranteed on message thread,
         // and stopTimer() in destructor prevents post-destruction calls
         repaint();
     }
@@ -153,14 +153,14 @@ struct MyComp : juce::Component, juce::Timer {
 ### LookAndFeel Cleanup
 
 ```cpp
-// DANGEROUS — components reference L&F that's already destroyed
+// DANGEROUS, components reference L&F that's already destroyed
 struct MyApp {
     CustomLookAndFeel lnf;       // Destroyed SECOND (after mainWindow)
-    std::unique_ptr<MainWindow> mainWindow;  // Destroyed FIRST — but its children
+    std::unique_ptr<MainWindow> mainWindow;  // Destroyed FIRST, but its children
                                               // may still reference lnf during teardown
 };
 
-// SAFE — clear default L&F before destroying components
+// SAFE, clear default L&F before destroying components
 struct MyApp {
     ~MyApp() {
         juce::LookAndFeel::setDefaultLookAndFeel(nullptr);  // Clear global L&F
@@ -170,7 +170,7 @@ struct MyApp {
     std::unique_ptr<MainWindow> mainWindow;
 };
 
-// SAFE — per-component L&F cleanup
+// SAFE, per-component L&F cleanup
 struct MyComp : juce::Component {
     ~MyComp() override {
         setLookAndFeel(nullptr);  // Detach before L&F may be destroyed
@@ -207,7 +207,7 @@ public:
     ~MyComponent() override;
 
 private:
-    // Place at the END of the class — detects leaked instances on shutdown
+    // Place at the END of the class, detects leaked instances on shutdown
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MyComponent)
 };
 ```
@@ -285,7 +285,7 @@ struct Good : juce::Button::Listener {
 // BUG: deleting yourself inside a button callback
 void buttonClicked(juce::Button*) override {
     owner.removeChildComponent(this);
-    delete this;  // CRASH — stack still unwinding through JUCE event dispatch
+    delete this;  // CRASH, stack still unwinding through JUCE event dispatch
 }
 
 // FIX: defer deletion
@@ -302,7 +302,7 @@ void buttonClicked(juce::Button*) override {
 // BUG: called from processBlock
 void processBlock(...) {
     if (clipping)
-        component.repaint();  // WRONG — repaint() posts to message thread internally,
+        component.repaint();  // WRONG, repaint() posts to message thread internally,
                                // but is not safe from audio thread
 }
 
@@ -325,12 +325,12 @@ Always use RAII classes instead of manual acquire/release patterns. This prevent
 ### Smart Pointers Over Raw new/delete
 
 ```cpp
-// BAD — leak if exception or early return between new and delete
+// BAD, leak if exception or early return between new and delete
 auto* comp = new MyComponent();
 addAndMakeVisible(comp);
 // ... if something throws or returns, comp is leaked
 
-// GOOD — ownership is automatic
+// GOOD, ownership is automatic
 auto comp = std::make_unique<MyComponent>();
 addAndMakeVisible(comp.get());
 ownedComponents.push_back(std::move(comp));
@@ -339,13 +339,13 @@ ownedComponents.push_back(std::move(comp));
 ### Scoped Locks
 
 ```cpp
-// BAD — manual lock/unlock, easy to forget unlock on early return
+// BAD, manual lock/unlock, easy to forget unlock on early return
 mutex.lock();
 doWork();
 if (error) return;  // BUG: mutex not unlocked!
 mutex.unlock();
 
-// GOOD — RAII lock, always released on scope exit
+// GOOD, RAII lock, always released on scope exit
 {
     const juce::ScopedLock sl(mutex);
     doWork();
@@ -353,26 +353,13 @@ mutex.unlock();
 }
 ```
 
-### Tracktion Engine RAII Helpers
+### Batching Undo
 
 ```cpp
-// Prevent expensive playback graph rebuilds during batch operations
+// Group several changes into one undo step
 {
-    te::TransportControl::ReallocationInhibitor inhibitor(transport);
-    // ... make many changes to tracks/plugins ...
-}  // Single graph rebuild happens here
-
-// Restore playback state after temporary stop
-{
-    te::TransportControl::ScopedPlaybackRestarter restarter(transport);
-    transport.stop(false, false);
-    // ... do work that requires transport stopped ...
-}  // Playback automatically resumes
-
-// Group undo operations
-{
-    te::Edit::UndoTransactionInhibitor inhibitor(*edit);
-    // ... multiple operations won't be grouped into one undo step ...
+    magda::CompoundOperationScope scope("Move tracks");
+    // ... multiple commands run through UndoManager::executeCommand ...
 }
 ```
 

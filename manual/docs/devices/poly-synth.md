@@ -2,8 +2,6 @@
 
 Poly Synth is a 16-voice subtractive synthesizer built into MAGDA. Four detunable oscillators feed a multimode state-variable filter with its own envelope, followed by an amplitude ADSR. It plays in poly, mono, or legato modes.
 
-Poly Synth is a separate device from the [4OSC Synth](4osc.md). 4OSC is the Tracktion Engine synth; Poly Synth is a native MAGDA instrument compiled from Faust.
-
 ## Oscillators
 
 Four oscillators, each with the same four controls. Oscillators 2 to 4 default to silent (level -60 dB), so a fresh patch sounds from Osc 1 alone until you bring the others up.

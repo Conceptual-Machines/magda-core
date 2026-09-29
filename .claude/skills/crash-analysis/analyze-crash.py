@@ -89,7 +89,7 @@ def run_parse(dump_path, pdb_path=None):
 # ── Claude analysis ───────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """\
-You are an expert C++/JUCE crash analyst for MAGDA, a DAW built on JUCE and Tracktion Engine.
+You are an expert C++/JUCE crash analyst for MAGDA, a DAW built on JUCE and its own native engine.
 When given a Windows minidump analysis, your job is to:
 1. Identify the most likely root cause (null pointer, dangling reference, use-after-free, etc.)
 2. Pinpoint the specific function or subsystem responsible

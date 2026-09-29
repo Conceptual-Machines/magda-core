@@ -935,7 +935,7 @@ jobs:
           # in its own narrow range. So diff the whole branch, every push.
           # --no-recurse-submodules throughout: the checkout configures submodule
           # recursion, so a plain fetch here went off to fetch faust's and
-          # tracktion's, some of which fail on refs their remotes no longer
+          # other nested submodules, some of which fail on refs their remotes no longer
           # serve, and took the step down with them before clang-tidy ever ran.
           #
           # HEAD first, and in its own fetch. checkout leaves it a shallow root,

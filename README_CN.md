@@ -62,8 +62,8 @@ Windows下载 `choco install git-lfs`   ,
 ### Quick Start快速上手
 
 ```bash
-# Clone with submodules and LFS assets
-git clone --recursive https://github.com/Conceptual-Machines/magda-core.git
+# Clone, then make setup initialises the submodules
+git clone https://github.com/Conceptual-Machines/magda-core.git
 cd magda-core
 git lfs pull  # safety net if git-lfs wasn't installed at clone time
 
@@ -141,7 +141,7 @@ docs/           # Documentation
 
 ## Issues
 
-> **提醒:**  MAGDA还在早期v0的开发阶段。始发于2026年1月，先是进行了内部迭代，最近才公开发布。因为开发者们非常活跃，并且我们能预料到肯定会有bug和丢失的部分，所以帮助我们的最好方法就是提交您的问题
+> **提醒:**  MAGDA仍在积极开发中。始发于2026年1月，先是进行了内部迭代，最近才公开发布。因为开发者们非常活跃，并且我们能预料到肯定会有bug和丢失的部分，所以帮助我们的最好方法就是提交您的问题
 
 发现了一个bug或者有一个特性请求? 请在Github上 [open an issue](https://github.com/Conceptual-Machines/magda-core/issues/new)
 
