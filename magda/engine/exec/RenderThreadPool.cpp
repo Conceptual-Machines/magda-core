@@ -22,8 +22,8 @@ namespace magda::engine {
 
 namespace {
 
-/// Tracktion's setThreadPriority(thread, 10) for the calling thread.
-void setTracktionWorkerPriority() {
+/// Raises the calling thread to render-worker priority.
+void setRenderWorkerPriority() {
 #if JUCE_WINDOWS
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 #else
@@ -46,7 +46,7 @@ class RenderThreadPool::Worker final : public juce::Thread {
         const juce::ScopedNoDenormals noDenormals;
 
         if (realtime_)
-            setTracktionWorkerPriority();
+            setRenderWorkerPriority();
 
         // On this thread for as long as it runs: a token has to die on the thread it joined.
         juce::WorkgroupToken token;

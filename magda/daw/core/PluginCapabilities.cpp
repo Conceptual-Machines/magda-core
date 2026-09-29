@@ -55,10 +55,6 @@ PluginCapabilitySnapshot snapshotFromVar(const juce::var& value) {
     snapshot.processorAcceptsMidi = readBool(*obj, "processorAcceptsMidi");
     snapshot.processorProducesMidi = readBool(*obj, "processorProducesMidi");
     snapshot.processorIsMidiEffect = readBool(*obj, "processorIsMidiEffect");
-    snapshot.tracktionTakesMidiInput = readBool(*obj, "tracktionTakesMidiInput");
-    snapshot.tracktionTakesAudioInput = readBool(*obj, "tracktionTakesAudioInput");
-    snapshot.tracktionProducesAudioWhenNoAudioInput =
-        readBool(*obj, "tracktionProducesAudioWhenNoAudioInput");
     return snapshot;
 }
 
@@ -79,10 +75,6 @@ juce::var snapshotToVar(const PluginCapabilitySnapshot& snapshot) {
     setBool(*obj, "processorAcceptsMidi", snapshot.processorAcceptsMidi);
     setBool(*obj, "processorProducesMidi", snapshot.processorProducesMidi);
     setBool(*obj, "processorIsMidiEffect", snapshot.processorIsMidiEffect);
-    setBool(*obj, "tracktionTakesMidiInput", snapshot.tracktionTakesMidiInput);
-    setBool(*obj, "tracktionTakesAudioInput", snapshot.tracktionTakesAudioInput);
-    setBool(*obj, "tracktionProducesAudioWhenNoAudioInput",
-            snapshot.tracktionProducesAudioWhenNoAudioInput);
     return {obj};
 }
 
@@ -122,10 +114,7 @@ bool snapshotsEqual(const PluginCapabilitySnapshot& a, const PluginCapabilitySna
            a.outputBusCount == b.outputBusCount &&
            a.processorAcceptsMidi == b.processorAcceptsMidi &&
            a.processorProducesMidi == b.processorProducesMidi &&
-           a.processorIsMidiEffect == b.processorIsMidiEffect &&
-           a.tracktionTakesMidiInput == b.tracktionTakesMidiInput &&
-           a.tracktionTakesAudioInput == b.tracktionTakesAudioInput &&
-           a.tracktionProducesAudioWhenNoAudioInput == b.tracktionProducesAudioWhenNoAudioInput;
+           a.processorIsMidiEffect == b.processorIsMidiEffect;
 }
 
 }  // namespace

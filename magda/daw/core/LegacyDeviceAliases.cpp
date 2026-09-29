@@ -127,6 +127,19 @@ float reverbMix(float wet, float dry) {
     return juce::jlimit(0.0f, 1.0f, wetGain / total);
 }
 
+float faderPositionToDb(float position, float) {
+    // v0 stored the fader position; unity is 0.7408. Same curve as engine/exec/PlanValues.cpp.
+    constexpr float kVolScaleFactor = 20.0f;
+    constexpr float kMaxFaderDb = 6.0f;
+    if (position <= 0.0f)
+        return -60.0f;
+    return juce::jlimit(-60.0f, 12.0f, kVolScaleFactor * std::log(position) + kMaxFaderDb);
+}
+
+float panPassthrough(float pan, float) {
+    return juce::jlimit(-1.0f, 1.0f, pan);
+}
+
 float pitchSemitones(float semitones, float) {
     return juce::jlimit(-24.0f, 24.0f, semitones);
 }
@@ -365,6 +378,21 @@ constexpr RetiredProperty kReverbProperties[] = {
 };
 // Dropped: freeze (5) — the compiled reverb has no infinite-hold mode.
 
+// --- Volume/Pan ("volume") -> magda_utility ---------------------------------
+// Fader position and -1..1 pan land in the utility's dB gain and pan slots.
+constexpr const char* kUtilityTypes[] = {"volume"};
+constexpr const char* kUtilityNames[] = {"Volume/Pan", "Legacy Volume/Pan"};
+constexpr SlotMapping kUtilitySlots[] = {
+    mapped(0, "Gain", 0, faderPositionToDb),
+    mapped(1, "Pan", 1, panPassthrough),
+};
+
+constexpr RetiredProperty kUtilityProperties[] = {
+    {0, "volume"},
+    {1, "pan"},
+};
+// Dropped: polarity (2), the Utility has no polarity control.
+
 // --- Pitch Shift ("pitchShifter") -> magda_pitch ----------------------------
 constexpr const char* kPitchTypes[] = {"pitchShifter", "pitchshift"};
 constexpr const char* kPitchNames[] = {"Pitch Shift"};
@@ -435,6 +463,7 @@ constexpr RetiredDevice kRetiredDevices[] = {
     {"magda_reverb", "Reverb", kReverbTypes, kReverbNames, kReverbSlots, kReverbProperties},
     {"magda_pitch", "Pitch", kPitchTypes, kPitchNames, kPitchSlots, kPitchProperties},
     {"magda_filter", "Filter", kFilterTypes, kFilterNames, kFilterSlots, kFilterProperties},
+    {"magda_utility", "Utility", kUtilityTypes, kUtilityNames, kUtilitySlots, kUtilityProperties},
     {"magda_convolution", "IR Reverb", kConvolutionTypes, kConvolutionNames, kConvolutionSlots,
      kConvolutionProperties, kConvolutionCarried, true},
 };
