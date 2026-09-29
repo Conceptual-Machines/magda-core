@@ -362,7 +362,7 @@ StretchSetup stretchSetupFor(const AudioClipPlayback& clip, const AudioEventPlay
     StretchSetup setup;
     setup.mode = event.timeStretchMode;
 
-    // What the incumbent reads, and the two are not added: a clip following the
+    // The two are not added: a clip following the
     // pitch track transposes by its own offset, and one that is not plays the
     // pitch change its editor set. Auto pitch's other half, the offset from the
     // project's pitch sequence, needs a pitch track the engine does not have

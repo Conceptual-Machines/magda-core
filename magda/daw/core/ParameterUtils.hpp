@@ -127,7 +127,7 @@ ParameterNormalizedValue modelToNormalizedValue(ParameterModelValue model,
  * @brief The real/display-unit value a model value represents.
  *
  * Identity (up to the scale curve round trip) for parameters whose model
- * already carries the scaled value; projects TE-native external values through
+ * already carries the scaled value; projects plugin-native external values through
  * the display range. This is the conversion any surface that promises real
  * units must apply before showing `DeviceInfo::currentValue`.
  */
@@ -141,11 +141,11 @@ ParameterModelValue realToModelValue(float real, const ParameterInfo& info);
 
 /**
  * @brief Convert a DeviceInfo/model value to the raw value stored by the
- *        owning Tracktion AutomatableParameter.
+ *        owning plugin parameter.
  *
- * The model convention and TE storage range are independent. A real model
- * value passes through when TE uses that same real range; otherwise its
- * normalized position is projected into the TE range.
+ * The model convention and plugin storage range are independent. A real model
+ * value passes through when the plugin uses that same real range; otherwise its
+ * normalized position is projected into the plugin range.
  */
 float modelToTeValue(ParameterModelValue model, const ParameterInfo& info);
 

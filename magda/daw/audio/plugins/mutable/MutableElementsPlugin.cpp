@@ -367,10 +367,8 @@ void MutableElementsPlugin::process(DeviceProcessContext& context) {
     }
     renderTo(context.numSamples);
 
-    // Add rather than replace (#2370): on the TE leg the buffer may already
-    // carry an audio clip's signal that must not be clobbered. The native
-    // engine clears an instrument's channels before running it, so add is a
-    // no-op difference there.
+    // Add rather than replace (#2370): the buffer may already carry another
+    // signal that must not be clobbered.
     const float gain = juce::Decibels::decibelsToGain(v[kLevel]);
     buffer.addFrom(0, start, scratch_, 0, 0, context.numSamples, gain);
     if (destR != nullptr)

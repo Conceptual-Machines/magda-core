@@ -677,7 +677,7 @@ void ProjectSerializer::commitStaged(StagedProjectData& data) {
                 tm.ensurePostFxDeviceIdAbove(element.device.id);
             for (const auto& element : masterTrack->chain.mixerAnalysisElements)
                 tm.ensureMixerAnalysisDeviceIdAbove(element.device.id);
-            // Notify listeners so audio bridge creates TE plugins for master devices
+            // Notify listeners so audio bridge creates plugins for master devices
             tm.notifyTrackDevicesChanged(MASTER_TRACK_ID);
         }
     }
@@ -1093,10 +1093,10 @@ void ProjectSerializer::commitStagedData(std::vector<TrackInfo>& stagedTracks,
 
         // Restore tracks in their own batch that closes BEFORE clips are
         // restored. Closing the track batch fires notifyTracksChanged() ->
-        // AudioBridge::syncAll(), which is what actually creates the TE
-        // AudioTracks (they are built lazily during plugin sync, not by
-        // restoreTrack). Clips must sync into existing TE tracks: ClipSynchronizer
-        // bails with "no TE track" if the track isn't there yet, silently dropping
+        // AudioBridge::syncAll(), which is what actually creates the engine
+        // tracks (they are built lazily during plugin sync, not by
+        // restoreTrack). Clips must sync into existing tracks: ClipSynchronizer
+        // bails with "no track" if the track isn't there yet, silently dropping
         // the clip's MIDI/audio. Restoring clips first (the previous behaviour)
         // left arrangement clips out of the engine on load -> instruments silent.
         {
@@ -1109,9 +1109,9 @@ void ProjectSerializer::commitStagedData(std::vector<TrackInfo>& stagedTracks,
             // After all tracks are restored, ensure TrackManager ID counters
             // (track/device/rack/chain) are updated to avoid ID collisions.
             trackManager.refreshIdCountersFromTracks();
-        }  // trackBatch closes here: TE AudioTracks now exist.
+        }  // trackBatch closes here: engine tracks now exist.
 
-        // Restore clips (synced into the now-existing TE tracks when clipBatch
+        // Restore clips (synced into the now-existing tracks when clipBatch
         // closes at the end of this scope).
         for (auto& clip : stagedClips) {
             clipManager.restoreClip(clip);

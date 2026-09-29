@@ -102,7 +102,7 @@ class EngineHost {
     /**
      * @brief Where external plugins are found and what can open them (#2566).
      *
-     * Both are the fork's, which owns the scan; the engine has no catalog of
+     * Both are the app's, which owns the scan; the engine has no catalog of
      * its own for a plugin that is a file on a machine rather than a class this
      * build contains. Before @ref start, or the first publish goes without
      * them.
@@ -123,13 +123,13 @@ class EngineHost {
     /// playing clip keeps the one it was compiled with until this asks again.
     void refreshGrooves();
 
-    /// Supply the Tracktion wave-device names behind persisted output routes.
+    /// Supply the wave-device names behind persisted output routes.
     void setHardwareOutputProvider(HardwareChannelProvider provider);
 
     /// Re-read output enablement and names after the device catalog changes.
     void refreshHardwareOutputs();
 
-    /// Supply the Tracktion wave-device names behind persisted input routes (#2553).
+    /// Supply the wave-device names behind persisted input routes (#2553).
     void setHardwareInputProvider(HardwareChannelProvider provider);
 
     /// Re-read input enablement and names after the device catalog changes.

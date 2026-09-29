@@ -186,7 +186,7 @@ double barBeatsOf(int numerator, int denominator);
 double modBarsElapsed(const BlockInfo& block, const ModTiming& timing);
 
 /**
- * @brief How much of a bar one rate type is (ModifierCommon::getBarFraction parity table).
+ * @brief How much of a bar one rate type is.
  *
  * Fractions of a bar, not of a whole note.
  */
@@ -195,8 +195,7 @@ double barFractionOf(int rateType);
 /**
  * @brief How many beats one cycle of a tempo-synced LFO lasts.
  *
- * Matches the TE modifiers' corrected bar arithmetic rather than the
- * reverse (#2128).
+ * Bar arithmetic is corrected per #2128.
  */
 double cycleBeats(int rateType, int numerator, int denominator);
 

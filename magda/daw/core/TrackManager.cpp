@@ -124,8 +124,7 @@ juce::String formatClipIds(const std::vector<ClipId>& clipIds) {
 }
 
 // v2 device state is captured already stripped of engine ids and modifier
-// assignments (see TracktionDeviceStateBridge.hpp), so only legacy engine XML
-// needs cleaning here.
+// assignments, so only legacy engine XML needs cleaning here.
 juce::String stripDuplicateRuntimePluginState(const juce::String& pluginState) {
     if (pluginState.isEmpty() || !device_state::looksLikeLegacyEngineState(pluginState))
         return pluginState;
@@ -362,9 +361,9 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
     DBG("Created track: " << track.name << " (id=" << trackId << ", type=" << getTrackTypeName(type)
                           << ")");
 
-    // Register for MIDI input monitoring (no-op for input-less tracks). TE-level
-    // routing is left to AudioBridge::updateMidiInputRouting() based on
-    // selection / record-arm.
+    // Register for MIDI input monitoring (no-op for input-less tracks). Routing is
+    // left to AudioBridge::updateMidiInputRouting() based on selection /
+    // record-arm.
     startMidiMonitoring(track, "all");
 
     // The chord track ships with a Chord Engine (the authoring/suggestion UI
@@ -868,7 +867,7 @@ void TrackManager::deactivateAllMultiOutPairs(TrackId parentTrackId, DeviceId de
 }
 
 void TrackManager::startMidiMonitoring(const TrackInfo& track, const juce::String& deviceId) {
-    // Input-less tracks (Aux, Group) never receive MIDI. TE-level routing is
+    // Input-less tracks (Aux, Group) never receive MIDI. Routing is
     // owned by AudioBridge::updateMidiInputRouting(); this only wires the
     // MidiBridge activity monitor.
     if (!audioEngine_ || !track.takesExternalInput())
@@ -1600,7 +1599,7 @@ void TrackManager::setAudioEngine(AudioEngine* audioEngine) {
         plugins.useStateProvider(*provider);
 
     // Sync existing tracks' MIDI routing (in case tracks were created before engine was set)
-    // Only set up MidiBridge monitoring; TE-level MIDI routing is handled by
+    // Only set up MidiBridge monitoring; MIDI routing is handled by
     // AudioBridge::updateMidiInputRouting() based on selection/arm state.
     if (audioEngine_) {
         for (const auto& track : tracks_) {
@@ -1724,7 +1723,7 @@ void TrackManager::setTrackMidiOutput(TrackId trackId, const juce::String& devic
     // Update track state
     track->midiOutputDevice = deviceId;
 
-    // Notify listeners (AudioBridge forwards to TrackController for TE routing)
+    // Notify listeners (AudioBridge forwards to TrackController for routing)
     notifyTrackPropertyChanged(trackId);
 }
 
@@ -1920,7 +1919,6 @@ void TrackManager::addSend(TrackId sourceTrackId, TrackId destTrackId) {
         return;
     }
 
-    // Tracktion Engine supports a limited number of aux buses
     if (static_cast<int>(source->sends.size()) >= MAX_SENDS_PER_TRACK) {
         DBG("addSend failed: maximum number of sends (" << MAX_SENDS_PER_TRACK << ") reached");
         return;

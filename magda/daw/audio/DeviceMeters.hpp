@@ -18,10 +18,8 @@ namespace magda {
  * @brief The level each device slot and each rack last reported.
  *
  * The same split TrackMeters is on the track side of: one measurement, held
- * where the chain UI can read it without knowing which engine made it. The
- * fork's per-device levels come out of DeviceMeteringManager and the native
- * engine's off the LevelTap behind each slot's Meter op, and neither is
- * reachable from the other engine's build of the app.
+ * where the chain UI can read it. Per-device levels come off the LevelTap
+ * behind each slot's Meter op.
  *
  * Message thread on both sides: an engine's metering timer writes and the
  * chain UI's timers read, both at frame rate. Nothing here is safe from the

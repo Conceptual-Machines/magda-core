@@ -12,7 +12,7 @@ namespace magda {
  *        for the playback bake (issue #1087).
  *
  * Unrolls each clip's loop iterations onto the timeline and inserts hold
- * points so the baked TE curve reproduces the model semantics exactly:
+ * points so the baked curve reproduces the model semantics exactly:
  * gaps hold the nearest clip edge, loop wraps jump, truncated final
  * iterations cut off at the clip end, and overlaps follow the lane's
  * clipIds-order precedence (a front-priority clip's points win inside its

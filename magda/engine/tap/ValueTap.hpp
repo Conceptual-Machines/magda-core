@@ -49,11 +49,8 @@
  * A tap holds while the engine is not rendering, and holding is the right
  * answer: an LFO nothing is advancing is not turning, and an editor that
  * animated one anyway would be drawing a second LFO that agrees with the audible
- * one by accident and diverges from it under every retrigger. That second LFO is
- * what the incumbent engine needs, because there the value is polled off the
- * engine at frame rate and a poll between two audio callbacks has nothing to
- * report. Here the value is published by the block that produced it, so the
- * simulation has nothing left to do and does not survive the port.
+ * one by accident and diverges from it under every retrigger. The value is
+ * published by the block that produced it, so no such simulation is needed.
  *
  * @ref Reading::writes is what distinguishes a value that is holding from a
  * value that is not moving. It counts blocks published rather than changes, so

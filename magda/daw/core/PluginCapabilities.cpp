@@ -272,7 +272,7 @@ void applyCachedCapabilitiesToDevice(DeviceInfo& device, const juce::String& plu
     //
     // canReceiveMidi promotes only. A project's saved true can be true for
     // reasons one scan of the installed plugin cannot see -- a MIDI-typed
-    // device, a plugin whose MIDI input the incumbent engine takes even though
+    // device, a plugin whose MIDI input the engine takes even though
     // its AudioProcessor does not advertise it -- and PlanCompiler gates MIDI
     // delivery on it, so assigning a scan's false over the model is a device
     // that silently stops receiving MIDI.

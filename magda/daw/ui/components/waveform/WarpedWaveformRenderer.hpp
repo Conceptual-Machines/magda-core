@@ -23,10 +23,9 @@ namespace magda::daw::ui {
  * source clamping, and loop tiling once; callers supply only their own
  * warp-time -> pixel-x transform.
  *
- * Domain: marker sourceTime/warpTime are in source-file seconds (TE's warp
- * markers; identity-mapped on creation, warpTime diverges as the user drags).
- * warpToPixelX must be affine (it always is: an offset + linear scale), which is
- * what makes loop tiling a constant warp-time shift per cycle.
+ * Domain: marker sourceTime/warpTime are in source-file seconds (identity-mapped on creation,
+ * warpTime diverges as the user drags). warpToPixelX must be affine (it always is: an offset +
+ * linear scale), which is what makes loop tiling a constant warp-time shift per cycle.
  */
 struct WarpedWaveformSpec {
     juce::Rectangle<int> clipArea;               // pixel rect to draw within and clip to

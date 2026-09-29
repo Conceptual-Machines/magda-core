@@ -604,7 +604,7 @@ std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device
         dto.minValue = info.minValue;
         dto.maxValue = info.maxValue;
         // currentValue/defaultValue are model values: for an external plugin
-        // whose saved config gave it a display range, they stay in TE's native
+        // whose saved config gave it a display range, they stay in the plugin's native
         // domain while min/max describe real units. Project through the
         // normalized domain so the wire always carries display units.
         const auto normalized = ParameterUtils::modelToNormalizedValue({info.currentValue}, info);

@@ -216,8 +216,7 @@ void remapPresetLinks(MacroArray& macros, ModArray& mods, const PresetIdRemap& r
 }
 
 // v2 device state is captured already stripped of engine ids and modifier
-// assignments (see TracktionDeviceStateBridge.hpp), so only legacy engine XML
-// needs cleaning here.
+// assignments, so only legacy engine XML needs cleaning here.
 juce::String stripPresetRuntimePluginState(const juce::String& pluginState) {
     if (pluginState.isEmpty() || !device_state::looksLikeLegacyEngineState(pluginState))
         return pluginState;
@@ -2079,7 +2078,7 @@ bool TrackManager::updateDeviceAuthoredState(const ChainNodePath& devicePath,
     // record, and encode() writes whatever is in `params`. The record was
     // consumed by the load-time hydration; writing it back here would leave a
     // second persisted authority alive in every path that never passes through
-    // a Tracktion capture (preset saves, native-only sessions), free to
+    // a capture (preset saves, native-only sessions), free to
     // hydrate stale values on the next load. This edit is the moment the
     // document goes canonical.
     doc.params.clear();
@@ -2177,8 +2176,8 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
     // Notify listeners — devicePropertyChanged covers gain/macros/mods refresh
     // via the AudioBridge sync path, then push each parameter individually so
     // the UI's ParamGrid pickup matches what the preset captured. Address each by
-    // its real `paramIndex` (the TE automatable index), NOT the vector ordinal —
-    // ParameterInfo is not 1:1 with the TE parameter list (wrapper dry/wet live in
+    // its real `paramIndex` (the automatable index), NOT the vector ordinal -
+    // ParameterInfo is not 1:1 with the plugin parameter list (wrapper dry/wet live in
     // wrapperParameters), and both the engine write (setParameterByIndex) and the
     // UI lookup (findParameterByIndex) interpret the notified index as paramIndex.
     notifyDevicePropertyChanged(devicePath);

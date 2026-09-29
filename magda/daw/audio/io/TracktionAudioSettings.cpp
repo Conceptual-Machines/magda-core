@@ -4,10 +4,10 @@ namespace magda {
 
 namespace {
 
-/// Tracktion's wave masks start all-on over this many channels, and MAGDA asked JUCE for as many.
+/// The saved wave masks start all-on over this many channels, and MAGDA asked JUCE for as many.
 constexpr int kTracktionChannelRange = 256;
 
-/** @brief The mask in @p attribute, or every channel Tracktion covers when it was never saved. */
+/** @brief The mask in @p attribute, or every channel the range covers when it was never saved. */
 juce::BigInteger maskOrAll(const juce::XmlElement* element, const juce::String& attribute) {
     juce::BigInteger mask;
     if (element != nullptr && element->hasAttribute(attribute))

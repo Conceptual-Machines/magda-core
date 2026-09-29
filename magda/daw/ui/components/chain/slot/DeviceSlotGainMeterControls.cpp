@@ -58,7 +58,7 @@ void setupDeviceSlotGainMeterControls(
     parent.addAndMakeVisible(*gainSlider);
 
     // Mix knob sits at the top of the meter strip. Drives an equal-power
-    // crossfade between TE's DryGain/WetGain wrapper params. Hidden when the
+    // crossfade between the DryGain/WetGain wrapper params. Hidden when the
     // device has no such pair (native MAGDA / Faust devices).
     mixKnob = std::make_unique<juce::Slider>(juce::Slider::RotaryHorizontalVerticalDrag,
                                              juce::Slider::NoTextBox);

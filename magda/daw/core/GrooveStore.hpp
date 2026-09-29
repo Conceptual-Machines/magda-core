@@ -2,7 +2,7 @@
 
 /**
  * @file GrooveStore.hpp
- * @brief The groove library's persistence with no Tracktion engine behind it (#2761).
+ * @brief The groove library's persistence (#2761).
  */
 
 #include <juce_core/juce_core.h>
@@ -14,10 +14,10 @@
 namespace magda {
 
 /**
- * @brief The "GrooveTemplates" key of Tracktion's Settings.xml, kept as its
- * GrooveTemplateManager keeps it, so either engine reads the list the other wrote.
+ * @brief The "GrooveTemplates" key of the legacy Settings.xml, kept in the format v0 wrote
+ * so existing groove lists still load.
  *
- * Seeded as Tracktion seeds it: the shipped grooves when the file holds none, the
+ * Seeded with the shipped grooves when the file holds none, the
  * parameterized set when the list has no parameterized groove, then the two basic swings.
  */
 class GrooveStore {
@@ -31,7 +31,7 @@ class GrooveStore {
     /**
      * @brief Replace the groove named @p groove, or add it, and save the list.
      *
-     * Canonicalised as Tracktion's updateTemplate does: the name trimmed, cut to 32
+     * Canonicalised: the name trimmed, cut to 32
      * characters and given a " (N)" suffix past a clash, and the groove parameterized.
      */
     bool upsert(const GrooveTemplateData& groove);

@@ -194,7 +194,7 @@ struct ProjectInfo {
     // Render / bounce settings (per-project)
     /// The engine that last wrote this project, by its setting word
     /// (AudioEngineChoice.hpp). Empty in every project saved before the field
-    /// existed, which is a Tracktion project by definition (#2437).
+    /// existed, which is a v0 project by definition (#2437).
     juce::String savedWithEngine;
 
     int renderBitDepth = 24;  // 16, 24, 32

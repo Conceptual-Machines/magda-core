@@ -41,8 +41,6 @@ class ControllerParamReader {
 // DefaultControllerParamReader
 // ============================================================================
 
-class AudioBridge;
-
 /**
  * @brief The reader that inverts `DefaultControllerParamWriter`, branch for
  *        branch.
@@ -51,10 +49,9 @@ class AudioBridge;
  * the point:
  *
  *  - Track and master volume and pan and send levels come from `TrackInfo`,
- *    because that is what the writer wrote to. Going to the
- *    `te::AutomatableParameter` instead would mean converting through TE's
- *    fader-position curve, which is a different domain from the linear gain
- *    `TrackManager` holds, and the round trip would not close.
+ *    because that is what the writer wrote to. The engine
+ *    parameter holds a fader-position curve, a different domain from the linear
+ *    gain `TrackManager` holds, so the round trip would not close.
  *  - Macros are normalized on both sides, so `MacroInfo::value` is the answer
  *    already.
  *  - A plugin parameter uses the same model/live catalog description as the
@@ -75,8 +72,6 @@ class AudioBridge;
 class DefaultControllerParamReader : public ControllerParamReader {
   public:
     DefaultControllerParamReader() = default;
-    // Source compatibility for callers that still have an incumbent bridge.
-    explicit DefaultControllerParamReader(AudioBridge&) {}
 
     std::optional<float> read(const ResolveResult& resolved) override;
 

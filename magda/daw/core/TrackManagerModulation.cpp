@@ -278,7 +278,7 @@ void TrackManager::setMacroLinkAmount(const ChainNodePath& path, int macroIndex,
     }
     // ModParam links don't change device topology — keep the lighter
     // notification so an open mod editor isn't torn down. Newly-created
-    // DeviceParam links need TE modifier assignment, which trackDevices
+    // DeviceParam links need a modifier assignment, which trackDevices
     // covers.
     if (created && target.kind != ControlTarget::Kind::ModParam) {
         notifyTrackDevicesChanged(path.trackId);
@@ -314,7 +314,7 @@ void TrackManager::removeMacroLink(const ChainNodePath& path, int macroIndex,
         return;
     (*node.macros)[macroIndex].removeLink(target);
     // Lighter notify across all scopes — modifier sync alone is sufficient to
-    // drop the TE assignment, no full device-topology rebuild needed.
+    // drop the assignment, no full device-topology rebuild needed.
     notifyDeviceModifiersChanged(path.trackId);
 }
 
@@ -359,7 +359,7 @@ void TrackManager::addMod(const ChainNodePath& path, int slotIndex, ModType type
 
     // Through setType, so the new modifier takes the tap point its kind wants.
     // Assigning the type on its own leaves a fresh follower listening in front
-    // of the source's chain, where the fork's follower never listens.
+    // of the source's chain instead of post-fader.
     newMod.setType(type);
     newMod.waveform = waveform;
     // An envelope defaults to note-triggered: free-running would just cycle
@@ -819,7 +819,7 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
     }
 
     // Lambda to update a single mod's phase and value.
-    // Returns true if 'running' state changed (needs TE assignment sync).
+    // Returns true if 'running' state changed (needs assignment sync).
     // scopeMacros / scopeMods are the SAME-scope macros / mods that may
     // target this mod's rate via a ModParam-kind link — used to compute the
     // effective rate so the UI animation matches what the audio LFO does.
@@ -844,7 +844,7 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
             // `running` so applyADSRProperties can open/close the gate (note-on
             // opens it, all-notes-off starts the release). Free mode keeps the
             // gate open so the engine free-cycles A-D-R. The value/stage shown
-            // in the UI are overlaid from the live TE modifier, not simulated
+            // in the UI are overlaid from the live modifier, not simulated
             // here, so there is no phase advance.
             if (mod.triggerMode == LFOTriggerMode::Free) {
                 mod.running = true;
@@ -906,9 +906,8 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
 
                 // Apply incoming ModParam-kind modulation from same-scope
                 // macros / mods so the UI animation matches what the audio
-                // LFO actually does. TE drives the audio side via its own
-                // modifier graph; here we mirror it on MAGDA's parallel
-                // visual sim by summing each link's offset * amount and
+                // LFO actually does. The visual sim mirrors it
+                // by summing each link's offset * amount and
                 // applying it as a multiplicative shift on the rate (the
                 // rate slider is logarithmic 0.05..20 Hz, so a normalized
                 // unit covers ~8.6 octaves — multiplying by 20/0.05 to the
@@ -975,10 +974,9 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
         }
 
         if (mod.type == ModType::Random) {
-            // The TE RandomModifier only advances while the playback graph is
+            // The audio Random modifier only advances while the playback graph is
             // processing, so its value freezes when the transport is stopped.
-            // Simulate it here for the editor preview, mirroring
-            // te::RandomModifier::setPhase: a phase ramp at `rate`, a fresh
+            // Simulate it here for the editor preview: a phase ramp at `rate`, a fresh
             // random target each time the phase wraps, and a shape-driven
             // hold->ramp between targets. The live audio value is overlaid on
             // top (syncLFOValuesToVisuals) when the graph is running.
@@ -1040,9 +1038,6 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
         return mod.running != wasRunning;
     };
 
-    // Audio sidechain triggering of TE LFOs is now handled on the audio thread
-    // by AudioSidechainMonitorPlugin — no message-thread retrigger needed.
-
     // Recursive lambda to update mods in chain elements
     // Returns true if any mod's running state changed
     std::function<bool(ChainElement&, bool, bool, float, TrackId)> updateElementMods =
@@ -1102,7 +1097,7 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
         return changed;
     };
 
-    // Update mods in all tracks, collect those needing TE assignment sync.
+    // Update mods in all tracks, collect those needing assignment sync.
     // The master is not in tracks_, but its device mods can be driven by a
     // regular source track, so it needs the same message-thread mirror.
     std::vector<TrackId> tracksNeedingSync;
@@ -1133,7 +1128,7 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
         updateTrackMods(track, true);
     updateTrackMods(masterTrack_, false);
 
-    // Notify TE to sync assignment values for tracks where running state changed
+    // Notify to sync assignment values for tracks where running state changed
     for (auto trackId : tracksNeedingSync) {
         notifyDeviceModifiersChanged(trackId);
     }

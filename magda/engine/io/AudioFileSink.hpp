@@ -28,8 +28,7 @@
  * What the sink is handed is what the file holds. The range, the tail and the
  * plan's latency are all settled before anything reaches here
  * (exec/OfflineRender), so there is no pre-roll in the file and no second pass
- * to cut one off -- the incumbent's export writes the file, reads it back and
- * rewrites it shorter, and none of that survives.
+ * to cut one off.
  */
 
 namespace magda::engine {

@@ -15,7 +15,7 @@ namespace magda {
  * Replaces the three legacy addressing schemes (`MacroTarget`, `ModTarget`,
  * `AutomationTarget`, `StaticTarget`) with a single value type. Every consumer
  * — macro/mod links, automation lanes, MIDI bindings, alias resolvers —
- * speaks `ControlTarget`. Resolution to a writable `te::AutomatableParameter*`
+ * speaks `ControlTarget`. Resolution to a writable parameter
  * happens once via `TargetResolver::resolveToParam`.
  *
  * Kind selects which secondary fields are meaningful:

@@ -23,17 +23,12 @@ struct GrooveTemplateData {
 /**
  * @brief The named grooves, owned here rather than by whichever engine renders.
  *
- * Both engines read this: the fork compiles each into a tracktion::GrooveTemplate, and the
- * native engine compiles the same entries into an engine::GrooveTemplateSet at publish.
- * Neither is asked for the list, which is what let a groove exist under one engine and not
- * the other (#2757).
- *
- * The list persists in Tracktion's Settings.xml, through the fork's manager under that
- * engine and through GrooveStore under the native one, in the same format (#2761).
+ * The engine compiles the entries into an engine::GrooveTemplateSet at publish. The list
+ * persists through GrooveStore, in the Settings.xml format earlier versions wrote (#2761).
  */
 class GrooveLibrary {
   public:
-    /// What persists a write: the fork's manager, or GrooveStore.
+    /// What persists a write, normally GrooveStore.
     using Writer = std::function<bool(const GrooveTemplateData&)>;
 
     /// The store's own list, which is what a write is read back through.
@@ -50,9 +45,9 @@ class GrooveLibrary {
     /**
      * @brief Put @p reader and @p writer behind the library, and take the store's list.
      *
-     * The store canonicalises what it is given -- Tracktion trims and truncates a name,
-     * deduplicates it with a "(2)" suffix, and forces the parameterized flag to its own
-     * mode -- so every write is read back rather than assumed (#2757).
+     * The store canonicalises what it is given (trims and truncates a name, deduplicates it
+     * with a "(2)" suffix, forces the parameterized flag), so every write is read back
+     * rather than assumed (#2757).
      */
     void setStore(Reader reader, Writer writer);
 

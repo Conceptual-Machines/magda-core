@@ -30,9 +30,8 @@ float nextUnitFloat(std::uint64_t& seed) {
     return static_cast<float>(nextBits(seed) >> 40) / static_cast<float>(1 << 24);
 }
 
-/// The fork's S-curve (AudioFadeCurve::SCurve), which is what the smoothing
-/// control bends the phase towards. Transcribed rather than approximated: it is
-/// audible on a ramped step and the two engines have to bend it alike.
+/// The S-curve the smoothing control bends the phase towards. Audible on a
+/// ramped step, so it is exact rather than approximated.
 float sCurve(float alpha) {
     const auto quarterTurn = alpha * 0.5f * std::numbers::pi_v<float>;
     return ((1.0f - alpha) * (1.0f - std::cos(quarterTurn))) + (alpha * std::sin(quarterTurn));
@@ -53,9 +52,8 @@ float wrapPhase(float phase) {
  * wrapped would jump the full range from a control that says how far it may
  * move.
  *
- * The half-range is half the control, which is the fork's arithmetic for a
- * unipolar modulator: its own bipolar parameter is off, because MAGDA keeps
- * polarity per link.
+ * The half-range is half the control: the modulator is unipolar, because MAGDA
+ * keeps polarity per link.
  */
 void takeStep(RandomState& state, float stepDepth) {
     state.previous = state.current;
@@ -109,8 +107,8 @@ float advanceRandom(RandomState& state, const RandomSettings& settings, const Bl
 
     // Smoothing bends the phase, not the output, so it eases the ends of a
     // ramped step and leaves a held one alone: there is nothing to ease when
-    // the value does not travel. The fork applies it here, before the wrap is
-    // looked for, and the two have to agree about where a step boundary is.
+    // the value does not travel. It is applied before the wrap is looked for,
+    // so the wrap is where the smoothed phase says a step boundary is.
     const float smooth = std::clamp(settings.smooth, 0.0f, 1.0f);
     const float phase = wrapPhase(((1.0f - smooth) * raw) + (smooth * sCurve(raw)));
 
@@ -140,8 +138,7 @@ float advanceRandom(RandomState& state, const RandomSettings& settings, const Bl
     state.value = std::clamp(value, 0.0f, 1.0f);
 
     // Moved on after this block's value has been settled, which is the LFO's
-    // order and the fork's: the value a block renders with is the value at its
-    // first sample.
+    // order: the value a block renders with is the value at its first sample.
     if (settings.sync != ModSync::Transport) {
         if (settings.tempoSync) {
             // The bars the block covered over the bars a step lasts, off the

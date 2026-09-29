@@ -64,9 +64,7 @@ struct ScannedPluginParameter {
  * @brief What plugins exist and the seam to the instances currently rendering. Message thread.
  *
  * A scan is not an engine question, and neither is the project operation of capturing a
- * hosted plugin's state, so neither lives on AudioEngine (#2756, #2758). Tracktion's Engine
- * still owns the KnownPluginList its own hosting reads, so until the fork goes (#2557) the
- * service is pointed at that pair rather than owning one.
+ * hosted plugin's state, so neither lives on AudioEngine (#2756, #2758).
  */
 class PluginService {
   public:
@@ -153,12 +151,12 @@ class PluginService {
      * @brief Every parameter @p pluginId declares, for the parameter-config dialog.
      *
      * A MAGDA device answers off the catalog, an external plugin is opened straight from
-     * the format manager, and a plugin that is neither is the fork's to answer (#2601).
+     * the format manager (#2601).
      */
     std::vector<ScannedPluginParameter> scanParameters(const juce::String& pluginId,
                                                        bool internalPlugin);
 
-    /// Tracktion's own internal plugins need an Edit to be built in, which only the fork has.
+    /// Internal plugins are scanned through a callback the host supplies.
     void setInternalParameterScanner(
         std::function<std::vector<ScannedPluginParameter>(const juce::String&)> scanner) {
         internalScanner_ = std::move(scanner);

@@ -50,7 +50,7 @@ void MiniChainRow::setDevice(const ChainNodePath& devicePath, AudioEngine* engin
 
     // "Open native editor" icon. Only genuine external plugins (VST3/AU/VST)
     // have a native editor window worth popping; every MAGDA-internal device
-    // (TE built-ins, the magda_* Faust effects, native instruments, analysis)
+    // (the magda_* Faust effects, native instruments, analysis)
     // reports PluginFormat::Internal and edits inline, so it gets no icon.
     const auto* devInfo = devicePath_.isValid()
                               ? TrackManager::getInstance().getDeviceInChainByPath(devicePath_)
@@ -283,8 +283,7 @@ void MiniChainRow::updateTimerState() {
 
 void MiniChainRow::timerCallback() {
     // Ask the engine that owns the rendered instance, including when its own
-    // window close button was used. A Tracktion window-manager callback cannot
-    // report this for the native engine (#2668).
+    // window close button was used (#2668).
     if (isShowing() && uiButton_ != nullptr && uiButton_->isVisible() && engine_ != nullptr)
         setPluginEditorOpen(engine_->isDeviceEditorOpen(devicePath_));
 

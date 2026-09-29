@@ -31,7 +31,7 @@ void applyDeviceSlotAutomationValueChange(magda::DeviceInfo& device, ParamHostCo
                                           DeviceCustomUIManager& customUI,
                                           magda::AutomationLaneId laneId, double normalizedValue) {
     // Curve-driven update: the lane has pushed a new value (drag preview,
-    // stopped rebake, or TE playback). Only react to DeviceParameter lanes
+    // stopped rebake, or playback). Only react to DeviceParameter lanes
     // that target this device; lane registration is global.
     const auto* lane = magda::AutomationManager::getInstance().getLane(laneId);
     if (!lane)

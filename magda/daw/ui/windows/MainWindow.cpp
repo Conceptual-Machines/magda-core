@@ -939,7 +939,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     };
 
     // Time selections and clip placement are authoritative in beats. Keep the
-    // bounce range in beats until ClipCommands converts it for Tracktion's
+    // bounce range in beats until ClipCommands converts it for the
     // seconds-based renderer.
     auto getBounceRange = [this]() -> BounceRange {
         BounceRange timeSelection;
@@ -1194,7 +1194,7 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
 
     // Route Lua-script transport calls through the same TimelineController
     // dispatch the on-screen buttons use, so script play() honours MAGDA's
-    // playhead (issue: script play resumed from Tracktion's stop position
+    // playhead (issue: script play resumed from the engine's stop position
     // instead of editPosition because it bypassed the TimelineController
     // -> locate -> play sequence).
     if (auto* live = dynamic_cast<magda::MagdaApiLive*>(&engine->getMagdaApi())) {

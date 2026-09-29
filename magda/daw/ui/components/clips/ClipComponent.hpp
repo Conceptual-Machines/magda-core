@@ -243,7 +243,7 @@ class ClipComponent : public juce::Component,
     static constexpr int FADE_HANDLE_HIT_WIDTH = interaction::ClipMetrics::FADE_HANDLE_HIT_WIDTH;
 
     // Effective fades for display/interaction (#1499): a crossfaded edge shows
-    // the overlap-derived fade (what TE actually plays) instead of the stored
+    // the overlap-derived fade (what actually plays) instead of the stored
     // fadeIn/fadeOut, which return once the clips are pulled apart. The same
     // call the engine syncs from, so the curve on screen is the one played.
     using EffectiveFades = ClipManager::EffectiveFades;

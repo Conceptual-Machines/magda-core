@@ -98,8 +98,7 @@ double projectBpm() {
     return DEFAULT_BPM;
 }
 
-// The default instrument for a transcription's new track: the compiled Poly Synth,
-// which renders on both engines.
+// The default instrument for a transcription's new track: the compiled Poly Synth.
 magda::DeviceInfo makePolySynthDevice() {
     magda::DeviceInfo d;
     d.name = "Poly Synth";

@@ -42,9 +42,8 @@ void EditPadsCommand::execute() {
     if (!edit_)
         return;
 
-    // Under the Tracktion renderer this flushes pad-plugin patches into the grid
-    // before the snapshot. Native pad snapshots do not yet have an equivalent
-    // child-instance capture path; that limitation predates the service move.
+    // Native pad snapshots do not yet have a child-instance capture path, so
+    // this captures the grid plugin only.
     PluginService::getInstance().capturePluginStateAt(gridPath_);
     padsBefore_ = snapshotPads(gridPath_);
 

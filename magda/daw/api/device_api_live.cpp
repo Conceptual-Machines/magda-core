@@ -60,9 +60,8 @@ SidechainCapabilities sidechainCapabilities(const DeviceInfo& device) {
         result.tapPoints = {ModTapPoint::PreFx, ModTapPoint::PostFader};
         result.gain = true;
         result.listen = true;
-        // Both engines currently adapt the source width to the declared port.
-        // Advertise that one supported mapping instead of accepting a mapping
-        // one backend would silently ignore.
+        // The engine adapts the source width to the declared port, so that is the
+        // one mapping advertised.
         result.channelMappings = {"automatic"};
     }
     return result;
@@ -603,7 +602,7 @@ std::vector<DeviceParameter> DeviceApiLive::getDeviceParameters(
     std::vector<DeviceParameter> parameters;
     parameters.reserve(device->parameters.size());
     for (const auto& info : device->parameters) {
-        // The model stores TE-native values for externals with a display-range
+        // The model stores native values for externals with a display-range
         // override; this surface promises real units, so project.
         parameters.push_back({info.paramIndex, info.stableId, info.name, info.unit, info.minValue,
                               info.maxValue,
@@ -1166,7 +1165,7 @@ bool DeviceApiLive::setDeviceParameter(const ChainNodePath& devicePath, int para
         !std::ranges::contains(device->aiSoundDesignerParameters, match->paramIndex))
         return false;
 
-    // The caller speaks display units; the model may store TE-native values
+    // The caller speaks display units; the model may store native values
     // (external plugin with a config display range), so convert before writing.
     TrackManager::getInstance().setDeviceParameterValue(
         devicePath, *match, ParameterUtils::realToModelValue(value, *match));

@@ -60,7 +60,7 @@ namespace magda::osc {
 /// anyone asks whether that track exists.
 inline constexpr int kMaxTrackNumber = 128;
 
-/// Matches `TrackManager::MAX_SENDS_PER_TRACK`, the Tracktion Engine aux limit.
+/// Matches `TrackManager::MAX_SENDS_PER_TRACK`, the aux send limit.
 inline constexpr int kMaxSendNumber = 8;
 
 /// Matches `NUM_MACROS`, the macro count on a device's macro array.

@@ -199,8 +199,8 @@ int LiveMidiSources::resolveRoute(const juce::String& midiInputDevice) {
     if (const auto* found = std::ranges::find_if(available, byIdentifier); found != available.end())
         return sourceFor(found->identifier);
 
-    // What the fork's selectors store for a hardware input: TE's own ID,
-    // derived from the JUCE identifier (tracktion_PhysicalMidiInputDevice.cpp:294).
+    // Saved v0 projects store a hardware input as "midiin_" plus the hex hash of
+    // the JUCE identifier.
     const auto byForkId = [&](const juce::MidiDeviceInfo& device) {
         return "midiin_" + juce::String::toHexString(device.identifier.hashCode()) ==
                midiInputDevice;

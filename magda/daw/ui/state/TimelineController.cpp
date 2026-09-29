@@ -314,7 +314,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartPlayb
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const StartRecordEvent& /*e*/) {
     // If punch-armed but not yet actually recording, cancel the armed state
-    // (isRecording is true for UI purposes but TE hasn't started recording yet)
+    // (isRecording is true for UI purposes but the engine hasn't started recording yet)
     if (punchArmed_) {
         DBG("StartRecordEvent: cancelling punch-armed state");
         punchArmed_ = false;
@@ -336,7 +336,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartRecor
     }
 
     // Session recording does not require armed tracks — proceed regardless.
-    // (Track arming is only needed for MIDI/audio input recording via TE.)
+    // (Track arming is only needed for MIDI/audio input recording.)
 
     // Check if punch-in is enabled with a valid region
     bool punchInActive = state.punch.punchInEnabled && state.punch.isValid();
@@ -866,13 +866,12 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
                                                       state.loop.endBeats);
     }
 
-    // IMPORTANT: Notify audio engine FIRST so TE's tempo sequence is updated
-    // before we sync clips (clips will read BPM from TE's tempo sequence)
+    // Notify the audio engine first so its tempo is current before clips sync.
     for (auto* listener : audioEngineListeners) {
         listener->onTempoChanged(newBpm);
     }
 
-    // Notify audio engine of updated loop region (TE transport needs new time positions)
+    // Notify audio engine of updated loop region (the transport needs new time positions)
     if (state.loop.isValid() && state.loop.enabled) {
         for (auto* listener : audioEngineListeners) {
             listener->onLoopRegionChanged(state.loop.startTime, state.loop.endTime, true);
@@ -891,7 +890,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetTempoEv
     // view: a session clip skipped here kept stale seconds (#1157).
     if (std::abs(newBpm - oldBpm) > 0.01) {
         auto& clipManager = ClipManager::getInstance();
-        // Notify so AudioBridge re-syncs TE positions and the UI re-reads.
+        // Notify so AudioBridge re-syncs clip positions and the UI re-reads.
         for (const auto& clip : clipManager.getClips())
             clipManager.forceNotifyClipPropertyChanged(clip.id);
     }

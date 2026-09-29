@@ -274,8 +274,7 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
         const auto& pass = passes[static_cast<std::size_t>(index)];
 
         // Notes hanging over the start of the loop region are struck again at
-        // it, which is the fork's unrolling read the other way round: its copy
-        // of the sequence clips such a note to the pass and keeps what is left.
+        // it.
         if (pass.startsPass)
             chaseClip(out, block, clip, pass, pass.timelineOfContentZero + pass.windowStart);
 
@@ -324,9 +323,7 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
                     // already ended everything the pass started, and MidiBuffer
                     // orders by sample, so emitting this would put the off
                     // before the on and leave a note sounding that nothing here
-                    // knows about. The fork drops the same event by clipping its
-                    // re-timed sequence to the pass (clipSequenceToRange); the
-                    // reason is the invariant rather than the mechanism.
+                    // knows about.
                     if (timelineBeat >= passEndBeat)
                         continue;
 
@@ -625,8 +622,7 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
 
     // A swap that moved or deleted what was sounding. Everything the new
     // snapshot agrees should be sounding here is left alone; the rest is
-    // ended. The fork's shouldSendNoteOffsForNotesNoLongerPlaying, and it
-    // costs one pointer comparison on every block that is not a swap.
+    // ended. Costs one pointer comparison on every block that is not a swap.
     //
     // Agreement is about the owner as well as the pitch. A bare
     // (channel, note) mask would call it settled when one clip is deleted

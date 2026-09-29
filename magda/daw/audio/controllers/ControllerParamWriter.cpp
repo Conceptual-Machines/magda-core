@@ -43,11 +43,10 @@ void DefaultControllerParamWriter::write(const ResolveResult& resolved, float va
 }
 
 // Track / master volume and pan. Deliberately routed through TrackManager
-// rather than the te::AutomatableParameter: the setters keep MAGDA's TrackInfo
+// rather than the engine parameter: the setters keep MAGDA's TrackInfo
 // cache in sync and notify the inspector, mixer and headers, and
 // setTrackVolume forwards MASTER_TRACK_ID to setMasterVolume, so
-// @master.volume lands on the edit's master volume plugin without special
-// casing here.
+// @master.volume needs no special casing here.
 void DefaultControllerParamWriter::writeTrackLevel(const ControlTarget& target, float clamped) {
     const auto trackId = target.devicePath.trackId;
     if (trackId == INVALID_TRACK_ID)
@@ -123,8 +122,8 @@ void DefaultControllerParamWriter::writeModParam(const ControlTarget& target, fl
     // build an AutomationTarget for the rate, take its perceptual ParameterInfo
     // (logarithmic Hz or discrete sync division depending on the modifier's
     // tempoSync flag), map normalized → real through ParameterUtils, and write
-    // via TrackManager so MAGDA state, the slider UI, and the live TE param
-    // all stay in sync. A linear interp on TE's raw Hz range crammed every
+    // via TrackManager so MAGDA state, the slider UI, and the live param
+    // all stay in sync. A linear interp on the raw Hz range crammed every
     // audible rate change into the bottom 5% of the slider.
     ParameterInfo info = getParameterInfoForTarget(target);
     auto& trackMgr = TrackManager::getInstance();

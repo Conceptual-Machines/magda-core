@@ -229,7 +229,7 @@ class DeviceCustomUIManager {
     // engine renders for this slot now (#2585).
     void bindDeviceFaceplates();
     // The MAGDA device the rendering engine holds for this slot, or the one
-    // inside the slot's own plugin override. Empty for a hosted te::Plugin.
+    // inside the slot's own plugin override. Empty for a hosted external plugin.
     std::shared_ptr<daw::audio::MagdaDevice> liveDevice() const;
     void createToneGeneratorUI(const magda::DeviceInfo& device, juce::Component& parent,
                                const Callbacks& callbacks);

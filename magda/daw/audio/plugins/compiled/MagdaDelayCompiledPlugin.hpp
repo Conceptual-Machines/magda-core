@@ -15,7 +15,7 @@ namespace magda::daw::audio::compiled {
  * cross-feedback. Single-engine compiled plugin — every user control
  * maps 1:1 to a Faust slot pinned by [idx:N].
  *
- * The hidden BPM slot ([idx:63]) is populated each block from TE's
+ * The hidden BPM slot ([idx:63]) is populated each block from the
  * transport so musical-division mode tracks the live tempo.
  */
 class MagdaDelayCompiledPlugin : public MagdaCompiledEffect {
@@ -32,7 +32,7 @@ class MagdaDelayCompiledPlugin : public MagdaCompiledEffect {
     static constexpr int kToneSlot = 5;
     static constexpr int kCrossSlot = 6;
     static constexpr int kHostSlotCount = 7;
-    static constexpr int kBpmSlot = 63;  // hidden, populated from TE transport
+    static constexpr int kBpmSlot = 63;  // hidden, populated from the transport
 
     /// The Faust quarter-note multiplier behind Division choice @p index.
     float divisionFaustValueForIndex(int index) const {

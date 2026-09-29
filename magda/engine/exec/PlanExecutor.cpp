@@ -86,15 +86,13 @@ void copyWithGain(juce::dsp::AudioBlock<float> destination, juce::dsp::AudioBloc
 /**
  * @brief What an audio trigger listens for.
  *
- * The fork's own three numbers (AudioSidechainMonitorPlugin), because a project
- * that ducks on a kick has to duck on the same kicks in both engines. A fast
- * attack so a transient opens the gate, a moderate release so it does not
- * chatter at the boundary, and a threshold around -20 dB, which is above what a
- * quiet track leaves behind and below anything meant as a hit.
+ * A fast attack so a transient opens the gate, a moderate release so it does
+ * not chatter at the boundary, and a threshold around -20 dB, which is above
+ * what a quiet track leaves behind and below anything meant as a hit.
  *
- * One detector per source track rather than one per modifier, which is the
- * fork's arrangement too: what an audio trigger keys off is a property of the
- * signal rather than of whatever is listening to it.
+ * One detector per source track rather than one per modifier: what an audio
+ * trigger keys off is a property of the signal rather than of whatever is
+ * listening to it.
  */
 constexpr float kTriggerThreshold = 0.1f;
 constexpr double kTriggerAttackMs = 1.0;
@@ -461,8 +459,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     // A modulation tap's envelope is state the way an LFO's phase is state, and
     // a structural republish during playback must not zero it: a source above
     // the threshold at that moment would read as a rising edge on the next
-    // block and fire a trigger nothing played. The fork's monitor plugin
-    // survives the same edits with its own level and gate intact.
+    // block and fire a trigger nothing played.
     // Shared rather than copied, on the terms the delay lines and the modifier
     // states are shared: the executor being replaced is still rendering while
     // this one is prepared, and a tap's envelope is written on the audio thread
@@ -1327,8 +1324,7 @@ void PlanExecutor::feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi
 
     // Whether the block holds a note at all, settled before anything is fed.
     // A cross-track listener takes one trigger for the block rather than one
-    // per note, which is what the fork's monitor does: it scans the buffer,
-    // sets a flag, and fires triggerSidechain once.
+    // per note.
     const auto isNoteOn = [](const auto& metadata) { return metadata.getMessage().isNoteOn(); };
     const bool anyNoteOn = std::ranges::any_of(midi, isNoteOn);
 
@@ -1338,10 +1334,8 @@ void PlanExecutor::feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi
 
         // A modifier living somewhere else is following this track rather than
         // playing it. The note-counting path refuses it by design, so a trigger
-        // is the only door it has, and there is no note-off half: the fork
-        // deliberately leaves the gate alone there so the modifier runs its
-        // full cycle after a hit (SidechainMonitorPlugin says so at the note-off
-        // branch it does not take).
+        // is the only door it has, and there is no note-off half: the gate is
+        // left alone so the modifier runs its full cycle after a hit.
         if (mods_.drivenFromElsewhere(index, *blockTable_)) {
             if (anyNoteOn)
                 mods_.trigger(index, *blockTable_);
@@ -1385,9 +1379,8 @@ void PlanExecutor::renderModSource(OpId id, const BlockInfo& block) {
     if (numSamples <= 0)
         return;
 
-    // Downmixed to mono by averaging the channels, which is what the fork's tap
-    // hands its followers. A sum would make a stereo source read six decibels
-    // louder than the same material in mono.
+    // Downmixed to mono by averaging the channels. A sum would make a stereo
+    // source read six decibels louder than the same material in mono.
     auto in = audioIn(audio, numSamples);
     const auto channels = static_cast<int>(in.getNumChannels());
     const auto scale = channels > 0 ? 1.0f / static_cast<float>(channels) : 0.0f;
@@ -1402,8 +1395,7 @@ void PlanExecutor::renderModSource(OpId id, const BlockInfo& block) {
         std::span<const float>{detectMono_}.first(static_cast<std::size_t>(numSamples));
 
     // The level a trigger keys off, which is the block's peak rather than the
-    // mono average: the fork's monitor takes the loudest channel's magnitude
-    // and a duck should follow whichever side is loud.
+    // mono average: a duck should follow whichever side is loud.
     float peak = 0.0f;
     for (int c = 0; c < channels; ++c)
         peak = std::max(
@@ -1413,11 +1405,11 @@ void PlanExecutor::renderModSource(OpId id, const BlockInfo& block) {
     if (detector == nullptr)
         return;
 
-    // One envelope per source rather than one per modifier, and the constants
-    // are the fork's: a fast attack so a transient opens the gate, a moderate
-    // release so it does not chatter, and a threshold well above the noise a
-    // silent track leaves behind. Per block, from the block's own length, so an
-    // offline render detects the same hits as playback does.
+    // One envelope per source rather than one per modifier: a fast attack so a
+    // transient opens the gate, a moderate release so it does not chatter, and
+    // a threshold well above the noise a silent track leaves behind. Per block,
+    // from the block's own length, so an offline render detects the same hits
+    // as playback does.
     const auto blockMs = 1000.0 * numSamples / std::max(preparedContext().sampleRate, 1.0);
     const auto attack = 1.0f - std::exp(static_cast<float>(-blockMs / kTriggerAttackMs));
     const auto release = 1.0f - std::exp(static_cast<float>(-blockMs / kTriggerReleaseMs));
@@ -1488,9 +1480,8 @@ void PlanExecutor::clearUnboundValueTaps() {
 void PlanExecutor::publishValueTaps() {
     // The position the parameter opens the block at, clamped, which is the same
     // answer a link reading it as a source gets. A knob draws where the value
-    // is at the boundary for the same reason a device reads it there: that is
-    // where the fork settles a parameter, and what is being drawn is what is
-    // being heard.
+    // is at the boundary for the same reason a device reads it there: what is
+    // being drawn is what is being heard.
     for (const auto& bound : paramTaps_)
         bound.tap->write(paramValues_.sourceValue(bound.index));
 
@@ -1956,8 +1947,7 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             }
 
             // What the device left on its output, for whatever the port feeds.
-            // A device that produces MIDI and says nothing drops the panic,
-            // which is what the fork does with its fresh output buffer.
+            // A device that produces MIDI and says nothing drops the panic.
             if (producesMidi) {
                 setMidiOutPanic(id, 1, deviceBlock.midiOutAllNotesOff);
 

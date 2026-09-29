@@ -13,8 +13,7 @@
  * model's signal graph: it is never recorded, never routed, and never touched
  * by the master fader, so putting it in the plan would mean recompiling the
  * graph to toggle it and finding somewhere to hide it from every render. It is
- * summed into the output after the plan instead, which is where the incumbent
- * puts it too.
+ * summed into the output after the plan instead.
  *
  * Two sounds, a bar accent and a beat, synthesised as they play from the tick's
  * own instant, so a tick a fraction into a sample sounds that fraction late

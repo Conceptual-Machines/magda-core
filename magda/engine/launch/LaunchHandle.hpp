@@ -19,10 +19,6 @@
  * produces per block is a description of that block, which whatever reads a
  * clip then acts on.
  *
- * The incumbent's is `te::LaunchHandle`, and `SessionClipScheduler`'s own
- * header is explicit that the fork owns the state and MAGDA only sends it
- * commands. Replacing that state is what this is for.
- *
  * No synchronisation of its own, because nothing calls it from two threads: the
  * audio thread advances it, and every request reaches it down the queue in
  * LaunchRequests.hpp and is applied on that same thread ahead of the advance
@@ -344,9 +340,8 @@ class LaunchHandle {
      * Not the clip's own loop. This restarts the handle as if it had been
      * launched again, which is what resets the played range a source reads its
      * position from; a clip looping inside its own length is the clip's
-     * business and happens without the handle knowing. Both exist in the fork
-     * and conflating them is right whenever the two lengths agree and wrong
-     * whenever they do not.
+     * business and happens without the handle knowing. Conflating them is
+     * right whenever the two lengths agree and wrong whenever they do not.
      *
      * Absent cancels looping.
      */

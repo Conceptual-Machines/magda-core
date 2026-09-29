@@ -22,7 +22,7 @@
  *
  * Neither is redundant and the order between them is load-bearing, so it lives
  * here rather than in whichever engine happens to be loading the project. The
- * incumbent's sequence, which this is:
+ * sequence is:
  *
  * 1. **The parameter array, as a baseline.** It is what a project has for a
  *    plugin with no chunk -- one that stores nothing, or whose chunk this build
@@ -33,9 +33,8 @@
  *    enough to have written a stale array looks like. The native adapter suite
  *    in test_engine_external_device.cpp pins that ordering.
  * 3. **A snapshot of what the plugin now holds**, handed back to whoever owns
- *    the model. That is the step the fork spends `valueChangedByPlugin` on, and
- *    the reason it exists is the same here: after a restore the model's array
- *    and the live plugin can disagree, and everything downstream -- an
+ *    the model. After a restore the model's array and the live plugin can
+ *    disagree, and everything downstream -- an
  *    automation lane's base value, a knob's position, the values a render
  *    writes every block -- reads the model. Correcting it is the host's job and
  *    the message thread's; what this returns is what to correct it to.
@@ -47,9 +46,7 @@
  * automation lane that happens to be passing through the same value.
  *
  * Saving is the same three records read the other way, and it is here for the
- * same reason: a project saved while the native engine holds the instance has
- * to be a project the incumbent can open, so what goes back into the model is
- * what the fork's own flushPluginStateToValueTree() would have written. One
+ * same reason: what goes back into the model is the saved format, with one
  * definition of what a project keeps about a plugin, read and written by
  * whichever engine happens to be holding it.
  *
@@ -78,8 +75,7 @@ struct PluginPrograms {
  * and no chunk carries them. From two on it is the plugin's own parameters, in
  * plugin order, skipping any it says are not automatable.
  *
- * That shape is not a choice. It is the list the incumbent builds
- * (ExternalPlugin::buildParameterList) and therefore what MAGDA saved in
+ * That shape is not a choice. It is what projects saved in
  * ParameterInfo::paramIndex, so anything reading a project's parameter values
  * back onto a live plugin has to reproduce it. One definition, because two
  * would eventually differ by one and put a project's cutoff on its resonance.
@@ -101,13 +97,11 @@ struct HostParameters {
  * hosted plugin's parameters, and everything that addresses one reads the model
  * (#2595).
  *
- * Names, ranges and defaults are the fork's
- * (ExternalPlugin::buildParameterList), de-duplicating suffix included, so a
- * project moved between engines finds the same parameter under the same name.
- * The id is the one the plugin's own format declares, which the fork does not
- * reach -- see hostParameterId().
- * The range is normalised because that is the space the fork wraps an external
- * parameter in, and the plan converts through it (ParameterUtils::domainOf).
+ * Names, ranges and defaults follow the saved format, de-duplicating suffix
+ * included, so a saved project finds the same parameter under the same name.
+ * The id is the one the plugin's own format declares -- see hostParameterId().
+ * The range is normalised because that is the space an external parameter is
+ * saved in, and the plan converts through it (ParameterUtils::domainOf).
  *
  * The wrapper pair keeps the value @p device holds: it is the host's own
  * number, no chunk carries it, and the model is the only place it lives.
@@ -297,10 +291,9 @@ struct ExternalPluginSnapshot {
 /**
  * @brief Read what @p instance holds: chunk, parameter values, VST3 records.
  *
- * Saving, and the mirror of applySavedPluginState(). What it reads is what the
- * fork writes for the same instance -- the chunk from getStateInformation(),
- * base64 in juce::MemoryBlock's own encoding -- so a project saved under either
- * engine opens under the other.
+ * Saving, and the mirror of applySavedPluginState(). What it reads is the saved
+ * format: the chunk from getStateInformation(), base64 in juce::MemoryBlock's
+ * own encoding.
  *
  * It reads and does not write, for the same reason the restore hands its
  * corrections back rather than applying them: the model is the caller's, and a
@@ -308,11 +301,10 @@ struct ExternalPluginSnapshot {
  * contents. Symmetry aside, it is what keeps the commit a separate step the
  * caller can refuse.
  *
- * Message thread, and the plugin is suspended across the whole read the way the
- * fork holds its processMutex across one: a plugin asked to describe itself
- * mid-block is entitled to answer with half of one state and half of another,
- * and that applies to its parameter values and its portable preset as much as to
- * its chunk.
+ * Message thread, and the plugin is suspended across the whole read: a plugin
+ * asked to describe itself mid-block is entitled to answer with half of one state and half of
+ * another, and that applies to its parameter values and its portable preset as much as to its
+ * chunk.
  *
  * Suspension is only worth anything because the host honours it. A block that
  * arrives while this is in flight passes through without touching the plugin at

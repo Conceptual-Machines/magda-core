@@ -481,9 +481,9 @@ std::optional<float> parseMs(juce::String text) {
 juce::String formatValue(float realValue, const ParameterInfo& info, int decimalPlaces) {
     // Live plugin display text — exact, no quantization.
     //
-    // DisplayTextProvider wraps TE's valueToString, which expects the
-    // plugin-native TE value. Cross both explicit boundaries: display real
-    // value to the model convention, then model value to TE storage.
+    // DisplayTextProvider expects the plugin-native value. Cross both
+    // explicit boundaries: display real value to the model convention, then
+    // model value to plugin storage.
     if (info.displayText) {
         const float teRaw = modelToTeValue(realToModelValue(realValue, info), info);
         auto text = info.displayText->format(teRaw);

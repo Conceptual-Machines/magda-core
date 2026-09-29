@@ -121,8 +121,7 @@ constexpr int kSectionDeClickSamples = 32;
  * Resolved once per block and handed to both of a track's sources, so its audio
  * and its MIDI are gated by one answer with nothing of their own to keep in
  * step (#2490). The track's own mode is folded in beside the handles (#2485):
- * Session mode gates the arrangement the way the fork's playSlotClips does,
- * launched or not.
+ * Session mode gates the arrangement, launched or not.
  */
 struct SectionHold {
     /// The first sample the arrangement owns.

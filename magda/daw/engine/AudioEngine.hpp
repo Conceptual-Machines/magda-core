@@ -303,7 +303,7 @@ class AudioEngine : public AudioEngineListener {
 
     // ===== Audio Management =====
     /// Track and master meters and MIDI activity, from an engine-neutral
-    /// object both engines feed (#2579).
+    /// object the engine feeds (#2579).
     virtual TrackMeters& meters() = 0;
     virtual const TrackMeters& meters() const = 0;
 
@@ -317,9 +317,8 @@ class AudioEngine : public AudioEngineListener {
      *
      * What a faceplate reads its telemetry off: the oscilloscope's ring, the
      * sequencer's playing step, a compiled device's own DSP figures. The
-     * instance is the one filling those, so it comes from whichever engine is
-     * rendering -- the fork's plugin under Tracktion, the plan's device under
-     * magda -- and never from a parallel instance nothing renders.
+     * instance is the one filling those, so it comes from the plan's device and
+     * never from a parallel instance nothing renders.
      *
      * Held open for as long as the handle lives, so a UI reading a ring cannot
      * be left on an instance a rebuild freed. Message thread. Null for a path

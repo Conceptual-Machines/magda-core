@@ -52,9 +52,7 @@ int foldBlock(const MidiFold& fold, double startBeat, double endBeat, double cli
 
     if (!fold.loopEnabled || fold.loopLengthBeats <= 0.0) {
         // One pass, and its window is the whole clip: what crops it is the
-        // span, which the caller has already applied. Not a second visible
-        // range, which is what the incumbent needs only because TE requires the
-        // sequence to BE the clip.
+        // span, which the caller has already applied.
         auto& pass = out[0];
         pass.timelineOfContentZero = fold.clipStartBeat - fold.trimOffsetBeats - fold.offsetBeats;
         pass.contentStart = startBeat - pass.timelineOfContentZero;

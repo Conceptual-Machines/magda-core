@@ -57,13 +57,13 @@ enum class DisplayFormat {
  *
  * Only set on entries in DeviceInfo::wrapperParameters — None for plugin
  * params and unrecognised wrapper params. The role tag lets device-header
- * chrome render a known pair (e.g. TE's DryGain + WetGain) as a single
+ * chrome render a known pair (e.g. DryGain + WetGain) as a single
  * collapsed control like a Mix crossfader without name-sniffing.
  */
 enum class WrapperRole {
     None,
-    DryGain,  // TE PluginWetDryAutomatableParam, dry side
-    WetGain,  // TE PluginWetDryAutomatableParam, wet side
+    DryGain,  // dry side
+    WetGain,  // wet side
 };
 
 /**
@@ -94,9 +94,9 @@ struct ParameterInfo {
     float defaultValue = 0.5f;  // Default in valueConvention's domain
     float currentValue = 0.5f;  // Current value in valueConvention's domain
 
-    // The native range that the owning te::AutomatableParameter actually
-    // stores. For external VSTs this is ALWAYS [0, 1] because TE wraps VST
-    // parameters in normalized space, regardless of any AI-Detect display
+    // The native range that the owning parameter actually stores. For
+    // external VSTs this is ALWAYS [0, 1] because VST parameters are
+    // normalized, regardless of any AI-Detect display
     // range the user has configured; for built-in plugins it matches
     // minValue/maxValue. Tracked separately so the automation echo path can
     // compute the plugin-native value and avoid the flicker caused by
@@ -135,7 +135,7 @@ struct ParameterInfo {
     // Curated tick labels for the automation lane axis. When non-empty (and
     // scale==Discrete), the lane uses these (realValue, label) pairs for tick
     // marks instead of striding evenly through `choices`. Lets a parameter
-    // expose a dense TE-aligned `choices` for value→string lookup while only
+    // expose a dense `choices` for value→string lookup while only
     // labelling a sparse, musically meaningful subset on the axis.
     std::vector<std::pair<float, juce::String>> labelTicks;
 

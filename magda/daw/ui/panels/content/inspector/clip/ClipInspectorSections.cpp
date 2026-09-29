@@ -1503,7 +1503,7 @@ void ClipInspector::initGrooveSection() {
 void ClipInspector::showGroovePicker() {
     using Category = GroovePickerPopup::Category;
 
-    // Build category list from TE's GrooveTemplateManager
+    // Build category list from the groove template manager
     std::vector<Category> categories;
     categories.push_back({"None", {"None"}});
 

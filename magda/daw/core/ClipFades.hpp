@@ -74,8 +74,8 @@ std::optional<CrossfadeInfo> crossfadeAtEndIn(const std::vector<ClipInfo>& lane,
  *
  * An overlap that covers an edge replaces that edge's fade with the length of
  * the overlap. Whatever the two come to, they are scaled to fit inside the clip
- * when they would together outrun it, which is the clamp the incumbent engine
- * applies, so the curve drawn is the curve played.
+ * when they would together outrun it, the same clamp the engine applies, so the
+ * curve drawn is the curve played.
  */
 EffectiveFades effectiveFadesOf(const ClipInfo& clip, const std::vector<const ClipInfo*>& lane,
                                 double bpm);

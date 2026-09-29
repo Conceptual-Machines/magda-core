@@ -36,7 +36,7 @@ enum class PopulatedScenePolicy { Fail, DeleteClips, MoveClips };
  * Abstract view onto Session playback and durable scene structure.
  *
  * NOTE: Behaviour matches the UI's "trigger" buttons — calls flow through
- * the same clipPlaybackRequested → SessionClipScheduler → TE LaunchHandle
+ * the same clipPlaybackRequested → SessionClipScheduler → LaunchHandle
  * pipeline. Launch quantization, toggle vs trigger mode, and scene logic
  * are applied identically to manual UI interaction.
  */

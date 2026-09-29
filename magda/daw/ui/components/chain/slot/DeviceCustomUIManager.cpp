@@ -856,7 +856,7 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
         forwardParameterChanges(*arpeggiatorUI_, callbacks);
         // Non-slot settings are authored state: the edit patches the MODEL's
         // state document, and the projection updates the live device (#2317).
-        // The model is what autosave writes and what both engines build from,
+        // The model is what autosave writes and what the engine builds from,
         // so the edit also dirties the project.
         arpeggiatorUI_->onSettingsEdited = [this](const juce::NamedValueSet& settings) {
             writeDeviceSettings(devicePath_, settings);
@@ -2106,7 +2106,7 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
 // =============================================================================
 
 void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
-    // Native-engine faceplates have no Tracktion plugin to poll. Populate the
+    // Native-engine faceplates: populate the
     // saved pattern on creation/full updates, not only after a parameter edit.
     refreshSequencerState(device);
 
@@ -2125,7 +2125,7 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
         float level = -12.0f;
         int waveform = 0;
 
-        // ToneGeneratorProcessor exposes params in TE order: 0=oscType, 1=bandLimit,
+        // ToneGeneratorProcessor exposes params in this order: 0=oscType, 1=bandLimit,
         // 2=frequency, 3=level. Match that here.
         if (device.parameters.size() >= 4) {
             waveform = static_cast<int>(device.parameters[0].currentValue);

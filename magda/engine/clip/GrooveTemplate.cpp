@@ -8,11 +8,8 @@ namespace magda::engine {
 namespace {
 
 /// Index of @p value in a pattern of @p length, for negative values too.
-/// C++'s % answers negative for a negative left operand, and the fork's
-/// juce::Array then answers zero for the negative index it is handed. Timeline
-/// beats are never negative in MAGDA, so the two agree everywhere they can be
-/// reached; folding properly is what makes that a property of this function
-/// rather than of the caller.
+/// C++'s % answers negative for a negative left operand, so the result is
+/// folded into [0, length) here rather than left to the caller.
 int patternIndex(double value, int length) {
     const auto index = static_cast<long long>(std::llround(value)) % length;
     return static_cast<int>(index < 0 ? index + length : index);
@@ -28,8 +25,7 @@ GrooveTemplate GrooveTemplate::compile(const std::vector<float>& latenesses, int
     groove.notesPerBeat_ = std::clamp(notesPerBeat, kMinNotesPerBeat, kMaxNotesPerBeat);
 
     // Only a parameterized template answers to strength; the rest carry their
-    // shape at full weight however the clip is set, which is the fork's
-    // getLatenessProportion.
+    // shape at full weight however the clip is set.
     const auto weight = parameterized ? strength : 1.0f;
 
     groove.latenesses_.assign(static_cast<std::size_t>(notes), 0.0f);
@@ -72,9 +68,8 @@ double GrooveTemplate::groovyBeat(double beat) const {
     const auto next =
         static_cast<double>(latenesses_[static_cast<std::size_t>((index + 1) % notes)]);
 
-    // The fork's formula, unchanged: the step moves by half its own lateness and
-    // the one after it by half of the next, and a position between them rides
-    // the line between the two.
+    // The step moves by half its own lateness and the one after it by half of
+    // the next, and a position between them rides the line between the two.
     const auto start = step + 0.5 * lateness;
     const auto span = 1.0 + 0.5 * (next - lateness);
 

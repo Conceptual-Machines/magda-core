@@ -38,7 +38,7 @@ const juce::Identifier kPadSolo("padSolo");
 const juce::Identifier kPadBypassed("padBypassed");
 const juce::Identifier kBusOutput("busOutput");
 const juce::Identifier kType("type");
-/// Tracktion saves every external plugin under one `type`, with the real
+/// Saved projects hold every external plugin under one `type`, with the real
 /// identity in these. `format` is the plugin format ("VST3", "AudioUnit").
 const juce::Identifier kExternalName("name");
 const juce::Identifier kManufacturer("manufacturer");
@@ -180,7 +180,7 @@ DeviceInfo deviceFromNode(const ds::Node& node) {
         // The file, because JUCE's identifier string cannot be rebuilt from
         // what is saved here and the shared `type` would key every external pad
         // plugin alike. uniqueId stays empty: the saved `uniqueId` is
-        // Tracktion's hash, not the JUCE identifier DeviceInfo::uniqueId means,
+        // the retired engine's hash, not the JUCE identifier DeviceInfo::uniqueId means,
         // and capability lookups key on that field.
         if (device.fileOrIdentifier.isNotEmpty())
             device.pluginId = device.fileOrIdentifier;

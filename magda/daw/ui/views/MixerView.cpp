@@ -2112,7 +2112,7 @@ void MixerView::rebuildChannelStrips() {
     // Newly built strips need their analyzer plugin pointers resolved. The
     // immediate refresh handles the steady-state case; the deferred one
     // catches project load, where PluginManagerSync may not yet have attached
-    // the actual TE plugins to AudioBridge by the time we get here.
+    // the actual plugins to AudioBridge by the time we get here.
     for (auto& strip : channelStrips)
         strip->refreshMiniAnalyzers();
     for (auto& strip : auxChannelStrips)

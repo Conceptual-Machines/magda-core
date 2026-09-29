@@ -13,7 +13,7 @@
  *
  * Three places used to answer this, each with its own copy of the same linear
  * interpolation: the piano roll drew one curve, MidiClipCompiler compiled a
- * second, and ClipSynchronizer handed a third to Tracktion. They agreed only
+ * second, and ClipSynchronizer handed a third to the engine. They agreed only
  * because none of them had a shape to disagree about. Giving the segments a
  * tension ends that, so the answer lives here and all three ask it.
  *

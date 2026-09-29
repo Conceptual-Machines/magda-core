@@ -253,8 +253,7 @@ void RackComponent::timerCallback() {
     if (!audioEngine)
         return;
 
-    // The engine's own meters: the fork's bridge is null under the native
-    // engine, which reports no rack levels yet (#2570).
+    // The engine's own meters (#2570).
     magda::DeviceMeters::Levels levels;
     if (audioEngine->deviceMeters().rackPeak(rackId_, levels))
         levelMeter_.setLevels(levels.peakL, levels.peakR);

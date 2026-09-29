@@ -559,8 +559,7 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
         DESER(randomStepDepth);
 
     // Where it listens. Absent in every project written before the point was a
-    // choice, and the answer there is the fork's own split, which is what those
-    // projects were rendered against.
+    // choice, and the answer there is the type's default tap point.
     data.tapPoint = obj->hasProperty("tapPoint")
                         ? static_cast<ModTapPoint>(static_cast<int>(obj->getProperty("tapPoint")))
                         : defaultModTapPoint(data.type);

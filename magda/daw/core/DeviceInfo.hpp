@@ -195,15 +195,13 @@ struct SidechainConfig {
  * @brief A hardware insert: what leaves the machine and what comes back (#2245).
  *
  * Model values rather than a plugin's state blob, and that is the point of it.
- * The incumbent keeps this inside a te::InsertPlugin's ValueTree, so the only
- * way to know what an insert sends to was to ask the fork; the native engine
- * compiles an insert into a send op and a return op with the outside world
- * between them, and it compiles from the model like everything else.
+ * The native engine compiles an insert into a send op and a return op with the
+ * outside world between them, and it compiles from the model like everything
+ * else.
  *
  * Send and return are declared separately because they are separate. An
  * external effect sends audio and gets audio back; an external instrument sends
- * MIDI and gets audio back; a device that only listens has no send at all. The
- * incumbent carries the same pair of types for the same reason.
+ * MIDI and gets audio back; a device that only listens has no send at all.
  *
  * @ref manualAdjustMs is the user's correction on top of the measured round
  * trip, in milliseconds, and it may be negative: an interface reports its own
@@ -338,16 +336,16 @@ struct DeviceInfo {
     juce::String aiConversation;
 
     // Device parameters (populated by DeviceProcessor) — the plugin's own
-    // automatable parameters. Wrapper-injected slot params (e.g. TE's
-    // PluginWetDryAutomatableParam pair) belong in `wrapperParameters` and
+    // automatable parameters. Wrapper-injected slot params (e.g. the
+    // dry/wet pair) belong in `wrapperParameters` and
     // must not be mixed in here.
     std::vector<ParameterInfo> parameters;
 
     // Wrapper-owned slot parameters. These come from the host wrapper, not
-    // the plugin itself — TE's slot-level dry/wet on external plugins, and
+    // the plugin itself - the slot-level dry/wet on external plugins, and
     // anywhere else a wrapper synthesises parameters that the plugin author
     // never declared. Rendered by device-header chrome, never by the
-    // parameter grid. `paramIndex` still addresses the underlying TE slot so
+    // parameter grid. `paramIndex` still addresses the underlying slot so
     // host writes, automation and aliases work the same as for plugin params.
     std::vector<ParameterInfo> wrapperParameters;
 
@@ -419,7 +417,7 @@ struct DeviceInfo {
     /// plan wires and what the API reports all read this one declaration.
     SidechainPort sidechainPort;
 
-    bool canReceiveMidi = false;  // true if TE plugin accepts MIDI input (for cross-track MIDI)
+    bool canReceiveMidi = false;  // true if the plugin accepts MIDI input (for cross-track MIDI)
     bool producesMidi = false;    // true if the live plugin can output MIDI
     /// A MAGDA device's DeviceProperties::forwardsMidiInput, copied from its
     /// declaration whenever it enters the model. Such a device has no MIDI thru:
@@ -467,8 +465,8 @@ struct DeviceInfo {
     // UI state
     int currentParameterPage = 0;  // Current parameter page (for multi-page param display)
 
-    // Resolve a TE-relative paramIndex to the matching ParameterInfo in either
-    // bucket. The argument is ALWAYS a TE index (ParameterInfo::paramIndex),
+    // Resolve a paramIndex to the matching ParameterInfo in either bucket.
+    // The argument is ALWAYS a slot index (ParameterInfo::paramIndex),
     // never an array position. Returns nullptr if no entry matches.
     ParameterInfo* findParameterByIndex(int paramIndex) {
         if (paramIndex < 0)
@@ -487,7 +485,7 @@ struct DeviceInfo {
 
     // Parameter names positioned at their own paramIndex, so a link picker can
     // read a name back from the index a stored target carries. paramIndex is a
-    // TE slot rather than an array position, so gaps stay empty.
+    // slot rather than an array position, so gaps stay empty.
     std::vector<juce::String> paramNamesByIndex() const {
         std::vector<juce::String> names;
         for (const auto& param : parameters) {

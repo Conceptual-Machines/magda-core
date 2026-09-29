@@ -652,7 +652,7 @@ void AutomationCurveEditor::onPointAdded(double x, double y, CurveType curveType
 
 void AutomationCurveEditor::onPointDragPreview(uint32_t pointId, double newX, double newY) {
     // Broadcast the in-progress drag so AutomationPlaybackEngine can push the
-    // preview value straight into the TE parameter — this keeps the fader /
+    // preview value straight into the parameter - this keeps the fader /
     // knob tracking the drag in real time without waiting for the mouseUp
     // commit + full rebake. Visual point movement is already handled by the
     // base-class lambda.

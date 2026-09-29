@@ -12,8 +12,8 @@ namespace magda::daw::audio {
  * @brief Test-tone generator: a single oscillator for calibration, routing
  *        checks and utility signals.
  *
- * MAGDA's own, replacing the stock Tracktion device it was hosting (#2192).
- * The parameter order, ids and ranges are the ones that device used, because
+ * MAGDA's own (#2192). The parameter order, ids and ranges are those of the earlier
+ * stock device, because
  * saved projects address them by index and the faceplate is written against
  * them: 0 = Waveform, 1 = Band Limit, 2 = Frequency, 3 = Level.
  *

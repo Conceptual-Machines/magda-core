@@ -67,9 +67,8 @@ double sizingRate(const StretchSetup& setup) {
  * output samples out, and the two lengths are the rate. That is what makes a
  * tempo curve free here, where an engine with a set tempo has to be told.
  *
- * Configured the way the incumbent configures it, down to the formant base and
- * the pitch-compensated neutral formant shift, because a project that sounded a
- * particular way through the fork has to go on sounding that way.
+ * Configured with a formant base and a pitch-compensated neutral formant
+ * shift, so existing projects go on sounding the same.
  *
  * Priming is `outputSeek`, which is the library's own answer to starting in the
  * middle of a file: hand it a window beginning at the first sample wanted.
@@ -671,22 +670,15 @@ std::unique_ptr<ClipStretcher> makeStretcher(const StretchSetup& setup) {
     if (setup.numChannels <= 0 || setup.maxBlockSamples <= 0 || !(setup.sampleRate > 0.0))
         return nullptr;
 
-    // A clip that asks for nothing gets nothing, whatever its mode field says,
-    // and that is a parity requirement rather than an economy. The mode is a
-    // preference for how to stretch and not an instruction to stretch: the
-    // incumbent engages an engine on auto tempo, auto pitch, a pitch change or a
-    // ratio off unity, and never on the mode alone
-    // (AudioClipBase::usesTimeStretchedProxy). A clip whose dropdown was touched
-    // once and asks for nothing plays clean through the fork, and a phase
-    // vocoder run at one-to-one is not clean: it re-synthesises what it was
-    // given. Every project that ever opened that dropdown would otherwise be a
-    // difference in the null-diff corpus (#2040).
+    // A clip that asks for nothing gets nothing, whatever its mode field says.
+    // The mode is a preference for how to stretch, not an instruction to
+    // stretch: an engine engages on auto tempo, auto pitch, a pitch change or a
+    // ratio off unity, never on the mode alone, because a phase vocoder run at
+    // one-to-one is not clean: it re-synthesises what it was given (#2040).
     //
-    // Auto tempo is the carve-out, and keeps its engine at a unity average. The
-    // average is not what it plays at: its ratio is the project's tempo over the
-    // file's own and moves with the tempo curve, so a clip averaging unity is
-    // still stretching in both directions around it. The incumbent engages on
-    // auto tempo alone for the same reason.
+    // Auto tempo is the carve-out, and keeps its engine at a unity average. Its
+    // ratio is the project's tempo over the file's own and moves with the tempo
+    // curve, so a clip averaging unity is still stretching around it.
     if (!setup.followsTempo && !setup.speedRamp && std::abs(setup.semitones) < 0.001f &&
         std::abs(setup.nominalRate - 1.0) < 1.0e-9)
         return nullptr;
@@ -707,14 +699,11 @@ std::unique_ptr<ClipStretcher> makeStretcher(const StretchSetup& setup) {
 
         default:
             // A mode this build has no engine for, which is every value
-            // Tracktion's enum holds that MAGDA never wrote. The incumbent
-            // answers this with its default engine (TimeStretcher::
-            // checkModeIsAvailable) and so does this: the clip is asking to be
-            // stretched, and the position map has already decided how much
-            // material a block will consume. Returning nothing here would leave
-            // a block reading that material at unity and the next one starting
-            // where the ratio says, which is a skip at every block boundary
-            // rather than a fallback.
+            // a saved v0 project may hold that MAGDA never wrote. Fall back to the
+            // default engine: the clip is asking to be stretched, and the position map has already
+            // decided how much material a block will consume. Returning nothing here would leave a
+            // block reading that material at unity and the next one starting where the ratio says,
+            // which is a skip at every block boundary rather than a fallback.
             return std::make_unique<SignalsmithClipStretcher>(setup);
     }
 }

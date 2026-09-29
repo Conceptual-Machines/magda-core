@@ -625,8 +625,8 @@ void ParamSlotComponent::setParameterInfo(const magda::ParameterInfo& info) {
     };
     // The discrete widgets report a choice index. What that index means as a
     // parameter value depends on the parameter: internal devices store the
-    // index, an external plugin with a saved discrete config stores TE's
-    // normalized value. Map it here, against the slot's current info.
+    // index, an external plugin with a saved discrete config stores the
+    // plugin's normalized value. Map it here, against the slot's current info.
     auto deferChoiceToSlot = [this](double index) {
         if (onValueChanged)
             onValueChanged(magda::ParameterUtils::modelValueForChoiceIndex(

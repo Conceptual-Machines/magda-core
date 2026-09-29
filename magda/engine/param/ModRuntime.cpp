@@ -373,12 +373,9 @@ void ModRuntime::noteOn(int index, const ParamTable& table) {
 
     // A cross-track sidechain modifier follows its source track and nothing
     // else: not its phase, and not its gate either. Retriggering it from the
-    // track it ducks is the bug the fork's flag exists to prevent, and so is
-    // gating it from there, which flaps on every note the destination plays.
-    //
-    // The fork suppresses the two separately, because its flags are set apart
-    // and the combination is prevented rather than refused. Here the policy is
-    // the guard: a modifier driven from elsewhere does not hear this at all.
+    // track it ducks is a bug, and so is gating it from there, which flaps on
+    // every note the destination plays. A modifier driven from elsewhere does
+    // not hear this at all.
     if (isDrivenFromElsewhere(modifier))
         return;
 
@@ -461,8 +458,7 @@ void ModRuntime::trigger(int index, const ParamTable& table, bool forceZero) {
         case ModKind::Random:
         case ModKind::Follower:
             // Neither has a gate, so neither has a gap to stand in for: a walk
-            // that blanked for a block on every hit would be a hole the fork
-            // does not have.
+            // that blanked for a block on every hit would be a hole.
             break;
     }
 }

@@ -16,8 +16,7 @@
  * reads messages, so something has to decide how many. **On every change of the
  * quantised value, and no closer together than the floor.**
  *
- * Not the 1/16-beat grid the sync layer uses when it writes into Tracktion, and
- * not per sample or per block either.
+ * Not a fixed 1/16-beat grid, and not per sample or per block either.
  *
  * Per block is not available: RenderContext.hpp requires a shorter block to
  * render identically, so a curve resolved per callback would make the offline
@@ -40,15 +39,14 @@
  *
  * Emitting on value change is what makes both come out right with no number to
  * tune: every message changes something, and nothing that changes is missed
- * until the floor bites. The incumbent's constant-segment guard and its Step
- * handling stop being special cases and fall out.
+ * until the floor bites. Constant segments and Step curves need no special
+ * cases: they fall out.
  *
  * A user's own points are never subject to the floor, only the interpolation
  * between them: the flood risk is densification, and a point somebody placed is
  * not densification.
  *
- * This is a deliberate divergence from the incumbent and #2040 compares MIDI
- * event streams as their own artifact because of it. It does not walk back into
+ * #2040 compares MIDI event streams as their own artifact. It does not walk back into
  * #1193: a millisecond floor caps a controller at about ten messages per block,
  * and caps it in wall-clock rather than in beats, which the grid never did.
  */

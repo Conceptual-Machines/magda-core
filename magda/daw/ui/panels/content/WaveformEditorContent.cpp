@@ -348,9 +348,7 @@ WaveformEditorContent::WaveformEditorContent() {
     };
 
     // Push every drag tick through to ClipManager so the looped audio reflects the new region
-    // immediately. TE coalesces graph rebuilds via a 1ms restart timer and crossfades the
-    // switchover, so even a fast drag produces smooth audio (the previous "flickering rebuild"
-    // concern was masking TE #8 — the bleed made each rebuild sound different).
+    // immediately.
     timeRuler_->onLoopRegionChanged = commitLoopFromDisplay;
 
     addAndMakeVisible(timeRuler_.get());
@@ -619,7 +617,7 @@ WaveformEditorContent::WaveformEditorContent() {
     gridComponent_->onSliceAtGridToDrumGrid = [this]() { sliceAtGridToDrumGrid(); };
 
     // Loop-record takes: a lane click fronts that take as the clip's source and
-    // re-syncs (ClipSynchronizer rebuilds the TE clip + re-attaches the takes).
+    // re-syncs (ClipSynchronizer rebuilds the clip and re-attaches the takes).
     gridComponent_->onTakeSelected = [this](int takeIndex) {
         magda::ClipManager::getInstance().setAudioClipCurrentTake(editingClipId_, takeIndex);
     };

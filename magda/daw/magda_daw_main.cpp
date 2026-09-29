@@ -92,9 +92,8 @@ class MagdaDAWApplication : public JUCEApplication {
   private:
     std::unique_ptr<juce::FileLogger> fileLogger_;
     std::unique_ptr<magda::AudioEngine> daw_engine_;
-    // Lua-driven MIDI controller scripts (issue #592). Lives in the app
-    // layer rather than inside TracktionEngineWrapper so the engine library
-    // (magda_daw) doesn't pull magda_scripting into its link line.
+    // Lua-driven MIDI controller scripts (issue #592). Lives in the app layer
+    // so the engine library (magda_daw) doesn't pull magda_scripting into its link line.
     std::unique_ptr<magda::scripting::LuaController> luaController_;
     // Remote API (#1856): dispatcher, model bridge and WebSocket transport.
     // Owned here so it is torn down before the managers its bridge listens to.

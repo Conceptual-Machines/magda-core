@@ -14,9 +14,8 @@ namespace magda {
 /**
  * @brief The route name of each channel in @p open, from the interface's @p channelNames.
  *
- * Projects store these names, so every engine has to produce Tracktion's: outputs in pairs
- * (1+2, 3+4), inputs mono, and a two-channel interface named "Output 1" and "Output 2" (or
- * "Input"). MAGDA never changes Tracktion's pairing, so this is the only layout there is.
+ * Projects store these names, so the layout is fixed: outputs in pairs (1+2, 3+4), inputs
+ * mono, and a two-channel interface named "Output 1" and "Output 2" (or "Input").
  */
 std::map<int, juce::String> routeNamesByChannel(const juce::StringArray& channelNames,
                                                 const juce::BigInteger& open, bool inputs);

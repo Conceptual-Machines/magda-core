@@ -49,8 +49,6 @@ struct CompiledPluginSpec {
 };
 
 /// All compiled-plugin specs known to the current host, in stable iteration order.
-/// Implemented by the host compatibility target while legacy compiled devices
-/// remain Tracktion-native; the neutral base-device archive does not depend on it.
 std::span<const CompiledPluginSpec* const> getAllCompiledPluginSpecs();
 
 /// Returns null if `pluginId` doesn't match any compiled plugin id or load alias.

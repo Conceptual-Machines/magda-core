@@ -110,10 +110,10 @@ class LiveMidiSources {
     /**
      * @brief The id a track's `midiInputDevice` names, or @ref kNoSource.
      *
-     * By JUCE identifier, by the fork's hashed ID for it, then by device name,
+     * By JUCE identifier, by the v0 hashed ID for it, then by device name,
      * the way MidiInputRouter reads the same field. A field naming nothing
      * this machine has is taken as the id it will push under, which is how the
-     * QWERTY keyboard resolves: it pushes under the fork's ID for it.
+     * QWERTY keyboard resolves: it pushes under its v0-format ID.
      */
     int resolveRoute(const juce::String& midiInputDevice);
 

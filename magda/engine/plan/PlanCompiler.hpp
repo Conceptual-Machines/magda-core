@@ -84,8 +84,7 @@ RenderPlan compileRenderPlan(const std::vector<TrackInfo>& tracks, const TrackIn
  * Exposed because the null-diff harness has to put its capture device on exactly
  * the tracks this returns true for. Deciding that separately would be a second
  * opinion about what consumes MIDI, and the two would drift the first time a
- * device type was added: the incumbent leg would capture on tracks the plan
- * emits nothing for, or miss ones it does.
+ * device type was added.
  */
 bool chainConsumesMidi(const TrackInfo& track);
 

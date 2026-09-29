@@ -50,7 +50,7 @@ bool GrooveLibrary::upsert(const GrooveTemplateData& groove) {
             return false;
 
         // What it kept, not what it was asked for: a renamed or reflagged groove would
-        // otherwise play one way here and another under the fork.
+        // otherwise differ between the library and the store.
         if (reader_) {
             grooves_ = reader_();
             notifyChanged();

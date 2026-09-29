@@ -52,7 +52,7 @@ class LinkableTextSlider : public juce::Component,
                         const magda::ChainNodePath& devicePath);
     void setLinkOwnerPath(const magda::ChainNodePath& ownerPath);
     // Pre-set paramIndex before setLinkContext runs. Use when the processor's
-    // parameter ordering (e.g. TE's oscType/bandLimit/freq/level for the Tone
+    // parameter ordering (e.g. oscType/bandLimit/freq/level for the Tone
     // Generator) doesn't match the slider's position in getLinkableSliders().
     void setParamIndex(int paramIndex);
     void setAvailableMods(const magda::ModArray* mods);

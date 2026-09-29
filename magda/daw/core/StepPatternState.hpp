@@ -16,7 +16,7 @@ namespace magda::step_pattern {
  * the two - the sequencing core's plain pattern types on one side, the
  * persisted `STEP` / `NOTE` element names on the other.
  *
- * The element and property names are the retired Tracktion plugins': saved
+ * The element and property names are the retired plugins': saved
  * projects carry them, so they are a frozen persistence surface. The device
  * reads exactly the same names out of the tree it is restored from, which is
  * what keeps "what the model holds" and "what the device plays" one thing.

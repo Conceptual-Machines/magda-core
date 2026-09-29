@@ -46,7 +46,7 @@ struct RawMidiListener {
                            const juce::MidiMessage& msg) = 0;
 };
 
-/// What the fork's virtual keyboard device is called.
+/// Name of the virtual QWERTY keyboard input.
 inline constexpr const char* kQwertyMidiDeviceName = "QWERTY Keyboard";
 
 /// The keyboard's device ID. Kept in the v0 format so projects routed to it still resolve.
@@ -55,7 +55,7 @@ inline juce::String qwertyMidiDeviceId() {
 }
 
 /**
- * @brief Where live MIDI goes when something other than the fork renders (#2579).
+ * @brief Where live MIDI goes: the engine that renders it (#2579).
  *
  * Called from the MIDI callback thread and the message thread; never the audio thread.
  */
@@ -323,7 +323,7 @@ class MidiBridge : public juce::MidiInputCallback {
      *     record-arm state.
      *   - Pushes to the recording preview queue ONLY for armed tracks.
      *
-     * @param sourceDeviceId TE device ID of the virtual device that produced
+     * @param sourceDeviceId ID of the virtual device that produced
      *                       the note (typically the QWERTY keyboard).
      */
     void broadcastSynthesizedNote(const juce::String& sourceDeviceId, int noteNumber, int velocity,
@@ -335,10 +335,10 @@ class MidiBridge : public juce::MidiInputCallback {
      */
     void playQwertyNote(int note, int velocity, bool isNoteOn);
 
-    /// Enables or disables the QWERTY device on the fork, and for the sink path.
+    /// Enables or disables the virtual QWERTY input.
     void setQwertyEnabled(bool enabled);
 
-    /// What the native engine's virtual-input list reads, having no fork device to ask.
+    /// What the engine's virtual-input list reads.
     bool isQwertyEnabled() const {
         return qwertyEnabled_;
     }
@@ -372,10 +372,10 @@ class MidiBridge : public juce::MidiInputCallback {
     // Shared MIDI-activity monitor (#2579).
     std::atomic<TrackMeters*> meters_{nullptr};
 
-    // Where live MIDI goes under the magda engine; not owned (#2579).
+    // Where live MIDI goes; not owned (#2579).
     std::atomic<LiveMidiSink*> liveSink_{nullptr};
 
-    // QWERTY enable state for the sink path, where there is no fork device to ask.
+    // QWERTY enable state.
     bool qwertyEnabled_ = false;
 
     // Track MIDI input routing (trackId → MIDI device ID)

@@ -16,7 +16,7 @@ namespace {
 constexpr double kBeatEpsilon = 1.0e-9;
 
 /// How finely a tempo ramp is cut into constant-tempo sections. Four to the
-/// beat, capped, which is what the incumbent uses: at 120 bpm a section is
+/// beat, capped: at 120 bpm a section is
 /// 125 ms of a curve that is already smooth, and the cap keeps a ramp across a
 /// hundred bars from baking a hundred thousand sections nobody can hear.
 constexpr double kRampSectionsPerBeat = 4.0;

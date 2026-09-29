@@ -4,7 +4,7 @@ namespace magda {
 
 namespace {
 
-/** @brief Tracktion's mergeTwoNames: "Out 1" and "Out 2" read "Out 1 + 2". */
+/** @brief Merges a channel pair's names: "Out 1" and "Out 2" read "Out 1 + 2". */
 juce::String mergeTwoNames(const juce::String& first, const juce::String& second) {
     const auto bracketed = [](const juce::String& name) {
         return name.fromLastOccurrenceOf("(", false, false)

@@ -12,10 +12,8 @@
  * @file FadeCurves.hpp
  * @brief The four fade shapes, and the ramp that is not a fade.
  *
- * The shapes are the incumbent's, sample for sample. FadeCurve's values are
- * pinned project-file integers that happen to equal Tracktion's own
- * (ClipInfo.hpp), and the curves behind them have to match too: a fade that
- * differs by a hair is a null-diff render that never nulls (#2040).
+ * FadeCurve's values are pinned project-file integers (ClipInfo.hpp), so the
+ * curves behind them must not change: saved projects would sound different.
  *
  * A fade is a gain envelope over a stretch of the timeline, so nothing here
  * knows about blocks or streams. Where a curve is applied is the voice's
@@ -41,8 +39,8 @@ float fadeGain(FadeCurve curve, float alpha);
  * and stops. So the curve is read as a position rather than as a level, and what
  * comes back is the proportion of the ramp's own stretch that has been consumed.
  *
- * These are the incumbent's shapes, which are the integrals of the gain curves
- * above rather than the curves themselves: what the gain curve is worth at a
+ * These shapes are the integrals of the gain curves above rather than the
+ * curves themselves: what the gain curve is worth at a
  * point is the *rate* the material runs at there, and where the material has got
  * to is the area under that. A rising ramp therefore ends at 1 and begins at a
  * half, which is not a mistake: a ramp that ran the material from the very start

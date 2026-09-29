@@ -62,8 +62,8 @@ juce::String getModParamDisplayName(int modParamIndex) {
 }
 
 /// The two readings of a modulator's Rate lane, which are the model's own
-/// (ParameterPresets) so the editor, the fork and the native engine read one
-/// description of it rather than three.
+/// (ParameterPresets) so the editor and the native engine read one
+/// description of it.
 ParameterInfo makeHzRateInfo(const juce::String& name) {
     return ParameterPresets::modRateHz(name);
 }
@@ -74,7 +74,7 @@ ParameterInfo makeSyncDivisionInfo(const juce::String& name) {
 
 ParameterInfo makeTempoInfo(const juce::String& name) {
     // Global tempo lane. Linear BPM scale covering the usual musical range;
-    // the actual write into te::TempoSequence happens in the BPM bridge epic.
+    // the write into the tempo map happens in the BPM bridge epic.
     ParameterInfo info;
     info.paramIndex = -1;
     info.name = name;

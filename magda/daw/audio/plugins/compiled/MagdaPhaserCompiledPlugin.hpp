@@ -11,7 +11,7 @@ namespace magda::daw::audio::compiled {
 /**
  * @brief Compiled-Faust stereo phaser.
  *
- * Hosts magda_phaser.dsp as a native Tracktion plugin. Every host control maps
+ * Hosts magda_phaser.dsp as a native plugin. Every host control maps
  * 1:1 to a Faust slot pinned by [idx:N].
  */
 class MagdaPhaserCompiledPlugin : public MagdaCompiledEffect {

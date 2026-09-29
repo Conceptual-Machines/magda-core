@@ -11,9 +11,8 @@ namespace magda {
 /**
  * @brief Native comping for loop-record takes.
  *
- * Tracktion's own comp manager can't be used here: it resolves takes only via
- * ProjectItemID, and our recorded takes are direct file references. So MAGDA
- * assembles the comp itself - it edits the per-clip comp section list, renders
+ * Recorded takes are direct file references, so MAGDA assembles the comp
+ * itself - it edits the per-clip comp section list, renders
  * a stitched composite WAV from the take files (equal-power crossfades at the
  * section boundaries) on a background thread, and points the clip's source at
  * the render. The comp section list lives on the clip (AudioClipModel::comp)

@@ -7,16 +7,16 @@ namespace magda::engine {
 
 namespace {
 
-/// A stage shorter than this is one the user means to be instant. The fork's
-/// own floor, and it is a comparison rather than a clamp: a zero-length attack
+/// A stage shorter than this is one the user means to be instant. It is a
+/// comparison rather than a clamp: a zero-length attack
 /// arrives at the top and hands the rest of the block to the decay, which is
 /// what makes an envelope with no attack a click on purpose.
 constexpr double kMinStageSeconds = 0.0001;
 
 /// A single block can step through several stages when the lengths are very
 /// short, and every one of them consumes what is left of the block. The bound
-/// is what stops a set of zero-length stages from spinning; the fork's own,
-/// and reached only by an envelope that has no time in it anywhere.
+/// is what stops a set of zero-length stages from spinning, and is reached only
+/// by an envelope that has no time in it anywhere.
 constexpr int kMaxStagesPerBlock = 8;
 
 struct Point {
@@ -25,13 +25,11 @@ struct Point {
 };
 
 /**
- * @brief The control point of the fork's quadratic bezier.
+ * @brief The control point of the quadratic bezier a curvature stands for.
  *
- * Transcribed from BezierHelpers::getQuadraticControlPoint rather than
- * reasoned out again: the curvature is a persisted number and the shape it
- * stands for is whatever that function says it is. The two branches are the
- * rising and falling segment, which are not mirror images of each other in the
- * original and are not made into one here.
+ * The curvature is a persisted number, so the shape it maps to must not
+ * change. The two branches are the rising and falling segment, which are not
+ * mirror images of each other and are not made into one.
  */
 Point controlPointFor(Point start, Point end, float curve) {
     const float c = std::clamp(curve * 2.0f, -1.0f, 1.0f);
@@ -47,8 +45,7 @@ Point controlPointFor(Point start, Point end, float curve) {
     return Point{x, end.y + halfRise + (halfRise * c)};
 }
 
-/// The bezier's y at an x, by solving for t and evaluating. The fork's
-/// BezierHelpers::getQuadraticYFromX, on the same terms.
+/// The bezier's y at an x, by solving for t and evaluating.
 float quadraticYFromX(float x, Point start, Point control, Point end) {
     if (start.x == end.x || start.y == end.y)
         return start.y;
@@ -101,8 +98,7 @@ void enterStage(AdsrState& state, AdsrStage stage, float startValue) {
 }
 
 /// Whether an envelope's stages are a musical length rather than a duration. A
-/// division of Hertz is not a division, and falls back to the milliseconds,
-/// which is the fork's rule (adsrStageSeconds says so).
+/// division of Hertz is not a division, and falls back to the milliseconds.
 bool runsInBars(const AdsrSettings& settings) {
     return settings.tempoSync && settings.rateType != static_cast<int>(magda::ModRateType::Hertz);
 }
@@ -150,9 +146,9 @@ StageLengths stageLengthsFor(const AdsrSettings& settings, const ModTiming& timi
 /**
  * @brief Run the stage machine forward by @p elapsed.
  *
- * The fork's own loop. A stage that ends inside the block hands what is left of
- * it to the next one, so a block longer than the attack arrives somewhere in
- * the decay rather than being clamped at the top of it.
+ * A stage that ends inside the block hands what is left of it to the next one,
+ * so a block longer than the attack arrives somewhere in the decay rather than
+ * being clamped at the top of it.
  *
  * @p elapsed and @p lengths are in the same unit and the machine never asks
  * which (@ref StageLengths).
@@ -234,8 +230,8 @@ void advanceStages(AdsrState& state, const AdsrSettings& settings, const StageLe
 
 double adsrStageSeconds(float milliseconds, const AdsrSettings& settings, const ModTiming& timing) {
     // A division of Hertz is not a division. The model reaches that state by
-    // having tempo sync on with nothing musical selected, and the fork's answer
-    // is to fall back to the milliseconds rather than to invent a period.
+    // having tempo sync on with nothing musical selected, and the answer is to
+    // fall back to the milliseconds rather than to invent a period.
     if (runsInBars(settings)) {
         const auto beats = cycleBeats(settings.rateType, timing.numerator, timing.denominator);
         return beats * 60.0 / std::max(timing.bpm, 1.0e-6);
@@ -352,10 +348,9 @@ float advanceAdsr(AdsrState& state, const AdsrSettings& settings, const BlockInf
 
     advanceStages(state, settings, lengths, elapsed, freeRunning, gateOpen);
 
-    // Advanced first and published after, which is the fork's ADSR timer and
-    // the opposite of its LFO timer: the value a block renders with is where
-    // the envelope ends up rather than where it started. Reproduced rather than
-    // tidied, because the fork is what a parity case compares against.
+    // Advanced first and published after, the opposite of the LFO: the value a
+    // block renders with is where the envelope ends up rather than where it
+    // started.
     state.value = std::clamp(state.value, 0.0f, 1.0f);
     return state.value;
 }

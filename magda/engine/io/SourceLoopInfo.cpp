@@ -72,7 +72,7 @@ SourceLoopInfo loopInfoFrom(const juce::StringPairArray& metadata, double sample
     if (metadata[juce::WavAudioFormat::acidRootSet] == "1")
         info.rootNote = intOf(metadata, juce::WavAudioFormat::acidRootNote);
 
-    // ---- The plainer keys AIFF and the fork's own files use -----------------
+    // ---- The plainer keys AIFF and similar files use ------------------------
 
     if (!info.bpm)
         info.bpm = positiveDoubleOf(metadata, "tempo");
@@ -80,12 +80,7 @@ SourceLoopInfo loopInfoFrom(const juce::StringPairArray& metadata, double sample
     if (!info.numBeats)
         info.numBeats = positiveDoubleOf(metadata, "beat count");
 
-    // Numerator before the slash, which is how a time signature is written and
-    // NOT how the fork reads one: tracktion_LoopInfo.cpp assigns the left side
-    // to the denominator and the right to the numerator, so a 6/8 file becomes
-    // 8/6 there. Diverging deliberately -- none of these fields reaches the
-    // audio, so nothing in the null-diff corpus moves for it, and reproducing a
-    // swap would only spread it.
+    // Numerator before the slash, which is how a time signature is written (6/8 is six over eight).
     if (const auto timeSignature = valueOf(metadata, "time signature")) {
         if (!info.numerator)
             info.numerator = timeSignature->upToFirstOccurrenceOf("/", false, false).getIntValue();
@@ -95,13 +90,13 @@ SourceLoopInfo loopInfoFrom(const juce::StringPairArray& metadata, double sample
     }
 
     // The smpl chunk's root, for a file with no acid chunk at all. Note zero
-    // reads as absent, which is the fork's own treatment of this key.
+    // reads as absent.
     if (!info.rootNote)
         info.rootNote = positiveIntOf(metadata, "MidiUnityNote");
 
-    // Not read: the "key signature" string, which the fork also turns into a
-    // root note. That needs a note-name parser the engine has not got, and what
-    // the model seeds from here is the tempo and the beat count.
+    // Not read: the "key signature" string. That needs a note-name parser the
+    // engine has not got, and what the model seeds from here is the tempo and
+    // the beat count.
 
     // ---- What the file left to be worked out -------------------------------
 
@@ -109,11 +104,7 @@ SourceLoopInfo loopInfoFrom(const juce::StringPairArray& metadata, double sample
                                      ? static_cast<double>(lengthInSamples) / sampleRate
                                      : 0.0;
 
-    // Beats over minutes. The fork's beat-count branch writes
-    // `beats / duration / 60` here, which is a genuine bug in it -- four beats
-    // over two seconds seeds 0.03 bpm rather than 120 -- and one worth not
-    // reproducing: a tempo that wrong is a clip that will not stretch to any
-    // sensible length.
+    // Beats over minutes: four beats over two seconds is 120 bpm.
     if (!info.bpm && info.numBeats && durationSeconds > 0.0)
         info.bpm = (*info.numBeats * 60.0) / durationSeconds;
 

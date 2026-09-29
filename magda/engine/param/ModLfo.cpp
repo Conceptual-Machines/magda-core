@@ -11,8 +11,8 @@ namespace {
 
 /// A rate this low is a period longer than any session, and it is what a
 /// modulated rate arriving at the bottom of its range would otherwise divide
-/// by. Well below MAGDA's own slider (0.05 Hz) and the fork's (0.01 Hz), so it
-/// is a guard rather than a range.
+/// by. Well below MAGDA's own slider (0.05 Hz), so it is a guard rather than a
+/// range.
 constexpr double kMinHz = 1.0e-4;
 
 /// A loop region narrower than this is a region the user has collapsed rather
@@ -96,7 +96,7 @@ double barFractionOf(int rateType) {
 
     // Hertz is not a division, and neither is an ordinal from a project this
     // build does not know. A bar is what a modifier with no division falls
-    // back to, which is the fork's answer as well.
+    // back to.
     return 1.0;
 }
 
@@ -251,8 +251,7 @@ float advanceLfo(LfoState& state, const LfoSettings& settings,
 
     // A latch belongs to the setting that made it. Turning one-shot off clears
     // it, so turning it back on plays the cycle again rather than resuming a
-    // hold from before, which is what the fork's snapshot does on the same
-    // edit (CurveSnapshotHolder::update).
+    // hold from before.
     if (!settings.oneShot)
         state.completed = false;
 
@@ -321,9 +320,8 @@ float advanceLfo(LfoState& state, const LfoSettings& settings,
     state.phase = phase;
     state.value = value;
 
-    // Moved on for the next block, after this one's value has been settled,
-    // which is the order the fork's timer uses: the value a block renders with
-    // is the value at its first sample.
+    // Moved on for the next block, after this one's value has been settled:
+    // the value a block renders with is the value at its first sample.
     if (settings.sync != ModSync::Transport && !holding && !zeroed) {
         if (settings.tempoSync) {
             // The bars the block covered over the bars a cycle lasts. Off the

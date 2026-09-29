@@ -14,10 +14,9 @@ void configureSliderFormatting(TextSlider& slider, const magda::ParameterInfo& i
     slider.clearValueFormatter();
     slider.setParameterInfo(info);
 
-    // DisplayTextProvider::format is a thin wrapper around TE's
-    // valueToString, so the argument MUST be a plugin-native (TE raw)
-    // value. For text entry, project from MAGDA-normalized samples back
-    // to TE raw so typed plugin display values can be matched by probing.
+    // DisplayTextProvider::format takes a plugin-native (raw) value. For
+    // text entry, project from MAGDA-normalized samples back to raw so typed
+    // plugin display values can be matched by probing.
     if (info.displayText) {
         auto provider = info.displayText;
         const magda::ParameterInfo& infoCopy = info;

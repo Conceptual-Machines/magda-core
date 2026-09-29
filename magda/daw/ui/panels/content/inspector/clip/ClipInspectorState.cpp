@@ -451,7 +451,7 @@ void ClipInspector::updateFromSelectedClip() {
             clipStretchValue_->setValue(magda::audioEventRef(*clip).speedRatio,
                                         juce::dontSendNotification);
             // Show the effective stretch mode (auto-upgraded when beat mode / warp
-            // / speed / pitch silently engages TE's SoundTouch) so this matches
+            // / speed / pitch silently engages stretching) so this matches
             // the audio editor's readout.
             stretchModeCombo_.setSelectedId(
                 magda::audioEventRef(*clip).getEffectiveTimeStretchMode() + 1,

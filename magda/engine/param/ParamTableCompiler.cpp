@@ -56,9 +56,8 @@ ModKind modKindOf(magda::ModType type) {
 /**
  * @brief Where a modifier's phase comes from, folded from what the model says.
  *
- * The model keeps the trigger mode and the tempo-sync flag apart, and the fork
- * folds the two into one sync type (ModifierHelpers::mapSyncType). Folded the
- * same way here, so a project sounds the same in both engines:
+ * The model keeps the trigger mode and the tempo-sync flag apart; they are
+ * folded into one sync type here:
  *
  *  - a MIDI or audio trigger is a run something restarts, whether or not it is
  *    also tempo synced;
@@ -95,15 +94,14 @@ LfoSettings lfoSettingsOf(const magda::ModInfo& mod) {
     settings.loopStart = mod.loopStart;
     settings.loopEnd = mod.loopEnd;
 
-    // Which triggers this LFO listens to, and whether they gate it. Both are
-    // the fork's rules read off the same model fields (applyLFOProperties):
-    // a note-triggered LFO is gated by its own held notes so it reads as an
+    // Which triggers this LFO listens to, and whether they gate it: a
+    // note-triggered LFO is gated by its own held notes so it reads as an
     // envelope, and an audio-triggered one sits shut between hits.
     //
     // Cross-track sidechain is the one thing the model cannot say here. It is
-    // a property of the device the modifier drives rather than of the modifier
-    // (PluginManager owns it in the fork), so it is left off and set by
-    // whoever knows, which is the same place that will feed the triggers.
+    // a property of the scope the modifier lives on rather than of the
+    // modifier, so it is left off and set by whoever knows, which is the same
+    // place that will feed the triggers.
     settings.gateOnTrigger = mod.triggerMode == magda::LFOTriggerMode::MIDI;
     settings.startGated = mod.triggerMode == magda::LFOTriggerMode::Audio ||
                           (mod.triggerMode == magda::LFOTriggerMode::MIDI && !mod.running);
@@ -118,8 +116,7 @@ LfoSettings lfoSettingsOf(const magda::ModInfo& mod) {
  * decides what the period is and therefore whether the phase is a function of
  * the timeline, so it belongs in the fold. For an envelope it only scales the
  * stage lengths, and a tempo-synced free-running envelope is still free
- * running. The fork keeps the two apart for the same reason
- * (ModifierHelpers::mapADSRSyncType).
+ * running.
  */
 ModSync adsrSyncOf(const magda::ModInfo& mod) {
     switch (mod.triggerMode) {
@@ -149,15 +146,14 @@ AdsrSettings adsrSettingsOf(const magda::ModInfo& mod) {
     settings.tempoSync = mod.tempoSync;
 
     // One division for all three stages, because that is what the model
-    // carries: the fork writes it to the ADSR's separate attack, decay and
-    // release sync parameters and they always hold the same value.
+    // carries.
     settings.rateType = mod.tempoSync ? magda::syncDivisionToTeRateOrdinal(mod.syncDivision)
                                       : static_cast<int>(magda::ModRateType::Hertz);
 
-    // The gate rules the fork applies (applyADSRProperties), read off the same
-    // model fields. An audio-triggered envelope's gate belongs to the detector
-    // watching its source, and it sits shut between hits; a note-triggered one
-    // is shut until the model says it is running.
+    // The gate rules, read off the model fields. An audio-triggered envelope's
+    // gate belongs to the detector watching its source, and it sits shut
+    // between hits; a note-triggered one is shut until the model says it is
+    // running.
     settings.startGated = mod.triggerMode == magda::LFOTriggerMode::Audio ||
                           (mod.triggerMode == magda::LFOTriggerMode::MIDI && !mod.running);
 
@@ -169,9 +165,8 @@ RandomSettings randomSettingsOf(const magda::ModInfo& mod) {
     RandomSettings settings;
     settings.type = mod.randomType == 1 ? RandomShape::Noise : RandomShape::Stepped;
 
-    // The LFO's fold, unchanged. The fork maps the two with the same call
-    // (applyRandomProperties uses mapSyncType), because both read the model's
-    // one trigger mode and one tempo-sync flag.
+    // The LFO's fold, unchanged: both read the model's one trigger mode and one
+    // tempo-sync flag.
     settings.sync = modSyncOf(mod);
     settings.trigger = mod.triggerMode;
     settings.tempoSync = mod.tempoSync;
@@ -189,10 +184,8 @@ RandomSettings randomSettingsOf(const magda::ModInfo& mod) {
 FollowerSettings followerSettingsOf(const magda::ModInfo& mod) {
     FollowerSettings settings;
 
-    // The gain belongs before the band limits and before detection, which is
-    // where the fork puts it too: its own source cache applies this and holds
-    // TE's post-detection gain at unity, because a level that has already been
-    // detected has no frequency content left for a filter to act on.
+    // The gain belongs before the band limits and before detection: a level that
+    // has already been detected has no frequency content left for a filter to act on.
     settings.gainDb = mod.followerGainDb;
     settings.attackMs = mod.followerAttackMs;
     settings.holdMs = mod.followerHoldMs;
@@ -413,9 +406,7 @@ void Builder::allocateMods(const Node& node) {
         // Cross-track is a property of the scope rather than of the modifier,
         // which is why the settings could not say it: a modifier whose scope is
         // sidechained from elsewhere is driven by that track's detector and
-        // must not be retriggered by the track it lives on. The fork keeps the
-        // same flag on the same terms, set by PluginManager rather than by the
-        // modifier itself.
+        // must not be retriggered by the track it lives on.
         const bool crossTrack = node.sidechainSource != magda::INVALID_TRACK_ID &&
                                 node.sidechainSource != node.scope.trackId;
         modifier.lfo.skipNativeResync = crossTrack;
@@ -444,11 +435,9 @@ void Builder::allocateMods(const Node& node) {
             table_.modifiers.back().rate = add(rateKey, modRateSpec(mod), modRateBase(mod));
 
         // A modifier the model has switched off has no links at all rather
-        // than links from a source that outputs zero. The fork creates no
-        // modifier for one, so nothing is assigned and nothing contributes;
-        // carrying the links instead would push every bipolar target down by
-        // the link's own depth, which is a modifier doing something while
-        // switched off.
+        // than links from a source that outputs zero: carrying the links
+        // instead would push every bipolar target down by the link's own depth,
+        // which is a modifier doing something while switched off.
         if (!mod.enabled)
             continue;
 

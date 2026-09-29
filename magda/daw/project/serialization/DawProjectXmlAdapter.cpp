@@ -366,7 +366,7 @@ const char* deviceElementTag(const DeviceInfo& device) {
 
 // A device's DAWproject state file: where it lives in the archive and its exact
 // bytes. VST3 devices export their .vstpreset (loadable by other hosts); anything
-// else falls back to MAGDA's opaque TE plugin-state blob. nullopt = no state.
+// else falls back to MAGDA's opaque plugin-state blob. nullopt = no state.
 struct DeviceStateFile {
     juce::String archivePath;
     juce::MemoryBlock bytes;

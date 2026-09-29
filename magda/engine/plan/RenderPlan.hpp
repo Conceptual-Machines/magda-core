@@ -143,8 +143,7 @@ enum class OpKind : std::uint8_t {
     Output,        ///< hardware output
 
     // A hardware insert, which is these two with the outside world between them
-    // (#2245). Not a device with special cases: the incumbent recognises an
-    // insert by where it sits in a chain, and the plan already has ops for
+    // (#2245). Not a device with special cases: the plan already has ops for
     // things that consume a signal and things that produce one.
     InsertSend,    ///< audio or MIDI leaving the machine; consumes, produces nothing
     InsertReturn,  ///< what comes back, and where the round trip's latency is declared

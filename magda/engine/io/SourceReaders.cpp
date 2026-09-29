@@ -167,7 +167,7 @@ int LoopingAudioFileReader::read(juce::AudioBuffer<float>& destination, int dest
     while (done < numSamples) {
         // Every position is inside the region, including the ones in front of
         // it: an event anchored before its own loop start is anchored at a
-        // phase within the loop, which is how the incumbent reads one too.
+        // phase within the loop.
         const auto offset = (startSample + done) - loopStart_;
         const auto phase = offset % loopLength_;
         const auto found = loopStart_ + (phase < 0 ? phase + loopLength_ : phase);

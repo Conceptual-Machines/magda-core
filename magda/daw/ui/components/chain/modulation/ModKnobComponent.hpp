@@ -94,7 +94,7 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
 
   private:
     // Compact ADSR shape with a dot at the current value (overlaid from the
-    // live TE modifier via mod_->value / mod_->envStage).
+    // live modifier via mod_->value / mod_->envStage).
     void paintEnvelope(juce::Graphics& g, juce::Rectangle<float> bounds) {
         const float top = bounds.getY() + 1.0f;
         const float bottom = bounds.getBottom() - 1.0f;
@@ -148,7 +148,7 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
     }
 
     // Compact scrolling trace of the random output (oldest -> newest), fed
-    // from mod_->value (overlaid from the live TE modifier) each tick.
+    // from mod_->value (overlaid from the live modifier) each tick.
     void paintRandom(juce::Graphics& g, juce::Rectangle<float> bounds) {
         const float w = bounds.getWidth();
         const float h = bounds.getHeight() - 2.0f;

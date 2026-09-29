@@ -136,7 +136,7 @@ class AutomationManager : public TrackManagerListener {
     /** Notify listeners (UI, playback engine) that a lane's underlying
         ParameterInfo has effectively changed — typically because a mode flag
         on the target (e.g. an LFO's tempoSync) flipped, swapping the lane's
-        scale/labels and the TE bake target. Same wire as the private
+        scale/labels and the bake target. Same wire as the private
         property-change notification but reachable from AudioBridge.
     */
     void invalidateLane(AutomationLaneId laneId) {
@@ -341,7 +341,7 @@ class AutomationManager : public TrackManagerListener {
     /**
      * @brief Replace every point on an absolute lane in one shot (fresh ids),
      *        then notify once. Used by the tempo-lane bridge to mirror
-     *        te::Edit::tempoSequence into the lane without per-point churn.
+     *        the tempo map into the lane without per-point churn.
      */
     void replaceLanePoints(AutomationLaneId laneId, const std::vector<AutomationPoint>& points);
 
@@ -549,7 +549,7 @@ class AutomationManager : public TrackManagerListener {
      *        an automated value back into TrackManager via setTrackVolume /
      *        setTrackPan. Listeners that would otherwise push the value back
      *        into the audio engine (AudioBridge) check this to avoid fighting
-     *        TE's own automation curve, while still letting user-initiated
+     *        the engine's own automation curve, while still letting user-initiated
      *        fader/pan edits on any track reach the engine during playback.
      *
      *        Use AutomationWriteScope RAII to toggle — always pair set/unset.

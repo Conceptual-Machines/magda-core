@@ -62,8 +62,7 @@ bool elementsConsumeMidi(const std::vector<ChainElement>& elements, RackNesting&
 }
 
 /// Whether a rack produces the track's sound rather than processing it, which
-/// is what puts the trigger tap after it rather than in front of it. The fork
-/// asks the same question of the same subtree (rackContainsInstrumentSource).
+/// is what puts the trigger tap after it rather than in front of it.
 ///
 /// Only what will be emitted counts: a bypassed nested rack and one that
 /// contains itself are both passed through, and neither makes a sound for the
@@ -306,8 +305,8 @@ class Compiler {
      * @brief Where an audio trigger keys off each emitted track.
      *
      * Not the sidechain tap, and the difference is the whole of what a source
-     * fader does. The fork puts its trigger monitor at the front of the chain,
-     * or immediately after the instrument that makes the sound, so a hit is
+     * fader does. The trigger tap sits at the front of the chain, or
+     * immediately after the instrument that makes the sound, so a hit is
      * detected on what the track played; the follower tap sits at the far end,
      * post-FX and post-fader, so a follower tracks what the track sends. Riding
      * the source fader therefore moves a follower and leaves the triggers
@@ -321,8 +320,8 @@ class Compiler {
     RackNesting nesting_;
 
     /// The track whose trigger tap is still being looked for, and whether the
-    /// instrument that ends the search has gone by. Top level only, because the
-    /// fork's own search is over the track's own element list.
+    /// instrument that ends the search has gone by. Top level only: the search
+    /// is over the track's own element list.
     TrackId triggerTapTrack_ = INVALID_TRACK_ID;
     bool triggerTapFound_ = false;
     /// Post-mute output: what the track's destination and any track taking this
@@ -952,9 +951,8 @@ std::vector<PortRef> Compiler::alignInputs(const OpKey& key, OpKind kind,
  *        between them (#2245).
  *
  * Two ops rather than a device with special cases, which is the difference
- * #1893 asked for. The incumbent recognises an insert by where it sits in a
- * chain and wires it accordingly; the plan already has ops that consume a
- * signal and ops that produce one, and an insert is one of each.
+ * #1893 asked for: the plan already has ops that consume a signal and ops that
+ * produce one, and an insert is one of each.
  *
  * What that buys is the alignment. The return op declares the round trip when
  * the plan is prepared, exactly as a device declares its latency, and the same
@@ -1156,20 +1154,20 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     // An external plugin is handed the bus and adapts its own channels, and
     // that is not a width the plan gets an opinion about (#2246).
     //
-    // The adaptation is arithmetic rather than routing, and it is the fork's:
-    // a stereo bus into a mono plugin is averaged, a mono bus into a stereo one
-    // is duplicated, and a mono plugin's output is spread back over both sides.
-    // EngineExternalDevice reproduces every step of it, because every project
-    // hosting a plugin that is not stereo was mixed against it.
+    // The adaptation is arithmetic rather than routing: a stereo bus into a
+    // mono plugin is averaged, a mono bus into a stereo one is duplicated, and
+    // a mono plugin's output is spread back over both sides. EngineExternalDevice
+    // does every step of it, because every project hosting a plugin that is not
+    // stereo was mixed against it.
     //
     // Narrowing the port first defeats that. The device would be handed the
     // left channel of the bus and the average would never be taken -- the
     // arithmetic would still be in the adapter, unreachable, and a mono plugin
-    // would render one side of a project the fork renders both sides of.
+    // would render one side of the project.
     const bool adaptsItsOwnChannels = device.format != PluginFormat::Internal;
 
-    // The injector test still comes first: an instrument reads no bus in either
-    // engine, and being external does not give it one to adapt.
+    // The injector test still comes first: an instrument reads no bus, and
+    // being external does not give it one to adapt.
     const auto inputWidth = transparent            ? 2
                             : injector             ? 0
                             : adaptsItsOwnChannels ? 2
@@ -1350,13 +1348,13 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
         if (chain.outputIndex != 0) {
             // Not the same mechanism as a multi-out track, which reads an
             // output pair of an instrument rather than a chain of a user rack.
-            // A chain routed to an aux output is silent in the current engine
-            // too: RackSyncManager wires it to output pins 3 and up, and the
-            // rack instance on the track reads pins 1 and 2, so nothing is on
-            // the other end of them. Compiling nothing is therefore parity,
-            // and it is reported because the model says something the signal
-            // flow does not: routing a chain to an aux output loses it, and
-            // silently dropping it here would look like the plan's doing.
+            // A chain routed to an aux output is silent: RackSyncManager wires
+            // it to output pins 3 and up, and the rack instance on the track
+            // reads pins 1 and 2, so nothing is on the other end of them.
+            // Compiling nothing is therefore correct, and it is reported
+            // because the model says something the signal flow does not:
+            // routing a chain to an aux output loses it, and silently dropping
+            // it here would look like the plan's doing.
             diagnose("rack " + std::to_string(rack.id) + " chain " + std::to_string(chain.id) +
                      ": aux output " + std::to_string(chain.outputIndex) +
                      " reaches nothing, the chain is silent");
@@ -1574,8 +1572,8 @@ ChainSignal Compiler::emitPadRack(const DeviceInfo& device, const ChainSite& sit
 ChainSignal Compiler::emitElements(const std::vector<ChainElement>& elements, const ChainSite& site,
                                    ChainSignal signal) {
     // Only the track's own list, and only while a trigger tap is still wanted.
-    // A nested chain is not where the fork looks either: an instrument inside a
-    // rack ends the search at the rack, not inside it.
+    // A nested chain is not searched: an instrument inside a rack ends the
+    // search at the rack, not inside it.
     const bool watchingForInstrument = !triggerTapFound_ && site.trackId == triggerTapTrack_ &&
                                        site.rackId == INVALID_RACK_ID &&
                                        site.segment == ChainSegment::Fx;
@@ -1594,9 +1592,8 @@ ChainSignal Compiler::emitElements(const std::vector<ChainElement>& elements, co
             signal = emitRack(rack, site, signal);
         }
 
-        // Immediately after whatever makes the sound, which is where the fork
-        // puts the monitor on a track that has an instrument: in front of it
-        // there is nothing to detect.
+        // Immediately after whatever makes the sound on a track that has an
+        // instrument: in front of it there is nothing to detect.
         if (watchingForInstrument && endsTheSearch && !triggerTapFound_) {
             trackTriggerTap_[site.trackId] = signal.audio;
             triggerTapFound_ = true;
@@ -1663,10 +1660,9 @@ void Compiler::emitTrack(const TrackInfo& track) {
             const auto op = addOp(OpKind::AudioInput, key, {}, {SignalKind::Audio});
             plan_.ops[static_cast<std::size_t>(op)].liveness = LivenessDomain::Live;
 
-            // What the track is hearing, which the incumbent reads off the
-            // input device rather than off the signal (#2463). Here it is the
-            // input op's own output, ahead of the gate, so a track that is
-            // recording without monitoring still meters what it records.
+            // What the track is hearing (#2463): the input op's own output,
+            // ahead of the gate, so a track that is recording without
+            // monitoring still meters what it records.
             const auto meter = addOp(OpKind::Meter, liveInputMeterKey(track.id), {PortRef{op, 0}},
                                      {SignalKind::Audio});
             plan_.ops[static_cast<std::size_t>(meter)].liveness = LivenessDomain::Live;
@@ -1763,13 +1759,7 @@ void Compiler::emitTrack(const TrackInfo& track) {
     // fader the chain says (#2087). Emitted through one lambda called from one
     // of two places rather than duplicated, so the two sides cannot drift into
     // meaning different things.
-    // The master is pre-fader in both engines whatever the flag says, because
-    // Tracktion cannot represent anything else: `createMasterPluginNode` builds
-    // the whole of `getMasterPluginList()` and only then wraps it in
-    // `getMasterVolumePlugin()`, so a plugin after the master fader would need a
-    // change to TE's own graph builder. Honouring the flag here and not there
-    // would make the master the one place the two engines disagree, which is the
-    // failure this whole contract exists to prevent. See #2087.
+    // The master is pre-fader whatever the flag says. See #2087.
     const bool stagePostFader = track.chain.postFxPostFader && !isMaster;
 
     auto emitPostFx = [&](ChainSignal in) {
@@ -1912,10 +1902,10 @@ void Compiler::emitModulationTaps() {
 
         // Two points, and the tap reads the one it is for. Pre-FX is after
         // whatever makes the track's sound and before its effects, which is
-        // where the fork puts its trigger monitor; post-fader is the far end,
-        // before the muting node, which is where it puts its follower tap. A
-        // plan reading one point for both would lose what the source fader
-        // does, which is the whole of the difference.
+        // where triggers key off; post-fader is the far end, before the muting
+        // node, which is where followers read. A plan reading one point for
+        // both would lose what the source fader does, which is the whole of the
+        // difference.
         const auto& points = preFx ? trackTriggerTap_ : trackSidechainTap_;
 
         PortRef audio;

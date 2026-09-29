@@ -395,7 +395,7 @@ class ClipManager {
     /** @brief Enable or disable warp markers on an audio clip */
     void setClipWarpEnabled(ClipId clipId, bool enabled);
 
-    // -- Audio loop / offset setters (TE-aligned model) --
+    // -- Audio loop / offset setters --
     //
     // Each setter has a deliberately narrow scope. If you need a composite
     // "drag the whole loop region" operation that also resets phase, call
@@ -511,8 +511,7 @@ class ClipManager {
      *  this returns when nothing needs detecting. */
     void detectMissingTempo(const std::vector<ClipId>& clipIds, double projectBPM,
                             std::function<void()> onReady);
-    /** @brief Set the playback speed ratio (1.0 = original, 2.0 = double speed) - TE:
-     * Clip::speedRatio */
+    /** @brief Set the playback speed ratio (1.0 = original, 2.0 = double speed) */
     void setSpeedRatio(ClipId clipId, double speedRatio);
     /** @brief Set the time-stretch algorithm mode for an audio clip */
     void setTimeStretchMode(ClipId clipId, int mode);
@@ -557,7 +556,7 @@ class ClipManager {
     //
     // A crossfade IS an overlap: two audio arrangement clips on the same track
     // whose placements partially overlap and whose autoCrossfade flags are set.
-    // Playback fades come from TE's auto-crossfade over the overlap region
+    // Playback fades come from the auto-crossfade over the overlap region
     // (each clip's stored fadeIn/fadeOut returns when the clips are pulled
     // apart). The geometry is beat-domain and lives in the placements, so it
     // serializes and round-trips with them — there is no separate duration
@@ -597,7 +596,7 @@ class ClipManager {
      *
      * Its own stored fades, replaced at either edge by the overlap AUTO-XFADE
      * turns into a fade, and clamped so the two never sum past the clip — the
-     * same clamp TE applies, so what is drawn is what is heard. One call for
+     * same clamp playback applies, so what is drawn is what is heard. One call for
      * the arrangement view and for the engine, because a fade drawn differently
      * from the one played is the bug this replaces.
      *
@@ -936,7 +935,7 @@ class ClipManager {
      * can publish an all-or-nothing grid mutation after every slot is ready.
      *
      * Intended for bulk mutations like AI-driven note generation where
-     * firing per-note would cause O(n) full TE sequence rebuilds plus
+     * firing per-note would cause O(n) full sequence rebuilds plus
      * O(n) UI repaints.
      */
     void beginBatch();
@@ -999,10 +998,8 @@ class ClipManager {
      *
      * Nothing else changes the model: no trim, no split, no delete, at any
      * overlap shape. A drop landing strictly inside another audio clip used to
-     * split it into head / covered slice / tail, because the Tracktion mirror
-     * holds one engine clip per model clip and cannot express a hole; the
-     * native engine carries silenced ranges on the clip snapshot instead
-     * (#1890), so that case keeps whole clips too.
+     * split it into head / covered slice / tail; the clip snapshot now carries
+     * silenced ranges instead (#1890), so that case keeps whole clips too.
      * Called internally by move methods and explicit opt-in creation paths.
      */
     void resolveOverlaps(ClipId dominantClipId);

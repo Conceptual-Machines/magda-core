@@ -30,12 +30,12 @@ namespace magda {
  */
 struct ClipDisplayInfo {
     // ------- Clip placement on the timeline -------
-    double startTime;   // clip start on timeline (seconds)
-    double length;      // clip duration on timeline (seconds)
-    double endTime;     // startTime + length
-    double offset;      // original source-file offset (seconds)
-    double speedRatio;  // time stretch ratio — TE: Clip::speedRatio
-                        // In autoTempo mode, speedRatio is always 1.0 (TE handles stretching).
+    double startTime;  // clip start on timeline (seconds)
+    double length;     // clip duration on timeline (seconds)
+    double endTime;    // startTime + length
+    double offset;     // original source-file offset (seconds)
+    // In autoTempo mode, speedRatio is always 1.0 (the engine handles stretching).
+    double speedRatio;  // time stretch ratio
     bool reversed;
 
     // ------- Source file extent (the only "what to draw" answer) -------
@@ -209,7 +209,7 @@ struct ClipDisplayInfo {
 
         // ---- Source-time ↔ timeline-time conversion ratio ----
         //
-        // AutoTempo: TE stretches the source so 1 source beat == 1 timeline
+        // AutoTempo: the engine stretches the source so 1 source beat == 1 timeline
         // beat, so timelineSeconds = sourceSeconds × (sourceBPM / projectBPM).
         // We try the source-interpretation BPM first; if absent, fall back to
         // the loop's beat-count for the same calibration. Issue #1157.

@@ -62,10 +62,8 @@ enum class SyncDivision {
  *
  * PINNED: this is the discrete value a tempo-synced modifier's Rate parameter
  * carries, so it lands in project files through automation curves and macro/mod
- * links. It is MAGDA's own enumeration; the values equal
- * tracktion::engine::ModifierCommon::RateType today, which is what lets the
- * engine bridge be a cast, and a static_assert in audio/EngineEnumPins.cpp holds
- * that equality.
+ * links. It is MAGDA's own enumeration; the values do not
+ * move.
  *
  * MAGDA's Rate control does not expose every value (no 1/16 dotted/triplet, no
  * 1/64s); the unexposed ones exist so a value written by the engine or by an
@@ -251,10 +249,9 @@ enum class LFOTriggerMode {
 /**
  * @brief Where in a source track's chain a modifier listens.
  *
- * The two points the engines actually have, named for what they are rather than
+ * The two points the engine actually has, named for what they are rather than
  * for a fader they sit either side of. A third point between them (post-FX,
- * pre-fader) is not something either engine taps today, so it is deliberately
- * not offered: adding it is a change to both engines and its own decision.
+ * pre-fader) is not tapped today, so it is deliberately not offered.
  *
  * Per modifier rather than per sidechain, because a modifier listening to its
  * own track has no sidechain to carry the setting, and because two listeners on
@@ -281,9 +278,8 @@ enum class ModTapPoint : int {
 /**
  * @brief Where a modifier of this type listens unless it says otherwise.
  *
- * The fork's own split, which is what makes the default pure parity: its
- * follower tap is post-fader and its trigger monitor is pre-FX, so a project
- * carrying neither setting sounds the same in both engines.
+ * A follower taps post-fader and a trigger monitor taps pre-FX, which is what
+ * projects saved before the setting existed were rendered against.
  */
 inline ModTapPoint defaultModTapPoint(ModType type) {
     return type == ModType::Follower ? ModTapPoint::PostFader : ModTapPoint::PreFx;
@@ -339,7 +335,7 @@ struct ModInfo {
     bool oneShotComplete = false;  // Runtime: true after one-shot finishes, cleared on gate reset
 
     // The drawn curve is a level envelope (1 = full level) and the applied
-    // modulator output is (1 - curve). TE treats output 0 as "modifier
+    // modulator output is (1 - curve). The engine treats output 0 as "modifier
     // inactive" (gated / not yet triggered), so a level curve must be flipped
     // on the way out for inactive to mean "no attenuation". Used by the
     // Sidechain device: the user draws the audible gain shape, the engine
@@ -361,7 +357,6 @@ struct ModInfo {
     float audioReleaseMs = 100.0f;  // Envelope follower release time (ms)
 
     // ADSR envelope generator settings (type == Envelope; serialized).
-    // Defaults mirror te::ADSRModifier's parameter defaults.
     float envAttackMs = 10.0f;    // Attack time (ms when !tempoSync)
     float envDecayMs = 200.0f;    // Decay time (ms when !tempoSync)
     float envSustain = 0.7f;      // Sustain level held while gated (0-1)
@@ -371,10 +366,10 @@ struct ModInfo {
     float envReleaseCurve = 0.0f;
 
     // ADSR runtime state (not serialized)
-    int envStage = 0;  // Current te::ADSRModifier::Stage ordinal, for the UI display
+    int envStage = 0;  // Current ADSR stage ordinal, for the UI display
 
     // Random modulator settings (type == Random; serialized).
-    // Defaults mirror te::RandomModifier's parameter defaults. Timing reuses
+    // Timing reuses
     // the shared rate / tempoSync / syncDivision / triggerMode fields above,
     // and modulation depth/bipolarity come from the per-link amount/bipolar
     // (like the LFO path), so only the distribution shape lives here.
@@ -385,15 +380,13 @@ struct ModInfo {
 
     // Random modulator runtime state (not serialized). Drives the MAGDA-side
     // visual simulation in TrackManager::updateAllMods so the editor preview
-    // keeps animating between audio-thread updates (the TE RandomModifier only
-    // advances while the playback graph is processing). Mirrors te::Random-
-    // Modifier's previousRandom/currentRandom/randomDifference.
+    // keeps animating between audio-thread updates (the audio Random modifier only
+    // advances while the playback graph is processing).
     float randomCurrent = 0.5f;
     float randomPrev = 0.5f;
     float randomDiff = 0.0f;
 
-    // Envelope follower settings (type == Follower; serialized). Defaults
-    // mirror te::EnvelopeFollowerModifier's parameter defaults. The follower
+    // Envelope follower settings (type == Follower; serialized). The follower
     // tracks the amplitude of its host scope's (post-FX) audio; modulation
     // depth comes from the per-link amount (like the other modulators).
     float followerGainDb = 0.0f;       // Input gain before detection (dB)
@@ -409,7 +402,7 @@ struct ModInfo {
 
     // Band-limit detection: filter the raw source audio BEFORE peak detection so
     // the follower can track just part of the spectrum (e.g. only the bass).
-    // Applied by the post-FX FollowerSourceTapPlugin, not TE's own post-rectify
+    // Applied by the post-FX FollowerSourceTapPlugin, not post-rectify
     // filters (which can't see frequency content of a detected level).
     bool followerHpEnabled = false;  // High-pass the source before detection
     float followerHpFreq = 200.0f;   // High-pass cutoff (Hz)

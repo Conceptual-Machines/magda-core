@@ -41,13 +41,9 @@ struct ParamSpec {
     /**
      * @brief Whether the device reads the value inside the block or once for it.
      *
-     * Off by default, and that default is a parity decision rather than a
-     * performance one. The incumbent engine settles every parameter at the
-     * block boundary, so a device resolved per sample against a curve the fork
-     * reads once would differ from it by however much the curve moves across a
-     * block, on every automated parameter, in every project. During the port
-     * nothing opts in, and the null-diff corpus is what would say so if
-     * something did.
+     * Off by default: a parameter settles at the block boundary, so opting in
+     * changes what every automated parameter of that device does across a
+     * block.
      *
      * What opting in buys is a parameter that ramps rather than steps inside
      * the block, which matters where the step is audible: a filter cutoff swept

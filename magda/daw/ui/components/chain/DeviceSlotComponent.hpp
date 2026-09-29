@@ -286,8 +286,8 @@ class DeviceSlotComponent : public NodeComponent,
     // Vertical gain slider overlaid on the meter
     std::unique_ptr<juce::Slider> gainSlider_;
     // Small rotary at the top of the meter strip that drives an equal-power
-    // crossfade between TE's slot DryGain/WetGain wrapper params. Only shown
-    // when the device exposes that wrapper pair (external plugins via TE).
+    // crossfade between the slot's DryGain/WetGain wrapper params. Only shown
+    // when the device exposes that wrapper pair (external plugins).
     // The meter and gain slider shrink to leave room above when present.
     std::unique_ptr<juce::Slider> mixKnob_;
     void setupGainMeterControls();

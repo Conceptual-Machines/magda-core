@@ -159,9 +159,8 @@ class ModRuntime {
      * living on the source hears its own notes and counts them (gate shuts
      * on the last one); one living elsewhere is following that track rather
      * than playing it, so the note-counting path refuses it and @ref trigger
-     * is the way in -- the fork's arrangement too (SidechainMonitorPlugin
-     * fires triggerSidechain and ignores note-off). Exposed because the
-     * executor holds the tap and cannot otherwise tell the two apart.
+     * is the way in, and note-off is ignored. Exposed because the executor
+     * holds the tap and cannot otherwise tell the two apart.
      */
     static bool drivenFromElsewhere(int index, const ParamTable& table);
 
