@@ -1,6 +1,9 @@
 # Tracktion Engine removal
 
 Tracking: #2557, #2918–#2921. Baseline: `dev/1.0.0` at `0d92b0e30`.
+V1 is native-only: remove the TE runtime and its adapters, selectors and oracle
+machinery. The dual-engine transition belongs to v0.20, not v1. Existing legacy
+project translation remains unchanged.
 JUCE 9 (#2922) follows a qualified native-only build. Project version control
 (#2251) follows those platform changes.
 
@@ -44,33 +47,23 @@ alert acceptance/deferral, failed saves, source/media preservation and reopening
 the v1 copy. In particular, the older load-time media-folder migration needs
 an audit under #2919; the save-copy guard does not change that existing loader.
 
-## Transport API decoupling (#2918)
+## Native transport API (#2918)
 
-`TransportApiLive` now uses engine-owned callbacks for reads, writes and source
-observation. Neither its header/implementation nor `MagdaApiLive` exposes a TE
-Edit getter. The native engine keeps its existing state/notification wiring and
-constant-meter bar seeks; application commands still use TimelineController.
+`TransportApiLive` uses native engine state callbacks and explicit native
+notifications. Its direct TE transport calls, Edit getter, beat-to-time fallback
+and edit-scoped listeners are deleted. Application transport commands still use
+TimelineController.
 
-`TracktionTransportApiAdapter` contains the incumbent's direct transport calls,
-mixed-meter bar conversion and edit-scoped listeners. It observes only while
-API listeners exist, refreshes when the current Edit changes, and detaches when
-the state source is replaced or the API is destroyed. The incumbent wrapper
-releases the API before its Edit. This adapter remains until legacy qualification
-permits runtime deletion; it is not a replacement native runtime.
+The TE-backed `test_transport_seek_juce.cpp` suite is deleted. Native API tests
+cover state reads, command dispatch, bar/beat positioning, within-bar offsets,
+start clamping, bounded requests, callback replacement and notifications. Native
+meter-grid expectations remain in `tests/engine/test_tempo_map.cpp`. The native
+application uses one project time signature for bar seeks; this slice retains
+that existing behaviour.
 
 `magda_transport_api_tests` builds the shared facade and its regression tests
-with Catch2 alone, without JUCE or TE (`ctest -R transport_api_native`). Coverage
-includes unbound defaults, command dispatch/application overrides, beat/bar
-seeking, notifications, source replacement and listener teardown. The existing
-JUCE meter-change and incumbent listener cases now exercise the legacy adapter.
-
-Focused standalone Debug and optimized Release runs passed 9 cases / 42
-assertions each. Compile checks passed for the facade, legacy adapter, both
-engine construction paths, MainWindow and the incumbent JUCE suite. An isolated
-JUCE/TE harness passed all added lifecycle cases but reproduced two existing
-mixed-meter assertions on both baseline `2207421cd` and this change (7.5 vs 8,
-3.5 vs 4). Seeking behavior was preserved; those failures and full application
-qualification remain pending.
+with Catch2 alone, without JUCE or TE dependencies
+(`ctest -R transport_api_native`). Validation uses the repository targets.
 
 ## Remaining production consumers
 
@@ -97,7 +90,7 @@ verified. Record that verification before deleting its legacy implementation.
 | Transient detection calls in waveform/editor/inspector views | Identify/verify native analysis provider; null-returning `TracktionFork` helpers are a remaining behavior gap | #2918 |
 | `AutomationManager` base-value lookup; TE automation bake/playback/recording and modifier helpers | Native parameter lanes, model automation and modulation; preserve touch/write/bake behavior and undo | #2918, #2920 |
 | `ClipCommands` legacy sampler/pad extraction | Native/model extraction path; verify slicing to sampler/Drum Grid and retain media references | #2918, #2919 |
-| `transport_api_live` | Shared facade is TE-free and has a Catch2-only regression target; incumbent transport calls and edit observation are isolated in `TracktionTransportApiAdapter` until final runtime deletion | #2918, #2920 |
+| `transport_api_live` | TE transport fallback and Edit observation are deleted; native callbacks and a Catch2-only regression target remain | #2918, #2920 |
 | `plugin_api_live` 4OSC state editing | Canonical native device state/parameter path and explicit legacy migration diagnostics | #2918, #2919 |
 | TE measurement/follower/sidechain/MIDI receive/meter-tap plugins | Native plan taps, buses, analysis and MIDI routing; audit registration needs before deleting compatibility devices | #2918 |
 | `EngineEnumPins`, persisted stretch/fade/modulation values | Keep MAGDA's persisted integers; delete comparisons to the retired engine, retain native interpretation fixtures | #2919, #2920 |
@@ -109,19 +102,19 @@ The saved-state changes remove a dependency, not the whole legacy adapter. In
 particular `BaseDevicePack`, plugin sync and the wrapper still have live TE
 capture/construction calls, while model readers no longer require them.
 
-## Qualification and deletion order
+## Native-only v1 qualification and deletion
 
-1. Finish native release qualification under #2557: existing parity validation,
-   user-bug regression pass (#2641), performance tracking and installed-app smoke
-   work (#2781/#2782/#2784).
-2. Complete runtime decoupling (#2918) and project/settings migration (#2919).
-3. Preserve native-only regression coverage (#2920) before deleting the incumbent
-   oracle. Keep plan goldens, reference/parallel consistency, block-size
-   invariance, DAWproject round trips and installed-app smoke projects.
-4. Delete the fork, legacy runtime branches, build links/options, CI and packaging
-   dependencies (#2921). Validate Debug/Release builds and installed artifacts on
-   supported macOS, Windows and Linux configurations from a fresh checkout.
-5. Upgrade the exact pinned JUCE revision in a separate change (#2922).
+1. Remove production TE consumers under #2918. Use the existing project
+   translator unchanged; verify its TE-independent operation under #2919.
+2. Retain required user-behaviour expectations in native gates under #2920 and
+   delete TE-only oracle machinery. Keep plan goldens, reference/parallel
+   consistency, block-size invariance, DAWproject round trips and installed-app
+   smoke projects.
+3. Delete the fork, runtime branch, build links/options, CI and packaging
+   dependencies under #2921. Qualification under #2557 validates the native-only
+   result, including user-bug regressions (#2641), performance and installed-app
+   smoke work (#2781/#2782/#2784), on supported macOS, Windows and Linux builds.
+4. Upgrade the pinned JUCE revision separately under #2922.
 
 ## Audit commands
 

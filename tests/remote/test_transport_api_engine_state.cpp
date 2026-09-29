@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <limits>
 
 #include "magda/daw/api/transport_api_live.hpp"
 
@@ -135,59 +136,6 @@ TEST_CASE("Transport dispatchers preserve state and application overrides",
     CHECK_FALSE(engine.playing);
 }
 
-TEST_CASE("Bar seeking delegates meter changes to the engine", "[remote][transport][2918]") {
-    FakeEngine engine;
-    engine.positionBeats = 11.5;
-    auto state = engine.state();
-    double queriedBeats = -1.0;
-    int queriedBars = 0;
-    state.beatsAtBarOffset = [&](double beats, int bars) {
-        queriedBeats = beats;
-        queriedBars = bars;
-        return 8.0;
-    };
-    magda::TransportApiLive transport;
-    transport.setEngineState(std::move(state));
-    transport.setSeekDispatcher([&](double beats) { engine.positionBeats = beats; });
-    transport.seekBars(-1);
-    CHECK(queriedBeats == 11.5);
-    CHECK(queriedBars == -1);
-    CHECK(engine.positionBeats == 8.0);
-}
-
-TEST_CASE("Transport observation follows listeners, source replacement and teardown",
-          "[remote][transport][2918]") {
-    bool firstObserving = false;
-    bool secondObserving = false;
-    {
-        magda::TransportApiLive transport;
-        magda::TransportApiLive::EngineState first;
-        first.refreshStateSource = [&](bool observing) { firstObserving = observing; };
-        transport.setEngineState(std::move(first));
-        CHECK_FALSE(firstObserving);
-        CHECK(transport.addStateListener({}) == 0);
-        CHECK_FALSE(firstObserving);
-
-        const auto firstToken = transport.addStateListener([] {});
-        const auto secondToken = transport.addStateListener([] {});
-        CHECK(firstObserving);
-        transport.removeStateListener(firstToken);
-        CHECK(firstObserving);
-
-        magda::TransportApiLive::EngineState second;
-        second.refreshStateSource = [&](bool observing) { secondObserving = observing; };
-        transport.setEngineState(std::move(second));
-        CHECK_FALSE(firstObserving);
-        CHECK(secondObserving);
-        transport.removeStateListener(secondToken);
-        CHECK_FALSE(secondObserving);
-
-        transport.addStateListener([] {});
-        CHECK(secondObserving);
-    }
-    CHECK_FALSE(secondObserving);
-}
-
 TEST_CASE("Transport listeners may unsubscribe during notification", "[remote][transport][2918]") {
     magda::TransportApiLive transport;
     int firstCalls = 0;
@@ -202,4 +150,68 @@ TEST_CASE("Transport listeners may unsubscribe during notification", "[remote][t
     transport.notifyStateChanged();
     CHECK(firstCalls == 1);
     CHECK(secondCalls == 2);
+}
+
+TEST_CASE("Native transport bar seeks retain the offset within the bar",
+          "[remote][transport][2918]") {
+    FakeEngine engine;
+    engine.positionBeats = 10.5;
+    magda::TransportApiLive transport;
+    transport.setEngineState(engine.state());
+    transport.setSeekDispatcher([&](double beats) { engine.positionBeats = beats; });
+
+    transport.seekBars(-1);
+    CHECK(engine.positionBeats == 6.5);
+    transport.seekBars(2);
+    CHECK(engine.positionBeats == 14.5);
+    transport.seekBars(0);
+    CHECK(engine.positionBeats == 14.5);
+}
+
+TEST_CASE("Native transport bar seeks bound extreme requests", "[remote][transport][2918]") {
+    FakeEngine engine;
+    engine.positionBeats = 8.0;
+    magda::TransportApiLive transport;
+    transport.setEngineState(engine.state());
+    transport.setSeekDispatcher([&](double beats) { engine.positionBeats = beats; });
+
+    transport.seekBars(std::numeric_limits<long long>::max());
+    CHECK(engine.positionBeats == 8.0 + magda::TransportApi::kMaxBarOffset * 4.0);
+    engine.positionBeats = 8.0;
+    transport.seekBars(std::numeric_limits<long long>::min());
+    CHECK(engine.positionBeats == 0.0);
+}
+
+TEST_CASE("Native transport notifications use the replacement state callbacks",
+          "[remote][transport][2918]") {
+    FakeEngine first;
+    first.playing = true;
+    FakeEngine second;
+    second.recording = true;
+    second.positionBeats = 12.5;
+    magda::TransportApiLive transport;
+    transport.setEngineState(first.state());
+    int notifications = 0;
+    bool playing = false;
+    bool recording = false;
+    const auto token = transport.addStateListener([&] {
+        ++notifications;
+        playing = transport.isPlaying();
+        recording = transport.isRecording();
+    });
+    CHECK(transport.addStateListener({}) == 0);
+    transport.notifyStateChanged();
+    CHECK(playing);
+    CHECK_FALSE(recording);
+
+    transport.setEngineState(second.state());
+    transport.notifyStateChanged();
+    CHECK_FALSE(playing);
+    CHECK(recording);
+    CHECK(transport.getPositionBeats() == 12.5);
+    CHECK(notifications == 2);
+
+    transport.removeStateListener(token);
+    transport.notifyStateChanged();
+    CHECK(notifications == 2);
 }

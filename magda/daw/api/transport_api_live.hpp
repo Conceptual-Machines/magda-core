@@ -12,7 +12,7 @@ namespace magda {
  * Live transport facade over engine-owned callbacks.
  *
  * Reads return safe defaults and writes are no-ops when their callbacks are
- * unset. Engines supply state and notifications; application dispatchers route
+ * unset. The native engine supplies state and notifications; application dispatchers route
  * transport commands through TimelineController when a window is attached.
  */
 class TransportApiLive : public TransportApi {
@@ -29,11 +29,10 @@ class TransportApiLive : public TransportApi {
         std::function<bool()> looping;
         std::function<double()> positionBeats;
         std::function<double()> beatsPerBar;
-        std::function<double(double, int)> beatsAtBarOffset;
-        // Observe only while listeners exist; false also detaches before teardown.
-        std::function<void(bool)> refreshStateSource;
     };
-    void setEngineState(EngineState state);
+    void setEngineState(EngineState state) {
+        engineState_ = std::move(state);
+    }
 
     /** Seek through TimelineController so the next play starts where the seek put it. */
     void setSeekDispatcher(std::function<void(double)> fn) {
@@ -78,7 +77,6 @@ class TransportApiLive : public TransportApi {
     double beatsAtBarOffset(double beats, int deltaBars) const override;
     int addStateListener(StateListener listener) override;
     void removeStateListener(int token) override;
-    void refreshStateSource() override;
 
   private:
     struct ListenerEntry {

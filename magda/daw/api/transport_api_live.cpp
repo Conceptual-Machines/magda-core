@@ -6,17 +6,7 @@ namespace magda {
 
 TransportApiLive::TransportApiLive() = default;
 
-TransportApiLive::~TransportApiLive() {
-    if (engineState_.refreshStateSource)
-        engineState_.refreshStateSource(false);
-}
-
-void TransportApiLive::setEngineState(EngineState state) {
-    if (engineState_.refreshStateSource)
-        engineState_.refreshStateSource(false);
-    engineState_ = std::move(state);
-    refreshStateSource();
-}
+TransportApiLive::~TransportApiLive() = default;
 
 int TransportApiLive::addStateListener(StateListener listener) {
     if (!listener)
@@ -24,7 +14,6 @@ int TransportApiLive::addStateListener(StateListener listener) {
 
     const auto token = nextStateListenerToken_++;
     stateListeners_.push_back({token, std::move(listener)});
-    refreshStateSource();
     return token;
 }
 
@@ -33,12 +22,6 @@ void TransportApiLive::removeStateListener(int token) {
         std::remove_if(stateListeners_.begin(), stateListeners_.end(),
                        [token](const ListenerEntry& entry) { return entry.token == token; }),
         stateListeners_.end());
-    refreshStateSource();
-}
-
-void TransportApiLive::refreshStateSource() {
-    if (engineState_.refreshStateSource)
-        engineState_.refreshStateSource(!stateListeners_.empty());
 }
 
 void TransportApiLive::notifyStateListeners() {
@@ -90,8 +73,6 @@ void TransportApiLive::setPositionBeats(double beats) {
 }
 
 double TransportApiLive::beatsAtBarOffset(double beats, int deltaBars) const {
-    if (engineState_.beatsAtBarOffset)
-        return engineState_.beatsAtBarOffset(beats, deltaBars);
     if (engineState_.beatsPerBar)
         return beats + static_cast<double>(deltaBars) * engineState_.beatsPerBar();
     return beats;
