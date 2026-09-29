@@ -4,7 +4,7 @@ Status: proposed implementation specification
 
 Date: 2026-09-13
 
-Scope: the native engine's hosted plugins, with a shared application-facing API and a Tracktion adapter. This replaces the parameter-ownership assumptions behind #2629, rather than replacing the useful sparse-table and parameter-catalog work.
+Scope: the native engine's hosted plugins, with a shared application-facing API. This replaces the parameter-ownership assumptions behind #2629, rather than replacing the useful sparse-table and parameter-catalog work.
 
 This document is a design, not a claim that the described APIs exist. Proposed names may change; the ownership, ordering, failure and test contracts must not.
 
@@ -255,7 +255,7 @@ authored control edit -> document -> control-table publication
 
 Remove hosted feedback's call through `notifyDeviceParameterChanged` when that signal also commands the engine. Different directions require different event types, not a comment or temporary suppression flag.
 
-The Tracktion adapter must implement the same application contract while retaining its format wrapper's required execution rules. Do not run both the old `AudioBridge` setter and the new service for one command. Internal-device forwarding is a separate adapter to the existing model path.
+Do not run both the old `AudioBridge` setter and the new service for one command. Internal-device forwarding is a separate adapter to the existing model path.
 
 ## 10. Save, restore, presets and missing plugins
 
@@ -375,7 +375,6 @@ Each phase may merge behind a feature flag, but only one hosted write path may b
 | `EngineExternalDevice.*` | Adapter-local delivery and feedback capture; no document writes; no timing-based echo classification |
 | `engine/param/*`, `PlanExecutor.*` | Sparse host-driven values and coherent authority revisions; retain numeric slot mapping |
 | `TrackSerializer`, preset/capture paths | Chunk plus authored host-control persistence; legacy reconciliation |
-| Tracktion bridge/processors | Implement equivalent service contract without duplicate outbound setters |
 
 Prefer a dedicated `HostedParameterService` and transport types over adding all storage and protocol logic to `EngineHost::Impl`. Keep the pure control classification and identity resolution testable without a running audio device.
 

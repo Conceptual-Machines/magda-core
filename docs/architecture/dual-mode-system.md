@@ -114,7 +114,7 @@ Audio Configuration:
 
 ```cpp
 // Mode switching flow
-Agent Request → gRPC → DAWModeInterface → TracktionEngine → Audio Engine
+Agent Request → gRPC → DAWModeInterface → Native Engine → Audio Engine
      ↓              ↓           ↓              ↓              ↓
 "Set Live Mode" → SetAudioMode → applyAudioConfig → updateBufferSize → restartAudio
 ```

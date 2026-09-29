@@ -10,7 +10,7 @@ channels. Start with a stereo clip whose left and right channels are distinct.
 - [ ] Route two tracks to the same hardware pair. Their signals sum once, and
       each track's mute, solo, pan and fader still work.
 - [ ] Select a mono output. The clip's left channel reaches that output, matching
-      the existing Tracktion routing; no other hardware channel carries it.
+      earlier versions; no other hardware channel carries it.
 - [ ] Change a playing track between Master and another hardware pair. The
       destination updates without requiring a transport restart.
 - [ ] Disable an output pair, or switch to an interface without that saved

@@ -1,6 +1,6 @@
 # Loop length intent (#2675)
 
-Repeat in native and Tracktion playback.
+Run on the native engine.
 
 1. Import a recording longer than eight bars into a Session slot and enable beat
    mode. Set its source tempo to 100 BPM, then use the waveform loop handles to

@@ -121,7 +121,6 @@ namespace audio_engine {
 
 // Third-party headers
 #include <juce_core/juce_core.h>
-#include <tracktion_engine/tracktion_engine.h>
 
 // Local headers last
 #include "AudioProcessor.hpp"

@@ -20,11 +20,9 @@ Two structs, kept separate on purpose:
 
 ## Block-rate timing
 
-The LFO advances once per block, from the block's first sample, because that
-matches Tracktion Engine: TE advances a modifier timer at the top of the block
-and every plugin reading it that block sees one value. A per-sample LFO would
-diverge from the TE reference implementation on every modulated parameter in
-every project — a decision left for after the native-engine port.
+The LFO advances once per block, from the block's first sample, so every
+device reading it in that block sees one value. A per-sample LFO would change
+the modulated value of every parameter in every project.
 
 ## Depth and polarity live outside the LFO
 
