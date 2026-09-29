@@ -29,9 +29,6 @@ struct PluginCapabilitySnapshot {
     bool processorAcceptsMidi = false;
     bool processorProducesMidi = false;
     bool processorIsMidiEffect = false;
-    bool tracktionTakesMidiInput = false;
-    bool tracktionTakesAudioInput = false;
-    bool tracktionProducesAudioWhenNoAudioInput = false;
 };
 
 struct DeviceMidiCapabilities {

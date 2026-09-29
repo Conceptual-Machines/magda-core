@@ -101,16 +101,6 @@ constexpr const char* kMutableCloudsTags[] = {"mutable-clouds"};
 // (core/LegacyDeviceAliases.hpp).
 void registerUtilityDevices(InternalPluginRegistry& registry) {
     add(registry,
-        {
-            .pluginId = "volume",
-            .displayName = "Legacy Volume/Pan",
-            .browserCategory = "Legacy",
-            .description = "Legacy Tracktion volume and pan device, kept for old project loads.",
-            .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-            .tags = kLegacyTags,
-            .tagCount = static_cast<int>(std::size(kLegacyTags)),
-        });
-    add(registry,
         {.pluginId = ToneGeneratorPlugin::xmlTypeName,
          .displayName = "Test Tone",
          .browserCategory = "Utility",

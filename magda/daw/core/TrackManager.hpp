@@ -219,7 +219,7 @@ struct ExternalTrackRouting {
  */
 class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::DeviceTrackContext {
   public:
-    static constexpr int MAX_SENDS_PER_TRACK = 8;  // Tracktion Engine aux bus limit
+    static constexpr int MAX_SENDS_PER_TRACK = 8;
 
     static TrackManager& getInstance();
 
