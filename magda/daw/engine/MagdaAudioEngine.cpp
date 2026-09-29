@@ -267,7 +267,7 @@ BeatDuration MagdaAudioEngine::getEditLengthBeats() const {
     return BeatDuration{daw::engine_host::projectEndBeat()};
 }
 juce::File MagdaAudioEngine::getEditFile() const {
-    // What the fork answers with no Edit: the file is the project layer's.
+    // No file: it is the project layer's.
     return juce::File{};
 }
 void MagdaAudioEngine::play() {
@@ -298,8 +298,7 @@ bool MagdaAudioEngine::isRecording() const {
     return host_->isRecording();
 }
 // The session launcher, off the handle the engine publishes per slot and the
-// tap the block that advanced it wrote (#2552). SlotLauncher.hpp is the whole
-// of it; what a slot is doing is never asked of the fork again.
+// tap the block that advanced it wrote (#2552). SlotLauncher.hpp is the whole of it.
 double MagdaAudioEngine::getSessionPlayheadPosition() const {
     return host_->sessionPlayheadSeconds();
 }
@@ -379,8 +378,7 @@ void MagdaAudioEngine::updateTriggerState() {
 
     const bool justStarted = playing && !wasPlaying_;
 
-    // 100 ms backwards, the fork's own threshold: anything smaller is jitter
-    // rather than a loop.
+    // 100 ms backwards: anything smaller is jitter rather than a loop.
     const bool justLooped = playing && isLooping() && lastPosition_ - position > 0.1;
 
     wasPlaying_ = playing;
@@ -578,8 +576,8 @@ void MagdaAudioEngine::previewNoteOnTrack(const std::string& track_id, int noteN
         return;
     }
 
-    // Channel 1, like the fork's preview, and auditioned rather than routed:
-    // the track it is played on need not be monitoring anything (#762).
+    // Channel 1, auditioned rather than routed: the track it is played on need
+    // not be monitoring anything (#762).
     host_->audition(
         trackId,
         isNoteOn ? juce::MidiMessage::noteOn(1, noteNumber, static_cast<juce::uint8>(velocity))
@@ -592,8 +590,7 @@ void MagdaAudioEngine::audition(TrackId trackId, const juce::MidiMessage& messag
     host_->audition(trackId, message);
 }
 // The UI's own transport, which TimelineController drives. Deliberately not
-// forwarded: the fork's versions of these are locate-and-play, and starting its
-// transport is the one thing this class must never do.
+// forwarded: the engine's transport is started only by play().
 void MagdaAudioEngine::onTransportPlay(double positionSeconds) {
     locate(positionSeconds);
     play();
@@ -628,7 +625,7 @@ void MagdaAudioEngine::onTransportStopRecording() {
     api_->notifyTransportStateChanged();
 }
 void MagdaAudioEngine::onEditPositionChanged(double positionSeconds) {
-    // Only while stopped, which is the fork's rule and the right one: this
+    // Only while stopped: this
     // fires whenever the edit cursor moves, and clicking in the piano roll to
     // place a note moves it. Seeking on that would drag the transport out from
     // under whoever is listening.

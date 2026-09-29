@@ -102,7 +102,7 @@ class EngineHost {
     /**
      * @brief Where external plugins are found and what can open them (#2566).
      *
-     * Both are the fork's, which owns the scan; the engine has no catalog of
+     * Both are the app's, which owns the scan; the engine has no catalog of
      * its own for a plugin that is a file on a machine rather than a class this
      * build contains. Before @ref start, or the first publish goes without
      * them.

@@ -787,9 +787,7 @@ class PlanExecutor {
      * That buys the one block a note-triggered modifier would otherwise be
      * late by: parameters resolve at the top of a block, so a trigger fired
      * by an op isn't spent until the next block's resolve, while a trigger
-     * read off a MIDI buffer that already exists is spent in this one. The
-     * fork's own gate is the later of the two and its monitor the earlier,
-     * so this makes the fork's best case unconditional.
+     * read off a MIDI buffer that already exists is spent in this one.
      *
      * MIDI a device makes is not in here and cannot be: an arpeggiator's
      * notes are audio-thread work that hasn't happened yet at resolve time.

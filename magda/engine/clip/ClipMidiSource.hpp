@@ -36,8 +36,7 @@
  * - a locate or a loop wrap (`!BlockInfo::continuous`), off at sample zero;
  * - a stop (`!BlockInfo::playing`), the same, and then nothing;
  * - a snapshot swap that moved or deleted what was sounding, reconciled against
- *   what the new snapshot says should be sounding here, which is the fork's
- *   `shouldSendNoteOffsForNotesNoLongerPlaying` rule;
+ *   what the new snapshot says should be sounding here;
  * - destruction, which needs nothing: a source is destroyed when its track
  *   leaves the model and its output port leaves with it, so there is nowhere
  *   for a note-off to go and nothing downstream left to hang.
@@ -45,9 +44,8 @@
  * ## Chase
  *
  * Every discontinuous block, after those note-offs: the value of each controller
- * as of the instant, then note-ons for the notes that instant is inside. Both
- * are the fork's behaviour (`createMessagesForTime`, `getNotesOnAtTime`) and
- * dropping either is audible in an ordinary way. Because the compile emits on
+ * as of the instant, then note-ons for the notes that instant is inside.
+ * Dropping either is audible in an ordinary way. Because the compile emits on
  * value change, the controller half is exactly right rather than nearly right:
  * if nothing was emitted since, nothing changed since.
  *

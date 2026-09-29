@@ -13,9 +13,8 @@
  * @file DeviceTelemetrySources.hpp
  * @brief Telemetry sources over the device the engine is rendering (#2585).
  *
- * The other implementation of the seam #1630 left: the same faceplates, fed by
- * whichever engine holds the instance that filled the ring rather than by a
- * plugin pointer only the fork can hand over.
+ * The implementation of the seam #1630 left: the same faceplates, fed by the
+ * engine's instance that filled the ring.
  *
  * Every read resolves the device again rather than holding it, which is what
  * makes a rebuilt device (#2575) a rebind and a removed one an empty trace

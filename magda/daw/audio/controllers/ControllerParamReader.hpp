@@ -41,8 +41,6 @@ class ControllerParamReader {
 // DefaultControllerParamReader
 // ============================================================================
 
-class AudioBridge;
-
 /**
  * @brief The reader that inverts `DefaultControllerParamWriter`, branch for
  *        branch.
@@ -74,8 +72,6 @@ class AudioBridge;
 class DefaultControllerParamReader : public ControllerParamReader {
   public:
     DefaultControllerParamReader() = default;
-    // Source compatibility for callers that still have an incumbent bridge.
-    explicit DefaultControllerParamReader(AudioBridge&) {}
 
     std::optional<float> read(const ResolveResult& resolved) override;
 

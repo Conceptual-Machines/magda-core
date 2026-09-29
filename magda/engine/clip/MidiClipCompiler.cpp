@@ -21,8 +21,7 @@ constexpr std::uint8_t kChannelPressure = 0xd0;
 constexpr std::uint8_t kPitchWheel = 0xe0;
 
 /// The MPE timbre dimension, and the two values a note opens with. Timbre rests
-/// at the centre of its range and pressure at the bottom of its, which is what
-/// the fork writes for a note carrying neither.
+/// at the centre of its range and pressure at the bottom of its.
 constexpr std::uint8_t kMpeTimbreController = 74;
 constexpr std::uint8_t kMpeTimbreRest = 64;
 constexpr std::uint8_t kMpePressureRest = 0;
@@ -129,9 +128,8 @@ void densify(std::vector<EventType> sorted, int maxValue, double floorBeats, Emi
         const auto from = static_cast<double>(event.value);
         const auto to = static_cast<double>(next.value);
 
-        // Nothing moves across this segment, so nothing is sent across it. The
-        // incumbent has the same guard for the same reason; here it is not a
-        // special case, it is what emitting on value change means.
+        // Nothing moves across this segment, so nothing is sent across it: that
+        // is what emitting on value change means.
         if (std::lround(from) == std::lround(to))
             continue;
 
@@ -291,9 +289,8 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
         }
 
         // Its own pitch struck again before this note ends: the note-off is
-        // dropped, because emitting it would cut the second note short. The
-        // fork's `useNoteUp = false`. What ends such a note is the pass or the
-        // span it sits in.
+        // dropped, because emitting it would cut the second note short. What
+        // ends such a note is the pass or the span it sits in.
         //
         // It goes on SOUNDING until the retrigger replaces it, though, so that
         // is where its end beat is. Reading a dropped note-off as "no end" would
@@ -316,16 +313,15 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
         // ---- The MPE dimensions a note opens with --------------------------
         //
         // The specification asks for timbre before the note-on and pressure
-        // beside it, and the fork sends both for every note it puts on a member
-        // channel. A synth that never receives them is left holding whatever
-        // the last note on that channel set, which under a round-robin is
-        // another note's expression: the channel is reused, so the state is
-        // inherited rather than fresh.
+        // beside it, for every note put on a member channel. A synth that never
+        // receives them is left holding whatever the last note on that channel
+        // set, which under a round-robin is another note's expression: the
+        // channel is reused, so the state is inherited rather than fresh.
         //
         // At their resting values, because the model carries neither dimension:
         // per-note expression here is pitch, and nothing in the clip can move
-        // timbre or pressure. Sending them at rest is what makes the channel
-        // mean the same thing to a synth as it does in the fork.
+        // timbre or pressure. Sending them at rest makes the channel mean the
+        // same thing to a synth on every note.
         //
         // Ordered before the note-on by the same rule as everything else at one
         // instant: controllers, then pitch bend, then offs, then ons.

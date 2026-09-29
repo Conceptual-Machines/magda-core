@@ -18,29 +18,25 @@
  * based and the threshold is relative to the file's own peak, so the peak has to
  * be known before the first sample is judged.
  *
- * The algorithm is the incumbent's, reproduced rather than improved. It is
- * cheap and entirely in the time domain: a pair of envelope followers, a
+ * Cheap and entirely in the time domain: a pair of envelope followers, a
  * differentiator, another follower, and a threshold with a retrigger lockout.
- * Improving on it is a separate argument from replacing it, and a detector that
- * found different transients would move every auto-detected marker in every
- * project that already has one.
+ * A detector that found different transients would move every auto-detected
+ * marker in every project that already has one.
  */
 
 namespace magda::engine {
 
 struct TransientDetectionSettings {
     /// 0 finds few, 1 finds many. The model's `AudioEvent::beatSensitivity`,
-    /// and it maps to a threshold of `-10 - sensitivity * 30` dB, which is the
-    /// incumbent's mapping.
+    /// and it maps to a threshold of `-10 - sensitivity * 30` dB.
     float sensitivity = 0.5f;
 
     /// Transients closer together than this are thinned until none are. The
-    /// incumbent's 100 ms, and the reason a detected downbeat does not arrive
-    /// as three markers a millisecond apart.
+    /// 100 ms, so a detected downbeat does not arrive as three markers a
+    /// millisecond apart.
     double minimumSpacingSeconds = 0.1;
 
-    /// How long after a trigger the detector will not fire again. The
-    /// incumbent's 50 ms.
+    /// How long after a trigger the detector will not fire again.
     double retriggerSeconds = 0.05;
 
     bool operator==(const TransientDetectionSettings&) const = default;

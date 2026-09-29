@@ -947,8 +947,7 @@ void sliceClipAtGrid(ClipId clipId, double gridInterval, double tempo);
  *
  * Each warp marker boundary becomes a pad in a new DrumGridPlugin.
  * A MIDI clip is created with notes that trigger each pad in sequence
- * to reproduce the original pattern. Only while the fork renders: the pad
- * macros are linked through its plugin.
+ * to reproduce the original pattern.
  */
 void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo);
 
@@ -957,7 +956,7 @@ void sliceWarpMarkersToDrumGrid(ClipId clipId, double tempo);
  *
  * Each grid-aligned region becomes a pad in a new DrumGridPlugin.
  * A MIDI clip is created with notes that trigger each pad in sequence
- * to reproduce the original pattern. Only while the fork renders, as above.
+ * to reproduce the original pattern.
  */
 void sliceAtGridToDrumGrid(ClipId clipId, double gridInterval, double tempo);
 

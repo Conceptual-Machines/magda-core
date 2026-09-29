@@ -164,8 +164,7 @@ class ClipStretcher {
      *
      * Short is allowed: a clip cued at the very start of its file gets
      * this, as does a locate while the reader is still catching up.
-     * Alignment is then as good as the available material allows, matching
-     * the incumbent.
+     * Alignment is then as good as the available material allows.
      *
      * Returns the source frames the stream owed the priming read and did not
      * give it. Zero is the ordinary answer, including for a pre-roll cut
@@ -255,9 +254,8 @@ std::unique_ptr<ClipStretcher> makeStretcher(const StretchSetup& setup);
 /**
  * @brief The rate a stretcher will refuse to go beyond.
  *
- * The incumbent's limits, and the reason a scratch buffer can be sized at
- * all: a block consumes at most this much reading per output sample, so the
- * most a voice can be asked to read in one callback is bounded up front.
+ * These bound a block's reading per output sample, so a scratch buffer can be
+ * sized up front.
  */
 constexpr double kMinStretchRate = 0.1;
 constexpr double kMaxStretchRate = 10.0;
@@ -290,7 +288,7 @@ StretchRead stretchReadAt(const ClipStretcher& stretcher, int fixedPreRoll, doub
         return {firstSampleFrom(opens) + stretcher.readAheadSamples(1.0), fixedPreRoll, opens};
 
     // The rate across the output latency, with the stretcher's own rounding: at
-    // a constant rate this is exactly the read-ahead the fork aligns with.
+    // a constant rate this is exactly the stretcher's read-ahead.
     const auto heard = positionAt(seconds + latency / sampleRate);
     const auto rate = std::clamp((heard - opens) / latency, kMinStretchRate, kMaxStretchRate);
     return {firstSampleFrom(opens) + stretcher.readAheadSamples(rate),

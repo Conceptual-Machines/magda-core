@@ -56,7 +56,7 @@ class ExternalPluginLoader final : private juce::AsyncUpdater {
     ExternalPluginLoader(const ExternalPluginLoader&) = delete;
     ExternalPluginLoader& operator=(const ExternalPluginLoader&) = delete;
 
-    /// Where plugins are found and what can open them. Both are the fork's,
+    /// Where plugins are found and what can open them. Both are the app's,
     /// which owns the scan; without them nothing external loads at all.
     void setServices(juce::AudioPluginFormatManager* formats,
                      const juce::KnownPluginList* knownPlugins);

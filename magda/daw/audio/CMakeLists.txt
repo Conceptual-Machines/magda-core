@@ -386,7 +386,7 @@ target_sources(magda_devices PRIVATE
     ${_magda_device_sdk_sources}
 )
 
-# All shipped device implementations are native and compile without TE.
+# All shipped device implementations are native.
 file(GLOB_RECURSE _magda_native_device_sources CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/*.hpp")

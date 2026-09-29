@@ -10,13 +10,12 @@ namespace magda::engine {
 
 namespace {
 
-/// The incumbent reads in chunks of this, and where a trigger's rewind lands is
-/// measured from the start of one. Matching it is what keeps a detected marker
-/// in the same place rather than half a millisecond from it.
+/// Read chunk size; where a trigger's rewind lands is measured from the start
+/// of one, so changing it moves detected markers.
 constexpr int kBlockSamples = 32768;
 
 /// A one-pole follower with separate attack and release, where 1 is instant and
-/// 0 never moves. The incumbent's, coefficient for coefficient.
+/// 0 never moves.
 class EnvelopeFollower {
   public:
     void setCoefficients(float attack, float release) noexcept {
@@ -83,10 +82,9 @@ float peakOf(AudioFileReader& reader, juce::AudioBuffer<float>& block, std::int6
 /// Thin @p transients until none are closer together than @p spacing.
 ///
 /// Backwards, keeping the later of any pair, and repeated because one pass can
-/// leave a new pair adjacent where it removed what sat between them. The
-/// incumbent gives up after ten passes and so does this: what it is thinning is
-/// a detector's own retriggers, and a file that still has them after ten rounds
-/// has something the spacing rule was never going to fix.
+/// leave a new pair adjacent where it removed what sat between them. Gives up
+/// after ten passes: a file that still has retriggers by then is not one the
+/// spacing rule will fix.
 void thin(std::vector<double>& transients, double spacing) {
     if (transients.size() < 2)
         return;
@@ -121,8 +119,7 @@ std::vector<double> detectTransients(AudioFileReader& reader,
     if (!(sampleRate > 0.0) || totalSamples <= 0)
         return transients;
 
-    // One channel, which is what the reader hands the file's first through and
-    // what the incumbent detects on. A transient is in every channel of a
+    // One channel: the file's first. A transient is in every channel of a
     // recording that has one.
     juce::AudioBuffer<float> block(1, kBlockSamples);
 
@@ -145,13 +142,8 @@ std::vector<double> detectTransients(AudioFileReader& reader,
     // detector noticed is the difference between a warped beat landing on the
     // grid and landing just behind it.
     //
-    // Rounded up, which is not a preference. The incumbent truncates after the
-    // subtraction (`int (i - sampleRate * 0.0005)`), and for a whole-numbered i
-    // that is the same as subtracting the rounded-up rewind: at 44100 its
-    // effective rewind is 23 samples, not the 22 that truncating the rewind on
-    // its own would give. Reproducing this detector exactly is the whole
-    // argument for having written it this way, and one sample is a marker that
-    // moved.
+    // Rounded up, not truncated: at 44100 the rewind is 23 samples, not 22, and
+    // one sample is a marker that moved.
     const auto rewind = static_cast<int>(std::ceil(sampleRate * 0.0005));
 
     int countdown = 0;

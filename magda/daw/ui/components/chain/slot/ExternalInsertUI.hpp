@@ -14,7 +14,7 @@ namespace magda::daw::ui {
  * @brief Device-slot body for the External FX / External Instrument hardware insert.
  *
  * Two port pickers -- a send and an audio return -- plus a manual latency trim, read
- * from and written to the model's InsertConfig, which both engines build the insert
+ * from and written to the model's InsertConfig, which the engine builds the insert
  * from (#2279). The send is an audio output for FX and a MIDI output for an
  * instrument; the ports are the engine's open hardware channels and the system's
  * MIDI outputs.

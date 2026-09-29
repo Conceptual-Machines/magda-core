@@ -249,10 +249,9 @@ enum class LFOTriggerMode {
 /**
  * @brief Where in a source track's chain a modifier listens.
  *
- * The two points the engines actually have, named for what they are rather than
+ * The two points the engine actually has, named for what they are rather than
  * for a fader they sit either side of. A third point between them (post-FX,
- * pre-fader) is not something either engine taps today, so it is deliberately
- * not offered: adding it is a change to both engines and its own decision.
+ * pre-fader) is not tapped today, so it is deliberately not offered.
  *
  * Per modifier rather than per sidechain, because a modifier listening to its
  * own track has no sidechain to carry the setting, and because two listeners on
@@ -279,9 +278,8 @@ enum class ModTapPoint : int {
 /**
  * @brief Where a modifier of this type listens unless it says otherwise.
  *
- * The fork's own split, which is what makes the default pure parity: its
- * follower tap is post-fader and its trigger monitor is pre-FX, so a project
- * carrying neither setting sounds the same in both engines.
+ * A follower taps post-fader and a trigger monitor taps pre-FX, which is what
+ * projects saved before the setting existed were rendered against.
  */
 inline ModTapPoint defaultModTapPoint(ModType type) {
     return type == ModType::Follower ? ModTapPoint::PostFader : ModTapPoint::PreFx;

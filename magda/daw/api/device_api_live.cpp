@@ -60,9 +60,8 @@ SidechainCapabilities sidechainCapabilities(const DeviceInfo& device) {
         result.tapPoints = {ModTapPoint::PreFx, ModTapPoint::PostFader};
         result.gain = true;
         result.listen = true;
-        // Both engines currently adapt the source width to the declared port.
-        // Advertise that one supported mapping instead of accepting a mapping
-        // one backend would silently ignore.
+        // The engine adapts the source width to the declared port, so that is the
+        // one mapping advertised.
         result.channelMappings = {"automatic"};
     }
     return result;

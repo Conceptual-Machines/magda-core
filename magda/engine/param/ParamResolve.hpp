@@ -21,12 +21,8 @@
  * settled on.
  *
  * They are separate lanes rather than one value written by turns, and that is
- * the whole point of the arrangement. The incumbent engine has one value and
- * several writers, which is why a host write lands on a parameter under an
- * active modifier and disappears: the modifier writes next and there was only
- * ever one place to write. Here a host write goes into a lane modulation never
- * touches, so nothing can overwrite it, and the bug class is gone rather than
- * patched.
+ * the whole point of the arrangement. A host write goes into a lane modulation
+ * never touches, so nothing can overwrite it.
  *
  * Precedence, in full:
  *
@@ -46,9 +42,8 @@
  *
  * Which authority state a lane is in is not decided here. The model owns that
  * (AutomationStateMachine), and a lane handed to a block is one the model has
- * already decided is playing; read mode is what the port ships, and write, touch
- * and latch change what the model does with a gesture rather than what a block
- * does with a lane.
+ * already decided is playing; write, touch and latch change what the model
+ * does with a gesture rather than what a block does with a lane.
  */
 
 namespace magda::engine {
@@ -56,11 +51,8 @@ namespace magda::engine {
 /**
  * @brief What one modulation link adds to a parameter this block.
  *
- * Block-rate, because the modifiers it comes from are: the incumbent engine
- * advances a modifier once per block and every parity case in the corpus is
- * measured against that. A modifier that ran per sample would be a difference
- * from the fork on every modulated parameter, which is a decision for after the
- * port rather than during it.
+ * Block-rate, because the modifiers it comes from are: a modifier advances
+ * once per block.
  */
 struct ModContribution {
     /// The modifier's output, 0 to 1. An inactive modifier outputs 0, which is
@@ -118,9 +110,8 @@ void resolveParam(ResolvedParams& out, int param, const ParamSpec& spec,
  * it wrote, which is zero for a parameter with no curve.
  *
  * One segment for a parameter its device reads once per block, holding the
- * value the curve has at the block's first sample. That is the whole shape of
- * the port: the incumbent engine settles a parameter at the block boundary, and
- * a curve read more finely than that would differ from it everywhere.
+ * value the curve has at the block's first sample: a parameter settles at the
+ * block boundary unless it asks for more.
  *
  * A parameter that asked for segment accuracy gets a segment per knot the block
  * contains: every breakpoint, and the apex of a hard corner, which is where

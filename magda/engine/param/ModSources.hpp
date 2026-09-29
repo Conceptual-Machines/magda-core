@@ -23,10 +23,6 @@
  *
  * The rule itself is short. A modifier listens to the sidechain source of the
  * scope it lives on, and to the track it lives on when that scope has none.
- * That is what the fork does, arrived at from the other end: it collects a
- * track's own modifiers into that track's detector cache and, separately,
- * collects the modifiers of any scope sidechained from a track into that
- * track's cache instead (PluginManager::rebuildSidechainLFOCache).
  *
  * What it listens for depends on what it is. A follower and an audio-triggered
  * modifier read the source's audio; a MIDI-triggered one reads its MIDI.
@@ -102,11 +98,7 @@ inline std::optional<magda::TrackId> modifierSourceTrack(const magda::ModInfo& m
  *
  * Either type, because the type is not this question's. A sidechain says which
  * track a scope reads; the trigger mode on the modifier says what that modifier
- * is waiting for. The fork separates them the same way: it installs its MIDI
- * monitor for a track with a note-triggered modifier and its level monitor for
- * one with an audio-triggered modifier, both read off the modes rather than off
- * any sidechain's type (trackNeedsSidechainMonitor, trackNeedsAudioSidechain-
- * Monitor).
+ * is waiting for.
  */
 inline magda::TrackId sidechainSourceOf(const magda::SidechainConfig& sidechain) {
     return sidechain.isActive() ? sidechain.sourceTrackId : magda::INVALID_TRACK_ID;

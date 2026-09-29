@@ -386,8 +386,7 @@ bool GainStagingManager::readDevicePeakLinear(const ChainNodePath& devicePath,
     if (engine == nullptr)
         return false;
 
-    // The engine's own meters, since the fork's bridge is null under the
-    // native engine (#2570).
+    // Read from the engine's own meters (#2570).
     DeviceMeters::Levels levels;
     if (!engine->deviceMeters().devicePeak(devicePath, levels))
         return false;

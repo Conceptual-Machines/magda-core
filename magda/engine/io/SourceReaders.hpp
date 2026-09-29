@@ -24,12 +24,11 @@
  * block, which is a seek per block and silence for the whole take (#2016).
  * Mirroring the file underneath leaves the stream reading forwards through a
  * file whose samples are in the other order, and the flip is done by the thread
- * that is allowed to wait for a disk rather than by the one that is not. The
- * incumbent renders a reversed copy of the file to disk for this; what is
- * different here is that nothing is written and nothing has to finish before
- * the clip can play.
+ * that is allowed to wait for a disk rather than by the one that is not.
+ * Nothing is written to disk and nothing has to finish before the clip can
+ * play.
  *
- * They compose in the incumbent's order: mirror, then tile, then convert.
+ * They compose in a fixed order: mirror, then tile, then convert.
  * Tiling over the mirror is what makes a reversed loop the same region played
  * backwards, which is what its reversed loop points say. Converting last leaves
  * everything below it in the source's own samples, where the model holds them,
@@ -139,9 +138,7 @@ class ReversedAudioFileReader final : public AudioFileReader {
  * One event tiling its own source, which is what a looped clip is: the region
  * plays, and when it runs out it plays again. Every position is inside it,
  * including the ones outside its bounds, because an anchor away from the loop
- * start is a phase within the loop rather than a place of its own. That is the
- * incumbent's reading too: its clips carry a loop phase where they carry an
- * offset otherwise.
+ * start is a phase within the loop rather than a place of its own.
  *
  * Endless, and that is not a figure of speech: there is no last sample of a
  * loop, so nothing here ever reports the end of a file. What crops it is the
@@ -187,9 +184,8 @@ class LoopingAudioFileReader final : public AudioFileReader {
  * a sample of accuracy at the price of a bounce that could disagree with what
  * was heard.
  *
- * Cubic Lagrange, which is the family the incumbent's default resampling
- * quality is from. Its sinc settings are a quality option rather than a
- * behaviour, and there is nothing in the model to select one with yet (#1890).
+ * Cubic Lagrange. Sinc settings are a quality option rather than a behaviour,
+ * and there is nothing in the model to select one with yet (#1890).
  */
 class ResamplingAudioFileReader final : public AudioFileReader {
   public:

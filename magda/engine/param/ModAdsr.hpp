@@ -17,8 +17,7 @@
  * to and belongs to the runtime; advanceAdsr is one block of the first applied
  * to the second.
  *
- * Two things differ from the LFO, and both are the fork's rather than choices
- * made here.
+ * Two things differ from the LFO.
  *
  * The first is the gate. An LFO's trigger restarts a phase and a gate is
  * something extra a note-triggered one opts into; an envelope is nothing but a
@@ -28,11 +27,9 @@
  * gate open and cycles, a transport-locked one is gated by playback, and a
  * note-driven one is gated by whatever is feeding it notes.
  *
- * The second is when the value is read. The fork's LFO timer publishes the
- * phase the block opens on and then moves the ramp; its ADSR timer advances
- * first and publishes where the block ends up. The two are one block apart and
- * this reproduces the second, because a parity case is measured against the
- * fork and not against the tidier of its two conventions.
+ * The second is when the value is read. The LFO publishes the phase the block
+ * opens on and then moves the ramp; the envelope advances first and publishes
+ * where the block ends up. The two are one block apart.
  *
  * What is deliberately not here, exactly as with the LFO, is depth and
  * polarity: one envelope drives several parameters by different amounts, and
@@ -65,8 +62,8 @@ struct AdsrSettings {
     float sustain = 0.7f;
 
     /// Per-segment curvature, -0.5 to 0.5: a quadratic bezier bent from
-    /// logarithmic through linear at zero to exponential. The fork's own
-    /// control point arithmetic, because the numbers land in project files.
+    /// logarithmic through linear at zero to exponential. The numbers land in
+    /// project files, so the control point arithmetic must not change.
     float attackCurve = 0.0f;
     float decayCurve = 0.0f;
     float releaseCurve = 0.0f;
@@ -95,9 +92,7 @@ struct AdsrSettings {
     /**
      * @brief The division every stage runs at when tempo synced.
      *
-     * One for all three, because that is what the model carries: the fork
-     * writes it to the ADSR's separate attack, decay and release sync
-     * parameters and they are always the same value (applyADSRProperties).
+     * One for all three, because that is what the model carries.
      */
     int rateType = static_cast<int>(magda::ModRateType::Hertz);
 
@@ -169,7 +164,7 @@ struct AdsrState {
  *
  * The milliseconds the model stores, or the musical division they are replaced
  * by when the envelope is tempo synced. A division of Hertz is not a division,
- * and falls back to the milliseconds, which is the fork's own rule.
+ * and falls back to the milliseconds.
  *
  * What a synced envelope actually runs on is that division in bars, because
  * the block says how many bars it covered and a bpm and signature read once
@@ -182,9 +177,8 @@ double adsrStageSeconds(float milliseconds, const AdsrSettings& settings, const 
 /**
  * @brief The level a curved segment has @p t of the way through it.
  *
- * The fork's quadratic bezier (BezierHelpers), because the curvature lands in
- * project files as a number between -0.5 and 0.5 and the shape it stands for
- * has to be the same one in both engines. A curvature of zero is the straight
+ * A quadratic bezier: the curvature lands in project files as a number between
+ * -0.5 and 0.5 and the shape it stands for must not change. A curvature of zero is the straight
  * line, taken early rather than solved for.
  *
  * Exposed because the tests want the shape without the run.

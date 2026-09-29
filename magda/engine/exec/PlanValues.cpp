@@ -523,9 +523,8 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         case OpRole::TrackMeter:
         // A modulation tap reads what reached it and has no value of its own.
         // Not even a mute: a modifier following a track is following what that
-        // track is playing, and the fork taps the same point for the same
-        // reason, before the muting node, so a muted source still ducks the
-        // compressor keying off it.
+        // track is playing. It taps before the muting node, so a muted source
+        // still ducks the compressor keying off it.
         case OpRole::ModulationTap:
         case OpRole::HardwareOutput:
         // Delay and crossfade roles never reach here: they return above.

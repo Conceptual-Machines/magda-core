@@ -856,7 +856,7 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
         forwardParameterChanges(*arpeggiatorUI_, callbacks);
         // Non-slot settings are authored state: the edit patches the MODEL's
         // state document, and the projection updates the live device (#2317).
-        // The model is what autosave writes and what both engines build from,
+        // The model is what autosave writes and what the engine builds from,
         // so the edit also dirties the project.
         arpeggiatorUI_->onSettingsEdited = [this](const juce::NamedValueSet& settings) {
             writeDeviceSettings(devicePath_, settings);

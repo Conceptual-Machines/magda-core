@@ -359,7 +359,7 @@ void TrackManager::addMod(const ChainNodePath& path, int slotIndex, ModType type
 
     // Through setType, so the new modifier takes the tap point its kind wants.
     // Assigning the type on its own leaves a fresh follower listening in front
-    // of the source's chain, where the fork's follower never listens.
+    // of the source's chain instead of post-fader.
     newMod.setType(type);
     newMod.waveform = waveform;
     // An envelope defaults to note-triggered: free-running would just cycle

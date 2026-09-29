@@ -76,7 +76,7 @@ namespace {
 /// and a narrow device is a declared width rather than a smaller buffer.
 constexpr int kChannels = 2;
 
-/// 30 fps, which is what the fork's own metering timer runs at.
+/// 30 fps, fast enough for a smooth meter.
 constexpr int kMeterIntervalMs = 33;
 
 /// Per live MIDI pass. Fixed before the audio thread sees the tap.
@@ -2168,8 +2168,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /**
      * @brief Give each pad bus in use a multi-out track to play into, and close the unused ones.
      *
-     * The fork does this in PluginManager::syncDrumGridMultiOutTracks; without it a
-     * pad sent to a bus reaches no track and the plan leaves it silent.
+     * Without it a pad sent to a bus reaches no track and the plan leaves it silent.
      */
     void followDrumGridBuses(TrackId trackId) {
         if (followingBuses_)
@@ -2221,7 +2220,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         }
     }
 
-    /** @brief The grid's bus pairs, as the fork reads them off DrumGridPlugin's outputs. */
+    /** @brief The grid's bus pairs, read off DrumGridPlugin's outputs. */
     static void declareDrumGridBuses(DeviceInfo& grid) {
         if (grid.multiOut.isMultiOut)
             return;

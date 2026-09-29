@@ -970,8 +970,7 @@ bool EngineExternalDevice::isEditorOpen() const {
 }
 
 std::optional<magda::ExternalPluginSnapshot> EngineExternalDevice::captureState() {
-    // Shared with the fork in ExternalPluginState.hpp; process() honours the
-    // suspension it asks for.
+    // Defined in ExternalPluginState.hpp; process() honours the suspension it asks for.
     return magda::captureExternalPluginState(*instance_);
 }
 

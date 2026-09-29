@@ -19,13 +19,12 @@
  *
  * The walk is bounded rather than uniform: each step lands within
  * @ref RandomSettings::stepDepth of the one before it, so a small depth wanders
- * and a full one jumps anywhere in range. That is the fork's own rule and it is
- * what makes the control mean "how far it can move" rather than "how loud".
+ * and a full one jumps anywhere in range. That is what makes the control mean
+ * "how far it can move" rather than "how loud".
  *
- * Depth and polarity stay per link, as everywhere else in this system. The
- * fork's own depth and bipolar parameters are held at unity and off for the
- * same reason (applyRandomProperties), which is why the walk here runs in
- * 0 to 1 and a link is what turns it into a swing about a centre.
+ * Depth and polarity stay per link, as everywhere else in this system, which
+ * is why the walk here runs in 0 to 1 and a link is what turns it into a swing
+ * about a centre.
  */
 
 namespace magda::engine {
@@ -41,12 +40,6 @@ enum class RandomShape : std::uint8_t {
     /// for a rate to be the length of. Shape and smoothing go with it: both
     /// describe what happens between one number and the next, and noise has no
     /// between.
-    ///
-    /// The fork carries this choice and does nothing with it: its type
-    /// parameter is written and never read, so a project set to noise sounds
-    /// stepped there. Implemented rather than reproduced as the same omission,
-    /// because the model offers the control, and a control that does nothing is
-    /// worse than a difference that is written down.
     Noise,
 };
 
@@ -68,7 +61,7 @@ struct RandomSettings {
      * Zero holds the new value for the whole step, which is a sample-and-hold.
      * One ramps from the previous value to the new one across the whole of it.
      * In between, the step holds and then ramps over the last @ref shape of
-     * itself, which is the fork's own reading of the control.
+     * itself.
      */
     float shape = 0.0f;
 
@@ -92,11 +85,9 @@ struct RandomSettings {
  * @brief Where one random modulator has got to.
  *
  * No gate here, and its absence is deliberate. The LFO and the envelope both
- * have one that a trigger can shut; the fork's random modifier resyncs on a
- * note and has no gate parameter at all, so an audio-triggered one keeps
- * walking between hits rather than resting at zero. A gate added here would be
- * a difference in every project that has one, so a trigger restarts this and
- * nothing shuts it.
+ * have one that a trigger can shut; a random modifier resyncs on a note, so an
+ * audio-triggered one keeps walking between hits rather than resting at zero.
+ * A trigger restarts this and nothing shuts it.
  */
 struct RandomState {
     /// Cycles since the run began, fractional and monotonic, exactly as the
@@ -124,9 +115,7 @@ struct RandomState {
      * @brief The state of the walk's own generator.
      *
      * Its own rather than a shared one, so two random modulators in a project
-     * are independent and one project renders the same way twice. The fork
-     * seeds from the clock and cannot promise either, which is why a parity
-     * case here compares the structure of the walk rather than its numbers.
+     * are independent and one project renders the same way twice.
      */
     std::uint64_t seed = 0;
 };
@@ -155,7 +144,7 @@ void restartRandom(RandomState& state, const RandomSettings& settings);
  *
  * On the audio thread, once per block. Returns the output, 0 to 1. The value
  * published is the one the block opens on and the ramp is moved on afterwards,
- * which is the LFO's order and the fork's.
+ * which is the LFO's order.
  */
 float advanceRandom(RandomState& state, const RandomSettings& settings, const BlockInfo& block,
                     const ModTiming& timing);

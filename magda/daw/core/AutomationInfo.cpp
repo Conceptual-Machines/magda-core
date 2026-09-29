@@ -62,8 +62,8 @@ juce::String getModParamDisplayName(int modParamIndex) {
 }
 
 /// The two readings of a modulator's Rate lane, which are the model's own
-/// (ParameterPresets) so the editor, the fork and the native engine read one
-/// description of it rather than three.
+/// (ParameterPresets) so the editor and the native engine read one
+/// description of it.
 ParameterInfo makeHzRateInfo(const juce::String& name) {
     return ParameterPresets::modRateHz(name);
 }

@@ -152,9 +152,8 @@ EngineMagdaDevice::EngineMagdaDevice(std::unique_ptr<MagdaDevice> device, bool o
     for (auto [index, info] : std::views::zip(std::views::iota(0), device_->parameters())) {
         // The plan addresses a device's parameters by ParameterInfo::paramIndex
         // and allocates a slot for every index from zero, so a device that left
-        // it unset is addressed by its declaration order. Same fallback the
-        // fork's adapter uses to name them, for the same reason: two answers to
-        // one question is what puts a parameter's value on the wrong parameter.
+        // it unset is addressed by its declaration order; two answers to one
+        // question would put a parameter's value on the wrong parameter.
         const int plan = info.paramIndex >= 0 ? info.paramIndex : index;
         parameters_.push_back({plan, std::move(info)});
     }
@@ -190,10 +189,7 @@ void EngineMagdaDevice::prepare(const magda::engine::RenderContext& context) {
     });
 
     // From the properties read once at construction, never re-read here: the
-    // SDK says a device's properties are constant for its lifetime, and the
-    // fork's adapter takes them at the same moment. A host that read them again
-    // would be the only one of the two that noticed a device changing its mind,
-    // which is a divergence rather than a correction.
+    // SDK says a device's properties are constant for its lifetime.
     //
     // juce::roundToInt, which a device sizing its own delay line rounds with too
     // (MagdaLimiterDspCore::kLookaheadSeconds).
@@ -329,9 +325,8 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
                 auto message = metadata.getMessage();
 
                 // Seconds from the start of the block, which is what a device
-                // reads on both sides: the fork stamps its events that way and
-                // the engine's ports count samples. A note-on also carries how
-                // far into its sample it falls (#2741).
+                // reads; the engine's ports count samples. A note-on also
+                // carries how far into its sample it falls (#2741).
                 const auto fraction =
                     block.midiInFractions != nullptr && message.isNoteOn()
                         ? block.midiInFractions->at(metadata.samplePosition, message.getChannel(),
@@ -384,8 +379,7 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
     if (block.midiOut == nullptr)
         return;
 
-    // A port the device never declared: what it wrote is dropped, as the fork's
-    // adapter drops it, so producesMidi means the same on both legs.
+    // A port the device never declared: what it wrote is dropped.
     if (!properties_.producesMidi)
         return;
 

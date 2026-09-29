@@ -15,9 +15,10 @@ ToneGeneratorUI::ToneGeneratorUI() {
     waveformSelector_.addItem("Noise", 6);
     waveformSelector_.setSelectedId(1, juce::dontSendNotification);
     waveformSelector_.onChange = [this]() {
-        int teValue = waveformSelector_.getSelectedId() - 1;
+        // Param 0 = oscType, stored as the combo id minus one
+        int oscType = waveformSelector_.getSelectedId() - 1;
         if (onParameterChanged) {
-            onParameterChanged(0, static_cast<float>(teValue));  // Param 0 = oscType
+            onParameterChanged(0, static_cast<float>(oscType));
         }
     };
     addAndMakeVisible(waveformSelector_);
@@ -46,8 +47,8 @@ ToneGeneratorUI::ToneGeneratorUI() {
 
 void ToneGeneratorUI::updateParameters(float frequency, float level, int waveform) {
     // waveform is the oscType value (0-5); combo IDs are value + 1
-    int teValue = juce::jlimit(0, 5, waveform);
-    waveformSelector_.setSelectedId(teValue + 1, juce::dontSendNotification);
+    int oscType = juce::jlimit(0, 5, waveform);
+    waveformSelector_.setSelectedId(oscType + 1, juce::dontSendNotification);
 
     frequencySlider_.setValue(frequency, juce::dontSendNotification);
     levelSlider_.setValue(level, juce::dontSendNotification);

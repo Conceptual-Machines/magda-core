@@ -303,7 +303,7 @@ class AudioEngine : public AudioEngineListener {
 
     // ===== Audio Management =====
     /// Track and master meters and MIDI activity, from an engine-neutral
-    /// object both engines feed (#2579).
+    /// object the engine feeds (#2579).
     virtual TrackMeters& meters() = 0;
     virtual const TrackMeters& meters() const = 0;
 

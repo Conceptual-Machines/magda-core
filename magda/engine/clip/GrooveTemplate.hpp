@@ -20,10 +20,8 @@
  * The lookup runs ON the audio thread, and that is the one part of a MIDI clip
  * which cannot be resolved ahead of the block. Groove is anchored to the project
  * grid rather than to the clip, so a looped clip whose loop length is not a
- * whole multiple of the template's period grooves each pass differently. The
- * fork delivers that by re-timing its whole sequence once per pass and grooving
- * it there (LoopedMidiEventGenerator::setLoopIndex), which is the behaviour, not
- * an artefact of how it unrolls. Baking before the fold would be a divergence on
+ * whole multiple of the template's period grooves each pass differently. That
+ * is the intended behaviour, so baking before the loop fold would be wrong on
  * every odd-length loop.
  *
  * So the lookup allocates nothing, touches no string and is two array reads and
@@ -42,9 +40,8 @@ namespace magda::engine {
  */
 class GrooveTemplate {
   public:
-    /// The fork's clamps, kept because they are what a stored template was
-    /// written under: 2 to 1024 notes, 1 to 8 notes per beat, latenesses in
-    /// [-1, 1].
+    /// The clamps stored templates are written under: 2 to 1024 notes, 1 to 8
+    /// notes per beat, latenesses in [-1, 1].
     static constexpr int kMinNotes = 2;
     static constexpr int kMaxNotes = 1024;
     static constexpr int kMinNotesPerBeat = 1;
@@ -57,9 +54,7 @@ class GrooveTemplate {
      *        strength.
      *
      * @p numNotes is the pattern length in grid steps and may exceed the
-     * latenesses given, in which case the rest are zero: the fork reads its
-     * table through a juce::Array, which answers zero past the end, and a clip
-     * saved that way has to play the same.
+     * latenesses given, in which case the rest are zero.
      */
     static GrooveTemplate compile(const std::vector<float>& latenesses, int numNotes,
                                   int notesPerBeat, bool parameterized, float strength);
@@ -112,8 +107,8 @@ class GrooveTemplateSet {
         bool parameterized = false;
     };
 
-    /// Parse a <GROOVETEMPLATES> document, which is the shape the fork keeps
-    /// these in and therefore the shape any settings file already holds.
+    /// Parse a <GROOVETEMPLATES> document, the shape any settings file already
+    /// holds these in.
     static GrooveTemplateSet parse(const juce::XmlElement& document);
 
     void add(Entry entry);

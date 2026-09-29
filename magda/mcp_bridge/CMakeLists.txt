@@ -2,7 +2,7 @@
 #
 # Deliberately does NOT link magda_daw. This is a proxy: it parses just enough of
 # each message to route it and never touches a model object, so linking the DAW
-# would trade a ~1MB tool for a ~200MB one and put Tracktion Engine on the
+# would trade a ~1MB tool for a ~200MB one and put the whole DAW on the
 # critical path of a build that only needs JSON and an HTTP client.
 #
 # The one thing it does borrow is the data-directory resolution, which it

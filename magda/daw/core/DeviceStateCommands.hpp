@@ -67,9 +67,8 @@ bool writeDeviceSettings(const ChainNodePath& devicePath, const juce::NamedValue
 /**
  * @brief Push a state document onto a device that is already running.
  *
- * The projection's other half: the fork hands its plugin the tree and the
- * plugin hands it to the device, so a device the native engine holds is given
- * the same tree directly (#2663).
+ * The projection's other half: a device the native engine holds is given the
+ * tree directly (#2663).
  *
  * @p deviceType names the device for an empty @p docText, which is still a
  * state -- "nothing authored" -- and has to reach a device whose contract reads

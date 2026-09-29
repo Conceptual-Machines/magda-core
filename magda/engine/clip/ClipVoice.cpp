@@ -415,9 +415,9 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
         applyFade(region, first, block, envelope.seconds.end - clip.fadeOutSeconds,
                   envelope.seconds.end, clip.fadeOutCurve, false);
 
-    // Volume and gain summed, panned the way the incumbent pans a clip: linear,
-    // and hotter on one side rather than quieter on the other. Not a law with a
-    // centre correction, because a bounce has to match what was heard.
+    // Volume and gain summed, panned linear: hotter on one side rather than
+    // quieter on the other. Not a law with a centre correction, because a
+    // bounce has to match what was heard.
     //
     // The event's own trim sits under the clip's rather than replacing it, so
     // one event of several can be levelled against the others without touching

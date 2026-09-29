@@ -340,9 +340,8 @@ class LaunchHandle {
      * Not the clip's own loop. This restarts the handle as if it had been
      * launched again, which is what resets the played range a source reads its
      * position from; a clip looping inside its own length is the clip's
-     * business and happens without the handle knowing. Both exist in the fork
-     * and conflating them is right whenever the two lengths agree and wrong
-     * whenever they do not.
+     * business and happens without the handle knowing. Conflating them is
+     * right whenever the two lengths agree and wrong whenever they do not.
      *
      * Absent cancels looping.
      */

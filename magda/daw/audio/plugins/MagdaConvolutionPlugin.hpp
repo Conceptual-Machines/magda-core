@@ -174,7 +174,6 @@ class MagdaConvolutionPlugin : public MagdaDevice {
         wetSmoother_, drySmoother_;
 
     /// Dry copy for the mix, sized in prepare() so process() never allocates.
-    /// (The fork's pooled AudioScratchBuffer is host code.)
     juce::AudioBuffer<float> dryBuffer_;
 
     double sampleRate_ = 44100.0;

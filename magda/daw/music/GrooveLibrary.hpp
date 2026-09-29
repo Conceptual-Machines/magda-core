@@ -28,7 +28,7 @@ struct GrooveTemplateData {
  */
 class GrooveLibrary {
   public:
-    /// What persists a write: the fork's manager, or GrooveStore.
+    /// What persists a write, normally GrooveStore.
     using Writer = std::function<bool(const GrooveTemplateData&)>;
 
     /// The store's own list, which is what a write is read back through.

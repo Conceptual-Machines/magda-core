@@ -186,7 +186,7 @@ double barBeatsOf(int numerator, int denominator);
 double modBarsElapsed(const BlockInfo& block, const ModTiming& timing);
 
 /**
- * @brief How much of a bar one rate type is (ModifierCommon::getBarFraction parity table).
+ * @brief How much of a bar one rate type is.
  *
  * Fractions of a bar, not of a whole note.
  */

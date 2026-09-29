@@ -34,16 +34,12 @@ class ControllerParamWriter {
 // DefaultControllerParamWriter
 // ============================================================================
 
-class AudioBridge;
-
 /**
- * @brief Production param writer shared by the incumbent and native engines.
+ * @brief Production param writer.
  */
 class DefaultControllerParamWriter : public ControllerParamWriter {
   public:
     DefaultControllerParamWriter() = default;
-    // Source compatibility for callers that still have an incumbent bridge.
-    explicit DefaultControllerParamWriter(AudioBridge&) {}
 
     void write(const ResolveResult& resolved, float value) override;
 

@@ -24,8 +24,8 @@
  * because two followers on one track can be listening to different parts of the
  * spectrum, which is the point of the band limits.
  *
- * The envelope is this half. It runs the fork's own one-pole attack, hold and
- * release over that peak, sample by sample across the block, which is what
+ * The envelope is this half. It runs a one-pole attack, hold and release over
+ * that peak, sample by sample across the block, which is what
  * makes a follower's attack a time rather than a block count.
  *
  * ## Where the source's audio comes from, and when
@@ -39,9 +39,8 @@
  * The alternative is to resolve a follower's targets after its source's
  * subgraph has rendered, which splits parameter resolution into two passes and
  * makes the order a plan-shaped question rather than a table-shaped one. That
- * is a structural change and it is not this slice's: the lag is bounded, it is
- * the same lag the fork has whenever the source track is ordered after the
- * destination, and it is written down here rather than discovered later.
+ * is a structural change and it is not this slice's: the lag is bounded and
+ * written down here rather than discovered later.
  */
 
 namespace magda::engine {
@@ -77,10 +76,9 @@ struct FollowerSettings {
  * @brief One second-order section, transposed direct form II.
  *
  * The filter juce::IIRFilter is, coefficient order and state layout included,
- * because that is what the fork band-limits with: a follower that rolled off
- * differently would be tracking a different part of the spectrum, and the two
- * engines have to agree about which part. Its own rather than borrowed, so the
- * engine's DSP does not reach into the UI framework.
+ * because a follower that rolled off differently would be tracking a different
+ * part of the spectrum. Its own rather than borrowed, so the engine's DSP does
+ * not reach into the UI framework.
  */
 struct FollowerBiquad {
     /// Normalised, in JUCE's order: feed-forward b0, b1, b2 then feedback a1,
@@ -132,8 +130,7 @@ struct FollowerState {
  * @brief Reduce one block of source audio to the peak this follower detects.
  *
  * On the audio thread, after the source's ops have rendered. @p mono is the
- * source's block downmixed to one channel, which is what the fork's tap hands
- * over as well (FollowerSourceTapPlugin averages the channels).
+ * source's block downmixed to one channel by averaging.
  *
  * Stores the result on @p state, where the next block's advance reads it.
  */
@@ -148,9 +145,9 @@ void detectFollowerSource(FollowerState& state, const FollowerSettings& settings
  * the whole modulation system reads as a modifier doing nothing, so a follower
  * with nothing to follow contributes nothing.
  *
- * The peak is held flat across the block, which is what the fork does with an
- * externally fed follower: the detection already reduced the block to one
- * number and the envelope's job is the time constant rather than the waveform.
+ * The peak is held flat across the block: the detection already reduced the
+ * block to one number and the envelope's job is the time constant rather than
+ * the waveform.
  */
 float advanceFollower(FollowerState& state, const FollowerSettings& settings,
                       const BlockInfo& block, const ModTiming& timing);

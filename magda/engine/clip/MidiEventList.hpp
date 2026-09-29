@@ -54,7 +54,7 @@ struct MidiClipEvent {
     /// Where it stops sounding, which isn't always where its own note-off
     /// is: a note whose pitch is struck again before it ends has its
     /// note-off dropped at compile time, since emitting it would cut the
-    /// second note short (the fork's `useNoteUp = false`). Such a note keeps
+    /// second note short. Such a note keeps
     /// sounding from its onset until the retrigger replaces it, so this
     /// holds the retrigger's beat -- a locate landing in that stretch has to
     /// hear it, and reading a dropped note-off as "never sounding" would
@@ -87,8 +87,7 @@ struct MidiClipEvent {
  * What the chase reads. Locating into the middle of a clip has to leave
  * every controller at the value the curve is at; the answer is the last
  * event of each stream before the instant, one binary search per stream
- * rather than the whole-sequence scan the fork does
- * (`chocMidiHelpers::createControllerUpdatesForTime`).
+ * rather than a whole-sequence scan.
  *
  * Emitting only on value change makes that lookup exactly right rather than
  * nearly right: if nothing was emitted since, nothing changed since, so the
@@ -126,11 +125,9 @@ struct MidiPolyAftertouchStream {
 /**
  * @brief One stretch of a block, in one pass of a clip's loop.
  *
- * A loop is a coordinate change rather than a copy. The fork unrolls,
- * writing one copy of the sequence per repetition, so a two-bar loop under
- * a sixty-four bar clip is thirty-two copies rebuilt whenever a note moves.
- * Nothing here needs that: a block is a beat range, and folding a range
- * through a loop gives a handful of sub-ranges over the one list.
+ * A loop is a coordinate change rather than a copy: a block is a beat range,
+ * and folding a range through a loop gives a handful of sub-ranges over the
+ * one list.
  */
 struct MidiFoldPass {
     /// The half-open content range this pass covers of the block.
@@ -162,8 +159,8 @@ struct MidiFoldPass {
 struct MidiEventList {
     /// Sorted by beat, and at equal beats by kind: controllers, channel pressure,
     /// pitch bend, note-offs, note-ons, then poly aftertouch. Controllers first since a bank
-    /// or program change has to land before the note it configures (the
-    /// fork's rule too); offs before ons since two notes of one pitch
+    /// or program change has to land before the note it configures; offs
+    /// before ons since two notes of one pitch
     /// meeting exactly is otherwise a coin toss between a retrigger and a
     /// hung note.
     std::vector<MidiClipEvent> events;
@@ -245,9 +242,8 @@ struct MidiEventList {
      * @brief Note-ons before @p beat whose note ends after it, into @p out.
      *
      * What a locate needs, and what a loop pass needs: a note hanging over
-     * the point being jumped to has to be struck, and the fork does the
-     * same for the same reason (`getNotesOnAtTime`, and the clip-in half of
-     * its unrolling). A note with no note-off at all is never sounding
+     * the point being jumped to has to be struck. A note with no note-off at
+     * all is never sounding
      * here, since what ended it was a boundary rather than itself.
      *
      * Bounded by @ref longestNoteBeats rather than walked from the top.
@@ -276,10 +272,7 @@ struct MidiFold {
     /// getMidiVisibleRange already decides.
     double trimOffsetBeats = 0.0;
 
-    /// The phase, which applies whether or not the clip loops. The fork's
-    /// arranger path drops it for a clip that does not loop while its
-    /// session path applies it -- a gap in the sync layer rather than a
-    /// semantic, recorded here as a divergence.
+    /// The phase, which applies whether or not the clip loops.
     double offsetBeats = 0.0;
 
     bool loopEnabled = false;

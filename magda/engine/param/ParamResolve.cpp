@@ -160,10 +160,9 @@ int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& sp
 
     const float opening = valueAt(block.beats.start);
 
-    // One value for the block, held: the incumbent engine settles a parameter
-    // at the block boundary, and a device that did not ask for more is not the
-    // place to start differing from it. Also the whole answer for a block with
-    // no time in it, which is what a stopped transport renders.
+    // One value for the block, held, for a device that did not ask for more.
+    // Also the whole answer for a block with no time in it, which is what a
+    // stopped transport renders.
     if (!spec.segmentAccurate || block.numSamples <= 0 || block.beats.end <= block.beats.start) {
         out[0] = ParamSegment{0, opening, opening};
         return 1;

@@ -689,9 +689,7 @@ void DeviceSlotComponent::timerCallback() {
             }
         }
     } else {
-        // Poll device peak levels for right-side meter strip. Off the engine's
-        // own meters rather than the fork's, which is null under the native
-        // engine (#2570).
+        // Poll device peak levels for right-side meter strip (#2570).
         magda::DeviceMeters::Levels levels;
         if (engine->deviceMeters().devicePeak(nodePath_, levels))
             levelMeter_.setLevels(levels.peakL, levels.peakR);

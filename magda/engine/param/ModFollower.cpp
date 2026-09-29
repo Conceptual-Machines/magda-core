@@ -11,12 +11,10 @@ namespace magda::engine {
 namespace {
 
 /**
- * @brief The fork's time constant, which is the digital one.
+ * @brief The follower's time constant: log(1%).
  *
- * log(1%): a stage is "arrived" when it is within a hundredth of its
- * destination, and the coefficient is what that means per sample. The fork
- * offers three of these and MAGDA selects none of them, so this is the default
- * it therefore always runs at (EnvelopeFollowerModifier's digitalTC).
+ * A stage is "arrived" when it is within a hundredth of its destination, and
+ * the coefficient is what that means per sample.
  */
 constexpr float kTimeConstant = -2.0f;
 
@@ -27,8 +25,7 @@ constexpr float kMinTimeMs = 1.0e-3f;
 
 /// How far a coefficient may be from its neighbour before it is worth
 /// recomputing. The cutoffs arrive as floats off the model and comparing them
-/// exactly is what the fork does; matched, so a block that changes nothing
-/// recomputes nothing in either engine.
+/// exactly, so a block that changes nothing recomputes nothing.
 bool cutoffMoved(float current, float wanted) {
     return current != wanted;
 }
@@ -142,9 +139,9 @@ void detectFollowerSource(FollowerState& state, const FollowerSettings& settings
     juce::FloatVectorOperations::copyWithMultiply(scratch.data(), mono.data(), gain,
                                                   static_cast<int>(count));
 
-    // High pass first and low pass second, which is the fork's order. Two
-    // second-order sections do not commute exactly in floating point, so the
-    // order is part of the answer rather than a detail of it.
+    // High pass first and low pass second. Two second-order sections do not
+    // commute exactly in floating point, so the order is part of the answer
+    // rather than a detail of it.
     if (settings.highPass) {
         if (cutoffMoved(state.highPassHz, settings.highPassHz)) {
             state.highPassHz = settings.highPassHz;
@@ -187,7 +184,7 @@ float advanceFollower(FollowerState& state, const FollowerSettings& settings,
     // The peak the detector left, held flat across the block. The detection has
     // already reduced the block to one number and what is left for the envelope
     // is the time constant, which is why this is a run of one value rather than
-    // the waveform: it is what the fork feeds an externally driven follower.
+    // the waveform.
     const float input = std::max(state.sourcePeak, 0.0f);
 
     if (numSamples > 0) {

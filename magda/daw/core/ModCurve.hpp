@@ -8,11 +8,10 @@
  * @file ModCurve.hpp
  * @brief The shape a modulator has at a phase, read in one place.
  *
- * A modulator's cycle is drawn once and read three times: by the editor's
- * preview, by the fork's lock-free snapshot on the audio thread, and by the
- * native engine's LFO (#2119). Three readings of one curve is three chances for
+ * A modulator's cycle is drawn once and read by the editor's preview and by the
+ * native engine's LFO (#2119). Separate readings of one curve are a chance for
  * the dot, the sound and the render to disagree, so the arithmetic lives here
- * and the three of them call it.
+ * and both call it.
  *
  * Pure: no allocation, no locks, no state. Safe on the audio thread, which is
  * what lets the snapshot delegate rather than keep its own copy.

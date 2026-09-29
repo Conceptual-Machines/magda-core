@@ -241,7 +241,7 @@ juce_add_binary_data(MagdaAssets
     # plugin packs; MAGDA-internal plugin aliases live in
     # core/aliases/InternalPluginAliases.cpp).
     ../../assets/aliases/curated_index.json
-    # Tracktion's default grooves, which GrooveStore seeds an empty list with
+    # Default grooves, which GrooveStore seeds an empty list with
     ../../assets/grooves/groove_templates.xml
     ../../assets/grooves/groove_templates_parameterized.xml
     # Factory themes - embedded JSON palettes listed between the built-in
@@ -267,7 +267,7 @@ add_library(magda_types STATIC
     # through the same function the editor draws it with (#2118).
     core/AutomationCurve.cpp
     # The shape of a modulator's cycle, on the same terms: the editor's preview,
-    # the fork's audio snapshot and the native engine's LFO read one curve
+    # the audio-thread snapshot and the native engine's LFO read one curve
     # rather than three (#2119).
     core/ModCurve.cpp
     core/DeviceState.cpp
@@ -504,9 +504,9 @@ if(WIN32)
     endif()
 endif()
 
-# JUCE / Tracktion modules are JUCE "module" INTERFACE libraries: their unity
+# JUCE modules are JUCE "module" INTERFACE libraries: their unity
 # .cpp lives in INTERFACE_SOURCES, so linking them PUBLIC propagates those
-# sources to every dependent, which then recompiles the entire JUCE+TE stack
+# sources to every dependent, which then recompiles the entire JUCE stack
 # (measured: juce_core x14, juce_audio_basics x7 across the 7 targets). Compile
 # them ONCE here instead:
 #   - PRIVATE so the sources land only in magda_daw and do not propagate;
@@ -641,11 +641,11 @@ if(MAGDA_PRO_DEVICES)
     target_compile_definitions(magda_daw PUBLIC MAGDA_PRO_DEVICES_ENABLED=1)
 endif()
 
-# Re-export JUCE/TE compile usage (include dirs + defines, NO sources) so
+# Re-export JUCE compile usage (include dirs + defines, NO sources) so
 # dependents can still #include JUCE headers. magda_daw's own resolved
 # INCLUDE_DIRECTORIES / COMPILE_DEFINITIONS already hold the full transitive
 # JUCE closure (CMake resolved it when the modules were linked PRIVATE above),
-# so forward exactly those - this avoids having to enumerate TE's hidden juce
+# so forward exactly those - this avoids having to enumerate the hidden juce
 # module dependencies by hand.
 target_include_directories(magda_daw INTERFACE
     $<BUILD_INTERFACE:$<TARGET_PROPERTY:magda_daw,INCLUDE_DIRECTORIES>>)
@@ -676,7 +676,7 @@ target_link_libraries(magda_daw_app
     # magda_daw because magda_daw only names the host through a pimpl'd header:
     # the engine's own includes never reach it.
     magda_engine_host
-    # JUCE/TE come transitively from magda_daw: its re-exported INTERFACE gives
+    # JUCE comes transitively from magda_daw: its re-exported INTERFACE gives
     # the headers + defines to compile this target's own sources, and its
     # $<LINK_ONLY:...> forwards the modules' frameworks + the objects already in
     # magda_daw's archive. Linking the juce:: modules here directly would just

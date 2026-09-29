@@ -151,7 +151,7 @@ class PluginService {
      * @brief Every parameter @p pluginId declares, for the parameter-config dialog.
      *
      * A MAGDA device answers off the catalog, an external plugin is opened straight from
-     * the format manager, and a plugin that is neither is the fork's to answer (#2601).
+     * the format manager (#2601).
      */
     std::vector<ScannedPluginParameter> scanParameters(const juce::String& pluginId,
                                                        bool internalPlugin);

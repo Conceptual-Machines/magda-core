@@ -59,8 +59,8 @@ LaunchHandle* followTarget(const LaunchHandleTable& table, const SlotKey& key,
 
     switch (follow.action) {
         case SlotAction::next:
-            // No wrap at the ends, which is the incumbent's: the last slot of a
-            // track stops rather than starting the first again.
+            // No wrap at the ends: the last slot of a track stops rather than
+            // starting the first again.
             return at + 1 < count ? first[at + 1].handle : nullptr;
 
         case SlotAction::previous:

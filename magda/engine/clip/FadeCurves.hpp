@@ -39,8 +39,8 @@ float fadeGain(FadeCurve curve, float alpha);
  * and stops. So the curve is read as a position rather than as a level, and what
  * comes back is the proportion of the ramp's own stretch that has been consumed.
  *
- * These are the incumbent's shapes, which are the integrals of the gain curves
- * above rather than the curves themselves: what the gain curve is worth at a
+ * These shapes are the integrals of the gain curves above rather than the
+ * curves themselves: what the gain curve is worth at a
  * point is the *rate* the material runs at there, and where the material has got
  * to is the area under that. A rising ramp therefore ends at 1 and begins at a
  * half, which is not a mistake: a ramp that ran the material from the very start

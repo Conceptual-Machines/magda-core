@@ -32,11 +32,8 @@
  * the map here instead would need the length of the region the event reads,
  * which is itself an answer from the map, and the two would define each other.
  *
- * The incumbent cannot do reverse and warp together at all: it bakes warp into
- * a rendered proxy file and can only bake one thing per clip, so a reversed
- * warped clip there silently loses its markers
- * (`WaveAudioClip::createRenderJob` returns the reverse job before it ever
- * reaches the warp one). Computing both live has no such constraint.
+ * Warp and reverse are both computed live, so a reversed warped clip keeps its
+ * markers.
  */
 
 namespace magda::engine {

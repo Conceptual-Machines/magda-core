@@ -15,9 +15,8 @@ constexpr int kWrapperParameterCount = 2;
 
 /// The model's record of the parameter at @p index, or none.
 ///
-/// Both buckets, because MAGDA splits the incumbent's one list in two: the
-/// plugin's parameters and the wrapper pair it never declared. Both carry the
-/// index a project addresses them by.
+/// Both buckets: the plugin's parameters and the wrapper pair it never declared.
+/// Both carry the index a project addresses them by.
 const ParameterInfo* modelParameterAt(const DeviceInfo& device, int index) {
     for (const auto* bucket : {&device.parameters, &device.wrapperParameters})
         for (const auto& info : *bucket)
@@ -106,12 +105,11 @@ float modelValueFrom(float normalised, const ParameterInfo& info) {
         .value;
 }
 
-/// The length the fork asks a plugin for its parameter names at.
+/// The length a plugin is asked for its parameter names at.
 constexpr int kParameterNameLength = 1024;
 
-/// A record over [0, 1], which is the only shape an external plugin's
-/// parameters take: the fork wraps every one of them in that range whatever the
-/// plugin's own units are.
+/// A record over [0, 1], the only shape an external plugin's parameters take,
+/// whatever the plugin's own units are.
 ParameterInfo normalisedParameter(int index, const juce::String& name) {
     ParameterInfo info;
     info.paramIndex = index;
@@ -124,7 +122,7 @@ ParameterInfo normalisedParameter(int index, const juce::String& name) {
     return info;
 }
 
-/// The fork's name for @p parameter, de-duplication included: a repeated name
+/// The host's name for @p parameter, de-duplication included: a repeated name
 /// gains a " (2)", and an unnamed one is numbered by its position in the
 /// plugin's own array. @p used counts the names seen before this one.
 juce::String hostParameterName(const juce::AudioProcessorParameter& parameter,
@@ -145,9 +143,8 @@ juce::String hostParameterName(const juce::AudioProcessorParameter& parameter,
 /// AudioUnitParameterID -- and it is the only identity that survives the plugin
 /// renumbering its parameters in an update. Not
 /// AudioProcessorParameterWithID, which the formats' own parameters do not
-/// derive from: the fork casts to that and so ends up with the index for every
-/// real plugin (ExternalPlugin::buildParameterList), which is an identity that
-/// matches whatever moved into the slot.
+/// derive from: casting to that yields the index for every real plugin, an
+/// identity that matches whatever moved into the slot.
 ///
 /// Empty rather than the index for a parameter that declares nothing, so a
 /// caller can tell "this is its id" from "it has none" instead of being handed
@@ -405,10 +402,9 @@ std::optional<ExternalPluginSnapshot> captureExternalPluginState(
     if (!described)
         return std::nullopt;
 
-    // Absent rather than empty for a plugin with nothing to say, which is what
-    // the fork writes for one: it removes the property rather than storing a
-    // zero-length chunk, and a project that stored one would come back through
-    // decodeSavedChunk() as a baseline anyway.
+    // Absent rather than empty for a plugin with nothing to say: the property is
+    // omitted rather than stored as a zero-length chunk, which would come back
+    // through decodeSavedChunk() as a baseline anyway.
     if (chunk.getSize() > 0)
         snapshot.pluginState = chunk.toBase64Encoding();
 

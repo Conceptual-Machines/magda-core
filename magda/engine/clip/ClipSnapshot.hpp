@@ -225,8 +225,8 @@ struct AudioClipPlayback {
 
     // ---- Mix ---------------------------------------------------------------
 
-    /// The clip's volume and gain summed, as the incumbent applies them, in
-    /// dB. Per-event trim sits under it on the event.
+    /// The clip's volume and gain summed, in dB. Per-event trim sits under it
+    /// on the event.
     float gainDb = 0.0f;
     float pan = 0.0f;
 
@@ -322,7 +322,7 @@ struct TrackClipPlayback {
     std::vector<MidiClipPlayback> midi;
 
     /// Whether the arrangement above sounds. Session mode silences it whether
-    /// or not a slot is launched, as the fork's playSlotClips does (#2485).
+    /// or not a slot is launched (#2485).
     /// Read per block by the track's arrangement sources.
     TrackPlaybackMode playbackMode = TrackPlaybackMode::Arrangement;
 

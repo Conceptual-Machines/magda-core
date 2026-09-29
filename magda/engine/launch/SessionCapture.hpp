@@ -13,16 +13,11 @@
  * @file SessionCapture.hpp
  * @brief What the session played, as spans the arrangement can hold (#2464).
  *
- * The fork's SessionRecorder watches session clips play and writes arrangement
- * clips from what it saw, asking a play state per clip and a launch time per
- * track once a frame. Two clocks: what was heard and what was captured, and the
- * difference between them is the drift.
- *
- * This is fed the launcher's own edges instead (SlotRuns.hpp), so a run is
- * placed on the sample it began on however long ago the frame that collects it
- * runs. A scene is one event for the same reason: its runs share an origin
- * because they were launched on one sample, not because they were observed in
- * one frame.
+ * Fed the launcher's own edges (SlotRuns.hpp), so a run is placed on the
+ * sample it began on however long ago the frame that collects it runs, with no
+ * drift between what was heard and what was captured. A scene is one event
+ * for the same reason: its runs share an origin because they were launched on
+ * one sample, not because they were observed in one frame.
  *
  * Spans and not clips. What the material is, and what a clip made of it is
  * called, is the model's; this says which slot sounded, from where, and for how

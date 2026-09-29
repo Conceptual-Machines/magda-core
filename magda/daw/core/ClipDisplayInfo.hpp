@@ -34,9 +34,8 @@ struct ClipDisplayInfo {
     double length;     // clip duration on timeline (seconds)
     double endTime;    // startTime + length
     double offset;     // original source-file offset (seconds)
-    double
-        speedRatio;  // time stretch ratio
-                     // In autoTempo mode, speedRatio is always 1.0 (the engine handles stretching).
+    // In autoTempo mode, speedRatio is always 1.0 (the engine handles stretching).
+    double speedRatio;  // time stretch ratio
     bool reversed;
 
     // ------- Source file extent (the only "what to draw" answer) -------
