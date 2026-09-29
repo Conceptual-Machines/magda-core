@@ -2031,10 +2031,9 @@ TEST_CASE("resolveOverlaps - covering a clip leaves it whole and gives it back",
 }
 
 // The last case that used to cut: a drop landing strictly inside an audio clip
-// split it into head, covered slice and tail. That existed only because the
-// Tracktion mirror holds one engine clip per model clip and cannot express a
-// hole in the middle of one; the native engine carries the silenced range on
-// the clip snapshot (#1890). Nothing on a lane is cut now, at any shape.
+// split it into head, covered slice and tail. The native engine carries the
+// silenced range on the clip snapshot (#1890), so nothing on a lane is cut now,
+// at any shape.
 TEST_CASE("resolveOverlaps - a clip dropped inside another leaves it whole",
           "[clip][overlap][regression]") {
     resetState();

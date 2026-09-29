@@ -18,8 +18,7 @@
  * @file test_plan_insert.cpp
  * @brief A hardware insert as a send op and a return op (#2245).
  *
- * The whole claim of this slice is that an insert is not a special case. The
- * incumbent recognises one by where it sits in a chain and wires it there; the
+ * The whole claim of this slice is that an insert is not a special case: the
  * plan already had ops that consume a signal and ops that produce one, so an
  * insert is one of each with the outside world between them.
  *

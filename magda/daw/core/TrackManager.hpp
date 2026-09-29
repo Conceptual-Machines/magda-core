@@ -871,11 +871,11 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     bool insertFlatSectionDeviceByPath(const ChainNodePath& devicePath, DeviceInfo device,
                                        int index);
     /**
-     * Stage a fresh device beside @p incumbentPath in the same flat section.
-     * Uniqueness checks ignore only the incumbent, allowing an atomic same-kind
+     * Stage a fresh device beside @p replacedPath in the same flat section.
+     * Uniqueness checks ignore only the replaced device, allowing an atomic same-kind
      * replacement without first deleting the live device.
      */
-    DeviceId stageFlatSectionReplacement(const ChainNodePath& incumbentPath,
+    DeviceId stageFlatSectionReplacement(const ChainNodePath& replacedPath,
                                          const DeviceInfo& device, int index);
     /// Wrap @p paths in a new rack.
     ///

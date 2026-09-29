@@ -161,7 +161,7 @@ bool holdsValueNear(const ControllerFunction& points, std::int64_t from, std::in
     return false;
 }
 
-/// Drop messages that repeat the value before them. The fork emits on its grid
+/// Drop messages that repeat the value before them. A grid-sampled stream emits
 /// whether the value moved or not, and a repeat says nothing about the curve:
 /// counting it would make a stream that flattens early look longer than one
 /// that stopped when it had nothing left to say.
@@ -189,20 +189,20 @@ std::string describeKey(const ControllerKey& key) {
 // =============================================================================
 
 ShiftEstimate estimateShift(const juce::AudioBuffer<float>& native,
-                            const juce::AudioBuffer<float>& incumbent, int maxShiftSamples) {
+                            const juce::AudioBuffer<float>& reference, int maxShiftSamples) {
     ShiftEstimate estimate;
 
-    if (native.getNumSamples() == 0 || incumbent.getNumSamples() == 0 || maxShiftSamples <= 0)
+    if (native.getNumSamples() == 0 || reference.getNumSamples() == 0 || maxShiftSamples <= 0)
         return estimate;
 
-    const auto onset = std::min(onsetOf(native), onsetOf(incumbent));
+    const auto onset = std::min(onsetOf(native), onsetOf(reference));
 
     // Wide enough that a wrong lag cannot correlate as well as the right one by
     // accident, which for periodic material means many periods. Narrowing this
     // is tempting and wrong: an eighth of a second of tone correlates with an
     // eighth of a second of noise at some lag, and the search would then name a
     // fiction rather than decline.
-    const auto available = std::min(native.getNumSamples(), incumbent.getNumSamples()) - onset;
+    const auto available = std::min(native.getNumSamples(), reference.getNumSamples()) - onset;
     const auto window = std::min(std::max(4 * maxShiftSamples, 4096), std::max(0, available));
     if (window <= 0)
         return estimate;
@@ -268,7 +268,7 @@ ShiftEstimate estimateShift(const juce::AudioBuffer<float>& native,
     const auto from = std::max(0, onset - maxShiftSamples);
 
     auto coarseA = envelope(native, from, span);
-    auto coarseB = envelope(incumbent, from, span);
+    auto coarseB = envelope(reference, from, span);
     const auto coarseGuard = maxShiftSamples / kDecimation;
 
     // With the mean left in, a level that does not change scores near one at
@@ -325,8 +325,8 @@ ShiftEstimate estimateShift(const juce::AudioBuffer<float>& native,
         const auto index = from + i;
         if (index < native.getNumSamples())
             fineA[static_cast<std::size_t>(i)] = summed(native, index);
-        if (index < incumbent.getNumSamples())
-            fineB[static_cast<std::size_t>(i)] = summed(incumbent, index);
+        if (index < reference.getNumSamples())
+            fineB[static_cast<std::size_t>(i)] = summed(reference, index);
     }
 
     estimate.envelopeSamples = static_cast<double>(bestCoarseLag * kDecimation);
@@ -436,12 +436,12 @@ juce::AudioBuffer<float> delayFractionally(const juce::AudioBuffer<float>& sourc
 }
 
 EnvelopeAgreement compareEnvelopes(const juce::AudioBuffer<float>& native,
-                                   const juce::AudioBuffer<float>& incumbent, int shiftSamples,
+                                   const juce::AudioBuffer<float>& reference, int shiftSamples,
                                    double sampleRate, double followerHz) {
     EnvelopeAgreement result;
 
     const auto begin = std::max(0, -shiftSamples);
-    const auto end = std::min(native.getNumSamples(), incumbent.getNumSamples() - shiftSamples);
+    const auto end = std::min(native.getNumSamples(), reference.getNumSamples() - shiftSamples);
     const auto length = end - begin;
     if (length <= 0)
         return result;
@@ -467,7 +467,7 @@ EnvelopeAgreement compareEnvelopes(const juce::AudioBuffer<float>& native,
     };
 
     const auto a = follow(native, begin);
-    const auto b = follow(incumbent, begin + shiftSamples);
+    const auto b = follow(reference, begin + shiftSamples);
 
     const auto mean = [](const std::vector<double>& values) {
         auto total = 0.0;
@@ -536,12 +536,12 @@ EnvelopeAgreement compareEnvelopes(const juce::AudioBuffer<float>& native,
 }
 
 SpectralAgreement compareSpectra(const juce::AudioBuffer<float>& native,
-                                 const juce::AudioBuffer<float>& incumbent, int shiftSamples,
+                                 const juce::AudioBuffer<float>& reference, int shiftSamples,
                                  double floorDb) {
     SpectralAgreement result;
 
     const auto begin = std::max(0, -shiftSamples);
-    const auto end = std::min(native.getNumSamples(), incumbent.getNumSamples() - shiftSamples);
+    const auto end = std::min(native.getNumSamples(), reference.getNumSamples() - shiftSamples);
     if (end - begin < kSpectralWindow)
         return result;
 
@@ -569,7 +569,7 @@ SpectralAgreement compareSpectra(const juce::AudioBuffer<float>& native,
 
     for (auto frame = begin; frame + kSpectralWindow <= end; frame += kSpectralHop) {
         const auto a = spectrumAt(native, frame);
-        const auto b = spectrumAt(incumbent, frame + shiftSamples);
+        const auto b = spectrumAt(reference, frame + shiftSamples);
 
         auto peak = 0.0f;
         for (std::size_t bin = 0; bin < a.size(); ++bin)
@@ -613,19 +613,19 @@ SpectralAgreement compareSpectra(const juce::AudioBuffer<float>& native,
 }
 
 AudioComparison compareAudio(const juce::AudioBuffer<float>& native,
-                             const juce::AudioBuffer<float>& incumbent,
+                             const juce::AudioBuffer<float>& reference,
                              const AudioCompareOptions& options) {
     AudioComparison result;
     result.floorUsed = options.floorDb;
-    result.lengthDifference = native.getNumSamples() - incumbent.getNumSamples();
+    result.lengthDifference = native.getNumSamples() - reference.getNumSamples();
 
-    if (native.getNumChannels() != incumbent.getNumChannels()) {
+    if (native.getNumChannels() != reference.getNumChannels()) {
         result.refusal = "channel counts differ: " + std::to_string(native.getNumChannels()) +
-                         " against " + std::to_string(incumbent.getNumChannels());
+                         " against " + std::to_string(reference.getNumChannels());
         return result;
     }
 
-    if (native.getNumSamples() == 0 || incumbent.getNumSamples() == 0) {
+    if (native.getNumSamples() == 0 || reference.getNumSamples() == 0) {
         result.refusal = "one render is empty";
         return result;
     }
@@ -653,7 +653,7 @@ AudioComparison compareAudio(const juce::AudioBuffer<float>& native,
     };
 
     for (const auto& [buffer, whose] :
-         {std::pair{&native, "native render"}, std::pair{&incumbent, "incumbent"}}) {
+         {std::pair{&native, "native render"}, std::pair{&reference, "reference"}}) {
         const auto at = firstNonFinite(*buffer);
         if (at < 0)
             continue;
@@ -667,7 +667,7 @@ AudioComparison compareAudio(const juce::AudioBuffer<float>& native,
     }
 
     if (options.measureShift) {
-        const auto estimate = estimateShift(native, incumbent, options.maxShiftSamples);
+        const auto estimate = estimateShift(native, reference, options.maxShiftSamples);
         result.shiftSamples = estimate.samples;
         result.shiftNotFound = !estimate.found;
     }
@@ -675,7 +675,7 @@ AudioComparison compareAudio(const juce::AudioBuffer<float>& native,
     const auto shift = result.shiftSamples;
     const auto begin = static_cast<std::int64_t>(std::max(0, -shift));
     const auto end = std::min(static_cast<std::int64_t>(native.getNumSamples()),
-                              static_cast<std::int64_t>(incumbent.getNumSamples()) - shift);
+                              static_cast<std::int64_t>(reference.getNumSamples()) - shift);
 
     if (end <= begin) {
         result.refusal = "nothing overlaps once the shift is applied";
@@ -692,7 +692,7 @@ AudioComparison compareAudio(const juce::AudioBuffer<float>& native,
 
     for (auto channel = 0; channel < native.getNumChannels(); ++channel) {
         const auto* a = native.getReadPointer(channel);
-        const auto* b = incumbent.getReadPointer(channel);
+        const auto* b = reference.getReadPointer(channel);
 
         std::size_t range = 0;
 
@@ -738,16 +738,16 @@ AudioComparison compareAudio(const juce::AudioBuffer<float>& native,
 // =============================================================================
 
 InvariantComparison compareInvariants(const juce::AudioBuffer<float>& native,
-                                      const juce::AudioBuffer<float>& incumbent,
+                                      const juce::AudioBuffer<float>& reference,
                                       const InvariantOptions& options) {
     InvariantComparison result;
 
-    if (native.getNumChannels() != incumbent.getNumChannels()) {
+    if (native.getNumChannels() != reference.getNumChannels()) {
         result.refusal = "different channel counts";
         return result;
     }
 
-    if (native.getNumSamples() == 0 || incumbent.getNumSamples() == 0) {
+    if (native.getNumSamples() == 0 || reference.getNumSamples() == 0) {
         result.refusal = "nothing to compare";
         return result;
     }
@@ -767,11 +767,11 @@ InvariantComparison compareInvariants(const juce::AudioBuffer<float>& native,
         return result;
     }
 
-    result.lengthsMatch = native.getNumSamples() == incumbent.getNumSamples();
+    result.lengthsMatch = native.getNumSamples() == reference.getNumSamples();
     if (!result.lengthsMatch)
         result.problems.push_back("lengths differ: native " +
-                                  std::to_string(native.getNumSamples()) + ", incumbent " +
-                                  std::to_string(incumbent.getNumSamples()));
+                                  std::to_string(native.getNumSamples()) + ", reference " +
+                                  std::to_string(reference.getNumSamples()));
 
     // Finite first, because everything below it is arithmetic on these samples
     // and a NaN would propagate into a worst step of NaN and a peak of NaN,
@@ -793,7 +793,7 @@ InvariantComparison compareInvariants(const juce::AudioBuffer<float>& native,
         }
     };
     checkFinite(native, "native");
-    checkFinite(incumbent, "incumbent");
+    checkFinite(reference, "reference");
     result.finite = finite;
 
     if (!result.finite)
@@ -820,23 +820,23 @@ InvariantComparison compareInvariants(const juce::AudioBuffer<float>& native,
     };
 
     std::int64_t nativeAt = -1;
-    std::int64_t incumbentAt = -1;
+    std::int64_t referenceAt = -1;
     result.worstStepNative = worstStep(native, nativeAt);
-    result.worstStepIncumbent = worstStep(incumbent, incumbentAt);
+    result.worstStepReference = worstStep(reference, referenceAt);
     result.worstStepAt =
-        result.worstStepNative >= result.worstStepIncumbent ? nativeAt : incumbentAt;
+        result.worstStepNative >= result.worstStepReference ? nativeAt : referenceAt;
 
     result.continuous = result.worstStepNative <= options.maxStepPerSample &&
-                        result.worstStepIncumbent <= options.maxStepPerSample;
+                        result.worstStepReference <= options.maxStepPerSample;
     if (!result.continuous)
         result.problems.push_back(
             "a step of " +
-            formatDb(toDb(std::max(result.worstStepNative, result.worstStepIncumbent))) +
+            formatDb(toDb(std::max(result.worstStepNative, result.worstStepReference))) +
             " dBFS at sample " + std::to_string(result.worstStepAt) + " exceeds the bound of " +
             formatDb(toDb(options.maxStepPerSample)) + " dBFS");
 
     // The tail, which is where a device left running past its material shows up.
-    // Both sides are asked independently: two engines leaking alike would cancel
+    // Both sides are asked independently: two buffers leaking alike would cancel
     // in a residual and be reported as agreement.
     const auto tailPeak = [&](const juce::AudioBuffer<float>& buffer) {
         const auto samples =
@@ -865,25 +865,25 @@ InvariantComparison compareInvariants(const juce::AudioBuffer<float>& native,
     };
 
     result.peakNativeDb = peakOf(native);
-    result.peakIncumbentDb = peakOf(incumbent);
+    result.peakReferenceDb = peakOf(reference);
     result.bothSound =
-        result.peakNativeDb >= options.minPeakDb && result.peakIncumbentDb >= options.minPeakDb;
+        result.peakNativeDb >= options.minPeakDb && result.peakReferenceDb >= options.minPeakDb;
 
     if (!result.bothSound)
         result.problems.push_back("a render did not sound: native " +
-                                  formatDb(result.peakNativeDb) + " dBFS, incumbent " +
-                                  formatDb(result.peakIncumbentDb) + " dBFS, floor " +
+                                  formatDb(result.peakNativeDb) + " dBFS, reference " +
+                                  formatDb(result.peakReferenceDb) + " dBFS, floor " +
                                   formatDb(options.minPeakDb) + " dBFS");
 
     result.tailPeakNativeDb = tailPeak(native);
-    result.tailPeakIncumbentDb = tailPeak(incumbent);
+    result.tailPeakReferenceDb = tailPeak(reference);
     result.tailAsked = options.asksForTail;
     result.tailDecays = result.tailPeakNativeDb <= options.tailFloorDb &&
-                        result.tailPeakIncumbentDb <= options.tailFloorDb;
+                        result.tailPeakReferenceDb <= options.tailFloorDb;
     if (result.tailAsked && !result.tailDecays)
         result.problems.push_back("the tail has not decayed: native " +
-                                  formatDb(result.tailPeakNativeDb) + " dBFS, incumbent " +
-                                  formatDb(result.tailPeakIncumbentDb) + " dBFS, bound " +
+                                  formatDb(result.tailPeakNativeDb) + " dBFS, reference " +
+                                  formatDb(result.tailPeakReferenceDb) + " dBFS, bound " +
                                   formatDb(options.tailFloorDb) + " dBFS");
 
     return result;
@@ -953,36 +953,35 @@ MidiLifetime pairNotes(const MidiStream& stream) {
     return lifetime;
 }
 
-MidiComparison compareMidi(const MidiStream& native, const MidiStream& incumbent,
+MidiComparison compareMidi(const MidiStream& native, const MidiStream& reference,
                            const MidiCompareOptions& options) {
     MidiComparison result;
 
     const auto nativeLifetime = pairNotes(native);
-    auto incumbentLifetime = pairNotes(incumbent);
+    auto referenceLifetime = pairNotes(reference);
 
     result.nativeHanging = nativeLifetime.hanging;
-    result.incumbentHanging = incumbentLifetime.hanging;
+    result.referenceHanging = referenceLifetime.hanging;
 
     // Each stream is checked on its own before the two are compared. A note
-    // left hanging by the fork is not a reason to accept one here.
+    // left hanging by the reference is not a reason to accept one here.
     if (nativeLifetime.hanging > 0)
         result.problems.push_back("native left " + std::to_string(nativeLifetime.hanging) +
                                   " note(s) hanging");
     if (nativeLifetime.unmatchedOffs > 0)
         result.problems.push_back("native sent " + std::to_string(nativeLifetime.unmatchedOffs) +
                                   " note-off(s) for notes it never started");
-    if (incumbentLifetime.hanging > 0)
-        result.problems.push_back("incumbent left " + std::to_string(incumbentLifetime.hanging) +
+    if (referenceLifetime.hanging > 0)
+        result.problems.push_back("reference left " + std::to_string(referenceLifetime.hanging) +
                                   " note(s) hanging");
-    if (incumbentLifetime.unmatchedOffs > 0)
-        result.problems.push_back("incumbent sent " +
-                                  std::to_string(incumbentLifetime.unmatchedOffs) +
+    if (referenceLifetime.unmatchedOffs > 0)
+        result.problems.push_back("reference sent " +
+                                  std::to_string(referenceLifetime.unmatchedOffs) +
                                   " note-off(s) for notes it never started");
 
-    // The declared shift brings the incumbent into the native domain. Declared,
-    // never fitted: the only thing it stands for is the fork dropping
-    // midiOffset on an unlooped arranger clip.
-    for (auto& note : incumbentLifetime.notes) {
+    // The declared shift brings the reference into the native domain. Declared,
+    // never fitted.
+    for (auto& note : referenceLifetime.notes) {
         note.onSample -= options.noteShiftSamples;
         note.offSample -= options.noteShiftSamples;
     }
@@ -1017,21 +1016,21 @@ MidiComparison compareMidi(const MidiStream& native, const MidiStream& incumbent
     };
 
     const auto nativeOthers = others(native, 0);
-    const auto incumbentOthers = others(incumbent, options.noteShiftSamples);
+    const auto referenceOthers = others(reference, options.noteShiftSamples);
 
     result.nativeUncompared = static_cast<int>(nativeOthers.size());
-    result.incumbentUncompared = static_cast<int>(incumbentOthers.size());
+    result.referenceUncompared = static_cast<int>(referenceOthers.size());
 
-    auto othersMatch = nativeOthers.size() == incumbentOthers.size();
+    auto othersMatch = nativeOthers.size() == referenceOthers.size();
     if (!othersMatch)
         result.problems.push_back("messages outside notes, controllers and pitch bend: " +
                                   std::to_string(result.nativeUncompared) +
                                   " in the native render against " +
-                                  std::to_string(result.incumbentUncompared) + " in the incumbent");
+                                  std::to_string(result.referenceUncompared) + " in the reference");
 
     for (std::size_t i = 0; othersMatch && i < nativeOthers.size(); ++i) {
         const auto& a = nativeOthers[i];
-        const auto& b = incumbentOthers[i];
+        const auto& b = referenceOthers[i];
 
         if (a.status == b.status && a.data1 == b.data1 && a.data2 == b.data2 &&
             std::abs(a.sample - b.sample) <= tolerance)
@@ -1049,17 +1048,17 @@ MidiComparison compareMidi(const MidiStream& native, const MidiStream& incumbent
 
     result.otherMessagesMatch = othersMatch;
 
-    std::vector<char> matched(incumbentLifetime.notes.size(), 0);
-    const auto endEarly = static_cast<std::int64_t>(options.incumbentNoteEndEarlySamples);
+    std::vector<char> matched(referenceLifetime.notes.size(), 0);
+    const auto endEarly = static_cast<std::int64_t>(options.referenceNoteEndEarlySamples);
 
     for (const auto& note : nativeLifetime.notes) {
-        std::size_t found = incumbentLifetime.notes.size();
+        std::size_t found = referenceLifetime.notes.size();
 
-        for (std::size_t index = 0; index < incumbentLifetime.notes.size(); ++index) {
+        for (std::size_t index = 0; index < referenceLifetime.notes.size(); ++index) {
             if (matched[index])
                 continue;
 
-            const auto& other = incumbentLifetime.notes[index];
+            const auto& other = referenceLifetime.notes[index];
             if (other.channel != note.channel || other.pitch != note.pitch)
                 continue;
             if (std::abs(other.onSample - note.onSample) > tolerance)
@@ -1069,20 +1068,20 @@ MidiComparison compareMidi(const MidiStream& native, const MidiStream& incumbent
             break;
         }
 
-        if (found == incumbentLifetime.notes.size()) {
+        if (found == referenceLifetime.notes.size()) {
             ++result.notesOnlyInNative;
             if (result.problems.size() < 24)
                 result.problems.push_back("note " + std::to_string(note.pitch) + " ch" +
                                           std::to_string(note.channel) + " at " +
                                           sampleAddress(note.onSample, options.sampleRate) +
-                                          " is not in the incumbent");
+                                          " is not in the reference");
             continue;
         }
 
         matched[found] = 1;
         ++result.notesCompared;
 
-        const auto& other = incumbentLifetime.notes[found];
+        const auto& other = referenceLifetime.notes[found];
         if (other.velocity != note.velocity ||
             std::abs(other.offSample + endEarly - note.offSample) > tolerance) {
             ++result.notesMismatched;
@@ -1096,12 +1095,12 @@ MidiComparison compareMidi(const MidiStream& native, const MidiStream& incumbent
         }
     }
 
-    for (std::size_t index = 0; index < incumbentLifetime.notes.size(); ++index) {
+    for (std::size_t index = 0; index < referenceLifetime.notes.size(); ++index) {
         if (matched[index])
             continue;
 
-        ++result.notesOnlyInIncumbent;
-        const auto& note = incumbentLifetime.notes[index];
+        ++result.notesOnlyInReference;
+        const auto& note = referenceLifetime.notes[index];
         if (result.problems.size() < 24)
             result.problems.push_back("note " + std::to_string(note.pitch) + " ch" +
                                       std::to_string(note.channel) + " at " +
@@ -1111,38 +1110,37 @@ MidiComparison compareMidi(const MidiStream& native, const MidiStream& incumbent
 
     result.otherMessagesMatch = othersMatch;
 
-    result.notesMatch = result.notesOnlyInNative == 0 && result.notesOnlyInIncumbent == 0 &&
+    result.notesMatch = result.notesOnlyInNative == 0 && result.notesOnlyInReference == 0 &&
                         result.notesMismatched == 0 && nativeLifetime.hanging == 0 &&
-                        nativeLifetime.unmatchedOffs == 0 && incumbentLifetime.hanging == 0 &&
-                        incumbentLifetime.unmatchedOffs == 0;
+                        nativeLifetime.unmatchedOffs == 0 && referenceLifetime.hanging == 0 &&
+                        referenceLifetime.unmatchedOffs == 0;
 
     // --- controllers, as functions of time ---------------------------------
     //
     // The engine's stream IS the curve: a message goes out on every change of
     // the quantised value, so its step function is the quantised curve exactly.
-    // The fork's is a sampling of that curve on a 1/16-beat grid. So the test
-    // is not that the two functions agree instant for instant, which is false
-    // by construction and gets worse the faster the curve moves: a pitch-bend
-    // dive over a hundred milliseconds gets three grid points there and about a
-    // hundred here, and at most instants the fork simply has not sent the value
-    // the curve is at. The test is that the fork's sampling is a faithful one.
+    // The reference is a sampling of that curve on a 1/16-beat grid. So the
+    // test is not that the two functions agree instant for instant, which is
+    // false by construction and gets worse the faster the curve moves: a
+    // pitch-bend dive over a hundred milliseconds gets three grid points there
+    // and about a hundred here. The test is that the sampling is a faithful one.
     //
     // Three things say that, and between them they catch everything a wrong
     // controller stream can be:
     //
-    // - every message the fork sends lands on the engine's curve, within one
+    // - every message the reference sends lands on the engine's curve, within one
     //   grid step either way. A wrong value, a curve evaluated with the wrong
     //   tension and a stream arriving late all break this.
     // - the two cover the same span, first change to last change.
     // - they reach the same extremes.
     //
-    // Repeats collapse first. The fork emits on its grid whether the value
-    // moved or not, so a curve that flattens for two bars keeps producing
-    // identical messages there; those carry no information and would otherwise
-    // make its span look longer than the engine's.
+    // Repeats collapse first. A grid emits whether the value moved or not, so a
+    // curve that flattens for two bars keeps producing identical messages there;
+    // those carry no information and would otherwise make its span look longer
+    // than the engine's.
 
     const auto nativeFunctions = controllerFunctions(native, 0);
-    const auto incumbentFunctions = controllerFunctions(incumbent, options.noteShiftSamples);
+    const auto referenceFunctions = controllerFunctions(reference, options.noteShiftSamples);
 
     const auto slack = static_cast<std::int64_t>(
         std::llround(options.staleBeats * 60.0 / std::max(1.0, options.bpm) * options.sampleRate));
@@ -1152,7 +1150,7 @@ MidiComparison compareMidi(const MidiStream& native, const MidiStream& incumbent
     std::vector<ControllerKey> keys;
     for (const auto& [key, points] : nativeFunctions)
         keys.push_back(key);
-    for (const auto& [key, points] : incumbentFunctions)
+    for (const auto& [key, points] : referenceFunctions)
         if (nativeFunctions.find(key) == nativeFunctions.end())
             keys.push_back(key);
     std::sort(keys.begin(), keys.end());
@@ -1165,16 +1163,16 @@ MidiComparison compareMidi(const MidiStream& native, const MidiStream& incumbent
 
     for (const auto& key : keys) {
         const auto nativeEntry = nativeFunctions.find(key);
-        const auto incumbentEntry = incumbentFunctions.find(key);
+        const auto referenceEntry = referenceFunctions.find(key);
 
-        if (nativeEntry == nativeFunctions.end() || incumbentEntry == incumbentFunctions.end()) {
+        if (nativeEntry == nativeFunctions.end() || referenceEntry == referenceFunctions.end()) {
             fail(describeKey(key) + " is only in the " +
-                 (nativeEntry == nativeFunctions.end() ? "incumbent" : "native render"));
+                 (nativeEntry == nativeFunctions.end() ? "reference" : "native render"));
             continue;
         }
 
         const auto curve = collapseRepeats(nativeEntry->second);
-        const auto sampled = collapseRepeats(incumbentEntry->second);
+        const auto sampled = collapseRepeats(referenceEntry->second);
         if (curve.empty() || sampled.empty()) {
             fail(describeKey(key) + " has no messages on one side");
             continue;
@@ -1186,7 +1184,7 @@ MidiComparison compareMidi(const MidiStream& native, const MidiStream& incumbent
                                options.valueTolerance))
                 continue;
 
-            fail(describeKey(key) + ": the incumbent sends " + std::to_string(point.value) +
+            fail(describeKey(key) + ": the reference sends " + std::to_string(point.value) +
                  " at " + sampleAddress(point.sample, options.sampleRate) +
                  ", which the native curve is not at within a grid step (it is at " +
                  std::to_string(valueAt(curve, point.sample)) + " there)");
@@ -1204,7 +1202,7 @@ MidiComparison compareMidi(const MidiStream& native, const MidiStream& incumbent
             std::abs(curve.back().sample - sampled.back().sample) > slack)
             fail(describeKey(key) + ": the streams cover different spans, native " +
                  sampleAddress(curve.front().sample, options.sampleRate) + " to " +
-                 sampleAddress(curve.back().sample, options.sampleRate) + ", incumbent " +
+                 sampleAddress(curve.back().sample, options.sampleRate) + ", reference " +
                  sampleAddress(sampled.front().sample, options.sampleRate) + " to " +
                  sampleAddress(sampled.back().sample, options.sampleRate));
 
@@ -1212,7 +1210,7 @@ MidiComparison compareMidi(const MidiStream& native, const MidiStream& incumbent
         // extremes. A grid sampler misses the peak of anything moving faster
         // than its grid, and missing it is the divergence rather than a symptom
         // of one. A dive of a hundred milliseconds gets four grid points at 120
-        // bpm, so the fork's stream turns round at whatever the curve happened
+        // bpm, so the reference stream turns round at whatever the curve happened
         // to be at 94 ms and never sends the value at the bottom. Requiring
         // equal extremes would fail every fast curve in the corpus for being
         // exactly what it was predicted to be.
@@ -1307,16 +1305,16 @@ std::string formatReport(const std::vector<CaseReport>& cases, const CaseEnviron
                 const auto& invariants = report.invariants;
                 std::snprintf(
                     line, sizeof(line), "peak=%-9s step=%-9s tail=%-9s length=%-8s",
-                    formatDb(std::min(invariants.peakNativeDb, invariants.peakIncumbentDb)).c_str(),
+                    formatDb(std::min(invariants.peakNativeDb, invariants.peakReferenceDb)).c_str(),
                     formatDb(
-                        toDb(std::max(invariants.worstStepNative, invariants.worstStepIncumbent)))
+                        toDb(std::max(invariants.worstStepNative, invariants.worstStepReference)))
                         .c_str(),
                     // Printed with a mark when nobody asked, so a number that is
                     // not a verdict cannot be read as one.
                     (invariants.tailAsked ? formatDb(std::max(invariants.tailPeakNativeDb,
-                                                              invariants.tailPeakIncumbentDb))
+                                                              invariants.tailPeakReferenceDb))
                                           : formatDb(std::max(invariants.tailPeakNativeDb,
-                                                              invariants.tailPeakIncumbentDb)) +
+                                                              invariants.tailPeakReferenceDb)) +
                                                 "?")
                         .c_str(),
                     invariants.lengthsMatch ? "ok" : "differs");

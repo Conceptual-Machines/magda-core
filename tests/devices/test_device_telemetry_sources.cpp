@@ -8,7 +8,7 @@
 
 /**
  * The faceplate's end of #2585: a telemetry source over whichever device the
- * engine is rendering, rather than over a plugin pointer only the fork has.
+ * engine is rendering, rather than over a plugin pointer.
  *
  * What these pin is the lifetime rule the issue asks for -- a UI bound to a
  * device that is rebuilt or torn down is rebound or reads nothing, never left

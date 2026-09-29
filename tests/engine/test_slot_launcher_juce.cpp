@@ -505,7 +505,7 @@ class SlotLauncherTest final : public juce::UnitTest {
 
         // Something has to be sounding first: the launcher starts the first
         // clip of a set where it was asked rather than holding it for a bar of
-        // silence, which is the fork's rule too.
+        // silence.
         rig.launcher.launch(rolling);
         rig.render(rig.blocksFor(0.5));
 

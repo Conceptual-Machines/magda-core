@@ -9,7 +9,7 @@
  * The corpus's safety net, against the ways it could quietly stop working
  * (#2075).
  *
- * AssertionWatch is what keeps a graph Tracktion objects to from being certified
+ * AssertionWatch is what keeps a graph the engine objects to from being certified
  * as a null. Every corpus case is assertion-free today, which is the point and
  * also the problem: with nothing provoking it, the prefix match, the collection
  * and the process-wide installation could all break and the corpus would stay

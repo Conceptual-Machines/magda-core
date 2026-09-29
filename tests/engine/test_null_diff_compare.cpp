@@ -95,7 +95,7 @@ MidiStream curveByValueChange(double durationSeconds, int number = 1) {
     return stream;
 }
 
-/// The same ramp emitted the way the fork does: the value the curve is at, on a
+/// The same ramp emitted on a fixed grid: the value the curve is at, on a
 /// 1/16-beat grid, whether it moved or not.
 MidiStream curveOnGrid(double durationSeconds, int number = 1) {
     MidiStream stream;
@@ -130,9 +130,9 @@ TEST_CASE("A pair that differs by one sample of placement is reported at full sc
     // The failure the corpus exists to catch, and the one a sloppy comparator
     // misses by aligning it away.
     const auto native = impulses(2.0);
-    const auto incumbent = delayed(native, 1);
+    const auto reference = delayed(native, 1);
 
-    const auto result = compareAudio(native, incumbent);
+    const auto result = compareAudio(native, reference);
 
     CHECK_FALSE(result.withinFloor());
     CHECK(result.peakDb > -1.0);
@@ -187,16 +187,16 @@ TEST_CASE("A refusal is never reported as a residual", "[nulldiff][compare]") {
 
 TEST_CASE("The shift search finds a known shift", "[nulldiff][compare][shift]") {
     const auto native = tone(2.0);
-    const auto incumbent = delayed(native, 1024);
+    const auto reference = delayed(native, 1024);
 
-    const auto estimate = estimateShift(native, incumbent, 4096);
+    const auto estimate = estimateShift(native, reference, 4096);
 
     REQUIRE(estimate.found);
     CHECK(estimate.samples == 1024);
 
     AudioCompareOptions options;
     options.measureShift = true;
-    const auto result = compareAudio(native, incumbent, options);
+    const auto result = compareAudio(native, reference, options);
 
     CHECK(result.shiftSamples == 1024);
     CHECK(result.withinFloor());
@@ -231,16 +231,16 @@ TEST_CASE("The shift search declines a pair that differs in content",
     spec.kind = MaterialKind::Noise;
     spec.sampleRate = kSampleRate;
     spec.durationSeconds = 2.0;
-    const auto incumbent = renderMaterial(spec);
+    const auto reference = renderMaterial(spec);
 
-    const auto estimate = estimateShift(native, incumbent, 4096);
+    const auto estimate = estimateShift(native, reference, 4096);
 
     CHECK_FALSE(estimate.found);
     CHECK(estimate.samples == 0);
 
     AudioCompareOptions options;
     options.measureShift = true;
-    const auto result = compareAudio(native, incumbent, options);
+    const auto result = compareAudio(native, reference, options);
 
     CHECK(result.shiftNotFound);
     CHECK_FALSE(result.withinFloor());
@@ -249,20 +249,20 @@ TEST_CASE("The shift search declines a pair that differs in content",
 TEST_CASE("One shift per case, measured at the start", "[nulldiff][compare][shift]") {
     // A pair aligned at the start and drifting later has to fail, at the drift,
     // rather than be re-aligned region by region until it passes. This is what
-    // the auto-tempo case leans on: the fork's stretcher priming is measured
-    // once, and a lateness that grows when the ratio moves is a finding.
+    // the auto-tempo case leans on: the stretcher priming is measured once, and
+    // a lateness that grows when the ratio moves is a finding.
     const auto native = tone(4.0);
 
-    auto incumbent = delayed(native, 512);
-    const auto halfway = incumbent.getNumSamples() / 2;
-    for (auto channel = 0; channel < incumbent.getNumChannels(); ++channel)
-        for (auto sample = halfway; sample < incumbent.getNumSamples(); ++sample)
-            incumbent.setSample(channel, sample,
+    auto reference = delayed(native, 512);
+    const auto halfway = reference.getNumSamples() / 2;
+    for (auto channel = 0; channel < reference.getNumChannels(); ++channel)
+        for (auto sample = halfway; sample < reference.getNumSamples(); ++sample)
+            reference.setSample(channel, sample,
                                 native.getSample(channel, juce::jmax(0, sample - 1024)));
 
     AudioCompareOptions options;
     options.measureShift = true;
-    const auto result = compareAudio(native, incumbent, options);
+    const auto result = compareAudio(native, reference, options);
 
     CHECK(result.shiftSamples == 512);
     CHECK_FALSE(result.withinFloor());
@@ -299,52 +299,52 @@ TEST_CASE("Every way a note can differ is reported", "[nulldiff][compare][midi]"
     }
 
     SECTION("an extra note") {
-        auto incumbent = native;
-        incumbent.push_back(noteOn(1, 67, 100, 0.75));
-        incumbent.push_back(noteOff(1, 67, 1.0));
+        auto reference = native;
+        reference.push_back(noteOn(1, 67, 100, 0.75));
+        reference.push_back(noteOff(1, 67, 1.0));
 
-        const auto result = compareMidi(native, incumbent, midiOptions());
+        const auto result = compareMidi(native, reference, midiOptions());
         CHECK_FALSE(result.notesMatch);
-        CHECK(result.notesOnlyInIncumbent == 1);
+        CHECK(result.notesOnlyInReference == 1);
     }
 
     SECTION("a wrong velocity") {
-        MidiStream incumbent;
-        incumbent.push_back(noteOn(1, 60, 99, 0.0));
-        incumbent.push_back(noteOff(1, 60, 0.5));
+        MidiStream reference;
+        reference.push_back(noteOn(1, 60, 99, 0.0));
+        reference.push_back(noteOff(1, 60, 0.5));
 
-        const auto result = compareMidi(native, incumbent, midiOptions());
+        const auto result = compareMidi(native, reference, midiOptions());
         CHECK_FALSE(result.notesMatch);
         CHECK(result.notesMismatched == 1);
     }
 
     SECTION("a wrong channel") {
         // Compared as assigned rather than canonicalised to order of first use:
-        // the fork's MPE round-robin was ported deliberately, so a channel that
-        // differs is a finding.
-        MidiStream incumbent;
-        incumbent.push_back(noteOn(2, 60, 100, 0.0));
-        incumbent.push_back(noteOff(2, 60, 0.5));
+        // the MPE round-robin is deliberate, so a channel that differs is a
+        // finding.
+        MidiStream reference;
+        reference.push_back(noteOn(2, 60, 100, 0.0));
+        reference.push_back(noteOff(2, 60, 0.5));
 
-        const auto result = compareMidi(native, incumbent, midiOptions());
+        const auto result = compareMidi(native, reference, midiOptions());
         CHECK_FALSE(result.notesMatch);
         CHECK(result.notesOnlyInNative == 1);
-        CHECK(result.notesOnlyInIncumbent == 1);
+        CHECK(result.notesOnlyInReference == 1);
     }
 
     SECTION("a wrong length") {
-        MidiStream incumbent;
-        incumbent.push_back(noteOn(1, 60, 100, 0.0));
-        incumbent.push_back(noteOff(1, 60, 0.6));
+        MidiStream reference;
+        reference.push_back(noteOn(1, 60, 100, 0.0));
+        reference.push_back(noteOff(1, 60, 0.6));
 
-        const auto result = compareMidi(native, incumbent, midiOptions());
+        const auto result = compareMidi(native, reference, midiOptions());
         CHECK_FALSE(result.notesMatch);
         CHECK(result.notesMismatched == 1);
     }
 }
 
 TEST_CASE("A note within the rounding allowance is not a difference", "[nulldiff][compare][midi]") {
-    // Two engines round a beat to a sample through different arithmetic, and
+    // A beat rounds to a sample through different arithmetic on each side, and
     // one sample of that is not a finding. Two is.
     MidiStream native;
     native.push_back(noteOn(1, 60, 100, 0.0));
@@ -362,23 +362,23 @@ TEST_CASE("A note within the rounding allowance is not a difference", "[nulldiff
 }
 
 TEST_CASE("A declared note shift is applied and nothing else is", "[nulldiff][compare][midi]") {
-    // The fork drops midiOffset on an unlooped arranger clip, so every note of
-    // such a clip lands offset. Declared by the case, asserted here, and a note
-    // that moves for any other reason still breaks.
+    // A case may declare a note shift, for example an unlooped arranger clip
+    // whose notes all land offset. Declared by the case, asserted here, and a
+    // note that moves for any other reason still breaks.
     MidiStream native;
     native.push_back(noteOn(1, 60, 100, 1.0));
     native.push_back(noteOff(1, 60, 1.5));
 
-    MidiStream incumbent;
-    incumbent.push_back(noteOn(1, 60, 100, 1.25));
-    incumbent.push_back(noteOff(1, 60, 1.75));
+    MidiStream reference;
+    reference.push_back(noteOn(1, 60, 100, 1.25));
+    reference.push_back(noteOff(1, 60, 1.75));
 
     auto options = midiOptions();
     options.noteShiftSamples = samplesAt(0.25);
-    CHECK(compareMidi(native, incumbent, options).notesMatch);
+    CHECK(compareMidi(native, reference, options).notesMatch);
 
     options.noteShiftSamples = samplesAt(0.5);
-    CHECK_FALSE(compareMidi(native, incumbent, options).notesMatch);
+    CHECK_FALSE(compareMidi(native, reference, options).notesMatch);
 }
 
 TEST_CASE("A hanging note fails whichever engine left it", "[nulldiff][compare][midi]") {
@@ -395,9 +395,9 @@ TEST_CASE("A hanging note fails whichever engine left it", "[nulldiff][compare][
         CHECK_FALSE(result.notesMatch);
     }
 
-    SECTION("the incumbent") {
+    SECTION("the reference") {
         const auto result = compareMidi(complete, hanging, midiOptions());
-        CHECK(result.incumbentHanging == 1);
+        CHECK(result.referenceHanging == 1);
         CHECK_FALSE(result.notesMatch);
     }
 }
@@ -434,27 +434,27 @@ TEST_CASE("A dense value-change stream and a sparse grid stream carry the same c
     // The recorded divergence, and the reason controllers are compared as a
     // curve against a sampling of it rather than list against list.
     const auto native = withNote(curveByValueChange(4.0));
-    const auto incumbent = withNote(curveOnGrid(4.0));
+    const auto reference = withNote(curveOnGrid(4.0));
 
-    const auto result = compareMidi(native, incumbent, midiOptions());
+    const auto result = compareMidi(native, reference, midiOptions());
 
     INFO(firstProblem(result));
     CHECK(result.controllersMatch);
     CHECK(result.notesMatch);
 }
 
-TEST_CASE("A fast curve the fork can only sample three times still matches",
+TEST_CASE("A fast curve the reference can only sample three times still matches",
           "[nulldiff][compare][midi][controllers]") {
-    // A hundred milliseconds is four grid points there and about a hundred
-    // here. Comparing the two functions instant for instant would fail this,
-    // which is why that is not the test.
+    // A hundred milliseconds is four grid points on the grid stream and about a
+    // hundred on the value-change stream. Comparing the two functions instant
+    // for instant would fail this, which is why that is not the test.
     const auto native = withNote(curveByValueChange(0.1));
-    const auto incumbent = withNote(curveOnGrid(0.1));
+    const auto reference = withNote(curveOnGrid(0.1));
 
-    // And the fork's last grid point lands before the curve arrives, so it
+    // And the grid's last point lands before the curve arrives, so that stream
     // never sends the value at the end of the sweep at all. Missing the extreme
-    // of something moving faster than the grid IS the divergence, so it is the
-    // one thing about these two streams that is deliberately not asserted.
+    // of something moving faster than the grid is expected, so it is the one
+    // thing about these two streams that is deliberately not asserted.
     const auto reach = [](const MidiStream& stream) {
         auto highest = 0;
         for (const auto& event : stream)
@@ -463,9 +463,9 @@ TEST_CASE("A fast curve the fork can only sample three times still matches",
         return highest;
     };
     REQUIRE(reach(native) == 127);
-    REQUIRE(reach(incumbent) < 127);
+    REQUIRE(reach(reference) < 127);
 
-    const auto result = compareMidi(native, incumbent, midiOptions());
+    const auto result = compareMidi(native, reference, midiOptions());
 
     INFO(firstProblem(result));
     CHECK(result.controllersMatch);
@@ -474,12 +474,12 @@ TEST_CASE("A fast curve the fork can only sample three times still matches",
 TEST_CASE("A value two units out is reported", "[nulldiff][compare][midi][controllers]") {
     const auto native = withNote(curveByValueChange(4.0));
 
-    auto incumbent = withNote(curveOnGrid(4.0));
-    for (auto& event : incumbent)
+    auto reference = withNote(curveOnGrid(4.0));
+    for (auto& event : reference)
         if (event.type() == 0xB0 && event.sample > samplesAt(2.0))
             event.data2 = static_cast<std::uint8_t>(std::min(127, event.data2 + 2));
 
-    const auto result = compareMidi(native, incumbent, midiOptions());
+    const auto result = compareMidi(native, reference, midiOptions());
 
     CHECK_FALSE(result.controllersMatch);
     REQUIRE_FALSE(result.problems.empty());
@@ -489,12 +489,12 @@ TEST_CASE("The right values arriving a beat late are reported",
           "[nulldiff][compare][midi][controllers]") {
     const auto native = withNote(curveByValueChange(4.0));
 
-    auto incumbent = withNote(curveOnGrid(4.0));
-    for (auto& event : incumbent)
+    auto reference = withNote(curveOnGrid(4.0));
+    for (auto& event : reference)
         if (event.type() == 0xB0)
             event.sample += samplesAt(0.5);
 
-    const auto result = compareMidi(native, incumbent, midiOptions());
+    const auto result = compareMidi(native, reference, midiOptions());
 
     CHECK_FALSE(result.controllersMatch);
 }
@@ -502,28 +502,28 @@ TEST_CASE("The right values arriving a beat late are reported",
 TEST_CASE("A controller that stops halfway is reported", "[nulldiff][compare][midi][controllers]") {
     const auto native = withNote(curveByValueChange(4.0));
 
-    MidiStream incumbent;
+    MidiStream reference;
     for (const auto& event : withNote(curveOnGrid(4.0)))
         if (event.type() != 0xB0 || event.sample <= samplesAt(2.0))
-            incumbent.push_back(event);
+            reference.push_back(event);
 
-    const auto result = compareMidi(native, incumbent, midiOptions());
+    const auto result = compareMidi(native, reference, midiOptions());
 
     CHECK_FALSE(result.controllersMatch);
 }
 
 TEST_CASE("A curve that flattens is not a shorter stream",
           "[nulldiff][compare][midi][controllers]") {
-    // The fork keeps emitting on its grid after the curve stops moving. Those
-    // repeats say nothing, and counting them would make its span look longer
-    // than the engine's on every curve that ends flat.
+    // A grid stream keeps emitting after the curve stops moving. Those repeats
+    // say nothing, and counting them would make its span look longer than the
+    // native stream's on every curve that ends flat.
     auto native = withNote(curveByValueChange(2.0));
 
-    auto incumbent = withNote(curveOnGrid(2.0));
+    auto reference = withNote(curveOnGrid(2.0));
     for (auto time = 2.0; time < 4.0; time += 60.0 / kBpm / 16.0)
-        incumbent.push_back(controller(1, 1, 127, time));
+        reference.push_back(controller(1, 1, 127, time));
 
-    const auto result = compareMidi(native, incumbent, midiOptions());
+    const auto result = compareMidi(native, reference, midiOptions());
 
     INFO(firstProblem(result));
     CHECK(result.controllersMatch);
@@ -532,9 +532,9 @@ TEST_CASE("A curve that flattens is not a shorter stream",
 TEST_CASE("A controller only one engine sends is reported",
           "[nulldiff][compare][midi][controllers]") {
     const auto native = withNote(curveByValueChange(4.0, 1));
-    const auto incumbent = withNote(curveOnGrid(4.0, 74));
+    const auto reference = withNote(curveOnGrid(4.0, 74));
 
-    const auto result = compareMidi(native, incumbent, midiOptions());
+    const auto result = compareMidi(native, reference, midiOptions());
 
     CHECK_FALSE(result.controllersMatch);
     CHECK(result.problems.size() >= 2);
@@ -548,18 +548,18 @@ TEST_CASE("Pitch bend is compared at its own resolution",
     };
 
     MidiStream native;
-    MidiStream incumbent;
+    MidiStream reference;
     for (auto step = 0; step <= 64; ++step) {
         const auto time = 2.0 * static_cast<double>(step) / 64.0;
         native.push_back(bend(8192 + step * 64, time));
-        incumbent.push_back(bend(8192 + step * 64, time));
+        reference.push_back(bend(8192 + step * 64, time));
     }
 
-    CHECK(compareMidi(native, incumbent, midiOptions()).controllersMatch);
+    CHECK(compareMidi(native, reference, midiOptions()).controllersMatch);
 
     // Fourteen bits, so two units apart is two units apart here as well.
-    incumbent.back().data1 = static_cast<std::uint8_t>((8192 + 64 * 64 + 8) & 0x7F);
-    CHECK_FALSE(compareMidi(native, incumbent, midiOptions()).controllersMatch);
+    reference.back().data1 = static_cast<std::uint8_t>((8192 + 64 * 64 + 8) & 0x7F);
+    CHECK_FALSE(compareMidi(native, reference, midiOptions()).controllersMatch);
 }
 
 // =============================================================================
@@ -735,11 +735,11 @@ TEST_CASE("A pair that will never null can still be judged", "[nulldiff][compare
     // calls produces. A residual comparison reports full scale; the invariants
     // report that both renders are well formed, which is the true answer.
     const auto native = decayingTone();
-    const auto incumbent = decayingTone(220.0, 8192, 0.9);
+    const auto reference = decayingTone(220.0, 8192, 0.9);
 
-    CHECK_FALSE(compareAudio(native, incumbent).nulled());
+    CHECK_FALSE(compareAudio(native, reference).nulled());
 
-    const auto invariants = compareInvariants(native, incumbent, invariantOptions());
+    const auto invariants = compareInvariants(native, reference, invariantOptions());
     CHECK(invariants.passed());
     CHECK(invariants.problems.empty());
 }
@@ -778,7 +778,7 @@ TEST_CASE("One silent render is never certified", "[nulldiff][compare][invariant
     // and it has decayed by the end: every other check in this tier passes on
     // it. A case that renders eight beats of a long arrangement waives the tail,
     // so without this a native leg that stopped rendering would report ok
-    // against an incumbent that sounded (#2175).
+    // against a reference that sounded (#2175).
     // Cleared explicitly: JUCE's constructor leaves the buffer as it found the
     // memory, and a test for silence built out of whatever was on the heap is a
     // test for whatever was on the heap.
@@ -862,7 +862,7 @@ TEST_CASE("A click past the bound is reported", "[nulldiff][compare][invariants]
 
 TEST_CASE("A tail that never decays is reported", "[nulldiff][compare][invariants]") {
     // A device left running past the end of its material. Both sides are asked
-    // on their own, because two engines leaking alike would cancel in a residual
+    // on their own, because two renders leaking alike would cancel in a residual
     // and be reported as agreement.
     juce::AudioBuffer<float> ringing(1, 8192);
     auto* data = ringing.getWritePointer(0);
@@ -882,9 +882,9 @@ TEST_CASE("A tail that never decays is reported", "[nulldiff][compare][invariant
 TEST_CASE("Renders of different lengths are reported rather than trimmed",
           "[nulldiff][compare][invariants]") {
     const auto native = decayingTone(220.0, 8192);
-    const auto incumbent = decayingTone(220.0, 8000);
+    const auto reference = decayingTone(220.0, 8000);
 
-    const auto invariants = compareInvariants(native, incumbent, invariantOptions());
+    const auto invariants = compareInvariants(native, reference, invariantOptions());
 
     CHECK_FALSE(invariants.lengthsMatch);
     CHECK_FALSE(invariants.passed());
@@ -902,8 +902,8 @@ TEST_CASE("The shift search resolves below a sample", "[nulldiff][compare][shift
     const auto native = tone(2.0);
 
     for (const auto delay : {0.25, 0.5, 1.75, 3.5}) {
-        const auto incumbent = delayFractionally(native, delay);
-        const auto estimate = estimateShift(native, incumbent, 512);
+        const auto reference = delayFractionally(native, delay);
+        const auto estimate = estimateShift(native, reference, 512);
 
         INFO("delay " << delay << " measured " << estimate.fractionalSamples);
         REQUIRE(estimate.found);
@@ -915,13 +915,13 @@ TEST_CASE("A fractional delay is undone by aligning fractionally", "[nulldiff][c
     // What a case does once the offset has a mechanism: align by it, then
     // require the null at the floor rather than accepting the residual.
     const auto native = tone(2.0);
-    const auto incumbent = delayFractionally(native, 0.6);
+    const auto reference = delayFractionally(native, 0.6);
 
-    const auto before = compareAudio(native, incumbent);
+    const auto before = compareAudio(native, reference);
     CHECK_FALSE(before.withinFloor());
 
     const auto aligned = delayFractionally(native, 0.6);
-    const auto after = compareAudio(aligned, incumbent);
+    const auto after = compareAudio(aligned, reference);
 
     INFO("peak " << formatDb(after.peakDb));
     CHECK(after.peakDb < -100.0);
@@ -1037,28 +1037,28 @@ TEST_CASE("Messages outside notes and controllers are compared, not counted",
     }
 
     SECTION("a different value fails") {
-        auto incumbent = native;
-        incumbent[0] = pressure(2, 64, 0.0);
-        const auto result = compareMidi(native, incumbent, midiOptions());
+        auto reference = native;
+        reference[0] = pressure(2, 64, 0.0);
+        const auto result = compareMidi(native, reference, midiOptions());
         CHECK_FALSE(result.otherMessagesMatch);
         CHECK_FALSE(result.passed());
     }
 
     SECTION("a different channel fails") {
-        auto incumbent = native;
-        incumbent[0] = pressure(3, 0, 0.0);
-        CHECK_FALSE(compareMidi(native, incumbent, midiOptions()).passed());
+        auto reference = native;
+        reference[0] = pressure(3, 0, 0.0);
+        CHECK_FALSE(compareMidi(native, reference, midiOptions()).passed());
     }
 
     SECTION("a different instant fails") {
-        auto incumbent = native;
-        incumbent[0] = pressure(2, 0, 0.25);
-        CHECK_FALSE(compareMidi(native, incumbent, midiOptions()).passed());
+        auto reference = native;
+        reference[0] = pressure(2, 0, 0.25);
+        CHECK_FALSE(compareMidi(native, reference, midiOptions()).passed());
     }
 
     SECTION("a missing message fails") {
-        MidiStream incumbent{native[1], native[2]};
-        CHECK_FALSE(compareMidi(native, incumbent, midiOptions()).passed());
+        MidiStream reference{native[1], native[2]};
+        CHECK_FALSE(compareMidi(native, reference, midiOptions()).passed());
     }
 }
 
@@ -1103,7 +1103,7 @@ TEST_CASE("Garbage is refused rather than certified", "[nulldiff][compare]") {
     const auto nan = std::numeric_limits<float>::quiet_NaN();
     const auto infinity = std::numeric_limits<float>::infinity();
 
-    SECTION("a NaN in the incumbent") {
+    SECTION("a NaN in the reference") {
         const auto result = compareAudio(native, poisoned(nan, 100));
         CHECK_FALSE(result.refusal.empty());
         CHECK_FALSE(result.nulled());
@@ -1129,15 +1129,15 @@ TEST_CASE("Garbage outside the aligned overlap is refused too", "[nulldiff][comp
     // read by nothing, so validating the overlap alone would let a stretched
     // case pass a render with a NaN in it.
     const auto native = tone(2.0);
-    auto incumbent = delayed(native, 1024);
+    auto reference = delayed(native, 1024);
 
-    // Inside the incumbent's leading margin: with the alignment applied, no
+    // Inside the second buffer's leading margin: with the alignment applied, no
     // comparison ever reads this sample.
-    incumbent.setSample(0, 10, std::numeric_limits<float>::quiet_NaN());
+    reference.setSample(0, 10, std::numeric_limits<float>::quiet_NaN());
 
     AudioCompareOptions options;
     options.measureShift = true;
-    const auto result = compareAudio(native, incumbent, options);
+    const auto result = compareAudio(native, reference, options);
 
     INFO(result.refusal);
     CHECK_FALSE(result.refusal.empty());

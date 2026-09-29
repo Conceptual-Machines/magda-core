@@ -16,17 +16,14 @@
  * @file test_mod_random.cpp
  * @brief The random modulator (#2120).
  *
- * What is assertable about a walk is its structure rather than its numbers. The
- * fork seeds from the clock and promises neither reproducibility nor
- * independence between two modulators, so a parity case here cannot compare
- * sequences; what it can compare is where the steps land, how far one may move
- * from the last, what the shape control does between them, and that the timing
- * is the LFO's timing, which is the part a project can hear.
+ * What is assertable about a walk is its structure rather than its numbers:
+ * where the steps land, how far one may move from the last, what the shape
+ * control does between them, and that the timing is the LFO's timing, which is
+ * the part a project can hear.
  *
- * The one thing this engine does promise and the fork does not is that a
- * project draws the same numbers on every run of it, which is asserted here
- * because an engine that renders differently twice cannot be null-diffed
- * against anything, itself included.
+ * The engine also promises that a project draws the same numbers on every run
+ * of it, which is asserted here because an engine that renders differently
+ * twice cannot be checked against a golden.
  */
 
 using namespace magda;
@@ -188,8 +185,8 @@ TEST_CASE("A stepped walk changes value once per cycle", "[engine][mod][random]"
             CHECK(value == approx(cycle.front()));
 
     // And a different one two cycles on. Two rather than one, because a held
-    // step publishes the value drawn at the wrap before it: the fork reads the
-    // shape control as "how much of the step is spent travelling", and a step
+    // step publishes the value drawn at the wrap before it: the shape control
+    // is "how much of the step is spent travelling", and a step
     // that travels for none of itself is a sample and hold one step behind.
     CHECK(third.front() != approx(first.front()));
 }
@@ -201,7 +198,7 @@ TEST_CASE("Step depth bounds how far one step moves", "[engine][mod][random]") {
     auto state = seeded(7);
     float previous = walk(state, settings, 10).front();
 
-    // Half the control each way, clipped to the range, which is the fork's
+    // Half the control each way, clipped to the range, which is the
     // arithmetic for a unipolar modulator. A hundred steps is enough for a
     // breach to show if the bound were wrong.
     for (int i = 0; i < 100; ++i) {
@@ -514,7 +511,7 @@ TEST_CASE("A random modulator shares the LFO's rate lane", "[engine][mod][random
     REQUIRE(table.modifiers.size() == 1);
 
     // The same fold and the same ordinal an LFO on these fields would get: the
-    // fork drives both through one mapping and a project has to sound the same
+    // both are driven through one mapping and a project has to sound the same
     // whichever of the two is on the knob.
     CHECK(table.modifiers.front().random.sync == ModSync::Transport);
     CHECK(table.modifiers.front().random.tempoSync);
@@ -555,7 +552,7 @@ TEST_CASE("A random modulator drives a device parameter", "[engine][mod][random]
 }
 
 TEST_CASE("A random modulator has no gate", "[engine][mod][random][runtime]") {
-    // The fork's random modifier resyncs on a note and has no gate parameter,
+    // The random modifier resyncs on a note and has no gate parameter,
     // so an audio-triggered one keeps walking between hits rather than resting
     // at zero. Asserted because the API a detector drives is uniform across the
     // kinds and this is the kind that ignores half of it.

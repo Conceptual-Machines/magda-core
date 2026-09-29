@@ -11,15 +11,13 @@
  * @brief The engine's own assertions, readable as a test result (#2075).
  *
  * A jassert is not fatal. An invalid graph is built anyway, the render happens,
- * and the buffer it produces compares perfectly well: Tracktion saying that two
- * of its nodes do not have distinct identities, and the null-diff corpus then
- * certifying that case as a null, is the worst pairing available. A project the
- * engine itself objects to, signed off as parity.
+ * and the buffer it produces still passes its comparison, so the null-diff
+ * corpus would sign off a project the engine itself objects to.
  *
  * So assertions are collected rather than left as console noise. JUCE routes
  * them through Logger::writeToLog when JUCE_LOG_ASSERTIONS is set, which
- * magda_daw sets for test builds because that is where Tracktion is compiled and
- * an assertion's logging is decided where the macro expands.
+ * magda_daw sets for test builds because an assertion's logging is decided
+ * where the macro expands.
  *
  * Two things about lifetime, both of them about the same unsynchronised pointer.
  * juce::Logger holds the current logger in a plain raw pointer with no lock, so

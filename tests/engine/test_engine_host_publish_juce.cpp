@@ -887,9 +887,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         // Monitoring with the input selector on None, which is an empty field.
         // Read as "all", it played every keyboard attached.
         const auto unnamed = synthTrack("Unnamed", 3, magda::InputMonitorMode::In, {});
-        // Auto and unarmed: routed on the fork, where TE's monitor mode still
-        // decides what is heard, and audible here the moment it is in a route
-        // table.
+        // Auto and unarmed: audible the moment it is in a route table.
         const auto automatic = synthTrack("Auto", 4, magda::InputMonitorMode::Auto, "all");
         const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
         expect(routed != magda::INVALID_TRACK_ID && idle != magda::INVALID_TRACK_ID &&
@@ -1075,7 +1073,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
 
         const juce::MidiDeviceInfo keystep{"Keystep", "juce-identifier-42"};
 
-        // What the fork's selectors store for a hardware input, which is what
+        // What the input selectors store for a hardware input, which is what
         // a project holds and what a route names.
         const auto forkId = "midiin_" + juce::String::toHexString(keystep.identifier.hashCode());
 
@@ -1355,7 +1353,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         expect(restored > before * 0.5f, "Which was sounding all along, as undoing it shows");
     }
 
-    /// A rack's own level, which the fork answers with the track's (#2649).
+    /// A rack's own level, not the track's (#2649).
     void testRackMeterReadsWhatTheRackRendered() {
         beginTest("A rack's meter reads what the rack put out");
 

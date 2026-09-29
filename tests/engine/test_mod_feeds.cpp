@@ -34,10 +34,6 @@
  *    detector runs during the walk and the resolve that reads it is the next
  *    block's: distance one, always exactly one.
  *
- * The fork's ordinary MIDI gate is the later of the two as well (its
- * ADSRModifier reads a gate its applyToBuffer set during the previous block),
- * and its monitor path is the earlier. So the first of these is the fork's best
- * case made unconditional, and the second is its ordinary case.
  */
 
 using namespace magda;
@@ -348,15 +344,14 @@ TEST_CASE("A cross-track modifier is triggered by the notes it listens to",
 
     // The note reaches the trigger in the block it arrived in, and what that
     // block publishes is the gap a cross-track trigger asks for: one block of
-    // nothing so the device sees a transition rather than a continuation. The
-    // fork's triggerNoteOn does the same with its forceZeroValue.
+    // nothing so the device sees a transition rather than a continuation.
     midi.pending.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
     CHECK(session.render() == approx(0.0f));
 
     // Then the attack, which has no time in it, so the envelope is up.
     CHECK(session.render() == approx(1.0f));
 
-    // And the note lifting does not shut it: the fork leaves the gate alone on
+    // And the note lifting does not shut it: the gate is left alone on
     // note-off so the modifier runs its full cycle after a hit.
     midi.pending.addEvent(juce::MidiMessage::noteOff(1, 60), 0);
     CHECK(session.render() == approx(1.0f));
@@ -410,9 +405,8 @@ TEST_CASE("A modulation tap keeps its detector across a prepare", "[engine][mod]
     // it did, a source above the threshold at that moment would read as a
     // rising edge on the next block and fire a trigger nothing played, forced
     // gap included, so every link edit would be an audible blip on a live
-    // sidechain. The fork's monitor survives the same edits with its own level
-    // and gate intact, and this carries on the same terms ModRuntime carries a
-    // phase.
+    // sidechain. The monitor keeps its level and gate across the edits on the
+    // same terms ModRuntime carries a phase.
     auto tracks = std::vector{trackWithModifier(ModType::LFO, LFOTriggerMode::Audio)};
     const auto master = makeMaster();
     const auto plan = compileRenderPlan(tracks, master);
@@ -434,10 +428,9 @@ TEST_CASE("A modulation tap keeps its detector across a prepare", "[engine][mod]
 }
 
 TEST_CASE("A follower and a trigger on one source read different points", "[engine][mod][feeds]") {
-    // The fork has two tap points and uses both: its trigger monitor sits in
-    // front of the chain and its follower tap at the far end. One point for
-    // both would make riding the source fader silence the triggers, which it
-    // does in neither engine.
+    // There are two tap points: the trigger monitor sits in front of the chain
+    // and the follower tap at the far end. One point for both would make riding
+    // the source fader silence the triggers.
     auto source = makeTrack(2);
     source.chain.fxChainElements.push_back(makeDeviceElement(makeDevice(9)));
 

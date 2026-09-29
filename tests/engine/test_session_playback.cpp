@@ -1274,7 +1274,7 @@ TEST_CASE("The arrangement is carried down rather than cut off",
 
 TEST_CASE("A stopped slot goes on holding the track", "[engine][clip][session][section]") {
     // The hand-back is not the slot stopping. Silence after a stop is the
-    // session still holding the track, exactly as it is in the incumbent.
+    // session still holding the track.
     SwitchRig rig;
     rig.giveArrangement(1, 1.0f);
     rig.giveSlot(2, 4.0, 0.5f);

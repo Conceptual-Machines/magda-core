@@ -178,8 +178,7 @@ TEST_CASE("Time signatures come off either spelling", "[engine][io][loop-info]")
     }
 
     SECTION("the plainer one AIFF writes, numerator first") {
-        // The fork reads this one backwards (tracktion_LoopInfo.cpp assigns the
-        // left side to the denominator), and 6/8 is 6 over 8 everywhere else.
+        // 6/8 is 6 over 8: the left side is the numerator.
         juce::StringPairArray metadata;
         metadata.set("time signature", "6/8");
 

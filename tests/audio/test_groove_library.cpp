@@ -95,9 +95,8 @@ TEST_CASE("A write the store refuses does not enter the library", "[groove-libra
 
 TEST_CASE("The library takes back what the store kept, not what it was asked for",
           "[groove-library][2757]") {
-    // Tracktion trims and deduplicates the name and forces the parameterized flag to its
-    // own mode, so storing the request would have the library and the fork disagree about
-    // a groove they are both playing.
+    // The store trims and deduplicates the name and forces the parameterized flag to its
+    // own mode, so the library keeps what the store returned rather than the request.
     std::vector<GrooveTemplateData> stored;
     auto& library = GrooveLibrary::getInstance();
     library.setStore([&stored] { return stored; },

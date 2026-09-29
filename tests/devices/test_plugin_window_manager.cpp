@@ -13,7 +13,7 @@
 // PluginWindowManager Logic Tests
 // ============================================================================
 // These tests verify the logic patterns and algorithms used in
-// PluginWindowManager without instantiating real JUCE/Tracktion objects.
+// PluginWindowManager without instantiating real JUCE objects.
 
 TEST_CASE("Plugin window state tracking", "[ui][plugin][window]") {
     SECTION("Window state preserved across show/hide") {

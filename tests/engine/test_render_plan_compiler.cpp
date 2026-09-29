@@ -352,8 +352,8 @@ TEST_CASE("A device's channel counts reach the ports it is compiled to",
     SECTION("an external plugin is handed the bus whatever it declares") {
         // The one device the plan has no opinion about (#2246). A hosted plugin
         // that reports one channel is still given both, because the fold and the
-        // spread either side of it are the fork's own arithmetic and the adapter
-        // reproduces them (EngineExternalDevice.cpp). Narrowing the port first
+        // spread either side of it are the adapter's arithmetic
+        // (EngineExternalDevice.cpp). Narrowing the port first
         // would hand it the left channel and take the average nowhere.
         auto hosted = makeMonoEffect(7);
         hosted.format = PluginFormat::VST3;
@@ -2365,11 +2365,7 @@ TEST_CASE("The post-FX stage sits on the side of the fader the chain says",
     }
 
     SECTION("the master stays pre-fader whatever the flag says") {
-        // Tracktion cannot represent a post-fader master stage:
-        // createMasterPluginNode builds the whole of getMasterPluginList() and
-        // only then wraps it in getMasterVolumePlugin(). Honouring the flag here
-        // and not there would make the master the one place the engines
-        // disagree, which is the failure this contract exists to prevent.
+        // The master's stage is always pre-fader, so the flag has no effect there.
         auto master = makeMaster();
         master.chain.postFxPostFader = true;
         master.chain.postFxChainElements.push_back(PostFxChainElement{makeEffect(11)});

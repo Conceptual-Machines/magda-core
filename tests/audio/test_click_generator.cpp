@@ -127,7 +127,7 @@ TEST_CASE("A bar is accented", "[engine][transport][click]") {
 }
 
 TEST_CASE("A rendered click is the one the metronome plays", "[engine][transport][click]") {
-    // Tracktion plays these as its click samples, so both engines sound the same (#2802)
+    // The metronome plays these as its click samples (#2802)
     for (const bool accent : {true, false}) {
         Fixture fixture;
         constexpr int kWholeClick = 2048;

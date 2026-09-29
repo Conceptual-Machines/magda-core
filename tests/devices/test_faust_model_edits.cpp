@@ -1,7 +1,7 @@
 // A Faust patch load lands on the model: its source and the controls it declares (#2659).
 //
 // No audio engine in this binary, so TrackManager skips the projection and what is under test is
-// the model a save writes and both engines build from.
+// the model a save writes and the engine builds from.
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

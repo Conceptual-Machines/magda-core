@@ -28,7 +28,7 @@ void seedSourceDuration(magda::ClipInfo* clip, double durationSeconds) {
  *
  * A crossfade is an actual overlap between two adjacent audio arrangement
  * clips whose autoCrossfade flags are set. The geometry lives in the beat
- * placements; TE derives the playback fades from the overlap.
+ * placements; the engine derives the playback fades from the overlap.
  *
  * At the default 120 BPM: 1 second = 2 beats.
  */
@@ -603,9 +603,8 @@ TEST_CASE("dropping a clip inside another fades instead of splitting it", "[cros
 
 // Nothing on a lane is cut to make room, at any overlap shape. A drop landing
 // strictly inside another clip used to split it into head, covered slice and
-// tail, purely because the Tracktion mirror holds one engine clip per model
-// clip and cannot express a hole. The native engine carries the silenced range
-// on the clip snapshot instead (#1890), so the lane keeps whole clips (#2003).
+// tail. The native engine carries the silenced range on the clip snapshot
+// (#1890), so the lane keeps whole clips (#2003).
 TEST_CASE("dropping a clip inside another never splits it", "[crossfade][overlap]") {
     resetState();
     auto& cm = ClipManager::getInstance();

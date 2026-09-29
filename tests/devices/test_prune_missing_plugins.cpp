@@ -56,8 +56,7 @@ bool listContainsName(const juce::KnownPluginList& list, const juce::String& nam
     return false;
 }
 
-// Build a format manager with the formats we actually ship. The tracktion
-// fork deletes addDefaultFormats(), so each format is registered explicitly.
+// Build a format manager with the formats shipped, each registered explicitly.
 void registerTestFormats(juce::AudioPluginFormatManager& fm) {
 #if JUCE_PLUGINHOST_VST3
     fm.addFormat(std::make_unique<juce::VST3PluginFormat>());

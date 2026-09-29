@@ -34,8 +34,8 @@
  * from the original unchanged.
  *
  * The groove document is carried over on the same grounds, and it is the one
- * that could be argued: `Case::grooveXml` is the template library both engines
- * are handed, not a property of the project, while the clip's reference to a
+ * that could be argued: `Case::grooveXml` is the template library the engine
+ * is handed, not a property of the project, while the clip's reference to a
  * template by name IS project data and is declared as a loss below.
  *
  * ## Identity

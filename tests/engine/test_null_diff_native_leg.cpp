@@ -11,15 +11,12 @@
 /**
  * The native leg of the null-diff corpus, on its own (#2040).
  *
- * A leg that returns silence makes every case it touches compare two silences,
- * and two silences null perfectly. So before either leg is compared against the
- * other, each has to be caught lying about itself. This is that check for the
- * native one: every case renders, renders something, and renders it without the
- * engine reporting that it dropped anything on the way.
+ * A leg that returns silence makes every case it touches compare silence to
+ * silence, and silence nulls perfectly. So before the corpus is judged, the leg
+ * has to be caught lying about itself: every case renders, renders something,
+ * and renders it without the engine reporting that it dropped anything.
  *
- * It runs in the model-only target because the native engine needs no Edit. The
- * incumbent leg gets the same treatment in the JUCE target, where it can be
- * caught rendering before its proxies arrived.
+ * It runs in the model-only target because the native engine needs no Edit.
  */
 
 using namespace magda;
@@ -113,9 +110,9 @@ TEST_CASE("A routed MIDI source is not captured", "[nulldiff][native]") {
     // carrying only an audio effect has a device with a live MIDI input while
     // consuming none itself.
     //
-    // The incumbent asks the other question, and skips it. A tap chosen on the
-    // wiring alone would hand back a stream for a track the incumbent never
-    // captured, and the runner would report it as captured by one leg only.
+    // The tap is chosen on what the track consumes, not on the wiring: a tap
+    // chosen on the wiring alone would hand back a stream for a track that
+    // never captures.
     Case value;
     value.name = "routed.source";
     value.covers = "a track whose MIDI another track reads";
@@ -196,16 +193,14 @@ TEST_CASE("A routed MIDI source is not captured", "[nulldiff][native]") {
 }
 
 TEST_CASE("An eligible track with nothing to play is still captured", "[nulldiff][native]") {
-    // The mirror of the routed source. This track consumes MIDI, so the
-    // incumbent puts a capture on it and indexes the result by track whether
-    // that capture heard anything or not. It has no clip, so no ClipMidi op is
-    // compiled and none of its devices has a MIDI input to be nominated by.
+    // The mirror of the routed source. This track consumes MIDI, so it is
+    // captured and indexed by track whether that capture heard anything or not.
+    // It has no clip, so no ClipMidi op is compiled and none of its devices has
+    // a MIDI input to be nominated by.
     //
-    // Without an entry the two legs disagree about which tracks exist rather
-    // than about what they received, and the runner reports a track only one leg
-    // saw. It is not a corpus case because that would want a fourth track in
-    // project.mixed, and four audio tracks in one Edit trip the fork's
-    // node-identity assertion (#2085).
+    // Without an entry the runner would see a track missing rather than a track
+    // that received nothing. It is not a corpus case because that would want a
+    // fourth track in project.mixed (#2085).
     Case value;
     value.name = "eligible.empty";
     value.covers = "an instrument track with no clip beside one with";
@@ -261,8 +256,8 @@ TEST_CASE("An eligible track with nothing to play is still captured", "[nulldiff
     REQUIRE(rendered.midiByTrack.count(1) == 1);
     CHECK_FALSE(rendered.midiByTrack.at(1).empty());
 
-    // Present, and empty. Both halves matter: the entry is what the incumbent
-    // has, and its being empty is what says nothing was invented to fill it.
+    // Present, and empty. Both halves matter: the entry says the track was
+    // captured, and its being empty says nothing was invented to fill it.
     REQUIRE(rendered.midiByTrack.count(2) == 1);
     CHECK(rendered.midiByTrack.at(2).empty());
 }

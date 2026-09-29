@@ -3926,10 +3926,9 @@ TEST_CASE("Saved automation targets keep the flag that makes a track path valid"
 }
 
 TEST_CASE("A hardware insert's send and return roundtrip", "[project][serialization][insert]") {
-    // What an insert is has to survive a save (#2245). It used to live only
-    // inside a te::InsertPlugin's ValueTree, so the only thing that knew what an
-    // insert sent to was the fork; the native engine compiles a send op and a
-    // return op from the model, and the model is what a project writes down.
+    // What an insert is has to survive a save (#2245). The engine compiles a
+    // send op and a return op from the model, and the model is what a project
+    // writes down.
     ProjectTestFixture fixture;
 
     auto trackId = TrackManager::getInstance().createTrack("Outboard", TrackType::Media);

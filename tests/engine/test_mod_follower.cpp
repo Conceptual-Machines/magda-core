@@ -20,7 +20,7 @@
  * splits differently. The detector is one half: the gain, the band limits and
  * the peak the block reduces to, which is what decides how loud a source reads
  * and which part of its spectrum is being listened to. The envelope is the
- * other: the fork's one-pole attack, hold and release over that peak, which is
+ * other: a one-pole attack, hold and release over that peak, which is
  * what makes a follower's attack a time rather than a block count.
  *
  * And then the edge between them, which is the part slice 4 could not build: a
@@ -230,7 +230,7 @@ TEST_CASE("Band limits decide which part of the spectrum is heard", "[engine][mo
         // Eight kilohertz at this rate is six samples a cycle, so the loudest
         // sample a full-scale tone actually has is sin(60 degrees). What the
         // detector reports is the peak of the samples rather than of the wave
-        // the samples came from, which is what the fork reports too.
+        // the samples came from.
         CHECK(detect(high, settings, sine(kSamples, 8000.0)) > 0.8f);
     }
 }
@@ -260,10 +260,10 @@ TEST_CASE("The envelope rises towards the source and falls away from it",
         previous = value;
     }
 
-    // The fork's time constant is -2, so one attack's worth of samples closes
+    // The time constant is -2, so one attack's worth of samples closes
     // all but e^-2 of the gap: 86.5 per cent of the way there, not all of it.
     // Pinned rather than approximated, because it is the number that decides
-    // how a follower sounds and the two engines have to agree about it.
+    // how a follower sounds.
     CHECK(previous == approx(1.0f - std::exp(-2.0f)));
 
     // And falls back on the release, which is ten times as long, so the same

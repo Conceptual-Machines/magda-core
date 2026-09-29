@@ -23,10 +23,7 @@
  * at the one moment both exist.
  *
  * What is asserted here is the whole of that path, and one thing that is not on
- * it: nothing simulates a modifier. The incumbent engine keeps a MAGDA-side
- * copy of the random modulator turning so its editor animates between audio
- * callbacks, because there the value is polled at frame rate and a poll between
- * two callbacks has nothing to report. Here the block publishes what it
+ * it: nothing simulates a modifier. The block publishes what it
  * produced, so a tap that is not moving is an engine that is not rendering, and
  * that is the honest answer rather than a gap to paper over.
  */

@@ -15,7 +15,7 @@ using namespace magda;
  * Tests for session clip playback scheduling and loop behavior.
  *
  * These test the pure logic used by SessionClipScheduler and
- * WaveformGridComponent without requiring Tracktion Engine or JUCE UI.
+ * WaveformGridComponent without requiring the audio engine or JUCE UI.
  */
 
 // =============================================================================
@@ -28,7 +28,7 @@ namespace {
  * Replicates the playhead position calculation from
  * SessionClipScheduler::getSessionPlayheadPosition().
  *
- * The real implementation reads transport position from TE; here we
+ * The real implementation reads transport position from the engine; here we
  * accept elapsed time directly so we can test the math in isolation.
  */
 double computeSessionPlayhead(double elapsed, double loopLength, double clipLength, bool looping) {
@@ -356,7 +356,7 @@ TEST_CASE("AddMidiNotes — add notes and verify storage", "[session][midi][note
 
 TEST_CASE("SyncMidiClipToSlot — verify ClipManager state for MIDI session clip",
           "[session][midi][sync]") {
-    // Note: Full TE sync requires a running engine. This test verifies the
+    // Note: Full engine sync requires a running engine. This test verifies the
     // ClipManager side: creating a MIDI clip and assigning it to a session slot.
     ClipManager::getInstance().shutdown();
 
@@ -383,7 +383,7 @@ TEST_CASE("SyncMidiClipToSlot — verify ClipManager state for MIDI session clip
 
 TEST_CASE("LaunchMidiClip — verify launch/stop cycle via ClipManager state",
           "[session][midi][launch]") {
-    // Note: Actual audio playback requires TE. This test verifies the
+    // Note: Actual audio playback requires the engine. This test verifies the
     // ClipManager state transitions for MIDI clips match audio clips.
     ClipManager::getInstance().shutdown();
 
@@ -412,7 +412,7 @@ TEST_CASE("LaunchMidiClip — verify launch/stop cycle via ClipManager state",
 
 TEST_CASE("StopMidiClipSendsAllNotesOff — verify MIDI clip type is detectable for all-notes-off",
           "[session][midi][allnotesoff]") {
-    // Note: Actual MIDI message sending requires TE's DeviceManager.
+    // Note: Actual MIDI message sending requires the running engine.
     // This test verifies the clip type detection that gates the all-notes-off logic.
     ClipManager::getInstance().shutdown();
 

@@ -65,10 +65,8 @@ class WavFactory final : public AudioFileReaderFactory {
 /// It replaces a stand-in device that used to do this job. Reading a device
 /// meant the harness had to work out which device stood for the track, and that
 /// question has no good answer: two instruments record the same notes twice, an
-/// audio effect at the head records the wrong thing or nothing, a track whose
-/// MIDI is only routed elsewhere has a wired device that the incumbent never
-/// captures. Those were all one mistake, which was observing the graph at a
-/// point that belongs to the project rather than at the point being compared.
+/// audio effect at the head records the wrong thing or nothing, and a track
+/// whose MIDI is only routed elsewhere has a wired device that would capture it.
 class ChainMidiTap final : public MidiTap {
   public:
     explicit ChainMidiTap(double sampleRate) : sampleRate_(sampleRate) {}
@@ -101,20 +99,17 @@ class ChainMidiTap final : public MidiTap {
     double sampleRate_ = 44100.0;
 };
 
-/// Stands where the incumbent has no plugin at all.
+/// Stands in for a device the leg does not run.
 ///
-/// The native leg has to bind something to every Device op or the executor
-/// refuses the plan, but the incumbent instantiates none of the model's devices:
-/// it inserts one capture on a MIDI-consuming track and nothing anywhere else.
-/// A stand-in that cleared the buffer would therefore silence an audio track
-/// that merely carries an effect, and the two legs would differ over a device
-/// neither of them is really running. Doing nothing is what the incumbent does.
+/// The leg has to bind something to every Device op or the executor refuses the
+/// plan. A stand-in that cleared the buffer would silence an audio track that
+/// merely carries an effect, so this one passes the signal through untouched.
 class Passthrough final : public EngineDevice {
   public:
     void process(DeviceBlock&) override {}
 };
 
-/// The one device the corpus runs under both engines (#2123).
+/// The corpus's gain device (#2123).
 ///
 /// Multiplies by parameter zero and nothing else, so what it renders is the
 /// value of its own parameter. NullDiffGain.hpp has the contract.
@@ -302,10 +297,8 @@ engine::TempoMap tempoMapFor(const Case& value) {
     // what the model's curve editor draws when two points share an x position.
     //
     // So a case's tempo list is turned into steps here rather than handed over
-    // as it stands. Every render case in the corpus wants steps, because a ramp
-    // is the one place the two engines' tempo maps are known to be able to
-    // disagree, and a render case built on one would report that disagreement
-    // as a clip in the wrong place.
+    // as it stands. Every render case in the corpus wants steps, so the expected
+    // clip positions never depend on ramp interpolation.
     std::vector<engine::TempoChange> changes;
 
     for (const auto& point : value.tempo) {
@@ -384,10 +377,6 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
             // beat, and it sounds only once something launches it (#2441). The
             // demo project's sixty-four were dropped here until now, and were
             // sixty-four diagnostics before that.
-            //
-            // Where the incumbent puts the same split:
-            // ClipSynchronizer::syncArrangementClipToEngine refuses a session
-            // clip and syncSessionClipToSlot puts it in a te::ClipSlot.
             if (clip.view == ClipView::Session)
                 lane.session.push_back(clip);
             else
@@ -409,8 +398,8 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
     // --- the plan ------------------------------------------------------------
 
     // The scan an external plugin is resolved against, and the settings one is
-    // instantiated at. Both legs read the same scan; a leg that was handed none
-    // resolves nothing and says so per device below.
+    // instantiated at. A leg that was handed no scan resolves nothing and says
+    // so per device below.
     const adapter::ExternalPluginServices services{
         .formats = installed.formats, .knownPlugins = installed.knownPlugins, .context = context};
 
@@ -512,10 +501,8 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
 
     const auto modelDevices = adapter::devicesIn(tracks, master);
 
-    // The tracks the corpus compares MIDI for, which is the same question the
-    // incumbent asks when it decides where to put a capture. Asked once, of the
-    // model, through the compiler's own predicate, rather than inferred from the
-    // graph afterwards.
+    // The tracks the corpus compares MIDI for. Asked once, of the model, through
+    // the compiler's own predicate, rather than inferred from the graph afterwards.
     std::set<TrackId> midiTracks;
     for (const auto& track : tracks)
         if (chainConsumesMidi(track))
@@ -585,10 +572,9 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
                 // neither can build.
                 //
                 // The corpus's two come first because nothing else can build
-                // them: they are registered so that the incumbent can create
-                // one, and they carry no createDevice, so the factory would
-                // return null for both and they would fall through to the
-                // stand-in. Every device MAGDA ships that has moved to the SDK
+                // them: they carry no createDevice, so the factory would return
+                // null for both and they would fall through to the stand-in.
+                // Every device MAGDA ships that has moved to the SDK
                 // is built by the factory below, which is what makes a corpus
                 // case able to contain one (#2174).
                 const auto found = modelDevices.find(op.key.deviceKey());
@@ -661,18 +647,14 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
                     // not really render.
                     //
                     // Only for a device some catalog knows. An id nothing
-                    // registered is not a device either engine runs -- the MIDI
-                    // cases' instrument slot is one, and the incumbent puts a
-                    // capture there rather than a plugin -- and reporting those
-                    // would make every such case unmeasurable over an asymmetry
-                    // that does not exist.
+                    // registered is not a real device (the MIDI cases'
+                    // instrument slot is one), and reporting those would make
+                    // every such case unmeasurable.
                     if (adapter::isRegisteredDevice(model->pluginId))
                         result.diagnostics.push_back("devices: no native device for " +
                                                      model->pluginId.toStdString());
                 }
 
-                // The stand-in passes signal because that is what the incumbent
-                // does with a device it does not instantiate.
                 auto device = std::make_unique<Passthrough>();
                 device->prepare(context);
                 bindings.devices[op.key.deviceKey()] = device.get();
@@ -747,8 +729,7 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
     //
     // In monotonic beats, which start at zero on the render's first block: the
     // clock accumulates the beats it has rolled and the locate never enters
-    // them (TransportClock.cpp). A render has no pre-roll to count, which the
-    // fork's does -- the incumbent leg's launch works out its own origin.
+    // them (TransportClock.cpp). A render has no pre-roll to count.
     if (!value.launches.empty()) {
         LaunchRequestQueue::Gesture gesture(requests);
         for (const auto& launch : value.launches)
@@ -784,9 +765,7 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
         result.droppedMidiEvents += source->droppedEvents();
 
     // Every eligible track gets an entry, including one whose tap never fired.
-    // The incumbent puts a capture on every MIDI-consuming track and indexes the
-    // result by track whether it heard anything or not, so a track with no clip
-    // yet is an empty stream on both sides rather than a track only one leg saw.
+    // A track with no clip yet is an empty stream rather than a missing entry.
     for (const auto& [trackId, tap] : taps) {
         auto& perTrack = result.midiByTrack[trackId];
         for (const auto& event : tap->captured) {

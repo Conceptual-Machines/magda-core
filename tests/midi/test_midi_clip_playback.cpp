@@ -235,7 +235,7 @@ class Rig {
     bool rolling_ = false;
 };
 
-/// The fork's own "Basic 8th Swing", which displaces an off-beat by half of
+/// "Basic 8th Swing", which displaces an off-beat by half of
 /// 0.66 over a two-per-beat grid: 0.165 beats.
 GrooveTemplateSet swingSet() {
     GrooveTemplateSet set;
@@ -273,8 +273,8 @@ TEST_CASE("Notes compile to paired edges", "[engine][clip][midi]") {
 }
 
 TEST_CASE("A pitch struck again before it ends loses the first note-off", "[engine][clip][midi]") {
-    // The fork's `useNoteUp = false`. Emitting the off would cut the second note
-    // short; what ends such a note is the pass or the span it sits in.
+    // Emitting the off would cut the second note short; what ends such a note
+    // is the pass or the span it sits in.
     auto clip = makeMidiClip(1, 0.0, 4.0);
     clip.midiNotes.push_back(note(60, 0.0, 2.0));
     clip.midiNotes.push_back(note(60, 1.0, 1.0));
@@ -305,7 +305,7 @@ TEST_CASE("Controllers land before notes at the same instant", "[engine][clip][m
     REQUIRE(list.events.size() == 3);
 
     // A bank or program change has to reach the synth before the note it
-    // configures, which is the fork's ordering too.
+    // configures.
     CHECK(list.events[0].kind() == 0xb0u);
     CHECK(list.events[1].isNoteOn());
 }
@@ -437,11 +437,10 @@ TEST_CASE("A pitch-bend list entirely at rest is skipped", "[engine][clip][midi]
 TEST_CASE("An MPE note opens with the dimensions the specification asks for",
           "[engine][clip][midi]") {
     // Timbre before the note-on and pressure beside it. The specification asks
-    // for them and the fork sends both, and a synth that never receives them is
-    // left holding whatever the last note on that channel set: a member channel
-    // is reused round-robin, so the state would be inherited from another note
-    // rather than fresh. Found by the null-diff corpus (#2040), which caught the
-    // fork sending three messages the engine did not.
+    // for them, and a synth that never receives them is left holding whatever
+    // the last note on that channel set: a member channel is reused
+    // round-robin, so the state would be inherited from another note rather
+    // than fresh (#2040).
     auto clip = makeMidiClip(1, 0.0, 4.0);
 
     auto expressive = note(60, 1.0, 1.0);
@@ -622,8 +621,7 @@ TEST_CASE("A looped clip repeats its notes and ends each pass", "[engine][clip][
 }
 
 TEST_CASE("A note running past the loop end is cut there", "[engine][clip][midi]") {
-    // The fork's unrolling rule, read the other way round: its copy of the
-    // sequence clips the note to the pass and keeps what is left.
+    // The note is clipped to the pass and what is left is kept.
     auto clip = makeMidiClip(1, 0.0, 4.0);
     clip.midiNotes.push_back(note(60, 0.0, 3.0));
     clip.loopEnabled = true;
@@ -640,7 +638,7 @@ TEST_CASE("A note running past the loop end is cut there", "[engine][clip][midi]
     REQUIRE(offs.size() == 2);
 
     // On the pass boundary, nudged back one sample so it is not lost to the
-    // block that starts there. The fork does the same by hand; here it is the
+    // block that starts there. It is the
     // edge rule: a note-off is where a note's stretch ends, and an edge that
     // has to be heard sounds on the block's last sample rather than on the
     // boundary past it (BlockInfo::soundsAt).
@@ -1022,7 +1020,7 @@ TEST_CASE("Locating into a note strikes it", "[engine][clip][midi]") {
     rig.locate(blockOf(3.0), recorder);
 
     // Seeking into a sustained pad has to sound, or it is silence until the
-    // next note. The fork does the same (getNotesOnAtTime).
+    // next note.
     REQUIRE(recorder.noteOns().size() == 1);
     CHECK(recorder.noteOns().front().message.getNoteNumber() == 60);
 
@@ -1091,7 +1089,7 @@ TEST_CASE("Locating into an expressive note reconstructs its bend on its own cha
 
     // The bend is a controller stream like any other, so the chase delivers it
     // structurally: halfway up a six-beat glide to twelve semitones is six, and
-    // the wheel is centre plus half of TE's fixed 48-semitone range times that.
+    // the wheel is centre plus half of the fixed 48-semitone range times that.
     const auto bends = recorder.pitchBends();
     REQUIRE(!bends.empty());
     CHECK(bends.front().message.getChannel() == channel);
@@ -1304,8 +1302,8 @@ TEST_CASE("Groove moves a note and leaves a controller alone", "[engine][clip][m
 }
 
 TEST_CASE("Groove is anchored to the project grid, not to the clip", "[engine][clip][midi]") {
-    // A clip dragged half a beat does not take its swing with it: the fork adds
-    // the clip's content start before grooving and subtracts the clip's start
+    // A clip dragged half a beat does not take its swing with it: the clip's
+    // content start is added before grooving and the clip's start subtracted
     // after (MidiNote::getPlaybackBeats).
     const auto displacementOf = [](double clipStart) {
         auto clip = makeMidiClip(1, clipStart, 4.0);

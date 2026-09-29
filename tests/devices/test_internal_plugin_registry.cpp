@@ -141,7 +141,7 @@ TEST_CASE("Renamed runtime Faust ids still resolve under their 0.17 spellings",
 TEST_CASE("Every retired Tracktion device names a successor",
           "[internal-plugin-registry][legacy]") {
     // The retired spellings are the persisted contract: a project saved before
-    // the stock TE effects were retired stores these as the plugin type, so
+    // the stock effects were retired stores these as the plugin type, so
     // each one has to name the device that replaced it or the device is lost on
     // load. This is the table migrateRetiredDevice() resolves through.
     struct RetiredDevice {

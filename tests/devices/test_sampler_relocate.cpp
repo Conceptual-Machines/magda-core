@@ -10,7 +10,7 @@
 
 // Relocating a sampler's file must not re-interpret the sample (#2170), and a restore of
 // the document the model owns keeps what it does not name (#2377, #2379). The sampler is
-// driven as the native engine builds it (#2556, ported from the fork's suite).
+// driven as the native engine builds it (#2556).
 
 namespace {
 

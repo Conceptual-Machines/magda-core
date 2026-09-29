@@ -24,9 +24,6 @@ class GrooveEntriesTests final : public juce::UnitTest {
     void testShippedParameterizedGroovesAreImported() {
         beginTest("The shipped parameterized grooves reach the library");
 
-        // Tracktion's manager hides every parameterized groove behind its active list,
-        // which is off by default, so these two ship with the fork and were missing from
-        // the library -- and from the native engine -- until the import turns it on.
         magda::test::getSharedEngine();
 
         const auto names = magda::GrooveLibrary::getInstance().names();

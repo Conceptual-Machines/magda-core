@@ -590,10 +590,10 @@ TEST_CASE("A clip asks for a stretcher only when it needs one", "[engine][clip][
 
     SECTION("a mode set once on a clip that asks for nothing gets no engine") {
         // The mode is a preference for how to stretch, not an instruction to
-        // stretch. The incumbent engages on auto tempo, auto pitch, a pitch
-        // change or a ratio off unity and never on the mode alone
-        // (AudioClipBase::usesTimeStretchedProxy), and a phase vocoder run at
-        // one-to-one is not transparent: it re-synthesises what it was given.
+        // stretch. The engine engages on auto tempo, auto pitch, a pitch change
+        // or a ratio off unity and never on the mode alone, and a phase vocoder
+        // run at one-to-one is not transparent: it re-synthesises what it was
+        // given.
         for (const auto which :
              {mode::kSignalsmith, mode::kSoundTouchNormal, mode::kSoundTouchBetter}) {
             event.timeStretchMode = which;
@@ -650,7 +650,7 @@ TEST_CASE("A clip asks for a stretcher only when it needs one", "[engine][clip][
         event.timeStretchMode = 6;  // elastiquePro, which is not vendored here
         event.speedRatio = 2.0;
 
-        // The default engine, as the incumbent answers the same question. Not
+        // The default engine answers. Not
         // null: the position map has already decided this block consumes twice
         // its length, so a clip with nothing to consume it through would read
         // that material at unity and skip the rest at every block boundary.

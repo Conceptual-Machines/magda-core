@@ -309,9 +309,6 @@ TEST_CASE("Where the pool cues a warped clip is where its first block reads",
 }
 
 TEST_CASE("A reversed warped clip keeps its markers", "[engine][clip][warp]") {
-    // The incumbent cannot do this at all: it bakes warp into a proxy file and
-    // returns the reverse job before it reaches the warp one, so a reversed
-    // warped clip there plays unwarped.
     auto clip = warpedClip();
     auto& event = clip.events.front();
     event.reversed = true;
@@ -496,7 +493,7 @@ TEST_CASE("A warped clip is read ahead at the rate it plays, not at its steepest
         *stretcher, stretcher->preRollSamples(setup.nominalRate), at, kSampleRate, positionAt);
 
     const auto latency = stretcher->outputLatencySamples() / kSampleRate;
-    // Within a sample: the window is rounded the stretcher's own way, as the fork's is.
+    // Within a sample: the window is rounded the stretcher's own way.
     REQUIRE(static_cast<double>(read.from) ==
             approx(positionAt(at + latency) + stretcher->preRollSamples(0.0), 1.0));
 

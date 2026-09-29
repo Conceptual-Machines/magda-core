@@ -10,10 +10,9 @@
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "magda/daw/audio/plugins/engine/EngineMagdaDevice.hpp"
 
-// The native convolution device that replaced te::ImpulseResponsePlugin (#1980),
-// driven as the native engine drives it (#2556, ported from the fork's suite): the
-// impulse response survives a save and reload, the convolution convolves, and the
-// parameter ranges normalise exactly as the retired device's did.
+// The native convolution device (#1980), driven as the native engine drives it
+// (#2556): the impulse response survives a save and reload, the convolution
+// convolves, and the parameter ranges normalise as they always have.
 
 namespace {
 
