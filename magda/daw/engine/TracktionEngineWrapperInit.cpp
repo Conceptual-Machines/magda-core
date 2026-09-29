@@ -25,6 +25,7 @@
 #include "TempoLaneSync.hpp"
 #include "TracktionEngineWrapper.hpp"
 #include "TracktionTempoMap.hpp"
+#include "TracktionTransportApiAdapter.hpp"
 #include "WaveDeviceChannels.hpp"
 
 namespace magda {
@@ -505,7 +506,8 @@ bool TracktionEngineWrapper::initialisePlayback() {
         setLoopRegionBeats({{start}, {end}});
     });
     live->setProjectTempoMap([this] { return tempoMap(); });
-    live->setEditAccessor([this]() -> tracktion::Edit* { return currentEdit_.get(); });
+    wireTracktionTransportApi(static_cast<TransportApiLive&>(live->transport()),
+                              [this] { return currentEdit_.get(); });
     magdaApi_ = std::move(live);
 
     juce::Logger::writeToLog("[Init] initialisePlayback() done");
@@ -608,6 +610,9 @@ void TracktionEngineWrapper::shutdown() {
         audioBridge_.reset();
     }
 
+    // Detach the legacy API observer before destroying the Edit it listens to.
+    magdaApi_.reset();
+
     // CRITICAL: Stop transport and release playback context BEFORE destroying Edit
     // This ensures audio/MIDI devices are properly released
     if (currentEdit_) {
@@ -625,10 +630,6 @@ void TracktionEngineWrapper::shutdown() {
         DBG("Destroying Edit...");
         currentEdit_.reset();
     }
-
-    // MagdaApi is a thin facade over singletons — safe to reset anytime,
-    // but match teardown order with construction.
-    magdaApi_.reset();
 
     // Close audio/MIDI devices before destroying engine
     if (engine_) {

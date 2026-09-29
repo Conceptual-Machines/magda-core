@@ -14,6 +14,7 @@ target_sources(magda_daw PRIVATE
     TracktionEngineWrapperInit.cpp
     TracktionEngineWrapperDevices.cpp
     TracktionAudioIO.cpp
+    TracktionTransportApiAdapter.cpp
     TracktionEngineWrapperTransport.cpp
     TracktionEngineWrapperTracks.cpp
     TracktionEngineWrapperClips.cpp
@@ -36,6 +37,7 @@ target_sources(magda_daw PRIVATE
     AppServices.hpp
     OfflineRenderHelper.hpp
     TracktionEngineWrapper.hpp
+    TracktionTransportApiAdapter.hpp
     TracktionFork.hpp
     MagdaUIBehaviour.hpp
 )

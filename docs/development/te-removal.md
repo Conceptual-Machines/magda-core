@@ -44,6 +44,34 @@ alert acceptance/deferral, failed saves, source/media preservation and reopening
 the v1 copy. In particular, the older load-time media-folder migration needs
 an audit under #2919; the save-copy guard does not change that existing loader.
 
+## Transport API decoupling (#2918)
+
+`TransportApiLive` now uses engine-owned callbacks for reads, writes and source
+observation. Neither its header/implementation nor `MagdaApiLive` exposes a TE
+Edit getter. The native engine keeps its existing state/notification wiring and
+constant-meter bar seeks; application commands still use TimelineController.
+
+`TracktionTransportApiAdapter` contains the incumbent's direct transport calls,
+mixed-meter bar conversion and edit-scoped listeners. It observes only while
+API listeners exist, refreshes when the current Edit changes, and detaches when
+the state source is replaced or the API is destroyed. The incumbent wrapper
+releases the API before its Edit. This adapter remains until legacy qualification
+permits runtime deletion; it is not a replacement native runtime.
+
+`magda_transport_api_tests` builds the shared facade and its regression tests
+with Catch2 alone, without JUCE or TE (`ctest -R transport_api_native`). Coverage
+includes unbound defaults, command dispatch/application overrides, beat/bar
+seeking, notifications, source replacement and listener teardown. The existing
+JUCE meter-change and incumbent listener cases now exercise the legacy adapter.
+
+Focused standalone Debug and optimized Release runs passed 9 cases / 42
+assertions each. Compile checks passed for the facade, legacy adapter, both
+engine construction paths, MainWindow and the incumbent JUCE suite. An isolated
+JUCE/TE harness passed all added lifecycle cases but reproduced two existing
+mixed-meter assertions on both baseline `2207421cd` and this change (7.5 vs 8,
+3.5 vs 4). Seeking behavior was preserved; those failures and full application
+qualification remain pending.
+
 ## Remaining production consumers
 
 These are dependency groups observed in the baseline source/build files. A
@@ -69,7 +97,7 @@ verified. Record that verification before deleting its legacy implementation.
 | Transient detection calls in waveform/editor/inspector views | Identify/verify native analysis provider; null-returning `TracktionFork` helpers are a remaining behavior gap | #2918 |
 | `AutomationManager` base-value lookup; TE automation bake/playback/recording and modifier helpers | Native parameter lanes, model automation and modulation; preserve touch/write/bake behavior and undo | #2918, #2920 |
 | `ClipCommands` legacy sampler/pad extraction | Native/model extraction path; verify slicing to sampler/Drum Grid and retain media references | #2918, #2919 |
-| `transport_api_live` edit listener / beat-to-time fallback | Native tempo-map and transport callbacks already supplied by `MagdaAudioEngine`; remove TE fallback/listener ownership | #2918 |
+| `transport_api_live` | Shared facade is TE-free and has a Catch2-only regression target; incumbent transport calls and edit observation are isolated in `TracktionTransportApiAdapter` until final runtime deletion | #2918, #2920 |
 | `plugin_api_live` 4OSC state editing | Canonical native device state/parameter path and explicit legacy migration diagnostics | #2918, #2919 |
 | TE measurement/follower/sidechain/MIDI receive/meter-tap plugins | Native plan taps, buses, analysis and MIDI routing; audit registration needs before deleting compatibility devices | #2918 |
 | `EngineEnumPins`, persisted stretch/fade/modulation values | Keep MAGDA's persisted integers; delete comparisons to the retired engine, retain native interpretation fixtures | #2919, #2920 |

@@ -620,6 +620,16 @@ endif()
 # Create test executable
 add_executable(magda_tests ${TEST_SOURCES})
 
+# The shared transport facade must compile and run without JUCE or TE (#2918).
+add_executable(magda_transport_api_tests
+    remote/test_transport_api_engine_state.cpp
+    ../magda/daw/api/transport_api_live.cpp
+)
+target_compile_features(magda_transport_api_tests PRIVATE cxx_std_23)
+target_include_directories(magda_transport_api_tests PRIVATE ${CMAKE_SOURCE_DIR})
+target_link_libraries(magda_transport_api_tests PRIVATE Catch2::Catch2WithMain)
+add_test(NAME transport_api_native COMMAND magda_transport_api_tests)
+
 # This restore boundary must keep building without the Tracktion-linked DAW (#2919).
 add_executable(magda_saved_state_tests
     devices/test_saved_device_state.cpp

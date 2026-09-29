@@ -3,6 +3,7 @@
 
 #include "SharedTestEngine.hpp"
 #include "magda/daw/api/transport_api_live.hpp"
+#include "magda/daw/engine/TracktionTransportApiAdapter.hpp"
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
 
 /**
@@ -11,7 +12,7 @@
  * `TransportApi::seekBars` is shared by every surface and covered against the
  * mock in test_transport_seek.cpp, but the mock answers with a fixed number of
  * beats per bar. What that cannot reach is the thing `seekBars` exists for:
- * `TransportApiLive::beatsAtBarOffset` walking a sequence whose meter changes,
+ * the incumbent adapter walking a sequence whose meter changes,
  * so a rewind across a time-signature change lands where the bar line actually
  * is rather than a fixed distance back.
  *
@@ -24,7 +25,7 @@ namespace {
 
 /// Wire a transport to `edit` the way MagdaApiLive wires one.
 void useEdit(magda::TransportApiLive& transport, te::Edit& edit) {
-    transport.setEditGetter([&edit] { return &edit; });
+    magda::wireTracktionTransportApi(transport, [&edit] { return &edit; });
 }
 
 /// Put a time signature at `beat`, which is how a meter change is expressed.
@@ -153,6 +154,64 @@ class TransportSeekBarsTests final : public juce::UnitTest {
             expectGreaterThan(transport.getPositionBeats(), 0.0);
         }
 
+        beginTest("The incumbent adapter remains safe without an Edit");
+        {
+            magda::TransportApiLive transport;
+            magda::wireTracktionTransportApi(transport, {});
+            expect(!transport.isPlaying() && !transport.isRecording());
+            expect(!transport.isLoopEnabled());
+            expectEquals(transport.getPositionBeats(), 0.0);
+            expectEquals(transport.beatsAtBarOffset(8.0, 2), 8.0);
+            transport.play();
+            transport.stop();
+            transport.setRecording(true);
+            transport.setLoopEnabled(true);
+            transport.setPositionBeats(12.0);
+            const auto token = transport.addStateListener([] {});
+            transport.refreshStateSource();
+            transport.removeStateListener(token);
+        }
+
+        beginTest("Clearing the API state detaches before an Edit is destroyed");
+        {
+            auto edit = te::engine::test_utilities::createTestEdit(*engine, 1);
+            expect(edit != nullptr, "no Edit");
+            if (edit == nullptr)
+                return;
+            magda::TransportApiLive transport;
+            useEdit(transport, *edit);
+            int changes = 0;
+            transport.addStateListener([&changes] { ++changes; });
+            edit->getTransport().looping = true;
+            expectEquals(changes, 1);
+            transport.setEngineState({});
+            edit->getTransport().looping = false;
+            edit->getTransport().sendSynchronousChangeMessage();
+            expectEquals(changes, 1, "The retired engine must stop notifying the API");
+            edit.reset();
+            transport.refreshStateSource();
+        }
+
+        beginTest("Destroying the API detaches active incumbent listeners");
+        {
+            auto edit = te::engine::test_utilities::createTestEdit(*engine, 1);
+            expect(edit != nullptr, "no Edit");
+            if (edit == nullptr)
+                return;
+            int changes = 0;
+            {
+                magda::TransportApiLive transport;
+                useEdit(transport, *edit);
+                transport.addStateListener([&changes] { ++changes; });
+                transport.setLoopEnabled(true);
+                expect(transport.isLoopEnabled());
+                expectEquals(changes, 1);
+            }
+            edit->getTransport().looping = false;
+            edit->getTransport().sendSynchronousChangeMessage();
+            expectEquals(changes, 1, "A destroyed API must no longer receive notifications");
+        }
+
         beginTest("Discrete transport listeners follow the current Edit");
         {
             auto first = te::engine::test_utilities::createTestEdit(*engine, 1);
@@ -163,7 +222,7 @@ class TransportSeekBarsTests final : public juce::UnitTest {
 
             te::Edit* current = first.get();
             magda::TransportApiLive transport;
-            transport.setEditGetter([&current] { return current; });
+            magda::wireTracktionTransportApi(transport, [&current] { return current; });
 
             int changes = 0;
             const auto token = transport.addStateListener([&changes] { ++changes; });

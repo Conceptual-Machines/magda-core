@@ -55,7 +55,7 @@ MagdaAudioEngine::MagdaAudioEngine(AudioEngineOptions options) : headless_(optio
     audioIO_ = std::make_unique<AudioIOService>();
     host_ = std::make_unique<daw::engine_host::EngineHost>();
 
-    // No edit accessor: the half of the API that reads a te::Edit is #2554's.
+    // The facade reads engine state through callbacks, without a legacy Edit.
     api_ = std::make_unique<MagdaApiLive>();
     api_->setProjectTempoWriter([this](double bpm) { setTempo(bpm); });
     api_->setProjectTimeSignatureWriter(

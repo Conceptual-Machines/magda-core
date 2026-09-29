@@ -82,3 +82,124 @@ TEST_CASE("Bar seeks on an engine with no Edit follow its meter and clamp at the
     transport.seekBars(-5);
     CHECK(seekedTo == 0.0);
 }
+
+TEST_CASE("An unwired transport is safe without an engine", "[remote][transport][2918]") {
+    magda::TransportApiLive transport;
+    CHECK_FALSE(transport.isPlaying());
+    CHECK_FALSE(transport.isRecording());
+    CHECK_FALSE(transport.isLoopEnabled());
+    CHECK(transport.getPositionBeats() == 0.0);
+    CHECK(transport.beatsAtBarOffset(7.5, 2) == 7.5);
+    transport.play();
+    transport.stop();
+    transport.setRecording(true);
+    transport.setLoopEnabled(true);
+    transport.setPositionBeats(12.0);
+    transport.seekBars(2);
+    CHECK(transport.getPositionBeats() == 0.0);
+}
+
+TEST_CASE("Transport dispatchers preserve state and application overrides",
+          "[remote][transport][2918]") {
+    FakeEngine engine;
+    magda::TransportApiLive transport;
+    transport.setEngineState(engine.state());
+    transport.setPlayDispatcher([&] { engine.playing = true; });
+    transport.setStopDispatcher([&] {
+        engine.playing = false;
+        engine.recording = false;
+    });
+    transport.setLoopDispatcher([&](bool enabled) { engine.looping = enabled; });
+    transport.setRecordDispatcher([&](bool enabled) { engine.recording = enabled; });
+    transport.setSeekDispatcher([&](double beats) { engine.positionBeats = beats; });
+
+    transport.play();
+    CHECK(transport.isPlaying());
+    transport.setRecording(true);
+    CHECK(transport.isRecording());
+    transport.setLoopEnabled(true);
+    CHECK(transport.isLoopEnabled());
+    transport.setLoopEnabled(false);
+    CHECK_FALSE(transport.isLoopEnabled());
+    transport.setPositionBeats(10.0);
+    CHECK(transport.getPositionBeats() == 10.0);
+    transport.stop();
+    CHECK_FALSE(transport.isPlaying());
+    CHECK_FALSE(transport.isRecording());
+
+    // MainWindow replaces the engine dispatcher with TimelineController's path.
+    bool controllerCalled = false;
+    transport.setPlayDispatcher([&] { controllerCalled = true; });
+    transport.play();
+    CHECK(controllerCalled);
+    CHECK_FALSE(engine.playing);
+}
+
+TEST_CASE("Bar seeking delegates meter changes to the engine", "[remote][transport][2918]") {
+    FakeEngine engine;
+    engine.positionBeats = 11.5;
+    auto state = engine.state();
+    double queriedBeats = -1.0;
+    int queriedBars = 0;
+    state.beatsAtBarOffset = [&](double beats, int bars) {
+        queriedBeats = beats;
+        queriedBars = bars;
+        return 8.0;
+    };
+    magda::TransportApiLive transport;
+    transport.setEngineState(std::move(state));
+    transport.setSeekDispatcher([&](double beats) { engine.positionBeats = beats; });
+    transport.seekBars(-1);
+    CHECK(queriedBeats == 11.5);
+    CHECK(queriedBars == -1);
+    CHECK(engine.positionBeats == 8.0);
+}
+
+TEST_CASE("Transport observation follows listeners, source replacement and teardown",
+          "[remote][transport][2918]") {
+    bool firstObserving = false;
+    bool secondObserving = false;
+    {
+        magda::TransportApiLive transport;
+        magda::TransportApiLive::EngineState first;
+        first.refreshStateSource = [&](bool observing) { firstObserving = observing; };
+        transport.setEngineState(std::move(first));
+        CHECK_FALSE(firstObserving);
+        CHECK(transport.addStateListener({}) == 0);
+        CHECK_FALSE(firstObserving);
+
+        const auto firstToken = transport.addStateListener([] {});
+        const auto secondToken = transport.addStateListener([] {});
+        CHECK(firstObserving);
+        transport.removeStateListener(firstToken);
+        CHECK(firstObserving);
+
+        magda::TransportApiLive::EngineState second;
+        second.refreshStateSource = [&](bool observing) { secondObserving = observing; };
+        transport.setEngineState(std::move(second));
+        CHECK_FALSE(firstObserving);
+        CHECK(secondObserving);
+        transport.removeStateListener(secondToken);
+        CHECK_FALSE(secondObserving);
+
+        transport.addStateListener([] {});
+        CHECK(secondObserving);
+    }
+    CHECK_FALSE(secondObserving);
+}
+
+TEST_CASE("Transport listeners may unsubscribe during notification", "[remote][transport][2918]") {
+    magda::TransportApiLive transport;
+    int firstCalls = 0;
+    int secondCalls = 0;
+    int firstToken = 0;
+    firstToken = transport.addStateListener([&] {
+        ++firstCalls;
+        transport.removeStateListener(firstToken);
+    });
+    transport.addStateListener([&] { ++secondCalls; });
+    transport.notifyStateChanged();
+    transport.notifyStateChanged();
+    CHECK(firstCalls == 1);
+    CHECK(secondCalls == 2);
+}
