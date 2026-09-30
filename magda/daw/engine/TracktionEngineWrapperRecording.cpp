@@ -3,17 +3,25 @@
 #include <ranges>
 
 #include "../audio/AudioBridge.hpp"
+#include "../core/ClipCommands.hpp"
 #include "../core/ClipManager.hpp"
 #include "../core/RangesHelpers.hpp"
 #include "../core/SelectionManager.hpp"
 #include "../core/TempoUtils.hpp"
 #include "../core/TrackManager.hpp"
+#include "../core/UndoManager.hpp"
 #include "../project/ProjectManager.hpp"
 #include "TracktionEngineWrapper.hpp"
 
 namespace magda {
 
 namespace {
+
+/// Make the take that just landed on @p trackId one undo step (#2951).
+void registerTake(TrackId trackId, ClipView view, std::vector<ClipInfo> before) {
+    UndoManager::getInstance().executeCommand(
+        std::make_unique<RecordTakeCommand>(trackId, view, std::move(before)));
+}
 
 double getBeatsPerBar(TracktionEngineWrapper& engine) {
     int numerator = 4;
@@ -208,6 +216,7 @@ void TracktionEngineWrapper::recordingFinished(
 
             // Create MAGDA audio clip (triggers syncClipToEngine which re-creates in TE)
             auto& clipManager = ClipManager::getInstance();
+            auto before = RecordTakeCommand::snapshot(trackId, ClipView::Arrangement);
             ClipId clipId = clipManager.createAudioClipBeats(trackId, startBeat, lengthBeats,
                                                              audioFilePath, ClipView::Arrangement);
 
@@ -229,6 +238,8 @@ void TracktionEngineWrapper::recordingFinished(
 
             if (audioBridge_)
                 audioBridge_->syncClipToEngine(clipId);
+            if (clipId != INVALID_CLIP_ID)
+                registerTake(trackId, ClipView::Arrangement, std::move(before));
 
             DBG("  created audio clip " << clipId << " file=" << audioFilePath);
             continue;
@@ -629,6 +640,7 @@ ClipId TracktionEngineWrapper::createEmptySessionSlotRecordingClip(TrackId track
         return INVALID_CLIP_ID;
 
     const double lengthBeats = getBeatsPerBar(*this);
+    auto before = RecordTakeCommand::snapshot(trackId, ClipView::Session);
     ClipId clipId = clipManager.createMidiClipBeats(trackId, 0.0, lengthBeats, ClipView::Session);
     if (clipId == INVALID_CLIP_ID)
         return INVALID_CLIP_ID;
@@ -640,6 +652,7 @@ ClipId TracktionEngineWrapper::createEmptySessionSlotRecordingClip(TrackId track
     }
     SelectionManager::getInstance().selectClip(clipId);
     clipManager.forceNotifyClipPropertyChanged(clipId);
+    registerTake(trackId, ClipView::Session, std::move(before));
     return clipId;
 }
 
@@ -678,6 +691,7 @@ bool TracktionEngineWrapper::finalizeSessionSlotAudioRecording(
     }
 
     auto& clipManager = ClipManager::getInstance();
+    auto before = RecordTakeCommand::snapshot(trackId, ClipView::Session);
     ClipId clipId = clipManager.getClipInSlot(trackId, targetIt->second.sceneIndex);
     if (clipId == INVALID_CLIP_ID) {
         clipId = clipManager.createAudioClipBeats(trackId, 0.0, lengthBeats,
@@ -702,6 +716,9 @@ bool TracktionEngineWrapper::finalizeSessionSlotAudioRecording(
         clipManager.forceNotifyClipPropertyChanged(clipId);
         SelectionManager::getInstance().selectClip(clipId);
     }
+
+    if (clipId != INVALID_CLIP_ID)
+        registerTake(trackId, ClipView::Session, std::move(before));
 
     activeRecordingClips_[trackId] = clipId;
     recordingPreviews_.erase(trackId);
@@ -804,6 +821,7 @@ bool TracktionEngineWrapper::finalizeSessionSlotMidiRecording(TrackId trackId,
     }
 
     auto& clipManager = ClipManager::getInstance();
+    auto before = RecordTakeCommand::snapshot(trackId, ClipView::Session);
     ClipId clipId = clipManager.getClipInSlot(trackId, targetIt->second.sceneIndex);
     if (clipId == INVALID_CLIP_ID) {
         clipId = clipManager.createMidiClipBeats(trackId, 0.0, lengthBeats, ClipView::Session);
@@ -822,6 +840,7 @@ bool TracktionEngineWrapper::finalizeSessionSlotMidiRecording(TrackId trackId,
         clipInfo->midiPolyAftertouchData = std::move(recordedPolyAftertouch);
         clipManager.forceNotifyClipPropertyChanged(clipId);
         SelectionManager::getInstance().selectClip(clipId);
+        registerTake(trackId, ClipView::Session, std::move(before));
     }
 
     recordingPreviews_.erase(trackId);
@@ -931,6 +950,7 @@ void TracktionEngineWrapper::finalizeMidiRecording(TrackId trackId) {
     midiClip->removeFromParent();
 
     auto& clipManager = ClipManager::getInstance();
+    auto before = RecordTakeCommand::snapshot(trackId, ClipView::Arrangement);
     ClipId clipId =
         clipManager.createMidiClipBeats(trackId, startBeat, lengthBeats, ClipView::Arrangement);
     activeRecordingClips_[trackId] = clipId;
@@ -949,6 +969,8 @@ void TracktionEngineWrapper::finalizeMidiRecording(TrackId trackId) {
 
     if (audioBridge_)
         audioBridge_->syncClipToEngine(clipId);
+    if (clipId != INVALID_CLIP_ID)
+        registerTake(trackId, ClipView::Arrangement, std::move(before));
 
     recordingPreviews_.erase(trackId);
 
