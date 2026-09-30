@@ -109,11 +109,10 @@ struct TransportRequest {
      * Resolved by the caller rather than named as a mode here: how many beats a
      * bar is worth is the tempo map's business, and whether a plain play counts
      * in at all is the application's. What reaches the engine is a number of
-     * beats to roll in for.
+     * beats to count.
      *
-     * The cursor starts that far before the play position and reaches it
-     * playing, so material before the start is heard rather than skipped, and
-     * the loop does not wrap the roll-in.
+     * The cursor holds at the play position while only the metronome counts,
+     * so nothing before the start is heard (#2949). Pre-roll is punch-in.
      */
     double countInBeats = 0.0;
 };

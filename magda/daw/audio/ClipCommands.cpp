@@ -2672,6 +2672,45 @@ void RecordSessionToArrangementCommand::undo() {
 }
 
 // ============================================================================
+// RecordTakeCommand
+// ============================================================================
+
+RecordTakeCommand::RecordTakeCommand(TrackId trackId, ClipView view, std::vector<ClipInfo> before)
+    : trackId_(trackId), view_(view), before_(std::move(before)) {}
+
+std::vector<ClipInfo> RecordTakeCommand::snapshot(TrackId trackId, ClipView view) {
+    auto& clipManager = ClipManager::getInstance();
+    std::vector<ClipInfo> clips;
+    for (const auto clipId : clipManager.getClipsOnTrack(trackId, view))
+        if (const auto* clip = clipManager.getClip(clipId))
+            clips.push_back(*clip);
+    return clips;
+}
+
+void RecordTakeCommand::execute() {
+    // The take is already on the track the first time; only a redo puts it back.
+    if (!executed_) {
+        after_ = snapshot(trackId_, view_);
+        executed_ = true;
+        return;
+    }
+    replaceWith(after_);
+}
+
+void RecordTakeCommand::undo() {
+    replaceWith(before_);
+}
+
+void RecordTakeCommand::replaceWith(const std::vector<ClipInfo>& clips) {
+    auto& clipManager = ClipManager::getInstance();
+    for (const auto clipId : clipManager.getClipsOnTrack(trackId_, view_))
+        clipManager.deleteClip(clipId);
+    for (const auto& clip : clips)
+        clipManager.restoreClip(clip);
+    clipManager.forceNotifyClipsChanged();
+}
+
+// ============================================================================
 // Slice Utilities
 // ============================================================================
 
