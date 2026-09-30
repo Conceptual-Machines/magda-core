@@ -898,19 +898,31 @@ void AudioSettingsDialog::onBufferSizeSelected() {
 
 void AudioSettingsDialog::applyStreamChange(const AudioIOSettings& settings,
                                             const juce::String& what, const juce::String& asked) {
-    // A device can refuse a combination it advertises, and JUCE drops the open device when
-    // it does -- silently, leaving no audio and no reason for it.
-    showDeviceRefreshIndicator(true);
-    const auto error = audio_->apply(settings);
-    if (error.isNotEmpty())
-        juce::AlertWindow::showMessageBoxAsync(
-            juce::AlertWindow::WarningIcon, "Audio Interface Error",
-            "Could not set the " + what + " to " + asked + ".\n\nError: " + error);
+    deviceRefreshLabel_.setText("Changing " + what + " to " + asked + "...",
+                                juce::dontSendNotification);
+    sampleRateComboBox_.setEnabled(false);
+    bufferSizeComboBox_.setEnabled(false);
+    showDeviceRefreshIndicator(false);
 
-    // Either way: on success the lists follow the new stream, and on failure they show what
-    // is actually open rather than what was asked for.
-    refreshChosenInterface();
-    hideDeviceRefreshIndicator();
+    audio_->applyAsync(settings, [safe = juce::Component::SafePointer(this), what,
+                                  asked](const juce::String& error) {
+        // A device can refuse a combination it advertises, and JUCE drops the open device
+        // when it does -- silently, leaving no audio and no reason for it.
+        if (error.isNotEmpty())
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::AlertWindow::WarningIcon, "Audio Interface Error",
+                "Could not set the " + what + " to " + asked + ".\n\nError: " + error);
+        if (safe == nullptr)
+            return;
+
+        // Either way: on success the lists follow the new stream, and on failure they show
+        // what is actually open rather than what was asked for.
+        safe->sampleRateComboBox_.setEnabled(true);
+        safe->bufferSizeComboBox_.setEnabled(true);
+        safe->refreshChosenInterface();
+        safe->hideDeviceRefreshIndicator();
+        safe->deviceRefreshLabel_.setText("Refreshing devices...", juce::dontSendNotification);
+    });
 }
 
 void AudioSettingsDialog::populateStreamLists() {

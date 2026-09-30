@@ -7,6 +7,7 @@
 
 #include <juce_audio_devices/juce_audio_devices.h>
 
+#include <functional>
 #include <vector>
 
 #include "../../core/Config.hpp"
@@ -27,6 +28,12 @@ class AudioIOControl : public HardwareChannels {
 
     /** @brief Open exactly @p settings and keep them as the choice; returns the open error. */
     virtual juce::String apply(const AudioIOSettings& settings) = 0;
+
+    /** @brief apply(), calling @p done on the message thread when the interface is open. */
+    virtual void applyAsync(const AudioIOSettings& settings,
+                            std::function<void(juce::String)> done) {
+        done(apply(settings));
+    }
 
     /** @brief What @p interfaceName calls its channels, whether or not it is open. */
     virtual juce::StringArray channelNames(const juce::String& backend,

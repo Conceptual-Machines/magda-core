@@ -1,8 +1,10 @@
 #include "AudioIOService.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 
+#include "CoreAudioRate.hpp"
 #include "HardwareRouteNames.hpp"
 #include "TracktionAudioSettings.hpp"
 
@@ -12,6 +14,9 @@ namespace {
 
 /// What a fresh configuration opens, and what replaces an output that is gone.
 const std::vector<int> kStereoOut{0, 1};
+
+/// Long enough for an interface re-locking its clock; the wait ends as soon as it reports.
+constexpr int kRateSettleTimeoutMs = 3000;
 
 std::vector<int> within(const std::vector<int>& channels, int count) {
     std::vector<int> kept;
@@ -50,6 +55,7 @@ AudioIOService::AudioIOService(std::vector<std::unique_ptr<juce::AudioIODeviceTy
 }
 
 AudioIOService::~AudioIOService() {
+    *alive_ = false;
     manager_.removeChangeListener(this);
     manager_.closeAudioDevice();
 }
@@ -314,6 +320,8 @@ juce::String AudioIOService::openFitted(const AudioIOSettings& fitted) {
         device != nullptr && device->getTypeName() != juce::String(fitted.backend))
         manager_.closeAudioDevice();
 
+    settleCoreAudioRate(fitted);
+
     auto error = manager_.initialise(0, 0, xml.get(), false);
     if (const auto active = getActiveConfiguration(); active.backend.isEmpty()) {
         log("no interface open");
@@ -325,6 +333,68 @@ juce::String AudioIOService::openFitted(const AudioIOSettings& fitted) {
             " samples");
     }
     return error;
+}
+
+namespace {
+
+/// Blocks until each interface reports @p sampleRate. Any thread.
+void settleRate(const std::vector<std::string>& interfaces, double sampleRate) {
+    for (const auto& name : interfaces) {
+        const auto ms = coreaudio::settleSampleRate(name, sampleRate, kRateSettleTimeoutMs);
+        log(juce::String(name) + (ms >= 0 ? " settled at " : " did not settle at ") +
+            juce::String(sampleRate, 0) + " Hz" +
+            (ms >= 0 ? " after " + juce::String(ms) + " ms" : juce::String()));
+    }
+}
+
+}  // namespace
+
+std::vector<std::string> AudioIOService::interfacesChangingRate(const AudioIOSettings& fitted) {
+    if (fitted.backend != "CoreAudio" || fitted.sampleRate <= 0.0)
+        return {};
+
+    std::vector<std::string> interfaces;
+    if (!fitted.outputChannels.empty() && !fitted.outputInterface.empty())
+        interfaces.push_back(fitted.outputInterface);
+    if (!fitted.inputChannels.empty() && !fitted.inputInterface.empty() &&
+        fitted.inputInterface != fitted.outputInterface)
+        interfaces.push_back(fitted.inputInterface);
+
+    const auto changing = std::ranges::any_of(interfaces, [&](const std::string& name) {
+        const auto current = coreaudio::nominalSampleRate(name);
+        return current > 0.0 && std::abs(current - fitted.sampleRate) >= 1.0;
+    });
+    return changing ? interfaces : std::vector<std::string>{};
+}
+
+void AudioIOService::settleCoreAudioRate(const AudioIOSettings& fitted) {
+    const auto interfaces = interfacesChangingRate(fitted);
+    if (interfaces.empty())
+        return;
+
+    // Not streaming while the interface switches, so the late report reaches no open device.
+    manager_.closeAudioDevice();
+    settleRate(interfaces, fitted.sampleRate);
+}
+
+void AudioIOService::applyAsync(const AudioIOSettings& settings,
+                                std::function<void(juce::String)> done) {
+    auto interfaces = interfacesChangingRate(fit(settings));
+    if (interfaces.empty()) {
+        done(apply(settings));
+        return;
+    }
+
+    manager_.closeAudioDevice();
+    juce::Thread::launch([interfaces = std::move(interfaces), settings, alive = alive_,
+                          done = std::move(done), this]() mutable {
+        settleRate(interfaces, settings.sampleRate);
+        juce::MessageManager::callAsync(
+            [settings, alive = std::move(alive), done = std::move(done), this] {
+                if (*alive)
+                    done(apply(settings));
+            });
+    });
 }
 
 void AudioIOService::changeListenerCallback(juce::ChangeBroadcaster*) {
