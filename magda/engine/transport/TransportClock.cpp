@@ -38,6 +38,59 @@ std::int64_t TransportClock::samplesUntil(const TempoMap& tempo, double beat) co
     return static_cast<std::int64_t>(std::floor((target - now) * sampleRate_ + kSampleEpsilon));
 }
 
+std::int64_t TransportClock::countInLeft(const TempoMap& tempo) const {
+    const auto length = tempo.beatToTime(positionBeat_) - tempo.beatToTime(countFromBeat_);
+    return static_cast<std::int64_t>(std::floor((length * sampleRate_) + kSampleEpsilon)) -
+           samplesCounted_;
+}
+
+void TransportClock::countSegment(const TempoMap& tempo, std::int64_t samples, int offset) {
+    auto& segment = segments_[static_cast<std::size_t>(segmentCount_++)];
+
+    // The timeline stands still, as a stopped block does, so nothing on it plays.
+    const auto beat = beatAfter(tempo, samplesSinceAnchor_);
+    const auto seconds = secondsAfter(samplesSinceAnchor_);
+    auto& block = segment.block;
+    block.numSamples = static_cast<int>(samples);
+    block.playing = false;
+    block.beats = {beat, beat};
+    block.seconds = {seconds, seconds};
+    block.sampleRate = sampleRate_;
+    block.continuous = continuous_;
+    block.tempo = &tempo;
+
+    // The count's own seconds, which end on the cursor.
+    const auto countStart =
+        tempo.beatToTime(countFromBeat_) + (static_cast<double>(samplesCounted_) / sampleRate_);
+    const auto countEnd = countStart + (static_cast<double>(samples) / sampleRate_);
+    auto& count = segment.count;
+    count = block;
+    count.playing = true;
+    count.beats = {tempo.timeToBeat(countStart), tempo.timeToBeat(countEnd)};
+    count.seconds = {countStart, countEnd};
+
+    // Time still passes, so what is due when the count ends is due then.
+    block.monotonicBeats.start = monotonicBeat_;
+    monotonicBeat_ += count.beats.end - count.beats.start;
+    block.monotonicBeats.end = monotonicBeat_;
+    block.monotonicSeconds.start = monotonicSeconds_;
+    monotonicSeconds_ += static_cast<double>(samples) / sampleRate_;
+    block.monotonicSeconds.end = monotonicSeconds_;
+    block.monotonicSamples.start = monotonicSamples_;
+    monotonicSamples_ += SampleDuration{samples};
+    block.monotonicSamples.end = monotonicSamples_;
+    count.monotonicBeats = block.monotonicBeats;
+    count.monotonicSeconds = block.monotonicSeconds;
+    count.monotonicSamples = block.monotonicSamples;
+
+    segment.startSample = offset;
+    segment.countingIn = true;
+    segment.insidePunch = true;
+
+    samplesCounted_ += samples;
+    continuous_ = true;
+}
+
 std::int64_t TransportClock::samplesThrough(const TempoMap& tempo, double beat) const {
     const auto now = secondsAfter(samplesSinceAnchor_);
     const auto target = tempo.beatToTime(beat);
@@ -95,22 +148,23 @@ void TransportClock::applyRequest(const TransportSnapshot& snapshot) {
     if (locates && request.locateId != 0)
         appliedLocateId_ = request.locateId;
 
-    // A request that moves the cursor at all: a locate, or a roll-in, which
-    // moves it back to where the count begins. Everything else leaves the
-    // anchor alone rather than re-deriving the position it already has.
+    // A locate moves the cursor. A count-in leaves it where it is and counts
+    // the bars before it, so nothing else on the timeline sounds (#2949).
+    // Everything else leaves the anchor alone rather than re-deriving the
+    // position it already has.
     if (locates || countingIn_) {
         // A locate is honoured as it was asked for, loop or no loop. The loop
         // is somewhere the timeline returns to when it gets there, not a pen: a
         // playhead put down at bar 40 with a two-bar loop enabled plays bar 40,
         // which is what the user pointed at.
         const auto target = locates ? request.positionBeat : wasAt;
-        const auto position = countingIn_ ? target - request.countInBeats : target;
+        anchorTo(snapshot.tempo, target);
 
-        countInUntilBeat_ = target;
-        anchorTo(snapshot.tempo, position);
+        countFromBeat_ = target - request.countInBeats;
+        samplesCounted_ = 0;
 
         // Arriving somewhere else is a jump.
-        if (std::abs(position - wasAt) > kBeatEpsilon)
+        if (std::abs(target - wasAt) > kBeatEpsilon)
             continuous_ = false;
     }
 
@@ -190,16 +244,24 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
     auto offset = 0;
 
     while (remaining > 0) {
-        // The count-in ends at the play position. Not a jump, but it changes
-        // what the metronome is allowed to do, so the callback is cut there
-        // rather than left to round to whichever side of the beat is nearer.
-        if (countingIn_ && samplesUntil(tempo, countInUntilBeat_) <= 0)
-            countingIn_ = false;
+        // The callback is cut where the count-in ends, and the timeline starts
+        // from there: a start, not a continuation of the count.
+        if (countingIn_) {
+            if (const auto left = countInLeft(tempo); left > 0) {
+                const auto samples = segmentCount_ + 1 == kMaxSegmentsPerBlock
+                                         ? static_cast<std::int64_t>(remaining)
+                                         : std::min(static_cast<std::int64_t>(remaining), left);
+                countSegment(tempo, samples, offset);
+                offset += static_cast<int>(samples);
+                remaining -= static_cast<int>(samples);
+                continue;
+            }
 
-        // Rolling in is not looping. A count-in that started before the loop
-        // end would otherwise wrap on its way to the play position and count
-        // for ever without arriving.
-        const auto looping = snapshot.loop.valid() && !countingIn_;
+            countingIn_ = false;
+            continuous_ = false;
+        }
+
+        const auto looping = snapshot.loop.valid();
         auto untilLoopEnd = looping ? samplesUntil(tempo, snapshot.loop.endBeat)
                                     : std::numeric_limits<std::int64_t>::max();
 
@@ -218,8 +280,6 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         }
 
         auto samples = static_cast<std::int64_t>(remaining);
-        if (countingIn_)
-            samples = std::min(samples, samplesUntil(tempo, countInUntilBeat_));
 
         // A tempo section boundary is not cut at. It used to be, so that the
         // block's own straight line stayed honest and so that a modifier
@@ -299,7 +359,7 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         segment.block.continuous = continuous_;
         segment.block.tempo = &tempo;
         segment.startSample = offset;
-        segment.countingIn = countingIn_;
+        segment.countingIn = false;
         segment.insidePunch = !beforePunch && !afterPunch;
 
         samplesSinceAnchor_ += samples;
@@ -313,7 +373,7 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         // overflow costs this callback its wrapping, and without this it would
         // cost every callback after it too, because the loop would never catch
         // the cursor again.
-        if (overflowed && snapshot.loop.valid() && !countingIn_) {
+        if (overflowed && snapshot.loop.valid()) {
             anchorTo(tempo, snapshot.loop.startBeat);
             continuous_ = false;
         }

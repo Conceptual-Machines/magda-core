@@ -39,10 +39,14 @@ class TransportClock {
         /// Where it begins in the callback's buffer.
         int startSample = 0;
 
-        /// The cursor is still short of the play position, rolling in. The
-        /// metronome sounds through a count-in whether or not it is switched
-        /// on, which is the only thing that reads this.
+        /// A count-in: the timeline holds at the play position and only the
+        /// metronome runs, over @ref count, whether or not it is switched on
+        /// (#2949). The monotonic count still advances.
         bool countingIn = false;
+
+        /// The bars counted in, as beats before the play position. Valid only
+        /// while @ref countingIn.
+        BlockInfo count;
 
         /// Whether Arrangement takes may consume this segment.
         bool insidePunch = true;
@@ -159,6 +163,12 @@ class TransportClock {
     ///        Audio thread, wherever the cursor is stored.
     void publishSyncPoint(double beat);
 
+    /// Samples of count-in left before the timeline starts to roll.
+    std::int64_t countInLeft(const TempoMap& tempo) const;
+
+    /// Add a segment of @p samples of count-in at @p offset in the callback.
+    void countSegment(const TempoMap& tempo, std::int64_t samples, int offset);
+
     void applyRequest(const TransportSnapshot& snapshot);
     void followTempo(const TempoMap& tempo);
 
@@ -185,8 +195,11 @@ class TransportClock {
     /// that produced it.
     double positionBeat_ = 0.0;
 
+    /// A count-in runs its own seconds from @ref countFromBeat_ up to the
+    /// cursor, which waits for it.
     bool countingIn_ = false;
-    double countInUntilBeat_ = 0.0;
+    double countFromBeat_ = 0.0;
+    std::int64_t samplesCounted_ = 0;
 
     /// Whether the next block continues the last one.
     bool continuous_ = false;

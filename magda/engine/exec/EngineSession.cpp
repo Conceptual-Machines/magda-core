@@ -528,7 +528,8 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
             if (clickChannels > 0) {
                 juce::AudioBuffer<float> clickOutput(output.getArrayOfWritePointers(),
                                                      clickChannels, 0, output.getNumSamples());
-                (*render)->click->render(transport->tempo, transport->click, segment.block,
+                (*render)->click->render(transport->tempo, transport->click,
+                                         segment.countingIn ? segment.count : segment.block,
                                          segment.countingIn, clickOutput, segment.startSample);
             }
         }
