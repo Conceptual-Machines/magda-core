@@ -2,7 +2,6 @@
 
 #include <utility>
 
-#include "audio/modifiers/ADSRDebugLog.hpp"
 #include "core/AutomationInfo.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -51,11 +50,6 @@ FollowerEditorPanel::FollowerEditorPanel() {
             [tag](double v) { return tag + " " + juce::String(juce::roundToInt(v)) + " ms"; });
         s.onValueChanged = [this, field](double value) {
             field() = static_cast<float>(value);
-            MAGDA_ADSR_AUDIO_LOG("follower-ui time-change modIndex="
-                                 << selectedModIndex_ << " gainDb=" << currentMod_.followerGainDb
-                                 << " attack=" << currentMod_.followerAttackMs
-                                 << " hold=" << currentMod_.followerHoldMs
-                                 << " release=" << currentMod_.followerReleaseMs);
             fireFollowerChanged();
         };
         addAndMakeVisible(s);
@@ -74,8 +68,6 @@ FollowerEditorPanel::FollowerEditorPanel() {
     gainSlider_.setValueFormatter([](double v) { return "Gain " + juce::String(v, 1) + " dB"; });
     gainSlider_.onValueChanged = [this](double value) {
         currentMod_.followerGainDb = static_cast<float>(value);
-        MAGDA_ADSR_AUDIO_LOG("follower-ui gain-change modIndex=" << selectedModIndex_ << " gainDb="
-                                                                 << currentMod_.followerGainDb);
         fireFollowerChanged();
     };
     addAndMakeVisible(gainSlider_);
@@ -95,12 +87,6 @@ FollowerEditorPanel::FollowerEditorPanel() {
         b.onClick = [this, &b, field, &freq]() {
             field() = b.getToggleState();
             freq.setEnabled(b.getToggleState());
-            MAGDA_ADSR_AUDIO_LOG("follower-ui band-toggle modIndex="
-                                 << selectedModIndex_
-                                 << " hpOn=" << static_cast<int>(currentMod_.followerHpEnabled)
-                                 << " hpHz=" << currentMod_.followerHpFreq
-                                 << " lpOn=" << static_cast<int>(currentMod_.followerLpEnabled)
-                                 << " lpHz=" << currentMod_.followerLpFreq);
             fireFollowerChanged();
         };
         addAndMakeVisible(b);
@@ -114,12 +100,6 @@ FollowerEditorPanel::FollowerEditorPanel() {
         s.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)) + " Hz"; });
         s.onValueChanged = [this, field](double value) {
             field() = static_cast<float>(value);
-            MAGDA_ADSR_AUDIO_LOG("follower-ui freq-change modIndex="
-                                 << selectedModIndex_
-                                 << " hpOn=" << static_cast<int>(currentMod_.followerHpEnabled)
-                                 << " hpHz=" << currentMod_.followerHpFreq
-                                 << " lpOn=" << static_cast<int>(currentMod_.followerLpEnabled)
-                                 << " lpHz=" << currentMod_.followerLpFreq);
             fireFollowerChanged();
         };
         addAndMakeVisible(s);
@@ -246,17 +226,7 @@ void FollowerEditorPanel::onNameLabelEdited() {
 
 void FollowerEditorPanel::fireFollowerChanged() {
     if (selectedModIndex_ >= 0 && onFollowerChanged) {
-        MAGDA_ADSR_AUDIO_LOG("follower-ui fire-change modIndex="
-                             << selectedModIndex_ << " gainDb=" << currentMod_.followerGainDb
-                             << " hpOn=" << static_cast<int>(currentMod_.followerHpEnabled)
-                             << " hpHz=" << currentMod_.followerHpFreq
-                             << " lpOn=" << static_cast<int>(currentMod_.followerLpEnabled)
-                             << " lpHz=" << currentMod_.followerLpFreq);
         onFollowerChanged(currentMod_);
-    } else {
-        MAGDA_ADSR_AUDIO_LOG("follower-ui drop-change modIndex="
-                             << selectedModIndex_
-                             << " hasCallback=" << static_cast<int>(onFollowerChanged != nullptr));
     }
     followerDisplay_.repaint();
 }

@@ -12,7 +12,6 @@
 #include "../TrackController.hpp"
 #include "../TracktionHelpers.hpp"
 #include "PluginManager.hpp"
-#include "modifiers/ADSRDebugLog.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 #include "modifiers/ModifierHelpers.hpp"
 #include "modifiers/ModifierSync.hpp"
@@ -236,9 +235,6 @@ void PluginManager::checkAudioSidechainMonitor(TrackId trackId) {
     rebuildSidechainLFOCache();
 
     const bool needed = trackNeedsAudioSidechainMonitor(trackId);
-    MAGDA_ADSR_AUDIO_LOG("check monitor sourceTrack="
-                         << trackId << " needed=" << static_cast<int>(needed) << " exists="
-                         << static_cast<int>(audioSidechainMonitors_.count(trackId) > 0));
 
     if (needed)
         ensureAudioSidechainMonitor(trackId);
@@ -256,9 +252,6 @@ void PluginManager::refreshAudioSidechainMonitors() {
 
     for (const auto& track : TrackManager::getInstance().getTracks()) {
         const bool needed = trackNeedsAudioSidechainMonitor(track.id);
-        MAGDA_ADSR_AUDIO_LOG("refresh monitor sourceTrack="
-                             << track.id << " needed=" << static_cast<int>(needed) << " exists="
-                             << static_cast<int>(audioSidechainMonitors_.count(track.id) > 0));
 
         if (needed)
             ensureAudioSidechainMonitor(track.id);
@@ -277,8 +270,6 @@ void PluginManager::ensureAudioSidechainMonitor(TrackId sourceTrackId) {
     if (!teTrack) {
         DBG("PluginManager::ensureAudioSidechainMonitor - track " << sourceTrackId
                                                                   << " has no TE AudioTrack");
-        MAGDA_ADSR_AUDIO_LOG(
-            "cannot create monitor; missing TE track sourceTrack=" << sourceTrackId);
         return;
     }
 
@@ -344,9 +335,6 @@ void PluginManager::ensureAudioSidechainMonitor(TrackId sourceTrackId) {
             }
         }
 
-        MAGDA_ADSR_AUDIO_LOG("monitor already exists sourceTrack="
-                             << sourceTrackId << " pluginIndex=" << existingIndex);
-
         const int desiredIndex = computeInsertPos();
         if (existingIndex == desiredIndex)
             return;
@@ -354,9 +342,6 @@ void PluginManager::ensureAudioSidechainMonitor(TrackId sourceTrackId) {
         if (auto* plugin = audioSidechainMonitors_[sourceTrackId].get())
             plugin->deleteFromParent();
         audioSidechainMonitors_.erase(sourceTrackId);
-        MAGDA_ADSR_AUDIO_LOG("removed monitor for trigger-tap reposition sourceTrack="
-                             << sourceTrackId << " oldIndex=" << existingIndex
-                             << " desiredIndex=" << desiredIndex);
     }
 
     // Check if an AudioSidechainMonitorPlugin already exists on the track
@@ -365,9 +350,6 @@ void PluginManager::ensureAudioSidechainMonitor(TrackId sourceTrackId) {
             const int desiredIndex = computeInsertPos();
             if (i != desiredIndex) {
                 teTrack->pluginList[i]->deleteFromParent();
-                MAGDA_ADSR_AUDIO_LOG(
-                    "removed existing monitor for trigger-tap reposition sourceTrack="
-                    << sourceTrackId << " oldIndex=" << i << " desiredIndex=" << desiredIndex);
                 break;
             }
 
@@ -377,8 +359,6 @@ void PluginManager::ensureAudioSidechainMonitor(TrackId sourceTrackId) {
             auto* mon = dynamic_cast<AudioSidechainMonitorPlugin*>(teTrack->pluginList[i]);
             mon->setSourceTrackId(sourceTrackId);
             mon->setRealtimeContext(this);
-            MAGDA_ADSR_AUDIO_LOG("using existing monitor sourceTrack=" << sourceTrackId
-                                                                       << " pluginIndex=" << i);
             return;
         }
     }
@@ -390,7 +370,6 @@ void PluginManager::ensureAudioSidechainMonitor(TrackId sourceTrackId) {
 
     DBG("PluginManager::ensureAudioSidechainMonitor - creating new audio monitor for track "
         << sourceTrackId);
-    MAGDA_ADSR_AUDIO_LOG("creating monitor sourceTrack=" << sourceTrackId);
     auto plugin = edit_.getPluginCache().createNewPlugin(pluginState);
     if (plugin) {
         if (auto* mon = dynamic_cast<AudioSidechainMonitorPlugin*>(plugin.get())) {
@@ -402,12 +381,9 @@ void PluginManager::ensureAudioSidechainMonitor(TrackId sourceTrackId) {
         audioSidechainMonitors_[sourceTrackId] = plugin;
         DBG("PluginManager::ensureAudioSidechainMonitor - inserted audio monitor at position "
             << insertPos << " on track " << sourceTrackId);
-        MAGDA_ADSR_AUDIO_LOG("inserted monitor sourceTrack=" << sourceTrackId
-                                                             << " insertPos=" << insertPos);
     } else {
         DBG("PluginManager::ensureAudioSidechainMonitor - FAILED to create audio monitor for track "
             << sourceTrackId);
-        MAGDA_ADSR_AUDIO_LOG("failed creating monitor sourceTrack=" << sourceTrackId);
     }
 }
 
@@ -434,19 +410,12 @@ bool PluginManager::trackNeedsFollowerSourceTap(TrackId trackId) const {
         return false;
 
     auto* cache = activeCache_.load(std::memory_order_acquire);
-    const bool needed = cache && cache->entries[static_cast<size_t>(trackId)].hasFollowerSource;
-    if (needed) {
-        const auto& entry = cache->entries[static_cast<size_t>(trackId)];
-        MAGDA_ADSR_AUDIO_LOG("follower-tap-needed sourceTrack=" << trackId << " followerCount="
-                                                                << entry.followerCount);
-    }
-    return needed;
+    return cache && cache->entries[static_cast<size_t>(trackId)].hasFollowerSource;
 }
 
 void PluginManager::ensureFollowerSourceTap(TrackId sourceTrackId) {
     auto* teTrack = trackController_.getAudioTrack(sourceTrackId);
     if (!teTrack) {
-        MAGDA_ADSR_AUDIO_LOG("follower-tap ensure-missing-track sourceTrack=" << sourceTrackId);
         return;
     }
 
@@ -462,28 +431,22 @@ void PluginManager::ensureFollowerSourceTap(TrackId sourceTrackId) {
 
     // Reuse an existing tap if it's already at the desired position; otherwise
     // drop it so we can reinsert cleanly (chain may have grown since).
-    auto reuseExisting = [&](te::Plugin* existing, int existingIndex) {
+    auto reuseExisting = [&](te::Plugin* existing) {
         followerSourceTaps_[sourceTrackId] = existing;
         if (auto* tap = dynamic_cast<FollowerSourceTapPlugin*>(existing)) {
             tap->setSourceTrackId(sourceTrackId);
             tap->setRealtimeContext(this);
         }
-        MAGDA_ADSR_AUDIO_LOG("follower-tap reuse sourceTrack=" << sourceTrackId
-                                                               << " index=" << existingIndex
-                                                               << " desired=" << desiredPos());
     };
 
     if (followerSourceTaps_.count(sourceTrackId) > 0) {
         auto* existing = followerSourceTaps_[sourceTrackId].get();
         int existingIndex = existing ? teTrack->pluginList.indexOf(existing) : -1;
         if (existingIndex >= 0 && existingIndex == desiredPos() - 1) {
-            reuseExisting(existing, existingIndex);
+            reuseExisting(existing);
             return;
         }
         if (existing) {
-            MAGDA_ADSR_AUDIO_LOG("follower-tap remove-for-reposition sourceTrack="
-                                 << sourceTrackId << " oldIndex=" << existingIndex
-                                 << " desired=" << desiredPos());
             existing->deleteFromParent();
         }
         followerSourceTaps_.erase(sourceTrackId);
@@ -493,12 +456,9 @@ void PluginManager::ensureFollowerSourceTap(TrackId sourceTrackId) {
     for (int i = 0; i < teTrack->pluginList.size(); ++i) {
         if (dynamic_cast<FollowerSourceTapPlugin*>(teTrack->pluginList[i])) {
             if (i == desiredPos() - 1) {
-                reuseExisting(teTrack->pluginList[i], i);
+                reuseExisting(teTrack->pluginList[i]);
                 return;
             }
-            MAGDA_ADSR_AUDIO_LOG("follower-tap remove-stray sourceTrack="
-                                 << sourceTrackId << " oldIndex=" << i
-                                 << " desired=" << desiredPos());
             teTrack->pluginList[i]->deleteFromParent();
             break;
         }
@@ -517,11 +477,6 @@ void PluginManager::ensureFollowerSourceTap(TrackId sourceTrackId) {
         const int insertPos = desiredPos();
         teTrack->pluginList.insertPlugin(plugin, insertPos, nullptr);
         followerSourceTaps_[sourceTrackId] = plugin;
-        MAGDA_ADSR_AUDIO_LOG("follower-tap inserted sourceTrack="
-                             << sourceTrackId << " index=" << insertPos
-                             << " pluginCount=" << teTrack->pluginList.size());
-    } else {
-        MAGDA_ADSR_AUDIO_LOG("follower-tap create-failed sourceTrack=" << sourceTrackId);
     }
 }
 
@@ -534,7 +489,6 @@ void PluginManager::removeFollowerSourceTap(TrackId sourceTrackId) {
     followerSourceTaps_.erase(it);
 
     if (plugin) {
-        MAGDA_ADSR_AUDIO_LOG("follower-tap removed sourceTrack=" << sourceTrackId);
         plugin->deleteFromParent();
     }
 }
