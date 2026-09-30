@@ -12,6 +12,9 @@ Open audio settings from **Settings > Audio Settings**. The dialog is organised 
 !!! tip
     MAGDA automatically optimizes buffer sizes when switching views: Live mode uses the lowest latency, while Mix and Arrange modes use larger buffers for stability.
 
+!!! note "Silence after changing the sample rate"
+    Many audio interfaces mute their outputs for a few seconds after a sample rate change while they re-sync their clock, even after the new rate is shown. Anything played in that window is lost, the metronome included, and the same happens with any other app on that interface. Wait a few seconds after switching before you press play or record.
+
 ## Channel Configuration
 
 - **Active output channels** — Choose which output channels to use (stereo pair or multi-channel)
