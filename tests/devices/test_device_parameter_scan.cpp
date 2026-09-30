@@ -79,9 +79,8 @@ const bool scanTestPackRegistered = audio::registerDevicePack(registerScanTestPa
 
 TEST_CASE("A MAGDA device is scanned off the catalog, with no engine",
           "[device-parameter-scan][2601]") {
-    // Nothing here starts an engine or opens an Edit: the Configure Parameters
-    // dialog used to need the fork's Edit for this, and the native engine has
-    // none, so every MAGDA device fell back to mock parameters there.
+    // Nothing here starts an engine: the Configure Parameters dialog scans the
+    // catalog directly.
     const auto scanned = magda::scanDeviceParameters("arpeggiator");
     REQUIRE_FALSE(scanned.empty());
 
@@ -90,8 +89,7 @@ TEST_CASE("A MAGDA device is scanned off the catalog, with no engine",
     CHECK(octaves->stableId == "octaves");
 
     // The device's own range, not the 0..1 the host wraps every one of its
-    // parameters in -- which is what a scan through the fork's automatable
-    // list reported.
+    // parameters in.
     CHECK(octaves->rangeMin == 1.0f);
     CHECK(octaves->rangeMax == 4.0f);
 }

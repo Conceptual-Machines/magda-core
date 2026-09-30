@@ -10,8 +10,7 @@
 #include "magda/daw/core/TrackManager.hpp"
 
 // A runtime Faust effect's audio sidechain key, declared by its source and fed through
-// DeviceProcessContext::sidechain as the native engine feeds it (#2329; #2556, ported
-// from the fork's suite).
+// DeviceProcessContext::sidechain as the native engine feeds it (#2329; #2556).
 
 namespace {
 

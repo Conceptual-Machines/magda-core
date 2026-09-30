@@ -7,16 +7,14 @@
 #include "magda/daw/audio/plugins/ArpeggiatorPlugin.hpp"
 #include "magda/daw/audio/plugins/engine/EngineMagdaDevice.hpp"
 
-// The panic flag through both adapters (#2418).
+// The panic flag through the engine adapter (#2418).
 //
-// A device asks one question -- DeviceMidiInput::isAllNotesOff -- and until now
-// only one host answered it: the fork carries the flag on its MIDI container,
-// the engine's juce::MidiBuffer has nowhere to put it, so every device on the
-// native engine read false and every setAllNotesOff() was dropped.
+// A device asks one question -- DeviceMidiInput::isAllNotesOff. The engine's
+// juce::MidiBuffer has nowhere to carry the flag, so the adapter passes it
+// beside the port in each direction.
 //
 // The arpeggiator is the device that acts on it (#2413): it releases what it is
-// sounding and passes the panic on. Same device, same discontinuity, driven
-// through each adapter, so the two answers can be compared rather than assumed.
+// sounding and passes the panic on.
 
 namespace {
 
@@ -26,10 +24,7 @@ namespace adapter = magda::daw::audio::engine_adapter;
 constexpr double kSampleRate = 44100.0;
 constexpr int kBlockSize = 64;
 
-/// What the fork's leg reports for a block whose input carried @p panic: the
-/// flag left on the buffer the host reads back.
-
-/// The same question of the engine's leg: the flag left beside the port.
+/// The flag left beside the port for a block whose input carried @p panic.
 bool engineLegAnswer(bool panic) {
     adapter::EngineMagdaDevice hosted(std::make_unique<audio::ArpeggiatorPlugin>(),
                                       /*offlineRender=*/false);

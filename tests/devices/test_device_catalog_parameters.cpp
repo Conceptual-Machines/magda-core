@@ -21,10 +21,8 @@ namespace ds = magda::device_state;
 namespace hydration = magda::daw::audio::device_state_hydration;
 
 // ============================================================================
-// #2613 - the model carries a MAGDA device's parameters whichever engine
-// renders. Only the fork ever filled the array, off a plugin in its Edit, so a
-// device added under the native engine had none and every write to one was
-// dropped for want of an entry to land on.
+// #2613 - the model carries a MAGDA device's parameters, so a write to one
+// always has an entry to land on.
 // ============================================================================
 
 namespace {

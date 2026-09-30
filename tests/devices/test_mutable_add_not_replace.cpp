@@ -10,8 +10,8 @@
 #include "magda/daw/core/ParameterUtils.hpp"
 
 // The Mutable instruments add their signal to the buffer they are handed rather than
-// replace it (#2370), driven as the native engine drives them (#2556, ported from the
-// fork's suite). A pre-filled buffer stands in for an audio clip ahead on the chain.
+// replace it (#2370), driven as the native engine drives them (#2556). A pre-filled
+// buffer stands in for an audio clip ahead on the chain.
 
 namespace {
 

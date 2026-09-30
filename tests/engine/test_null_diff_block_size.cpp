@@ -90,9 +90,7 @@
  * rule and the comparison together, each because the other looked like it had
  * the case covered.
  *
- * It runs in the model-only target because the native engine needs no Edit, and
- * the incumbent is not party to this claim: Tracktion owes nobody block-size
- * invariance and could not be fixed here if it did.
+ * It runs in the model-only target because the native engine needs no Edit.
  */
 
 using namespace magda;
@@ -178,13 +176,10 @@ struct GateResult {
 
 /// What the engine could not do in @p rendered, beyond what @p value declared.
 ///
-/// The same rule the runner applies, and this file needs it more than the runner
-/// does: the runner compares a native render against the incumbent, where a
-/// device the engine did not build shows up as a residual. This compares native
-/// renders against each other, and a passthrough substituted for a plugin is
-/// perfectly block-size invariant. Checking only `failure` would certify exactly
-/// that -- a project held to bit identity across every size without the plugin
-/// ever having run.
+/// The same rule the runner applies. Renders are compared against each other
+/// here, and a passthrough substituted for a plugin is perfectly block-size
+/// invariant, so checking only `failure` would certify a project held to bit
+/// identity across every size without the plugin ever having run.
 std::string undeclaredDiagnostic(const Case& value, const NativeRender& rendered) {
     auto diagnostics = rendered.diagnostics;
 
@@ -434,8 +429,7 @@ TEST_CASE("Every project renders the same audio at 64, 512 and 4096", "[nulldiff
         // A case that asserts nothing about its audio renders none to compare:
         // the four MIDI-only cases carry a device that records what arrives
         // instead of sounding. What block size does to a stream of captured
-        // events is the runner's question, asked of both engines, not this
-        // one's.
+        // events is the runner's question, not this one's.
         //
         // Keyed on the tier and not on capturesMidi(), which answers a
         // different question. Comparing MIDI streams and asserting nothing

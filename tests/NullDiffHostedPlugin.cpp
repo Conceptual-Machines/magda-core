@@ -67,7 +67,7 @@ bool roleProducesMidi(HostedRole role) {
 }
 
 /// How many channels of chain audio the plugin reads, and how many it writes.
-/// An instrument reads none: both engines route audio around one rather than
+/// An instrument reads none: the engine routes audio around one rather than
 /// into it.
 int roleInputChannels(HostedRole role) {
     switch (role) {
@@ -400,16 +400,14 @@ class HostedPlugin final : public juce::AudioPluginInstance {
 };
 
 /**
- * @brief The format that makes those instances, as far as either engine knows.
+ * @brief The format that makes those instances, as far as the engine knows.
  *
  * It scans nothing and finds nothing on disk, which is the whole point: what it
  * publishes is in the binary, so a case that hosts one of these runs on a
  * machine with no plugins installed and on CI, where every real plugin is
  * absent.
  *
- * Creation is synchronous, and it says so. The fork asks a format whether it
- * needs an unblocked message thread and takes the async path when it does
- * (ExternalPlugin::requiresAsyncInstantiation), which would leave a leg
+ * Creation is synchronous, and it says so: an async path would leave the leg
  * rendering a project whose plugins had not arrived yet.
  */
 class HostedFormat final : public juce::AudioPluginFormat {

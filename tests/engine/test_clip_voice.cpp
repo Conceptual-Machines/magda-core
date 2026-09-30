@@ -584,7 +584,7 @@ TEST_CASE("A clip plays at its own gain and pan", "[engine][clip][voice]") {
 
     rig.start(300, 100);
 
-    // The incumbent's law: linear, and hotter on one side rather than quieter
+    // The pan law: linear, and hotter on one side rather than quieter
     // on the other, because a bounce has to match what was heard.
     const auto gain = juce::Decibels::decibelsToGain(-6.0f);
     REQUIRE(rig.at(0, 0) == approx(gain - 0.5f * gain));
@@ -1137,7 +1137,7 @@ TEST_CASE("A track with nothing published renders silence rather than the buffer
         REQUIRE(dirty.getSample(0, sample) == approx(0.0f));
 }
 
-TEST_CASE("The fade curves are the shapes the incumbent draws", "[engine][clip][fades]") {
+TEST_CASE("The fade curves are the shapes earlier versions drew", "[engine][clip][fades]") {
     using magda::FadeCurve;
     using magda::engine::fadeGain;
 

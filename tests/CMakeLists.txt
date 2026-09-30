@@ -582,7 +582,7 @@ set(TEST_SOURCES
     # An external plugin under a Device op (#2241): the adapter over
     # juce::AudioPluginInstance, against a plugin written in the test rather
     # than one that happens to be installed. What a real plugin is for is the
-    # corpus (#2175), where both engines run the same one.
+    # corpus (#2175), where the engine runs the same one.
     list(APPEND TEST_SOURCES engine/test_engine_external_device.cpp)
 
     # Who an asynchronous plugin load belongs to (#2261): the runtime-owned
@@ -591,8 +591,7 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES engine/test_control_executor.cpp)
 
     # The block-size invariance gate (#2078). Model-only for the same reason the
-    # native leg is: the claim is the native engine's alone, and the incumbent
-    # owes nobody block-size invariance. In CI rather than in a nightly, because
+    # native leg is: the claim is the native engine's alone. In CI rather than in a nightly, because
     # a gate that runs after the merge is a report rather than a gate.
     list(APPEND TEST_SOURCES engine/test_null_diff_block_size.cpp)
 

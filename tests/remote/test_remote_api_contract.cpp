@@ -1506,10 +1506,10 @@ TEST_CASE("devices.listParameters projects real units and customization flags",
 
 TEST_CASE("configured external parameters project model values into display units",
           "[remote-api][contract]") {
-    // The realistic external-override shape: the plugin's TE parameter runs
-    // 0..1 and keeps storing TE-native values, while a saved config gave the
+    // The realistic external-override shape: the plugin's parameter runs
+    // 0..1 and keeps storing normalized values, while a saved config gave the
     // parameter a real display range. Its explicit convention keeps the model
-    // in normalized TE-native values even when no live display provider is
+    // in normalized values even when no live display provider is
     // available (the shape of a parameter mirrored into project state).
     DeviceInfo device;
     device.format = PluginFormat::VST3;
@@ -1517,8 +1517,8 @@ TEST_CASE("configured external parameters project model values into display unit
     gain.teMinValue = 0.0f;
     gain.teMaxValue = 1.0f;
     gain.valueConvention = ParameterValueConvention::Normalized;
-    gain.currentValue = 0.75f;  // model / TE domain
-    gain.defaultValue = 0.5f;   // model / TE domain
+    gain.currentValue = 0.75f;  // model domain
+    gain.defaultValue = 0.5f;   // model domain
     device.parameters.push_back(gain);
 
     const auto parameters = makeDeviceParameterDtos(device, {});

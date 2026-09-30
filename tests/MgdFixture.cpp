@@ -79,7 +79,7 @@ using Declarations = std::map<juce::String, const FixtureSource*>;
  *
  * Both directions. A project source the manifest does not name is the failure
  * this rig is built around: its path points at a machine that is gone, so the
- * case would reach a leg with a source that reads nothing, and nothing nulls
+ * case would reach the render with a source that reads nothing, and nothing nulls
  * against nothing. A manifest entry no source claims is refused for the reason
  * the DAWproject loss table refuses one -- a declaration that has stopped being
  * true is worse than no declaration, because it reads like coverage.
@@ -117,7 +117,7 @@ std::string matchSources(const MgdFixture& fixture, const std::vector<Source*>& 
  * scratch directory is readable by whoever is debugging a case.
  *
  * Read back rather than trusted. The manifest's rate and duration are what the
- * material was asked for; what the file is is what a leg will play, and a spec
+ * material was asked for; what the file is is what the render will play, and a spec
  * whose duration does not survive the writer is a case rendering something
  * other than what it declared.
  */
@@ -226,13 +226,8 @@ void everyDevice(const TrackInfo& track, std::vector<const DeviceInfo*>& out) {
  * @brief Why this project cannot be a fixture here, if it hosts a plugin it did
  *        not declare (#2175).
  *
- * A plugin in a project used to be an outright refusal, and while nothing hosted
- * a VST3 in the engine it was the right one: without the plugin installed both
- * legs render a passthrough and pass by agreeing about nothing, and with it
- * installed the incumbent hosted it and the native leg could not, so the verdict
- * was a fact about the machine either way. #1893 answered the second half and
- * the runner's absent-plugin gate answers the first, so what is left here is the
- * declaration.
+ * The runner's absent-plugin gate covers a plugin that is not installed, so what
+ * is checked here is the declaration.
  *
  * Both directions, like the sources beside it. A plugin the manifest does not
  * name is refused, because a project acquires one the day somebody replaces its
@@ -440,8 +435,8 @@ std::string stageFixture(const MgdFixture& fixture, const juce::File& scratchDir
     // debugging a case.
     //
     // Read back rather than trusted. The manifest's rate and duration are what
-    // the material was asked for; what the file is is what a leg will play, and
-    // a spec whose duration does not survive the writer is a case rendering
+    // the material was asked for; what the file is is what the render will
+    // play, and a spec whose duration does not survive the writer is a case rendering
     // something other than what it declared.
     return writeAndRepoint(sources, declared, materialDirectory, written);
 }
@@ -515,10 +510,8 @@ FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDire
         result.value.master = *staged.masterTrack;
     result.value.clips = std::move(staged.clips);
 
-    // The app relaunches a track's active session clip on play
-    // (TracktionEngineWrapper::onTransportPlay ->
-    // SessionClipScheduler::relaunchActiveClips), so a render of the project as
-    // saved launches it too (#2485).
+    // The app relaunches a track's active session clip on play, so a render of the
+    // project as saved launches it too (#2485).
     for (const auto& track : result.value.tracks) {
         if (track.activeSessionClipId == INVALID_CLIP_ID)
             continue;

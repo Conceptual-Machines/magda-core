@@ -1380,8 +1380,8 @@ ReplaceDeviceByPathCommand::ReplaceDeviceByPathCommand(
 
 void ReplaceDeviceByPathCommand::execute() {
     auto& tm = TrackManager::getInstance();
-    const auto* incumbent = tm.getDeviceInChainByPath(devicePath_);
-    if (incumbent == nullptr) {
+    const auto* deviceInfo = tm.getDeviceInChainByPath(devicePath_);
+    if (deviceInfo == nullptr) {
         executed_ = false;
         return;
     }
@@ -1396,7 +1396,7 @@ void ReplaceDeviceByPathCommand::execute() {
     };
 
     // Redo puts back the exact instance the first execution materialised. Put
-    // it beside the incumbent before taking the incumbent out, so an insertion
+    // it beside the replaced device before taking it out, so an insertion
     // refusal cannot turn replacement into deletion.
     if (captured_) {
         if (!insertMaterialised(replacementPath_, materialisedReplacement_)) {
@@ -1411,12 +1411,12 @@ void ReplaceDeviceByPathCommand::execute() {
     }
 
     PluginService::getInstance().capturePluginStateAt(devicePath_);
-    incumbent = tm.getDeviceInChainByPath(devicePath_);
-    if (incumbent == nullptr) {
+    deviceInfo = tm.getDeviceInChainByPath(devicePath_);
+    if (deviceInfo == nullptr) {
         executed_ = false;
         return;
     }
-    previousDevice_ = *incumbent;
+    previousDevice_ = *deviceInfo;
     insertIndex_ = tm.getChainElementIndex(devicePath_);
     if (insertIndex_ < 0) {
         executed_ = false;

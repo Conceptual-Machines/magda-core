@@ -28,16 +28,9 @@
  * @file test_engine_device_layer.cpp
  * @brief The devices MAGDA ships, running under the native engine (#2174).
  *
- * The corpus knew one device until this slice, and it was written for the
- * corpus: a gain implemented twice, once in each leg. What that could prove was
- * that the two legs agree about a gain. What it could not is that either engine
- * runs a device somebody would find in a project, which is what a real project
- * is made of.
- *
- * These are the engine's half, on its own. They ask the two catalogs the app
- * asks, they build what those catalogs return, and they run it. What the two
- * hosts do with the same device is the corpus's question and is asked where
- * both legs are (magda_juce_tests).
+ * These ask the two catalogs the app asks, build what those catalogs return,
+ * and run it, so the engine is tested on devices somebody would find in a
+ * project.
  */
 
 namespace {
@@ -284,8 +277,8 @@ TEST_CASE("the engine can run every device that has moved to the SDK", "[engine]
     // does not have to remember to come back here: what the factory answers is
     // exactly what the catalog carries, in both directions. A device with no
     // createDevice is one the engine cannot run, and saying so is the point --
-    // the alternative is a stand-in that passes signal while the incumbent runs
-    // the real thing.
+    // the alternative is a stand-in that passes signal in place of the real
+    // thing.
     int sdkDevices = 0;
 
     for (const auto* spec : magda::daw::audio::getAllInternalPluginSpecs()) {
@@ -958,7 +951,7 @@ TEST_CASE("two note-ons of one pitch inside one sample keep their own fractions"
 TEST_CASE("a device that declares no MIDI output cannot emit any", "[engine][devices][2347]") {
     // The plan may still give the op a MIDI output port (the model's view of the
     // device, not the device's own). What an undeclared emitter writes is
-    // dropped, as the Tracktion adapter drops it.
+    // dropped.
     auto emitting = std::make_unique<EmittingDevice>(3, 16, /*declared=*/false);
     adapter::EngineMagdaDevice hosted(std::move(emitting), /*offlineRender=*/false);
 

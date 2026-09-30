@@ -12,7 +12,7 @@
  *
  * Every case here is a sequence of blocks fed to a handle, which is what makes
  * this the one part of #1894 that is fully deterministic offline. Nothing is
- * rendered and nothing is compared against the fork: what is asserted is where
+ * rendered: what is asserted is where
  * a launch lands and what the handle says it has played, both of which are
  * numbers rather than audio.
  */

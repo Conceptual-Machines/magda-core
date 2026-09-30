@@ -16,7 +16,7 @@
  * nothing, which is the failure mode the whole slice is arranged against.
  *
  * These run in the model-only target because the corpus is model values. What
- * the two engines make of them is the runner's business.
+ * the engine makes of them is the runner's business.
  */
 
 using namespace magda;
@@ -142,7 +142,7 @@ TEST_CASE("Every allowance carries a mechanism", "[nulldiff][corpus]") {
                             value.declaredMidiShiftBeats != 0.0 ||
                             // A raised block-size epsilon is the same kind of
                             // thing, against the engine's own second render
-                            // rather than against the incumbent (#2078). The
+                            // (#2078). The
                             // gate itself refuses one on a project with no
                             // plugin to pin it on; this is the other half, so
                             // that a project which does host one still has to
@@ -199,8 +199,8 @@ TEST_CASE("Every case says what it covers and what it plays", "[nulldiff][corpus
 
         // Every clip lands on a track the case declares. A clip pointing at a
         // track that is not there would be dropped by the snapshot and skipped
-        // by the sync, so both legs would render the same silence and the case
-        // would pass by covering nothing.
+        // by the sync, so the render would be silence and the case would pass
+        // by covering nothing.
         for (const auto& clip : value.clips) {
             const auto known =
                 std::any_of(value.tracks.begin(), value.tracks.end(),
@@ -227,13 +227,13 @@ TEST_CASE("Every case says what it covers and what it plays", "[nulldiff][corpus
             CHECK(source.durationSeconds > 0.0);
         }
 
-        // Any track, not the first one. Both legs put a capture on every track
-        // whose chain consumes MIDI, so an instrument sitting behind an audio
-        // track is a project they handle; a check that looked only at the front
-        // would fail it here before either leg got the chance to render it.
+        // Any track, not the first one. A capture goes on every track whose chain
+        // consumes MIDI, so an instrument sitting behind an audio track is a
+        // project the leg handles; a check that looked only at the front would
+        // fail it here before the leg got the chance to render it.
         //
-        // Asked through the compiler's own predicate for the same reason the
-        // incumbent leg asks through it: what consumes MIDI has one definition.
+        // Asked through the compiler's own predicate, so what consumes MIDI has
+        // one definition.
         if (value.capturesMidi())
             CHECK(std::any_of(value.tracks.begin(), value.tracks.end(), [](const TrackInfo& track) {
                 return magda::engine::chainConsumesMidi(track);
@@ -243,8 +243,8 @@ TEST_CASE("Every case says what it covers and what it plays", "[nulldiff][corpus
 
 TEST_CASE("Every lane and every link names something the project has", "[nulldiff][corpus]") {
     // The way a parameter case asserts nothing is for its target to miss: the
-    // table drops the lane or the link with a diagnostic, both legs render the
-    // same unmodulated audio, and the case passes having compared nothing.
+    // table drops the lane or the link with a diagnostic, the leg renders
+    // unmodulated audio, and the case passes having compared nothing.
     //
     // The runner catches that when the corpus is rendered. This catches it in
     // the model-only target, in a second, without an Edit.
@@ -331,10 +331,9 @@ TEST_CASE("Every lane and every link names something the project has", "[nulldif
 }
 
 TEST_CASE("Render cases change tempo in steps rather than ramps", "[nulldiff][corpus]") {
-    // A ramped tempo is the one place the two tempo maps are known to be able
-    // to disagree, because the engine subdivides where the fork integrates. A
-    // render case built on one would report that as a clip bug. Ramps are
-    // pinned in the tempo-map comparison, where the answer is a number.
+    // A ramped tempo would make expected clip positions depend on ramp
+    // interpolation. Ramps are pinned in the tempo-map comparison, where the
+    // answer is a number.
     for (const auto& value : sharedCorpus(scratch())) {
         INFO(value.name);
         REQUIRE_FALSE(value.tempo.empty());
@@ -345,9 +344,8 @@ TEST_CASE("Render cases change tempo in steps rather than ramps", "[nulldiff][co
     }
 }
 
-TEST_CASE("A grooving case carries the template both engines will read", "[nulldiff][corpus]") {
-    // One XML string feeds both legs, which is what makes "the same groove" a
-    // fact rather than two parsers agreeing.
+TEST_CASE("A grooving case carries the template the engine will read", "[nulldiff][corpus]") {
+    // One XML string is the single source of the groove the case reads.
     for (const auto& value : sharedCorpus(scratch())) {
         auto namesAGroove = false;
         for (const auto& clip : value.clips)

@@ -246,7 +246,7 @@ TEST_CASE("A drawn cycle is read through the model's own curve", "[engine][mod][
     LfoSettings settings = freeRunning(1.0f, LFOWaveform::Custom);
 
     // A step and a ramp, which is a shape the built-in waveforms cannot make
-    // and which the fork reads through the same function.
+    // and which the custom waveform reads.
     std::vector<CurvePointData> curve(3);
     curve[0] = CurvePointData{0.0f, 0.0f};
     curve[0].curveType = 2;  // Step: holds until the next point
@@ -509,9 +509,7 @@ TEST_CASE("A tempo-synced LFO's period is a fraction of a bar", "[engine][mod][l
     }
 
     SECTION("in six eight a bar is three beats, not six") {
-        // The fork used to count the numerator in quarter notes, so a "1 Bar"
-        // modifier here ran two written bars long. Both engines read the
-        // denominator now (#2128).
+        // The denominator sets the beat length (#2128).
         LfoState state;
         LfoSettings settings;
         settings.wave = LFOWaveform::Saw;
@@ -739,9 +737,8 @@ TEST_CASE("A cross-track LFO ignores the track it modulates", "[engine][mod][lfo
     }
 
     SECTION("nor does one that would otherwise gate it") {
-        // The fork prevents this pairing by setting its two flags apart rather
-        // than by refusing it. Refusing it here is what keeps the destination
-        // track's notes off a cross-track LFO's gate whatever sets the flags.
+        // Refusing the pairing is what keeps the destination track's notes off
+        // a cross-track LFO's gate whatever sets the flags.
         auto gating = fixture.table;
         gating.modifiers[0].lfo.gateOnTrigger = true;
 
@@ -774,7 +771,7 @@ TEST_CASE("A forced zero stands in for the gap a gated retrigger leaves",
 
     // The trigger lands inside a block whose parameters are already resolved,
     // so the gap is published on the next one and the shape starts over on the
-    // one after: the fork's own sequence, late by the block the trigger is.
+    // one after: late by the block the trigger is.
     harness.mods.trigger(fixture.modifier, fixture.table, /*forceZero=*/true);
 
     harness.run(fixture.table, block);
@@ -925,8 +922,8 @@ TEST_CASE("A modifier's settings reach the table", "[engine][mod][lfo][table]") 
     CHECK(modifier.lfo.oneShot);
     CHECK(modifier.lfo.invertOutput);
 
-    // Tempo sync on its own locks the LFO to the timeline, which is the fork's
-    // own folding of trigger mode and sync flag into one sync type.
+    // Tempo sync on its own locks the LFO to the timeline: trigger mode and sync
+    // flag fold into one sync type.
     CHECK(modifier.lfo.sync == ModSync::Transport);
     CHECK(table.modCurveFor(0).size() == 2);
 }
@@ -944,7 +941,7 @@ TEST_CASE("A modifier the model has switched off has no links at all",
 
     // A bipolar link reading an output of zero would push its parameter down
     // by the link's own depth, which is a switched-off modifier doing
-    // something. The fork creates no modifier for one, so nothing contributes.
+    // something. No modifier is created for one, so nothing contributes.
     CHECK(table.linksFor(param).empty());
 
     Harness harness(table);

@@ -10,10 +10,8 @@
 
 // The panic flag beside a MIDI port (#2418).
 //
-// The fork carries all-notes-off on its MIDI container and raises it per plugin
-// on a playhead jump or a track it just muted (tracktion_PluginNode.cpp). A
-// juce::MidiBuffer has nowhere to put it, so the engine carries it beside the
-// port: seeded on the way into a device, read back on the way out, and passed
+// A juce::MidiBuffer has nowhere to carry all-notes-off, so the engine carries
+// it beside the port: seeded on the way into a device, read back on the way out, and passed
 // along whatever the port feeds.
 
 using magda::TrackId;
@@ -559,9 +557,8 @@ TEST_CASE("a device forwards its panic to the next device in the chain", "[engin
 }
 
 TEST_CASE("a device that says nothing drops the panic it was handed", "[engine][exec][2418]") {
-    // What the fork does with its fresh output buffer: a device producing MIDI
-    // produces the flag with it, so passing one on is a decision rather than
-    // the default.
+    // A device producing MIDI produces the flag with it, so passing one on is a
+    // decision rather than the default.
     ChainHarness harness;
     harness.prepare();
 
@@ -611,11 +608,9 @@ TEST_CASE("a merge with nothing to report carries no panic", "[engine][exec][241
 TEST_CASE("muting a track raises no panic on its devices", "[engine][exec][2418]") {
     // MAGDA's mute is a gain with the track still rendering, so its meters stay
     // live and nothing is withheld from a device: there is nothing for one to
-    // recover from. The fork raises a panic here because it stops the track's
-    // contents; carrying the flag without carrying that behaviour would tell a
-    // device to drop a chord nothing is going to chase back, and neither the
-    // mute nor the unmute leaves the block discontinuous for playLane to chase
-    // on (#2418 review).
+    // recover from. Raising a panic here would tell a device to drop a chord
+    // nothing is going to chase back, and neither the mute nor the unmute
+    // leaves the block discontinuous for playLane to chase on (#2418 review).
     auto track = magda::test::makeTrack(1);
     auto instrument = magda::DeviceInfo{};
     instrument.id = 7;

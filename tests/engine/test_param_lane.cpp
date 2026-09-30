@@ -116,11 +116,9 @@ TEST_CASE("An absolute lane covers the whole block without saying so", "[engine]
 }
 
 TEST_CASE("A host write under an active modifier is not dropped", "[engine][param]") {
-    // The bug class the two lanes exist to make impossible. In the incumbent
-    // engine a parameter has one value and several writers, so a knob move
-    // under a running LFO is overwritten by the LFO's next write and the user
-    // watches the knob spring back. Here the write lands in a lane the
-    // modulation never touches.
+    // The bug class the two lanes exist to make impossible: a knob move under a
+    // running LFO must not be overwritten by the LFO's next write. The write
+    // lands in a lane the modulation never touches.
     OneParam table{256};
 
     const std::vector<ModContribution> lfo{{/*value=*/1.0f, /*amount=*/0.2f, /*bipolar=*/false}};
@@ -204,8 +202,7 @@ TEST_CASE("A device that reads once for the block gets one segment", "[engine][p
     ParamSources sources;
     sources.automation = lane;
 
-    // Not opted in: the value at the top of the block, held, which is what the
-    // incumbent engine's parameters take at a block boundary.
+    // Not opted in: the value at the top of the block, held.
     const auto blockRate = table.resolve(percentSpec(), sources);
     REQUIRE(blockRate.numSegments() == 1);
     CHECK(blockRate.isConstant());
@@ -443,9 +440,8 @@ TEST_CASE("A spec carries the model parameter's domain", "[engine][param]") {
     CHECK(spec.domain.minValue == approx(20.0f));
     CHECK(spec.domain.maxValue == approx(20000.0f));
     CHECK_FALSE(spec.modulatable);
-    // Nothing opts into segment accuracy during the port: the incumbent engine
-    // settles a parameter at the block boundary, and a device resolving inside
-    // the block would differ from it on every automated parameter.
+    // Nothing opts into segment accuracy: a parameter settles at the block
+    // boundary.
     CHECK_FALSE(spec.segmentAccurate);
 
     OneParam table{32};

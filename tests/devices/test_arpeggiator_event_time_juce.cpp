@@ -8,13 +8,11 @@
 #include "magda/daw/audio/plugins/ArpeggiatorPlugin.hpp"
 #include "magda/daw/audio/plugins/engine/EngineMagdaDevice.hpp"
 
-// Input read at event time, through both adapters (#2415).
+// Input read at event time through the engine adapter (#2415).
 //
 // The arp closes the note it is sounding when a panic reaches it. Where that
 // note-off lands is the question: at the top of the block, which is a whole
-// block early, or at the panic. The two hosts stamp their MIDI differently --
-// the fork carries seconds on its container, the engine's ports count samples
-// -- so the same phrase is driven through each and the answers compared.
+// block early, or at the panic. The engine's ports count samples.
 
 namespace {
 
@@ -32,8 +30,6 @@ juce::MidiMessage noteOn(int note) {
 
 /// Where the arp put the note-off closing what it was sounding, in samples from
 /// the start of the block that carried the panic, or nothing if it sent none.
-
-/// The same phrase through the engine's adapter, whose ports carry samples.
 std::optional<int> engineLegNoteOffSample() {
     adapter::EngineMagdaDevice hosted(std::make_unique<audio::ArpeggiatorPlugin>(),
                                       /*offlineRender=*/false);

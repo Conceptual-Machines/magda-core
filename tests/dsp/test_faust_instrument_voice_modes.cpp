@@ -11,8 +11,7 @@
 #include "magda/daw/audio/plugins/engine/EngineMagdaDevice.hpp"
 
 // The runtime Faust instrument's host-owned voice allocation (Poly, Mono, Legato, glide,
-// pitch bend, panic), driven as the native engine drives the device (#2556, ported from
-// the fork's suite).
+// pitch bend, panic), driven as the native engine drives the device (#2556).
 
 namespace {
 
@@ -282,7 +281,7 @@ TEST_CASE("The host's panic lets go of what is sounding, in Poly and Mono (#2722
     }
 }
 
-TEST_CASE("Both engines follow the device sample rate, not the provisional one",
+TEST_CASE("The engine follows the device sample rate, not the provisional one",
           "[faust][voice-modes][2556]") {
     // The constructor compiles at 44.1 kHz, so only another rate tells the two apart.
     constexpr double kDeviceRate = 48000.0;

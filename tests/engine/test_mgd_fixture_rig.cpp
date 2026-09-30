@@ -21,8 +21,8 @@
  *
  * That last one is the reason the rig exists in this shape. Every path in a
  * saved project points at a machine that is gone, so a source nobody stood in
- * for reaches a leg as a file that is not there, renders silence, and nulls
- * against the other leg's silence at the ordinary floor. A corpus cannot see
+ * for reaches the render as a file that is not there, renders silence, and
+ * nulls against silence at the ordinary floor. A corpus cannot see
  * that in its own report: it looks exactly like a case that passed.
  */
 
@@ -159,7 +159,7 @@ TEST_CASE("Every source reads back as what the manifest asked for", "[nulldiff][
 TEST_CASE("Two fixtures held at once both stay resolvable", "[nulldiff][fixture]") {
     const PooledSourcesUnwind unwind;
 
-    // A Case carries source ids and nothing else, and the legs resolve them
+    // A Case carries source ids and nothing else, and the render resolves them
     // through the global pool. The app's install clears that pool and resets its
     // allocator to one, which is right for an app with one project open: load a
     // second fixture and the first would come back holding ids that now name the
@@ -300,8 +300,7 @@ TEST_CASE("A source the manifest does not name fails rather than passing quietly
     // The failure this rig is built around, provoked rather than described: drop
     // one declaration and the load has to refuse. Without the check the case
     // would still be produced, that source would point at a volume this machine
-    // has never had, and the clip reading it would render silence against the
-    // other leg's silence.
+    // has never had, and the clip reading it would render silence.
     REQUIRE_FALSE(mgdFixtures().front().sources.empty());
 
     auto starved = mgdFixtures().front();
@@ -319,7 +318,7 @@ TEST_CASE("Two project sources that share a name are refused", "[nulldiff][fixtu
     // declaration, one written file, and -- because the source install dedups by
     // canonical path -- one pooled source. Two clips would come out playing the
     // same sound and the case would render a project that never existed, at the
-    // ordinary floor, against an incumbent doing the same thing.
+    // ordinary floor.
     //
     // Checked against paths rather than through a load, because provoking it
     // through one would mean checking in a project built to break the rig, and
@@ -341,8 +340,7 @@ TEST_CASE("Two project sources that share a name are refused", "[nulldiff][fixtu
     // Case folded, because whether two names are one file belongs to the
     // filesystem the stand-ins are written to and macOS and Windows both say
     // yes. Compared exactly, this pair passed the guard and then wrote the
-    // second file over the first: two sources, one sound, and a null against an
-    // incumbent doing the same thing.
+    // second file over the first: two sources and one sound.
     CHECK_FALSE(refuseIndistinguishableSources({"/packs/a/Loop.wav", "/packs/b/loop.wav"}).empty());
     CHECK_FALSE(refuseIndistinguishableSources({"/packs/a/LOOP.WAV", "/packs/b/loop.wav"}).empty());
 

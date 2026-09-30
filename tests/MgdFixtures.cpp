@@ -43,7 +43,7 @@
  *
  * Every path in these files points at a machine that is gone, so every source
  * is a judgement rather than a recovery. The judgement is the corpus's usual
- * one (#2040): what stands between the two engines on this source's path.
+ * one (#2040): what the render asserts on this source's path.
  *
  * A clip that plays at its own rate and lands where it was placed wants
  * impulses, because placement is the whole assertion and there is nothing to
@@ -185,9 +185,9 @@ std::vector<MgdFixture> build() {
 
         // The grid's pads no longer need declaring. A Drum Grid fills every pad
         // with a magdasampler when it restores (DrumGridPads.cpp); until #2271
-        // that device had no SDK form, so the native leg substituted a
-        // passthrough for each pad and said so. The sampler is a MagdaDevice
-        // now, so the pads build and no diagnostic is expected.
+        // that device had no SDK form, so each pad was a passthrough with a
+        // diagnostic. The sampler is a MagdaDevice now, so the pads build and no
+        // diagnostic is expected.
 
         // Impulses on both: neither clip is stretched -- the source's own bpm is
         // the project's -- so where each sample lands is the whole assertion.
@@ -213,9 +213,8 @@ std::vector<MgdFixture> build() {
         // One audio clip on one track at 172 bpm, and nothing else at all: no
         // devices, no automation, no master chain. The simplest real project
         // there is, and it is here because the tempo is not the corpus default.
-        // Every code-built case renders at 120, so a beat that lands at a
-        // different second than the fork thinks it does would null across the
-        // whole of that corpus and show up here.
+        // Every code-built case renders at 120, so a tempo-dependent placement
+        // error would go unseen there and show up here.
         MgdFixture fixture;
         fixture.file = "legacy/projects/0.9.0-analysis.mgd";
         fixture.savedBy = "0.9.0-rc3-1-gde7a0b7c3";
@@ -225,7 +224,7 @@ std::vector<MgdFixture> build() {
 
         // Impulses: the clip's interpretation is unlocked and its own bpm is
         // the file's, so it plays at its own rate and where each impulse lands
-        // is what the two engines owe each other.
+        // is what the render asserts.
         fixture.sources = {
             {.fileName = "Sub Focus - Timewarp (Dimension Remix).wav",
              .material = impulsesFor(9.0, 0.25),
@@ -437,9 +436,9 @@ std::vector<MgdFixture> build() {
 
         // Which is why the liveness floor has to be here: with no tail to ask
         // about and no residual in this tier, every remaining check passes on
-        // silence. The quieter of the two legs peaks at +4 dBFS on this project,
-        // a float render of two tones through a repeat effect and a limiter; -40
-        // is far below that and far above anything a dead leg produces.
+        // silence. The render peaks at +4 dBFS on this project, a float render
+        // of two tones through a repeat effect and a limiter; -40 is far below
+        // that and far above anything a dead render produces.
         fixture.declaration.minPeakDb = -40.0;
 
         // Retrospect is an LV2 plugin behind a VST3 shell. Older JUCE builds
@@ -458,7 +457,7 @@ std::vector<MgdFixture> build() {
         // clips on the two unmuted tracks. The rest are the project's session
         // clips and its two muted tracks, and they are declared because the
         // manifest has to name every source the project references -- a source
-        // the manifest misses reaches a leg pointing at a path that does not
+        // the manifest misses reaches the render pointing at a path that does not
         // exist, renders silence, and silence nulls against silence.
         fixture.sources = {
             {.fileName = "mdh_drm120_touch_stp.wav",
@@ -526,17 +525,16 @@ std::vector<MgdFixture> build() {
         // here is the instrument sounding rather than a device left running.
         fixture.declaration.rendersPastItsMaterial = false;
 
-        // And with no tail asked, liveness is what stops a silent leg passing.
-        // Eight notes into a piano is not a quiet render on either engine.
+        // And with no tail asked, liveness is what stops a silent render passing.
+        // Eight notes into a piano is not a quiet render.
         fixture.declaration.minPeakDb = -40.0;
 
         fixture.declaration.mechanism =
             "a hosted Pianoteq, which is a physical model and settles from its own state";
 
         // Asserted beside the audio, and independent of it. What reaches the
-        // instrument is a fact both engines owe each other exactly, whatever
-        // either instrument then does with it, and it is the assertion that
-        // survives the plugin being entitled to its own sound.
+        // instrument is an exact fact, whatever the instrument then does with it,
+        // and it is the assertion that survives the plugin owning its own sound.
         fixture.declaration.compareMidiStreams = true;
 
         fixtures.push_back(std::move(fixture));

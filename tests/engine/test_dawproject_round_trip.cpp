@@ -31,13 +31,12 @@
  * ## Native against native
  *
  * This is a semantic cross-check, not a parity test. Both sides are the native
- * engine, the fork has no part in it, and the two models are supposed to be the
- * same model. So the bar is bit identity rather than a floor: there is no
- * mechanism by which one deterministic graph fed one timeline twice could
- * produce anything else, and a floor would let a real difference hide under it
- * until it grew. The corpus's tiers are about what stands between two different
- * engines and do not apply here; a Spectral case runs the same stretcher primed
- * the same way on both sides of this comparison, so it owes the same bits as
+ * engine, and the two models are supposed to be the same model. So the bar is
+ * bit identity rather than a floor: there is no mechanism by which one
+ * deterministic graph fed one timeline twice could produce anything else, and a
+ * floor would let a real difference hide under it until it grew. The corpus's
+ * tiers do not apply here; a Spectral case runs the same stretcher primed the
+ * same way on both sides of this comparison, so it owes the same bits as
  * everything else.
  *
  * ## Declared losses
@@ -99,7 +98,7 @@ std::string join(const std::vector<std::string>& parts) {
 std::string dumpFor(const Case& value) {
     engine::CompileOptions options;
 
-    // The same switch the native leg compiles under. A plan compared under
+    // The same switch the render compiles under. A plan compared under
     // different options from the one that is rendered would be pinning a graph
     // nothing plays.
     options.deviceMeters = false;

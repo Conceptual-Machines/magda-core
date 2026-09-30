@@ -15,8 +15,7 @@
  * this file chose is a file whose right answer is known exactly, and no
  * filesystem is involved in asking.
  *
- * The detector is the incumbent's, reproduced coefficient for coefficient, so
- * what is asserted here is what that algorithm does rather than what a better
+ * What is asserted here is what the algorithm does rather than what a better
  * one might: transients land on the attacks, quiet ones need sensitivity to be
  * found, and nothing survives closer together than the spacing rule allows.
  */
@@ -30,7 +29,7 @@ constexpr double kSampleRate = 44100.0;
 
 /// Half a millisecond, which is how far back a trigger is placed from where the
 /// differentiated envelope crossed the threshold. Rounded up, because the
-/// incumbent truncates after subtracting it rather than before: at 44100 the
+/// detector truncates after subtracting it rather than before: at 44100 the
 /// effective rewind is 23 samples, not 22.
 constexpr int kRewindSamples = 23;
 
@@ -150,7 +149,7 @@ TEST_CASE("Transients closer together than the spacing rule are thinned", "[engi
         // impulse over it for about 1400 samples, so an attack shuts the
         // detector for something closer to 80 ms. Worth knowing rather than
         // worth changing -- the spacing rule below is what actually decides
-        // what survives, and the incumbent has this property too.
+        // what survives.
         ClickReader reader({{44100}, {44100 + 1323}}, 200000);
 
         const auto transients = detectTransients(reader, {});

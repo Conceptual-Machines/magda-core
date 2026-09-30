@@ -349,7 +349,7 @@ Loss tempoMap() {
 }
 
 /// The table. Keyed by case name so that the corpus stays a description of what
-/// the two engines have to agree about, with nothing in it about a file format.
+/// a saved project has to keep, with nothing in it about a file format.
 /// A track's own modulation, which rides on TrackInfo rather than on its chain.
 ///
 /// Separate from internalDevices(): the chain is lost because the format has no
@@ -500,13 +500,14 @@ Loss deviceSidechain() {
 /// numbers and not the plugin's (#2246).
 Loss deviceWrapperMix() {
     return {.field = "DeviceInfo::wrapperParameters",
-            .reason = "the pair of levels in front of an external plugin belongs to the host "
-                      "rather than to the plugin: the fork injects it, MAGDA persists it, and "
-                      "the plugin has never heard of it. DAWproject carries a device as an "
-                      "identity and a blob of its own state, and neither has anywhere to put a "
-                      "number the plugin did not author. It comes back empty, which the engine "
-                      "reads as the pair's own default of fully wet -- so a project saved at "
-                      "40% wet returns as one that is not",
+            .reason =
+                "the pair of levels in front of an external plugin belongs to the host "
+                "rather than to the plugin: earlier versions injected it, MAGDA persists it, and "
+                "the plugin has never heard of it. DAWproject carries a device as an "
+                "identity and a blob of its own state, and neither has anywhere to put a "
+                "number the plugin did not author. It comes back empty, which the engine "
+                "reads as the pair's own default of fully wet -- so a project saved at "
+                "40% wet returns as one that is not",
             .restore = [](Case& imported, const Case& original) {
                 const auto sameMix = [](const DeviceInfo& device, const DeviceInfo& saved) {
                     if (device.wrapperParameters.size() != saved.wrapperParameters.size())
@@ -782,7 +783,7 @@ template <typename Id> class NameClaims {
 };
 
 /**
- * @brief Everything the imported clips play, as the native leg wants to be
+ * @brief Everything the imported clips play, as the native engine wants to be
  *        told it.
  *
  * Read back out of the pool rather than carried over from the original case.

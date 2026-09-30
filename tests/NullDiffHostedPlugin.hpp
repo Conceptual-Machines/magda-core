@@ -13,25 +13,20 @@
  * @brief The plugin the corpus hosts, and the model device that names it
  *        (#2246).
  *
- * Every other device in the corpus is written twice: once as a te::Plugin for
- * the incumbent leg and once as an SDK device for the native one, from a
- * contract that says what the two owe each other (NullDiffGain.hpp). An
- * external plugin is the one device that cannot be written twice, and that is
- * the whole reason these cases exist. Neither engine wrote it, neither can ask
- * anything of it, and both are reduced to handing it blocks and taking back
- * what it returns -- so what the two hosts do around the plugin is the entire
- * difference between them, and it is what a case here measures.
+ * Every other device in the corpus is an SDK device written from a contract
+ * (NullDiffGain.hpp). An external plugin cannot be: the engine did not write it,
+ * cannot ask anything of it, and is reduced to handing it blocks and taking back
+ * what it returns -- so what the host does around the plugin is what a case here
+ * measures.
  *
- * One implementation, two hosts. The instance below is created through the
- * ordinary path in both legs: a format registered with the engine's own
- * juce::AudioPluginFormatManager, a description in the same
- * juce::KnownPluginList both legs resolve against, and from there
- * te::ExternalPlugin on one side and EngineExternalDevice on the other. Nothing
- * in either engine knows this plugin is ours.
+ * The instance below is created through the ordinary path: a format registered
+ * with the engine's own juce::AudioPluginFormatManager, a description in the
+ * juce::KnownPluginList the leg resolves against, and from there
+ * EngineExternalDevice. Nothing in the engine knows this plugin is ours.
  *
  * It is in the binary rather than on the machine, and that is not a shortcut
  * around #2175. The two questions are different. A real project hosting a real
- * plugin asks whether this machine's Pro-Q renders the same under both engines,
+ * plugin asks whether this machine's Pro-Q renders correctly through the host,
  * and it can only be asked where that plugin is installed. These ask what the
  * host does: which channels a mono plugin is handed, what the wrapper pair
  * means, where a sidechain key lands, what a plugin is told about the
@@ -105,8 +100,7 @@ enum class HostedRole {
     ///
     /// The same law the corpus's own impulse synth runs (NullDiffGain.hpp), for
     /// the same reason: an impulse at the note's own sample says both that the
-    /// MIDI arrived and where, and nothing between the two engines interpolates
-    /// it.
+    /// MIDI arrived and where, and nothing interpolates it.
     Instrument,
 
     /// The same instrument, which also writes every note-on it received to its
@@ -114,7 +108,7 @@ enum class HostedRole {
     ///
     /// What a project does with that is @ref Echo below. Kept apart from
     /// @ref Instrument rather than made a property of it, because a plugin that
-    /// produces MIDI is a different device to both engines -- it is what
+    /// produces MIDI is a different device to the engine -- it is what
     /// DeviceInfo::producesMidi says and what midiInThru is about -- and a case
     /// about an instrument's audio should not quietly be a case about its MIDI.
     InstrumentMidiOut,
@@ -183,9 +177,8 @@ juce::PluginDescription hostedDescription(HostedRole role);
  * (ExternalPluginLookup.hpp).
  *
  * The channel counts and the MIDI flags are the plugin's own, declared here as
- * well because the plan reads them off the model while the incumbent reads them
- * off the live instance. Both have to say the same thing or a case measures the
- * disagreement between two declarations rather than what the engines do
+ * well because the plan reads them off the model. They have to match the live
+ * instance or a case measures the disagreement between two declarations
  * (NullDiffGain.hpp).
  */
 magda::DeviceInfo hostedDevice(magda::DeviceId id, HostedRole role);
@@ -193,9 +186,9 @@ magda::DeviceInfo hostedDevice(magda::DeviceId id, HostedRole role);
 /**
  * @brief Put the wrapper pair on @p device at the levels a project saved.
  *
- * The fork gives every external plugin a dry level and a wet level the plugin
- * never declared, at slots zero and one in front of its own parameters, and
- * MAGDA persists both (DeviceInfo::wrapperParameters). A device that leaves
+ * Every external plugin carries a dry level and a wet level the plugin never
+ * declared, at slots zero and one in front of its own parameters, and MAGDA
+ * persists both (DeviceInfo::wrapperParameters). A device that leaves
  * them off is a device at the pair's own default, which is fully wet: the
  * absence is a value, so a case that wants one says so.
  */
@@ -203,10 +196,6 @@ void setHostedMix(magda::DeviceInfo& device, float dry, float wet);
 
 /**
  * @brief Register the format and its descriptions, once per manager.
- *
- * Both legs are handed the same two objects for the reason the corpus already
- * hands them one scan: two legs that each found their own copy of a plugin
- * would be rendering two projects and calling the difference an engine bug.
  *
  * Idempotent, because the runner calls it per case and the tests that build
  * their own scan build one per project. A second call adds neither a second
@@ -228,9 +217,8 @@ void addInstalledPluginsNamed(const std::vector<std::string>& names,
  * @brief A scan holding the corpus's own plugins and nothing else.
  *
  * For the tests that drive the native leg on their own, where there is no
- * engine to borrow a format manager from and no reason to want one: these
- * plugins are in the binary, so a manager and a list built here hold exactly
- * what the runner's engine-owned pair holds.
+ * engine to borrow a format manager from: these plugins are in the binary, so a
+ * manager and a list built here hold exactly what the runner's pair holds.
  *
  * A local rather than a static, and the reason is JUCE's own bookkeeping: a
  * format manager that outlives main() is reported as a leaked

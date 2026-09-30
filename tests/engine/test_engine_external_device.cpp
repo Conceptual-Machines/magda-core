@@ -45,7 +45,7 @@
  * lands on, what it does with the wet/dry pair the plugin never declared -- and
  * a real plugin answers none of those questions any better than a stub that
  * reports exactly what it was given. What a real plugin is for is the corpus,
- * where the two engines run the same one (#2175).
+ * where the same plugin is rendered (#2175).
  *
  * The stub is deliberately awkward in the ways real plugins are: a
  * non-automatable parameter in the middle of its list, a mono bus, a sidechain
@@ -61,7 +61,7 @@ namespace host = magda::daw::engine_host;
  * @brief One parameter of the stub, automatable or not.
  *
  * The non-automatable one is what makes the slot numbering below worth
- * asserting: the fork's list skips it, so every parameter after it sits one slot
+ * asserting: the host's list skips it, so every parameter after it sits one slot
  * lower than its position in the plugin's own array. Real plugins are full of
  * them -- a bypass switch, a program selector, a meter reported as a parameter.
  */
@@ -444,7 +444,7 @@ class StubPlugin final : public juce::AudioPluginInstance {
     bool emitsMidi = false;
 
     /// Whether the processor advertises MIDI input at all. A real plugin can
-    /// say no here while the incumbent engine still takes MIDI input for it.
+    /// say no here while the host still takes MIDI input for it.
     bool takesMidi = true;
 
     /// Whether restoring the chunk widens the main output bus (see
@@ -601,8 +601,6 @@ magda::engine::RenderContext contextFor(int channels = 2, int blockSize = 64) {
     return {.sampleRate = 48000.0, .maxBlockSize = blockSize, .numChannels = channels};
 }
 
-/// A device whose parameters are the fork's list: the wrapper pair at zero and
-/// one, then the plugin's automatable parameters.
 /**
  * @brief Ask @p plane for a capture and wait for the answer (#2270).
  *
@@ -942,7 +940,7 @@ TEST_CASE("A bounce tells the plugin it is not realtime", "[engine][external]") 
     CHECK(offlineRaw->nonRealtimeAtPrepare);
 }
 
-TEST_CASE("A plan slot addresses the fork's parameter, not the plugin's", "[engine][external]") {
+TEST_CASE("A plan slot addresses the host's parameter, not the plugin's", "[engine][external]") {
     auto plugin = std::make_unique<StubPlugin>();
     auto* raw = plugin.get();
 
@@ -951,7 +949,7 @@ TEST_CASE("A plan slot addresses the fork's parameter, not the plugin's", "[engi
     device.prepare(context);
 
     // Slot two is the plugin's first automatable parameter and slot three is
-    // its second: the non-automatable one between them is not in the fork's
+    // its second: the non-automatable one between them is not in the host's
     // list, so it takes no slot.
     ParamArena arena({0.0f, 1.0f, 0.75f, 0.5f});
     Block block(context, 2);
@@ -1052,8 +1050,7 @@ TEST_CASE("A mono plugin is fed the average and answers on both sides", "[engine
     auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
     device.process(deviceBlock);
 
-    // The average of one and nothing, which is the fork's rule and not the left
-    // channel.
+    // The average of one and nothing, not the left channel.
     CHECK(raw->channelsSeen == 1);
     CHECK(raw->inputSeen.getSample(0, 0) == Catch::Approx(0.5f));
 
@@ -1663,8 +1660,8 @@ TEST_CASE("A second prepare at the same settings does not prepare the plugin aga
     device.prepare(contextFor());
     device.prepare(contextFor());
 
-    // Once. The fork does not release a plugin's resources before re-preparing
-    // it -- with VST3 that shuts down the MIDI input buses for good -- so a
+    // Once. A plugin's resources are not released before re-preparing it
+    // -- with VST3 that shuts down the MIDI input buses for good -- so a
     // device retained across a re-prepare at settings that did not move is left
     // alone rather than torn down and rebuilt.
     CHECK(raw->prepareCount == 1);
@@ -1798,8 +1795,8 @@ TEST_CASE("A project's saved plugin state reaches the plugin", "[engine][externa
 TEST_CASE("A stale saved parameter array is corrected rather than replayed", "[engine][external]") {
     // Every project MAGDA saved before the restore was fixed has this shape:
     // the chunk holds the voice the user heard, and the parameter array beside
-    // it holds the defaults the host read at construction. The incumbent lets
-    // the chunk win; this native adapter test preserves that project contract.
+    // it holds the defaults the host read at construction. The chunk wins,
+    // which is the project contract this test preserves.
     //
     // Under the native engine the plan writes every parameter it resolves
     // before each block, and it resolves them from the model. So the chunk
@@ -2004,8 +2001,8 @@ TEST_CASE("An external plugin's parameters reach the model", "[engine][external]
     const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
     REQUIRE(result.resolvedDevice.has_value());
 
-    // The plugin's own, at the slots the fork's list puts them at, with the
-    // non-automatable one between them absent the way the fork drops it.
+    // The plugin's own, at the slots the host's list puts them at, with the
+    // non-automatable one between them absent.
     const auto& parameters = result.resolvedDevice->parameters;
     REQUIRE(parameters.size() == 2);
     CHECK(parameters[0].paramIndex == 2);
@@ -2015,8 +2012,8 @@ TEST_CASE("An external plugin's parameters reach the model", "[engine][external]
     CHECK(parameters[1].name == "Tone");
     CHECK(parameters[1].stableId == "tone");
 
-    // And the pair the plugin never declared, in the bucket the fork's split
-    // puts it in rather than among the plugin's own.
+    // And the pair the plugin never declared, in its own bucket rather than
+    // among the plugin's own.
     const auto& wrapper = result.resolvedDevice->wrapperParameters;
     REQUIRE(wrapper.size() == 2);
     CHECK(wrapper[0].paramIndex == 0);
@@ -2109,8 +2106,8 @@ TEST_CASE("A device that never had a wrapper pair gets one fully wet", "[engine]
     CHECK(wet->currentValue == Catch::Approx(1.0f));
 }
 
-TEST_CASE("Repeated and missing parameter names are the fork's", "[engine][external]") {
-    // A project moved between the engines has to find the same parameter under
+TEST_CASE("Repeated and missing parameter names are the host's", "[engine][external]") {
+    // A saved project has to find the same parameter under
     // the same name, and plenty of plugins declare two called the same thing or
     // none at all. The suffix and the numbering are
     // ExternalPlugin::buildParameterList's.
@@ -2347,7 +2344,7 @@ TEST_CASE("Successful adaptation reports live buses and MIDI capabilities", "[en
 
 TEST_CASE("A plugin that does not advertise MIDI input cannot clear the project's flag",
           "[engine][external]") {
-    // The incumbent engine takes MIDI input for plugins whose AudioProcessor
+    // The host takes MIDI input for plugins whose AudioProcessor
     // says no, so the model's true is evidence the instance does not have.
     // Assigning over it would leave PlanCompiler routing no MIDI to a device
     // that had been receiving it.
@@ -2657,10 +2654,9 @@ TEST_CASE("Reading a plugin does not write the project", "[engine][external][sta
     CHECK(model.parameters[0].currentValue == Catch::Approx(0.6f));
 }
 
-TEST_CASE("A save writes the chunk the incumbent would have written", "[engine][external][state]") {
-    // The round trip that matters during the dual-engine release: a project
-    // saved while the native engine held the instance has to open under the
-    // fork, which means the same base64 in the same field.
+TEST_CASE("A save writes the chunk earlier versions wrote", "[engine][external][state]") {
+    // The chunk is the plugin's getStateInformation in base64, so a project
+    // reopens with the state it was saved with.
     auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
     auto* raw = plugin.get();
     raw->tone->setValue(0.9f);
@@ -2669,8 +2665,7 @@ TEST_CASE("A save writes the chunk the incumbent would have written", "[engine][
     auto model = externalDevice();
     REQUIRE(captureInto(*raw, model));
 
-    // What the fork writes for the same instance: getStateInformation, in
-    // juce::MemoryBlock's own base64.
+    // getStateInformation, in juce::MemoryBlock's own base64.
     juce::MemoryBlock expected;
     raw->getStateInformation(expected);
     CHECK(model.pluginState == expected.toBase64Encoding());
@@ -2703,7 +2698,7 @@ TEST_CASE("A save writes the parameter array beside the chunk", "[engine][extern
 }
 
 TEST_CASE("A plugin with nothing to say saves no chunk at all", "[engine][external][state]") {
-    // The fork removes the property rather than storing a zero-length chunk,
+    // The property is removed rather than storing a zero-length chunk,
     // and a project that stored one would come back as a baseline anyway. What
     // matters is that a previous save's chunk does not survive the plugin
     // ceasing to have one.
@@ -2738,7 +2733,7 @@ TEST_CASE("A plugin that throws describing itself leaves the last good save",
 }
 
 TEST_CASE("A save is not left holding the plugin suspended", "[engine][external][state]") {
-    // The fork suspends the plugin across the read, and a plugin left suspended
+    // The plugin is suspended across the read, and a plugin left suspended
     // by its own throw would render silence for the rest of the session.
     auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
     auto* raw = plugin.get();

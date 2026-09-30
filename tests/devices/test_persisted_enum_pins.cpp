@@ -21,10 +21,7 @@
 // becomes convex, a 1/4 LFO becomes 1/8, an Aux track becomes a Master. Nothing
 // complains, because the integer is still in range.
 //
-// audio/EngineEnumPins.cpp pins the subset that mirrors a Tracktion enum, in the
-// other direction: it holds MAGDA's numbers equal to the engine's so the bridges
-// can stay casts. That says nothing about an insert on MAGDA's side, which is
-// what this file is for. Appending stays legal; every other edit fails here.
+// Appending stays legal; every other edit fails here.
 //
 // The static_asserts are the gate - they fail the build, so the value cannot
 // reach a user's project. The test case re-states them at runtime so a failure

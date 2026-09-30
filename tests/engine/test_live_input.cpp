@@ -789,8 +789,7 @@ TEST_CASE("A monitoring track hears its live input through the plan", "[engine][
 
 TEST_CASE("An input meter reads the input a monitoring track is hearing",
           "[engine][live-input][2463]") {
-    // The incumbent reads this off the input device (WaveInputDevice's level
-    // measurer); here it is a meter on the input op, so it exists exactly while
+    // The level is a meter on the input op, so it exists exactly while
     // the op does and sits in the signal rather than beside it. Ahead of the
     // monitor gate, so a track that is not listening still meters its input
     // (#2612).

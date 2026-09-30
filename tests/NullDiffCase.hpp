@@ -18,43 +18,35 @@ class KnownPluginList;
 
 /**
  * @file NullDiffCase.hpp
- * @brief One project, as model values, plus what it claims about the two
- *        engines rendering it (#2040).
+ * @brief One project, as model values, plus what it claims about the native
+ *        engine's render of it (#2040).
  *
- * Model values and nothing else. Both legs are handed the same case and build
- * their own world from it: the incumbent leg installs the clips in ClipManager
- * and syncs them into a te::Edit, the native leg compiles them into a plan and
- * a snapshot. Neither is allowed a private opinion about what the project is,
- * which is the whole reason a case is data rather than a pair of setup
- * functions.
+ * Model values and nothing else. The native leg compiles the case into a plan
+ * and a snapshot, so a case is data rather than a setup function.
  *
- * A case is built in code rather than loaded from a .mgd. A load produces the
- * model and both legs consume the model, so a file on disk would add a step
- * neither leg is testing and a binary to the repository. What it would buy is
- * covered by the project-load tests already.
+ * A case is built in code rather than loaded from a .mgd: a file on disk would
+ * add a step the leg is not testing and a binary to the repository. The
+ * project-load tests already cover what it would buy.
  */
 
 namespace magda::nulldiff {
 
-/// A tempo change, as both legs need to see it. Step changes only, and that is
-/// deliberate: the two engines resolve a ramped tempo differently (the engine
-/// subdivides because there is no closed form across a curve, the fork
-/// integrates its own way), so a render case with a ramp in it would report a
-/// tempo disagreement as a clip bug. Ramps are pinned where the answer is a
-/// number, in the tempo-map comparison.
+/// A tempo change. Step changes only: a ramped tempo has no closed form across
+/// a curve, so a render case with a ramp would report a tempo error as a clip
+/// bug. Ramps are pinned where the answer is a number, in the tempo-map
+/// comparison.
 struct TempoPoint {
     double beat = 0.0;
     double bpm = 120.0;
 };
 
 /**
- * @brief A slot this case launches, and the beat both legs launch it on (#2441).
+ * @brief A slot this case launches, and the beat it is launched on (#2441).
  *
- * The corpus renders an offline arrangement and neither leg has anything that
- * launches by itself, so a session clip put in a case sounds on neither side
- * until something says this. Both legs queue it before the render, against the
- * same beat, which is what makes the two runs start on one sample rather than
- * on whichever moment each engine happened to begin at.
+ * The corpus renders an offline arrangement and nothing launches by itself, so
+ * a session clip put in a case stays silent until something says this. The leg
+ * queues it before the render, against this beat, so the run starts on a known
+ * sample.
  *
  * No quantization, and that is not an omission. Quantization is the host's:
  * MAGDA resolves a clip's LaunchQuantize into a beat and hands the engine that
@@ -69,14 +61,10 @@ struct LaunchInfo {
 
     /// The timeline beat to start the run on.
     ///
-    /// Both engines take a launch inside a block on the sample its beat falls
-    /// on, and they round to it differently -- the engine floors the offset it
-    /// derives through the tempo map, the fork rounds the beat's proportion of
-    /// the block. So a case that wants a null puts the launch on the render's
-    /// own start beat, where the answer is sample zero on both sides and every
-    /// block after it is the ordinary clip render #2306 says it is. The field
-    /// is a beat rather than a flag because the difference above is a finding
-    /// to pin, and pinning it needs a case that can ask for one.
+    /// The engine floors the offset it derives through the tempo map. A case
+    /// that wants an exact expectation puts the launch on the render's own
+    /// start beat, where the answer is sample zero and every block after it is
+    /// the ordinary clip render #2306 says it is.
     double beat = 0.0;
 };
 
@@ -96,10 +84,9 @@ struct Case {
     /// "placement.trims failed" is only useful to whoever wrote it.
     std::string covers;
 
-    /// What stands between the two engines on this case's paths, which decides
-    /// what can be asserted of the audio. Not a per-case preference: a tier is
-    /// declared because of what the signal goes through, and the mechanism
-    /// below says what that is.
+    /// What the signal goes through on this case's paths, which decides what
+    /// can be asserted of the audio. Not a per-case preference: the mechanism
+    /// below says what the path is.
     AudioTier tier = AudioTier::Exact;
 
     /// Whether the captured MIDI streams are compared.
@@ -150,16 +137,12 @@ struct Case {
     std::vector<LaunchInfo> launches;
 
     /// The automation the project plays, and the clips a clip-based lane names
-    /// (#2123). Model values like the rest of a case: both legs are handed the
-    /// same lanes and each builds its own world from them. The engine compiles
-    /// them into segment lanes, the incumbent bakes them into the fork's own
-    /// AutomationCurve.
+    /// (#2123). Model values like the rest of a case; the engine compiles them
+    /// into segment lanes.
     std::vector<AutomationLaneInfo> lanes;
     std::vector<AutomationClipInfo> automationClips;
 
-    /// The groove templates the clips may name, as the fork keeps them: a
-    /// <GROOVETEMPLATES> document. One string feeds both legs, which is what
-    /// makes "the same groove" a fact rather than two parsers agreeing.
+    /// The groove templates the clips may name: a <GROOVETEMPLATES> document.
     juce::String grooveXml;
 
     // --- what to render ------------------------------------------------------
@@ -219,13 +202,12 @@ struct Case {
     /// How far the search may look for that shift.
     int maxShiftSamples = 8192;
 
-    /// Notes the incumbent is expected to be late by, in beats. Non-zero for
-    /// exactly one thing: the fork drops midiOffset on an unlooped arranger
-    /// clip, so every note of such a clip lands offset.
+    /// Beats the reference notes are expected to land late by, declared by the
+    /// case. Non-zero only for a clip whose midiOffset the reference drops.
     double declaredMidiShiftBeats = 0.0;
 
-    /// A fixed sub-sample offset between the two renders, applied before
-    /// comparing, with its mechanism in `mechanism`.
+    /// A fixed sub-sample offset between the render and its reference, applied
+    /// before comparing, with its mechanism in `mechanism`.
     ///
     /// This is not a tolerance and it is not fitted. It is a constant the
     /// corpus measured, declared here, and then aligned by: if the offset were
@@ -235,15 +217,9 @@ struct Case {
     /// nulled.
     double declaredFractionalShiftSamples = 0.0;
 
-    /// How much earlier the fork ends every note, in seconds.
-    ///
-    /// Its own constant: MidiNote::getPlaybackTime nudges every note-off back
-    /// by 0.0001 s "to make sure the ordering is correct", which is how it
-    /// keeps an off ahead of an on at the same instant. The engine orders
-    /// events at compile time instead and keeps the length the note was drawn
-    /// at. Written here as the number it is, so that the day the fork changes
-    /// it the corpus says so rather than absorbing it.
-    double incumbentNoteEndEarlySeconds = 0.0001;
+    /// How much earlier the reference ends every note, in seconds. The engine
+    /// orders events at compile time and keeps the length the note was drawn at.
+    double referenceNoteEndEarlySeconds = 0.0001;
 
     /// Whether this case's audio changes when a note ENDS, not only when it
     /// starts. Set by hand: the harness cannot tell a synth that sustains from
@@ -252,11 +228,10 @@ struct Case {
 
     /// This case's instrument's release stage, in seconds.
     ///
-    /// The nudge above puts the two legs' releases four samples apart, so an
-    /// instrument with a release ramp differs for that ramp's whole length
-    /// rather than for four samples. The device's number, not the fork's, and
-    /// a case is expected to keep it short: the longer it is, the less of the
-    /// render is held to bit identity.
+    /// The note-end offset above moves the release by four samples, so an
+    /// instrument with a release ramp differs for that ramp's whole length. A
+    /// case keeps it short: the longer it is, the less of the render is held to
+    /// bit identity.
     double noteEndReleaseSeconds = 0.0;
 
     /// The largest step this case's material may take from one sample to the
@@ -265,11 +240,10 @@ struct Case {
     /// nobody declared would certify a check that never ran.
     double maxStepPerSample = 0.0;
 
-    /// The peak each side of this case has to reach on its own, for a case in
-    /// the Invariants tier. Required there and refused without, for the reason
-    /// the step bound is: this tier computes no residual, so nothing else in it
-    /// would notice one leg going silent, and every other check it makes is
-    /// satisfied by silence.
+    /// The peak this case's render has to reach, for a case in the Invariants
+    /// tier. Required there and refused without, for the reason the step bound
+    /// is: this tier computes no residual, so nothing else in it would notice a
+    /// silent render, and every other check it makes is satisfied by silence.
     ///
     /// A liveness floor rather than a level. It says the render happened, and
     /// it is set far below what the project renders and far above what a broken
@@ -360,12 +334,11 @@ struct Case {
  *
  * Material is generated here rather than checked in, and the choice of it per
  * case is what makes a residual mean something: impulses and steps where the
- * engines must agree sample for sample, a band-limited tone wherever an
- * interpolator or a stretcher stands between them. See NullDiffMaterial.hpp.
+ * render must be sample exact, a band-limited tone wherever an interpolator or
+ * a stretcher is in the path. See NullDiffMaterial.hpp.
  *
- * Seeds the source pool as it goes, because both legs read a file's rate and
- * duration from there and a case that let them probe separately would have two
- * answers to one question.
+ * Seeds the source pool as it goes, so a file's rate and duration have one
+ * answer instead of being probed separately.
  */
 std::vector<Case> buildCorpus(const juce::File& scratchDirectory);
 
@@ -409,7 +382,7 @@ const std::vector<Case>& sharedCorpus(const juce::File& scratchDirectory);
  * to blame if it is not; a project hosting a plugin is compared within the
  * bound it declares, with these names printed beside the residual. The
  * distinction has to come from the project rather than from the case's tier: a
- * tier says what can be asserted against the incumbent, and an external plugin
+ * tier says what can be asserted of the audio, and an external plugin
  * frames its own work whether or not the case chose to notice.
  *
  * Empty for the code-built corpus, whose devices were all written for it. The
@@ -422,11 +395,10 @@ std::vector<std::string> externalDevicesIn(const Case& value);
  * @brief Of those, the ones @p knownPlugins has never seen (#2175).
  *
  * The gate on a case whose project hosts a plugin. A project rendered without
- * the plugin it names is a different project: both legs bind nothing in that
- * slot, both render the chain around it, and the two null against each other
- * perfectly -- a case that passes by having tested less than it claims. So the
- * question is asked of the scan before either leg is driven, and a case with an
- * answer does not run at all.
+ * the plugin it names is a different project: the slot binds nothing and the
+ * chain around it renders, a case that passes by having tested less than it
+ * claims. So the question is asked of the scan before the leg is driven, and a
+ * case with an answer does not run at all.
  *
  * Asked of the model rather than of the compiled plan, which makes it strict in
  * one direction: a plugin on a chain the project bypassed is never instantiated
@@ -443,7 +415,7 @@ std::vector<std::string> absentPluginsIn(const Case& value,
                                          const juce::KnownPluginList* knownPlugins);
 
 /// The groove template every grooving case names, and the one the runner
-/// installs in both engines.
+/// installs.
 extern const char* const kGrooveName;
 
 }  // namespace magda::nulldiff

@@ -26,7 +26,7 @@ juce::PluginDescription createMockDescription(const juce::String& name,
     return desc;
 }
 
-// Simulates Tracktion Engine's createIdentifierString using deprecatedUid
+// Simulates the legacy identifier string, built from deprecatedUid
 juce::String createTEIdentifierString(const juce::PluginDescription& d) {
     return d.pluginFormatName + "-" + d.name + "-" +
            juce::String::toHexString(d.fileOrIdentifier.hashCode()) + "-" +
@@ -56,7 +56,7 @@ const juce::PluginDescription* findMatchingByUniqueIdAndName(
         }
     }
 
-    // Fallback: match by uniqueId only (original TE behavior - problematic for multi-component)
+    // Fallback: match by uniqueId only (legacy behavior - problematic for multi-component)
     if (searchDesc.uniqueId != 0) {
         for (const auto& d : knownPlugins) {
             if (d.uniqueId == searchDesc.uniqueId &&
@@ -246,7 +246,7 @@ TEST_CASE("PluginDescription - ValueTree round-trip simulation", "[plugin][value
         // This was the bug: pluginFormatName is empty
         REQUIRE(loaded.pluginFormatName.isEmpty());
 
-        // This caused TE's identifier string to lack the format prefix
+        // This caused the legacy identifier string to lack the format prefix
         auto teId = createTEIdentifierString(loaded);
         REQUIRE(teId.startsWith("-Serum 2-"));  // Missing "VST3" prefix!
     }
@@ -267,7 +267,7 @@ TEST_CASE("Identifier string - TE vs JUCE format mismatch", "[plugin][identifier
         // They're different because suffix uses different ID
         REQUIRE(teId != juceId);
 
-        // TE ends with deprecatedUid (0 for VST3)
+        // The legacy string ends with deprecatedUid (0 for VST3)
         REQUIRE(teId.endsWith("-0"));
 
         // JUCE ends with uniqueId (the actual VST3 component ID)

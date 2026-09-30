@@ -6,10 +6,8 @@
 /**
  * The native groove template (#2039).
  *
- * A port of the fork's, so the tests are about the formula agreeing with it
- * rather than about a shape anybody chose: a swing template has to move an
- * off-beat late by the amount the stored table says, and a clip saved under the
- * fork has to keep playing the way it did.
+ * A swing template has to move an off-beat late by the amount the stored table
+ * says, and a clip saved with a groove has to keep playing the way it did.
  */
 
 using Catch::Approx;
@@ -18,7 +16,7 @@ using magda::engine::GrooveTemplateSet;
 
 namespace {
 
-/// The fork's own "Basic 8th Swing": two steps, two per beat, parameterized.
+/// "Basic 8th Swing": two steps, two per beat, parameterized.
 GrooveTemplate eighthSwing(float strength) {
     return GrooveTemplate::compile({0.0f, 0.66f}, 2, 2, true, strength);
 }
@@ -59,8 +57,8 @@ TEST_CASE("Only a parameterized template answers to strength", "[engine][clip][g
 
     CHECK(half.groovyBeat(0.5) - 0.5 == Approx((full.groovyBeat(0.5) - 0.5) * 0.5));
 
-    // The fork's getLatenessProportion ignores strength when the template is
-    // not parameterized, so a clip's slider has nothing to say about it.
+    // Strength is ignored when the template is not parameterized, so a clip's
+    // slider has nothing to say about it.
     const auto fixed = GrooveTemplate::compile({0.0f, 0.66f}, 2, 2, false, 0.5f);
     CHECK(fixed.groovyBeat(0.5) == Approx(full.groovyBeat(0.5)));
 }
@@ -91,8 +89,8 @@ TEST_CASE("The pattern repeats and is anchored at beat zero", "[engine][clip][gr
 }
 
 TEST_CASE("Latenesses past the table read as zero", "[engine][clip][groove]") {
-    // The fork reads its table through a juce::Array, which answers zero past
-    // the end, so a clip saved with fewer shifts than notes has to play alike.
+    // A shift missing from the table is zero, so a clip saved with fewer shifts
+    // than notes plays as if they were padded.
     const auto shortTable = GrooveTemplate::compile({0.5f}, 4, 2, false, 1.0f);
     const auto padded = GrooveTemplate::compile({0.5f, 0.0f, 0.0f, 0.0f}, 4, 2, false, 1.0f);
 
@@ -100,7 +98,7 @@ TEST_CASE("Latenesses past the table read as zero", "[engine][clip][groove]") {
         CHECK(shortTable.groovyBeat(beat) == Approx(padded.groovyBeat(beat)));
 }
 
-TEST_CASE("A set parses the fork's own document", "[engine][clip][groove]") {
+TEST_CASE("A set parses the shipped document", "[engine][clip][groove]") {
     const auto* xml =
         "<GROOVETEMPLATES>"
         "<GROOVETEMPLATE name=\"Basic 8th Swing\" numberOfNotes=\"2\" notesPerBeat=\"2\" "

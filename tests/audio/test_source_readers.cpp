@@ -228,7 +228,7 @@ TEST_CASE("A looping reader tiles the region it was given", "[engine][clip][sour
 
     SECTION("a position in front of the region is a phase within it too") {
         // An anchor away from the loop start is a phase rather than a place of
-        // its own, which is how the incumbent reads a looped clip's offset.
+        // its own, which is how a looped clip's offset reads.
         const auto out = readOut(reader, 97, 2);
         CHECK(out[0] == approx(105.0f));
         CHECK(out[1] == approx(106.0f));
@@ -393,7 +393,7 @@ TEST_CASE("A reading asked for nothing is the file itself", "[engine][clip][sour
 }
 
 TEST_CASE("A reading composes mirror, tile and rate in that order", "[engine][clip][source]") {
-    // The incumbent's order. Tiling over the mirror is what makes a reversed
+    // Tiling over the mirror is what makes a reversed
     // loop the same region played backwards, and converting last leaves
     // everything below it in the source's own samples.
     SourceRead how;

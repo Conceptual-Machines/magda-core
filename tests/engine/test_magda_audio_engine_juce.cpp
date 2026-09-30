@@ -14,11 +14,8 @@
 #include "magda/daw/project/ProjectInfo.hpp"
 
 /**
- * What MagdaAudioEngine answers with no Edit behind it (#2579).
- *
- * The fork under this engine is services only. Both halves of that are
- * asserted: the questions the Edit used to answer, and the Edit's absence,
- * which is what makes answering them here necessary.
+ * What MagdaAudioEngine answers with no Edit behind it (#2579): the questions
+ * an Edit used to answer, and the Edit's absence.
  */
 
 namespace {
@@ -70,8 +67,7 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
         magda::MagdaAudioEngine engine{magda::AudioEngineOptions{.headless = true}};
         expect(engine.initialize(), "The engine comes up headless");
 
-        // No Tracktion engine lends these (#2761): the plugin list and the grooves are the
-        // app's services' own.
+        // The plugin list and the grooves are the app's services' own (#2761).
         auto& plugins = magda::PluginService::getInstance();
         expect(plugins.formats() != nullptr && plugins.knownList() != nullptr,
                "The plugin service has a list of its own");
@@ -122,8 +118,8 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
     /**
      * The last row of #2551's list: nothing on this engine may answer a
      * question it has not been wired for without saying so. The recording
-     * surface forwarded into a fork with no Edit, which answered false and
-     * empty in silence. The session launcher was on this list too until #2552
+     * surface used to forward into an Edit that was not there, and answered
+     * false and empty in silence. The session launcher was on this list too until #2552
      * wired it, and every method it took is a line the list no longer carries.
      */
     void testUnwiredMethodsNameThemselves() {

@@ -613,8 +613,7 @@ TEST_CASE("an end no block stamped closes the run it belongs to", "[engine][capt
 TEST_CASE("a run is held under the handle that played it", "[engine][capture]") {
     // The refill's launch reaches the capture before the retired run's end, and
     // the two are different runs of the same slot: keying by slot alone would
-    // drop the first, which is what the fork's play-state poll cannot tell
-    // apart either.
+    // drop the first.
     Rig rig;
     rig.capture().arm();
     rig.play();

@@ -9,10 +9,10 @@
 #include "magda/daw/audio/plugins/engine/EngineMagdaDevice.hpp"
 #include "magda/daw/project/serialization/ProjectSerializer.hpp"
 
-// Device state as the native engine reads it (#2556, ported from the fork's schema and
-// migration suites). The model owns the document and the device is its projection, so
-// there is no capture: what has to hold is that a read is faithful and repeatable, for
-// v2 documents and for the pre-v2 state the legacy corpus still carries verbatim.
+// Device state as the native engine reads it (#2556). The model owns the document and
+// the device is its projection, so there is no capture: what has to hold is that a read
+// is faithful and repeatable, for v2 documents and for the pre-v2 state the legacy
+// corpus still carries verbatim.
 
 namespace {
 

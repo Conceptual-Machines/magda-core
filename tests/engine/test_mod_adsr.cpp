@@ -16,9 +16,9 @@
  * @file test_mod_adsr.cpp
  * @brief The envelope generator (#2120).
  *
- * Three claims, separable the way the LFO's are. The shape is the fork's: a
- * segment's curvature is a persisted number and what it draws has to be the
- * same curve in both engines. The run is the engine's: which stage the envelope
+ * Three claims, separable the way the LFO's are. The shape is fixed: a
+ * segment's curvature is a persisted number and what it draws has to stay the
+ * same curve. The run is the engine's: which stage the envelope
  * is in after a block, what a gate edge does from each of them, and what a
  * tempo-synced stage is worth in seconds. And the wiring is the table's: that
  * the model's seven fields reach the block and that the value comes out of a
@@ -250,7 +250,7 @@ TEST_CASE("A stage runs in milliseconds unless the envelope is synced", "[engine
     CHECK(adsrStageSeconds(250.0f, settings, timing(120.0, 3, 4)) == Catch::Approx(1.5));
 
     // Hertz is not a division. The model reaches that by having tempo sync on
-    // with nothing musical selected, and the fork's answer is the milliseconds.
+    // with nothing musical selected, and the answer is the milliseconds.
     settings.rateType = static_cast<int>(ModRateType::Hertz);
     CHECK(adsrStageSeconds(250.0f, settings, timing()) == Catch::Approx(0.25));
 }
@@ -273,7 +273,7 @@ TEST_CASE("A gate opening runs the envelope through its stages", "[engine][mod][
 
     state.gated = false;
 
-    // Advanced first and published after, which is the fork's ADSR timer: the
+    // Advanced first and published after: the
     // value a block renders with is where the envelope ends up. One block into
     // a ten-block attack is a tenth of the way up.
     CHECK(step(state, settings, millisecondBlock()) == approx(0.1f));
@@ -373,8 +373,8 @@ TEST_CASE("A stage with no time in it is instant", "[engine][mod][adsr]") {
 
     SECTION("and an envelope with no time anywhere still terminates") {
         // Every stage instant and free running, so the cycle has no time in it
-        // anywhere and the block would walk it for ever. The bound is the
-        // fork's own, eight stages, and where in the cycle that leaves the
+        // anywhere and the block would walk it for ever. The bound is
+        // eight stages, and where in the cycle that leaves the
         // envelope is a consequence of the bound rather than a claim: what
         // matters is that the block ends and the output is a level.
         AdsrSettings instant;

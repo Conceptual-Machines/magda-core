@@ -74,7 +74,7 @@ TEST_CASE("An authored-state edit never re-encodes the retired parameter record"
     // A pre-#2317 document still carrying its duplicate `params`. The edit is
     // the moment the document goes canonical: hydration consumed the record at
     // load, and writing it back would leave a second persisted authority alive
-    // in every path that never passes through a Tracktion capture.
+    // in every path that never passes through a plugin-state capture.
     ds::Doc oldDoc;
     oldDoc.deviceType = "arpeggiator";
     oldDoc.paramsAreDisplayDomain = true;
@@ -244,8 +244,7 @@ TEST_CASE("The projection puts an analyser's document onto the running device",
     namespace audio = magda::daw::audio;
 
     // The whole round trip the faceplate depends on: the keys it writes are the
-    // ones the device reads back, through the projection the native engine uses
-    // in place of the fork's plugin.
+    // ones the device reads back, through the projection the native engine uses.
     const auto path = addInternalDevice("oscilloscope", {});
 
     juce::NamedValueSet scopeSettings;

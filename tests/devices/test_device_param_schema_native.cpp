@@ -8,13 +8,13 @@
 #include "magda/daw/audio/plugins/MagdaDevice.hpp"
 #include "magda/daw/audio/plugins/compiled/CompiledPluginRegistry.hpp"
 
-// The frozen parameter order (#1887) as the native engine sees it (#2556, ported from
-// the fork's suite). Saved automation, macro, mod and MIDI links persist a parameter's
-// position, so every device the native engine builds must list the same ids in the same
-// order as tests/device_param_schema.txt. The id is the parameter's stableId, or
-// `<pluginId>_param_<index>` when it has none, which is the rule the fork's adapter uses.
-// Devices the native engine does not build on their own (the fork's built-ins) are
-// skipped, as the file already allows for optional packs.
+// The frozen parameter order (#1887) as the native engine sees it (#2556). Saved
+// automation, macro, mod and MIDI links persist a parameter's position, so every device
+// the native engine builds must list the same ids in the same order as
+// tests/device_param_schema.txt. The id is the parameter's stableId, or
+// `<pluginId>_param_<index>` when it has none.
+// Devices the native engine does not build on their own are skipped, as the file
+// already allows for optional packs.
 
 namespace {
 

@@ -192,7 +192,7 @@ TEST_CASE("A sparse device window carries only what the device declared",
           "[engine][param][table]") {
     // The shape the first real project hosting a plugin arrived in (#2175). A
     // project saved before the wet/dry pair was persisted has no parameters at
-    // indices 0 and 1, and the fork's list is a filtered view of the instance's
+    // indices 0 and 1, and the host's list is a filtered view of the instance's
     // anyway, so a sparse array is the normal shape of a hosted plugin rather
     // than a model to correct.
     auto device = makeDevice(7, 0);

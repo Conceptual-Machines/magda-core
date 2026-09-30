@@ -7,57 +7,43 @@
 
 /**
  * @file NullDiffGain.hpp
- * @brief The one device both engines run, and the contract that makes its
+ * @brief The one device the corpus runs, and the contract that makes its
  *        renders comparable (#2123).
  *
- * The corpus had no device with a parameter until this slice: a Device op
- * resolved to a stand-in and the incumbent instantiated nothing, so the whole
- * of #1891 had never been put in front of the fork. A parameter nothing reads
- * is a parameter nothing can compare.
+ * A parameter nothing reads is a parameter nothing can compare, so this is the
+ * smallest device that has one. One parameter, linear, zero to one, applied as
+ * a gain, so what it renders is the value of its own parameter and a case that
+ * plays a constant into it draws the curve directly. It is written for the
+ * corpus from one contract.
  *
- * This is the smallest device that fixes that. One parameter, linear, zero to
- * one, applied as a gain, so what it renders is the value of its own parameter
- * and a case that plays a constant into it draws the curve directly. No MAGDA
- * device runs under both engines yet (#1893, #1836), which is why it is written
- * for the corpus, in both legs, from one contract -- the arrangement the MIDI
- * capture already uses.
+ * The law: a gain of `v` multiplies by `v`, with no smoothing, because a
+ * smoother is state and two smoothers primed differently never agree.
  *
- * Both legs owe the same law: a gain of `v` multiplies by `v`, with no
- * smoothing, because a smoother is state and two smoothers primed differently
- * never agree.
- *
- * They differ in when they read it. The engine reads the value at the sample
- * being written, which is what keeps a render a function of timeline position
- * (#2078); the fork settles a parameter at a block boundary and holds it. The
- * corpus does not paper over that: every `param.*` case steps its curves on the
- * half beat and lands its impulses on the beat, so the material is silent
- * wherever the two could disagree.
+ * The engine reads the value at the sample being written, which is what keeps
+ * a render a function of timeline position (#2078). Every `param.*` case steps
+ * its curves on the half beat and lands its impulses on the beat, so the
+ * material is silent wherever a block-boundary reader could disagree.
  */
 
 namespace magda::nulldiff {
 
-/// The device's id in the app's internal registry. Registered by the incumbent
-/// leg, hidden from the browser, and only ever inside a test binary.
+/// The device's id in the app's internal registry. Hidden from the browser and
+/// only ever inside a test binary.
 inline constexpr const char* kGainPluginId = "nulldiffgain";
 
 /// A MIDI-driven instrument, for the cases that need one to make a sound
 /// (#2139).
 ///
 /// Not a gain: a multi-out instrument is the one device whose extra pairs
-/// exist at all, and in both engines an instrument generates rather than
-/// processes. The wrapper the current engine builds around an instrument
-/// routes audio *around* it and never into it (InstrumentRackManager), and the
-/// plan agrees -- an injector reads no bus -- so a device that multiplied its
-/// input would have nothing to multiply.
+/// exist at all, and an instrument generates rather than processes. The plan
+/// agrees -- an injector reads no bus -- so a device that multiplied its input
+/// would have nothing to multiply.
 ///
-/// What it generates is driven by MIDI rather than by a clock. Two engines
-/// asked to free-run the same generator have to agree about where a sample
-/// sits on the timeline to the sample, and that is a comparison of their
-/// clocks wearing a device costume. Driven by notes, the case rests on
-/// something the corpus has already pinned: both engines deliver a clip's
-/// MIDI to a device at the same sample (the `midi.*` cases).
+/// What it generates is driven by MIDI rather than by a clock, so the case
+/// rests on something the corpus already pins: a clip's MIDI reaches a device
+/// at a known sample (the `midi.*` cases).
 ///
-/// The law, in both legs: on every note-on, one sample at `velocity / 127`
+/// The law: on every note-on, one sample at `velocity / 127`
 /// into both channels of pair 0, and half of that into both channels of pair
 /// 1. Nothing else -- no note-off, no envelope, no decay. An impulse is the
 /// corpus's material for anything that has to be exact, and a pair that
@@ -74,10 +60,8 @@ inline constexpr float kMultiOutSecondPairScale = 0.5f;
 /// The same device, one channel wide (#2139).
 ///
 /// A separate registration rather than a flag on the one above, because what
-/// makes a device mono is what its plugin reports when the graph asks how many
-/// channels it has, and that is a property of the type in both engines: the
-/// rack matrix reads it off the plugin at build time, and the plan reads it off
-/// the model. Two ids keep the two answers to one question.
+/// makes a device mono is what it reports when the graph asks how many channels
+/// it has, and that is a property of the type.
 ///
 /// The DSP is identical, which is the point: what a mono case measures is the
 /// bus narrowing and widening around the device, and a device that also sounded
@@ -91,12 +75,8 @@ inline constexpr int kGainParamIndex = 0;
 /// Unity, so a device nobody automated, modulated or linked is inaudible.
 inline constexpr float kGainDefault = 1.0f;
 
-/// The model parameter, as both legs read it.
-///
-/// The same range on both sides, so the model value and the value the fork's
-/// parameter stores are the same number and neither leg converts. Two ranges
-/// would put a conversion between the engines and the residual would measure
-/// it.
+/// The model parameter. The model range is the device's own range, so no
+/// conversion sits between them for the residual to measure.
 inline magda::ParameterInfo gainParameter(float value = kGainDefault) {
     magda::ParameterInfo info;
     info.paramIndex = kGainParamIndex;
@@ -136,9 +116,7 @@ inline magda::DeviceInfo gainDevice(magda::DeviceId id, float value = kGainDefau
  *
  * The widths are on the model because that is where the plan reads them
  * (PlanCompiler clamps `audioInputChannels` and `audioOutputChannels` to the
- * bus), and the incumbent reads its own from the plugin. Both have to say the
- * same thing or the case is measuring the disagreement between the two
- * declarations rather than what the engines do with a narrow device.
+ * bus).
  */
 inline magda::DeviceInfo monoGainDevice(magda::DeviceId id, float value = kGainDefault) {
     auto device = gainDevice(id, value);
@@ -154,8 +132,8 @@ inline magda::DeviceInfo monoGainDevice(magda::DeviceId id, float value = kGainD
  *
  * What an instrument inside a chain is for: it generates rather than
  * processes, so a chain carrying both an audio source and one of these is
- * where the two engines have to agree that the instrument's output is *added*
- * to the bus rather than replacing it.
+ * where the instrument's output has to be *added* to the bus rather than
+ * replacing it.
  */
 inline magda::DeviceInfo synthDevice(magda::DeviceId id) {
     magda::DeviceInfo device;
@@ -211,14 +189,13 @@ inline bool isImpulseSynthDevice(const magda::DeviceInfo& device) {
     return device.pluginId == kSynthPluginId || device.pluginId == kMultiOutPluginId;
 }
 
-/// Whether @p device is the four-channel one, which is the only one the
-/// incumbent has to wrap for its extra pins.
+/// Whether @p device is the four-channel one, the only one with extra pins.
 inline bool isMultiOutSynthDevice(const magda::DeviceInfo& device) {
     return device.pluginId == kMultiOutPluginId;
 }
 
-/// Whether @p device is one of these, asked the way both legs ask it. Either
-/// width: they run the same gain, and what differs is the bus around it.
+/// Whether @p device is one of these. Either width: they run the same gain, and
+/// what differs is the bus around it.
 inline bool isGainDevice(const magda::DeviceInfo& device) {
     return device.pluginId == kGainPluginId || device.pluginId == kMonoGainPluginId;
 }

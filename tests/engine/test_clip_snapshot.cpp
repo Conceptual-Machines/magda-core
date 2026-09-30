@@ -382,7 +382,7 @@ TEST_CASE("A captured audio window compiles its source envelope", "[engine][clip
           std::string::npos);
 }
 
-TEST_CASE("Clip volume and gain reach the engine summed, as the incumbent applies them",
+TEST_CASE("Clip volume and gain reach the engine summed, as earlier versions applied them",
           "[engine][clip]") {
     auto clip = makeAudioClip(1, 0.0, 8.0);
     clip.volumeDB = -6.0f;

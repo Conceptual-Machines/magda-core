@@ -8,14 +8,11 @@
 #include "magda/daw/audio/plugins/ArpeggiatorPlugin.hpp"
 #include "magda/daw/audio/plugins/engine/EngineMagdaDevice.hpp"
 
-// Non-note MIDI through the arpeggiator, on both adapters (#2417).
+// Non-note MIDI through the arpeggiator on the engine adapter (#2417).
 //
 // The device replaces the notes it is handed and passes the rest of the
-// channel on, because thru would bring the held chord back with it. Both hosts
-// hand the device its input and take its output through containers of their
-// own -- the fork swaps a te::MidiMessageArray, the engine writes back onto a
-// juce::MidiBuffer -- so the two are driven over the same block and compared
-// rather than assumed.
+// channel on, because thru would bring the held chord back with it. The engine
+// writes the output back onto a juce::MidiBuffer.
 
 namespace {
 
@@ -28,7 +25,7 @@ constexpr int kController = 11;
 constexpr int kControllerValue = 77;
 
 /// A held note and an expression pedal on the same instant, which is the input
-/// both legs are given.
+/// the device is given.
 juce::MidiMessage heldNote() {
     return juce::MidiMessage::noteOn(1, 60, juce::uint8{90});
 }
@@ -54,9 +51,7 @@ bool isNoteOn(const juce::MidiMessage& message) {
     return message.isNoteOn();
 }
 
-/// What the fork's leg leaves on the buffer the host reads back.
-
-/// The same block through the engine's leg, read back off the port.
+/// The block through the engine adapter, read back off the port.
 std::vector<juce::MidiMessage> engineLegOutput() {
     adapter::EngineMagdaDevice hosted(std::make_unique<audio::ArpeggiatorPlugin>(),
                                       /*offlineRender=*/false);
@@ -100,7 +95,7 @@ class DeviceMidiPassThruTest final : public juce::UnitTest {
 
         beginTest("The native adapter never echoes the note the arpeggiator replaced");
 
-        // One note-on on each leg: the arpeggio's. The input's own would be
+        // One note-on: the arpeggio's. The input's own would be
         // the chord playing under the pattern, which is what thru is for.
         expect(count(engineLeg, isNoteOn) == 1, "The engine's leg should emit only its own too");
     }

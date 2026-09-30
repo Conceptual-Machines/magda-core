@@ -11,32 +11,29 @@
  * megabyte per case and a review that cannot read them, and a fixture recorded
  * once is a fixture nobody can regenerate when a case needs one bar more.
  *
- * The choice of material per case is not decoration, it is what makes a
- * residual mean something (#2040). Two correct implementations of the same
- * thing disagree wherever they interpolate, and between these two engines
- * stand three interpolators: a four-point cubic Lagrange here against JUCE's
- * five-point in the fork, and two phase vocoders whose output depends on how
- * their input was framed. Broadband material through any of those produces a
- * residual tens of decibels above anything a placement bug makes, and the only
- * way to pass is a tolerance wide enough to hide the placement bug too.
+ * The choice of material per case is what makes a residual mean something
+ * (#2040). Interpolators and phase vocoders answer differently to broadband
+ * material, so broadband input through one produces a residual tens of
+ * decibels above anything a placement bug makes, and the only way to pass is a
+ * tolerance wide enough to hide the placement bug too.
  *
  * So:
  *
- * - Where the engines must agree sample for sample, which is placement, trims,
- *   fades, loop tiling, reverse and comping, the material is impulses and
- *   steps. Nothing interpolates, one sample of disagreement is a residual at
- *   full scale, and a fade curve wrong in the fourth decimal shows up.
- * - Where an interpolator or a stretcher stands between them, the material is
- *   a tone well below Nyquist. Interpolation error falls with the fourth power
- *   of frequency over sample rate, so at a few hundred hertz both curves are
- *   the same curve to far below the floor, while a wrong position, a wrong
- *   ratio or a dropped sample is as loud as it ever was.
- * - Noise exists for one case, which measures how far apart the two stretchers
- *   are and asserts nothing.
+ * - Where placement must be exact to the sample (placement, trims, fades, loop
+ *   tiling, reverse and comping), the material is impulses and steps. Nothing
+ *   interpolates, one sample of error is a residual at full scale, and a fade
+ *   curve wrong in the fourth decimal shows up.
+ * - Where an interpolator or a stretcher is in the path, the material is a
+ *   tone well below Nyquist. Interpolation error falls with the fourth power
+ *   of frequency over sample rate, so at a few hundred hertz it sits far below
+ *   the floor, while a wrong position, a wrong ratio or a dropped sample is as
+ *   loud as it ever was.
+ * - Noise exists for one case, which measures stretcher output on broadband
+ *   material and asserts nothing.
  *
- * Written as 32-bit float, for the same reason the incumbent leg renders as
- * float: a 16-bit fixture puts quantisation noise at -96 dBFS, which is well
- * above the floor, and every case would be measuring the file format.
+ * Written as 32-bit float: a 16-bit fixture puts quantisation noise at
+ * -96 dBFS, well above the floor, and every case would be measuring the file
+ * format.
  */
 
 namespace magda::nulldiff {

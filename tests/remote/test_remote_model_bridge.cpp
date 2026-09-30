@@ -136,8 +136,8 @@ TEST_CASE("A local transport callback reaches subscribers without advancing the 
     BridgeFixture fixture;
     const auto before = fixture.service.currentRevision();
 
-    // This is the abstraction-level equivalent of Tracktion's transport
-    // ChangeBroadcaster or looping ValueTree firing after a local UI action.
+    // This is the abstraction-level equivalent of the transport state
+    // changing after a local UI action.
     fixture.api.transport_.playing = true;
     fixture.api.transport_.notifyStateChanged();
     fixture.service.changes().flush();

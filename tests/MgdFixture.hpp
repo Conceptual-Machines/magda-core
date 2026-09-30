@@ -15,7 +15,7 @@
  * @brief A real project turned into a null-diff case (#2173).
  *
  * Every case in the corpus today is built in code, and #2040 settled that
- * argument for the cases it covered: a load adds a step neither leg is testing
+ * argument for the cases it covered: a load adds a step the render is not testing
  * and a binary to the repository, and thirty lines of value initialisation is
  * reviewable as a diff. That reasoning still holds there and this does not
  * replace it.
@@ -35,7 +35,7 @@
  * render, the tier, the figures that tier needs, and the environment.
  *
  * None of that can live in the file. A `.mgd` is what the app writes and there
- * is nowhere in it to say what two engines owe each other. So the manifest
+ * is nowhere in it to say what the render owes. So the manifest
  * carries a `Case` holding only its declarations, and the load fills in the
  * project half. A fixture is the file plus the half a `.mgd` cannot hold.
  *
@@ -49,20 +49,19 @@
  *
  * So the manifest names, per source, the `MaterialSpec` that stands in for it,
  * and the rig writes it into the scratch directory and repoints the source
- * before either leg sees the case. Same rule as the rest of the corpus and the
+ * before the render sees the case. Same rule as the rest of the corpus and the
  * same two reasons: a fixture recorded once is a fixture nobody can regenerate
  * when a case needs one bar more, and a corpus carrying a sample library grows
  * a megabyte per project.
  *
- * Choosing the kind is a judgement about what stands between the two engines on
- * that source's path, the way #2040 chooses it per case. A stretched clip fed
- * impulses reports the distance between two interpolators rather than anything
- * about placement.
+ * Choosing the kind is a judgement about what the render asserts on that
+ * source's path, the way #2040 chooses it per case. A stretched clip fed
+ * impulses measures interpolation rather than placement.
  *
  * ## What the rig refuses
  *
  * A source the project references that the manifest does not name is a failure,
- * not a gap to fill in later. That case would reach a leg with a source pointing
+ * not a gap to fill in later. That case would reach the render with a source pointing
  * at a path that does not exist, so it would render silence, and silence nulls
  * against silence perfectly well. It is the failure this rig is built around.
  *
@@ -84,7 +83,7 @@
  *
  * ## A loaded fixture keeps its ids
  *
- * A `Case` carries source ids and nothing else; the legs resolve them through
+ * A `Case` carries source ids and nothing else; the render resolves them through
  * the global `SourcePool`. The app's install clears that pool and resets its id
  * allocator, which is right for an app with one project open and fatal for a
  * corpus holding several cases: two fixtures would both come back holding id 1
@@ -171,7 +170,7 @@ struct FixtureLoad {
     /// Why not. Empty on success, and the only thing a caller should print.
     std::string failure;
 
-    /// The case, ready for either leg. Meaningless unless @c ok.
+    /// The case, ready to render. Meaningless unless @c ok.
     Case value;
 
     /// The stand-in written for each source the manifest names, keyed by that
@@ -222,8 +221,7 @@ class PooledSourcesUnwind {
  * @brief Load @p fixture, writing its material into @p scratchDirectory.
  *
  * Drives the app's own load and its own source install rather than a copy of
- * them, for the reason the incumbent leg drives `PluginManager`: a second
- * implementation is something that can agree with itself while both are wrong.
+ * them, since a second implementation can agree with itself while both are wrong.
  *
  * Touches `SourcePool`, which the install path clears. Not thread safe, and
  * neither is anything else that reads the pool while it runs.

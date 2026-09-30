@@ -13,10 +13,9 @@
  * @file NullDiffNativeLeg.hpp
  * @brief A null-diff case rendered through the native engine (#2040).
  *
- * The engine's own offline render, the engine's own compiler and the engine's
- * own voice pool. Nothing here reimplements a step of it: a harness that
- * rendered through a second implementation would prove things about the second
- * implementation.
+ * The engine's own offline render, compiler and voice pool. Nothing here
+ * reimplements a step of it: a harness that rendered through a second
+ * implementation would prove things about that implementation.
  *
  * What this file does own is the host side the engine deliberately does not
  * have. A snapshot carries paths because that is what the model holds, and
@@ -26,7 +25,7 @@
  * device that has moved to the SDK (EngineDeviceFactory.hpp). What is left in
  * this file is the corpus's own two -- the gain and the impulse instrument,
  * which are in no catalog because they were written for the corpus -- and the
- * stand-in for a device neither engine runs (#2174).
+ * stand-in for a device the corpus does not run (#2174).
  */
 
 namespace juce {
@@ -41,10 +40,8 @@ namespace magda::nulldiff {
  *
  * The engine does not go looking for plugins and could not: which plugin a
  * project meant is answered against a scan, and the scan belongs to the host.
- * So the leg is handed one rather than finding one, and the corpus hands it the
- * same list the incumbent leg resolves against -- two legs reading one scan,
- * because a corpus where each engine found its own copy of a plugin would be
- * comparing two projects.
+ * So the leg is handed one rather than finding one, and the corpus hands every
+ * case the same list, so every case resolves against one scan.
  *
  * Absent is the normal case and not an error: the code-built corpus hosts no
  * plugins, and a machine with no scan has none to host. What it must not be is
@@ -109,11 +106,8 @@ struct NativeRender {
     /// samples of the reading.
     ///
     /// This is what a stretched case predicts its shift from, and it comes from
-    /// the engine rather than from a number written down here: the fork primes
-    /// with the material AT a clip's start where the engine primes with the
-    /// material BEFORE it, and both use the same library at the same preset, so
-    /// what the engine reads back is what the fork is late by. A constant in the
-    /// corpus would go stale the moment either side changed its preset.
+    /// the engine rather than from a number written down here: a constant in
+    /// the corpus would go stale the moment the stretcher's preset changed.
     int primingSamples = 0;
 };
 

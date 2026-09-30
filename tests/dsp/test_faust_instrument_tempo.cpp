@@ -5,7 +5,7 @@
 #include "magda/daw/audio/plugins/FaustInstrumentPlugin.hpp"
 
 // A runtime Faust instrument's `[role:projectTempo]` control follows the tempo map the
-// native engine hands the device (#2556, ported from the fork's suite).
+// native engine hands the device (#2556).
 
 namespace {
 
