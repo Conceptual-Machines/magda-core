@@ -386,10 +386,10 @@ ReplacementReferencePreflight preflightReplacementReferences(const ChainNodePath
                              AutomationManager::getInstance().getLanes(), bound});
     const std::array paths{devicePath};
     const auto affected = referencesAffectedBy(inventory, paths);
-    const auto* replaced = tracks.getDeviceInChainByPath(devicePath);
-    const bool stableDeviceIdentity = replaced != nullptr &&
-                                      replaced->pluginId == replacement.pluginId &&
-                                      replaced->format == replacement.format;
+    const auto* deviceInfo = tracks.getDeviceInChainByPath(devicePath);
+    const bool stableDeviceIdentity = deviceInfo != nullptr &&
+                                      deviceInfo->pluginId == replacement.pluginId &&
+                                      deviceInfo->format == replacement.format;
 
     ReplacementReferencePreflight result;
     for (const auto& reference : affected) {

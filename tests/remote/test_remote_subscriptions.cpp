@@ -698,7 +698,7 @@ TEST_CASE("A second subscriber does not cost the first one its next delta",
 
     // A change lands, and a new client subscribes before the flush that would
     // have told the first one about it. Moving the shared baseline forward for
-    // the newcomer would swallow that change for the incumbent.
+    // the newcomer would swallow that change for the existing subscriber.
     api.tracks_.tracks.push_back(makeTrack(2, "Bass"));
     service.noteModelChanged(Topic::Tracks);
 

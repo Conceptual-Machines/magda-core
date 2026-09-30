@@ -301,10 +301,10 @@ TEST_CASE("A device replacement preserves its slot and round-trips through undo"
     REQUIRE(oldId != INVALID_DEVICE_ID);
     REQUIRE(sentinelId != INVALID_DEVICE_ID);
     const auto oldPath = ChainNodePath::topLevelDevice(trackId, oldId);
-    auto* incumbent = tracks.getDeviceInChainByPath(oldPath);
-    REQUIRE(incumbent != nullptr);
-    incumbent->sidechain.type = SidechainConfig::Type::Audio;
-    incumbent->sidechain.sourceTrackId = trackId;
+    auto* deviceInfo = tracks.getDeviceInChainByPath(oldPath);
+    REQUIRE(deviceInfo != nullptr);
+    deviceInfo->sidechain.type = SidechainConfig::Type::Audio;
+    deviceInfo->sidechain.sourceTrackId = trackId;
     UndoManager::getInstance().clearHistory();
 
     const auto replaced = api.replaceDevice(oldPath, catalog[1].catalogId);
@@ -320,10 +320,10 @@ TEST_CASE("A device replacement preserves its slot and round-trips through undo"
     CHECK(UndoManager::getInstance().getUndoDescription() == "Replace Device");
 
     REQUIRE(UndoManager::getInstance().undo());
-    const auto* restoredIncumbent = tracks.getDeviceInChainByPath(oldPath);
-    REQUIRE(restoredIncumbent != nullptr);
-    CHECK(restoredIncumbent->sidechain.type == SidechainConfig::Type::Audio);
-    CHECK(restoredIncumbent->sidechain.sourceTrackId == trackId);
+    const auto* restoredDeviceInfo = tracks.getDeviceInChainByPath(oldPath);
+    REQUIRE(restoredDeviceInfo != nullptr);
+    CHECK(restoredDeviceInfo->sidechain.type == SidechainConfig::Type::Audio);
+    CHECK(restoredDeviceInfo->sidechain.sourceTrackId == trackId);
     CHECK(tracks.getDeviceInChainByPath(replaced.devicePath) == nullptr);
     CHECK(getDevice(tracks.getChainElements(trackId)[0]).id == oldId);
     CHECK(getDevice(tracks.getChainElements(trackId)[1]).id == sentinelId);
@@ -452,8 +452,8 @@ TEST_CASE("A failed replacement stage rolls back without an undo entry",
     auto& tracks = TrackManager::getInstance();
     const auto trackId = freshTrack("Rollback replacement");
     DeviceInfo old;
-    old.name = "Incumbent";
-    old.pluginId = "incumbent";
+    old.name = "Old";
+    old.pluginId = "old";
     const auto oldId = tracks.addDeviceToTrack(trackId, old);
     const auto oldPath = ChainNodePath::topLevelDevice(trackId, oldId);
     UndoManager::getInstance().clearHistory();

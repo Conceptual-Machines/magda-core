@@ -1150,21 +1150,21 @@ bool TrackManager::insertFlatSectionDeviceByPath(const ChainNodePath& devicePath
     return true;
 }
 
-DeviceId TrackManager::stageFlatSectionReplacement(const ChainNodePath& replacedPath,
+DeviceId TrackManager::stageFlatSectionReplacement(const ChainNodePath& devicePath,
                                                    const DeviceInfo& device, int index) {
-    auto* track = getTrack(replacedPath.trackId);
-    if (track == nullptr || (!replacedPath.isPostFx() && !replacedPath.isMixerAnalysis()) ||
-        getDeviceInChainByPath(replacedPath) == nullptr || device.isInstrument)
+    auto* track = getTrack(devicePath.trackId);
+    if (track == nullptr || (!devicePath.isPostFx() && !devicePath.isMixerAnalysis()) ||
+        getDeviceInChainByPath(devicePath) == nullptr || device.isInstrument)
         return INVALID_DEVICE_ID;
 
-    const bool postFx = replacedPath.isPostFx();
+    const bool postFx = devicePath.isPostFx();
     if (postFx && daw::audio::internalPluginHasTag(device.pluginId, "sidechain"))
         return INVALID_DEVICE_ID;
 
     auto& section = postFx ? track->chain.postFxChainElements : track->chain.mixerAnalysisElements;
     const bool uniqueKind = !postFx || daw::audio::isInternalAnalysisPlugin(device.pluginId);
     if (uniqueKind && std::ranges::any_of(section, [&](const PostFxChainElement& element) {
-            return element.device.id != replacedPath.getDeviceId() &&
+            return element.device.id != devicePath.getDeviceId() &&
                    element.device.pluginId == device.pluginId;
         }))
         return INVALID_DEVICE_ID;
@@ -1180,10 +1180,10 @@ DeviceId TrackManager::stageFlatSectionReplacement(const ChainNodePath& replaced
 
     index = std::clamp(index, 0, static_cast<int>(section.size()));
     section.insert(section.begin() + index, PostFxChainElement{staged});
-    const auto stagedPath =
-        postFx ? ChainNodePath::postFxDevice(replacedPath.trackId, staged.id)
-               : ChainNodePath::mixerAnalysisDevice(replacedPath.trackId, staged.id);
-    notifyTrackDevicesChanged(replacedPath.trackId);
+    const auto stagedPath = postFx
+                                ? ChainNodePath::postFxDevice(devicePath.trackId, staged.id)
+                                : ChainNodePath::mixerAnalysisDevice(devicePath.trackId, staged.id);
+    notifyTrackDevicesChanged(devicePath.trackId);
     notifyDeviceAdded(stagedPath, staged);
     return staged.id;
 }

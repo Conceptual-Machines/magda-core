@@ -1380,8 +1380,8 @@ ReplaceDeviceByPathCommand::ReplaceDeviceByPathCommand(
 
 void ReplaceDeviceByPathCommand::execute() {
     auto& tm = TrackManager::getInstance();
-    const auto* replaced = tm.getDeviceInChainByPath(devicePath_);
-    if (replaced == nullptr) {
+    const auto* deviceInfo = tm.getDeviceInChainByPath(devicePath_);
+    if (deviceInfo == nullptr) {
         executed_ = false;
         return;
     }
@@ -1411,12 +1411,12 @@ void ReplaceDeviceByPathCommand::execute() {
     }
 
     PluginService::getInstance().capturePluginStateAt(devicePath_);
-    replaced = tm.getDeviceInChainByPath(devicePath_);
-    if (replaced == nullptr) {
+    deviceInfo = tm.getDeviceInChainByPath(devicePath_);
+    if (deviceInfo == nullptr) {
         executed_ = false;
         return;
     }
-    previousDevice_ = *replaced;
+    previousDevice_ = *deviceInfo;
     insertIndex_ = tm.getChainElementIndex(devicePath_);
     if (insertIndex_ < 0) {
         executed_ = false;
