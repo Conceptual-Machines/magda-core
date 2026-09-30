@@ -22,3 +22,6 @@
 	path = third_party/JUCE
 	url = https://github.com/juce-framework/JUCE.git
 	branch = develop
+[submodule "third_party/magda-sdk"]
+	path = third_party/magda-sdk
+	url = https://github.com/Conceptual-Machines/magda-sdk.git
