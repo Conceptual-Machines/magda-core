@@ -30,11 +30,13 @@
 #include "../../core/AddressedParameters.hpp"
 #include "../../core/AutomationManager.hpp"
 #include "../../core/ChainWalk.hpp"
+#include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/DrumGridPads.hpp"
 #include "../../core/OpenProjectAddressing.hpp"
 #include "../../core/TempoMap.hpp"
 #include "../../core/TrackManager.hpp"
+#include "../../core/UndoManager.hpp"
 #include "../../core/controllers/BindingRegistry.hpp"
 #include "../../project/ProjectManager.hpp"
 #include "EngineInsertCapture.hpp"
@@ -1120,6 +1122,17 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             });
     }
 
+    /// Create a take's clip through @p create and make it one undo step (#2951).
+    template <typename Create>
+    static bool landTake(TrackId trackId, ClipView view, Create&& create) {
+        auto before = RecordTakeCommand::snapshot(trackId, view);
+        if (create() == INVALID_CLIP_ID)
+            return false;
+        UndoManager::getInstance().executeCommand(
+            std::make_unique<RecordTakeCommand>(trackId, view, std::move(before)));
+        return true;
+    }
+
     bool materializeMidi(engine::ClosedTake closed, bool createClip = true,
                          std::optional<int> sessionScene = {}) {
         if (closed.take == nullptr)
@@ -1163,12 +1176,15 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             collisionFallback = true;
             data.startBeat = take.startBeat;
         }
-        return clips.createRecordedMidiClip(closed.key.trackId, std::move(data),
-                                            collisionFallback ? ClipOverlapPolicy::PreserveExisting
-                                                              : ClipOverlapPolicy::ResolveOverlaps,
-                                            sessionScene ? ClipView::Session
-                                                         : ClipView::Arrangement,
-                                            sessionScene.value_or(-1)) != INVALID_CLIP_ID &&
+        const auto view = sessionScene ? ClipView::Session : ClipView::Arrangement;
+        return landTake(closed.key.trackId, view,
+                        [&] {
+                            return clips.createRecordedMidiClip(
+                                closed.key.trackId, std::move(data),
+                                collisionFallback ? ClipOverlapPolicy::PreserveExisting
+                                                  : ClipOverlapPolicy::ResolveOverlaps,
+                                view, sessionScene.value_or(-1));
+                        }) &&
                sessionScene.has_value();
     }
 
@@ -1214,12 +1230,15 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             collisionFallback = true;
             data.startBeat = take.startBeat;
         }
-        return clips.createRecordedAudioClip(closed.key.trackId, std::move(data),
-                                             collisionFallback ? ClipOverlapPolicy::PreserveExisting
-                                                               : ClipOverlapPolicy::ResolveOverlaps,
-                                             sessionScene ? ClipView::Session
-                                                          : ClipView::Arrangement,
-                                             sessionScene.value_or(-1)) != INVALID_CLIP_ID &&
+        const auto view = sessionScene ? ClipView::Session : ClipView::Arrangement;
+        return landTake(closed.key.trackId, view,
+                        [&] {
+                            return clips.createRecordedAudioClip(
+                                closed.key.trackId, std::move(data),
+                                collisionFallback ? ClipOverlapPolicy::PreserveExisting
+                                                  : ClipOverlapPolicy::ResolveOverlaps,
+                                view, sessionScene.value_or(-1));
+                        }) &&
                sessionScene.has_value();
     }
 
@@ -1230,6 +1249,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         bool removedSessionTarget = false;
         bool harvested = false;
         std::vector<engine::SlotKey> releases;
+
+        // Takes that close together are one recording pass, so one undo step.
+        UndoManager::getInstance().beginCompoundOperation("Record");
         for (auto& closed : session_->takeClosedTakes()) {
             harvested = true;
             const auto trackId = closed.key.trackId;
@@ -1290,6 +1312,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                 removedSessionTarget = true;
             }
         }
+        UndoManager::getInstance().endCompoundOperation();
+
         if (!releases.empty()) {
             engine::LaunchRequestQueue::Gesture gesture(session_->launchRequests());
             for (const auto& key : releases)
