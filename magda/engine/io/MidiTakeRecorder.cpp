@@ -1,8 +1,10 @@
 #include "io/MidiTakeRecorder.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <functional>
+#include <span>
 #include <utility>
 
 #include "exec/EngineDevice.hpp"
@@ -54,10 +56,13 @@ struct HeldNote {
  */
 class PassWalk {
   public:
-    /// @p beatOf gives the take-relative beat of a take position.
-    PassWalk(std::span<const std::int64_t> edges, std::function<double(std::int64_t)> beatOf)
+    /// @p beatOf gives the take-relative beat of a take position. An event up
+    /// to @p leadIn samples before the take opens is placed on its first beat.
+    PassWalk(std::span<const std::int64_t> edges, std::function<double(std::int64_t)> beatOf,
+             std::int64_t leadIn)
         : edges_(edges),
           beatOf_(std::move(beatOf)),
+          leadIn_(leadIn),
           takes_(edges.size() - 1),
           pending_(HeldNotes::kEntries) {
         passStart_.reserve(takes_.size());
@@ -86,6 +91,7 @@ class PassWalk {
 
     std::span<const std::int64_t> edges_;
     std::function<double(std::int64_t)> beatOf_;
+    std::int64_t leadIn_ = 0;
     std::vector<double> passStart_;
     std::vector<MidiTake> takes_;
 
@@ -126,7 +132,11 @@ void PassWalk::closePass(std::size_t pass) {
     }
 }
 
-void PassWalk::add(const RecordedMidiEvent& event) {
+void PassWalk::add(const RecordedMidiEvent& played) {
+    auto event = played;
+    if (event.sample < 0 && edges_.front() == 0 && event.sample >= -leadIn_)
+        event.sample = 0;
+
     if (event.sample < edges_.front() || event.sample >= edges_.back())
         return;
 
@@ -222,6 +232,7 @@ MidiTakeRecorder::MidiTakeRecorder(const LiveInputFeed& feed, RecordTap& tap,
     // Sized once, so a block's events are copied into it and never allocate.
     events_.ensureSize(static_cast<std::size_t>(kMaxMidiBytesPerPort));
     incoming_.ensureSize(static_cast<std::size_t>(kMaxMidiBytesPerPort));
+    leadInEvents_.ensureSize(static_cast<std::size_t>(kMaxMidiBytesPerPort));
 }
 
 void MidiTakeRecorder::capture(const BlockInfo& block, bool countingIn, const LoopRange& loop) {
@@ -246,6 +257,9 @@ void MidiTakeRecorder::capture(const BlockInfo& block, bool countingIn, const Lo
     // A count-in is time before the play position and a stop is where a take
     // ends, so neither is part of one.
     if (!block.playing || countingIn) {
+        if (countingIn && block.playing && state_ == State::waiting)
+            holdLeadIn(block);
+
         if (state_ == State::rolling) {
             beginPostRoll();
             capturePostRoll(block, 0, block.numSamples);
@@ -343,6 +357,56 @@ void MidiTakeRecorder::start(const BlockInfo& block, const LoopRange& loop, int 
     passOrigin_ = 0;
     passOriginBeat_ = startBeat_;
     preview_.open(startBeat_);
+
+    const auto beats = block.beats.end - block.beats.start;
+    const auto seconds = block.seconds.end - block.seconds.start;
+    leadInSamples_ = beats > 0.0 ? std::llround(kLeadInBeats * seconds / beats * sampleRate_) : 0;
+    writeLeadIn(block);
+}
+
+void MidiTakeRecorder::holdLeadIn(const BlockInfo& block) {
+    collect(block, 0, block.numSamples);
+
+    for (const auto metadata : events_) {
+        if (metadata.numBytes > 3)
+            continue;
+
+        if (numLeadIn_ == kMaxLeadInEvents) {
+            std::move(leadIn_.begin() + 1, leadIn_.end(), leadIn_.begin());
+            --numLeadIn_;
+        }
+
+        auto& held = leadIn_[numLeadIn_++];
+        held.sample = block.monotonicSamples.start.sample + metadata.samplePosition -
+                      settings_.latencySamples;
+        held.numBytes = metadata.numBytes;
+        std::copy_n(metadata.data, metadata.numBytes, held.bytes.begin());
+    }
+}
+
+void MidiTakeRecorder::writeLeadIn(const BlockInfo& block) {
+    const auto opens = block.monotonicSamples.start.sample;
+    const auto held = std::span(leadIn_).first(numLeadIn_);
+    numLeadIn_ = 0;
+
+    const auto first = std::ranges::find_if(
+        held, [&](const auto& event) { return event.sample - opens >= -leadInSamples_; });
+    if (first == held.end())
+        return;
+
+    // Stamped in take positions, before zero; finish() places them on the first beat.
+    const auto base = first->sample - opens;
+    leadInEvents_.clear();
+    for (auto event = first; event != held.end(); ++event)
+        leadInEvents_.addEvent(event->bytes.data(), event->numBytes,
+                               static_cast<int>(event->sample - opens - base));
+
+    stream_.writeMidi(leadInEvents_, base);
+    captured_.fetch_add(leadInEvents_.getNumEvents(), std::memory_order_relaxed);
+
+    const RecordTap::Change change(tap_);
+    for (const auto metadata : leadInEvents_)
+        preview(metadata.getMessage(), 0.0);
 }
 
 void MidiTakeRecorder::openPass(const BlockInfo& block, const LoopRange& loop) {
@@ -466,34 +530,41 @@ void MidiTakeRecorder::publish(const BlockInfo& block) {
 
         // A latency can stamp an event before the pass it arrived in began,
         // and the pass that owns it has already been drawn. finish() still
-        // places it, in the pass it belongs to.
-        if (sample < passOrigin_)
-            continue;
-
-        const auto message = metadata.getMessage();
-        const auto* bytes = message.getRawData();
-        const auto data2 = message.getRawDataSize() > 2 ? bytes[2] : 0;
-        const auto beat = liveBeatAt(block, sample) - passOriginBeat_;
-
-        // The take's own reading of the message and of what a strike does to a
-        // pitch already down, so the overlay and the clip are the same notes
-        // rather than two answers about them (io/TakeNotes.hpp).
-        switch (kindOf(bytes[0], data2)) {
-            case MidiKind::noteOn:
-                preview_.strike(message.getChannel(), message.getNoteNumber(),
-                                message.getVelocity(), beat);
-                break;
-
-            case MidiKind::noteOff:
-                preview_.release(message.getChannel(), message.getNoteNumber(), beat);
-                break;
-
-            default:
-                break;
+        // places it, in the pass it belongs to. Just ahead of the take's
+        // first beat, it is on that beat.
+        auto beat = liveBeatAt(block, sample) - passOriginBeat_;
+        if (sample < passOrigin_) {
+            if (passOrigin_ != 0 || sample < -leadInSamples_)
+                continue;
+            beat = 0.0;
         }
+
+        preview(metadata.getMessage(), beat);
     }
 
     preview_.reaches(std::max(0.0, liveBeatAt(block, end_) - passOriginBeat_));
+}
+
+// The take's own reading of the message and of what a strike does to a pitch
+// already down, so the overlay and the clip are the same notes rather than two
+// answers about them (io/TakeNotes.hpp).
+void MidiTakeRecorder::preview(const juce::MidiMessage& message, double beat) {
+    const auto* bytes = message.getRawData();
+    const auto data2 = message.getRawDataSize() > 2 ? bytes[2] : 0;
+
+    switch (kindOf(bytes[0], data2)) {
+        case MidiKind::noteOn:
+            preview_.strike(message.getChannel(), message.getNoteNumber(), message.getVelocity(),
+                            beat);
+            break;
+
+        case MidiKind::noteOff:
+            preview_.release(message.getChannel(), message.getNoteNumber(), beat);
+            break;
+
+        default:
+            break;
+    }
 }
 
 double MidiTakeRecorder::timeAt(std::int64_t sample) const {
@@ -509,7 +580,8 @@ double MidiTakeRecorder::beatAt(const TempoMap& tempo, double moment) const {
 
 std::vector<MidiTake> MidiTakeRecorder::passesFrom(const TempoMap& tempo,
                                                    std::span<const std::int64_t> edges) {
-    PassWalk walk(edges, [&](std::int64_t sample) { return beatAt(tempo, timeAt(sample)); });
+    PassWalk walk(
+        edges, [&](std::int64_t sample) { return beatAt(tempo, timeAt(sample)); }, leadInSamples_);
 
     for (const auto& event : sink_.events())
         walk.add(event);
