@@ -1891,28 +1891,29 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // operand of an || it would be skipped on a block that already
             // carried a panic, and fire again on a later one (#2418).
             const auto rerouted = takeOwedPanic(midiPanicForOp_[static_cast<std::size_t>(i)]);
-            DeviceBlock deviceBlock{
-                .audio = audio.getSubsetChannelBlock(0, blockWidth),
-                .midiIn = &midiIn(op.inputs[1]),
-                .midiInFractions = &fractionsIn(op.inputs[1]),
-                // What reached the port, plus the block's
-                // own playhead jump, which both hosts raise
-                // per device rather than passing it along a
-                // chain.
-                //
-                // Deliberately not this track going quiet. A
-                // panic says the host is about to re-assert
-                // what should sound, and only a jump does
-                // (playLane chases on !continuous); mute here
-                // is a gain with the track still rendering, so
-                // nothing is withheld and nothing would come
-                // back (#2418).
-                .midiInAllNotesOff = !block.continuous || midiInPanic(op.inputs[1]) || rerouted,
-                .midiOut = deviceMidiOut,
-                .midiOutFractions = producesMidi ? &fractionsOut(id, 1) : nullptr,
-                .sidechain = {},
-                .params = deviceParams(window),
-                .block = block};
+            DeviceBlock deviceBlock{.audio = audio.getSubsetChannelBlock(0, blockWidth),
+                                    .midiIn = &midiIn(op.inputs[1]),
+                                    .midiInFractions = &fractionsIn(op.inputs[1]),
+                                    // What reached the port, plus the block's
+                                    // own playhead jump, which both hosts raise
+                                    // per device rather than passing it along a
+                                    // chain.
+                                    //
+                                    // Deliberately not this track going quiet. A
+                                    // panic says the host is about to re-assert
+                                    // what should sound, and only a jump does
+                                    // (playLane chases on !continuous); mute here
+                                    // is a gain with the track still rendering, so
+                                    // nothing is withheld and nothing would come
+                                    // back (#2418).
+                                    .midiInAllNotesOff = (!block.continuous && !block.started) ||
+                                                         midiInPanic(op.inputs[1]) || rerouted,
+                                    .midiOut = deviceMidiOut,
+                                    .midiOutFractions =
+                                        producesMidi ? &fractionsOut(id, 1) : nullptr,
+                                    .sidechain = {},
+                                    .params = deviceParams(window),
+                                    .block = block};
             if (op.inputs[2].valid())
                 deviceBlock.sidechain = audioIn(op.inputs[2], numSamples);
 
@@ -2064,8 +2065,8 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // Where a device would be handed an all-notes-off, and also when the
             // chain falls silent: a muted track sends nothing more, including the
             // note-offs for what it started.
-            if (op.inputs[1].valid() &&
-                (value.silent || !block.continuous || midiInPanic(op.inputs[1])))
+            if (op.inputs[1].valid() && (value.silent || (!block.continuous && !block.started) ||
+                                         midiInPanic(op.inputs[1])))
                 insert->releaseNotes(block);
 
             if (value.silent)

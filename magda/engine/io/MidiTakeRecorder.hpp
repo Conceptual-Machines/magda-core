@@ -175,6 +175,29 @@ class MidiTakeRecorder final : public TakeCapture {
     /// fit is refused rather than dropped.
     static constexpr std::size_t kMaxPasses = 256;
 
+    /// How far ahead of its first beat a take still keeps what was played, on
+    /// that beat: a downbeat played on the click arrives just before it (#2949).
+    static constexpr double kLeadInBeats = 0.25;
+
+    /// Count-in events held against the take opening, newest kept.
+    static constexpr std::size_t kMaxLeadInEvents = 64;
+
+    /** @brief A count-in event, at its monotonic sample less the latency. */
+    struct LeadInEvent {
+        std::int64_t sample = 0;
+        std::array<std::uint8_t, 3> bytes{};
+        int numBytes = 0;
+    };
+
+    /// Hold a count-in block's events in case the take opens right after it.
+    void holdLeadIn(const BlockInfo& block);
+
+    /// Queue the held events close enough to @p block, where the take opens.
+    void writeLeadIn(const BlockInfo& block);
+
+    /// Draw one message on the tap's pass at @p beat.
+    void preview(const juce::MidiMessage& message, double beat);
+
     /// @p from is where inside the block the take begins, which a quantized
     /// launch puts off the block boundary.
     void start(const BlockInfo& block, const LoopRange& loop, int from = 0);
@@ -258,6 +281,13 @@ class MidiTakeRecorder final : public TakeCapture {
     double startBeat_ = 0.0;
     double startSeconds_ = 0.0;
     double sampleRate_ = 0.0;
+
+    /// @ref kLeadInBeats in samples at the take's opening tempo.
+    std::int64_t leadInSamples_ = 0;
+
+    std::array<LeadInEvent, kMaxLeadInEvents> leadIn_{};
+    std::size_t numLeadIn_ = 0;
+    juce::MidiBuffer leadInEvents_;
 
     /// Where the pass in flight began, in the take's own positions and in the
     /// beats they resolve to. What the tap's notes are relative to, which is

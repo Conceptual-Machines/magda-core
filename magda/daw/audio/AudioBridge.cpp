@@ -14,7 +14,6 @@
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
 #include "Vst3Preset.hpp"
-#include "modifiers/ADSRDebugLog.hpp"
 #include "plugin_manager/ExternalPluginState.hpp"
 #include "plugins/DeviceServices.hpp"
 #include "plugins/InsertConfigBridge.hpp"
@@ -181,7 +180,6 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit, TrackMeters& meters
     // Start timer for metering updates (30 FPS for smooth UI)
     startTimerHz(30);
 
-    MAGDA_ADSR_AUDIO_LOG("AudioBridge initialized");
     DBG("AudioBridge initialized");
 }
 
@@ -603,8 +601,6 @@ void AudioBridge::deviceAdded(const ChainNodePath& devicePath, const DeviceInfo&
 }
 
 void AudioBridge::deviceModifiersChanged(TrackId trackId) {
-    MAGDA_ADSR_AUDIO_LOG("deviceModifiersChanged trackId=" << trackId);
-
     // Skip the modifier resync when this notify is the playback engine
     // echoing a baked curve value (e.g. LFO rate) back into MAGDA state.
     // TE already drove the modifier param on the audio thread; resyncing
@@ -613,9 +609,7 @@ void AudioBridge::deviceModifiersChanged(TrackId trackId) {
         return;
 
     // Modifier properties changed (rate, waveform, sync, trigger mode) - resync only modifiers
-    MAGDA_ADSR_AUDIO_LOG("follower-bridge resync-start trackId=" << trackId);
     pluginManager_.resyncDeviceModifiers(trackId);
-    MAGDA_ADSR_AUDIO_LOG("follower-bridge resync-done trackId=" << trackId);
 
     // Mod-rate lanes are mode-aware: tempoSync flips swap the bake target
     // between TE's `rate` (Hz) and `rateType` (sync division). Force a rebake
@@ -634,11 +628,9 @@ void AudioBridge::deviceModifiersChanged(TrackId trackId) {
     // Re-check sidechain monitors on this track and all other tracks
     // (a sidechain source change on this track may affect the source track's monitor)
     sidechainRouting_.refreshAllSourceMonitors();
-    MAGDA_ADSR_AUDIO_LOG("follower-bridge monitor-refresh-done trackId=" << trackId);
 
     // Re-check MIDI routing in case trigger mode changed to/from MIDI
     updateMidiInputRouting();
-    MAGDA_ADSR_AUDIO_LOG("follower-bridge midi-refresh-done trackId=" << trackId);
 }
 
 void AudioBridge::audioSidechainTriggered(TrackId /*sourceTrackId*/) {

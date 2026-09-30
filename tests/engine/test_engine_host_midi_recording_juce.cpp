@@ -1473,15 +1473,16 @@ class EngineHostMidiRecordingTest final : public juce::UnitTest {
 
         expect(host.startMidiRecording(4.0), "eligible armed track starts recording");
         devices.device->pump();
-        expectWithinAbsoluteError(host.positionBeats(), 4.02, 0.001,
-                                  "the cursor rolls in from a bar before beat eight");
+        expectWithinAbsoluteError(host.positionBeats(), 8.0, 0.001,
+                                  "the cursor holds at beat eight while it counts (#2949)");
 
-        // Played during the count-in: heard, never part of the take.
+        // Played at the start of the count-in: heard, never part of the take.
         host.pushMidi("keyboard", juce::MidiMessage::noteOn(1, 60, (juce::uint8)100));
         devices.device->pump();
         host.pushMidi("keyboard", juce::MidiMessage::noteOff(1, 60));
-        for (int i = 0; i < 400 && host.positionBeats() < 8.0; ++i)
+        for (int i = 0; i < 400 && host.positionBeats() <= 8.0; ++i)
             devices.device->pump();
+        expect(host.positionBeats() > 8.0, "the timeline rolls once the count-in ends");
 
         host.pushMidi("keyboard", juce::MidiMessage::noteOn(1, 64, (juce::uint8)100));
         for (int i = 0; i < 10; ++i)

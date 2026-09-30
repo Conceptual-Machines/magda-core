@@ -1584,8 +1584,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                 const auto boundary = std::floor(sync.beat / period + 1.0) * period;
                 due = sync.monotonicAt(boundary);
             } else if (const auto countIn = countInBeats(); countIn > 0.0) {
-                // The roll-in moves the cursor back but not the monotonic count,
-                // so the count-in ends that many beats past where it stands now.
+                // The count-in holds the cursor but not the monotonic count, so
+                // it ends that many beats past where the count stands now.
                 due = session_->syncPoint().monotonicBeat + countIn;
             }
             engine::LaunchRequestQueue::Gesture gesture(session_->launchRequests());

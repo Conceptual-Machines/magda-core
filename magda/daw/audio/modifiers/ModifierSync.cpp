@@ -2,7 +2,6 @@
 
 #include <algorithm>
 
-#include "modifiers/ADSRDebugLog.hpp"
 #include "modifiers/ModifierHelpers.hpp"
 
 namespace magda {
@@ -90,16 +89,6 @@ te::Modifier::Ptr createModifier(const ModInfo& modInfo, te::ModifierList& modLi
                 // pc.destBuffer path isn't the track audio at the modifier's
                 // position in our graph, so self-mode would otherwise stay silent.
                 ef->setUsesExternalInput(true);
-                MAGDA_ADSR_AUDIO_LOG(
-                    "follower-sync create modId="
-                    << static_cast<int>(modInfo.id) << " gainDb=" << modInfo.followerGainDb
-                    << " hpOn=" << static_cast<int>(modInfo.followerHpEnabled)
-                    << " hpHz=" << modInfo.followerHpFreq
-                    << " lpOn=" << static_cast<int>(modInfo.followerLpEnabled)
-                    << " lpHz=" << modInfo.followerLpFreq << " attack=" << modInfo.followerAttackMs
-                    << " hold=" << modInfo.followerHoldMs
-                    << " release=" << modInfo.followerReleaseMs
-                    << " usesExternal=" << static_cast<int>(ef->getUsesExternalInput()));
             }
             modifier = efMod;
             break;
@@ -360,16 +349,6 @@ void ModifierSyncWalker::syncProperties(const ConstChainNode& node, const Modifi
                 // matching syncStructure - keep self-mode working after a param
                 // tweak, which takes this in-place path (no link-fingerprint change).
                 ef->setUsesExternalInput(true);
-                MAGDA_ADSR_AUDIO_LOG(
-                    "follower-sync update modId="
-                    << static_cast<int>(modInfo.id) << " gainDb=" << modInfo.followerGainDb
-                    << " hpOn=" << static_cast<int>(modInfo.followerHpEnabled)
-                    << " hpHz=" << modInfo.followerHpFreq
-                    << " lpOn=" << static_cast<int>(modInfo.followerLpEnabled)
-                    << " lpHz=" << modInfo.followerLpFreq << " attack=" << modInfo.followerAttackMs
-                    << " hold=" << modInfo.followerHoldMs
-                    << " release=" << modInfo.followerReleaseMs
-                    << " usesExternal=" << static_cast<int>(ef->getUsesExternalInput()));
             }
 
             for (const auto& link : modInfo.links) {

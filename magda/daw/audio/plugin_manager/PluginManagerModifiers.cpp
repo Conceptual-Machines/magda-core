@@ -14,7 +14,6 @@
 #include "../TracktionHelpers.hpp"
 #include "PluginManager.hpp"
 #include "core/BlockMath.hpp"
-#include "modifiers/ADSRDebugLog.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 #include "modifiers/ModifierHelpers.hpp"
 #include "modifiers/ModifierSync.hpp"
@@ -371,18 +370,11 @@ void PluginManager::triggerSidechainNoteOn(TrackId sourceTrackId,
 
     auto* cache = activeCache_.load(std::memory_order_acquire);
     auto& entry = cache->entries[static_cast<size_t>(sourceTrackId)];
-    MAGDA_ADSR_AUDIO_LOG("trigger dispatch sourceTrack="
-                         << sourceTrackId << " cacheCount=" << entry.count << " modeFilter="
-                         << (modeFilter.has_value() ? juce::String(static_cast<int>(*modeFilter))
-                                                    : juce::String("none")));
 
     for (int i = 0; i < entry.count; ++i) {
         // Filter by trigger mode if specified
         if (modeFilter.has_value() &&
             entry.trigMode[static_cast<size_t>(i)] != modeFilter.value()) {
-            MAGDA_ADSR_AUDIO_LOG("trigger skip sourceTrack="
-                                 << sourceTrackId << " idx=" << i << " cachedMode="
-                                 << static_cast<int>(entry.trigMode[static_cast<size_t>(i)]));
             continue;
         }
 
@@ -391,34 +383,9 @@ void PluginManager::triggerSidechainNoteOn(TrackId sourceTrackId,
         // Cross-track: force value=0 for transient gap.
         // Self-track: resync phase but preserve value (no zero gap needed).
         if (auto* lfo = dynamic_cast<te::LFOModifier*>(mod)) {
-            MAGDA_ADSR_AUDIO_LOG(
-                "trigger LFO sourceTrack="
-                << sourceTrackId << " idx=" << i << " crossTrack=" << static_cast<int>(crossTrack)
-                << " mode=" << static_cast<int>(entry.trigMode[static_cast<size_t>(i)])
-                << " gatedBefore=" << static_cast<int>(lfo->isGated())
-                << " syncType=" << juce::roundToInt(lfo->syncTypeParam->getCurrentValue()));
             triggerLFONoteOnWithReset(lfo, crossTrack);
-            MAGDA_ADSR_AUDIO_LOG("trigger LFO done sourceTrack="
-                                 << sourceTrackId << " idx=" << i
-                                 << " gatedAfter=" << static_cast<int>(lfo->isGated()));
         } else if (auto* adsr = dynamic_cast<te::ADSRModifier*>(mod)) {
-            MAGDA_ADSR_AUDIO_LOG(
-                "trigger ADSR sourceTrack="
-                << sourceTrackId << " idx=" << i << " crossTrack=" << static_cast<int>(crossTrack)
-                << " mode=" << static_cast<int>(entry.trigMode[static_cast<size_t>(i)])
-                << " gatedBefore=" << static_cast<int>(adsr->isGated())
-                << " syncType=" << juce::roundToInt(adsr->syncTypeParam->getCurrentValue())
-                << " stageBefore=" << static_cast<int>(adsr->getCurrentStage())
-                << " valueBefore=" << adsr->getCurrentValue());
             adsr->triggerNoteOn(crossTrack);
-            MAGDA_ADSR_AUDIO_LOG("trigger ADSR done sourceTrack="
-                                 << sourceTrackId << " idx=" << i
-                                 << " gatedAfter=" << static_cast<int>(adsr->isGated())
-                                 << " stageAfter=" << static_cast<int>(adsr->getCurrentStage())
-                                 << " valueAfter=" << adsr->getCurrentValue());
-        } else {
-            MAGDA_ADSR_AUDIO_LOG("trigger unknown modifier sourceTrack=" << sourceTrackId
-                                                                         << " idx=" << i);
         }
     }
 }
@@ -435,8 +402,6 @@ void PluginManager::gateSidechainLFOs(TrackId sourceTrackId) {
 
     auto* cache = activeCache_.load(std::memory_order_acquire);
     auto& entry = cache->entries[static_cast<size_t>(sourceTrackId)];
-    MAGDA_ADSR_AUDIO_LOG("gate dispatch sourceTrack=" << sourceTrackId
-                                                      << " cacheCount=" << entry.count);
     for (int i = 0; i < entry.count; ++i) {
         auto* mod = entry.mods[static_cast<size_t>(i)];
 
@@ -444,20 +409,8 @@ void PluginManager::gateSidechainLFOs(TrackId sourceTrackId) {
         // self- and cross-track alike (it is a one-shot envelope, not a loop).
         if (auto* adsr = dynamic_cast<te::ADSRModifier*>(mod)) {
             const int syncType = juce::roundToInt(adsr->syncTypeParam->getCurrentValue());
-            MAGDA_ADSR_AUDIO_LOG("gate ADSR sourceTrack="
-                                 << sourceTrackId << " idx=" << i << " mode="
-                                 << static_cast<int>(entry.trigMode[static_cast<size_t>(i)])
-                                 << " syncType=" << syncType
-                                 << " gatedBefore=" << static_cast<int>(adsr->isGated())
-                                 << " stageBefore=" << static_cast<int>(adsr->getCurrentStage())
-                                 << " valueBefore=" << adsr->getCurrentValue());
             if (syncType == 2)
                 adsr->setGated(true);
-            MAGDA_ADSR_AUDIO_LOG("gate ADSR done sourceTrack="
-                                 << sourceTrackId << " idx=" << i
-                                 << " gatedAfter=" << static_cast<int>(adsr->isGated())
-                                 << " stageAfter=" << static_cast<int>(adsr->getCurrentStage())
-                                 << " valueAfter=" << adsr->getCurrentValue());
             continue;
         }
 
@@ -469,44 +422,20 @@ void PluginManager::gateSidechainLFOs(TrackId sourceTrackId) {
         // Only gate note-triggered LFOs (syncType == 2)
         if (lfo && juce::roundToInt(lfo->syncTypeParam->getCurrentValue()) == 2) {
             DBG("[SC-GATE] gating LFO srcTrack=" << sourceTrackId << " idx=" << i);
-            MAGDA_ADSR_AUDIO_LOG("gate LFO sourceTrack="
-                                 << sourceTrackId << " idx=" << i << " gatedBefore="
-                                 << static_cast<int>(lfo->isGated()) << " syncType="
-                                 << juce::roundToInt(lfo->syncTypeParam->getCurrentValue()));
             lfo->setGated(true);
-            MAGDA_ADSR_AUDIO_LOG("gate LFO done sourceTrack=" << sourceTrackId << " idx=" << i
-                                                              << " gatedAfter="
-                                                              << static_cast<int>(lfo->isGated()));
         }
     }
 }
 
 void PluginManager::pushFollowerSourceBuffer(TrackId sourceTrackId, const float* mono,
                                              int numSamples, double sampleRate) {
-    if (sourceTrackId < 0 || sourceTrackId >= kMaxCacheTracks || mono == nullptr ||
-        numSamples <= 0) {
-        static std::atomic<int> invalidLogThrottle{0};
-        if ((invalidLogThrottle.fetch_add(1, std::memory_order_relaxed) % 200) == 0) {
-            MAGDA_ADSR_AUDIO_LOG("follower-push invalid sourceTrack="
-                                 << sourceTrackId
-                                 << " hasMono=" << static_cast<int>(mono != nullptr)
-                                 << " numSamples=" << numSamples);
-        }
+    if (sourceTrackId < 0 || sourceTrackId >= kMaxCacheTracks || mono == nullptr || numSamples <= 0)
         return;
-    }
 
     auto* cache = activeCache_.load(std::memory_order_acquire);
     auto& entry = cache->entries[static_cast<size_t>(sourceTrackId)];
-    if (entry.followerCount <= 0) {
-        static std::atomic<int> emptyLogThrottle{0};
-        if ((emptyLogThrottle.fetch_add(1, std::memory_order_relaxed) % 200) == 0) {
-            MAGDA_ADSR_AUDIO_LOG("follower-push no-followers sourceTrack="
-                                 << sourceTrackId << " hasFollowerSource="
-                                 << static_cast<int>(entry.hasFollowerSource)
-                                 << " count=" << entry.followerCount);
-        }
+    if (entry.followerCount <= 0)
         return;
-    }
 
     // Per-follower detection: apply input gain and that follower's HP/LP filters
     // (so each can track a different part of the spectrum), then take the peak
@@ -514,22 +443,10 @@ void PluginManager::pushFollowerSourceBuffer(TrackId sourceTrackId, const float*
     const int n = std::min(numSamples, static_cast<int>(followerScratch_.size()));
     const float rawPeak = peakMagnitude(mono, n);
 
-    static std::atomic<int> pushLogThrottle{0};
-    const bool logThisBlock = (pushLogThrottle.fetch_add(1, std::memory_order_relaxed) % 100) == 0;
-    if (logThisBlock) {
-        MAGDA_ADSR_AUDIO_LOG("follower-push block sourceTrack="
-                             << sourceTrackId << " followers=" << entry.followerCount << " samples="
-                             << n << " rawPeak=" << rawPeak << " sampleRate=" << sampleRate);
-    }
-
     for (int i = 0; i < entry.followerCount; ++i) {
         auto& slot = entry.followers[static_cast<size_t>(i)];
-        if (slot.mod == nullptr) {
-            if (logThisBlock)
-                MAGDA_ADSR_AUDIO_LOG("follower-push slot-null sourceTrack=" << sourceTrackId
-                                                                            << " slot=" << i);
+        if (slot.mod == nullptr)
             continue;
-        }
 
         float peak = 0.0f;
         if (!slot.hpEnabled && !slot.lpEnabled) {
@@ -563,16 +480,7 @@ void PluginManager::pushFollowerSourceBuffer(TrackId sourceTrackId, const float*
             peak = peakMagnitude(work, n);
         }
 
-        const float outBefore = slot.mod->getCurrentValue();
         slot.mod->setExternalInput(peak);
-        if (logThisBlock) {
-            MAGDA_ADSR_AUDIO_LOG("follower-push slot sourceTrack="
-                                 << sourceTrackId << " slot=" << i << " rawPeak=" << rawPeak
-                                 << " sentPeak=" << peak << " gain=" << slot.gain << " hpOn="
-                                 << static_cast<int>(slot.hpEnabled) << " hpHz=" << slot.hpFreq
-                                 << " lpOn=" << static_cast<int>(slot.lpEnabled)
-                                 << " lpHz=" << slot.lpFreq << " outBefore=" << outBefore);
-        }
     }
 }
 
@@ -836,12 +744,6 @@ void PluginManager::rebuildSidechainLFOCache() {
                     continue;
                 if (dynamic_cast<te::LFOModifier*>(modIt->second.get()) ||
                     dynamic_cast<te::ADSRModifier*>(modIt->second.get())) {
-                    MAGDA_ADSR_AUDIO_LOG(
-                        "cache collect sourceTrack="
-                        << track.id << " modId=" << static_cast<int>(modInfo.id) << " type="
-                        << (dynamic_cast<te::ADSRModifier*>(modIt->second.get()) ? "ADSR" : "LFO")
-                        << " mode=" << static_cast<int>(modInfo.triggerMode)
-                        << " links=" << static_cast<int>(modInfo.links.size()));
                     lfos.push_back(modIt->second.get());
                     modes.push_back(modInfo.triggerMode);
                 } else if (auto* ef =
@@ -956,39 +858,15 @@ void PluginManager::rebuildSidechainLFOCache() {
             slot.gain = juce::Decibels::decibelsToGain(mi->followerGainDb);
             slot.hpFreq = mi->followerHpFreq;
             slot.lpFreq = mi->followerLpFreq;
-            MAGDA_ADSR_AUDIO_LOG(
-                "follower-cache slot sourceTrack="
-                << track.id << " slot=" << i << " modId=" << static_cast<int>(mi->id)
-                << " gainDb=" << mi->followerGainDb << " gain=" << slot.gain
-                << " hpOn=" << static_cast<int>(slot.hpEnabled) << " hpHz=" << slot.hpFreq
-                << " lpOn=" << static_cast<int>(slot.lpEnabled) << " lpHz=" << slot.lpFreq);
         }
         entry.hasFollowerSource = entry.followerCount > 0;
-        if (entry.hasFollowerSource) {
-            MAGDA_ADSR_AUDIO_LOG("follower-cache entry sourceTrack="
-                                 << track.id << " followerCount=" << entry.followerCount
-                                 << " audioTrigger=" << static_cast<int>(entry.hasAudioTrigger));
-        }
         entry.count = std::min(static_cast<int>(lfos.size()), PerTrackEntry::kMaxMods);
-        if (entry.count > 0) {
-            MAGDA_ADSR_AUDIO_LOG("cache entry sourceTrack=" << track.id << " count=" << entry.count
-                                                            << " selfCount=" << selfTrackCount
-                                                            << " totalCollected="
-                                                            << static_cast<int>(lfos.size()));
-        }
         for (int i = 0; i < entry.count; ++i) {
             entry.mods[static_cast<size_t>(i)] = lfos[static_cast<size_t>(i)];
             entry.isCrossTrack[static_cast<size_t>(i)] = (i >= selfTrackCount);
             entry.trigMode[static_cast<size_t>(i)] = (static_cast<size_t>(i) < modes.size())
                                                          ? modes[static_cast<size_t>(i)]
                                                          : LFOTriggerMode::Free;
-            MAGDA_ADSR_AUDIO_LOG(
-                "cache slot sourceTrack="
-                << track.id << " idx=" << i << " type="
-                << (dynamic_cast<te::ADSRModifier*>(entry.mods[static_cast<size_t>(i)]) ? "ADSR"
-                                                                                        : "LFO")
-                << " crossTrack=" << static_cast<int>(entry.isCrossTrack[static_cast<size_t>(i)])
-                << " mode=" << static_cast<int>(entry.trigMode[static_cast<size_t>(i)]));
         }
     }
 

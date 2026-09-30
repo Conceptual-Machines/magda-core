@@ -268,36 +268,39 @@ TEST_CASE("A loop is entered from before it and left where it ends",
     }
 }
 
-TEST_CASE("Count-in rolls in before the play position", "[engine][transport][clock][countin]") {
+TEST_CASE("Count-in holds the play position while it counts",
+          "[engine][transport][clock][countin][2949]") {
     TransportClock clock;
     auto snapshot = playing(4.0);
     snapshot.request.countInBeats = 2.0;
     snapshot.loop = {true, 4.0, 8.0};
 
-    SECTION("the cursor starts short of it and plays into it") {
+    SECTION("the timeline stands still and only the count runs") {
         const auto opening = advance(clock, snapshot, 512);
 
-        // Two beats before the play position, playing: material before the
-        // start is heard rather than skipped, which is what makes a count-in
-        // different from starting late.
-        CHECK(opening.segments[0].block.beats.start == approx(2.0));
-        CHECK(opening.segments[0].block.playing);
-        CHECK(opening.segments[0].countingIn);
+        // Nothing before the start is heard: pre-roll is punch-in's job.
+        REQUIRE(opening.segments.size() == 1);
+        const auto& segment = opening.segments[0];
+        CHECK(segment.countingIn);
+        CHECK(!segment.block.playing);
+        CHECK(segment.block.beats.start == approx(4.0));
+        CHECK(segment.block.beats.end == approx(4.0));
+        CHECK(segment.count.playing);
+        CHECK(segment.count.beats.start == approx(2.0));
+        CHECK(clock.positionBeats() == approx(4.0));
     }
 
-    SECTION("the loop does not wrap a roll-in") {
-        // A count-in that began before the loop end would otherwise wrap on
-        // its way to the play position and count for ever without arriving.
+    SECTION("the loop does not touch a count-in") {
         auto late = playing(9.0, 2);
         late.request.countInBeats = 4.0;
         late.loop = {true, 0.0, 6.0};
 
         advance(clock, late, static_cast<int>(kSamplesPerBeat * 3));
-        CHECK(clock.positionBeats() == approx(8.0));
+        CHECK(clock.positionBeats() == approx(9.0));
     }
 
     SECTION("the callback is cut where the count-in ends") {
-        // Land 100 samples short of the play position.
+        // Land 100 samples short of the end of the count.
         advance(clock, snapshot, static_cast<int>(kSamplesPerBeat * 2) - 100);
 
         const auto crossing = advance(clock, snapshot, 512);
@@ -306,22 +309,49 @@ TEST_CASE("Count-in rolls in before the play position", "[engine][transport][clo
 
         CHECK(crossing.segments[0].countingIn);
         CHECK(crossing.segments[0].block.numSamples == 100);
+        CHECK(crossing.segments[0].count.beats.end == approx(4.0));
         CHECK(!crossing.segments[1].countingIn);
+        CHECK(crossing.segments[1].block.playing);
         CHECK(crossing.segments[1].block.beats.start == approx(4.0));
 
-        // Reaching the play position is not a jump: the cursor played there.
-        CHECK(crossing.segments[1].block.continuous);
+        // The timeline starts here rather than continuing anything, and it is
+        // a start rather than a jump.
+        CHECK(!crossing.segments[1].block.continuous);
+        CHECK(crossing.segments[1].block.started);
+        CHECK(!crossing.segments[0].block.started);
+    }
+
+    SECTION("only the first rolling block is a start") {
+        advance(clock, snapshot, static_cast<int>(kSamplesPerBeat * 2) + 64);
+        const auto next = advance(clock, snapshot, 64);
+        CHECK(!next.segments[0].block.started);
     }
 
     SECTION("the loop takes over once the count-in is done") {
-        // Two beats of roll-in, the loop's four beats, and half a beat back
-        // inside it: the loop was suppressed for the count-in and for nothing
-        // else.
+        // Two beats of count, the loop's four beats, and half a beat back
+        // inside it.
         const auto rendered = advance(clock, snapshot, static_cast<int>(kSamplesPerBeat * 6.5));
 
         REQUIRE(rendered.segments.size() == 3);
         CHECK(clock.positionBeats() == approx(4.5));
     }
+}
+
+TEST_CASE("A start is not a jump", "[engine][transport][clock][2949]") {
+    TransportClock clock;
+
+    const auto opening = advance(clock, playing(4.0, 1), 64);
+    CHECK(!opening.segments[0].block.continuous);
+    CHECK(opening.segments[0].block.started);
+
+    // A locate while rolling is the jump a device is panicked for.
+    const auto located = advance(clock, playing(8.0, 2), 64);
+    CHECK(!located.segments[0].block.continuous);
+    CHECK(!located.segments[0].block.started);
+
+    advance(clock, halt(3), 64);
+    const auto again = advance(clock, playing(8.0, 4), 64);
+    CHECK(again.segments[0].block.started);
 }
 
 TEST_CASE("Editing the tempo moves the seconds, not the beat",
@@ -754,7 +784,7 @@ TEST_CASE("The monotonic seconds count rendered time, not converted beats",
 
         advance(clock, snapshot, static_cast<int>(kSamplesPerBeat) * 3);
 
-        // Counting in is playing: the clock runs through it.
+        // The timeline holds through a count-in, but time still passes.
         CHECK(clock.monotonicSeconds() == approx(secondsOf(static_cast<int>(kSamplesPerBeat) * 3)));
     }
 
