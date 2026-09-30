@@ -257,7 +257,9 @@ void MidiTakeRecorder::capture(const BlockInfo& block, bool countingIn, const Lo
     // A count-in is time before the play position and a stop is where a take
     // ends, so neither is part of one.
     if (!block.playing || countingIn) {
-        if (countingIn && state_ == State::waiting)
+        // A count-in holds the timeline; waiting for a punch-in rolls it, and a
+        // punch-in point is placed on purpose, so only a count-in has a lead-in.
+        if (countingIn && !block.playing && state_ == State::waiting)
             holdLeadIn(block);
 
         if (state_ == State::rolling) {
