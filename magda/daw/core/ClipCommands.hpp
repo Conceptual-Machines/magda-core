@@ -912,6 +912,36 @@ class RecordSessionToArrangementCommand : public UndoableCommand {
     bool snapshotCaptured_ = false;
 };
 
+/**
+ * @brief A recorded take landing on one track, as an undo step (#2951).
+ *
+ * Undo returns the track's clips in @p view to @p before, taken just before the take was created;
+ * the first execute records the state the take left, for redo.
+ */
+class RecordTakeCommand : public UndoableCommand {
+  public:
+    RecordTakeCommand(TrackId trackId, ClipView view, std::vector<ClipInfo> before);
+
+    juce::String getDescription() const override {
+        return "Record";
+    }
+
+    void execute() override;
+    void undo() override;
+
+    /// The track's clips in @p view, for the snapshot taken before a take lands.
+    static std::vector<ClipInfo> snapshot(TrackId trackId, ClipView view);
+
+  private:
+    void replaceWith(const std::vector<ClipInfo>& clips);
+
+    TrackId trackId_;
+    ClipView view_;
+    std::vector<ClipInfo> before_;
+    std::vector<ClipInfo> after_;
+    bool executed_ = false;
+};
+
 // ============================================================================
 // Slice Utilities
 // ============================================================================

@@ -7,6 +7,7 @@
 
 #include <juce_audio_devices/juce_audio_devices.h>
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -61,6 +62,10 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
 
     /** @brief Open @p settings and save them as the user's choice; returns the open error. */
     juce::String apply(const AudioIOSettings& settings) override;
+
+    /** @brief apply(), with a CoreAudio rate switch waited out off the message thread. */
+    void applyAsync(const AudioIOSettings& settings,
+                    std::function<void(juce::String)> done) override;
 
     /** @brief What was saved, or what is open when nothing was. */
     AudioIOSettings chosen() const override;
@@ -132,10 +137,19 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
     AudioIOSettings fit(const std::optional<AudioIOSettings>& wanted);
 
     juce::String openFitted(const AudioIOSettings& fitted);
+
+    /** @brief The CoreAudio interfaces @p fitted opens at a rate they are not at. */
+    static std::vector<std::string> interfacesChangingRate(const AudioIOSettings& fitted);
+
+    /** @brief Switch a CoreAudio interface to the fitted rate before opening it (#2950). */
+    void settleCoreAudioRate(const AudioIOSettings& fitted);
     void changeListenerCallback(juce::ChangeBroadcaster*) override;
 
     juce::AudioDeviceManager manager_;
     juce::File legacySettings_;
+
+    /// Cleared on destruction, so a rate switch finishing late does not open a dead service.
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
 };
 
 }  // namespace magda

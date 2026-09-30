@@ -658,12 +658,54 @@ TEST_CASE("A take starts where the count-in ends", "[engine][io][record][midi][2
     CHECK(take.startBeat == Catch::Approx(0.0));
 }
 
+TEST_CASE("A downbeat played just ahead of the take is on its first beat",
+          "[engine][io][record][midi][2949]") {
+    SECTION("from the end of the count-in") {
+        Rig rig(takeOf());
+        rig.schedule({noteOn((kBeatSamples * 4) - 200, 60), noteOff((kBeatSamples * 4) + 1800, 60),
+                      noteOn(kBeatSamples * 5, 64), noteOff((kBeatSamples * 5) + 500, 64)});
+        rig.play(64.0, 4.0);
+        rig.run(kBeatSamples * 7);
+
+        const auto take = rig.finish();
+        CHECK(take.startBeat == Catch::Approx(64.0));
+        REQUIRE(take.active.notes.size() == 2);
+        CHECK(take.active.notes[0].noteNumber == 60);
+        CHECK(take.active.notes[0].startBeat == Catch::Approx(0.0));
+        CHECK(take.active.notes[0].lengthBeats == Catch::Approx(0.45));
+        CHECK(take.active.notes[1].startBeat == Catch::Approx(1.0));
+    }
+
+    SECTION("stamped there by the latency") {
+        Rig rig(takeOf(800));
+        rig.schedule({noteOn(400, 60), noteOff(2000, 60)});
+        rig.play();
+        rig.run(kBeatSamples * 2);
+
+        const auto take = rig.finish();
+        REQUIRE(take.active.notes.size() == 1);
+        CHECK(take.active.notes[0].startBeat == Catch::Approx(0.0));
+    }
+
+    SECTION("but a pickup earlier in the count-in is not") {
+        Rig rig(takeOf());
+        rig.schedule({noteOn((kBeatSamples * 4) - 2000, 60), noteOff((kBeatSamples * 4) - 1000, 60),
+                      noteOn((kBeatSamples * 4) - 1500, 62),
+                      noteOff((kBeatSamples * 4) + 400, 62)});
+        rig.play(0.0, 4.0);
+        rig.run(kBeatSamples * 6);
+
+        const auto take = rig.finish();
+        CHECK(take.active.notes.empty());
+    }
+}
+
 TEST_CASE("An event is placed where it was played, not where it arrived",
           "[engine][io][record][midi][2462]") {
     SECTION("a positive latency moves it earlier and drops what precedes the take") {
-        Rig rig(takeOf(800));
-        rig.schedule({noteOn(400, 60), noteOff(600, 60), noteOn(kBeatSamples + 800, 64),
-                      noteOff(kBeatSamples + 1300, 64)});
+        Rig rig(takeOf(1600));
+        rig.schedule({noteOn(400, 60), noteOff(600, 60), noteOn(kBeatSamples + 1600, 64),
+                      noteOff(kBeatSamples + 2100, 64)});
         rig.play();
         rig.run(kBeatSamples * 2);
 

@@ -144,6 +144,11 @@ struct BlockInfo {
      */
     bool continuous = false;
 
+    /// The first block of a roll, after a stop or a count-in. Not a jump:
+    /// nothing was left sounding, so no device is panicked, and a note played
+    /// live into the start keeps sounding (#2949).
+    bool started = false;
+
     /**
      * @brief What one sample of this block is worth, in seconds.
      *
