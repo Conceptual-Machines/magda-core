@@ -57,6 +57,7 @@ void TransportClock::countSegment(const TempoMap& tempo, std::int64_t samples, i
     block.seconds = {seconds, seconds};
     block.sampleRate = sampleRate_;
     block.continuous = continuous_;
+    block.started = false;
     block.tempo = &tempo;
 
     // The count's own seconds, which end on the cursor.
@@ -89,6 +90,7 @@ void TransportClock::countSegment(const TempoMap& tempo, std::int64_t samples, i
 
     samplesCounted_ += samples;
     continuous_ = true;
+    rolledLast_ = false;
 }
 
 std::int64_t TransportClock::samplesThrough(const TempoMap& tempo, double beat) const {
@@ -227,6 +229,7 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         segment.block.monotonicSamples.end = monotonicSamples_;
         segment.block.sampleRate = sampleRate_;
         segment.block.continuous = continuous_;
+        segment.block.started = false;
         segment.block.tempo = &tempo;
         segment.startSample = 0;
         segment.countingIn = false;
@@ -234,6 +237,7 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
 
         segmentCount_ = 1;
         continuous_ = true;
+        rolledLast_ = false;
         positionBeat_ = beat;
         positionBeats_.store(beat, std::memory_order_relaxed);
         publishSyncPoint(beat);
@@ -357,9 +361,11 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         segment.block.sampleRate = sampleRate_;
 
         segment.block.continuous = continuous_;
+        segment.block.started = !rolledLast_;
         segment.block.tempo = &tempo;
         segment.startSample = offset;
         segment.countingIn = false;
+        rolledLast_ = true;
         segment.insidePunch = !beforePunch && !afterPunch;
 
         samplesSinceAnchor_ += samples;

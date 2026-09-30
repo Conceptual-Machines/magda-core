@@ -314,8 +314,17 @@ TEST_CASE("Count-in holds the play position while it counts",
         CHECK(crossing.segments[1].block.playing);
         CHECK(crossing.segments[1].block.beats.start == approx(4.0));
 
-        // The timeline starts here rather than continuing anything.
+        // The timeline starts here rather than continuing anything, and it is
+        // a start rather than a jump.
         CHECK(!crossing.segments[1].block.continuous);
+        CHECK(crossing.segments[1].block.started);
+        CHECK(!crossing.segments[0].block.started);
+    }
+
+    SECTION("only the first rolling block is a start") {
+        advance(clock, snapshot, static_cast<int>(kSamplesPerBeat * 2) + 64);
+        const auto next = advance(clock, snapshot, 64);
+        CHECK(!next.segments[0].block.started);
     }
 
     SECTION("the loop takes over once the count-in is done") {
@@ -326,6 +335,23 @@ TEST_CASE("Count-in holds the play position while it counts",
         REQUIRE(rendered.segments.size() == 3);
         CHECK(clock.positionBeats() == approx(4.5));
     }
+}
+
+TEST_CASE("A start is not a jump", "[engine][transport][clock][2949]") {
+    TransportClock clock;
+
+    const auto opening = advance(clock, playing(4.0, 1), 64);
+    CHECK(!opening.segments[0].block.continuous);
+    CHECK(opening.segments[0].block.started);
+
+    // A locate while rolling is the jump a device is panicked for.
+    const auto located = advance(clock, playing(8.0, 2), 64);
+    CHECK(!located.segments[0].block.continuous);
+    CHECK(!located.segments[0].block.started);
+
+    advance(clock, halt(3), 64);
+    const auto again = advance(clock, playing(8.0, 4), 64);
+    CHECK(again.segments[0].block.started);
 }
 
 TEST_CASE("Editing the tempo moves the seconds, not the beat",

@@ -204,6 +204,9 @@ class TransportClock {
     /// Whether the next block continues the last one.
     bool continuous_ = false;
 
+    /// Whether the last block rolled the timeline, so the next one is not a start.
+    bool rolledLast_ = false;
+
     /// Musical time rolled through since the clock began, never decreasing.
     /// Accumulated from what each playing segment covered rather than derived
     /// from the cursor, which is the only way it survives the wraps and
