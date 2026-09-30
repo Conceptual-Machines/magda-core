@@ -86,6 +86,18 @@ void magdaTerminateHandler() noexcept {
         g_previousTerminateHandler();
     std::abort();
 }
+
+/** @brief Delete the debug logs 0.11 to 0.20 appended to without bound. */
+void removeRetiredDebugLogs(const juce::File& logDir) {
+    for (const auto* name :
+         {"adsr-audio-trigger.log", "arrange-range-select.log", "mixer-select.log"})
+        logDir.getChildFile(name).deleteFile();
+
+    juce::File("/tmp/magda-adsr-audio-trigger.log").deleteFile();
+    juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getChildFile("magda-adsr-audio-trigger.log")
+        .deleteFile();
+}
 }  // namespace
 
 class MagdaDAWApplication : public JUCEApplication {
@@ -211,6 +223,7 @@ class MagdaDAWApplication : public JUCEApplication {
         fileLogger_ = std::make_unique<juce::FileLogger>(
             logDir.getChildFile("magda.log"), "MAGDA v" + getApplicationVersion(), 1024 * 512);
         juce::Logger::setCurrentLogger(fileLogger_.get());
+        removeRetiredDebugLogs(magda::paths::logsDir());
         juce::Logger::writeToLog("=== MAGDA " + getApplicationVersion() + " starting ===");
         juce::Logger::writeToLog("OS: " + juce::SystemStats::getOperatingSystemName());
         juce::Logger::writeToLog("Command line: " + commandLine);

@@ -428,6 +428,8 @@ target_sources(magda_daw PRIVATE
     # The one owner of hardware audio I/O (#2746)
     io/AudioIOService.cpp
     io/AudioIOService.hpp
+    io/CoreAudioRate.cpp
+    io/CoreAudioRate.hpp
     io/HardwareRouteNames.cpp
     io/HardwareRouteNames.hpp
     io/LegacyAudioSettings.cpp

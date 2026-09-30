@@ -162,12 +162,13 @@ struct ChainHarness {
         REQUIRE(messages.empty());
     }
 
-    void render(bool continuous = true) {
+    void render(bool continuous = true, bool started = false) {
         output.clear();
         BlockInfo block;
         block.numSamples = kBlockSize;
         block.playing = true;
         block.continuous = continuous;
+        block.started = started;
         executor.process(values, block, output);
     }
 };
@@ -536,6 +537,17 @@ TEST_CASE("a locate raises the panic on every device it reaches", "[engine][exec
     CHECK(harness.second.lastHeard());
 
     harness.render();
+    CHECK_FALSE(harness.first.lastHeard());
+    CHECK_FALSE(harness.second.lastHeard());
+}
+
+TEST_CASE("starting the transport raises no panic", "[engine][exec][2949]") {
+    // Nothing was left sounding by the stop, and a note played live into the
+    // start, like a downbeat struck on a count-in, has to keep sounding.
+    ChainHarness harness;
+    harness.prepare();
+
+    harness.render(/*continuous=*/false, /*started=*/true);
     CHECK_FALSE(harness.first.lastHeard());
     CHECK_FALSE(harness.second.lastHeard());
 }
