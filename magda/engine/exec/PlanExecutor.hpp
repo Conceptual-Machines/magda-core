@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <magda/sdk/audio/BufferView.hpp>
 #include <memory>
 #include <set>
 #include <span>
@@ -573,6 +574,9 @@ class PlanExecutor {
 
     juce::dsp::AudioBlock<float> audioIn(const PortRef& ref, int numSamples) const;
     juce::dsp::AudioBlock<float> audioOut(OpId op, int port, int numSamples) const;
+
+    /// An output port as the SDK's view, over the same cached pointer row as audioBlock().
+    ConstBufferView audioOutView(OpId op, int port, int numSamples) const;
     const juce::MidiBuffer& midiIn(const PortRef& ref) const;
     juce::MidiBuffer& midiOut(OpId op, int port);
 

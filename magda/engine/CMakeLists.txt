@@ -72,7 +72,6 @@ add_library(magda_engine STATIC
     exec/PlanLayoutDump.hpp
     exec/PlanValues.hpp
     exec/PlanBindings.hpp
-    exec/AudioBlockView.hpp
     exec/EngineDevice.hpp
     exec/NoteFractions.hpp
     exec/RenderContext.hpp
