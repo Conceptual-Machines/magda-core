@@ -284,6 +284,16 @@ test-build:
 	fi
 	cd $(BUILD_DIR) && $(BUILD_ENV) ninja magda_tests
 
+# Write the base-pack parameter manifests (#2939) to $(BUILD_DIR)/device-manifests
+.PHONY: device-manifests
+device-manifests:
+	@mkdir -p $(BUILD_DIR) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@if [ ! -f $(BUILD_DIR)/CMakeCache.txt ]; then \
+		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
+	fi
+	cd $(BUILD_DIR) && $(BUILD_ENV) ninja magda_device_manifests
+	$(BUILD_DIR)/tools/device_manifests/magda_device_manifests $(BUILD_DIR)/device-manifests
+
 .PHONY: test-juce-build
 test-juce-build:
 	@echo "🔨 Building JUCE tests..."
