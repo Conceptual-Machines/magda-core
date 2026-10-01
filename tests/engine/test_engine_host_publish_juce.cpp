@@ -18,9 +18,11 @@
 #include "magda/daw/audio/MidiBridge.hpp"
 #include "magda/daw/audio/WarpMarkerManager.hpp"
 #include "magda/daw/audio/plugins/AnalysisTelemetry.hpp"
+#include "magda/daw/audio/plugins/DeviceStateDocument.hpp"
 #include "magda/daw/audio/plugins/FaustPlugin.hpp"
 #include "magda/daw/audio/plugins/OscilloscopePlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaChorusCompiledPlugin.hpp"
+#include "magda/daw/audio/plugins/compiled/MagdaEqCompiledPlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "magda/daw/audio/plugins/engine/EngineMagdaDevice.hpp"
@@ -197,6 +199,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testNoteMovedWhileRolling(); });
         magda::test::runWithCleanJuceState([this] { testReplacedPluginIsRebuilt(); });
         magda::test::runWithCleanJuceState([this] { testFaustPatchChangeIsRebuilt(); });
+        magda::test::runWithCleanJuceState([this] { testDeviceReportsReachTheHost(); });
         magda::test::runWithCleanJuceState([this] { testExternalKeysNamesOnlyExternals(); });
         magda::test::runWithCleanJuceState([this] { testPadPluginIsItsOwnKey(); });
         magda::test::runWithCleanJuceState([this] { testClearedProjectIsRebuilt(); });
@@ -505,6 +508,88 @@ class EngineHostPublishTest final : public juce::UnitTest {
         const auto rebuild = factory.devicesToRebuild();
         expect(rebuild.size() == 1 && rebuild.contains(firstFxSlot()),
                "Only the Faust device is named for rebuild");
+    }
+
+    void testDeviceReportsReachTheHost() {
+        beginTest("State a device reports and a rebuild it asks for reach its host (#2939)");
+
+        using Eq = magda::daw::audio::compiled::MagdaEqCompiledPlugin;
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto trackId = trackManager.createTrack("Reports");
+        auto* track = trackManager.getTrack(trackId);
+        const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
+        expect(track != nullptr && master != nullptr, "The track and the master exist");
+        if (track == nullptr || master == nullptr)
+            return;
+
+        magda::DeviceInfo eqDevice;
+        eqDevice.id = 1;
+        eqDevice.name = "EQ";
+        eqDevice.pluginId = Eq::xmlTypeName;
+        eqDevice.format = magda::PluginFormat::Internal;
+        track->chain.fxChainElements.emplace_back(eqDevice);
+        track->chain.fxChainElements.emplace_back(
+            faustEffect(2, "// stdfaust.lib\nprocess = *(hslider(\"Gain\", 0.5, 0, 1, 0.01));"));
+
+        host::EngineRuntimeFactory factory;
+        factory.setModel(trackManager.getTracks(), *master);
+
+        std::vector<std::pair<engine::DeviceKey, magda::sdk::StateNode>> reported;
+        factory.reportDeviceStateWith(
+            [&reported](engine::DeviceKey key, magda::sdk::StateNode state) {
+                reported.emplace_back(key, std::move(state));
+            });
+
+        const engine::DeviceKey eqSlot{magda::ChainSegment::Fx, 1};
+        const engine::DeviceKey faustSlot{magda::ChainSegment::Fx, 2};
+
+        const auto builtEq = factory.createDevice(eqSlot);
+        auto* hostedEq = dynamic_cast<adapter::EngineMagdaDevice*>(builtEq.get());
+        auto* eq = hostedEq != nullptr ? dynamic_cast<Eq*>(&hostedEq->device()) : nullptr;
+        expect(eq != nullptr, "The catalog builds the EQ");
+        if (eq == nullptr)
+            return;
+
+        eq->setCurveCollapsed(false);
+        expect(reported.size() == 1 && reported.front().first == eqSlot,
+               "The toggle is reported against the slot that holds it");
+        expect(!reported.front().second.getBool(Eq::kCurveCollapsedKey, true),
+               "With the value it was given");
+
+        // The model's side of the same report: it lands on the document and survives a restore.
+        const auto path = adapter::devicePathsIn(trackManager.getTracks(), *master).at(eqSlot);
+        expect(trackManager.updateDeviceAuthoredState(path,
+                                                      [&](magda::device_state::Doc& doc) {
+                                                          magda::daw::audio::applyReportedState(
+                                                              doc, reported.front().second);
+                                                      }),
+               "The model takes the report");
+        const auto* held = trackManager.getDeviceInChainByPath(path);
+        const auto saved = held != nullptr
+                               ? magda::daw::audio::normaliseDeviceState(held->pluginState)
+                               : std::nullopt;
+        expect(saved.has_value() && !saved->document.root.getBool(Eq::kCurveCollapsedKey, true),
+               "The document holds what the device reported");
+
+        const auto builtFaust = factory.createDevice(faustSlot);
+        auto* hostedFaust = dynamic_cast<adapter::EngineMagdaDevice*>(builtFaust.get());
+        auto* faust = hostedFaust != nullptr
+                          ? dynamic_cast<magda::daw::audio::FaustPlugin*>(&hostedFaust->device())
+                          : nullptr;
+        expect(faust != nullptr, "The catalog builds the Faust device");
+        if (faust == nullptr)
+            return;
+
+        expect(factory.devicesToRebuild().empty(), "Nothing has asked for a rebuild yet");
+
+        // A patch with more channels changes the counts properties() reports.
+        juce::String error;
+        expect(faust->loadDspSource("Wide", "// stdfaust.lib\nprocess = _,_,_,_;", error),
+               "The patch compiles");
+        const auto rebuild = factory.devicesToRebuild();
+        expect(rebuild.size() == 1 && rebuild.contains(faustSlot),
+               "A device whose properties changed is built again");
     }
 
     void testExternalKeysNamesOnlyExternals() {

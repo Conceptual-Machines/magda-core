@@ -22,6 +22,7 @@
 #include "../../audio/DeviceParameterList.hpp"
 #include "../../audio/midi/RecordingNoteQueue.hpp"
 #include "../../audio/plugin_manager/ExternalPluginState.hpp"
+#include "../../audio/plugins/DeviceStateDocument.hpp"
 #include "../../audio/plugins/engine/ControlExecutor.hpp"
 #include "../../audio/plugins/engine/DeviceControl.hpp"
 #include "../../audio/plugins/engine/EngineDeviceFactory.hpp"
@@ -410,6 +411,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         factory_.loadExternalsWith(loader_);
         factory_.routeInsertsWith(
             [this](const InsertConfig& insert) { return routeInsert(insert); });
+        factory_.reportDeviceStateWith([this](engine::DeviceKey key, sdk::StateNode state) {
+            writeReportedDeviceState(key, state);
+        });
 
         // Captures nothing: the model is a singleton and the request guards
         // the key, so a project that closed first is a no-op.
@@ -3236,6 +3240,25 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         auto held = session_->device(key);
         return held != nullptr ? externalIn(*held) : nullptr;
+    }
+
+    /**
+     * @brief Put state a device reported about itself into the model's document.
+     *
+     * The model owns the document; a device that holds state it could not have been
+     * handed (a UI toggle that lives on the device) says so through
+     * sdk::DeviceHost::stateChanged, and this is where that lands. Control thread.
+     */
+    void writeReportedDeviceState(engine::DeviceKey key, const sdk::StateNode& state) {
+        const auto slot = devicePaths_.find(key);
+        if (slot == devicePaths_.end())
+            return;
+
+        const bool changed = TrackManager::getInstance().updateDeviceAuthoredState(
+            slot->second,
+            [&state](device_state::Doc& doc) { audio::applyReportedState(doc, state); });
+        if (changed)
+            ProjectManager::getInstance().markDirty();
     }
 
     HostParameters describeDeviceParameters(const ChainNodePath& devicePath) const {

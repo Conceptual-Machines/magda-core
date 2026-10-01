@@ -4,6 +4,7 @@
 
 #include "../../audio/plugins/InternalPluginRegistry.hpp"
 #include "../../audio/plugins/engine/EngineDeviceFactory.hpp"
+#include "../../audio/plugins/engine/EngineMagdaDevice.hpp"
 #include "EngineHost.hpp"
 #include "analysis/TransientDetector.hpp"
 #include "clip/ClipAudioSource.hpp"
@@ -189,8 +190,24 @@ std::unique_ptr<engine::EngineDevice> EngineRuntimeFactory::createDevice(engine:
         return handOver(key, found->second,
                         externals_ != nullptr ? externals_->device(key, found->second) : nullptr);
 
-    if (auto device = adapter::createEngineDevice(found->second))
+    if (auto device = adapter::createEngineDevice(found->second)) {
+        if (auto* hosted = dynamic_cast<adapter::EngineMagdaDevice*>(device.get())) {
+            hosted->setStateReporter(
+                [this, key, alive = std::weak_ptr<bool>(alive_)](sdk::StateNode state) {
+                    if (alive.lock() != nullptr && reportDeviceState_)
+                        reportDeviceState_(key, std::move(state));
+                });
+
+            // A device whose properties changed is built again at the next publish, which reads
+            // them afresh.
+            hosted->setRebuildRequestHandler([this, key, alive = std::weak_ptr<bool>(alive_)] {
+                if (alive.lock() != nullptr)
+                    rebuild_.insert(key);
+            });
+        }
+
         return handOver(key, found->second, std::move(device));
+    }
 
     // Said out loud once per publish rather than left as silence. A device the
     // app can build and the engine cannot is a project playing without part of
