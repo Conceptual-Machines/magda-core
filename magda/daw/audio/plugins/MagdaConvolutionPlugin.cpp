@@ -35,9 +35,9 @@ juce::AudioFormatManager& irFormats() {
 /// what the retired host-native plugin registered, because projects store
 /// parameter values in the model in display units against these ranges and
 /// saved automation addresses the normalised positions.
-ParameterInfo slotInfo(int index) {
-    ParameterInfo info;
-    info.paramIndex = index;
+sdk::ParameterDescriptor slotInfo(int index) {
+    sdk::ParameterDescriptor info;
+    info.index = index;
 
     switch (index) {
         case MagdaConvolutionPlugin::kGain:
@@ -48,7 +48,7 @@ ParameterInfo slotInfo(int index) {
             // applies real = min + span * normalized^(1/skew), and unity at
             // centre needs normalized^k = 2/3 at 0.5, so k = ln(2/3)/ln(1/2).
             info.scale = ParameterScale::Exponential;
-            info.skewFactor = 0.5849625f;
+            info.exponent = 0.5849625f;
             info.minValue = -12.0f;
             info.maxValue = 6.0f;
             info.defaultValue = 0.0f;
@@ -123,13 +123,13 @@ MagdaConvolutionPlugin::MagdaConvolutionPlugin() {
         const auto info = slotInfo(index);
         domains_[static_cast<size_t>(index)] = ParameterUtils::domainOf(info);
         values_[static_cast<size_t>(index)] =
-            ParameterUtils::realToNormalized(info.defaultValue, info);
+            ParameterUtils::realToNormalized(info.defaultValue, ParameterUtils::domainOf(info));
     }
 }
 
 MagdaConvolutionPlugin::~MagdaConvolutionPlugin() = default;
 
-ParameterInfo MagdaConvolutionPlugin::parameterInfo(int index) const {
+sdk::ParameterDescriptor MagdaConvolutionPlugin::parameterDescriptor(int index) const {
     if (index < 0 || index >= kNumParams)
         return {};
     return slotInfo(index);

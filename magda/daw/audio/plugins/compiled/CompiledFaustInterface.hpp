@@ -177,25 +177,28 @@ class CompiledFaustDevice : public MagdaDevice, public ICompiledFaustPlugin {
         return hostSlotCount();
     }
 
-    ParameterInfo parameterInfo(int slotIndex) const override {
+    sdk::ParameterDescriptor parameterDescriptor(int slotIndex) const override {
         if (slotIndex < 0 || slotIndex >= hostSlotCount())
             return {};
 
         const auto& slot = hostSlotInfo(slotIndex);
-        ParameterInfo info;
-        info.paramIndex = slotIndex;
-        info.stableId = hostSlotId(slotIndex);
-        info.name = slot.name;
-        info.unit = slot.unit;
-        info.scale = slot.scale;
-        info.minValue = slot.minValue;
-        info.maxValue = slot.maxValue;
-        info.defaultValue = slot.defaultValue;
-        info.scaleAnchor = std::isfinite(slot.scaleAnchor) ? slot.scaleAnchor : 0.0f;
-        info.choices = slot.choices;
-        info.gateSlotIndex = slot.gateSlotIndex;
-        info.gateNegated = slot.gateNegated;
-        return info;
+        sdk::ParameterDescriptor descriptor;
+        descriptor.index = slotIndex;
+        descriptor.stableId = hostSlotId(slotIndex).toStdString();
+        descriptor.name = slot.name.toStdString();
+        descriptor.unit = slot.unit.toStdString();
+        descriptor.scale = slot.scale;
+        descriptor.minValue = slot.minValue;
+        descriptor.maxValue = slot.maxValue;
+        descriptor.defaultValue = slot.defaultValue;
+        descriptor.scaleAnchor = std::isfinite(slot.scaleAnchor) ? slot.scaleAnchor : 0.0f;
+        std::vector<std::string> labels;
+        for (const auto& choice : slot.choices)
+            labels.push_back(choice.toStdString());
+        descriptor.choices = sdk::choicesFromLabels(labels);
+        descriptor.gateSlotIndex = slot.gateSlotIndex;
+        descriptor.gateNegated = slot.gateNegated;
+        return descriptor;
     }
 
     float parameterValue(int slotIndex) const override {

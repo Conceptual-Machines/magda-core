@@ -201,13 +201,13 @@ const std::array<Desc, MutableCloudsPlugin::kNumParams> kDescs = {{
 /// ranges are pinned to what the retired host-native plugin registered,
 /// because projects store parameter values in the model in display units
 /// against these ranges and address the slots by index.
-ParameterInfo slotInfo(int index) {
-    ParameterInfo info;
+sdk::ParameterDescriptor slotInfo(int index) {
+    sdk::ParameterDescriptor info;
     if (index < 0 || index >= MutableCloudsPlugin::kNumParams)
         return info;
 
     const auto& d = kDescs[static_cast<size_t>(index)];
-    info.paramIndex = index;
+    info.index = index;
     info.stableId = d.id;
     info.name = d.name;
     info.defaultValue = d.def;
@@ -227,7 +227,8 @@ ParameterInfo slotInfo(int index) {
             info.scale = ParameterScale::Discrete;
             info.minValue = 0.0f;
             info.maxValue = static_cast<float>(kNumModes - 1);
-            info.choices = {kModeNames, kModeNames + kNumModes};
+            info.choices = sdk::choicesFromLabels(
+                std::vector<std::string>(kModeNames, kModeNames + kNumModes));
             break;
         case Kind::Freeze:
             // Boolean, and not modulatable, which is also what the old
@@ -235,7 +236,7 @@ ParameterInfo slotInfo(int index) {
             info.scale = ParameterScale::Boolean;
             info.minValue = 0.0f;
             info.maxValue = 1.0f;
-            info.choices = {"Off", "On"};
+            info.choices = sdk::choicesFromLabels({"Off", "On"});
             info.modulatable = false;
             break;
     }
@@ -382,13 +383,13 @@ MutableCloudsPlugin::MutableCloudsPlugin() : impl_(std::make_unique<Impl>()) {
         const auto info = slotInfo(index);
         domains_[static_cast<size_t>(index)] = ParameterUtils::domainOf(info);
         values_[static_cast<size_t>(index)] =
-            ParameterUtils::realToNormalized(info.defaultValue, info);
+            ParameterUtils::realToNormalized(info.defaultValue, ParameterUtils::domainOf(info));
     }
 }
 
 MutableCloudsPlugin::~MutableCloudsPlugin() = default;
 
-ParameterInfo MutableCloudsPlugin::parameterInfo(int index) const {
+sdk::ParameterDescriptor MutableCloudsPlugin::parameterDescriptor(int index) const {
     return slotInfo(index);
 }
 

@@ -46,7 +46,7 @@ class FaustPlugin : public MagdaDevice, public IFaustEditorModel {
     int parameterCount() const override {
         return FaustParamPool::kSize;
     }
-    ParameterInfo parameterInfo(int index) const override;
+    sdk::ParameterDescriptor parameterDescriptor(int index) const override;
     float parameterValue(int index) const override;
     void setParameterValue(int index, float value) override;
     bool offersParameter(int index) const override;

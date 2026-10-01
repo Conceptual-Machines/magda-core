@@ -107,9 +107,9 @@ class NonNoteForwarder {
 /// One slot's metadata. The ids, order and display ranges are pinned to what
 /// the retired host-native plugin registered, because saved links address the
 /// slots by index and projects store parameter values in display units.
-ParameterInfo slotInfo(int index) {
-    ParameterInfo info;
-    info.paramIndex = index;
+sdk::ParameterDescriptor slotInfo(int index) {
+    sdk::ParameterDescriptor info;
+    info.index = index;
 
     switch (index) {
         case ArpeggiatorPlugin::kPattern:
@@ -119,7 +119,8 @@ ParameterInfo slotInfo(int index) {
             info.minValue = 0.0f;
             info.maxValue = 5.0f;
             info.defaultValue = 0.0f;
-            info.choices = {"Up", "Down", "Up/Down", "Down/Up", "Random", "As Played"};
+            info.choices =
+                sdk::choicesFromLabels({"Up", "Down", "Up/Down", "Down/Up", "Random", "As Played"});
             break;
 
         case ArpeggiatorPlugin::kRate:
@@ -129,8 +130,8 @@ ParameterInfo slotInfo(int index) {
             info.minValue = 0.0f;
             info.maxValue = 9.0f;
             info.defaultValue = 4.0f;  // 1/8
-            info.choices = {"1/4D", "1/4",   "1/4T", "1/8D",  "1/8",
-                            "1/8T", "1/16D", "1/16", "1/16T", "1/32"};
+            info.choices = sdk::choicesFromLabels(
+                {"1/4D", "1/4", "1/4T", "1/8D", "1/8", "1/8T", "1/16D", "1/16", "1/16T", "1/32"});
             break;
 
         case ArpeggiatorPlugin::kOctaves:
@@ -184,7 +185,7 @@ ParameterInfo slotInfo(int index) {
             info.minValue = 0.0f;
             info.maxValue = 1.0f;
             info.defaultValue = 0.0f;
-            info.choices = {"Off", "On"};
+            info.choices = sdk::choicesFromLabels({"Off", "On"});
             info.modulatable = false;
             break;
 
@@ -195,7 +196,7 @@ ParameterInfo slotInfo(int index) {
             info.minValue = 0.0f;
             info.maxValue = 2.0f;
             info.defaultValue = 0.0f;
-            info.choices = {"Original", "Fixed", "Accent"};
+            info.choices = sdk::choicesFromLabels({"Original", "Fixed", "Accent"});
             break;
 
         case ArpeggiatorPlugin::kFixedVel:
@@ -220,13 +221,13 @@ ArpeggiatorPlugin::ArpeggiatorPlugin() {
         const auto info = slotInfo(index);
         domains_[static_cast<size_t>(index)] = ParameterUtils::domainOf(info);
         values_[static_cast<size_t>(index)] =
-            ParameterUtils::realToNormalized(info.defaultValue, info);
+            ParameterUtils::realToNormalized(info.defaultValue, ParameterUtils::domainOf(info));
     }
 }
 
 ArpeggiatorPlugin::~ArpeggiatorPlugin() = default;
 
-ParameterInfo ArpeggiatorPlugin::parameterInfo(int index) const {
+sdk::ParameterDescriptor ArpeggiatorPlugin::parameterDescriptor(int index) const {
     if (index < 0 || index >= kNumParams)
         return {};
     return slotInfo(index);

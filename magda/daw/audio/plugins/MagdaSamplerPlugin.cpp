@@ -24,9 +24,9 @@ juce::AudioFormatManager& sampleFormats() {
 /// Its curves came from `juce::NormalisableRange` skews, where real =
 /// min + span * norm^(1/skew); MAGDA's Exponential is norm^k * span + min,
 /// so k is the RECIPROCAL of the JUCE skew.
-ParameterInfo slotInfo(int index) {
-    ParameterInfo info;
-    info.paramIndex = index;
+sdk::ParameterDescriptor slotInfo(int index) {
+    sdk::ParameterDescriptor info;
+    info.index = index;
 
     // Time params used a JUCE skew of 0.4 so equal knob/macro movement gives
     // perceptually-even change: most audible action is in the first few hundred
@@ -39,7 +39,7 @@ ParameterInfo slotInfo(int index) {
             info.name = "Attack";
             info.unit = "s";
             info.scale = ParameterScale::Exponential;
-            info.skewFactor = kTimeSkew;
+            info.exponent = kTimeSkew;
             info.minValue = 0.001f;
             info.maxValue = 5.0f;
             info.defaultValue = 0.001f;
@@ -50,7 +50,7 @@ ParameterInfo slotInfo(int index) {
             info.name = "Decay";
             info.unit = "s";
             info.scale = ParameterScale::Exponential;
-            info.skewFactor = kTimeSkew;
+            info.exponent = kTimeSkew;
             info.minValue = 0.001f;
             info.maxValue = 5.0f;
             info.defaultValue = 0.1f;
@@ -70,7 +70,7 @@ ParameterInfo slotInfo(int index) {
             info.name = "Release";
             info.unit = "s";
             info.scale = ParameterScale::Exponential;
-            info.skewFactor = kTimeSkew;
+            info.exponent = kTimeSkew;
             info.minValue = 0.001f;
             info.maxValue = 10.0f;
             info.defaultValue = 0.1f;
@@ -101,7 +101,7 @@ ParameterInfo slotInfo(int index) {
             // JUCE skew 4.0: unity sits high in the range, so the usable trim
             // around 0 dB gets most of the travel.
             info.scale = ParameterScale::Exponential;
-            info.skewFactor = 1.0f / 4.0f;
+            info.exponent = 1.0f / 4.0f;
             info.minValue = -60.0f;
             info.maxValue = 12.0f;
             info.defaultValue = 0.0f;
@@ -159,7 +159,7 @@ ParameterInfo slotInfo(int index) {
             info.minValue = 0.0f;
             info.maxValue = 2.0f;
             info.defaultValue = 0.0f;
-            info.choices = {"Poly", "Mono", "Legato"};
+            info.choices = sdk::choicesFromLabels({"Poly", "Mono", "Legato"});
             break;
 
         case MagdaSamplerPlugin::kGlide:
@@ -167,7 +167,7 @@ ParameterInfo slotInfo(int index) {
             info.name = "Glide";
             info.unit = "ms";
             info.scale = ParameterScale::Exponential;
-            info.skewFactor = kTimeSkew;
+            info.exponent = kTimeSkew;
             info.minValue = 0.0f;
             info.maxValue = 2000.0f;
             info.defaultValue = 0.0f;
@@ -493,7 +493,8 @@ MagdaSamplerPlugin::MagdaSamplerPlugin() {
         const auto info = slotInfo(index);
         domains_[static_cast<size_t>(index)] = ParameterUtils::domainOf(info);
         values_[static_cast<size_t>(index)].store(
-            ParameterUtils::realToNormalized(info.defaultValue, info), std::memory_order_relaxed);
+            ParameterUtils::realToNormalized(info.defaultValue, ParameterUtils::domainOf(info)),
+            std::memory_order_relaxed);
     }
     tailSeconds_.store(displayValue(kRelease), std::memory_order_relaxed);
 
@@ -512,12 +513,17 @@ MagdaSamplerPlugin::MagdaSamplerPlugin() {
 MagdaSamplerPlugin::~MagdaSamplerPlugin() = default;
 
 //==============================================================================
-ParameterInfo MagdaSamplerPlugin::parameterInfo(int index) const {
+sdk::ParameterDescriptor MagdaSamplerPlugin::parameterDescriptor(int index) const {
     if (index < 0 || index >= kNumParams)
         return {};
 
-    auto info = slotInfo(index);
-    info.currentValue = displayValue(index);
+    return slotInfo(index);
+}
+
+ParameterInfo MagdaSamplerPlugin::parameterInfo(int index) const {
+    auto info = MagdaDevice::parameterInfo(index);
+    if (index >= 0 && index < kNumParams)
+        info.currentValue = displayValue(index);
     return info;
 }
 

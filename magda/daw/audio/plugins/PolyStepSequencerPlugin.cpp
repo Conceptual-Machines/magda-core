@@ -33,9 +33,9 @@ const juce::Identifier kNoteVelocity("vel");
 
 /// One slot's metadata, pinned to what the retired host-native plugin
 /// registered: saved links address the slots by index.
-ParameterInfo slotInfo(int index) {
-    ParameterInfo info;
-    info.paramIndex = index;
+sdk::ParameterDescriptor slotInfo(int index) {
+    sdk::ParameterDescriptor info;
+    info.index = index;
 
     switch (index) {
         case PolyStepSequencerPlugin::kRate:
@@ -45,8 +45,8 @@ ParameterInfo slotInfo(int index) {
             info.minValue = 0.0f;
             info.maxValue = 9.0f;
             info.defaultValue = 7.0f;  // 1/16
-            info.choices = {"1/4D", "1/4",   "1/4T", "1/8D",  "1/8",
-                            "1/8T", "1/16D", "1/16", "1/16T", "1/32"};
+            info.choices = sdk::choicesFromLabels(
+                {"1/4D", "1/4", "1/4T", "1/8D", "1/8", "1/8T", "1/16D", "1/16", "1/16T", "1/32"});
             break;
 
         case PolyStepSequencerPlugin::kDirection:
@@ -56,7 +56,7 @@ ParameterInfo slotInfo(int index) {
             info.minValue = 0.0f;
             info.maxValue = 3.0f;
             info.defaultValue = 0.0f;
-            info.choices = {"Forward", "Reverse", "Ping-Pong", "Random"};
+            info.choices = sdk::choicesFromLabels({"Forward", "Reverse", "Ping-Pong", "Random"});
             break;
 
         case PolyStepSequencerPlugin::kSwing:
@@ -109,13 +109,13 @@ PolyStepSequencerPlugin::PolyStepSequencerPlugin() {
         const auto info = slotInfo(index);
         domains_[static_cast<size_t>(index)] = ParameterUtils::domainOf(info);
         values_[static_cast<size_t>(index)] =
-            ParameterUtils::realToNormalized(info.defaultValue, info);
+            ParameterUtils::realToNormalized(info.defaultValue, ParameterUtils::domainOf(info));
     }
 }
 
 PolyStepSequencerPlugin::~PolyStepSequencerPlugin() = default;
 
-ParameterInfo PolyStepSequencerPlugin::parameterInfo(int index) const {
+sdk::ParameterDescriptor PolyStepSequencerPlugin::parameterDescriptor(int index) const {
     if (index < 0 || index >= kNumParams)
         return {};
     return slotInfo(index);

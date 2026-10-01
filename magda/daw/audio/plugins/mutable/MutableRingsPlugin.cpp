@@ -24,9 +24,9 @@ constexpr int kNumModels = 6;
 /// the retired host-native plugin registered, because projects store parameter
 /// values in the model in display units against these ranges and address the
 /// slots by index.
-ParameterInfo slotInfo(int index) {
-    ParameterInfo info;
-    info.paramIndex = index;
+sdk::ParameterDescriptor slotInfo(int index) {
+    sdk::ParameterDescriptor info;
+    info.index = index;
 
     const auto normalised = [&info](const char* id, const char* name, float def) {
         info.stableId = id;
@@ -61,7 +61,8 @@ ParameterInfo slotInfo(int index) {
             info.minValue = 0.0f;
             info.maxValue = static_cast<float>(kNumModels - 1);
             info.defaultValue = 0.0f;
-            info.choices = {"Modal", "Sympathetic", "String", "FM", "Sym Quant", "String+Verb"};
+            info.choices = sdk::choicesFromLabels(
+                {"Modal", "Sympathetic", "String", "FM", "Sym Quant", "String+Verb"});
             break;
 
         case MutableRingsPlugin::kPolyphony:
@@ -71,7 +72,7 @@ ParameterInfo slotInfo(int index) {
             info.minValue = 0.0f;
             info.maxValue = 2.0f;
             info.defaultValue = 1.0f;  // index 1 -> 2 voices
-            info.choices = {"1", "2", "4"};
+            info.choices = sdk::choicesFromLabels({"1", "2", "4"});
             break;
 
         case MutableRingsPlugin::kChord:
@@ -81,7 +82,8 @@ ParameterInfo slotInfo(int index) {
             info.minValue = 0.0f;
             info.maxValue = 10.0f;
             info.defaultValue = 0.0f;
-            info.choices = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"};
+            info.choices =
+                sdk::choicesFromLabels({"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"});
             break;
 
         case MutableRingsPlugin::kPitch:
@@ -109,7 +111,7 @@ ParameterInfo slotInfo(int index) {
             // The retired host-native plugin's NormalisableRange carried skew
             // 4, which JUCE applies as real = min + span * normalized^(1/skew).
             info.scale = ParameterScale::Exponential;
-            info.skewFactor = 0.25f;
+            info.exponent = 0.25f;
             info.minValue = -60.0f;
             info.maxValue = 12.0f;
             info.defaultValue = 0.0f;
@@ -278,13 +280,13 @@ MutableRingsPlugin::MutableRingsPlugin() : impl_(std::make_unique<Impl>()) {
         const auto info = slotInfo(index);
         domains_[static_cast<size_t>(index)] = ParameterUtils::domainOf(info);
         values_[static_cast<size_t>(index)] =
-            ParameterUtils::realToNormalized(info.defaultValue, info);
+            ParameterUtils::realToNormalized(info.defaultValue, ParameterUtils::domainOf(info));
     }
 }
 
 MutableRingsPlugin::~MutableRingsPlugin() = default;
 
-ParameterInfo MutableRingsPlugin::parameterInfo(int index) const {
+sdk::ParameterDescriptor MutableRingsPlugin::parameterDescriptor(int index) const {
     if (index < 0 || index >= kNumParams)
         return {};
     return slotInfo(index);

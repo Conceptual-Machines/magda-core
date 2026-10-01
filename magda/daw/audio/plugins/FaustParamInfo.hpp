@@ -1,15 +1,18 @@
 #pragma once
 
+#include <magda/sdk/device/ParameterDescriptor.hpp>
+
 #include "../../core/DeviceInfo.hpp"
+#include "../../core/ParameterDescriptorAdapter.hpp"
 #include "../../core/ParameterInfo.hpp"
 #include "FaustParamSlot.hpp"
 
 namespace magda::daw::audio {
 
 /**
- * @brief Build a `magda::ParameterInfo` from a populated `FaustParamSlot`.
+ * @brief Describe a populated `FaustParamSlot` as an SDK parameter.
  *
- * The returned ParameterInfo is what `DeviceInfo.parameters` ends up
+ * The ParameterInfo built from it is what `DeviceInfo.parameters` ends up
  * filled from for Faust devices, which in turn drives every
  * `ParamSlotComponent` widget choice (text slider / dropdown / toggle)
  * and the automation lane axis. Mapping rules:
@@ -33,6 +36,9 @@ namespace magda::daw::audio {
 /// instrument that reads the wheel have to agree on one number.
 constexpr float kMaxBendSemitones = 24.0f;
 
+sdk::ParameterDescriptor paramDescriptorFromSlot(const FaustParamSlot& slot);
+
+/// The same, as the model holds it.
 magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot);
 
 /**
@@ -48,7 +54,7 @@ magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot);
  *
  * @param hostIndex 0 for Voice Mode, 1 for Glide.
  */
-magda::ParameterInfo faustInstrumentHostParamInfo(int hostIndex);
+sdk::ParameterDescriptor faustInstrumentHostParamDescriptor(int hostIndex);
 
 /**
  * @brief Build a `magda::MeterInfo` from a populated `FaustOutputSlot`.

@@ -66,7 +66,7 @@ class PolyStepSequencerPlugin : public MidiMagdaDevice {
     int parameterCount() const override {
         return kNumParams;
     }
-    ParameterInfo parameterInfo(int index) const override;
+    sdk::ParameterDescriptor parameterDescriptor(int index) const override;
     float parameterValue(int index) const override;
     void setParameterValue(int index, float value) override;
 

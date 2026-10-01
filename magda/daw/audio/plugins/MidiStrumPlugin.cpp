@@ -83,19 +83,19 @@ float sampleCycled(const std::array<float, 1024>& lut, float u, int cycles) noex
 /// One slot's metadata. The ids, order and display ranges are pinned to what
 /// the retired host-native plugin registered, because saved links address the
 /// slots by index and projects store parameter values in display units.
-ParameterInfo slotInfo(int index) {
-    ParameterInfo info;
-    info.paramIndex = index;
+sdk::ParameterDescriptor slotInfo(int index) {
+    sdk::ParameterDescriptor info;
+    info.index = index;
 
     const auto discrete = [&info](const char* id, const char* name, float def,
-                                  std::vector<juce::String> choices) {
+                                  std::vector<std::string> choices) {
         info.stableId = id;
         info.name = name;
         info.scale = ParameterScale::Discrete;
         info.minValue = 0.0f;
         info.maxValue = static_cast<float>(choices.size() - 1);
         info.defaultValue = def;
-        info.choices = std::move(choices);
+        info.choices = sdk::choicesFromLabels(choices);
     };
 
     switch (index) {
@@ -108,9 +108,9 @@ ParameterInfo slotInfo(int index) {
             break;
 
         case MidiStrumPlugin::kShape: {
-            const auto nameOf = [](const auto& shape) { return juce::String(shape.name); };
+            const auto nameOf = [](const auto& shape) { return std::string(shape.name); };
             auto names =
-                shapes() | std::views::transform(nameOf) | toStd<std::vector<juce::String>>();
+                shapes() | std::views::transform(nameOf) | toStd<std::vector<std::string>>();
             discrete("shape", "Shape", 1.0f, std::move(names));  // Ease In
             break;
         }
@@ -162,7 +162,7 @@ MidiStrumPlugin::MidiStrumPlugin() {
         const auto info = slotInfo(index);
         domains_[static_cast<size_t>(index)] = ParameterUtils::domainOf(info);
         values_[static_cast<size_t>(index)] =
-            ParameterUtils::realToNormalized(info.defaultValue, info);
+            ParameterUtils::realToNormalized(info.defaultValue, ParameterUtils::domainOf(info));
     }
 
     buildLut(displayIndex(kShape), lut_);
@@ -171,7 +171,7 @@ MidiStrumPlugin::MidiStrumPlugin() {
 
 MidiStrumPlugin::~MidiStrumPlugin() = default;
 
-ParameterInfo MidiStrumPlugin::parameterInfo(int index) const {
+sdk::ParameterDescriptor MidiStrumPlugin::parameterDescriptor(int index) const {
     if (index < 0 || index >= kNumParams)
         return {};
     return slotInfo(index);

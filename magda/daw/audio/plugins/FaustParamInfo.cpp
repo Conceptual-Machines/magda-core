@@ -9,14 +9,14 @@ namespace magda::daw::audio {
 
 namespace {
 
-magda::ParameterInfo placeholderForInactive(const FaustParamSlot& slot) {
-    magda::ParameterInfo info;
-    info.paramIndex = slot.index;
-    info.name = juce::String("(slot ") + juce::String(slot.index + 1) + ")";
+sdk::ParameterDescriptor placeholderForInactive(const FaustParamSlot& slot) {
+    sdk::ParameterDescriptor info;
+    info.index = slot.index;
+    info.name = "(slot " + std::to_string(slot.index + 1) + ")";
     info.minValue = 0.0f;
     info.maxValue = 1.0f;
     info.defaultValue = 0.0f;
-    info.scale = magda::ParameterScale::Linear;
+    info.scale = ParameterScale::Linear;
     info.modulatable = false;
     return info;
 }
@@ -26,18 +26,17 @@ magda::ParameterInfo placeholderForInactive(const FaustParamSlot& slot) {
 // carrying the patch's own name.
 constexpr const char* kHostParamGroup = "Voice";
 
-magda::ParameterInfo voiceModeInfo() {
-    magda::ParameterInfo info;
+sdk::ParameterDescriptor voiceModeInfo() {
+    sdk::ParameterDescriptor info;
     info.stableId = "voiceMode";
-    info.paramIndex = FaustParamPool::kSize;
+    info.index = FaustParamPool::kSize;
     info.name = "Voice Mode";
     info.group = kHostParamGroup;
     info.minValue = 0.0f;
     info.maxValue = 2.0f;
     info.defaultValue = 0.0f;
-    info.currentValue = 0.0f;
-    info.scale = magda::ParameterScale::Discrete;
-    info.choices = {"Poly", "Mono", "Legato"};
+    info.scale = ParameterScale::Discrete;
+    info.choices = sdk::choicesFromLabels({"Poly", "Mono", "Legato"});
     // Segmented buttons rather than a dropdown: the mode is worth reading at a
     // glance without opening anything.
     info.radioChoices = true;
@@ -51,27 +50,26 @@ magda::ParameterInfo voiceModeInfo() {
     return info;
 }
 
-magda::ParameterInfo glideInfo() {
-    magda::ParameterInfo info;
+sdk::ParameterDescriptor glideInfo() {
+    sdk::ParameterDescriptor info;
     info.stableId = "glide";
-    info.paramIndex = FaustParamPool::kSize + 1;
+    info.index = FaustParamPool::kSize + 1;
     info.name = "Glide";
     info.group = kHostParamGroup;
     info.unit = "ms";
     info.minValue = 0.0f;
     info.maxValue = 2000.0f;
     info.defaultValue = 0.0f;
-    info.currentValue = 0.0f;
     // Linear, and starting at 0: 0 has to mean "off" exactly, which a log
     // scale cannot represent.
-    info.scale = magda::ParameterScale::Linear;
+    info.scale = ParameterScale::Linear;
     return info;
 }
 
-magda::ParameterInfo bendRangeInfo() {
-    magda::ParameterInfo info;
+sdk::ParameterDescriptor bendRangeInfo() {
+    sdk::ParameterDescriptor info;
     info.stableId = "bendRange";
-    info.paramIndex = FaustParamPool::kSize + 2;
+    info.index = FaustParamPool::kSize + 2;
     info.name = "Bend Range";
     info.group = kHostParamGroup;
     info.unit = "st";
@@ -80,24 +78,22 @@ magda::ParameterInfo bendRangeInfo() {
     // 2 semitones each way is what almost every synth ships with, and what a
     // patch author will assume when they reach for the wheel.
     info.defaultValue = 2.0f;
-    info.currentValue = info.defaultValue;
-    info.scale = magda::ParameterScale::Linear;
+    info.scale = ParameterScale::Linear;
     return info;
 }
 
-magda::ParameterInfo continuousInfo(const FaustParamSlot& slot) {
-    magda::ParameterInfo info;
-    info.paramIndex = slot.index;
-    info.name = slot.label;
-    info.unit = slot.unit;
+sdk::ParameterDescriptor continuousInfo(const FaustParamSlot& slot) {
+    sdk::ParameterDescriptor info;
+    info.index = slot.index;
+    info.name = slot.label.toStdString();
+    info.unit = slot.unit.toStdString();
     info.minValue = slot.minValue;
     info.maxValue = slot.maxValue;
     info.defaultValue = slot.defaultValue;
-    info.currentValue = slot.defaultValue;
-    info.scale = slot.logScale ? magda::ParameterScale::Logarithmic : magda::ParameterScale::Linear;
+    info.scale = slot.logScale ? ParameterScale::Logarithmic : ParameterScale::Linear;
     if (slot.label.equalsIgnoreCase("Mix") && std::abs(slot.minValue) < 1.0e-6f &&
         std::abs(slot.maxValue - 1.0f) < 1.0e-6f)
-        info.displayFormat = magda::DisplayFormat::Percent;
+        info.displayFormat = DisplayFormat::Percent;
     if (std::isfinite(slot.scaleAnchor))
         info.scaleAnchor = slot.scaleAnchor;
     info.gateSlotIndex = slot.gateSlotIndex;
@@ -105,34 +101,33 @@ magda::ParameterInfo continuousInfo(const FaustParamSlot& slot) {
     return info;
 }
 
-magda::ParameterInfo booleanInfo(const FaustParamSlot& slot) {
-    magda::ParameterInfo info;
-    info.paramIndex = slot.index;
-    info.name = slot.label;
-    info.unit = slot.unit;
+sdk::ParameterDescriptor booleanInfo(const FaustParamSlot& slot) {
+    sdk::ParameterDescriptor info;
+    info.index = slot.index;
+    info.name = slot.label.toStdString();
+    info.unit = slot.unit.toStdString();
     info.minValue = 0.0f;
     info.maxValue = 1.0f;
     info.defaultValue = slot.defaultValue >= 0.5f ? 1.0f : 0.0f;
-    info.currentValue = info.defaultValue;
-    info.scale = magda::ParameterScale::Boolean;
+    info.scale = ParameterScale::Boolean;
     info.modulatable = false;  // matches ParameterPresets::boolean
     info.gateSlotIndex = slot.gateSlotIndex;
     info.gateNegated = slot.gateNegated;
     return info;
 }
 
-magda::ParameterInfo triggerInfo(const FaustParamSlot& slot) {
+sdk::ParameterDescriptor triggerInfo(const FaustParamSlot& slot) {
     auto info = booleanInfo(slot);
     info.momentary = true;
     return info;
 }
 
-magda::ParameterInfo discreteInfo(const FaustParamSlot& slot) {
-    magda::ParameterInfo info;
-    info.paramIndex = slot.index;
-    info.name = slot.label;
-    info.unit = slot.unit;
-    info.scale = magda::ParameterScale::Discrete;
+sdk::ParameterDescriptor discreteInfo(const FaustParamSlot& slot) {
+    sdk::ParameterDescriptor info;
+    info.index = slot.index;
+    info.name = slot.label.toStdString();
+    info.unit = slot.unit.toStdString();
+    info.scale = ParameterScale::Discrete;
     info.modulatable = false;  // matches ParameterPresets::discrete
     // `[style:radio{…}]` asks for visible buttons, `[style:menu{…}]` for a
     // dropdown. Both are the same parameter; only the widget differs, and the
@@ -148,17 +143,19 @@ magda::ParameterInfo discreteInfo(const FaustParamSlot& slot) {
               [](const std::pair<float, juce::String>& a, const std::pair<float, juce::String>& b) {
                   return a.first < b.first;
               });
-    info.choices.reserve(sorted.size());
+    std::vector<std::string> labels;
+    labels.reserve(sorted.size());
     for (const auto& c : sorted)
-        info.choices.push_back(c.second);
+        labels.push_back(c.second.toStdString());
 
-    if (info.choices.empty()) {
-        // Defensive fallback — Phase 2 metadata parser shouldn't emit
-        // an empty choice list for a menu/radio style, but if it does
-        // we degrade to a single "(empty)" option so the slot is still
-        // selectable.
-        info.choices.emplace_back("(empty)");
-    }
+    // Defensive fallback: a menu/radio style with no choices degrades to one "(empty)" option
+    // so the slot is still selectable.
+    if (labels.empty())
+        labels.emplace_back("(empty)");
+
+    info.choices = sdk::choicesFromLabels(labels);
+    for (size_t i = 0; i < sorted.size(); ++i)
+        info.choices[i].value = sorted[i].first;
     info.minValue = 0.0f;
     info.maxValue = static_cast<float>(info.choices.size() - 1);
 
@@ -173,7 +170,6 @@ magda::ParameterInfo discreteInfo(const FaustParamSlot& slot) {
         }
     }
     info.defaultValue = static_cast<float>(defaultIndex);
-    info.currentValue = info.defaultValue;
     info.gateSlotIndex = slot.gateSlotIndex;
     info.gateNegated = slot.gateNegated;
     return info;
@@ -183,7 +179,7 @@ magda::ParameterInfo discreteInfo(const FaustParamSlot& slot) {
 
 // The three ids below are the retired plugin's own property spellings, which the
 // load-time hydration reads a project saved before the port back onto (#2315).
-magda::ParameterInfo faustInstrumentHostParamInfo(int hostIndex) {
+sdk::ParameterDescriptor faustInstrumentHostParamDescriptor(int hostIndex) {
     switch (hostIndex) {
         case 0:
             return voiceModeInfo();
@@ -194,17 +190,17 @@ magda::ParameterInfo faustInstrumentHostParamInfo(int hostIndex) {
     }
 }
 
-magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot) {
+sdk::ParameterDescriptor paramDescriptorFromSlot(const FaustParamSlot& slot) {
     // Hidden slots are part of the live binding (the host writes to
     // their zones — e.g. ProjectTempo) but should not appear in the
     // inspector. Funnel them through the inactive-placeholder path so
     // the slot index stays addressable for automation lookups while
     // the param grid filters them out by empty name.
-    magda::ParameterInfo info;
+    sdk::ParameterDescriptor info;
     if (!slot.active || slot.hidden) {
         info = placeholderForInactive(slot);
-        info.group = slot.group;
-        info.tooltip = slot.tooltip;
+        info.group = slot.group.toStdString();
+        info.tooltip = slot.tooltip.toStdString();
         info.widthCells = slot.widthCells;
         return info;
     }
@@ -222,10 +218,14 @@ magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot) {
             info = discreteInfo(slot);
             break;
     }
-    info.group = slot.group;
-    info.tooltip = slot.tooltip;
+    info.group = slot.group.toStdString();
+    info.tooltip = slot.tooltip.toStdString();
     info.widthCells = slot.widthCells;
     return info;
+}
+
+magda::ParameterInfo paramInfoFromSlot(const FaustParamSlot& slot) {
+    return magda::toParameterInfo(paramDescriptorFromSlot(slot));
 }
 
 magda::MeterInfo meterInfoFromOutput(const FaustOutputSlot& output) {
