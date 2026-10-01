@@ -780,7 +780,7 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setRackDeltaSoloByPath(const ChainNodePath& rackPath, bool deltaSolo);
     void setRackExpanded(TrackId trackId, RackId rackId, bool expanded);
 
-    // Path-based rack lookup (works for nested racks at any depth)
+    /// Rack at any depth; nullptr unless the path's last step is a Rack (#2057).
     RackInfo* getRackByPath(const ChainNodePath& rackPath);
     const RackInfo* getRackByPath(const ChainNodePath& rackPath) const;
 

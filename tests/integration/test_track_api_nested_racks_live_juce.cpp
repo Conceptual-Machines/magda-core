@@ -146,13 +146,8 @@ class TrackApiNestedRacksLiveTest final : public juce::UnitTest {
             // Asking for a chain with a rack path is a miss.
             expect(api.getChainByPath(rackPath) == nullptr);
 
-            // The other direction is not. `getRackByPath` returns the deepest
-            // rack it walked through regardless of the final step, so a chain
-            // path answers with that chain's parent rack. Long-standing
-            // `TrackManager` behaviour, pinned here because it is surprising —
-            // this test is what caught the mock disagreeing about it, and
-            // tightening it would reach well beyond this facade. Tracked as #2057.
-            expect(api.getRackByPath(chainPath) == api.getRackByPath(rackPath));
+            // Asking for a rack with a chain path is a miss too (#2057).
+            expect(api.getRackByPath(chainPath) == nullptr);
 
             // A path whose *middle* step is broken must not resolve to
             // something it merely passed through. This is the case the mock
@@ -229,7 +224,7 @@ class TrackApiNestedRacksLiveTest final : public juce::UnitTest {
             const auto deviceId = api.addDeviceToChainByPath(pathA.withChain(chain1), device);
             expect(deviceId != INVALID_DEVICE_ID);
             const auto validDevicePath = pathA.withChain(chain1).withDevice(deviceId);
-            expect(api.getRackByPath(validDevicePath) == api.getRackByPath(pathA));
+            expect(api.getRackByPath(validDevicePath) == nullptr);
             const auto missingDevicePath = pathA.withChain(chain1).withDevice(9999);
             expect(api.getRackByPath(missingDevicePath) == nullptr);
             expect(api.getRackByPath(pathA.withDevice(deviceId)) == nullptr);
