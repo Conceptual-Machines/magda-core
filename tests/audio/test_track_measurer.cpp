@@ -1,6 +1,8 @@
+#include <bit>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 #include "../../magda/daw/audio/analysis/TrackMeasurer.hpp"
@@ -200,4 +202,65 @@ TEST_CASE("TrackMeasurer - reset clears state", "[measurer]") {
     REQUIRE_FALSE(s.valid);
     REQUIRE(s.integratedLufs == Catch::Approx(kSilenceLufs));
     REQUIRE(s.samplePeakDb == Catch::Approx(magda::daw::audio::kSilenceDb));
+}
+
+namespace {
+
+// Deterministic programme: two detuned sines plus a spiky tail, different on each channel.
+std::vector<std::uint32_t> measureBits(double sr, int numSamples) {
+    TrackMeasurer m;
+    m.prepare(sr, kBlock, true);
+    std::vector<float> l(kBlock), r(kBlock);
+    std::uint32_t lcg = 12345u;
+    int done = 0;
+    while (done < numSamples) {
+        const int n = std::min(kBlock, numSamples - done);
+        for (int i = 0; i < n; ++i) {
+            const double t = static_cast<double>(done + i) / sr;
+            lcg = lcg * 1664525u + 1013904223u;
+            const float noise = (static_cast<float>(lcg >> 8) / 16777216.0f - 0.5f) * 0.2f;
+            const float spike = ((done + i) % 997 == 0) ? 0.45f : 0.0f;
+            l[static_cast<size_t>(i)] =
+                0.4f * static_cast<float>(std::sin(2.0 * kPi * 997.0 * t)) + noise + spike;
+            r[static_cast<size_t>(i)] =
+                0.3f * static_cast<float>(std::sin(2.0 * kPi * 3111.0 * t + 0.3)) - noise + spike;
+        }
+        const float* ch[2] = {l.data(), r.data()};
+        m.process(ch, 2, n);
+        done += n;
+    }
+    const auto s = m.read();
+    return {std::bit_cast<std::uint32_t>(s.momentaryLufs),
+            std::bit_cast<std::uint32_t>(s.shortTermLufs),
+            std::bit_cast<std::uint32_t>(s.integratedLufs),
+            std::bit_cast<std::uint32_t>(s.samplePeakDb),
+            std::bit_cast<std::uint32_t>(s.truePeakDb),
+            std::bit_cast<std::uint32_t>(s.correlation),
+            std::bit_cast<std::uint32_t>(s.width)};
+}
+
+}  // namespace
+
+TEST_CASE("TrackMeasurer - readings are bit-stable across the DSP extraction", "[measurer]") {
+    // Captured from the inline biquads and oversampler before they moved to the SDK:
+    // momentary, short-term, integrated, sample peak, true peak, correlation, width.
+    struct Golden {
+        double sampleRate;
+        std::uint32_t bits[7];
+    };
+    const Golden goldens[] = {
+        {44100.0,
+         {0xc0ea2962, 0xc0ea4261, 0xc0e9999a, 0xbf0fff8d, 0xbee5c98d, 0xbd5d035b, 0x3f06a903}},
+        {48000.0,
+         {0xc0eabab2, 0xc0ea21cd, 0xc0e9999a, 0xbef65f92, 0xbee3fd9b, 0xbd309adf, 0x3f0551b1}},
+        {96000.0,
+         {0xc0ea0466, 0xc0e9e282, 0xc0e9999a, 0xbeed094c, 0xbedab83c, 0xbd2f3c70, 0x3f054526}},
+    };
+    for (const auto& g : goldens) {
+        const auto bits = measureBits(g.sampleRate, static_cast<int>(g.sampleRate * 5));
+        for (size_t i = 0; i < bits.size(); ++i) {
+            INFO("sample rate " << g.sampleRate << " field " << i);
+            CHECK(bits[i] == g.bits[i]);
+        }
+    }
 }

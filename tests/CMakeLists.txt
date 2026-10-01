@@ -353,6 +353,7 @@ set(TEST_SOURCES
     # Configurable user data paths
     project/test_app_paths.cpp
     # Mixing pt2 (issue #1388) - per-track loudness/level/stereo measurement DSP
+    audio/test_lcg48_random.cpp
     audio/test_track_measurer.cpp
     # Mixing pt2 (issue #1390) - inter-track frequency masking detector
     audio/test_masking_detector.cpp

@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <magda/sdk/dsp/Random.hpp>
 
 #include "core/ParameterUtils.hpp"
 #include "plugins/MidiMagdaDevice.hpp"
@@ -170,7 +171,7 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
     double freeRunSamples_ = 0.0;
 
     // Random
-    juce::Random arpRandom_;
+    sdk::Lcg48Random arpRandom_;
 
     /// The parameter's display-domain value, converted through the cached
     /// domain rather than a freshly built ParameterInfo: this runs per block on

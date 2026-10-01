@@ -6,6 +6,8 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <magda/sdk/dsp/Biquad.hpp>
+#include <magda/sdk/dsp/Oversampler.hpp>
 #include <magda/sdk/telemetry/Telemetry.hpp>
 #include <vector>
 
@@ -51,8 +53,10 @@ class TrackMeasurer {
         sampleRate_ = sampleRate > 0.0 ? sampleRate : 48000.0;
         enableTruePeak_ = enableTruePeak;
         computeKWeightingCoeffs(sampleRate_);
-        if (enableTruePeak_)
-            buildOversampler();
+        if (enableTruePeak_) {
+            tpOversamplerL_.prepare(kOsFactor, kTapsPerPhase);
+            tpOversamplerR_.prepare(kOsFactor, kTapsPerPhase);
+        }
         blockSamples_ = juce::jmax(1, static_cast<int>(std::lround(sampleRate_ * 0.1)));  // 100 ms
         scratchL_.assign(static_cast<size_t>(juce::jmax(1, maxBlockSize)), 0.0f);
         reset();
@@ -73,8 +77,8 @@ class TrackMeasurer {
             h.store(0, std::memory_order_relaxed);
         corrSmoothed_ = 1.0f;
         widthSmoothed_ = 0.0f;
-        tpDelayL_.clear();
-        tpDelayR_.clear();
+        tpOversamplerL_.reset();
+        tpOversamplerR_.reset();
         momentary_.store(kSilenceLufs, std::memory_order_relaxed);
         shortTerm_.store(kSilenceLufs, std::memory_order_relaxed);
         samplePeak_.store(kSilenceDb, std::memory_order_relaxed);
@@ -131,8 +135,8 @@ class TrackMeasurer {
 
         // True peak (oversampled) only when enabled.
         if (enableTruePeak_) {
-            const float tp = juce::jmax(oversamplePeak(tpDelayL_, l, numSamples),
-                                        oversamplePeak(tpDelayR_, r, numSamples));
+            const float tp = juce::jmax(oversamplePeak(tpOversamplerL_, l, numSamples),
+                                        oversamplePeak(tpOversamplerR_, r, numSamples));
             if (tp > 0.0f)
                 publishMax(truePeak_, linearToDb(tp));
         }
@@ -205,56 +209,22 @@ class TrackMeasurer {
 
   private:
     // ---- ITU-R BS.1770-4 K-weighting: two cascaded biquads (TDF-II) ----------
-    struct Biquad {
-        double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
-    };
-    struct BiquadState {
-        double z1 = 0, z2 = 0;
-    };
-
-    Biquad preFilter_;                    // stage 1: high-shelf
-    Biquad highPass_;                     // stage 2: RLB high-pass
-    std::array<BiquadState, 2> filtL_{};  // [0]=pre, [1]=highpass
-    std::array<BiquadState, 2> filtR_{};
+    sdk::BiquadCoeffs<double> preFilter_;              // stage 1: high-shelf
+    sdk::BiquadCoeffs<double> highPass_;               // stage 2: RLB high-pass
+    std::array<sdk::BiquadState<double>, 2> filtL_{};  // [0]=pre, [1]=highpass
+    std::array<sdk::BiquadState<double>, 2> filtR_{};
 
     // Coefficient derivation ported from the well-known libebur128 filter design
     // so LUFS is correct at any sample rate, not just 48 kHz.
     void computeKWeightingCoeffs(double fs) {
-        {
-            const double f0 = 1681.974450955533;
-            const double G = 3.999843853973347;
-            const double Q = 0.7071752369554196;
-            const double K = std::tan(juce::MathConstants<double>::pi * f0 / fs);
-            const double Vh = std::pow(10.0, G / 20.0);
-            const double Vb = std::pow(Vh, 0.4996667741545416);
-            const double a0 = 1.0 + K / Q + K * K;
-            preFilter_.b0 = (Vh + Vb * K / Q + K * K) / a0;
-            preFilter_.b1 = 2.0 * (K * K - Vh) / a0;
-            preFilter_.b2 = (Vh - Vb * K / Q + K * K) / a0;
-            preFilter_.a1 = 2.0 * (K * K - 1.0) / a0;
-            preFilter_.a2 = (1.0 - K / Q + K * K) / a0;
-        }
-        {
-            const double f0 = 38.13547087602444;
-            const double Q = 0.5003270373238773;
-            const double K = std::tan(juce::MathConstants<double>::pi * f0 / fs);
-            const double a0 = 1.0 + K / Q + K * K;
-            highPass_.b0 = 1.0 / a0;
-            highPass_.b1 = -2.0 / a0;
-            highPass_.b2 = 1.0 / a0;
-            highPass_.a1 = 2.0 * (K * K - 1.0) / a0;
-            highPass_.a2 = (1.0 - K / Q + K * K) / a0;
-        }
+        const double Vh = std::pow(10.0, 3.999843853973347 / 20.0);
+        const double Vb = std::pow(Vh, 0.4996667741545416);
+        preFilter_ = sdk::biquad::highShelfK(fs, 1681.974450955533, Vh, Vb, 0.7071752369554196);
+        highPass_ = sdk::biquad::highPassK(fs, 38.13547087602444, 0.5003270373238773);
     }
 
-    static double biquad(const Biquad& c, BiquadState& s, double x) noexcept {
-        const double y = c.b0 * x + s.z1;
-        s.z1 = c.b1 * x - c.a1 * y + s.z2;
-        s.z2 = c.b2 * x - c.a2 * y;
-        return y;
-    }
-    double applyKWeight(std::array<BiquadState, 2>& st, double x) const noexcept {
-        return biquad(highPass_, st[1], biquad(preFilter_, st[0], x));
+    double applyKWeight(std::array<sdk::BiquadState<double>, 2>& st, double x) const noexcept {
+        return sdk::processBiquad(highPass_, st[1], sdk::processBiquad(preFilter_, st[0], x));
     }
 
     // ---- Gating blocks (100 ms) feeding momentary/short-term/integrated -------
@@ -353,66 +323,8 @@ class TrackMeasurer {
     static constexpr int kOsFactor = 4;
     static constexpr int kTapsPerPhase = 12;
 
-    /** @brief Newest-first sample history for the true-peak FIR (#2152).
-     *
-     *  The window walks backwards through a buffer holding two copies of itself,
-     *  so the polyphase dot products always read kTapsPerPhase contiguous
-     *  samples and no sample is ever moved.
-     */
-    struct TruePeakHistory {
-        std::array<float, 2 * kTapsPerPhase> samples{};
-        int newest = 0;
-
-        void clear() noexcept {
-            samples.fill(0.0f);
-            newest = 0;
-        }
-
-        void push(float x) noexcept {
-            newest = (newest == 0 ? kTapsPerPhase : newest) - 1;
-            samples[static_cast<size_t>(newest)] = x;
-            samples[static_cast<size_t>(newest + kTapsPerPhase)] = x;
-        }
-
-        const float* window() const noexcept {
-            return samples.data() + newest;
-        }
-    };
-
-    std::array<std::array<float, kTapsPerPhase>, kOsFactor> osCoeffs_{};
-    TruePeakHistory tpDelayL_;
-    TruePeakHistory tpDelayR_;
-
-    void buildOversampler() {
-        // Windowed-sinc low-pass (cutoff at original Nyquist), split into 4 polyphase
-        // sub-filters. Hann window over the full kernel for a clean stopband.
-        const int total = kOsFactor * kTapsPerPhase;
-        const double fc = 0.5 / kOsFactor;  // normalised to oversampled rate
-        std::vector<double> kernel(static_cast<size_t>(total));
-        const double mid = (total - 1) / 2.0;
-        for (int n = 0; n < total; ++n) {
-            const double x = n - mid;
-            const double sinc = std::abs(x) < 1.0e-9
-                                    ? 2.0 * fc
-                                    : std::sin(2.0 * juce::MathConstants<double>::pi * fc * x) /
-                                          (juce::MathConstants<double>::pi * x);
-            const double w =
-                0.5 - 0.5 * std::cos(2.0 * juce::MathConstants<double>::pi * n / (total - 1));
-            kernel[static_cast<size_t>(n)] = sinc * w;
-        }
-        // Unity passband gain after upsampling (compensate the kOsFactor zero-stuffing loss).
-        double sum = 0.0;
-        for (double v : kernel)
-            sum += v;
-        const double norm = sum > 1.0e-12 ? (kOsFactor / sum) : 1.0;
-        for (int phase = 0; phase < kOsFactor; ++phase)
-            for (int t = 0; t < kTapsPerPhase; ++t) {
-                const int idx = t * kOsFactor + phase;
-                osCoeffs_[static_cast<size_t>(phase)][static_cast<size_t>(t)] =
-                    idx < total ? static_cast<float>(kernel[static_cast<size_t>(idx)] * norm)
-                                : 0.0f;
-            }
-    }
+    sdk::PolyphaseUpsampler tpOversamplerL_;
+    sdk::PolyphaseUpsampler tpOversamplerR_;
 
     /// Audio thread. Mono downmix of the block into the spectrum ring. Hosts can
     /// deliver blocks larger than the size reported during prepare(), so it goes
@@ -427,19 +339,12 @@ class TrackMeasurer {
         }
     }
 
-    float oversamplePeak(TruePeakHistory& delay, const float* x, int n) noexcept {
+    static float oversamplePeak(sdk::PolyphaseUpsampler& upsampler, const float* x,
+                                int n) noexcept {
         float peak = 0.0f;
-        for (int i = 0; i < n; ++i) {
-            delay.push(x[i]);
-            const float* window = delay.window();
-            for (int phase = 0; phase < kOsFactor; ++phase) {
-                float acc = 0.0f;
-                const auto& c = osCoeffs_[static_cast<size_t>(phase)];
-                for (int t = 0; t < kTapsPerPhase; ++t)
-                    acc += c[static_cast<size_t>(t)] * window[t];
-                peak = juce::jmax(peak, std::abs(acc));
-            }
-        }
+        for (int i = 0; i < n; ++i)
+            upsampler.processSample(x[i],
+                                    [&peak](float y) { peak = juce::jmax(peak, std::abs(y)); });
         return peak;
     }
 
