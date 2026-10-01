@@ -33,7 +33,7 @@ int midiEventsWithin(int boundBytes) {
     return std::max(0, boundBytes) / (kMidiEventOverheadBytes + 1);
 }
 
-DeviceProperties propertiesForRequiredDevice(const std::unique_ptr<MagdaDevice>& device) {
+sdk::DeviceProperties propertiesForRequiredDevice(const std::unique_ptr<MagdaDevice>& device) {
     jassert(device != nullptr);
     return device->properties();
 }
@@ -42,29 +42,19 @@ DeviceProperties propertiesForRequiredDevice(const std::unique_ptr<MagdaDevice>&
 ///
 /// The engine's port is a juce::MidiBuffer, a byte stream that cannot be
 /// addressed by index, so the block's events are decoded into the scratch first.
-/// Decoding is push_back and emptying is clear(): JUCE's MidiMessage move
-/// assignment overwrites a live destination's heap pointer without freeing it,
-/// so nothing here ever move-assigns into a message that is already alive.
-///
-/// A long message allocates on the audio thread whichever way this is written:
-/// message() hands out a const juce::MidiMessage& and JUCE has no non-owning
-/// one. Anything past eight bytes is heap, which is SysEx and nothing else. That
-/// is the SDK boundary, not this adapter (#1836).
-class EngineMidiInputView final : public DeviceMidiInput {
+/// A sysex points at the port's own bytes, which the block does not modify, so
+/// nothing here allocates.
+class EngineMidiInputView final : public sdk::MidiInput {
   public:
-    EngineMidiInputView(const std::vector<DeviceMidiEvent>& events, bool allNotesOff)
+    EngineMidiInputView(const std::vector<sdk::MidiEvent>& events, bool allNotesOff)
         : events_(events), allNotesOff_(allNotesOff) {}
 
     int size() const override {
         return static_cast<int>(events_.size());
     }
 
-    const juce::MidiMessage& message(int index) const override {
-        return events_[static_cast<std::size_t>(index)].message;
-    }
-
-    std::uint32_t sourceId(int index) const override {
-        return events_[static_cast<std::size_t>(index)].sourceId;
+    const sdk::MidiEvent& event(int index) const override {
+        return events_[static_cast<std::size_t>(index)];
     }
 
     bool isAllNotesOff() const override {
@@ -72,7 +62,7 @@ class EngineMidiInputView final : public DeviceMidiInput {
     }
 
   private:
-    const std::vector<DeviceMidiEvent>& events_;
+    const std::vector<sdk::MidiEvent>& events_;
     /// What the port carried, beside its events rather than in them: the
     /// engine's juce::MidiBuffer has nowhere to put it (#2418).
     bool allNotesOff_ = false;
@@ -80,33 +70,39 @@ class EngineMidiInputView final : public DeviceMidiInput {
 
 /// The SDK's write-only sink for what the device emits, over the output scratch.
 ///
-/// Nothing here grows the vector. Its capacity is the most events the output
-/// port's bound admits, so what is refused is a device past that bound rather
-/// than an ordinary block: growing it would allocate, and one dropped event is
-/// cheaper than a callback that missed its deadline.
-///
-/// That capacity is a count of events; the port's budget is bytes, and the two
-/// part company on SysEx. The count keeps this vector from reallocating, the
-/// byte budget is enforced where it is spent, writing back onto the port (#2341).
-class EngineMidiOutputView final : public DeviceMidiOutput {
+/// Nothing here grows a vector: the event count and the byte budget are the
+/// output port's bounds, and an event past either is refused rather than
+/// allocated for, since one dropped event is cheaper than a callback that
+/// missed its deadline. The budget is the one the executor reserved for the
+/// port (#2341), so what is accepted here fits the port when it is written back.
+class EngineMidiOutputView final : public sdk::MidiOutput {
   public:
-    EngineMidiOutputView(std::vector<DeviceMidiEvent>& events, int capacity)
-        : events_(events), capacity_(capacity) {}
+    EngineMidiOutputView(std::vector<sdk::MidiEvent>& events, std::vector<std::uint8_t>& bytes,
+                         int capacity, int budgetBytes)
+        : events_(events), bytes_(bytes), capacity_(capacity), budgetBytes_(budgetBytes) {}
 
     /// What the device left here, for the executor to put back on the port.
     bool isAllNotesOff() const {
         return allNotesOff_;
     }
 
-    void addEvent(DeviceMidiEvent event) override {
-        if (static_cast<int>(events_.size()) >= capacity_) {
+    bool addEvent(const sdk::MidiEvent& event) override {
+        const auto cost = kMidiEventOverheadBytes + static_cast<int>(event.size());
+        if (static_cast<int>(events_.size()) >= capacity_ || spentBytes_ + cost > budgetBytes_) {
             jassertfalse;  // a device past the port's bound; see the class comment
-            return;
+            return false;
         }
 
-        // Move construction into storage that holds nothing yet: the one move a
-        // live juce::MidiMessage allows without leaking (see the input view).
-        events_.push_back(std::move(event));
+        spentBytes_ += cost;
+        auto stored = event;
+        if (event.isSysex()) {
+            // Within the reserve: every sysex byte is part of the cost above.
+            const auto offset = bytes_.size();
+            bytes_.insert(bytes_.end(), event.longData, event.longData + event.longSize);
+            stored.longData = bytes_.data() + offset;
+        }
+        events_.push_back(stored);
+        return true;
     }
 
     void setAllNotesOff(bool allNotesOff) override {
@@ -114,8 +110,11 @@ class EngineMidiOutputView final : public DeviceMidiOutput {
     }
 
   private:
-    std::vector<DeviceMidiEvent>& events_;
+    std::vector<sdk::MidiEvent>& events_;
+    std::vector<std::uint8_t>& bytes_;
     int capacity_;
+    int budgetBytes_;
+    int spentBytes_ = 0;
     bool allNotesOff_ = false;
 };
 
@@ -124,7 +123,7 @@ class EngineMidiOutputView final : public DeviceMidiOutput {
 /// A view over the snapshot the transport published for this callback, which is
 /// immutable and outlives the block. Seconds in, because that is the face of a
 /// block a device is given alongside its samples.
-class EngineTempoMapView final : public DeviceTempoMap {
+class EngineTempoMapView final : public sdk::TempoMap {
   public:
     explicit EngineTempoMapView(const magda::engine::TempoMap& map) : map_(map) {}
 
@@ -145,8 +144,9 @@ class EngineTempoMapView final : public DeviceTempoMap {
 EngineMagdaDevice::EngineMagdaDevice(std::unique_ptr<MagdaDevice> device, bool offlineRender)
     : device_(std::move(device)),
       properties_(propertiesForRequiredDevice(device_)),
-      dspTimingName_(properties_.pluginId.toStdString() + " dsp"),
+      dspTimingName_(properties_.pluginId + " dsp"),
       offlineRender_(offlineRender) {
+    device_->setHost(this);
     parameters_.reserve(static_cast<std::size_t>(std::max(0, device_->parameterCount())));
 
     for (auto [index, info] : std::views::zip(std::views::iota(0), device_->parameters())) {
@@ -167,6 +167,18 @@ EngineMagdaDevice::~EngineMagdaDevice() {
     // handed a sample rate.
     if (prepared_)
         device_->release();
+
+    device_->setHost(nullptr);
+}
+
+void EngineMagdaDevice::stateChanged(sdk::StateNode state) {
+    if (stateReporter_)
+        stateReporter_(std::move(state));
+}
+
+void EngineMagdaDevice::rebuildRequired() {
+    if (rebuildHandler_)
+        rebuildHandler_();
 }
 
 void EngineMagdaDevice::prepare(const magda::engine::RenderContext& context) {
@@ -183,17 +195,16 @@ void EngineMagdaDevice::prepare(const magda::engine::RenderContext& context) {
     for (auto& mapping : parameters_)
         mapping.written = std::numeric_limits<float>::quiet_NaN();
 
+    // Properties are constant between prepares, so this is the one place they are
+    // read again; latency is only valid once the device has been prepared.
+    properties_ = device_->properties();
+
     device_->prepare({
         .sampleRate = context.sampleRate,
         .maximumBlockSize = context.maxBlockSize,
     });
 
-    // From the properties read once at construction, never re-read here: the
-    // SDK says a device's properties are constant for its lifetime.
-    //
-    // juce::roundToInt, which a device sizing its own delay line rounds with too
-    // (MagdaLimiterDspCore::kLookaheadSeconds).
-    latencySamples_ = juce::roundToInt(properties_.latencySeconds * context.sampleRate);
+    latencySamples_ = device_->latencySamples();
 
     channels_.assign(static_cast<std::size_t>(std::max(0, context.numChannels)), nullptr);
     sidechainChannels_.assign(static_cast<std::size_t>(std::max(0, properties_.sidechain.channels)),
@@ -230,6 +241,8 @@ void EngineMagdaDevice::sizeMidiScratch() {
     midiOutCapacity_ = midiEventsWithin(midiOutputBoundBytes_);
     midiOutScratch_.clear();
     midiOutScratch_.reserve(static_cast<std::size_t>(midiOutCapacity_));
+    midiOutBytes_.clear();
+    midiOutBytes_.reserve(static_cast<std::size_t>(std::max(0, midiOutputBoundBytes_)));
 }
 
 void EngineMagdaDevice::reset() {
@@ -245,8 +258,11 @@ int EngineMagdaDevice::latencySamples() const {
 }
 
 double EngineMagdaDevice::tailSeconds() const {
-    // Live rather than the cached properties: a convolution's tail is whatever impulse is loaded.
-    return device_->properties().tailLengthSeconds;
+    // Live: a convolution's tail is whatever impulse is loaded.
+    const auto tail = device_->tailSamples();
+    if (tail == sdk::kInfiniteTail)
+        return std::numeric_limits<double>::infinity();
+    return static_cast<double>(tail) / sampleRate_;
 }
 
 void EngineMagdaDevice::writeParameters(const magda::engine::DeviceParams& params) {
@@ -302,17 +318,20 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
 
     // Non-owning: the executor's buffer, seen through the container the SDK
     // takes. Nothing is copied and nothing is allocated.
-    juce::AudioBuffer<float> audio(channels_.data(), static_cast<int>(numChannels), numSamples);
+    sdk::ProcessContext context;
+    context.audio = BufferView(channels_.data(), static_cast<int>(numChannels), numSamples);
+    if (sidechainChannels > 0)
+        context.sidechain = ConstBufferView(sidechainChannels_.data(),
+                                            static_cast<int>(sidechainChannels), numSamples);
 
     // Both views or neither, which is the SDK's contract: a device with an input
     // and nothing to write to still gets a sink, and its output is discarded.
     std::optional<EngineMidiInputView> midiIn;
     std::optional<EngineMidiOutputView> midiOut;
     if (block.midiIn != nullptr || block.midiOut != nullptr) {
-        // Emptied by destroying what they held, which is what frees a long
-        // message rather than leaking it. See the input view.
         midiInScratch_.clear();
         midiOutScratch_.clear();
+        midiOutBytes_.clear();
 
         occurrences_.restart();
         if (block.midiIn != nullptr)
@@ -322,48 +341,34 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
                     break;
                 }
 
-                auto message = metadata.getMessage();
+                auto event = sdk::MidiEvent::fromBytes(
+                    metadata.data, static_cast<std::uint32_t>(metadata.numBytes),
+                    metadata.samplePosition);
 
-                // Seconds from the start of the block, which is what a device
-                // reads; the engine's ports count samples. A note-on also
-                // carries how far into its sample it falls (#2741).
-                const auto fraction =
-                    block.midiInFractions != nullptr && message.isNoteOn()
-                        ? block.midiInFractions->at(metadata.samplePosition, message.getChannel(),
-                                                    message.getNoteNumber(),
-                                                    occurrences_.next(metadata.samplePosition,
-                                                                      message.getChannel(),
-                                                                      message.getNoteNumber()))
-                        : 0.0f;
-                message.setTimeStamp((metadata.samplePosition + static_cast<double>(fraction)) /
-                                     sampleRate_);
-                midiInScratch_.push_back({std::move(message), 0});
+                // How far into its sample a note-on falls (#2741).
+                if (block.midiInFractions != nullptr && event.isNoteOn())
+                    event.fraction = block.midiInFractions->at(
+                        event.sample, event.channel(), event.noteNumber(),
+                        occurrences_.next(event.sample, event.channel(), event.noteNumber()));
+
+                midiInScratch_.push_back(event);
             }
 
         midiIn.emplace(midiInScratch_, block.midiInAllNotesOff);
-        midiOut.emplace(midiOutScratch_, midiOutCapacity_);
+        midiOut.emplace(midiOutScratch_, midiOutBytes_, midiOutCapacity_, midiOutputBoundBytes_);
     }
 
     std::optional<EngineTempoMapView> tempo;
     if (block.block.tempo != nullptr)
         tempo.emplace(*block.block.tempo);
 
-    DeviceProcessContext context{
-        .audio = &audio,
-        .sidechain = sidechainChannels > 0 ? sidechainChannels_.data() : nullptr,
-        .numSidechainChannels = static_cast<int>(sidechainChannels),
-        .midiIn = midiIn ? &*midiIn : nullptr,
-        .midiOut = midiOut ? &*midiOut : nullptr,
-        .tempoMap = tempo ? &*tempo : nullptr,
-        .startSample = 0,
-        .numSamples = numSamples,
-        .midiTimeOffsetSeconds = 0.0,
-        .timelineStartSeconds = block.block.seconds.start,
-        .timelineEndSeconds = block.block.seconds.end,
-        .isPlaying = block.block.playing,
-        .isScrubbing = false,
-        .isRendering = offlineRender_,
-    };
+    context.midiIn = midiIn ? &*midiIn : nullptr;
+    context.midiOut = midiOut ? &*midiOut : nullptr;
+    context.tempoMap = tempo ? &*tempo : nullptr;
+    context.timelineStartSeconds = block.block.seconds.start;
+    context.timelineEndSeconds = block.block.seconds.end;
+    context.isPlaying = block.block.playing;
+    context.isRendering = offlineRender_;
 
     {
         const DeviceTimingScope dsp(dspTimingName_.c_str());
@@ -385,39 +390,17 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
 
     // What the device wrote, back onto the port. An event outside the block
     // lands on the nearest sample it has rather than being dropped: a device
-    // that placed a note one sample past the end meant the note.
-    //
-    // Counted in bytes against what the executor reserved for this port, never
-    // the flat constant (#2341): the scratch's guard is an event count, and a
-    // device emitting SysEx stays far inside that while going far past the
-    // budget, growing a juce::MidiBuffer the executor reserved once.
-    //
-    // The input cannot reach this port any more by construction (#2347); thru
-    // is the plan's merge behind the device.
-    int bytesWritten = 0;
-
+    // that placed a note one sample past the end meant the note. The output
+    // view has already counted the bytes against what the executor reserved for
+    // this port (#2341); thru is the plan's merge behind the device (#2347).
     for (const auto& event : midiOutScratch_) {
-        const auto cost = kMidiEventOverheadBytes + event.message.getRawDataSize();
-        if (bytesWritten + cost > midiOutputBoundBytes_) {
-            jassertfalse;  // a device past the port's budget; see the output view
-            break;
-        }
+        const auto sample = std::clamp(event.sample, 0, std::max(0, numSamples - 1));
+        block.midiOut->addEvent(event.data(), static_cast<int>(event.size()), sample);
 
-        bytesWritten += cost;
-
-        // The sample the stamp falls in, the rule every instant follows (#2741).
-        const auto position = event.message.getTimeStamp() * sampleRate_;
-        const auto sample = static_cast<int>(std::clamp<std::int64_t>(
-            magda::engine::sampleAt(position), 0, std::max(0, numSamples - 1)));
-        block.midiOut->addEvent(event.message, sample);
-
-        // One entry per note-on, a stamp the clamp moved sounding on its sample.
-        if (block.midiOutFractions != nullptr && event.message.isNoteOn())
-            block.midiOutFractions->add(
-                sample, event.message.getChannel(), event.message.getNoteNumber(),
-                sample == magda::engine::sampleAt(position)
-                    ? static_cast<float>(magda::engine::fractionAt(position))
-                    : 0.0f);
+        // One entry per note-on; a stamp the clamp moved sounds on its sample.
+        if (block.midiOutFractions != nullptr && event.isNoteOn())
+            block.midiOutFractions->add(sample, event.channel(), event.noteNumber(),
+                                        sample == event.sample ? event.fraction : 0.0f);
     }
 }
 

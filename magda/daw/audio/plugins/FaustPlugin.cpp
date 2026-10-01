@@ -301,9 +301,7 @@ void FaustPlugin::initialiseUnsetPoolValues(
 
         const auto& previous = previousSlots[static_cast<size_t>(slotIndex)];
         const bool sameControl = sameControlIdentity(previous, pool_.slot(slotIndex));
-        const bool restoredBeforeFirstBind =
-            !previous.active && poolValueWasRestored_[static_cast<size_t>(slotIndex)];
-        if (sameControl || restoredBeforeFirstBind)
+        if (sameControl)
             continue;
 
         poolValues_[static_cast<size_t>(slotIndex)].store(
@@ -380,9 +378,12 @@ bool FaustPlugin::loadDspSource(const juce::String& name, const juce::String& so
     activeDspMatchesSource_ = true;
 
     // A stereo-only replacement can no longer consume a key. The device says so
-    // through properties().sidechain, which the host re-reads when
-    // refreshDeviceParameters() runs after a compile; there is nothing for the
-    // device itself to unroute.
+    // through properties().sidechain, which the host re-reads when it asks to be
+    // rebuilt; there is nothing for the device itself to unroute.
+    if (host() != nullptr &&
+        (!previous || previous->dspIn != compiled->dspIn || previous->dspOut != compiled->dspOut ||
+         previous->sidechain != compiled->sidechain))
+        host()->rebuildRequired();
 
     if (previous) {
         const juce::ScopedLock lk(retiredLock_);
@@ -459,7 +460,7 @@ void FaustPlugin::reservePointerScratch(const std::shared_ptr<FaustState>& state
 }
 
 void FaustPlugin::process(DeviceProcessContext& context) {
-    if (context.audio == nullptr || context.numSamples <= 0)
+    if (context.numSamples() <= 0)
         return;
 
     auto active = std::atomic_load(&active_);
@@ -503,9 +504,8 @@ void FaustPlugin::process(DeviceProcessContext& context) {
         }
     }
 
-    const int hostChannels = context.audio->getNumChannels();
-    const int n = context.numSamples;
-    const int start = context.startSample;
+    const int hostChannels = context.audio.numChannels();
+    const int n = context.numSamples();
 
     if (hostChannels <= 0 || active->dspIn <= 0 || active->dspOut <= 0)
         return;
@@ -525,11 +525,12 @@ void FaustPlugin::process(DeviceProcessContext& context) {
         float* dst = scratchIn_.getWritePointer(ch);
         const float* src = nullptr;
         if (ch >= ownIn) {
-            const int key = std::min(ch - ownIn, context.numSidechainChannels - 1);
+            const int numKeys = context.sidechain ? context.sidechain->numChannels() : 0;
+            const int key = std::min(ch - ownIn, numKeys - 1);
             if (key >= 0)
-                src = context.sidechain[key] + start;
+                src = context.sidechain->channel(key);
         } else if (ch < hostChannels) {
-            src = context.audio->getReadPointer(ch, start);
+            src = context.audio.channel(ch);
         }
 
         if (src != nullptr)
@@ -541,7 +542,7 @@ void FaustPlugin::process(DeviceProcessContext& context) {
 
     const int writableOut = std::min(active->dspOut, hostChannels);
     for (int ch = 0; ch < writableOut; ++ch)
-        outPtrs_[static_cast<size_t>(ch)] = context.audio->getWritePointer(ch, start);
+        outPtrs_[static_cast<size_t>(ch)] = context.audio.channel(ch);
     for (int ch = writableOut; ch < active->dspOut; ++ch)
         outPtrs_[static_cast<size_t>(ch)] =
             scratchIn_.getWritePointer(ch % scratchIn_.getNumChannels());
@@ -549,18 +550,11 @@ void FaustPlugin::process(DeviceProcessContext& context) {
     active->dsp->compute(n, inPtrs_.data(), outPtrs_.data());
 }
 
-void FaustPlugin::flushState(juce::ValueTree& state) {
-    state.setProperty(kFaustDspNameProperty, dspName_, nullptr);
-    state.setProperty(kFaustDspSourceProperty, dspSource_, nullptr);
-    for (int i = 0; i < FaustParamPool::kSize; ++i)
-        state.setProperty(juce::Identifier(poolParamId(i)),
-                          poolValues_[static_cast<size_t>(i)].load(std::memory_order_relaxed),
-                          nullptr);
-}
-
-void FaustPlugin::restoreState(const juce::ValueTree& v) {
-    const auto savedSource = v.getProperty(kFaustDspSourceProperty, juce::String()).toString();
-    const auto savedName = v.getProperty(kFaustDspNameProperty, juce::String()).toString();
+sdk::RestoreResult FaustPlugin::restoreState(const sdk::StateNode& state) {
+    const auto savedSource =
+        juce::String::fromUTF8(state.getString(stateKey(kFaustDspSourceProperty)).c_str());
+    const auto savedName =
+        juce::String::fromUTF8(state.getString(stateKey(kFaustDspNameProperty)).c_str());
 
     if (savedSource.isNotEmpty() && savedSource != dspSource_) {
         juce::String err;
@@ -591,17 +585,9 @@ void FaustPlugin::restoreState(const juce::ValueTree& v) {
         }
     }
 
-    // Pool values are saved under stable ids (param_01 ... param_64), which is
-    // what lets a macro or automation lane keep pointing at the same control
-    // across a recompile.
-    for (int i = 0; i < FaustParamPool::kSize; ++i) {
-        const auto id = poolParamId(i);
-        const auto* saved = v.getPropertyPointer(juce::Identifier(id));
-        poolValueWasRestored_[static_cast<size_t>(i)] = saved != nullptr;
-        poolValues_[static_cast<size_t>(i)].store(
-            saved != nullptr ? static_cast<float>(*saved) : 0.0f, std::memory_order_relaxed);
-    }
-    refreshPoolDomains();
+    // Pool values are the model's (#2317): DeviceInfo::parameters is their only
+    // authority, and the adapter writes them into the slots.
+    return sdk::RestoreResult::success();
 }
 
 void FaustPlugin::refreshPoolDomains() {

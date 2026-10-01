@@ -3,6 +3,7 @@
 #include <juce_dsp/juce_dsp.h>
 
 #include <atomic>
+#include <cmath>
 
 #include "core/ParameterUtils.hpp"
 #include "plugins/MagdaDevice.hpp"
@@ -90,6 +91,11 @@ class MagdaConvolutionPlugin : public MagdaDevice {
     bool loadImpulseResponse(const void* sourceData, size_t sourceDataSize);
 
     /// The loaded IR's display name. Not used by the DSP; the custom UI shows it.
+    /// The encoded impulse response the device holds; empty when it holds none.
+    const juce::MemoryBlock& irData() const {
+        return irData_;
+    }
+
     const juce::String& irName() const {
         return irName_;
     }
@@ -120,12 +126,15 @@ class MagdaConvolutionPlugin : public MagdaDevice {
             .pluginId = xmlTypeName,
             .name = getPluginName(),
             .shortName = "IR",
-            // A convolution rings for exactly the length of its impulse
-            // response, plus the filters' own short decay. Declaring it is what
-            // lets an offline render or a freeze keep the reverb's tail instead
-            // of cutting it at the last note.
-            .tailLengthSeconds = irLengthSeconds_.load(std::memory_order_relaxed),
         };
+    }
+
+    /// A convolution rings for exactly the length of its impulse response, plus the filters' own
+    /// short decay. Declaring it is what lets an offline render or a freeze keep the reverb's
+    /// tail instead of cutting it at the last note.
+    std::int64_t tailSamples() const override {
+        return static_cast<std::int64_t>(
+            std::ceil(irLengthSeconds_.load(std::memory_order_relaxed) * sampleRate_));
     }
 
     void prepare(const DevicePrepareContext& context) override;
@@ -139,8 +148,7 @@ class MagdaConvolutionPlugin : public MagdaDevice {
     float parameterValue(int index) const override;
     void setParameterValue(int index, float value) override;
 
-    void flushState(juce::ValueTree& state) override;
-    void restoreState(const juce::ValueTree& state) override;
+    sdk::RestoreResult restoreState(const sdk::StateNode& state) override;
 
   private:
     //==============================================================================

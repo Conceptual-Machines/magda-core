@@ -197,12 +197,20 @@ juce::String MagdaEqCompiledPlugin::slotId(int slotIndex) const {
            kRoleSuffix[slotIndex % kSlotsPerBand];
 }
 
-void MagdaEqCompiledPlugin::flushState(juce::ValueTree& state) {
-    state.setProperty("curveCollapsed", curveCollapsed_, nullptr);
+sdk::RestoreResult MagdaEqCompiledPlugin::restoreState(const sdk::StateNode& state) {
+    curveCollapsed_ = state.getBool(kCurveCollapsedKey, true);
+    return sdk::RestoreResult::success();
 }
 
-void MagdaEqCompiledPlugin::restoreState(const juce::ValueTree& state) {
-    curveCollapsed_ = static_cast<bool>(state.getProperty("curveCollapsed", true));
+void MagdaEqCompiledPlugin::setCurveCollapsed(bool collapsed) {
+    curveCollapsed_ = collapsed;
+
+    // The toggle is the device's own state: the model's document has no other way to learn it.
+    if (auto* reportTo = host()) {
+        sdk::StateNode state;
+        state.setBool(kCurveCollapsedKey, collapsed);
+        reportTo->stateChanged(std::move(state));
+    }
 }
 
 MagdaEqCompiledPlugin::BandSnapshot MagdaEqCompiledPlugin::getBandSnapshot(int band) const {
@@ -244,9 +252,8 @@ void MagdaEqCompiledPlugin::onReset() {
 void MagdaEqCompiledPlugin::processAudio(DeviceProcessContext& context) {
     // No Faust engine: the bands are MAGDA-owned RBJ biquads so the audible
     // response and the curve view share one piece of coefficient maths.
-    const int numSamples = context.numSamples;
-    const int startSample = context.startSample;
-    const int hostChannels = context.audio->getNumChannels();
+    const int numSamples = context.numSamples();
+    const int hostChannels = context.audio.numChannels();
     if (hostChannels <= 0)
         return;
 
@@ -277,8 +284,8 @@ void MagdaEqCompiledPlugin::processAudio(DeviceProcessContext& context) {
 
     std::fill_n(preTapScratch_.data(), numSamples, 0.0f);
     for (int channel = 0; channel < hostChannels; ++channel)
-        juce::FloatVectorOperations::add(
-            preTapScratch_.data(), context.audio->getReadPointer(channel, startSample), numSamples);
+        juce::FloatVectorOperations::add(preTapScratch_.data(), context.audio.channel(channel),
+                                         numSamples);
     const float channelInverse = 1.0f / static_cast<float>(hostChannels);
     juce::FloatVectorOperations::multiply(preTapScratch_.data(), channelInverse, numSamples);
     preSpectrumTap_.write(preTapScratch_.data(), numSamples);
@@ -296,7 +303,7 @@ void MagdaEqCompiledPlugin::processAudio(DeviceProcessContext& context) {
 
     std::fill_n(postTapScratch_.data(), numSamples, 0.0f);
     for (int channel = 0; channel < hostChannels; ++channel) {
-        float* out = context.audio->getWritePointer(channel, startSample);
+        float* out = context.audio.channel(channel);
         for (int i = 0; i < numSamples; ++i) {
             float sample = out[i];
             for (int active = 0; active < activeBandCount; ++active) {

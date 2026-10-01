@@ -15,7 +15,6 @@ namespace {
 
 // The property the toggle was already saved under, kept so a project written
 // before the port still finds it.
-const juce::Identifier kCurveCollapsedProperty("magda_multiband_curve_collapsed");
 
 constexpr float kMinRatio = 0.05f;
 constexpr float kMaxRatio = 100.0f;
@@ -277,12 +276,20 @@ void MagdaMultibandCompiledPlugin::CrossoverState::split(float input, float& low
     high = highHp2.process(highHp1.process(aboveLow));
 }
 
-void MagdaMultibandCompiledPlugin::flushState(juce::ValueTree& state) {
-    state.setProperty(kCurveCollapsedProperty, curveCollapsed_, nullptr);
+sdk::RestoreResult MagdaMultibandCompiledPlugin::restoreState(const sdk::StateNode& state) {
+    curveCollapsed_ = state.getBool(kCurveCollapsedKey, true);
+    return sdk::RestoreResult::success();
 }
 
-void MagdaMultibandCompiledPlugin::restoreState(const juce::ValueTree& state) {
-    curveCollapsed_ = static_cast<bool>(state.getProperty(kCurveCollapsedProperty, true));
+void MagdaMultibandCompiledPlugin::setCurveCollapsed(bool collapsed) {
+    curveCollapsed_ = collapsed;
+
+    // The toggle is the device's own state: the model's document has no other way to learn it.
+    if (auto* reportTo = host()) {
+        sdk::StateNode state;
+        state.setBool(kCurveCollapsedKey, collapsed);
+        reportTo->stateChanged(std::move(state));
+    }
 }
 
 void MagdaMultibandCompiledPlugin::onPrepare(double, int) {
@@ -310,7 +317,7 @@ void MagdaMultibandCompiledPlugin::processAudio(DeviceProcessContext& context) {
     // No Faust engine: the Linkwitz-Riley split and the three dynamics stages
     // are MAGDA's own, so this is the whole block.
 
-    const int hostChannels = std::min(2, context.audio->getNumChannels());
+    const int hostChannels = std::min(2, context.audio.numChannels());
     if (hostChannels <= 0)
         return;
 
@@ -366,11 +373,10 @@ void MagdaMultibandCompiledPlugin::processAudio(DeviceProcessContext& context) {
         coefficientForMs(bandReleaseMs[1], currentSampleRate()),
         coefficientForMs(bandReleaseMs[2], currentSampleRate())};
     const float gainSmoothCoeff = coefficientForMs(5.0f, currentSampleRate());
-    const int startSample = context.startSample;
-    const int numSamples = context.numSamples;
+    const int numSamples = context.numSamples();
 
     for (int ch = 0; ch < hostChannels; ++ch) {
-        float* buffer = context.audio->getWritePointer(ch, startSample);
+        float* buffer = context.audio.channel(ch);
         auto& crossover = crossovers_[static_cast<size_t>(ch)];
         auto& env = envelopes_[static_cast<size_t>(ch)];
         auto& smoothedGainDb = gainDb_[static_cast<size_t>(ch)];
@@ -408,8 +414,8 @@ void MagdaMultibandCompiledPlugin::processAudio(DeviceProcessContext& context) {
         }
     }
 
-    for (int ch = hostChannels; ch < context.audio->getNumChannels(); ++ch)
-        context.audio->clear(ch, startSample, numSamples);
+    for (int ch = hostChannels; ch < context.audio.numChannels(); ++ch)
+        std::fill_n(context.audio.channel(ch), numSamples, 0.0f);
 }
 
 constexpr AliasSpec kAliases[] = {

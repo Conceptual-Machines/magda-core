@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <vector>
 
+#include "DeviceTestBlock.hpp"
 #include "TestDeviceMidiBuffer.hpp"
 #include "magda/daw/audio/plugins/MagdaSamplerPlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
@@ -26,11 +27,10 @@ float peakOf(MagdaPolySynthCompiledPlugin& synth, magda::test::DeviceMidiBuffer&
     audio.clear();
 
     magda::test::DeviceMidiBuffer out;
-    magda::daw::audio::DeviceProcessContext context;
-    context.audio = &audio;
+    magda::test::DeviceTestBlock contextBlock(audio, kBlockSize);
+    auto& context = contextBlock.context;
     context.midiIn = &midi;
     context.midiOut = &out;
-    context.numSamples = kBlockSize;
     context.isPlaying = true;
 
     synth.process(context);
@@ -121,11 +121,10 @@ TEST_CASE("A panic with nothing sounding leaves the instrument as it found it",
             juce::AudioBuffer<float> audio(2, kBlockSize);
             audio.clear();
             magda::test::DeviceMidiBuffer out;
-            magda::daw::audio::DeviceProcessContext context;
-            context.audio = &audio;
+            magda::test::DeviceTestBlock contextBlock(audio, kBlockSize);
+            auto& context = contextBlock.context;
             context.midiIn = &midi;
             context.midiOut = &out;
-            context.numSamples = kBlockSize;
             context.isPlaying = true;
             synth.process(context);
 
@@ -164,11 +163,10 @@ TEST_CASE("Materia closes its gate on the host's panic", "[devices][mutable][272
             juce::AudioBuffer<float> audio(2, kBlockSize);
             audio.clear();
             magda::test::DeviceMidiBuffer out;
-            magda::daw::audio::DeviceProcessContext context;
-            context.audio = &audio;
+            magda::test::DeviceTestBlock contextBlock(audio, kBlockSize);
+            auto& context = contextBlock.context;
             context.midiIn = &midi;
             context.midiOut = &out;
-            context.numSamples = kBlockSize;
             context.isPlaying = true;
             elements.process(context);
             peak = audio.getMagnitude(0, kBlockSize);
@@ -211,11 +209,10 @@ TEST_CASE("The sampler lets go on the host's panic", "[devices][sampler][2722]")
             juce::AudioBuffer<float> audio(2, kBlockSize);
             audio.clear();
             magda::test::DeviceMidiBuffer out;
-            magda::daw::audio::DeviceProcessContext context;
-            context.audio = &audio;
+            magda::test::DeviceTestBlock contextBlock(audio, kBlockSize);
+            auto& context = contextBlock.context;
             context.midiIn = &midi;
             context.midiOut = &out;
-            context.numSamples = kBlockSize;
             context.isPlaying = true;
             sampler.process(context);
             peak = audio.getMagnitude(0, kBlockSize);

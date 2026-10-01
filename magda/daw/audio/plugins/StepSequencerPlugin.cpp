@@ -4,7 +4,6 @@
 #include <cstddef>
 #include <ranges>
 
-#include "core/RangesHelpers.hpp"
 #include "plugins/DeviceNoteSink.hpp"
 
 namespace magda::daw::audio {
@@ -18,13 +17,6 @@ const juce::Identifier StepSequencerPlugin::SettingIDs::quantize("seqQuantize");
 const juce::Identifier StepSequencerPlugin::SettingIDs::quantizeSub("seqQuantizeSub");
 
 namespace {
-
-// MIDI thru left the device for the plan (#2345). A project saved before that
-// carries this property, and a plugin built from such a project holds it on the
-// very tree flushState() writes into, so it has to be taken off rather than
-// merely not written: captureInternalDeviceState() copies whatever is on the
-// tree, and an unwritten property would ride along through every later save.
-const juce::Identifier kRetiredMidiThru("seqMidiThru");
 
 // The pattern's element and property names. Frozen: saved projects carry them,
 // and the model writes the same spellings (core/StepPatternState.cpp).
@@ -191,76 +183,44 @@ sequencer::MonoPattern StepSequencerPlugin::pattern() const {
     return published_.current();
 }
 
-void StepSequencerPlugin::flushState(juce::ValueTree& state) {
-    // The retired device-level flag, off the tree a project came back on. See
-    // kRetiredMidiThru.
-    state.removeProperty(kRetiredMidiThru, nullptr);
-
-    state.setProperty(SettingIDs::rampCycles, rampCycles.load(std::memory_order_relaxed), nullptr);
-    state.setProperty(SettingIDs::hardAngle, hardAngle.load(std::memory_order_relaxed), nullptr);
-    state.setProperty(SettingIDs::quantize, quantize.load(std::memory_order_relaxed), nullptr);
-    state.setProperty(SettingIDs::quantizeSub, quantizeSub.load(std::memory_order_relaxed),
-                      nullptr);
-
-    const auto live = pattern();
-    state.setProperty(SettingIDs::numSteps, live.playingLength(), nullptr);
-
-    removeChildrenWithType(state, kStepTree);
-
-    // Only the steps that differ from a default one, which is what the model
-    // writes too: absence and a default step read back the same.
-    const sequencer::MonoStep defaults;
-    for (int i = 0; i < MAX_STEPS; ++i) {
-        const auto& step = live.steps[static_cast<size_t>(i)];
-        if (step == defaults)
-            continue;
-
-        juce::ValueTree node(kStepTree);
-        node.setProperty(kStepIndex, i, nullptr);
-        node.setProperty(kStepNote, step.noteNumber, nullptr);
-        node.setProperty(kStepOctave, step.octaveShift, nullptr);
-        node.setProperty(kStepGate, step.gate, nullptr);
-        node.setProperty(kStepAccent, step.accent, nullptr);
-        node.setProperty(kStepGlide, step.glide, nullptr);
-        node.setProperty(kStepTie, step.tie, nullptr);
-        state.appendChild(node, nullptr);
-    }
-}
-
-void StepSequencerPlugin::restoreState(const juce::ValueTree& state) {
+sdk::RestoreResult StepSequencerPlugin::restoreState(const sdk::StateNode& state) {
     // No seqMidiThru here. The toggle it stood for is DeviceInfo::midiInThru,
     // which the model saves and the compiler acts on (#2345), so a project that
-    // has one loads with the property simply unread - and flushState() takes it
-    // off the tree on the way back out.
-    if (const auto* value = state.getPropertyPointer(SettingIDs::rampCycles))
-        rampCycles.store(static_cast<int>(*value), std::memory_order_relaxed);
-    if (const auto* value = state.getPropertyPointer(SettingIDs::hardAngle))
-        hardAngle.store(static_cast<bool>(*value), std::memory_order_relaxed);
-    if (const auto* value = state.getPropertyPointer(SettingIDs::quantize))
-        quantize.store(static_cast<float>(*value), std::memory_order_relaxed);
-    if (const auto* value = state.getPropertyPointer(SettingIDs::quantizeSub))
-        quantizeSub.store(static_cast<int>(*value), std::memory_order_relaxed);
+    // has one loads with the property simply unread.
+    if (state.has(stateKey(SettingIDs::rampCycles)))
+        rampCycles.store(state.getInt(stateKey(SettingIDs::rampCycles)), std::memory_order_relaxed);
+    if (state.has(stateKey(SettingIDs::hardAngle)))
+        hardAngle.store(state.getBool(stateKey(SettingIDs::hardAngle)), std::memory_order_relaxed);
+    if (state.has(stateKey(SettingIDs::quantize)))
+        quantize.store(static_cast<float>(state.getDouble(stateKey(SettingIDs::quantize))),
+                       std::memory_order_relaxed);
+    if (state.has(stateKey(SettingIDs::quantizeSub)))
+        quantizeSub.store(state.getInt(stateKey(SettingIDs::quantizeSub)),
+                          std::memory_order_relaxed);
 
     sequencer::MonoPattern parsed;
-    if (const auto* value = state.getPropertyPointer(SettingIDs::numSteps))
-        parsed.length = std::clamp(static_cast<int>(*value), 1, MAX_STEPS);
+    if (state.has(stateKey(SettingIDs::numSteps)))
+        parsed.length = std::clamp(state.getInt(stateKey(SettingIDs::numSteps)), 1, MAX_STEPS);
 
-    const auto isStep = [](const juce::ValueTree& child) { return child.hasType(kStepTree); };
-    for (const auto child : children(state) | std::views::filter(isStep)) {
-        const int index = child.getProperty(kStepIndex, -1);
+    for (const auto& child : state.children()) {
+        if (child.type() != stateKey(kStepTree))
+            continue;
+
+        const int index = child.getInt(stateKey(kStepIndex), -1);
         if (index < 0 || index >= MAX_STEPS)
             continue;
 
         auto& step = parsed.steps[static_cast<size_t>(index)];
-        step.noteNumber = std::clamp(static_cast<int>(child.getProperty(kStepNote, 60)), 0, 127);
-        step.octaveShift = std::clamp(static_cast<int>(child.getProperty(kStepOctave, 0)), -2, 2);
-        step.gate = child.getProperty(kStepGate, true);
-        step.accent = child.getProperty(kStepAccent, false);
-        step.glide = child.getProperty(kStepGlide, false);
-        step.tie = child.getProperty(kStepTie, false);
+        step.noteNumber = std::clamp(child.getInt(stateKey(kStepNote), 60), 0, 127);
+        step.octaveShift = std::clamp(child.getInt(stateKey(kStepOctave), 0), -2, 2);
+        step.gate = child.getBool(stateKey(kStepGate), true);
+        step.accent = child.getBool(stateKey(kStepAccent), false);
+        step.glide = child.getBool(stateKey(kStepGlide), false);
+        step.tie = child.getBool(stateKey(kStepTie), false);
     }
 
     published_.publish(parsed);
+    return sdk::RestoreResult::success();
 }
 
 // =============================================================================
@@ -291,13 +251,13 @@ bool StepSequencerPlugin::popRecordedStep(RecordedStep& step) {
 // =============================================================================
 
 void StepSequencerPlugin::process(DeviceProcessContext& context) {
-    if (context.midiIn == nullptr || context.midiOut == nullptr || context.numSamples <= 0)
+    if (context.midiIn == nullptr || context.midiOut == nullptr || context.numSamples() <= 0)
         return;
 
-    const auto& in = *context.midiIn;
+    const DeviceMidiInput in(*context.midiIn, sampleRate_);
     // Carries only what this device writes; MIDI thru is the host's merge
     // behind it (#2345, #2347).
-    auto& midi = *context.midiOut;
+    DeviceMidiOutput midi(*context.midiOut, sampleRate_);
 
     // Take the published pattern for the length of this block: a publish
     // waiting on the message thread cannot touch this slot until the hold goes
@@ -363,7 +323,7 @@ void StepSequencerPlugin::process(DeviceProcessContext& context) {
             haveTempo ? context.tempoMap->beatsAtSeconds(context.timelineStartSeconds) : 0.0,
         .endBeat = haveTempo ? context.tempoMap->beatsAtSeconds(context.timelineEndSeconds) : 0.0,
         .isPlaying = context.isPlaying && haveTempo,
-        .numSamples = context.numSamples};
+        .numSamples = context.numSamples()};
 
     DeviceNoteSink sink{midi};
     sequencer_.processBlock(timing, live, params, sink);

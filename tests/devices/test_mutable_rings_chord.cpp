@@ -3,6 +3,7 @@
 #include <initializer_list>
 #include <vector>
 
+#include "DeviceTestBlock.hpp"
 #include "TestDeviceMidiBuffer.hpp"
 #include "magda/daw/audio/plugins/mutable/MutableRingsPlugin.hpp"
 #include "magda/daw/core/ParameterUtils.hpp"
@@ -57,10 +58,9 @@ struct RingsRig {
                              .withTimeStamp(note.timeStamp),
                          0});
 
-            audio::DeviceProcessContext context;
-            context.audio = &audio;
+            magda::test::DeviceTestBlock contextBlock(audio, kBlockSize);
+            auto& context = contextBlock.context;
             context.midiIn = &midi;
-            context.numSamples = kBlockSize;
             context.isPlaying = true;
             device.process(context);
 

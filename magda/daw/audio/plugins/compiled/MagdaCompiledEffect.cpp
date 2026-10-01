@@ -340,19 +340,28 @@ int MagdaCompiledEffect::engineOutputCount(int engineIndex) const {
 
 DeviceProperties MagdaCompiledEffect::properties() const {
     return {
-        .pluginId = devicePluginId(),
-        .name = deviceName(),
-        .shortName = deviceShortName(),
+        .pluginId = devicePluginId().toStdString(),
+        .name = deviceName().toStdString(),
+        .shortName = deviceShortName().toStdString(),
         .takesMidiInput = wantsMidiInput(),
         .takesAudioInput = true,
         .isSynth = false,
         .producesAudioWithoutInput = producesAudioWithoutInput(),
         .sidechain = sidechainPort(),
-        .latencySeconds = latencySeconds(),
-        .tailLengthSeconds = tailSeconds(),
         .outputChannelCount = outputChannelCount(),
         .inputChannelCount = inputChannelCount(),
     };
+}
+
+int MagdaCompiledEffect::latencySamples() const {
+    return juce::roundToInt(latencySeconds() * currentSampleRate());
+}
+
+std::int64_t MagdaCompiledEffect::tailSamples() const {
+    const auto seconds = tailSeconds();
+    if (std::isinf(seconds))
+        return sdk::kInfiniteTail;
+    return static_cast<std::int64_t>(std::ceil(seconds * currentSampleRate()));
 }
 
 void MagdaCompiledEffect::prepare(const DevicePrepareContext& context) {
@@ -437,12 +446,11 @@ void MagdaCompiledEffect::computeEngine(int engineIndex, DeviceProcessContext& c
         return;
 
     auto& engine = engines_[static_cast<size_t>(engineIndex)];
-    if (engine.instance == nullptr || context.audio == nullptr)
+    if (engine.instance == nullptr)
         return;
 
-    const int numSamples = context.numSamples;
-    const int startSample = context.startSample;
-    const int hostChannels = context.audio->getNumChannels();
+    const int numSamples = context.numSamples();
+    const int hostChannels = context.audio.numChannels();
     const int numInputs = engine.numInputs;
     const int numOutputs = engine.numOutputs;
     if (numSamples <= 0 || hostChannels <= 0 || numOutputs <= 0)
@@ -473,11 +481,12 @@ void MagdaCompiledEffect::computeEngine(int engineIndex, DeviceProcessContext& c
             // A source narrower than the key the dsp asked for feeds its last
             // channel to the rest: a mono send into a stereo key is the key on
             // both sides, not the key and silence.
-            const int key = std::min(channel - ownInputs, context.numSidechainChannels - 1);
+            const int numKeys = context.sidechain ? context.sidechain->numChannels() : 0;
+            const int key = std::min(channel - ownInputs, numKeys - 1);
             if (key >= 0)
-                source = context.sidechain[key] + startSample;
+                source = context.sidechain->channel(key);
         } else if (channel < hostChannels) {
-            source = context.audio->getReadPointer(channel, startSample);
+            source = context.audio.channel(channel);
         }
 
         if (source != nullptr)
@@ -488,14 +497,14 @@ void MagdaCompiledEffect::computeEngine(int engineIndex, DeviceProcessContext& c
     }
 
     for (int channel = 0; channel < numOutputs; ++channel)
-        outPtrs_[static_cast<size_t>(channel)] =
-            channel < hostChannels ? context.audio->getWritePointer(channel, startSample)
-                                   : scratchOut_.getWritePointer(channel);
+        outPtrs_[static_cast<size_t>(channel)] = channel < hostChannels
+                                                     ? context.audio.channel(channel)
+                                                     : scratchOut_.getWritePointer(channel);
 
     engine.instance->compute(numSamples, inPtrs_.data(), outPtrs_.data());
 
     for (int channel = 0; channel < std::min(hostChannels, numOutputs); ++channel) {
-        float* out = context.audio->getWritePointer(channel, startSample);
+        float* out = context.audio.channel(channel);
         for (int i = 0; i < numSamples; ++i)
             out[i] = sanitise(out[i]);
     }
@@ -507,7 +516,7 @@ void MagdaCompiledEffect::computeEngine(int engineIndex, DeviceProcessContext& c
     // cleared: it is a port now, and it belongs to whatever produced it.
     if (outputChannelCount() > 0)
         for (int channel = numOutputs; channel < hostChannels; ++channel)
-            context.audio->clear(channel, startSample, numSamples);
+            std::fill_n(context.audio.channel(channel), numSamples, 0.0f);
 }
 
 void MagdaCompiledEffect::processAudio(DeviceProcessContext& context) {
@@ -515,7 +524,7 @@ void MagdaCompiledEffect::processAudio(DeviceProcessContext& context) {
 }
 
 void MagdaCompiledEffect::process(DeviceProcessContext& context) {
-    if (context.audio == nullptr || context.numSamples <= 0)
+    if (context.numSamples() <= 0)
         return;
 
     if (context.isPlaying && !wasPlaying_ && resetsOnPlayStart())

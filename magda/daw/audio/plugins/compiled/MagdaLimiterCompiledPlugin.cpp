@@ -170,8 +170,8 @@ void MagdaLimiterCompiledPlugin::processAudio(DeviceProcessContext& context) {
         .outputDb = slotDisplayValue(kOutputSlot),
     };
 
-    const auto stats =
-        limiter_.process(*context.audio, context.startSample, context.numSamples, settings);
+    auto audio = juceAudio(context);
+    const auto stats = limiter_.process(audio, 0, context.numSamples(), settings);
 
     inputPeakDb_.store(ampToDb(stats.inputPeak), std::memory_order_relaxed);
     outputPeakDb_.store(ampToDb(stats.outputPeak), std::memory_order_relaxed);

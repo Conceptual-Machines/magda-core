@@ -76,6 +76,8 @@ class MagdaCompiledEffect : public CompiledFaustDevice {
     void process(DeviceProcessContext& context) override;
 
     DeviceProperties properties() const override;
+    int latencySamples() const override;
+    std::int64_t tailSamples() const override;
 
     int hostSlotCountValue() const {
         return static_cast<int>(hostSlotInfo_.size());

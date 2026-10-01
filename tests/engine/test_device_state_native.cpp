@@ -5,6 +5,7 @@
 #include "core/DeviceState.hpp"
 #include "magda/daw/audio/plugins/ArpeggiatorPlugin.hpp"
 #include "magda/daw/audio/plugins/DeviceCatalogParameters.hpp"
+#include "magda/daw/audio/plugins/DeviceStateDocument.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "magda/daw/audio/plugins/engine/EngineMagdaDevice.hpp"
 #include "magda/daw/project/serialization/ProjectSerializer.hpp"
@@ -50,13 +51,6 @@ std::vector<LegacyDevice> collectLegacyDevices() {
     return found;
 }
 
-/// What the running device reports as its own state.
-juce::ValueTree reported(magda::daw::audio::MagdaDevice& device) {
-    juce::ValueTree state("STATE");
-    device.flushState(state);
-    return state;
-}
-
 }  // namespace
 
 TEST_CASE("Every pre-v2 device state in the corpus restores into a native device",
@@ -67,8 +61,8 @@ TEST_CASE("Every pre-v2 device state in the corpus restores into a native device
     int restored = 0;
     for (const auto& [where, model] : legacy) {
         INFO(where);
-        const auto saved = magda::daw::audio::deviceStateTree(model.pluginState);
-        REQUIRE(saved.isValid());
+        const auto saved = magda::daw::audio::normaliseDeviceState(model.pluginState);
+        REQUIRE(saved.has_value());
 
         auto engineDevice = adapter::createEngineDevice(model);
         auto* hosted = dynamic_cast<adapter::EngineMagdaDevice*>(engineDevice.get());
@@ -78,27 +72,26 @@ TEST_CASE("Every pre-v2 device state in the corpus restores into a native device
             continue;
         }
 
-        // What the device reports matches what the project saved, wherever both speak.
-        const auto first = reported(hosted->device());
-        for (int i = 0; i < first.getNumProperties(); ++i) {
-            const auto name = first.getPropertyName(i);
-            if (saved.hasProperty(name)) {
-                INFO("property " << name.toString());
-                CHECK(first[name].toString() == saved[name].toString());
-            }
-        }
+        // What the device is handed is a document the strict codec writes and reads back.
+        const auto text = magda::sdk::encodeDocument(saved->document);
+        REQUIRE(text.has_value());
+        const auto reread = magda::sdk::decodeDocument(*text);
+        REQUIRE(reread.ok());
+        CHECK(*reread.document == saved->document);
 
-        // Loading what it reports gives the same device again, so reopening is stable.
+        // Loading it again gives the same device, so reopening is stable.
         auto again = magda::daw::audio::createDetachedDevice(model.pluginId);
         REQUIRE(again != nullptr);
-        again->restoreState(first);
-        CHECK(reported(*again).isEquivalentTo(first));
+        CHECK(again->restoreState(saved->document.root).ok);
+        CHECK(again->restoreState(reread.document->root).ok);
+        for (int slot = 0; slot < again->parameterCount(); ++slot)
+            CHECK(again->parameterValue(slot) == hosted->device().parameterValue(slot));
         ++restored;
     }
     CHECK(restored > 0);
 }
 
-TEST_CASE("A v2 document's authored settings reach a native device and read back unchanged",
+TEST_CASE("A v2 document's authored settings reach a native device and restore the same again",
           "[device-state][native][2556]") {
     ds::Doc doc;
     doc.deviceType = magda::daw::audio::ArpeggiatorPlugin::xmlTypeName;
@@ -117,12 +110,13 @@ TEST_CASE("A v2 document's authored settings reach a native device and read back
     CHECK(arp->quantizeSub.load() == 8);
     CHECK(arp->hardAngle.load());
 
-    const auto first = reported(*arp);
-    CHECK(static_cast<int>(first["arpQuantizeSub"]) == 8);
-    CHECK(static_cast<bool>(first["arpHardAngle"]));
-
+    const auto saved = magda::daw::audio::normaliseDeviceState(model.pluginState);
+    REQUIRE(saved.has_value());
     auto again = magda::daw::audio::createDetachedDevice(model.pluginId);
     REQUIRE(again != nullptr);
-    again->restoreState(first);
-    CHECK(reported(*again).isEquivalentTo(first));
+    CHECK(again->restoreState(saved->document.root).ok);
+    auto* second = dynamic_cast<magda::daw::audio::ArpeggiatorPlugin*>(again.get());
+    REQUIRE(second != nullptr);
+    CHECK(second->quantizeSub.load() == arp->quantizeSub.load());
+    CHECK(second->hardAngle.load() == arp->hardAngle.load());
 }

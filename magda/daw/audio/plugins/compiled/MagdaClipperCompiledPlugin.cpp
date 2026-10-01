@@ -53,16 +53,14 @@ void MagdaClipperCompiledPlugin::beforeCompute(DeviceProcessContext& context, in
     // channels the engine is about to consume rather than the whole buffer, so
     // a host block wider than the dsp does not report a peak the curve never
     // sees.
-    const int channels = std::min(context.audio->getNumChannels(), engineInputCount(engineIndex));
+    const int channels = std::min(context.audio.numChannels(), engineInputCount(engineIndex));
 
     // Not getMagnitude(): it reduces through findMinAndMax, so one NaN sample
     // would be published into inputPeakDb_ and stay there through every later
     // finite block, taking the curve's dot with it.
     float peak = 0.0f;
     for (int channel = 0; channel < channels; ++channel)
-        peak = std::max(peak,
-                        peakMagnitude(context.audio->getReadPointer(channel, context.startSample),
-                                      context.numSamples));
+        peak = std::max(peak, peakMagnitude(context.audio.channel(channel), context.numSamples()));
 
     inputPeakDb_.store(20.0f * std::log10(std::max(peak, 1.0e-6f)), std::memory_order_relaxed);
 }

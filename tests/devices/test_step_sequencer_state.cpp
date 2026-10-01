@@ -2,8 +2,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "DeviceTestState.hpp"
 #include "magda/daw/audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "magda/daw/audio/plugins/StepSequencerPlugin.hpp"
+#include "magda/daw/core/StepPatternState.hpp"
 
 // The persisted shape of a step pattern (#2150). The element and property
 // names below are the wire format: a project saved by any MAGDA version
@@ -23,12 +25,17 @@ juce::ValueTree monoStep(int index, int note, bool gate = true, bool accent = fa
     return step;
 }
 
-int countChildren(const juce::ValueTree& tree, const juce::Identifier& type) {
-    int found = 0;
-    for (const auto& child : tree)
-        if (child.hasType(type))
-            ++found;
-    return found;
+/// The state the model would hold for @p pattern: written by the host's own writer.
+magda::sdk::StateNode hostState(const audio::sequencer::MonoPattern& pattern) {
+    magda::device_state::Doc doc;
+    magda::step_pattern::writeMono(doc, pattern);
+    return audio::toSdkNode(doc.root);
+}
+
+magda::sdk::StateNode hostState(const audio::sequencer::PolyPattern& pattern) {
+    magda::device_state::Doc doc;
+    magda::step_pattern::writePoly(doc, pattern);
+    return audio::toSdkNode(doc.root);
 }
 
 }  // namespace
@@ -43,7 +50,7 @@ TEST_CASE("A step sequencer restores only the STEP children", "[sequencer][state
     state.appendChild(monoStep(999, 60), nullptr);
 
     audio::StepSequencerPlugin sequencer;
-    sequencer.restoreState(state);
+    sequencer.restoreState(magda::test::stateOf(state));
 
     const auto pattern = sequencer.pattern();
     CHECK(pattern.length == 8);
@@ -55,24 +62,22 @@ TEST_CASE("A step sequencer restores only the STEP children", "[sequencer][state
     CHECK(pattern.step(1) == audio::StepSequencerPlugin::Step{});
 }
 
-TEST_CASE("Flushing a step sequencer twice does not stack up STEP children", "[sequencer][state]") {
+TEST_CASE("Restoring a step sequencer twice does not stack up steps", "[sequencer][state]") {
     juce::ValueTree state("STEPSEQ");
     state.appendChild(monoStep(0, 48), nullptr);
     state.appendChild(monoStep(1, 50), nullptr);
 
     audio::StepSequencerPlugin sequencer;
-    sequencer.restoreState(state);
+    sequencer.restoreState(magda::test::stateOf(state));
+    const auto afterFirst = sequencer.pattern();
 
-    juce::ValueTree flushed("STEPSEQ");
-    sequencer.flushState(flushed);
-    const int afterFirst = countChildren(flushed, juce::Identifier("STEP"));
-    REQUIRE(afterFirst == 2);
-
-    sequencer.flushState(flushed);
-    CHECK(countChildren(flushed, juce::Identifier("STEP")) == afterFirst);
+    sequencer.restoreState(magda::test::stateOf(state));
+    CHECK(sequencer.pattern() == afterFirst);
+    CHECK(afterFirst.step(0).noteNumber == 48);
+    CHECK(afterFirst.step(1).noteNumber == 50);
 }
 
-TEST_CASE("A flushed step sequencer tree restores the same pattern", "[sequencer][state]") {
+TEST_CASE("A pattern the host writes restores the same pattern", "[sequencer][state]") {
     juce::ValueTree state("STEPSEQ");
     state.setProperty("seqNumSteps", 12, nullptr);
     auto glided = monoStep(2, 41);
@@ -84,13 +89,10 @@ TEST_CASE("A flushed step sequencer tree restores the same pattern", "[sequencer
     state.appendChild(tied, nullptr);
 
     audio::StepSequencerPlugin first;
-    first.restoreState(state);
-
-    juce::ValueTree flushed("STEPSEQ");
-    first.flushState(flushed);
+    first.restoreState(magda::test::stateOf(state));
 
     audio::StepSequencerPlugin second;
-    second.restoreState(flushed);
+    second.restoreState(hostState(first.pattern()));
 
     CHECK(first.pattern() == second.pattern());
 }
@@ -114,7 +116,7 @@ TEST_CASE("A poly step keeps its NOTE children through a state round trip",
     state.appendChild(step, nullptr);
 
     audio::PolyStepSequencerPlugin first;
-    first.restoreState(state);
+    first.restoreState(magda::test::stateOf(state));
 
     const auto chord = first.pattern().step(1);
     REQUIRE(chord.noteCount == 3);
@@ -122,11 +124,8 @@ TEST_CASE("A poly step keeps its NOTE children through a state round trip",
     CHECK(chord.notes[2].noteNumber == 67);
     CHECK(chord.velocity == 90);
 
-    juce::ValueTree flushed("POLYSEQ");
-    first.flushState(flushed);
-
     audio::PolyStepSequencerPlugin second;
-    second.restoreState(flushed);
+    second.restoreState(hostState(first.pattern()));
     CHECK(first.pattern() == second.pattern());
 }
 
@@ -145,7 +144,7 @@ TEST_CASE("A poly step takes the first notes it can hold and drops the rest",
     state.appendChild(step, nullptr);
 
     audio::PolyStepSequencerPlugin sequencer;
-    sequencer.restoreState(state);
+    sequencer.restoreState(magda::test::stateOf(state));
 
     const auto chord = sequencer.pattern().step(0);
     REQUIRE(chord.noteCount == audio::PolyStepSequencerPlugin::MAX_NOTES_PER_STEP);

@@ -85,8 +85,7 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
     float parameterValue(int index) const override;
     void setParameterValue(int index, float value) override;
 
-    void flushState(juce::ValueTree& state) override;
-    void restoreState(const juce::ValueTree& state) override;
+    sdk::RestoreResult restoreState(const sdk::StateNode& state) override;
 
     // ValueTree property ids for the non-parameter settings below. The
     // spellings are the retired host-native plugin's, so saved projects keep

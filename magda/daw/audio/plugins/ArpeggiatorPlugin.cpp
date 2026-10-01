@@ -20,13 +20,7 @@ namespace {
 /// "nothing is known live", never "everything is": the native engine says
 /// nothing and stamps every event 0 (#2418).
 bool isLiveSource(const DeviceProcessContext& context, std::uint32_t sourceId) {
-    if (context.liveSourceIds == nullptr)
-        return false;
-    for (int i = 0; i < context.numLiveSourceIds; ++i) {
-        if (context.liveSourceIds[i] == sourceId)
-            return true;
-    }
-    return false;
+    return std::ranges::find(context.liveSourceIds, sourceId) != context.liveSourceIds.end();
 }
 
 /**
@@ -49,12 +43,10 @@ class NonNoteForwarder {
   public:
     /**
      * @param in The block's MIDI input.
-     * @param offsetSeconds The host's sub-block offset, added to every input
-     *                      timestamp.
      * @param blockDurationSecs The block's length, which no event is read past.
      */
-    NonNoteForwarder(const DeviceMidiInput& in, double offsetSeconds, double blockDurationSecs)
-        : in_(in), offsetSeconds_(offsetSeconds), blockDurationSecs_(blockDurationSecs) {}
+    NonNoteForwarder(const DeviceMidiInput& in, double blockDurationSecs)
+        : in_(in), blockDurationSecs_(blockDurationSecs) {}
 
     /**
      * @brief Where in the block the host put an input event.
@@ -63,12 +55,11 @@ class NonNoteForwarder {
      * the notes generated around it share a timeline (#2415).
      *
      * @param index Index into the block's MIDI input.
-     * @return Seconds from the block start: the event's timestamp with the
-     *         host's sub-block offset added, inside the block it belongs to.
+     * @return Seconds from the block start: the event's timestamp, inside the
+     *         block it belongs to.
      */
     double timeOf(int index) const {
-        return juce::jlimit(0.0, blockDurationSecs_,
-                            in_.message(index).getTimeStamp() + offsetSeconds_);
+        return juce::jlimit(0.0, blockDurationSecs_, in_.message(index).getTimeStamp());
     }
 
     /**
@@ -109,7 +100,6 @@ class NonNoteForwarder {
 
   private:
     const DeviceMidiInput& in_;
-    double offsetSeconds_ = 0.0;
     double blockDurationSecs_ = 0.0;
     int next_ = 0;
 };
@@ -273,23 +263,18 @@ void ArpeggiatorPlugin::reset() {
     clearHeldNotes();
 }
 
-void ArpeggiatorPlugin::flushState(juce::ValueTree& state) {
-    state.setProperty(SettingIDs::rampCycles, rampCycles.load(std::memory_order_relaxed), nullptr);
-    state.setProperty(SettingIDs::quantize, quantize.load(std::memory_order_relaxed), nullptr);
-    state.setProperty(SettingIDs::quantizeSub, quantizeSub.load(std::memory_order_relaxed),
-                      nullptr);
-    state.setProperty(SettingIDs::hardAngle, hardAngle.load(std::memory_order_relaxed), nullptr);
-}
-
-void ArpeggiatorPlugin::restoreState(const juce::ValueTree& state) {
-    if (const auto* value = state.getPropertyPointer(SettingIDs::rampCycles))
-        rampCycles.store(static_cast<int>(*value), std::memory_order_relaxed);
-    if (const auto* value = state.getPropertyPointer(SettingIDs::quantize))
-        quantize.store(static_cast<float>(*value), std::memory_order_relaxed);
-    if (const auto* value = state.getPropertyPointer(SettingIDs::quantizeSub))
-        quantizeSub.store(static_cast<int>(*value), std::memory_order_relaxed);
-    if (const auto* value = state.getPropertyPointer(SettingIDs::hardAngle))
-        hardAngle.store(static_cast<bool>(*value), std::memory_order_relaxed);
+sdk::RestoreResult ArpeggiatorPlugin::restoreState(const sdk::StateNode& state) {
+    if (state.has(stateKey(SettingIDs::rampCycles)))
+        rampCycles.store(state.getInt(stateKey(SettingIDs::rampCycles)), std::memory_order_relaxed);
+    if (state.has(stateKey(SettingIDs::quantize)))
+        quantize.store(static_cast<float>(state.getDouble(stateKey(SettingIDs::quantize))),
+                       std::memory_order_relaxed);
+    if (state.has(stateKey(SettingIDs::quantizeSub)))
+        quantizeSub.store(state.getInt(stateKey(SettingIDs::quantizeSub)),
+                          std::memory_order_relaxed);
+    if (state.has(stateKey(SettingIDs::hardAngle)))
+        hardAngle.store(state.getBool(stateKey(SettingIDs::hardAngle)), std::memory_order_relaxed);
+    return sdk::RestoreResult::success();
 }
 
 // =============================================================================
@@ -845,7 +830,7 @@ void ArpeggiatorPlugin::playStretch(BlockScope& block, double startSecs, double 
 }
 
 void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
-    if (context.midiIn == nullptr || context.midiOut == nullptr || context.numSamples <= 0)
+    if (context.midiIn == nullptr || context.midiOut == nullptr || context.numSamples() <= 0)
         return;
 
     // The host pushed the modulated slot positions before this call; publish
@@ -853,15 +838,17 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     displayedRamp_.store(displayValue(kRamp), std::memory_order_relaxed);
     displayedSkew_.store(displayValue(kSkew), std::memory_order_relaxed);
 
-    const double blockDurationSecs = static_cast<double>(context.numSamples) / sampleRate_;
+    const double blockDurationSecs = static_cast<double>(context.numSamples()) / sampleRate_;
     const bool onTransportClock = context.isPlaying && context.tempoMap != nullptr;
+
+    const DeviceMidiInput midiIn(*context.midiIn, sampleRate_);
+    DeviceMidiOutput midiOut(*context.midiOut, sampleRate_);
 
     BlockScope block{
         .context = context,
-        .in = *context.midiIn,
-        .midi = *context.midiOut,
-        .forward =
-            NonNoteForwarder(*context.midiIn, context.midiTimeOffsetSeconds, blockDurationSecs),
+        .in = midiIn,
+        .midi = midiOut,
+        .forward = NonNoteForwarder(midiIn, blockDurationSecs),
         .blockDurationSecs = blockDurationSecs,
         .isLatched = displayValue(kLatch) >= 0.5f,
         .onTransportClock = onTransportClock,

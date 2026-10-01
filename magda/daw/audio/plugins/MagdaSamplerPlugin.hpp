@@ -4,6 +4,7 @@
 
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <span>
 #include <vector>
 
@@ -287,11 +288,14 @@ class MagdaSamplerPlugin : public MagdaDevice {
             .takesAudioInput = false,
             .isSynth = true,
             .producesAudioWithoutInput = true,
-            // A released voice rings for the length of its release stage, so an
-            // offline render or a freeze keeps the tail instead of cutting it
-            // at the last note-off.
-            .tailLengthSeconds = tailSeconds_.load(std::memory_order_relaxed),
         };
+    }
+
+    /// A released voice rings for the length of its release stage, so an offline render or a
+    /// freeze keeps the tail instead of cutting it at the last note-off.
+    std::int64_t tailSamples() const override {
+        return static_cast<std::int64_t>(
+            std::ceil(tailSeconds_.load(std::memory_order_relaxed) * sampleRate));
     }
 
     void prepare(const DevicePrepareContext& context) override;
@@ -312,8 +316,7 @@ class MagdaSamplerPlugin : public MagdaDevice {
     float displayValue(int index) const;
     void setDisplayValue(int index, float value);
 
-    void flushState(juce::ValueTree& state) override;
-    void restoreState(const juce::ValueTree& state) override;
+    sdk::RestoreResult restoreState(const sdk::StateNode& state) override;
 
     /// What choosing @p file means for a sampler, read off the file itself: the
     /// note its metadata names and the marker span covering it. Invalid when no

@@ -72,8 +72,12 @@ class MutableElementsPlugin : public MagdaDevice {
             .takesAudioInput = false,
             .isSynth = true,
             .producesAudioWithoutInput = true,
-            .tailLengthSeconds = 3.0,  // the space tail rings out well past note-off
         };
+    }
+
+    /// The space tail rings out well past note-off.
+    std::int64_t tailSamples() const override {
+        return static_cast<std::int64_t>(std::ceil(3.0 * sampleRate_));
     }
 
     void prepare(const DevicePrepareContext& context) override;

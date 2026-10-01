@@ -55,22 +55,22 @@ float peakOfChannel(const float* samples, int numSamples) {
 }
 
 /// Peak magnitude over one channel range of @p buffer.
-float peakOfChannels(const juce::AudioBuffer<float>& buffer, int firstChannel, int lastChannel,
-                     int startSample, int numSamples) {
+float peakOfChannels(const BufferView& buffer, int firstChannel, int lastChannel) {
     float peak = 0.0f;
-    for (int channel = firstChannel; channel < std::min(lastChannel, buffer.getNumChannels());
+    for (int channel = firstChannel; channel < std::min(lastChannel, buffer.numChannels());
          ++channel)
-        peak =
-            std::max(peak, peakOfChannel(buffer.getReadPointer(channel, startSample), numSamples));
+        peak = std::max(peak, peakOfChannel(buffer.channel(channel), buffer.numFrames()));
     return peak;
 }
 
 /// Peak magnitude over every channel of the key the host routed.
 float peakOfSidechain(const DeviceProcessContext& context) {
     float peak = 0.0f;
-    for (int channel = 0; channel < context.numSidechainChannels; ++channel)
-        peak = std::max(peak, peakOfChannel(context.sidechain[channel] + context.startSample,
-                                            context.numSamples));
+    if (!context.sidechain)
+        return peak;
+    for (int channel = 0; channel < context.sidechain->numChannels(); ++channel)
+        peak = std::max(peak,
+                        peakOfChannel(context.sidechain->channel(channel), context.numSamples()));
     return peak;
 }
 
@@ -191,7 +191,7 @@ std::vector<MagdaCompressorCompiledPlugin::HostSlotInfo> MagdaCompressorCompiled
 }
 
 void MagdaCompressorCompiledPlugin::beforeCompute(DeviceProcessContext& context, int engineIndex) {
-    const bool external = context.numSidechainChannels > 0;
+    const bool external = context.sidechain && context.sidechain->numChannels() > 0;
 
     // The hidden zone that tells the dsp to detect off the key rather than off
     // its own input. Only the Clean engine has one; Glue has no external
@@ -199,8 +199,7 @@ void MagdaCompressorCompiledPlugin::beforeCompute(DeviceProcessContext& context,
     if (auto* useSidechain = zoneForIdx(engineIndex, kUseSidechainHiddenSlot))
         *useSidechain = external ? 1.0f : 0.0f;
 
-    const float inputPeak =
-        peakOfChannels(*context.audio, 0, 2, context.startSample, context.numSamples);
+    const float inputPeak = peakOfChannels(context.audio, 0, 2);
     const float keyPeak = external ? peakOfSidechain(context) : inputPeak;
 
     inputPeakDb_.store(ampToDb(inputPeak), std::memory_order_relaxed);
@@ -216,9 +215,7 @@ void MagdaCompressorCompiledPlugin::beforeCompute(DeviceProcessContext& context,
 
 void MagdaCompressorCompiledPlugin::afterCompute(DeviceProcessContext& context, int engineIndex) {
     juce::ignoreUnused(engineIndex);
-    outputPeakDb_.store(
-        ampToDb(peakOfChannels(*context.audio, 0, 2, context.startSample, context.numSamples)),
-        std::memory_order_relaxed);
+    outputPeakDb_.store(ampToDb(peakOfChannels(context.audio, 0, 2)), std::memory_order_relaxed);
 }
 
 constexpr AliasSpec kAliases[] = {

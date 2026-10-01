@@ -61,12 +61,13 @@ class MagdaMultibandCompiledPlugin : public MagdaCompiledEffect {
     bool isCurveCollapsed() const {
         return curveCollapsed_;
     }
-    void setCurveCollapsed(bool collapsed) {
-        curveCollapsed_ = collapsed;
-    }
+    /// Reported to the host, which writes it into the document.
+    void setCurveCollapsed(bool collapsed);
 
-    void flushState(juce::ValueTree& state) override;
-    void restoreState(const juce::ValueTree& state) override;
+    sdk::RestoreResult restoreState(const sdk::StateNode& state) override;
+
+    /// The spelling saved projects carry.
+    static constexpr const char* kCurveCollapsedKey = "magda_multiband_curve_collapsed";
 
     juce::String devicePluginId() const override {
         return xmlTypeName;

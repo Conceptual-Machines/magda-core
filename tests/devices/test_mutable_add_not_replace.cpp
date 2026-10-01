@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 
+#include "DeviceTestBlock.hpp"
 #include "TestDeviceMidiBuffer.hpp"
 #include "magda/daw/audio/plugins/mutable/MutableElementsPlugin.hpp"
 #include "magda/daw/audio/plugins/mutable/MutableRingsPlugin.hpp"
@@ -39,9 +40,8 @@ void fillWithExistingSignal(juce::AudioBuffer<float>& buffer) {
 void process(audio::MagdaDevice& device, juce::AudioBuffer<float>& buffer,
              magda::test::DeviceMidiBuffer& midi) {
     magda::test::DeviceMidiBuffer out;
-    audio::DeviceProcessContext context;
-    context.audio = &buffer;
-    context.numSamples = buffer.getNumSamples();
+    magda::test::DeviceTestBlock contextBlock(buffer);
+    auto& context = contextBlock.context;
     context.midiIn = &midi;
     context.midiOut = &out;
     context.isPlaying = true;

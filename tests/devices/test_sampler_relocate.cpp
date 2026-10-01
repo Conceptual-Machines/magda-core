@@ -5,6 +5,7 @@
 #include <cmath>
 #include <memory>
 
+#include "DeviceTestState.hpp"
 #include "magda/daw/audio/plugins/DeviceCatalogParameters.hpp"
 #include "magda/daw/audio/plugins/MagdaSamplerPlugin.hpp"
 
@@ -131,11 +132,11 @@ TEST_CASE("A restore that does not name loopEnabled switches looping off",
     sampler.setLoopEnabled(true);
 
     auto state = samplerState();
-    sampler.restoreState(state);
+    sampler.restoreState(magda::test::stateOf(state));
     CHECK_FALSE(sampler.loopEnabled());
 
     state.setProperty(MagdaSamplerPlugin::StateIDs::loopEnabled, true, nullptr);
-    sampler.restoreState(state);
+    sampler.restoreState(magda::test::stateOf(state));
     CHECK(sampler.loopEnabled());
 }
 
@@ -156,7 +157,7 @@ TEST_CASE("Restoring the source already loaded leaves the markers alone",
     state.setProperty(MagdaSamplerPlugin::StateIDs::source, file.getFullPathName(), nullptr);
     state.setProperty(MagdaSamplerPlugin::StateIDs::rootNote, 48, nullptr);
     state.setProperty(MagdaSamplerPlugin::StateIDs::loopEnabled, true, nullptr);
-    sampler.restoreState(state);
+    sampler.restoreState(magda::test::stateOf(state));
 
     CHECK(sampler.loopEnabled());
     CHECK(sampler.getRootNote() == 48);
@@ -180,7 +181,7 @@ TEST_CASE("A file replaced under the same name is read again",
     REQUIRE(writeTestWav(file, 2.0));
     auto state = samplerState();
     state.setProperty(MagdaSamplerPlugin::StateIDs::source, file.getFullPathName(), nullptr);
-    sampler.restoreState(state);
+    sampler.restoreState(magda::test::stateOf(state));
 
     CHECK(sampler.getSampleLengthSeconds() == Approx(2.0).margin(0.01));
 

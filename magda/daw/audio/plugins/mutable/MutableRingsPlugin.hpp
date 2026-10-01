@@ -62,8 +62,12 @@ class MutableRingsPlugin : public MagdaDevice {
             .takesAudioInput = false,
             .isSynth = true,
             .producesAudioWithoutInput = true,
-            .tailLengthSeconds = 4.0,  // long resonator/reverb tail
         };
+    }
+
+    /// A long resonator and reverb tail.
+    std::int64_t tailSamples() const override {
+        return static_cast<std::int64_t>(std::ceil(4.0 * sampleRate_));
     }
 
     void prepare(const DevicePrepareContext& context) override;

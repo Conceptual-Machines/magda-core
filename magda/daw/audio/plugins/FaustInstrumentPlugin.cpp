@@ -592,9 +592,7 @@ void FaustInstrumentPlugin::initialiseUnsetPoolValues(
 
         const auto& previous = previousSlots[static_cast<size_t>(slotIndex)];
         const bool sameControl = sameControlIdentity(previous, pool_.slot(slotIndex));
-        const bool restoredBeforeFirstBind =
-            !previous.active && poolValueWasRestored_[static_cast<size_t>(slotIndex)];
-        if (sameControl || restoredBeforeFirstBind)
+        if (sameControl)
             continue;
 
         poolValues_[static_cast<size_t>(slotIndex)].store(
@@ -670,6 +668,10 @@ bool FaustInstrumentPlugin::loadDspSource(const juce::String& name, const juce::
     auto previous = std::atomic_load(&active_);
     reservePointerScratch(compiled);
     std::atomic_store(&active_, compiled);
+
+    // The output width is part of properties(), which the host re-reads when asked.
+    if (host() != nullptr && (!previous || previous->dspOut != compiled->dspOut))
+        host()->rebuildRequired();
 
     if (previous) {
         const juce::ScopedLock lk(retiredLock_);
@@ -750,7 +752,7 @@ void FaustInstrumentPlugin::reservePointerScratch(const std::shared_ptr<FaustSta
 }
 
 void FaustInstrumentPlugin::process(DeviceProcessContext& context) {
-    if (context.audio == nullptr || context.numSamples <= 0)
+    if (context.numSamples() <= 0)
         return;
 
     auto active = std::atomic_load(&active_);
@@ -813,9 +815,9 @@ void FaustInstrumentPlugin::process(DeviceProcessContext& context) {
             *monoZone = static_cast<FAUSTFLOAT>(cachedBpm);
     }
 
-    const int hostChannels = context.audio->getNumChannels();
-    const int n = context.numSamples;
-    const int start = context.startSample;
+    auto audio = juceAudio(context);
+    const int hostChannels = audio.getNumChannels();
+    const int n = context.numSamples();
     const int dspOut = active->dspOut;
 
     if (hostChannels <= 0 || dspOut <= 0 || scratchOut_.getNumSamples() <= 0)
@@ -887,7 +889,7 @@ void FaustInstrumentPlugin::process(DeviceProcessContext& context) {
             for (int ch = 0; ch < hostChannels; ++ch) {
                 // One-output ("mono") DSP drives both channels; else channel-map.
                 const int srcCh = (dspOut == 1) ? 0 : (ch % dspOut);
-                context.audio->addFrom(ch, start + segStart + done, scratchOut_, srcCh, 0, chunk);
+                audio.addFrom(ch, segStart + done, scratchOut_, srcCh, 0, chunk);
             }
             done += chunk;
         }
@@ -898,12 +900,14 @@ void FaustInstrumentPlugin::process(DeviceProcessContext& context) {
     // an edge only exists if samples are rendered either side of it.
     int cursor = 0;
     if (context.midiIn != nullptr) {
+        const DeviceMidiInput in(*context.midiIn, static_cast<double>(currentSampleRate_));
+
         // The host's panic travels beside the events rather than as CC 123 (#2418).
-        if (context.midiIn->isAllNotesOff())
+        if (in.isAllNotesOff())
             releaseAllVoices(active);
 
-        for (int eventIndex = 0; eventIndex < context.midiIn->size(); ++eventIndex) {
-            const auto& m = context.midiIn->message(eventIndex);
+        for (int eventIndex = 0; eventIndex < in.size(); ++eventIndex) {
+            const auto m = in.message(eventIndex);
             int evSample = midiEventPosition(m.getTimeStamp(), currentSampleRate_).sample;
             evSample = juce::jlimit(cursor, n, evSample);  // clamp + keep monotonic
             renderSegment(cursor, evSample - cursor);
@@ -966,24 +970,11 @@ void FaustInstrumentPlugin::process(DeviceProcessContext& context) {
     renderSegment(cursor, n - cursor);
 }
 
-void FaustInstrumentPlugin::flushState(juce::ValueTree& state) {
-    state.setProperty(kFaustDspNameProperty, dspName_, nullptr);
-    state.setProperty(kFaustDspSourceProperty, dspSource_, nullptr);
-    for (int i = 0; i < FaustParamPool::kSize; ++i)
-        state.setProperty(juce::Identifier(poolParamId(i)),
-                          poolValues_[static_cast<size_t>(i)].load(std::memory_order_relaxed),
-                          nullptr);
-
-    // The retired plugin's spellings, so an older project reads back onto the
-    // same controls.
-    state.setProperty("voiceMode", hostValue(kVoiceModeParamIndex), nullptr);
-    state.setProperty("glide", hostValue(kGlideParamIndex), nullptr);
-    state.setProperty("bendRange", hostValue(kBendRangeParamIndex), nullptr);
-}
-
-void FaustInstrumentPlugin::restoreState(const juce::ValueTree& v) {
-    const auto savedSource = v.getProperty(kFaustDspSourceProperty, juce::String()).toString();
-    const auto savedName = v.getProperty(kFaustDspNameProperty, juce::String()).toString();
+sdk::RestoreResult FaustInstrumentPlugin::restoreState(const sdk::StateNode& state) {
+    const auto savedSource =
+        juce::String::fromUTF8(state.getString(stateKey(kFaustDspSourceProperty)).c_str());
+    const auto savedName =
+        juce::String::fromUTF8(state.getString(stateKey(kFaustDspNameProperty)).c_str());
 
     if (savedSource.isNotEmpty() && savedSource != dspSource_) {
         juce::String err;
@@ -1002,25 +993,9 @@ void FaustInstrumentPlugin::restoreState(const juce::ValueTree& v) {
         dspName_ = savedName;
     }
 
-    // Stable ids (param_01 ... param_64), so a macro or automation lane keeps
-    // pointing at the same control across a recompile.
-    for (int i = 0; i < FaustParamPool::kSize; ++i) {
-        const auto* saved = v.getPropertyPointer(juce::Identifier(poolParamId(i)));
-        poolValueWasRestored_[static_cast<size_t>(i)] = saved != nullptr;
-        poolValues_[static_cast<size_t>(i)].store(
-            saved != nullptr ? static_cast<float>(*saved) : 0.0f, std::memory_order_relaxed);
-    }
-    refreshPoolDomains();
-
-    // An absent property keeps the constructor's value: for the bend range
-    // that is two semitones, and absent must not read as zero.
-    const auto restoreHost = [&v, this](const char* id, int parameterIndex) {
-        if (const auto* saved = v.getPropertyPointer(juce::Identifier(id)))
-            setParameterValue(parameterIndex, static_cast<float>(*saved));
-    };
-    restoreHost("voiceMode", kVoiceModeParamIndex);
-    restoreHost("glide", kGlideParamIndex);
-    restoreHost("bendRange", kBendRangeParamIndex);
+    // Pool and host parameter values are the model's (#2317): DeviceInfo::parameters is
+    // their only authority, and the adapter writes them into the slots.
+    return sdk::RestoreResult::success();
 }
 
 void FaustInstrumentPlugin::refreshPoolDomains() {

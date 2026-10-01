@@ -69,12 +69,13 @@ TEST_CASE("Limiter DSP output is post-limiter negative trim", "[limiter][dsp]") 
 }
 
 TEST_CASE("Limiter reports the latency its lookahead delays by", "[limiter][dsp]") {
-    const magda::daw::audio::compiled::MagdaLimiterCompiledPlugin device;
-    REQUIRE(device.properties().latencySeconds == MagdaLimiterDspCore::kLookaheadSeconds);
+    magda::daw::audio::compiled::MagdaLimiterCompiledPlugin device;
 
     // 44.1 kHz puts the lookahead on a half sample, which juce::roundToInt takes to even.
     for (const auto sampleRate : {44100.0, 48000.0, 96000.0}) {
-        const auto reported = juce::roundToInt(device.properties().latencySeconds * sampleRate);
+        device.prepare({.sampleRate = sampleRate, .maximumBlockSize = 1024});
+        const auto reported = device.latencySamples();
+        REQUIRE(reported == juce::roundToInt(MagdaLimiterDspCore::kLookaheadSeconds * sampleRate));
 
         juce::AudioBuffer<float> buffer(2, 1024);
         buffer.clear();

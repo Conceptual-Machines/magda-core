@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <memory>
 
+#include "DeviceTestBlock.hpp"
 #include "audio/plugins/LevelsPlugin.hpp"
 #include "custom_ui/DeviceTelemetrySources.hpp"
 
@@ -236,9 +237,8 @@ void measureBlock(audio::LevelsPlugin& device, float level) {
     for (auto channel = 0; channel < buffer.getNumChannels(); ++channel)
         juce::FloatVectorOperations::fill(buffer.getWritePointer(channel), level, 512);
 
-    audio::DeviceProcessContext context;
-    context.audio = &buffer;
-    context.numSamples = 512;
+    magda::test::DeviceTestBlock contextBlock(buffer, 512);
+    auto& context = contextBlock.context;
     device.process(context);
 }
 

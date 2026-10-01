@@ -52,9 +52,9 @@ class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
 
     DeviceProperties properties() const override {
         return {
-            .pluginId = devicePluginId(),
-            .name = deviceName(),
-            .shortName = deviceShortName(),
+            .pluginId = devicePluginId().toStdString(),
+            .name = deviceName().toStdString(),
+            .shortName = deviceShortName().toStdString(),
             .takesMidiInput = true,
             .takesAudioInput = false,
             .isSynth = true,

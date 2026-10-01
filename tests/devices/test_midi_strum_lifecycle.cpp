@@ -3,6 +3,7 @@
 #include <initializer_list>
 #include <vector>
 
+#include "DeviceTestBlock.hpp"
 #include "TestDeviceMidiBuffer.hpp"
 #include "magda/daw/audio/plugins/MidiStrumPlugin.hpp"
 
@@ -44,10 +45,12 @@ struct StrumRig {
             in.events.push_back({message, source});
         in.allNotesOff = panic;
         magda::test::DeviceMidiBuffer out;
-        audio::DeviceProcessContext context;
+        juce::AudioBuffer<float> contextAudio(1, kBlock);
+        contextAudio.clear();
+        magda::test::DeviceTestBlock contextBlock(contextAudio);
+        auto& context = contextBlock.context;
         context.midiIn = &in;
         context.midiOut = &out;
-        context.numSamples = kBlock;
         context.isPlaying = playing;
         strum.process(context);
         passedPanic = out.allNotesOff;

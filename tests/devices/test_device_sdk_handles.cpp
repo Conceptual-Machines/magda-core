@@ -5,6 +5,7 @@
 #include <utility>
 #include <vector>
 
+#include "DeviceTestBlock.hpp"
 #include "TestDeviceMidiBuffer.hpp"
 #include "audio/plugins/DeviceParameterHandle.hpp"
 #include "audio/plugins/DevicePluginHandle.hpp"
@@ -87,7 +88,7 @@ TEST_CASE("MagdaDevice owns telemetry independently of a host plugin lifecycle",
         double lastBeat = -1.0;
     };
 
-    class TestTempoMap final : public audio::DeviceTempoMap {
+    class TestTempoMap final : public magda::sdk::TempoMap {
       public:
         double beatsAtSeconds(double seconds) const override {
             return seconds * 2.0;
@@ -100,10 +101,9 @@ TEST_CASE("MagdaDevice owns telemetry independently of a host plugin lifecycle",
 
     TestDevice device;
     TestTempoMap tempoMap;
-    audio::DeviceProcessContext context{
-        .tempoMap = &tempoMap,
-        .timelineStartSeconds = 3.0,
-    };
+    audio::DeviceProcessContext context;
+    context.tempoMap = &tempoMap;
+    context.timelineStartSeconds = 3.0;
 
     device.process(context);
 
@@ -126,7 +126,6 @@ TEST_CASE("MagdaDevice lifecycle, state, parameters, audio, and MIDI need no hos
                 .shortName = "Neutral",
                 .takesMidiInput = true,
                 .producesMidi = true,
-                .latencySeconds = 0.01,
             };
         }
 
@@ -134,16 +133,19 @@ TEST_CASE("MagdaDevice lifecycle, state, parameters, audio, and MIDI need no hos
             sampleRate = context.sampleRate;
         }
 
+        int latencySamples() const override {
+            return static_cast<int>(sampleRate * 0.01);
+        }
+
         void release() override {
             released = true;
         }
 
         void process(audio::DeviceProcessContext& context) override {
-            if (context.audio != nullptr)
-                context.audio->applyGain(context.startSample, context.numSamples, parameter);
+            auto audio = audio::juceAudio(context);
+            audio.applyGain(0, context.numSamples(), parameter);
             if (context.midiOut != nullptr)
-                context.midiOut->addEvent(
-                    {.message = juce::MidiMessage::noteOn(1, 60, juce::uint8{100})});
+                context.midiOut->addEvent(magda::sdk::MidiEvent::noteOn(1, 60, 100, 0));
         }
 
         int parameterCount() const override {
@@ -170,12 +172,9 @@ TEST_CASE("MagdaDevice lifecycle, state, parameters, audio, and MIDI need no hos
                 parameter = value;
         }
 
-        void flushState(juce::ValueTree& state) override {
-            state.setProperty("deviceOwned", deviceOwnedState, nullptr);
-        }
-
-        void restoreState(const juce::ValueTree& state) override {
-            deviceOwnedState = state["deviceOwned"];
+        magda::sdk::RestoreResult restoreState(const magda::sdk::StateNode& state) override {
+            deviceOwnedState = state.getInt("deviceOwned");
+            return magda::sdk::RestoreResult::success();
         }
 
         double sampleRate = 0.0;
@@ -187,7 +186,7 @@ TEST_CASE("MagdaDevice lifecycle, state, parameters, audio, and MIDI need no hos
     TestDevice device;
     device.prepare({.sampleRate = 48000.0, .maximumBlockSize = 16});
     CHECK(device.sampleRate == 48000.0);
-    CHECK(device.properties().latencySeconds == 0.01);
+    CHECK(device.latencySamples() == 480);
     CHECK(device.parameterInfo(0).stableId == "gain");
 
     device.setParameterValue(0, 0.5f);
@@ -196,23 +195,20 @@ TEST_CASE("MagdaDevice lifecycle, state, parameters, audio, and MIDI need no hos
     audioBuffer.addFrom(0, 0, std::array{1.0f, 1.0f, 1.0f, 1.0f}.data(), 4);
     MidiBuffer in;
     MidiBuffer out;
-    audio::DeviceProcessContext context{
-        .audio = &audioBuffer,
-        .midiIn = &in,
-        .midiOut = &out,
-        .numSamples = 4,
-    };
+    magda::test::DeviceTestBlock block(audioBuffer);
+    auto& context = block.context;
+    context.midiIn = &in;
+    context.midiOut = &out;
     device.process(context);
 
     CHECK(audioBuffer.getSample(0, 0) == 0.5f);
     REQUIRE(out.size() == 1);
     CHECK(out.message(0).isNoteOn());
 
-    juce::ValueTree state("device");
-    device.deviceOwnedState = 17;
-    device.flushState(state);
-    device.deviceOwnedState = 0;
-    device.restoreState(state);
+    // The host owns the document and the device restores it.
+    magda::sdk::StateNode state;
+    state.setInt("deviceOwned", 17);
+    CHECK(device.restoreState(state).ok);
     CHECK(device.deviceOwnedState == 17);
 
     device.release();

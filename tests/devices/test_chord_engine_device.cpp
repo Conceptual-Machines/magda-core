@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "DeviceTestBlock.hpp"
 #include "TestDeviceMidiBuffer.hpp"
 #include "magda/daw/audio/plugins/MidiChordEnginePlugin.hpp"
 
@@ -20,10 +21,12 @@ void playTriad(audio::MidiChordEnginePlugin& engine, bool playing) {
         midi.events.push_back({juce::MidiMessage::noteOn(1, note, 0.8f), 1});
 
     magda::test::DeviceMidiBuffer out;
-    audio::DeviceProcessContext context;
+    juce::AudioBuffer<float> contextAudio(1, 512);
+    contextAudio.clear();
+    magda::test::DeviceTestBlock contextBlock(contextAudio);
+    auto& context = contextBlock.context;
     context.midiIn = &midi;
     context.midiOut = &out;
-    context.numSamples = 512;
     context.isPlaying = playing;
 
     engine.process(context);

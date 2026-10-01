@@ -61,8 +61,9 @@ void MidiChordEnginePlugin::process(DeviceProcessContext& context) {
 
     const double blockTimeSeconds = context.timelineStartSeconds;
 
-    for (int index = 0; index < context.midiIn->size(); ++index) {
-        const auto& msg = context.midiIn->message(index);
+    const DeviceMidiInput in(*context.midiIn, sampleRate_);
+    for (int index = 0; index < in.size(); ++index) {
+        const auto msg = in.message(index);
         if (msg.isNoteOn()) {
             // Add to held notes
             int count = heldNoteCount_.load(std::memory_order_relaxed);

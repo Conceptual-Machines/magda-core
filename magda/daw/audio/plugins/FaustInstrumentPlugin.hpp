@@ -59,8 +59,7 @@ class FaustInstrumentPlugin : public MagdaDevice, public IFaustEditorModel {
     void setParameterValue(int index, float value) override;
     bool offersParameter(int index) const override;
 
-    void flushState(juce::ValueTree& state) override;
-    void restoreState(const juce::ValueTree& v) override;
+    sdk::RestoreResult restoreState(const sdk::StateNode& state) override;
 
     // Compile `source`, wrap it in a fresh poly voice allocator, swap it in,
     // and persist source+name to plugin state. Returns true on success; on
@@ -187,7 +186,6 @@ class FaustInstrumentPlugin : public MagdaDevice, public IFaustEditorModel {
     // Normalised 0..1, written by the host and read on the audio thread.
     std::array<std::atomic<float>, FaustParamPool::kSize> poolValues_{};
     std::array<ParameterUtils::ParameterDomain, FaustParamPool::kSize> poolDomains_{};
-    std::array<bool, FaustParamPool::kSize> poolValueWasRestored_{};
 
     // ---- Host-owned voice allocation -------------------------------------
     // Past the end of the pool, so nothing in the pool moves. Normalised;

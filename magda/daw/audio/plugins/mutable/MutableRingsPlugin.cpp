@@ -318,7 +318,8 @@ void MutableRingsPlugin::reset() {
 }
 
 void MutableRingsPlugin::process(DeviceProcessContext& context) {
-    if (context.audio == nullptr || context.numSamples <= 0)
+    const int numSamples = context.numSamples();
+    if (numSamples <= 0)
         return;
 
     rings::Patch patch;
@@ -333,8 +334,8 @@ void MutableRingsPlugin::process(DeviceProcessContext& context) {
     const float transpose = displayValue(kPitch) + displayValue(kFine) * 0.01f;
     impl_->configure(patch, model, polyphony, chord, transpose);
 
-    auto& buffer = *context.audio;
-    const int start = context.startSample;
+    auto buffer = juceAudio(context);
+    const int start = 0;
     auto* destL = scratch_.getWritePointer(0);
     auto* destR = buffer.getNumChannels() > 1 ? scratch_.getWritePointer(1) : nullptr;
 
@@ -347,24 +348,25 @@ void MutableRingsPlugin::process(DeviceProcessContext& context) {
     };
 
     if (context.midiIn != nullptr) {
-        for (int eventIndex = 0; eventIndex < context.midiIn->size(); ++eventIndex) {
-            const auto& m = context.midiIn->message(eventIndex);
+        const DeviceMidiInput in(*context.midiIn, sampleRate_);
+        for (int eventIndex = 0; eventIndex < in.size(); ++eventIndex) {
+            const auto m = in.message(eventIndex);
             if (!m.isNoteOn() || m.getVelocity() == 0)
                 continue;  // Rings has no note-off gate; resonators decay via Damping
-            const int evPos = juce::jlimit(0, context.numSamples - 1,
+            const int evPos = juce::jlimit(0, numSamples - 1,
                                            midiEventPosition(m.getTimeStamp(), sampleRate_).sample);
             renderTo(evPos);
             impl_->noteOn(m.getNoteNumber());
         }
     }
-    renderTo(context.numSamples);
+    renderTo(numSamples);
 
     // Add rather than replace (#2370): the buffer may already carry another
     // signal that must not be clobbered.
     const float gain = juce::Decibels::decibelsToGain(displayValue(kLevel));
-    buffer.addFrom(0, start, scratch_, 0, 0, context.numSamples, gain);
+    buffer.addFrom(0, start, scratch_, 0, 0, numSamples, gain);
     if (destR != nullptr)
-        buffer.addFrom(1, start, scratch_, 1, 0, context.numSamples, gain);
+        buffer.addFrom(1, start, scratch_, 1, 0, numSamples, gain);
 }
 
 }  // namespace magda::daw::audio

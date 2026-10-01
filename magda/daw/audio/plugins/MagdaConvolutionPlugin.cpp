@@ -245,12 +245,12 @@ void MagdaConvolutionPlugin::reset() {
 }
 
 void MagdaConvolutionPlugin::process(DeviceProcessContext& context) {
-    if (context.audio == nullptr || context.numSamples <= 0)
+    if (context.numSamples() <= 0)
         return;
 
-    auto& buffer = *context.audio;
-    const int start = context.startSample;
-    const int numSamples = context.numSamples;
+    auto buffer = juceAudio(context);
+    const int start = 0;
+    const int numSamples = context.numSamples();
 
     lowCutSmoother_.setTargetValue(displayValue(kLowCut));
     highCutSmoother_.setTargetValue(displayValue(kHighCut));
@@ -326,43 +326,40 @@ void MagdaConvolutionPlugin::process(DeviceProcessContext& context) {
 }
 
 //==============================================================================
-void MagdaConvolutionPlugin::flushState(juce::ValueTree& state) {
-    state.setProperty(StateIDs::name, irName_, nullptr);
-    state.setProperty(StateIDs::normalise, normalise_, nullptr);
-    state.setProperty(StateIDs::trimSilence, trimSilence_, nullptr);
-
-    // The property tracks the device exactly: written when it holds an IR,
-    // REMOVED when it does not. Leaving a stale blob on the engine tree would
-    // let a capture write an un-loaded IR back into the model after an undo
-    // (#2317 review). restoreState() now owns the absent-means-none contract,
-    // so nothing legitimate parks state here behind the device's back.
-    if (irData_.getSize() > 0)
-        state.setProperty(StateIDs::irFileData, juce::var(irData_), nullptr);
-    else
-        state.removeProperty(StateIDs::irFileData, nullptr);
-}
-
-void MagdaConvolutionPlugin::restoreState(const juce::ValueTree& state) {
-    if (const auto* name = state.getPropertyPointer(StateIDs::name))
-        irName_ = name->toString();
-    if (const auto* normalise = state.getPropertyPointer(StateIDs::normalise))
-        normalise_ = static_cast<bool>(*normalise);
-    if (const auto* trimSilence = state.getPropertyPointer(StateIDs::trimSilence))
-        trimSilence_ = static_cast<bool>(*trimSilence);
-
+sdk::RestoreResult MagdaConvolutionPlugin::restoreState(const sdk::StateNode& state) {
     // The document is the whole authored state, so no `irFileData` MEANS no
     // impulse response - restoring a document saved before the first IR load
     // (an undo of that load, a preset with none) has to unload the current
     // one, or the model says "no IR" while playback keeps convolving with it
     // (#2317 review). An empty blob reads the same way.
-    if (const auto* irFileData = state.getProperty(StateIDs::irFileData).getBinaryData()) {
-        irData_ = *irFileData;
-    } else {
-        irData_ = {};
-        if (!state.hasProperty(StateIDs::name))
-            irName_.clear();
+    juce::MemoryBlock data;
+    if (const auto* bytes = state.getBinary(stateKey(StateIDs::irFileData)))
+        data = juce::MemoryBlock(bytes->data(), bytes->size());
+
+    // Read before anything is adopted, so a blob that is not audio leaves the
+    // device as it was.
+    if (data.getSize() > 0) {
+        auto stream = std::make_unique<juce::MemoryInputStream>(data, false);
+        std::unique_ptr<juce::AudioFormatReader> reader(
+            irFormats().createReaderFor(std::move(stream)));
+        if (reader == nullptr || reader->numChannels == 0 || reader->lengthInSamples == 0)
+            return sdk::RestoreResult::error("the impulse response data is not readable audio");
     }
+
+    const auto nameKey = stateKey(StateIDs::name);
+    if (state.has(nameKey))
+        irName_ = juce::String::fromUTF8(state.getString(nameKey).c_str());
+    if (state.has(stateKey(StateIDs::normalise)))
+        normalise_ = state.getBool(stateKey(StateIDs::normalise));
+    if (state.has(stateKey(StateIDs::trimSilence)))
+        trimSilence_ = state.getBool(stateKey(StateIDs::trimSilence));
+
+    irData_ = std::move(data);
+    if (irData_.getSize() == 0 && !state.has(nameKey))
+        irName_.clear();
+
     loadImpulseResponseFromData();
+    return sdk::RestoreResult::success();
 }
 
 void MagdaConvolutionPlugin::loadImpulseResponseFromData() {

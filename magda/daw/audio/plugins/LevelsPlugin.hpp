@@ -94,20 +94,20 @@ class LevelsPlugin : public MagdaDevice, public LevelsTelemetry {
 
         if (!active_.load(std::memory_order_acquire))
             return;  // not showing: no measurement cost beyond the transport edge
-        if (context.audio == nullptr || context.numSamples <= 0)
+        if (context.numSamples() <= 0)
             return;
         // Fresh integration window each time the meter opens, the transport rolls
         // or the user hits Reset.
         if (pendingReset_.exchange(false, std::memory_order_acq_rel))
             measurer_.reset();
 
-        const int numCh = juce::jmin(context.audio->getNumChannels(), 2);
+        const int numCh = juce::jmin(context.audio.numChannels(), 2);
         if (numCh <= 0)
             return;
         const float* ptrs[2] = {nullptr, nullptr};
         for (int ch = 0; ch < numCh; ++ch)
-            ptrs[ch] = context.audio->getReadPointer(ch, context.startSample);
-        measurer_.process(ptrs, numCh, context.numSamples);
+            ptrs[ch] = context.audio.channel(ch);
+        measurer_.process(ptrs, numCh, context.numSamples());
     }
 
   private:

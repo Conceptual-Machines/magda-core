@@ -124,7 +124,7 @@ void SidechainPlugin::reset() {
 }
 
 void SidechainPlugin::process(DeviceProcessContext& context) {
-    if (context.audio == nullptr || context.numSamples <= 0)
+    if (context.numSamples() <= 0)
         return;
 
     const float target = displayValue(kGainParamIndex);
@@ -139,10 +139,9 @@ void SidechainPlugin::process(DeviceProcessContext& context) {
     const float releaseCoeff =
         smoothingCoeff(juce::jmax(5.0f, displayValue(kReleaseParamIndex)), sampleRate_);
 
-    const int numChannels = context.audio->getNumChannels();
-    const int numSamples = context.numSamples;
-    const auto* channels = context.audio->getArrayOfWritePointers();
-    const int offset = context.startSample;
+    const int numChannels = context.audio.numChannels();
+    const int numSamples = context.numSamples();
+    const auto* channels = context.audio.channels();
 
     // The modifier writes the gain target at a coarse quantum (one hop per
     // modifier update, several render blocks wide), so the drawn curve
@@ -194,7 +193,7 @@ void SidechainPlugin::process(DeviceProcessContext& context) {
             gains[i] = gain;
         }
 
-        const int chunkOffset = offset + done;
+        const int chunkOffset = done;
         if (sidesOnly) {
             float* left = channels[0] + chunkOffset;
             float* right = channels[1] + chunkOffset;
