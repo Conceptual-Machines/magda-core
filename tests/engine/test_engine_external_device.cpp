@@ -400,15 +400,15 @@ class StubPlugin final : public juce::AudioPluginInstance {
      * @brief The stub as a VST3, for the one record that is not a chunk.
      *
      * A portable .vstpreset is reached through the format's own client rather
-     * than through setStateInformation, and whether an instance answers this
-     * visit at all is the only way a host can ask whether it is a VST3. So the
+     * than through setStateInformation, and whether an instance returns a
+     * client at all is the only way a host can ask whether it is a VST3. So the
      * stub answers it or does not, and a test picks which.
      *
      * The patch it carries is the same State the chunk carries, behind a real
      * preset header: what is being asserted is which door the host went
      * through, not that two serialisations differ.
      */
-    struct Vst3Extension final : juce::ExtensionsVisitor::VST3Client {
+    struct Vst3Extension final : juce::AudioPluginExtensions::VST3Client {
         explicit Vst3Extension(const StubPlugin& owner) : plugin(owner) {}
 
         Steinberg::Vst::IComponent* getIComponentPtr() const noexcept override {
@@ -416,19 +416,19 @@ class StubPlugin final : public juce::AudioPluginInstance {
         }
 
         juce::MemoryBlock getPreset() const override;
-        bool setPreset(const juce::MemoryBlock& data) const override;
+        bool setPreset(const juce::MemoryBlock& data) override;
 
         const StubPlugin& plugin;
     };
 
-    void getExtensions(juce::ExtensionsVisitor& visitor) const override {
-        // Nothing is visited for a plugin of another format, which is how the
-        // host tells a VST3 from an AU without being told.
-        if (!isVst3)
-            return;
+    // Null for a plugin of another format, which is how the host tells a VST3
+    // from an AU without being told.
+    juce::AudioPluginExtensions::VST3Client* getVST3Client() override {
+        return isVst3 ? &vst3Client : nullptr;
+    }
 
-        const Vst3Extension client(*this);
-        visitor.visitVST3Client(client);
+    const juce::AudioPluginExtensions::VST3Client* getVST3Client() const override {
+        return isVst3 ? &vst3Client : nullptr;
     }
 
     /// The per-channel offset the output carries, so a test can name which of
@@ -471,7 +471,7 @@ class StubPlugin final : public juce::AudioPluginInstance {
     /// not read as "not a VST3".
     bool savesNoPreset = false;
 
-    /// Whether this stub is a VST3 at all (see getExtensions).
+    /// Whether this stub is a VST3 at all (see getVST3Client).
     bool isVst3 = false;
 
     /// Whether its VST3 client takes the preset it is handed. A real one
@@ -484,6 +484,8 @@ class StubPlugin final : public juce::AudioPluginInstance {
     /// How many presets reached it, which is how a test tells the portable
     /// record's door from the chunk's.
     mutable int presetApplies = 0;
+
+    Vst3Extension vst3Client{*this};
 
     double preparedRate = 0.0;
     int preparedBlockSize = 0;
@@ -508,7 +510,7 @@ juce::MemoryBlock StubPlugin::Vst3Extension::getPreset() const {
     return vst3PresetOf(&state, sizeof(state));
 }
 
-bool StubPlugin::Vst3Extension::setPreset(const juce::MemoryBlock& data) const {
+bool StubPlugin::Vst3Extension::setPreset(const juce::MemoryBlock& data) {
     if (!plugin.acceptsPreset) {
         // Half of it, then the refusal. Steinberg's loader restores the
         // component's state and then the controller's and returns false when the

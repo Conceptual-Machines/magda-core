@@ -83,6 +83,15 @@ const std::vector<ProviderInfo>& getKnownProviders() {
     return providers;
 }
 
+/// A Drawable together with the Component that displays it.
+struct ProviderIcon {
+    explicit ProviderIcon(std::unique_ptr<juce::Drawable> d)
+        : drawable(std::move(d)), component(*drawable) {}
+
+    std::unique_ptr<juce::Drawable> drawable;
+    juce::DrawableComponent component;
+};
+
 std::unique_ptr<juce::Drawable> createProviderIcon(const ProviderInfo& info) {
     auto icon =
         juce::Drawable::createFromImageData(info.iconData, static_cast<size_t>(info.iconDataSize));
@@ -312,7 +321,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
         // Clear existing entries
         entries_.clear();
         for (auto& c : ownedDrawables_)
-            listContainer_.removeChildComponent(c.get());
+            listContainer_.removeChildComponent(&c->component);
         for (auto& c : ownedLabels_)
             listContainer_.removeChildComponent(c.get());
         for (auto& c : ownedButtons_)
@@ -359,7 +368,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
 
     struct ListEntry {
         std::string providerId;
-        juce::Drawable* iconComp = nullptr;
+        juce::DrawableComponent* iconComp = nullptr;
         juce::Label* nameLabel = nullptr;
         juce::Label* statusLabel = nullptr;
         juce::TextButton* removeBtn = nullptr;
@@ -370,7 +379,8 @@ class AISettingsDialog::CloudPage : public juce::Component {
             if (statusLabel)
                 statusLabel->setBounds(bounds.removeFromRight(80));
             if (iconComp)
-                iconComp->setBounds(bounds.removeFromLeft(20).reduced(2, 4));
+                iconComp->setTransformToFit(bounds.removeFromLeft(20).reduced(2, 4).toFloat(),
+                                            juce::RectanglePlacement::centred);
             bounds.removeFromLeft(4);
             if (nameLabel)
                 nameLabel->setBounds(bounds);
@@ -444,10 +454,12 @@ class AISettingsDialog::CloudPage : public juce::Component {
         entry.providerId = providerId;
 
         // Icon
-        auto icon = createProviderIcon(*info);
-        listContainer_.addAndMakeVisible(*icon);
-        entry.iconComp = icon.get();
-        ownedDrawables_.push_back(std::move(icon));
+        if (auto drawable = createProviderIcon(*info)) {
+            auto icon = std::make_unique<ProviderIcon>(std::move(drawable));
+            listContainer_.addAndMakeVisible(icon->component);
+            entry.iconComp = &icon->component;
+            ownedDrawables_.push_back(std::move(icon));
+        }
 
         // Name label
         auto nameLabel = std::make_unique<juce::Label>();
@@ -573,7 +585,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
     juce::Label registeredLabel_;
     juce::Component listContainer_;
     std::vector<ListEntry> entries_;
-    std::vector<std::unique_ptr<juce::Drawable>> ownedDrawables_;
+    std::vector<std::unique_ptr<ProviderIcon>> ownedDrawables_;
     std::vector<std::unique_ptr<juce::Label>> ownedLabels_;
     std::vector<std::unique_ptr<juce::TextButton>> ownedButtons_;
 

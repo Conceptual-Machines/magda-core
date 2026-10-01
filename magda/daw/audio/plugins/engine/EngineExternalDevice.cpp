@@ -81,7 +81,7 @@ class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
                                juce::DocumentWindow::closeButton),
           closed_(std::move(closed)) {
         setUsingNativeTitleBar(true);
-        setContentOwned(plugin.createEditorIfNeeded(), true);
+        setContentOwned(plugin.createEditorAndMakeActive(), true);
         setResizable(plugin.getActiveEditor() != nullptr && plugin.getActiveEditor()->isResizable(),
                      false);
         centreWithSize(getWidth(), getHeight());

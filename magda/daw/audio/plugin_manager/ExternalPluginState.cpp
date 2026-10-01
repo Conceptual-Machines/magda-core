@@ -26,26 +26,6 @@ const ParameterInfo* modelParameterAt(const DeviceInfo& device, int index) {
     return nullptr;
 }
 
-/// One visit to the VST3 extension, in whichever direction was asked for. The
-/// extension is the only way to ask an instance whether it is a VST3 at all:
-/// visitVST3Client() is called for one and nothing is called for anything else,
-/// so `visited` is the answer to both questions at once.
-struct Vst3PresetVisitor final : juce::ExtensionsVisitor {
-    juce::MemoryBlock preset;
-    bool writing = false;
-    bool visited = false;
-    bool accepted = false;
-
-    void visitVST3Client(const VST3Client& client) override {
-        visited = true;
-
-        if (writing)
-            accepted = client.setPreset(preset);
-        else
-            preset = client.getPreset();
-    }
-};
-
 /// The saved chunk, decoded. Empty for a device that saved none and for a
 /// string that is not base64, which is what a project truncated by a failed
 /// write looks like.
@@ -336,19 +316,18 @@ void applyRestoredParameters(DeviceInfo& device, const std::vector<RestoredParam
 }
 
 Vst3PresetRead readVst3Preset(const juce::AudioPluginInstance& instance) {
-    Vst3PresetVisitor visitor;
+    // A non-null client is what identifies the format; a VST3 whose getPreset()
+    // throws is still a VST3.
+    const auto* client = instance.getVST3Client();
 
-    // The visit is what identifies the format, and it is recorded before the
-    // plugin is asked anything: a VST3 whose getPreset() throws has still been
-    // identified as one, and the caller's answer for it is not the answer for a
-    // plugin that was never visited.
+    if (client == nullptr)
+        return {.preset = {}, .isVst3 = false};
+
     try {
-        instance.getExtensions(visitor);
+        return {.preset = client->getPreset(), .isVst3 = true};
     } catch (...) {
-        return {.preset = {}, .isVst3 = visitor.visited};
+        return {.preset = {}, .isVst3 = true};
     }
-
-    return {.preset = std::move(visitor.preset), .isVst3 = visitor.visited};
 }
 
 Vst3PresetOutcome writeVst3Preset(juce::AudioPluginInstance& instance,
@@ -356,23 +335,18 @@ Vst3PresetOutcome writeVst3Preset(juce::AudioPluginInstance& instance,
     if (preset.getSize() == 0)
         return Vst3PresetOutcome::NotVst3;
 
-    Vst3PresetVisitor visitor;
-    visitor.writing = true;
-    visitor.preset = preset;
+    auto* client = instance.getVST3Client();
 
-    try {
-        instance.getExtensions(visitor);
-    } catch (...) {
-        // Visited and throwing is a refusal rather than a no-op, and for the
-        // same reason a refusal is: whatever the loader had done before it threw
-        // is still done.
-        return visitor.visited ? Vst3PresetOutcome::Refused : Vst3PresetOutcome::NotVst3;
-    }
-
-    if (!visitor.visited)
+    if (client == nullptr)
         return Vst3PresetOutcome::NotVst3;
 
-    return visitor.accepted ? Vst3PresetOutcome::Applied : Vst3PresetOutcome::Refused;
+    // A throwing loader is a refusal rather than a no-op: whatever it did
+    // before it threw is still done.
+    try {
+        return client->setPreset(preset) ? Vst3PresetOutcome::Applied : Vst3PresetOutcome::Refused;
+    } catch (...) {
+        return Vst3PresetOutcome::Refused;
+    }
 }
 
 void captureVst3Records(const juce::AudioPluginInstance& instance, DeviceInfo& device) {

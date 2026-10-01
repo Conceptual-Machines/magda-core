@@ -115,12 +115,12 @@ class GridDivisionButton final : public juce::Button {
                 ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).withMultipliedAlpha(alpha);
             const auto slashColour =
                 ActiveTheme::getSecondaryTextColour().withMultipliedAlpha(alpha);
-            const int numWidth =
-                static_cast<int>(std::ceil(g.getCurrentFont().getStringWidthFloat(numeratorText)));
-            const int slashWidth =
-                static_cast<int>(std::ceil(g.getCurrentFont().getStringWidthFloat("/")));
-            const int denWidth = static_cast<int>(
-                std::ceil(g.getCurrentFont().getStringWidthFloat(denominatorText)));
+            const int numWidth = static_cast<int>(std::ceil(
+                juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), numeratorText)));
+            const int slashWidth = static_cast<int>(
+                std::ceil(juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), "/")));
+            const int denWidth = static_cast<int>(std::ceil(
+                juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), denominatorText)));
             int x = area.getCentreX() - (numWidth + slashWidth + denWidth) / 2;
             g.setColour(numberColour);
             g.drawText(numeratorText, x, area.getY(), numWidth, area.getHeight(),

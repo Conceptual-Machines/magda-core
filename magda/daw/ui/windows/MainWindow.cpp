@@ -267,7 +267,7 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
     // Size and position the window within the display's work area
     const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
     if (display != nullptr) {
-        auto workArea = display->userArea;  // Excludes taskbar
+        auto workArea = display->userBounds.toNearestInt();  // Excludes taskbar
         // Leave some margin so the title bar and window frame are fully visible
         int margin = 10;
         int w = juce::jmin(LayoutConfig::defaultWindowWidth, workArea.getWidth() - margin * 2);
@@ -668,7 +668,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
 
     // Scale side panel defaults based on screen width
     if (const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()) {
-        int screenWidth = display->userArea.getWidth();
+        int screenWidth = display->userBounds.toNearestInt().getWidth();
         if (screenWidth >= 2560) {  // Large display (1440p+)
             leftPanelWidth = rightPanelWidth = 400;
         } else if (screenWidth >= 1920) {  // Full HD
