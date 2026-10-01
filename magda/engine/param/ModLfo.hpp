@@ -210,7 +210,7 @@ float laneValueFromRateType(int rateType);
 /**
  * @brief The level @p settings has at @p phase, before gating and inversion.
  *
- * The model's own reading of the shape (core/ModCurve.hpp).
+ * The model's own reading of the shape (magda/sdk/curve/ModCurve.hpp).
  */
 float lfoShapeAt(const LfoSettings& settings, std::span<const magda::CurvePointData> curve,
                  float phase);

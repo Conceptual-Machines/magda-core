@@ -4,9 +4,9 @@
 
 #include <chrono>
 #include <functional>
+#include <magda/sdk/curve/ModCurve.hpp>
 #include <memory>
 
-#include "ModCurve.hpp"
 #include "ModInfo.hpp"
 
 namespace magda {
@@ -146,21 +146,21 @@ class ModulatorEngine {
     /**
      * @brief Generate waveform value for given phase
      *
-     * The model's own reading (core/ModCurve.hpp), so the visual sim, the
+     * The model's own reading (magda/sdk/curve/ModCurve.hpp), so the visual sim, the
      * audio snapshot and the native engine's LFO all draw one shape.
      */
     static float generateWaveform(LFOWaveform waveform, float phase) {
-        return modcurve::waveform(waveform, phase);
+        return sdk::modcurve::waveform(waveform, phase);
     }
 
     /** @brief Generate curve preset value for given phase. */
     static float generateCurvePreset(CurvePreset preset, float phase) {
-        return modcurve::preset(preset, phase);
+        return sdk::modcurve::preset(preset, phase);
     }
 
     /** @brief Evaluate drawn curve points at given phase. */
     static float evaluateCurvePoints(const std::vector<CurvePointData>& points, float phase) {
-        return modcurve::points(points, phase);
+        return sdk::modcurve::points(points, phase);
     }
 
     /**
@@ -170,12 +170,12 @@ class ModulatorEngine {
      * interpolation), or the preset value at phase 1.0 for non-custom waveforms.
      */
     static float generateOneShotEndValue(const ModInfo& mod) {
-        return modcurve::endValue(mod.waveform, mod.curvePreset, mod.curvePoints);
+        return sdk::modcurve::endValue(mod.waveform, mod.curvePreset, mod.curvePoints);
     }
 
     /** @brief Waveform value for a mod, handling Custom waveforms with curve points. */
     static float generateWaveformForMod(const ModInfo& mod, float phase) {
-        return modcurve::shapeAt(mod.waveform, mod.curvePreset, mod.curvePoints, phase);
+        return sdk::modcurve::shapeAt(mod.waveform, mod.curvePreset, mod.curvePoints, phase);
     }
 
   private:

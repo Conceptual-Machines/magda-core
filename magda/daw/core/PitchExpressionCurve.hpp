@@ -2,10 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <magda/sdk/curve/CurveMath.hpp>
 #include <vector>
 
 #include "ClipInfo.hpp"
-#include "CurveMath.hpp"
 
 /**
  * @file PitchExpressionCurve.hpp
@@ -59,7 +59,7 @@ inline double evaluatePitchExpressionCurve(const std::vector<MidiPitchExpression
         // No stored shaper: a glide bends by the tension scalar alone, the way
         // the tempo lane does. Handles would be a second way to say the same
         // thing and a second thing to serialise.
-        return static_cast<double>(curvemath::evalSegment(
+        return static_cast<double>(sdk::curvemath::evalSegment(
             static_cast<float>(a.semitones), static_cast<float>(b.semitones), 0.0f,
             static_cast<float>(a.tension), false, static_cast<float>(t)));
     }

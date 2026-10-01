@@ -2,9 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <magda/sdk/curve/AutomationCurveSimplifier.hpp>
 #include <vector>
 
-#include "../../../audio/automation/AutomationCurveSimplifier.hpp"
 #include "../../../core/AutomationCommands.hpp"
 #include "../../../core/ParameterUtils.hpp"
 #include "../../../core/UndoManager.hpp"
@@ -603,7 +603,7 @@ void AutomationLaneComponent::simplifyLane(AutomationLaneId laneId, double epsil
     // user's unselected points survive intact.
     struct Entry {
         AutomationPointId id;
-        AutomationCurveSimplifier::Point p;
+        sdk::AutomationCurveSimplifier::Point p;
         bool inScope;
     };
 
@@ -620,12 +620,12 @@ void AutomationLaneComponent::simplifyLane(AutomationLaneId laneId, double epsil
     const auto beatPositionOf = [](const Entry& entry) { return entry.p.beatPosition; };
     std::ranges::sort(entries, {}, beatPositionOf);
 
-    std::vector<AutomationCurveSimplifier::Point> polyline;
+    std::vector<sdk::AutomationCurveSimplifier::Point> polyline;
     polyline.reserve(entries.size());
     for (const auto& e : entries)
         polyline.push_back(e.p);
 
-    auto keepIdx = AutomationCurveSimplifier::simplify(polyline, epsilon);
+    auto keepIdx = sdk::AutomationCurveSimplifier::simplify(polyline, epsilon);
 
     std::vector<bool> keep(entries.size(), false);
     for (auto idx : keepIdx)

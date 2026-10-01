@@ -1,9 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
-
-#include "../../magda/daw/audio/automation/AutomationCurveSimplifier.hpp"
+#include <magda/sdk/curve/AutomationCurveSimplifier.hpp>
 
 using namespace magda;
+using sdk::AutomationCurveSimplifier;
 using Point = AutomationCurveSimplifier::Point;
 
 TEST_CASE("AutomationCurveSimplifier - empty and trivial inputs", "[automation][simplify]") {

@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 
 #include <algorithm>
+#include <magda/sdk/curve/CurveTypes.hpp>
 #include <vector>
 
 #include "ControlTarget.hpp"
@@ -19,17 +20,7 @@ constexpr int NUM_MODS = MODS_PER_PAGE * DEFAULT_MOD_PAGES;
  */
 enum class ModType { LFO, Envelope, Random, Follower };
 
-/**
- * @brief LFO waveform shapes
- */
-enum class LFOWaveform {
-    Sine,
-    Triangle,
-    Square,
-    Saw,
-    ReverseSaw,
-    Custom  // User-defined curve from curve editor
-};
+using LFOWaveform = sdk::LFOWaveform;
 
 /**
  * @brief Tempo sync divisions for LFO rate
@@ -208,33 +199,8 @@ inline SyncDivision teRateOrdinalToSyncDivision(int ordinal) {
     }
 }
 
-/**
- * @brief Curve presets for Custom waveform
- */
-enum class CurvePreset {
-    Triangle,     // Simple triangle
-    Sine,         // Smooth sine-like curve
-    RampUp,       // Linear ramp up
-    RampDown,     // Linear ramp down
-    SCurve,       // S-curve (smooth transition)
-    Exponential,  // Exponential rise/fall
-    Logarithmic,  // Logarithmic rise/fall
-    Custom        // User-edited curve
-};
-
-/**
- * @brief A point on a custom curve (for LFO Custom waveform)
- */
-struct CurvePointData {
-    float phase = 0.0f;    // 0.0 to 1.0, position in cycle
-    float value = 0.5f;    // 0.0 to 1.0, output value
-    float tension = 0.0f;  // -3 to +3, curve tension
-    int curveType = 0;     // 0=Linear, 1=Bezier, 2=Step, 3=HardCorner
-    float inHandleX = 0.0f;
-    float inHandleY = 0.0f;
-    float outHandleX = 0.0f;
-    float outHandleY = 0.0f;
-};
+using CurvePreset = sdk::CurvePreset;
+using CurvePointData = sdk::CurvePointData;
 
 /**
  * @brief LFO trigger modes

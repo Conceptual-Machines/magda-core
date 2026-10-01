@@ -256,6 +256,18 @@ class ProjectSerializer {
     static juce::var serializeCurvePointData(const CurvePointData& data);
     static bool deserializeCurvePointData(const juce::var& json, CurvePointData& data);
 
+    static juce::var serializeModInfo(const ModInfo& mod);
+    static bool deserializeModInfo(const juce::var& json, ModInfo& outMod);
+
+    static juce::var serializeAutomationLaneInfo(const AutomationLaneInfo& lane);
+    static bool deserializeAutomationLaneInfo(const juce::var& json, AutomationLaneInfo& outLane);
+
+    static juce::var serializeAutomationClipInfo(const AutomationClipInfo& clip);
+    static bool deserializeAutomationClipInfo(const juce::var& json, AutomationClipInfo& outClip);
+
+    static juce::var serializeAutomationPoint(const AutomationPoint& point);
+    static bool deserializeAutomationPoint(const juce::var& json, AutomationPoint& outPoint);
+
   private:
     // ========================================================================
     // Atomic deserialization helpers
@@ -347,15 +359,6 @@ class ProjectSerializer {
     // Automation serialization helpers
     // ========================================================================
 
-    static juce::var serializeAutomationLaneInfo(const AutomationLaneInfo& lane);
-    static bool deserializeAutomationLaneInfo(const juce::var& json, AutomationLaneInfo& outLane);
-
-    static juce::var serializeAutomationClipInfo(const AutomationClipInfo& clip);
-    static bool deserializeAutomationClipInfo(const juce::var& json, AutomationClipInfo& outClip);
-
-    static juce::var serializeAutomationPoint(const AutomationPoint& point);
-    static bool deserializeAutomationPoint(const juce::var& json, AutomationPoint& outPoint);
-
     static juce::var serializeAutomationTarget(const AutomationTarget& target);
     static bool deserializeAutomationTarget(const juce::var& json, AutomationTarget& outTarget);
 
@@ -371,9 +374,6 @@ class ProjectSerializer {
 
     static juce::var serializeMacroInfo(const MacroInfo& macro);
     static bool deserializeMacroInfo(const juce::var& json, MacroInfo& outMacro);
-
-    static juce::var serializeModInfo(const ModInfo& mod);
-    static bool deserializeModInfo(const juce::var& json, ModInfo& outMod);
 
     static juce::var serializeParameterInfo(const ParameterInfo& data);
     static bool deserializeParameterInfo(const juce::var& json, ParameterInfo& data);

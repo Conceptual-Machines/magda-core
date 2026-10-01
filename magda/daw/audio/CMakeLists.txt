@@ -464,7 +464,6 @@ target_sources(magda_daw PRIVATE
     # Restore persisted parameters and plugin state onto a live instance (#2243).
     plugin_manager/ExternalPluginState.cpp
     plugin_manager/ExternalPluginState.hpp
-    automation/AutomationCurveSimplifier.cpp
     automation/ModulationBaker.cpp
     # Controller routing (issue #1050 -- Phase C)
     controllers/ControllerParamReader.cpp

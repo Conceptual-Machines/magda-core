@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cmath>
+#include <magda/sdk/curve/CurveTypes.hpp>
 #include <vector>
 
 #include "AutomationStateMachine.hpp"
@@ -31,48 +32,9 @@ enum class AutomationVisualState {
     Overridden,  // Lane exists but the user has taken over — grey
 };
 
-/**
- * @brief Bezier handle for smooth curve control
- *
- * Handles are offsets relative to their parent point.
- * When linked=true, moving one handle mirrors the other.
- */
-struct BezierHandle {
-    double beatOffset = 0.0;  // Beat offset from point
-    double value = 0.0;       // Value offset from point (normalized)
-    bool linked = true;       // Mirror handles when one is moved
-
-    bool isZero() const {
-        return beatOffset == 0.0 && value == 0.0;
-    }
-};
-
-/**
- * @brief A single point on an automation curve
- */
-struct AutomationPoint {
-    AutomationPointId id = INVALID_AUTOMATION_POINT_ID;
-    double beatPosition = 0.0;  // Position in beats
-    double value = 0.5;         // Normalized value 0-1
-
-    AutomationCurveType curveType = AutomationCurveType::Linear;
-    BezierHandle inHandle;   // Handle before the point
-    BezierHandle outHandle;  // Handle after the point
-
-    // Tension control for the curve segment AFTER this point
-    // Range: -1.0 (concave/log) to 0.0 (linear) to +1.0 (convex/exp)
-    double tension = 0.0;
-
-    bool operator<(const AutomationPoint& other) const {
-        if (beatPosition == other.beatPosition)
-            return id < other.id;
-        return beatPosition < other.beatPosition;
-    }
-
-    bool operator==(const AutomationPoint& other) const {
-        return id == other.id;
-    }
-};
+using BezierHandle = sdk::BezierHandle;
+using AutomationPoint = sdk::AutomationPoint;
+static_assert(INVALID_AUTOMATION_POINT_ID == sdk::kInvalidAutomationPointId);
 
 /**
  * @brief Target for automation — alias for the unified ControlTarget.
@@ -123,17 +85,11 @@ juce::String getModParameterDisplayName(const ModInfo& mod, int modParamIndex);
  * Clips contain their own set of points and can be moved,
  * looped, and stretched independently.
  */
-struct AutomationClipInfo {
+struct AutomationClipInfo : sdk::AutomationClip {
     AutomationClipId id = INVALID_AUTOMATION_CLIP_ID;
     AutomationLaneId laneId = INVALID_AUTOMATION_LANE_ID;
     juce::String name;
     juce::Colour colour;
-
-    double startBeats = 0.0;   // Position on timeline in beats
-    double lengthBeats = 4.0;  // Duration in beats
-
-    bool looping = false;
-    double loopLengthBeats = 4.0;  // Loop length in beats
 
     // Editor snap settings, per clip (each clip remembers its own instead of
     // sharing the arrangement's). X = time grid, num/den of a whole note
@@ -144,55 +100,6 @@ struct AutomationClipInfo {
     bool snapYEnabled = false;
     int snapYNumerator = 1;
     int snapYDenominator = 8;
-
-    std::vector<AutomationPoint> points;
-
-    // Helpers
-    double getEndBeats() const {
-        return startBeats + lengthBeats;
-    }
-
-    bool containsBeat(double beat) const {
-        return beat >= startBeats && beat < getEndBeats();
-    }
-
-    bool overlapsBeats(double start, double end) const {
-        return startBeats < end && getEndBeats() > start;
-    }
-
-    /**
-     * @brief Get local beat position within clip (0 to length)
-     */
-    double getLocalBeat(double globalBeat) const {
-        double localBeatPosition = globalBeat - startBeats;
-        if (looping && loopLengthBeats > 0.0) {
-            localBeatPosition = std::fmod(localBeatPosition, loopLengthBeats);
-            if (localBeatPosition < 0.0)
-                localBeatPosition += loopLengthBeats;
-        }
-        return localBeatPosition;
-    }
-
-    /**
-     * @brief Local beat corresponding to the clip's end, as a limit from the
-     *        left: the wrapped loop position that is sounding as the clip
-     *        runs out. Used to hold a clip's final value across the gap that
-     *        follows it.
-     */
-    double getEndLocalBeat() const {
-        if (looping && loopLengthBeats > 0.0) {
-            // fmod of non-representable length/loop ratios lands ~1e-16 off
-            // an exact cycle boundary; treat both sides as "on the boundary"
-            // (same tolerance as the flattener's edge epsilon).
-            constexpr double kBoundaryEpsilon = 0.0001;
-            double local = std::fmod(lengthBeats, loopLengthBeats);
-            if (lengthBeats > 0.0 &&
-                (local <= kBoundaryEpsilon || loopLengthBeats - local <= kBoundaryEpsilon))
-                return loopLengthBeats;
-            return local;
-        }
-        return lengthBeats;
-    }
 
     // Default automation clip colors
     static inline const std::array<juce::uint32, 8> defaultColors = {

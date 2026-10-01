@@ -2,11 +2,11 @@
 
 #include <algorithm>
 #include <atomic>
+#include <magda/sdk/curve/AutomationCurve.hpp>
 #include <map>
 #include <queue>
 #include <set>
 
-#include "core/AutomationCurve.hpp"
 #include "core/ChainWalk.hpp"
 #include "core/ClipLaneFlattener.hpp"
 #include "core/RackInfo.hpp"
@@ -697,7 +697,8 @@ void Builder::resolveLanes() {
         // lane's own precedence (#1087).
         const auto getClip = [this](magda::AutomationClipId clipId) { return findClip(clipId); };
         curve = magda::flattenClipLane(lane, getClip, [&](double beat) {
-            return magda::automation::laneValueAtBeat(lane, getClip, beat);
+            return magda::sdk::automation::laneValueAtBeat(lane.isAbsolute(), lane.absolutePoints,
+                                                           lane.clipIds, getClip, beat);
         });
     }
 }

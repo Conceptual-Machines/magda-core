@@ -3,9 +3,9 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <magda/sdk/curve/AutomationCurve.hpp>
 #include <ranges>
 
-#include "AutomationCurve.hpp"
 #include "ClipLaneFlattener.hpp"
 #include "GridDivision.hpp"
 #include "ParameterInfo.hpp"
@@ -1055,8 +1055,9 @@ double AutomationManager::getValueAtBeat(AutomationLaneId laneId, double beatPos
     if (!lane)
         return 0.5;
 
-    return automation::laneValueAtBeat(
-        *lane, [this](AutomationClipId clipId) { return getClip(clipId); }, beatPosition);
+    return sdk::automation::laneValueAtBeat(
+        lane->isAbsolute(), lane->absolutePoints, lane->clipIds,
+        [this](int clipId) { return getClip(clipId); }, beatPosition);
 }
 
 double AutomationManager::getClipValueAtBeat(AutomationClipId clipId,
@@ -1070,7 +1071,7 @@ double AutomationManager::getClipValueAtBeat(AutomationClipId clipId,
 
 double AutomationManager::interpolatePoints(const std::vector<AutomationPoint>& points,
                                             double beatPosition) {
-    return automation::valueAtBeat(points, beatPosition);
+    return sdk::automation::valueAtBeat(points, beatPosition);
 }
 
 // ============================================================================
