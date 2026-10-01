@@ -543,6 +543,7 @@ target_link_libraries(magda_daw
     PUBLIC
     magda_types  # leaf value-type library (#1831); its types appear in magda_daw's public headers
     magda_music  # leaf music-theory library (#1833)
+    magda::sdk_core  # JUCE-free SDK core (#2239)
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,magda_devices>"  # SDK runtime
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,magda_base_devices>"  # engine-neutral base pack
     # Host-owned legacy devices retain registration anchors while their DSP

@@ -196,6 +196,9 @@ add_subdirectory(third_party/JUCE)
 # Signalsmith Stretch sits beside it and is header-only, so it needs no target.
 add_subdirectory(third_party/soundtouch)
 
+# magda-sdk: the JUCE-free core shared with other hosts (#2239).
+add_subdirectory(third_party/magda-sdk)
+
 # LLM API client module (juce_core only)
 juce_add_module(${CMAKE_CURRENT_SOURCE_DIR}/third_party/juce-llm/juce_llm)
 
