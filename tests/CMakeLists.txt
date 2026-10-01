@@ -68,6 +68,7 @@ set(TEST_SOURCES
     # An idle instrument skips its render, exactly (#2786)
     devices/test_instrument_idle.cpp
     devices/test_device_sdk_handles.cpp
+    devices/test_device_sdk_state.cpp
     devices/test_external_insert_registry.cpp
     devices/test_insert_capture.cpp
     devices/test_plugin_window_manager.cpp
@@ -621,6 +622,7 @@ add_executable(magda_saved_state_tests
     project/test_project_version_migration.cpp
     ../magda/daw/core/DeviceState.cpp
     ../magda/daw/audio/plugins/InternalPluginRegistry.cpp
+    ../magda/daw/audio/plugins/DeviceStateDocument.cpp
     ../magda/daw/audio/plugins/SavedDeviceState.cpp
 )
 target_compile_features(magda_saved_state_tests PRIVATE cxx_std_23)
@@ -632,6 +634,7 @@ target_include_directories(magda_saved_state_tests PRIVATE
 target_compile_definitions(magda_saved_state_tests PRIVATE JUCE_USE_CURL=0)
 target_link_libraries(magda_saved_state_tests PRIVATE
     Catch2::Catch2WithMain
+    magda::sdk_core
     juce::juce_core
     juce::juce_events
     juce::juce_data_structures

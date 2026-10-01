@@ -1,5 +1,7 @@
 #include "DeviceState.hpp"
 
+#include <algorithm>
+
 namespace magda::device_state {
 
 namespace {
@@ -302,6 +304,32 @@ std::optional<int> schemaVersionOf(const juce::String& text) {
 bool isFutureDeviceState(const juce::String& text) {
     const auto version = schemaVersionOf(text);
     return version.has_value() && *version > kSchemaVersion;
+}
+
+bool isEngineOwnedRootProperty(const juce::Identifier& name) {
+    static const juce::Identifier kOwned[] = {
+        juce::Identifier("id"),
+        juce::Identifier("type"),
+        juce::Identifier("enabled"),
+        juce::Identifier("process"),
+        juce::Identifier("frozen"),
+        juce::Identifier("quickParamName"),
+        juce::Identifier("windowPos"),
+        juce::Identifier("windowX"),
+        juce::Identifier("windowY"),
+        juce::Identifier("windowLocked"),
+        juce::Identifier("masterPluginID"),
+        juce::Identifier("sidechainSourceID"),
+        juce::Identifier("parameters"),
+        juce::Identifier("magdaDeviceId"),
+        juce::Identifier("magdaIsInstrument"),
+    };
+    return std::find(std::begin(kOwned), std::end(kOwned), name) != std::end(kOwned);
+}
+
+bool isEngineOwnedChild(const Node& child) {
+    return child.type == "MODIFIERASSIGNMENTS" || child.type == "MACROPARAMETERS" ||
+           child.type == "SIDECHAINCONNECTIONS";
 }
 
 void forEachNode(const Node& root, const std::function<void(const Node&)>& visit) {

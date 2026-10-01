@@ -7,7 +7,7 @@
 #include "DeviceState.hpp"
 #include "ProjectManager.hpp"
 #include "TrackManager.hpp"
-#include "audio/plugins/SavedDeviceState.hpp"
+#include "audio/plugins/DeviceStateDocument.hpp"
 
 namespace magda {
 
@@ -64,17 +64,15 @@ void LoadImpulseResponseCommand::performAction() {
 
 void projectAuthoredStateToDevice(daw::audio::MagdaDevice& device, const juce::String& docText,
                                   const juce::String& deviceType) {
-    auto tree = daw::audio::savedDeviceStateTree(docText);
-    if (!tree.isValid()) {
-        // An empty snapshot is still a state: "nothing authored". Project a
-        // bare typed tree so a device whose contract reads absence as none (a
-        // convolution's impulse response) actually unloads, rather than the
-        // model saying the edit was undone while the engine keeps playing it.
-        tree = juce::ValueTree("PLUGIN");
-        tree.setProperty(juce::Identifier("type"), deviceType, nullptr);
-    }
-
-    device.restoreState(tree);
+    // An empty snapshot is still a state: "nothing authored". Project a bare
+    // root so a device whose contract reads absence as none (a convolution's
+    // impulse response) actually unloads, rather than the model saying the edit
+    // was undone while the engine keeps playing it.
+    const auto state = daw::audio::normaliseDeviceState(docText);
+    const auto result = device.restoreState(state ? state->document.root : sdk::StateNode{});
+    if (!result.ok)
+        juce::Logger::writeToLog("[device] " + deviceType +
+                                 " refused its saved state: " + juce::String(result.message));
 }
 
 void projectAuthoredStateToRenderedDevice(const AudioEngine& engine,

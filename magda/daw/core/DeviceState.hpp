@@ -120,6 +120,18 @@ std::optional<int> schemaVersionOf(const juce::String& text);
  */
 bool isFutureDeviceState(const juce::String& text);
 
+/**
+ * @brief Whether @p name is the engine's vocabulary on a plugin tree rather than a device's:
+ *        the object id, window and routing bookkeeping, and MAGDA's two pad markers.
+ *
+ * What a v1 document's root carries that no device reads. The `type` among them is the
+ * device's identity, which the document names in `deviceType`.
+ */
+bool isEngineOwnedRootProperty(const juce::Identifier& name);
+
+/// Child trees the engine attaches to every plugin, which MAGDA rebuilds from its own model.
+bool isEngineOwnedChild(const Node& child);
+
 /// Depth-first walk over `root` and all descendants, root first.
 void forEachNode(const Node& root, const std::function<void(const Node&)>& visit);
 
