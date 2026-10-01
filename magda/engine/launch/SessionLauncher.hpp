@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <farbot/RealtimeObject.hpp>
+#include <magda/sdk/tap/LaunchTap.hpp>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -14,7 +15,6 @@
 #include "launch/LaunchHandle.hpp"
 #include "launch/LaunchRequests.hpp"
 #include "launch/SlotRuns.hpp"
-#include "tap/LaunchTap.hpp"
 
 /**
  * @file SessionLauncher.hpp

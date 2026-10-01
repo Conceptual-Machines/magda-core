@@ -2,6 +2,8 @@
 
 #include <atomic>
 #include <cstdint>
+#include <magda/sdk/tap/LevelTap.hpp>
+#include <magda/sdk/tap/ValueTap.hpp>
 #include <map>
 #include <unordered_map>
 
@@ -9,9 +11,7 @@
 #include "exec/EngineDevice.hpp"
 #include "param/ParamKey.hpp"
 #include "plan/RenderPlan.hpp"
-#include "tap/LevelTap.hpp"
 #include "tap/MidiTap.hpp"
-#include "tap/ValueTap.hpp"
 
 namespace magda::engine {
 

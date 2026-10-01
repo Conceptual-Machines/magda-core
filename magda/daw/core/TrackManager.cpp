@@ -1,13 +1,13 @@
 #include "TrackManager.hpp"
 
 #include <algorithm>
+#include <magda/sdk/lockfree/SidechainTriggerBus.hpp>
 #include <map>
 #include <ranges>
 #include <set>
 #include <unordered_set>
 
 #include "../audio/MidiBridge.hpp"
-#include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "../engine/PluginService.hpp"
 #include "../project/ProjectManager.hpp"

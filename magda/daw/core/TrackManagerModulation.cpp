@@ -1,7 +1,7 @@
 #include <cmath>
+#include <magda/sdk/lockfree/SidechainTriggerBus.hpp>
 #include <set>
 
-#include "../audio/plugins/SidechainTriggerBus.hpp"
 #include "ModulatorEngine.hpp"
 #include "RackInfo.hpp"
 #include "SidechainTraversal.hpp"

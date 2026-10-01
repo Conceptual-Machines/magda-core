@@ -474,9 +474,7 @@ target_sources(magda_daw PRIVATE
     osc/OscService.cpp
     # Headers (listed for IDE visibility)
     session/SessionClipStateQueue.hpp
-    MeteringBuffer.hpp
     TrackMeters.hpp
-    params/ParameterQueue.hpp
     transport/TransportStateManager.hpp
     midi/MidiActivityMonitor.hpp
     params/ParameterManager.hpp

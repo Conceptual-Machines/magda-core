@@ -38,6 +38,21 @@ LaunchHandle* LaunchHandleTable::find(const SlotKey& key) const {
 
 namespace {
 
+LaunchTap::Reading readingOf(const LaunchHandle& handle) {
+    LaunchTap::Reading reading;
+    reading.playing = handle.playState() == LaunchHandle::PlayState::playing;
+    reading.holdsSection = handle.holdsSection();
+
+    if (const auto queued = handle.queuedState())
+        reading.queued = *queued == LaunchHandle::QueueState::playQueued ? LaunchTap::Queued::play
+                                                                         : LaunchTap::Queued::stop;
+
+    if (const auto played = handle.playedRange())
+        reading.elapsedBeats = played->length();
+
+    return reading;
+}
+
 /**
  * @brief Apply @p request against the table that is live now.
  *
@@ -257,7 +272,7 @@ void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& request
             // Published by the block that decided it, so the UI is never a
             // frame behind the audio and has nothing to poll (#2303).
             if (entry.tap != nullptr)
-                entry.tap->write(*entry.handle);
+                entry.tap->write(readingOf(*entry.handle));
 
             if (runs != nullptr)
                 publishRunEdges(*runs, entry, range, status, sourceFor(clips, entry.key),

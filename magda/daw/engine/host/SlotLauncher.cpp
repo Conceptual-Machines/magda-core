@@ -2,12 +2,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <magda/sdk/tap/LaunchTap.hpp>
 
 #include "../../core/ClipManager.hpp"
 #include "../../core/TrackManager.hpp"
 #include "exec/EngineSession.hpp"
 #include "launch/LaunchRequests.hpp"
-#include "tap/LaunchTap.hpp"
 #include "transport/TempoMap.hpp"
 
 namespace magda::daw::engine_host {

@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "core/BlockMath.hpp"
+#include "exec/AudioBlockView.hpp"
 #include "exec/BlockProfile.hpp"
 
 namespace magda::engine {
@@ -2035,7 +2036,7 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // reader's cadence and not which blocks the executor bothered
             // to report.
             if (auto* tap = meterForOp_[i]; tap != nullptr)
-                tap->write(out, numSamples);
+                tap->write(viewOf(out), numSamples);
             break;
         }
 
