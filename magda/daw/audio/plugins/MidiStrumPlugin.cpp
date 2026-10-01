@@ -334,11 +334,11 @@ void MidiStrumPlugin::scheduleStrum() {
 }
 
 void MidiStrumPlugin::process(DeviceProcessContext& context) {
-    if (context.midiIn == nullptr || context.midiOut == nullptr || context.numSamples <= 0)
+    if (context.midiIn == nullptr || context.midiOut == nullptr || context.numSamples() <= 0)
         return;
-    const auto& in = *context.midiIn;
-    auto& midi = *context.midiOut;
-    const int n = context.numSamples;
+    const DeviceMidiInput in(*context.midiIn, sampleRate_);
+    DeviceMidiOutput midi(*context.midiOut, sampleRate_);
+    const int n = context.numSamples();
 
     // Stop mid-strum: the upstream clip stops sending note-offs, so release
     // everything sounding and drop the latched chord on the playing->stopped

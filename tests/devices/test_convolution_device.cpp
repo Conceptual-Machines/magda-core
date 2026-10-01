@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
 
+#include "DeviceTestBlock.hpp"
 #include "core/DeviceState.hpp"
 #include "core/ParameterUtils.hpp"
 #include "magda/daw/audio/plugins/MagdaConvolutionPlugin.hpp"
@@ -48,10 +49,8 @@ void prepare(audio::MagdaDevice& device, double sampleRate = kSampleRate) {
 }
 
 void process(audio::MagdaDevice& device, juce::AudioBuffer<float>& buffer) {
-    audio::DeviceProcessContext context;
-    context.audio = &buffer;
-    context.numSamples = buffer.getNumSamples();
-    device.process(context);
+    magda::test::DeviceTestBlock block(buffer);
+    device.process(block.context);
 }
 
 /// One block of a unit impulse through the device.
@@ -150,7 +149,7 @@ TEST_CASE("A loaded impulse response convolves the signal", "[devices][convoluti
     const auto rendered = renderImpulse(convolution);
     CHECK(peakIndex(rendered) == kDelaySamples);
     CHECK(rendered.getMagnitude(0, kBlockSize) > 0.1f);
-    CHECK(convolution.properties().tailLengthSeconds > 0.0);
+    CHECK(convolution.tailSamples() > 0);
 
     // A control still moving takes the sub-blocked path; the convolution survives it.
     convolution.setParameterValue(Convolution::kGain, 6.0f);
@@ -211,13 +210,10 @@ TEST_CASE("Restoring a document without an IR unloads the device", "[devices][co
     REQUIRE(convolution.loadImpulseResponse(ir.getData(), ir.getSize()));
     convolution.setIrName("Doomed");
 
-    convolution.restoreState(juce::ValueTree("PLUGIN"));
+    CHECK(convolution.restoreState(magda::sdk::StateNode{}).ok);
     CHECK(convolution.irName().isEmpty());
-    CHECK(convolution.properties().tailLengthSeconds == Approx(0.0).margin(1.0e-9));
-
-    juce::ValueTree flushed("PLUGIN");
-    convolution.flushState(flushed);
-    CHECK_FALSE(flushed.hasProperty(Convolution::StateIDs::irFileData));
+    CHECK(convolution.tailSamples() == 0);
+    CHECK(convolution.irData().getSize() == 0);
 
     convolution.setParameterValue(Convolution::kMix, 1.0f);
     prepare(convolution);

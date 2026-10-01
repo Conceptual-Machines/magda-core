@@ -486,7 +486,8 @@ void MutableCloudsPlugin::reset() {
 }
 
 void MutableCloudsPlugin::process(DeviceProcessContext& context) {
-    if (context.audio == nullptr || context.numSamples <= 0)
+    const int numSamples = context.numSamples();
+    if (numSamples <= 0)
         return;
 
     float v[kNumParams];
@@ -509,14 +510,14 @@ void MutableCloudsPlugin::process(DeviceProcessContext& context) {
     p->trigger = false;
     p->gate = false;
 
-    auto& buffer = *context.audio;
-    const int start = context.startSample;
-    auto* destL = buffer.getWritePointer(0, start);
-    float* destR = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1, start) : nullptr;
+    if (context.audio.numChannels() < 1)
+        return;
+    auto* destL = context.audio.channel(0);
+    float* destR = context.audio.numChannels() > 1 ? context.audio.channel(1) : nullptr;
 
     // Tap the dry input into a decimated peak envelope; the faceplate uses its
     // recent level to drive the ambient grain-cloud liveliness.
-    for (int i = 0; i < context.numSamples; ++i) {
+    for (int i = 0; i < numSamples; ++i) {
         const float s = destR != nullptr ? 0.5f * (destL[i] + destR[i]) : destL[i];
         envPeak_ = juce::jmax(envPeak_, std::abs(s));
         if (++envCount_ >= envBucketLen_) {
@@ -526,7 +527,7 @@ void MutableCloudsPlugin::process(DeviceProcessContext& context) {
         }
     }
 
-    impl_->process(destL, destR, context.numSamples);
+    impl_->process(destL, destR, numSamples);
 }
 
 }  // namespace magda::daw::audio

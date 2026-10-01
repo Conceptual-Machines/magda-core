@@ -95,7 +95,8 @@ class MyDevice : public MagdaDevice {
     // Audio thread:
     void process(DeviceProcessContext& ctx) override {
         float g = gainLevel.load(std::memory_order_relaxed);
-        ctx.audio->applyGain(ctx.startSample, ctx.numSamples, g);
+        for (int c = 0; c < ctx.audio.numChannels(); ++c)
+            juce::FloatVectorOperations::multiply(ctx.audio.channel(c), g, ctx.numSamples());
     }
 };
 ```
@@ -111,9 +112,9 @@ class MyDevice : public MagdaDevice {
 
     // Audio thread: update running peak
     void process(DeviceProcessContext& ctx) override {
-        auto& buf = *ctx.audio;
-        float newPeakL = buf.getMagnitude(0, ctx.startSample, ctx.numSamples);
-        float newPeakR = buf.getMagnitude(1, ctx.startSample, ctx.numSamples);
+        auto buf = juceAudio(ctx);  // non-owning juce::AudioBuffer over the host's channel pointers
+        float newPeakL = buf.getMagnitude(0, 0, ctx.numSamples());
+        float newPeakR = buf.getMagnitude(1, 0, ctx.numSamples());
 
         // Only store if new peak is greater than current
         auto prevL = peakLeft.load(std::memory_order_relaxed);
@@ -139,9 +140,9 @@ class MyDevice : public MagdaDevice {
 
 Do not read a ValueTree or CachedValue on the audio thread. Automatable parameters reach a device already resolved: the engine combines stored value, automation and modulation (`magda/engine/param/ParamResolve.hpp`) and hands the device one value stream per parameter. A device writes the values it is given into its DSP at the top of `process()`; `MagdaCompiledEffect::process()` does this in `writeZones()` before `compute()`.
 
-`MagdaDevice::setParameterValue(slot, normalized)` is the message-thread entry point. Store it in a `std::atomic<float>` (as `CompiledFaustInterface` does) and read that on the audio thread.
+`sdk::Device::setParameterValue(slot, normalized)` is the host's per-block write (`setParameterSegments` for a sample-accurate one). Store it in a `std::atomic<float>` (as `CompiledFaustInterface` does) and read that on the audio thread.
 
-Non-parameter state (sample paths, sequencer steps) comes in through `restoreState()` on the message thread. Build the new data off-thread and swap it in atomically (a pointer exchange or an `AbstractFifo` message), never edit the structure the audio thread is iterating.
+Non-parameter state (sample paths, sequencer steps) comes in through `restoreState(const sdk::StateNode&)` on the message thread. Build the new data off-thread and swap it in atomically (a pointer exchange or an `AbstractFifo` message), never edit the structure the audio thread is iterating.
 
 ### Pattern 4: std::atomic<bool> for Flags and Triggers
 
@@ -198,28 +199,30 @@ class MeterBridge {
 
 ### Device Lifecycle & Threading
 
-`MagdaDevice` (`magda/daw/audio/plugins/MagdaDevice.hpp`) is the engine-neutral device contract.
+`sdk::Device` (magda-sdk, `magda/sdk/device/Device.hpp`; docs/device-interface.md there) is the JUCE-free device contract. `MagdaDevice` (`magda/daw/audio/plugins/MagdaDevice.hpp`) adds how the app describes parameters.
 
 | Call | Thread |
 |------|--------|
 | `prepare()`, `release()`, `reset()` | message thread, before/after rendering |
-| `parameterValue()`, `setParameterValue()`, `flushState()`, `restoreState()` | message thread |
-| `process(DeviceProcessContext&)` | audio thread, every block |
+| `parameterValue()`, `restoreState()`, `latencySamples()`, `tailSamples()` | message thread |
+| `process(ProcessContext&)`, `setParameterValue()` | audio thread, every block |
 
 - Never touch a `ValueTree`, `magda::UndoManager` or model manager from `process()`.
-- Everything a device needs per block arrives in `DeviceProcessContext`.
+- Everything a device needs per block arrives in `sdk::ProcessContext`.
 
-### DeviceProcessContext Quick Reference
+### ProcessContext Quick Reference
 
 ```cpp
-void process(DeviceProcessContext& ctx) override {
-    auto& audio = *ctx.audio;              // juce::AudioBuffer<float>&, window is [startSample, startSample + numSamples)
-    const auto* midiIn = ctx.midiIn;       // may be null: no MIDI routed
-    auto* midiOut = ctx.midiOut;           // DeviceMidiOutput*, null with midiIn
+void process(DeviceProcessContext& ctx) override {   // DeviceProcessContext = sdk::ProcessContext
+    auto& audio = ctx.audio;               // sdk::BufferView: host channel pointers, frame 0 is the block's first frame
+    int n = ctx.numSamples();
+    const auto* midiIn = ctx.midiIn;       // sdk::MidiInput*, may be null: no MIDI routed
+    auto* midiOut = ctx.midiOut;           // sdk::MidiOutput*, null with midiIn; addEvent returns false once the port's budget is spent
     const auto* tempo = ctx.tempoMap;
     bool playing = ctx.isPlaying;
-    // ctx.sidechain: read-only key channels, ctx.numSidechainChannels may be 0
+    // ctx.sidechain: std::optional<ConstBufferView>, absent when nothing is routed
     // sample rate and max block size come from prepare(), not from the context
+    // juceAudio(ctx) and DeviceMidiInput/DeviceMidiOutput (DeviceJuceInterop.hpp) are the JUCE views
 }
 ```
 

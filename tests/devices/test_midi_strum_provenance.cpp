@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <initializer_list>
 
+#include "DeviceTestBlock.hpp"
 #include "TestDeviceMidiBuffer.hpp"
 #include "magda/daw/audio/plugins/MidiStrumPlugin.hpp"
 
@@ -15,10 +16,12 @@ magda::test::DeviceMidiBuffer runBlock(audio::MidiStrumPlugin& strum,
     for (const auto& message : input)
         in.events.push_back({message, source});
     magda::test::DeviceMidiBuffer out;
-    audio::DeviceProcessContext context;
+    juce::AudioBuffer<float> contextAudio(1, 2400);
+    contextAudio.clear();
+    magda::test::DeviceTestBlock contextBlock(contextAudio);
+    auto& context = contextBlock.context;
     context.midiIn = &in;
     context.midiOut = &out;
-    context.numSamples = 2400;
     context.isPlaying = true;
     strum.process(context);
     return out;

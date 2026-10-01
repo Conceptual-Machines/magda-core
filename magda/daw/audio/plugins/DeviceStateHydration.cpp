@@ -11,6 +11,8 @@
 #include "core/TrackInfo.hpp"
 #include "plugins/DeviceCatalogParameters.hpp"
 #include "plugins/DevicePluginHandle.hpp"
+#include "plugins/DeviceStateDocument.hpp"
+#include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MagdaDevice.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 
@@ -65,11 +67,8 @@ ParamDomain resolveDomain(const DeviceInfo& device, const ds::Doc& doc,
 /// device that is not a MagdaDevice.
 std::unique_ptr<MagdaDevice> metadataDevice(const juce::String& pluginId, const ds::Doc& doc) {
     auto device = createDetachedDevice(pluginId);
-    if (device != nullptr) {
-        auto tree = ds::toValueTree(doc.root);
-        tree.setProperty(juce::Identifier("type"), doc.deviceType, nullptr);
-        device->restoreState(tree);
-    }
+    if (device != nullptr)
+        device->restoreState(toSdkNode(doc.root));
     return device;
 }
 
@@ -111,10 +110,64 @@ Provenance provenanceFromMagdaVersion(const juce::String& version) {
     return {.savedBeforeWrapperCutover = major == 0 && minor < 20};
 }
 
-bool hydrateParametersFromDeviceState(DeviceInfo& device, const Provenance& provenance) {
-    if (device.format != PluginFormat::Internal || !device.hasPluginState())
+namespace {
+
+/**
+ * Parameter values a runtime Faust device's older state carried as plain properties under
+ * its parameters' stable ids (`param_01`, `voiceMode`, `glide`, `bendRange`), from before the
+ * model held them. Read once here, for entries the model lacks, and never by the device.
+ */
+bool hydrateFromRetiredProperties(DeviceInfo& device) {
+    const auto* spec = findInternalPluginSpec(device.pluginId);
+    if (spec == nullptr || !spec->stateDefinesParameters)
         return false;
 
+    const auto doc = ds::decodeSavedState(device.pluginState);
+    if (!doc || doc->root.props.size() == 0)
+        return false;
+
+    const auto metadata = metadataDevice(device.pluginId, *doc);
+    if (metadata == nullptr)
+        return false;
+
+    bool added = false;
+    for (int slot = 0; slot < metadata->parameterCount(); ++slot) {
+        auto info = metadata->parameterInfo(slot);
+        if (info.stableId.isEmpty() || !metadata->offersParameter(slot))
+            continue;
+
+        const auto* saved = doc->root.props.getVarPointer(juce::Identifier(info.stableId));
+        if (saved == nullptr || device.findParameterByIndex(slot) != nullptr)
+            continue;
+
+        const auto alreadyHeld =
+            std::any_of(device.parameters.begin(), device.parameters.end(),
+                        [&info](const ParameterInfo& p) { return p.stableId == info.stableId; });
+        if (alreadyHeld)
+            continue;
+
+        info.valueConvention = ParameterValueConvention::Real;
+        info.paramIndex = slot;
+        info.currentValue = ParameterUtils::normalizedToReal(
+            juce::jlimit(0.0f, 1.0f, static_cast<float>(*saved)), info);
+        device.parameters.push_back(std::move(info));
+        added = true;
+    }
+
+    if (added)
+        std::stable_sort(device.parameters.begin(), device.parameters.end(),
+                         [](const ParameterInfo& a, const ParameterInfo& b) {
+                             return a.paramIndex < b.paramIndex;
+                         });
+    return added;
+}
+
+}  // namespace
+
+namespace {
+
+/// The pre-#2317 `params` record, in the order the chronology rules want it read.
+bool hydrateFromParamsRecord(DeviceInfo& device, const Provenance& provenance) {
     const auto doc = ds::decode(device.pluginState);
     if (!doc || doc->params.empty())
         return false;
@@ -210,6 +263,18 @@ bool hydrateParametersFromDeviceState(DeviceInfo& device, const Provenance& prov
                          });
 
     return added;
+}
+
+}  // namespace
+
+bool hydrateParametersFromDeviceState(DeviceInfo& device, const Provenance& provenance) {
+    if (device.format != PluginFormat::Internal || !device.hasPluginState())
+        return false;
+
+    // The record is newer than the retired properties, so it fills first.
+    const bool fromRecord = hydrateFromParamsRecord(device, provenance);
+    const bool fromProperties = hydrateFromRetiredProperties(device);
+    return fromRecord || fromProperties;
 }
 
 void completeDeviceParameters(DeviceInfo& device, const Provenance& provenance) {

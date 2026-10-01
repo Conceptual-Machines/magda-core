@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
 
+#include "DeviceTestBlock.hpp"
 #include "TestDeviceMidiBuffer.hpp"
 #include "magda/daw/audio/plugins/FaustInstrumentPlugin.hpp"
 
@@ -26,7 +27,7 @@ process = voice <: _, _;
 constexpr int kBlockSize = 64;
 constexpr double kSampleRate = 44100.0;
 
-class ConstantTempo final : public audio::DeviceTempoMap {
+class ConstantTempo final : public magda::sdk::TempoMap {
   public:
     double beatsAtSeconds(double seconds) const override {
         return seconds * bpm / 60.0;
@@ -38,15 +39,14 @@ class ConstantTempo final : public audio::DeviceTempoMap {
     double bpm = 120.0;
 };
 
-float renderBlock(audio::MagdaDevice& device, const audio::DeviceTempoMap& tempo,
+float renderBlock(audio::MagdaDevice& device, const magda::sdk::TempoMap& tempo,
                   double startSeconds, magda::test::DeviceMidiBuffer& midi) {
     juce::AudioBuffer<float> buffer(2, kBlockSize);
     buffer.clear();
 
     magda::test::DeviceMidiBuffer out;
-    audio::DeviceProcessContext context;
-    context.audio = &buffer;
-    context.numSamples = kBlockSize;
+    magda::test::DeviceTestBlock contextBlock(buffer, kBlockSize);
+    auto& context = contextBlock.context;
     context.midiIn = &midi;
     context.midiOut = &out;
     context.tempoMap = &tempo;

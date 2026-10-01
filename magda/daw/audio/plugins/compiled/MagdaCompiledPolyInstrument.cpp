@@ -475,7 +475,7 @@ void MagdaCompiledPolyInstrument::reset() {
 }
 
 void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
-    if (!poly_ || context.audio == nullptr || context.numSamples <= 0)
+    if (!poly_ || context.numSamples() <= 0)
         return;
 
     if (pendingVoiceFlush_.exchange(false, std::memory_order_acq_rel))
@@ -487,9 +487,9 @@ void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
         resetAllVoices();
     wasPlaying_ = context.isPlaying;
 
-    const int n = context.numSamples;
-    const int start = context.startSample;
-    const int hostChannels = context.audio->getNumChannels();
+    auto audio = juceAudio(context);
+    const int n = context.numSamples();
+    const int hostChannels = audio.getNumChannels();
     if (hostChannels <= 0 || numOutputs_ <= 0 || scratchOut_.getNumSamples() <= 0)
         return;
 
@@ -601,7 +601,7 @@ void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
 
             for (int ch = 0; ch < hostChannels; ++ch) {
                 const int srcCh = (numOutputs_ == 1) ? 0 : (ch % numOutputs_);
-                context.audio->addFrom(ch, start + segStart + done, scratchOut_, srcCh, 0, chunk);
+                audio.addFrom(ch, segStart + done, scratchOut_, srcCh, 0, chunk);
             }
             done += chunk;
         }
@@ -615,11 +615,12 @@ void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
         // juce::MidiBuffer has nowhere to put it, so the engine carries it on
         // the port (#2418). Whatever raised it has taken the note-offs away
         // with it, so anything still sounding will never be told to stop.
-        if (context.midiIn->isAllNotesOff())
+        const DeviceMidiInput in(*context.midiIn, sampleRate_);
+        if (in.isAllNotesOff())
             releaseAllVoices();
 
-        for (int eventIndex = 0; eventIndex < context.midiIn->size(); ++eventIndex) {
-            const auto& m = context.midiIn->message(eventIndex);
+        for (int eventIndex = 0; eventIndex < in.size(); ++eventIndex) {
+            const auto m = in.message(eventIndex);
             int evSample = midiEventPosition(m.getTimeStamp(), sampleRate_).sample;
             evSample = juce::jlimit(cursor, n, evSample);  // clamp + keep monotonic
             renderSegment(cursor, evSample - cursor);

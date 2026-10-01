@@ -1,5 +1,6 @@
 #include "plugins/ToneGeneratorPlugin.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace magda::daw::audio {
@@ -174,10 +175,11 @@ float ToneGeneratorPlugin::oscillate(Waveform waveform, float phase, float phase
 }
 
 void ToneGeneratorPlugin::process(DeviceProcessContext& context) {
-    if (context.audio == nullptr || context.numSamples <= 0)
+    const int numSamples = context.numSamples();
+    const int numChannels = context.audio.numChannels();
+    if (numSamples <= 0)
         return;
 
-    const int numChannels = context.audio->getNumChannels();
     if (numChannels <= 0)
         return;
 
@@ -194,8 +196,8 @@ void ToneGeneratorPlugin::process(DeviceProcessContext& context) {
 
     // The generator replaces whatever it was handed: it takes no audio input,
     // so anything already in the buffer is not part of its signal.
-    float* first = context.audio->getWritePointer(0, context.startSample);
-    for (int i = 0; i < context.numSamples; ++i) {
+    float* first = context.audio.channel(0);
+    for (int i = 0; i < numSamples; ++i) {
         const float sample = oscillate(waveform, phase_, phaseIncrement, bandLimit) * gain;
         first[i] = std::isfinite(sample) ? juce::jlimit(-1.0f, 1.0f, sample) : 0.0f;
 
@@ -205,8 +207,7 @@ void ToneGeneratorPlugin::process(DeviceProcessContext& context) {
     }
 
     for (int channel = 1; channel < numChannels; ++channel)
-        context.audio->copyFrom(channel, context.startSample, *context.audio, 0,
-                                context.startSample, context.numSamples);
+        std::copy(first, first + numSamples, context.audio.channel(channel));
 }
 
 }  // namespace magda::daw::audio

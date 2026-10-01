@@ -3,6 +3,7 @@
 #include <memory>
 #include <vector>
 
+#include "DeviceTestBlock.hpp"
 #include "TestDeviceMidiBuffer.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 
@@ -176,11 +177,10 @@ TEST_CASE("Two note-ons of one pitch inside one sample are two notes", "[devices
         juce::AudioBuffer<float> audio(2, kBlock);
         audio.clear();
         magda::test::DeviceMidiBuffer out;
-        DeviceProcessContext context;
-        context.audio = &audio;
+        magda::test::DeviceTestBlock block(audio);
+        auto& context = block.context;
         context.midiIn = &midi;
         context.midiOut = &out;
-        context.numSamples = kBlock;
         context.isPlaying = true;
         sampler.process(context);
 

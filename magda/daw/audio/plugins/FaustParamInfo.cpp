@@ -181,10 +181,8 @@ magda::ParameterInfo discreteInfo(const FaustParamSlot& slot) {
 
 }  // namespace
 
-// The three ids below are the retired plugin's own property spellings. The host
-// wrapper keys its CachedValue on stableId and falls back to
-// "<pluginId>_param_<n>" without one, which would neither read what flushState
-// writes nor survive a project saved before the port (#2315).
+// The three ids below are the retired plugin's own property spellings, which the
+// load-time hydration reads a project saved before the port back onto (#2315).
 magda::ParameterInfo faustInstrumentHostParamInfo(int hostIndex) {
     switch (hostIndex) {
         case 0:

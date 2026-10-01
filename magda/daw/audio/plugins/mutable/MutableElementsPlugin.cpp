@@ -293,7 +293,8 @@ void MutableElementsPlugin::reset() {
 }
 
 void MutableElementsPlugin::process(DeviceProcessContext& context) {
-    if (context.audio == nullptr || context.numSamples <= 0)
+    const int numSamples = context.numSamples();
+    if (numSamples <= 0)
         return;
 
     // Pull current parameter values and push them into the DSP patch (block rate).
@@ -326,8 +327,8 @@ void MutableElementsPlugin::process(DeviceProcessContext& context) {
     const float transpose = v[kPitch] + v[kFine] * 0.01f;
     const float velToAmp = v[kVelAmp];
 
-    auto& buffer = *context.audio;
-    const int start = context.startSample;
+    auto buffer = juceAudio(context);
+    const int start = 0;
     const int numChannels = buffer.getNumChannels();
     auto* destL = scratch_.getWritePointer(0);
     auto* destR = numChannels > 1 ? scratch_.getWritePointer(1) : nullptr;
@@ -344,17 +345,19 @@ void MutableElementsPlugin::process(DeviceProcessContext& context) {
     };
 
     if (context.midiIn != nullptr) {
+        const DeviceMidiInput in(*context.midiIn, sampleRate_);
+
         // The host's panic travels beside the events rather than as CC 123 (#2418).
-        if (context.midiIn->isAllNotesOff())
+        if (in.isAllNotesOff())
             impl_->allNotesOff();
 
-        for (int eventIndex = 0; eventIndex < context.midiIn->size(); ++eventIndex) {
-            const auto& m = context.midiIn->message(eventIndex);
+        for (int eventIndex = 0; eventIndex < in.size(); ++eventIndex) {
+            const auto m = in.message(eventIndex);
             const bool isPanic = m.isController() &&
                                  (m.getControllerNumber() == 120 || m.getControllerNumber() == 123);
             if (!m.isNoteOn() && !m.isNoteOff() && !isPanic)
                 continue;
-            const int evPos = juce::jlimit(0, context.numSamples - 1,
+            const int evPos = juce::jlimit(0, numSamples - 1,
                                            midiEventPosition(m.getTimeStamp(), sampleRate_).sample);
             renderTo(evPos);
             if (isPanic)
@@ -365,14 +368,14 @@ void MutableElementsPlugin::process(DeviceProcessContext& context) {
                 impl_->noteOff(m.getNoteNumber());
         }
     }
-    renderTo(context.numSamples);
+    renderTo(numSamples);
 
     // Add rather than replace (#2370): the buffer may already carry another
     // signal that must not be clobbered.
     const float gain = juce::Decibels::decibelsToGain(v[kLevel]);
-    buffer.addFrom(0, start, scratch_, 0, 0, context.numSamples, gain);
+    buffer.addFrom(0, start, scratch_, 0, 0, numSamples, gain);
     if (destR != nullptr)
-        buffer.addFrom(1, start, scratch_, 1, 0, context.numSamples, gain);
+        buffer.addFrom(1, start, scratch_, 1, 0, numSamples, gain);
 }
 
 }  // namespace magda::daw::audio

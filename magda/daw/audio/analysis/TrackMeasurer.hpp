@@ -6,6 +6,7 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <magda/sdk/telemetry/Telemetry.hpp>
 #include <vector>
 
 #include "../../core/BlockMath.hpp"
@@ -31,31 +32,11 @@ namespace magda::daw::audio {
  * "tearing acceptable for metering" stance as AudioTapBuffer).
  */
 
-/// LUFS value reported when a window holds no above-floor signal.
-inline constexpr float kSilenceLufs = -100.0f;
-/// dB value reported for silence on the peak fields.
-inline constexpr float kSilenceDb = -200.0f;
+using sdk::kSilenceDb;
+using sdk::kSilenceLufs;
 
-struct TrackMeasurementSnapshot {
-    float momentaryLufs = kSilenceLufs;   ///< 400 ms K-weighted window
-    float shortTermLufs = kSilenceLufs;   ///< 3 s K-weighted window
-    float integratedLufs = kSilenceLufs;  ///< gated, since last reset()
-
-    float samplePeakDb = kSilenceDb;  ///< max |sample|, dBFS (always computed)
-    float truePeakDb = kSilenceDb;    ///< oversampled dBTP (only if true-peak enabled)
-
-    float correlation = 1.0f;  ///< L/R correlation [-1, 1] (1 for mono)
-    float width = 0.0f;        ///< side/(mid+side) energy ratio [0,1]: 0 mono, 1 fully out-of-phase
-
-    float plr = 0.0f;  ///< peak-to-loudness ratio: peak - integrated (LU)
-    float psr = 0.0f;  ///< peak-to-short-term ratio: peak - short-term (LU)
-
-    bool plrValid = false;  ///< false while either peak or integrated is at the floor
-    bool psrValid = false;  ///< false while either peak or short-term is at the floor
-
-    bool truePeakValid = false;  ///< false when oversampled true-peak is disabled
-    bool valid = false;          ///< true once any signal has been processed
-};
+/// One reading of a measurer; the SDK's loudness-meter payload.
+using TrackMeasurementSnapshot = sdk::LevelsSnapshot;
 
 class TrackMeasurer {
   public:

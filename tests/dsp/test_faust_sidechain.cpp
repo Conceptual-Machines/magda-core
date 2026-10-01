@@ -3,6 +3,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "DeviceTestBlock.hpp"
 #include "core/DeviceState.hpp"
 #include "magda/daw/audio/faust/FaustModelEdits.hpp"
 #include "magda/daw/audio/plugins/FaustPlugin.hpp"
@@ -75,13 +76,10 @@ juce::AudioBuffer<float> renderWithKey(audio::FaustPlugin& faust) {
         std::fill_n(buffer.getWritePointer(channel), kBlockSize, 0.1f * (channel + 1));
         std::fill_n(key.getWritePointer(channel), kBlockSize, 0.1f * (channel + 3));
     }
-    const std::array<const float*, 2> keyChannels{key.getReadPointer(0), key.getReadPointer(1)};
 
-    audio::DeviceProcessContext context;
-    context.audio = &buffer;
-    context.numSamples = kBlockSize;
-    context.sidechain = keyChannels.data();
-    context.numSidechainChannels = 2;
+    magda::test::DeviceTestBlock contextBlock(buffer, kBlockSize);
+    auto& context = contextBlock.context;
+    contextBlock.setSidechain(key);
     faust.process(context);
     return buffer;
 }
@@ -138,9 +136,8 @@ TEST_CASE("A runtime patch wider than scratch capacity fails safely", "[faust][s
     CHECK(diagnostics.front().containsIgnoreCase("reload"));
 
     auto buffer = before;
-    audio::DeviceProcessContext context;
-    context.audio = &buffer;
-    context.numSamples = kBlockSize;
+    magda::test::DeviceTestBlock contextBlock(buffer, kBlockSize);
+    auto& context = contextBlock.context;
     faust.process(context);
     CHECK(buffer.getSample(0, 0) == Approx(before.getSample(0, 0)).margin(0.0001f));
 }

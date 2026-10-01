@@ -608,17 +608,20 @@ void MagdaSamplerPlugin::updateVoiceParameters() {
 }
 
 void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
-    if (context.audio == nullptr)
-        return;
+    auto audio = juceAudio(context);
+    const int numSamples = context.numSamples();
+    const std::optional<DeviceMidiInput> in =
+        context.midiIn != nullptr
+            ? std::optional<DeviceMidiInput>(std::in_place, *context.midiIn, sampleRate)
+            : std::nullopt;
 
     const float levelLinear = juce::Decibels::decibelsToGain(displayValue(kLevel));
 
     // No voice sounding and nothing arriving: rendering would leave every voice where it is and
     // add nothing, and a Drum Grid holds dozens of pads that are silent most blocks.
-    const bool eventsArrive = context.midiIn != nullptr &&
-                              (context.midiIn->size() > 0 || context.midiIn->isAllNotesOff());
+    const bool eventsArrive = in && (in->size() > 0 || in->isAllNotesOff());
     if (!sounding_ && !eventsArrive) {
-        context.audio->applyGain(context.startSample, context.numSamples, levelLinear);
+        audio.applyGain(0, numSamples, levelLinear);
         return;
     }
 
@@ -630,17 +633,17 @@ void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
     // instant, and two of one pitch inside one sample are two notes (#2741).
     // The host's panic travels beside the events (#2418). A tail-off stop is a
     // no-op on an idle voice, so only what is sounding is let go.
-    if (context.midiIn != nullptr && context.midiIn->isAllNotesOff())
+    if (in && in->isAllNotesOff())
         synthesiser.allNotesOff(0, true);
 
     blockMidi_.clear();
     eventFractions_.clear();
     seenEvents_.clear();
-    if (context.midiIn != nullptr) {
-        for (int i = 0; i < context.midiIn->size(); ++i) {
-            const auto& m = context.midiIn->message(i);
+    if (in) {
+        for (int i = 0; i < in->size(); ++i) {
+            const auto m = in->message(i);
             const auto at = midiEventPosition(m.getTimeStamp(), sampleRate);
-            const int midiPos = juce::jlimit(0, juce::jmax(0, context.numSamples - 1), at.sample);
+            const int midiPos = juce::jlimit(0, juce::jmax(0, numSamples - 1), at.sample);
 
             if (m.isNoteOn() || m.isNoteOff()) {
                 const SeenEvent key{m.getNoteNumber(), midiPos,
@@ -651,7 +654,7 @@ void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
                     seenEvents_.push_back(key);
             }
 
-            blockMidi_.addEvent(m, midiPos + context.startSample);
+            blockMidi_.addEvent(m, midiPos);
 
             // One per event, in the order added, which is the order the
             // synthesiser handles them in. Past the reservation the rest fall
@@ -662,10 +665,9 @@ void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
     }
 
     synthesiser.beginBlock(eventFractions_);
-    synthesiser.renderNextBlock(*context.audio, blockMidi_, context.startSample,
-                                context.numSamples);
+    synthesiser.renderNextBlock(audio, blockMidi_, 0, numSamples);
 
-    context.audio->applyGain(context.startSample, context.numSamples, levelLinear);
+    audio.applyGain(0, numSamples, levelLinear);
 
     // Playhead position from the first sounding voice.
     const double sourceSR = playback_.read().sourceRate;
@@ -686,35 +688,24 @@ void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
 }
 
 //==============================================================================
-void MagdaSamplerPlugin::flushState(juce::ValueTree& state) {
-    // Parameters are the model's (#2317); what the device owns here is the
-    // sample it points at and how to read it.
-    state.setProperty(StateIDs::source, samplePath_, nullptr);
-    state.setProperty(StateIDs::rootNote, rootNote_, nullptr);
-    state.setProperty(StateIDs::loopEnabled, loopEnabled_.load(std::memory_order_relaxed), nullptr);
-}
-
-void MagdaSamplerPlugin::restoreState(const juce::ValueTree& state) {
+sdk::RestoreResult MagdaSamplerPlugin::restoreState(const sdk::StateNode& state) {
     // Absent means off, as it does for the sample and the root note below: the
     // document is the whole authored state, so restoring one saved before the
     // loop was switched on has to switch it back off (#2377).
-    loopEnabled_.store(static_cast<bool>(state.getProperty(StateIDs::loopEnabled, false)),
+    loopEnabled_.store(state.getBool(stateKey(StateIDs::loopEnabled), false),
                        std::memory_order_relaxed);
 
-    const int savedRootNote = state.getPropertyPointer(StateIDs::rootNote) != nullptr
-                                  ? static_cast<int>(state[StateIDs::rootNote])
-                                  : 60;
+    const int savedRootNote = state.getInt(stateKey(StateIDs::rootNote), 60);
 
-    const auto savedPath = state.getPropertyPointer(StateIDs::source) != nullptr
-                               ? state[StateIDs::source].toString()
-                               : juce::String();
+    const auto savedPath =
+        juce::String::fromUTF8(state.getString(stateKey(StateIDs::source)).c_str());
 
     // The document is the whole authored state, so no source MEANS no sample:
     // restoring a document saved before the sample was chosen has to unload it,
     // or the model says "empty" while playback keeps sounding the old audio.
     if (savedPath.isEmpty()) {
         unloadSample();
-        return;
+        return sdk::RestoreResult::success();
     }
 
     // Already holding this audio is not a reload. An authored-state edit is
@@ -724,7 +715,7 @@ void MagdaSamplerPlugin::restoreState(const juce::ValueTree& state) {
     // through and is read again.
     if (holdsAudioFrom(savedPath)) {
         setRootNote(savedRootNote);
-        return;
+        return sdk::RestoreResult::success();
     }
 
     // loadSample() re-derives the markers from the file, which is right for a
@@ -755,6 +746,7 @@ void MagdaSamplerPlugin::restoreState(const juce::ValueTree& state) {
     restore(kSampleEnd, savedEnd);
     restore(kLoopStart, savedLoopStart);
     restore(kLoopEnd, savedLoopEnd);
+    return sdk::RestoreResult::success();
 }
 
 //==============================================================================

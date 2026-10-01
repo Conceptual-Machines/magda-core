@@ -70,8 +70,7 @@ class PolyStepSequencerPlugin : public MidiMagdaDevice {
     float parameterValue(int index) const override;
     void setParameterValue(int index, float value) override;
 
-    void flushState(juce::ValueTree& state) override;
-    void restoreState(const juce::ValueTree& state) override;
+    sdk::RestoreResult restoreState(const sdk::StateNode& state) override;
 
     // ValueTree property ids for the non-slot settings below, in the retired
     // host-native plugin's spellings so saved projects keep them. Public

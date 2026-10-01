@@ -29,15 +29,11 @@ class OscilloscopePlugin : public AnalysisTapPlugin, public OscilloscopeTelemetr
         timebaseMs_.store(juce::jlimit(1.0f, 5000.0f, ms), std::memory_order_relaxed);
     }
 
-    void flushState(juce::ValueTree& state) override {
-        AnalysisTapPlugin::flushState(state);
-        state.setProperty("timebaseMs", getTimebaseMs(), nullptr);
-    }
-
-    void restoreState(const juce::ValueTree& state) override {
+    sdk::RestoreResult restoreState(const sdk::StateNode& state) override {
         AnalysisTapPlugin::restoreState(state);
-        if (state.hasProperty("timebaseMs"))
-            setTimebaseMs(state["timebaseMs"]);
+        if (state.has("timebaseMs"))
+            setTimebaseMs(static_cast<float>(state.getDouble("timebaseMs")));
+        return sdk::RestoreResult::success();
     }
 
     DeviceProperties properties() const override {

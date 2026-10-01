@@ -55,47 +55,17 @@ const juce::Identifier kPluginIsInstrument("magdaIsInstrument");
 /// instead of ChainInfo's default, which means "every note".
 constexpr int kFallbackNote = 60;
 
-/// The engine's own vocabulary on a plugin tree, and MAGDA's two markers.
-///
 /// A pad's plugin was a NESTED tree inside the Drum Grid's state, where a
 /// capture strips only the object id. As its own device it becomes the ROOT of
-/// its own document, and a root drops all of this: the bridge's own list, plus
-/// the id and instrument flag the grid stamped, which are read into the device
-/// here and have no meaning to the plugin.
+/// its own document, and a root drops the engine's vocabulary and MAGDA's two pad
+/// markers (device_state::isEngineOwnedRootProperty), which are read into the
+/// device here and have no meaning to the plugin.
 ///
 /// `type` is the one that bites. The document names the device in `deviceType`,
 /// and the bridge writes that onto the tree first and then applies the root's
 /// properties over it, so a `type` left in the bag puts the saved name back:
 /// a pad saved under a retired device would be rebuilt as the retired plugin,
 /// which is exactly what the alias exists to prevent.
-const juce::Identifier* engineOwnedRootProperties(int& count) {
-    static const juce::Identifier kOwned[] = {
-        juce::Identifier("id"),
-        juce::Identifier("type"),
-        juce::Identifier("enabled"),
-        juce::Identifier("process"),
-        juce::Identifier("frozen"),
-        juce::Identifier("quickParamName"),
-        juce::Identifier("windowPos"),
-        juce::Identifier("windowX"),
-        juce::Identifier("windowY"),
-        juce::Identifier("windowLocked"),
-        juce::Identifier("masterPluginID"),
-        juce::Identifier("sidechainSourceID"),
-        juce::Identifier("parameters"),
-        kPluginDeviceId,
-        kPluginIsInstrument,
-    };
-    count = static_cast<int>(std::size(kOwned));
-    return kOwned;
-}
-
-/// Child trees the engine attaches to every plugin, which MAGDA rebuilds from
-/// its own model rather than restores.
-bool isEngineOwnedChild(const ds::Node& child) {
-    return child.type == "MODIFIERASSIGNMENTS" || child.type == "MACROPARAMETERS" ||
-           child.type == "SIDECHAINCONNECTIONS";
-}
 
 /// @p node as the root of its own device's document.
 ds::Node asOwnDocumentRoot(const ds::Node& node) {
@@ -103,18 +73,15 @@ ds::Node asOwnDocumentRoot(const ds::Node& node) {
     // `type` is left unset here and the node's own is dropped below.
     ds::Node root;
 
-    int owned = 0;
-    const auto* engineOwned = engineOwnedRootProperties(owned);
-
     for (int i = 0; i < node.props.size(); ++i) {
         const auto name = node.props.getName(i);
-        if (std::find(engineOwned, engineOwned + owned, name) != engineOwned + owned)
+        if (ds::isEngineOwnedRootProperty(name))
             continue;
         root.props.set(name, node.props.getValueAt(i));
     }
 
     for (const auto& child : node.children)
-        if (!isEngineOwnedChild(child))
+        if (!ds::isEngineOwnedChild(child))
             root.children.push_back(child);
 
     return root;

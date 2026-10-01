@@ -53,23 +53,23 @@ class AnalysisTapPlugin : public MagdaDevice {
 
     void process(DeviceProcessContext& context) override {
         // Transparent passthrough: read the buffer, never write it.
-        if (context.audio == nullptr || context.numSamples <= 0)
+        if (context.numSamples() <= 0)
             return;
         // Don't feed the visualisation during an offline render (export / mix
         // analysis): audio still passes through untouched, but tapping it would
         // make the live scope/spectrum displays twitch to the render's audio.
         if (context.isRendering)
             return;
-        const int n = context.numSamples;
+        const int n = context.numSamples();
         if (static_cast<int>(monoScratch_.size()) < n)
             return;  // block exceeds initialised size; skip tap (audio still passes through)
-        const int numCh = context.audio->getNumChannels();
+        const int numCh = context.audio.numChannels();
         if (numCh <= 0)
             return;
 
         std::fill_n(monoScratch_.data(), n, 0.0f);
         for (int ch = 0; ch < numCh; ++ch) {
-            const float* src = context.audio->getReadPointer(ch, context.startSample);
+            const float* src = context.audio.channel(ch);
             for (int i = 0; i < n; ++i)
                 monoScratch_[static_cast<size_t>(i)] += src[i];
         }
@@ -80,13 +80,10 @@ class AnalysisTapPlugin : public MagdaDevice {
         tap_.write(monoScratch_.data(), n);
     }
 
-    void flushState(juce::ValueTree& state) override {
-        state.setProperty("traceColour", getTraceColourIndex(), nullptr);
-    }
-
-    void restoreState(const juce::ValueTree& state) override {
-        if (state.hasProperty("traceColour"))
-            setTraceColourIndex(state["traceColour"]);
+    sdk::RestoreResult restoreState(const sdk::StateNode& state) override {
+        if (state.has("traceColour"))
+            setTraceColourIndex(state.getInt("traceColour"));
+        return sdk::RestoreResult::success();
     }
 
   protected:

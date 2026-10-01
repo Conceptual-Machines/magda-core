@@ -4,6 +4,7 @@
 #include <cmath>
 #include <vector>
 
+#include "DeviceTestBlock.hpp"
 #include "magda/daw/audio/plugins/mutable/MutableCloudsPlugin.hpp"
 #include "magda/daw/core/ParameterUtils.hpp"
 
@@ -45,11 +46,9 @@ struct CloudsRig {
 
     void render(juce::AudioBuffer<float>& buffer) {
         for (int pos = 0; pos < buffer.getNumSamples(); pos += blockSize) {
-            audio::DeviceProcessContext context;
-            context.audio = &buffer;
-            context.startSample = pos;
-            context.numSamples = std::min(blockSize, buffer.getNumSamples() - pos);
-            device.process(context);
+            magda::test::DeviceTestBlock contextBlock(
+                buffer, std::min(blockSize, buffer.getNumSamples() - pos), pos);
+            device.process(contextBlock.context);
         }
     }
 };
@@ -258,11 +257,8 @@ void renderWithPartitions(MutableCloudsPlugin& device, juce::AudioBuffer<float>&
     while (pos < buffer.getNumSamples()) {
         const int n =
             std::min(partitions[next++ % partitions.size()], buffer.getNumSamples() - pos);
-        audio::DeviceProcessContext context;
-        context.audio = &buffer;
-        context.startSample = pos;
-        context.numSamples = n;
-        device.process(context);
+        magda::test::DeviceTestBlock contextBlock(buffer, n, pos);
+        device.process(contextBlock.context);
         pos += n;
     }
 }
@@ -292,14 +288,14 @@ double tailFor(double rate, int mode, float reverb, float position, float feedba
     return decayToSilenceSeconds(buffer, rate, secondsToSamples(kBurstSeconds, rate));
 }
 
-/// What properties() reports for a setting, with nothing rendered.
+/// The tail, in seconds, the device declares for a setting, with nothing rendered.
 double declarationFor(double rate, int mode, float reverb, float position, float feedback) {
     CloudsRig rig(rate);
     rig.set(MutableCloudsPlugin::kMode, static_cast<float>(mode));
     rig.set(MutableCloudsPlugin::kReverb, reverb);
     rig.set(MutableCloudsPlugin::kPosition, position);
     rig.set(MutableCloudsPlugin::kFeedback, feedback);
-    return rig.device.properties().tailLengthSeconds;
+    return static_cast<double>(rig.device.tailSamples()) / rate;
 }
 
 }  // namespace
@@ -509,11 +505,9 @@ TEST_CASE("Nimbus survives being prepared again at a different rate",
 
         auto buffer = steadyTone(rate, 1000.0, 0.1);
         for (int pos = 0; pos < buffer.getNumSamples(); pos += kBlockSize) {
-            audio::DeviceProcessContext context;
-            context.audio = &buffer;
-            context.startSample = pos;
-            context.numSamples = std::min(kBlockSize, buffer.getNumSamples() - pos);
-            device.process(context);
+            magda::test::DeviceTestBlock contextBlock(
+                buffer, std::min(kBlockSize, buffer.getNumSamples() - pos), pos);
+            device.process(contextBlock.context);
         }
 
         int nonFinite = 0;

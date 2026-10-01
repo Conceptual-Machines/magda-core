@@ -51,8 +51,7 @@ class FaustPlugin : public MagdaDevice, public IFaustEditorModel {
     void setParameterValue(int index, float value) override;
     bool offersParameter(int index) const override;
 
-    void flushState(juce::ValueTree& state) override;
-    void restoreState(const juce::ValueTree& v) override;
+    sdk::RestoreResult restoreState(const sdk::StateNode& state) override;
 
   private:
     /// Re-cache the conversion domain of every pool slot. Called whenever the
@@ -172,7 +171,6 @@ class FaustPlugin : public MagdaDevice, public IFaustEditorModel {
     // every block, and building a ParameterInfo there would allocate.
     std::array<std::atomic<float>, FaustParamPool::kSize> poolValues_{};
     std::array<ParameterUtils::ParameterDomain, FaustParamPool::kSize> poolDomains_{};
-    std::array<bool, FaustParamPool::kSize> poolValueWasRestored_{};
 
     // Retired states pending destruction on the message thread. After a
     // swap, the audio thread may briefly still hold a snapshot of the

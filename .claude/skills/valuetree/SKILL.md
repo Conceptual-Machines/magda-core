@@ -1,11 +1,11 @@
 ---
 name: valuetree
-description: JUCE ValueTree patterns as used in MAGDA. Use when working with device state (MagdaDevice::flushState/restoreState, DeviceState), ValueTree listeners, or the few remaining CachedValue bindings.
+description: JUCE ValueTree patterns as used in MAGDA. Use when working with device state (sdk::Device::restoreState, DeviceState, DeviceStateDocument), ValueTree listeners, or the few remaining CachedValue bindings.
 ---
 
 # JUCE ValueTree & Serialization Patterns
 
-ValueTree is JUCE's tree-of-properties container. In MAGDA it is not the project model: the project model is plain C++ (TrackManager, ClipManager, DeviceInfo) with its own undo system. ValueTree appears at the device state boundary (`MagdaDevice::flushState`/`restoreState`, `magda/daw/core/DeviceState.*`) and in a handful of UI and agent helpers. Automatable parameters are not stored in it; `DeviceInfo::parameters` is their persisted authority.
+ValueTree is JUCE's tree-of-properties container. In MAGDA it is not the project model: the project model is plain C++ (TrackManager, ClipManager, DeviceInfo) with its own undo system. ValueTree appears in the tolerant legacy readers (`magda/daw/core/DeviceState.*`, `plugins/DeviceStateDocument.*`) and in a handful of UI and agent helpers. Automatable parameters are not stored in it; `DeviceInfo::parameters` is their persisted authority.
 
 ## ValueTree Basics
 
@@ -93,7 +93,7 @@ const juce::Identifier MyDevice::muteId("mute");
 
 ## CachedValue<T>
 
-`CachedValue<T>` binds a C++ variable to a ValueTree property and caches the value locally. Almost none remain in `magda/`. New device code does not use it: parameters are read through the engine's resolved parameter values, and non-parameter state goes through `flushState`/`restoreState`. Do not read a CachedValue from the audio thread; the cache is updated by a listener on whichever thread writes the tree.
+`CachedValue<T>` binds a C++ variable to a ValueTree property and caches the value locally. Almost none remain in `magda/`. New device code does not use it: parameters are read through the engine's resolved parameter values, and non-parameter state goes through `restoreState`. Do not read a CachedValue from the audio thread; the cache is updated by a listener on whichever thread writes the tree.
 
 ```cpp
 juce::CachedValue<float> level;
@@ -107,35 +107,24 @@ After replacing the tree's properties wholesale, call `forceUpdateOfCachedValue(
 
 ## Device State
 
-`MagdaDevice` (`magda/daw/audio/plugins/MagdaDevice.hpp`) exchanges non-parameter state as a plain ValueTree:
+Devices no longer see a ValueTree. The host owns the state document (`DeviceInfo::pluginState`, schema v2, `magda/daw/core/DeviceState.*`) and a device restores it: `sdk::Device::restoreState(const sdk::StateNode&)` returns `sdk::RestoreResult` and keeps its previous state on error. There is no flush; the model's authoring paths (`updateDeviceAuthoredState`, `StepPatternState`, `SamplerModelEdits`, `FaustModelEdits`, `DeviceStateCommands`) write the document.
+
+`normaliseDeviceState(text)` (`plugins/DeviceStateDocument.hpp`) is the one place a saved state becomes the SDK document: v1 engine XML, the pre-#2317 `params` record, the engine's own props and children, and device-type aliases are all handled there and never reach a device. Parameters are not state.
 
 ```cpp
-void flushState(juce::ValueTree& state) override;          // write into state
-void restoreState(const juce::ValueTree& state) override;  // read it back
-```
-
-`magda/daw/core/DeviceState.hpp` defines the persisted document (schema v2): a MAGDA-owned tree with the device's own property names, no engine ids. `toValueTree(node)` in the `device_state` namespace gives the tree `restoreState` takes. Automatable parameter values are excluded from it.
-
-```cpp
-void MyDevice::flushState(juce::ValueTree& state) {
-    state.setProperty(samplePathId, samplePath, nullptr);
-    for (auto& step : steps) {
-        juce::ValueTree t(stepId);
-        t.setProperty(indexId, step.index, nullptr);
-        state.addChild(t, -1, nullptr);
-    }
-}
-
-void MyDevice::restoreState(const juce::ValueTree& state) {
-    samplePath = state.getProperty(samplePathId, "").toString();
+sdk::RestoreResult MyDevice::restoreState(const sdk::StateNode& state) {
+    samplePath = state.getString("samplePath");           // coerces like juce::var; fallback only for an absent key
     steps.clear();
-    for (auto t : state)
-        if (t.hasType(stepId))
-            steps.push_back({(int)t.getProperty(indexId, 0)});
+    for (const auto& child : state.children())
+        if (child.type() == "STEP")
+            steps.push_back({child.getInt("idx")});
+    return sdk::RestoreResult::success();
 }
 ```
 
-`flushState`/`restoreState` run on the message thread. Rebuild what the audio thread reads off-thread and publish it atomically (see the audio-thread skill).
+State a device holds that the document does not (a UI toggle that lives on the device) goes to the host with `host()->stateChanged(node)` on the control thread; the host writes it into the document, and a restore never reports.
+
+`restoreState` runs on the message thread. Rebuild what the audio thread reads off-thread and publish it atomically (see the audio-thread skill).
 
 ## ValueTree::Listener
 
@@ -196,10 +185,10 @@ Pass `nullptr` as the ValueTree undo manager. Project undo is MAGDA's own `magda
 
 ### Chain Properties
 
-Devices with multiple chains (e.g., drum grid, multi-output) write per-chain state as child trees in `flushState`:
+The model writes per-chain state for devices with multiple chains (e.g., drum grid, multi-output) as child nodes of the document:
 
 ```cpp
-// In flushState(state)
+// Writing the document
 for (int i = 0; i < numChains; ++i) {
     juce::ValueTree chainTree("CHAIN");
     chainTree.setProperty("index", i, nullptr);

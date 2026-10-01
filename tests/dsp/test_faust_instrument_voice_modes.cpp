@@ -4,8 +4,11 @@
 #include <memory>
 #include <utility>
 
+#include "DeviceTestBlock.hpp"
 #include "TestDeviceMidiBuffer.hpp"
 #include "core/DeviceState.hpp"
+#include "core/ParameterUtils.hpp"
+#include "magda/daw/audio/plugins/DeviceStateHydration.hpp"
 #include "magda/daw/audio/plugins/FaustInstrumentPlugin.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "magda/daw/audio/plugins/engine/EngineMagdaDevice.hpp"
@@ -74,9 +77,8 @@ float renderBlock(Instrument& instrument, double startSeconds, magda::test::Devi
     juce::AudioBuffer<float> buffer(2, kBlockSize);
     buffer.clear();
 
-    audio::DeviceProcessContext context;
-    context.audio = &buffer;
-    context.numSamples = kBlockSize;
+    magda::test::DeviceTestBlock contextBlock(buffer, kBlockSize);
+    auto& context = contextBlock.context;
     context.midiIn = &midi;
     magda::test::DeviceMidiBuffer out;
     context.midiOut = &out;
@@ -297,9 +299,9 @@ TEST_CASE("The engine follows the device sample rate, not the provisional one",
     CHECK(std::abs(renderBlock(*instrument, 0.1, noteOn(69)) - expected) <= 0.002f);
 }
 
-TEST_CASE("Voice Mode, Glide and Bend Range restore from a document under their released names",
+TEST_CASE("Voice Mode, Glide and Bend Range under their released names fill the model once",
           "[faust][voice-modes][native][2556]") {
-    // A value no default produces, so what comes back could only have been restored.
+    // A value no default produces, so what comes back could only have been read from the document.
     constexpr float kSaved = 0.375f;
     const std::array<std::pair<const char*, int>, 3> hostParams{
         {{"voiceMode", kVoiceMode}, {"glide", kGlide}, {"bendRange", kBendRange}}};
@@ -310,20 +312,31 @@ TEST_CASE("Voice Mode, Glide and Bend Range restore from a document under their 
         doc.root.props.set(name, kSaved);
     magda::DeviceInfo model;
     model.pluginId = Instrument::xmlTypeName;
+    model.format = magda::PluginFormat::Internal;
     model.pluginState = ds::encode(doc);
 
+    // The model is the parameters' only authority (#2317): the load-time hydration reads the
+    // retired spellings into it once, for entries it lacks.
+    REQUIRE(magda::daw::audio::device_state_hydration::hydrateParametersFromDeviceState(model));
+    for (const auto& [name, slot] : hostParams) {
+        INFO(name);
+        const auto* entry = model.findParameterByIndex(slot);
+        REQUIRE(entry != nullptr);
+        CHECK(entry->stableId == juce::String(name));
+        CHECK(entry->currentValue == magda::ParameterUtils::normalizedToReal(kSaved, *entry));
+    }
+
+    // The device built from that document does not read them: they are not its state.
     auto engineDevice = adapter::createEngineDevice(model);
     auto* hosted = dynamic_cast<adapter::EngineMagdaDevice*>(engineDevice.get());
     REQUIRE(hosted != nullptr);
     auto* restored = dynamic_cast<Instrument*>(&hosted->device());
     REQUIRE(restored != nullptr);
-
-    juce::ValueTree flushed("PLUGIN");
-    restored->flushState(flushed);
     for (const auto& [name, slot] : hostParams) {
         INFO(name);
-        CHECK(restored->parameterInfo(slot).stableId == juce::String(name));
-        CHECK(std::abs(restored->parameterValue(slot) - kSaved) <= 1.0e-6f);
-        CHECK(std::abs(static_cast<float>(flushed.getProperty(name)) - kSaved) <= 1.0e-6f);
+        CHECK(std::abs(restored->parameterValue(slot) - kSaved) > 1.0e-3f);
     }
+
+    // Hydrating again adds nothing: the entries are the model's now.
+    CHECK_FALSE(magda::daw::audio::device_state_hydration::hydrateParametersFromDeviceState(model));
 }

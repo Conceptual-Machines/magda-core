@@ -3,6 +3,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include <atomic>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <string>
@@ -24,7 +25,7 @@
  *
  * One thing the device SDK does not carry yet:
  *
- * - **Further output pairs.** A MagdaDevice declares no channel layout beyond
+ * - **Further output pairs.** An sdk::Device declares no channel layout beyond
  *   what it writes into the buffer it is handed, so DeviceBlock::extraOutputs
  *   is left cleared. A device that owned pairs of its own would need the SDK
  *   to say so.
@@ -42,14 +43,14 @@
 namespace magda::daw::audio::engine_adapter {
 
 /**
- * @brief One MagdaDevice bound to one Device op.
+ * @brief One sdk::Device bound to one Device op.
  *
- * Owns the device. Everything the audio thread touches is sized in prepare():
- * the channel pointer array the audio view is built from, the two MIDI
- * scratches the SDK's input and output views read and write, and the
- * parameter map.
+ * Owns the device and is the host it talks to (sdk::DeviceHost). Everything the
+ * audio thread touches is sized in prepare(): the channel pointer array the
+ * audio view is built from, the two MIDI scratches the SDK's input and output
+ * views read and write, and the parameter map.
  */
-class EngineMagdaDevice final : public magda::engine::EngineDevice {
+class EngineMagdaDevice final : public magda::engine::EngineDevice, private sdk::DeviceHost {
   public:
     /**
      * @brief Binds @p device, for a render that is @p offlineRender or is not.
@@ -86,8 +87,21 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
         return *device_;
     }
 
+    /**
+     * @brief Where the device's own state goes: called on the control thread with state the
+     *        device produced and the host's document does not hold.
+     */
+    void setStateReporter(std::function<void(sdk::StateNode)> reporter) {
+        stateReporter_ = std::move(reporter);
+    }
+
+    /// Called on the control thread when the device asks for its properties to be re-read.
+    void setRebuildRequestHandler(std::function<void()> handler) {
+        rebuildHandler_ = std::move(handler);
+    }
+
     const char* profileName() const override {
-        return properties_.pluginId.toRawUTF8();
+        return properties_.pluginId.c_str();
     }
 
     const DeviceProperties& properties() const {
@@ -101,10 +115,15 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
     }
 
   private:
+    void stateChanged(sdk::StateNode state) override;
+    void rebuildRequired() override;
+
     void writeParameters(const magda::engine::DeviceParams& params);
     void sizeMidiScratch();
 
     std::unique_ptr<MagdaDevice> device_;
+    std::function<void(sdk::StateNode)> stateReporter_;
+    std::function<void()> rebuildHandler_;
     DeviceProperties properties_;
     /// What the device's own process() is timed under, beside the adapter's (DeviceTiming.hpp).
     std::string dspTimingName_;
@@ -135,9 +154,12 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
     std::vector<const float*> sidechainChannels_;
 
     /// What the device reads this block and what it wrote, one vector each,
-    /// reserved to its own port's bound and never grown past it (#2347).
-    std::vector<DeviceMidiEvent> midiInScratch_;
-    std::vector<DeviceMidiEvent> midiOutScratch_;
+    /// reserved to its own port's bound and never grown past it (#2347). A
+    /// sysex written out is copied into @ref midiOutBytes_, reserved to the
+    /// same bound.
+    std::vector<sdk::MidiEvent> midiInScratch_;
+    std::vector<sdk::MidiEvent> midiOutScratch_;
+    std::vector<std::uint8_t> midiOutBytes_;
 
     /// Which of its pitch each input note-on is, for its fraction (#2741).
     magda::engine::NoteOccurrences occurrences_;

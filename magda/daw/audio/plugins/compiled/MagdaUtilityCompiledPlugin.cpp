@@ -85,9 +85,8 @@ void MagdaUtilityCompiledPlugin::onReset() {
 void MagdaUtilityCompiledPlugin::processAudio(DeviceProcessContext& context) {
     // No Faust engine: gain, pan, M/S width and the Low Mono fold are a few
     // lines of arithmetic each, so this is the whole block.
-    const int numSamples = context.numSamples;
-    const int startSample = context.startSample;
-    const int hostChannels = context.audio->getNumChannels();
+    const int numSamples = context.numSamples();
+    const int hostChannels = context.audio.numChannels();
     if (hostChannels <= 0)
         return;
 
@@ -104,8 +103,8 @@ void MagdaUtilityCompiledPlugin::processAudio(DeviceProcessContext& context) {
     const float lowMonoAlpha =
         onePoleAlpha(slotDisplayValue(kLowMonoFreqSlot), currentSampleRate());
 
-    float* left = context.audio->getWritePointer(0, startSample);
-    float* right = hostChannels > 1 ? context.audio->getWritePointer(1, startSample) : nullptr;
+    float* left = context.audio.channel(0);
+    float* right = hostChannels > 1 ? context.audio.channel(1) : nullptr;
 
     for (int i = 0; i < numSamples; ++i) {
         float l = left[i] * flipL * gain;
@@ -143,7 +142,7 @@ void MagdaUtilityCompiledPlugin::processAudio(DeviceProcessContext& context) {
     // Anything past the stereo pair takes the gain trim and nothing else: the
     // rest of this device is a stereo image, and there is no image to shape.
     for (int channel = 2; channel < hostChannels; ++channel) {
-        float* out = context.audio->getWritePointer(channel, startSample);
+        float* out = context.audio.channel(channel);
         for (int i = 0; i < numSamples; ++i)
             out[i] = sanitise(out[i] * gain);
     }

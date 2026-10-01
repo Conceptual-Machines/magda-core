@@ -2,6 +2,7 @@
 #include <memory>
 #include <vector>
 
+#include "DeviceTestBlock.hpp"
 #include "TestDeviceMidiBuffer.hpp"
 #include "magda/daw/audio/plugins/MagdaSamplerPlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaFMCompiledPlugin.hpp"
@@ -42,11 +43,10 @@ std::vector<float> render(magda::daw::audio::MagdaDevice& device, const std::vec
         juce::AudioBuffer<float> audio(2, kBlockSize);
         audio.clear();
         magda::test::DeviceMidiBuffer out;
-        magda::daw::audio::DeviceProcessContext context;
-        context.audio = &audio;
+        magda::test::DeviceTestBlock contextBlock(audio, kBlockSize);
+        auto& context = contextBlock.context;
         context.midiIn = &midi;
         context.midiOut = &out;
-        context.numSamples = kBlockSize;
         context.isPlaying = true;
         device.process(context);
 

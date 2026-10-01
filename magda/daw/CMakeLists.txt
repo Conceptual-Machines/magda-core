@@ -313,6 +313,8 @@ target_include_directories(magda_types
 target_compile_definitions(magda_types
     PRIVATE $<TARGET_PROPERTY:juce::juce_core,INTERFACE_COMPILE_DEFINITIONS>
             $<TARGET_PROPERTY:juce::juce_graphics,INTERFACE_COMPILE_DEFINITIONS>)
+# The SDK's device declarations (SidechainPort) appear in magda_types' public headers.
+target_link_libraries(magda_types PUBLIC magda::sdk_core)
 
 # Core library — populated by per-subdir CMakeLists.txt below.
 add_library(magda_daw STATIC
@@ -583,6 +585,7 @@ foreach(_magda_device_module IN LISTS MAGDA_DEVICE_JUCE_STACK)
 endforeach()
 target_link_libraries(magda_device_sdk
     INTERFACE
+    magda::sdk_core
     magda_types
     magda_music
     $<LINK_ONLY:${MAGDA_DEVICE_JUCE_STACK}>

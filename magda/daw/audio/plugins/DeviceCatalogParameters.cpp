@@ -3,26 +3,16 @@
 #include <algorithm>
 
 #include "core/DeviceState.hpp"
+#include "plugins/DeviceStateDocument.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MagdaDevice.hpp"
+#include "plugins/SavedDeviceState.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda::daw::audio {
 
 juce::ValueTree deviceStateTree(const juce::String& savedState) {
-    if (magda::device_state::looksLikeLegacyEngineState(savedState)) {
-        auto tree = magda::device_state::legacyEngineStateTree(savedState);
-        adoptCanonicalPluginType(tree);
-        return tree;
-    }
-
-    const auto doc = magda::device_state::decode(savedState);
-    if (!doc)
-        return {};
-
-    auto tree = magda::device_state::toValueTree(doc->root);
-    tree.setProperty(juce::Identifier("type"), doc->deviceType, nullptr);
-    return tree;
+    return savedDeviceStateTree(savedState);
 }
 
 std::unique_ptr<MagdaDevice> createDetachedDevice(const juce::String& pluginId,
@@ -54,8 +44,8 @@ std::unique_ptr<MagdaDevice> createDetachedDevice(const juce::String& pluginId,
     if (device == nullptr || savedState.isEmpty())
         return device;
 
-    if (const auto tree = deviceStateTree(savedState); tree.isValid())
-        device->restoreState(tree);
+    if (const auto state = normaliseDeviceState(savedState))
+        device->restoreState(state->document.root);
 
     return device;
 }

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <vector>
 
+#include "DeviceTestBlock.hpp"
 #include "TestDeviceMidiBuffer.hpp"
 #include "magda/daw/audio/plugins/ArpeggiatorPlugin.hpp"
 
@@ -12,7 +13,7 @@ namespace magda::test {
 namespace audio = magda::daw::audio;
 using Arp = audio::ArpeggiatorPlugin;
 
-class ArpTempo final : public audio::DeviceTempoMap {
+class ArpTempo final : public sdk::TempoMap {
   public:
     double beatsAtSeconds(double seconds) const override {
         return seconds * 2.0;
@@ -30,9 +31,6 @@ struct ArpRig {
     /// playback, so a test says which of the two this phrase is.
     std::uint32_t source = 42;
     std::vector<std::uint32_t> liveSourceIds;
-    /// What the host says the timestamps on its buffer are offset by, which is
-    /// how a sub-block reaches a device.
-    double midiTimeOffset = 0.0;
 
     explicit ArpRig(bool latch = false) {
         arp.prepare({.sampleRate = 48000.0, .maximumBlockSize = 2400});
@@ -56,17 +54,17 @@ struct ArpRig {
         for (const auto& message : input)
             in.events.push_back({message, source});
         DeviceMidiBuffer out;
-        audio::DeviceProcessContext context;
+        juce::AudioBuffer<float> blockAudio(1, static_cast<int>(seconds * 48000.0));
+        blockAudio.clear();
+        DeviceTestBlock block(blockAudio);
+        auto& context = block.context;
         context.midiIn = &in;
         context.midiOut = &out;
         context.tempoMap = &tempo;
-        context.numSamples = static_cast<int>(seconds * 48000.0);
         context.timelineStartSeconds = start;
         context.timelineEndSeconds = start + seconds;
         context.isPlaying = playing;
-        context.midiTimeOffsetSeconds = midiTimeOffset;
-        context.liveSourceIds = liveSourceIds.empty() ? nullptr : liveSourceIds.data();
-        context.numLiveSourceIds = static_cast<int>(liveSourceIds.size());
+        context.liveSourceIds = liveSourceIds;
         arp.process(context);
         return out;
     }

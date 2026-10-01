@@ -44,21 +44,15 @@ class SpectrumAnalyzerPlugin : public AnalysisTapPlugin, public SpectrumTelemetr
         smoothing_.store(juce::jlimit(0.05f, 1.0f, s), std::memory_order_relaxed);
     }
 
-    void flushState(juce::ValueTree& state) override {
-        AnalysisTapPlugin::flushState(state);
-        state.setProperty("fftOrder", getFftOrder(), nullptr);
-        state.setProperty("slopeDbPerOct", getSlopeDbPerOct(), nullptr);
-        state.setProperty("smoothing", getSmoothing(), nullptr);
-    }
-
-    void restoreState(const juce::ValueTree& state) override {
+    sdk::RestoreResult restoreState(const sdk::StateNode& state) override {
         AnalysisTapPlugin::restoreState(state);
-        if (state.hasProperty("fftOrder"))
-            setFftOrder(state["fftOrder"]);
-        if (state.hasProperty("slopeDbPerOct"))
-            setSlopeDbPerOct(state["slopeDbPerOct"]);
-        if (state.hasProperty("smoothing"))
-            setSmoothing(state["smoothing"]);
+        if (state.has("fftOrder"))
+            setFftOrder(state.getInt("fftOrder"));
+        if (state.has("slopeDbPerOct"))
+            setSlopeDbPerOct(static_cast<float>(state.getDouble("slopeDbPerOct")));
+        if (state.has("smoothing"))
+            setSmoothing(static_cast<float>(state.getDouble("smoothing")));
+        return sdk::RestoreResult::success();
     }
 
     DeviceProperties properties() const override {

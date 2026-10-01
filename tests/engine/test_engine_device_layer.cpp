@@ -104,7 +104,11 @@ class CountingDevice final : public magda::daw::audio::MagdaDevice {
 class EmittingDevice final : public magda::daw::audio::MagdaDevice {
   public:
     EmittingDevice(int count, int dataBytes, bool declared = true)
-        : count_(count), declared_(declared), payload_(dataBytes, 0x7f) {}
+        : count_(count), declared_(declared), payload_(static_cast<std::size_t>(dataBytes), 0x7f) {
+        // A SysEx message is its data between the start and end markers.
+        payload_.insert(payload_.begin(), 0xF0);
+        payload_.push_back(0xF7);
+    }
 
     magda::daw::audio::DeviceProperties properties() const override {
         magda::daw::audio::DeviceProperties properties;
@@ -120,9 +124,8 @@ class EmittingDevice final : public magda::daw::audio::MagdaDevice {
             return;
 
         for (int event = 0; event < count_; ++event)
-            context.midiOut->addEvent({juce::MidiMessage::createSysExMessage(
-                                           payload_.data(), static_cast<int>(payload_.size())),
-                                       0});
+            context.midiOut->addEvent(magda::sdk::MidiEvent::fromBytes(
+                payload_.data(), static_cast<std::uint32_t>(payload_.size()), 0));
     }
 
   private:
@@ -131,11 +134,16 @@ class EmittingDevice final : public magda::daw::audio::MagdaDevice {
     std::vector<std::uint8_t> payload_;
 };
 
-/// Keeps each note-on's stamp, and plays one note of its own at the stamp it
-/// was given.
+/// Keeps where each note-on arrived, and plays one note of its own where it was told to.
 class StampingDevice final : public magda::daw::audio::MagdaDevice {
   public:
-    explicit StampingDevice(double outStamp) : outStamp_(outStamp) {}
+    StampingDevice(int outSample, float outFraction)
+        : outSample_(outSample), outFraction_(outFraction) {}
+
+    struct Position {
+        int sample = 0;
+        float fraction = 0.0f;
+    };
 
     magda::daw::audio::DeviceProperties properties() const override {
         magda::daw::audio::DeviceProperties properties;
@@ -149,18 +157,20 @@ class StampingDevice final : public magda::daw::audio::MagdaDevice {
     void process(magda::daw::audio::DeviceProcessContext& context) override {
         if (context.midiIn != nullptr)
             for (int at = 0; at < context.midiIn->size(); ++at)
-                if (context.midiIn->message(at).isNoteOn())
-                    stamps.push_back(context.midiIn->message(at).getTimeStamp());
+                if (context.midiIn->event(at).isNoteOn())
+                    positions.push_back(
+                        {context.midiIn->event(at).sample, context.midiIn->event(at).fraction});
 
         if (context.midiOut != nullptr)
             context.midiOut->addEvent(
-                {juce::MidiMessage::noteOn(1, 72, 1.0f).withTimeStamp(outStamp_), 0});
+                magda::sdk::MidiEvent::noteOn(1, 72, 127, outSample_, outFraction_));
     }
 
-    std::vector<double> stamps;
+    std::vector<Position> positions;
 
   private:
-    double outStamp_;
+    int outSample_;
+    float outFraction_;
 };
 
 /// Records what the executor told it about either port, and renders nothing.
@@ -212,9 +222,10 @@ class ForwardingDevice final : public magda::daw::audio::MagdaDevice {
                 continue;
 
             // Reversed in time as well as in order, so the port shows it.
-            auto message = context.midiIn->message(at);
-            message.setTimeStamp(context.midiIn->message(count - 1 - at).getTimeStamp());
-            context.midiOut->addEvent({std::move(message), context.midiIn->sourceId(at)});
+            auto event = context.midiIn->event(at);
+            event.sample = context.midiIn->event(count - 1 - at).sample;
+            event.fraction = context.midiIn->event(count - 1 - at).fraction;
+            context.midiOut->addEvent(event);
         }
     }
 };
@@ -885,7 +896,7 @@ TEST_CASE("a device's input never reaches its MIDI output port", "[engine][devic
 TEST_CASE("a note-on reaches a device at its fraction, and leaves at its own",
           "[engine][devices][2741]") {
     const auto context = contextFor();
-    auto stamping = std::make_unique<StampingDevice>(200.3 / context.sampleRate);
+    auto stamping = std::make_unique<StampingDevice>(200, 0.3f);
     auto* device = stamping.get();
 
     adapter::EngineMagdaDevice hosted(std::move(stamping), /*offlineRender=*/false);
@@ -907,11 +918,9 @@ TEST_CASE("a note-on reaches a device at its fraction, and leaves at its own",
     deviceBlock.midiOutFractions = &outFractions;
     hosted.process(deviceBlock);
 
-    REQUIRE(device->stamps.size() == 1);
-    const auto arrived =
-        magda::daw::audio::midiEventPosition(device->stamps.front(), context.sampleRate);
-    CHECK(arrived.sample == 100);
-    CHECK(arrived.fraction == Catch::Approx(0.6f).margin(1e-4));
+    REQUIRE(device->positions.size() == 1);
+    CHECK(device->positions.front().sample == 100);
+    CHECK(device->positions.front().fraction == Catch::Approx(0.6f).margin(1e-4));
 
     // What the device stamped 200.3 in lands on sample 200, and keeps the rest.
     REQUIRE(out.getNumEvents() == 1);
@@ -922,7 +931,7 @@ TEST_CASE("a note-on reaches a device at its fraction, and leaves at its own",
 TEST_CASE("two note-ons of one pitch inside one sample keep their own fractions",
           "[engine][devices][2741]") {
     const auto context = contextFor();
-    auto stamping = std::make_unique<StampingDevice>(0.0);
+    auto stamping = std::make_unique<StampingDevice>(0, 0.0f);
     auto* device = stamping.get();
 
     adapter::EngineMagdaDevice hosted(std::move(stamping), /*offlineRender=*/false);
@@ -942,10 +951,12 @@ TEST_CASE("two note-ons of one pitch inside one sample keep their own fractions"
     deviceBlock.midiInFractions = &in;
     hosted.process(deviceBlock);
 
-    REQUIRE(device->stamps.size() == 3);
-    CHECK(device->stamps[0] * context.sampleRate == Catch::Approx(100.2).margin(1e-4));
-    CHECK(device->stamps[1] * context.sampleRate == Catch::Approx(100.5).margin(1e-4));
-    CHECK(device->stamps[2] * context.sampleRate == Catch::Approx(100.8).margin(1e-4));
+    REQUIRE(device->positions.size() == 3);
+    for (int at = 0; at < 3; ++at)
+        CHECK(device->positions[static_cast<std::size_t>(at)].sample == 100);
+    CHECK(device->positions[0].fraction == Catch::Approx(0.2f).margin(1e-4));
+    CHECK(device->positions[1].fraction == Catch::Approx(0.5f).margin(1e-4));
+    CHECK(device->positions[2].fraction == Catch::Approx(0.8f).margin(1e-4));
 }
 
 TEST_CASE("a device that declares no MIDI output cannot emit any", "[engine][devices][2347]") {

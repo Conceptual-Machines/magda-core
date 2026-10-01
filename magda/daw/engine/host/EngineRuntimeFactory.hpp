@@ -3,6 +3,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
 #include <functional>
+#include <magda/sdk/state/StateNode.hpp>
 #include <map>
 #include <memory>
 #include <optional>
@@ -82,6 +83,14 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
 
     void wrapInsertsWith(InsertWrapper wrapper) {
         wrapInsert_ = std::move(wrapper);
+    }
+
+    /// Where state a device reports about itself goes, told which key it came from.
+    /// Called on the control thread; set before the first publish.
+    using DeviceStateReporter = std::function<void(engine::DeviceKey, sdk::StateNode)>;
+
+    void reportDeviceStateWith(DeviceStateReporter reporter) {
+        reportDeviceState_ = std::move(reporter);
     }
 
     /// Build every insert again at the next publish: the interface, its latency, or
@@ -177,6 +186,10 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
     engine::LiveOutputFeed* liveOutputs_ = nullptr;
     InsertRouter routeInsert_;
     InsertWrapper wrapInsert_;
+    DeviceStateReporter reportDeviceState_;
+
+    /// Held by the reporters handed to devices, so one outliving the factory finds it gone.
+    std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);
 
     /// Which config each insert was built or last tried from, like @ref built_ for devices.
     std::map<engine::DeviceKey, juce::String> insertsBuilt_;

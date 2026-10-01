@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <memory>
 
 #include "audio/analysis/AudioTapBuffer.hpp"
@@ -64,15 +65,14 @@ class MutableCloudsPlugin : public MagdaDevice, public GrainEnvelopeTelemetry {
     /// Measured, not derived: the filters' group delay is not the analog
     /// prototype's sum(1/Q)/w0, since the bilinear transform collapses it as
     /// the corner nears Nyquist, and it is not one number across the band
-    /// anyway. In seconds because properties() is a construction-time
-    /// snapshot; the dry path carries it too, since Clouds mixes dry itself.
+    /// anyway. In seconds, converted at the prepared rate; the dry path carries it too, since
+    /// Clouds mixes dry itself.
     static constexpr double kLatencySeconds = 1145.9e-6;
 
     /// How far the delay moves across 22.05 kHz to 192 kHz, which is the
     /// measured quantity rather than a tolerance picked to pass a test. What is
     /// left is the input guard holding a fixed sample count, a shrinking
-    /// duration as the rate climbs; closing it needs a rate-aware declaration,
-    /// which construction-time properties() has no room for.
+    /// duration as the rate climbs.
     static constexpr double kLatencySpreadSeconds = 55.0e-6;
 
     /// Past this the device sustains rather than decays: feedback from 0.75
@@ -85,11 +85,18 @@ class MutableCloudsPlugin : public MagdaDevice, public GrainEnvelopeTelemetry {
             .pluginId = xmlTypeName,
             .name = getPluginName(),
             .shortName = "Nimbus",
-            .latencySeconds = kLatencySeconds,
-            // Off the reverb, not a constant: the decay runs 60 ms to past 18 s
-            // across that parameter, and getTailLength() is read per render.
-            .tailLengthSeconds = tailSeconds_.load(std::memory_order_relaxed),
         };
+    }
+
+    int latencySamples() const override {
+        return juce::roundToInt(kLatencySeconds * sampleRate_);
+    }
+
+    /// Off the reverb, not a constant: the decay runs 60 ms to past 18 s across that parameter,
+    /// and the tail is read per render.
+    std::int64_t tailSamples() const override {
+        return static_cast<std::int64_t>(
+            std::ceil(tailSeconds_.load(std::memory_order_relaxed) * sampleRate_));
     }
 
     /// @brief The tail those parameters imply, in seconds. `position` because
