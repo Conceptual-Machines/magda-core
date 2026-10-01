@@ -7,6 +7,7 @@
 #include <magda/sdk/device/Device.hpp>
 #include <ranges>
 
+#include "core/ParameterDescriptorAdapter.hpp"
 #include "core/ParameterInfo.hpp"
 #include "core/SidechainPort.hpp"
 #include "plugins/DeviceJuceInterop.hpp"
@@ -16,8 +17,8 @@
  * @brief MAGDA's device base: the JUCE-free SDK contract, plus what the app describes it with.
  *
  * Everything a host needs to run a device is sdk::Device (docs/device-interface.md in the
- * SDK). What is added here is how the app presents the device's parameters, which stays
- * with the model until the parameter manifest (#2939) replaces it.
+ * SDK). What is added here is the model's view of a device's parameters: ParameterInfo is
+ * built from the described parameter, so a device describes each one once (#2939).
  */
 
 namespace magda::daw::audio {
@@ -35,9 +36,9 @@ class MagdaDevice : public sdk::Device {
         host_ = host;
     }
 
-    /// How @p slot is described to the model and the UI. Slots are those of parameterCount().
-    virtual ParameterInfo parameterInfo(int) const {
-        return {};
+    /// @p slot as the model and the UI hold it: parameterDescriptor() plus the host-only fields.
+    virtual ParameterInfo parameterInfo(int slot) const {
+        return toParameterInfo(parameterDescriptor(slot));
     }
 
     /// Every parameter this device describes, in slot order. The view yields values,

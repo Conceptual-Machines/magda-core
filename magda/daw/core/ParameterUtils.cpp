@@ -13,30 +13,6 @@
 
 namespace magda::ParameterUtils {
 
-namespace {
-
-// Compute the skew exponent that places `anchorPosition` (the normalized
-// position of the anchor in the scale's natural space — linear ratio for
-// Linear, log ratio for Logarithmic) at the visual midpoint 0.5.
-//
-// Returns 1.0 (no skew) when the anchor already sits at 0.5 or when the
-// anchor is degenerate (0 or 1). Clamps to a sane range so extreme anchors
-// don't produce pathological curves.
-float computeSkew(float anchorPosition) {
-    if (anchorPosition <= 1e-6f || anchorPosition >= 1.0f - 1e-6f)
-        return 1.0f;
-    if (std::abs(anchorPosition - 0.5f) < 1e-6f)
-        return 1.0f;
-    // pow(0.5, skew) should equal anchorPosition, so skew = log(anchor)/log(0.5).
-    return std::log(anchorPosition) / std::log(0.5f);
-}
-
-}  // namespace
-
-bool hasScaleAnchor(const ParameterDomain& domain) {
-    return domain.scaleAnchor > domain.minValue && domain.scaleAnchor < domain.maxValue;
-}
-
 bool hasScaleAnchor(const ParameterInfo& info) {
     return hasScaleAnchor(domainOf(info));
 }
@@ -46,89 +22,16 @@ ParameterDomain domainOf(const ParameterInfo& info) {
     domain.scale = info.scale;
     domain.minValue = info.minValue;
     domain.maxValue = info.maxValue;
-    domain.skewFactor = info.skewFactor;
+    domain.exponent = info.skewFactor;
     domain.scaleAnchor = info.scaleAnchor;
+    domain.unityPosition = info.unityPosition;
+    domain.unityDb = info.unityDb;
     domain.choiceCount = static_cast<int>(info.choices.size());
     return domain;
 }
 
-bool isStepped(const ParameterDomain& domain) {
-    return domain.scale == ParameterScale::Discrete || domain.scale == ParameterScale::Boolean;
-}
-
 float normalizedToReal(float normalized, const ParameterInfo& info) {
     return normalizedToReal(normalized, domainOf(info));
-}
-
-float normalizedToReal(float normalized, const ParameterDomain& domain) {
-    // Clamp input to valid range
-    normalized = juce::jlimit(0.0f, 1.0f, normalized);
-
-    switch (domain.scale) {
-        case ParameterScale::Linear: {
-            float range = domain.maxValue - domain.minValue;
-            if (hasScaleAnchor(domain) && range > 0.0f) {
-                float anchorPos = (domain.scaleAnchor - domain.minValue) / range;
-                float skew = computeSkew(anchorPos);
-                normalized = std::pow(normalized, skew);
-            }
-            return domain.minValue + normalized * range;
-        }
-
-        case ParameterScale::Logarithmic: {
-            // Fallback to linear when log is undefined (non-positive min).
-            if (domain.minValue <= 0.0f) {
-                return domain.minValue + normalized * (domain.maxValue - domain.minValue);
-            }
-            float logRange = std::log(domain.maxValue / domain.minValue);
-            if (hasScaleAnchor(domain)) {
-                // Place anchor at norm=0.5 in log space by skewing norm first.
-                float anchorLogPos = std::log(domain.scaleAnchor / domain.minValue) / logRange;
-                float skew = computeSkew(anchorLogPos);
-                normalized = std::pow(normalized, skew);
-            }
-            return domain.minValue * std::exp(normalized * logRange);
-        }
-
-        case ParameterScale::Exponential:
-            return std::pow(normalized, domain.skewFactor) * (domain.maxValue - domain.minValue) +
-                   domain.minValue;
-
-        case ParameterScale::Discrete: {
-            if (domain.choiceCount <= 0) {
-                return 0.0f;
-            }
-            int index = static_cast<int>(std::round(normalized * (domain.choiceCount - 1)));
-            return static_cast<float>(index);
-        }
-
-        case ParameterScale::Boolean:
-            return normalized >= 0.5f ? 1.0f : 0.0f;
-
-        case ParameterScale::FaderDB: {
-            // Fader-style dB scale: 0.75 = 0dB (unity)
-            // 0.0 = minValue (e.g., -60dB), 1.0 = maxValue (e.g., +6dB)
-            constexpr float UNITY_POS = 0.75f;
-            constexpr float UNITY_DB = 0.0f;
-
-            if (normalized <= 0.0f)
-                return domain.minValue;
-            if (normalized >= 1.0f)
-                return domain.maxValue;
-
-            if (normalized < UNITY_POS) {
-                // Below unity: 0..0.75 maps to minValue..0dB
-                return domain.minValue + (normalized / UNITY_POS) * (UNITY_DB - domain.minValue);
-            } else {
-                // Above unity: 0.75..1.0 maps to 0dB..maxValue
-                return UNITY_DB + ((normalized - UNITY_POS) / (1.0f - UNITY_POS)) *
-                                      (domain.maxValue - UNITY_DB);
-            }
-        }
-
-        default:
-            return domain.minValue + normalized * (domain.maxValue - domain.minValue);
-    }
 }
 
 float gainFromNormalized(float normalized, const ParameterInfo& info) {
@@ -142,89 +45,6 @@ float normalizedFromGain(float gain, const ParameterInfo& info) {
 
 float realToNormalized(float real, const ParameterInfo& info) {
     return realToNormalized(real, domainOf(info));
-}
-
-float realToNormalized(float real, const ParameterDomain& domain) {
-    switch (domain.scale) {
-        case ParameterScale::Linear: {
-            float range = domain.maxValue - domain.minValue;
-            if (range == 0.0f)
-                return 0.0f;
-            float linPos = (real - domain.minValue) / range;
-            if (hasScaleAnchor(domain)) {
-                float anchorPos = (domain.scaleAnchor - domain.minValue) / range;
-                float skew = computeSkew(anchorPos);
-                // Invert the forward skew (norm -> norm^skew) with norm -> norm^(1/skew).
-                linPos = std::pow(juce::jlimit(0.0f, 1.0f, linPos), 1.0f / skew);
-            }
-            return juce::jlimit(0.0f, 1.0f, linPos);
-        }
-
-        case ParameterScale::Logarithmic: {
-            // Handle edge cases
-            if (domain.minValue <= 0.0f || real <= 0.0f) {
-                float range = domain.maxValue - domain.minValue;
-                if (range == 0.0f)
-                    return 0.0f;
-                return juce::jlimit(0.0f, 1.0f, (real - domain.minValue) / range);
-            }
-            float logRange = std::log(domain.maxValue / domain.minValue);
-            if (logRange == 0.0f)
-                return 0.0f;
-            float logPos = std::log(real / domain.minValue) / logRange;
-            if (hasScaleAnchor(domain)) {
-                float anchorLogPos = std::log(domain.scaleAnchor / domain.minValue) / logRange;
-                float skew = computeSkew(anchorLogPos);
-                logPos = std::pow(juce::jlimit(0.0f, 1.0f, logPos), 1.0f / skew);
-            }
-            return juce::jlimit(0.0f, 1.0f, logPos);
-        }
-
-        case ParameterScale::Exponential: {
-            float range = domain.maxValue - domain.minValue;
-            if (range == 0.0f || domain.skewFactor == 0.0f)
-                return 0.0f;
-            float normalized = (real - domain.minValue) / range;
-            return juce::jlimit(0.0f, 1.0f, std::pow(normalized, 1.0f / domain.skewFactor));
-        }
-
-        case ParameterScale::Discrete: {
-            if (domain.choiceCount <= 0)
-                return 0.0f;
-            int index = juce::jlimit(0, domain.choiceCount - 1, static_cast<int>(std::round(real)));
-            return static_cast<float>(index) / static_cast<float>(domain.choiceCount - 1);
-        }
-
-        case ParameterScale::Boolean:
-            return real >= 0.5f ? 1.0f : 0.0f;
-
-        case ParameterScale::FaderDB: {
-            // Fader-style dB scale: 0.75 = 0dB (unity)
-            constexpr float UNITY_POS = 0.75f;
-            constexpr float UNITY_DB = 0.0f;
-
-            if (real <= domain.minValue)
-                return 0.0f;
-            if (real >= domain.maxValue)
-                return 1.0f;
-
-            if (real < UNITY_DB) {
-                // Below unity: minValue..0dB maps to 0..0.75
-                return UNITY_POS * (real - domain.minValue) / (UNITY_DB - domain.minValue);
-            } else {
-                // Above unity: 0dB..maxValue maps to 0.75..1.0
-                return UNITY_POS +
-                       (1.0f - UNITY_POS) * (real - UNITY_DB) / (domain.maxValue - UNITY_DB);
-            }
-        }
-
-        default: {
-            float range = domain.maxValue - domain.minValue;
-            if (range == 0.0f)
-                return 0.0f;
-            return juce::jlimit(0.0f, 1.0f, (real - domain.minValue) / range);
-        }
-    }
 }
 
 ParameterModelValue normalizedToModelValue(ParameterNormalizedValue normalized,

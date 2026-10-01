@@ -704,6 +704,7 @@ DeviceProperties FaustInstrumentPlugin::properties() const {
         .pluginId = xmlTypeName,
         .name = getPluginName(),
         .shortName = "FaustInst",
+        .parameterSource = sdk::ParameterSource::State,
         .takesMidiInput = true,
         .takesAudioInput = false,
         .isSynth = true,
@@ -1001,18 +1002,18 @@ sdk::RestoreResult FaustInstrumentPlugin::restoreState(const sdk::StateNode& sta
 void FaustInstrumentPlugin::refreshPoolDomains() {
     for (int i = 0; i < FaustParamPool::kSize; ++i)
         poolDomains_[static_cast<size_t>(i)] =
-            ParameterUtils::domainOf(paramInfoFromSlot(pool_.slot(i)));
+            ParameterUtils::domainOf(paramDescriptorFromSlot(pool_.slot(i)));
 }
 
-ParameterInfo FaustInstrumentPlugin::parameterInfo(int index) const {
+sdk::ParameterDescriptor FaustInstrumentPlugin::parameterDescriptor(int index) const {
     if (index >= FaustParamPool::kSize && index < parameterCount())
-        return faustInstrumentHostParamInfo(index - FaustParamPool::kSize);
+        return faustInstrumentHostParamDescriptor(index - FaustParamPool::kSize);
     if (index < 0 || index >= FaustParamPool::kSize)
         return {};
 
-    auto info = paramInfoFromSlot(pool_.slot(index));
-    info.paramIndex = index;
-    info.stableId = poolParamId(index);
+    auto info = paramDescriptorFromSlot(pool_.slot(index));
+    info.index = index;
+    info.stableId = poolParamId(index).toStdString();
     return info;
 }
 

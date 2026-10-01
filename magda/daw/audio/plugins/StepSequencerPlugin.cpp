@@ -32,9 +32,9 @@ const juce::Identifier kStepTie("tie");
 /// One slot's metadata. The ids, order and display ranges are pinned to what
 /// the retired host-native plugin registered, because saved links address the
 /// slots by index and projects store parameter values in display units.
-ParameterInfo slotInfo(int index) {
-    ParameterInfo info;
-    info.paramIndex = index;
+sdk::ParameterDescriptor slotInfo(int index) {
+    sdk::ParameterDescriptor info;
+    info.index = index;
 
     switch (index) {
         case StepSequencerPlugin::kRate:
@@ -44,8 +44,8 @@ ParameterInfo slotInfo(int index) {
             info.minValue = 0.0f;
             info.maxValue = 9.0f;
             info.defaultValue = 7.0f;  // 1/16
-            info.choices = {"1/4D", "1/4",   "1/4T", "1/8D",  "1/8",
-                            "1/8T", "1/16D", "1/16", "1/16T", "1/32"};
+            info.choices = sdk::choicesFromLabels(
+                {"1/4D", "1/4", "1/4T", "1/8D", "1/8", "1/8T", "1/16D", "1/16", "1/16T", "1/32"});
             break;
 
         case StepSequencerPlugin::kDirection:
@@ -55,7 +55,7 @@ ParameterInfo slotInfo(int index) {
             info.minValue = 0.0f;
             info.maxValue = 3.0f;
             info.defaultValue = 0.0f;
-            info.choices = {"Forward", "Reverse", "Ping-Pong", "Random"};
+            info.choices = sdk::choicesFromLabels({"Forward", "Reverse", "Ping-Pong", "Random"});
             break;
 
         case StepSequencerPlugin::kSwing:
@@ -124,13 +124,13 @@ StepSequencerPlugin::StepSequencerPlugin() {
         const auto info = slotInfo(index);
         domains_[static_cast<size_t>(index)] = ParameterUtils::domainOf(info);
         values_[static_cast<size_t>(index)] =
-            ParameterUtils::realToNormalized(info.defaultValue, info);
+            ParameterUtils::realToNormalized(info.defaultValue, ParameterUtils::domainOf(info));
     }
 }
 
 StepSequencerPlugin::~StepSequencerPlugin() = default;
 
-ParameterInfo StepSequencerPlugin::parameterInfo(int index) const {
+sdk::ParameterDescriptor StepSequencerPlugin::parameterDescriptor(int index) const {
     if (index < 0 || index >= kNumParams)
         return {};
     return slotInfo(index);

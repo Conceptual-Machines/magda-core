@@ -384,6 +384,9 @@ if(MAGDA_BUILD_TESTS)
 endif()
 
 
+# Writes the base-pack parameter manifests (#2939); built on request.
+add_subdirectory(tools/device_manifests)
+
 # Faust scalar-vs-vector codegen benchmark (#1397). Dispatch-only; it doubles
 # the Faust generation work, so it stays out of ordinary builds.
 if(MAGDA_BUILD_FAUST_VEC_BENCH)

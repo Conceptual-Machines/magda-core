@@ -54,7 +54,7 @@ class FaustInstrumentPlugin : public MagdaDevice, public IFaustEditorModel {
     int parameterCount() const override {
         return FaustParamPool::kSize + kHostParamCount;
     }
-    ParameterInfo parameterInfo(int index) const override;
+    sdk::ParameterDescriptor parameterDescriptor(int index) const override;
     float parameterValue(int index) const override;
     void setParameterValue(int index, float value) override;
     bool offersParameter(int index) const override;
@@ -86,7 +86,7 @@ class FaustInstrumentPlugin : public MagdaDevice, public IFaustEditorModel {
 
     // Host-owned parameters, addressed past the end of the [idx:N] pool so a
     // patch is still free to use all 64 of its own slots. See
-    // faustInstrumentHostParamInfo().
+    // faustInstrumentHostParamDescriptor().
     static constexpr int kVoiceModeParamIndex = FaustParamPool::kSize;
     static constexpr int kGlideParamIndex = FaustParamPool::kSize + 1;
     static constexpr int kBendRangeParamIndex = FaustParamPool::kSize + 2;
@@ -189,7 +189,7 @@ class FaustInstrumentPlugin : public MagdaDevice, public IFaustEditorModel {
 
     // ---- Host-owned voice allocation -------------------------------------
     // Past the end of the pool, so nothing in the pool moves. Normalised;
-    // faustInstrumentHostParamInfo() carries the real ranges for display.
+    // faustInstrumentHostParamDescriptor() carries the real ranges for display.
     std::array<std::atomic<float>, kHostParamCount> hostValues_{};
 
     /// A host-owned parameter by its parameter index (kVoiceModeParamIndex and

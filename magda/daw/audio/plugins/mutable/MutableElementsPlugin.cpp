@@ -63,13 +63,13 @@ const std::array<Desc, MutableElementsPlugin::kNumParams> kDescs = {{
 /// ranges are pinned to what the retired host-native plugin registered,
 /// because projects store parameter values in the model in display units
 /// against these ranges and address the slots by index.
-ParameterInfo slotInfo(int index) {
-    ParameterInfo info;
+sdk::ParameterDescriptor slotInfo(int index) {
+    sdk::ParameterDescriptor info;
     if (index < 0 || index >= MutableElementsPlugin::kNumParams)
         return info;
 
     const auto& d = kDescs[static_cast<size_t>(index)];
-    info.paramIndex = index;
+    info.index = index;
     info.stableId = d.id;
     info.name = d.name;
     info.defaultValue = d.def;
@@ -95,7 +95,7 @@ ParameterInfo slotInfo(int index) {
             // 4, which JUCE applies as real = min + span * normalized^(1/skew).
             info.unit = "dB";
             info.scale = ParameterScale::Exponential;
-            info.skewFactor = 0.25f;
+            info.exponent = 0.25f;
             info.minValue = -60.0f;
             info.maxValue = 12.0f;
             break;
@@ -255,13 +255,13 @@ MutableElementsPlugin::MutableElementsPlugin() : impl_(std::make_unique<Impl>())
         const auto info = slotInfo(index);
         domains_[static_cast<size_t>(index)] = ParameterUtils::domainOf(info);
         values_[static_cast<size_t>(index)] =
-            ParameterUtils::realToNormalized(info.defaultValue, info);
+            ParameterUtils::realToNormalized(info.defaultValue, ParameterUtils::domainOf(info));
     }
 }
 
 MutableElementsPlugin::~MutableElementsPlugin() = default;
 
-ParameterInfo MutableElementsPlugin::parameterInfo(int index) const {
+sdk::ParameterDescriptor MutableElementsPlugin::parameterDescriptor(int index) const {
     return slotInfo(index);
 }
 

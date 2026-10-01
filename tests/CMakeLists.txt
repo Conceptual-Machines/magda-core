@@ -45,6 +45,7 @@ set(TEST_SOURCES
     devices/test_post_fx_chain.cpp
     routing/test_group_tracks_and_macros.cpp
     utilities/test_parameter_utils.cpp
+    utilities/test_parameter_conversion_parity.cpp
     agents/test_openai_url.cpp
     agents/test_llm_tool_calls.cpp
     agents/test_generic_sound_design_parameters.cpp
@@ -57,6 +58,7 @@ set(TEST_SOURCES
     devices/test_sampler_model_edits.cpp
     devices/test_faust_model_edits.cpp
     devices/test_device_catalog_parameters.cpp
+    devices/test_device_manifests.cpp
     devices/test_device_state_hydration.cpp
     devices/test_internal_plugin_registry.cpp
     # Engine-neutral internal device state schema v2 (issue #1887)

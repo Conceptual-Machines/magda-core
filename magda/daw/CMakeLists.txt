@@ -262,6 +262,7 @@ juce_add_binary_data(MagdaAssets
 # physically in core/ for now; relocating them into their own directory (and the
 # include-boundary guard) lands with the device-library carve (#1834).
 add_library(magda_types STATIC
+    core/ParameterDescriptorAdapter.cpp
     core/ParameterUtils.cpp
     # The shape of an automation lane, on its own, so the engine bakes a curve
     # through the same function the editor draws it with (#2118).
@@ -291,6 +292,7 @@ add_library(magda_types STATIC
     core/AddressedParameters.hpp
     core/ChainNodePath.hpp
     core/ControlTarget.hpp
+    core/ParameterDescriptorAdapter.hpp
     core/ParameterInfo.hpp
     core/ParameterUtils.hpp
     core/AutomationCurve.hpp

@@ -24,9 +24,9 @@ constexpr int kMaxStairSamples = 4096;
 /// The slot table. The ids are pinned rather than derived from the names
 /// because they key saved state, and "channelMode" is not what a name-derived
 /// scheme would make of "Channel Mode".
-ParameterInfo slotInfo(int index) {
-    ParameterInfo info;
-    info.paramIndex = index;
+sdk::ParameterDescriptor slotInfo(int index) {
+    sdk::ParameterDescriptor info;
+    info.index = index;
 
     switch (index) {
         case SidechainPlugin::kGainParamIndex:
@@ -65,7 +65,7 @@ ParameterInfo slotInfo(int index) {
             info.minValue = 0.0f;
             info.maxValue = 1.0f;
             info.defaultValue = 0.0f;
-            info.choices = {"Stereo", "Sides"};
+            info.choices = sdk::choicesFromLabels({"Stereo", "Sides"});
             break;
 
         default:
@@ -82,11 +82,11 @@ SidechainPlugin::SidechainPlugin() {
         const auto info = slotInfo(index);
         domains_[static_cast<size_t>(index)] = ParameterUtils::domainOf(info);
         values_[static_cast<size_t>(index)] =
-            ParameterUtils::realToNormalized(info.defaultValue, info);
+            ParameterUtils::realToNormalized(info.defaultValue, ParameterUtils::domainOf(info));
     }
 }
 
-ParameterInfo SidechainPlugin::parameterInfo(int index) const {
+sdk::ParameterDescriptor SidechainPlugin::parameterDescriptor(int index) const {
     if (index < 0 || index >= kParamCount)
         return {};
     return slotInfo(index);

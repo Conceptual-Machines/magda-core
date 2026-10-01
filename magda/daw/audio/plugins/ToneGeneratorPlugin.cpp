@@ -31,9 +31,9 @@ float polyBlep(float phase, float phaseIncrement) {
     return 0.0f;
 }
 
-ParameterInfo slotInfo(int index) {
-    ParameterInfo info;
-    info.paramIndex = index;
+sdk::ParameterDescriptor slotInfo(int index) {
+    sdk::ParameterDescriptor info;
+    info.index = index;
 
     switch (index) {
         case ToneGeneratorPlugin::kWaveformParamIndex:
@@ -43,7 +43,8 @@ ParameterInfo slotInfo(int index) {
             info.minValue = 0.0f;
             info.maxValue = static_cast<float>(ToneGeneratorPlugin::kWaveformCount - 1);
             info.defaultValue = 0.0f;
-            info.choices = {"Sine", "Triangle", "Saw Up", "Saw Down", "Square", "Noise"};
+            info.choices = sdk::choicesFromLabels(
+                {"Sine", "Triangle", "Saw Up", "Saw Down", "Square", "Noise"});
             break;
 
         case ToneGeneratorPlugin::kBandLimitParamIndex:
@@ -58,7 +59,7 @@ ParameterInfo slotInfo(int index) {
         case ToneGeneratorPlugin::kFrequencyParamIndex:
             info.stableId = "frequency";
             info.name = "Frequency";
-            info.unit = technicalText(TechnicalTextToken::Hertz);
+            info.unit = technicalText(TechnicalTextToken::Hertz).toStdString();
             info.scale = ParameterScale::Logarithmic;
             info.minValue = 20.0f;
             info.maxValue = 20000.0f;
@@ -69,7 +70,7 @@ ParameterInfo slotInfo(int index) {
         case ToneGeneratorPlugin::kLevelParamIndex:
             info.stableId = "level";
             info.name = "Level";
-            info.unit = technicalText(TechnicalTextToken::Decibels);
+            info.unit = technicalText(TechnicalTextToken::Decibels).toStdString();
             info.scale = ParameterScale::Linear;
             info.minValue = -60.0f;
             info.maxValue = 0.0f;
@@ -90,11 +91,11 @@ ToneGeneratorPlugin::ToneGeneratorPlugin() {
         const auto info = slotInfo(index);
         domains_[static_cast<size_t>(index)] = ParameterUtils::domainOf(info);
         values_[static_cast<size_t>(index)] =
-            ParameterUtils::realToNormalized(info.defaultValue, info);
+            ParameterUtils::realToNormalized(info.defaultValue, ParameterUtils::domainOf(info));
     }
 }
 
-ParameterInfo ToneGeneratorPlugin::parameterInfo(int index) const {
+sdk::ParameterDescriptor ToneGeneratorPlugin::parameterDescriptor(int index) const {
     if (index < 0 || index >= kParamCount)
         return {};
     return slotInfo(index);

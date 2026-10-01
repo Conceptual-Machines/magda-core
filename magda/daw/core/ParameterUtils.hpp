@@ -13,41 +13,17 @@ namespace magda::ParameterUtils {
 /**
  * @brief The part of a ParameterInfo that decides what a normalized position means.
  *
- * A flat value type with no heap in it, because the conversion is not only a UI
- * concern: the native engine resolves a modulated parameter on the audio thread
- * every block (#2116), where a ParameterInfo cannot go. It carries strings, a
- * choice list and a shared display provider, none of which the curve reads.
- *
- * Split out rather than reimplemented on the engine side. Two implementations of
- * one curve is a difference nobody sees until a project sounds different in one
- * engine than the other, so the conversion below is the only one there is and
- * the ParameterInfo overloads are this one under another name.
+ * The SDK's flat domain: the native engine resolves a modulated parameter on the audio
+ * thread every block (#2116), where a ParameterInfo cannot go. The conversion is the SDK's
+ * and the only one there is; the ParameterInfo overloads below are it under another name.
  */
-struct ParameterDomain {
-    ParameterScale scale = ParameterScale::Linear;
-    float minValue = 0.0f;
-    float maxValue = 1.0f;
-    float skewFactor = 1.0f;
-    float scaleAnchor = 0.0f;
-
-    /// Number of entries in the parameter's choice list, for Discrete. Zero
-    /// everywhere else, and Discrete with zero choices converts to 0 the way
-    /// an empty `choices` does.
-    int choiceCount = 0;
-
-    bool operator==(const ParameterDomain&) const = default;
-};
+using ParameterDomain = sdk::ParameterDomain;
 
 /** @brief The conversion domain of @p info. */
 ParameterDomain domainOf(const ParameterInfo& info);
+using sdk::domainOf;
 
-/**
- * @brief Whether the domain's values are discrete steps rather than a continuum.
- *
- * A stepped parameter is never ramped: there is nothing between two of its
- * values to ramp through.
- */
-bool isStepped(const ParameterDomain& domain);
+using sdk::isStepped;
 
 /**
  * @brief Convert normalized value (0-1) to real parameter value
@@ -61,7 +37,7 @@ bool isStepped(const ParameterDomain& domain);
  *   float realHz = normalizedToReal(0.5f, cutoff);  // ~632 Hz (geometric mean)
  */
 float normalizedToReal(float normalized, const ParameterInfo& info);
-float normalizedToReal(float normalized, const ParameterDomain& domain);
+using sdk::normalizedToReal;
 
 /**
  * @brief Convert real parameter value to normalized (0-1)
@@ -75,7 +51,7 @@ float normalizedToReal(float normalized, const ParameterDomain& domain);
  *   float norm = realToNormalized(440.0f, cutoff);  // ~0.353
  */
 float realToNormalized(float real, const ParameterInfo& info);
-float realToNormalized(float real, const ParameterDomain& domain);
+using sdk::realToNormalized;
 
 /**
  * @brief Whether a parameter places a chosen real value at normalized 0.5.
@@ -86,7 +62,7 @@ float realToNormalized(float real, const ParameterDomain& domain);
  * nor a comparison against zero answers this.
  */
 bool hasScaleAnchor(const ParameterInfo& info);
-bool hasScaleAnchor(const ParameterDomain& domain);
+using sdk::hasScaleAnchor;
 
 /**
  * @brief A normalized fader position as the linear gain `TrackManager` stores.
