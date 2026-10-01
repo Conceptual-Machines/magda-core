@@ -5,7 +5,7 @@ CONSTANTS MaxWrites, MaxPeak
 Ids == 1..MaxWrites
 Peaks == 1..MaxPeak
 
-(* LevelTap::accumulate/read in magda/engine/tap/LevelTap.hpp.
+(* LevelTap::accumulate/read in magda/sdk/tap/LevelTap.hpp (magda-sdk).
 
    `slot` is one atomic<float> channel. The writer's compare-and-swap and the
    reader's exchange are the only atomic operations. A peak lower than the

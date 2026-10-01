@@ -1,5 +1,6 @@
 #include <juce_core/juce_core.h>
 
+#include <magda/sdk/tap/LaunchTap.hpp>
 #include <memory>
 #include <unordered_map>
 
@@ -15,7 +16,6 @@
 #include "magda/daw/engine/host/EngineRuntimeFactory.hpp"
 #include "magda/daw/engine/host/SlotLauncher.hpp"
 #include "plan/PlanCompiler.hpp"
-#include "tap/LaunchTap.hpp"
 
 /**
  * The app driving the session launcher (#2552).

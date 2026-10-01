@@ -16,7 +16,7 @@
  * writes behind it. The callback copies into memory and returns; a thread
  * allowed to block moves it to disk.
  *
- * Not tap/SampleRing.hpp, whose contract is the opposite one. A ring lets the
+ * Not the SDK's tap/SampleRing.hpp, whose contract is the opposite one. A ring lets the
  * writer overwrite what the reader has not taken, which is right for a meter
  * and for a retro-capture buffer (#2311) where the present matters more than
  * the past. A take is the past: a sample the disk did not keep up with is a

@@ -6,11 +6,11 @@
 #include <cmath>
 #include <functional>
 #include <iterator>
+#include <magda/sdk/lockfree/MeteringBuffer.hpp>
 #include <set>
 #include <tuple>
 #include <unordered_map>
 
-#include "../../audio/MeteringBuffer.hpp"
 #include "../../audio/TrackMeters.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "../components/common/InternalFileDrag.hpp"

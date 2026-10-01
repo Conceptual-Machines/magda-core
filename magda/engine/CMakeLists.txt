@@ -3,7 +3,7 @@
 # Dark target: nothing in the app links it yet. It is built on every configure
 # so it cannot rot, and it is deliberately isolated: the C++ standard library,
 # JUCE headers, the MAGDA model layer and a short list of vendored DSP
-# libraries it owns copies of (farbot, Signalsmith Stretch, SoundTouch). No
+# libraries it owns copies of (Signalsmith Stretch, SoundTouch) and the SDK core. No
 # Tracktion Engine, no UI, no app services. The boundary check below enforces
 # that at configure time rather than leaving it to review.
 
@@ -104,19 +104,15 @@ add_library(magda_engine STATIC
     param/ModFollower.hpp
     param/ModSources.hpp
     param/ModRuntime.hpp
-    tap/LevelTap.hpp
     tap/NoteOnTap.hpp
     tap/RecordTap.cpp
     tap/RecordTap.hpp
-    tap/SampleRing.hpp
-    tap/ValueTap.hpp
     launch/FollowActions.cpp
     launch/FollowActions.hpp
     launch/LaunchHandle.cpp
     launch/LaunchHandle.hpp
     launch/LaunchRequests.hpp
     launch/SlotRuns.hpp
-    tap/LaunchTap.hpp
     launch/SessionCapture.cpp
     launch/SessionCapture.hpp
     launch/SessionLauncher.cpp
@@ -186,11 +182,11 @@ target_link_libraries(magda_engine PUBLIC magda_types)
 
 target_include_directories(magda_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-# Vendored, pinned, header-only: farbot (MIT). The engine owns its copy so
-# that nothing outside third_party/ can break this target.
+# farbot (MIT) comes from the SDK, which vendors it header-only; the SDK core
+# also supplies the lock-free taps and the audio buffer view.
 #
 # Standing rule for the engine: nothing real-time-concurrent is hand-rolled.
-target_include_directories(magda_engine PUBLIC ${CMAKE_SOURCE_DIR}/third_party/farbot/include)
+target_link_libraries(magda_engine PUBLIC magda::sdk_core)
 
 # The render pool's ready queue and worker semaphore (#2786): rigtorp MPMCQueue
 # (MIT) and moodycamel LightweightSemaphore (Simplified BSD / zlib). Header-only.

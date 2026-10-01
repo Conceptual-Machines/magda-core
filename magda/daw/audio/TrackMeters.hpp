@@ -3,8 +3,8 @@
 #include <juce_core/juce_core.h>
 
 #include <atomic>
+#include <magda/sdk/lockfree/MeteringBuffer.hpp>
 
-#include "MeteringBuffer.hpp"
 #include "midi/MidiActivityMonitor.hpp"
 
 /**

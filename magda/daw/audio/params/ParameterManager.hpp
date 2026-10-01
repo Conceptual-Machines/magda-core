@@ -2,10 +2,38 @@
 
 #include <juce_core/juce_core.h>
 
+#include <magda/sdk/lockfree/ParameterQueue.hpp>
+
 #include "../../core/ChainNodePath.hpp"
-#include "params/ParameterQueue.hpp"
 
 namespace magda {
+
+/// False when the path has more steps than the queue's fixed payload holds.
+inline bool packChainNodePath(const ChainNodePath& path, PackedPath& packed) {
+    std::array<PackedPath::Step, PackedPath::kMaxSteps> steps{};
+    if (path.steps.size() > steps.size())
+        return false;
+
+    for (size_t i = 0; i < path.steps.size(); ++i)
+        steps[i] = {static_cast<int>(path.steps[i].type), path.steps[i].id};
+
+    packed.trackId = path.trackId;
+    packed.topLevelDeviceId = path.topLevelDeviceId;
+    packed.isTrackLevel = path.isTrackLevel;
+    return packed.setSteps(steps.data(), path.steps.size());
+}
+
+inline ChainNodePath unpackChainNodePath(const PackedPath& packed) {
+    ChainNodePath path;
+    path.trackId = packed.trackId;
+    path.topLevelDeviceId = packed.topLevelDeviceId;
+    path.isTrackLevel = packed.isTrackLevel;
+    path.steps.reserve(packed.stepCount);
+    for (uint8_t i = 0; i < packed.stepCount; ++i)
+        path.steps.push_back(
+            {static_cast<ChainStepType>(packed.steps[i].type), packed.steps[i].id});
+    return path;
+}
 
 /**
  * @brief Manages parameter changes with lock-free queue
@@ -34,7 +62,7 @@ class ParameterManager {
      */
     bool pushChange(const ChainNodePath& devicePath, int paramIndex, float value) {
         ParameterChange change;
-        if (!change.setDevicePath(devicePath))
+        if (!packChainNodePath(devicePath, change.devicePath))
             return false;
         change.paramIndex = paramIndex;
         change.value = value;

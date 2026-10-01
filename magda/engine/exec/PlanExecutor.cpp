@@ -1204,6 +1204,12 @@ juce::dsp::AudioBlock<float> PlanExecutor::audioOut(OpId op, int port, int numSa
     return audioBlock(static_cast<std::size_t>(slotFor(PortRef{op, port})), numSamples);
 }
 
+ConstBufferView PlanExecutor::audioOutView(OpId op, int port, int numSamples) const {
+    const auto channels = static_cast<std::size_t>(context_.numChannels);
+    const auto row = static_cast<std::size_t>(slotFor(PortRef{op, port}));
+    return {&slotChannels_[row * channels], context_.numChannels, numSamples};
+}
+
 const juce::MidiBuffer& PlanExecutor::midiIn(const PortRef& ref) const {
     return ref.valid() ? midiSlots_[static_cast<std::size_t>(slotFor(ref))] : noMidi_;
 }
@@ -2035,7 +2041,7 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // reader's cadence and not which blocks the executor bothered
             // to report.
             if (auto* tap = meterForOp_[i]; tap != nullptr)
-                tap->write(out, numSamples);
+                tap->write(audioOutView(id, 0, numSamples));
             break;
         }
 

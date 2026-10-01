@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
+#include <magda/sdk/tap/LevelTap.hpp>
 #include <map>
 #include <memory>
 #include <set>
@@ -13,7 +14,6 @@
 #include "io/AudioFileSink.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "plan/RenderPlan.hpp"
-#include "tap/LevelTap.hpp"
 
 using namespace magda;
 using magda::engine::BlockInfo;

@@ -513,7 +513,6 @@ set(TEST_SOURCES
     # a recording in flight, and what the three that end one leave behind.
     list(APPEND TEST_SOURCES AllocationWatch.cpp)
     list(APPEND TEST_SOURCES engine/test_take_across_swap.cpp)
-    list(APPEND TEST_SOURCES engine/test_engine_taps.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_snapshot.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_tempo_engine_sequences.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_voice.cpp)

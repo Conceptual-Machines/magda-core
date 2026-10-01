@@ -2,6 +2,8 @@
 
 #include <atomic>
 #include <cstdint>
+#include <magda/sdk/tap/LevelTap.hpp>
+#include <magda/sdk/tap/ValueTap.hpp>
 #include <map>
 #include <memory>
 #include <optional>
@@ -15,10 +17,8 @@
 #include "launch/LaunchHandle.hpp"
 #include "launch/SessionLauncher.hpp"
 #include "plan/RenderPlan.hpp"
-#include "tap/LevelTap.hpp"
 #include "tap/NoteOnTap.hpp"
 #include "tap/RecordTap.hpp"
-#include "tap/ValueTap.hpp"
 
 namespace magda {
 struct TrackInfo;

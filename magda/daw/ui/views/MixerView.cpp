@@ -2,10 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <magda/sdk/lockfree/MeteringBuffer.hpp>
 #include <set>
 #include <unordered_map>
 
-#include "../../audio/MeteringBuffer.hpp"
 #include "../../audio/MidiBridge.hpp"
 #include "../../audio/TrackMeters.hpp"
 #include "../../core/MixerStripOrder.hpp"

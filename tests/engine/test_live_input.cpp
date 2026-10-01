@@ -2,6 +2,7 @@
 #include <array>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <magda/sdk/tap/LevelTap.hpp>
 #include <memory>
 #include <string>
 #include <utility>
@@ -14,7 +15,6 @@
 #include "io/LiveInput.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "plan/RenderPlan.hpp"
-#include "tap/LevelTap.hpp"
 
 /**
  * @file test_live_input.cpp
