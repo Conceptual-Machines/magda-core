@@ -50,46 +50,34 @@ TEST_CASE("Binary text is byte for byte what juce::MemoryBlock writes", "[device
     }
 }
 
+// JUCE narrows an out-of-range integer differently per platform; the SDK saturates.
+TEST_CASE("An integer string beyond the getter's range saturates", "[device-state][sdk]") {
+    sdk::StateNode node;
+    node.set("big", sdk::StateValue::fromString("99999999999"));
+    node.set("small", sdk::StateValue::fromString("-99999999999"));
+    node.set("huge", sdk::StateValue::fromString("99999999999999999999999"));
+
+    CHECK(node.getInt("big") == std::numeric_limits<int>::max());
+    CHECK(node.getInt("small") == std::numeric_limits<int>::min());
+    CHECK(node.getInt64("big") == 99999999999LL);
+    CHECK(node.getInt64("huge") == std::numeric_limits<std::int64_t>::max());
+
+    node.set("wide", sdk::StateValue::fromInt(std::int64_t{1} << 40));
+    CHECK(node.getInt("wide") == std::numeric_limits<int>::max());
+    CHECK(node.getInt64("wide") == (std::int64_t{1} << 40));
+}
+
 TEST_CASE("Typed getters coerce exactly as juce::var does", "[device-state][sdk]") {
     const std::vector<juce::var> values{
-        juce::var(0),
-        juce::var(1),
-        juce::var(-7),
-        juce::var(60),
-        juce::var(2147483647),
-        juce::var(juce::int64{1} << 40),
-        juce::var(-juce::int64{1} << 40),
-        juce::var(0.0),
-        juce::var(1.5),
-        juce::var(-2.5),
-        juce::var(0.1),
-        juce::var(1.0e-7),
-        juce::var(123456.789),
-        juce::var(true),
-        juce::var(false),
-        juce::var("60"),
-        juce::var("1"),
-        juce::var("0"),
-        juce::var("true"),
-        juce::var("false"),
-        juce::var("yes"),
-        juce::var("Yes "),
-        juce::var("1.5"),
-        juce::var("-1.5"),
-        juce::var("  42 abc"),
-        juce::var("+5"),
-        juce::var("abc"),
-        juce::var(""),
-        juce::var("0.5"),
-        juce::var("1e3"),
-        juce::var(".5"),
-        juce::var("-"),
-        juce::var("007"),
-        juce::var("99999999999"),
-        juce::var("2.9"),
-        juce::var("  -3"),
-        juce::var("TRUE"),
-        juce::var(" true"),
+        juce::var(0),          juce::var(1),       juce::var(-7),         juce::var(60),
+        juce::var(2147483647), juce::var(0.0),     juce::var(1.5),        juce::var(-2.5),
+        juce::var(0.1),        juce::var(1.0e-7),  juce::var(123456.789), juce::var(true),
+        juce::var(false),      juce::var("60"),    juce::var("1"),        juce::var("0"),
+        juce::var("true"),     juce::var("false"), juce::var("yes"),      juce::var("Yes "),
+        juce::var("1.5"),      juce::var("-1.5"),  juce::var("  42 abc"), juce::var("+5"),
+        juce::var("abc"),      juce::var(""),      juce::var("0.5"),      juce::var("1e3"),
+        juce::var(".5"),       juce::var("-"),     juce::var("007"),      juce::var("2.9"),
+        juce::var("  -3"),     juce::var("TRUE"),  juce::var(" true"),
     };
 
     for (const auto& value : values) {
