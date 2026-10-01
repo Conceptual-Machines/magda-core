@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <magda/sdk/device/ParameterDescriptor.hpp>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -11,60 +12,12 @@
 
 namespace magda {
 
-/**
- * @brief Scale type for parameter value conversion
- *
- * Defines how normalized values (0-1) map to real parameter values.
- */
-enum class ParameterScale {
-    Linear,       // value = min + normalized * (max - min)
-    Logarithmic,  // value = min * pow(max/min, normalized) - for freq, time
-    Exponential,  // value = pow(normalized, exponent) * (max - min) + min - for curves
-    Discrete,     // value = choices[round(normalized * (count-1))]
-    Boolean,      // value = normalized >= 0.5
-    FaderDB       // Fader-style dB: 0.75 = 0dB (unity), 0.0 = minDb, 1.0 = maxDb
-};
-
-/**
- * @brief The value domain used by currentValue and defaultValue.
- */
-enum class ParameterValueConvention {
-    Real,        // Values use the display domain described by minValue/maxValue/scale
-    Normalized,  // Values use the normalized [0, 1] domain
-};
-
-/**
- * @brief How a parameter's value should be formatted for display and parsed from input.
- *
- * Decouples presentation from the scale used for value conversion. For example
- * a volume parameter uses scale=FaderDB and displayFormat=Decibels; a pan uses
- * scale=Linear and displayFormat=Pan. For Default, ParameterUtils::formatValue
- * dispatches on `unit` (Hz/kHz, ms, %, dB, bare) — Default is the right choice
- * for most plugin params.
- */
-enum class DisplayFormat {
-    Default,   // Dispatch on info.unit (Hz/kHz, dB, %, ms, bare)
-    Decibels,  // dB with "-inf" at minValue, always signed ("+3.0", "-6.0")
-    Pan,       // -1..+1 → "L100".."C".."R100"
-    Percent,   // Treat stored value as 0..1 and display "0%".."100%"
-    MidiNote,  // 0..127 → "C-1".."G9"
-    Beats,     // float beats: "2.25 beats"
-    BarsBeats  // float beats: "1.1.000" bars.beats.ticks (480 ticks/beat)
-};
-
-/**
- * @brief Identifies a wrapper-injected parameter by its semantic role.
- *
- * Only set on entries in DeviceInfo::wrapperParameters — None for plugin
- * params and unrecognised wrapper params. The role tag lets device-header
- * chrome render a known pair (e.g. DryGain + WetGain) as a single
- * collapsed control like a Mix crossfader without name-sniffing.
- */
-enum class WrapperRole {
-    None,
-    DryGain,  // dry side
-    WetGain,  // wet side
-};
+/// The scale kinds, value conventions, display formats and wrapper roles are the SDK's, so the
+/// manifest and the model name them once (docs/parameter-manifest.md in the SDK).
+using ParameterScale = sdk::ParameterScale;
+using ParameterValueConvention = sdk::ParameterValueConvention;
+using DisplayFormat = sdk::DisplayFormat;
+using WrapperRole = sdk::WrapperRole;
 
 /**
  * @brief Metadata for a plugin parameter
@@ -108,6 +61,10 @@ struct ParameterInfo {
     // Scaling
     ParameterScale scale = ParameterScale::Linear;
     float skewFactor = 1.0f;  // For exponential scaling
+
+    // For FaderDB: where unityDb sits on the normalized axis.
+    float unityPosition = 0.75f;
+    float unityDb = 0.0f;
 
     /**
      * The real value that maps to normalized 0.5. 0.0 means "unset" —
