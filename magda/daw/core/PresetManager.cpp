@@ -11,6 +11,7 @@
 #include "AppPaths.hpp"
 #include "AutomationInfo.hpp"
 #include "DeviceParamMigrations.hpp"
+#include "DevicePresetEnvelope.hpp"
 #include "LegacyDeviceAliases.hpp"
 #include "version.hpp"
 
@@ -149,6 +150,15 @@ juce::String idFromPresetFile(const juce::File& file) {
     return {};
 }
 
+bool writePresetText(const juce::File& target, const juce::String& text, juce::String& outError) {
+    target.getParentDirectory().createDirectory();
+    if (!target.replaceWithText(text)) {
+        outError = "Failed to write preset file: " + target.getFullPathName();
+        return false;
+    }
+    return true;
+}
+
 // Wrap payload in the standard envelope and write pretty JSON.
 bool writePresetFile(const juce::File& target, const juce::String& kind, const juce::var& payload,
                      juce::String& outError) {
@@ -164,14 +174,7 @@ bool writePresetFile(const juce::File& target, const juce::String& kind, const j
     envelope->setProperty("payload", payload);
 
     juce::var root(envelope);
-    auto json = juce::JSON::toString(root, /*allOnOneLine*/ false);
-
-    target.getParentDirectory().createDirectory();
-    if (!target.replaceWithText(json)) {
-        outError = "Failed to write preset file: " + target.getFullPathName();
-        return false;
-    }
-    return true;
+    return writePresetText(target, juce::JSON::toString(root, /*allOnOneLine*/ false), outError);
 }
 
 // Parse a preset file, validate the envelope, and return the payload. The
@@ -534,10 +537,25 @@ juce::File PresetManager::getDevicePluginDirectory(const juce::String& pluginFol
 }
 
 bool PresetManager::saveDevicePreset(const DeviceInfo& device, const juce::String& presetName) {
-    auto payload = ProjectSerializer::serializeDeviceInfo(device);
     auto pluginDir = getDevicePluginDirectory(device.name);
     auto target = pluginDir.getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
-    if (!writePresetFile(target, kKindDevice, payload, lastError_)) {
+
+    // Identity, authorship and creation time survive an overwrite; a device the envelope cannot
+    // hold exactly keeps the legacy payload.
+    device_preset::Metadata metadata;
+    if (auto existing = device_preset::readMetadata(target))
+        metadata = *existing;
+    if (metadata.id.isEmpty())
+        metadata.id = idFromPresetFile(target);
+    if (metadata.id.isEmpty())
+        metadata.id = juce::Uuid().toDashedString();
+    metadata.name = target.getFileNameWithoutExtension();
+
+    if (auto text = device_preset::writeEnvelope(device, target, metadata)) {
+        if (!writePresetText(target, *text, lastError_))
+            return false;
+    } else if (!writePresetFile(target, kKindDevice, ProjectSerializer::serializeDeviceInfo(device),
+                                lastError_)) {
         return false;
     }
     mirrorToMediaDb(getPresetsDirectory(), target);
@@ -549,6 +567,25 @@ bool PresetManager::loadDevicePreset(const juce::String& pluginFolder,
                                      DeviceInfo& outDevice) {
     auto source = getDevicePluginDirectory(pluginFolder)
                       .getChildFile(sanitizeRelativePath(presetRelativePath) + kPresetExtension);
+    if (source.existsAsFile()) {
+        const auto envelope =
+            device_preset::readEnvelope(source.loadFileAsString(), source, outDevice);
+        switch (envelope.status) {
+            case device_preset::ReadStatus::Loaded:
+                for (const auto& warning : envelope.warnings)
+                    DBG("Device preset " << source.getFullPathName() << ": " << warning);
+                return true;
+            case device_preset::ReadStatus::FromNewerVersion:
+                lastError_ = "Preset was written by a newer version: " + envelope.error;
+                return false;
+            case device_preset::ReadStatus::Invalid:
+                lastError_ = "Invalid preset " + source.getFullPathName() + ": " + envelope.error;
+                return false;
+            case device_preset::ReadStatus::NotAnEnvelope:
+                break;
+        }
+    }
+
     juce::var payload;
     juce::String savedVersion;
     if (!readPresetFile(source, kKindDevice, payload, lastError_, &savedVersion))
@@ -619,7 +656,18 @@ bool PresetManager::renameDevicePreset(const juce::String& pluginFolder,
     auto pluginDir = getDevicePluginDirectory(pluginFolder);
     auto source = pluginDir.getChildFile(sanitizeRelativePath(oldRelativePath) + kPresetExtension);
     auto dest = pluginDir.getChildFile(sanitizeRelativePath(newRelativePath) + kPresetExtension);
-    return renamePresetFile(getPresetsDirectory(), source, dest, lastError_);
+
+    // Asset paths are relative to the file, so they are re-based when it changes folder.
+    juce::String rebased;
+    if (source.getParentDirectory() != dest.getParentDirectory() && source.existsAsFile() &&
+        !dest.existsAsFile()) {
+        if (const auto text = device_preset::rebaseAssets(source.loadFileAsString(), source, dest))
+            rebased = *text;
+    }
+
+    if (!renamePresetFile(getPresetsDirectory(), source, dest, lastError_))
+        return false;
+    return rebased.isEmpty() || writePresetText(dest, rebased, lastError_);
 }
 
 // ============================================================================

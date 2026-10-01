@@ -59,6 +59,8 @@ set(TEST_SOURCES
     devices/test_faust_model_edits.cpp
     devices/test_device_catalog_parameters.cpp
     devices/test_device_manifests.cpp
+    # Device presets in the SDK's portable envelope (#2939)
+    devices/test_device_preset_envelope.cpp
     devices/test_device_state_hydration.cpp
     devices/test_internal_plugin_registry.cpp
     # Engine-neutral internal device state schema v2 (issue #1887)
