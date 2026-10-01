@@ -62,6 +62,7 @@ jobs:
           libxcursor-dev \
           libxext-dev \
           libxinerama-dev \
+          libxi-dev \
           libxrandr-dev \
           libxrender-dev \
           libwebkit2gtk-4.1-dev \

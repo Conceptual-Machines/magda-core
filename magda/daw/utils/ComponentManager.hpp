@@ -41,11 +41,8 @@ class ManagedDrawable {
     static ManagedDrawable create(const char* svgData, size_t svgSize) {
         ManagedDrawable managed;
         if (svgData && svgSize > 0) {
-            auto svgString = juce::String::fromUTF8(svgData, static_cast<int>(svgSize));
-            auto svgXml = juce::XmlDocument::parse(svgString);
-            if (svgXml) {
-                managed.drawable_ = juce::Drawable::createFromSVG(*svgXml);
-            }
+            managed.drawable_ = juce::Drawable::createFromSVGString(
+                juce::String::fromUTF8(svgData, static_cast<int>(svgSize)));
         }
         return managed;
     }

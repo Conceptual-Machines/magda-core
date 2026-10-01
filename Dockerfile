@@ -28,6 +28,7 @@ RUN apt-get update && apt-get install -y \
     libxcursor-dev \
     libxext-dev \
     libxinerama-dev \
+    libxi-dev \
     libxrandr-dev \
     libxrender-dev \
     libwebkit2gtk-4.1-dev \

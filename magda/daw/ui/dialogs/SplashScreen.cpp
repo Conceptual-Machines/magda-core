@@ -23,44 +23,35 @@ class SplashScreen::ContentComponent : public juce::Component {
         setSize(450, 450);
 
         // Load the SVG logo
-        if (auto xml = juce::XmlDocument::parse(
-                juce::String::fromUTF8(BinaryData::magdalisa_svg, BinaryData::magdalisa_svgSize))) {
-            logo_ = juce::Drawable::createFromSVG(*xml);
-            if (logo_) {
-                logo_->replaceColour(juce::Colour(0xFF000000),
-                                     ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-            }
+        logo_ = juce::Drawable::createFromSVGString(
+            juce::String::fromUTF8(BinaryData::magdalisa_svg, BinaryData::magdalisa_svgSize));
+        if (logo_) {
+            logo_->replaceColour(juce::Colour(0xFF000000),
+                                 ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         }
 
         // Load Conceptual Machines badge
-        if (auto xml = juce::XmlDocument::parse(
-                juce::String::fromUTF8(BinaryData::conceptualmachinesbadge_svg,
-                                       BinaryData::conceptualmachinesbadge_svgSize))) {
-            conceptualMachinesBadge_ = juce::Drawable::createFromSVG(*xml);
-            if (conceptualMachinesBadge_) {
-                conceptualMachinesBadge_->replaceColour(
-                    juce::Colour(0xFFE7DFD2), ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-            }
+        conceptualMachinesBadge_ = juce::Drawable::createFromSVGString(juce::String::fromUTF8(
+            BinaryData::conceptualmachinesbadge_svg, BinaryData::conceptualmachinesbadge_svgSize));
+        if (conceptualMachinesBadge_) {
+            conceptualMachinesBadge_->replaceColour(juce::Colour(0xFFE7DFD2),
+                                                    ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         }
 
         // Load JUCE logo
-        if (auto xml = juce::XmlDocument::parse(juce::String::fromUTF8(
-                BinaryData::fadlogojuce_svg, BinaryData::fadlogojuce_svgSize))) {
-            juceLogo_ = juce::Drawable::createFromSVG(*xml);
-            if (juceLogo_) {
-                juceLogo_->replaceColour(juce::Colour(0xFF000000),
-                                         ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-            }
+        juceLogo_ = juce::Drawable::createFromSVGString(
+            juce::String::fromUTF8(BinaryData::fadlogojuce_svg, BinaryData::fadlogojuce_svgSize));
+        if (juceLogo_) {
+            juceLogo_->replaceColour(juce::Colour(0xFF000000),
+                                     ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         }
 
         // Load Faust wordmark logo (same SVG used in the Faust device header)
-        if (auto xml = juce::XmlDocument::parse(juce::String::fromUTF8(
-                BinaryData::fausttextlogo_svg, BinaryData::fausttextlogo_svgSize))) {
-            faustLogo_ = juce::Drawable::createFromSVG(*xml);
-            if (faustLogo_) {
-                faustLogo_->replaceColour(juce::Colour(0xFFD9D9D9),
-                                          ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-            }
+        faustLogo_ = juce::Drawable::createFromSVGString(juce::String::fromUTF8(
+            BinaryData::fausttextlogo_svg, BinaryData::fausttextlogo_svgSize));
+        if (faustLogo_) {
+            faustLogo_->replaceColour(juce::Colour(0xFFD9D9D9),
+                                      ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         }
     }
 
