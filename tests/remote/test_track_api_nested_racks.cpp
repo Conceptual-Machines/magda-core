@@ -218,20 +218,11 @@ TEST_CASE("An unresolvable path yields nothing rather than the wrong node",
     REQUIRE(api.tracks().getChainByPath(top.rackPath()) == nullptr);
     REQUIRE(api.tracks().getRackByPath(ChainNodePath::rack(9999, top.rack)) == nullptr);
 
-    // Asking for a *rack* with a chain path is lenient rather than a miss: the
-    // resolver answers with the deepest rack it walked through, which is that
-    // chain's parent. Pinned because it is surprising, and because the live
-    // test caught the mock disagreeing with `TrackManager` about it — not
-    // because it is obviously the right rule. Tightening it would change
-    // long-standing behaviour well outside this facade — tracked as #2057.
-    REQUIRE(api.tracks().getRackByPath(top.chainPath()) ==
-            api.tracks().getRackByPath(top.rackPath()));
+    // Asking for a rack with a chain path is a miss (#2057).
+    REQUIRE(api.tracks().getRackByPath(top.chainPath()) == nullptr);
 
-    // A path whose *middle* step is broken resolves to nothing, rather than to
-    // something it merely walked through on the way. The live suite is what
-    // pins this against the real resolver — this mock always failed closed, and
-    // `TrackManager` did not, so the agreement here is the thing that used to be
-    // a lie. See `test_track_api_nested_racks_live_juce.cpp`.
+    // A broken middle step resolves to nothing. The live suite pins the same
+    // against the real resolver (`test_track_api_nested_racks_live_juce.cpp`).
     REQUIRE(api.tracks().getRackByPath(top.rackPath().withChain(9999).withRack(9998)) == nullptr);
 
     // Writing through an unresolvable path changes nothing rather than
@@ -275,8 +266,7 @@ TEST_CASE("A structurally impossible route is refused, even with real ids",
     device.name = "Leaf";
     const auto deviceId = api.tracks().addDeviceToChainByPath(top.chainPath(), device);
     const auto validDevicePath = top.chainPath().withDevice(deviceId);
-    REQUIRE(api.tracks().getRackByPath(validDevicePath) ==
-            api.tracks().getRackByPath(top.rackPath()));
+    REQUIRE(api.tracks().getRackByPath(validDevicePath) == nullptr);
     REQUIRE(api.tracks().getRackByPath(top.chainPath().withDevice(9999)) == nullptr);
     REQUIRE(api.tracks().getRackByPath(top.rackPath().withDevice(deviceId)) == nullptr);
     REQUIRE(api.tracks().getRackByPath(top.chainPath().withDevice(deviceId).withRack(rackB)) ==

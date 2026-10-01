@@ -588,18 +588,20 @@ class MockTrackApi : public TrackApi {
     ChainId nextChainId = 1;
 
     RackInfo* resolveRack(const ChainNodePath& rackPath) {
+        if (rackPath.steps.empty() || rackPath.steps.back().type != ChainStepType::Rack)
+            return nullptr;
+        return resolveEnclosingRack(rackPath);
+    }
+
+    RackInfo* resolveEnclosingRack(const ChainNodePath& rackPath) {
         auto* track = getTrack(rackPath.trackId);
         if (track == nullptr)
             return nullptr;
         if (rackPath.isTrackLevel || rackPath.topLevelDeviceId != INVALID_DEVICE_ID)
             return nullptr;
 
-        // Mirrors `TrackManager::getRackByPath` step for step, including its
-        // structural rules: a route alternates `Rack > Chain > Rack > Chain`,
-        // a Device is a leaf, and a Segment only ever leads. Two consecutive
-        // steps of the same kind move sideways through the tree on ids that all
-        // exist, which is a route the model cannot express — see the long note
-        // on the model's copy for the shapes that used to resolve.
+        // Mirrors the walk in `TrackManager::getRackByPath`: a route alternates
+        // `Rack > Chain > Rack`, a Device is a leaf, and a Segment never resolves.
         RackInfo* rack = nullptr;
         ChainInfo* chain = nullptr;
         for (std::size_t index = 0; index < rackPath.steps.size(); ++index) {
@@ -650,15 +652,7 @@ class MockTrackApi : public TrackApi {
                 return nullptr;
             }
         }
-        // The deepest rack traversed, whatever the last step was — so a *chain*
-        // path answers with that chain's parent rack rather than with nothing.
-        //
-        // That is `TrackManager::getRackByPath`'s behaviour, and matching it is
-        // the point of this mock. Guarding on the last step type here instead
-        // read better and was wrong: the two resolvers then disagreed, and a
-        // test written against the mock encoded the mock's opinion rather than
-        // the model's. Whether the real one *should* be this lenient is a
-        // separate question from whether the mock should lie about it.
+        // The innermost rack traversed; resolveRack() adds the last-step rule.
         return rack;
     }
 

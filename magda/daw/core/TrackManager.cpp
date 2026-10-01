@@ -2728,50 +2728,18 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
     // combined with rack steps) instead of silently ignoring one representation.
     if (rackPath.isTrackLevel || rackPath.topLevelDeviceId != INVALID_DEVICE_ID)
         return nullptr;
+    // Strict like getChainByPath: only a path ending on a Rack step names a rack (#2057).
+    if (rackPath.steps.empty() || rackPath.steps.back().type != ChainStepType::Rack)
+        return nullptr;
 
     RackInfo* currentRack = nullptr;
     ChainInfo* currentChain = nullptr;
 
-    // A step that resolves to nothing ends the walk. This used to leave the
-    // previous `currentRack` in place and carry on, which made a broken path
-    // resolve to whatever it had passed through — so `outer > missingChain >
-    // missingRack` answered with `outer`. Worse, a missed Chain step left
-    // `currentChain` null, so the *next* Rack step searched the track's
-    // top-level list again and `outer > missingChain > someOtherTopLevelRack`
-    // answered with that unrelated rack.
-    //
-    // Every path-based rack mutator resolves through here, so that was a write
-    // landing silently on a node the caller never named. Failing closed is the
-    // only answer that cannot do that.
-    //
-    // The structure has to hold as well as the ids. Racks contain chains and
-    // chains contain racks, so a route alternates `Rack > Chain > Rack > Chain`;
-    // a step that cannot follow the one before it describes a route the model
-    // has no way to express. Checking only that each id resolves is not enough,
-    // because two consecutive steps of the same kind then move sideways through
-    // the tree using ids that all genuinely exist:
-    //
-    //   rack(A).withRack(B)            — B is a *sibling* top-level rack, and
-    //                                    with `currentChain` null the second
-    //                                    Rack step searched the track list
-    //                                    again and found it.
-    //   rack(R).withChain(c1).withChain(c2)
-    //                                  — c2 is a sibling chain of c1 in the
-    //                                    same rack, reached by a route that
-    //                                    never went through anything.
-    //
-    // Both resolved, and every path-based rack mutator would then write to a
-    // node on the other side of the tree from the one the caller named.
-    //
-    // Deliberately unchanged: a path that resolves *completely* but ends on a
-    // Chain or nested Device step still returns the enclosing rack rather than
-    // nothing. That is a terminal-type leniency on a route that does exist,
-    // which is a different question — #2057. A Device step therefore still has
-    // to name a real device in the current chain before this lookup may return
-    // that enclosing rack.
+    // A step that resolves to nothing ends the walk, and a step that cannot follow
+    // the previous one (Rack after Rack, Chain after Chain) is rejected: a route
+    // alternates Rack > Chain > Rack, and anything else moves sideways.
     for (std::size_t index = 0; index < rackPath.steps.size(); ++index) {
         const auto& step = rackPath.steps[index];
-        const bool isLast = index + 1 == rackPath.steps.size();
 
         switch (step.type) {
             // A PadRack is answered above, before the walk starts: it is always
@@ -2815,20 +2783,9 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
                 currentChain = found;
                 break;
             }
-            case ChainStepType::Device: {
-                // A nested device is a leaf directly inside the current chain.
-                // Validate both the parent and the id before preserving the
-                // #2057 behavior of returning its enclosing rack.
-                if (!isLast || currentChain == nullptr)
-                    return nullptr;
-                const auto matchesDeviceId = [&step](const ChainElement& element) {
-                    return magda::isDevice(element) && magda::getDevice(element).id == step.id;
-                };
-                const auto found = std::ranges::find_if(currentChain->elements, matchesDeviceId);
-                if (found == currentChain->elements.end())
-                    return nullptr;
-                break;
-            }
+            case ChainStepType::Device:
+                // A device is a leaf, so it can only end a path, and this one ends on a Rack.
+                return nullptr;
             case ChainStepType::Segment:
                 // Explicit segments select the flat post-fx or mixer-analysis
                 // lists (the main FX segment is implicit). None can contain a

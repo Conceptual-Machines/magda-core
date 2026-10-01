@@ -266,6 +266,30 @@ TEST_CASE("TrackManager: Add Rack to Track", "[trackmanager][rack]") {
     }
 }
 
+TEST_CASE("TrackManager: getRackByPath names only a rack", "[trackmanager][rack][path]") {
+    TrackManagerTestFixture fixture;
+    auto& tm = fixture.tm();
+    const auto trackId = tm.createTrack("Test Track");
+    const auto rackId = tm.addRackToTrack(trackId, "Outer");
+    const auto chainId = tm.getRack(trackId, rackId)->chains[0].id;
+    const auto rackPath = ChainNodePath::rack(trackId, rackId);
+    const auto chainPath = rackPath.withChain(chainId);
+
+    REQUIRE(tm.getRackByPath(rackPath) == tm.getRack(trackId, rackId));
+    REQUIRE(tm.getRackByPath(chainPath) == nullptr);
+
+    DeviceInfo device;
+    device.name = "Leaf";
+    const auto deviceId = tm.addDeviceToChainByPath(chainPath, device);
+    REQUIRE(tm.getRackByPath(chainPath.withDevice(deviceId)) == nullptr);
+
+    const auto nestedId = tm.addRackToChainByPath(chainPath, "Inner");
+    auto* nested = tm.getRackByPath(chainPath.withRack(nestedId));
+    REQUIRE(nested != nullptr);
+    REQUIRE(tm.getRackByPath(chainPath.withRack(nestedId).withChain(nested->chains[0].id)) ==
+            nullptr);
+}
+
 TEST_CASE("TrackManager: getRackByPath", "[trackmanager][rack][path]") {
     TrackManagerTestFixture fixture;
 
