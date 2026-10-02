@@ -674,26 +674,14 @@ bool TracktionEngineWrapper::finalizeSessionSlotAudioRecording(
     lengthBeats = snapLengthToBars(*this, lengthBeats);
 
     const double projectBpm = getTempo() > 0.0 ? getTempo() : 120.0;
-    if (auto* edit = currentEdit_.get()) {
-        auto end = edit->tempoSequence.toTime(tracktion::BeatPosition::fromBeats(lengthBeats));
-        audioClip.setLength(tracktion::toDuration(end), false);
-
-        auto waveInfo = audioClip.getWaveInfo();
-        auto& loopInfo = audioClip.getLoopInfo();
-        loopInfo.setBpm(projectBpm, waveInfo);
-        loopInfo.setNumBeats(lengthBeats);
-        audioClip.setAutoTempo(true);
-        audioClip.setLoopRangeBeats({tracktion::BeatPosition::fromBeats(0.0),
-                                     tracktion::BeatPosition::fromBeats(lengthBeats)});
-
-        if (auto launchHandle = audioClip.getLaunchHandle())
-            launchHandle->setLooping(tracktion::BeatDuration::fromBeats(lengthBeats));
-    }
 
     auto& clipManager = ClipManager::getInstance();
     auto before = RecordTakeCommand::snapshot(trackId, ClipView::Session);
     ClipId clipId = clipManager.getClipInSlot(trackId, targetIt->second.sceneIndex);
     if (clipId == INVALID_CLIP_ID) {
+        // As for MIDI, the model clip builds the slot clip; the file stays, the model references
+        // it.
+        audioClip.removeFromParent();
         clipId = clipManager.createAudioClipBeats(trackId, 0.0, lengthBeats,
                                                   audioFile.getFullPathName(), ClipView::Session);
         if (clipId != INVALID_CLIP_ID)
