@@ -295,6 +295,12 @@ class SlotRig {
             deliver(false);
     }
 
+    /// @p samples of count-in: the timeline holds, the monotonic count and the input go on.
+    void countIn(std::int64_t samples) {
+        for (auto at = std::int64_t{0}; at < samples; at += kBlockSize)
+            deliver(false, true);
+    }
+
     MidiTakeRecorder& recorder() {
         return *recorder_;
     }
@@ -313,13 +319,11 @@ class SlotRig {
         block.playing = true;
         block.continuous = startSample != 0;
         block.tempo = &tempo_;
-        block.monotonicSamples = {SamplePosition{startSample}, SamplePosition{endSample}};
         block.seconds = {static_cast<double>(startSample) / kSampleRate,
                          static_cast<double>(endSample) / kSampleRate};
-        block.monotonicSeconds = block.seconds;
         block.beats = {static_cast<double>(startSample) / kBeatSamples,
                        static_cast<double>(endSample) / kBeatSamples};
-        block.monotonicBeats = block.beats;
+        setMonotonic(block, startSample + counted_);
         return block;
     }
 
@@ -336,7 +340,16 @@ class SlotRig {
         return block;
     }
 
-    void deliver(bool playing) {
+    static void setMonotonic(BlockInfo& block, std::int64_t startSample) {
+        const auto endSample = startSample + kBlockSize;
+        block.monotonicSamples = {SamplePosition{startSample}, SamplePosition{endSample}};
+        block.monotonicSeconds = {static_cast<double>(startSample) / kSampleRate,
+                                  static_cast<double>(endSample) / kSampleRate};
+        block.monotonicBeats = {static_cast<double>(startSample) / kBeatSamples,
+                                static_cast<double>(endSample) / kBeatSamples};
+    }
+
+    void deliver(bool playing, bool counting = false) {
         juce::MidiBuffer arriving;
         for (const auto& event : schedule_)
             if (event.arrival >= arrival_ && event.arrival < arrival_ + kBlockSize)
@@ -350,9 +363,13 @@ class SlotRig {
 
         // The order the audio thread runs them in: every handle is advanced
         // over the block before anything reads what its run did.
-        const auto block = playing ? blockAt(position_) : stoppedAt(position_);
+        auto block = playing ? blockAt(position_) : stoppedAt(position_);
+        if (counting) {
+            setMonotonic(block, position_ + counted_);
+            counted_ += kBlockSize;
+        }
         advanceLaunchHandles(handles_, requests_, block);
-        recorder_->capture(block, false, {});
+        recorder_->capture(block, counting, {});
 
         feed_.endCallback();
         arrival_ += kBlockSize;
@@ -379,6 +396,9 @@ class SlotRig {
 
     /// Where the transport has rolled to, which a stopped block leaves alone.
     std::int64_t position_ = 0;
+
+    /// Monotonic samples the count-in has passed without moving the timeline.
+    std::int64_t counted_ = 0;
 };
 
 }  // namespace
@@ -978,6 +998,38 @@ TEST_CASE("A slot stop asked for while the transport is stopped ends the take",
     CHECK(take.active.notes[0].noteNumber == 60);
     CHECK(take.startBeat == Catch::Approx(1.0));
     CHECK(take.lengthBeats == Catch::Approx(1.0));
+}
+
+TEST_CASE("A downbeat played just ahead of a slot take opening off a count-in is on its first beat",
+          "[engine][io][record][midi][2965]") {
+    constexpr int kCountIn = kBeatSamples * 4;
+
+    SlotRig rig;
+    rig.schedule({noteOn(kCountIn - 200, 60), noteOff(kCountIn + 1800, 60),
+                  noteOn(kCountIn + kBeatSamples, 64), noteOff(kCountIn + kBeatSamples + 500, 64)});
+    rig.launch(4.0);
+    rig.countIn(kCountIn);
+    rig.runTo(kCountIn + (kBeatSamples * 3));
+
+    const auto take = rig.finish();
+    REQUIRE(take.active.notes.size() == 2);
+    CHECK(take.active.notes[0].noteNumber == 60);
+    CHECK(take.active.notes[0].startBeat == Catch::Approx(0.0));
+    CHECK(take.active.notes[0].lengthBeats == Catch::Approx(0.45));
+    CHECK(take.active.notes[1].startBeat == Catch::Approx(1.0));
+}
+
+TEST_CASE("A pickup earlier in a slot's count-in is not in its take",
+          "[engine][io][record][midi][2965]") {
+    constexpr int kCountIn = kBeatSamples * 4;
+
+    SlotRig rig;
+    rig.schedule({noteOn(kCountIn - 2000, 60), noteOff(kCountIn - 1000, 60)});
+    rig.launch(4.0);
+    rig.countIn(kCountIn);
+    rig.runTo(kCountIn + (kBeatSamples * 2));
+
+    CHECK(rig.finish().active.notes.empty());
 }
 
 TEST_CASE("A re-launch after the run ended does not extend the take",
