@@ -120,6 +120,18 @@ TEST_CASE("WaveformPeakCache - cache file bytes are pinned", "[audio][peaks]") {
         const auto cacheFile = magda::WaveformPeakCache::getCacheFileFor(file);
         juce::MemoryBlock bytes;
         REQUIRE(cacheFile.loadFileAsData(bytes));
+
+        const auto loaded = magda::WaveformPeakCache::loadFromDisk(file);
+        REQUIRE(loaded != nullptr);
+        CHECK(loaded->getNumChannels() == f.channels);
+        CHECK(loaded->getNumSourceSamples() == f.length);
+        for (int ch = 0; ch < f.channels; ++ch) {
+            const auto written = cache->getMinMaxForRange(ch, 0, f.length);
+            const auto read = loaded->getMinMaxForRange(ch, 0, f.length);
+            CHECK(read.min == written.min);
+            CHECK(read.max == written.max);
+        }
+
         cacheFile.deleteFile();
         dir.deleteRecursively();
 

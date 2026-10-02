@@ -7,15 +7,15 @@
 #include <memory>
 #include <vector>
 
+#include "magda/sdk/peaks/PeakData.hpp"
+
 namespace magda {
 
 /**
  * @brief Per-file peak cache at 64 samples/point, persisted to disk.
  *
- * Mirrors the spirit of Ableton's `.asd` files: the smooth waveform renderer
- * needs finer-than-thumbnail resolution but does not need raw samples, so we
- * pre-compute and store min/max pairs once per source file. Subsequent paints
- * read from this cache instead of hitting AudioFormatReader on every column.
+ * Reads a file through AudioFormatReader and stores its sdk::PeakData in a .mpk. Paints read the
+ * peaks instead of hitting the reader on every column.
  *
  * Thread model: an instance is immutable once constructed. Construction is
  * expected to happen on a background thread; reads are safe from any thread.
@@ -36,12 +36,9 @@ namespace magda {
  */
 class WaveformPeakCache {
   public:
-    static constexpr int SAMPLES_PER_PEAK = 64;
+    static constexpr int SAMPLES_PER_PEAK = sdk::kSamplesPerPeak;
 
-    struct MinMax {
-        float min = 0.0f;
-        float max = 0.0f;
-    };
+    using MinMax = sdk::PeakMinMax;
 
     /**
      * @brief Try to load a previously-written cache for @p sourceFile from disk.
@@ -65,31 +62,26 @@ class WaveformPeakCache {
      * [0, endSample]. Returns {0,0} if the clamped range is empty or the
      * channel is out of range.
      */
-    MinMax getMinMaxForRange(int channel, juce::int64 startSample, juce::int64 endSample) const;
+    MinMax getMinMaxForRange(int channel, std::int64_t startSample, std::int64_t endSample) const {
+        return peaks_.getMinMaxForRange(channel, startSample, endSample);
+    }
 
     int getNumChannels() const noexcept {
-        return numChannels_;
+        return peaks_.numChannels();
     }
-    juce::int64 getNumSourceSamples() const noexcept {
-        return sourceLengthSamples_;
+    std::int64_t getNumSourceSamples() const noexcept {
+        return peaks_.numSourceSamples();
     }
 
     /** @brief The .mpk path @p sourceFile's peaks are cached at. */
     static juce::File getCacheFileFor(const juce::File& sourceFile);
 
   private:
-    WaveformPeakCache() = default;
-
     static juce::File getCacheRoot();
 
-    int numChannels_ = 0;
-    double sampleRate_ = 0.0;
-    juce::int64 sourceLengthSamples_ = 0;
-    juce::int64 numBuckets_ = 0;
+    explicit WaveformPeakCache(sdk::PeakData peaks) : peaks_(std::move(peaks)) {}
 
-    // Per-channel packed pairs: peaks_[ch][i*2+0]=min, peaks_[ch][i*2+1]=max
-    // (int16, normalized by 32767).
-    std::vector<std::vector<std::int16_t>> peaks_;
+    sdk::PeakData peaks_;
 
     JUCE_DECLARE_NON_COPYABLE(WaveformPeakCache)
 };
