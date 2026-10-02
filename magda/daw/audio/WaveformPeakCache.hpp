@@ -74,10 +74,12 @@ class WaveformPeakCache {
         return sourceLengthSamples_;
     }
 
+    /** @brief The .mpk path @p sourceFile's peaks are cached at. */
+    static juce::File getCacheFileFor(const juce::File& sourceFile);
+
   private:
     WaveformPeakCache() = default;
 
-    static juce::File getCacheFileFor(const juce::File& sourceFile);
     static juce::File getCacheRoot();
 
     int numChannels_ = 0;
