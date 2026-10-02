@@ -73,7 +73,8 @@ std::vector<engine::LiveMidiSourceId> LiveMidiRouting::devicesFor(const TrackInf
 
     if (track.midiInputDevice == "all") {
         // An unarmed track does not hear its external instrument's own port, which would
-        // double or loop what the insert sends it. Armed, the synth's keyboard is recorded.
+        // double or loop what the insert sends it. Armed, the synth's keyboard is heard
+        // (recording takes its own sources, EngineHost::recordingSources).
         if (!track.recordArmed)
             if (const auto sendback = externalInstrumentPort(track); sendback.isNotEmpty())
                 return sources_.deviceSourcesExcept(sendback);

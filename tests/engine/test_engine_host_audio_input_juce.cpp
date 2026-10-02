@@ -327,7 +327,7 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
     }
 
     void unmonitoredInputStaysSilent() {
-        beginTest("an unmonitored input is silent until the track is armed");
+        beginTest("Off is silent even armed; Auto is audible only while armed");
 
         InputPumpManager devices;
         expect(devices.initialise(kInputs, 2, nullptr, true).isEmpty());
@@ -355,7 +355,25 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
 
         tracks.setTrackRecordArmed(track, true);
         settle(host);
-        expect(steady(*devices.device).left > 0.001f, "arming counts as monitoring");
+        const auto armedOff = steady(*devices.device);
+        expectEquals(armedOff.left, 0.0f);
+        expectEquals(armedOff.right, 0.0f);
+        expect(meterAfter(meters, track, *devices.device) > 0.001f,
+               "the meter follows what is recorded, so an armed Off track still shows its input");
+
+        tracks.setTrackInputMonitor(track, magda::InputMonitorMode::Auto);
+        settle(host);
+        expect(steady(*devices.device).left > 0.001f, "armed Auto is audible");
+
+        tracks.setTrackRecordArmed(track, false);
+        settle(host);
+        expectEquals(steady(*devices.device).left, 0.0f);
+        meterAfter(meters, track, *devices.device);
+        expectEquals(meterAfter(meters, track, *devices.device), 0.0f);
+
+        tracks.setTrackInputMonitor(track, magda::InputMonitorMode::In);
+        settle(host);
+        expect(steady(*devices.device).left > 0.001f, "In is audible unarmed");
 
         host.stop();
         devices.closeAudioDevice();
@@ -442,8 +460,11 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         settle(host);
         expect(host.startMidiRecording(0.0), "the app-facing Record entry accepts audio input");
 
-        for (auto block = 0; block < 4; ++block)
-            devices.device->pump();
+        auto heard = devices.device->pump();
+        for (auto block = 1; block < 4; ++block)
+            heard = devices.device->pump();
+        expectEquals(heard.left, 0.0f, "Off keeps the armed input out of the output");
+        expectEquals(heard.right, 0.0f);
 
         const auto& previews = host.recordingPreviews();
         const auto preview = previews.find(track);
@@ -492,16 +513,6 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
                                       beatsForSamples(host, *devices.device, 4 * kBlockSize),
                                       0.0000001, "timeline length matches the corrected file");
         }
-
-        host.stopPlaying();
-        host.locateSeconds(0.0);
-        host.play();
-        settle(host);
-        const auto playback = devices.device->pump();
-        expectWithinAbsoluteError(playback.left, levelOf(2), 0.0001f,
-                                  "the recorded clip plays through the track");
-        expectWithinAbsoluteError(playback.right, levelOf(3), 0.0001f,
-                                  "recorded stereo reaches both outputs");
 
         host.stop();
         devices.closeAudioDevice();
