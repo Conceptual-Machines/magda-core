@@ -245,8 +245,12 @@ void MidiTakeRecorder::capture(const BlockInfo& block, bool countingIn, const Lo
     }
 
     // A slot take is on its run's own time: neither the count-in nor the loop
-    // says anything about it (#2464).
+    // says anything about it (#2464), but a launch due at the count-in's end
+    // still has a lead-in (#2965).
     if (settings_.slot) {
+        if (countingIn && !block.playing && state_ == State::waiting)
+            holdLeadIn(block);
+
         captureRun(block);
         return;
     }
@@ -363,7 +367,7 @@ void MidiTakeRecorder::start(const BlockInfo& block, const LoopRange& loop, int 
     const auto beats = block.beats.end - block.beats.start;
     const auto seconds = block.seconds.end - block.seconds.start;
     leadInSamples_ = beats > 0.0 ? std::llround(kLeadInBeats * seconds / beats * sampleRate_) : 0;
-    writeLeadIn(block);
+    writeLeadIn(block, from);
 }
 
 void MidiTakeRecorder::holdLeadIn(const BlockInfo& block) {
@@ -386,8 +390,8 @@ void MidiTakeRecorder::holdLeadIn(const BlockInfo& block) {
     }
 }
 
-void MidiTakeRecorder::writeLeadIn(const BlockInfo& block) {
-    const auto opens = block.monotonicSamples.start.sample;
+void MidiTakeRecorder::writeLeadIn(const BlockInfo& block, int from) {
+    const auto opens = block.monotonicSamples.start.sample + from;
     const auto held = std::span(leadIn_).first(numLeadIn_);
     numLeadIn_ = 0;
 
