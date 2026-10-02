@@ -218,10 +218,9 @@ magda::engine::TransportSnapshot rolling(double fromBeat) {
 
 TEST_CASE("A hardware input is compiled for every track that names one",
           "[engine][live-input][2612]") {
-    // monitorsInput(): armed, or monitoring set to In. Auto lights the activity
-    // indicator (receivesLiveMidiInput) but is not audible until the track is
-    // armed, which is what ships. That decides the audio gate's value and the
-    // MIDI routing snapshot's sources, not whether either op exists.
+    // monitorsInput(): In, or Auto while armed; Off is never audible. That
+    // decides the audio gate's value and the MIDI routing snapshot's sources,
+    // not whether either op exists.
     for (const auto kind : {OpKind::AudioInput, OpKind::MidiInput}) {
         CHECK(inputOpsFor(InputMonitorMode::Off, false, kind) == 1);
         CHECK(inputOpsFor(InputMonitorMode::Auto, false, kind) == 1);
@@ -304,8 +303,9 @@ TEST_CASE("What the monitor switch moves is the input gate's silence",
     CHECK(gateSilence(InputMonitorMode::Off, false));
     CHECK(gateSilence(InputMonitorMode::Auto, false));
     CHECK_FALSE(gateSilence(InputMonitorMode::In, false));
-    CHECK_FALSE(gateSilence(InputMonitorMode::Off, true));
+    CHECK(gateSilence(InputMonitorMode::Off, true));
     CHECK_FALSE(gateSilence(InputMonitorMode::Auto, true));
+    CHECK_FALSE(gateSilence(InputMonitorMode::In, true));
 
     // The input reaches the chain through the gate and nowhere else, so a
     // silent gate is the whole of what an unmonitored track hears of it.

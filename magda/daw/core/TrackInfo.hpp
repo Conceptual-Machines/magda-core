@@ -271,10 +271,11 @@ struct TrackInfo {
         return inputMonitor != InputMonitorMode::Off || recordArmed;
     }
 
-    /// Live input reaches the chain: armed, or monitoring set to In. Narrower
-    /// than receivesLiveMidiInput, which answers for the UI's activity light.
+    /// Live input reaches the chain: In always, Auto while armed, Off never.
+    /// Recording is decided by recordArmed alone and ignores this.
     bool monitorsInput() const {
-        return recordArmed || inputMonitor == InputMonitorMode::In;
+        return inputMonitor == InputMonitorMode::In ||
+               (inputMonitor == InputMonitorMode::Auto && recordArmed);
     }
 
     // View settings helpers
