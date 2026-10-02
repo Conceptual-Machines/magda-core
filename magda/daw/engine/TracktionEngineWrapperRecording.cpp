@@ -811,19 +811,13 @@ bool TracktionEngineWrapper::finalizeSessionSlotMidiRecording(TrackId trackId,
         lengthBeats = juce::jmax(lengthBeats, pressure.beatPosition);
     lengthBeats = snapLengthToBars(*this, lengthBeats);
 
-    if (auto* edit = currentEdit_.get()) {
-        auto end = edit->tempoSequence.toTime(tracktion::BeatPosition::fromBeats(lengthBeats));
-        midiClip.setLength(tracktion::toDuration(end), false);
-        midiClip.setLoopRangeBeats({tracktion::BeatPosition::fromBeats(0.0),
-                                    tracktion::BeatPosition::fromBeats(lengthBeats)});
-        if (auto launchHandle = midiClip.getLaunchHandle())
-            launchHandle->setLooping(tracktion::BeatDuration::fromBeats(lengthBeats));
-    }
-
     auto& clipManager = ClipManager::getInstance();
     auto before = RecordTakeCommand::snapshot(trackId, ClipView::Session);
     ClipId clipId = clipManager.getClipInSlot(trackId, targetIt->second.sceneIndex);
     if (clipId == INVALID_CLIP_ID) {
+        // The model clip builds its own slot clip; one left in the slot stays unmapped and
+        // cannot be launched (#2967).
+        midiClip.removeFromParent();
         clipId = clipManager.createMidiClipBeats(trackId, 0.0, lengthBeats, ClipView::Session);
         if (clipId != INVALID_CLIP_ID)
             clipManager.setClipSceneIndex(clipId, targetIt->second.sceneIndex);
