@@ -131,6 +131,8 @@ set(TEST_SOURCES
     devices/test_persisted_enum_pins.cpp
     devices/test_device_param_migrations.cpp
     project/test_project_document_adapters.cpp
+    # The curves a project saves read through the SDK curve schema (#2931)
+    project/test_curve_schema_roundtrip.cpp
     # Unsaved-changes tracking across the undo stack and project boundaries
     project/test_project_dirty_tracking.cpp
     project/test_project_teardown.cpp
@@ -676,6 +678,8 @@ target_include_directories(magda_tests
     # Test sources live in category subdirectories; shared fixtures/mocks stay
     # at tests/ root, so quote-includes of them need this on the search path.
     ${CMAKE_CURRENT_SOURCE_DIR}
+    # The SDK's curve corpus and golden hashes (support/Curve*.hpp).
+    ${CMAKE_SOURCE_DIR}/third_party/magda-sdk/tests
 )
 
 # Paths for the exploratory mix-analysis harness (hidden [.] tests): the repo

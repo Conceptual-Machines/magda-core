@@ -3,8 +3,7 @@
 #include <juce_core/juce_core.h>
 
 #include <algorithm>
-
-#include "core/AutomationCurve.hpp"
+#include <magda/sdk/curve/AutomationCurve.hpp>
 
 namespace magda::engine {
 
@@ -155,7 +154,7 @@ int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& sp
         return 0;
 
     const auto valueAt = [&curve](double beat) {
-        return static_cast<float>(magda::automation::valueAtBeat(curve, beat));
+        return static_cast<float>(magda::sdk::automation::valueAtBeat(curve, beat));
     };
 
     const float opening = valueAt(block.beats.start);
@@ -173,7 +172,7 @@ int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& sp
     // written as a ramp would glide a device through values the drawn curve
     // never has.
     const auto holdsFrom = [&curve](double beat) {
-        const auto* opener = magda::automation::segmentOpening(curve, beat);
+        const auto* opener = magda::sdk::automation::segmentOpening(curve, beat);
         return opener != nullptr && opener->curveType == magda::AutomationCurveType::Step;
     };
 
@@ -250,7 +249,7 @@ int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& sp
             closeAt(curve[i].beatPosition);
 
         if (i + 1 < curve.size())
-            if (const auto corner = magda::automation::hardCornerOf(curve[i], curve[i + 1])) {
+            if (const auto corner = magda::sdk::automation::hardCornerOf(curve[i], curve[i + 1])) {
                 if (written + 1 >= static_cast<int>(out.size())) {
                     overflowed = true;
                     break;

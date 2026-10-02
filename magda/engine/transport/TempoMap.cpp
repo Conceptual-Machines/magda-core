@@ -4,8 +4,8 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <magda/sdk/curve/CurveMath.hpp>
 
-#include "core/CurveMath.hpp"
 #include "core/TempoUtils.hpp"
 
 namespace magda::engine {
@@ -38,8 +38,8 @@ double rampedBpm(double beat, const TempoChange& from, const TempoChange& to) {
 
     const auto position = std::clamp((beat - from.startBeat) / span, 0.0, 1.0);
     return static_cast<double>(
-        curvemath::evalSegment(static_cast<float>(from.bpm), static_cast<float>(to.bpm), 0.0f,
-                               from.tension, false, static_cast<float>(position)));
+        sdk::curvemath::evalSegment(static_cast<float>(from.bpm), static_cast<float>(to.bpm), 0.0f,
+                                    from.tension, false, static_cast<float>(position)));
 }
 
 /// Bar length in beats. A beat is a quarter note, so a bar of x/y is x quarter

@@ -1,10 +1,10 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <magda/sdk/curve/AutomationCurve.hpp>
 #include <map>
 #include <memory>
 #include <vector>
 
-#include "core/AutomationCurve.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
 #include "exec/EngineSession.hpp"

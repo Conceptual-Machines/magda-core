@@ -1,10 +1,10 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
+#include <magda/sdk/curve/ModCurve.hpp>
 #include <memory>
 #include <vector>
 
-#include "core/ModCurve.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
 #include "exec/EngineSession.hpp"
@@ -262,7 +262,7 @@ TEST_CASE("A drawn cycle is read through the model's own curve", "[engine][mod][
 
     CHECK(at(0.25f) == approx(0.0f));
     CHECK(at(0.5f) == approx(1.0f));
-    CHECK(at(0.625f) == approx(magda::modcurve::points(curve, 0.625f)));
+    CHECK(at(0.625f) == approx(magda::sdk::modcurve::points(curve, 0.625f)));
 }
 
 TEST_CASE("A custom waveform with nothing drawn on it falls back to its preset",

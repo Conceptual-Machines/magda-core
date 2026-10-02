@@ -4,11 +4,11 @@
 #include <cmath>
 #include <functional>
 #include <limits>
+#include <magda/sdk/curve/CurveMath.hpp>
 #include <map>
 #include <set>
 
 #include "CurveRenderOrder.hpp"
-#include "core/CurveMath.hpp"
 #include "core/UndoManager.hpp"
 #include "magda/daw/ui/themes/FontManager.hpp"
 
@@ -260,7 +260,7 @@ void CurveEditorBase::renderCurveSegment(juce::Path& path, const CurvePoint& p1,
                 // Pure linear
                 path.lineTo(pixelX2, pixelY2);
             } else {
-                // Sample the shared segment evaluator (core/CurveMath.hpp) so the
+                // Sample the shared segment evaluator (magda/sdk/curve/CurveMath.hpp) so the
                 // drawn curve is byte-for-byte what the modulator engine outputs.
                 const auto [cx, cy] = getSegmentShaperPosition(p1, p2, effectiveTension);
                 juce::ignoreUnused(cx);
@@ -271,7 +271,7 @@ void CurveEditorBase::renderCurveSegment(juce::Path& path, const CurvePoint& p1,
                 for (int s = 1; s <= kSamples; ++s) {
                     const double t = static_cast<double>(s) / kSamples;
                     const double xx = x1 + (x2 - x1) * t;
-                    const double yy = magda::curvemath::evalSegment(
+                    const double yy = magda::sdk::curvemath::evalSegment(
                         static_cast<float>(y1), static_cast<float>(y2), static_cast<float>(cy),
                         static_cast<float>(effectiveTension), hasStoredShaper,
                         static_cast<float>(t));
@@ -672,7 +672,7 @@ std::pair<double, double> CurveEditorBase::getSegmentHandlePosition(const CurveP
     // The handle sits exactly on the rendered curve: its value at the segment
     // midpoint, from the same shared evaluator the engine uses.
     const double midX = 0.5 * (p1x + p2x);
-    const double midY = magda::curvemath::evalSegment(
+    const double midY = magda::sdk::curvemath::evalSegment(
         static_cast<float>(p1y), static_cast<float>(p2y), static_cast<float>(cy),
         static_cast<float>(effectiveTension), hasStoredShaper, 0.5f);
     return {midX, midY};
@@ -719,7 +719,7 @@ void CurveEditorBase::updateSegmentShaperFromPixel(uint32_t pointId, double pixe
             cx = midX;
             cy = 2.0 * handleY - 0.5 * (p1.y + p2.y);
             displayX = midX;
-            displayY = magda::curvemath::evalSegment(
+            displayY = magda::sdk::curvemath::evalSegment(
                 static_cast<float>(p1.y), static_cast<float>(p2.y), static_cast<float>(cy),
                 static_cast<float>(p1.tension), true, 0.5f);
         }

@@ -3,9 +3,9 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <magda/sdk/curve/AutomationCurveSimplifier.hpp>
 
 #include "../../core/ModulatorEngine.hpp"
-#include "AutomationCurveSimplifier.hpp"
 
 namespace magda {
 
@@ -136,7 +136,7 @@ std::vector<AutomationPoint> ModulationBaker::bake(
         return baseValueAt ? baseValueAt(beat) : opts.fallbackBaseValue;
     };
 
-    std::vector<AutomationCurveSimplifier::Point> raw;
+    std::vector<sdk::AutomationCurveSimplifier::Point> raw;
     raw.reserve(static_cast<size_t>((opts.endBeat - opts.startBeat) / step) + 2);
     for (double beat = opts.startBeat; beat < opts.endBeat; beat += step) {
         const double value = baseAt(beat) + contributionAtBeat(sources, beat, tempoMap);
@@ -146,7 +146,7 @@ std::vector<AutomationPoint> ModulationBaker::bake(
         baseAt(opts.endBeat) + contributionAtBeat(sources, opts.endBeat, tempoMap);
     raw.push_back({opts.endBeat, std::clamp(endValue, 0.0, 1.0)});
 
-    const auto keep = AutomationCurveSimplifier::simplify(raw, opts.simplifyEpsilon);
+    const auto keep = sdk::AutomationCurveSimplifier::simplify(raw, opts.simplifyEpsilon);
 
     std::vector<AutomationPoint> points;
     points.reserve(keep.size());

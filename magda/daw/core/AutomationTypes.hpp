@@ -1,5 +1,7 @@
 #pragma once
 
+#include <magda/sdk/curve/CurveTypes.hpp>
+
 namespace magda {
 
 /**
@@ -13,16 +15,7 @@ enum class AutomationLaneType {
     ClipBased  // Automation clips that can loop/stretch
 };
 
-/**
- * @brief Curve interpolation type between automation points
- */
-enum class AutomationCurveType {
-    Linear,     // Straight line between points
-    Bezier,     // Smooth bezier curve with control handles
-    Step,       // Instant jump to next value (no interpolation)
-    HardCorner  // Two straight segments meeting at a sharp, draggable apex.
-                // Keep LAST: persisted as its integer value.
-};
+using AutomationCurveType = sdk::CurveInterpolation;
 
 /**
  * @brief How the transport records automation.

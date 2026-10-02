@@ -2,8 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
-
-#include "core/ModCurve.hpp"
+#include <magda/sdk/curve/ModCurve.hpp>
 
 namespace magda::engine {
 
@@ -220,7 +219,7 @@ ModTiming modTimingFor(const BlockInfo& block, double sampleRate) {
 
 float lfoShapeAt(const LfoSettings& settings, std::span<const magda::CurvePointData> curve,
                  float phase) {
-    return magda::modcurve::shapeAt(settings.wave, settings.preset, curve, phase);
+    return magda::sdk::modcurve::shapeAt(settings.wave, settings.preset, curve, phase);
 }
 
 void restartLfo(LfoState& state, const LfoSettings& settings) {
@@ -279,7 +278,7 @@ float advanceLfo(LfoState& state, const LfoSettings& settings,
         // that is where the curve the user can see is being held.
         state.completed = true;
         phase = 1.0f;
-        shape = magda::modcurve::endValue(settings.wave, settings.preset, curve);
+        shape = magda::sdk::modcurve::endValue(settings.wave, settings.preset, curve);
     } else if (looping) {
         // The intro plays once and the region repeats from there. Read off the
         // cumulative position rather than the wrapped phase, because which of
