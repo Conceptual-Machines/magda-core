@@ -327,7 +327,7 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
     }
 
     void unmonitoredInputStaysSilent() {
-        beginTest("an unmonitored input is silent until the track is armed");
+        beginTest("Off is silent even armed; Auto is audible only while armed");
 
         InputPumpManager devices;
         expect(devices.initialise(kInputs, 2, nullptr, true).isEmpty());
@@ -355,7 +355,36 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
 
         tracks.setTrackRecordArmed(track, true);
         settle(host);
-        expect(steady(*devices.device).left > 0.001f, "arming counts as monitoring");
+        const auto armedOff = steady(*devices.device);
+        expectEquals(armedOff.left, 0.0f);
+        expectEquals(armedOff.right, 0.0f);
+        expect(meterAfter(meters, track, *devices.device) > 0.001f,
+               "the meter follows what is recorded, so an armed Off track still shows its input");
+
+        for (auto toggle = 0; toggle < 3; ++toggle) {
+            tracks.setTrackRecordArmed(track, false);
+            settle(host);
+            expectEquals(steady(*devices.device).left, 0.0f);
+            tracks.setTrackRecordArmed(track, true);
+            settle(host);
+            const auto rearmed = steady(*devices.device);
+            expectEquals(rearmed.left, 0.0f, "re-arming an Off track stays silent");
+            expectEquals(rearmed.right, 0.0f);
+        }
+
+        tracks.setTrackInputMonitor(track, magda::InputMonitorMode::Auto);
+        settle(host);
+        expect(steady(*devices.device).left > 0.001f, "armed Auto is audible");
+
+        tracks.setTrackRecordArmed(track, false);
+        settle(host);
+        expectEquals(steady(*devices.device).left, 0.0f);
+        meterAfter(meters, track, *devices.device);
+        expectEquals(meterAfter(meters, track, *devices.device), 0.0f);
+
+        tracks.setTrackInputMonitor(track, magda::InputMonitorMode::In);
+        settle(host);
+        expect(steady(*devices.device).left > 0.001f, "In is audible unarmed");
 
         host.stop();
         devices.closeAudioDevice();
@@ -442,8 +471,11 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         settle(host);
         expect(host.startMidiRecording(0.0), "the app-facing Record entry accepts audio input");
 
-        for (auto block = 0; block < 4; ++block)
-            devices.device->pump();
+        auto heard = devices.device->pump();
+        for (auto block = 1; block < 4; ++block)
+            heard = devices.device->pump();
+        expectEquals(heard.left, 0.0f, "Off keeps the armed input out of the output");
+        expectEquals(heard.right, 0.0f);
 
         const auto& previews = host.recordingPreviews();
         const auto preview = previews.find(track);
@@ -493,11 +525,37 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
                                       0.0000001, "timeline length matches the corrected file");
         }
 
-        host.stopPlaying();
-        host.locateSeconds(0.0);
-        host.play();
+        // Still armed with monitor Off after the take: the input stays out of the output, and
+        // arming again after a take changes nothing.
         settle(host);
-        const auto playback = devices.device->pump();
+        expectEquals(steady(*devices.device).left, 0.0f, "armed Off stays silent after a take");
+        tracks.setTrackRecordArmed(track, false);
+        settle(host);
+        tracks.setTrackRecordArmed(track, true);
+        settle(host);
+        expectEquals(steady(*devices.device).left, 0.0f, "re-arming after a take stays silent");
+
+        // The all-MIDI route that ran beside the audio take leaves an empty MIDI clip on the same
+        // beats, and a clip above another covers it on the lane. A track names one input in the
+        // app, so it is removed to leave the audio clip as the only thing playing.
+        auto& clips = magda::ClipManager::getInstance();
+        for (const auto id : clips.getClipsOnTrack(track, magda::ClipView::Arrangement))
+            if (const auto* other = clips.getClip(id); other != nullptr && !other->isAudio())
+                clips.deleteClip(id);
+        settle(host);
+
+        // The clip voice thread opens the file and cues it off the callback, so a pass that
+        // starts before it has can be silent; the cursor is parked until the clip is ready.
+        Output playback;
+        for (auto attempt = 0; attempt < 50 && playback.left == 0.0f; ++attempt) {
+            host.stopPlaying();
+            host.locateSeconds(0.0);
+            devices.device->pump();
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(40);
+            host.play();
+            settle(host);
+            playback = devices.device->pump();
+        }
         expectWithinAbsoluteError(playback.left, levelOf(2), 0.0001f,
                                   "the recorded clip plays through the track");
         expectWithinAbsoluteError(playback.right, levelOf(3), 0.0001f,
