@@ -361,6 +361,17 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         expect(meterAfter(meters, track, *devices.device) > 0.001f,
                "the meter follows what is recorded, so an armed Off track still shows its input");
 
+        for (auto toggle = 0; toggle < 3; ++toggle) {
+            tracks.setTrackRecordArmed(track, false);
+            settle(host);
+            expectEquals(steady(*devices.device).left, 0.0f);
+            tracks.setTrackRecordArmed(track, true);
+            settle(host);
+            const auto rearmed = steady(*devices.device);
+            expectEquals(rearmed.left, 0.0f, "re-arming an Off track stays silent");
+            expectEquals(rearmed.right, 0.0f);
+        }
+
         tracks.setTrackInputMonitor(track, magda::InputMonitorMode::Auto);
         settle(host);
         expect(steady(*devices.device).left > 0.001f, "armed Auto is audible");
@@ -513,6 +524,16 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
                                       beatsForSamples(host, *devices.device, 4 * kBlockSize),
                                       0.0000001, "timeline length matches the corrected file");
         }
+
+        // Still armed with monitor Off after the take: the input stays out of the output, and
+        // arming again after a take changes nothing.
+        settle(host);
+        expectEquals(steady(*devices.device).left, 0.0f, "armed Off stays silent after a take");
+        tracks.setTrackRecordArmed(track, false);
+        settle(host);
+        tracks.setTrackRecordArmed(track, true);
+        settle(host);
+        expectEquals(steady(*devices.device).left, 0.0f, "re-arming after a take stays silent");
 
         // The all-MIDI route that ran beside the audio take leaves an empty MIDI clip on the same
         // beats, and a clip above another covers it on the lane. A track names one input in the
