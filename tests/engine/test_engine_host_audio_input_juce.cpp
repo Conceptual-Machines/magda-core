@@ -514,6 +514,32 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
                                       0.0000001, "timeline length matches the corrected file");
         }
 
+        // The all-MIDI route that ran beside the audio take leaves an empty MIDI clip on the same
+        // beats, and a clip above another covers it on the lane. A track names one input in the
+        // app, so it is removed to leave the audio clip as the only thing playing.
+        auto& clips = magda::ClipManager::getInstance();
+        for (const auto id : clips.getClipsOnTrack(track, magda::ClipView::Arrangement))
+            if (const auto* other = clips.getClip(id); other != nullptr && !other->isAudio())
+                clips.deleteClip(id);
+        settle(host);
+
+        // The clip voice thread opens the file and cues it off the callback, so a pass that
+        // starts before it has can be silent; the cursor is parked until the clip is ready.
+        Output playback;
+        for (auto attempt = 0; attempt < 50 && playback.left == 0.0f; ++attempt) {
+            host.stopPlaying();
+            host.locateSeconds(0.0);
+            devices.device->pump();
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(40);
+            host.play();
+            settle(host);
+            playback = devices.device->pump();
+        }
+        expectWithinAbsoluteError(playback.left, levelOf(2), 0.0001f,
+                                  "the recorded clip plays through the track");
+        expectWithinAbsoluteError(playback.right, levelOf(3), 0.0001f,
+                                  "recorded stereo reaches both outputs");
+
         host.stop();
         devices.closeAudioDevice();
     }
