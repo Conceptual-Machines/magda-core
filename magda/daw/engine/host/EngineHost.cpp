@@ -501,7 +501,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return;
 
         for (const auto& track : TrackManager::getInstance().getTracks())
-            publishMeter(track.id, track.monitorsInput());
+            publishMeter(track.id, track.recordArmed || track.monitorsInput());
 
         publishMeter(MASTER_TRACK_ID, false);
     }
@@ -514,7 +514,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         auto levels = tap != nullptr ? tap->read() : engine::LevelTap::Levels{};
 
-        // A monitored input shows at its own level, ahead of the fader (#2553).
+        // An input that is monitored or being recorded shows at its own level,
+        // ahead of the fader (#2553).
         // Drained either way, so switching monitoring on shows now rather than
         // the loudest input since.
         if (inputTap != nullptr) {

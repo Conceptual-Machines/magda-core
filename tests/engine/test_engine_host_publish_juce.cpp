@@ -1049,8 +1049,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         expect(idleTap->read().loudest() == 0.0f,
                "Nor did the track routed to it but monitoring nothing");
 
-        // What monitorsInput() gates and receivesLiveMidiInput() does not: Auto
-        // without an arm is the UI's activity light, not an audible input.
+        // Auto without an arm is the UI's activity light, not an audible input.
         expect(autoTap->read().loudest() == 0.0f, "Nor did the unarmed Auto track");
 
         // The store keeps the input it built, so a monitor switched on after the

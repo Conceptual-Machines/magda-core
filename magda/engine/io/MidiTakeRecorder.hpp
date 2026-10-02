@@ -192,8 +192,9 @@ class MidiTakeRecorder final : public TakeCapture {
     /// Hold a count-in block's events in case the take opens right after it.
     void holdLeadIn(const BlockInfo& block);
 
-    /// Queue the held events close enough to @p block, where the take opens.
-    void writeLeadIn(const BlockInfo& block);
+    /// Queue the held events close enough to the sample @p from into @p block, where the take
+    /// opens.
+    void writeLeadIn(const BlockInfo& block, int from);
 
     /// Draw one message on the tap's pass at @p beat.
     void preview(const juce::MidiMessage& message, double beat);

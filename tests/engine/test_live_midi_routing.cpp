@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 
+#include "exec/RuntimeStateStore.hpp"
 #include "magda/daw/engine/host/LiveMidiRouting.hpp"
 
 /// @file The model's input routing as one snapshot (#2592).
@@ -87,6 +88,43 @@ TEST_CASE("A monitoring track's route resolves to the devices it names", "[live-
         CHECK(track.receivesLiveMidiInput());
         CHECK(entryFor(*snapshot, 1).sources.empty());
     }
+}
+
+TEST_CASE("Monitor mode and arm decide what reaches the chain", "[live-routing]") {
+    host::LiveMidiSources sources;
+    sources.registerAvailableDevices({kKeystep, kPush});
+
+    const auto heard = [&](magda::InputMonitorMode monitor, bool armed) {
+        host::LiveMidiRouting routing(sources);
+        auto track = monitoring(1, "all");
+        track.inputMonitor = monitor;
+        track.recordArmed = armed;
+        const auto snapshot = routing.resolve({track});
+        REQUIRE(snapshot != nullptr);
+        return entryFor(*snapshot, 1).sources;
+    };
+
+    CHECK(heard(magda::InputMonitorMode::Off, true).empty());
+    CHECK(heard(magda::InputMonitorMode::Off, false).empty());
+    CHECK(heard(magda::InputMonitorMode::Auto, false).empty());
+    CHECK(heard(magda::InputMonitorMode::Auto, true).size() == 2);
+    CHECK(heard(magda::InputMonitorMode::In, false).size() == 2);
+    CHECK(heard(magda::InputMonitorMode::In, true).size() == 2);
+}
+
+TEST_CASE("An armed track records its input whatever the monitor says", "[live-routing]") {
+    magda::TrackInfo track;
+    track.id = 1;
+    track.recordArmed = true;
+    track.audioInputDevice = "stereo:In 1";
+    track.midiInputDevice = "all";
+    track.inputMonitor = magda::InputMonitorMode::Off;
+
+    CHECK_FALSE(track.monitorsInput());
+
+    const auto ids = magda::engine::collectRuntimeStateIds({track}, magda::TrackInfo{});
+    CHECK(ids.takes.contains({1, magda::engine::RecordMaterial::audio}));
+    CHECK(ids.takes.contains({1, magda::engine::RecordMaterial::midi}));
 }
 
 TEST_CASE("Every track's audition is its own", "[live-routing]") {
