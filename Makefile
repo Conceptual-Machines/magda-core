@@ -304,18 +304,23 @@ device-abi-test:
 
 .PHONY: device-plugins
 device-plugins:
-	cd $(BUILD_DIR) && $(BUILD_ENV) ninja magda_test_tone_plugin_All
+	cd $(BUILD_DIR) && $(BUILD_ENV) ninja magda_test_tone_plugin_All magda_delay_plugin_All
 
 .PHONY: device-wasm
 device-wasm:
-	emcmake cmake -S magda/devices -B $(WASM_DEVICES_DIR) -G Ninja -DCMAKE_BUILD_TYPE=Release
+	cd $(BUILD_DIR) && $(BUILD_ENV) ninja magda_compiled_dsps
+	emcmake cmake -S magda/devices -B $(WASM_DEVICES_DIR) -G Ninja -DCMAKE_BUILD_TYPE=Release \
+		-DMAGDA_COMPILED_DSPS_DIR=$(CURDIR)/$(BUILD_DIR)/compiled_dsps
 	cmake --build $(WASM_DEVICES_DIR)
 
 .PHONY: device-parity
+# 1e-4: the app's build fuses multiply-adds, which wasm cannot, and a reverb's feedback carries that
+# to ~4e-5; without contraction only libm ulps remain (<5e-7).
 device-parity: device-wasm
 	cd $(BUILD_DIR) && $(BUILD_ENV) ninja magda_portable_render
 	node third_party/magda-sdk/hosts/parity/parity.mjs --wasm $(WASM_DEVICES_DIR)/magda_portable.wasm \
-		--render $(BUILD_DIR)/magda/devices/magda_portable_render --corpus magda/devices/parity-corpus.json
+		--render $(BUILD_DIR)/magda/devices/magda_portable_render --corpus magda/devices/parity-corpus.json \
+		--tolerance 1e-4
 
 .PHONY: test-juce-build
 test-juce-build:

@@ -1,70 +1,8 @@
 #include "plugins/compiled/MagdaClipperCompiledPlugin.hpp"
 
-#include <algorithm>
-#include <cmath>
-#include <magda/sdk/audio/BlockPeak.hpp>
-
-#include "core/ParameterInfo.hpp"
-#include "faust/dsp/dsp.h"
-#include "faust/gui/UI.h"
-#include "faust/gui/meta.h"
-#include "magda_clipper.generated.cpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda::daw::audio::compiled {
-
-const char* MagdaClipperCompiledPlugin::xmlTypeName = "magda_clipper";
-
-MagdaClipperCompiledPlugin::MagdaClipperCompiledPlugin() {
-    initEffect();
-}
-
-::dsp* MagdaClipperCompiledPlugin::createEngineDsp(int) const {
-    return new MagdaClipperDsp();
-}
-
-std::vector<MagdaClipperCompiledPlugin::HostSlotInfo> MagdaClipperCompiledPlugin::slotInfos()
-    const {
-    using magda::ParameterScale;
-    return {
-        {.name = "Drive",
-         .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
-         .scale = ParameterScale::Linear,
-         .minValue = 0.0f,
-         .maxValue = 24.0f,
-         .defaultValue = 0.0f},
-        {.name = "Mode",
-         .scale = ParameterScale::Discrete,
-         .minValue = 0.0f,
-         .maxValue = static_cast<float>(kModeCount - 1),
-         .defaultValue = 0.0f,
-         .choices = {"Hard", "Soft", "Tanh", "Hyperbolic", "Sine"}},
-        {.name = "Output",
-         .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
-         .scale = ParameterScale::Linear,
-         .minValue = -24.0f,
-         .maxValue = 12.0f,
-         .defaultValue = 0.0f},
-    };
-}
-
-void MagdaClipperCompiledPlugin::beforeCompute(DeviceProcessContext& context, int engineIndex) {
-    // Pre-DSP peak, for the dot that rides the transfer curve. Read off the
-    // channels the engine is about to consume rather than the whole buffer, so
-    // a host block wider than the dsp does not report a peak the curve never
-    // sees.
-    const int channels = std::min(context.audio.numChannels(), engineInputCount(engineIndex));
-
-    // Not getMagnitude(): it reduces through findMinAndMax, so one NaN sample
-    // would be published into inputPeakDb_ and stay there through every later
-    // finite block, taking the curve's dot with it.
-    float peak = 0.0f;
-    for (int channel = 0; channel < channels; ++channel)
-        peak = std::max(peak,
-                        sdk::peakMagnitude(context.audio.channel(channel), context.numSamples()));
-
-    inputPeakDb_.store(20.0f * std::log10(std::max(peak, 1.0e-6f)), std::memory_order_relaxed);
-}
 
 constexpr AliasSpec kAliases[] = {
     {"drive", 0, "Drive"},

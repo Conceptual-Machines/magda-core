@@ -31,7 +31,9 @@ void fillSlot(FaustParamSlot& slot, int index, const HarvestedControl& h) {
     slot.stepValue = h.stepValue;
     slot.defaultValue = h.defaultValue;
     slot.logScale = h.metadata.logScale;
-    slot.choices = h.metadata.menuChoices;
+    slot.choices.clear();
+    for (const auto& [value, label] : h.metadata.menuChoices)
+        slot.choices.emplace_back(value, juce::String(label));
     // Set unconditionally: resetSlot deliberately keeps descriptive fields
     // across a deactivate/reactivate cycle, so anything left conditional here
     // would carry over from whatever DSP previously owned this slot.

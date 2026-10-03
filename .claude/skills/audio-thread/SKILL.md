@@ -1,6 +1,6 @@
 ---
 name: audio-thread
-description: Audio thread safety and lock-free programming patterns for MAGDA's native engine. Use when writing MagdaDevice::process(), MagdaCompiledEffect hooks, real-time audio callbacks, metering, or any code that touches the audio thread. Covers what is forbidden, lock-free communication, and codebase-specific patterns.
+description: Audio thread safety and lock-free programming patterns for MAGDA's native engine. Use when writing MagdaDevice::process(), CompiledEffect hooks, real-time audio callbacks, metering, or any code that touches the audio thread. Covers what is forbidden, lock-free communication, and codebase-specific patterns.
 ---
 
 # Audio Thread Safety & Lock-Free Patterns
@@ -138,7 +138,7 @@ class MyDevice : public MagdaDevice {
 
 ### Pattern 3: Resolved Parameter Values
 
-Do not read a ValueTree or CachedValue on the audio thread. Automatable parameters reach a device already resolved: the engine combines stored value, automation and modulation (`magda/engine/param/ParamResolve.hpp`) and hands the device one value stream per parameter. A device writes the values it is given into its DSP at the top of `process()`; `MagdaCompiledEffect::process()` does this in `writeZones()` before `compute()`.
+Do not read a ValueTree or CachedValue on the audio thread. Automatable parameters reach a device already resolved: the engine combines stored value, automation and modulation (`magda/engine/param/ParamResolve.hpp`) and hands the device one value stream per parameter. A device writes the values it is given into its DSP at the top of `process()`; `devices::faust::CompiledEffect::process()` does this in `writeZones()` before `compute()`.
 
 `sdk::Device::setParameterValue(slot, normalized)` is the host's per-block write (`setParameterSegments` for a sample-accurate one). Store it in a `std::atomic<float>` (as `CompiledFaustInterface` does) and read that on the audio thread.
 
@@ -228,7 +228,7 @@ void process(DeviceProcessContext& ctx) override {   // DeviceProcessContext = s
 
 ### Compiled Effects
 
-Faust-based devices derive from `MagdaCompiledEffect` (`magda/daw/audio/plugins/compiled/`). `process()` is final in shape: it writes zones, then calls `beforeCompute()`, `processAudio()`, `afterCompute()`. A device with custom DSP overrides `processAudio(DeviceProcessContext&)`; the same audio-thread rules apply to every hook.
+Compiled Faust effects derive from `devices::faust::CompiledEffect` (`magda/devices/faust/`, JUCE-free). `process()` is final in shape: it writes zones, then calls `beforeCompute()`, `processAudio()`, `afterCompute()`. A device with custom DSP overrides `processAudio(sdk::ProcessContext&)`; the same audio-thread rules apply to every hook.
 
 ## Common Patterns in This Codebase
 

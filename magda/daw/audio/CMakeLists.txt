@@ -322,8 +322,6 @@ set(_magda_neutral_base_device_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ArpeggiatorPlugin.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ArpeggiatorPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/AnalysisTapPlugin.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustMetadataParser.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustMetadataParser.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MagdaConvolutionPlugin.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MagdaConvolutionPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceNoteSink.hpp"
@@ -349,10 +347,9 @@ set(_magda_neutral_base_device_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SpectrumAnalyzerPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ToneGeneratorPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SdkDeviceAdapter.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/CompiledEffectPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/CompiledFaustInterface.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/CompiledPluginRegistry.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/MagdaCompiledEffect.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/MagdaCompiledEffect.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/MagdaCompiledPolyInstrument.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/MagdaCompiledPolyInstrument.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableCloudsPlugin.cpp"
@@ -362,9 +359,8 @@ set(_magda_neutral_base_device_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableRingsPlugin.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableRingsPlugin.hpp"
 )
-# Devices that are MagdaDevice implementations: one DSP, hosted by whichever
-# engine is running it (#2192). Instruments share MagdaCompiledPolyInstrument,
-# effects share MagdaCompiledEffect; both lists are just "who has crossed".
+# Compiled devices (#2192). Instruments share MagdaCompiledPolyInstrument; the effects are
+# magda/devices/faust/effects through CompiledEffectPlugin, so their files here are specs.
 foreach(_magda_neutral_device IN ITEMS
         Bell Clap Djembe FM Hat Kick Marimba PolySynth Snare Tom
         Bitcrusher Chorus Clipper Compressor Delay Dimension Filter Flanger

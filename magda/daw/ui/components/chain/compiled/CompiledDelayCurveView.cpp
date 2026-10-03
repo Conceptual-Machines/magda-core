@@ -61,16 +61,16 @@ void CompiledDelayCurveView::timerCallback() {
 
     if (compiledPlugin_ != nullptr) {
         if (auto p = compiledPlugin_->getSlotParameter(Delay::kTimeSlot))
-            time = compiledPlugin_->nativeValueToDisplayValue(Delay::kTimeSlot, p.currentValue());
+            time = compiledPlugin_->normalizedToDisplay(Delay::kTimeSlot, p.currentValue());
         if (auto p = compiledPlugin_->getSlotParameter(Delay::kFeedbackSlot))
-            fb = compiledPlugin_->nativeValueToDisplayValue(Delay::kFeedbackSlot, p.currentValue());
+            fb = compiledPlugin_->normalizedToDisplay(Delay::kFeedbackSlot, p.currentValue());
         if (auto p = compiledPlugin_->getSlotParameter(Delay::kCrossSlot))
-            cross = compiledPlugin_->nativeValueToDisplayValue(Delay::kCrossSlot, p.currentValue());
+            cross = compiledPlugin_->normalizedToDisplay(Delay::kCrossSlot, p.currentValue());
         if (auto p = compiledPlugin_->getSlotParameter(Delay::kSyncSlot))
             sync = p.currentValue() >= 0.5f;
         if (auto p = compiledPlugin_->getSlotParameter(Delay::kDivisionSlot)) {
-            divIdx = static_cast<int>(std::round(compiledPlugin_->nativeValueToDisplayValue(
-                Delay::kDivisionSlot, p.currentValue())));
+            divIdx = static_cast<int>(std::round(
+                compiledPlugin_->normalizedToDisplay(Delay::kDivisionSlot, p.currentValue())));
         }
         bpm = compiledPlugin_->currentBpm();
     } else {

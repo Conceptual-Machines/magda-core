@@ -156,7 +156,7 @@ thread.
 
 ## Phase ordering
 
-1. **Phase 1** — `FaustParamSlot.hpp`, `FaustMetadataParser.{hpp,cpp}`,
+1. **Phase 1** — `FaustParamSlot.hpp`, `FaustMetadataParser.{hpp,cpp}` (now `magda/devices/faust/`, JUCE-free),
    plus unit tests. Pure logic, no audio path touched. Lands on its
    own.
 2. **Phase 2** — `FaustParamPool.{hpp,cpp}`, `HarvestedControl`,

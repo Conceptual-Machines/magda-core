@@ -5,7 +5,7 @@
 
 #include "magda/daw/audio/plugins/compiled/MagdaLimiterCompiledPlugin.hpp"
 
-using magda::daw::audio::compiled::MagdaLimiterDspCore;
+using magda::devices::faust::LimiterDspCore;
 
 namespace {
 
@@ -15,6 +15,10 @@ float peakOf(const juce::AudioBuffer<float>& buffer) {
         for (int i = 0; i < buffer.getNumSamples(); ++i)
             peak = std::max(peak, std::abs(buffer.getSample(ch, i)));
     return peak;
+}
+
+magda::BufferView viewOf(juce::AudioBuffer<float>& buffer) {
+    return {buffer.getArrayOfWritePointers(), buffer.getNumChannels(), buffer.getNumSamples()};
 }
 
 float dbToGain(float db) {
@@ -32,16 +36,16 @@ TEST_CASE("Limiter DSP normalizes threshold into a fixed ceiling", "[limiter][ds
         buffer.setSample(1, i, -input);
     }
 
-    MagdaLimiterDspCore limiter;
+    LimiterDspCore limiter;
     limiter.prepare(48000.0, buffer.getNumSamples(), buffer.getNumChannels());
 
-    MagdaLimiterDspCore::Settings settings;
+    LimiterDspCore::Settings settings;
     settings.thresholdDb = -12.0f;
     settings.attackMs = 0.1f;
     settings.releaseMs = 10.0f;
     settings.outputDb = 0.0f;
 
-    limiter.process(buffer, 0, buffer.getNumSamples(), settings);
+    limiter.process(viewOf(buffer), 0, buffer.getNumSamples(), settings);
 
     REQUIRE_THAT(peakOf(buffer), Catch::Matchers::WithinAbs(1.0f, 0.001f));
 }
@@ -54,16 +58,16 @@ TEST_CASE("Limiter DSP output is post-limiter negative trim", "[limiter][dsp]") 
         buffer.setSample(1, i, -2.0f);
     }
 
-    MagdaLimiterDspCore limiter;
+    LimiterDspCore limiter;
     limiter.prepare(48000.0, buffer.getNumSamples(), buffer.getNumChannels());
 
-    MagdaLimiterDspCore::Settings settings;
+    LimiterDspCore::Settings settings;
     settings.thresholdDb = 0.0f;
     settings.attackMs = 0.1f;
     settings.releaseMs = 10.0f;
     settings.outputDb = -6.0f;
 
-    limiter.process(buffer, 0, buffer.getNumSamples(), settings);
+    limiter.process(viewOf(buffer), 0, buffer.getNumSamples(), settings);
 
     REQUIRE(peakOf(buffer) <= dbToGain(-6.0f) + 0.0001f);
 }
@@ -71,23 +75,23 @@ TEST_CASE("Limiter DSP output is post-limiter negative trim", "[limiter][dsp]") 
 TEST_CASE("Limiter reports the latency its lookahead delays by", "[limiter][dsp]") {
     magda::daw::audio::compiled::MagdaLimiterCompiledPlugin device;
 
-    // 44.1 kHz puts the lookahead on a half sample, which juce::roundToInt takes to even.
+    // 44.1 kHz puts the lookahead on a half sample, which rounds to even.
     for (const auto sampleRate : {44100.0, 48000.0, 96000.0}) {
         device.prepare({.sampleRate = sampleRate, .maximumBlockSize = 1024});
         const auto reported = device.latencySamples();
-        REQUIRE(reported == juce::roundToInt(MagdaLimiterDspCore::kLookaheadSeconds * sampleRate));
+        REQUIRE(reported == juce::roundToInt(LimiterDspCore::kLookaheadSeconds * sampleRate));
 
         juce::AudioBuffer<float> buffer(2, 1024);
         buffer.clear();
         buffer.setSample(0, 0, 0.25f);
         buffer.setSample(1, 0, 0.25f);
 
-        MagdaLimiterDspCore limiter;
+        LimiterDspCore limiter;
         limiter.prepare(sampleRate, buffer.getNumSamples(), buffer.getNumChannels());
 
-        MagdaLimiterDspCore::Settings settings;
+        LimiterDspCore::Settings settings;
         settings.thresholdDb = 0.0f;
-        limiter.process(buffer, 0, buffer.getNumSamples(), settings);
+        limiter.process(viewOf(buffer), 0, buffer.getNumSamples(), settings);
 
         int loudest = 0;
         for (int i = 0; i < buffer.getNumSamples(); ++i)

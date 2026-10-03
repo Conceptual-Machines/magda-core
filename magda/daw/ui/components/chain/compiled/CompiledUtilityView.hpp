@@ -10,11 +10,8 @@
 #include "core/DeviceInfo.hpp"
 #include "params/ParamLinkResolver.hpp"
 #include "params/ParamSlotComponent.hpp"
+#include "plugins/compiled/MagdaUtilityCompiledPlugin.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
-
-namespace magda::daw::audio::compiled {
-class MagdaUtilityCompiledPlugin;
-}
 
 namespace magda::daw::ui {
 

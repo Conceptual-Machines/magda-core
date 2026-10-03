@@ -1,65 +1,8 @@
 #include "plugins/compiled/MagdaSaturatorCompiledPlugin.hpp"
 
-#include "core/ParameterInfo.hpp"
-#include "faust/dsp/dsp.h"
-#include "faust/gui/UI.h"
-#include "faust/gui/meta.h"
-#include "magda_saturator.generated.cpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda::daw::audio::compiled {
-
-const char* MagdaSaturatorCompiledPlugin::xmlTypeName = "magda_saturator";
-
-MagdaSaturatorCompiledPlugin::MagdaSaturatorCompiledPlugin() {
-    initEffect();
-}
-
-::dsp* MagdaSaturatorCompiledPlugin::createEngineDsp(int) const {
-    return new MagdaSaturatorDsp();
-}
-
-std::vector<MagdaSaturatorCompiledPlugin::HostSlotInfo> MagdaSaturatorCompiledPlugin::slotInfos()
-    const {
-    using magda::ParameterScale;
-    return {
-        // Drive (dB, linear). Smoothing happens inside the DSP.
-        {.name = "Drive",
-         .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
-         .scale = ParameterScale::Linear,
-         .minValue = 0.0f,
-         .maxValue = 24.0f,
-         .defaultValue = 0.0f},
-        {.name = "Mode",
-         .scale = ParameterScale::Discrete,
-         .minValue = 0.0f,
-         .maxValue = 5.0f,
-         .defaultValue = 0.0f,
-         .choices = {"Tanh", "Soft", "Hard", "Fold", "Tube", "Tape"}},
-        {.name = "Bias",
-         .scale = ParameterScale::Linear,
-         .minValue = -1.0f,
-         .maxValue = 1.0f,
-         .defaultValue = 0.0f},
-        // Bipolar tilt.
-        {.name = "Tone",
-         .scale = ParameterScale::Linear,
-         .minValue = -1.0f,
-         .maxValue = 1.0f,
-         .defaultValue = 0.0f},
-        {.name = "Mix",
-         .scale = ParameterScale::Linear,
-         .minValue = 0.0f,
-         .maxValue = 1.0f,
-         .defaultValue = 1.0f},
-        {.name = "Output",
-         .unit = magda::technicalText(magda::TechnicalTextToken::Decibels),
-         .scale = ParameterScale::Linear,
-         .minValue = -24.0f,
-         .maxValue = 6.0f,
-         .defaultValue = 0.0f},
-    };
-}
 
 constexpr AliasSpec kAliases[] = {
     {"drive", 0, "Drive"}, {"mode", 1, "Mode"}, {"bias", 2, "Bias"},

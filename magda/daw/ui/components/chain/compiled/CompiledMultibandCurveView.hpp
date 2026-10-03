@@ -8,10 +8,7 @@
 
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
-
-namespace magda::daw::audio::compiled {
-class MagdaMultibandCompiledPlugin;
-}
+#include "plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
 
 namespace magda::daw::ui {
 

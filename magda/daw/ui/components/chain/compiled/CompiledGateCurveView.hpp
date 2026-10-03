@@ -5,12 +5,9 @@
 #include <functional>
 #include <memory>
 
+#include "audio/plugins/compiled/MagdaGateExpanderCompiledPlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
-
-namespace magda::daw::audio::compiled {
-class MagdaGateExpanderCompiledPlugin;
-}
 
 namespace magda::daw::ui {
 

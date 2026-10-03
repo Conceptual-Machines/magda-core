@@ -61,17 +61,6 @@ void computeFromFrame(std::vector<float>& frame, double sampleRate,
 
 }  // namespace
 
-void computeMaskingBandsDb(const AudioTapBuffer& ring, double sampleRate,
-                           std::array<float, kNumMaskingBands>& outDb) {
-    outDb.fill(kFloorDb);
-    if (sampleRate <= 0.0)
-        return;
-
-    std::vector<float> frame(static_cast<size_t>(kFftSize), 0.0f);
-    ring.readLatest(frame.data(), kFftSize);
-    computeFromFrame(frame, sampleRate, outDb);
-}
-
 void computeMaskingBandsDb(const engine::SampleRing& ring, double sampleRate,
                            std::array<float, kNumMaskingBands>& outDb) {
     outDb.fill(kFloorDb);

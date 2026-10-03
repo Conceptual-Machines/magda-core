@@ -4,13 +4,10 @@
 
 #include <memory>
 
+#include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
 #include "params/ParamLinkResolver.hpp"
-
-namespace magda::daw::audio::compiled {
-class MagdaFilterCompiledPlugin;
-}
 
 namespace magda::daw::ui {
 

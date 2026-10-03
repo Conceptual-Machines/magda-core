@@ -5,7 +5,14 @@
 
 namespace magda::daw::audio {
 
+using devices::faust::mergeFaustMetadata;
+using devices::faust::parseFaustLabel;
+
 namespace {
+
+std::string_view orEmpty(const char* text) {
+    return text != nullptr ? text : "";
+}
 
 juce::String fromUtf8OrEmpty(const char* text) {
     return juce::String::fromUTF8(text != nullptr ? text : "");
@@ -23,9 +30,9 @@ bool isPolyStructuralGroup(const juce::String& label) {
 }  // namespace
 
 void FaustUIHarvester::pushGroup(const char* label) {
-    auto parsed = parseFaustLabel(fromUtf8OrEmpty(label));
+    auto parsed = parseFaustLabel(orEmpty(label));
     groupMetadataStack_.push_back(std::move(parsed.metadata));
-    groupLabelStack_.push_back(std::move(parsed.cleanLabel));
+    groupLabelStack_.push_back(juce::String(parsed.cleanLabel));
 }
 
 ControlMetadata FaustUIHarvester::mergedMetadataFor(FAUSTFLOAT* zone) {
@@ -64,7 +71,7 @@ juce::String FaustUIHarvester::controlGroup() const {
 void FaustUIHarvester::emitControl(FaustParamSlot::Kind kind, const char* rawLabel,
                                    FAUSTFLOAT* zone, FAUSTFLOAT init, FAUSTFLOAT min,
                                    FAUSTFLOAT max, FAUSTFLOAT step) {
-    auto parsed = parseFaustLabel(fromUtf8OrEmpty(rawLabel));
+    auto parsed = parseFaustLabel(orEmpty(rawLabel));
     // This consumes and erases any pending declare() metadata for the zone.
     // Keep it before the poly-proxy early return so metadata from a skipped
     // proxy control cannot leak onto the next harvested control.
@@ -76,7 +83,7 @@ void FaustUIHarvester::emitControl(FaustParamSlot::Kind kind, const char* rawLab
 
     HarvestedControl control;
     control.kind = kind;
-    control.label = std::move(parsed.cleanLabel);
+    control.label = juce::String(parsed.cleanLabel);
     control.minValue = static_cast<float>(min);
     control.maxValue = static_cast<float>(max);
     control.stepValue = static_cast<float>(step);
@@ -89,7 +96,7 @@ void FaustUIHarvester::emitControl(FaustParamSlot::Kind kind, const char* rawLab
 
 void FaustUIHarvester::emitOutput(bool vertical, const char* rawLabel, FAUSTFLOAT* zone,
                                   FAUSTFLOAT min, FAUSTFLOAT max) {
-    auto parsed = parseFaustLabel(fromUtf8OrEmpty(rawLabel));
+    auto parsed = parseFaustLabel(orEmpty(rawLabel));
     // Same ordering as emitControl: consume the pending declares before the
     // poly-proxy early return, so metadata cannot leak onto the next widget.
     auto merged = mergedMetadataFor(zone);
@@ -99,7 +106,7 @@ void FaustUIHarvester::emitOutput(bool vertical, const char* rawLabel, FAUSTFLOA
         return;
 
     HarvestedOutput output;
-    output.label = std::move(parsed.cleanLabel);
+    output.label = juce::String(parsed.cleanLabel);
     output.minValue = static_cast<float>(min);
     output.maxValue = static_cast<float>(max);
     output.vertical = vertical;
@@ -163,7 +170,8 @@ void FaustUIHarvester::addNumEntry(const char* label, FAUSTFLOAT* zone, FAUSTFLO
 
 void FaustUIHarvester::declare(FAUSTFLOAT* zone, const char* key, const char* value) {
     ControlMetadata metadata;
-    applyFaustAnnotation(fromUtf8OrEmpty(key).toLowerCase(), fromUtf8OrEmpty(value), metadata);
+    devices::faust::applyFaustAnnotation(fromUtf8OrEmpty(key).toLowerCase().toStdString(),
+                                         orEmpty(value), metadata);
     if (zone == nullptr) {
         if (!groupMetadataStack_.empty())
             mergeFaustMetadata(groupMetadataStack_.back(), metadata);

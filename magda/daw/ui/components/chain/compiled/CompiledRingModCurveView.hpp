@@ -5,12 +5,9 @@
 #include <functional>
 #include <memory>
 
+#include "audio/plugins/compiled/MagdaRingModCompiledPlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
-
-namespace magda::daw::audio::compiled {
-class MagdaRingModCompiledPlugin;
-}
 
 namespace magda::daw::ui {
 

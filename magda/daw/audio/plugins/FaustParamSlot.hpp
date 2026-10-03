@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-#include "FaustMetadataParser.hpp"
+#include "devices/faust/FaustMetadataParser.hpp"
 
 // Forward-declare FAUSTFLOAT without dragging the libfaust headers into
 // every translation unit that includes this file. libfaust always
@@ -14,6 +14,11 @@
 using FAUSTFLOAT = float;
 
 namespace magda::daw::audio {
+
+using devices::faust::ControlMetadata;
+using devices::faust::FaustChoiceStyle;
+using devices::faust::FaustControlRole;
+using devices::faust::FaustOutputStyle;
 
 /**
  * @brief One slot in the FaustPlugin's fixed parameter pool.
@@ -81,7 +86,7 @@ struct FaustParamSlot {
 
     // MAGDA role tag from `[role:<value>]`. ProjectTempo means the host
     // writes the live BPM into this slot's zone every audio block. See
-    // FaustMetadataParser.hpp for the full list.
+    // devices/faust/FaustMetadataParser.hpp for the full list.
     FaustControlRole role = FaustControlRole::User;
 
     // True iff the slot was declared with `[hidden:1]`. Hidden slots

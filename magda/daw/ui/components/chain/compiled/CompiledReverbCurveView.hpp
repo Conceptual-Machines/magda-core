@@ -5,12 +5,9 @@
 #include <functional>
 #include <memory>
 
+#include "audio/plugins/compiled/MagdaReverbCompiledPlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
-
-namespace magda::daw::audio::compiled {
-class MagdaReverbCompiledPlugin;
-}
 
 namespace magda::daw::ui {
 

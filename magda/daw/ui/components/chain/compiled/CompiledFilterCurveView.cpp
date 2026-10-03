@@ -45,7 +45,7 @@ float modulatedValueForSlot(const magda::DeviceInfo& device, int slotIndex, floa
                             magda::daw::audio::compiled::MagdaFilterCompiledPlugin* plugin) {
     if (plugin != nullptr) {
         if (auto param = plugin->getSlotParameter(slotIndex))
-            return plugin->nativeValueToDisplayValue(slotIndex, param.currentValue());
+            return plugin->normalizedToDisplay(slotIndex, param.currentValue());
     }
 
     const auto* param = paramForSlot(device, slotIndex);
