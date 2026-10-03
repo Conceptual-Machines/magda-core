@@ -149,3 +149,4 @@ MAGDA.zip
 # Local working notes for a slice, not part of the repository.
 PLAN-*.md
 HANDOFF-*.md
+/build-wasm-devices/

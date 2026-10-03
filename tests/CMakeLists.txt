@@ -1102,3 +1102,9 @@ if(WIN32)
             COMMENT "Copying runtime DLLs (libxml2 + deps) alongside ${test_target}")
     endforeach()
 endif()
+
+# The portable devices through the SDK's C ABI (#2940). Its own binary: the module defines the
+# ABI's device list.
+add_executable(magda_portable_abi_tests devices/test_portable_abi.cpp)
+target_link_libraries(magda_portable_abi_tests PRIVATE Catch2::Catch2WithMain magda_portable_module)
+add_test(NAME portable_device_abi COMMAND magda_portable_abi_tests)

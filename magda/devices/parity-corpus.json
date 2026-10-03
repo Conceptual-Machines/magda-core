@@ -1,0 +1,19 @@
+{
+  "format": "magda.parity-corpus",
+  "version": 1,
+  "cases": [
+    { "name": "tone-sine-default", "device": "toneGenerator", "frames": 48000 },
+    { "name": "tone-triangle", "device": "toneGenerator", "frames": 24000, "parameters": { "oscType": 0.2 } },
+    { "name": "tone-saw-up-bl", "device": "toneGenerator", "frames": 24000,
+      "parameters": { "oscType": 0.4, "frequency": 0.7 } },
+    { "name": "tone-saw-down-44k", "device": "toneGenerator", "sampleRate": 44100, "blockSize": 97, "frames": 22050,
+      "parameters": { "oscType": 0.6, "frequency": 0.3, "level": 1.0 } },
+    { "name": "tone-square-naive", "device": "toneGenerator", "frames": 24000,
+      "parameters": { "oscType": 0.8, "bandLimit": 0.0, "frequency": 0.55 } },
+    { "name": "tone-square-bl-96k", "device": "toneGenerator", "sampleRate": 96000, "blockSize": 512, "frames": 48000,
+      "parameters": { "oscType": 0.8, "frequency": 0.9 } },
+    { "name": "tone-noise", "device": "toneGenerator", "frames": 24000, "parameters": { "oscType": 1.0, "level": 0.5 } },
+    { "name": "tone-floor-is-off", "device": "toneGenerator", "frames": 4800, "parameters": { "level": 0.0 },
+      "expectSilence": true }
+  ]
+}

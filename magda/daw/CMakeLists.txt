@@ -584,6 +584,7 @@ endforeach()
 target_link_libraries(magda_device_sdk
     INTERFACE
     magda::sdk_core
+    magda_portable_devices  # JUCE-free devices the SDK hosts also build (#2940)
     magda_types
     magda_music
     $<LINK_ONLY:${MAGDA_DEVICE_JUCE_STACK}>
