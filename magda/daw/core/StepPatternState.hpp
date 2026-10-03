@@ -2,8 +2,9 @@
 
 #include <juce_core/juce_core.h>
 
+#include <magda/sdk/sequencer/StepPattern.hpp>
+
 #include "DeviceState.hpp"
-#include "audio/sequencer/StepPattern.hpp"
 
 namespace magda::step_pattern {
 
@@ -22,8 +23,8 @@ namespace magda::step_pattern {
  * what keeps "what the model holds" and "what the device plays" one thing.
  */
 
-using MonoPattern = daw::audio::sequencer::MonoPattern;
-using PolyPattern = daw::audio::sequencer::PolyPattern;
+using MonoPattern = sdk::sequencer::MonoPattern;
+using PolyPattern = sdk::sequencer::PolyPattern;
 
 /// Read the monophonic sequencer's pattern out of a decoded document.
 MonoPattern readMono(const device_state::Doc& doc);

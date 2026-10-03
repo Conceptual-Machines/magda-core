@@ -97,7 +97,7 @@ void transposePattern(step_pattern::PolyPattern& pattern, int semitones) {
 
 /// Add or remove @p note on @p stepIndex, the way a grid click does.
 void toggleStepNote(step_pattern::PolyPattern& pattern, int stepIndex, int note) {
-    if (stepIndex < 0 || stepIndex >= daw::audio::sequencer::kMaxSteps)
+    if (stepIndex < 0 || stepIndex >= sdk::sequencer::kMaxSteps)
         return;
 
     auto& step = pattern.steps[static_cast<size_t>(stepIndex)];
@@ -111,7 +111,7 @@ void toggleStepNote(step_pattern::PolyPattern& pattern, int stepIndex, int note)
         return;
     }
 
-    if (step.noteCount >= daw::audio::sequencer::kMaxNotesPerStep)
+    if (step.noteCount >= sdk::sequencer::kMaxNotesPerStep)
         return;  // voice cap reached
     step.notes[static_cast<size_t>(step.noteCount)] = {.noteNumber = juce::jlimit(0, 127, note)};
     ++step.noteCount;
@@ -1208,7 +1208,7 @@ void PolyStepSequencerUI::drainRecordedSteps() {
     daw::audio::PolyStepSequencerPlugin::RecordedStep recorded;
     while (device_->popRecordedStep(recorded)) {
         editPattern("Record Step", [recorded](step_pattern::PolyPattern& p) {
-            if (recorded.stepIndex < 0 || recorded.stepIndex >= daw::audio::sequencer::kMaxSteps)
+            if (recorded.stepIndex < 0 || recorded.stepIndex >= sdk::sequencer::kMaxSteps)
                 return;
             p.steps[static_cast<size_t>(recorded.stepIndex)].gate = true;
             toggleStepNote(p, recorded.stepIndex, recorded.noteNumber);

@@ -320,16 +320,6 @@ set_source_files_properties(${_magda_device_dsp_sources} PROPERTIES HEADER_FILE_
 
 set(_magda_neutral_base_device_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis/AudioTapBuffer.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/transport/RampCurve.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/MonoStepSequencer.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/MonoStepSequencer.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/NoteSink.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/PolyStepSequencer.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/PolyStepSequencer.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/PublishedPattern.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/StepClock.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/StepClock.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/StepPattern.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ArpeggiatorPlugin.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ArpeggiatorPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/AnalysisTapPlugin.hpp"
@@ -400,9 +390,6 @@ list(REMOVE_ITEM _magda_native_device_sources
 target_sources(magda_base_devices PRIVATE
     ${_magda_native_device_sources}
     ${_magda_base_device_support_sources}
-    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/MonoStepSequencer.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/PolyStepSequencer.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/StepClock.cpp"
     ${_magda_device_dsp_sources})
 
     add_library(magda_engine_devices STATIC ${_magda_engine_device_adapter_sources})

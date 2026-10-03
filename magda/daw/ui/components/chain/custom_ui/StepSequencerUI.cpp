@@ -287,7 +287,7 @@ void StepSequencerUI::drainRecordedSteps() {
     daw::audio::StepSequencerPlugin::RecordedStep recorded;
     while (device_->popRecordedStep(recorded)) {
         editPattern("Record Step", [recorded](step_pattern::MonoPattern& p) {
-            if (recorded.stepIndex < 0 || recorded.stepIndex >= daw::audio::sequencer::kMaxSteps)
+            if (recorded.stepIndex < 0 || recorded.stepIndex >= sdk::sequencer::kMaxSteps)
                 return;
             auto& step = p.steps[static_cast<size_t>(recorded.stepIndex)];
             step.noteNumber = juce::jlimit(0, 127, recorded.noteNumber);

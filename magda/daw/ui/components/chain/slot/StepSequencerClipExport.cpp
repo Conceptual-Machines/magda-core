@@ -1,11 +1,11 @@
 #include "slot/StepSequencerClipExport.hpp"
 
 #include <algorithm>
+#include <magda/sdk/sequencer/StepClock.hpp>
 #include <vector>
 
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
-#include "audio/sequencer/StepClock.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
 #include "core/MidiFileWriter.hpp"
@@ -18,7 +18,7 @@ namespace magda::daw::ui {
 
 namespace {
 
-namespace seq = daw::audio::sequencer;
+namespace seq = sdk::sequencer;
 
 /// What an export needs from the model: the pattern, and the settings that
 /// decide where its notes land and how long they last.

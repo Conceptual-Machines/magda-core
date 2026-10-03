@@ -3,10 +3,10 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <magda/sdk/sequencer/StepClock.hpp>
 #include <ranges>
 
 #include "ClipOperations.hpp"
-#include "audio/sequencer/StepClock.hpp"
 
 namespace magda {
 
@@ -138,8 +138,8 @@ std::vector<MidiNoteStartBeat> calculateBentMidiNoteStartBeats(
     for (int i = 0; i < noteCount; ++i) {
         const auto& start = validStarts[static_cast<size_t>(i)];
         const double t = static_cast<double>(i) / ordinalDenom;
-        const double tEased = daw::audio::sequencer::StepClock::applyRampCurveWithCycles(
-            t, depth, skew, cycles, hardAngle);
+        const double tEased =
+            sdk::sequencer::StepClock::applyRampCurveWithCycles(t, depth, skew, cycles, hardAngle);
         // Shift each note by how far the curve pushes its ordinal slot, anchored
         // on its true onset. Depth 0 -> tEased == t -> identity; a uniform mono
         // line reduces to minBeat + curve(t) * span (the prior behaviour).
