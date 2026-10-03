@@ -47,21 +47,6 @@ float decibelsToGain(float db) {
     return std::pow(10.0f, db * 0.05f);
 }
 
-/// JUCE's normalisation: the five coefficients divided through by the one that
-/// is not stored, computed in double and kept as float, which is what makes
-/// this the same filter rather than one that agrees to a few decimals.
-FollowerBiquad normalised(double c1, double c2, double c3, double c4, double c5, double c6) {
-    const auto a = 1.0 / c4;
-
-    FollowerBiquad filter;
-    filter.c0 = static_cast<float>(c1 * a);
-    filter.c1 = static_cast<float>(c2 * a);
-    filter.c2 = static_cast<float>(c3 * a);
-    filter.c3 = static_cast<float>(c5 * a);
-    filter.c4 = static_cast<float>(c6 * a);
-    return filter;
-}
-
 /// Inside the band the filters can describe. A cutoff at or above Nyquist has
 /// no shape, and the model's own range stops at 20 kHz, which is above it at
 /// 32 kHz and below.
@@ -71,39 +56,14 @@ double usableCutoff(double sampleRate, double frequency) {
 
 }  // namespace
 
-void FollowerBiquad::reset() {
-    v1 = 0.0f;
-    v2 = 0.0f;
+sdk::BiquadCoeffs<float> followerLowPass(double sampleRate, double frequency) {
+    return sdk::biquad::lowPass(std::max(sampleRate, 1.0), usableCutoff(sampleRate, frequency))
+        .cast<float>();
 }
 
-float FollowerBiquad::process(float in) {
-    const float out = (c0 * in) + v1;
-    v1 = (c1 * in) - (c3 * out) + v2;
-    v2 = (c2 * in) - (c4 * out);
-    return out;
-}
-
-FollowerBiquad followerLowPass(double sampleRate, double frequency) {
-    // JUCE's makeLowPass at its default Q of one over root two.
-    const auto q = 1.0 / std::numbers::sqrt2;
-    const auto n = 1.0 / std::tan(std::numbers::pi * usableCutoff(sampleRate, frequency) /
-                                  std::max(sampleRate, 1.0));
-    const auto nSquared = n * n;
-    const auto c1 = 1.0 / (1.0 + (n / q) + nSquared);
-
-    return normalised(c1, c1 * 2.0, c1, 1.0, c1 * 2.0 * (1.0 - nSquared),
-                      c1 * (1.0 - (n / q) + nSquared));
-}
-
-FollowerBiquad followerHighPass(double sampleRate, double frequency) {
-    const auto q = 1.0 / std::numbers::sqrt2;
-    const auto n = std::tan(std::numbers::pi * usableCutoff(sampleRate, frequency) /
-                            std::max(sampleRate, 1.0));
-    const auto nSquared = n * n;
-    const auto c1 = 1.0 / (1.0 + (n / q) + nSquared);
-
-    return normalised(c1, c1 * -2.0, c1, 1.0, c1 * 2.0 * (nSquared - 1.0),
-                      c1 * (1.0 - (n / q) + nSquared));
+sdk::BiquadCoeffs<float> followerHighPass(double sampleRate, double frequency) {
+    return sdk::biquad::highPass(std::max(sampleRate, 1.0), usableCutoff(sampleRate, frequency))
+        .cast<float>();
 }
 
 void detectFollowerSource(FollowerState& state, const FollowerSettings& settings,
@@ -145,10 +105,7 @@ void detectFollowerSource(FollowerState& state, const FollowerSettings& settings
     if (settings.highPass) {
         if (cutoffMoved(state.highPassHz, settings.highPassHz)) {
             state.highPassHz = settings.highPassHz;
-            const auto carried = state.highPass;
-            state.highPass = followerHighPass(sampleRate, settings.highPassHz);
-            state.highPass.v1 = carried.v1;
-            state.highPass.v2 = carried.v2;
+            state.highPass.setCoefficients(followerHighPass(sampleRate, settings.highPassHz));
         }
 
         for (std::size_t i = 0; i < count; ++i)
@@ -158,10 +115,7 @@ void detectFollowerSource(FollowerState& state, const FollowerSettings& settings
     if (settings.lowPass) {
         if (cutoffMoved(state.lowPassHz, settings.lowPassHz)) {
             state.lowPassHz = settings.lowPassHz;
-            const auto carried = state.lowPass;
-            state.lowPass = followerLowPass(sampleRate, settings.lowPassHz);
-            state.lowPass.v1 = carried.v1;
-            state.lowPass.v2 = carried.v2;
+            state.lowPass.setCoefficients(followerLowPass(sampleRate, settings.lowPassHz));
         }
 
         for (std::size_t i = 0; i < count; ++i)

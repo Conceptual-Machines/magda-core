@@ -1,5 +1,6 @@
 #pragma once
 
+#include <magda/sdk/dsp/Biquad.hpp>
 #include <span>
 
 #include "exec/RenderContext.hpp"
@@ -72,30 +73,14 @@ struct FollowerSettings {
     float lowPassHz = 2000.0f;
 };
 
-/**
- * @brief One second-order section, transposed direct form II.
- *
- * The filter juce::IIRFilter is, coefficient order and state layout included,
- * because a follower that rolled off differently would be tracking a different
- * part of the spectrum. Its own rather than borrowed, so the engine's DSP does
- * not reach into the UI framework.
- */
-struct FollowerBiquad {
-    /// Normalised, in JUCE's order: feed-forward b0, b1, b2 then feedback a1,
-    /// a2, all already divided through by a0.
-    float c0 = 1.0f, c1 = 0.0f, c2 = 0.0f, c3 = 0.0f, c4 = 0.0f;
-
-    float v1 = 0.0f, v2 = 0.0f;
-
-    void reset();
-    float process(float in);
-};
+/// The band-limit filter: sdk::Biquad on JUCE's coefficients, in float.
+using FollowerBiquad = sdk::Biquad<float>;
 
 /** @brief A low-pass at @p frequency, on JUCE's coefficients. */
-FollowerBiquad followerLowPass(double sampleRate, double frequency);
+sdk::BiquadCoeffs<float> followerLowPass(double sampleRate, double frequency);
 
 /** @brief A high-pass at @p frequency, on JUCE's coefficients. */
-FollowerBiquad followerHighPass(double sampleRate, double frequency);
+sdk::BiquadCoeffs<float> followerHighPass(double sampleRate, double frequency);
 
 /** @brief Where one envelope follower has got to. */
 struct FollowerState {

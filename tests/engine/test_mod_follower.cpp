@@ -1,6 +1,8 @@
+#include <bit>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
+#include <cstdint>
 #include <numbers>
 #include <vector>
 
@@ -487,4 +489,64 @@ TEST_CASE("A disabled follower detects nothing", "[engine][mod][follower][runtim
     harness.mods.detectSource(0, table, flat(block.numSamples, 1.0f));
     harness.run(table, block);
     CHECK(harness.mods.value(0) == approx(0.0f));
+}
+
+TEST_CASE("The band-limit filters keep the coefficients and output they had before the SDK biquad",
+          "[engine][mod][follower]") {
+    struct Pin {
+        double sampleRate, cutoff;
+        bool highPass;
+        std::uint32_t coeffs[5];
+        std::uint64_t outputHash;
+    };
+
+    // Captured from the pre-SDK FollowerBiquad: coefficient bits, then an FNV-1a hash over the
+    // output bits for 2000 samples of a fixed LCG signal.
+    const Pin pins[] = {
+        {48000,
+         1000,
+         false,
+         {0x3b8052da, 0x3c0052da, 0x3b8052da, 0xbfe85d19, 0x3f54bcc8},
+         0xe282b339737b9152ULL},
+        {44100,
+         200,
+         true,
+         {0x3f7ae4b8, 0xbffae4b8, 0x3f7ae4b8, 0xbffad7ae, 0x3f75e385},
+         0x84aab841f57fdc82ULL},
+        {96000,
+         8000,
+         false,
+         {0x3d4ab5fb, 0x3dcab5fb, 0x3d4ab5fb, 0xbfa3caff, 0x3ef486f9},
+         0x93ce4660d9b41279ULL},
+        {22050,
+         50,
+         true,
+         {0x3f7d6f11, 0xbffd6f11, 0x3f7d6f11, 0xbffd6bc6, 0x3f7ae4b9},
+         0xeef4d7661b06532dULL},
+    };
+
+    for (const auto& pin : pins) {
+        const auto c = pin.highPass ? magda::engine::followerHighPass(pin.sampleRate, pin.cutoff)
+                                    : magda::engine::followerLowPass(pin.sampleRate, pin.cutoff);
+        CHECK(std::bit_cast<std::uint32_t>(c.b0) == pin.coeffs[0]);
+        CHECK(std::bit_cast<std::uint32_t>(c.b1) == pin.coeffs[1]);
+        CHECK(std::bit_cast<std::uint32_t>(c.b2) == pin.coeffs[2]);
+        CHECK(std::bit_cast<std::uint32_t>(c.a1) == pin.coeffs[3]);
+        CHECK(std::bit_cast<std::uint32_t>(c.a2) == pin.coeffs[4]);
+
+        magda::engine::FollowerBiquad filter(c);
+        std::uint64_t hash = 1469598103934665603ULL;
+        std::uint32_t lcg = 1;
+        for (int i = 0; i < 2000; ++i) {
+            lcg = lcg * 1664525u + 1013904223u;
+            const float x = (static_cast<float>(lcg >> 8) / 16777216.0f - 0.5f) * 2.0f;
+            hash = (hash ^ std::bit_cast<std::uint32_t>(filter.process(x))) * 1099511628211ULL;
+        }
+#if defined(__APPLE__) && defined(__aarch64__)
+        // Captured on this platform; other compilers round the last bit differently.
+        CHECK(hash == pin.outputHash);
+#else
+        CHECK(hash != 0);
+#endif
+    }
 }

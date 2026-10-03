@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 
 #include <array>
+#include <magda/sdk/dsp/Random.hpp>
 
 #include "sequencer/StepPattern.hpp"
 
@@ -147,7 +148,7 @@ class StepClock {
     bool goingUp_ = true;           // For ping-pong direction
 
     // Random
-    juce::Random random_;
+    sdk::Lcg48Random random_;
 
     // Steps whose swung or quantized position landed beyond the block that
     // scheduled them. Swing offsets a tick by up to half a step, which at a
