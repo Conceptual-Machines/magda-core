@@ -1,8 +1,8 @@
 #pragma once
 
 #include <atomic>
+#include <magda/sdk/analysis/TrackMeasurer.hpp>
 
-#include "analysis/TrackMeasurer.hpp"
 #include "plugins/AnalysisTelemetry.hpp"
 #include "plugins/MagdaDevice.hpp"
 
@@ -53,7 +53,7 @@ class LevelsPlugin : public MagdaDevice, public LevelsTelemetry {
     }
 
     /// Message thread. Latest measurements (lock-free).
-    TrackMeasurementSnapshot snapshot() const override {
+    sdk::LevelsSnapshot snapshot() const override {
         return measurer_.read();
     }
 
@@ -104,14 +104,11 @@ class LevelsPlugin : public MagdaDevice, public LevelsTelemetry {
         const int numCh = juce::jmin(context.audio.numChannels(), 2);
         if (numCh <= 0)
             return;
-        const float* ptrs[2] = {nullptr, nullptr};
-        for (int ch = 0; ch < numCh; ++ch)
-            ptrs[ch] = context.audio.channel(ch);
-        measurer_.process(ptrs, numCh, context.numSamples());
+        measurer_.process(ConstBufferView(context.audio.channels(), numCh, context.numSamples()));
     }
 
   private:
-    TrackMeasurer measurer_;
+    sdk::TrackMeasurer measurer_;
     std::atomic<bool> active_{false};        // measure only while the UI is showing
     std::atomic<bool> pendingReset_{false};  // clear gating history on (re)open / roll / Reset
     bool wasPlaying_ = false;                // audio thread only: transport edge detection

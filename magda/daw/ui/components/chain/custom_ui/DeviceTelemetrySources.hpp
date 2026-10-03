@@ -182,7 +182,7 @@ class DeviceLevelsTelemetry final : public LevelsTelemetrySource {
             surface->requestReset();
     }
 
-    audio::TrackMeasurementSnapshot snapshot() const override {
+    sdk::LevelsSnapshot snapshot() const override {
         auto surface = meter();
         if (surface == nullptr)
             return {};

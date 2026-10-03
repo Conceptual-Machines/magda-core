@@ -2,9 +2,9 @@
 
 #include <array>
 #include <cstddef>
+#include <magda/sdk/analysis/TrackMeasurer.hpp>
 
 #include "MaskingDetector.hpp"
-#include "TrackMeasurer.hpp"
 
 namespace magda::daw::audio {
 
@@ -18,7 +18,7 @@ class TrackMeasurementTap {
     virtual ~TrackMeasurementTap() = default;
 
     virtual void setMeasurementEnabled(bool shouldMeasure) noexcept = 0;
-    virtual TrackMeasurementSnapshot getSnapshot() const noexcept = 0;
+    virtual sdk::LevelsSnapshot getSnapshot() const noexcept = 0;
 
     /// Mono capture for masking analysis: heavier, so on only during a masking pass.
     virtual void setSpectrumCaptureEnabled(bool shouldCapture) noexcept = 0;

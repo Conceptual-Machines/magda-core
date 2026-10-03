@@ -2,12 +2,12 @@
 
 #include <juce_events/juce_events.h>
 
+#include <magda/sdk/analysis/TrackMeasurer.hpp>
 #include <map>
 #include <set>
 #include <vector>
 
 #include "../audio/analysis/MaskingDetector.hpp"
-#include "../audio/analysis/TrackMeasurer.hpp"
 #include "TypeIds.hpp"
 
 namespace magda {
@@ -58,9 +58,9 @@ class TrackMeasurementManager : private juce::Timer {
 
     // --- Snapshots ----------------------------------------------------------
     /// Latest measurement for a track. `valid == false` if none yet / not enabled.
-    daw::audio::TrackMeasurementSnapshot getSnapshot(TrackId trackId) const;
+    sdk::LevelsSnapshot getSnapshot(TrackId trackId) const;
     /// All currently-held snapshots (enabled tracks with data), for the agent.
-    std::vector<std::pair<TrackId, daw::audio::TrackMeasurementSnapshot>> getAllSnapshots() const;
+    std::vector<std::pair<TrackId, sdk::LevelsSnapshot>> getAllSnapshots() const;
 
     // --- Masking analysis (#1390) -------------------------------------------
     /// Arm/disarm masking band capture on the enabled taps. Heavier than the
@@ -103,7 +103,7 @@ class TrackMeasurementManager : private juce::Timer {
     bool globalEnabled_ = false;
     bool maskingEnabled_ = false;      // masking band capture armed
     std::set<TrackId> enabledTracks_;  // desired per-track state
-    std::map<TrackId, daw::audio::TrackMeasurementSnapshot> latest_;
+    std::map<TrackId, sdk::LevelsSnapshot> latest_;
     juce::ListenerList<TrackMeasurementListener> listeners_;
 };
 

@@ -126,16 +126,16 @@ size_t TrackMeasurementManager::readTrackSpectrumSamples(TrackId trackId, float*
     return tap->readLatestSpectrumSamples(dest, numSamples);
 }
 
-daw::audio::TrackMeasurementSnapshot TrackMeasurementManager::getSnapshot(TrackId trackId) const {
+sdk::LevelsSnapshot TrackMeasurementManager::getSnapshot(TrackId trackId) const {
     auto it = latest_.find(trackId);
     if (it == latest_.end())
         return {};
     return it->second;
 }
 
-std::vector<std::pair<TrackId, daw::audio::TrackMeasurementSnapshot>>
-TrackMeasurementManager::getAllSnapshots() const {
-    std::vector<std::pair<TrackId, daw::audio::TrackMeasurementSnapshot>> out;
+std::vector<std::pair<TrackId, sdk::LevelsSnapshot>> TrackMeasurementManager::getAllSnapshots()
+    const {
+    std::vector<std::pair<TrackId, sdk::LevelsSnapshot>> out;
     out.reserve(latest_.size());
     for (const auto& [trackId, snapshot] : latest_)
         out.emplace_back(trackId, snapshot);

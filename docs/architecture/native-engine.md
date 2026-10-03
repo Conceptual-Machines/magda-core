@@ -473,7 +473,8 @@ Three things compose with it, and each is decided in one place:
   has no single rate, and the pre-roll has to cover the fastest stretch of it.
 
 Where the markers come from when the user has not placed them is the other half of the slice.
-`analysis/TransientDetector.hpp` is a coefficient-for-coefficient port of the detector earlier
+`analysis/TransientDetector.hpp` feeds a file to the SDK's `sdk/analysis/TransientDetector.hpp`, a
+coefficient-for-coefficient port of the detector earlier
 projects were marked with -- envelope followers, a differentiator, a threshold from the
 sensitivity, a spacing rule -- because a detector that found different transients would move
 every auto-detected marker in every existing project. `io/SourceLoopInfo.hpp` is the third piece

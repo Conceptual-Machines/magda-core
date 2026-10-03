@@ -36,7 +36,7 @@ class LevelsUI : public juce::Component, private juce::Timer {
     void updateActiveState();  // start/stop the timer and gate plugin measurement
 
     std::shared_ptr<LevelsTelemetrySource> telemetry_;
-    daw::audio::TrackMeasurementSnapshot snapshot_;
+    sdk::LevelsSnapshot snapshot_;
     juce::TextButton resetButton_{"RESET"};
 
     static constexpr int kTimerHz = 30;

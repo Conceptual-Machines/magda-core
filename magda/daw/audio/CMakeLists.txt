@@ -311,7 +311,6 @@ set(_magda_base_device_support_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis/BandSpectrum.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis/BandSpectrum.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis/MaskingDetector.hpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/analysis/TrackMeasurer.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/insert_capture/CaptureWindowMath.hpp"
 )
 file(GLOB _magda_device_dsp_sources CONFIGURE_DEPENDS

@@ -252,13 +252,13 @@ TEST_CASE("A Levels faceplate measures through the device the engine renders",
 
     // The faceplate shows before anything renders behind it.
     source.setActive(true);
-    CHECK(source.snapshot().samplePeakDb == audio::kSilenceDb);
+    CHECK(source.snapshot().samplePeakDb == magda::sdk::kSilenceDb);
 
     device = std::make_shared<audio::LevelsPlugin>();
     device->prepare({.sampleRate = 48000.0, .maximumBlockSize = 512});
 
     measureBlock(*device, 0.5f);
-    REQUIRE(source.snapshot().samplePeakDb == audio::kSilenceDb);
+    REQUIRE(source.snapshot().samplePeakDb == magda::sdk::kSilenceDb);
 
     // The read handed the device the faceplate's state, so the next block is measured.
     measureBlock(*device, 0.5f);
