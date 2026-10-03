@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
+#include <cstdint>
 #include <vector>
 
 #include "analysis/TransientDetector.hpp"
@@ -46,14 +48,14 @@ class ClickReader final : public magda::engine::AudioFileReader {
         float amplitude = 1.0f;
     };
 
-    ClickReader(std::vector<Click> clicks, std::int64_t length)
-        : clicks_(std::move(clicks)), length_(length) {}
+    ClickReader(std::vector<Click> clicks, std::int64_t length, double sampleRate = kSampleRate)
+        : clicks_(std::move(clicks)), length_(length), sampleRate_(sampleRate) {}
 
     std::int64_t lengthInSamples() const override {
         return length_;
     }
     double sampleRate() const override {
-        return kSampleRate;
+        return sampleRate_;
     }
     int numChannels() const override {
         return 1;
@@ -78,7 +80,64 @@ class ClickReader final : public magda::engine::AudioFileReader {
   private:
     std::vector<Click> clicks_;
     std::int64_t length_;
+    double sampleRate_;
 };
+
+/// Decaying noise bursts over a quiet noise floor, so the envelope followers see
+/// float arithmetic that a bare impulse never exercises.
+class BurstReader final : public magda::engine::AudioFileReader {
+  public:
+    BurstReader(std::vector<std::int64_t> starts, std::int64_t length, double sampleRate)
+        : starts_(std::move(starts)), length_(length), sampleRate_(sampleRate) {}
+
+    std::int64_t lengthInSamples() const override {
+        return length_;
+    }
+    double sampleRate() const override {
+        return sampleRate_;
+    }
+    int numChannels() const override {
+        return 1;
+    }
+
+    int read(juce::AudioBuffer<float>& destination, int destinationOffset, std::int64_t startSample,
+             int numSamples) override {
+        for (int i = 0; i < numSamples; ++i)
+            destination.setSample(0, destinationOffset + i, sampleAt(startSample + i));
+        return numSamples;
+    }
+
+  private:
+    /// Stateless, so a read at any offset gives the same samples.
+    float sampleAt(std::int64_t at) const {
+        auto hash = static_cast<std::uint32_t>(at) * 2654435761u + 12345u;
+        hash ^= hash >> 15;
+        hash *= 2246822519u;
+        hash ^= hash >> 13;
+        const float noise = static_cast<float>(hash >> 8) / 8388608.0f - 1.0f;
+
+        float level = 0.01f;
+        for (const auto start : starts_) {
+            const auto age = at - start;
+            if (age >= 0 && age < 4000)
+                level += 0.8f * std::exp(-static_cast<float>(age) / 600.0f);
+        }
+        return noise * level;
+    }
+
+    std::vector<std::int64_t> starts_;
+    std::int64_t length_;
+    double sampleRate_;
+};
+
+/// Reported positions as whole samples, which is exact: a position is a sample
+/// index over the rate.
+std::vector<std::int64_t> inSamples(const std::vector<double>& seconds, double sampleRate) {
+    std::vector<std::int64_t> samples;
+    for (const auto time : seconds)
+        samples.push_back(std::llround(time * sampleRate));
+    return samples;
+}
 
 /// Where a click at @p sample is expected to be reported.
 double expected(std::int64_t sample) {
@@ -185,4 +244,64 @@ TEST_CASE("Detection is deterministic", "[engine][analysis]") {
     ClickReader reader({{44100}, {88200}, {132300}}, 200000);
 
     REQUIRE(detectTransients(reader, {}) == detectTransients(reader, {}));
+}
+
+TEST_CASE("Detected positions are pinned across the SDK split", "[engine][analysis]") {
+    using Samples = std::vector<std::int64_t>;
+
+    // Captured from the detector before it moved to the SDK. The bursts and the
+    // clicks near a 32768-sample block edge pin the block-relative rewind.
+    struct Golden {
+        float sensitivity;
+        Samples levels;
+        Samples boundary;
+        Samples bursts44100;
+        Samples bursts48000;
+        Samples bursts96000;
+    };
+    const Golden goldens[] = {
+        {0.0f,
+         {44077},
+         {32768, 65542},
+         {19978, 32768, 69977, 131072, 179977},
+         {19977, 32768, 69976, 131072, 179976},
+         {19953, 32768, 69952, 131072, 179952}},
+        {0.5f,
+         {44077, 88177},
+         {32768, 65542, 99976},
+         {19978, 32768, 69977, 98977, 131072, 179977},
+         {19977, 32768, 69976, 98976, 131072, 179976},
+         {19953, 32768, 69952, 98952, 131072, 179952}},
+        {1.0f,
+         {44077, 88177, 132277},
+         {32768, 65542, 99976},
+         {0, 19977, 32768, 69977, 98977, 131072, 179977},
+         {0, 19976, 32768, 69976, 98976, 131072, 179976},
+         {0, 19952, 32768, 69952, 98952, 131072, 179952}},
+    };
+
+    const std::vector<std::int64_t> burstStarts{20000, 32768 + 2,   70000,
+                                                99000, 131072 + 10, 180000};
+
+    for (const auto& golden : goldens) {
+        TransientDetectionSettings settings;
+        settings.sensitivity = golden.sensitivity;
+        INFO("sensitivity " << golden.sensitivity);
+
+        ClickReader levels({{44100, 1.0f}, {88200, 0.1f}, {132300, 0.02f}}, 200000);
+        CHECK(inSamples(detectTransients(levels, settings), kSampleRate) == golden.levels);
+
+        ClickReader boundary({{32768 + 5, 1.0f}, {65536 + 30, 0.5f}, {100000, 0.3f}}, 150000,
+                             48000.0);
+        CHECK(inSamples(detectTransients(boundary, settings), 48000.0) == golden.boundary);
+
+        const std::pair<double, const Samples*> bursts[] = {{44100.0, &golden.bursts44100},
+                                                            {48000.0, &golden.bursts48000},
+                                                            {96000.0, &golden.bursts96000}};
+        for (const auto& [rate, expectedSamples] : bursts) {
+            BurstReader reader(burstStarts, 260000, rate);
+            INFO("rate " << rate);
+            CHECK(inSamples(detectTransients(reader, settings), rate) == *expectedSamples);
+        }
+    }
 }

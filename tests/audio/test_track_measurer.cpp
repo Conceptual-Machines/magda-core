@@ -270,3 +270,105 @@ TEST_CASE("TrackMeasurer - readings are bit-stable across the DSP extraction", "
 #endif
     }
 }
+
+namespace {
+
+std::uint64_t fnv1a(const std::vector<float>& values) {
+    std::uint64_t hash = 14695981039346656037ull;
+    for (const auto value : values) {
+        hash ^= std::bit_cast<std::uint32_t>(value);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+struct CaptureReading {
+    std::vector<std::uint32_t> bits;
+    std::uint64_t ringHash = 0;
+    std::size_t written = 0;
+};
+
+// Mono or stereo programme through a measurer that captures its spectrum ring,
+// in blocks that are not a divisor of the scratch size.
+CaptureReading measureWithCapture(int numChannels, bool truePeak, int maxBlock) {
+    constexpr double sr = 44100.0;
+    TrackMeasurer m;
+    m.prepare(sr, maxBlock, truePeak);
+    m.setSpectrumCaptureEnabled(true);
+    std::vector<float> l(700), r(700);
+    std::uint32_t lcg = 777u;
+    for (int done = 0; done < static_cast<int>(sr * 3);) {
+        const int n = std::min(700, static_cast<int>(sr * 3) - done);
+        for (int i = 0; i < n; ++i) {
+            lcg = lcg * 1664525u + 1013904223u;
+            const float noise = (static_cast<float>(lcg >> 8) / 16777216.0f - 0.5f) * 0.3f;
+            const double t = static_cast<double>(done + i) / sr;
+            l[static_cast<size_t>(i)] =
+                0.5f * static_cast<float>(std::sin(2.0 * kPi * 440.0 * t)) + noise;
+            r[static_cast<size_t>(i)] =
+                0.25f * static_cast<float>(std::sin(2.0 * kPi * 1234.0 * t)) - noise;
+        }
+        const float* ch[2] = {l.data(), r.data()};
+        m.process(ch, numChannels, n);
+        done += n;
+    }
+    const auto s = m.read();
+    CaptureReading out;
+    out.bits = {std::bit_cast<std::uint32_t>(s.momentaryLufs),
+                std::bit_cast<std::uint32_t>(s.shortTermLufs),
+                std::bit_cast<std::uint32_t>(s.integratedLufs),
+                std::bit_cast<std::uint32_t>(s.samplePeakDb),
+                std::bit_cast<std::uint32_t>(s.truePeakDb),
+                std::bit_cast<std::uint32_t>(s.correlation),
+                std::bit_cast<std::uint32_t>(s.width)};
+    std::vector<float> ring(4096);
+    out.written = m.getSpectrumRing().readLatest(ring.data(), 4096);
+    out.ringHash = fnv1a(ring);
+    return out;
+}
+
+}  // namespace
+
+TEST_CASE("TrackMeasurer - capture readings are pinned across the SDK split", "[measurer]") {
+    // Captured before the measurer moved to the SDK: the seven readings, then a hash of
+    // the last 4096 ring samples.
+    struct Golden {
+        int channels;
+        bool truePeak;
+        std::uint64_t ringHash;
+        std::uint32_t bits[7];
+    };
+    const Golden goldens[] = {
+        {1,
+         false,
+         0x5b139ecbaac0f088ull,
+         {0xc0c5dab2, 0xc0c53316, 0xc0c5cd44, 0xc06fb4dc, 0xc3480000, 0x3f800000, 0x0}},
+        {1,
+         true,
+         0x5b139ecbaac0f088ull,
+         {0xc0c5dab2, 0xc0c53316, 0xc0c5cd44, 0xc06fb4dc, 0xc0224782, 0x3f800000, 0x0}},
+        {2,
+         false,
+         0x9370370503af3edfull,
+         {0xc0f5a487, 0xc0f4b083, 0xc0f47ead, 0xc06fb4dc, 0xc3480000, 0xbdc548b1, 0x3f0a5d7c}},
+        {2,
+         true,
+         0x9370370503af3edfull,
+         {0xc0f5a487, 0xc0f4b083, 0xc0f47ead, 0xc06fb4dc, 0xc0224782, 0xbdc548b1, 0x3f0a5d7c}},
+    };
+    for (const auto& g : goldens) {
+        const auto r = measureWithCapture(g.channels, g.truePeak, 256);
+        INFO("channels " << g.channels << " true peak " << g.truePeak);
+        CHECK(r.written == 132300);
+#if defined(__APPLE__) && defined(__aarch64__)
+        // Captured on this platform; other compilers round the last bit differently.
+        CHECK(r.ringHash == g.ringHash);
+        for (size_t i = 0; i < r.bits.size(); ++i) {
+            INFO("field " << i);
+            CHECK(r.bits[i] == g.bits[i]);
+        }
+#else
+        CHECK(r.bits.size() == std::size(g.bits));
+#endif
+    }
+}
