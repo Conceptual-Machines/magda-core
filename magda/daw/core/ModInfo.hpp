@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <magda/sdk/curve/CurveTypes.hpp>
+#include <magda/sdk/mod/ModTypes.hpp>
 #include <vector>
 
 #include "ControlTarget.hpp"
@@ -48,44 +49,7 @@ enum class SyncDivision {
     SixteenBars = 1600          // 16 bars (64 beats)
 };
 
-/**
- * @brief Modifier rate type, slow to fast.
- *
- * PINNED: this is the discrete value a tempo-synced modifier's Rate parameter
- * carries, so it lands in project files through automation curves and macro/mod
- * links. It is MAGDA's own enumeration; the values do not
- * move.
- *
- * MAGDA's Rate control does not expose every value (no 1/16 dotted/triplet, no
- * 1/64s); the unexposed ones exist so a value written by the engine or by an
- * imported project still round-trips.
- */
-enum class ModRateType : int {
-    Hertz = 0,
-    SixteenBars = 1,
-    EightBars = 2,
-    FourBars = 3,
-    TwoBars = 4,
-    Bar = 5,
-    DottedHalf = 6,
-    Half = 7,
-    TripletHalf = 8,
-    DottedQuarter = 9,
-    Quarter = 10,
-    TripletQuarter = 11,
-    DottedEighth = 12,
-    Eighth = 13,
-    TripletEighth = 14,
-    DottedSixteenth = 15,
-    Sixteenth = 16,
-    TripletSixteenth = 17,
-    DottedThirtySecond = 18,
-    ThirtySecond = 19,
-    TripletThirtySecond = 20,
-    DottedSixtyFourth = 21,
-    SixtyFourth = 22,
-    TripletSixtyFourth = 23,
-};
+using ModRateType = sdk::ModRateType;
 
 /**
  * @brief Map MAGDA SyncDivision to the persisted ModRateType ordinal.
@@ -202,15 +166,7 @@ inline SyncDivision teRateOrdinalToSyncDivision(int ordinal) {
 using CurvePreset = sdk::CurvePreset;
 using CurvePointData = sdk::CurvePointData;
 
-/**
- * @brief LFO trigger modes
- */
-enum class LFOTriggerMode {
-    Free,       // Continuous, never resets
-    Transport,  // Reset on transport start/loop
-    MIDI,       // Reset on MIDI note-on (stubbed)
-    Audio       // Reset on audio transient (stubbed)
-};
+using LFOTriggerMode = sdk::LFOTriggerMode;
 
 /**
  * @brief Where in a source track's chain a modifier listens.

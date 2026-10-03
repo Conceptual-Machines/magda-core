@@ -112,6 +112,7 @@ void ModRuntime::reset() {
     fingerprint_ = 0;
     sampleRate_ = 44100.0;
     timing_ = ModTiming{};
+    modBlock_ = {};
     carried_ = 0;
 }
 
@@ -253,10 +254,10 @@ ModListen ModRuntime::listensFor(int index, const ParamTable& table) {
 
 void ModRuntime::beginBlock(const BlockInfo& block) {
     timing_ = modTimingFor(block, sampleRate_);
+    modBlock_ = modBlockFor(block, timing_);
 }
 
-void ModRuntime::advance(int index, const ParamTable& table, const LfoRate& rate,
-                         const BlockInfo& block) {
+void ModRuntime::advance(int index, const ParamTable& table, const LfoRate& rate) {
     auto* state = mutableState(index);
     if (state == nullptr || index >= static_cast<int>(table.modifiers.size()))
         return;
@@ -278,7 +279,7 @@ void ModRuntime::advance(int index, const ParamTable& table, const LfoRate& rate
         case ModKind::Lfo: {
             auto settings = modifier.lfo;
             settings.rate = rate;
-            out = advanceLfo(state->lfo, settings, table.modCurveFor(index), block, timing_);
+            out = advanceLfo(state->lfo, settings, table.modCurveFor(index), modBlock_, timing_);
             break;
         }
 
@@ -286,20 +287,20 @@ void ModRuntime::advance(int index, const ParamTable& table, const LfoRate& rate
             // No rate. An envelope's stage lengths are times rather than a
             // frequency, and the one lane a modifier exposes describes a
             // frequency, so there is nothing here for it to mean.
-            out = advanceAdsr(state->adsr, modifier.adsr, block, timing_);
+            out = advanceAdsr(state->adsr, modifier.adsr, modBlock_, timing_);
             break;
 
         case ModKind::Random: {
             auto settings = modifier.random;
             settings.rate = rate;
-            out = advanceRandom(state->random, settings, block, timing_);
+            out = advanceRandom(state->random, settings, modBlock_, timing_);
             break;
         }
 
         case ModKind::Follower:
             // The peak its detector left on the last block. No rate either:
             // what a follower runs at is whatever its source is doing.
-            out = advanceFollower(state->follower, modifier.follower, block, timing_);
+            out = advanceFollower(state->follower, modifier.follower, modBlock_, timing_);
             break;
     }
 }

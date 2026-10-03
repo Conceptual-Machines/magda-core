@@ -454,6 +454,7 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES engine/test_mod_random.cpp)
     list(APPEND TEST_SOURCES engine/test_mod_follower.cpp)
     list(APPEND TEST_SOURCES engine/test_mod_feeds.cpp)
+    list(APPEND TEST_SOURCES engine/test_mod_sample_identity.cpp)
     # Macros at track, rack and device scope (#2121): which array a path
     # names, nested racks, and a macro reaching a modifier's rate.
     list(APPEND TEST_SOURCES engine/test_param_macros.cpp)

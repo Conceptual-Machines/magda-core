@@ -8,10 +8,7 @@
 
 #include "core/AutomationInfo.hpp"
 #include "core/ModInfo.hpp"
-#include "param/ModAdsr.hpp"
-#include "param/ModFollower.hpp"
-#include "param/ModLfo.hpp"
-#include "param/ModRandom.hpp"
+#include "param/ModBridge.hpp"
 #include "param/ParamKey.hpp"
 #include "param/ParamSpec.hpp"
 

@@ -1,8 +1,9 @@
 # Modifier LFO engine
 
-`magda/engine/param/ModLfo.hpp` is the runtime that moves an LFO modifier. It
-replaces the old model, where a modifier was a published number that never
-moved between publishes.
+`magda/sdk/mod/ModLfo.hpp` (magda-sdk, `docs/modulators.md`) is the runtime that
+moves an LFO modifier. It replaces the old model, where a modifier was a
+published number that never moved between publishes. `param/ModBridge.hpp`
+reduces the engine's block to the SDK's `ModBlock`.
 
 ## Settings vs. state
 
