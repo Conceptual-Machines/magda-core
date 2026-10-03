@@ -2,10 +2,10 @@
 
 #include <array>
 #include <cmath>
+#include <magda/sdk/analysis/TrackMeasurer.hpp>
 
 #include "BandSpectrum.hpp"
 #include "MaskingDetector.hpp"
-#include "TrackMeasurer.hpp"
 
 namespace magda::daw::audio {
 
@@ -19,9 +19,9 @@ using BandArray = std::array<float, kNumMaskingBands>;
 // Measure a buffer; also produces the song-averaged 1/3-octave band spectrum
 // when bandsOut is given. computeMaskingBandsDb rebuilds an FFT per call, so a
 // song-average only samples ~128 frames rather than every block.
-TrackMeasurementSnapshot measure(const juce::AudioBuffer<float>& buf, double sr,
-                                 BandArray* bandsOut, bool enableTruePeak) {
-    TrackMeasurer m;
+sdk::LevelsSnapshot measure(const juce::AudioBuffer<float>& buf, double sr, BandArray* bandsOut,
+                            bool enableTruePeak) {
+    sdk::TrackMeasurer m;
     m.prepare(sr, kBlock, enableTruePeak);
     if (bandsOut != nullptr)
         m.setSpectrumCaptureEnabled(true);
@@ -41,7 +41,7 @@ TrackMeasurementSnapshot measure(const juce::AudioBuffer<float>& buf, double sr,
         const float* chans[2];
         chans[0] = buf.getReadPointer(0) + pos;
         chans[1] = nch > 1 ? buf.getReadPointer(1) + pos : chans[0];
-        m.process(chans, nch, n);
+        m.process({chans, nch, n});
         if (bandsOut != nullptr && n >= 2048 && (blockIdx % hop) == 0) {
             computeMaskingBandsDb(m.getSpectrumRing(), sr, frameBands);
             for (int b = 0; b < kNumMaskingBands; ++b)
@@ -160,7 +160,7 @@ void stereoCorrWidth(const juce::AudioBuffer<float>& buf, float& corr, float& wi
 }
 
 MixAnalysisData::Track snapshotToMix(const juce::String& name, const std::string& role,
-                                     const TrackMeasurementSnapshot& s) {
+                                     const sdk::LevelsSnapshot& s) {
     MixAnalysisData::Track t;
     t.name = name.toStdString();
     t.role = role;

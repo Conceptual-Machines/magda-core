@@ -1,10 +1,9 @@
 #pragma once
 
 #include <cstddef>
+#include <magda/sdk/analysis/TrackMeasurer.hpp>
 #include <magda/sdk/telemetry/Telemetry.hpp>
 #include <string_view>
-
-#include "analysis/TrackMeasurer.hpp"
 
 /**
  * @file AnalysisTelemetry.hpp

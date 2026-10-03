@@ -16,13 +16,13 @@ class CountingLevelsTelemetrySource final : public magda::daw::ui::LevelsTelemet
         ++resetRequests;
     }
 
-    magda::daw::audio::TrackMeasurementSnapshot snapshot() const override {
+    magda::sdk::LevelsSnapshot snapshot() const override {
         return held;
     }
 
     std::vector<bool> activationStates;
     int resetRequests = 0;
-    magda::daw::audio::TrackMeasurementSnapshot held;
+    magda::sdk::LevelsSnapshot held;
 };
 
 }  // namespace

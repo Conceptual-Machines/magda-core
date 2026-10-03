@@ -13,16 +13,11 @@ constexpr int kFftSize = 1 << kFftOrder;  // 2048
 constexpr float kFloorDb = -120.0f;
 }  // namespace
 
-void computeMaskingBandsDb(const AudioTapBuffer& ring, double sampleRate,
-                           std::array<float, kNumMaskingBands>& outDb) {
-    outDb.fill(kFloorDb);
-    if (sampleRate <= 0.0)
-        return;
+namespace {
 
-    // Pull the most recent frame from the ring.
-    std::vector<float> frame(static_cast<size_t>(kFftSize), 0.0f);
-    ring.readLatest(frame.data(), kFftSize);
-
+/// Bands of one FFT frame, which it windows in place.
+void computeFromFrame(std::vector<float>& frame, double sampleRate,
+                      std::array<float, kNumMaskingBands>& outDb) {
     // Hann window (coherent gain 0.5, compensated below).
     juce::dsp::WindowingFunction<float> window(static_cast<size_t>(kFftSize),
                                                juce::dsp::WindowingFunction<float>::hann);
@@ -62,6 +57,30 @@ void computeMaskingBandsDb(const AudioTapBuffer& ring, double sampleRate,
             outDb[static_cast<size_t>(b)] =
                 juce::jmax(kFloorDb, 20.0f * std::log10(peak[static_cast<size_t>(b)]));
     }
+}
+
+}  // namespace
+
+void computeMaskingBandsDb(const AudioTapBuffer& ring, double sampleRate,
+                           std::array<float, kNumMaskingBands>& outDb) {
+    outDb.fill(kFloorDb);
+    if (sampleRate <= 0.0)
+        return;
+
+    std::vector<float> frame(static_cast<size_t>(kFftSize), 0.0f);
+    ring.readLatest(frame.data(), kFftSize);
+    computeFromFrame(frame, sampleRate, outDb);
+}
+
+void computeMaskingBandsDb(const engine::SampleRing& ring, double sampleRate,
+                           std::array<float, kNumMaskingBands>& outDb) {
+    outDb.fill(kFloorDb);
+    if (sampleRate <= 0.0)
+        return;
+
+    std::vector<float> frame(static_cast<size_t>(kFftSize), 0.0f);
+    ring.readLatest(frame.data(), kFftSize);
+    computeFromFrame(frame, sampleRate, outDb);
 }
 
 }  // namespace magda::daw::audio

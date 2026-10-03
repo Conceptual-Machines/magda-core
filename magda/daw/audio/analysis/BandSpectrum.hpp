@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <magda/sdk/tap/SampleRing.hpp>
 
 #include "AudioTapBuffer.hpp"
 #include "MaskingDetector.hpp"
@@ -18,6 +19,10 @@ namespace magda::daw::audio {
  * the floor. Allocates scratch on the message thread (never the audio thread).
  */
 void computeMaskingBandsDb(const AudioTapBuffer& ring, double sampleRate,
+                           std::array<float, kNumMaskingBands>& outDb);
+
+/** @brief The same over an SDK ring, which is what TrackMeasurer captures into. */
+void computeMaskingBandsDb(const engine::SampleRing& ring, double sampleRate,
                            std::array<float, kNumMaskingBands>& outDb);
 
 }  // namespace magda::daw::audio

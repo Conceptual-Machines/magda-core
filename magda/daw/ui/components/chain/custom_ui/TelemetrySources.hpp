@@ -2,7 +2,8 @@
 
 #include <juce_core/juce_core.h>
 
-#include "audio/analysis/TrackMeasurer.hpp"
+#include <magda/sdk/analysis/TrackMeasurer.hpp>
+
 #include "core/DeviceUiContext.hpp"
 
 namespace magda::daw::ui {
@@ -55,7 +56,7 @@ class LevelsTelemetrySource : public magda::DeviceTelemetrySource {
     virtual void setActive(bool active) = 0;
     /// Restart the held figures (integrated loudness, peak hold and PLR).
     virtual void requestReset() = 0;
-    virtual magda::daw::audio::TrackMeasurementSnapshot snapshot() const = 0;
+    virtual magda::sdk::LevelsSnapshot snapshot() const = 0;
 };
 
 class NimbusTelemetrySource : public magda::DeviceTelemetrySource {

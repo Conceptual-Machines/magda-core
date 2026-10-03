@@ -1,13 +1,14 @@
 #include "LevelsUI.hpp"
 
-#include "audio/analysis/TrackMeasurer.hpp"
+#include <magda/sdk/analysis/TrackMeasurer.hpp>
+
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
-using magda::daw::audio::kSilenceDb;
-using magda::daw::audio::kSilenceLufs;
+using magda::sdk::kSilenceDb;
+using magda::sdk::kSilenceLufs;
 
 namespace {
 
