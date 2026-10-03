@@ -428,7 +428,7 @@ void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModCo
                 if (runnable && step.index >= 0 &&
                     step.index < static_cast<int>(table.modifiers.size())) {
                     const auto& modifier = table.modifiers[static_cast<std::size_t>(step.index)];
-                    mods->advance(step.index, table, rateFor(out, modifier), block);
+                    mods->advance(step.index, table, rateFor(out, modifier));
                 }
                 break;
         }

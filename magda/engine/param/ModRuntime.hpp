@@ -6,10 +6,7 @@
 #include <vector>
 
 #include "exec/RenderContext.hpp"
-#include "param/ModAdsr.hpp"
-#include "param/ModFollower.hpp"
-#include "param/ModLfo.hpp"
-#include "param/ModRandom.hpp"
+#include "param/ModBridge.hpp"
 #include "param/ModSources.hpp"
 #include "param/ParamKey.hpp"
 
@@ -117,13 +114,13 @@ class ModRuntime {
     void beginBlock(const BlockInfo& block);
 
     /**
-     * @brief Advance modifier @p index over the block and publish its output.
+     * @brief Advance modifier @p index over the block beginBlock settled and publish its output.
      *
      * On the audio thread, from the table's resolution order. @p rate is
      * what its Rate parameter resolved to (a frequency or division ordinal,
      * per tempo sync); only the two kinds with a rate read it.
      */
-    void advance(int index, const ParamTable& table, const LfoRate& rate, const BlockInfo& block);
+    void advance(int index, const ParamTable& table, const LfoRate& rate);
 
     /**
      * @brief Hand modifier @p index the block its source just rendered.
@@ -257,6 +254,7 @@ class ModRuntime {
     std::uint64_t fingerprint_ = 0;
     double sampleRate_ = 44100.0;
     ModTiming timing_;
+    sdk::ModBlock modBlock_;
     int carried_ = 0;
 };
 
