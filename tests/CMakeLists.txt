@@ -8,6 +8,7 @@ set(TEST_SOURCES
     clips/test_audio_clip_source_display.cpp
     clips/test_clip_bpm_invariant.cpp
     audio/test_source_pool.cpp
+    audio/test_waveform_peak_cache.cpp
     clips/test_clip_event_model.cpp
     clips/test_clip_tempo_sequences.cpp
     clips/test_clip_tempo_detection_sequences.cpp
