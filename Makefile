@@ -294,6 +294,29 @@ device-manifests:
 	cd $(BUILD_DIR) && $(BUILD_ENV) ninja magda_device_manifests
 	$(BUILD_DIR)/tools/device_manifests/magda_device_manifests $(BUILD_DIR)/device-manifests
 
+# The portable devices through the SDK hosts (#2940): ABI test, JUCE plugins, wasm, parity.
+WASM_DEVICES_DIR = build-wasm-devices
+
+.PHONY: device-abi-test
+device-abi-test:
+	cd $(BUILD_DIR) && $(BUILD_ENV) ninja magda_portable_abi_tests
+	$(BUILD_DIR)/tests/magda_portable_abi_tests
+
+.PHONY: device-plugins
+device-plugins:
+	cd $(BUILD_DIR) && $(BUILD_ENV) ninja magda_test_tone_plugin_All
+
+.PHONY: device-wasm
+device-wasm:
+	emcmake cmake -S magda/devices -B $(WASM_DEVICES_DIR) -G Ninja -DCMAKE_BUILD_TYPE=Release
+	cmake --build $(WASM_DEVICES_DIR)
+
+.PHONY: device-parity
+device-parity: device-wasm
+	cd $(BUILD_DIR) && $(BUILD_ENV) ninja magda_portable_render
+	node third_party/magda-sdk/hosts/parity/parity.mjs --wasm $(WASM_DEVICES_DIR)/magda_portable.wasm \
+		--render $(BUILD_DIR)/magda/devices/magda_portable_render --corpus magda/devices/parity-corpus.json
+
 .PHONY: test-juce-build
 test-juce-build:
 	@echo "🔨 Building JUCE tests..."
