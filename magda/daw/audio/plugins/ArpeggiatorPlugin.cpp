@@ -2,8 +2,7 @@
 
 #include <algorithm>
 #include <limits>
-
-#include "transport/RampCurve.hpp"
+#include <magda/sdk/sequencer/RampCurve.hpp>
 
 namespace magda::daw::audio {
 
@@ -310,7 +309,7 @@ double ArpeggiatorPlugin::rateToBeats(Rate r) {
 }
 
 double ArpeggiatorPlugin::applyRampCurve(double t, float depth, float skew, bool hardAngle) {
-    return ramp_curve::applyRampCurve(t, depth, skew, hardAngle);
+    return sdk::sequencer::ramp_curve::applyRampCurve(t, depth, skew, hardAngle);
 }
 
 void ArpeggiatorPlugin::addHeldNote(int noteNumber, int velocity, bool fromLiveSource,
@@ -595,7 +594,7 @@ struct ArpeggiatorPlugin::Stretch {
         if (std::abs(block.ramp) > 0.001f && seq.length > 1) {
             const double tLinear =
                 static_cast<double>(stepInCycle) / static_cast<double>(seq.length);
-            const double tCurved = ramp_curve::applyRampCurveWithCycles(
+            const double tCurved = sdk::sequencer::ramp_curve::applyRampCurveWithCycles(
                 tLinear, block.ramp, block.skew, block.rampCycleCount, block.hardAngleCurve);
             return cycleStart + tCurved * cycleBeats;
         }

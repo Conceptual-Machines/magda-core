@@ -8,7 +8,7 @@ namespace magda::step_pattern {
 
 namespace {
 
-namespace seq = daw::audio::sequencer;
+namespace seq = sdk::sequencer;
 
 // The retired plugins' element and property names. Frozen: saved projects and
 // presets are written in them, and the devices read the same spellings back
@@ -93,7 +93,7 @@ void writeMono(device_state::Doc& doc, const MonoPattern& pattern) {
     // lengthening it again must not lose what the hidden steps held. A step
     // nobody has touched is written as nothing at all - absence and a default
     // step read back the same.
-    const daw::audio::sequencer::MonoStep defaults;
+    const sdk::sequencer::MonoStep defaults;
     for (int i = 0; i < seq::kMaxSteps; ++i) {
         const auto& step = pattern.steps[static_cast<size_t>(i)];
         if (step == defaults)
@@ -152,7 +152,7 @@ void writePoly(device_state::Doc& doc, const PolyPattern& pattern) {
 
     // Every step, not just the playing ones, and only the ones that differ
     // from a default step (see writeMono).
-    const daw::audio::sequencer::PolyStep defaults;
+    const sdk::sequencer::PolyStep defaults;
     for (int i = 0; i < seq::kMaxSteps; ++i) {
         const auto& step = pattern.steps[static_cast<size_t>(i)];
         if (step == defaults)

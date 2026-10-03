@@ -3,11 +3,11 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <magda/sdk/sequencer/MonoStepSequencer.hpp>
+#include <magda/sdk/sequencer/PublishedPattern.hpp>
 
 #include "core/ParameterUtils.hpp"
 #include "plugins/MidiMagdaDevice.hpp"
-#include "sequencer/MonoStepSequencer.hpp"
-#include "sequencer/PublishedPattern.hpp"
 
 namespace magda::daw::audio {
 
@@ -16,7 +16,7 @@ namespace magda::daw::audio {
  *
  * Plays a looping pattern of notes with pitch, accent, glide, gate and octave
  * shift, in front of a synth on a track's chain. The playing itself is
- * sequencer::MonoStepSequencer; this class is the device shell around it.
+ * sdk::sequencer::MonoStepSequencer; this class is the device shell around it.
  *
  * A MagdaDevice since #2299: one sequencer hosted by whichever engine is
  * running it. The slot ids, order and display ranges are the ones the retired
@@ -39,8 +39,8 @@ class StepSequencerPlugin : public MidiMagdaDevice {
     static const char* xmlTypeName;
 
     // --- Per-step data (the sequencing core's, so a pattern is one type) ---
-    using Step = sequencer::MonoStep;
-    static constexpr int MAX_STEPS = sequencer::kMaxSteps;
+    using Step = sdk::sequencer::MonoStep;
+    static constexpr int MAX_STEPS = sdk::sequencer::kMaxSteps;
 
     /// FROZEN slot order - saved links address these by index.
     enum ParamIndex {
@@ -101,7 +101,7 @@ class StepSequencerPlugin : public MidiMagdaDevice {
 
     /// The pattern the model last published. Message thread only - the
     /// faceplate reads it to draw, and edits it through the model.
-    sequencer::MonoPattern pattern() const;
+    sdk::sequencer::MonoPattern pattern() const;
 
     /** Current playback step index for UI highlight (-1 if not playing). */
     std::atomic<int> currentPlayStep_{-1};
@@ -130,10 +130,10 @@ class StepSequencerPlugin : public MidiMagdaDevice {
 
   private:
     // The sequencing engine: clock, voice and the tie/glide/gate rules.
-    sequencer::MonoStepSequencer sequencer_;
+    sdk::sequencer::MonoStepSequencer sequencer_;
 
     /// What the model published, handed to the audio thread a block at a time.
-    sequencer::PublishedPattern<sequencer::MonoPattern> published_;
+    sdk::sequencer::PublishedPattern<sdk::sequencer::MonoPattern> published_;
 
     // --- Audio-thread state ---
     bool needsAllNotesOff_ = false;

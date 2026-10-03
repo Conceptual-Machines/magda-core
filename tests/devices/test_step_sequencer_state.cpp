@@ -26,13 +26,13 @@ juce::ValueTree monoStep(int index, int note, bool gate = true, bool accent = fa
 }
 
 /// The state the model would hold for @p pattern: written by the host's own writer.
-magda::sdk::StateNode hostState(const audio::sequencer::MonoPattern& pattern) {
+magda::sdk::StateNode hostState(const magda::sdk::sequencer::MonoPattern& pattern) {
     magda::device_state::Doc doc;
     magda::step_pattern::writeMono(doc, pattern);
     return audio::toSdkNode(doc.root);
 }
 
-magda::sdk::StateNode hostState(const audio::sequencer::PolyPattern& pattern) {
+magda::sdk::StateNode hostState(const magda::sdk::sequencer::PolyPattern& pattern) {
     magda::device_state::Doc doc;
     magda::step_pattern::writePoly(doc, pattern);
     return audio::toSdkNode(doc.root);

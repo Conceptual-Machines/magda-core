@@ -3,11 +3,11 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <magda/sdk/sequencer/PolyStepSequencer.hpp>
+#include <magda/sdk/sequencer/PublishedPattern.hpp>
 
 #include "core/ParameterUtils.hpp"
 #include "plugins/MidiMagdaDevice.hpp"
-#include "sequencer/PolyStepSequencer.hpp"
-#include "sequencer/PublishedPattern.hpp"
 
 namespace magda::daw::audio {
 
@@ -16,7 +16,7 @@ namespace magda::daw::audio {
  *
  * Like StepSequencerPlugin but each step holds up to 8 notes: steps carry
  * gate, tie, probability and a step velocity, and a note may override that
- * velocity. The playing itself is sequencer::PolyStepSequencer; this class is
+ * velocity. The playing itself is sdk::sequencer::PolyStepSequencer; this class is
  * the device shell around it.
  *
  * A MagdaDevice since #2299, and the pattern belongs to the model rather than
@@ -33,10 +33,10 @@ class PolyStepSequencerPlugin : public MidiMagdaDevice {
     static const char* xmlTypeName;
 
     // --- Per-step data (the sequencing core's, so a pattern is one type) ---
-    using Note = sequencer::PolyNote;
-    using Step = sequencer::PolyStep;
-    static constexpr int MAX_STEPS = sequencer::kMaxSteps;
-    static constexpr int MAX_NOTES_PER_STEP = sequencer::kMaxNotesPerStep;
+    using Note = sdk::sequencer::PolyNote;
+    using Step = sdk::sequencer::PolyStep;
+    static constexpr int MAX_STEPS = sdk::sequencer::kMaxSteps;
+    static constexpr int MAX_NOTES_PER_STEP = sdk::sequencer::kMaxNotesPerStep;
 
     /// FROZEN slot order - saved links address these by index.
     enum ParamIndex {
@@ -100,7 +100,7 @@ class PolyStepSequencerPlugin : public MidiMagdaDevice {
 
     /// The pattern the model last published. Message thread only - the
     /// faceplate reads it to draw, and edits it through the model.
-    sequencer::PolyPattern pattern() const;
+    sdk::sequencer::PolyPattern pattern() const;
 
     /** Current playback step index for UI highlight (-1 if not playing). */
     std::atomic<int> currentPlayStep_{-1};
@@ -128,10 +128,10 @@ class PolyStepSequencerPlugin : public MidiMagdaDevice {
 
   private:
     // The sequencing engine: clock, chord voice and the tie/probability rules.
-    sequencer::PolyStepSequencer sequencer_;
+    sdk::sequencer::PolyStepSequencer sequencer_;
 
     /// What the model published, handed to the audio thread a block at a time.
-    sequencer::PublishedPattern<sequencer::PolyPattern> published_;
+    sdk::sequencer::PublishedPattern<sdk::sequencer::PolyPattern> published_;
 
     juce::String viewMode_{"keys"};
 

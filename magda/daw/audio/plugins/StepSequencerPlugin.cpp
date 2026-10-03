@@ -179,7 +179,7 @@ void StepSequencerPlugin::reset() {
 // Pattern and state
 // =============================================================================
 
-sequencer::MonoPattern StepSequencerPlugin::pattern() const {
+sdk::sequencer::MonoPattern StepSequencerPlugin::pattern() const {
     return published_.current();
 }
 
@@ -198,7 +198,7 @@ sdk::RestoreResult StepSequencerPlugin::restoreState(const sdk::StateNode& state
         quantizeSub.store(state.getInt(stateKey(SettingIDs::quantizeSub)),
                           std::memory_order_relaxed);
 
-    sequencer::MonoPattern parsed;
+    sdk::sequencer::MonoPattern parsed;
     if (state.has(stateKey(SettingIDs::numSteps)))
         parsed.length = std::clamp(state.getInt(stateKey(SettingIDs::numSteps)), 1, MAX_STEPS);
 
@@ -262,7 +262,7 @@ void StepSequencerPlugin::process(DeviceProcessContext& context) {
     // Take the published pattern for the length of this block: a publish
     // waiting on the message thread cannot touch this slot until the hold goes
     // out of scope, so the reference stays valid for the whole call.
-    const sequencer::PublishedPattern<sequencer::MonoPattern>::Hold hold{published_};
+    const sdk::sequencer::PublishedPattern<sdk::sequencer::MonoPattern>::Hold hold{published_};
     if (!hold.isValid()) {
         jassertfalse;  // one audio thread, and it always hands the slot back
         return;
@@ -303,9 +303,9 @@ void StepSequencerPlugin::process(DeviceProcessContext& context) {
         needsAllNotesOff_ = false;
     }
 
-    sequencer::MonoStepSequencer::Params params;
-    params.rate = static_cast<sequencer::StepClock::Rate>(displayIndex(kRate));
-    params.direction = static_cast<sequencer::StepClock::Direction>(displayIndex(kDirection));
+    sdk::sequencer::MonoStepSequencer::Params params;
+    params.rate = static_cast<sdk::sequencer::StepClock::Rate>(displayIndex(kRate));
+    params.direction = static_cast<sdk::sequencer::StepClock::Direction>(displayIndex(kDirection));
     params.swing = displayValue(kSwing);
     params.gateLength = displayValue(kGateLength);
     params.accentVelocity = displayIndex(kAccentVelocity);
@@ -318,7 +318,7 @@ void StepSequencerPlugin::process(DeviceProcessContext& context) {
     params.quantizeSub = quantizeSub.load(std::memory_order_relaxed);
 
     const bool haveTempo = context.tempoMap != nullptr;
-    const sequencer::StepClock::BlockTiming timing{
+    const sdk::sequencer::StepClock::BlockTiming timing{
         .startBeat =
             haveTempo ? context.tempoMap->beatsAtSeconds(context.timelineStartSeconds) : 0.0,
         .endBeat = haveTempo ? context.tempoMap->beatsAtSeconds(context.timelineEndSeconds) : 0.0,

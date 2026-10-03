@@ -1,9 +1,9 @@
 #pragma once
 
+#include <magda/sdk/sequencer/NoteSink.hpp>
 #include <utility>
 
 #include "plugins/MagdaDevice.hpp"
-#include "sequencer/NoteSink.hpp"
 
 namespace magda::daw::audio {
 
@@ -15,11 +15,11 @@ namespace magda::daw::audio {
  * hands downstream. Timestamps stay in seconds from the block's start, which is
  * the domain DeviceMidiOutput takes.
  */
-class DeviceNoteSink : public sequencer::NoteSink {
+class DeviceNoteSink : public sdk::sequencer::NoteSink {
   public:
     explicit DeviceNoteSink(DeviceMidiOutput& midi) : midi_(midi) {}
 
-    void addNoteEvent(const sequencer::NoteEvent& event) override {
+    void addNoteEvent(const sdk::sequencer::NoteEvent& event) override {
         auto message = event.isNoteOn
                            ? juce::MidiMessage::noteOn(1, event.noteNumber,
                                                        static_cast<juce::uint8>(event.velocity))

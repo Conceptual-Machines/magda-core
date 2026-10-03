@@ -164,7 +164,7 @@ void PolyStepSequencerPlugin::reset() {
 // Pattern and state
 // =============================================================================
 
-sequencer::PolyPattern PolyStepSequencerPlugin::pattern() const {
+sdk::sequencer::PolyPattern PolyStepSequencerPlugin::pattern() const {
     return published_.current();
 }
 
@@ -185,7 +185,7 @@ sdk::RestoreResult PolyStepSequencerPlugin::restoreState(const sdk::StateNode& s
     if (state.has(stateKey(SettingIDs::viewMode)))
         viewMode_ = juce::String::fromUTF8(state.getString(stateKey(SettingIDs::viewMode)).c_str());
 
-    sequencer::PolyPattern parsed;
+    sdk::sequencer::PolyPattern parsed;
     if (state.has(stateKey(SettingIDs::numSteps)))
         parsed.length = std::clamp(state.getInt(stateKey(SettingIDs::numSteps)), 1, MAX_STEPS);
 
@@ -261,7 +261,7 @@ void PolyStepSequencerPlugin::process(DeviceProcessContext& context) {
     // Take the published pattern for the length of this block: a publish
     // waiting on the message thread cannot touch this slot until the hold goes
     // out of scope, so the reference stays valid for the whole call.
-    const sequencer::PublishedPattern<sequencer::PolyPattern>::Hold hold{published_};
+    const sdk::sequencer::PublishedPattern<sdk::sequencer::PolyPattern>::Hold hold{published_};
     if (!hold.isValid()) {
         jassertfalse;  // one audio thread, and it always hands the slot back
         return;
@@ -308,9 +308,9 @@ void PolyStepSequencerPlugin::process(DeviceProcessContext& context) {
         needsAllNotesOff_ = false;
     }
 
-    sequencer::PolyStepSequencer::Params params;
-    params.rate = static_cast<sequencer::StepClock::Rate>(displayIndex(kRate));
-    params.direction = static_cast<sequencer::StepClock::Direction>(displayIndex(kDirection));
+    sdk::sequencer::PolyStepSequencer::Params params;
+    params.rate = static_cast<sdk::sequencer::StepClock::Rate>(displayIndex(kRate));
+    params.direction = static_cast<sdk::sequencer::StepClock::Direction>(displayIndex(kDirection));
     params.swing = displayValue(kSwing);
     params.gateLength = displayValue(kGateLength);
     params.ramp = displayValue(kRamp);
@@ -321,7 +321,7 @@ void PolyStepSequencerPlugin::process(DeviceProcessContext& context) {
     params.quantizeSub = quantizeSub.load(std::memory_order_relaxed);
 
     const bool haveTempo = context.tempoMap != nullptr;
-    const sequencer::StepClock::BlockTiming timing{
+    const sdk::sequencer::StepClock::BlockTiming timing{
         .startBeat =
             haveTempo ? context.tempoMap->beatsAtSeconds(context.timelineStartSeconds) : 0.0,
         .endBeat = haveTempo ? context.tempoMap->beatsAtSeconds(context.timelineEndSeconds) : 0.0,

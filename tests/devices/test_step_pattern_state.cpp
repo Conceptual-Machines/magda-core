@@ -86,7 +86,7 @@ TEST_CASE("A mono pattern keeps the steps a shorter length hides", "[steppattern
 TEST_CASE("A mono pattern's length is clamped into the pattern", "[steppattern]") {
     ds::Doc doc;
     doc.root.props.set(juce::Identifier("seqNumSteps"), 999);
-    REQUIRE(sp::readMono(doc).playingLength() == magda::daw::audio::sequencer::kMaxSteps);
+    REQUIRE(sp::readMono(doc).playingLength() == magda::sdk::sequencer::kMaxSteps);
 
     doc.root.props.set(juce::Identifier("seqNumSteps"), 0);
     REQUIRE(sp::readMono(doc).playingLength() == 1);
