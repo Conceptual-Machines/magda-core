@@ -1,84 +1,20 @@
 #pragma once
 
-#include <array>
-#include <random>
-
-#include "core/ParameterUtils.hpp"
-#include "plugins/MagdaDevice.hpp"
+#include "devices/tone/ToneGenerator.hpp"
+#include "plugins/SdkDeviceAdapter.hpp"
 
 namespace magda::daw::audio {
 
-/**
- * @brief Test-tone generator: a single oscillator for calibration, routing
- *        checks and utility signals.
- *
- * MAGDA's own (#2192). The parameter order, ids and ranges are those of the earlier
- * stock device, because
- * saved projects address them by index and the faceplate is written against
- * them: 0 = Waveform, 1 = Band Limit, 2 = Frequency, 3 = Level.
- *
- * This is a rewrite rather than a port -- there was no MAGDA DSP to move, only
- * a faceplate driving somebody else's oscillator -- so a project made before it
- * will sound very slightly different where the old device's band limiting
- * differed from the PolyBLEP used here. The waveforms, their order and their
- * ranges are unchanged.
- */
-class ToneGeneratorPlugin : public MagdaDevice {
+/// The Test Tone in the app: devices::ToneGenerator, which also runs through the SDK hosts.
+class ToneGeneratorPlugin : public SdkDeviceAdapter {
   public:
-    ToneGeneratorPlugin();
+    ToneGeneratorPlugin() : SdkDeviceAdapter(std::make_unique<devices::ToneGenerator>()) {}
 
-    static const char* xmlTypeName;
+    static constexpr const char* xmlTypeName = devices::ToneGenerator::kDeviceType;
 
     static const char* getPluginName() {
-        return "Test Tone";
+        return devices::ToneGenerator::kName;
     }
-
-    // The order is the retired device's, and saved projects address these by
-    // index.
-    static constexpr int kWaveformParamIndex = 0;
-    static constexpr int kBandLimitParamIndex = 1;
-    static constexpr int kFrequencyParamIndex = 2;
-    static constexpr int kLevelParamIndex = 3;
-    static constexpr int kParamCount = 4;
-
-    enum class Waveform { Sine = 0, Triangle, SawUp, SawDown, Square, Noise };
-    static constexpr int kWaveformCount = 6;
-
-    DeviceProperties properties() const override {
-        return {
-            .pluginId = xmlTypeName,
-            .name = getPluginName(),
-            .shortName = "Tone",
-            .takesAudioInput = false,
-            .producesAudioWithoutInput = true,
-        };
-    }
-
-    void prepare(const DevicePrepareContext& context) override;
-    void reset() override;
-    void process(DeviceProcessContext& context) override;
-
-    int parameterCount() const override {
-        return kParamCount;
-    }
-    sdk::ParameterDescriptor parameterDescriptor(int index) const override;
-    float parameterValue(int index) const override;
-    void setParameterValue(int index, float value) override;
-
-  private:
-    float displayValue(int index) const;
-    /// One sample of @p waveform at phase @p phase (0..1), band limited around
-    /// its discontinuities when @p bandLimit is set.
-    float oscillate(Waveform waveform, float phase, float phaseIncrement, bool bandLimit);
-
-    std::array<float, kParamCount> values_{};
-    std::array<ParameterUtils::ParameterDomain, kParamCount> domains_{};
-
-    double sampleRate_ = 44100.0;
-    float phase_ = 0.0f;
-    std::minstd_rand noise_{0x5EED};
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ToneGeneratorPlugin)
 };
 
 }  // namespace magda::daw::audio
