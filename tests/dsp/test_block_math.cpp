@@ -7,12 +7,13 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
 #include <limits>
+#include <magda/sdk/audio/BlockPeak.hpp>
 #include <utility>
 #include <vector>
 
 #include "magda/daw/core/BlockMath.hpp"
 
-using magda::peakMagnitude;
+using magda::sdk::peakMagnitude;
 
 namespace {
 

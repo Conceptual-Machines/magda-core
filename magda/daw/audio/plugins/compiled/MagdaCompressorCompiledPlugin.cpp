@@ -2,8 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <magda/sdk/audio/BlockPeak.hpp>
 
-#include "core/BlockMath.hpp"
 #include "core/ParameterInfo.hpp"
 #include "faust/dsp/dsp.h"
 #include "faust/gui/UI.h"
@@ -51,7 +51,7 @@ float gainReductionForLevel(float levelDb, float thresholdDb, float ratio, float
 
 /// Peak magnitude over @p numSamples of one channel.
 float peakOfChannel(const float* samples, int numSamples) {
-    return peakMagnitude(samples, numSamples);
+    return sdk::peakMagnitude(samples, numSamples);
 }
 
 /// Peak magnitude over one channel range of @p buffer.

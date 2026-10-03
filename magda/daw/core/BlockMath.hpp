@@ -47,10 +47,4 @@ inline juce::Range<float> blockMinMax(const float* samples, int numSamples) noex
     return {lowest, highest};
 }
 
-/** @brief Highest absolute sample in a block, ignoring NaN (#2151). */
-inline float peakMagnitude(const float* samples, int numSamples) noexcept {
-    const auto range = blockMinMax(samples, numSamples);
-    return juce::jmax(range.getStart(), -range.getStart(), range.getEnd(), -range.getEnd());
-}
-
 }  // namespace magda

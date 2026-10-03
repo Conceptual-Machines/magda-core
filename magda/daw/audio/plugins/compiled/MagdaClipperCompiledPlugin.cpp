@@ -2,8 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <magda/sdk/audio/BlockPeak.hpp>
 
-#include "core/BlockMath.hpp"
 #include "core/ParameterInfo.hpp"
 #include "faust/dsp/dsp.h"
 #include "faust/gui/UI.h"
@@ -60,7 +60,8 @@ void MagdaClipperCompiledPlugin::beforeCompute(DeviceProcessContext& context, in
     // finite block, taking the curve's dot with it.
     float peak = 0.0f;
     for (int channel = 0; channel < channels; ++channel)
-        peak = std::max(peak, peakMagnitude(context.audio.channel(channel), context.numSamples()));
+        peak = std::max(peak,
+                        sdk::peakMagnitude(context.audio.channel(channel), context.numSamples()));
 
     inputPeakDb_.store(20.0f * std::log10(std::max(peak, 1.0e-6f)), std::memory_order_relaxed);
 }

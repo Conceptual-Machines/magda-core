@@ -3,11 +3,11 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <magda/sdk/audio/BlockPeak.hpp>
 #include <map>
 #include <set>
 #include <utility>
 
-#include "core/BlockMath.hpp"
 #include "exec/BlockProfile.hpp"
 
 namespace magda::engine {
@@ -1404,8 +1404,8 @@ void PlanExecutor::renderModSource(OpId id, const BlockInfo& block) {
     // mono average: a duck should follow whichever side is loud.
     float peak = 0.0f;
     for (int c = 0; c < channels; ++c)
-        peak = std::max(
-            peak, peakMagnitude(in.getChannelPointer(static_cast<std::size_t>(c)), numSamples));
+        peak = std::max(peak, sdk::peakMagnitude(in.getChannelPointer(static_cast<std::size_t>(c)),
+                                                 numSamples));
 
     auto* detector = triggerForOp_[i].get();
     if (detector == nullptr)
