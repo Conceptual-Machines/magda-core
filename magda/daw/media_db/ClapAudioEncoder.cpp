@@ -22,6 +22,7 @@ struct ClapAudioEncoder::Impl {
     std::string inputName;
     std::string outputName;
     MelConfig melCfg;
+    sdk::LogMelFrontEnd melFrontEnd;
     int outputDim = 512;
     std::string modelId;
 
@@ -35,6 +36,7 @@ struct ClapAudioEncoder::Impl {
         sessionOptions.SetIntraOpNumThreads(1);
         sessionOptions.SetInterOpNumThreads(1);
         session = Ort::Session(env, modelPath.c_str(), sessionOptions);
+        melFrontEnd.prepare(clapLogMelConfig(melCfg));
 
         Ort::AllocatorWithDefaultOptions allocator;
 
@@ -108,16 +110,12 @@ std::vector<float> ClapAudioEncoder::embed(const float* mono, int numSamples) {
         const int offset = c * chunkSamples;
         const int chunkLen = std::min(chunkSamples, numSamples - offset);
 
-        // mel comes back as [n_mels, n_frames]; the model wants
-        // [batch=1, channels=1, n_frames, n_mels]. Transpose.
-        const auto mel = computeLogMel(mono + offset, chunkLen, cfg);
+        // The model takes [batch=1, channels=1, n_frames, n_mels]: frame-major, as the front end
+        // writes it, over a chunk zero-padded to the model's 10 s.
+        std::vector<float> chunk(static_cast<size_t>(chunkSamples), 0.0F);
+        std::copy_n(mono + offset, chunkLen, chunk.begin());
         std::vector<float> input(static_cast<size_t>(cfg.nMels) * nFrames, 0.0F);
-        for (int t = 0; t < nFrames; ++t) {
-            for (int m = 0; m < cfg.nMels; ++m) {
-                input[static_cast<size_t>(t) * cfg.nMels + m] =
-                    mel[static_cast<size_t>(m) * nFrames + t];
-            }
-        }
+        impl_->melFrontEnd.compute(chunk.data(), chunkSamples, input.data());
 
         std::array<int64_t, 4> shape{1, 1, static_cast<int64_t>(nFrames),
                                      static_cast<int64_t>(cfg.nMels)};

@@ -23,13 +23,22 @@ using magda::media::ClapAudioEncoder;
 using magda::media::ClapEncoderError;
 using magda::media::MelConfig;
 
+namespace {
+
+std::vector<float> clapLogMel(const std::vector<float>& audio, const MelConfig& cfg) {
+    magda::sdk::LogMelFrontEnd frontEnd;
+    REQUIRE(frontEnd.prepare(magda::media::clapLogMelConfig(cfg)));
+    return frontEnd.compute(audio.data(), static_cast<int>(audio.size()));
+}
+
+}  // namespace
+
 TEST_CASE("mel filterbank shape matches CLAP config", "[media_db][clap][mel]") {
     MelConfig cfg;
-    auto fb = magda::media::buildMelFilterbank(cfg);
+    auto fb = magda::sdk::melFilterbank(magda::media::clapLogMelConfig(cfg));
     REQUIRE(fb.size() == static_cast<size_t>(cfg.nMels) * (cfg.nFft / 2 + 1));
 
-    // Sanity: every row should have some non-zero weight (each filter spans
-    // a triangular region) and the peak should be ≤ 1 with no normalization.
+    // Every filter spans a triangle, unnormalised, so each row peaks above zero and at most one.
     for (int m = 0; m < cfg.nMels; ++m) {
         const float* row = &fb[static_cast<size_t>(m) * (cfg.nFft / 2 + 1)];
         float maxW = 0.0F;
@@ -41,60 +50,34 @@ TEST_CASE("mel filterbank shape matches CLAP config", "[media_db][clap][mel]") {
     }
 }
 
-TEST_CASE("computeLogMel returns expected shape", "[media_db][clap][mel]") {
+TEST_CASE("CLAP log-mel returns the model's shape", "[media_db][clap][mel]") {
     MelConfig cfg;
     std::vector<float> silence(cfg.targetSamples, 0.0F);
-    auto mel = magda::media::computeLogMel(silence.data(), cfg.targetSamples, cfg);
+    auto mel = clapLogMel(silence, cfg);
 
     const int expectedFrames = cfg.targetSamples / cfg.hopLength + 1;
     REQUIRE(mel.size() == static_cast<size_t>(cfg.nMels) * expectedFrames);
 
-    // Log of (filterbank · 0 + eps) collapses to log(eps); should be uniform
-    // across all bins for true silence.
+    // True silence reads log(eps) in every bin.
     for (float v : mel) {
         REQUIRE(v == Catch::Approx(std::log(1e-10F)).epsilon(0.01));
     }
 }
 
-TEST_CASE("computeLogMel produces signal-shaped output on a sine", "[media_db][clap][mel]") {
+TEST_CASE("CLAP log-mel shows a sine above the floor", "[media_db][clap][mel]") {
     MelConfig cfg;
     std::vector<float> sine(cfg.targetSamples);
     constexpr double kTwoPi = 2.0 * std::numbers::pi_v<double>;
-    const double freq = 1000.0;
     for (int i = 0; i < cfg.targetSamples; ++i) {
-        sine[i] = static_cast<float>(0.5 * std::sin(kTwoPi * freq * i / cfg.sampleRate));
+        sine[i] = static_cast<float>(0.5 * std::sin(kTwoPi * 1000.0 * i / cfg.sampleRate));
     }
 
-    auto mel = magda::media::computeLogMel(sine.data(), cfg.targetSamples, cfg);
-
-    // For a pure tone, at least one mel bin must show real energy well above
-    // the silence floor (log(1e-10) ≈ -23). Without specifying which bin —
-    // mel scale is logarithmic so 1 kHz lands somewhere around index 17, not
-    // the linearly-spaced position you'd guess.
+    auto mel = clapLogMel(sine, cfg);
     float maxVal = -1e30F;
     for (float v : mel) {
         maxVal = std::max(maxVal, v);
     }
     REQUIRE(maxVal > 0.0F);
-}
-
-TEST_CASE("computeLogMel is stable when reusing cached mel filterbank", "[media_db][clap][mel]") {
-    MelConfig cfg;
-    std::vector<float> sine(cfg.targetSamples);
-    constexpr double kTwoPi = 2.0 * std::numbers::pi_v<double>;
-    for (int i = 0; i < cfg.targetSamples; ++i) {
-        const double a = 0.35 * std::sin(kTwoPi * 440.0 * i / cfg.sampleRate);
-        const double b = 0.20 * std::sin(kTwoPi * 1760.0 * i / cfg.sampleRate);
-        sine[i] = static_cast<float>(a + b);
-    }
-
-    const auto first = magda::media::computeLogMel(sine.data(), cfg.targetSamples, cfg);
-    const auto second = magda::media::computeLogMel(sine.data(), cfg.targetSamples, cfg);
-
-    REQUIRE(second.size() == first.size());
-    for (size_t i = 0; i < first.size(); ++i) {
-        REQUIRE(second[i] == Catch::Approx(first[i]).epsilon(0.0001F).margin(0.0001F));
-    }
 }
 
 TEST_CASE("ClapAudioEncoder throws on missing model", "[media_db][clap]") {
