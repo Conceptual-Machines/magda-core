@@ -1867,11 +1867,10 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         case escapeAction: {
             // Exit any active link mode and clear the edit cursor (#1351).
             LinkModeManager::getInstance().exitAllLinkModes();
-            if (auto* controller = TimelineController::getCurrent()) {
-                if (controller->getState().editCursorPosition >= 0.0) {
-                    controller->dispatch(SetEditCursorEvent{-1.0});
-                }
-            }
+            // Unconditionally: the MIDI editors keep their own cursor and clear it on this event
+            // even when the arrangement's is already hidden.
+            if (auto* controller = TimelineController::getCurrent())
+                controller->dispatch(SetEditCursorEvent{-1.0});
             return true;
         }
 
