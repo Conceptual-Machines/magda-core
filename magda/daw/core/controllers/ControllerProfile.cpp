@@ -58,7 +58,8 @@ juce::var encodeControllerProfile(const ControllerProfile& p) {
 // JSON decoding
 // ============================================================================
 
-std::optional<ControllerProfile> decodeControllerProfile(const juce::var& v) {
+std::optional<ControllerProfile> decodeControllerProfile(
+    const juce::var& v, std::vector<ProfileValidationIssue>* skipped) {
     if (!v.isObject())
         return std::nullopt;
 
@@ -79,45 +80,53 @@ std::optional<ControllerProfile> decodeControllerProfile(const juce::var& v) {
 
     p.vendor = obj->getProperty("vendor").toString();
 
-    // Decode controls — skip entries with missing required fields or out-of-range
-    // MIDI values. Without this, a profile with partial fields loads as "cc=0 on
-    // channel 'any'" and silently captures all CC0 traffic.
+    // Entries without an id are reported by 1-based position.
+    auto skip = [skipped](const char* key, const juce::String& id, int index) {
+        DBG("ControllerProfile: skipping entry " << (id.isNotEmpty() ? id : juce::String(index + 1))
+                                                 << ": " << key);
+        if (skipped != nullptr)
+            skipped->push_back({juce::String("controllers.validation.") + key,
+                                id.isNotEmpty() ? id : "#" + juce::String(index + 1)});
+    };
+    auto isMidi7Bit = [](int n) { return n >= 0 && n <= 127; };
+
+    // A control with partial fields would otherwise load as "cc=0 on channel 'any'"
+    // and capture all CC0 traffic.
     auto controlsVar = obj->getProperty("controls");
     if (controlsVar.isArray()) {
         for (int i = 0; i < controlsVar.size(); ++i) {
-            const auto& cv = controlsVar[i];
-            auto* co = cv.getDynamicObject();
-            if (co == nullptr)
+            auto* co = controlsVar[i].getDynamicObject();
+            if (co == nullptr) {
+                skip("control_incomplete", {}, i);
                 continue;
+            }
             ControllerProfileControl ctrl;
             ctrl.controlId = co->getProperty("controlId").toString();
             ctrl.kind = co->getProperty("kind").toString();
 
-            if (ctrl.controlId.isEmpty() || ctrl.kind.isEmpty()) {
-                DBG("ControllerProfile: skipping control missing controlId or kind");
-                continue;
-            }
-            if (!co->hasProperty("cc") || !co->hasProperty("channel")) {
-                DBG("ControllerProfile: skipping control '" << ctrl.controlId
-                                                            << "' missing cc or channel");
+            if (ctrl.controlId.isEmpty() || ctrl.kind.isEmpty() || !co->hasProperty("cc") ||
+                !co->hasProperty("channel")) {
+                skip("control_incomplete", ctrl.controlId, i);
                 continue;
             }
 
             ctrl.cc = static_cast<int>(co->getProperty("cc"));
             ctrl.channel = static_cast<int>(co->getProperty("channel"));
-            if (ctrl.cc < 0 || ctrl.cc > 127) {
-                DBG("ControllerProfile: skipping control '" << ctrl.controlId
-                                                            << "' cc out of range: " << ctrl.cc);
+            if (!isMidi7Bit(ctrl.cc)) {
+                skip("control_cc_out_of_range", ctrl.controlId, i);
                 continue;
             }
             if (ctrl.channel != -1 && (ctrl.channel < 1 || ctrl.channel > 16)) {
-                DBG("ControllerProfile: skipping control '"
-                    << ctrl.controlId << "' channel out of range: " << ctrl.channel);
+                skip("control_channel_out_of_range", ctrl.controlId, i);
                 continue;
             }
-
-            if (co->hasProperty("feedbackCc"))
+            if (co->hasProperty("feedbackCc")) {
                 ctrl.feedbackCc = static_cast<int>(co->getProperty("feedbackCc"));
+                if (ctrl.feedbackCc != -1 && !isMidi7Bit(ctrl.feedbackCc)) {
+                    skip("control_feedback_cc_out_of_range", ctrl.controlId, i);
+                    continue;
+                }
+            }
             p.controls.push_back(ctrl);
         }
     }
@@ -125,18 +134,12 @@ std::optional<ControllerProfile> decodeControllerProfile(const juce::var& v) {
     if (p.controls.empty())
         return std::nullopt;
 
-    // Decode defaultBindings (skip malformed entries individually)
     auto bindingsVar = obj->getProperty("defaultBindings");
     if (bindingsVar.isArray()) {
         for (int i = 0; i < bindingsVar.size(); ++i) {
-            const auto& bv = bindingsVar[i];
-            auto* bo = bv.getDynamicObject();
+            auto* bo = bindingsVar[i].getDynamicObject();
             if (bo == nullptr) {
-                DBG("ControllerProfile: skipping malformed defaultBinding entry (not an object)");
-                continue;
-            }
-            if (!bo->hasProperty("controlId") || !bo->hasProperty("resolverKind")) {
-                DBG("ControllerProfile: skipping defaultBinding missing controlId or resolverKind");
+                skip("binding_incomplete", {}, i);
                 continue;
             }
             ControllerProfileDefaultBinding db;
@@ -144,8 +147,7 @@ std::optional<ControllerProfile> decodeControllerProfile(const juce::var& v) {
             db.resolverKind = bo->getProperty("resolverKind").toString();
 
             if (db.controlId.isEmpty() || db.resolverKind.isEmpty()) {
-                DBG("ControllerProfile: skipping defaultBinding with empty controlId or "
-                    "resolverKind");
+                skip("binding_incomplete", db.controlId, i);
                 continue;
             }
 

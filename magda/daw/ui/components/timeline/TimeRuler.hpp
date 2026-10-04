@@ -133,7 +133,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
                         const juce::MouseWheelDetails& wheel) override;
 
     // Callbacks
-    std::function<void(double, bool)> onPositionClicked;  // Upper ruler position clicked
+    std::function<void(double, bool)> onEditCursorRequested;  // Time ticks double-clicked
     std::function<void(double, bool)>
         onPlayheadPositionClicked;                            // Lower tick/playhead strip clicked
     std::function<void(double, double, int)> onZoomChanged;   // newZoom, anchorTime, anchorScreenX

@@ -338,12 +338,9 @@ void TimeRuler::mouseUp(const juce::MouseEvent& event) {
                 const bool bypassSnap = event.mods.isAltDown();
                 if (!bypassSnap)
                     time = snapTimeToGrid(time);
-                if (event.y >= getHeight() - tickHeightMajor()) {
-                    if (onPlayheadPositionClicked)
-                        onPlayheadPositionClicked(time, bypassSnap);
-                } else if (onPositionClicked) {
-                    onPositionClicked(time, bypassSnap);
-                }
+                // The lens area above only zooms; a click there places nothing.
+                if (event.y >= getHeight() - tickHeightMajor() && onPlayheadPositionClicked)
+                    onPlayheadPositionClicked(time, bypassSnap);
             }
         }
     }
@@ -375,18 +372,16 @@ void TimeRuler::mouseDoubleClick(const juce::MouseEvent& event) {
         }
     }
 
-    // Fall through: treat as a position click using the same ruler zones as mouseUp.
+    // A double-click on the time ticks places the edit cursor; the lens area above only zooms.
+    if (event.y < getHeight() - tickHeightMajor())
+        return;
     double time = pixelToTime(event.x);
     if (time >= 0.0 && time <= timelineLength) {
         const bool bypassSnap = event.mods.isAltDown();
         if (!bypassSnap)
             time = snapTimeToGrid(time);
-        if (event.y >= getHeight() - tickHeightMajor()) {
-            if (onPlayheadPositionClicked)
-                onPlayheadPositionClicked(time, bypassSnap);
-        } else if (onPositionClicked) {
-            onPositionClicked(time, bypassSnap);
-        }
+        if (onEditCursorRequested)
+            onEditCursorRequested(time, bypassSnap);
     }
 }
 

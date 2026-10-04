@@ -39,6 +39,7 @@
 #include "../views/MainView.hpp"
 #include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
+#include "AppShortcuts.hpp"
 #include "audio/MidiBridge.hpp"
 #include "audio/midi/QwertyMidiKeyboard.hpp"
 #include "audio/plugins/engine/EngineExternalDevice.hpp"
@@ -642,7 +643,9 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     // Plugin editor windows are separate top-level windows in the engine layer,
     // outside this component's key chain. Inject the command manager so they can
     // route unconsumed keys (Space = play/stop, etc.) back to the transport.
-    daw::audio::engine_adapter::EngineExternalDevice::setApplicationCommandManager(&commandManager);
+    daw::audio::engine_adapter::EngineExternalDevice::setApplicationCommands(&commandManager, this);
+    // MAGDA's own floating windows route unconsumed keys the same way.
+    setAppShortcuts(&commandManager, this);
 
     // Use external engine if provided, otherwise create our own
     if (externalEngine) {
@@ -1383,7 +1386,8 @@ MainWindow::MainComponent::~MainComponent() {
     commandManager.setFirstCommandTarget(nullptr);
 
     // Stop plugin editor windows referencing this command manager once it's gone.
-    daw::audio::engine_adapter::EngineExternalDevice::setApplicationCommandManager(nullptr);
+    daw::audio::engine_adapter::EngineExternalDevice::setApplicationCommands(nullptr, nullptr);
+    setAppShortcuts(nullptr, nullptr);
 
     // Stop position timer before destroying
     DBG("    [5e] Stopping position timer...");

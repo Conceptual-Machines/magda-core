@@ -4,6 +4,7 @@ target_sources(magda_daw_app PRIVATE
     MainWindowCommands.cpp
     MainWindowExport.cpp
     MenuManager.cpp
+    AppShortcuts.hpp
     MainWindow.hpp
     MenuManager.hpp
 )

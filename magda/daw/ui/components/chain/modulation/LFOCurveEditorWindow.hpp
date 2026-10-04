@@ -8,6 +8,7 @@
 #include "modulation/LFOCurveEditor.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
+#include "ui/windows/AppShortcuts.hpp"
 
 namespace magda::daw::ui {
 
@@ -91,6 +92,10 @@ class LFOCurveEditorWindow : public juce::DocumentWindow {
     // look-and-feel change that repaints everything else. Re-resolve it, or a
     // window left open across a theme switch keeps the old palette.
     void lookAndFeelChanged() override;
+
+    bool keyPressed(const juce::KeyPress& key) override {
+        return invokeAppShortcut(key, this);
+    }
 
     // Get the curve editor for syncing
     magda::LFOCurveEditor& getCurveEditor() {

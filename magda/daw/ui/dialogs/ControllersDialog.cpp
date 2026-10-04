@@ -318,12 +318,16 @@ void ControllerProfilesPage::importProfileFile(const juce::File& file, const juc
         return fail(tr("controllers.upload_invalid_json")
                         .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Json)));
 
-    auto profileOpt = decodeControllerProfile(parsed);
-    if (!profileOpt.has_value())
+    std::vector<ProfileValidationIssue> issues;
+    auto profileOpt = decodeControllerProfile(parsed, &issues);
+    if (!profileOpt.has_value() && issues.empty())
         return fail(tr("controllers.upload_invalid_profile")
                         .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Json)));
 
-    auto issues = validateControllerProfile(*profileOpt);
+    if (profileOpt.has_value()) {
+        auto crossField = validateControllerProfile(*profileOpt);
+        issues.insert(issues.end(), crossField.begin(), crossField.end());
+    }
     if (!issues.empty()) {
         juce::String body = tr("controllers.upload_validation_failed");
         for (const auto& issue : issues)
