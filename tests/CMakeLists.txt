@@ -830,6 +830,9 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/code/DSLTokeniser.cpp
     ../magda/daw/ui/code/FaustTokeniser.cpp
     devices/test_device_gain_slider.cpp
+    # The piano roll ruler's lens area only zooms; its ticks take clicks and double-clicks
+    ui/test_time_ruler_clicks_juce.cpp
+    ../magda/daw/ui/components/timeline/TimeRuler.cpp
     ../magda/daw/ui/components/chain/compiled/CompiledMultibandCurveView.cpp
     ../magda/daw/ui/dialogs/ParameterConfigDialog.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorInit.cpp
@@ -1031,6 +1034,7 @@ target_include_directories(magda_juce_tests
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/components/chain
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/components/common
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/components/common/curve
+    ${CMAKE_SOURCE_DIR}/magda/daw/ui/layout
     ${CMAKE_SOURCE_DIR}/magda/daw/ui/dialogs
     # Test sources live in category subdirectories; shared fixtures/mocks stay
     # at tests/ root, so quote-includes of them need this on the search path.
