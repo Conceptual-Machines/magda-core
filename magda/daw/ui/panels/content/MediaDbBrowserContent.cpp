@@ -23,6 +23,7 @@
 #include "../../themes/FileBrowserLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallComboBoxLookAndFeel.hpp"
+#include "ui/windows/AppShortcuts.hpp"
 
 namespace magda::daw::ui {
 
@@ -2666,6 +2667,10 @@ class MediaDbBrowserContent::PopOutWindow : public juce::DocumentWindow {
     void lookAndFeelChanged() override {
         juce::DocumentWindow::lookAndFeelChanged();
         setBackgroundColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+    }
+
+    bool keyPressed(const juce::KeyPress& key) override {
+        return invokeAppShortcut(key, this);
     }
 
   private:
