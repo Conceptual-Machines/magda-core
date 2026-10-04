@@ -7,8 +7,7 @@
 
 #pragma once
 
-#include <cstdint>
-#include <vector>
+#include "magda/sdk/analysis/LogMel.hpp"
 
 namespace magda::media {
 
@@ -24,21 +23,24 @@ struct MelConfig {
     int targetSamples = 480000;  // 10 s chunk, what the model expects
 };
 
-// Build the mel filterbank as a (n_mels, n_fft/2 + 1) matrix in row-major
-// order. Triangular filters spaced on the HTK mel scale; same construction
-// as torchaudio / librosa with htk=True, norm=None.
-//
-// Exposed for testing parity against reference implementations.
-std::vector<float> buildMelFilterbank(const MelConfig& cfg);
-
-// Compute log-mel spectrogram from a single chunk of `targetSamples` mono
-// samples at `cfg.sampleRate`. Output is `n_mels * num_time_frames` floats
-// in row-major order matching torch tensor `[batch=1, channels=1, time, mels]`
-// after transposition. The caller assembles batch tensors from these.
-//
-// Implementation: Hann-windowed STFT -> power spectrum -> mel filterbank
-// -> log(eps + x). Time frames are `targetSamples / hopLength + 1` for the
-// canonical CLAP 10-s window (1001 frames).
-std::vector<float> computeLogMel(const float* mono, int numSamples, const MelConfig& cfg);
+/// HTK mel scale, power spectrum, zero-padded centred frames, log(x + 1e-10) (magda-sdk
+/// docs/measurement.md). A chunk is padded to targetSamples, so targetSamples / hopLength + 1
+/// frames.
+inline sdk::LogMelConfig clapLogMelConfig(const MelConfig& cfg) {
+    sdk::LogMelConfig config;
+    config.sampleRate = cfg.sampleRate;
+    config.fftSize = cfg.nFft;
+    config.hopSize = cfg.hopLength;
+    config.numMels = cfg.nMels;
+    config.fMin = cfg.fMin;
+    config.fMax = cfg.fMax;
+    config.scale = sdk::MelScale::Htk;
+    config.spectrum = sdk::MelSpectrum::Power;
+    config.normaliseWindow = true;
+    config.padding = sdk::MelPadding::Zero;
+    config.compression = sdk::MelCompression::Log;
+    config.logOffset = 1e-10;
+    return config;
+}
 
 }  // namespace magda::media

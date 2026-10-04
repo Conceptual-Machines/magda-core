@@ -9,8 +9,9 @@
 #if defined(MAGDA_HAVE_CLAP) && MAGDA_HAVE_CLAP
 
     #include <juce_audio_basics/juce_audio_basics.h>
-    #include <juce_dsp/juce_dsp.h>
     #include <onnxruntime_cxx_api.h>
+
+    #include "magda/sdk/analysis/LogMel.hpp"
 
 namespace magda::media {
 
@@ -62,59 +63,6 @@ constexpr double kContextSeconds = 24.0;
 // one, which is what turns a 179.1 into the 175 the loop actually is.
 constexpr double kWholeBeatTolerance = 0.04;
 
-/// Slaney mel scale, as torchaudio builds it for this model. Linear below
-/// 1 kHz, logarithmic above.
-double hzToMel(double hz) {
-    constexpr double fSp = 200.0 / 3.0;
-    constexpr double minLogHz = 1000.0;
-    const double minLogMel = minLogHz / fSp;
-    if (hz < minLogHz) {
-        return hz / fSp;
-    }
-    return minLogMel + std::log(hz / minLogHz) / (std::log(6.4) / 27.0);
-}
-
-double melToHz(double mel) {
-    constexpr double fSp = 200.0 / 3.0;
-    constexpr double minLogHz = 1000.0;
-    const double minLogMel = minLogHz / fSp;
-    if (mel < minLogMel) {
-        return mel * fSp;
-    }
-    return minLogHz * std::exp((mel - minLogMel) * (std::log(6.4) / 27.0));
-}
-
-/// Triangular filters, unnormalised, as (bins x mels) in row-major order.
-std::vector<float> melFilterbank() {
-    constexpr int bins = kFftSize / 2 + 1;
-    std::vector<float> filterbank(static_cast<std::size_t>(bins) * kMels, 0.0F);
-
-    std::vector<double> edges(kMels + 2);
-    const double melMin = hzToMel(kFMin);
-    const double melMax = hzToMel(kFMax);
-    for (int i = 0; i < kMels + 2; ++i) {
-        edges[static_cast<std::size_t>(i)] = melToHz(melMin + (melMax - melMin) * i / (kMels + 1));
-    }
-
-    for (int bin = 0; bin < bins; ++bin) {
-        const double hz = static_cast<double>(bin) * kModelRate / kFftSize;
-        for (int mel = 0; mel < kMels; ++mel) {
-            const double left = edges[static_cast<std::size_t>(mel)];
-            const double centre = edges[static_cast<std::size_t>(mel) + 1];
-            const double right = edges[static_cast<std::size_t>(mel) + 2];
-            double weight = 0.0;
-            if (hz >= left && hz <= centre && centre > left) {
-                weight = (hz - left) / (centre - left);
-            } else if (hz > centre && hz <= right && right > centre) {
-                weight = (right - hz) / (right - centre);
-            }
-            filterbank[static_cast<std::size_t>(bin) * kMels + static_cast<std::size_t>(mel)] =
-                static_cast<float>(weight);
-        }
-    }
-    return filterbank;
-}
-
 std::vector<float> resampleToModelRate(const float* mono, int numSamples, double sampleRate) {
     if (std::abs(sampleRate - kModelRate) < 1.0) {
         return {mono, mono + numSamples};
@@ -132,60 +80,31 @@ std::vector<float> resampleToModelRate(const float* mono, int numSamples, double
 
 /// Log-mel frames, [frames][mels] flattened row-major, matching the tensor the
 /// model takes.
+/// The model's front end: Slaney mels of the magnitude spectrum over reflect-padded frames,
+/// compressed as log1p(1000 x) (magda-sdk docs/measurement.md). Frame-major.
 std::vector<float> logMelFrames(const std::vector<float>& audio, int& framesOut) {
-    framesOut = 0;
-    const auto pad = static_cast<std::size_t>(kFftSize / 2);
-    if (audio.size() <= pad * 2) {
-        return {};
-    }
-
-    // Reflect at both ends, which is what torch.stft(center=True) does.
-    std::vector<float> padded;
-    padded.reserve(audio.size() + pad * 2);
-    for (std::size_t i = pad; i >= 1; --i) {
-        padded.push_back(audio[i]);
-    }
-    padded.insert(padded.end(), audio.begin(), audio.end());
-    for (std::size_t i = 1; i <= pad; ++i) {
-        padded.push_back(audio[audio.size() - 1 - i]);
-    }
-
-    const int frames = static_cast<int>((padded.size() - kFftSize) / kHop) + 1;
-    if (frames <= 0) {
-        return {};
-    }
-
-    static const std::vector<float> filterbank = melFilterbank();
-    juce::dsp::FFT fft(kFftOrder);
-    juce::dsp::WindowingFunction<float> window(kFftSize, juce::dsp::WindowingFunction<float>::hann,
-                                               false);
-    const double normalisation = std::sqrt(static_cast<double>(kFftSize));
-
-    std::vector<float> out(static_cast<std::size_t>(frames) * kMels, 0.0F);
-    std::vector<float> frame(static_cast<std::size_t>(kFftSize) * 2, 0.0F);
-
-    for (int f = 0; f < frames; ++f) {
-        std::fill(frame.begin(), frame.end(), 0.0F);
-        std::copy_n(padded.begin() + static_cast<std::ptrdiff_t>(f) * kHop, kFftSize,
-                    frame.begin());
-        window.multiplyWithWindowingTable(frame.data(), kFftSize);
-        fft.performFrequencyOnlyForwardTransform(frame.data(), true);
-
-        constexpr int bins = kFftSize / 2 + 1;
-        for (int mel = 0; mel < kMels; ++mel) {
-            double energy = 0.0;
-            for (int bin = 0; bin < bins; ++bin) {
-                energy += (frame[static_cast<std::size_t>(bin)] / normalisation) *
-                          filterbank[static_cast<std::size_t>(bin) * kMels +
-                                     static_cast<std::size_t>(mel)];
-            }
-            out[static_cast<std::size_t>(f) * kMels + static_cast<std::size_t>(mel)] =
-                static_cast<float>(std::log1p(kLogMultiplier * std::max(energy, kAmplitudeFloor)));
-        }
-    }
-
-    framesOut = frames;
-    return out;
+    static const sdk::LogMelConfig config = [] {
+        sdk::LogMelConfig c;
+        c.sampleRate = kModelRate;
+        c.fftSize = kFftSize;
+        c.hopSize = kHop;
+        c.numMels = kMels;
+        c.fMin = kFMin;
+        c.fMax = kFMax;
+        c.scale = sdk::MelScale::Slaney;
+        c.spectrum = sdk::MelSpectrum::Magnitude;
+        c.binScale = 1.0 / std::sqrt(static_cast<double>(kFftSize));
+        c.normaliseWindow = false;
+        c.padding = sdk::MelPadding::Reflect;
+        c.compression = sdk::MelCompression::Log1p;
+        c.logOffset = kAmplitudeFloor;
+        c.log1pScale = kLogMultiplier;
+        return c;
+    }();
+    sdk::LogMelFrontEnd frontEnd;
+    frontEnd.prepare(config);
+    framesOut = frontEnd.numFrames(static_cast<int>(audio.size()));
+    return frontEnd.compute(audio.data(), static_cast<int>(audio.size()));
 }
 
 std::vector<double> pickPeaks(const float* logits, int frames) {
