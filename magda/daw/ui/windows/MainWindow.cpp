@@ -41,6 +41,7 @@
 #include "../views/SessionView.hpp"
 #include "audio/MidiBridge.hpp"
 #include "audio/midi/QwertyMidiKeyboard.hpp"
+#include "audio/plugins/engine/EngineExternalDevice.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/Config.hpp"
 #include "core/LinkModeManager.hpp"
@@ -643,6 +644,8 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     // outside this component's key chain. Inject the command manager so they can
     // route unconsumed keys (Space = play/stop, etc.) back to the transport.
     PluginEditorWindow::appCommandManager = &commandManager;
+    PluginEditorWindow::appCommandTarget = this;
+    daw::audio::engine_adapter::EngineExternalDevice::setApplicationCommands(&commandManager, this);
 
     // Use external engine if provided, otherwise create our own
     if (externalEngine) {
@@ -1384,6 +1387,8 @@ MainWindow::MainComponent::~MainComponent() {
 
     // Stop plugin editor windows referencing this command manager once it's gone.
     PluginEditorWindow::appCommandManager = nullptr;
+    PluginEditorWindow::appCommandTarget = nullptr;
+    daw::audio::engine_adapter::EngineExternalDevice::setApplicationCommands(nullptr, nullptr);
 
     // Stop position timer before destroying
     DBG("    [5e] Stopping position timer...");

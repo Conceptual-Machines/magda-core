@@ -60,6 +60,9 @@ class PluginEditorWindow final : public daw::ui::FloatingHostWindow {
     // manager. This engine library can't depend on the UI's command manager, so
     // it's set externally and cleared on shutdown.
     static juce::ApplicationCommandManager* appCommandManager;
+    /// Where the shortcuts run: the manager would look for a target from the active window,
+    /// which is this one.
+    static juce::ApplicationCommandTarget* appCommandTarget;
 
     void closeButtonPressed() override;
     void moved() override;

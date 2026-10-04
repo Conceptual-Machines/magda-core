@@ -94,6 +94,7 @@ std::unique_ptr<juce::Component> MagdaUIBehaviour::createPluginWindow(
 // =============================================================================
 
 juce::ApplicationCommandManager* PluginEditorWindow::appCommandManager = nullptr;
+juce::ApplicationCommandTarget* PluginEditorWindow::appCommandTarget = nullptr;
 
 PluginEditorWindow::PluginEditorWindow(tracktion::Plugin& plugin,
                                        tracktion::PluginWindowState& state)
@@ -186,9 +187,17 @@ bool PluginEditorWindow::keyPressed(const juce::KeyPress& key) {
     // command manager at event time. Checking the injected pointer each press
     // (and clearing it on shutdown) avoids holding a persistent KeyListener that
     // could dangle once the command manager is destroyed.
-    if (appCommandManager != nullptr)
-        return appCommandManager->getKeyMappings()->keyPressed(key, this);
-    return false;
+    if (appCommandManager == nullptr || appCommandTarget == nullptr)
+        return false;
+    const auto command = appCommandManager->getKeyMappings()->findCommandForKeyPress(key);
+    if (command == 0)
+        return false;
+    juce::ApplicationCommandTarget::InvocationInfo info(command);
+    info.invocationMethod = juce::ApplicationCommandTarget::InvocationInfo::fromKeyPress;
+    info.keyPress = key;
+    info.isKeyDown = true;
+    info.originatingComponent = this;
+    return appCommandTarget->invoke(info, false);
 }
 
 PluginEditorWindow::~PluginEditorWindow() {

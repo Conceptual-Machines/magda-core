@@ -61,10 +61,51 @@ void clearNonFinite(juce::AudioBuffer<float>& audio, int numSamples) {
 
 }  // namespace
 
+namespace {
+juce::ApplicationCommandManager* editorCommandManager = nullptr;
+juce::ApplicationCommandTarget* editorCommandTarget = nullptr;
+
+/**
+ * @brief Runs the app shortcut mapped to @p key on the app's command target.
+ *
+ * Read at key-press time, so a listener never outlives the command manager. Invoked on the target
+ * directly: the manager would look for one from the active window, and with the plugin window in
+ * front that finds none.
+ */
+bool invokeEditorShortcut(const juce::KeyPress& key, juce::Component* origin) {
+    if (editorCommandManager == nullptr || editorCommandTarget == nullptr)
+        return false;
+    const auto command = editorCommandManager->getKeyMappings()->findCommandForKeyPress(key);
+    if (command == 0)
+        return false;
+    juce::ApplicationCommandTarget::InvocationInfo info(command);
+    info.invocationMethod = juce::ApplicationCommandTarget::InvocationInfo::fromKeyPress;
+    info.keyPress = key;
+    info.isKeyDown = true;
+    info.originatingComponent = origin;
+    return editorCommandTarget->invoke(info, false);
+}
+
+/// Ahead of the editor's own keyPressed: JUCE's VST3 editor claims every key it is handed,
+/// so a shortcut the plugin passed on would otherwise stop there.
+struct EditorShortcutListener final : juce::KeyListener {
+    bool keyPressed(const juce::KeyPress& key, juce::Component* origin) override {
+        return invokeEditorShortcut(key, origin);
+    }
+};
+}  // namespace
+
+void EngineExternalDevice::setApplicationCommands(juce::ApplicationCommandManager* manager,
+                                                  juce::ApplicationCommandTarget* target) {
+    editorCommandManager = manager;
+    editorCommandTarget = target;
+}
+
 /**
  * @brief The plugin's editor in a window of its own (#2580).
  *
- * Its close button tells the owner rather than deleting itself.
+ * Its close button tells the owner rather than deleting itself. It sits outside the main window's
+ * key chain, so keys the editor leaves unhandled go to the app's shortcuts.
  */
 class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
   public:
@@ -74,15 +115,25 @@ class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
           closed_(std::move(closed)) {
         setUsingNativeTitleBar(true);
         setContentOwned(plugin.createEditorIfNeeded(), true);
+        if (auto* editor = getContentComponent())
+            editor->addKeyListener(&shortcuts_);
         setResizable(plugin.getActiveEditor() != nullptr && plugin.getActiveEditor()->isResizable(),
                      false);
         centreWithSize(getWidth(), getHeight());
+        // Floats over MAGDA, so clicking back into the app does not bury it.
+        setAlwaysOnTop(true);
         setVisible(true);
     }
 
     /// The editor goes while the plugin is still there to be told.
     ~EditorWindow() override {
+        if (auto* editor = getContentComponent())
+            editor->removeKeyListener(&shortcuts_);
         clearContentComponent();
+    }
+
+    bool keyPressed(const juce::KeyPress& key) override {
+        return invokeEditorShortcut(key, this);
     }
 
     void closeButtonPressed() override {
@@ -93,6 +144,7 @@ class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
 
   private:
     std::function<void()> closed_;
+    EditorShortcutListener shortcuts_;
 };
 
 /**
