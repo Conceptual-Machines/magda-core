@@ -1,13 +1,13 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "magda/daw/ui/components/common/FloatingHostWindow.hpp"
 #include "magda/daw/ui/windows/AppShortcuts.hpp"
 
 /**
- * MAGDA's floating windows sit outside the main window's key chain, so a key their content leaves
- * unhandled must still run the app's shortcut: Space plays and stops from the analyzer, the LFO
- * window and the rest. The manager has no first target, as in the app, so the shortcut only runs
- * if the window invokes it on the main target itself.
+ * MAGDA's floating windows sit outside the main window's key chain; each falls back to
+ * invokeAppShortcut, so Space plays and stops from the analyzer, the LFO window and the rest. The
+ * manager has no first target, as in the app, so the shortcut only runs if it is invoked on the
+ * main target itself. No real window: a desktop window under Xvfb has no window manager to take
+ * the always-on-top property.
  */
 
 namespace {
@@ -42,20 +42,21 @@ class PopoutWindowShortcutsTest final : public juce::UnitTest {
         juce::ApplicationCommandManager manager;
         manager.registerAllCommandsForTarget(&target);
         manager.setFirstCommandTarget(nullptr);
-        magda::daw::ui::FloatingHostWindow window("Popout");
+        juce::Component origin;
 
-        beginTest("Without the app's shortcuts a popout passes keys on");
+        beginTest("Without the app's shortcuts a key is passed on");
         magda::setAppShortcuts(nullptr, nullptr);
-        expect(!window.keyPressed(juce::KeyPress(juce::KeyPress::spaceKey)));
+        expect(!magda::invokeAppShortcut(juce::KeyPress(juce::KeyPress::spaceKey), &origin));
         expectEquals(target.performed, 0);
 
-        beginTest("Space in a popout runs the app's play shortcut on the main target");
+        beginTest("Space runs the app's play shortcut on the main target");
         magda::setAppShortcuts(&manager, &target);
-        expect(window.keyPressed(juce::KeyPress(juce::KeyPress::spaceKey)));
+        expect(magda::invokeAppShortcut(juce::KeyPress(juce::KeyPress::spaceKey), &origin));
         expectEquals(target.performed, 1);
 
         beginTest("A key with no shortcut is left unhandled");
-        expect(!window.keyPressed(juce::KeyPress('q', juce::ModifierKeys::noModifiers, 0)));
+        expect(!magda::invokeAppShortcut(juce::KeyPress('q', juce::ModifierKeys::noModifiers, 0),
+                                         &origin));
         expectEquals(target.performed, 1);
 
         magda::setAppShortcuts(nullptr, nullptr);
