@@ -151,6 +151,14 @@ ExternalDeviceResult adaptExternalPluginInstance(
     bool offlineRender) {
     instance->enableAllBuses();
 
+    // A plugin that failed to initialise (an AU whose Initialize fails, say) answers with no
+    // buses; loaded, it would be a silent device with no parameters.
+    if (instance->getTotalNumInputChannels() == 0 && instance->getTotalNumOutputChannels() == 0 &&
+        !instance->isMidiEffect())
+        return {.device = {},
+                .failure = "external plugin \"" + device.name +
+                           "\" has no audio inputs or outputs; it may have failed to initialise"};
+
     // Array, then preset, then chunk (ExternalPluginState.hpp), all before the
     // adapter exists.
     const auto restoredFrom = magda::applySavedPluginState(*instance, device);
