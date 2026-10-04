@@ -1,37 +1,26 @@
 #pragma once
 
-#include <cmath>
+#include "magda/sdk/meter/MeterModel.hpp"
 
+/// MAGDA's meter scale, the SDK default (docs/meter.md in magda-sdk).
 namespace magda::level_meter_scale {
 
-static constexpr float minDb = -60.0f;
-static constexpr float maxDb = 6.0f;
-static constexpr float meterCurveExponent = 3.0f;
+inline constexpr sdk::MeterScale scale{};
+
+static constexpr float minDb = scale.minDb;
+static constexpr float maxDb = scale.maxDb;
+static constexpr float meterCurveExponent = scale.curveExponent;
 
 inline float gainToDb(float gain) {
-    if (gain <= 0.0f)
-        return minDb;
-    return 20.0f * std::log10(gain);
+    return scale.gainToDb(gain);
 }
 
 inline float dbToMeterPos(float db) {
-    if (db <= minDb)
-        return 0.0f;
-    if (db >= maxDb)
-        return 1.0f;
-
-    const float normalized = (db - minDb) / (maxDb - minDb);
-    return std::pow(normalized, meterCurveExponent);
+    return scale.dbToPosition(db);
 }
 
 inline float meterPosToDb(float pos) {
-    if (pos <= 0.0f)
-        return minDb;
-    if (pos >= 1.0f)
-        return maxDb;
-
-    const float normalized = std::pow(pos, 1.0f / meterCurveExponent);
-    return minDb + normalized * (maxDb - minDb);
+    return scale.positionToDb(pos);
 }
 
 inline double dbFillProportion(double db) {

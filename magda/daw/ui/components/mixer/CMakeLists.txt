@@ -10,6 +10,7 @@ target_sources(magda_daw_app PRIVATE
     HardwareInputLevels.hpp
     MasterChannelStrip.hpp
     InputTypeSelector.hpp
+    LevelMeterClock.hpp
     LevelMeterScale.hpp
     MidiNoteStrip.hpp
     MiniChainRow.hpp

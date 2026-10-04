@@ -7,7 +7,7 @@
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "HardwareInputLevels.hpp"
-#include "LevelMeterBallistics.hpp"
+#include "LevelMeterClock.hpp"
 #include "LevelMeterScale.hpp"
 
 namespace magda {
@@ -68,12 +68,13 @@ void InputLevelBars::setChannels(std::vector<int> channels) {
 }
 
 bool InputLevelBars::follow(const HardwareInputLevels* levels) {
-    const auto elapsedMs = level_meter_ballistics::getElapsedMs(lastUpdateMs_);
+    const auto elapsedMs = level_meter_clock::elapsedMs(lastUpdateMs_);
+    const sdk::MeterBallistics ballistics;
 
     bool changed = false;
     for (std::size_t i = 0; i < channels_.size(); ++i) {
         const auto target = levels != nullptr ? levels->level(channels_[i]) : 0.0f;
-        changed |= level_meter_ballistics::updateLevel(display_[i], target, elapsedMs);
+        changed |= ballistics.follow(display_[i], target, elapsedMs);
     }
     return changed;
 }
