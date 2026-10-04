@@ -5,6 +5,8 @@
 
 #include <functional>
 
+#include "ui/windows/AppShortcuts.hpp"
+
 namespace magda::daw::ui {
 
 // Modeless top-level editor window for a Faust .dsp source. Compile button
@@ -24,6 +26,10 @@ class FaustCodeEditorWindow : public juce::DocumentWindow {
     // look-and-feel change that repaints everything else. Re-resolve it, or a
     // window left open across a theme switch keeps the old palette.
     void lookAndFeelChanged() override;
+
+    bool keyPressed(const juce::KeyPress& key) override {
+        return invokeAppShortcut(key, this);
+    }
 
   private:
     class Content;

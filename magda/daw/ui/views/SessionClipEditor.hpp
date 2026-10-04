@@ -9,6 +9,7 @@
 #include "core/ClipTypes.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/panels/content/inspector/clip/sections/ClipFadesSection.hpp"
+#include "ui/windows/AppShortcuts.hpp"
 
 namespace magda {
 
@@ -84,6 +85,10 @@ class SessionClipEditorWindow : public juce::DocumentWindow {
     // look-and-feel change that repaints everything else. Re-resolve it, or a
     // window left open across a theme switch keeps the old palette.
     void lookAndFeelChanged() override;
+
+    bool keyPressed(const juce::KeyPress& key) override {
+        return invokeAppShortcut(key, this);
+    }
 
   private:
     std::unique_ptr<SessionClipEditor> editor_;

@@ -2,6 +2,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "ui/windows/AppShortcuts.hpp"
+
 namespace magda::daw::ui {
 
 /**
@@ -18,6 +20,10 @@ class DebugDialog : public juce::DocumentWindow {
     // look-and-feel change that repaints everything else. Re-resolve it, or a
     // window left open across a theme switch keeps the old palette.
     void lookAndFeelChanged() override;
+
+    bool keyPressed(const juce::KeyPress& key) override {
+        return invokeAppShortcut(key, this);
+    }
 
     // Show the dialog (creates if needed)
     static void show();
