@@ -6,7 +6,6 @@
 #include <limits>
 #include <vector>
 
-#include "FaustMetadataParser.hpp"
 #include "FaustParamSlot.hpp"
 
 namespace magda::daw::audio {

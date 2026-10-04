@@ -67,16 +67,16 @@ void CompiledSaturatorCurveView::timerCallback() {
 
     if (compiledPlugin_ != nullptr) {
         if (auto p = compiledPlugin_->getSlotParameter(Sat::kDriveSlot))
-            drive = compiledPlugin_->nativeValueToDisplayValue(Sat::kDriveSlot, p.currentValue());
+            drive = compiledPlugin_->normalizedToDisplay(Sat::kDriveSlot, p.currentValue());
         if (auto p = compiledPlugin_->getSlotParameter(Sat::kBiasSlot))
-            bias = compiledPlugin_->nativeValueToDisplayValue(Sat::kBiasSlot, p.currentValue());
+            bias = compiledPlugin_->normalizedToDisplay(Sat::kBiasSlot, p.currentValue());
         if (auto p = compiledPlugin_->getSlotParameter(Sat::kOutputSlot))
-            output = compiledPlugin_->nativeValueToDisplayValue(Sat::kOutputSlot, p.currentValue());
+            output = compiledPlugin_->normalizedToDisplay(Sat::kOutputSlot, p.currentValue());
         if (auto p = compiledPlugin_->getSlotParameter(Sat::kMixSlot))
-            mix = compiledPlugin_->nativeValueToDisplayValue(Sat::kMixSlot, p.currentValue());
+            mix = compiledPlugin_->normalizedToDisplay(Sat::kMixSlot, p.currentValue());
         if (auto p = compiledPlugin_->getSlotParameter(Sat::kModeSlot))
-            mode = static_cast<int>(std::round(
-                compiledPlugin_->nativeValueToDisplayValue(Sat::kModeSlot, p.currentValue())));
+            mode = static_cast<int>(
+                std::round(compiledPlugin_->normalizedToDisplay(Sat::kModeSlot, p.currentValue())));
     } else {
         drive = valueForSlot(deviceSnapshot_, Sat::kDriveSlot, drive);
         bias = valueForSlot(deviceSnapshot_, Sat::kBiasSlot, bias);

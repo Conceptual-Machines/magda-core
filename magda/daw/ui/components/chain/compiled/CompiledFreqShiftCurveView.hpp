@@ -5,12 +5,9 @@
 #include <functional>
 #include <memory>
 
+#include "audio/plugins/compiled/MagdaFreqShiftCompiledPlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
-
-namespace magda::daw::audio::compiled {
-class MagdaFreqShiftCompiledPlugin;
-}
 
 namespace magda::daw::ui {
 

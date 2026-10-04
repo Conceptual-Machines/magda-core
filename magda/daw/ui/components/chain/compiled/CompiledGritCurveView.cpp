@@ -73,16 +73,14 @@ void CompiledGritCurveView::timerCallback() {
 
     if (compiledPlugin_ != nullptr) {
         if (auto p = compiledPlugin_->getSlotParameter(Grit::kFrequencySlot))
-            freq =
-                compiledPlugin_->nativeValueToDisplayValue(Grit::kFrequencySlot, p.currentValue());
+            freq = compiledPlugin_->normalizedToDisplay(Grit::kFrequencySlot, p.currentValue());
         if (auto p = compiledPlugin_->getSlotParameter(Grit::kWidthSlot))
-            width = compiledPlugin_->nativeValueToDisplayValue(Grit::kWidthSlot, p.currentValue());
+            width = compiledPlugin_->normalizedToDisplay(Grit::kWidthSlot, p.currentValue());
         if (auto p = compiledPlugin_->getSlotParameter(Grit::kAmountSlot))
-            amount =
-                compiledPlugin_->nativeValueToDisplayValue(Grit::kAmountSlot, p.currentValue());
+            amount = compiledPlugin_->normalizedToDisplay(Grit::kAmountSlot, p.currentValue());
         if (auto p = compiledPlugin_->getSlotParameter(Grit::kModeSlot)) {
             mode = static_cast<int>(std::round(
-                compiledPlugin_->nativeValueToDisplayValue(Grit::kModeSlot, p.currentValue())));
+                compiledPlugin_->normalizedToDisplay(Grit::kModeSlot, p.currentValue())));
         }
     } else {
         freq = valueForSlot(deviceSnapshot_, Grit::kFrequencySlot, freq);

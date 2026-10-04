@@ -6,7 +6,7 @@ description: Work on MAGDA's compiled Faust devices (synths/FX whose DSP is a .d
 # Compiled Faust devices
 
 MAGDA has two kinds of Faust device:
-- **Compiled** (this skill): the `.dsp` is compiled to C++ **at build time** and statically linked. Fast, ships in the binary. Lives in `magda/daw/audio/faust_dsp/*.dsp` + `magda/daw/audio/plugins/compiled/Magda*CompiledPlugin.{hpp,cpp}`.
+- **Compiled** (this skill): the `.dsp` is compiled to C++ **at build time** and statically linked. Fast, ships in the binary. Lives in `magda/daw/audio/faust_dsp/*.dsp` + a device class. Effects are JUCE-free (`magda/devices/faust/effects/<Name>.{hpp,cpp}`, deriving `devices::faust::CompiledEffect`) so they also build for the SDK hosts (#2940); `plugins/compiled/Magda<Name>CompiledPlugin.hpp` is the app's alias, `CompiledEffectPlugin<devices::faust::<Name>>`, and its `.cpp` holds only the registry spec. Instruments still live in `plugins/compiled/` on `MagdaCompiledPolyInstrument`.
 - Interpreted/JIT (FaustPlugin / FaustInstrumentPlugin): loads `.dsp` at runtime. Not this skill.
 
 ## The pipeline (how a .dsp becomes a device)
@@ -16,7 +16,7 @@ faust_dsp/magda_x.dsp
   --(CMake: magda_compile_faust_dsp, runs `faust -lang cpp`)-->
 cmake-build-debug/compiled_dsps/magda_x.generated.cpp   (NOT checked in)
   --(#include'd by)-->
-plugins/compiled/MagdaXCompiledPlugin.cpp   (the host wrapper)
+devices/faust/effects/X.cpp   (the device; an instrument: plugins/compiled/MagdaXCompiledPlugin.cpp)
   --(custom UI)-->
 ui/components/chain/custom_ui/XUI.cpp
 ```
@@ -31,8 +31,8 @@ Each control is a Faust `hslider`/`nentry` tagged `[idx:N]`. `N` is the **host s
 
 Three places must agree on slot indices:
 1. **`.dsp`** — `[idx:N]` on each param.
-2. **`MagdaXCompiledPlugin.hpp`** — `kFooSlot = N` constants + `kHostSlotCount`.
-3. **`MagdaXCompiledPlugin.cpp`** — `hostSlotInfo_[kFooSlot] = {.name, .scale, .minValue, .maxValue, .defaultValue, .choices}`.
+2. **The device header** — `kFooSlot = N` constants + `kHostSlotCount`.
+3. **The device `.cpp`** — `slotInfos()` entry `infos[kFooSlot] = {.name, .scale, .minValue, .maxValue, .defaultValue, .choices}` (effects: `SlotInfo`, `std::string`, `sdk::ParameterScale`, no JUCE).
 4. **`XUI.{hpp,cpp}`** — its own `kFooSlot` constants + `kNumParams`, label, layout.
 
 ### Adding a parameter (common case)
@@ -40,8 +40,8 @@ Three places must agree on slot indices:
 **Append at the end** (`idx = old kHostSlotCount`) so existing slot indices stay stable — never insert in the middle and renumber.
 
 1. `.dsp`: add the `hslider`/`nentry` with the next free `[idx:N]`; wire it into the DSP graph. Reuse-by-copy from a sibling `.dsp` when matching behaviour (e.g. the drive lerp `(1-d)*x + d*(tanh(4x)/tanh(4))` from `magda_filter_svf.dsp`).
-2. Wrapper `.hpp`: add `kFooSlot = N`, bump `kHostSlotCount`. The `std::array<…, kHostSlotCount>` members grow automatically.
-3. Wrapper `.cpp`: add `hostSlotInfo_[kFooSlot] = {…}`. Use `ParameterScale::Discrete` + `.choices = {...}` for menus, `Linear`/`Logarithmic`/`FaderDB` otherwise.
+2. Device `.hpp`: add `kFooSlot = N`, bump `kHostSlotCount`.
+3. Device `.cpp`: add the slot to `slotInfos()`. Use `ParameterScale::Discrete` + `.choices = {...}` for menus, `Linear`/`Logarithmic`/`FaderDB` otherwise.
 4. UI: add `kFooSlot`, bump `kNumParams`, add a label, place it in `resized()`.
 5. `make debug` (regenerates the dsp), confirm the param appears in the generated `.cpp`.
 

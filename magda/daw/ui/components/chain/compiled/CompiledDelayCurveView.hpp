@@ -4,12 +4,9 @@
 
 #include <memory>
 
+#include "audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
-
-namespace magda::daw::audio::compiled {
-class MagdaDelayCompiledPlugin;
-}
 
 namespace magda::daw::ui {
 

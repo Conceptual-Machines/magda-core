@@ -3,8 +3,8 @@
 #include <array>
 #include <regex>
 
-#include "../daw/audio/plugins/FaustMetadataParser.hpp"
 #include "../daw/core/Config.hpp"
+#include "devices/faust/FaustMetadataParser.hpp"
 #include "llm_client_factory.hpp"
 #include "llm_presets.hpp"
 #include "mcp/MCPServerManager.hpp"
@@ -184,10 +184,10 @@ bool validateSourceImpl(FaustAgent::Target target, const std::string& source,
          it != std::sregex_iterator(); ++it) {
         const juce::String kind((*it)[1].str());
         const juce::String rawLabel((*it)[2].str());
-        const auto parsed = magda::daw::audio::parseFaustLabel(rawLabel);
+        const auto parsed = magda::devices::faust::parseFaustLabel((*it)[2].str());
         const int idx = parsed.metadata.slotIndex;
-        const juce::String name =
-            parsed.cleanLabel.trim().isNotEmpty() ? parsed.cleanLabel.trim() : rawLabel;
+        const auto cleanLabel = juce::String(parsed.cleanLabel).trim();
+        const juce::String name = cleanLabel.isNotEmpty() ? cleanLabel : rawLabel;
         const auto normalized = name.toLowerCase();
         const bool reserved =
             target == FaustAgent::Target::Instrument &&

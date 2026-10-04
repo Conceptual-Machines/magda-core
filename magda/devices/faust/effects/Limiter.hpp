@@ -1,0 +1,110 @@
+#pragma once
+
+#include <atomic>
+#include <magda/sdk/audio/BufferView.hpp>
+#include <vector>
+
+#include "devices/faust/CompiledEffect.hpp"
+
+namespace magda::devices::faust {
+
+class LimiterDspCore {
+  public:
+    /// The lookahead line's length, reported as the device's latency. Rounded half to even, as
+    /// the host rounds a reported latency, so the two agree at every rate.
+    static constexpr double kLookaheadSeconds = 0.005;
+
+    struct Settings {
+        float thresholdDb = -1.0f;
+        float attackMs = 1.0f;
+        float releaseMs = 200.0f;
+        float outputDb = 0.0f;
+    };
+
+    struct Stats {
+        float inputPeak = 0.0f;
+        float outputPeak = 0.0f;
+        float gainReductionDb = 0.0f;
+    };
+
+    void prepare(double sampleRate, int maxBlockSize, int numChannels);
+    void reset();
+    Stats process(magda::BufferView buffer, int startSample, int numSamples,
+                  const Settings& settings);
+
+  private:
+    static float dbToGain(float db);
+    static float coefficient(float timeMs, double sampleRate);
+
+    double sampleRate_ = 44100.0;
+    int delaySamples_ = 1;
+    int writeIndex_ = 0;
+    float gain_ = 1.0f;
+
+    // One flat lookahead line, channel-major with a power-of-two stride so the
+    // ring wraps on a mask rather than a per-sample division (#2152).
+    int lineStride_ = 2;
+    int lineMask_ = 1;
+    int numLines_ = 0;
+    std::vector<float> delayLines_;
+    std::vector<float> frame_;
+};
+
+/**
+ * @brief Native lookahead limiter / autonormalizer.
+ *
+ * Threshold is normalizer drive into a fixed 0 dB ceiling; Output is a post-limiter trim limited
+ * to negative gain.
+ */
+class Limiter : public CompiledEffect {
+  public:
+    static constexpr const char* xmlTypeName = "magda_limiter";
+
+    Limiter();
+
+    static constexpr int kThresholdSlot = 0;
+    static constexpr int kAttackSlot = 1;
+    static constexpr int kReleaseSlot = 2;
+    static constexpr int kOutputSlot = 3;
+    static constexpr int kHostSlotCount = 4;
+
+    // Audio-thread metering taps, read by the curve view on its timer.
+    float getInputPeakDb() const {
+        return inputPeakDb_.load(std::memory_order_relaxed);
+    }
+    float getOutputPeakDb() const {
+        return outputPeakDb_.load(std::memory_order_relaxed);
+    }
+    float getGainReductionDb() const {
+        return gainReductionDb_.load(std::memory_order_relaxed);
+    }
+
+    std::string devicePluginId() const override {
+        return xmlTypeName;
+    }
+    std::string deviceName() const override {
+        return "Limiter";
+    }
+
+  protected:
+    std::vector<SlotInfo> slotInfos() const override;
+    const char* slotIdPrefix() const override {
+        return "magda_limiter_";
+    }
+    double latencySeconds() const override {
+        return LimiterDspCore::kLookaheadSeconds;
+    }
+    void onPrepare(double sampleRate, int maximumBlockSize) override;
+    void onRelease() override;
+    void onReset() override;
+    void processAudio(sdk::ProcessContext& context) override;
+
+  private:
+    LimiterDspCore limiter_;
+
+    std::atomic<float> inputPeakDb_{-120.0f};
+    std::atomic<float> outputPeakDb_{-120.0f};
+    std::atomic<float> gainReductionDb_{0.0f};
+};
+
+}  // namespace magda::devices::faust

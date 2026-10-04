@@ -1,54 +1,8 @@
 #include "plugins/compiled/MagdaFreqShiftCompiledPlugin.hpp"
 
-#include "core/ParameterInfo.hpp"
-#include "faust/dsp/dsp.h"
-#include "faust/gui/UI.h"
-#include "faust/gui/meta.h"
-#include "magda_freq_shift.generated.cpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda::daw::audio::compiled {
-
-const char* MagdaFreqShiftCompiledPlugin::xmlTypeName = "magda_freq_shift";
-
-MagdaFreqShiftCompiledPlugin::MagdaFreqShiftCompiledPlugin() {
-    initEffect();
-}
-
-::dsp* MagdaFreqShiftCompiledPlugin::createEngineDsp(int) const {
-    return new MagdaFreqShiftDsp();
-}
-
-std::vector<MagdaFreqShiftCompiledPlugin::HostSlotInfo> MagdaFreqShiftCompiledPlugin::slotInfos()
-    const {
-    std::vector<HostSlotInfo> infos(kHostSlotCount);
-    infos[kShiftSlot] = {.name = "Shift",
-                         .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
-                         .scale = magda::ParameterScale::Linear,
-                         .minValue = -1000.0f,
-                         .maxValue = 1000.0f,
-                         .defaultValue = 0.0f};
-
-    infos[kFeedbackSlot] = {.name = "Feedback",
-                            .scale = magda::ParameterScale::Linear,
-                            .minValue = -0.9f,
-                            .maxValue = 0.9f,
-                            .defaultValue = 0.0f};
-
-    infos[kMixSlot] = {.name = "Mix",
-                       .scale = magda::ParameterScale::Linear,
-                       .minValue = 0.0f,
-                       .maxValue = 1.0f,
-                       .defaultValue = 0.5f};
-
-    infos[kSpreadSlot] = {.name = "Spread",
-                          .scale = magda::ParameterScale::Linear,
-                          .minValue = 0.0f,
-                          .maxValue = 1.0f,
-                          .defaultValue = 0.0f};
-
-    return infos;
-}
 
 constexpr AliasSpec kAliases[] = {
     {"shift", 0, "Shift"},

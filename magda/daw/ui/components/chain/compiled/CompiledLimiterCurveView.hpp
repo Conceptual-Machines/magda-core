@@ -7,10 +7,7 @@
 
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
-
-namespace magda::daw::audio::compiled {
-class MagdaLimiterCompiledPlugin;
-}
+#include "plugins/compiled/MagdaLimiterCompiledPlugin.hpp"
 
 namespace magda::daw::ui {
 

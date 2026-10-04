@@ -1,7 +1,9 @@
 #include <magda/sdk/abi/magda_device.h>
 
+#include <algorithm>
 #include <array>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -60,4 +62,30 @@ TEST_CASE("The Test Tone's ABI manifest keeps the saved slot ids", "[devices][ab
     CHECK(at("\"id\":\"frequency\",\"index\":2") != std::string::npos);
     CHECK(at("\"id\":\"level\",\"index\":3") != std::string::npos);
     magda_device_destroy(device);
+}
+
+TEST_CASE("Every portable device renders through the C ABI", "[devices][abi]") {
+    REQUIRE(magda_device_type_count() == 23);
+    for (int index = 0; index < magda_device_type_count(); ++index) {
+        const std::string type = magda_device_type_at(index);
+        INFO(type);
+        auto* device = magda_device_create(type.c_str());
+        REQUIRE(device != nullptr);
+        REQUIRE(magda_device_prepare(device, 48000.0, 256) == MAGDA_OK);
+        REQUIRE(magda_device_get_manifest(device) != nullptr);
+
+        std::vector<float> left(4800), right(4800);
+        for (size_t i = 0; i < left.size(); ++i)
+            left[i] = right[i] = 0.5f * std::sin(0.0288f * static_cast<float>(i));
+        std::array<float*, 2> channels{left.data(), right.data()};
+        REQUIRE(magda_device_process(device, channels.data(), 2, 4800) == MAGDA_OK);
+
+        float peak = 0.0f;
+        for (const float sample : left) {
+            REQUIRE(std::isfinite(sample));
+            peak = std::max(peak, std::abs(sample));
+        }
+        CHECK(peak > 0.0f);
+        magda_device_destroy(device);
+    }
 }

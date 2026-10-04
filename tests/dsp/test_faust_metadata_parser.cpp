@@ -1,8 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "../../magda/daw/audio/plugins/FaustMetadataParser.hpp"
+#include "devices/faust/FaustMetadataParser.hpp"
 
-using namespace magda::daw::audio;
+using namespace magda::devices::faust;
 
 // ============================================================================
 // parseFaustLabel — clean label
@@ -17,7 +17,7 @@ TEST_CASE("parseFaustLabel - empty input", "[faust][metadata]") {
 TEST_CASE("parseFaustLabel - no annotations", "[faust][metadata]") {
     auto p = parseFaustLabel("Cutoff");
     REQUIRE(p.cleanLabel == "Cutoff");
-    REQUIRE(p.metadata.unit.isEmpty());
+    REQUIRE(p.metadata.unit.empty());
 }
 
 TEST_CASE("parseFaustLabel - strips known annotations", "[faust][metadata]") {
@@ -143,7 +143,7 @@ TEST_CASE("parseFaustLabel - tooltip drops surrounding quotes", "[faust][metadat
 
 TEST_CASE("parseFaustLabel - absent tooltip stays empty", "[faust][metadata]") {
     auto p = parseFaustLabel("Cutoff [unit:Hz]");
-    REQUIRE(p.metadata.tooltip.isEmpty());
+    REQUIRE(p.metadata.tooltip.empty());
 }
 
 TEST_CASE("parseFaustLabel - menu accepts double quotes too", "[faust][metadata]") {
@@ -171,7 +171,7 @@ TEST_CASE("parseFaustLabel - empty menu body yields empty choices", "[faust][met
 TEST_CASE("applyFaustAnnotation - rejects unknown key", "[faust][metadata]") {
     ControlMetadata m;
     REQUIRE_FALSE(applyFaustAnnotation("colour", "red", m));
-    REQUIRE(m.unit.isEmpty());
+    REQUIRE(m.unit.empty());
 }
 
 TEST_CASE("applyFaustAnnotation - case-insensitive key handled by caller", "[faust][metadata]") {

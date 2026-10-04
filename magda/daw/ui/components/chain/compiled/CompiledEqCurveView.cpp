@@ -703,8 +703,8 @@ void CompiledEqCurveView::updateSpectrumOverlay() {
     if (compiledPlugin_ == nullptr || spectrumFft_ == nullptr || spectrumWindow_ == nullptr)
         return;
 
-    auto updateTrace = [this](const magda::daw::audio::AudioTapBuffer& tap,
-                              size_t& lastWritePosition, std::vector<float>& traceDb) {
+    auto updateTrace = [this](const magda::engine::SampleRing& tap, size_t& lastWritePosition,
+                              std::vector<float>& traceDb) {
         const auto writePosition = tap.writePosition();
         if (writePosition == lastWritePosition)
             return;

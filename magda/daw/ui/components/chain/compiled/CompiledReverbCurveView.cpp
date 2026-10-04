@@ -87,7 +87,7 @@ void CompiledReverbCurveView::timerCallback() {
 
     auto read = [this](int slot, float fallback) {
         if (auto p = compiledPlugin_->getSlotParameter(slot))
-            return compiledPlugin_->nativeValueToDisplayValue(slot, p.currentValue());
+            return compiledPlugin_->normalizedToDisplay(slot, p.currentValue());
         return fallback;
     };
 

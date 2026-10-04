@@ -7,11 +7,11 @@
 #include <ranges>
 
 #include "core/ParameterUtils.hpp"
+#include "devices/faust/FaustMetadataParser.hpp"
 #include "faust/dsp/dsp.h"
 #include "faust/dsp/poly-dsp.h"
 #include "faust/gui/UI.h"
 #include "faust/gui/meta.h"
-#include "plugins/FaustMetadataParser.hpp"
 
 // NOTE: Faust's GUI base statics (GUI::fGuiList / gTimedZoneMap), required by
 // poly-dsp.h, are defined once in FaustPolyGuiStatics.cpp — see that file.
@@ -72,14 +72,14 @@ class PolyVoiceHarvester : public ::UI {
         if (zone == nullptr)
             return;
         const auto k = juce::String::fromUTF8(key != nullptr ? key : "").toLowerCase();
-        const auto v = juce::String::fromUTF8(value != nullptr ? value : "");
-        applyFaustAnnotation(k, v, pendingByZone_[zone]);
+        devices::faust::applyFaustAnnotation(k.toStdString(), value != nullptr ? value : "",
+                                             pendingByZone_[zone]);
     }
 
   private:
     void pushGroup(const char* label) {
-        groupLabels_.push_back(
-            parseFaustLabel(juce::String::fromUTF8(label != nullptr ? label : "")).cleanLabel);
+        groupLabels_.push_back(juce::String(
+            devices::faust::parseFaustLabel(label != nullptr ? label : "").cleanLabel));
     }
 
     bool inProxyGroup() const {
@@ -95,12 +95,11 @@ class PolyVoiceHarvester : public ::UI {
     }
 
     void emit(const char* rawLabel, FAUSTFLOAT* zone) {
-        const auto parsed =
-            parseFaustLabel(juce::String::fromUTF8(rawLabel != nullptr ? rawLabel : ""));
-        ControlMetadata merged = parsed.metadata;
+        const auto parsed = devices::faust::parseFaustLabel(rawLabel != nullptr ? rawLabel : "");
+        devices::faust::ControlMetadata merged = parsed.metadata;
         if (zone != nullptr) {
             if (auto it = pendingByZone_.find(zone); it != pendingByZone_.end()) {
-                mergeFaustMetadata(merged, it->second);
+                devices::faust::mergeFaustMetadata(merged, it->second);
                 pendingByZone_.erase(it);
             }
         }
@@ -109,14 +108,14 @@ class PolyVoiceHarvester : public ::UI {
         if (merged.slotIndex >= 0) {
             zonesByIdx[merged.slotIndex].push_back(zone);
         } else {
-            const auto name = parsed.cleanLabel.toLowerCase();
+            const auto name = juce::String(parsed.cleanLabel).toLowerCase();
             if (name == "freq" || name == "gain" || name == "gate" || name == "bend")
                 reservedByName[name].push_back(zone);
         }
     }
 
     std::vector<juce::String> groupLabels_;
-    std::map<FAUSTFLOAT*, ControlMetadata> pendingByZone_;
+    std::map<FAUSTFLOAT*, devices::faust::ControlMetadata> pendingByZone_;
 };
 
 constexpr float kCeiling = 0.9f;  // hard output ceiling

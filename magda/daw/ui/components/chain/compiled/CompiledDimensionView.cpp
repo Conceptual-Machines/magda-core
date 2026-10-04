@@ -69,7 +69,7 @@ void CompiledDimensionView::timerCallback() {
     if (compiledPlugin_ != nullptr) {
         auto read = [this](int slot, float fallback) {
             if (auto p = compiledPlugin_->getSlotParameter(slot))
-                return compiledPlugin_->nativeValueToDisplayValue(slot, p.currentValue());
+                return compiledPlugin_->normalizedToDisplay(slot, p.currentValue());
             return fallback;
         };
         engine_ = juce::jlimit(0, Plugin::kEngineCount - 1,

@@ -60,28 +60,22 @@ void CompiledGrainDelayCurveView::timerCallback() {
 
     if (compiledPlugin_ != nullptr) {
         if (auto p = compiledPlugin_->getSlotParameter(GrainDelay::kTimeSlot))
-            time =
-                compiledPlugin_->nativeValueToDisplayValue(GrainDelay::kTimeSlot, p.currentValue());
+            time = compiledPlugin_->normalizedToDisplay(GrainDelay::kTimeSlot, p.currentValue());
         if (auto p = compiledPlugin_->getSlotParameter(GrainDelay::kSizeSlot))
-            size =
-                compiledPlugin_->nativeValueToDisplayValue(GrainDelay::kSizeSlot, p.currentValue());
+            size = compiledPlugin_->normalizedToDisplay(GrainDelay::kSizeSlot, p.currentValue());
         if (auto p = compiledPlugin_->getSlotParameter(GrainDelay::kPitchSlot))
-            pitch = compiledPlugin_->nativeValueToDisplayValue(GrainDelay::kPitchSlot,
-                                                               p.currentValue());
+            pitch = compiledPlugin_->normalizedToDisplay(GrainDelay::kPitchSlot, p.currentValue());
         if (auto p = compiledPlugin_->getSlotParameter(GrainDelay::kSpraySlot))
-            spray = compiledPlugin_->nativeValueToDisplayValue(GrainDelay::kSpraySlot,
-                                                               p.currentValue());
+            spray = compiledPlugin_->normalizedToDisplay(GrainDelay::kSpraySlot, p.currentValue());
         if (auto p = compiledPlugin_->getSlotParameter(GrainDelay::kFeedbackSlot))
-            fb = compiledPlugin_->nativeValueToDisplayValue(GrainDelay::kFeedbackSlot,
-                                                            p.currentValue());
+            fb = compiledPlugin_->normalizedToDisplay(GrainDelay::kFeedbackSlot, p.currentValue());
         if (auto p = compiledPlugin_->getSlotParameter(GrainDelay::kMixSlot))
-            mix =
-                compiledPlugin_->nativeValueToDisplayValue(GrainDelay::kMixSlot, p.currentValue());
+            mix = compiledPlugin_->normalizedToDisplay(GrainDelay::kMixSlot, p.currentValue());
         if (auto p = compiledPlugin_->getSlotParameter(GrainDelay::kSyncSlot))
             sync = p.currentValue() >= 0.5f;
         if (auto p = compiledPlugin_->getSlotParameter(GrainDelay::kDivisionSlot)) {
-            divIdx = static_cast<int>(std::round(compiledPlugin_->nativeValueToDisplayValue(
-                GrainDelay::kDivisionSlot, p.currentValue())));
+            divIdx = static_cast<int>(std::round(
+                compiledPlugin_->normalizedToDisplay(GrainDelay::kDivisionSlot, p.currentValue())));
         }
         bpm = compiledPlugin_->currentBpm();
     } else {

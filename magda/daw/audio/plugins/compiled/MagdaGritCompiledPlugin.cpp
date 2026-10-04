@@ -1,57 +1,8 @@
 #include "plugins/compiled/MagdaGritCompiledPlugin.hpp"
 
-#include "core/ParameterInfo.hpp"
-#include "faust/dsp/dsp.h"
-#include "faust/gui/UI.h"
-#include "faust/gui/meta.h"
-#include "magda_grit.generated.cpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 
 namespace magda::daw::audio::compiled {
-
-const char* MagdaGritCompiledPlugin::xmlTypeName = "magda_grit";
-
-MagdaGritCompiledPlugin::MagdaGritCompiledPlugin() {
-    initEffect();
-}
-
-::dsp* MagdaGritCompiledPlugin::createEngineDsp(int) const {
-    return new MagdaGritDsp();
-}
-
-std::vector<MagdaGritCompiledPlugin::HostSlotInfo> MagdaGritCompiledPlugin::slotInfos() const {
-    std::vector<HostSlotInfo> infos(kHostSlotCount);
-    // Slot 0: Frequency (log Hz, anchored at 1 kHz so the slider mid lands
-    // on the most musically useful range).
-    infos[kFrequencySlot] = {.name = "Frequency",
-                             .unit = magda::technicalText(magda::TechnicalTextToken::Hertz),
-                             .scale = magda::ParameterScale::Logarithmic,
-                             .minValue = 20.0f,
-                             .maxValue = 16000.0f,
-                             .defaultValue = 1000.0f,
-                             .scaleAnchor = 1000.0f};
-    // Slot 1: Width (linear 0..1; mapped inside the DSP to Q ≈ 0.5..20).
-    infos[kWidthSlot] = {.name = "Width",
-                         .scale = magda::ParameterScale::Linear,
-                         .minValue = 0.0f,
-                         .maxValue = 1.0f,
-                         .defaultValue = 0.5f};
-    // Slot 2: Amount (modulation depth, 0..1).
-    infos[kAmountSlot] = {.name = "Amount",
-                          .scale = magda::ParameterScale::Linear,
-                          .minValue = 0.0f,
-                          .maxValue = 1.0f,
-                          .defaultValue = 0.0f};
-    // Slot 3: Mode (3 carrier sources).
-    infos[kModeSlot].name = "Mode";
-    infos[kModeSlot].scale = magda::ParameterScale::Discrete;
-    infos[kModeSlot].choices = {"Noise", "Wide Noise", "Sine"};
-    infos[kModeSlot].minValue = 0.0f;
-    infos[kModeSlot].maxValue = static_cast<float>(infos[kModeSlot].choices.size() - 1);
-    infos[kModeSlot].defaultValue = 0.0f;
-
-    return infos;
-}
 
 constexpr AliasSpec kAliases[] = {
     {"frequency", 0, "Frequency"},
