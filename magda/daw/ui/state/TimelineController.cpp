@@ -486,7 +486,9 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetEditCur
         newBeats = juce::jlimit(0.0, state.timelineLengthBeats, newBeats);
     }
 
-    if (newBeats == state.editCursorBeats) {
+    // A hide request is always announced: the MIDI editors' local cursors clear on it even
+    // when the arrangement's cursor is already hidden.
+    if (newBeats == state.editCursorBeats && newBeats >= 0.0) {
         return ChangeFlags::None;
     }
 

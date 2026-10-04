@@ -287,6 +287,32 @@ TEST_CASE("Timeline edit cursor is beat-authoritative across tempo changes",
     REQUIRE(state.editCursorPosition == Catch::Approx(-1.0));
 }
 
+TEST_CASE("Hiding an already hidden edit cursor is still announced", "[timeline][edit-cursor]") {
+    // The MIDI editors keep their own cursor and clear it when this announcement arrives, so
+    // Escape must reach them even when the arrangement's cursor is already hidden.
+    struct Recorder final : magda::TimelineStateListener {
+        int selectionChanges = 0;
+        void timelineStateChanged(const magda::TimelineState&,
+                                  magda::ChangeFlags changes) override {
+            if (magda::hasFlag(changes, magda::ChangeFlags::Selection))
+                ++selectionChanges;
+        }
+    } recorder;
+
+    magda::TimelineController controller;
+    controller.dispatch(magda::SetTimelineLengthEvent{100.0});
+    controller.addListener(&recorder);
+
+    controller.dispatch(magda::SetEditCursorEvent{-1.0});
+    REQUIRE(recorder.selectionChanges == 1);
+
+    controller.dispatch(magda::SetEditCursorEvent{8.0});
+    controller.dispatch(magda::SetEditCursorEvent{8.0});
+    REQUIRE(recorder.selectionChanges == 2);
+
+    controller.removeListener(&recorder);
+}
+
 // ============================================================================
 // The denominator sets the bar length in quarter-note beats (#2802)
 // ============================================================================

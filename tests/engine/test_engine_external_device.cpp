@@ -218,7 +218,9 @@ class StubPlugin final : public juce::AudioPluginInstance {
     }
 
     StubPlugin(int inputs, int outputs, int sidechain, int extraPairs = 0)
-        : AudioPluginInstance(busesFor(inputs, outputs, sidechain, extraPairs)) {
+        : StubPlugin(busesFor(inputs, outputs, sidechain, extraPairs)) {}
+
+    explicit StubPlugin(const BusesProperties& buses) : AudioPluginInstance(buses) {
         auto gainParameter = std::make_unique<StubParameter>("gain", "Gain", 1.0f, true);
         gain = gainParameter.get();
         addHostedParameter(std::move(gainParameter));
@@ -233,6 +235,11 @@ class StubPlugin final : public juce::AudioPluginInstance {
     }
 
     StubPlugin() : StubPlugin(2, 2, 0) {}
+
+    /// No buses at all, as an AU whose Initialize fails comes up.
+    static std::unique_ptr<StubPlugin> withoutBuses() {
+        return std::make_unique<StubPlugin>(BusesProperties());
+    }
 
     const juce::String getName() const override {
         return "Stub";
@@ -1859,6 +1866,15 @@ TEST_CASE("With no chunk the saved parameter array is what the plugin gets", "[e
     REQUIRE(result.device != nullptr);
     CHECK(raw->tone->getValue() == Catch::Approx(0.7f));
     CHECK(raw->stateRestores == 0);
+}
+
+TEST_CASE("A plugin with no audio buses fails to load instead of running silent",
+          "[engine][external]") {
+    const auto result =
+        adapter::adaptExternalPluginInstance(StubPlugin::withoutBuses(), externalDevice());
+
+    CHECK(result.device == nullptr);
+    CHECK(result.failure.isNotEmpty());
 }
 
 TEST_CASE("A chunk that is not base64 leaves the baseline standing", "[engine][external]") {

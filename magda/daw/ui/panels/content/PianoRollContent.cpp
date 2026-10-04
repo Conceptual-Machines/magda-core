@@ -1515,7 +1515,7 @@ void PianoRollContent::onActivated() {
             updateGridSize();
             updateTimeRuler();
             updateVelocityLane();
-            centerOnNotes();
+            fitViewToNewContent(clip->trackId, clip->view, {selectedClip});
         }
     }
     repaint();
@@ -1716,9 +1716,7 @@ void PianoRollContent::clipSelectionChanged(magda::ClipId clipId) {
             updateGridSize();
             updateTimeRuler();
             updateVelocityLane();
-
-            scrollToClipStartForTimeMode();
-            centerOnNotes();
+            fitViewToNewContent(trackId, clip->view, selectedMidiClips);
 
             repaint();
         }
@@ -1804,8 +1802,7 @@ void PianoRollContent::multiClipSelectionChanged(const std::unordered_set<magda:
     updateGridSize();
     updateTimeRuler();
     updateVelocityLane();
-    scrollToClipStartForTimeMode();
-    centerOnNotes();
+    fitViewToNewContent(trackId, firstClip->view, selectedMidiClips);
     repaint();
 }
 
@@ -1833,10 +1830,8 @@ void PianoRollContent::setClip(magda::ClipId clipId) {
         updateTimeRuler();
         updateVelocityLane();
 
-        scrollToClipStartForTimeMode();
-
-        // Center vertically on existing notes (or C4 if empty)
-        centerOnNotes();
+        if (const auto* clip = magda::ClipManager::getInstance().getClip(clipId))
+            fitViewToNewContent(clip->trackId, clip->view, {clipId});
 
         repaint();
     }
@@ -2356,6 +2351,16 @@ void PianoRollContent::ensureNoteVisible(int noteNumber) {
     keyboard_->setScrollOffset(newScrollY);
     if (octaveLabelStrip_)
         octaveLabelStrip_->setScrollOffset(newScrollY);
+}
+
+void PianoRollContent::fitViewToNewContent(magda::TrackId track, magda::ClipView view,
+                                           std::vector<magda::ClipId> clips) {
+    if (!magda::takeNewContent(
+            shownContent_,
+            magda::PianoRollShownContent::of(track, view, relativeTimeMode_, std::move(clips))))
+        return;
+    scrollToClipStartForTimeMode();
+    centerOnNotes();
 }
 
 void PianoRollContent::centerOnNotes() {

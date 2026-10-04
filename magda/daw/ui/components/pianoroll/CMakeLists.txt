@@ -12,6 +12,7 @@ target_sources(magda_daw_app PRIVATE
     PianoRollGridComponent.hpp
     PianoRollKeyboard.hpp
     OctaveLabelStrip.hpp
+    PianoRollShownContent.hpp
     PitchFoldMap.hpp
     VelocityLaneComponent.hpp
     CCLaneComponent.hpp

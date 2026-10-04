@@ -253,8 +253,8 @@ MidiEditorContent::MidiEditorContent() {
         viewport_->setViewPosition(newScrollX, viewport_->getViewPositionY());
     };
 
-    // TimeRuler upper click callback — set local edit cursor (independent from arrangement)
-    timeRuler_->onPositionClicked = [this](double time, bool) { setLocalEditCursor(time); };
+    // A double-click on the ruler's ticks sets the local edit cursor (independent from arrangement)
+    timeRuler_->onEditCursorRequested = [this](double time, bool) { setLocalEditCursor(time); };
 
     // TimeRuler lower strip click callback — set the global arrangement playhead.
     timeRuler_->onPlayheadPositionClicked = [this](double time, bool bypassSnap) {
