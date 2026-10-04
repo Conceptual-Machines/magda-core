@@ -32,6 +32,7 @@ set(TEST_SOURCES
     midi/test_midi_legato.cpp
     midi/test_midi_offset.cpp
     clips/test_pianoroll_note_position.cpp
+    clips/test_pianoroll_shown_content.cpp
     devices/test_nested_racks.cpp
     devices/test_rack_audio.cpp
     automation/test_modulation.cpp

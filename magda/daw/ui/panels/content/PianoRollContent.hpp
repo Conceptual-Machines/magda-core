@@ -2,9 +2,12 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
+#include <vector>
 
 #include "MidiEditorContent.hpp"
 #include "core/SelectionManager.hpp"
+#include "ui/components/pianoroll/PianoRollShownContent.hpp"
 #include "ui/components/pianoroll/PitchFoldMap.hpp"
 
 namespace magda {
@@ -214,6 +217,12 @@ class PianoRollContent : public MidiEditorContent,
 
     // Initial centering flag
     bool needsInitialCentering_ = true;
+
+    std::optional<magda::PianoRollShownContent> shownContent_;
+
+    /// Jumps to the clip start and centres on the notes when the grid shows new content.
+    void fitViewToNewContent(magda::TrackId track, magda::ClipView view,
+                             std::vector<magda::ClipId> clips);
 
     // Components (PianoRoll-specific)
     std::unique_ptr<magda::PianoRollGridComponent> gridComponent_;
