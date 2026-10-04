@@ -425,22 +425,7 @@ void LFOCurveEditorContent::showSaveCurvePresetDialog() {
 }
 
 void LFOCurveEditorContent::saveCurvePreset(const juce::String& presetName) {
-    std::vector<magda::CurvePointData> points;
-    const auto& editorPoints = curveEditor_.getPoints();
-    points.reserve(editorPoints.size());
-
-    for (const auto& point : editorPoints) {
-        magda::CurvePointData data;
-        data.phase = static_cast<float>(point.x);
-        data.value = static_cast<float>(point.y);
-        data.tension = static_cast<float>(point.tension);
-        data.curveType = magda::curveTypeToInt(point.curveType);
-        data.inHandleX = static_cast<float>(point.inHandle.x);
-        data.inHandleY = static_cast<float>(point.inHandle.y);
-        data.outHandleX = static_cast<float>(point.outHandle.x);
-        data.outHandleY = static_cast<float>(point.outHandle.y);
-        points.push_back(data);
-    }
+    const auto points = curveEditor_.getCurvePoints();
 
     if (points.size() < 2) {
         showPresetError("Save Curve Preset Failed", "Curve needs at least two points.");
