@@ -74,14 +74,6 @@ struct ControllerProfile {
 juce::var encodeControllerProfile(const ControllerProfile& p);
 
 /**
- * @brief Decode a ControllerProfile from a juce::var object.
- *
- * Returns nullopt when required fields (id, name) are missing or controls is empty.
- * Malformed default bindings are skipped individually (logged at DBG level).
- */
-std::optional<ControllerProfile> decodeControllerProfile(const juce::var& v);
-
-/**
  * @brief A single issue found by validateControllerProfile.
  *
  * `key` is a StringTable key (e.g. "controllers.validation.duplicate_control_id");
@@ -93,6 +85,16 @@ struct ProfileValidationIssue {
     juce::String key;
     juce::String arg;
 };
+
+/**
+ * @brief Decode a ControllerProfile from a juce::var object.
+ *
+ * Returns nullopt when required fields (id, name) are missing or no control survives.
+ * Malformed controls and default bindings are skipped individually; each skip is
+ * appended to @p skipped when given.
+ */
+std::optional<ControllerProfile> decodeControllerProfile(
+    const juce::var& v, std::vector<ProfileValidationIssue>* skipped = nullptr);
 
 /**
  * @brief Run cross-field consistency checks on an already-decoded profile.

@@ -139,6 +139,66 @@ TEST_CASE("ControllerProfile - decode skips malformed default bindings", "[contr
     CHECK(decoded->defaultBindings[0].controlId == "knob_1");
 }
 
+TEST_CASE("ControllerProfile - decode reports every skipped entry", "[controller_profile]") {
+    auto encoded = encodeControllerProfile(makeTestProfile());
+    auto* obj = encoded.getDynamicObject();
+    auto controlsVar = obj->getProperty("controls");
+    auto bindingsVar = obj->getProperty("defaultBindings");
+
+    auto addControl = [&](const juce::String& id, int cc, int channel, int feedbackCc) {
+        auto* c = new juce::DynamicObject();
+        c->setProperty("controlId", id);
+        c->setProperty("kind", "knob");
+        c->setProperty("cc", cc);
+        c->setProperty("channel", channel);
+        c->setProperty("feedbackCc", feedbackCc);
+        controlsVar.getArray()->add(juce::var(c));
+    };
+    addControl("bad_cc", 200, 1, -1);
+    addControl("bad_channel", 30, 17, -1);
+    addControl("bad_feedback", 31, 1, 128);
+    auto* noCc = new juce::DynamicObject();
+    noCc->setProperty("controlId", "no_cc");
+    noCc->setProperty("kind", "knob");
+    controlsVar.getArray()->add(juce::var(noCc));
+    controlsVar.getArray()->add(juce::var("not an object"));
+
+    auto* noKind = new juce::DynamicObject();
+    noKind->setProperty("controlId", "knob_2");
+    bindingsVar.getArray()->add(juce::var(noKind));
+
+    std::vector<ProfileValidationIssue> skipped;
+    auto decoded = decodeControllerProfile(encoded, &skipped);
+    REQUIRE(decoded.has_value());
+    CHECK(decoded->controls.size() == 2);
+    CHECK(decoded->defaultBindings.size() == 2);
+
+    const std::vector<ProfileValidationIssue> expected{
+        {"controllers.validation.control_cc_out_of_range", "bad_cc"},
+        {"controllers.validation.control_channel_out_of_range", "bad_channel"},
+        {"controllers.validation.control_feedback_cc_out_of_range", "bad_feedback"},
+        {"controllers.validation.control_incomplete", "no_cc"},
+        {"controllers.validation.control_incomplete", "#7"},
+        {"controllers.validation.binding_incomplete", "knob_2"},
+    };
+    REQUIRE(skipped.size() == expected.size());
+    for (size_t i = 0; i < expected.size(); ++i) {
+        CHECK(skipped[i].key == expected[i].key);
+        CHECK(skipped[i].arg == expected[i].arg);
+    }
+}
+
+TEST_CASE("ControllerProfile - decode reports skips when no control survives",
+          "[controller_profile]") {
+    auto encoded = encodeControllerProfile(makeTestProfile());
+    for (auto& c : *encoded.getDynamicObject()->getProperty("controls").getArray())
+        c.getDynamicObject()->setProperty("cc", 128);
+
+    std::vector<ProfileValidationIssue> skipped;
+    CHECK(!decodeControllerProfile(encoded, &skipped).has_value());
+    CHECK(skipped.size() == 2);
+}
+
 // ============================================================================
 // 4. materialiseControllerFromProfile -- basic
 // ============================================================================

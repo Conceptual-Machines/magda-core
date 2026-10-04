@@ -527,6 +527,11 @@
     "upload_validation_failed": "The profile has issues that need fixing first:",
     "validation": {
       "duplicate_control_id": "Duplicate controlId: {0}",
+      "control_incomplete": "Control {0} needs controlId, kind, cc and channel",
+      "control_cc_out_of_range": "Control {0} has a cc outside 0-127",
+      "control_channel_out_of_range": "Control {0} has a channel outside 1-16 (use -1 for any)",
+      "control_feedback_cc_out_of_range": "Control {0} has a feedbackCc outside 0-127",
+      "binding_incomplete": "defaultBinding {0} needs controlId and resolverKind",
       "unknown_default_binding_control_id": "defaultBinding references unknown controlId: {0}"
     },
     "upload_overwrite": "A profile with id \"{0}\" already exists. Replace it?",
