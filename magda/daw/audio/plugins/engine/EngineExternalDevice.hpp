@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_gui_basics/juce_gui_basics.h>
 
 #include <atomic>
 #include <cstdint>
@@ -113,6 +114,9 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
 
     /// False for a plugin with no editor of its own.
     bool showEditor();
+
+    /// The app's shortcuts, for keys the floating editor does not consume (Space plays).
+    static void setApplicationCommandManager(juce::ApplicationCommandManager* manager);
 
     /// Control executor only; excludes rendering while accessing program/state data.
     PresetOutcome pluginPreset(const PresetRequest& request);

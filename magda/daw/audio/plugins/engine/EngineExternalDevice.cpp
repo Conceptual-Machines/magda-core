@@ -61,10 +61,19 @@ void clearNonFinite(juce::AudioBuffer<float>& audio, int numSamples) {
 
 }  // namespace
 
+namespace {
+juce::ApplicationCommandManager* editorCommandManager = nullptr;
+}
+
+void EngineExternalDevice::setApplicationCommandManager(juce::ApplicationCommandManager* manager) {
+    editorCommandManager = manager;
+}
+
 /**
  * @brief The plugin's editor in a window of its own (#2580).
  *
- * Its close button tells the owner rather than deleting itself.
+ * Its close button tells the owner rather than deleting itself. It sits outside the main window's
+ * key chain, so keys the editor leaves unhandled go to the app's shortcuts.
  */
 class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
   public:
@@ -83,6 +92,11 @@ class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
     /// The editor goes while the plugin is still there to be told.
     ~EditorWindow() override {
         clearContentComponent();
+    }
+
+    bool keyPressed(const juce::KeyPress& key) override {
+        return editorCommandManager != nullptr &&
+               editorCommandManager->getKeyMappings()->keyPressed(key, this);
     }
 
     void closeButtonPressed() override {
