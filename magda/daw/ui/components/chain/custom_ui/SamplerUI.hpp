@@ -8,6 +8,8 @@
 #include <memory>
 
 #include "custom_ui/AdsrGraph.hpp"
+#include "magda/sdk/display/DisplayList.hpp"
+#include "magda/sdk/waveview/WaveformView.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/SvgButton.hpp"
 
@@ -123,9 +125,6 @@ class SamplerUI : public juce::Component,
     // Timer
     void timerCallback() override;
 
-    // Coordinate mapping
-    float secondsToPixelX(double seconds, juce::Rectangle<int> waveArea) const;
-    double pixelXToSeconds(float pixelX, juce::Rectangle<int> waveArea) const;
     juce::Rectangle<int> getWaveformBounds() const;
 
     // Sample info
@@ -135,20 +134,15 @@ class SamplerUI : public juce::Component,
     TextSlider rootNoteSlider_{TextSlider::Format::Decimal};
     juce::Label rootNoteLabel_;
 
-    // Waveform thumbnail
-    juce::Path waveformPath_;
+    // Waveform pane: zoom, scroll, markers and drawing live in the SDK view (magda-sdk
+    // docs/waveform-view.md); the sliders stay the markers' source of truth.
     bool hasWaveform_ = false;
     double sampleLength_ = 0.0;
     double playheadPosition_ = 0.0;
-
-    // Waveform source data (kept for rebuilding on zoom)
-    const juce::AudioBuffer<float>* waveformBuffer_ = nullptr;
-    double waveformSampleRate_ = 0.0;
-
-    // Zoom & scroll state
-    double pixelsPerSecond_ = 0.0;
-    double scrollOffsetSeconds_ = 0.0;
-    static constexpr double kMaxPixelsPerSecond = 5000.0;
+    std::unique_ptr<sdk::BufferWaveformSource> waveformSource_;
+    sdk::WaveformView waveformView_;
+    sdk::display::DisplayList waveformList_;
+    bool waveformGesture_ = false;
 
     // Sample start/end / Loop controls
     LinkableTextSlider startSlider_{TextSlider::Format::Decimal};
@@ -193,38 +187,17 @@ class SamplerUI : public juce::Component,
     // Waveform gain (driven by level parameter)
     float waveformGain_ = 1.0f;
 
-    // Dragging state
-    enum class DragTarget {
-        None,
-        SampleStart,
-        SampleEnd,
-        LoopStart,
-        LoopEnd,
-        LoopRegion,
-        Scroll,
-        Zoom
-    };
-    DragTarget currentDrag_ = DragTarget::None;
-    double scrollDragStartOffset_ = 0.0;
-    double loopDragStartL_ = 0.0;
-    double loopDragStartR_ = 0.0;
-
-    // Zoom drag state
-    int zoomDragStartY_ = 0;
-    double zoomDragStartPPS_ = 0.0;
-    double zoomDragAnchorTime_ = 0.0;
-    int zoomDragAnchorPixelOffset_ = 0;
-
-    // Hit-testing helpers
-    static constexpr int kMarkerHitPixels = 5;
-    static constexpr int kLoopBarHeight = 8;
-    DragTarget markerHitTest(const juce::MouseEvent& e, juce::Rectangle<int> waveArea) const;
+    /// The sliders' marker values into the view, before it hit-tests or draws.
+    void syncWaveformMarkers();
+    /// A marker the view moved, out to its slider (and so to the parameter).
+    void applyWaveformMarkers(const sdk::WaveformResponse& response);
+    sdk::WaveformPointer waveformPointer(const juce::MouseEvent& e) const;
+    void updateWaveformCursor(const juce::MouseEvent& e);
 
     // Push the current ADSR slider values (+ ranges) into the envelope graph.
     void syncEnvGraph();
 
     void setupLabel(juce::Label& label, const juce::String& text);
-    void buildWaveformPath(const juce::AudioBuffer<float>* buffer, int width, int height);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SamplerUI)
 };

@@ -37,6 +37,16 @@ juce::Colour sdkRoleColour(sdk::display::ColourRole role) {
             return ActiveTheme::getColour(ActiveTheme::AUTOMATION_GUIDE);
         case Role::Shade:
             return ActiveTheme::getColour(ActiveTheme::TEXT_DARK);
+        case Role::Waveform:
+            return ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
+        case Role::LoopRegion:
+            return ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE);
+        case Role::MarkerStart:
+            return ActiveTheme::getColour(ActiveTheme::SAMPLER_START_MARKER);
+        case Role::MarkerEnd:
+            return ActiveTheme::getColour(ActiveTheme::SAMPLER_END_MARKER);
+        case Role::Playhead:
+            return ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT);
         case Role::MeterLow:
         case Role::MeterMid:
         case Role::MeterHigh:
