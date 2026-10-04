@@ -832,6 +832,8 @@ target_sources(magda_juce_tests PRIVATE
     devices/test_device_gain_slider.cpp
     # The piano roll ruler's lens area only zooms; its ticks take clicks and double-clicks
     ui/test_time_ruler_clicks_juce.cpp
+    # Floating windows run unhandled keys as the app's shortcuts (#2964)
+    ui/test_popout_window_shortcuts_juce.cpp
     ../magda/daw/ui/components/timeline/TimeRuler.cpp
     ../magda/daw/ui/components/chain/compiled/CompiledMultibandCurveView.cpp
     ../magda/daw/ui/dialogs/ParameterConfigDialog.cpp

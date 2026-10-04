@@ -39,6 +39,7 @@
 #include "../views/MainView.hpp"
 #include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
+#include "AppShortcuts.hpp"
 #include "audio/MidiBridge.hpp"
 #include "audio/midi/QwertyMidiKeyboard.hpp"
 #include "audio/plugins/engine/EngineExternalDevice.hpp"
@@ -646,6 +647,8 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     PluginEditorWindow::appCommandManager = &commandManager;
     PluginEditorWindow::appCommandTarget = this;
     daw::audio::engine_adapter::EngineExternalDevice::setApplicationCommands(&commandManager, this);
+    // MAGDA's own floating windows route unconsumed keys the same way.
+    setAppShortcuts(&commandManager, this);
 
     // Use external engine if provided, otherwise create our own
     if (externalEngine) {
@@ -1389,6 +1392,7 @@ MainWindow::MainComponent::~MainComponent() {
     PluginEditorWindow::appCommandManager = nullptr;
     PluginEditorWindow::appCommandTarget = nullptr;
     daw::audio::engine_adapter::EngineExternalDevice::setApplicationCommands(nullptr, nullptr);
+    setAppShortcuts(nullptr, nullptr);
 
     // Stop position timer before destroying
     DBG("    [5e] Stopping position timer...");
