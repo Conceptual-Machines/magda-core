@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "core/Config.hpp"
+#include "core/StringTable.hpp"
 #include "engine/AudioEngineChoice.hpp"
 
 namespace magda::daw::ui {
@@ -30,9 +31,7 @@ bool shouldAsk() {
 
 /// AlertWindow does not own a custom component, so the two are held together.
 struct Prompt {
-    juce::AlertWindow alert{"Try the MAGDA Engine?",
-                            "MAGDA has its own audio engine, now in beta. Would you like to use "
-                            "it?\n\nYou can switch engines any time in Audio/MIDI Settings.",
+    juce::AlertWindow alert{tr("engine_prompt.title"), tr("engine_prompt.message"),
                             juce::MessageBoxIconType::QuestionIcon};
 
     // Nameless: AlertWindow paints a custom component's name above it, and a
@@ -40,7 +39,7 @@ struct Prompt {
     juce::ToggleButton dontShowAgain;
 
     Prompt() {
-        dontShowAgain.setButtonText("Don't show again");
+        dontShowAgain.setButtonText(tr("engine_prompt.dont_show_again"));
     }
 };
 
@@ -55,8 +54,8 @@ void offerMagdaEngineAtLaunch(std::function<void()> then) {
     auto prompt = std::make_shared<Prompt>();
     prompt->dontShowAgain.setSize(200, 24);
     prompt->alert.addCustomComponent(&prompt->dontShowAgain);
-    prompt->alert.addButton("Yes", 1, juce::KeyPress(juce::KeyPress::returnKey));
-    prompt->alert.addButton("No", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    prompt->alert.addButton(tr("engine_prompt.yes"), 1, juce::KeyPress(juce::KeyPress::returnKey));
+    prompt->alert.addButton(tr("engine_prompt.no"), 0, juce::KeyPress(juce::KeyPress::escapeKey));
 
     const auto onDismissed = [prompt, then = std::move(then)](int result) {
         auto& config = Config::getInstance();
