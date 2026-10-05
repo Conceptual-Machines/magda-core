@@ -213,8 +213,11 @@ struct Published {
  */
 class Harness {
   public:
-    /// With @p handoffs, each plan gets its handoffs after its crossfades, as the host's does.
-    explicit Harness(Material material, bool handoffs = false);
+    /// With @p handoffs, each plan gets its handoffs after its crossfades, as the host's does;
+    /// with @p bySide too, each block renders as its two sides one after the other (#1898);
+    /// with @p params, each epoch is prepared with its values, parameters and modifiers.
+    explicit Harness(Material material, bool handoffs = false, bool bySide = false,
+                     bool params = false);
 
     /// Compile, crossfade, prepare and swap. The plan handed to the executor is
     /// the crossfaded one, which is what the session publishes and therefore
@@ -247,6 +250,8 @@ class Harness {
     Factory factory_;
     engine::RuntimeStateStore store_;
     bool handoffs_ = false;
+    bool bySide_ = false;
+    bool params_ = false;
     engine::RenderContext context_{kSampleRate, kBlockSize, kNumChannels};
 
     /// Every plan the harness has published. The executor points into its plan

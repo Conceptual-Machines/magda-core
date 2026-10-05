@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -7,11 +9,14 @@
 #include "core/TrackInfo.hpp"
 #include "core/TrackManager.hpp"
 #include "exec/EngineSession.hpp"
+#include "exec/ModulationLiveness.hpp"
+#include "exec/PlanExecutor.hpp"
 #include "exec/PlanValues.hpp"
 #include "exec/RuntimeStateStore.hpp"
 #include "param/ModRuntime.hpp"
 #include "param/ParamTableCompiler.hpp"
 #include "plan/PlanCompiler.hpp"
+#include "plan/PlanHandoff.hpp"
 
 /**
  * @file test_mod_feeds.cpp
@@ -571,4 +576,82 @@ TEST_CASE("A modifier added as a follower listens at the far end", "[engine][mod
     CHECK(track->mods[1].tapPoint == ModTapPoint::PreFx);
 
     manager.clearAllTracks();
+}
+
+TEST_CASE("Live and ahead modulation render the same side by side as whole",
+          "[engine][mod][feeds][1898]") {
+    // Track 1's device is driven by an envelope its live keyboard triggers, so it runs at the
+    // callback; track 2's by a free-running LFO, so it may be rendered ahead. Rendering each
+    // block as its two sides has to give the hardware exactly what one pass does.
+    auto live = trackWithModifier(ModType::Envelope, LFOTriggerMode::MIDI);
+    live.recordArmed = true;
+    live.inputMonitor = InputMonitorMode::In;
+    live.midiInputDevice = "test";
+
+    auto ahead = makeTrack(2);
+    ahead.volume = 1.0f;
+    ahead.chain.fxChainElements.push_back(makeDeviceElement(makeDevice(8)));
+    ahead.mods = createDefaultMods(1);
+    ahead.mods[0].type = ModType::LFO;
+    ahead.mods[0].triggerMode = LFOTriggerMode::Free;
+    ahead.mods[0].links.push_back(ModLink{
+        ControlTarget::pluginParam(ChainNodePath::topLevelDevice(2, 8), 0), 1.0f, false, true});
+
+    const std::vector<TrackInfo> tracks{live, ahead};
+    const auto master = makeMaster();
+    const magda::engine::RenderContext context{kSampleRate, kBlock, 2};
+
+    auto compiled = compileRenderPlan(tracks, master);
+    magda::engine::PlanValues probe;
+    magda::engine::resolvePlanValues(compiled, tracks, master, probe);
+    magda::engine::promoteModulatedLiveness(compiled, *probe.params);
+    const auto plan = magda::engine::insertHandoffs(compiled);
+    magda::engine::PlanValues values;
+    magda::engine::resolvePlanValues(plan, tracks, master, values);
+    REQUIRE(values.params->sidesAgree);
+    REQUIRE(std::ranges::count(values.params->opSide, std::uint8_t{1}) > 0);
+    REQUIRE(std::ranges::count(values.params->opSide, std::uint8_t{0}) > 0);
+
+    struct Rig {
+        ScriptedMidi midi;
+        Factory factory{&midi};
+        magda::engine::RuntimeStateStore store{factory};
+        magda::engine::PlanExecutor executor;
+    };
+    Rig whole, split;
+    for (auto* rig : {&whole, &split}) {
+        const auto bindings = rig->store.realise(plan, context);
+        for (const auto& message : rig->executor.prepare(plan, bindings, context, nullptr, &values))
+            UNSCOPED_INFO("prepare: " << message);
+        REQUIRE(rig->executor.isPrepared());
+    }
+
+    juce::AudioBuffer<float> a(2, kBlock), b(2, kBlock);
+    std::vector<float> heard;
+    BlockInfo block;
+    block.numSamples = kBlock;
+    block.playing = true;
+    block.continuous = true;
+    block.sampleRate = kSampleRate;
+    for (int index = 0; index < 24; ++index) {
+        const double seconds = index * kBlock / kSampleRate;
+        block.seconds = {seconds, seconds + kBlock / kSampleRate};
+        block.beats = {seconds * 2.0, (seconds + kBlock / kSampleRate) * 2.0};
+        if (index == 5)
+            for (auto* rig : {&whole, &split})
+                rig->midi.pending.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+
+        whole.executor.process(values, block, a);
+        split.executor.processSide(0, values, block, b);
+        split.executor.processSide(1, values, block, b);
+        for (int channel = 0; channel < 2; ++channel)
+            REQUIRE(std::memcmp(a.getReadPointer(channel), b.getReadPointer(channel),
+                                kBlock * sizeof(float)) == 0);
+        heard.push_back(a.getSample(0, 0));
+    }
+
+    // The envelope opened on the note, and the LFO moved the rest.
+    CHECK(heard[6] != heard[4]);
+    CHECK(std::ranges::adjacent_find(heard.begin() + 7, heard.end(), std::not_equal_to<>{}) !=
+          heard.end());
 }

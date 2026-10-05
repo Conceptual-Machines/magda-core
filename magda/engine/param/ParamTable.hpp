@@ -252,6 +252,9 @@ struct ParamTable {
     std::vector<std::uint8_t> paramSide;
     std::vector<std::uint8_t> modifierSide;
     std::vector<std::uint8_t> opSide;
+    /// Whether every op reads the side it runs on, which promotion makes true. A table where
+    /// it is not cannot be rendered side by side.
+    bool sidesAgree = false;
 
     /// Distinct per compiled table, so a resolver can tell the table it resolved last from a
     /// new one at the same address. Zero for a table built by hand, which is resolved whole.

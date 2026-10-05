@@ -252,6 +252,10 @@ void assignSides(const RenderPlan& plan, ParamTable& table) {
     table.paramSide = std::move(sides.params);
     table.modifierSide = std::move(sides.modifiers);
     table.opSide = std::move(sides.ops);
+    table.sidesAgree = true;
+    for (std::size_t i = 0; i < plan.ops.size(); ++i)
+        table.sidesAgree =
+            table.sidesAgree && table.opSide[i] == (runsAtCallback(plan.ops[i]) ? 1 : 0);
 }
 
 }  // namespace magda::engine

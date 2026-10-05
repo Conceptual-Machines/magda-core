@@ -277,6 +277,23 @@ class PlanExecutor {
     void process(const PlanValues& values, const BlockInfo& block,
                  juce::AudioBuffer<float>& output);
 
+    /**
+     * @brief Render one side of one block (#1898): 0, what may be rendered ahead, or 1, what
+     *        the callback runs, into @p output.
+     *
+     * The same ops process() runs, in plan order, split where the plan's handoffs split them;
+     * the ahead side of a block renders before its callback side reads the handoffs, and the
+     * two together render what process() does. Each side resolves only its own parameters and
+     * advances only its own modifiers. Back to back on one block for now: a handoff holds one
+     * block, so giving the sides different blocks waits for its ring.
+     *
+     * A plan without its handoffs, or a table where an op reads the other side's values (an
+     * unpromoted plan), is not split: the callback side renders the whole block and the ahead
+     * side nothing.
+     */
+    void processSide(int side, const PlanValues& values, const BlockInfo& block,
+                     juce::AudioBuffer<float>& output);
+
     /** @brief Where one block's render starts, before any op has run. */
     struct BlockStart {
         /// The block as this plan will actually render it: what was asked
@@ -316,7 +333,7 @@ class PlanExecutor {
      * addresses, handing a device the same window of nothing it would have
      * had before any table was published.
      */
-    void resolveParameters(const PlanValues& values, const BlockInfo& block);
+    void resolveParameters(const PlanValues& values, const BlockInfo& block, int only = -1);
 
     /**
      * @brief Render the MIDI a block has before it has any audio (#2120).
@@ -344,7 +361,7 @@ class PlanExecutor {
      * skip re-running them, since a live input queue rendered twice is a
      * queue read twice.
      */
-    void renderMidiPrefix(const PlanValues& values, const BlockInfo& block);
+    void renderMidiPrefix(const PlanValues& values, const BlockInfo& block, int only = -1);
 
     /// Whether @p op was already rendered by @ref renderMidiPrefix this block.
     bool inMidiPrefix(OpId op) const {
@@ -789,6 +806,12 @@ class PlanExecutor {
     };
     std::array<ParamSide, 2> paramSides_;
 
+    /// Per op, the side that runs it: 1 when it runs at the callback (PlanHandoff.hpp).
+    std::vector<std::uint8_t> runSide_;
+
+    /// Whether the prepared plan carries every handoff its boundary needs.
+    bool guarded_ = false;
+
     /// Which side of this block's table an op, parameter or modifier is on. A table resolved
     /// without a plan has no sides and resolves whole on the first.
     static std::uint8_t sideIn(const std::vector<std::uint8_t>& sides, std::size_t index) {
@@ -896,7 +919,7 @@ class PlanExecutor {
      * table takes to be replaced would be a visible fault reporting an
      * invisible one.
      */
-    void publishValueTaps();
+    void publishValueTaps(int only);
 
     /// Spend the notes in @p midi on the modifiers listening to @p op's track.
     void feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi);

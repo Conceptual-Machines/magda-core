@@ -80,7 +80,7 @@ class ConstantAudio final : public EngineAudioSource {
     float value;
 };
 
-std::vector<float> render(const RenderPlan& plan) {
+std::vector<float> render(const RenderPlan& plan, bool bySide = false) {
     ConstantAudio clip(0.25f);
     PlanBindings bindings;
     bindings.clipAudio[1] = &clip;
@@ -96,7 +96,12 @@ std::vector<float> render(const RenderPlan& plan) {
     block.numSamples = kBlock;
     block.playing = true;
     block.continuous = true;
-    executor.process(values, block, out);
+    if (bySide) {
+        executor.processSide(0, values, block, out);
+        executor.processSide(1, values, block, out);
+    } else {
+        executor.process(values, block, out);
+    }
     return {out.getReadPointer(0), out.getReadPointer(0) + kBlock};
 }
 
@@ -226,4 +231,13 @@ TEST_CASE("No buffer is shared across the boundary", "[engine][plan][1898]") {
         INFO("slot " << slot.second);
         CHECK(owners.size() == 1);
     }
+}
+
+TEST_CASE("The two sides of a block render what the whole block does", "[engine][plan][1898]") {
+    const auto guarded = magda::engine::insertHandoffs(mixedPlan());
+    const auto whole = render(guarded);
+    const auto split = render(guarded, true);
+    REQUIRE(whole.size() == split.size());
+    CHECK(std::memcmp(whole.data(), split.data(), whole.size() * sizeof(float)) == 0);
+    CHECK(whole.front() == 0.25f);
 }

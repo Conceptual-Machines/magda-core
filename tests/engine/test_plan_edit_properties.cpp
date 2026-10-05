@@ -605,9 +605,9 @@ struct Run {
 };
 
 Run renderRun(const std::vector<Edit>& edits, const std::vector<char>& mask, Material material,
-              int blocksPerStep, bool handoffs = false) {
+              int blocksPerStep, bool handoffs = false, bool bySide = false, bool params = false) {
     Run run;
-    Harness harness(material, handoffs);
+    Harness harness(material, handoffs, bySide, params);
     auto project = edits::startingProject();
 
     const auto publish = [&](std::size_t step) {
@@ -1392,5 +1392,19 @@ TEST_CASE("Handoffs change nothing a sequence renders or fades", "[engine][plan]
             CHECK(guarded.steps[step].faded.unfaded == plain.steps[step].faded.unfaded);
             CHECK(magda::engine::handoffProblems(guarded.steps[step].faded.plan).empty());
         }
+    }
+}
+
+TEST_CASE("A sequence renders the same side by side as whole", "[engine][plan][1898][property]") {
+    for (int seed = 1; seed <= 8; ++seed) {
+        const auto edits = edits::generate(static_cast<std::uint64_t>(seed), kSequenceLength);
+        const std::vector<char> everything(edits.size(), 1);
+        const auto whole =
+            renderRun(edits, everything, Material::Ramp, kBlocksPerStep, true, false, true);
+        const auto sides =
+            renderRun(edits, everything, Material::Ramp, kBlocksPerStep, true, true, true);
+        REQUIRE(whole.failure.empty());
+        REQUIRE(sides.failure.empty());
+        CHECK(sides.captures == whole.captures);
     }
 }

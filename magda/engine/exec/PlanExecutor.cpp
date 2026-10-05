@@ -387,6 +387,8 @@ void PlanExecutor::reset() {
     modTaps_.clear();
     unboundTaps_.clear();
     paramWindowForOp_.clear();
+    runSide_.clear();
+    guarded_ = false;
     mixerParamForOp_.clear();
     for (auto& side : paramSides_) {
         side.scratch.clear();
@@ -456,6 +458,10 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     meterForOp_.assign(numOps, nullptr);
     midiTapForOp_.assign(numOps, nullptr);
     paramWindowForOp_.assign(numOps, ParamTable::DeviceWindow{});
+    runSide_.assign(numOps, 0);
+    for (std::size_t i = 0; i < numOps; ++i)
+        runSide_[i] = runsAtCallback(plan.ops[i]) ? 1 : 0;
+    guarded_ = handoffProblems(plan).empty();
     mixerParamForOp_.assign(numOps, OpMixerParams{});
     modSourceForOp_.assign(numOps, std::span<const int>{});
 
@@ -1302,7 +1308,7 @@ void PlanExecutor::settleBlockTable(const PlanValues& values) {
     blockTable_ = appliesValues(values) && fitsParameters(values) ? values.params.get() : nullptr;
 }
 
-void PlanExecutor::renderMidiPrefix(const PlanValues& values, const BlockInfo& block) {
+void PlanExecutor::renderMidiPrefix(const PlanValues& values, const BlockInfo& block, int only) {
     settleBlockTable(values);
 
     if (plan_ == nullptr)
@@ -1313,8 +1319,9 @@ void PlanExecutor::renderMidiPrefix(const PlanValues& values, const BlockInfo& b
     // reads is a clip, an input queue, or another op of this set.
     const bool applyValues = appliesValues(values);
     for (const auto id : midiPrefix_)
-        renderOp(id, applyValues ? values.ops[static_cast<std::size_t>(id)] : kUnityValue, block,
-                 silence_);
+        if (only < 0 || runSide_[static_cast<std::size_t>(id)] == only)
+            renderOp(id, applyValues ? values.ops[static_cast<std::size_t>(id)] : kUnityValue,
+                     block, silence_);
 
     if (blockTable_ == nullptr)
         return;
@@ -1324,7 +1331,8 @@ void PlanExecutor::renderMidiPrefix(const PlanValues& values, const BlockInfo& b
     // a note hears it in the block the note is in.
     for (std::size_t i = 0; i < plan_->ops.size(); ++i) {
         const auto& op = plan_->ops[i];
-        if (op.kind != OpKind::ModSource || modSourceForOp_[i].empty())
+        if (op.kind != OpKind::ModSource || modSourceForOp_[i].empty() ||
+            (only >= 0 && runSide_[i] != only))
             continue;
 
         const auto& midi = op.inputs[1];
@@ -1465,7 +1473,7 @@ void PlanExecutor::renderModSource(OpId id, const BlockInfo& block) {
     }
 }
 
-void PlanExecutor::resolveParameters(const PlanValues& values, const BlockInfo& block) {
+void PlanExecutor::resolveParameters(const PlanValues& values, const BlockInfo& block, int only) {
     settleBlockTable(values);
 
     // Two shapes have to match, and neither is something appliesValues can
@@ -1480,25 +1488,34 @@ void PlanExecutor::resolveParameters(const PlanValues& values, const BlockInfo& 
     // gets a window of nothing, which is what it had before a table was ever
     // published, and the session escalates a publish of this shape into a
     // structural one so the emptiness lasts a block rather than for ever.
+    const auto mine = [only](std::size_t side) {
+        return only < 0 || static_cast<int>(side) == only;
+    };
     if (blockTable_ == nullptr) {
-        for (auto& side : paramSides_)
-            side.values.beginBlock(block.numSamples);
+        for (std::size_t s = 0; s < paramSides_.size(); ++s)
+            if (mine(s))
+                paramSides_[s].values.beginBlock(block.numSamples);
         return;
     }
 
     // A table resolved without a plan has no sides, and resolves whole on the first.
     if (blockTable_->opSide.empty()) {
-        auto& side = paramSides_[0];
-        resolveParams(*blockTable_, side.values, side.scratch, side.segments, block, &side.mods);
+        if (mine(0)) {
+            auto& side = paramSides_[0];
+            resolveParams(*blockTable_, side.values, side.scratch, side.segments, block,
+                          &side.mods);
+        }
     } else {
         for (std::size_t s = 0; s < paramSides_.size(); ++s) {
+            if (!mine(s))
+                continue;
             auto& side = paramSides_[s];
             resolveParamSteps(*blockTable_, side.values, side.scratch, side.segments, block,
                               &side.mods, blockTable_->sideOrder[s],
                               blockTable_->sideMovingOrder[s]);
         }
     }
-    publishValueTaps();
+    publishValueTaps(only);
 }
 
 void PlanExecutor::clearUnboundValueTaps() {
@@ -1506,24 +1523,26 @@ void PlanExecutor::clearUnboundValueTaps() {
         tap->clear();
 }
 
-void PlanExecutor::publishValueTaps() {
+void PlanExecutor::publishValueTaps(int only) {
     // The position the parameter opens the block at, clamped, which is the same
     // answer a link reading it as a source gets. A knob draws where the value
     // is at the boundary for the same reason a device reads it there: what is
     // being drawn is what is being heard.
-    for (const auto& bound : paramTaps_)
-        bound.tap->write(
-            paramSides_[sideIn(blockTable_->paramSide, static_cast<std::size_t>(bound.index))]
-                .values.sourceValue(bound.index));
+    for (const auto& bound : paramTaps_) {
+        const auto side = sideIn(blockTable_->paramSide, static_cast<std::size_t>(bound.index));
+        if (only < 0 || side == only)
+            bound.tap->write(paramSides_[side].values.sourceValue(bound.index));
+    }
 
     // The modifier's own output rather than anything downstream of it, so a
     // modifier editor animates the shape the modifier made and not the depth
     // some link applied to it. The depth belongs to the link, and a parameter
     // tap is where its effect shows.
-    for (const auto& bound : modTaps_)
-        bound.tap->write(
-            paramSides_[sideIn(blockTable_->modifierSide, static_cast<std::size_t>(bound.index))]
-                .mods.value(bound.index));
+    for (const auto& bound : modTaps_) {
+        const auto side = sideIn(blockTable_->modifierSide, static_cast<std::size_t>(bound.index));
+        if (only < 0 || side == only)
+            bound.tap->write(paramSides_[side].mods.value(bound.index));
+    }
 }
 
 void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedBlock,
@@ -1557,6 +1576,37 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
 
         renderOp(static_cast<OpId>(i), start.applyValues ? values.ops[i] : kUnityValue, start.block,
                  output);
+    }
+}
+
+void PlanExecutor::processSide(int side, const PlanValues& values, const BlockInfo& requestedBlock,
+                               juce::AudioBuffer<float>& output) {
+    // What cannot be split renders whole, at the callback.
+    const auto* table = appliesValues(values) ? values.params.get() : nullptr;
+    if (!guarded_ || (table != nullptr && !table->opSide.empty() && !table->sidesAgree)) {
+        if (side == 1)
+            process(values, requestedBlock, output);
+        return;
+    }
+
+    const juce::ScopedNoDenormals noDenormals;
+
+    // The ahead side drives no hardware, so it has nothing to write into the callback's buffer.
+    auto& target = side == 1 ? output : silence_;
+    const auto start = beginBlock(values, requestedBlock, target);
+    if (!start.render) {
+        resolveParameters(values, start.block, side);
+        return;
+    }
+
+    renderMidiPrefix(values, start.block, side);
+    resolveParameters(values, start.block, side);
+
+    for (std::size_t i = 0; i < plan_->ops.size(); ++i) {
+        if (inMidiPrefix_[i] != 0 || runSide_[i] != side)
+            continue;
+        renderOp(static_cast<OpId>(i), start.applyValues ? values.ops[i] : kUnityValue, start.block,
+                 target);
     }
 }
 
