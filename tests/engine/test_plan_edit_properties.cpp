@@ -605,9 +605,9 @@ struct Run {
 };
 
 Run renderRun(const std::vector<Edit>& edits, const std::vector<char>& mask, Material material,
-              int blocksPerStep) {
+              int blocksPerStep, bool handoffs = false) {
     Run run;
-    Harness harness(material);
+    Harness harness(material, handoffs);
     auto project = edits::startingProject();
 
     const auto publish = [&](std::size_t step) {
@@ -1372,4 +1372,25 @@ TEST_CASE("Dropping an edit a track can hear does change what it renders",
     }
 
     CHECK(differed > 0);
+}
+
+TEST_CASE("Handoffs change nothing a sequence renders or fades", "[engine][plan][1898][property]") {
+    // Until something renders ahead behind them, a handoff is a pass-through; the crossfade pass
+    // has to see through an old one, or every edge it guards would read as moved.
+    for (int seed = 1; seed <= 8; ++seed) {
+        const auto edits = edits::generate(static_cast<std::uint64_t>(seed), kSequenceLength);
+        const std::vector<char> everything(edits.size(), 1);
+        const auto plain = renderRun(edits, everything, Material::Ramp, kBlocksPerStep);
+        const auto guarded = renderRun(edits, everything, Material::Ramp, kBlocksPerStep, true);
+        REQUIRE(plain.failure.empty());
+        REQUIRE(guarded.failure.empty());
+
+        CHECK(guarded.captures == plain.captures);
+        REQUIRE(guarded.steps.size() == plain.steps.size());
+        for (std::size_t step = 0; step < plain.steps.size(); ++step) {
+            CHECK(guarded.steps[step].faded.inserted == plain.steps[step].faded.inserted);
+            CHECK(guarded.steps[step].faded.unfaded == plain.steps[step].faded.unfaded);
+            CHECK(magda::engine::handoffProblems(guarded.steps[step].faded.plan).empty());
+        }
+    }
 }

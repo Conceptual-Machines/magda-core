@@ -1025,6 +1025,8 @@ ChainSignal Compiler::emitInsert(const DeviceInfo& device, const ChainSite& site
 
     key.role = OpRole::InsertReturn;
     const auto returnOp = addOp(OpKind::InsertReturn, key, {}, std::move(outputs));
+    // What comes back is the outside world's, so it cannot be rendered ahead of the hardware.
+    plan_.ops[static_cast<std::size_t>(returnOp)].liveness = LivenessDomain::Live;
 
     // What comes back replaces what went out, for the end it came back on. The
     // other end of the chain is untouched: an external instrument is handed the

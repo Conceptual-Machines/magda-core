@@ -169,7 +169,8 @@ std::unique_ptr<engine::LevelTap> Factory::createMeter(const engine::OpKey& key)
 
 // --- the harness -------------------------------------------------------------
 
-Harness::Harness(Material material) : factory_(ledger_, material), store_(factory_) {
+Harness::Harness(Material material, bool handoffs)
+    : factory_(ledger_, material), store_(factory_), handoffs_(handoffs) {
     output_.setSize(kNumChannels, kBlockSize);
     output_.clear();
 }
@@ -204,6 +205,8 @@ Published Harness::publish(const Project& project) {
         previousPlan == nullptr
             ? engine::CrossfadedPlan{published.compiled, 0, 0}
             : engine::insertCrossfades(*previousPlan, published.compiled, stillFading);
+    if (handoffs_)
+        published.faded.plan = engine::insertHandoffs(published.faded.plan);
     published.diff = previousPlan == nullptr
                          ? engine::PlanDiff{}
                          : engine::diffPlans(*previousPlan, published.faded.plan);

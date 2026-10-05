@@ -2148,6 +2148,24 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             break;
         }
 
+        case OpKind::Handoff: {
+            if (!op.inputs[0].valid())
+                break;
+            if (op.outputs.front().kind == SignalKind::Audio) {
+                if (!writesInPlace(i))
+                    audioOut(id, 0, numSamples).copyFrom(audioIn(op.inputs[0], numSamples));
+                break;
+            }
+            auto& out = midiOut(id, 0);
+            out.clear();
+            out.addEvents(midiIn(op.inputs[0]), 0, numSamples, 0);
+            auto& fractions = fractionsOut(id, 0);
+            fractions.clear();
+            fractions.addFrom(fractionsIn(op.inputs[0]));
+            setMidiOutPanic(id, 0, midiInPanic(op.inputs[0]));
+            break;
+        }
+
         case OpKind::Output: {
             if (value.silent || !op.inputs[0].valid())
                 break;

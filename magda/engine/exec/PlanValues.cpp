@@ -534,6 +534,7 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         case OpRole::FaderInputDelay:
         case OpRole::SubtractInputDelay:
         case OpRole::EdgeCrossfade:
+        case OpRole::Handoff:
             break;
     }
 }
@@ -584,6 +585,7 @@ void resolveRequiredOps(const RenderPlan& plan, PlanValues& values) {
             case OpKind::SendTap:
             case OpKind::MixAudio:
             case OpKind::Subtract:
+            case OpKind::Handoff:
                 return true;
             case OpKind::Fader:
                 return std::ranges::none_of(op.outputs, [](const PortDesc& output) {

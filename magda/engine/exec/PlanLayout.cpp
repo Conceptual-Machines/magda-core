@@ -69,6 +69,9 @@ std::optional<std::size_t> inPlaceInputOf(const PlanOp& op) {
         // The dry side it subtracts is a different port, and one op reading a
         // port is what lets that port be written over at all.
         case OpKind::Subtract:
+        // A handoff passes its input on unchanged, so sharing makes it free until a ring stands
+        // between the two.
+        case OpKind::Handoff:
             return op.inputs.empty() || !op.inputs.front().valid() ? std::nullopt
                                                                    : std::optional<std::size_t>(0);
 
