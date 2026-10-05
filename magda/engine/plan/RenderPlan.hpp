@@ -441,6 +441,8 @@ struct PlanOp {
     OpKind kind = OpKind::MixAudio;
     OpKey key;
     LivenessDomain liveness = LivenessDomain::Deterministic;
+    /// Live because a modulation component it reads is (#1898): a live source with no plan edge.
+    bool liveByModulation = false;
     std::vector<PortRef> inputs;
     std::vector<PortDesc> outputs;
 

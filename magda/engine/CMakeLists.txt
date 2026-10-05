@@ -65,6 +65,7 @@ add_library(magda_engine STATIC
     exec/PlanLayout.cpp
     exec/PlanLayoutDump.cpp
     exec/PlanValues.cpp
+    exec/ModulationLiveness.cpp
     exec/RuntimeStateStore.cpp
     exec/EngineSession.cpp
     exec/OfflineRender.cpp

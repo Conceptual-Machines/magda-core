@@ -59,6 +59,7 @@
 #include "clip/ClipSnapshotCompiler.hpp"
 #include "clip/ClipVoicePool.hpp"
 #include "exec/EngineSession.hpp"
+#include "exec/ModulationLiveness.hpp"
 #include "exec/PlanValues.hpp"
 #include "exec/RenderThreadPool.hpp"
 #include "io/LiveInput.hpp"
@@ -692,8 +693,15 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                                           const TrackInfo& master) const {
         engine::CompileOptions options{.auditionMidi = true};
         options.hardwareOutputs = hardwareOutputs_;
-        return std::make_shared<const engine::RenderPlan>(
-            engine::insertHandoffs(engine::compileRenderPlan(tracks, master, options)));
+        auto plan = engine::compileRenderPlan(tracks, master, options);
+
+        // What modulation makes live is a question about the parameter table, which is
+        // resolved against a plan; this one is thrown away once it has answered (#1898).
+        engine::PlanValues values;
+        resolveValues(plan, TrackManager::getInstance().getTracks(), master, values);
+        if (values.params != nullptr)
+            engine::promoteModulatedLiveness(plan, *values.params);
+        return std::make_shared<const engine::RenderPlan>(engine::insertHandoffs(plan));
     }
 
     bool publishPlan(std::shared_ptr<const engine::RenderPlan> plan = nullptr) {
@@ -819,6 +827,16 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         engine::PlanValues values;
         report("values",
                resolveValues(*livePlan_, TrackManager::getInstance().getTracks(), *master, values));
+
+        // A link edit is a values publish until it reaches something live: then it moves the
+        // boundary, which only a plan can carry (#1898).
+        if (values.params != nullptr) {
+            auto promoted = *livePlan_;
+            if (engine::promoteModulatedLiveness(promoted, *values.params)) {
+                publishPlan(compilePlan(tracks, *master));
+                return;
+            }
+        }
         report("values", session_->publishValues(std::move(values)).messages);
 
         // A monitor or route change arrives as a track property, off the same
