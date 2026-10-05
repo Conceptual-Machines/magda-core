@@ -416,6 +416,7 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES engine/test_stretch_standby.cpp)
     # The one-block carry a cut routing loop is rejoined through (#2612).
     list(APPEND TEST_SOURCES engine/test_plan_feedback_carry.cpp)
+    list(APPEND TEST_SOURCES engine/test_plan_handoff.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_pad_rack.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_insert.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_diff.cpp)

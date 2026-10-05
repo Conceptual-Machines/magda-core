@@ -16,6 +16,7 @@
 #include "exec/RuntimeStateStore.hpp"
 #include "plan/PlanCrossfade.hpp"
 #include "plan/PlanDiff.hpp"
+#include "plan/PlanHandoff.hpp"
 
 /**
  * @file PlanEditHarness.hpp
@@ -212,7 +213,8 @@ struct Published {
  */
 class Harness {
   public:
-    explicit Harness(Material material);
+    /// With @p handoffs, each plan gets its handoffs after its crossfades, as the host's does.
+    explicit Harness(Material material, bool handoffs = false);
 
     /// Compile, crossfade, prepare and swap. The plan handed to the executor is
     /// the crossfaded one, which is what the session publishes and therefore
@@ -244,6 +246,7 @@ class Harness {
     Ledger ledger_;
     Factory factory_;
     engine::RuntimeStateStore store_;
+    bool handoffs_ = false;
     engine::RenderContext context_{kSampleRate, kBlockSize, kNumChannels};
 
     /// Every plan the harness has published. The executor points into its plan

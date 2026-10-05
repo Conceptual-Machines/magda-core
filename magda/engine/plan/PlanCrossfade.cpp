@@ -246,7 +246,12 @@ bool Pass::retain(std::size_t consumer, std::size_t slot, const std::vector<OpId
 
 bool Pass::visitSlot(std::size_t consumer, const PlanOp& before, std::size_t slot,
                      CrossfadedPlan& result) {
-    const auto beforeRef = before.inputs[slot];
+    // Handoffs are inserted after this pass, so the plan it fades into has none yet; the old
+    // edge is the port its handoff passed on.
+    auto beforeRef = before.inputs[slot];
+    if (beforeRef.valid() &&
+        old_.ops[static_cast<std::size_t>(beforeRef.op)].kind == OpKind::Handoff)
+        beforeRef = old_.ops[static_cast<std::size_t>(beforeRef.op)].inputs.front();
     const auto afterRef = now_.ops[consumer].inputs[slot];
 
     bool whole = true;

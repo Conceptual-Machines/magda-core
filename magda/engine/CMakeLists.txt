@@ -47,6 +47,7 @@ add_library(magda_engine STATIC
     plan/PlanCompiler.cpp
     plan/PlanDiff.cpp
     plan/PlanCrossfade.cpp
+    plan/PlanHandoff.cpp
     plan/PlanDump.cpp
     plan/PlanDiffDump.cpp
     plan/RenderPlan.hpp

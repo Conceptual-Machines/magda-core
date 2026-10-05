@@ -67,6 +67,7 @@
 #include "io/RecordThread.hpp"
 #include "io/TakeRecorder.hpp"
 #include "plan/PlanCompiler.hpp"
+#include "plan/PlanHandoff.hpp"
 #include "trace/PlaybackTrace.hpp"
 
 namespace magda::daw::engine_host {
@@ -692,7 +693,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         engine::CompileOptions options{.auditionMidi = true};
         options.hardwareOutputs = hardwareOutputs_;
         return std::make_shared<const engine::RenderPlan>(
-            engine::compileRenderPlan(tracks, master, options));
+            engine::insertHandoffs(engine::compileRenderPlan(tracks, master, options)));
     }
 
     bool publishPlan(std::shared_ptr<const engine::RenderPlan> plan = nullptr) {

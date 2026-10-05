@@ -160,6 +160,11 @@ enum class OpKind : std::uint8_t {
     /// so.
     FeedbackSend,
     FeedbackReturn,  ///< last block's carry, read a block before the send fills it
+
+    /// A deterministic port as the callback reads it: where an op that runs at the callback
+    /// (live, or driving hardware) takes a signal that may be rendered ahead (#1898). Passes
+    /// its input through; deterministic itself, so it renders with its producer.
+    Handoff,
 };
 
 /**
@@ -236,6 +241,9 @@ enum class OpRole : std::uint8_t {
     // other; so would two send taps on one track, which differ by nothing but
     // the index of their slot.
     EdgeCrossfade,  ///< ramps one input slot of the op it is keyed to
+
+    /// A handoff, keyed at its producer's location; OpKey::index orders the handoffs there.
+    Handoff,
 };
 
 // The four things that identify a fade, packed into OpKey::index, low bits

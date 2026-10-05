@@ -52,6 +52,8 @@ int arityOf(OpKind kind) {
             return 2;
         case OpKind::FeedbackReturn:
             return 0;  // last block's carry, which nothing in this block produced
+        case OpKind::Handoff:
+            return 1;
     }
     return -1;
 }
@@ -102,6 +104,8 @@ const char* toString(OpKind kind) {
             return "FeedbackSend";
         case OpKind::FeedbackReturn:
             return "FeedbackReturn";
+        case OpKind::Handoff:
+            return "Handoff";
     }
     return "?";
 }
@@ -188,6 +192,8 @@ const char* toString(OpRole role) {
             return "subtractInputDelay";
         case OpRole::EdgeCrossfade:
             return "edgeCrossfade";
+        case OpRole::Handoff:
+            return "handoff";
     }
     return "?";
 }
@@ -457,6 +463,13 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
             }
         }
 
+        if (op.kind == OpKind::Handoff &&
+            (op.key.role != OpRole::Handoff || op.outputs.size() != 1 ||
+             op.liveness != LivenessDomain::Deterministic))
+            problems.push_back(label +
+                               "a handoff is deterministic, carries the handoff role and has one "
+                               "port");
+
         const auto arity = arityOf(op.kind);
         if (arity >= 0 && static_cast<int>(op.inputs.size()) != arity)
             problems.push_back(label + "expected " + std::to_string(arity) + " input slots, has " +
@@ -483,15 +496,15 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
                                    std::to_string(producer.outputs.size()) + " ports");
                 continue;
             }
-            // A delay carries whatever reaches it, so its own output port is
-            // what its input has to agree with.
+            // A delay or a handoff carries whatever reaches it, so its own
+            // output port is what its input has to agree with.
             const bool midiSlot =
                 op.kind == OpKind::MergeMidi || op.kind == OpKind::MidiNoteGate ||
                 ((op.kind == OpKind::Device || op.kind == OpKind::Fader ||
                   op.kind == OpKind::ModSource || op.kind == OpKind::InsertSend) &&
                  slot == 1);
             const auto expected =
-                op.kind == OpKind::Delay
+                op.kind == OpKind::Delay || op.kind == OpKind::Handoff
                     ? (op.outputs.empty() ? SignalKind::Audio : op.outputs.front().kind)
                     : (midiSlot ? SignalKind::Midi : SignalKind::Audio);
             const auto actual = producer.outputs[static_cast<std::size_t>(input.port)];
@@ -601,7 +614,8 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
         // which is emitted later and cannot be reached by the walk above.
         const auto carriesLive = op.kind == OpKind::FeedbackReturn && liveCarries.contains(op.key);
 
-        const auto isLiveSource = op.kind == OpKind::AudioInput || op.kind == OpKind::MidiInput;
+        const auto isLiveSource = op.kind == OpKind::AudioInput || op.kind == OpKind::MidiInput ||
+                                  op.kind == OpKind::InsertReturn;
         if (op.liveness == LivenessDomain::Live && !isLiveSource && !readsLive && !carriesLive)
             problems.push_back(label + "is live but reads nothing live and is not an input source");
     }
