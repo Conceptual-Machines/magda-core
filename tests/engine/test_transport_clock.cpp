@@ -923,3 +923,50 @@ TEST_CASE("A carried locate the clock already took is not taken again",
     advance(clock, again, 512);
     CHECK(clock.positionBeats() == approx(8.0 + 512.0 / kSamplesPerBeat));
 }
+
+TEST_CASE("A copy of the clock's core predicts its blocks and publishes nothing",
+          "[engine][transport][clock][1898]") {
+    // The render-ahead runs a copy forward over the callbacks to come (#1898): what it predicts
+    // has to be what the clock then does, and running it must not move the playhead.
+    TransportClock clock;
+    auto snapshot = playing(0.0);
+    snapshot.loop = {true, 0.0, 1.0};
+    advance(clock, snapshot, 512);
+
+    auto ahead = clock.core();
+    std::vector<magda::engine::ClockCore::Segment> predicted;
+    for (int callback = 0; callback < 100; ++callback)
+        for (const auto& segment : ahead.advance(snapshot, kSampleRate, 512))
+            predicted.push_back(segment);
+    CHECK(clock.positionBeats() == approx(clock.core().positionBeat()));
+    CHECK(ahead.positionBeat() != approx(clock.positionBeats()));
+
+    std::vector<TransportClock::Segment> actual;
+    for (int callback = 0; callback < 100; ++callback)
+        for (const auto& segment : advance(clock, snapshot, 512).segments)
+            actual.push_back(segment);
+
+    REQUIRE(actual.size() == predicted.size());
+    CHECK(actual.size() > 100);  // the loop wrapped inside callbacks
+    for (std::size_t i = 0; i < actual.size(); ++i) {
+        const auto& a = actual[i];
+        const auto& p = predicted[i];
+        CHECK(a.block.numSamples == p.block.numSamples);
+        CHECK(a.block.playing == p.block.playing);
+        CHECK(a.block.started == p.block.started);
+        CHECK(a.block.continuous == p.block.continuous);
+        CHECK(a.block.beats.start == p.block.beats.start);
+        CHECK(a.block.beats.end == p.block.beats.end);
+        CHECK(a.block.seconds.start == p.block.seconds.start);
+        CHECK(a.block.seconds.end == p.block.seconds.end);
+        CHECK(a.block.monotonicBeats.start == p.block.monotonicBeats.start);
+        CHECK(a.block.monotonicBeats.end == p.block.monotonicBeats.end);
+        CHECK(a.block.monotonicSeconds.end == p.block.monotonicSeconds.end);
+        CHECK(a.block.monotonicSamples.start == p.block.monotonicSamples.start);
+        CHECK(a.block.monotonicSamples.end == p.block.monotonicSamples.end);
+        CHECK(a.startSample == p.startSample);
+        CHECK(a.countingIn == p.countingIn);
+        CHECK(a.insidePunch == p.insidePunch);
+    }
+    CHECK(clock.positionBeats() == approx(ahead.positionBeat()));
+}
