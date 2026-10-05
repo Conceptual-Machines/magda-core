@@ -89,13 +89,14 @@
     {
       "name": "delay-sync-pingpong",
       "device": "magda_delay",
-      "frames": 24000,
+      "frames": 72000,
       "input": "sine",
       "inputFrequency": 220,
       "parameters": {
         "magda_delay_sync": 1.0,
         "magda_delay_cross": 0.8
-      }
+      },
+      "transport": { "bpm": 90 }
     },
     {
       "name": "filter-default",
