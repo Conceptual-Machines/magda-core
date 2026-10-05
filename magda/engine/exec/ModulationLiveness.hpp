@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 
 #include "param/ParamTable.hpp"
@@ -30,5 +31,19 @@ std::vector<ParamId> paramsReadBy(const PlanOp& op, const ParamTable& table);
  * behind it. Feedback carries are settled with the rest.
  */
 bool promoteModulatedLiveness(RenderPlan& plan, const ParamTable& table);
+
+/// Which side resolves each parameter and advances each modifier: 1 for the callback, 0 for
+/// what may be rendered ahead. A component is wholly one side once promotion has settled it.
+struct ModulationSides {
+    std::vector<std::uint8_t> params;
+    std::vector<std::uint8_t> modifiers;
+    /// Per op, the side whose values it reads: its component's, or for an op reading no
+    /// parameters whether it runs at the callback. The two agree on a promoted plan.
+    std::vector<std::uint8_t> ops;
+};
+ModulationSides modulationSides(const RenderPlan& plan, const ParamTable& table);
+
+/// Fill @p table's side fields against @p plan. Off the audio thread, with the table.
+void assignSides(const RenderPlan& plan, ParamTable& table);
 
 }  // namespace magda::engine

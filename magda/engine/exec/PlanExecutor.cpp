@@ -9,6 +9,8 @@
 #include <utility>
 
 #include "exec/BlockProfile.hpp"
+#include "exec/ModulationLiveness.hpp"
+#include "plan/PlanHandoff.hpp"
 
 namespace magda::engine {
 namespace {
@@ -386,10 +388,12 @@ void PlanExecutor::reset() {
     unboundTaps_.clear();
     paramWindowForOp_.clear();
     mixerParamForOp_.clear();
-    paramScratch_.clear();
-    paramSegments_.clear();
-    paramValues_.prepare(0);
-    mods_.reset();
+    for (auto& side : paramSides_) {
+        side.scratch.clear();
+        side.segments.clear();
+        side.values.prepare(0);
+        side.mods.reset();
+    }
     paramLayout_ = 0;
 }
 
@@ -535,17 +539,22 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     // what every render did before there was a table at all.
     if (params != nullptr) {
         paramLayout_ = params->layoutFingerprint;
-        paramValues_.prepare(params->size());
-        paramScratch_.assign(static_cast<std::size_t>(std::max(params->maxLinksPerParam, 0)),
-                             ModContribution{});
-        paramSegments_.assign(static_cast<std::size_t>(paramValues_.segmentCapacity()),
-                              ParamSegment{});
+        for (auto& side : paramSides_) {
+            side.values.prepare(params->size());
+            side.scratch.assign(static_cast<std::size_t>(std::max(params->maxLinksPerParam, 0)),
+                                ModContribution{});
+            side.segments.assign(static_cast<std::size_t>(side.values.segmentCapacity()),
+                                 ParamSegment{});
+        }
 
         // The modifier engines, and whatever the epoch being replaced has
         // already turned. Shared rather than copied: the audio thread is still
         // inside that executor until the swap, so an LFO carried across one
-        // goes on from where it is rather than from where it was read.
-        mods_.prepare(*params, context, previous == nullptr ? nullptr : &previous->mods_);
+        // goes on from where it is rather than from where it was read. The
+        // callback's runtime takes the same states from the ahead one's.
+        paramSides_[0].mods.prepare(*params, context,
+                                    previous == nullptr ? nullptr : &previous->paramSides_[0].mods);
+        paramSides_[1].mods.prepare(*params, context, &paramSides_[0].mods);
 
         for (std::size_t i = 0; i < numOps; ++i) {
             const auto& op = plan.ops[i];
@@ -584,7 +593,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 // here. Both compilers worked the routing out from the same
                 // rule (ModSources.hpp), so a tap with nothing on the far end
                 // is the two having drifted rather than a project that has one.
-                modSourceForOp_[i] = mods_.listenersOf(op.key.trackId);
+                modSourceForOp_[i] = paramSides_[0].mods.listenersOf(op.key.trackId);
             }
         }
     }
@@ -617,7 +626,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 continue;
             }
 
-            if (const auto modifier = mods_.indexOf(key); modifier >= 0) {
+            if (const auto modifier = paramSides_[0].mods.indexOf(key); modifier >= 0) {
                 modTaps_.push_back(BoundValueTap{modifier, tap});
                 continue;
             }
@@ -1325,6 +1334,7 @@ void PlanExecutor::renderMidiPrefix(const PlanValues& values, const BlockInfo& b
 }
 
 void PlanExecutor::feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi) {
+    auto& mods = sideOfOp(op).mods;
     if (midi.isEmpty())
         return;
 
@@ -1335,16 +1345,16 @@ void PlanExecutor::feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi
     const bool anyNoteOn = std::ranges::any_of(midi, isNoteOn);
 
     for (const auto index : modSourceForOp_[op]) {
-        if (mods_.listensFor(index, *blockTable_) != ModListen::Midi)
+        if (mods.listensFor(index, *blockTable_) != ModListen::Midi)
             continue;
 
         // A modifier living somewhere else is following this track rather than
         // playing it. The note-counting path refuses it by design, so a trigger
         // is the only door it has, and there is no note-off half: the gate is
         // left alone so the modifier runs its full cycle after a hit.
-        if (mods_.drivenFromElsewhere(index, *blockTable_)) {
+        if (mods.drivenFromElsewhere(index, *blockTable_)) {
             if (anyNoteOn)
-                mods_.trigger(index, *blockTable_);
+                mods.trigger(index, *blockTable_);
             continue;
         }
 
@@ -1354,11 +1364,11 @@ void PlanExecutor::feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi
             const auto message = metadata.getMessage();
 
             if (message.isNoteOn())
-                mods_.noteOn(index, *blockTable_);
+                mods.noteOn(index, *blockTable_);
             else if (message.isNoteOff(true))
-                mods_.noteOff(index, *blockTable_);
+                mods.noteOff(index, *blockTable_);
             else if (message.isAllNotesOff() || message.isAllSoundOff())
-                mods_.allNotesOff(index, *blockTable_);
+                mods.allNotesOff(index, *blockTable_);
         }
     }
 }
@@ -1435,7 +1445,8 @@ void PlanExecutor::renderModSource(OpId id, const BlockInfo& block) {
         op.key.index == 0 ? magda::ModTapPoint::PreFx : magda::ModTapPoint::PostFader;
 
     for (const auto index : modSourceForOp_[i]) {
-        if (mods_.listensFor(index, *blockTable_) != ModListen::Audio)
+        if (sideOfOp(static_cast<std::size_t>(id)).mods.listensFor(index, *blockTable_) !=
+            ModListen::Audio)
             continue;
         if (blockTable_->modifiers[static_cast<std::size_t>(index)].tap != point)
             continue;
@@ -1443,14 +1454,14 @@ void PlanExecutor::renderModSource(OpId id, const BlockInfo& block) {
         // A follower wants the samples; a trigger wants the edge. Both listen
         // to the same track and neither is the other's fallback.
         if (blockTable_->modifiers[static_cast<std::size_t>(index)].kind == ModKind::Follower) {
-            mods_.detectSource(index, *blockTable_, mono);
+            sideOfOp(static_cast<std::size_t>(id)).mods.detectSource(index, *blockTable_, mono);
             continue;
         }
 
         if (rising)
-            mods_.trigger(index, *blockTable_);
+            sideOfOp(static_cast<std::size_t>(id)).mods.trigger(index, *blockTable_);
         else if (falling)
-            mods_.setGated(index, *blockTable_, true);
+            sideOfOp(static_cast<std::size_t>(id)).mods.setGated(index, *blockTable_, true);
     }
 }
 
@@ -1470,11 +1481,23 @@ void PlanExecutor::resolveParameters(const PlanValues& values, const BlockInfo& 
     // published, and the session escalates a publish of this shape into a
     // structural one so the emptiness lasts a block rather than for ever.
     if (blockTable_ == nullptr) {
-        paramValues_.beginBlock(block.numSamples);
+        for (auto& side : paramSides_)
+            side.values.beginBlock(block.numSamples);
         return;
     }
 
-    resolveParams(*blockTable_, paramValues_, paramScratch_, paramSegments_, block, &mods_);
+    // A table resolved without a plan has no sides, and resolves whole on the first.
+    if (blockTable_->opSide.empty()) {
+        auto& side = paramSides_[0];
+        resolveParams(*blockTable_, side.values, side.scratch, side.segments, block, &side.mods);
+    } else {
+        for (std::size_t s = 0; s < paramSides_.size(); ++s) {
+            auto& side = paramSides_[s];
+            resolveParamSteps(*blockTable_, side.values, side.scratch, side.segments, block,
+                              &side.mods, blockTable_->sideOrder[s],
+                              blockTable_->sideMovingOrder[s]);
+        }
+    }
     publishValueTaps();
 }
 
@@ -1489,14 +1512,18 @@ void PlanExecutor::publishValueTaps() {
     // is at the boundary for the same reason a device reads it there: what is
     // being drawn is what is being heard.
     for (const auto& bound : paramTaps_)
-        bound.tap->write(paramValues_.sourceValue(bound.index));
+        bound.tap->write(
+            paramSides_[sideIn(blockTable_->paramSide, static_cast<std::size_t>(bound.index))]
+                .values.sourceValue(bound.index));
 
     // The modifier's own output rather than anything downstream of it, so a
     // modifier editor animates the shape the modifier made and not the depth
     // some link applied to it. The depth belongs to the link, and a parameter
     // tap is where its effect shows.
     for (const auto& bound : modTaps_)
-        bound.tap->write(mods_.value(bound.index));
+        bound.tap->write(
+            paramSides_[sideIn(blockTable_->modifierSide, static_cast<std::size_t>(bound.index))]
+                .mods.value(bound.index));
 }
 
 void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedBlock,
@@ -1538,7 +1565,8 @@ OpValue PlanExecutor::mixerValueFor(std::size_t op, const OpValue& published) co
     if (params.gain == INVALID_PARAM_ID)
         return published;
 
-    const auto level = paramValues_[params.gain];
+    const auto& values = sideOfOp(op).values;
+    const auto level = values[params.gain];
     if (level.empty())
         return published;
 
@@ -1552,7 +1580,7 @@ OpValue PlanExecutor::mixerValueFor(std::size_t op, const OpValue& published) co
     // A fader carries both or neither (ParamTableCompiler::allocateMixer), so
     // a pan that is missing here is a send, which has none. A send's level is
     // one number and reaches both channels alike.
-    const auto pan = params.pan == INVALID_PARAM_ID ? ParamValues{} : paramValues_[params.pan];
+    const auto pan = params.pan == INVALID_PARAM_ID ? ParamValues{} : values[params.pan];
 
     if (pan.empty()) {
         value.gainLeft = gain;
@@ -1912,7 +1940,7 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                                     .midiOutFractions =
                                         producesMidi ? &fractionsOut(id, 1) : nullptr,
                                     .sidechain = {},
-                                    .params = deviceParams(window),
+                                    .params = deviceParams(i, window),
                                     .block = block};
             if (op.inputs[2].valid())
                 deviceBlock.sidechain = audioIn(op.inputs[2], numSamples);

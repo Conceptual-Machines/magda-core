@@ -126,10 +126,21 @@ std::vector<ParamId> paramsReadBy(const PlanOp& op, const ParamTable& table) {
     return params;
 }
 
-bool promoteModulatedLiveness(RenderPlan& plan, const ParamTable& table) {
-    const auto numParams = table.size();
-    const auto numModifiers = static_cast<int>(table.modifiers.size());
-    Components components(numParams + numModifiers);
+namespace {
+
+/// Parameters and modifiers joined by what links them, and each op's nodes in it.
+struct ModulationGraph {
+    int numParams = 0;
+    int numModifiers = 0;
+    Components components{0};
+    std::vector<std::vector<int>> nodesOf;
+};
+
+ModulationGraph graphOf(const RenderPlan& plan, const ParamTable& table) {
+    ModulationGraph graph;
+    const auto numParams = graph.numParams = table.size();
+    const auto numModifiers = graph.numModifiers = static_cast<int>(table.modifiers.size());
+    auto& components = graph.components = Components(numParams + numModifiers);
 
     for (ParamId param = 0; param < numParams; ++param)
         for (const auto& link : table.linksFor(param))
@@ -143,7 +154,8 @@ bool promoteModulatedLiveness(RenderPlan& plan, const ParamTable& table) {
 
     // An op's nodes: the parameters it reads, or for a tap the modifiers it feeds, which share
     // its trigger detector and so its side.
-    std::vector<std::vector<int>> nodesOf(plan.ops.size());
+    auto& nodesOf = graph.nodesOf;
+    nodesOf.resize(plan.ops.size());
     for (std::size_t i = 0; i < plan.ops.size(); ++i) {
         nodesOf[i] = paramsReadBy(plan.ops[i], table);
         for (const auto listener : listenersOf(plan.ops[i], table))
@@ -151,6 +163,25 @@ bool promoteModulatedLiveness(RenderPlan& plan, const ParamTable& table) {
         for (std::size_t k = 1; k < nodesOf[i].size(); ++k)
             components.join(nodesOf[i][0], nodesOf[i][k]);
     }
+    return graph;
+}
+
+/// Per component root: whether an op the callback runs touches it.
+std::vector<char> callbackComponents(const RenderPlan& plan, ModulationGraph& graph) {
+    std::vector<char> live(static_cast<std::size_t>(graph.numParams + graph.numModifiers), 0);
+    for (std::size_t i = 0; i < plan.ops.size(); ++i)
+        if (runsAtCallback(plan.ops[i]))
+            for (const auto node : graph.nodesOf[i])
+                live[static_cast<std::size_t>(graph.components.find(node))] = 1;
+    return live;
+}
+
+}  // namespace
+
+bool promoteModulatedLiveness(RenderPlan& plan, const ParamTable& table) {
+    auto graph = graphOf(plan, table);
+    auto& components = graph.components;
+    const auto& nodesOf = graph.nodesOf;
 
     bool changed = false;
     for (bool moved = true; moved;) {
@@ -158,11 +189,7 @@ bool promoteModulatedLiveness(RenderPlan& plan, const ParamTable& table) {
 
         // What makes a component live: anything in it touched by an op the callback runs, a
         // live tap feeding its modifiers included.
-        std::vector<char> live(static_cast<std::size_t>(numParams + numModifiers), 0);
-        for (std::size_t i = 0; i < plan.ops.size(); ++i)
-            if (runsAtCallback(plan.ops[i]))
-                for (const auto node : nodesOf[i])
-                    live[static_cast<std::size_t>(components.find(node))] = 1;
+        const auto live = callbackComponents(plan, graph);
 
         for (std::size_t i = 0; i < plan.ops.size(); ++i) {
             auto& op = plan.ops[i];
@@ -180,6 +207,51 @@ bool promoteModulatedLiveness(RenderPlan& plan, const ParamTable& table) {
         changed = changed || moved;
     }
     return changed;
+}
+
+}  // namespace magda::engine
+
+namespace magda::engine {
+
+ModulationSides modulationSides(const RenderPlan& plan, const ParamTable& table) {
+    auto graph = graphOf(plan, table);
+    const auto live = callbackComponents(plan, graph);
+    ModulationSides sides;
+    sides.params.resize(static_cast<std::size_t>(graph.numParams));
+    sides.modifiers.resize(static_cast<std::size_t>(graph.numModifiers));
+    for (int param = 0; param < graph.numParams; ++param)
+        sides.params[static_cast<std::size_t>(param)] =
+            live[static_cast<std::size_t>(graph.components.find(param))];
+    for (int modifier = 0; modifier < graph.numModifiers; ++modifier)
+        sides.modifiers[static_cast<std::size_t>(modifier)] =
+            live[static_cast<std::size_t>(graph.components.find(graph.numParams + modifier))];
+    sides.ops.resize(plan.ops.size());
+    for (std::size_t i = 0; i < plan.ops.size(); ++i)
+        sides.ops[i] =
+            graph.nodesOf[i].empty()
+                ? (runsAtCallback(plan.ops[i]) ? 1 : 0)
+                : live[static_cast<std::size_t>(graph.components.find(graph.nodesOf[i].front()))];
+    return sides;
+}
+
+void assignSides(const RenderPlan& plan, ParamTable& table) {
+    auto sides = modulationSides(plan, table);
+    const auto sideOf = [&sides](const ParamStep& step) {
+        return step.kind == ParamStep::Kind::Parameter
+                   ? sides.params[static_cast<std::size_t>(step.index)]
+                   : sides.modifiers[static_cast<std::size_t>(step.index)];
+    };
+    for (auto& slice : table.sideOrder)
+        slice.clear();
+    for (auto& slice : table.sideMovingOrder)
+        slice.clear();
+    for (const auto& step : table.order)
+        table.sideOrder[sideOf(step)].push_back(step);
+    for (const auto& step : table.movingOrder)
+        table.sideMovingOrder[sideOf(step)].push_back(step);
+    table.paramSide = std::move(sides.params);
+    table.modifierSide = std::move(sides.modifiers);
+    table.opSide = std::move(sides.ops);
 }
 
 }  // namespace magda::engine

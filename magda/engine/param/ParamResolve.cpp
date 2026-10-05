@@ -386,6 +386,13 @@ void resolveOneParam(const ParamTable& table, ResolvedParams& out, const ModRunt
 
 void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModContribution> links,
                    std::span<ParamSegment> segments, const BlockInfo& block, ModRuntime* mods) {
+    resolveParamSteps(table, out, links, segments, block, mods, table.order, table.movingOrder);
+}
+
+void resolveParamSteps(const ParamTable& table, ResolvedParams& out,
+                       std::span<ModContribution> links, std::span<ParamSegment> segments,
+                       const BlockInfo& block, ModRuntime* mods, std::span<const ParamStep> order,
+                       std::span<const ParamStep> movingOrder) {
     // Emptied first, and then refused. A table that does not fit is not a
     // reason to keep rendering last block's values: those were resolved for a
     // parameter set this one no longer has, and a device reading them would be
@@ -417,7 +424,7 @@ void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModCo
     // value rather than an index into a runtime sized for another list.
     const ModRuntime* reading = runnable ? mods : nullptr;
 
-    for (const auto& step : kept ? table.movingOrder : table.order) {
+    for (const auto& step : kept ? movingOrder : order) {
         switch (step.kind) {
             case ParamStep::Kind::Parameter:
                 if (step.index >= 0 && step.index < table.size())
