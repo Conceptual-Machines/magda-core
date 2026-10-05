@@ -1635,20 +1635,23 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // parallel executor's output bit-identical to this one.
             //
             // The first input may already be here, in the buffer it was
-            // written into. Skipping the copy is the same sum, not a
-            // different one: it is added first either way.
-            auto pending = writesInPlace(i);
-            if (!pending)
-                out.clear();
+            // written into; otherwise it is copied rather than added to
+            // silence, so a mix written in place and one that is not round a
+            // signed zero the same way.
+            auto first = true;
             for (const auto& input : op.inputs) {
                 if (!input.valid())
                     continue;
-                if (pending) {
-                    pending = false;
+                if (first) {
+                    first = false;
+                    if (!writesInPlace(i))
+                        out.copyFrom(audioIn(input, numSamples));
                     continue;
                 }
                 out.add(audioIn(input, numSamples));
             }
+            if (first)
+                out.clear();
             break;
         }
 

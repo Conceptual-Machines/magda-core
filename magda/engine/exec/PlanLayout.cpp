@@ -5,6 +5,8 @@
 #include <numeric>
 #include <optional>
 
+#include "plan/PlanHandoff.hpp"
+
 namespace magda::engine {
 namespace {
 
@@ -69,9 +71,6 @@ std::optional<std::size_t> inPlaceInputOf(const PlanOp& op) {
         // The dry side it subtracts is a different port, and one op reading a
         // port is what lets that port be written over at all.
         case OpKind::Subtract:
-        // A handoff passes its input on unchanged, so sharing makes it free until a ring stands
-        // between the two.
-        case OpKind::Handoff:
             return op.inputs.empty() || !op.inputs.front().valid() ? std::nullopt
                                                                    : std::optional<std::size_t>(0);
 
@@ -109,6 +108,9 @@ std::optional<std::size_t> inPlaceInputOf(const PlanOp& op) {
         // there before this block started.
         case OpKind::FeedbackSend:
         case OpKind::FeedbackReturn:
+        // A handoff's output is what the callback reads, possibly blocks after its input was
+        // written over (#1898).
+        case OpKind::Handoff:
             return std::nullopt;
     }
 
@@ -249,6 +251,16 @@ BufferLayout assignBuffers(const RenderPlan& plan, const std::vector<int>& portO
     // before it can be handed to another port.
     std::vector<OpSet> audioSlotUsers, midiSlotUsers;
 
+    // Which pass writes each slot. A handoff's slot is its own and never shared.
+    enum class Side : std::uint8_t { Ahead, Callback, Handoff };
+    const auto sideOf = [&plan](std::size_t op) {
+        const auto& planOp = plan.ops[op];
+        return planOp.kind == OpKind::Handoff ? Side::Handoff
+               : runsAtCallback(planOp)       ? Side::Callback
+                                              : Side::Ahead;
+    };
+    std::vector<Side> audioSlotSides, midiSlotSides;
+
     for (std::size_t i = 0; i < numOps; ++i) {
         const auto& op = plan.ops[i];
         const auto producers = distinctProducers(op);
@@ -261,6 +273,7 @@ BufferLayout assignBuffers(const RenderPlan& plan, const std::vector<int>& portO
         }
 
         const auto inPlaceSlot = layout.elided[i] ? std::nullopt : inPlaceInputOf(op);
+        const auto side = sideOf(i);
 
         for (std::size_t port = 0; port < op.outputs.size(); ++port) {
             const auto flatPort = static_cast<std::size_t>(portOffsets[i]) + port;
@@ -269,6 +282,7 @@ BufferLayout assignBuffers(const RenderPlan& plan, const std::vector<int>& portO
 
             const auto isAudio = op.outputs[port].kind == SignalKind::Audio;
             auto& slotUsers = isAudio ? audioSlotUsers : midiSlotUsers;
+            auto& slotSides = isAudio ? audioSlotSides : midiSlotSides;
 
             // Writing over an input the op is the last to read costs nothing
             // and saves both the buffer and the copy that would fill it. "Last
@@ -280,15 +294,16 @@ BufferLayout assignBuffers(const RenderPlan& plan, const std::vector<int>& portO
                 const auto source = canonical[flat(op.inputs[*inPlaceSlot])];
                 const auto& sourceReaders = readers[source];
                 if (sourceReaders.size() == 1 && sourceReaders.front() == static_cast<OpId>(i) &&
-                    layout.portSlots[source] >= 0) {
+                    layout.portSlots[source] >= 0 &&
+                    slotSides[static_cast<std::size_t>(layout.portSlots[source])] == side) {
                     slot = layout.portSlots[source];
                     layout.writesInPlace[i] = 1;
                 }
             }
 
-            if (slot < 0) {
+            if (slot < 0 && side != Side::Handoff) {
                 for (std::size_t candidate = 0; candidate < slotUsers.size(); ++candidate) {
-                    if (slotUsers[candidate].isSubsetOf(mine)) {
+                    if (slotSides[candidate] == side && slotUsers[candidate].isSubsetOf(mine)) {
                         slot = static_cast<int>(candidate);
                         break;
                     }
@@ -299,6 +314,7 @@ BufferLayout assignBuffers(const RenderPlan& plan, const std::vector<int>& portO
                 slot = static_cast<int>(slotUsers.size());
                 slotUsers.emplace_back();
                 slotUsers.back().resize(numWords);
+                slotSides.push_back(side);
             }
 
             layout.portSlots[flatPort] = slot;
