@@ -141,13 +141,6 @@ MainView::MainView(AudioEngine* audioEngine) : horizontalZoom(10.0), audioEngine
     magda::MidiLearnCoordinator::getInstance().setScope(
         static_cast<magda::BindingScope>(config.getMidiLearnDefaultScopeRaw()));
 
-    // Apply language from config (overrides the en.json auto-loaded by StringTable constructor)
-    {
-        auto lang = juce::String(config.getLanguage());
-        if (lang != "en")
-            StringTable::getInstance().loadLanguage(lang);
-    }
-
     DBG("CONFIG: Timeline length=" << config.getDefaultTimelineLengthBars() << " bars");
     DBG("CONFIG: Default zoom view=" << config.getDefaultZoomViewBars() << " bars");
 
