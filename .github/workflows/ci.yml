@@ -80,6 +80,11 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       run: |
         proceed=true
+        # Crowdin sync PRs only carry lang files; branches-ignore covers their
+        # pushes, but pull_request events cannot filter on the head branch.
+        case "${{ github.head_ref }}" in
+          l10n_crowdin_*) proceed=false ;;
+        esac
         if [ "${{ github.event_name }}" = "push" ]; then
           count=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" \
             --base main --state open --json number --jq length 2>/dev/null || echo 0)
@@ -98,8 +103,7 @@ jobs:
     if: |
       (github.event_name != 'workflow_dispatch' ||
        github.event.inputs.skip-cpp-build != 'true') &&
-      (github.event_name != 'push' ||
-       needs.release-pr-gate.outputs.proceed == 'true')
+      needs.release-pr-gate.outputs.proceed == 'true'
 
     steps:
     # First step on purpose: this decides whether the whole job builds warm or
@@ -375,8 +379,7 @@ jobs:
     if: |
       (github.event_name != 'workflow_dispatch' ||
        github.event.inputs.skip-cpp-build != 'true') &&
-      (github.event_name != 'push' ||
-       needs.release-pr-gate.outputs.proceed == 'true')
+      needs.release-pr-gate.outputs.proceed == 'true'
 
     steps:
     - uses: actions/checkout@v7
@@ -539,8 +542,7 @@ jobs:
     if: |
       (github.event_name != 'workflow_dispatch' ||
        github.event.inputs.skip-cpp-build != 'true') &&
-      (github.event_name != 'push' ||
-       needs.release-pr-gate.outputs.proceed == 'true')
+      needs.release-pr-gate.outputs.proceed == 'true'
     outputs:
       labels: ${{ steps.pick.outputs.labels }}
     steps:
@@ -1102,8 +1104,7 @@ jobs:
     if: |
       (github.event_name != 'workflow_dispatch' ||
        github.event.inputs.skip-cpp-build != 'true') &&
-      (github.event_name != 'push' ||
-       needs.release-pr-gate.outputs.proceed == 'true')
+      needs.release-pr-gate.outputs.proceed == 'true'
     outputs:
       labels: ${{ steps.pick.outputs.labels }}
     steps:
