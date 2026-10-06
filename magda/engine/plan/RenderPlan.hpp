@@ -443,6 +443,9 @@ struct PlanOp {
     LivenessDomain liveness = LivenessDomain::Deterministic;
     /// Live because a modulation component it reads is (#1898): a live source with no plan edge.
     bool liveByModulation = false;
+    /// Live because its track plays session clips or an instrument, which answer at the callback
+    /// (#1898).
+    bool liveByPlayback = false;
     std::vector<PortRef> inputs;
     std::vector<PortDesc> outputs;
 

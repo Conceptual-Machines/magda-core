@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -51,6 +52,15 @@ struct CompileOptions {
 
     /// Exact persisted hardware route string to packed callback channels.
     std::map<std::string, HardwareOutputRoute> hardwareOutputs;
+
+    /// Tracks holding session clips, whose clips render at the callback whenever anything is
+    /// rendered ahead (#1898): a launch has to be heard when it fires, not a look-ahead later.
+    std::set<TrackId> sessionTracks;
+
+    /// Only tracks playing audio files render ahead (#1898): a track whose chain reads MIDI is an
+    /// instrument, played from previews and keyboards that have to be heard now, and renders at
+    /// the callback.
+    bool aheadAudioOnly = false;
 };
 
 /**

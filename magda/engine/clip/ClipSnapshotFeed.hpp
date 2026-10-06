@@ -119,10 +119,16 @@ class ClipSnapshotFeed {
         return sections_;
     }
 
-    /// @p trackId's share of this block, or null for a track the snapshot does
+    /// What @p block plays: its own view's snapshot, or what the callback pinned.
+    const ClipSnapshot* live(const BlockInfo& block) const noexcept {
+        return block.feeds != nullptr ? block.feeds->clips : live_;
+    }
+
+    /// @p trackId's share of @p block, or null for a track the snapshot does
     /// not carry -- nothing gates an arrangement with no mode to read.
-    const SectionHold* holdFor(TrackId trackId) const {
-        const auto* state = sections_ != nullptr ? sections_->find(trackId) : nullptr;
+    const SectionHold* holdFor(TrackId trackId, const BlockInfo& block) const {
+        const auto* sections = block.feeds != nullptr ? block.feeds->sections : sections_;
+        const auto* state = sections != nullptr ? sections->find(trackId) : nullptr;
         return state != nullptr ? &state->hold : nullptr;
     }
 

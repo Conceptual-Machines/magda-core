@@ -1,9 +1,13 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <farbot/RealtimeObject.hpp>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <shared_mutex>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -137,23 +141,55 @@ class ClipStreamFeed {
      * with it, which is why a caller retiring one drops its own handle first.
      */
     void publish(std::shared_ptr<const ClipStreamTable> table) {
+        {
+            const std::lock_guard<std::mutex> guard(latestLock_);
+            latest_ = table;
+        }
         // The block pin is the lifetime boundary in specs/tla/hand_back_standby.
         published_.nonRealtimeReplace(std::move(table));
+
+        // And the ahead thread's round: a caller retires streams after this returns (#1898).
+        const std::unique_lock<std::shared_mutex> aheadDone(aheadReaders_);
     }
+
+    /**
+     * @brief The table a thread rendering off the callback reads for one round (#1898).
+     *
+     * It may wait, so it takes what was published last rather than a pin, and a publish waits
+     * for it to let go before the streams it replaced are retired.
+     */
+    class AheadTable {
+      public:
+        explicit AheadTable(const ClipStreamFeed& feed) : reading_(feed.aheadReaders_) {
+            const std::lock_guard<std::mutex> guard(feed.latestLock_);
+            table_ = feed.latest_;
+        }
+
+        const ClipStreamTable* get() const noexcept {
+            return table_.get();
+        }
+
+      private:
+        std::shared_lock<std::shared_mutex> reading_;
+        std::shared_ptr<const ClipStreamTable> table_;
+    };
 
     /// What is live, for as long as this exists. On the audio thread. Null
     /// until something has been published, which is a track whose clips have
     /// no readers yet rather than an error.
     class Reader {
       public:
+        /// What @p block's own view carries, or as below for the callback's.
+        Reader(ClipStreamFeed& feed, const BlockInfo& block) {
+            if (block.feeds != nullptr)
+                table_ = block.feeds->streams;
+            else
+                acquire(feed);
+        }
+
         /// Inside a BlockScope, what it pinned; outside one, the table acquired for itself.
         explicit Reader(ClipStreamFeed& feed) {
-            if (feed.pinned_.load(std::memory_order_acquire)) {
-                table_ = feed.live_.load(std::memory_order_relaxed);
-                return;
-            }
-            access_.emplace(feed.published_);
-            table_ = (*access_)->get();
+            acquire(feed);
         }
 
         const ClipStreamTable* get() const noexcept {
@@ -167,6 +203,15 @@ class ClipStreamFeed {
         }
 
       private:
+        void acquire(ClipStreamFeed& feed) {
+            if (feed.pinned_.load(std::memory_order_acquire)) {
+                table_ = feed.live_.load(std::memory_order_relaxed);
+                return;
+            }
+            access_.emplace(feed.published_);
+            table_ = (*access_)->get();
+        }
+
         std::optional<Published::ScopedAccess<farbot::ThreadType::realtime>> access_;
         const ClipStreamTable* table_ = nullptr;
     };
@@ -180,11 +225,14 @@ class ClipStreamFeed {
     /// session sources render on different workers, so neither may cue for the other.
     class BlockScope {
       public:
-        explicit BlockScope(ClipStreamFeed& feed) : feed_(feed) {
+        /// @p renderedAhead, sorted, are tracks another thread reads and cues (#1898).
+        explicit BlockScope(ClipStreamFeed& feed, std::span<const TrackId> renderedAhead = {})
+            : feed_(feed) {
             const auto* table = feed_.published_.realtimeAcquire().get();
             if (table != nullptr)
                 for (const auto& entry : table->entries)
-                    entry.stream->applyPendingCue();
+                    if (!std::ranges::binary_search(renderedAhead, entry.trackId))
+                        entry.stream->applyPendingCue();
 
             feed_.live_.store(table, std::memory_order_relaxed);
             feed_.pinned_.store(true, std::memory_order_release);
@@ -207,6 +255,10 @@ class ClipStreamFeed {
     Published published_;
     std::atomic<bool> pinned_{false};
     std::atomic<const ClipStreamTable*> live_{nullptr};
+
+    mutable std::mutex latestLock_;
+    std::shared_ptr<const ClipStreamTable> latest_;
+    mutable std::shared_mutex aheadReaders_;
 };
 
 }  // namespace magda::engine

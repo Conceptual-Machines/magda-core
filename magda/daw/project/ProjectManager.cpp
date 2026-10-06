@@ -507,8 +507,12 @@ bool ProjectManager::saveProjectAs(const juce::File& file, MediaTransfer transfe
     auto actualFile = saveTargetFor(file);
     if (requiresV1ProjectCopy()) {
         if (!project_version::isSeparateProject(currentFile_, actualFile)) {
-            lastError_ = "Save this v0 project as a new v1 project in a separate folder. "
-                         "The original project must remain available to v0.";
+            // A name is a folder (saveTargetFor), so the original's name anywhere is the original.
+            lastError_ = actualFile == currentFile_
+                             ? "A project with this name is the v0 original, which v1 does not "
+                               "overwrite. Give the v1 project a different name."
+                             : "Save this v0 project as a new v1 project in a separate folder. "
+                               "The original project must remain available to v0.";
             return false;
         }
         transfer = MediaTransfer::Copy;

@@ -114,14 +114,17 @@ class LaunchHandleFeed {
     /// no handles yet rather than an error.
     class Reader {
       public:
+        /// What @p block's own view carries, or as below for the callback's.
+        Reader(LaunchHandleFeed& feed, const BlockInfo& block) {
+            if (block.feeds != nullptr)
+                table_ = block.feeds->handles;
+            else
+                acquire(feed);
+        }
+
         /// Inside a BlockScope, what it pinned; outside one, the table acquired for itself.
         explicit Reader(LaunchHandleFeed& feed) {
-            if (feed.pinned_.load(std::memory_order_acquire)) {
-                table_ = feed.live_.load(std::memory_order_relaxed);
-                return;
-            }
-            access_.emplace(feed.published_);
-            table_ = (*access_)->get();
+            acquire(feed);
         }
 
         const LaunchHandleTable* get() const noexcept {
@@ -135,6 +138,15 @@ class LaunchHandleFeed {
         }
 
       private:
+        void acquire(LaunchHandleFeed& feed) {
+            if (feed.pinned_.load(std::memory_order_acquire)) {
+                table_ = feed.live_.load(std::memory_order_relaxed);
+                return;
+            }
+            access_.emplace(feed.published_);
+            table_ = (*access_)->get();
+        }
+
         std::optional<Published::ScopedAccess<farbot::ThreadType::realtime>> access_;
         const LaunchHandleTable* table_ = nullptr;
     };

@@ -308,8 +308,9 @@ void Harness::render(int blocks) {
 
         output_.clear();
         if (bySide_) {
-            live_->processSide(0, values_, info, output_);
-            live_->processSide(1, values_, info, output_);
+            const auto sequence = static_cast<std::uint64_t>(timeline_ / kBlockSize);
+            live_->processSide(0, sequence, values_, info, output_);
+            live_->processSide(1, sequence, values_, info, output_);
         } else {
             live_->process(values_, info, output_);
         }

@@ -370,7 +370,7 @@ class OscRouter {
 
     /// Messages accepted since construction, for the settings UI and tests --
     /// "is anything actually arriving?" is the first question a silent
-    /// surface raises.
+    /// surface raises. A message is counted once a drain can find it.
     std::uint64_t acceptedMessageCount() const;
 
     /// Discrete commands dropped because the ordered ring was full. Non-zero

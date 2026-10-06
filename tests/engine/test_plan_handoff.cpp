@@ -4,11 +4,13 @@
 #include <set>
 #include <vector>
 
+#include "exec/HandoffRing.hpp"
 #include "exec/PlanExecutor.hpp"
 #include "exec/PlanLayout.hpp"
 #include "exec/PlanValues.hpp"
 #include "plan/PlanHandoff.hpp"
 #include "plan/RenderPlan.hpp"
+#include "tap/MidiTap.hpp"
 
 // Where an op the callback runs reads one that may be rendered ahead (#1898).
 
@@ -97,8 +99,8 @@ std::vector<float> render(const RenderPlan& plan, bool bySide = false) {
     block.playing = true;
     block.continuous = true;
     if (bySide) {
-        executor.processSide(0, values, block, out);
-        executor.processSide(1, values, block, out);
+        executor.processSide(0, 0, values, block, out);
+        executor.processSide(1, 0, values, block, out);
     } else {
         executor.process(values, block, out);
     }
@@ -240,4 +242,561 @@ TEST_CASE("The two sides of a block render what the whole block does", "[engine]
     REQUIRE(whole.size() == split.size());
     CHECK(std::memcmp(whole.data(), split.data(), whole.size() * sizeof(float)) == 0);
     CHECK(whole.front() == 0.25f);
+}
+
+namespace {
+
+/// A different value every sample, so a block rendered out of turn cannot pass for its neighbour.
+class CountingAudio final : public EngineAudioSource {
+  public:
+    void render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) override {
+        for (int i = 0; i < block.numSamples; ++i, ++count)
+            for (std::size_t channel = 0; channel < out.getNumChannels(); ++channel)
+                out.setSample(static_cast<int>(channel), i, static_cast<float>(count));
+    }
+    int count = 0;
+};
+
+/// One note per block, at a sample and pitch that move every block.
+class CountingMidi final : public magda::engine::EngineMidiSource {
+  public:
+    void render(const BlockInfo& block, juce::MidiBuffer& out) override {
+        out.addEvent(juce::MidiMessage::noteOn(1, 36 + (count % 48), 1.0f),
+                     count % block.numSamples);
+        ++count;
+    }
+    int count = 0;
+};
+
+class CollectingTap final : public magda::engine::MidiTap {
+  public:
+    void write(const juce::MidiBuffer& midi, const BlockInfo&) override {
+        auto& block = blocks.emplace_back();
+        for (const auto event : midi)
+            block.emplace_back(event.samplePosition, event.getMessage().getNoteNumber());
+    }
+    std::vector<std::vector<std::pair<int, int>>> blocks;
+};
+
+/// A clip and a MIDI clip, each read by live ops through a handoff, rendered for @p blocks.
+struct Rendered {
+    std::vector<float> audio;
+    std::vector<std::vector<std::pair<int, int>>> midi;
+    int misses = 0;
+    int discards = 0;
+};
+
+RenderPlan aheadAndLivePlan() {
+    auto plan = mixedPlan();
+    plan.ops.push_back(op(OpKind::ClipMidi, OpRole::ClipMidi, 1, {}, {SignalKind::Midi}));
+    plan.ops.push_back(op(OpKind::MidiInput, OpRole::LiveMidiInput, 1, {}, {SignalKind::Midi},
+                          LivenessDomain::Live));
+    plan.ops.push_back(op(OpKind::MergeMidi, OpRole::TrackMidiInput, 1,
+                          {PortRef{4, 0}, PortRef{5, 0}}, {SignalKind::Midi},
+                          LivenessDomain::Live));
+    magda::engine::bakeScheduling(plan);
+    return magda::engine::insertHandoffs(plan);
+}
+
+/// Whole blocks, or the ahead side up to @p lag blocks before the callback through a ring of
+/// @p depth; @p skip is a block the ahead side never renders, and @p whole one whose table has
+/// no sides, on the side @p wholeOn names or on both (-1).
+Rendered renderLagged(int blocks, int lag = -1, int depth = 1, int skip = -1, int whole = -1,
+                      int wholeOn = -1) {
+    const auto plan = aheadAndLivePlan();
+    CountingAudio clip;
+    CountingMidi notes;
+    CollectingTap tap;
+    PlanBindings bindings;
+    bindings.clipAudio[1] = &clip;
+    bindings.clipMidi[1] = &notes;
+    for (const auto& planOp : plan.ops)
+        if (planOp.kind == OpKind::MergeMidi)
+            bindings.midiTaps[planOp.key] = &tap;
+    PlanValues values;
+    values.planFingerprint = magda::engine::planFingerprint(plan);
+    values.ops.assign(plan.ops.size(), magda::engine::kUnityValue);
+    auto sideless = values;
+    sideless.params = std::make_shared<magda::engine::ParamTable>();
+    const auto valuesFor = [&](int index, int side) -> const PlanValues& {
+        return index == whole && (wholeOn < 0 || wholeOn == side) ? sideless : values;
+    };
+
+    PlanExecutor executor;
+    executor.setRenderAheadDepth(depth);
+    for (const auto& message : executor.prepare(plan, bindings, RenderContext{48000.0, kBlock, 2}))
+        UNSCOPED_INFO("prepare: " << message);
+    REQUIRE(executor.isPrepared());
+
+    juce::AudioBuffer<float> out(2, kBlock), ahead(2, kBlock);
+    BlockInfo block;
+    block.numSamples = kBlock;
+    block.playing = true;
+    block.continuous = true;
+
+    Rendered rendered;
+    int nextAhead = 0;
+    for (int i = 0; i < blocks; ++i) {
+        if (lag < 0) {
+            executor.process(values, block, out);
+        } else {
+            while (nextAhead <= i + lag && nextAhead < blocks) {
+                if (nextAhead != skip &&
+                    !executor.processSide(0, static_cast<std::uint64_t>(nextAhead),
+                                          valuesFor(nextAhead, 0), block, ahead))
+                    break;
+                ++nextAhead;
+            }
+            const auto discards = executor.handoffDiscards();
+            executor.processSide(1, static_cast<std::uint64_t>(i), valuesFor(i, 1), block, out);
+            // As the thread does: what it rendered past a discard is gone, so it starts again.
+            if (executor.handoffDiscards() != discards)
+                nextAhead = i + 1;
+        }
+        rendered.audio.insert(rendered.audio.end(), out.getReadPointer(0),
+                              out.getReadPointer(0) + kBlock);
+    }
+    rendered.midi = tap.blocks;
+    rendered.misses = executor.handoffMisses();
+    rendered.discards = static_cast<int>(executor.handoffDiscards());
+    return rendered;
+}
+
+}  // namespace
+
+TEST_CASE("The ahead side renders as far ahead as the ring is deep", "[engine][plan][1898]") {
+    constexpr int kBlocks = 16;
+    const auto whole = renderLagged(kBlocks);
+    REQUIRE(whole.audio.size() == kBlocks * kBlock);
+    REQUIRE(whole.midi.size() == kBlocks);
+    CHECK(whole.audio.back() != whole.audio.front());
+
+    for (const int lag : {0, 1, 3}) {
+        INFO("lag " << lag);
+        const auto lagged = renderLagged(kBlocks, lag, lag + 1);
+        CHECK(lagged.misses == 0);
+        REQUIRE(lagged.audio.size() == whole.audio.size());
+        CHECK(std::memcmp(whole.audio.data(), lagged.audio.data(),
+                          whole.audio.size() * sizeof(float)) == 0);
+        CHECK(lagged.midi == whole.midi);
+    }
+}
+
+TEST_CASE("The ahead side waits for the callback to release an entry", "[engine][plan][1898]") {
+    const auto plan = aheadAndLivePlan();
+    CountingAudio clip;
+    PlanBindings bindings;
+    bindings.clipAudio[1] = &clip;
+    PlanValues values;
+    values.planFingerprint = magda::engine::planFingerprint(plan);
+    values.ops.assign(plan.ops.size(), magda::engine::kUnityValue);
+
+    PlanExecutor executor;
+    executor.setRenderAheadDepth(2);
+    for (const auto& message : executor.prepare(plan, bindings, RenderContext{48000.0, kBlock, 2}))
+        UNSCOPED_INFO("prepare: " << message);
+    REQUIRE(executor.isPrepared());
+    juce::AudioBuffer<float> out(2, kBlock);
+    BlockInfo block;
+    block.numSamples = kBlock;
+    block.playing = true;
+
+    // Any block may come first: a plan prepared mid-stream starts where it is driven.
+    CHECK(executor.processSide(0, 40, values, block, out));
+    CHECK(executor.processSide(0, 41, values, block, out));
+    CHECK_FALSE(executor.processSide(0, 42, values, block, out));
+    CHECK(clip.count == 2 * kBlock);
+
+    executor.processSide(1, 40, values, block, out);
+    CHECK(out.getSample(0, kBlock - 1) == static_cast<float>(kBlock - 1));
+    CHECK_FALSE(executor.processSide(0, 40, values, block, out));
+    CHECK(executor.processSide(0, 42, values, block, out));
+    CHECK(executor.handoffMisses() == 0);
+}
+
+TEST_CASE("A block rendered whole waits for the ahead side to stop", "[engine][plan][1898]") {
+    // A sideless table renders its block whole at the callback, ahead-side ops included, so
+    // nothing after it may have been rendered ahead by then.
+    constexpr int kBlocks = 8;
+    const auto whole = renderLagged(kBlocks);
+    for (const int at : {0, 2, 7}) {
+        INFO("whole at " << at);
+        const auto lagged = renderLagged(kBlocks, 2, 3, -1, at);
+        CHECK(lagged.misses == 0);
+        REQUIRE(lagged.audio.size() == whole.audio.size());
+        CHECK(std::memcmp(whole.audio.data(), lagged.audio.data(),
+                          whole.audio.size() * sizeof(float)) == 0);
+        CHECK(lagged.midi == whole.midi);
+    }
+}
+
+TEST_CASE("A handoff ring hands back MIDI, fractions and panic as written",
+          "[engine][plan][1898]") {
+    const auto plan = aheadAndLivePlan();
+    std::size_t midiHandoff = plan.ops.size();
+    for (std::size_t i = 0; i < plan.ops.size(); ++i)
+        if (plan.ops[i].kind == OpKind::Handoff &&
+            plan.ops[i].outputs.front().kind == SignalKind::Midi)
+            midiHandoff = i;
+    REQUIRE(midiHandoff < plan.ops.size());
+
+    magda::engine::HandoffRing ring;
+    ring.prepare(plan, 2, 2, kBlock, std::vector<int>(plan.ops.size(), 4096));
+    REQUIRE(ring.canWrite(7, true));
+    ring.midi(midiHandoff, 7).addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 5);
+    ring.fractions(midiHandoff, 7).add(5, 1, 60, 0.25f);
+    ring.setPanic(midiHandoff, 7, true);
+    BlockInfo seven;
+    seven.numSamples = kBlock;
+    ring.publish(7, magda::engine::BlockStamp::of(seven));
+
+    const auto& reader = ring;
+    auto shorter = seven;
+    shorter.numSamples = kBlock / 2;
+    auto elsewhere = seven;
+    elsewhere.beats.start = 4.0;
+    const auto stamp = magda::engine::BlockStamp::of;
+    CHECK(reader.published(7, stamp(seven)) == magda::engine::HandoffRing::Published::split);
+    CHECK(reader.published(7, stamp(shorter)) == magda::engine::HandoffRing::Published::missing);
+    CHECK(reader.published(7, stamp(elsewhere)) == magda::engine::HandoffRing::Published::missing);
+    CHECK(reader.published(9, stamp(seven)) == magda::engine::HandoffRing::Published::missing);
+    CHECK(reader.midi(midiHandoff, 7).getNumEvents() == 1);
+    CHECK(reader.fractions(midiHandoff, 7).at(5, 1, 60) == 0.25f);
+    CHECK(reader.panic(midiHandoff, 7));
+
+    CHECK(ring.canWrite(8, true));
+    CHECK_FALSE(ring.canWrite(9, true));
+    ring.release(7);
+    CHECK(ring.canWrite(9, true));
+}
+
+TEST_CASE("A block the ahead side never reached renders whole", "[engine][plan][1898]") {
+    constexpr int kBlocks = 6;
+    const auto whole = renderLagged(kBlocks);
+    const auto lagged = renderLagged(kBlocks, 0, 1, 3);
+    CHECK(lagged.misses == 0);
+    REQUIRE(lagged.audio.size() == whole.audio.size());
+    CHECK(std::memcmp(whole.audio.data(), lagged.audio.data(),
+                      whole.audio.size() * sizeof(float)) == 0);
+    CHECK(lagged.midi == whole.midi);
+}
+
+TEST_CASE("A block the ahead side passed is rendered at the callback", "[engine][plan][1898]") {
+    // Skipped by the ahead side, or rendered there for values the callback cannot split: the
+    // callback forgets what was rendered from that block on and renders it itself, from state
+    // already past it, and the ahead side starts again after it.
+    constexpr int kBlocks = 8;
+    constexpr int kAt = 3;
+    const auto whole = renderLagged(kBlocks);
+    for (const auto [skip, wholeOn] : {std::pair{kAt, -1}, std::pair{-1, 1}}) {
+        INFO("skip " << skip << ", sideless on " << wholeOn);
+        const auto lagged = renderLagged(kBlocks, 2, 3, skip, kAt, wholeOn);
+        CHECK(lagged.misses == 0);
+        CHECK(lagged.discards == 1);
+        REQUIRE(lagged.audio.size() == kBlocks * kBlock);
+        REQUIRE(lagged.midi.size() == kBlocks);
+
+        CHECK(std::memcmp(lagged.audio.data(), whole.audio.data(), kAt * kBlock * sizeof(float)) ==
+              0);
+        CHECK(lagged.audio[kAt * kBlock] > whole.audio[kAt * kBlock]);
+
+        // Rendered again from there, each block once: the clip runs on without a gap.
+        for (int i = kAt * kBlock; i + 1 < kBlocks * kBlock; ++i)
+            REQUIRE(lagged.audio[static_cast<std::size_t>(i) + 1] ==
+                    lagged.audio[static_cast<std::size_t>(i)] + 1.0f);
+    }
+}
+
+namespace {
+
+/// A clip's notes, each at a fraction of its sample, raising a panic every third block.
+class FractionalMidi final : public magda::engine::EngineMidiSource {
+  public:
+    explicit FractionalMidi(int notesPerBlock = 1, int firstNote = 36, bool panics = true,
+                            bool endsOnJump = false)
+        : perBlock(notesPerBlock), base(firstNote), panics(panics), endsOnJump(endsOnJump) {}
+
+    void render(const BlockInfo& block, juce::MidiBuffer& out) override {
+        magda::engine::NoteFractions ignored;
+        renderWithFractions(block, out, ignored);
+    }
+    void renderWithFractions(const BlockInfo& block, juce::MidiBuffer& out,
+                             magda::engine::NoteFractions& fractions) override {
+        // As a clip source chasing a jump: everything it started ends, heard or not.
+        if (endsOnJump && !block.continuous) {
+            for (const auto note : sounding)
+                out.addEvent(juce::MidiMessage::noteOff(1, note), 0);
+            sounding.clear();
+        }
+        for (int n = 0; n < perBlock; ++n) {
+            const auto sample = (count + n) % block.numSamples;
+            const auto note = base + ((count + n) % 48);
+            if (endsOnJump)
+                sounding.push_back(note);
+            out.addEvent(juce::MidiMessage::noteOn(1, note, 1.0f), sample);
+            fractions.add(sample, 1, note, 0.125f * static_cast<float>(1 + (count + n) % 7));
+        }
+        panic = panics && count % 3 == 0;
+        ++count;
+    }
+    bool raisedAllNotesOff() const override {
+        return panic;
+    }
+
+    int perBlock;
+    int base;
+    bool panics;
+    bool endsOnJump;
+    std::vector<int> sounding;
+    int count = 0;
+    bool panic = false;
+};
+
+/// What a live device was handed, block by block: each note-on's sample, pitch and fraction,
+/// and the panic.
+class HeardProbe final : public magda::engine::EngineDevice {
+  public:
+    struct Note {
+        int sample;
+        int note;
+        float fraction;
+        bool on = true;
+        bool operator==(const Note&) const = default;
+    };
+    struct Block {
+        std::vector<Note> notes;
+        bool panic;
+        bool operator==(const Block&) const = default;
+    };
+
+    void setMidiInputBoundBytes(int bytes) override {
+        boundBytes = bytes;
+    }
+    void process(magda::engine::DeviceBlock& block) override {
+        block.audio.clear();
+        auto& heard = blocks.emplace_back();
+        heard.panic = block.midiInAllNotesOff;
+        for (const auto event : *block.midiIn) {
+            const auto message = event.getMessage();
+            heard.notes.push_back(
+                {event.samplePosition, message.getNoteNumber(),
+                 block.midiInFractions->at(event.samplePosition, message.getChannel(),
+                                           message.getNoteNumber()),
+                 message.isNoteOn()});
+        }
+    }
+
+    std::vector<Block> blocks;
+    int boundBytes = 0;
+};
+
+/// @p sources MIDI clips merged on track 1, read by a live device through a handoff.
+RenderPlan clipsIntoLiveDevice(int sources) {
+    RenderPlan plan;
+    std::vector<PortRef> clips;
+    for (int track = 1; track <= sources; ++track) {
+        clips.push_back(PortRef{static_cast<magda::engine::OpId>(plan.ops.size()), 0});
+        plan.ops.push_back(op(OpKind::ClipMidi, OpRole::ClipMidi, track, {}, {SignalKind::Midi}));
+    }
+    auto feed = clips.front();
+    if (sources > 1) {
+        feed = PortRef{static_cast<magda::engine::OpId>(plan.ops.size()), 0};
+        plan.ops.push_back(
+            op(OpKind::MergeMidi, OpRole::TrackMidiInput, 1, clips, {SignalKind::Midi}));
+    }
+    // Live because the track also takes a live MIDI input, which nothing plays here.
+    const PortRef keys{static_cast<magda::engine::OpId>(plan.ops.size()), 0};
+    plan.ops.push_back(op(OpKind::MidiInput, OpRole::LiveMidiInput, 1, {}, {SignalKind::Midi},
+                          LivenessDomain::Live));
+    const PortRef heard{static_cast<magda::engine::OpId>(plan.ops.size()), 0};
+    plan.ops.push_back(op(OpKind::MergeMidi, OpRole::ChainMidiMerge, 1, {feed, keys},
+                          {SignalKind::Midi}, LivenessDomain::Live));
+    auto device = op(OpKind::Device, OpRole::DeviceProcess, 1, {PortRef{}, heard, PortRef{}},
+                     {SignalKind::Audio}, LivenessDomain::Live);
+    device.key.deviceId = 9;
+    plan.ops.push_back(device);
+    plan.ops.push_back(output(PortRef{static_cast<magda::engine::OpId>(plan.ops.size() - 1), 0}));
+    plan.ops.back().liveness = LivenessDomain::Live;
+    plan.outputOps = {static_cast<magda::engine::OpId>(plan.ops.size() - 1)};
+    magda::engine::bakeScheduling(plan);
+    return magda::engine::insertHandoffs(plan);
+}
+
+struct Heard {
+    std::vector<HeardProbe::Block> blocks;
+    int boundBytes = 0;
+    int misses = 0;
+};
+
+/// The device's view over @p blocks, whole or with the ahead side @p lag blocks early; @p skip
+/// is a block the ahead side never renders.
+Heard hearThroughHandoff(int sources, int notesPerBlock, int blocks, int lag = -1, int skip = -1,
+                         bool panics = true, bool endsOnJump = false) {
+    const auto plan = clipsIntoLiveDevice(sources);
+    for (const auto& problem : magda::engine::validatePlan(plan))
+        UNSCOPED_INFO(problem);
+    REQUIRE(magda::engine::validatePlan(plan).empty());
+    REQUIRE(countOf(plan, OpKind::Handoff) == 1);
+
+    std::vector<std::unique_ptr<FractionalMidi>> clips;
+    HeardProbe probe;
+    PlanBindings bindings;
+    for (int track = 1; track <= sources; ++track) {
+        clips.push_back(
+            std::make_unique<FractionalMidi>(notesPerBlock, 12 * track, panics, endsOnJump));
+        bindings.clipMidi[track] = clips.back().get();
+    }
+    bindings.devices[magda::engine::DeviceKey{9}] = &probe;
+    PlanValues values;
+    values.planFingerprint = magda::engine::planFingerprint(plan);
+    values.ops.assign(plan.ops.size(), magda::engine::kUnityValue);
+
+    PlanExecutor executor;
+    executor.setRenderAheadDepth(std::max(lag, 0) + 1);
+    for (const auto& message : executor.prepare(plan, bindings, RenderContext{48000.0, kBlock, 2}))
+        UNSCOPED_INFO("prepare: " << message);
+    REQUIRE(executor.isPrepared());
+
+    juce::AudioBuffer<float> out(2, kBlock), ahead(2, kBlock);
+    BlockInfo block;
+    block.numSamples = kBlock;
+    block.playing = true;
+    block.continuous = true;
+    int nextAhead = 0;
+    for (int i = 0; i < blocks; ++i) {
+        if (lag < 0) {
+            executor.process(values, block, out);
+            continue;
+        }
+        while (nextAhead <= i + lag && nextAhead < blocks) {
+            if (nextAhead != skip && !executor.processSide(0, static_cast<std::uint64_t>(nextAhead),
+                                                           values, block, ahead))
+                break;
+            ++nextAhead;
+        }
+        const auto discards = executor.handoffDiscards();
+        executor.processSide(1, static_cast<std::uint64_t>(i), values, block, out);
+        if (executor.handoffDiscards() != discards)
+            nextAhead = i + 1;
+    }
+    return {probe.blocks, probe.boundBytes, executor.handoffMisses()};
+}
+
+}  // namespace
+
+TEST_CASE("Fractions and panics cross a handoff rendered ahead", "[engine][plan][1898]") {
+    constexpr int kBlocks = 9;
+    const auto whole = hearThroughHandoff(1, 1, kBlocks);
+    REQUIRE(whole.blocks.size() == kBlocks);
+    CHECK(std::ranges::count_if(whole.blocks, [](const auto& b) { return b.panic; }) == 3);
+    CHECK(std::ranges::adjacent_find(whole.blocks, [](const auto& a, const auto& b) {
+              return a.notes.front().fraction != b.notes.front().fraction;
+          }) != whole.blocks.end());
+
+    for (const int lag : {0, 2}) {
+        INFO("lag " << lag);
+        const auto lagged = hearThroughHandoff(1, 1, kBlocks, lag);
+        CHECK(lagged.misses == 0);
+        CHECK(lagged.blocks == whole.blocks);
+    }
+}
+
+TEST_CASE("A handoff reserves the MIDI its merge can carry", "[engine][plan][1898]") {
+    // Two clips at 300 note-ons a block, nine bytes each: 5400 bytes past the handoff, more
+    // than one producer's budget.
+    constexpr int kNotes = 300;
+    constexpr int kBlocks = 4;
+    const auto whole = hearThroughHandoff(2, kNotes, kBlocks);
+    // Both clips through the handoff, and the live keys merged behind it.
+    CHECK(whole.boundBytes == 3 * magda::engine::kMaxMidiBytesPerPort);
+    REQUIRE(whole.blocks.size() == kBlocks);
+    CHECK(whole.blocks.front().notes.size() == 2 * kNotes);
+
+    const auto lagged = hearThroughHandoff(2, kNotes, kBlocks, 2);
+    CHECK(lagged.misses == 0);
+    CHECK(lagged.boundBytes == whole.boundBytes);
+    CHECK(lagged.blocks == whole.blocks);
+}
+
+TEST_CASE("A block rendered after a discard releases the notes it held", "[engine][plan][1898]") {
+    // The note-offs in what was discarded never reach the instrument, so the block that replaces
+    // it ends every note that crossed the handoff, and nothing else.
+    constexpr int kBlocks = 8;
+    constexpr int kSkip = 4;
+    const auto whole = hearThroughHandoff(1, 1, kBlocks, -1, -1, false);
+    REQUIRE(whole.blocks.size() == kBlocks);
+    REQUIRE(std::ranges::none_of(whole.blocks, [](const auto& b) { return b.panic; }));
+
+    const auto skipped = hearThroughHandoff(1, 1, kBlocks, 2, kSkip, false);
+    REQUIRE(skipped.blocks.size() == kBlocks);
+    CHECK(std::ranges::none_of(skipped.blocks, [](const auto& b) { return b.panic; }));
+
+    // The source only plays note-ons, so every one that crossed before the discard is owed.
+    const auto& released = skipped.blocks[kSkip].notes;
+    const auto offs = std::ranges::count_if(released, [](const auto& n) { return !n.on; });
+    CHECK(offs == kSkip);
+    for (std::size_t n = 0; n < static_cast<std::size_t>(offs) && n < released.size(); ++n)
+        CHECK((!released[n].on && released[n].sample == 0));
+    CHECK(
+        std::ranges::none_of(skipped.blocks[kSkip + 1].notes, [](const auto& n) { return !n.on; }));
+}
+
+TEST_CASE("A discard ends each note the instrument heard once", "[engine][plan][1898]") {
+    // The source ends everything it started as it chases, notes only discarded blocks played
+    // included; the instrument is sent one note-off per note it heard, and no others.
+    constexpr int kBlocks = 8;
+    constexpr int kSkip = 4;
+    const auto skipped = hearThroughHandoff(1, 1, kBlocks, 2, kSkip, false, true);
+    REQUIRE(skipped.blocks.size() == kBlocks);
+
+    std::map<int, int> offs;
+    for (const auto& note : skipped.blocks[kSkip].notes)
+        if (!note.on)
+            ++offs[note.note];
+    CHECK(offs.size() == kSkip);
+    CHECK(std::ranges::all_of(offs, [](const auto& entry) { return entry.second == 1; }));
+}
+
+TEST_CASE("Notes held across a plan swap are still ended by a discard", "[engine][plan][1898]") {
+    // The instrument keeps sounding what the replaced plan passed it, so the plan taking over
+    // knows those notes too and ends them when it discards.
+    const auto plan = clipsIntoLiveDevice(1);
+    FractionalMidi clip(1, 12, false, true);
+    HeardProbe probe;
+    PlanBindings bindings;
+    bindings.clipMidi[1] = &clip;
+    bindings.devices[magda::engine::DeviceKey{9}] = &probe;
+    PlanValues values;
+    values.planFingerprint = magda::engine::planFingerprint(plan);
+    values.ops.assign(plan.ops.size(), magda::engine::kUnityValue);
+    const RenderContext context{48000.0, kBlock, 2};
+
+    juce::AudioBuffer<float> out(2, kBlock), ahead(2, kBlock);
+    BlockInfo block;
+    block.numSamples = kBlock;
+    block.playing = true;
+    block.continuous = true;
+
+    PlanExecutor before;
+    before.setRenderAheadDepth(3);
+    before.prepare(plan, bindings, context);
+    REQUIRE(before.isPrepared());
+    for (int i = 0; i < 3; ++i)
+        before.process(values, block, out);
+
+    PlanExecutor after;
+    after.setRenderAheadDepth(3);
+    after.prepare(plan, bindings, context, &before);
+    REQUIRE(after.isPrepared());
+    // Block 3 is never rendered ahead, the two after it are: the callback discards at 3.
+    REQUIRE(after.processSide(0, 4, values, block, ahead));
+    REQUIRE(after.processSide(0, 5, values, block, ahead));
+    after.processSide(1, 3, values, block, out);
+    REQUIRE(after.handoffDiscards() == 1);
+
+    std::map<int, int> offs;
+    for (const auto& note : probe.blocks.back().notes)
+        if (!note.on)
+            ++offs[note.note];
+    CHECK(offs == std::map<int, int>{{12, 1}, {13, 1}, {14, 1}});
 }

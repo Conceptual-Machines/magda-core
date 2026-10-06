@@ -495,7 +495,7 @@ void ClipMidiSource::endSlot(juce::MidiBuffer& out, EventSample sample,
 
 bool ClipMidiSource::renderSession(juce::MidiBuffer& out, const BlockInfo& block,
                                    const TrackClipPlayback& track, bool reconcile) {
-    const LaunchHandleFeed::Reader handles(*handles_);
+    const LaunchHandleFeed::Reader handles(*handles_, block);
     if (!handles)
         return false;
 
@@ -574,7 +574,7 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
 
     // What the callback pinned for this block (#2490), which is what this
     // track's audio plays over the same one.
-    const auto* live = clips_.live();
+    const auto* live = clips_.live(block);
 
     if (live == nullptr) {
         endAll(out, EventSample{0});
@@ -653,7 +653,7 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
         // The block's own answer, worked out before anything rendered
         // (SessionPlayback.hpp), so the mode gating this is the one gating the
         // track's audio.
-        const auto* resolved = clips_.holdFor(trackId_);
+        const auto* resolved = clips_.holdFor(trackId_, block);
         const auto hold =
             resolved != nullptr ? *resolved : SectionHold::arrangement(block.numSamples);
 

@@ -198,6 +198,8 @@ bool MagdaAudioEngine::initialize() {
     audioIO_->addListener(this);
     if (!app_services::isHeadless(headless_))
         audioIO_->open();
+    configChanged();
+    Config::getInstance().addListener(this);
     host_->start(audioIO_->getDeviceManager());
 
     // The activity light and every live note go to this engine's meters and queue, and
@@ -218,7 +220,15 @@ bool MagdaAudioEngine::initialize() {
     initialised_ = true;
     return true;
 }
+void MagdaAudioEngine::configChanged() {
+    const auto& config = Config::getInstance();
+    if (host_ != nullptr)
+        host_->setRenderAhead(config.getRenderAheadEnabled() ? config.getRenderAheadMs() : 0);
+}
+
 void MagdaAudioEngine::shutdown() {
+    Config::getInstance().removeListener(this);
+
     // Stop the service reaching the host before it is stopped or destroyed.
     PluginService::getInstance().forgetStateProvider(*this);
     SamplerMedia::getInstance().forgetProvider();

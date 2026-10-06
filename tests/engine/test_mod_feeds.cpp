@@ -618,37 +618,55 @@ TEST_CASE("Live and ahead modulation render the same side by side as whole",
         magda::engine::RuntimeStateStore store{factory};
         magda::engine::PlanExecutor executor;
     };
-    Rig whole, split;
-    for (auto* rig : {&whole, &split}) {
+    // The ahead side also runs three blocks before the callback, through a ring four deep.
+    constexpr int kLag = 3;
+    Rig whole, split, lagged;
+    lagged.executor.setRenderAheadDepth(kLag + 1);
+    for (auto* rig : {&whole, &split, &lagged}) {
         const auto bindings = rig->store.realise(plan, context);
         for (const auto& message : rig->executor.prepare(plan, bindings, context, nullptr, &values))
             UNSCOPED_INFO("prepare: " << message);
         REQUIRE(rig->executor.isPrepared());
     }
 
-    juce::AudioBuffer<float> a(2, kBlock), b(2, kBlock);
+    juce::AudioBuffer<float> a(2, kBlock), b(2, kBlock), c(2, kBlock), early(2, kBlock);
     std::vector<float> heard;
-    BlockInfo block;
-    block.numSamples = kBlock;
-    block.playing = true;
-    block.continuous = true;
-    block.sampleRate = kSampleRate;
-    for (int index = 0; index < 24; ++index) {
+    const auto blockAt = [](int index) {
+        BlockInfo block;
+        block.numSamples = kBlock;
+        block.playing = true;
+        block.continuous = true;
+        block.sampleRate = kSampleRate;
         const double seconds = index * kBlock / kSampleRate;
         block.seconds = {seconds, seconds + kBlock / kSampleRate};
         block.beats = {seconds * 2.0, (seconds + kBlock / kSampleRate) * 2.0};
+        return block;
+    };
+    for (int index = 0; index < kLag; ++index)
+        REQUIRE(lagged.executor.processSide(0, static_cast<std::uint64_t>(index), values,
+                                            blockAt(index), early));
+    for (int index = 0; index < 24; ++index) {
+        const auto block = blockAt(index);
+        const auto sequence = static_cast<std::uint64_t>(index);
         if (index == 5)
-            for (auto* rig : {&whole, &split})
+            for (auto* rig : {&whole, &split, &lagged})
                 rig->midi.pending.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
 
         whole.executor.process(values, block, a);
-        split.executor.processSide(0, values, block, b);
-        split.executor.processSide(1, values, block, b);
-        for (int channel = 0; channel < 2; ++channel)
+        split.executor.processSide(0, sequence, values, block, b);
+        split.executor.processSide(1, sequence, values, block, b);
+        REQUIRE(
+            lagged.executor.processSide(0, sequence + kLag, values, blockAt(index + kLag), early));
+        lagged.executor.processSide(1, sequence, values, block, c);
+        for (int channel = 0; channel < 2; ++channel) {
             REQUIRE(std::memcmp(a.getReadPointer(channel), b.getReadPointer(channel),
                                 kBlock * sizeof(float)) == 0);
+            REQUIRE(std::memcmp(a.getReadPointer(channel), c.getReadPointer(channel),
+                                kBlock * sizeof(float)) == 0);
+        }
         heard.push_back(a.getSample(0, 0));
     }
+    CHECK(lagged.executor.handoffMisses() == 0);
 
     // The envelope opened on the note, and the LFO moved the rest.
     CHECK(heard[6] != heard[4]);

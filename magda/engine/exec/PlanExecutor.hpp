@@ -6,13 +6,16 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <magda/sdk/audio/BufferView.hpp>
 #include <memory>
+#include <optional>
 #include <set>
 #include <span>
 #include <string>
 #include <vector>
 
+#include "exec/HandoffRing.hpp"
 #include "exec/PlanBindings.hpp"
 #include "exec/PlanLayout.hpp"
 #include "exec/PlanValues.hpp"
@@ -278,21 +281,53 @@ class PlanExecutor {
                  juce::AudioBuffer<float>& output);
 
     /**
-     * @brief Render one side of one block (#1898): 0, what may be rendered ahead, or 1, what
-     *        the callback runs, into @p output.
+     * @brief Render one side of block @p sequence (#1898): 0, what may be rendered ahead, or 1,
+     *        what the callback runs, into @p output.
      *
-     * The same ops process() runs, in plan order, split where the plan's handoffs split them;
-     * the ahead side of a block renders before its callback side reads the handoffs, and the
-     * two together render what process() does. Each side resolves only its own parameters and
-     * advances only its own modifiers. Back to back on one block for now: a handoff holds one
-     * block, so giving the sides different blocks waits for its ring.
+     * The same ops process() runs, split where the plan's handoffs split them. The ahead side
+     * writes each handoff into the ring entry for @p sequence; the callback side reads that
+     * entry back, so the ahead side may run up to the ring's depth of blocks early. Each side
+     * resolves only its own parameters and advances only its own modifiers.
      *
-     * A plan without its handoffs, or a table where an op reads the other side's values (an
-     * unpromoted plan), is not split: the callback side renders the whole block and the ahead
-     * side nothing.
+     * A plan without its handoffs, or a table without sides or where an op reads the other
+     * side's values, is not split: the ahead side marks the block whole and the callback renders
+     * all of it, and no later block is rendered ahead until it has. The callback also renders
+     * whole a block the ahead side never reached. Returns whether the side ran; the ahead side
+     * does not while its entry for @p sequence is unreleased. A block the ahead side passed
+     * without rendering hears silence from its handoffs, and is silent altogether when the
+     * callback's values cannot split (handoffMisses).
      */
-    void processSide(int side, const PlanValues& values, const BlockInfo& block,
-                     juce::AudioBuffer<float>& output);
+    /// @p underClaim runs on the ahead side once it owns the block, before anything renders;
+    /// false abandons the block. @p whole makes the callback render this block and every later one
+    /// itself, and the ahead side stop.
+    bool processSide(int side, std::uint64_t sequence, const PlanValues& values,
+                     const BlockInfo& block, juce::AudioBuffer<float>& output,
+                     const std::function<bool()>& underClaim = {}, bool whole = false);
+
+    /// Whether every block rendered ahead has been taken by the callback.
+    bool handoffsDrained() const {
+        return handoffs_.drained();
+    }
+
+    /// Blocks each handoff holds between the two sides. Off the audio thread, before prepare.
+    void setRenderAheadDepth(int blocks) {
+        renderAheadDepth_ = std::max(blocks, 1);
+    }
+
+    /// Tracks whose clips the ahead side renders, sorted: the streams it reads and cues.
+    const std::vector<TrackId>& aheadTracks() const {
+        return aheadTracks_;
+    }
+
+    /// Callback blocks that could not be rendered: the ahead side was inside its ops.
+    int handoffMisses() const {
+        return handoffMisses_.load(std::memory_order_relaxed);
+    }
+
+    /// Times the callback forgot what was rendered ahead and rendered a block itself.
+    std::uint64_t handoffDiscards() const {
+        return handoffs_.discards();
+    }
 
     /** @brief Where one block's render starts, before any op has run. */
     struct BlockStart {
@@ -812,16 +847,51 @@ class PlanExecutor {
     /// Whether the prepared plan carries every handoff its boundary needs.
     bool guarded_ = false;
 
+    HandoffRing handoffs_;
+    std::vector<TrackId> aheadTracks_;
+
+    /// What the ahead side's block clears in place of the callback's buffer; nothing reads it.
+    juce::AudioBuffer<float> aheadOutput_;
+    int renderAheadDepth_ = 1;
+
+    /// The block the ahead side is rendering, while it is: a Handoff op writes into its entry.
+    std::optional<std::uint64_t> aheadBlock_;
+
+    std::atomic<int> handoffMisses_{0};
+
+    /// While the callback renders a block whole after discarding: the ahead side's ops see it as
+    /// a jump, and each MIDI handoff ends the notes that crossed it.
+    bool discontinuousAhead_ = false;
+
+    /// Per MIDI handoff, what crossed it to the callback; callback thread only. Shared with
+    /// the executor taking over, like a delay line, and used by one epoch at a time.
+    std::vector<int> crossedForOp_;
+    std::vector<std::shared_ptr<CrossedNotes>> crossed_;
+    CrossedNotes* crossedFor(std::size_t op) {
+        return op < crossedForOp_.size() && crossedForOp_[op] >= 0
+                   ? crossed_[static_cast<std::size_t>(crossedForOp_[op])].get()
+                   : nullptr;
+    }
+    void trackCrossing(std::size_t op, const juce::MidiBuffer& midi, bool panic);
+
+    /// Handoff @p op's input into the ahead block's entry; silence when not @p required.
+    void writeHandoff(std::size_t op, int numSamples, bool required);
+
+    /// Every handoff's output slot from @p sequence's entry, or silence when it is not @p ready.
+    void deliverHandoffs(std::uint64_t sequence, int numSamples, bool ready);
+
     /// Which side of this block's table an op, parameter or modifier is on. A table resolved
     /// without a plan has no sides and resolves whole on the first.
     static std::uint8_t sideIn(const std::vector<std::uint8_t>& sides, std::size_t index) {
         return index < sides.size() ? sides[index] : 0;
     }
     ParamSide& sideOfOp(std::size_t op) {
-        return paramSides_[blockTable_ == nullptr ? 0 : sideIn(blockTable_->opSide, op)];
+        const auto* table = tableFor(op);
+        return paramSides_[table == nullptr ? 0 : sideIn(table->opSide, op)];
     }
     const ParamSide& sideOfOp(std::size_t op) const {
-        return paramSides_[blockTable_ == nullptr ? 0 : sideIn(blockTable_->opSide, op)];
+        const auto* table = tableFor(op);
+        return paramSides_[table == nullptr ? 0 : sideIn(table->opSide, op)];
     }
 
     /**
@@ -855,8 +925,8 @@ class PlanExecutor {
     std::vector<std::span<const int>> modSourceForOp_;
 
     /// One block of the source's audio, downmixed to mono, which is what a
-    /// detector reads. Sized at prepare.
-    std::vector<float> detectMono_;
+    /// detector reads. One per side, since the two may render at once. Sized at prepare.
+    std::array<std::vector<float>, 2> detectMono_;
 
     /// Per follower: what its own detection needs to know about the level
     /// its audio trigger is at, kept out of the modifier states since it
@@ -876,29 +946,32 @@ class PlanExecutor {
     int carriedTriggerDetectors_ = 0;
 
     /**
-     * @brief The table this block resolved against, or null.
+     * @brief The table each side's block resolved against, or null.
      *
-     * Set once at the top of the block and read by ops that need to name a
-     * modifier. Not a second copy of anything: it's the same table
-     * resolveParameters was handed, kept for the length of the walk because
-     * a modulation tap runs inside the walk and the values it was given
-     * don't reach renderOp.
+     * Set at the top of the block and read by ops that need to name a modifier: a modulation
+     * tap runs inside the walk and the values it was given don't reach renderOp. Per side, since
+     * the two may render different blocks at once; a whole block sets both.
      */
-    const ParamTable* blockTable_ = nullptr;
+    std::array<const ParamTable*, 2> blockTables_{};
 
-    /// Settle @ref blockTable_ for this block. Called by whichever of the
-    /// two entry points runs first, and idempotent, since beginBlock is
-    /// const and the prefix needs the answer before the resolve does.
-    void settleBlockTable(const PlanValues& values);
+    /// The table @p op's side resolved against.
+    const ParamTable* tableFor(std::size_t op) const {
+        return blockTables_[runSide_[op]];
+    }
+
+    /// Settle @ref blockTables_ for side @p only, or both. Called by whichever of the two entry
+    /// points runs first, and idempotent, since the prefix needs the answer before the resolve.
+    void settleBlockTable(const PlanValues& values, int only);
 
     /// What the device behind @p window reads this block: one (slot, value)
     /// pair per parameter the table carries for it.
     DeviceParams deviceParams(std::size_t op, const ParamTable::DeviceWindow& window) const {
-        if (blockTable_ == nullptr)
+        const auto* table = tableFor(op);
+        if (table == nullptr)
             return {};
 
-        return sideOfOp(op).values.device(window.first, window.count, blockTable_->slotsIn(window),
-                                          blockTable_->drivenIn(window));
+        return sideOfOp(op).values.device(window.first, window.count, table->slotsIn(window),
+                                          table->drivenIn(window));
     }
 
     /// Read one modulation tap: hand the source's level to the followers
@@ -919,7 +992,7 @@ class PlanExecutor {
      * table takes to be replaced would be a visible fault reporting an
      * invisible one.
      */
-    void publishValueTaps(int only);
+    void publishValueTaps(const ParamTable& table, int only);
 
     /// Spend the notes in @p midi on the modifiers listening to @p op's track.
     void feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi);

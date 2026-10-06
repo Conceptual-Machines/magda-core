@@ -591,7 +591,7 @@ TEST_CASE("The feed hands the audio thread what was last published", "[engine][c
         // no track to have a state.
         CHECK(feed.live() == nullptr);
         CHECK(feed.sections() == nullptr);
-        CHECK(feed.holdFor(kTrack) == nullptr);
+        CHECK(feed.holdFor(kTrack, magda::engine::BlockInfo{}) == nullptr);
     }
 
     feed.publish(std::make_shared<const ClipSnapshot>(
@@ -626,8 +626,8 @@ TEST_CASE("A track keeps its playback state across a republish", "[engine][clip]
         REQUIRE(feed.sections() != nullptr);
         first = feed.sections()->find(kTrack);
         REQUIRE(first != nullptr);
-        CHECK(feed.holdFor(kTrack) == &first->hold);
-        CHECK(feed.holdFor(kTrack + 1) == nullptr);
+        CHECK(feed.holdFor(kTrack, magda::engine::BlockInfo{}) == &first->hold);
+        CHECK(feed.holdFor(kTrack + 1, magda::engine::BlockInfo{}) == nullptr);
     }
 
     // An edit to what the track plays is not a reason to forget what mode the

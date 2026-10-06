@@ -1139,6 +1139,21 @@ class Config {
         showTooltips = show;
     }
 
+    // Render ahead (#1898): the deterministic side of the mix rendered ahead of the callback
+    bool getRenderAheadEnabled() const {
+        return renderAheadEnabled;
+    }
+    void setRenderAheadEnabled(bool enabled) {
+        renderAheadEnabled = enabled;
+    }
+    /// How far ahead, as a time: the device's block size turns it into blocks.
+    int getRenderAheadMs() const {
+        return renderAheadMs;
+    }
+    void setRenderAheadMs(int milliseconds) {
+        renderAheadMs = std::clamp(milliseconds, 5, 200);
+    }
+
     // Auto-monitor selected track
     bool getAutoMonitorSelectedTrack() const {
         return autoMonitorSelectedTrack;
@@ -1443,6 +1458,9 @@ class Config {
 
     // Auto-monitor settings
     bool autoMonitorSelectedTrack = false;  // Auto-enable input monitor on selected track
+
+    bool renderAheadEnabled = false;
+    int renderAheadMs = 20;
 
     // Device chain behaviour
 

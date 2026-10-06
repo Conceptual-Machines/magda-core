@@ -307,8 +307,9 @@ std::optional<bool> OscRouter::handleFixedNamespace(const OscMessageView& messag
     if (dispatch == Dispatch::Preflight)
         return true;
 
-    accepted_.fetch_add(1, std::memory_order_relaxed);
+    // Counted once published, so a reader seeing the count finds the command to drain.
     submit(*command, *value, peer);
+    accepted_.fetch_add(1, std::memory_order_release);
     return true;
 }
 
@@ -344,7 +345,7 @@ bool OscRouter::handleBindings(const OscMessageView& message, OscPeerId peer, Di
     if (!accepted)
         return false;
 
-    accepted_.fetch_add(1, std::memory_order_relaxed);
+    accepted_.fetch_add(1, std::memory_order_release);
     scheduleDrain();
     return true;
 }
@@ -567,7 +568,7 @@ void OscRouter::setDrainScheduler(std::function<void()> scheduler) {
 }
 
 std::uint64_t OscRouter::acceptedMessageCount() const {
-    return accepted_.load(std::memory_order_relaxed);
+    return accepted_.load(std::memory_order_acquire);
 }
 
 std::uint64_t OscRouter::droppedCommandCount() const {

@@ -1,7 +1,10 @@
 #include "exec/EngineSession.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <optional>
+#include <span>
+#include <thread>
 
 #include "clip/ClipVoicePool.hpp"
 #include "clip/SessionPlayback.hpp"
@@ -40,6 +43,59 @@ struct ScopedLiveOutput {
 
 }  // namespace
 
+namespace {
+
+/// How long a publish waits for the callback to play out the blocks rendered ahead.
+constexpr auto kRenderAheadDrainLimit = std::chrono::milliseconds(250);
+
+}  // namespace
+
+bool EngineSession::playsSession(std::span<const TrackId> tracks, const BlockInfo& block) {
+    const LaunchHandleFeed::Reader handles(handles_);
+    for (const auto track : tracks) {
+        if (const auto* hold = clips_.holdFor(track, block);
+            hold != nullptr && (hold->from.value != 0 || hold->until.value != block.numSamples ||
+                                hold->gained || hold->lost || hold->heldAtEnd))
+            return true;
+        if (!handles)
+            continue;
+        const auto [first, last] = handles->rangeFor(track);
+        for (auto entry = first; entry != last; ++entry)
+            if (entry->handle != nullptr &&
+                (entry->handle->blockStatus().soundingAtStart ||
+                 entry->handle->blockStatus().playingAtEnd() || entry->handle->holdsSection()))
+                return true;
+    }
+    return false;
+}
+
+void EngineSession::setRenderAhead(int depth, bool inBackground) {
+    renderAheadDepth_ = std::max(depth, 0);
+    renderAhead_.reset();
+    if (renderAheadDepth_ == 0)
+        return;
+
+    renderAhead_ = std::make_unique<RenderAhead>(inBackground);
+    renderAhead_->setDepth(renderAheadDepth_);
+    if (voices_ != nullptr)
+        renderAhead_->setStreamFeed(&voices_->feed());
+}
+
+int EngineSession::renderAheadOnce() {
+    return renderAhead_ != nullptr ? renderAhead_->renderOnce() : 0;
+}
+
+void EngineSession::handRenderAheadEpoch() {
+    if (renderAhead_ == nullptr || live_ == nullptr)
+        return;
+
+    renderAhead_->setValues(std::make_shared<const PlanValues>(live_->values));
+    renderAhead_->setEpoch({.owner = live_,
+                            .executor = &live_->executor,
+                            .id = live_->epoch,
+                            .tracks = live_->executor.reference().aheadTracks()});
+}
+
 EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> plan,
                                              const RenderContext& context,
                                              const RuntimeStateIds& modelIds, PlanValues values) {
@@ -47,6 +103,7 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
         return {false, {"no plan to publish"}};
 
     auto prepared = std::make_shared<PreparedRender>(pool_);
+    prepared->executor.setRenderAheadDepth(renderAheadDepth_);
     prepared->plan = std::move(plan);
     prepared->values = std::move(values);
     prepared->context = context;
@@ -125,11 +182,24 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     // one still playing from spending them: it is carrying the old route, and
     // a note played through that route between here and the swap is released
     // by this plan rather than by that one (#2418).
-    prepared->executor.commitReroutes(++planEpoch_);
+    prepared->epoch = ++planEpoch_;
+    prepared->executor.commitReroutes(prepared->epoch);
 
     // The swap. This blocks until the audio thread is out of the block it was
     // in, then hands the previous epoch back here, where its destructor runs.
     // Modelled in specs/tla/plan_swap.
+    // The ahead thread lets go of the epoch it renders first: the new one shares that epoch's
+    // carried state, and the callback is about to render it. Then the callback plays out what
+    // was rendered ahead, since that state is already past it. Bounded, for a device that has
+    // stopped calling back: what it never played is skipped when it resumes.
+    if (renderAhead_ != nullptr && live_ != nullptr) {
+        renderAhead_->setEpoch({});
+        const auto deadline = std::chrono::steady_clock::now() + kRenderAheadDrainLimit;
+        while (!live_->executor.reference().handoffsDrained() &&
+               std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
     published_.nonRealtimeReplace(prepared);
 
     // Only now: until the swap, the epoch this replaces was the one rendering,
@@ -140,6 +210,7 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
         lastModelIds_ = modelIds;
     live_ = std::move(prepared);
     livePlan_ = live_->plan;
+    handRenderAheadEpoch();
 
     // Values this plan has nowhere to publish from, taken back now that it is
     // the one rendering. Here rather than at prepare, because until the swap
@@ -283,6 +354,8 @@ EngineSession::Result EngineSession::publishValues(PlanValues values) {
         // makes an input audible arrives here, with no prepare to notice that
         // nothing is bound to it (#2612).
         auto messages = live_->executor.reportUnboundInputs(&values);
+        if (renderAhead_ != nullptr)
+            renderAhead_->setValues(std::make_shared<const PlanValues>(values));
         values_.nonRealtimeReplace(std::move(values));
         return {true, std::move(messages)};
     }
@@ -300,6 +373,8 @@ EngineSession::Result EngineSession::publishValues(PlanValues values) {
 void EngineSession::publishTransport(TransportSnapshot transport) {
     if (voices_ != nullptr)
         voices_->setTransport(transport.loop, transport.tempo);
+    if (renderAhead_ != nullptr)
+        renderAhead_->setTransport(std::make_shared<const TransportSnapshot>(transport));
     transport_.nonRealtimeReplace(std::move(transport));
 }
 
@@ -320,6 +395,8 @@ void EngineSession::publishClips(std::shared_ptr<const ClipSnapshot> clips) {
     static const ClipSnapshot kNothing;
     store_.publishHandles(clips != nullptr ? *clips : kNothing, handles_, requests_, &retired_);
 
+    if (renderAhead_ != nullptr)
+        renderAhead_->setClips(clips);
     clips_.publish(std::move(clips));
 }
 
@@ -390,6 +467,10 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
     // independent already, which is what makes cutting a callback free.
     const auto segments = clock_.advance(*transport, (*render)->context.sampleRate, numSamples);
     const auto callbackEnd = clock_.syncPoint();
+    const std::span<const TrackId> renderedAhead =
+        renderAhead_ != nullptr
+            ? std::span<const TrackId>{(*render)->executor.reference().aheadTracks()}
+            : std::span<const TrackId>{};
     for (std::size_t index = 0; index < segments.size(); ++index) {
         const auto& segment = segments[index];
         if (transport->punch.recordingGeneration != punchCaptureGeneration_) {
@@ -441,7 +522,7 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
         const LaunchHandleFeed::BlockScope handles(handles_);
         std::optional<ClipStreamFeed::BlockScope> streams;
         if (voices_ != nullptr)
-            streams.emplace(voices_->feed());
+            streams.emplace(voices_->feed(), renderedAhead);
         const auto boundary =
             index + 1 < segments.size()
                 ? SlotRunBoundary{.at = segment.block.monotonicSamples.end,
@@ -517,7 +598,11 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
         if (voices_ != nullptr)
             voices_->announceHandBacks(clips_.sections(), segment.block);
 
-        (*render)->executor.process(table, segment.block, piece);
+        if (renderAhead_ != nullptr)
+            (*render)->executor.processSide(1, blockSequence_++, table, segment.block, piece, {},
+                                            playsSession(renderedAhead, segment.block));
+        else
+            (*render)->executor.process(table, segment.block, piece);
 
         // After the plan and outside it. The metronome is not in the graph: it
         // is never recorded, never routed, and not the master fader's to
@@ -534,6 +619,11 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
             }
         }
     }
+
+    // After the blocks are released, so the ring has room for what the thread renders next.
+    if (renderAhead_ != nullptr)
+        renderAhead_->advanced(clock_.core(), blockSequence_, numSamples,
+                               (*render)->context.sampleRate, (*render)->epoch);
 }
 
 }  // namespace magda::engine
