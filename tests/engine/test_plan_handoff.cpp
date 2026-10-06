@@ -506,3 +506,191 @@ TEST_CASE("A block that cannot render in order or split is dropped", "[engine][p
         CHECK(lagged.audio[(kAt + 1) * kBlock] == static_cast<float>(rendered * kBlock));
     }
 }
+
+namespace {
+
+/// A clip's notes, each at a fraction of its sample, raising a panic every third block.
+class FractionalMidi final : public magda::engine::EngineMidiSource {
+  public:
+    explicit FractionalMidi(int notesPerBlock = 1, int firstNote = 36)
+        : perBlock(notesPerBlock), base(firstNote) {}
+
+    void render(const BlockInfo& block, juce::MidiBuffer& out) override {
+        magda::engine::NoteFractions ignored;
+        renderWithFractions(block, out, ignored);
+    }
+    void renderWithFractions(const BlockInfo& block, juce::MidiBuffer& out,
+                             magda::engine::NoteFractions& fractions) override {
+        for (int n = 0; n < perBlock; ++n) {
+            const auto sample = (count + n) % block.numSamples;
+            const auto note = base + ((count + n) % 48);
+            out.addEvent(juce::MidiMessage::noteOn(1, note, 1.0f), sample);
+            fractions.add(sample, 1, note, 0.125f * static_cast<float>(1 + (count + n) % 7));
+        }
+        panic = count % 3 == 0;
+        ++count;
+    }
+    bool raisedAllNotesOff() const override {
+        return panic;
+    }
+
+    int perBlock;
+    int base;
+    int count = 0;
+    bool panic = false;
+};
+
+/// What a live device was handed, block by block: each note-on's sample, pitch and fraction,
+/// and the panic.
+class HeardProbe final : public magda::engine::EngineDevice {
+  public:
+    struct Note {
+        int sample;
+        int note;
+        float fraction;
+        bool operator==(const Note&) const = default;
+    };
+    struct Block {
+        std::vector<Note> notes;
+        bool panic;
+        bool operator==(const Block&) const = default;
+    };
+
+    void setMidiInputBoundBytes(int bytes) override {
+        boundBytes = bytes;
+    }
+    void process(magda::engine::DeviceBlock& block) override {
+        block.audio.clear();
+        auto& heard = blocks.emplace_back();
+        heard.panic = block.midiInAllNotesOff;
+        for (const auto event : *block.midiIn) {
+            const auto message = event.getMessage();
+            heard.notes.push_back(
+                {event.samplePosition, message.getNoteNumber(),
+                 block.midiInFractions->at(event.samplePosition, message.getChannel(),
+                                           message.getNoteNumber())});
+        }
+    }
+
+    std::vector<Block> blocks;
+    int boundBytes = 0;
+};
+
+/// @p sources MIDI clips merged on track 1, read by a live device through a handoff.
+RenderPlan clipsIntoLiveDevice(int sources) {
+    RenderPlan plan;
+    std::vector<PortRef> clips;
+    for (int track = 1; track <= sources; ++track) {
+        clips.push_back(PortRef{static_cast<magda::engine::OpId>(plan.ops.size()), 0});
+        plan.ops.push_back(op(OpKind::ClipMidi, OpRole::ClipMidi, track, {}, {SignalKind::Midi}));
+    }
+    auto feed = clips.front();
+    if (sources > 1) {
+        feed = PortRef{static_cast<magda::engine::OpId>(plan.ops.size()), 0};
+        plan.ops.push_back(
+            op(OpKind::MergeMidi, OpRole::TrackMidiInput, 1, clips, {SignalKind::Midi}));
+    }
+    // Live because the track also takes a live MIDI input, which nothing plays here.
+    const PortRef keys{static_cast<magda::engine::OpId>(plan.ops.size()), 0};
+    plan.ops.push_back(op(OpKind::MidiInput, OpRole::LiveMidiInput, 1, {}, {SignalKind::Midi},
+                          LivenessDomain::Live));
+    const PortRef heard{static_cast<magda::engine::OpId>(plan.ops.size()), 0};
+    plan.ops.push_back(op(OpKind::MergeMidi, OpRole::ChainMidiMerge, 1, {feed, keys},
+                          {SignalKind::Midi}, LivenessDomain::Live));
+    auto device = op(OpKind::Device, OpRole::DeviceProcess, 1, {PortRef{}, heard, PortRef{}},
+                     {SignalKind::Audio}, LivenessDomain::Live);
+    device.key.deviceId = 9;
+    plan.ops.push_back(device);
+    plan.ops.push_back(output(PortRef{static_cast<magda::engine::OpId>(plan.ops.size() - 1), 0}));
+    plan.ops.back().liveness = LivenessDomain::Live;
+    plan.outputOps = {static_cast<magda::engine::OpId>(plan.ops.size() - 1)};
+    magda::engine::bakeScheduling(plan);
+    return magda::engine::insertHandoffs(plan);
+}
+
+struct Heard {
+    std::vector<HeardProbe::Block> blocks;
+    int boundBytes = 0;
+    int misses = 0;
+};
+
+/// The device's view over @p blocks, whole or with the ahead side @p lag blocks early.
+Heard hearThroughHandoff(int sources, int notesPerBlock, int blocks, int lag = -1) {
+    const auto plan = clipsIntoLiveDevice(sources);
+    for (const auto& problem : magda::engine::validatePlan(plan))
+        UNSCOPED_INFO(problem);
+    REQUIRE(magda::engine::validatePlan(plan).empty());
+    REQUIRE(countOf(plan, OpKind::Handoff) == 1);
+
+    std::vector<std::unique_ptr<FractionalMidi>> clips;
+    HeardProbe probe;
+    PlanBindings bindings;
+    for (int track = 1; track <= sources; ++track) {
+        clips.push_back(std::make_unique<FractionalMidi>(notesPerBlock, 12 * track));
+        bindings.clipMidi[track] = clips.back().get();
+    }
+    bindings.devices[magda::engine::DeviceKey{9}] = &probe;
+    PlanValues values;
+    values.planFingerprint = magda::engine::planFingerprint(plan);
+    values.ops.assign(plan.ops.size(), magda::engine::kUnityValue);
+
+    PlanExecutor executor;
+    executor.setRenderAheadDepth(std::max(lag, 0) + 1);
+    for (const auto& message : executor.prepare(plan, bindings, RenderContext{48000.0, kBlock, 2}))
+        UNSCOPED_INFO("prepare: " << message);
+    REQUIRE(executor.isPrepared());
+
+    juce::AudioBuffer<float> out(2, kBlock), ahead(2, kBlock);
+    BlockInfo block;
+    block.numSamples = kBlock;
+    block.playing = true;
+    block.continuous = true;
+    int nextAhead = 0;
+    for (int i = 0; i < blocks; ++i) {
+        if (lag < 0) {
+            executor.process(values, block, out);
+            continue;
+        }
+        while (nextAhead <= i + lag && nextAhead < blocks &&
+               executor.processSide(0, static_cast<std::uint64_t>(nextAhead), values, block, ahead))
+            ++nextAhead;
+        executor.processSide(1, static_cast<std::uint64_t>(i), values, block, out);
+    }
+    return {probe.blocks, probe.boundBytes, executor.handoffMisses()};
+}
+
+}  // namespace
+
+TEST_CASE("Fractions and panics cross a handoff rendered ahead", "[engine][plan][1898]") {
+    constexpr int kBlocks = 9;
+    const auto whole = hearThroughHandoff(1, 1, kBlocks);
+    REQUIRE(whole.blocks.size() == kBlocks);
+    CHECK(std::ranges::count_if(whole.blocks, [](const auto& b) { return b.panic; }) == 3);
+    CHECK(std::ranges::adjacent_find(whole.blocks, [](const auto& a, const auto& b) {
+              return a.notes.front().fraction != b.notes.front().fraction;
+          }) != whole.blocks.end());
+
+    for (const int lag : {0, 2}) {
+        INFO("lag " << lag);
+        const auto lagged = hearThroughHandoff(1, 1, kBlocks, lag);
+        CHECK(lagged.misses == 0);
+        CHECK(lagged.blocks == whole.blocks);
+    }
+}
+
+TEST_CASE("A handoff reserves the MIDI its merge can carry", "[engine][plan][1898]") {
+    // Two clips at 300 note-ons a block, nine bytes each: 5400 bytes past the handoff, more
+    // than one producer's budget.
+    constexpr int kNotes = 300;
+    constexpr int kBlocks = 4;
+    const auto whole = hearThroughHandoff(2, kNotes, kBlocks);
+    // Both clips through the handoff, and the live keys merged behind it.
+    CHECK(whole.boundBytes == 3 * magda::engine::kMaxMidiBytesPerPort);
+    REQUIRE(whole.blocks.size() == kBlocks);
+    CHECK(whole.blocks.front().notes.size() == 2 * kNotes);
+
+    const auto lagged = hearThroughHandoff(2, kNotes, kBlocks, 2);
+    CHECK(lagged.misses == 0);
+    CHECK(lagged.boundBytes == whole.boundBytes);
+    CHECK(lagged.blocks == whole.blocks);
+}
