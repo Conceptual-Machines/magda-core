@@ -29,7 +29,7 @@ class BarsBeatsTicksLabel : public juce::Component {
      *  a box before the label exists; it reads the same font and segment
      *  widths that resized() lays out with, so the two cannot disagree. */
     static int preferredWidthForRange(double maxValue, int minBeatsPerBar, int maxBeatsPerBar,
-                                      bool isPosition);
+                                      bool isPosition, float fontSize = kTextFontSize);
 
     /** Width each segment needs for the widest value it can show, in the order
      *  bars, beats, ticks. preferredWidthForRange() adds these up; the live
@@ -37,7 +37,8 @@ class BarsBeatsTicksLabel : public juce::Component {
      *  resized()), so a box sized for this holds the widest value while a
      *  typical one reads balanced. */
     static std::array<int, 3> segmentWidthsFor(double maxValue, int minBeatsPerBar,
-                                               int maxBeatsPerBar, bool isPosition);
+                                               int maxBeatsPerBar, bool isPosition,
+                                               float fontSize = kTextFontSize);
 
     BarsBeatsTicksLabel();
     ~BarsBeatsTicksLabel() override;
@@ -59,6 +60,9 @@ class BarsBeatsTicksLabel : public juce::Component {
     void setDoubleClickResetsValue(bool shouldReset) {
         doubleClickResets_ = shouldReset;
     }
+
+    /** Size the digits draw at; kTextFontSize unless a caller wants a headline readout. */
+    void setFontSize(float size);
 
     // Custom text colour (default: uses TEXT_PRIMARY from theme)
     void setTextColour(juce::Colour colour);
@@ -105,8 +109,9 @@ class BarsBeatsTicksLabel : public juce::Component {
     // strip is shared out in these proportions.
     std::array<int, 3> shownSegmentWidths() const;
     // Width of a run of `digits` of the widest digit, plus the segment's air.
-    static int widthOfDigits(int digits);
+    static int widthOfDigits(int digits, float fontSize);
 
+    float fontSize_ = kTextFontSize;
     int trailingInset_ = 0;
     // Digit counts of the bar and beat numbers last laid out for, so a value
     // that gains or loses a digit relayouts rather than just repaints.

@@ -34,7 +34,12 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
                    " sigDen=" + juce::String(text.timeSigDenominator) + " cpuTitle=" +
                    juce::String(text.cpuTitle) + " cpuValue=" + juce::String(text.cpuValue) +
                    " gridDivision=" + juce::String(text.gridDivision) +
-                   " gridToggle=" + juce::String(text.gridToggle));
+                   " gridToggle=" + juce::String(text.gridToggle) +
+                   " headline=" + juce::String(text.headlineTimecodeBox) + " keyRoot=" +
+                   juce::String(text.keyRoot) + " keyQuality=" + juce::String(text.keyQuality) +
+                   " chip=" + juce::String(text.rangeChip) + " memCaption=" +
+                   juce::String(text.memoryCaption) + " memTime=" + juce::String(text.memoryTime) +
+                   " keep=" + juce::String(text.keep) + " banner=" + juce::String(text.banner));
         expect(text.timecodeBox > 0);
         expect(text.timecodeCaption > 0);
         expect(text.tempo > 0);
@@ -44,16 +49,29 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
         expect(text.cpuValue > 0);
         expect(text.gridDivision > 0);
         expect(text.gridToggle > 0);
+        expect(text.headlineTimecodeBox > text.timecodeBox);
+        expect(text.keyRoot > 0);
+        expect(text.keyQuality > 0);
+        expect(text.rangeChip > 0);
+        expect(text.memoryTime > 0);
+        expect(text.keep > 0);
+        expect(text.banner > 0);
 
-        beginTest("Nothing collapses at the window MAGDA opens at");
+        beginTest("Nothing but the master buffer meter collapses at the window MAGDA opens at");
+        for (auto style : {Style::MemoryFill, Style::Justified}) {
+            const auto other = compute(magda::LayoutConfig::defaultWindowWidth,
+                                       config.defaultTransportHeight, text, 1.0f, style);
+            expect(!other.overflowVisible,
+                   juce::String("the overflow button is showing in ") + styleKey(style));
+        }
         const auto l = compute(magda::LayoutConfig::defaultWindowWidth,
-                               config.defaultTransportHeight, text, 1.0f);
+                               config.defaultTransportHeight, text, 1.0f, Style::Anchored);
         expect(l.navVisible, "navigation buttons collapsed");
         expect(l.loopBackVisible, "loop / back-to-arrangement collapsed");
         expect(l.punchVisible, "punch box collapsed");
         expect(l.selLoopTimesVisible, "selection / loop readouts collapsed");
         expect(l.gridVisible, "grid cluster collapsed");
-        expect(l.rightClusterVisible, "CPU meter and QWERTY toggle collapsed");
+        expect(l.rightClusterVisible, "KEEP, CPU meter and QWERTY toggle collapsed");
         expect(!l.overflowVisible, "the overflow button is showing at the default size");
 
         beginTest("...and at every spacing density the preference offers");
@@ -115,7 +133,7 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
             expect(needed[1] >=
                    widthOf(timecodeFont, juce::String(magda::MAX_TIME_SIGNATURE_VALUE)));
             expect(needed[2] >= widthOf(timecodeFont, "888"));
-            expect(l.playhead.getWidth() >= needed[0] + needed[1] + needed[2]);
+            expect(l.selectionStart.getWidth() >= needed[0] + needed[1] + needed[2]);
         }
 
         beginTest("A bar number that gains a digit re-proportions the readout's segments");
@@ -155,28 +173,28 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
 
         beginTest("The digits stay clear of what is drawn over the readout's end");
         {
-            // TransportPanel draws the group caption over the box's top-right
-            // corner and the punch box carries its icons there. The layout
-            // adds that zone to every readout and hands it to the label, which
-            // keeps its strip out of it.
-            expect(l.timeBoxTrailingInset >= text.timecodeCaption,
+            // TransportPanel draws CUR over the headline playhead's top-right
+            // corner. The layout adds that zone to the readout and hands it to
+            // the label, which keeps its strip out of it.
+            expect(l.cursorTrailingInset >= text.timecodeCaption,
                    "the inset does not cover the caption");
 
             magda::BarsBeatsTicksLabel label;
             label.setRange(0.0, kTimecodeMaxBeats, 0.0);
             label.setBarsBeatsIsPosition(true);
+            label.setFontSize(kHeadlineFontSize);
             label.setSize(l.playhead.getWidth(), l.playhead.getHeight());
-            label.setTrailingInset(l.timeBoxTrailingInset);
+            label.setTrailingInset(l.cursorTrailingInset);
             label.setValue(kTimecodeMaxBeats, juce::dontSendNotification);
 
             // The last glyph sits half a segment pad inside its segment.
             const int glyphRight = label.getChildComponent(2)->getRight() -
                                    (magda::BarsBeatsTicksLabel::kSegmentPad / 2);
-            expect(glyphRight <= label.getWidth() - l.timeBoxTrailingInset,
+            expect(glyphRight <= label.getWidth() - l.cursorTrailingInset,
                    "the ticks run under the caption");
             const auto needed = magda::BarsBeatsTicksLabel::segmentWidthsFor(
                 kTimecodeMaxBeats, magda::DEFAULT_TIME_SIGNATURE_NUMERATOR,
-                magda::DEFAULT_TIME_SIGNATURE_NUMERATOR, true);
+                magda::DEFAULT_TIME_SIGNATURE_NUMERATOR, true, kHeadlineFontSize);
             for (int i = 0; i < 3; ++i)
                 expect(label.getChildComponent(i)->getWidth() >= needed[i],
                        "segment " + juce::String(i) + " lost room to the inset");
@@ -195,7 +213,11 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
         }
 
         beginTest("Each readout is wide enough for the string it has to draw");
-        expect(l.playhead.getWidth() >= text.timecodeBox);
+        expect(l.playhead.getWidth() >= text.headlineTimecodeBox);
+        expect(l.selectionStart.getWidth() >= text.timecodeBox);
+        expect(l.key.getWidth() >= text.keyRoot + text.keyQuality);
+        expect(l.selChip.getWidth() >= text.rangeChip);
+        expect(l.keep.getWidth() >= text.keep);
         expect(l.tempo.getWidth() >= text.tempo);
         expect(l.timeSigNumerator.getWidth() >= text.timeSigNumerator);
         expect(l.timeSigDenominator.getWidth() >= text.timeSigDenominator);
