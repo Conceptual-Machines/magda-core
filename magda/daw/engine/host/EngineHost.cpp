@@ -465,6 +465,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     /// The meters, and the audio thread's side of the trace.
     void timerCallback() override {
+        // A render-ahead change held back while playing or recording (handleAsyncUpdate).
+        if (renderAheadMoved_.load(std::memory_order_relaxed) && !request_.playing && !recording_)
+            triggerAsyncUpdate();
+
         reconcileFinishedSessionTakes();
         publishSessionRecordingStateIfChanged();
         if (sessionCapture_.update())
@@ -2389,6 +2393,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         publishRequest({.playing = true, .locate = false});
     }
 
+    /// The session remade at the next update, for a setting it is made with.
+    void wantRebuild() {
+        triggerAsyncUpdate();
+    }
+
     void wantPlan() {
         requests_.fetch_add(1, std::memory_order_relaxed);
         plan_.store(true, std::memory_order_relaxed);
@@ -2465,8 +2474,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (wanted.sampleRate <= 0.0 || wanted.maxBlockSize <= 0)
             return;
 
-        // The feed only grows while no callback runs, so more inputs is a rebuild.
-        if (session_ == nullptr || wanted != context_ ||
+        // The feed only grows while no callback runs, so more inputs is a rebuild. A session
+        // renders ahead or not from when it is made, so a change waits for the transport to
+        // stop and nothing to record: a rebuild restarts the clock and ends slot takes.
+        const auto renderAheadMoved = !request_.playing && !recording_ &&
+                                      renderAheadMoved_.exchange(false, std::memory_order_relaxed);
+        if (session_ == nullptr || wanted != context_ || renderAheadMoved ||
             scratch_.getNumChannels() != hardwareOutputChannels_ ||
             session_->liveInputs().preparedChannels() <
                 inputChannels_.load(std::memory_order_relaxed)) {
@@ -2654,6 +2667,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         voiceThread_ = std::make_unique<engine::ClipVoiceThread>(*voices_);
 
         session_ = std::make_unique<engine::EngineSession>(factory_, &renderPool_, voices_.get());
+        session_->setRenderAhead(renderAheadBlocks_.load(std::memory_order_relaxed));
         sessionCapture_.attach(*session_);
         factory_.attach(session_->clipFeed(), voices_->feed(), session_->launchHandleFeed(),
                         session_->liveInputs(), session_->liveOutputs());
@@ -3655,6 +3669,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// Every ask to republish, whether or not one followed.
     std::atomic<std::uint64_t> requests_{0};
 
+    /// Blocks the session renders ahead (#1898), applied when it is made.
+    std::atomic<int> renderAheadBlocks_{0};
+    std::atomic<bool> renderAheadMoved_{false};
+
     std::atomic<bool> plan_{false};
     std::atomic<bool> values_{false};
 
@@ -3720,6 +3738,14 @@ engine::GrooveTemplateSet grooveSetFrom(std::vector<EngineHost::GrooveEntry> ent
 
 void EngineHost::setGrooveProvider(GrooveProvider provider) {
     impl_->grooveProvider_ = std::move(provider);
+}
+
+void EngineHost::setRenderAhead(int blocks) {
+    blocks = std::max(blocks, 0);
+    if (impl_->renderAheadBlocks_.exchange(blocks) != blocks) {
+        impl_->renderAheadMoved_.store(true, std::memory_order_relaxed);
+        impl_->wantRebuild();
+    }
 }
 
 void EngineHost::refreshGrooves() {

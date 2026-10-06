@@ -8,6 +8,7 @@
 #include "../audio/MidiBridge.hpp"
 #include "../audio/TrackMeters.hpp"
 #include "../audio/io/AudioIOService.hpp"
+#include "../core/Config.hpp"
 #include "AudioEngine.hpp"
 #include "PluginService.hpp"
 
@@ -34,7 +35,8 @@ class MagdaAudioEngine final : public AudioEngine,
                                public PluginStateProvider,
                                public LiveMidiSink,
                                private HardwareChannels::Listener,
-                               private MidiBridge::Listener {
+                               private MidiBridge::Listener,
+                               private ConfigListener {
   public:
     explicit MagdaAudioEngine(AudioEngineOptions options);
     ~MagdaAudioEngine() override;
@@ -184,6 +186,9 @@ class MagdaAudioEngine final : public AudioEngine,
 
     void hardwareChannelsChanged() override;
     void midiDeviceListChanged() override;
+
+    /// Hands the render-ahead preference to the host (#1898).
+    void configChanged() override;
 
     /// Track and master meters, fed by the host (#2579).
     TrackMeters meters_;

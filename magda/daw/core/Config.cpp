@@ -173,6 +173,8 @@ void Config::save() {
     root->setProperty("duplicateLoopGrows", duplicateLoopGrows);
     root->setProperty("showTooltips", showTooltips);
     root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
+    root->setProperty("renderAheadEnabled", renderAheadEnabled);
+    root->setProperty("renderAheadBlocks", renderAheadBlocks);
 
     // Mixer view-toggle rail
     root->setProperty("mixerShowSends", mixerShowSends_);
@@ -588,6 +590,8 @@ void Config::load() {
     duplicateLoopGrows = getBool("duplicateLoopGrows", duplicateLoopGrows);
     showTooltips = getBool("showTooltips", showTooltips);
     autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
+    renderAheadEnabled = getBool("renderAheadEnabled", renderAheadEnabled);
+    setRenderAheadBlocks(getInt("renderAheadBlocks", renderAheadBlocks));
 
     mixerShowSends_ = getBool("mixerShowSends", mixerShowSends_);
     mixerShowRouting_ = getBool("mixerShowRouting", mixerShowRouting_);
