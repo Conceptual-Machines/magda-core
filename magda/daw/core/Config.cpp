@@ -174,7 +174,7 @@ void Config::save() {
     root->setProperty("showTooltips", showTooltips);
     root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     root->setProperty("renderAheadEnabled", renderAheadEnabled);
-    root->setProperty("renderAheadBlocks", renderAheadBlocks);
+    root->setProperty("renderAheadMs", renderAheadMs);
 
     // Mixer view-toggle rail
     root->setProperty("mixerShowSends", mixerShowSends_);
@@ -591,7 +591,7 @@ void Config::load() {
     showTooltips = getBool("showTooltips", showTooltips);
     autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     renderAheadEnabled = getBool("renderAheadEnabled", renderAheadEnabled);
-    setRenderAheadBlocks(getInt("renderAheadBlocks", renderAheadBlocks));
+    setRenderAheadMs(getInt("renderAheadMs", renderAheadMs));
 
     mixerShowSends_ = getBool("mixerShowSends", mixerShowSends_);
     mixerShowRouting_ = getBool("mixerShowRouting", mixerShowRouting_);

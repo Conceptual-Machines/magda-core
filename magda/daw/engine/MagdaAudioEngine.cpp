@@ -223,7 +223,7 @@ bool MagdaAudioEngine::initialize() {
 void MagdaAudioEngine::configChanged() {
     const auto& config = Config::getInstance();
     if (host_ != nullptr)
-        host_->setRenderAhead(config.getRenderAheadEnabled() ? config.getRenderAheadBlocks() : 0);
+        host_->setRenderAhead(config.getRenderAheadEnabled() ? config.getRenderAheadMs() : 0);
 }
 
 void MagdaAudioEngine::shutdown() {

@@ -1146,11 +1146,12 @@ class Config {
     void setRenderAheadEnabled(bool enabled) {
         renderAheadEnabled = enabled;
     }
-    int getRenderAheadBlocks() const {
-        return renderAheadBlocks;
+    /// How far ahead, as a time: the device's block size turns it into blocks.
+    int getRenderAheadMs() const {
+        return renderAheadMs;
     }
-    void setRenderAheadBlocks(int blocks) {
-        renderAheadBlocks = std::clamp(blocks, 1, 16);
+    void setRenderAheadMs(int milliseconds) {
+        renderAheadMs = std::clamp(milliseconds, 5, 200);
     }
 
     // Auto-monitor selected track
@@ -1459,7 +1460,7 @@ class Config {
     bool autoMonitorSelectedTrack = false;  // Auto-enable input monitor on selected track
 
     bool renderAheadEnabled = false;
-    int renderAheadBlocks = 3;
+    int renderAheadMs = 20;
 
     // Device chain behaviour
 

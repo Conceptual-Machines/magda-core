@@ -2667,7 +2667,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         voiceThread_ = std::make_unique<engine::ClipVoiceThread>(*voices_);
 
         session_ = std::make_unique<engine::EngineSession>(factory_, &renderPool_, voices_.get());
-        session_->setRenderAhead(renderAheadBlocks_.load(std::memory_order_relaxed));
+        session_->setRenderAhead(renderAheadBlocks(context));
         sessionCapture_.attach(*session_);
         factory_.attach(session_->clipFeed(), voices_->feed(), session_->launchHandleFeed(),
                         session_->liveInputs(), session_->liveOutputs());
@@ -3669,8 +3669,17 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// Every ask to republish, whether or not one followed.
     std::atomic<std::uint64_t> requests_{0};
 
-    /// Blocks the session renders ahead (#1898), applied when it is made.
-    std::atomic<int> renderAheadBlocks_{0};
+    /// How far the session renders ahead (#1898), applied when it is made.
+    std::atomic<int> renderAheadMs_{0};
+
+    /// That time in whole blocks of @p context, at least one, or none when it is off.
+    int renderAheadBlocks(const engine::RenderContext& context) const {
+        const auto milliseconds = renderAheadMs_.load(std::memory_order_relaxed);
+        if (milliseconds <= 0 || context.maxBlockSize <= 0)
+            return 0;
+        const auto samples = milliseconds * context.sampleRate / 1000.0;
+        return std::max(1, static_cast<int>(std::ceil(samples / context.maxBlockSize)));
+    }
     std::atomic<bool> renderAheadMoved_{false};
 
     std::atomic<bool> plan_{false};
@@ -3740,9 +3749,9 @@ void EngineHost::setGrooveProvider(GrooveProvider provider) {
     impl_->grooveProvider_ = std::move(provider);
 }
 
-void EngineHost::setRenderAhead(int blocks) {
-    blocks = std::max(blocks, 0);
-    if (impl_->renderAheadBlocks_.exchange(blocks) != blocks) {
+void EngineHost::setRenderAhead(int milliseconds) {
+    milliseconds = std::max(milliseconds, 0);
+    if (impl_->renderAheadMs_.exchange(milliseconds) != milliseconds) {
         impl_->renderAheadMoved_.store(true, std::memory_order_relaxed);
         impl_->wantRebuild();
     }

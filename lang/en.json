@@ -429,7 +429,7 @@
     "slider.default_total_length": "New Project Length",
     "slider.default_view": "New Project View",
     "slider.interval": "Interval",
-    "slider.render_ahead_blocks": "Blocks Ahead",
+    "slider.render_ahead_time": "Look-Ahead",
     "toggle.enable_autosave": "Enable auto-save",
     "toggle.stop_updates_playhead": "Stop updates playhead",
     "toggle.follow_playhead": "Follow playhead during playback",
