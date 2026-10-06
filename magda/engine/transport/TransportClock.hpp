@@ -30,7 +30,14 @@
 
 namespace magda::engine {
 
-class TransportClock {
+/**
+ * @brief The clock's state and arithmetic, with nothing published.
+ *
+ * A value: a copy advances on its own without telling the playhead, launch quantization or a
+ * waiting request anything, which is how the render-ahead predicts the blocks to come (#1898).
+ * Deterministic in the snapshots and sample counts it is handed.
+ */
+class ClockCore {
   public:
     /// One stretch of a callback that the timeline runs through in one piece.
     struct Segment {
@@ -52,85 +59,36 @@ class TransportClock {
         bool insidePunch = true;
     };
 
-    /**
-     * @brief Move the cursor over @p numSamples and say what they cover.
-     *
-     * On the audio thread. The returned segments cover the callback exactly,
-     * in order, with no gaps. There is always at least one for a callback with
-     * samples in it: a stopped transport renders a block that stands still
-     * rather than no block at all.
-     *
-     * The sample rate arrives per call rather than through a prepare, because
-     * everything else about the clock lives on this thread and a rate settled
-     * from another one would be a race for the sake of an argument. A rate that
-     * has changed re-anchors: the cursor is a position in seconds, which
-     * survives it, plus a count of samples, which does not.
-     *
-     * The span points at storage owned by the clock and is valid until the next
-     * call.
-     */
+    /// @copydoc TransportClock::advance
     std::span<const Segment> advance(const TransportSnapshot& snapshot, double sampleRate,
                                      int numSamples);
 
-    /// Where the cursor is, in beats. Written on the audio thread, readable
-    /// from anywhere: this is what a playhead is drawn from.
-    double positionBeats() const {
-        return positionBeats_.load(std::memory_order_relaxed);
+    /// Where the cursor is, in beats.
+    double positionBeat() const {
+        return positionBeat_;
     }
-
-    /// Whether the transport is rolling, as the clock currently has it.
-    bool isPlaying() const {
-        return playingPublic_.load(std::memory_order_relaxed);
+    bool playing() const {
+        return playing_;
     }
-
-    /// The generation of the last request the clock applied. Any thread: a publisher reads it to
-    /// tell a request still waiting from one already taken.
-    std::uint64_t appliedGeneration() const {
-        return appliedGeneration_.load(std::memory_order_acquire);
+    /// The generation of the last request applied.
+    std::uint64_t generation() const {
+        return generation_;
     }
-
-    /**
-     * @brief The cursor and the monotonic count as one block left them. Any
-     *        thread.
-     *
-     * What a launch is quantized against off the audio thread: the boundary is
-     * a timeline beat and the request names a monotonic one (#2305). Both faces
-     * come from one block, which is the whole point -- a wrap moves the cursor
-     * back and leaves the monotonic beat where it was, so a pair taken from two
-     * blocks is a whole loop out.
-     */
-    SyncPoint syncPoint() const;
-
-    /// Musical time the transport has rolled through since the clock began,
-    /// in beats that never go backwards. Audio thread, and the domain a
-    /// queued launch names its position in (#2300).
+    /// Whether the last advance found a loop too short to be honoured.
+    bool overflowedLoop() const {
+        return overflowedLoop_;
+    }
+    /// @copydoc TransportClock::monotonicBeat
     double monotonicBeat() const {
         return monotonicBeat_;
     }
-
-    /// Wall-clock time rolled through since the clock began, in seconds that
-    /// never go backwards. Audio thread. The domain a run's length is in (#2324).
+    /// @copydoc TransportClock::monotonicSeconds
     double monotonicSeconds() const {
         return monotonicSeconds_;
     }
-
-    /// Where the transport has rolled to on its own sample count. Never goes
-    /// back, and is not re-anchored by anything that moves the cursor.
+    /// @copydoc TransportClock::monotonicSamples
     SamplePosition monotonicSamples() const {
         return monotonicSamples_;
-    }
-
-    /**
-     * @brief Callbacks in which a loop was too short to be honoured.
-     *
-     * A loop of a few samples would wrap more times in one callback than there
-     * is room to render separately. The rest of the callback plays straight
-     * through instead, and this counts it, because a loop that quietly stopped
-     * looping is exactly the kind of thing that gets blamed on the audio
-     * device.
-     */
-    int loopWrapOverflows() const {
-        return loopWrapOverflows_.load(std::memory_order_relaxed);
     }
 
   private:
@@ -158,10 +116,6 @@ class TransportClock {
 
     /// Samples through a boundary, so the next segment opens on its far side.
     std::int64_t samplesThrough(const TempoMap& tempo, double beat) const;
-
-    /// @brief Publish @p beat beside the monotonic count as one reading.
-    ///        Audio thread, wherever the cursor is stored.
-    void publishSyncPoint(double beat);
 
     /// Samples of count-in left before the timeline starts to roll.
     std::int64_t countInLeft(const TempoMap& tempo) const;
@@ -222,6 +176,110 @@ class TransportClock {
     /// are counted from, and the one coordinate a locate, a wrap, a tempo edit
     /// and a re-anchor all leave alone (#2332).
     SamplePosition monotonicSamples_;
+
+    bool overflowedLoop_ = false;
+};
+
+/**
+ * @brief The audio thread's clock: a ClockCore whose position, request and sync point are
+ *        published after every advance.
+ */
+class TransportClock {
+  public:
+    using Segment = ClockCore::Segment;
+
+    /**
+     * @brief Move the cursor over @p numSamples and say what they cover.
+     *
+     * On the audio thread. The returned segments cover the callback exactly,
+     * in order, with no gaps. There is always at least one for a callback with
+     * samples in it: a stopped transport renders a block that stands still
+     * rather than no block at all.
+     *
+     * The sample rate arrives per call rather than through a prepare, because
+     * everything else about the clock lives on this thread and a rate settled
+     * from another one would be a race for the sake of an argument. A rate that
+     * has changed re-anchors: the cursor is a position in seconds, which
+     * survives it, plus a count of samples, which does not.
+     *
+     * The span points at storage owned by the clock and is valid until the next
+     * call.
+     */
+    std::span<const Segment> advance(const TransportSnapshot& snapshot, double sampleRate,
+                                     int numSamples);
+
+    /// Where the cursor is, in beats. Written on the audio thread, readable
+    /// from anywhere: this is what a playhead is drawn from.
+    double positionBeats() const {
+        return positionBeats_.load(std::memory_order_relaxed);
+    }
+
+    /// Whether the transport is rolling, as the clock currently has it.
+    bool isPlaying() const {
+        return playingPublic_.load(std::memory_order_relaxed);
+    }
+
+    /// The generation of the last request the clock applied. Any thread: a publisher reads it to
+    /// tell a request still waiting from one already taken.
+    std::uint64_t appliedGeneration() const {
+        return appliedGeneration_.load(std::memory_order_acquire);
+    }
+
+    /**
+     * @brief The cursor and the monotonic count as one block left them. Any
+     *        thread.
+     *
+     * What a launch is quantized against off the audio thread: the boundary is
+     * a timeline beat and the request names a monotonic one (#2305). Both faces
+     * come from one block, which is the whole point -- a wrap moves the cursor
+     * back and leaves the monotonic beat where it was, so a pair taken from two
+     * blocks is a whole loop out.
+     */
+    SyncPoint syncPoint() const;
+
+    /// Musical time the transport has rolled through since the clock began,
+    /// in beats that never go backwards. Audio thread, and the domain a
+    /// queued launch names its position in (#2300).
+    double monotonicBeat() const {
+        return core_.monotonicBeat();
+    }
+
+    /// Wall-clock time rolled through since the clock began, in seconds that
+    /// never go backwards. Audio thread. The domain a run's length is in (#2324).
+    double monotonicSeconds() const {
+        return core_.monotonicSeconds();
+    }
+
+    /// Where the transport has rolled to on its own sample count. Never goes
+    /// back, and is not re-anchored by anything that moves the cursor.
+    SamplePosition monotonicSamples() const {
+        return core_.monotonicSamples();
+    }
+
+    /**
+     * @brief Callbacks in which a loop was too short to be honoured.
+     *
+     * A loop of a few samples would wrap more times in one callback than there
+     * is room to render separately. The rest of the callback plays straight
+     * through instead, and this counts it, because a loop that quietly stopped
+     * looping is exactly the kind of thing that gets blamed on the audio
+     * device.
+     */
+    int loopWrapOverflows() const {
+        return loopWrapOverflows_.load(std::memory_order_relaxed);
+    }
+
+    /// The state that produced what is published, for a copy to run ahead of. Audio thread,
+    /// and copied there: nothing orders a read of it on another thread.
+    const ClockCore& core() const {
+        return core_;
+    }
+
+  private:
+    /// Publish @p beat beside the monotonic count as one reading.
+    void publishSyncPoint(double beat);
+
+    ClockCore core_;
 
     std::atomic<double> positionBeats_{0.0};
     std::atomic<bool> playingPublic_{false};

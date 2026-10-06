@@ -906,3 +906,63 @@ TEST_CASE("A table of the same size at different addresses is a structural chang
     CHECK(early->firstValue == approx(0.0f));
     CHECK(late->firstValue == approx(100.0f));
 }
+
+TEST_CASE("A lane added in a values publish goes on moving", "[engine][param][table][1898]") {
+    // A lane makes its parameter one the block re-resolves, and the table says so in its own
+    // order; a block resolving from the order the epoch was prepared with would hold the value
+    // the lane had on the first block and never move it again.
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeDevice(7, 1)));
+
+    std::vector<TrackInfo> tracks{track};
+    const auto master = makeMaster();
+    const auto plan =
+        std::make_shared<const magda::engine::RenderPlan>(compileRenderPlan(tracks, master));
+
+    magda::engine::PlanValues values;
+    magda::engine::resolvePlanValues(*plan, tracks, master, values);
+
+    RecordingFactory factory;
+    magda::engine::EngineSession session(factory);
+    const magda::engine::RenderContext context{44100.0, 64, 2};
+    REQUIRE(
+        session
+            .publish(plan, context, magda::engine::collectRuntimeStateIds(tracks, master), values)
+            .published);
+
+    magda::engine::TransportSnapshot transport;
+    transport.request.generation = 1;
+    transport.request.playing = true;
+    session.publishTransport(transport);
+
+    juce::AudioBuffer<float> output(2, 64);
+    session.process(64, output);
+
+    AutomationPoint start;
+    start.id = 1;
+    start.beatPosition = 0.0;
+    start.value = 0.0f;
+    AutomationPoint end = start;
+    end.id = 2;
+    end.beatPosition = 4.0;
+    end.value = 1.0f;
+    AutomationLaneInfo lane;
+    lane.id = 1;
+    lane.target = ControlTarget::pluginParam(ChainNodePath::topLevelDevice(1, 7), 0);
+    lane.type = AutomationLaneType::Absolute;
+    lane.authorityState = AutomationAuthorityState::Reading;
+    lane.absolutePoints = {start, end};
+    const std::vector<AutomationLaneInfo> lanes{lane};
+
+    magda::engine::PlanValues laned;
+    magda::engine::resolvePlanValues(*plan, tracks, master, laned, lanes);
+    REQUIRE(session.publishValues(laned).published);
+
+    auto* device = factory.devices[magda::engine::DeviceKey{ChainSegment::Fx, 7}];
+    REQUIRE(device != nullptr);
+    session.process(64, output);
+    const auto first = device->firstValue;
+    for (int block = 0; block < 200; ++block)
+        session.process(64, output);
+    CHECK(device->firstValue > first);
+}

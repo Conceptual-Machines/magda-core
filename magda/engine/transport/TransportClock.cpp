@@ -11,24 +11,22 @@ constexpr double kBeatEpsilon = 1.0e-9;
 
 }  // namespace
 
-void TransportClock::anchorTo(const TempoMap& tempo, double beat) {
+void ClockCore::anchorTo(const TempoMap& tempo, double beat) {
     anchorSeconds_ = tempo.beatToTime(beat);
     samplesSinceAnchor_ = 0;
     tempoFingerprint_ = tempo.fingerprint();
     positionBeat_ = beat;
-    positionBeats_.store(beat, std::memory_order_relaxed);
-    publishSyncPoint(beat);
 }
 
-double TransportClock::secondsAfter(std::int64_t samples) const {
+double ClockCore::secondsAfter(std::int64_t samples) const {
     return anchorSeconds_ + static_cast<double>(samples) / sampleRate_;
 }
 
-double TransportClock::beatAfter(const TempoMap& tempo, std::int64_t samples) const {
+double ClockCore::beatAfter(const TempoMap& tempo, std::int64_t samples) const {
     return tempo.timeToBeat(secondsAfter(samples));
 }
 
-std::int64_t TransportClock::samplesUntil(const TempoMap& tempo, double beat) const {
+std::int64_t ClockCore::samplesUntil(const TempoMap& tempo, double beat) const {
     // Rounded down, so a cut here lands on or before the position and never a
     // sample past it: the loop's wrap relies on that, since a cursor past the
     // end reads as one put there on purpose (#2691). The epsilon keeps a
@@ -38,13 +36,13 @@ std::int64_t TransportClock::samplesUntil(const TempoMap& tempo, double beat) co
     return static_cast<std::int64_t>(std::floor((target - now) * sampleRate_ + kSampleEpsilon));
 }
 
-std::int64_t TransportClock::countInLeft(const TempoMap& tempo) const {
+std::int64_t ClockCore::countInLeft(const TempoMap& tempo) const {
     const auto length = tempo.beatToTime(positionBeat_) - tempo.beatToTime(countFromBeat_);
     return static_cast<std::int64_t>(std::floor((length * sampleRate_) + kSampleEpsilon)) -
            samplesCounted_;
 }
 
-void TransportClock::countSegment(const TempoMap& tempo, std::int64_t samples, int offset) {
+void ClockCore::countSegment(const TempoMap& tempo, std::int64_t samples, int offset) {
     auto& segment = segments_[static_cast<std::size_t>(segmentCount_++)];
 
     // The timeline stands still, as a stopped block does, so nothing on it plays.
@@ -93,7 +91,7 @@ void TransportClock::countSegment(const TempoMap& tempo, std::int64_t samples, i
     rolledLast_ = false;
 }
 
-std::int64_t TransportClock::samplesThrough(const TempoMap& tempo, double beat) const {
+std::int64_t ClockCore::samplesThrough(const TempoMap& tempo, double beat) const {
     const auto now = secondsAfter(samplesSinceAnchor_);
     const auto target = tempo.beatToTime(beat);
     return static_cast<std::int64_t>(std::ceil((target - now) * sampleRate_ - kSampleEpsilon));
@@ -109,7 +107,7 @@ void TransportClock::publishSyncPoint(double beat) {
     std::atomic_thread_fence(std::memory_order_release);
 
     syncBeat_.store(beat, std::memory_order_relaxed);
-    syncMonotonicBeat_.store(monotonicBeat_, std::memory_order_relaxed);
+    syncMonotonicBeat_.store(core_.monotonicBeat(), std::memory_order_relaxed);
 
     syncSequence_.store(writing + 1, std::memory_order_release);
 }
@@ -129,7 +127,7 @@ SyncPoint TransportClock::syncPoint() const {
     }
 }
 
-void TransportClock::applyRequest(const TransportSnapshot& snapshot) {
+void ClockCore::applyRequest(const TransportSnapshot& snapshot) {
     const auto& request = snapshot.request;
     if (request.generation == generation_)
         return;
@@ -140,7 +138,6 @@ void TransportClock::applyRequest(const TransportSnapshot& snapshot) {
     const auto wasAt = positionBeat_;
 
     playing_ = request.playing;
-    playingPublic_.store(playing_, std::memory_order_relaxed);
 
     countingIn_ = request.playing && request.countInBeats > 0.0;
 
@@ -175,11 +172,9 @@ void TransportClock::applyRequest(const TransportSnapshot& snapshot) {
     // doing.
     if (playing_ && !wasPlaying)
         continuous_ = false;
-
-    appliedGeneration_.store(generation_, std::memory_order_release);
 }
 
-void TransportClock::followTempo(const TempoMap& tempo) {
+void ClockCore::followTempo(const TempoMap& tempo) {
     if (tempo.fingerprint() == tempoFingerprint_)
         return;
 
@@ -190,10 +185,10 @@ void TransportClock::followTempo(const TempoMap& tempo) {
     anchorTo(tempo, positionBeat_);
 }
 
-std::span<const TransportClock::Segment> TransportClock::advance(const TransportSnapshot& snapshot,
-                                                                 double sampleRate,
-                                                                 int numSamples) {
+std::span<const ClockCore::Segment> ClockCore::advance(const TransportSnapshot& snapshot,
+                                                       double sampleRate, int numSamples) {
     segmentCount_ = 0;
+    overflowedLoop_ = false;
 
     if (sampleRate > 0.0 && sampleRate != sampleRate_) {
         anchorSeconds_ += static_cast<double>(samplesSinceAnchor_) / sampleRate_;
@@ -239,8 +234,6 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         continuous_ = true;
         rolledLast_ = false;
         positionBeat_ = beat;
-        positionBeats_.store(beat, std::memory_order_relaxed);
-        publishSyncPoint(beat);
         return {segments_.data(), 1};
     }
 
@@ -324,7 +317,7 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         if (samples < 1 || segmentCount_ + 1 == kMaxSegmentsPerBlock) {
             overflowed = samples < remaining;
             if (overflowed)
-                loopWrapOverflows_.fetch_add(1, std::memory_order_relaxed);
+                overflowedLoop_ = true;
             samples = remaining;
         }
 
@@ -386,10 +379,21 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
     }
 
     positionBeat_ = beatAfter(tempo, samplesSinceAnchor_);
-    positionBeats_.store(positionBeat_, std::memory_order_relaxed);
-    publishSyncPoint(positionBeat_);
-
     return {segments_.data(), static_cast<std::size_t>(segmentCount_)};
+}
+
+std::span<const TransportClock::Segment> TransportClock::advance(const TransportSnapshot& snapshot,
+                                                                 double sampleRate,
+                                                                 int numSamples) {
+    const auto segments = core_.advance(snapshot, sampleRate, numSamples);
+
+    positionBeats_.store(core_.positionBeat(), std::memory_order_relaxed);
+    playingPublic_.store(core_.playing(), std::memory_order_relaxed);
+    if (core_.overflowedLoop())
+        loopWrapOverflows_.fetch_add(1, std::memory_order_relaxed);
+    publishSyncPoint(core_.positionBeat());
+    appliedGeneration_.store(core_.generation(), std::memory_order_release);
+    return segments;
 }
 
 }  // namespace magda::engine

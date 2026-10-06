@@ -1,7 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
+#include <cstring>
+#include <map>
+#include <set>
 #include <vector>
 
 #include "exec/PlanExecutor.hpp"
+#include "exec/PlanLayout.hpp"
 #include "exec/PlanValues.hpp"
 #include "plan/PlanHandoff.hpp"
 #include "plan/RenderPlan.hpp"
@@ -76,7 +80,7 @@ class ConstantAudio final : public EngineAudioSource {
     float value;
 };
 
-std::vector<float> render(const RenderPlan& plan) {
+std::vector<float> render(const RenderPlan& plan, bool bySide = false) {
     ConstantAudio clip(0.25f);
     PlanBindings bindings;
     bindings.clipAudio[1] = &clip;
@@ -92,7 +96,12 @@ std::vector<float> render(const RenderPlan& plan) {
     block.numSamples = kBlock;
     block.playing = true;
     block.continuous = true;
-    executor.process(values, block, out);
+    if (bySide) {
+        executor.processSide(0, values, block, out);
+        executor.processSide(1, values, block, out);
+    } else {
+        executor.process(values, block, out);
+    }
     return {out.getReadPointer(0), out.getReadPointer(0) + kBlock};
 }
 
@@ -156,11 +165,79 @@ TEST_CASE("MIDI crosses through its own handoff", "[engine][plan][1898]") {
 
 TEST_CASE("A handoff renders what its producer rendered", "[engine][plan][1898]") {
     const auto plan = mixedPlan();
-    CHECK(render(magda::engine::insertHandoffs(plan)) == render(plan));
+    const auto plain = render(plan);
+    const auto guarded = render(magda::engine::insertHandoffs(plan));
+    REQUIRE(plain.size() == guarded.size());
+    CHECK(std::memcmp(plain.data(), guarded.data(), plain.size() * sizeof(float)) == 0);
 }
 
 TEST_CASE("A handoff that claims liveness is refused", "[engine][plan][1898]") {
     auto guarded = magda::engine::insertHandoffs(mixedPlan());
     guarded.ops[2].liveness = LivenessDomain::Live;
     CHECK_FALSE(magda::engine::validatePlan(guarded).empty());
+}
+
+TEST_CASE("No buffer is shared across the boundary", "[engine][plan][1898]") {
+    // The two sides may render in different blocks on different threads, so a slot is only
+    // reused on its own side, a handoff's slot is its own, and nothing works in place across.
+    RenderPlan plan;
+    plan.ops.push_back(op(OpKind::ClipAudio, OpRole::ClipAudio, 1, {}, {SignalKind::Audio}));
+    plan.ops.push_back(op(OpKind::AudioInput, OpRole::LiveAudioInput, 2, {}, {SignalKind::Audio},
+                          LivenessDomain::Live));
+    plan.ops.push_back(op(OpKind::ClipAudio, OpRole::ClipAudio, 3, {}, {SignalKind::Audio}));
+    plan.ops.push_back(op(OpKind::MixAudio, OpRole::TrackAudioInput, 9,
+                          {PortRef{0, 0}, PortRef{1, 0}, PortRef{2, 0}}, {SignalKind::Audio},
+                          LivenessDomain::Live));
+    plan.ops.push_back(op(OpKind::Gain, OpRole::TrackMute, 9, {PortRef{3, 0}}, {SignalKind::Audio},
+                          LivenessDomain::Live));
+    auto out = output(PortRef{4, 0});
+    out.liveness = LivenessDomain::Live;
+    plan.ops.push_back(out);
+    plan.ops.push_back(op(OpKind::ClipMidi, OpRole::ClipMidi, 1, {}, {SignalKind::Midi}));
+    plan.ops.push_back(op(OpKind::MidiInput, OpRole::LiveMidiInput, 1, {}, {SignalKind::Midi},
+                          LivenessDomain::Live));
+    plan.ops.push_back(op(OpKind::MergeMidi, OpRole::TrackMidiInput, 1,
+                          {PortRef{6, 0}, PortRef{7, 0}}, {SignalKind::Midi},
+                          LivenessDomain::Live));
+    plan.outputOps = {5};
+    magda::engine::bakeScheduling(plan);
+    REQUIRE(magda::engine::validatePlan(plan).empty());
+
+    const auto guarded = magda::engine::insertHandoffs(plan);
+    REQUIRE(countOf(guarded, OpKind::Handoff) == 3);
+    const auto prepared =
+        magda::engine::resolveLayout(guarded, std::vector<int>(guarded.ops.size(), 0));
+    const auto& buffers = prepared.buffers;
+
+    // Arenas are numbered independently, so a slot is a kind and an index.
+    std::map<std::pair<SignalKind, int>, std::set<int>> ownersBySlot;
+    for (std::size_t i = 0; i < guarded.ops.size(); ++i) {
+        const auto& planOp = guarded.ops[i];
+        const auto owner = planOp.kind == OpKind::Handoff          ? 100 + static_cast<int>(i)
+                           : magda::engine::runsAtCallback(planOp) ? 1
+                                                                   : 0;
+        for (std::size_t port = 0; port < planOp.outputs.size(); ++port) {
+            const auto slot =
+                buffers.portSlots[static_cast<std::size_t>(prepared.portOffsets[i]) + port];
+            ownersBySlot[{planOp.outputs[port].kind, slot}].insert(owner);
+        }
+        if (planOp.kind == OpKind::Handoff || planOp.kind == OpKind::MixAudio)
+            CHECK_FALSE(buffers.writesInPlace[i]);
+        // Within the callback side, writing in place is still allowed.
+        if (planOp.kind == OpKind::Gain)
+            CHECK(buffers.writesInPlace[i]);
+    }
+    for (const auto& [slot, owners] : ownersBySlot) {
+        INFO("slot " << slot.second);
+        CHECK(owners.size() == 1);
+    }
+}
+
+TEST_CASE("The two sides of a block render what the whole block does", "[engine][plan][1898]") {
+    const auto guarded = magda::engine::insertHandoffs(mixedPlan());
+    const auto whole = render(guarded);
+    const auto split = render(guarded, true);
+    REQUIRE(whole.size() == split.size());
+    CHECK(std::memcmp(whole.data(), split.data(), whole.size() * sizeof(float)) == 0);
+    CHECK(whole.front() == 0.25f);
 }

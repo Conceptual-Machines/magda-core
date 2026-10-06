@@ -72,6 +72,11 @@ PlanLatency resolvePlanLatency(const RenderPlan& plan, const std::vector<int>& p
  * a race in the other ones. So the test is transitive dependency, and two ports
  * share only when every op that reads the first must have finished before the
  * op that writes the second can start.
+ *
+ * It is also a question of which pass renders them (#1898). The ops a handoff
+ * separates may render in different blocks on different threads, so a buffer is
+ * only shared on its own side of the boundary, nothing works in place across it,
+ * and a handoff's output is a buffer of its own that nothing else is given.
  */
 struct BufferLayout {
     /// Arena slot per flat output port. Audio ports index the audio arena and

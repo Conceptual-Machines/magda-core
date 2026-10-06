@@ -169,8 +169,12 @@ std::unique_ptr<engine::LevelTap> Factory::createMeter(const engine::OpKey& key)
 
 // --- the harness -------------------------------------------------------------
 
-Harness::Harness(Material material, bool handoffs)
-    : factory_(ledger_, material), store_(factory_), handoffs_(handoffs) {
+Harness::Harness(Material material, bool handoffs, bool bySide, bool params)
+    : factory_(ledger_, material),
+      store_(factory_),
+      handoffs_(handoffs),
+      bySide_(bySide),
+      params_(params) {
     output_.setSize(kNumChannels, kBlockSize);
     output_.clear();
 }
@@ -249,7 +253,8 @@ Published Harness::publish(const Project& project) {
     published.layout = engine::resolveLayout(*plan, deviceLatencyPerOp(*plan, project));
 
     auto executor = std::make_unique<engine::PlanExecutor>();
-    if (const auto problems = executor->prepare(*plan, bindings, context_, live_.get());
+    if (const auto problems =
+            executor->prepare(*plan, bindings, context_, live_.get(), params_ ? &values : nullptr);
         !problems.empty()) {
         published.failure = "the plan does not prepare: " + joined(problems);
         return published;
@@ -302,7 +307,12 @@ void Harness::render(int blocks) {
         info.continuous = timeline_ > 0;
 
         output_.clear();
-        live_->process(values_, info, output_);
+        if (bySide_) {
+            live_->processSide(0, values_, info, output_);
+            live_->processSide(1, values_, info, output_);
+        } else {
+            live_->process(values_, info, output_);
+        }
         timeline_ += kBlockSize;
     }
 }

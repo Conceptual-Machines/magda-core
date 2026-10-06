@@ -86,6 +86,12 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     void process(const PlanValues& values, const BlockInfo& block,
                  juce::AudioBuffer<float>& output);
 
+    /// One side of one block, on the calling thread (PlanExecutor::processSide).
+    void processSide(int side, const PlanValues& values, const BlockInfo& block,
+                     juce::AudioBuffer<float>& output) {
+        core_.processSide(side, values, block, output);
+    }
+
     /// Threads a block is spread across.
     int numThreads() const {
         return pool_ != nullptr ? pool_->numThreads() : 1;

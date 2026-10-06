@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -236,6 +237,24 @@ struct ParamTable {
     /// @ref order without the parameters nothing drives: what a block re-resolves while its
     /// table is unchanged, since an undriven parameter resolves to its stored value every time.
     std::vector<ParamStep> movingOrder;
+
+    /**
+     * @brief The two sides of the render (#1898): what may be rendered ahead (0) and what the
+     *        callback runs (1), against the plan the table was resolved for.
+     *
+     * @ref order and @ref movingOrder split by side, and the side of each parameter, modifier
+     * and plan op. Filled with the table rather than when a plan is prepared, so a values publish
+     * that moves the order moves the slices with it. Empty on a table built without a plan,
+     * which resolves whole on one side.
+     */
+    std::array<std::vector<ParamStep>, 2> sideOrder;
+    std::array<std::vector<ParamStep>, 2> sideMovingOrder;
+    std::vector<std::uint8_t> paramSide;
+    std::vector<std::uint8_t> modifierSide;
+    std::vector<std::uint8_t> opSide;
+    /// Whether every op reads the side it runs on, which promotion makes true. A table where
+    /// it is not cannot be rendered side by side.
+    bool sidesAgree = false;
 
     /// Distinct per compiled table, so a resolver can tell the table it resolved last from a
     /// new one at the same address. Zero for a table built by hand, which is resolved whole.

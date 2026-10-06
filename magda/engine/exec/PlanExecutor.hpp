@@ -3,6 +3,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_dsp/juce_dsp.h>
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <magda/sdk/audio/BufferView.hpp>
@@ -276,6 +277,23 @@ class PlanExecutor {
     void process(const PlanValues& values, const BlockInfo& block,
                  juce::AudioBuffer<float>& output);
 
+    /**
+     * @brief Render one side of one block (#1898): 0, what may be rendered ahead, or 1, what
+     *        the callback runs, into @p output.
+     *
+     * The same ops process() runs, in plan order, split where the plan's handoffs split them;
+     * the ahead side of a block renders before its callback side reads the handoffs, and the
+     * two together render what process() does. Each side resolves only its own parameters and
+     * advances only its own modifiers. Back to back on one block for now: a handoff holds one
+     * block, so giving the sides different blocks waits for its ring.
+     *
+     * A plan without its handoffs, or a table where an op reads the other side's values (an
+     * unpromoted plan), is not split: the callback side renders the whole block and the ahead
+     * side nothing.
+     */
+    void processSide(int side, const PlanValues& values, const BlockInfo& block,
+                     juce::AudioBuffer<float>& output);
+
     /** @brief Where one block's render starts, before any op has run. */
     struct BlockStart {
         /// The block as this plan will actually render it: what was asked
@@ -315,7 +333,7 @@ class PlanExecutor {
      * addresses, handing a device the same window of nothing it would have
      * had before any table was published.
      */
-    void resolveParameters(const PlanValues& values, const BlockInfo& block);
+    void resolveParameters(const PlanValues& values, const BlockInfo& block, int only = -1);
 
     /**
      * @brief Render the MIDI a block has before it has any audio (#2120).
@@ -343,7 +361,7 @@ class PlanExecutor {
      * skip re-running them, since a live input queue rendered twice is a
      * queue read twice.
      */
-    void renderMidiPrefix(const PlanValues& values, const BlockInfo& block);
+    void renderMidiPrefix(const PlanValues& values, const BlockInfo& block, int only = -1);
 
     /// Whether @p op was already rendered by @ref renderMidiPrefix this block.
     bool inMidiPrefix(OpId op) const {
@@ -489,7 +507,7 @@ class PlanExecutor {
     /// -- an LFO that didn't restart because a device was inserted
     /// elsewhere in the project (#2119).
     int carriedModifiers() const {
-        return mods_.carried();
+        return paramSides_[0].mods.carried();
     }
 
     /// True once a valid plan has been prepared.
@@ -536,9 +554,10 @@ class PlanExecutor {
     bool fitsParameters(const PlanValues& values) const {
         return values.params == nullptr ||
                (values.params->layoutFingerprint == paramLayout_ &&
-                values.params->size() == paramValues_.size() &&
-                values.params->maxLinksPerParam <= static_cast<int>(paramScratch_.size()) &&
-                values.params->modifierFingerprint == mods_.fingerprint());
+                values.params->size() == paramSides_[0].values.size() &&
+                values.params->maxLinksPerParam <=
+                    static_cast<int>(paramSides_[0].scratch.size()) &&
+                values.params->modifierFingerprint == paramSides_[0].mods.fingerprint());
     }
 
     /**
@@ -767,16 +786,43 @@ class PlanExecutor {
     /// the only thing anything does with them.
     std::vector<ValueTap*> unboundTaps_;
 
-    /// This block's parameter values, and the room the resolver gathers one
-    /// parameter's links in. Sized at prepare from the table the plan was
-    /// published with, so the block filling them allocates nothing.
-    ResolvedParams paramValues_;
-    std::vector<ModContribution> paramScratch_;
+    /**
+     * @brief One side's parameters and modifiers (#1898): index 0 for what may be rendered
+     *        ahead, 1 for the callback.
+     *
+     * A modulation component is wholly one side (ModulationLiveness.hpp), so each side resolves
+     * its own share of the table's order into values of its own, and advances its own modifiers
+     * through a runtime of its own. The two runtimes hold the same state objects, carried from
+     * the executor being replaced so a device insert doesn't restart every LFO (#2119), and each
+     * only ever advances the ones on its side.
+     */
+    struct ParamSide {
+        /// This block's values, and the room the resolver gathers one parameter's links and
+        /// bakes one curve in. Sized at prepare, so filling them allocates nothing.
+        ResolvedParams values;
+        std::vector<ModContribution> scratch;
+        std::vector<ParamSegment> segments;
+        ModRuntime mods;
+    };
+    std::array<ParamSide, 2> paramSides_;
 
-    /// Where the modifiers of this plan have got to (#2119). Sized at
-    /// prepare from the same table, carried from the executor being
-    /// replaced, so a device insert doesn't restart every LFO in the project.
-    ModRuntime mods_;
+    /// Per op, the side that runs it: 1 when it runs at the callback (PlanHandoff.hpp).
+    std::vector<std::uint8_t> runSide_;
+
+    /// Whether the prepared plan carries every handoff its boundary needs.
+    bool guarded_ = false;
+
+    /// Which side of this block's table an op, parameter or modifier is on. A table resolved
+    /// without a plan has no sides and resolves whole on the first.
+    static std::uint8_t sideIn(const std::vector<std::uint8_t>& sides, std::size_t index) {
+        return index < sides.size() ? sides[index] : 0;
+    }
+    ParamSide& sideOfOp(std::size_t op) {
+        return paramSides_[blockTable_ == nullptr ? 0 : sideIn(blockTable_->opSide, op)];
+    }
+    const ParamSide& sideOfOp(std::size_t op) const {
+        return paramSides_[blockTable_ == nullptr ? 0 : sideIn(blockTable_->opSide, op)];
+    }
 
     /**
      * @brief Ops that can run before the block's parameters are resolved.
@@ -847,12 +893,12 @@ class PlanExecutor {
 
     /// What the device behind @p window reads this block: one (slot, value)
     /// pair per parameter the table carries for it.
-    DeviceParams deviceParams(const ParamTable::DeviceWindow& window) const {
+    DeviceParams deviceParams(std::size_t op, const ParamTable::DeviceWindow& window) const {
         if (blockTable_ == nullptr)
             return {};
 
-        return paramValues_.device(window.first, window.count, blockTable_->slotsIn(window),
-                                   blockTable_->drivenIn(window));
+        return sideOfOp(op).values.device(window.first, window.count, blockTable_->slotsIn(window),
+                                          blockTable_->drivenIn(window));
     }
 
     /// Read one modulation tap: hand the source's level to the followers
@@ -873,7 +919,7 @@ class PlanExecutor {
      * table takes to be replaced would be a visible fault reporting an
      * invisible one.
      */
-    void publishValueTaps();
+    void publishValueTaps(int only);
 
     /// Spend the notes in @p midi on the modifiers listening to @p op's track.
     void feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi);
@@ -897,11 +943,6 @@ class PlanExecutor {
     /// have an opinion about, and the block's is the newer one by exactly
     /// the amount a lane moves inside it.
     OpValue mixerValueFor(std::size_t op, const OpValue& published) const;
-
-    /// Where one parameter's curve is baked before it is resolved. One
-    /// parameter's worth: the block walks them one at a time, and a segment
-    /// written for one is read before the next is baked.
-    std::vector<ParamSegment> paramSegments_;
 
     /// Per op: the window of the table a Device op's device reads, resolved
     /// once here so the audio thread never hashes a DeviceKey. Cached from

@@ -159,4 +159,13 @@ void resolveParams(const ParamTable& table, ResolvedParams& out, std::span<ModCo
                    std::span<ParamSegment> segments, const BlockInfo& block,
                    ModRuntime* mods = nullptr);
 
+/**
+ * @brief resolveParams over one side's share of the table (#1898): @p order and @p movingOrder
+ *        are slices of the table's own, closed under what their steps read.
+ */
+void resolveParamSteps(const ParamTable& table, ResolvedParams& out,
+                       std::span<ModContribution> links, std::span<ParamSegment> segments,
+                       const BlockInfo& block, ModRuntime* mods, std::span<const ParamStep> order,
+                       std::span<const ParamStep> movingOrder);
+
 }  // namespace magda::engine

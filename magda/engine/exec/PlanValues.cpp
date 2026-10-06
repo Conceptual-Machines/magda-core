@@ -9,6 +9,7 @@
 #include "core/DrumGridPads.hpp"
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
+#include "exec/ModulationLiveness.hpp"
 #include "param/ParamTableCompiler.hpp"
 #include "plan/TrackRouting.hpp"
 
@@ -655,6 +656,7 @@ std::vector<std::string> resolvePlanValues(const RenderPlan& plan,
     // which is a vector and a topological sort off the audio thread.
     auto params =
         std::make_shared<ParamTable>(compileParamTable(plan, tracks, master, lanes, clips));
+    assignSides(plan, *params);
 
     // Reported here as well as carried on the table, because the caller that
     // logs one of these is the caller that logs the other, and a diagnostic
