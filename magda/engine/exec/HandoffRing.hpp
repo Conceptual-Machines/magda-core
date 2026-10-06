@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "exec/NoteFractions.hpp"
+#include "exec/RenderContext.hpp"
 #include "plan/RenderPlan.hpp"
 
 /**
@@ -17,6 +18,32 @@
  */
 
 namespace magda::engine {
+
+/// What identifies the block an entry was rendered for, so a block predicted differently from
+/// the one the callback renders is a miss rather than the wrong audio.
+struct BlockStamp {
+    int numSamples = 0;
+    bool playing = false;
+    bool continuous = false;
+    bool started = false;
+    double beatsStart = 0.0;
+    double beatsEnd = 0.0;
+    double secondsStart = 0.0;
+    SamplePosition monotonicStart{};
+
+    static BlockStamp of(const BlockInfo& block) {
+        return {.numSamples = block.numSamples,
+                .playing = block.playing,
+                .continuous = block.continuous,
+                .started = block.started,
+                .beatsStart = block.beats.start,
+                .beatsEnd = block.beats.end,
+                .secondsStart = block.seconds.start,
+                .monotonicStart = block.monotonicSamples.start};
+    }
+
+    bool operator==(const BlockStamp&) const = default;
+};
 
 /**
  * @brief Some blocks of every handoff's signal, stamped with the block each was rendered for.
@@ -56,6 +83,12 @@ class HandoffRing {
                (!split || released >= wholeUntil_);
     }
 
+    /// Whether the reader has released everything the writer published.
+    bool drained() const {
+        return released_.load(std::memory_order_acquire) >=
+               written_.load(std::memory_order_acquire);
+    }
+
     /// Reader: whether the writer has published @p block or a later one, so the ahead side's
     /// state has moved past it.
     bool reached(std::uint64_t block) const {
@@ -68,8 +101,8 @@ class HandoffRing {
     NoteFractions& fractions(std::size_t op, std::uint64_t block);
     void setPanic(std::size_t op, std::uint64_t block, bool panic);
 
-    /// Writer: @p block is complete, @p numSamples long.
-    void publish(std::uint64_t block, int numSamples);
+    /// Writer: @p block is complete, rendered as @p stamp says.
+    void publish(std::uint64_t block, const BlockStamp& stamp);
 
     /// Writer: the callback renders @p block whole; nothing was rendered ahead for it.
     void publishWhole(std::uint64_t block);
@@ -77,8 +110,8 @@ class HandoffRing {
     /** @brief What the writer left for one block. */
     enum class Published : std::uint8_t { missing, whole, split };
 
-    /// Reader: what @p block's entry holds; split only at @p numSamples.
-    Published published(std::uint64_t block, int numSamples) const;
+    /// Reader: what @p block's entry holds; split only when rendered as @p stamp says.
+    Published published(std::uint64_t block, const BlockStamp& stamp) const;
 
     int handoffCount() const {
         return entries_.empty() ? 0 : static_cast<int>(entries_.front()->handoffs.size());
@@ -94,6 +127,25 @@ class HandoffRing {
     /// Reader: done with everything up to and including @p block.
     void release(std::uint64_t block);
 
+    /**
+     * @brief Who is rendering the ahead side's state: nobody, the writer, or the callback.
+     *
+     * The writer claims each block it renders; the callback claims to render a block whole,
+     * which runs the ahead side's ops too. Neither waits: a claim that fails is a block the
+     * claimant does not render.
+     */
+    bool claimForWriter() {
+        auto expected = Owner::none;
+        return owner_.compare_exchange_strong(expected, Owner::writer, std::memory_order_acquire);
+    }
+    bool claimForCallback() {
+        auto expected = Owner::none;
+        return owner_.compare_exchange_strong(expected, Owner::callback, std::memory_order_acquire);
+    }
+    void releaseClaim() {
+        owner_.store(Owner::none, std::memory_order_release);
+    }
+
   private:
     struct Handoff {
         juce::AudioBuffer<float> audio;
@@ -105,7 +157,7 @@ class HandoffRing {
     struct Entry {
         /// The block in here plus one, or zero; written last, with release.
         std::atomic<std::uint64_t> stamp{0};
-        int numSamples = 0;
+        BlockStamp rendered;
         bool whole = false;
         std::vector<Handoff> handoffs;
     };
@@ -133,6 +185,9 @@ class HandoffRing {
 
     /// One past the latest block the writer published.
     std::atomic<std::uint64_t> written_{0};
+
+    enum class Owner : std::uint8_t { none, writer, callback };
+    std::atomic<Owner> owner_{Owner::none};
 
     /// Writer only: one past the last block published whole.
     std::uint64_t wholeUntil_ = 0;

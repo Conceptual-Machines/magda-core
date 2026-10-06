@@ -390,7 +390,9 @@ void PlanExecutor::reset() {
     runSide_.clear();
     guarded_ = false;
     handoffs_.reset();
+    aheadTracks_.clear();
     aheadBlock_.reset();
+    blockTables_ = {};
     mixerParamForOp_.clear();
     for (auto& side : paramSides_) {
         side.scratch.clear();
@@ -665,7 +667,8 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         midiPrefix_.push_back(static_cast<OpId>(i));
     }
 
-    detectMono_.assign(static_cast<std::size_t>(std::max(context.maxBlockSize, 0)), 0.0f);
+    for (auto& mono : detectMono_)
+        mono.assign(static_cast<std::size_t>(std::max(context.maxBlockSize, 0)), 0.0f);
 
     const auto describe = [&plan](std::size_t index) { return describeOp(plan, index); };
 
@@ -1186,6 +1189,15 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     handoffs_.prepare(plan, renderAheadDepth_, context_.numChannels, context_.maxBlockSize,
                       handoffMidiBytes);
 
+    for (std::size_t i = 0; i < numOps; ++i) {
+        const auto kind = plan.ops[i].kind;
+        if (runSide_[i] == 0 &&
+            (kind == OpKind::ClipAudio || kind == OpKind::ClipMidi || kind == OpKind::SessionMidi))
+            aheadTracks_.push_back(plan.ops[i].key.trackId);
+    }
+    std::ranges::sort(aheadTracks_);
+    aheadTracks_.erase(std::ranges::unique(aheadTracks_).begin(), aheadTracks_.end());
+
     planFingerprint_ = magda::engine::planFingerprint(plan);
     plan_ = &plan;
 
@@ -1313,15 +1325,19 @@ PlanExecutor::BlockStart PlanExecutor::beginBlock(const PlanValues& values,
     return start;
 }
 
-void PlanExecutor::settleBlockTable(const PlanValues& values) {
+void PlanExecutor::settleBlockTable(const PlanValues& values, int only) {
     // Null on a block whose values do not fit, which is the same block that
     // resolves nothing: a modifier addressed through the wrong table is
     // another modifier, and half a table is worse than none.
-    blockTable_ = appliesValues(values) && fitsParameters(values) ? values.params.get() : nullptr;
+    const auto* table =
+        appliesValues(values) && fitsParameters(values) ? values.params.get() : nullptr;
+    for (std::size_t side = 0; side < blockTables_.size(); ++side)
+        if (only < 0 || static_cast<int>(side) == only)
+            blockTables_[side] = table;
 }
 
 void PlanExecutor::renderMidiPrefix(const PlanValues& values, const BlockInfo& block, int only) {
-    settleBlockTable(values);
+    settleBlockTable(values, only);
 
     if (plan_ == nullptr)
         return;
@@ -1335,16 +1351,13 @@ void PlanExecutor::renderMidiPrefix(const PlanValues& values, const BlockInfo& b
             renderOp(id, applyValues ? values.ops[static_cast<std::size_t>(id)] : kUnityValue,
                      block, silence_);
 
-    if (blockTable_ == nullptr)
-        return;
-
     // And then the notes in them, spent before the resolve rather than after,
     // which is the whole point of running the prefix early: a modifier gated by
     // a note hears it in the block the note is in.
     for (std::size_t i = 0; i < plan_->ops.size(); ++i) {
         const auto& op = plan_->ops[i];
         if (op.kind != OpKind::ModSource || modSourceForOp_[i].empty() ||
-            (only >= 0 && runSide_[i] != only))
+            (only >= 0 && runSide_[i] != only) || tableFor(i) == nullptr)
             continue;
 
         const auto& midi = op.inputs[1];
@@ -1355,6 +1368,7 @@ void PlanExecutor::renderMidiPrefix(const PlanValues& values, const BlockInfo& b
 
 void PlanExecutor::feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi) {
     auto& mods = sideOfOp(op).mods;
+    const auto& table = *tableFor(op);
     if (midi.isEmpty())
         return;
 
@@ -1365,16 +1379,16 @@ void PlanExecutor::feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi
     const bool anyNoteOn = std::ranges::any_of(midi, isNoteOn);
 
     for (const auto index : modSourceForOp_[op]) {
-        if (mods.listensFor(index, *blockTable_) != ModListen::Midi)
+        if (mods.listensFor(index, table) != ModListen::Midi)
             continue;
 
         // A modifier living somewhere else is following this track rather than
         // playing it. The note-counting path refuses it by design, so a trigger
         // is the only door it has, and there is no note-off half: the gate is
         // left alone so the modifier runs its full cycle after a hit.
-        if (mods.drivenFromElsewhere(index, *blockTable_)) {
+        if (mods.drivenFromElsewhere(index, table)) {
             if (anyNoteOn)
-                mods.trigger(index, *blockTable_);
+                mods.trigger(index, table);
             continue;
         }
 
@@ -1384,11 +1398,11 @@ void PlanExecutor::feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi
             const auto message = metadata.getMessage();
 
             if (message.isNoteOn())
-                mods.noteOn(index, *blockTable_);
+                mods.noteOn(index, table);
             else if (message.isNoteOff(true))
-                mods.noteOff(index, *blockTable_);
+                mods.noteOff(index, table);
             else if (message.isAllNotesOff() || message.isAllSoundOff())
-                mods.allNotesOff(index, *blockTable_);
+                mods.allNotesOff(index, table);
         }
     }
 }
@@ -1397,8 +1411,10 @@ void PlanExecutor::renderModSource(OpId id, const BlockInfo& block) {
     const auto i = static_cast<std::size_t>(id);
     const auto& op = plan_->ops[i];
 
-    if (blockTable_ == nullptr || modSourceForOp_[i].empty())
+    if (tableFor(i) == nullptr || modSourceForOp_[i].empty())
         return;
+    const auto& table = *tableFor(i);
+    auto& detectMono = detectMono_[runSide_[i]];
 
     // The notes, where the prefix did not already spend them. A source whose
     // MIDI a device makes is not in the prefix, so its notes are read here and
@@ -1411,7 +1427,7 @@ void PlanExecutor::renderModSource(OpId id, const BlockInfo& block) {
     if (!audio.valid())
         return;
 
-    const auto numSamples = std::min(block.numSamples, static_cast<int>(detectMono_.size()));
+    const auto numSamples = std::min(block.numSamples, static_cast<int>(detectMono.size()));
     if (numSamples <= 0)
         return;
 
@@ -1421,14 +1437,14 @@ void PlanExecutor::renderModSource(OpId id, const BlockInfo& block) {
     const auto channels = static_cast<int>(in.getNumChannels());
     const auto scale = channels > 0 ? 1.0f / static_cast<float>(channels) : 0.0f;
 
-    juce::FloatVectorOperations::clear(detectMono_.data(), numSamples);
+    juce::FloatVectorOperations::clear(detectMono.data(), numSamples);
     for (int c = 0; c < channels; ++c)
         juce::FloatVectorOperations::addWithMultiply(
-            detectMono_.data(), in.getChannelPointer(static_cast<std::size_t>(c)), scale,
+            detectMono.data(), in.getChannelPointer(static_cast<std::size_t>(c)), scale,
             numSamples);
 
     const auto mono =
-        std::span<const float>{detectMono_}.first(static_cast<std::size_t>(numSamples));
+        std::span<const float>{detectMono}.first(static_cast<std::size_t>(numSamples));
 
     // The level a trigger keys off, which is the block's peak rather than the
     // mono average: a duck should follow whichever side is loud.
@@ -1465,28 +1481,28 @@ void PlanExecutor::renderModSource(OpId id, const BlockInfo& block) {
         op.key.index == 0 ? magda::ModTapPoint::PreFx : magda::ModTapPoint::PostFader;
 
     for (const auto index : modSourceForOp_[i]) {
-        if (sideOfOp(static_cast<std::size_t>(id)).mods.listensFor(index, *blockTable_) !=
+        if (sideOfOp(static_cast<std::size_t>(id)).mods.listensFor(index, table) !=
             ModListen::Audio)
             continue;
-        if (blockTable_->modifiers[static_cast<std::size_t>(index)].tap != point)
+        if (table.modifiers[static_cast<std::size_t>(index)].tap != point)
             continue;
 
         // A follower wants the samples; a trigger wants the edge. Both listen
         // to the same track and neither is the other's fallback.
-        if (blockTable_->modifiers[static_cast<std::size_t>(index)].kind == ModKind::Follower) {
-            sideOfOp(static_cast<std::size_t>(id)).mods.detectSource(index, *blockTable_, mono);
+        if (table.modifiers[static_cast<std::size_t>(index)].kind == ModKind::Follower) {
+            sideOfOp(static_cast<std::size_t>(id)).mods.detectSource(index, table, mono);
             continue;
         }
 
         if (rising)
-            sideOfOp(static_cast<std::size_t>(id)).mods.trigger(index, *blockTable_);
+            sideOfOp(static_cast<std::size_t>(id)).mods.trigger(index, table);
         else if (falling)
-            sideOfOp(static_cast<std::size_t>(id)).mods.setGated(index, *blockTable_, true);
+            sideOfOp(static_cast<std::size_t>(id)).mods.setGated(index, table, true);
     }
 }
 
 void PlanExecutor::resolveParameters(const PlanValues& values, const BlockInfo& block, int only) {
-    settleBlockTable(values);
+    settleBlockTable(values, only);
 
     // Two shapes have to match, and neither is something appliesValues can
     // see: it compares the plan's fingerprint and its op count, and a link
@@ -1503,7 +1519,8 @@ void PlanExecutor::resolveParameters(const PlanValues& values, const BlockInfo& 
     const auto mine = [only](std::size_t side) {
         return only < 0 || static_cast<int>(side) == only;
     };
-    if (blockTable_ == nullptr) {
+    const auto* table = blockTables_[only < 0 ? 0 : static_cast<std::size_t>(only)];
+    if (table == nullptr) {
         for (std::size_t s = 0; s < paramSides_.size(); ++s)
             if (mine(s))
                 paramSides_[s].values.beginBlock(block.numSamples);
@@ -1511,23 +1528,21 @@ void PlanExecutor::resolveParameters(const PlanValues& values, const BlockInfo& 
     }
 
     // A table resolved without a plan has no sides, and resolves whole on the first.
-    if (blockTable_->opSide.empty()) {
+    if (table->opSide.empty()) {
         if (mine(0)) {
             auto& side = paramSides_[0];
-            resolveParams(*blockTable_, side.values, side.scratch, side.segments, block,
-                          &side.mods);
+            resolveParams(*table, side.values, side.scratch, side.segments, block, &side.mods);
         }
     } else {
         for (std::size_t s = 0; s < paramSides_.size(); ++s) {
             if (!mine(s))
                 continue;
             auto& side = paramSides_[s];
-            resolveParamSteps(*blockTable_, side.values, side.scratch, side.segments, block,
-                              &side.mods, blockTable_->sideOrder[s],
-                              blockTable_->sideMovingOrder[s]);
+            resolveParamSteps(*table, side.values, side.scratch, side.segments, block, &side.mods,
+                              table->sideOrder[s], table->sideMovingOrder[s]);
         }
     }
-    publishValueTaps(only);
+    publishValueTaps(*table, only);
 }
 
 void PlanExecutor::clearUnboundValueTaps() {
@@ -1535,13 +1550,13 @@ void PlanExecutor::clearUnboundValueTaps() {
         tap->clear();
 }
 
-void PlanExecutor::publishValueTaps(int only) {
+void PlanExecutor::publishValueTaps(const ParamTable& table, int only) {
     // The position the parameter opens the block at, clamped, which is the same
     // answer a link reading it as a source gets. A knob draws where the value
     // is at the boundary for the same reason a device reads it there: what is
     // being drawn is what is being heard.
     for (const auto& bound : paramTaps_) {
-        const auto side = sideIn(blockTable_->paramSide, static_cast<std::size_t>(bound.index));
+        const auto side = sideIn(table.paramSide, static_cast<std::size_t>(bound.index));
         if (only < 0 || side == only)
             bound.tap->write(paramSides_[side].values.sourceValue(bound.index));
     }
@@ -1551,7 +1566,7 @@ void PlanExecutor::publishValueTaps(int only) {
     // some link applied to it. The depth belongs to the link, and a parameter
     // tap is where its effect shows.
     for (const auto& bound : modTaps_) {
-        const auto side = sideIn(blockTable_->modifierSide, static_cast<std::size_t>(bound.index));
+        const auto side = sideIn(table.modifierSide, static_cast<std::size_t>(bound.index));
         if (only < 0 || side == only)
             bound.tap->write(paramSides_[side].mods.value(bound.index));
     }
@@ -1592,17 +1607,28 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
 }
 
 bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValues& values,
-                               const BlockInfo& requestedBlock, juce::AudioBuffer<float>& output) {
+                               const BlockInfo& requestedBlock, juce::AudioBuffer<float>& output,
+                               const std::function<void()>& underClaim) {
     // A table without sides resolves whole on the ahead side, which may be blocks early.
     const auto* table = appliesValues(values) ? values.params.get() : nullptr;
     const bool splits =
         guarded_ && (table == nullptr || (!table->opSide.empty() && table->sidesAgree));
 
     if (side == 0) {
-        if (!handoffs_.canWrite(sequence, splits))
+        // Asked again under the claim: the callback may have rendered the block whole meanwhile.
+        if (!handoffs_.canWrite(sequence, splits) || !handoffs_.claimForWriter())
             return false;
+        if (!handoffs_.canWrite(sequence, splits)) {
+            handoffs_.releaseClaim();
+            return false;
+        }
+        // Before a whole block too: the callback then renders the ahead side's tracks, and
+        // leaves their streams to this side.
+        if (underClaim)
+            underClaim();
         if (!splits) {
             handoffs_.publishWhole(sequence);
+            handoffs_.releaseClaim();
             return true;
         }
     }
@@ -1617,11 +1643,22 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
         // A block the ahead side marked whole, or never reached, renders whole and in order.
         // Past it, the ahead side's state has moved on: the live side runs if these values can
         // split, hearing whatever the ring has for the block, and otherwise the block is dropped.
-        const auto published = handoffs_.published(sequence, start.block.numSamples);
+        auto published = handoffs_.published(sequence, BlockStamp::of(start.block));
         if (published == HandoffRing::Published::whole || !handoffs_.reached(sequence)) {
-            process(values, requestedBlock, output);
-            handoffs_.release(sequence);
-            return true;
+            // Whole runs the ahead side's ops, so only while the writer is out of them; asked
+            // again under the claim, since the writer may have reached the block meanwhile.
+            if (handoffs_.claimForCallback()) {
+                published = handoffs_.published(sequence, BlockStamp::of(start.block));
+                const bool whole =
+                    published == HandoffRing::Published::whole || !handoffs_.reached(sequence);
+                if (whole) {
+                    process(values, requestedBlock, output);
+                    handoffs_.release(sequence);
+                }
+                handoffs_.releaseClaim();
+                if (whole)
+                    return true;
+            }
         }
         if (!splits) {
             handoffMisses_.fetch_add(1, std::memory_order_relaxed);
@@ -1651,7 +1688,8 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
 
     if (side == 0) {
         aheadBlock_.reset();
-        handoffs_.publish(sequence, start.render ? start.block.numSamples : 0);
+        handoffs_.publish(sequence, BlockStamp::of(start.block));
+        handoffs_.releaseClaim();
     } else {
         handoffs_.release(sequence);
     }
@@ -1713,7 +1751,7 @@ void PlanExecutor::deliverHandoffs(std::uint64_t sequence, int numSamples, bool 
 
 OpValue PlanExecutor::mixerValueFor(std::size_t op, const OpValue& published) const {
     const auto params = mixerParamForOp_[op];
-    if (params.gain == INVALID_PARAM_ID)
+    if (params.gain == INVALID_PARAM_ID || tableFor(op) == nullptr)
         return published;
 
     const auto& values = sideOfOp(op).values;

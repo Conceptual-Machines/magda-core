@@ -63,9 +63,9 @@ void HandoffRing::setPanic(std::size_t op, std::uint64_t block, bool panic) {
     at(op, block).panic = panic;
 }
 
-void HandoffRing::publish(std::uint64_t block, int numSamples) {
+void HandoffRing::publish(std::uint64_t block, const BlockStamp& stamp) {
     auto& entry = entryFor(block);
-    entry.numSamples = numSamples;
+    entry.rendered = stamp;
     entry.whole = false;
     // Reached before stamped: a reader between the two takes a miss, never a second render.
     noteWritten(block);
@@ -74,14 +74,14 @@ void HandoffRing::publish(std::uint64_t block, int numSamples) {
 
 void HandoffRing::publishWhole(std::uint64_t block) {
     auto& entry = entryFor(block);
-    entry.numSamples = 0;
+    entry.rendered = {};
     entry.whole = true;
     wholeUntil_ = std::max(wholeUntil_, block + 1);
     noteWritten(block);
     entry.stamp.store(block + 1, std::memory_order_release);
 }
 
-HandoffRing::Published HandoffRing::published(std::uint64_t block, int numSamples) const {
+HandoffRing::Published HandoffRing::published(std::uint64_t block, const BlockStamp& stamp) const {
     if (entries_.empty())
         return Published::missing;
     const auto& entry = entryFor(block);
@@ -89,7 +89,7 @@ HandoffRing::Published HandoffRing::published(std::uint64_t block, int numSample
         return Published::missing;
     if (entry.whole)
         return Published::whole;
-    return entry.numSamples == numSamples ? Published::split : Published::missing;
+    return entry.rendered == stamp ? Published::split : Published::missing;
 }
 
 juce::dsp::AudioBlock<const float> HandoffRing::audio(std::size_t op, std::uint64_t block,

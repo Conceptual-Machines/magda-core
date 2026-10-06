@@ -459,12 +459,20 @@ TEST_CASE("A handoff ring hands back MIDI, fractions and panic as written",
     ring.midi(midiHandoff, 7).addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 5);
     ring.fractions(midiHandoff, 7).add(5, 1, 60, 0.25f);
     ring.setPanic(midiHandoff, 7, true);
-    ring.publish(7, kBlock);
+    BlockInfo seven;
+    seven.numSamples = kBlock;
+    ring.publish(7, magda::engine::BlockStamp::of(seven));
 
     const auto& reader = ring;
-    CHECK(reader.published(7, kBlock) == magda::engine::HandoffRing::Published::split);
-    CHECK(reader.published(7, kBlock / 2) == magda::engine::HandoffRing::Published::missing);
-    CHECK(reader.published(9, kBlock) == magda::engine::HandoffRing::Published::missing);
+    auto shorter = seven;
+    shorter.numSamples = kBlock / 2;
+    auto elsewhere = seven;
+    elsewhere.beats.start = 4.0;
+    const auto stamp = magda::engine::BlockStamp::of;
+    CHECK(reader.published(7, stamp(seven)) == magda::engine::HandoffRing::Published::split);
+    CHECK(reader.published(7, stamp(shorter)) == magda::engine::HandoffRing::Published::missing);
+    CHECK(reader.published(7, stamp(elsewhere)) == magda::engine::HandoffRing::Published::missing);
+    CHECK(reader.published(9, stamp(seven)) == magda::engine::HandoffRing::Published::missing);
     CHECK(reader.midi(midiHandoff, 7).getNumEvents() == 1);
     CHECK(reader.fractions(midiHandoff, 7).at(5, 1, 60) == 0.25f);
     CHECK(reader.panic(midiHandoff, 7));

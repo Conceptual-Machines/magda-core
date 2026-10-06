@@ -11,6 +11,7 @@
 
 #include "clip/ClipSnapshotFeed.hpp"
 #include "exec/ParallelPlanExecutor.hpp"
+#include "exec/RenderAhead.hpp"
 #include "exec/RenderThreadPool.hpp"
 #include "exec/RuntimeStateStore.hpp"
 #include "io/LiveInput.hpp"
@@ -82,6 +83,37 @@ class EngineSession {
     explicit EngineSession(RuntimeStateFactory& factory, RenderThreadPool* pool = nullptr,
                            ClipVoicePool* voices = nullptr)
         : store_(factory), pool_(pool), voices_(voices) {}
+
+    /**
+     * @brief Render each plan's deterministic side @p depth blocks ahead of the callback on a
+     *        thread of its own (#1898); zero renders everything at the callback.
+     *
+     * Before the first publish, on the publishing thread. @p inBackground false leaves the
+     * rendering to @ref renderAheadOnce, for tests.
+     */
+    void setRenderAhead(int depth, bool inBackground = true);
+
+    /// One round of the ahead thread's work, where it does not run in the background.
+    int renderAheadOnce();
+
+    /// One past the last block the ahead thread has rendered, and the block the callback renders
+    /// next. The second is the audio thread's; read it from there, or with the audio stopped.
+    std::uint64_t renderedAheadThrough() const {
+        return renderAhead_ != nullptr ? renderAhead_->renderedThrough() : 0;
+    }
+    std::uint64_t nextBlock() const {
+        return blockSequence_;
+    }
+
+    /// Whether the ahead thread has finished a round begun after the last callback woke it.
+    bool renderAheadCaughtUp() const {
+        return renderAhead_ == nullptr || renderAhead_->caughtUp();
+    }
+
+    /// Blocks the live epoch's callback found missing from what was rendered ahead.
+    int renderAheadMisses() const {
+        return live_ != nullptr ? live_->executor.reference().handoffMisses() : 0;
+    }
 
     /// What came of a publish. `published` false means the plan was refused
     /// and the previous one is still playing; true with messages means it's
@@ -525,6 +557,9 @@ class EngineSession {
 
         std::shared_ptr<const RenderPlan> plan;
         ParallelPlanExecutor executor;
+
+        /// Which publish this is (@ref planEpoch_).
+        std::uint64_t epoch = 0;
         PlanValues values;
         RenderContext context;
         std::shared_ptr<ClickGenerator> click;
@@ -627,6 +662,18 @@ class EngineSession {
     /// Which publish the live epoch is, counted from one. What says whose
     /// owed MIDI panic an executor may spend (PlanExecutor::commitReroutes).
     std::uint64_t planEpoch_ = 0;
+
+    /// The ahead side's thread and how far ahead it renders, or null with everything at the
+    /// callback.
+    std::unique_ptr<RenderAhead> renderAhead_;
+    int renderAheadDepth_ = 0;
+
+    /// The callback's count of the blocks it has rendered, which numbers each block's
+    /// handoff entries. Audio thread.
+    std::uint64_t blockSequence_ = 0;
+
+    /// What the ahead thread renders against: the live epoch, once it is live.
+    void handRenderAheadEpoch();
 };
 
 }  // namespace magda::engine

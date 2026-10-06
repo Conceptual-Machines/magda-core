@@ -38,6 +38,25 @@ struct RenderContext {
     bool operator==(const RenderContext&) const = default;
 };
 
+struct ClipSnapshot;
+struct TrackSectionTable;
+struct ClipStreamTable;
+struct LaunchHandleTable;
+
+/**
+ * @brief What a block rendered off the callback reads in place of the feeds' pins (#1898).
+ *
+ * The feeds pin one table each for the callback's block; a block rendered ahead on another
+ * thread carries its own. Null fields read as nothing: no sections is an arrangement nothing
+ * holds, no handles a session with nothing launched.
+ */
+struct BlockFeeds {
+    const ClipSnapshot* clips = nullptr;
+    const TrackSectionTable* sections = nullptr;
+    const ClipStreamTable* streams = nullptr;
+    const LaunchHandleTable* handles = nullptr;
+};
+
 /**
  * @brief The stretch of timeline one block covers.
  *
@@ -352,6 +371,9 @@ struct BlockInfo {
      * is exactly what the cell path above cannot afford.
      */
     MaterialOrigin materialOrigin;
+
+    /// The tables a source reads this block, or null for the callback's, which the feeds pin.
+    const BlockFeeds* feeds = nullptr;
 };
 
 }  // namespace magda::engine

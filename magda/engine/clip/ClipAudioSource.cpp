@@ -125,7 +125,7 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
                                     const Streams& streams,
                                     std::array<Sounding, kMaxVoicesPerTrack>& sounding,
                                     int& soundingCount) {
-    const LaunchHandleFeed::Reader handles(*handles_);
+    const LaunchHandleFeed::Reader handles(*handles_, block);
     if (!handles)
         return;
 
@@ -178,7 +178,7 @@ bool ClipAudioSource::silentFor(const BlockInfo& block) const {
         if (voice.clipId() != INVALID_CLIP_ID || voice.fading())
             return false;
 
-    const LaunchHandleFeed::Reader handles(*handles_);
+    const LaunchHandleFeed::Reader handles(*handles_, block);
     if (!handles)
         return true;
 
@@ -199,7 +199,7 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
     // What the callback pinned for this block (#2490). The material and the
     // hold that gates it come from one publish, and so does what this track's
     // MIDI plays over the same block.
-    const auto* snapshot = clips_.live();
+    const auto* snapshot = clips_.live(block);
     const auto* track = snapshot != nullptr ? snapshot->find(trackId_) : nullptr;
 
     if (section_ == Section::Session) {
@@ -208,7 +208,7 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
     }
 
     // Every Arrangement source has a hold to apply (#2485), handles or not.
-    const auto* hold = clips_.holdFor(trackId_);
+    const auto* hold = clips_.holdFor(trackId_, block);
     const auto numSamples = static_cast<int>(out.getNumSamples());
     const auto from = hold != nullptr ? std::clamp(hold->from.value, 0, numSamples) : 0;
 
@@ -340,7 +340,7 @@ void ClipAudioSource::renderMaterial(const BlockInfo& block, juce::dsp::AudioBlo
                                      const ClipSnapshot* snapshot, const TrackClipPlayback* track) {
     out.clear();
 
-    const ClipStreamFeed::Reader streams(streams_);
+    const ClipStreamFeed::Reader streams(streams_, block);
     Streams table;
     if (streams)
         std::tie(table.first, table.last) = streams->rangeFor(trackId_);
