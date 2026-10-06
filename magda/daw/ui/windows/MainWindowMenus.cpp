@@ -749,6 +749,10 @@ void MainWindow::setupMenuCallbacks() {
         auto initialDir = currentFile.existsAsFile()
                               ? currentFile.getParentDirectory()
                               : juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+        // A v0 project is saved as a new v1 one outside its own folder, which is the only place
+        // saveProjectAs accepts: start there, as Save does.
+        if (projectManager.requiresV1ProjectCopy())
+            initialDir = daw::audio::convertedProjectFileFor(currentFile, true);
 
         fileChooser_ = std::make_unique<juce::FileChooser>(tr("dialogs.save_project_as"),
                                                            initialDir, "*.mgd", true);
