@@ -859,6 +859,21 @@ class PlanExecutor {
 
     std::atomic<int> handoffMisses_{0};
 
+    /// While the callback renders a block whole after discarding: the ahead side's ops see it as
+    /// a jump, and each MIDI handoff ends the notes that crossed it.
+    bool discontinuousAhead_ = false;
+
+    /// Per MIDI handoff, what crossed it to the callback; callback thread only. Shared with
+    /// the executor taking over, like a delay line, and used by one epoch at a time.
+    std::vector<int> crossedForOp_;
+    std::vector<std::shared_ptr<CrossedNotes>> crossed_;
+    CrossedNotes* crossedFor(std::size_t op) {
+        return op < crossedForOp_.size() && crossedForOp_[op] >= 0
+                   ? crossed_[static_cast<std::size_t>(crossedForOp_[op])].get()
+                   : nullptr;
+    }
+    void trackCrossing(std::size_t op, const juce::MidiBuffer& midi, bool panic);
+
     /// Handoff @p op's input into the ahead block's entry; silence when not @p required.
     void writeHandoff(std::size_t op, int numSamples, bool required);
 

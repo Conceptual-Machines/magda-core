@@ -390,6 +390,8 @@ void PlanExecutor::reset() {
     runSide_.clear();
     guarded_ = false;
     handoffs_.reset();
+    crossedForOp_.clear();
+    crossed_.clear();
     aheadTracks_.clear();
     aheadBlock_.reset();
     blockTables_ = {};
@@ -1188,6 +1190,24 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 slotFor(PortRef{static_cast<OpId>(i), 0}))];
     handoffs_.prepare(plan, renderAheadDepth_, context_.numChannels, context_.maxBlockSize,
                       handoffMidiBytes);
+    // What crossed a handoff the replaced plan also had is still sounding: shared, as the
+    // carried state is, so notes held across the swap are still ended by a later discard.
+    std::map<OpKey, std::shared_ptr<CrossedNotes>> crossedBefore;
+    if (previous != nullptr && previous->plan_ != nullptr)
+        for (std::size_t i = 0; i < previous->crossedForOp_.size(); ++i)
+            if (previous->crossedForOp_[i] >= 0)
+                crossedBefore.emplace(
+                    previous->plan_->ops[i].key,
+                    previous->crossed_[static_cast<std::size_t>(previous->crossedForOp_[i])]);
+    crossedForOp_.assign(numOps, -1);
+    crossed_.clear();
+    for (std::size_t i = 0; i < numOps; ++i)
+        if (handoffMidiBytes[i] > 0) {
+            crossedForOp_[i] = static_cast<int>(crossed_.size());
+            const auto carried = crossedBefore.find(plan.ops[i].key);
+            crossed_.push_back(carried != crossedBefore.end() ? carried->second
+                                                              : std::make_shared<CrossedNotes>());
+        }
 
     for (std::size_t i = 0; i < numOps; ++i) {
         const auto kind = plan.ops[i].kind;
@@ -1655,21 +1675,34 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
 
         auto published = handoffs_.published(sequence, BlockStamp::of(start.block));
         if (published != HandoffRing::Published::split || !splits || forceWhole) {
-            if (handoffs_.claimForCallback()) {
+            // A writer inside its ops gives the block up at the next one; waited for no longer
+            // than a quarter of this block, so a writer that has stalled costs a miss, not a gap.
+            const auto rate = start.block.rate() > 0.0 ? start.block.rate() : context_.sampleRate;
+            const auto patience = std::chrono::duration<double>(
+                0.25 * static_cast<double>(start.block.numSamples) / rate);
+            if (handoffs_.claimForCallbackBy(
+                    std::chrono::steady_clock::now() +
+                    std::chrono::duration_cast<std::chrono::steady_clock::duration>(patience))) {
                 published = handoffs_.published(sequence, BlockStamp::of(start.block));
                 const bool whole =
                     published != HandoffRing::Published::split || !splits || forceWhole;
                 if (whole) {
-                    if (published != HandoffRing::Published::whole && handoffs_.reached(sequence))
+                    // What is discarded was never heard, notes ended in it included, so the ahead
+                    // side meets this block as it would a jump: its sources chase, its devices
+                    // release (BlockInfo::continuous).
+                    discontinuousAhead_ =
+                        published != HandoffRing::Published::whole && handoffs_.reached(sequence);
+                    if (discontinuousAhead_)
                         handoffs_.discardFrom(sequence);
                     process(values, requestedBlock, output);
+                    discontinuousAhead_ = false;
                     handoffs_.release(sequence);
                 }
                 handoffs_.releaseClaim();
                 if (whole)
                     return true;
             } else {
-                // The writer is inside the ahead side's ops: the block cannot be rendered here.
+                // The writer did not let go in time: the block cannot be rendered here.
                 handoffMisses_.fetch_add(1, std::memory_order_relaxed);
                 if (!splits) {
                     handoffs_.release(sequence);
@@ -1693,6 +1726,14 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
                 continue;
             renderOp(static_cast<OpId>(i), start.applyValues ? values.ops[i] : kUnityValue,
                      start.block, target);
+
+            // The callback needs the ops this block is in: given up halfway, and rendered again.
+            if (side == 0 && handoffs_.callbackWaiting()) {
+                aheadBlock_.reset();
+                handoffs_.abandon(sequence);
+                handoffs_.releaseClaim();
+                return false;
+            }
         }
     } else {
         resolveParameters(values, start.block, side);
@@ -1731,6 +1772,15 @@ void PlanExecutor::writeHandoff(std::size_t op, int numSamples, bool required) {
     handoffs_.setPanic(op, block, in.valid() && midiInPanic(in));
 }
 
+void PlanExecutor::trackCrossing(std::size_t op, const juce::MidiBuffer& midi, bool panic) {
+    if (auto* crossed = crossedFor(op)) {
+        // A panic comes before the block's own events, so what starts after it is still counted.
+        if (panic)
+            crossed->clear();
+        crossed->track(midi);
+    }
+}
+
 void PlanExecutor::deliverHandoffs(std::uint64_t sequence, int numSamples, bool ready) {
     for (std::size_t i = 0; i < plan_->ops.size(); ++i) {
         if (!handoffs_.holds(i))
@@ -1754,7 +1804,9 @@ void PlanExecutor::deliverHandoffs(std::uint64_t sequence, int numSamples, bool 
             out.addEvents(handoffs_.midi(i, sequence), 0, numSamples, 0);
             fractions.addFrom(handoffs_.fractions(i, sequence));
         }
-        setMidiOutPanic(id, 0, ready && handoffs_.panic(i, sequence));
+        const bool panic = ready && handoffs_.panic(i, sequence);
+        setMidiOutPanic(id, 0, panic);
+        trackCrossing(i, out, panic);
     }
 }
 
@@ -1793,6 +1845,12 @@ OpValue PlanExecutor::mixerValueFor(std::size_t op, const OpValue& published) co
 void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& block,
                             juce::AudioBuffer<float>& output) {
     const auto i = static_cast<std::size_t>(id);
+    if (discontinuousAhead_ && block.continuous && runSide_[i] == 0) {
+        auto jumped = block;
+        jumped.continuous = false;
+        renderOp(id, published, jumped, output);
+        return;
+    }
     const auto& op = plan_->ops[i];
     const auto numSamples = block.numSamples;
 
@@ -2393,11 +2451,40 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             }
             auto& out = midiOut(id, 0);
             out.clear();
-            out.addEvents(midiIn(op.inputs[0]), 0, numSamples, 0);
+            const auto& in = midiIn(op.inputs[0]);
+            bool panic = midiInPanic(op.inputs[0]);
+            auto* crossed = crossedFor(i);
+            if (discontinuousAhead_ && crossed != nullptr) {
+                // The note-offs in what was discarded never came: end what crossed, or everything
+                // when there is no room to say which. The source ends its own notes as it
+                // chases, which the callback may never have had: only an open note is ended.
+                const auto room =
+                    midiByteBounds_[static_cast<std::size_t>(slotFor(PortRef{id, 0}))] -
+                    static_cast<int>(in.data.size());
+                if (!crossed->release(out, room)) {
+                    panic = true;
+                    crossed->clear();
+                }
+                for (const auto event : in) {
+                    // A system exclusive passes as bytes: making a message of it allocates.
+                    if (event.numBytes > 3) {
+                        out.addEvent(event.data, event.numBytes, event.samplePosition);
+                        continue;
+                    }
+                    const auto message = event.getMessage();
+                    if (message.isNoteOff() && !crossed->open(message))
+                        continue;
+                    crossed->track(message);
+                    out.addEvent(event.data, event.numBytes, event.samplePosition);
+                }
+            } else {
+                out.addEvents(in, 0, numSamples, 0);
+                trackCrossing(i, out, panic);
+            }
             auto& fractions = fractionsOut(id, 0);
             fractions.clear();
             fractions.addFrom(fractionsIn(op.inputs[0]));
-            setMidiOutPanic(id, 0, midiInPanic(op.inputs[0]));
+            setMidiOutPanic(id, 0, panic);
             break;
         }
 

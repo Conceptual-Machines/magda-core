@@ -135,6 +135,8 @@ struct Rig {
             renderedAhead += session.renderAheadOnce();
             return;
         }
+        if (!paced)
+            return;
         // The thread finishing the round this callback woke it for is the signal: a callback that
         // came sooner would be faster than real time and could find it inside the next block.
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
@@ -146,6 +148,9 @@ struct Rig {
 
     int depth;
     bool inBackground;
+
+    /// Whether a callback waits for the thread to catch up, as real time would let it.
+    bool paced = true;
 };
 
 magda::engine::TransportSnapshot rolling(double fromBeat) {
@@ -402,4 +407,25 @@ TEST_CASE("A launch on a track rendered ahead is heard from the callback",
     CHECK(session.renderAheadDiscards() >= 1);
     // And nothing more ahead until a plan moves the track: one thread renders its sources.
     CHECK(session.renderAheadOnce() == 0);
+}
+
+TEST_CASE("A callback that finds the ahead thread mid-block takes the block over",
+          "[engine][session][1898]") {
+    // Callbacks as fast as they come, so the thread is often inside its ops when one arrives:
+    // it gives the block up between ops and the callback renders it, never silence.
+    Rig ahead(3, true);
+    ahead.paced = false;
+    ahead.session.publishTransport(rolling(0.0));
+
+    juce::AudioBuffer<float> out(2, kBlockSize);
+    int silent = 0;
+    for (int callback = 0; callback < 3000; ++callback) {
+        ahead.callback(out);
+        silent += out.getMagnitude(0, 0, kBlockSize) > 0.0f ? 0 : 1;
+    }
+    // A miss is the thread not letting go within the callback's patience, which a busy machine
+    // can cause; without the hand-over, dozens of these blocks go silent.
+    const auto misses = ahead.session.renderAheadMisses();
+    CHECK(silent <= misses + 1);
+    CHECK(misses <= 3);
 }

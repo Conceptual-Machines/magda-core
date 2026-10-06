@@ -6,6 +6,48 @@
 
 namespace magda::engine {
 
+void CrossedNotes::track(const juce::MidiBuffer& midi) {
+    for (const auto event : midi)
+        if (event.numBytes <= 3)
+            track(event.getMessage());
+}
+
+void CrossedNotes::track(const juce::MidiMessage& message) {
+    const auto channel = message.getChannel() - 1;
+    if (channel < 0 || channel >= 16)
+        return;
+    if (message.isAllNotesOff() || message.isAllSoundOff()) {
+        std::fill_n(counts_.begin() + channel * 128, 128, std::uint8_t{0});
+        return;
+    }
+    auto& count = counts_[static_cast<std::size_t>(channel * 128 + message.getNoteNumber())];
+    if (message.isNoteOn())
+        count = static_cast<std::uint8_t>(std::min(count + 1, 255));
+    else if (message.isNoteOff() && count > 0)
+        --count;
+}
+
+bool CrossedNotes::open(const juce::MidiMessage& noteOff) const {
+    const auto channel = noteOff.getChannel() - 1;
+    return channel >= 0 && channel < 16 &&
+           counts_[static_cast<std::size_t>(channel * 128 + noteOff.getNoteNumber())] > 0;
+}
+
+bool CrossedNotes::release(juce::MidiBuffer& out, int capacityBytes) {
+    int owed = 0;
+    for (const auto count : counts_)
+        owed += count;
+    if (static_cast<int>(out.data.size()) + owed * kMidiShortMessageBytes > capacityBytes)
+        return false;
+
+    for (std::size_t i = 0; i < counts_.size(); ++i)
+        for (; counts_[i] > 0; --counts_[i])
+            out.addEvent(juce::MidiMessage::noteOff(static_cast<int>(i / 128) + 1,
+                                                    static_cast<int>(i % 128)),
+                         0);
+    return true;
+}
+
 void HandoffRing::prepare(const RenderPlan& plan, int depth, int numChannels, int maxBlockSize,
                           const std::vector<int>& midiBytes) {
     reset();

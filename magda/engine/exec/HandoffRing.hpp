@@ -4,8 +4,11 @@
 #include <juce_dsp/juce_dsp.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -47,6 +50,32 @@ struct BlockStamp {
 };
 
 /**
+ * @brief The notes that crossed one MIDI handoff to the callback and have not ended (#1898).
+ *
+ * What the ahead side rendered and the callback discarded can hold the note-offs for notes the
+ * callback already passed on; releasing these ends them without touching anything else the
+ * instrument behind the handoff is playing.
+ */
+class CrossedNotes {
+  public:
+    void track(const juce::MidiBuffer& midi);
+    void track(const juce::MidiMessage& message);
+    void clear() {
+        counts_.fill(0);
+    }
+
+    /// Whether @p noteOff ends a note that crossed and is still open.
+    bool open(const juce::MidiMessage& noteOff) const;
+
+    /// A note-off at sample 0 into @p out for every note still open, which are then forgotten.
+    /// False, adding nothing, when they would take @p out past @p capacityBytes.
+    bool release(juce::MidiBuffer& out, int capacityBytes);
+
+  private:
+    std::array<std::uint8_t, 16 * 128> counts_{};
+};
+
+/**
  * @brief Some blocks of every handoff's signal, stamped with the block each was rendered for.
  *
  * One writer, the ahead side, and one reader, the callback; they may be different threads. A
@@ -76,7 +105,9 @@ class HandoffRing {
     /// is driven. A split block also waits until the callback has rendered every whole block
     /// before it.
     bool canWrite(std::uint64_t block, bool split) {
-        if (entries_.empty() || stopped_.load(std::memory_order_acquire))
+        // Nothing after a block given up, until the reader has discarded from it.
+        if (entries_.empty() || stopped_.load(std::memory_order_acquire) ||
+            written_.load(std::memory_order_acquire) == kAbandoned)
             return false;
         forgetDiscardedWholeBlocks();
         const auto released = released_.load(std::memory_order_acquire);
@@ -169,6 +200,35 @@ class HandoffRing {
         owner_.store(Owner::none, std::memory_order_release);
     }
 
+    /**
+     * @brief Reader: claim for the callback, asking a writer inside its ops to give the block
+     *        up, and waiting for it until @p deadline at the latest.
+     *
+     * The writer asks between ops (@ref callbackWaiting), so the wait is one op long.
+     */
+    bool claimForCallbackBy(std::chrono::steady_clock::time_point deadline) {
+        if (claimForCallback())
+            return true;
+        callbackWaiting_.store(true, std::memory_order_release);
+        bool claimed = false;
+        while (!(claimed = claimForCallback()) && std::chrono::steady_clock::now() < deadline) {
+        }
+        callbackWaiting_.store(false, std::memory_order_release);
+        return claimed;
+    }
+
+    /// Writer: whether the callback is waiting for the block in hand.
+    bool callbackWaiting() const {
+        return callbackWaiting_.load(std::memory_order_acquire);
+    }
+
+    /// Writer, holding its claim: @p block was given up halfway, its ops moved past it with
+    /// nothing published. Late, too, after the callback stopped waiting for it.
+    void abandon(std::uint64_t) {
+        // Past every block, so whichever the callback renders next it discards from.
+        written_.store(kAbandoned, std::memory_order_release);
+    }
+
   private:
     struct Handoff {
         juce::AudioBuffer<float> audio;
@@ -209,7 +269,9 @@ class HandoffRing {
     /// One past the latest block the writer published.
     std::atomic<std::uint64_t> written_{0};
     std::atomic<std::uint64_t> discards_{0};
+    static constexpr auto kAbandoned = std::numeric_limits<std::uint64_t>::max();
     std::atomic<bool> stopped_{false};
+    std::atomic<bool> callbackWaiting_{false};
 
     enum class Owner : std::uint8_t { none, writer, callback };
     std::atomic<Owner> owner_{Owner::none};
