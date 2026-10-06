@@ -697,8 +697,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                                           const TrackInfo& master) const {
         engine::CompileOptions options{.auditionMidi = true};
         options.hardwareOutputs = hardwareOutputs_;
-        if (sessionRendersAhead_)
+        if (sessionRendersAhead_) {
             options.sessionTracks = sessionTracks();
+            options.aheadAudioOnly = true;
+        }
         auto plan = engine::compileRenderPlan(tracks, master, options);
 
         // What modulation makes live is a question about the parameter table, which is

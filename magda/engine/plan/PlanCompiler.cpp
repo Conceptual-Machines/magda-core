@@ -162,9 +162,10 @@ class Compiler {
     RenderPlan run();
 
   private:
-    /// @p op, live when @p track plays session clips (CompileOptions::sessionTracks).
+    /// @p op, live when @p track plays session clips or an instrument (CompileOptions).
     OpId playedLive(const TrackInfo& track, OpId op) {
-        if (options_.sessionTracks.contains(track.id)) {
+        if (options_.sessionTracks.contains(track.id) ||
+            (options_.aheadAudioOnly && chainConsumesMidi(track))) {
             auto& planOp = plan_.ops[static_cast<std::size_t>(op)];
             planOp.liveness = LivenessDomain::Live;
             planOp.liveByPlayback = true;

@@ -429,3 +429,40 @@ TEST_CASE("A callback that finds the ahead thread mid-block takes the block over
     CHECK(silent <= misses + 1);
     CHECK(misses <= 3);
 }
+
+TEST_CASE("Only tracks playing audio files render ahead", "[engine][plan][1898]") {
+    // An instrument is played from previews and keyboards that have to be heard now.
+    auto tracks = project();
+    auto synth = makeTrack(3);
+    DeviceInfo instrument;
+    instrument.id = 30;
+    instrument.name = "Synth";
+    instrument.deviceType = DeviceType::Instrument;
+    instrument.isInstrument = true;
+    synth.chain.fxChainElements.push_back(makeDeviceElement(instrument));
+    tracks.push_back(synth);
+    REQUIRE(magda::engine::chainConsumesMidi(synth));
+
+    magda::engine::CompileOptions options;
+    options.aheadAudioOnly = true;
+    const auto plan = magda::engine::insertHandoffs(
+        magda::engine::compileRenderPlan(tracks, makeMaster(), options));
+    REQUIRE(magda::engine::validatePlan(plan).empty());
+
+    for (const auto& op : plan.ops)
+        if (op.kind == magda::engine::OpKind::ClipMidi ||
+            op.kind == magda::engine::OpKind::ClipAudio) {
+            INFO("track " << op.key.trackId);
+            CHECK((op.liveness == magda::engine::LivenessDomain::Live) == (op.key.trackId == 3));
+        }
+
+    PlanValues values;
+    magda::engine::resolvePlanValues(plan, tracks, makeMaster(), values);
+    Factory factory;
+    magda::engine::RuntimeStateStore store{factory};
+    const RenderContext context{44100.0, kBlockSize, 2};
+    magda::engine::PlanExecutor executor;
+    executor.prepare(plan, store.realise(plan, context), context, nullptr, &values);
+    REQUIRE(executor.isPrepared());
+    CHECK(executor.aheadTracks() == std::vector<TrackId>{1, 2});
+}
