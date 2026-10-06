@@ -283,6 +283,7 @@ struct Rendered {
     std::vector<float> audio;
     std::vector<std::vector<std::pair<int, int>>> midi;
     int misses = 0;
+    int discards = 0;
 };
 
 RenderPlan aheadAndLivePlan() {
@@ -346,13 +347,18 @@ Rendered renderLagged(int blocks, int lag = -1, int depth = 1, int skip = -1, in
                     break;
                 ++nextAhead;
             }
+            const auto discards = executor.handoffDiscards();
             executor.processSide(1, static_cast<std::uint64_t>(i), valuesFor(i, 1), block, out);
+            // As the thread does: what it rendered past a discard is gone, so it starts again.
+            if (executor.handoffDiscards() != discards)
+                nextAhead = i + 1;
         }
         rendered.audio.insert(rendered.audio.end(), out.getReadPointer(0),
                               out.getReadPointer(0) + kBlock);
     }
     rendered.midi = tap.blocks;
     rendered.misses = executor.handoffMisses();
+    rendered.discards = static_cast<int>(executor.handoffDiscards());
     return rendered;
 }
 
@@ -406,25 +412,6 @@ TEST_CASE("The ahead side waits for the callback to release an entry", "[engine]
     CHECK_FALSE(executor.processSide(0, 40, values, block, out));
     CHECK(executor.processSide(0, 42, values, block, out));
     CHECK(executor.handoffMisses() == 0);
-}
-
-TEST_CASE("A block the ahead side missed hears its handoffs silent", "[engine][plan][1898]") {
-    constexpr int kBlocks = 6;
-    constexpr int kSkip = 3;
-    const auto whole = renderLagged(kBlocks);
-    const auto lagged = renderLagged(kBlocks, 1, 2, kSkip);
-    CHECK(lagged.misses == 1);
-    REQUIRE(lagged.audio.size() == whole.audio.size());
-
-    const auto at = [](const std::vector<float>& audio, int block) {
-        return audio.data() + block * kBlock;
-    };
-    const std::vector<float> silent(kBlock, 0.0f);
-    CHECK(std::memcmp(at(lagged.audio, kSkip), silent.data(), kBlock * sizeof(float)) == 0);
-    CHECK(lagged.midi[kSkip].empty());
-    CHECK(std::memcmp(at(lagged.audio, kSkip - 1), at(whole.audio, kSkip - 1),
-                      kBlock * sizeof(float)) == 0);
-    CHECK(lagged.midi[kSkip - 1] == whole.midi[kSkip - 1]);
 }
 
 TEST_CASE("A block rendered whole waits for the ahead side to stop", "[engine][plan][1898]") {
@@ -494,24 +481,29 @@ TEST_CASE("A block the ahead side never reached renders whole", "[engine][plan][
     CHECK(lagged.midi == whole.midi);
 }
 
-TEST_CASE("A block that cannot render in order or split is dropped", "[engine][plan][1898]") {
-    // Rendering it whole would run the ahead side's sources again after later blocks; split, its
-    // live ops would read parameters the other side resolved.
+TEST_CASE("A block the ahead side passed is rendered at the callback", "[engine][plan][1898]") {
+    // Skipped by the ahead side, or rendered there for values the callback cannot split: the
+    // callback forgets what was rendered from that block on and renders it itself, from state
+    // already past it, and the ahead side starts again after it.
     constexpr int kBlocks = 8;
-    constexpr int kAt = 2;
+    constexpr int kAt = 3;
+    const auto whole = renderLagged(kBlocks);
     for (const auto [skip, wholeOn] : {std::pair{kAt, -1}, std::pair{-1, 1}}) {
         INFO("skip " << skip << ", sideless on " << wholeOn);
         const auto lagged = renderLagged(kBlocks, 2, 3, skip, kAt, wholeOn);
-        CHECK(lagged.misses == 1);
+        CHECK(lagged.misses == 0);
+        CHECK(lagged.discards == 1);
         REQUIRE(lagged.audio.size() == kBlocks * kBlock);
-        const std::vector<float> silent(kBlock, 0.0f);
-        CHECK(std::memcmp(lagged.audio.data() + kAt * kBlock, silent.data(),
-                          kBlock * sizeof(float)) == 0);
-        CHECK(lagged.midi.size() == kBlocks - 1);
+        REQUIRE(lagged.midi.size() == kBlocks);
 
-        // The clip advanced once per block it rendered, never twice.
-        const auto rendered = skip == kAt ? kAt : kAt + 1;
-        CHECK(lagged.audio[(kAt + 1) * kBlock] == static_cast<float>(rendered * kBlock));
+        CHECK(std::memcmp(lagged.audio.data(), whole.audio.data(), kAt * kBlock * sizeof(float)) ==
+              0);
+        CHECK(lagged.audio[kAt * kBlock] > whole.audio[kAt * kBlock]);
+
+        // Rendered again from there, each block once: the clip runs on without a gap.
+        for (int i = kAt * kBlock; i + 1 < kBlocks * kBlock; ++i)
+            REQUIRE(lagged.audio[static_cast<std::size_t>(i) + 1] ==
+                    lagged.audio[static_cast<std::size_t>(i)] + 1.0f);
     }
 }
 

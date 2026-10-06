@@ -115,6 +115,11 @@ class EngineSession {
         return live_ != nullptr ? live_->executor.reference().handoffMisses() : 0;
     }
 
+    /// Times the live epoch's callback forgot what was rendered ahead and rendered itself.
+    std::uint64_t renderAheadDiscards() const {
+        return live_ != nullptr ? live_->executor.reference().handoffDiscards() : 0;
+    }
+
     /// What came of a publish. `published` false means the plan was refused
     /// and the previous one is still playing; true with messages means it's
     /// live but something in it could not be honoured.

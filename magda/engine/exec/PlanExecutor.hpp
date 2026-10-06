@@ -297,10 +297,11 @@ class PlanExecutor {
      * without rendering hears silence from its handoffs, and is silent altogether when the
      * callback's values cannot split (handoffMisses).
      */
-    /// @p underClaim runs on the ahead side once it owns the block, before anything renders.
+    /// @p underClaim runs on the ahead side once it owns the block, before anything renders;
+    /// false abandons the block.
     bool processSide(int side, std::uint64_t sequence, const PlanValues& values,
                      const BlockInfo& block, juce::AudioBuffer<float>& output,
-                     const std::function<void()>& underClaim = {});
+                     const std::function<bool()>& underClaim = {});
 
     /// Whether every block rendered ahead has been taken by the callback.
     bool handoffsDrained() const {
@@ -317,9 +318,14 @@ class PlanExecutor {
         return aheadTracks_;
     }
 
-    /// Callback blocks whose handoffs were not rendered ahead in time.
+    /// Callback blocks that could not be rendered: the ahead side was inside its ops.
     int handoffMisses() const {
         return handoffMisses_.load(std::memory_order_relaxed);
+    }
+
+    /// Times the callback forgot what was rendered ahead and rendered a block itself.
+    std::uint64_t handoffDiscards() const {
+        return handoffs_.discards();
     }
 
     /** @brief Where one block's render starts, before any op has run. */

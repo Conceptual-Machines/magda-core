@@ -126,6 +126,7 @@ class RenderAhead final : private juce::Thread {
     /// This thread's own: one past the last block it rendered, and where it renders into.
     std::uint64_t rendered_ = 0;
     std::uint64_t renderedFor_ = 0;
+    std::uint64_t seenDiscards_ = 0;
     juce::AudioBuffer<float> scratch_;
 };
 

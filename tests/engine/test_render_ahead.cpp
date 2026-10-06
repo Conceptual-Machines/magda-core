@@ -248,3 +248,30 @@ TEST_CASE("A republish plays out what was rendered ahead first", "[engine][sessi
     }
     CHECK(std::memcmp(heard.data(), expected.data(), heard.size() * sizeof(float)) == 0);
 }
+
+TEST_CASE("A jump forgets what was rendered ahead for where the playhead was",
+          "[engine][session][1898]") {
+    // The blocks rendered for the old position were never going to be heard, so the callback
+    // renders the first one after the jump itself and the thread starts again from there.
+    Rig ahead(3, true);
+    auto transport = rolling(0.0);
+    ahead.session.publishTransport(transport);
+
+    juce::AudioBuffer<float> out(2, kBlockSize);
+    for (int callback = 0; callback < 400; ++callback) {
+        if (callback == 200) {
+            transport.request.generation = 2;
+            transport.request.locate = true;
+            transport.request.locateId = 1;
+            transport.request.positionBeat = 32.0;
+            ahead.session.publishTransport(transport);
+        }
+        ahead.callback(out);
+        INFO("callback " << callback);
+        REQUIRE(out.getMagnitude(0, 0, kBlockSize) > 0.0f);
+    }
+
+    CHECK(ahead.session.renderAheadDiscards() >= 1);
+    CHECK(ahead.session.renderAheadMisses() == 0);
+    CHECK(ahead.session.renderedAheadThrough() > ahead.session.nextBlock());
+}

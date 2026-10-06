@@ -1608,7 +1608,7 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
 
 bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValues& values,
                                const BlockInfo& requestedBlock, juce::AudioBuffer<float>& output,
-                               const std::function<void()>& underClaim) {
+                               const std::function<bool()>& underClaim) {
     // A table without sides resolves whole on the ahead side, which may be blocks early.
     const auto* table = appliesValues(values) ? values.params.get() : nullptr;
     const bool splits =
@@ -1623,9 +1623,11 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
             return false;
         }
         // Before a whole block too: the callback then renders the ahead side's tracks, and
-        // leaves their streams to this side.
-        if (underClaim)
-            underClaim();
+        // leaves their streams to this side. False abandons the block.
+        if (underClaim && !underClaim()) {
+            handoffs_.releaseClaim();
+            return false;
+        }
         if (!splits) {
             handoffs_.publishWhole(sequence);
             handoffs_.releaseClaim();
@@ -1640,30 +1642,33 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
     const auto start = beginBlock(values, requestedBlock, target);
 
     if (side == 1) {
-        // A block the ahead side marked whole, or never reached, renders whole and in order.
-        // Past it, the ahead side's state has moved on: the live side runs if these values can
-        // split, hearing whatever the ring has for the block, and otherwise the block is dropped.
+        // Heard through the handoffs when it was rendered ahead for this very block and these
+        // values can be split. Anything else renders whole here, the ahead side's ops included,
+        // which needs them to itself. A block the ahead side passed without rendering it for this
+        // moment (a jump, a different callback size, a skip) costs what it rendered from here
+        // on: forgotten, and rendered again after this one.
         auto published = handoffs_.published(sequence, BlockStamp::of(start.block));
-        if (published == HandoffRing::Published::whole || !handoffs_.reached(sequence)) {
-            // Whole runs the ahead side's ops, so only while the writer is out of them; asked
-            // again under the claim, since the writer may have reached the block meanwhile.
+        if (published != HandoffRing::Published::split || !splits) {
             if (handoffs_.claimForCallback()) {
                 published = handoffs_.published(sequence, BlockStamp::of(start.block));
-                const bool whole =
-                    published == HandoffRing::Published::whole || !handoffs_.reached(sequence);
+                const bool whole = published != HandoffRing::Published::split || !splits;
                 if (whole) {
+                    if (published != HandoffRing::Published::whole && handoffs_.reached(sequence))
+                        handoffs_.discardFrom(sequence);
                     process(values, requestedBlock, output);
                     handoffs_.release(sequence);
                 }
                 handoffs_.releaseClaim();
                 if (whole)
                     return true;
+            } else {
+                // The writer is inside the ahead side's ops: the block cannot be rendered here.
+                handoffMisses_.fetch_add(1, std::memory_order_relaxed);
+                if (!splits) {
+                    handoffs_.release(sequence);
+                    return true;
+                }
             }
-        }
-        if (!splits) {
-            handoffMisses_.fetch_add(1, std::memory_order_relaxed);
-            handoffs_.release(sequence);
-            return true;
         }
         if (start.render)
             deliverHandoffs(sequence, start.block.numSamples,
@@ -1720,9 +1725,6 @@ void PlanExecutor::writeHandoff(std::size_t op, int numSamples, bool required) {
 }
 
 void PlanExecutor::deliverHandoffs(std::uint64_t sequence, int numSamples, bool ready) {
-    if (!ready && handoffs_.handoffCount() > 0)
-        handoffMisses_.fetch_add(1, std::memory_order_relaxed);
-
     for (std::size_t i = 0; i < plan_->ops.size(); ++i) {
         if (!handoffs_.holds(i))
             continue;

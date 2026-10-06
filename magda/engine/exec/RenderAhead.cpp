@@ -106,14 +106,16 @@ int RenderAhead::renderOnce() {
         streamTable.emplace(*streamFeed);
     const auto* streams = streamTable.has_value() ? streamTable->get() : nullptr;
 
-    // A new epoch has a ring of its own, which starts empty.
-    if (renderedFor_ != epoch.id) {
+    // A new epoch has a ring of its own, which starts empty, and a discard empties this one.
+    const auto& reference = epoch.executor->reference();
+    if (renderedFor_ != epoch.id || seenDiscards_ != reference.handoffDiscards()) {
         renderedFor_ = epoch.id;
+        seenDiscards_ = reference.handoffDiscards();
         rendered_ = 0;
         renderedThrough_.store(0, std::memory_order_release);
     }
 
-    const auto& context = epoch.executor->reference().preparedContext();
+    const auto& context = reference.preparedContext();
     if (scratch_.getNumChannels() != context.numChannels ||
         scratch_.getNumSamples() < context.maxBlockSize)
         scratch_.setSize(context.numChannels, context.maxBlockSize);
@@ -136,20 +138,29 @@ int RenderAhead::renderOnce() {
                 continue;
             }
 
-            // The streams of the tracks rendered here are this side's to cue (ClipStreamFeed),
-            // under the same claim as their reads.
+            // Asked under the claim, where the callback cannot discard: a discard since the
+            // round began leaves its prediction behind the callback. Then the streams of the
+            // tracks rendered here are this side's to cue (ClipStreamFeed), under the same
+            // claim as their reads.
+            bool discarded = false;
             const auto cue = [&] {
+                if (reference.handoffDiscards() != seenDiscards_) {
+                    discarded = true;
+                    return false;
+                }
                 if (streams != nullptr)
                     for (const auto track : epoch.tracks) {
                         const auto [first, last] = streams->rangeFor(track);
                         for (auto entry = first; entry != last; ++entry)
                             entry->stream->applyPendingCue();
                     }
+                return true;
             };
 
             auto block = segment.block;
             block.feeds = &feeds;
-            if (!epoch.executor->processSide(0, sequence, *values, block, scratch_, cue))
+            if (!epoch.executor->processSide(0, sequence, *values, block, scratch_, cue) ||
+                discarded)
                 return count;
             rendered_ = sequence + 1;
             renderedThrough_.store(rendered_, std::memory_order_release);

@@ -3,6 +3,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_dsp/juce_dsp.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -74,9 +75,10 @@ class HandoffRing {
     /// a released block. Any block may come first, so a ring prepared mid-stream starts where it
     /// is driven. A split block also waits until the callback has rendered every whole block
     /// before it.
-    bool canWrite(std::uint64_t block, bool split) const {
+    bool canWrite(std::uint64_t block, bool split) {
         if (entries_.empty())
             return false;
+        forgetDiscardedWholeBlocks();
         const auto released = released_.load(std::memory_order_acquire);
         const auto held = entryFor(block).stamp.load(std::memory_order_relaxed);
         return block >= released && (held == 0 || held <= released) &&
@@ -126,6 +128,19 @@ class HandoffRing {
 
     /// Reader: done with everything up to and including @p block.
     void release(std::uint64_t block);
+
+    /**
+     * @brief Reader, holding the callback claim: forget every block from @p block on.
+     *
+     * For a block the ahead side rendered for a moment that did not come; the callback renders
+     * it itself and the writer starts again after it (@ref discards).
+     */
+    void discardFrom(std::uint64_t block);
+
+    /// How many times the reader has discarded; a writer seeing it move starts again.
+    std::uint64_t discards() const {
+        return discards_.load(std::memory_order_acquire);
+    }
 
     /**
      * @brief Who is rendering the ahead side's state: nobody, the writer, or the callback.
@@ -185,12 +200,23 @@ class HandoffRing {
 
     /// One past the latest block the writer published.
     std::atomic<std::uint64_t> written_{0};
+    std::atomic<std::uint64_t> discards_{0};
 
     enum class Owner : std::uint8_t { none, writer, callback };
     std::atomic<Owner> owner_{Owner::none};
 
-    /// Writer only: one past the last block published whole.
+    /// Writer only: one past the last block published whole, and the discards it has seen.
     std::uint64_t wholeUntil_ = 0;
+    std::uint64_t writerDiscards_ = 0;
+
+    /// Writer: a discard takes its whole blocks with it, and with them their barrier.
+    void forgetDiscardedWholeBlocks() {
+        const auto discards = discards_.load(std::memory_order_acquire);
+        if (discards == writerDiscards_)
+            return;
+        writerDiscards_ = discards;
+        wholeUntil_ = std::min(wholeUntil_, written_.load(std::memory_order_relaxed));
+    }
 };
 
 }  // namespace magda::engine

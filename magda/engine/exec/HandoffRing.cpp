@@ -42,7 +42,9 @@ void HandoffRing::reset() {
     entries_.clear();
     released_.store(0, std::memory_order_relaxed);
     written_.store(0, std::memory_order_relaxed);
+    discards_.store(0, std::memory_order_relaxed);
     wholeUntil_ = 0;
+    writerDiscards_ = 0;
 }
 
 juce::dsp::AudioBlock<float> HandoffRing::audio(std::size_t op, std::uint64_t block,
@@ -115,6 +117,15 @@ bool HandoffRing::panic(std::size_t op, std::uint64_t block) const {
 void HandoffRing::noteWritten(std::uint64_t block) {
     if (block + 1 > written_.load(std::memory_order_relaxed))
         written_.store(block + 1, std::memory_order_release);
+}
+
+void HandoffRing::discardFrom(std::uint64_t block) {
+    for (auto& entry : entries_)
+        if (entry->stamp.load(std::memory_order_relaxed) > block)
+            entry->stamp.store(0, std::memory_order_relaxed);
+    if (written_.load(std::memory_order_relaxed) > block)
+        written_.store(block, std::memory_order_relaxed);
+    discards_.fetch_add(1, std::memory_order_release);
 }
 
 void HandoffRing::release(std::uint64_t block) {
