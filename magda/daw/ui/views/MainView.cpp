@@ -141,13 +141,6 @@ MainView::MainView(AudioEngine* audioEngine) : horizontalZoom(10.0), audioEngine
     magda::MidiLearnCoordinator::getInstance().setScope(
         static_cast<magda::BindingScope>(config.getMidiLearnDefaultScopeRaw()));
 
-    // Apply language from config (overrides the en.json auto-loaded by StringTable constructor)
-    {
-        auto lang = juce::String(config.getLanguage());
-        if (lang != "en")
-            StringTable::getInstance().loadLanguage(lang);
-    }
-
     DBG("CONFIG: Timeline length=" << config.getDefaultTimelineLengthBars() << " bars");
     DBG("CONFIG: Default zoom view=" << config.getDefaultZoomViewBars() << " bars");
 
@@ -758,7 +751,13 @@ void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags chan
         // the right edge (or jumps back, e.g. on loop), page the arrangement so
         // it sits near the left. Dispatching re-enters with a Scroll flag, which
         // syncs every horizontal surface (handled above).
-        if (state.playhead.isPlaying && Config::getInstance().getFollowPlayhead()) {
+        // A ruler or scrollbar zoom drag re-pins its own anchor on every move, so
+        // paging here would make the view ping-pong between the two.
+        const bool userZoomDragActive =
+            isZoomActive ||
+            scrollContainer_->getScrollBar(MainViewScrollContainer::Axis::Horizontal).isDragging();
+        if (state.playhead.isPlaying && Config::getInstance().getFollowPlayhead() &&
+            !userZoomDragActive) {
             const int viewW = state.zoom.viewportWidth;
             if (viewW > 0) {
                 const int playX = state.timeToPixelLocal(playheadPosition);

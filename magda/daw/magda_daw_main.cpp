@@ -29,6 +29,7 @@
 #include "core/ModulatorEngine.hpp"
 #include "core/PluginPreferences.hpp"
 #include "core/PresetManager.hpp"
+#include "core/StringTable.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UIScale.hpp"
 #include "core/UpdateChecker.hpp"
@@ -273,6 +274,11 @@ class MagdaDAWApplication : public JUCEApplication {
         const double uiScale = magda::resolveStartupScale();
         juce::Desktop::getInstance().setGlobalScaleFactor(static_cast<float>(uiScale));
         juce::Logger::writeToLog("UI scale: " + juce::String(uiScale, 2) + "x");
+
+        // The configured language, before the first window that shows text.
+        if (const auto lang = juce::String(magda::Config::getInstance().getLanguage());
+            lang != "en")
+            magda::StringTable::getInstance().loadLanguage(lang);
 
         // 2b. Show splash screen
         splashScreen_ = magda::SplashScreen::create();
