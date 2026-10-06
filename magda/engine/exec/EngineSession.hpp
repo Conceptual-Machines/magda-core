@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <set>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -679,6 +680,11 @@ class EngineSession {
 
     /// What the ahead thread renders against: the live epoch, once it is live.
     void handRenderAheadEpoch();
+
+    /// Whether session playback reaches any of @p tracks, rendered ahead, in @p block: a launch
+    /// the plan has not moved to the callback yet, which the callback then renders itself.
+    /// Audio thread, after the handles and sections have advanced.
+    bool playsSession(std::span<const TrackId> tracks, const BlockInfo& block);
 };
 
 }  // namespace magda::engine

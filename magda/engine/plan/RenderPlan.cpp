@@ -615,7 +615,8 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
         const auto carriesLive = op.kind == OpKind::FeedbackReturn && liveCarries.contains(op.key);
 
         const auto isLiveSource = op.kind == OpKind::AudioInput || op.kind == OpKind::MidiInput ||
-                                  op.kind == OpKind::InsertReturn || op.liveByModulation;
+                                  op.kind == OpKind::InsertReturn || op.liveByModulation ||
+                                  op.liveByPlayback;
         if (op.liveness == LivenessDomain::Live && !isLiveSource && !readsLive && !carriesLive)
             problems.push_back(label + "is live but reads nothing live and is not an input source");
     }

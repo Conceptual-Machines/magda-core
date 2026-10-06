@@ -89,8 +89,8 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     /// One side of one block, on the calling thread (PlanExecutor::processSide).
     bool processSide(int side, std::uint64_t sequence, const PlanValues& values,
                      const BlockInfo& block, juce::AudioBuffer<float>& output,
-                     const std::function<bool()>& underClaim = {}) {
-        return core_.processSide(side, sequence, values, block, output, underClaim);
+                     const std::function<bool()>& underClaim = {}, bool whole = false) {
+        return core_.processSide(side, sequence, values, block, output, underClaim, whole);
     }
 
     /// @copydoc PlanExecutor::setRenderAheadDepth

@@ -10,6 +10,7 @@
 #include "core/TrackInfo.hpp"
 #include "exec/EngineSession.hpp"
 #include "exec/PlanValues.hpp"
+#include "exec/RuntimeStateStore.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "plan/PlanHandoff.hpp"
 #include "plan/RenderPlan.hpp"
@@ -274,4 +275,131 @@ TEST_CASE("A jump forgets what was rendered ahead for where the playhead was",
     CHECK(ahead.session.renderAheadDiscards() >= 1);
     CHECK(ahead.session.renderAheadMisses() == 0);
     CHECK(ahead.session.renderedAheadThrough() > ahead.session.nextBlock());
+}
+
+TEST_CASE("A track holding session clips renders at the callback", "[engine][plan][1898]") {
+    // A launch has to be heard when it fires, so its clips are never rendered ahead; a track
+    // playing only its arrangement still is.
+    magda::engine::CompileOptions options;
+    options.sessionTracks = {2};
+    const auto tracks = project();
+    auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), options);
+    for (const auto& problem : magda::engine::validatePlan(plan))
+        UNSCOPED_INFO(problem);
+    REQUIRE(magda::engine::validatePlan(plan).empty());
+
+    for (const auto& op : plan.ops) {
+        if (op.kind != magda::engine::OpKind::ClipAudio)
+            continue;
+        INFO("track " << op.key.trackId);
+        const bool session = op.key.trackId == 2;
+        CHECK((op.liveness == magda::engine::LivenessDomain::Live) == session);
+        CHECK(op.liveByPlayback == session);
+    }
+
+    const auto guarded = magda::engine::insertHandoffs(plan);
+    REQUIRE(magda::engine::validatePlan(guarded).empty());
+    PlanValues values;
+    magda::engine::resolvePlanValues(guarded, tracks, makeMaster(), values);
+    Factory factory;
+    magda::engine::RuntimeStateStore store{factory};
+    const RenderContext context{44100.0, kBlockSize, 2};
+    magda::engine::PlanExecutor executor;
+    executor.prepare(guarded, store.realise(guarded, context), context, nullptr, &values);
+    REQUIRE(executor.isPrepared());
+    CHECK(executor.aheadTracks() == std::vector<TrackId>{1});
+}
+
+namespace {
+
+/// Sounds while its slot's handle plays, read through the block the way a clip source reads it.
+class LaunchGatedSource final : public EngineAudioSource {
+  public:
+    LaunchGatedSource(TrackId trackId, magda::engine::LaunchHandleFeed& handles)
+        : trackId_(trackId), handles_(handles) {}
+
+    void render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) override {
+        out.clear();
+        const magda::engine::LaunchHandleFeed::Reader table(handles_, block);
+        if (!table)
+            return;
+        const auto [first, last] = table->rangeFor(trackId_);
+        for (const auto* entry = first; entry != last; ++entry)
+            if (entry->handle != nullptr && entry->handle->blockStatus().beforeEvent.playing())
+                out.fill(1.0f);
+    }
+
+  private:
+    TrackId trackId_;
+    magda::engine::LaunchHandleFeed& handles_;
+};
+
+class LauncherFactory final : public RuntimeStateFactory {
+  public:
+    std::unique_ptr<EngineAudioSource> createClipAudioSource(TrackId) override {
+        return std::make_unique<CountingSource>(0.0f);
+    }
+    std::unique_ptr<EngineAudioSource> createSessionAudioSource(TrackId trackId) override {
+        return std::make_unique<LaunchGatedSource>(trackId, *handles);
+    }
+    magda::engine::LaunchHandleFeed* handles = nullptr;
+};
+
+std::shared_ptr<const magda::engine::ClipSnapshot> snapshotWithSlot(TrackId trackId) {
+    auto snapshot = std::make_shared<magda::engine::ClipSnapshot>();
+    magda::engine::TrackClipPlayback track;
+    track.trackId = trackId;
+    magda::engine::SessionSlotPlayback slot;
+    slot.sceneIndex = 0;
+    slot.lengthBeats = 4.0;
+    slot.audio.emplace_back();
+    track.session.push_back(std::move(slot));
+    snapshot->tracks.push_back(std::move(track));
+    return snapshot;
+}
+
+}  // namespace
+
+TEST_CASE("A launch on a track rendered ahead is heard from the callback",
+          "[engine][session][1898]") {
+    // Until the plan moves the track to the callback, the callback renders its blocks itself.
+    LauncherFactory factory;
+    EngineSession session(factory);
+    factory.handles = &session.launchHandleFeed();
+    session.setRenderAhead(3, false);
+
+    const std::vector<TrackInfo> tracks{makeTrack(1)};
+    const auto plan = std::make_shared<const RenderPlan>(
+        magda::engine::insertHandoffs(magda::engine::compileRenderPlan(tracks, makeMaster())));
+    PlanValues values;
+    magda::engine::resolvePlanValues(*plan, tracks, makeMaster(), values);
+    REQUIRE(session
+                .publish(plan, RenderContext{44100.0, kBlockSize, 2},
+                         magda::engine::collectRuntimeStateIds(tracks, makeMaster()),
+                         std::move(values))
+                .published);
+    session.publishTransport(rolling(0.0));
+    session.publishClips(snapshotWithSlot(1));
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    for (int callback = 0; callback < 8; ++callback) {
+        session.process(kBlockSize, output);
+        session.renderAheadOnce();
+        CHECK(output.getSample(0, 0) == 0.0f);
+    }
+    REQUIRE(session.renderedAheadThrough() > session.nextBlock());
+
+    {
+        magda::engine::LaunchRequestQueue::Gesture gesture(session.launchRequests());
+        gesture.play(magda::engine::SlotKey{1, 0});
+    }
+    for (int callback = 0; callback < 8; ++callback) {
+        session.process(kBlockSize, output);
+        session.renderAheadOnce();
+        INFO("callback " << callback);
+        CHECK(output.getSample(0, 0) == 1.0f);
+    }
+    CHECK(session.renderAheadDiscards() >= 1);
+    // And nothing more ahead until a plan moves the track: one thread renders its sources.
+    CHECK(session.renderAheadOnce() == 0);
 }

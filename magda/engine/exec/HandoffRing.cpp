@@ -43,6 +43,7 @@ void HandoffRing::reset() {
     released_.store(0, std::memory_order_relaxed);
     written_.store(0, std::memory_order_relaxed);
     discards_.store(0, std::memory_order_relaxed);
+    stopped_.store(false, std::memory_order_relaxed);
     wholeUntil_ = 0;
     writerDiscards_ = 0;
 }

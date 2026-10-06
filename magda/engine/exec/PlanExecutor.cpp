@@ -1608,7 +1608,7 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
 
 bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValues& values,
                                const BlockInfo& requestedBlock, juce::AudioBuffer<float>& output,
-                               const std::function<bool()>& underClaim) {
+                               const std::function<bool()>& underClaim, bool forceWhole) {
     // A table without sides resolves whole on the ahead side, which may be blocks early.
     const auto* table = appliesValues(values) ? values.params.get() : nullptr;
     const bool splits =
@@ -1647,11 +1647,18 @@ bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValue
         // which needs them to itself. A block the ahead side passed without rendering it for this
         // moment (a jump, a different callback size, a skip) costs what it rendered from here
         // on: forgotten, and rendered again after this one.
+        // Session playback reaching a track rendered ahead stops the ahead side for good: its
+        // sources would otherwise be rendered by both, one of them blind to the launch.
+        if (forceWhole)
+            handoffs_.stop();
+        forceWhole = handoffs_.stopped();
+
         auto published = handoffs_.published(sequence, BlockStamp::of(start.block));
-        if (published != HandoffRing::Published::split || !splits) {
+        if (published != HandoffRing::Published::split || !splits || forceWhole) {
             if (handoffs_.claimForCallback()) {
                 published = handoffs_.published(sequence, BlockStamp::of(start.block));
-                const bool whole = published != HandoffRing::Published::split || !splits;
+                const bool whole =
+                    published != HandoffRing::Published::split || !splits || forceWhole;
                 if (whole) {
                     if (published != HandoffRing::Published::whole && handoffs_.reached(sequence))
                         handoffs_.discardFrom(sequence);

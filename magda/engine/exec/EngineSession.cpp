@@ -50,6 +50,25 @@ constexpr auto kRenderAheadDrainLimit = std::chrono::milliseconds(250);
 
 }  // namespace
 
+bool EngineSession::playsSession(std::span<const TrackId> tracks, const BlockInfo& block) {
+    const LaunchHandleFeed::Reader handles(handles_);
+    for (const auto track : tracks) {
+        if (const auto* hold = clips_.holdFor(track, block);
+            hold != nullptr && (hold->from.value != 0 || hold->until.value != block.numSamples ||
+                                hold->gained || hold->lost || hold->heldAtEnd))
+            return true;
+        if (!handles)
+            continue;
+        const auto [first, last] = handles->rangeFor(track);
+        for (auto entry = first; entry != last; ++entry)
+            if (entry->handle != nullptr &&
+                (entry->handle->blockStatus().soundingAtStart ||
+                 entry->handle->blockStatus().playingAtEnd() || entry->handle->holdsSection()))
+                return true;
+    }
+    return false;
+}
+
 void EngineSession::setRenderAhead(int depth, bool inBackground) {
     renderAheadDepth_ = std::max(depth, 0);
     renderAhead_.reset();
@@ -580,7 +599,8 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
             voices_->announceHandBacks(clips_.sections(), segment.block);
 
         if (renderAhead_ != nullptr)
-            (*render)->executor.processSide(1, blockSequence_++, table, segment.block, piece);
+            (*render)->executor.processSide(1, blockSequence_++, table, segment.block, piece, {},
+                                            playsSession(renderedAhead, segment.block));
         else
             (*render)->executor.process(table, segment.block, piece);
 

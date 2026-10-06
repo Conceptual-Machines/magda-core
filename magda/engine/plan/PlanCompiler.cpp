@@ -162,6 +162,16 @@ class Compiler {
     RenderPlan run();
 
   private:
+    /// @p op, live when @p track plays session clips (CompileOptions::sessionTracks).
+    OpId playedLive(const TrackInfo& track, OpId op) {
+        if (options_.sessionTracks.contains(track.id)) {
+            auto& planOp = plan_.ops[static_cast<std::size_t>(op)];
+            planOp.liveness = LivenessDomain::Live;
+            planOp.liveByPlayback = true;
+        }
+        return op;
+    }
+
     OpId addOp(OpKind kind, const OpKey& key, std::vector<PortRef> inputs,
                std::vector<PortDesc> outputs);
     void diagnose(std::string message);
@@ -1627,7 +1637,8 @@ void Compiler::emitTrack(const TrackInfo& track) {
                         INVALID_DEVICE_ID, OpRole::ClipAudio, 0};
         // The session plays through the same op, so putting a clip in a scene no more
         // recompiles a plan than dropping one on the timeline does (#2301).
-        audioSources.push_back(PortRef{addOp(OpKind::ClipAudio, key, {}, {SignalKind::Audio}), 0});
+        audioSources.push_back(
+            PortRef{playedLive(track, addOp(OpKind::ClipAudio, key, {}, {SignalKind::Audio})), 0});
     }
 
     // Every input a track names is compiled, and the monitor switch is a value
@@ -1699,12 +1710,13 @@ void Compiler::emitTrack(const TrackInfo& track) {
     if (readsMidi) {
         const OpKey key{track.id,          INVALID_RACK_ID,  INVALID_CHAIN_ID,
                         INVALID_DEVICE_ID, OpRole::ClipMidi, 0};
-        midiSources.push_back(PortRef{addOp(OpKind::ClipMidi, key, {}, {SignalKind::Midi}), 0});
+        midiSources.push_back(
+            PortRef{playedLive(track, addOp(OpKind::ClipMidi, key, {}, {SignalKind::Midi})), 0});
 
         const OpKey sessionKey{track.id,          INVALID_RACK_ID,     INVALID_CHAIN_ID,
                                INVALID_DEVICE_ID, OpRole::SessionMidi, 0};
-        midiSources.push_back(
-            PortRef{addOp(OpKind::SessionMidi, sessionKey, {}, {SignalKind::Midi}), 0});
+        midiSources.push_back(PortRef{
+            playedLive(track, addOp(OpKind::SessionMidi, sessionKey, {}, {SignalKind::Midi})), 0});
     }
     // One live input op per track, whatever else is routed to it: a preview is
     // queued under the track's own audition source, and the store keys live

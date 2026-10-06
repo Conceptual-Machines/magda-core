@@ -697,6 +697,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                                           const TrackInfo& master) const {
         engine::CompileOptions options{.auditionMidi = true};
         options.hardwareOutputs = hardwareOutputs_;
+        if (sessionRendersAhead_)
+            options.sessionTracks = sessionTracks();
         auto plan = engine::compileRenderPlan(tracks, master, options);
 
         // What modulation makes live is a question about the parameter table, which is
@@ -706,6 +708,19 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (values.params != nullptr)
             engine::promoteModulatedLiveness(plan, *values.params);
         return std::make_shared<const engine::RenderPlan>(engine::insertHandoffs(plan));
+    }
+
+    /// Tracks holding session clips or recording into a slot: rendered at the callback while
+    /// anything renders ahead.
+    std::set<TrackId> sessionTracks() const {
+        std::set<TrackId> tracks;
+        const auto& clips = ClipManager::getInstance();
+        for (const auto& track : TrackManager::getInstance().getTracks())
+            if (!clips.getClipsOnTrack(track.id, ClipView::Session).empty())
+                tracks.insert(track.id);
+        for (const auto& entry : sessionSlotTargets_)
+            tracks.insert(entry.first);
+        return tracks;
     }
 
     bool publishPlan(std::shared_ptr<const engine::RenderPlan> plan = nullptr) {
@@ -741,6 +756,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         if (plan == nullptr)
             plan = compilePlan(tracks, *master);
+        compiledSessionTracks_ = sessionRendersAhead_ ? sessionTracks() : std::set<TrackId>{};
         report("plan", plan->diagnostics);
 
         // Values and ids off the model rather than what plays: a frozen chain's
@@ -2093,6 +2109,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (session_ == nullptr)
             return;
 
+        // A track gaining its first session clip or slot take moves to the callback before
+        // the snapshot that can launch it there goes live (CompileOptions::sessionTracks).
+        if (sessionRendersAhead_ && sessionTracks() != compiledSessionTracks_)
+            publishPlan();
+
         // A publish can retire and complete a captured run. One extra pass puts
         // the resulting Arrangement clip in the same live model transition.
         for (auto pass = 0; pass < 2; ++pass) {
@@ -2667,6 +2688,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         voiceThread_ = std::make_unique<engine::ClipVoiceThread>(*voices_);
 
         session_ = std::make_unique<engine::EngineSession>(factory_, &renderPool_, voices_.get());
+        sessionRendersAhead_ = renderAheadBlocks(context) > 0;
         session_->setRenderAhead(renderAheadBlocks(context));
         sessionCapture_.attach(*session_);
         factory_.attach(session_->clipFeed(), voices_->feed(), session_->launchHandleFeed(),
@@ -3668,6 +3690,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     std::shared_ptr<MasterCaptureWriter> masterCapture_;
     /// Every ask to republish, whether or not one followed.
     std::atomic<std::uint64_t> requests_{0};
+
+    /// The tracks the live plan renders at the callback for their session clips, and whether
+    /// the session renders anything ahead, as it was made.
+    std::set<TrackId> compiledSessionTracks_;
+    bool sessionRendersAhead_ = false;
 
     /// How far the session renders ahead (#1898), applied when it is made.
     std::atomic<int> renderAheadMs_{0};

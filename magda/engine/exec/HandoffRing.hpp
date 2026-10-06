@@ -76,7 +76,7 @@ class HandoffRing {
     /// is driven. A split block also waits until the callback has rendered every whole block
     /// before it.
     bool canWrite(std::uint64_t block, bool split) {
-        if (entries_.empty())
+        if (entries_.empty() || stopped_.load(std::memory_order_acquire))
             return false;
         forgetDiscardedWholeBlocks();
         const auto released = released_.load(std::memory_order_acquire);
@@ -136,6 +136,14 @@ class HandoffRing {
      * it itself and the writer starts again after it (@ref discards).
      */
     void discardFrom(std::uint64_t block);
+
+    /// Reader: the writer renders nothing more for this ring, and the reader everything.
+    void stop() {
+        stopped_.store(true, std::memory_order_release);
+    }
+    bool stopped() const {
+        return stopped_.load(std::memory_order_acquire);
+    }
 
     /// How many times the reader has discarded; a writer seeing it move starts again.
     std::uint64_t discards() const {
@@ -201,6 +209,7 @@ class HandoffRing {
     /// One past the latest block the writer published.
     std::atomic<std::uint64_t> written_{0};
     std::atomic<std::uint64_t> discards_{0};
+    std::atomic<bool> stopped_{false};
 
     enum class Owner : std::uint8_t { none, writer, callback };
     std::atomic<Owner> owner_{Owner::none};

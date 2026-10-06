@@ -298,10 +298,11 @@ class PlanExecutor {
      * callback's values cannot split (handoffMisses).
      */
     /// @p underClaim runs on the ahead side once it owns the block, before anything renders;
-    /// false abandons the block.
+    /// false abandons the block. @p whole makes the callback render this block and every later one
+    /// itself, and the ahead side stop.
     bool processSide(int side, std::uint64_t sequence, const PlanValues& values,
                      const BlockInfo& block, juce::AudioBuffer<float>& output,
-                     const std::function<bool()>& underClaim = {});
+                     const std::function<bool()>& underClaim = {}, bool whole = false);
 
     /// Whether every block rendered ahead has been taken by the callback.
     bool handoffsDrained() const {
