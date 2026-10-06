@@ -8,11 +8,13 @@
 #include <cstdint>
 #include <magda/sdk/audio/BufferView.hpp>
 #include <memory>
+#include <optional>
 #include <set>
 #include <span>
 #include <string>
 #include <vector>
 
+#include "exec/HandoffRing.hpp"
 #include "exec/PlanBindings.hpp"
 #include "exec/PlanLayout.hpp"
 #include "exec/PlanValues.hpp"
@@ -278,21 +280,34 @@ class PlanExecutor {
                  juce::AudioBuffer<float>& output);
 
     /**
-     * @brief Render one side of one block (#1898): 0, what may be rendered ahead, or 1, what
-     *        the callback runs, into @p output.
+     * @brief Render one side of block @p sequence (#1898): 0, what may be rendered ahead, or 1,
+     *        what the callback runs, into @p output.
      *
-     * The same ops process() runs, in plan order, split where the plan's handoffs split them;
-     * the ahead side of a block renders before its callback side reads the handoffs, and the
-     * two together render what process() does. Each side resolves only its own parameters and
-     * advances only its own modifiers. Back to back on one block for now: a handoff holds one
-     * block, so giving the sides different blocks waits for its ring.
+     * The same ops process() runs, split where the plan's handoffs split them. The ahead side
+     * writes each handoff into the ring entry for @p sequence; the callback side reads that
+     * entry back, so the ahead side may run up to the ring's depth of blocks early. Each side
+     * resolves only its own parameters and advances only its own modifiers.
      *
-     * A plan without its handoffs, or a table where an op reads the other side's values (an
-     * unpromoted plan), is not split: the callback side renders the whole block and the ahead
-     * side nothing.
+     * A plan without its handoffs, or a table without sides or where an op reads the other
+     * side's values, is not split: the ahead side marks the block whole and the callback renders
+     * all of it, and no later block is rendered ahead until it has. The callback also renders
+     * whole a block the ahead side never reached. Returns whether the side ran; the ahead side
+     * does not while its entry for @p sequence is unreleased. A block the ahead side passed
+     * without rendering hears silence from its handoffs, and is silent altogether when the
+     * callback's values cannot split (handoffMisses).
      */
-    void processSide(int side, const PlanValues& values, const BlockInfo& block,
-                     juce::AudioBuffer<float>& output);
+    bool processSide(int side, std::uint64_t sequence, const PlanValues& values,
+                     const BlockInfo& block, juce::AudioBuffer<float>& output);
+
+    /// Blocks each handoff holds between the two sides. Off the audio thread, before prepare.
+    void setRenderAheadDepth(int blocks) {
+        renderAheadDepth_ = std::max(blocks, 1);
+    }
+
+    /// Callback blocks whose handoffs were not rendered ahead in time.
+    int handoffMisses() const {
+        return handoffMisses_.load(std::memory_order_relaxed);
+    }
 
     /** @brief Where one block's render starts, before any op has run. */
     struct BlockStart {
@@ -811,6 +826,23 @@ class PlanExecutor {
 
     /// Whether the prepared plan carries every handoff its boundary needs.
     bool guarded_ = false;
+
+    HandoffRing handoffs_;
+
+    /// What the ahead side's block clears in place of the callback's buffer; nothing reads it.
+    juce::AudioBuffer<float> aheadOutput_;
+    int renderAheadDepth_ = 1;
+
+    /// The block the ahead side is rendering, while it is: a Handoff op writes into its entry.
+    std::optional<std::uint64_t> aheadBlock_;
+
+    std::atomic<int> handoffMisses_{0};
+
+    /// Handoff @p op's input into the ahead block's entry; silence when not @p required.
+    void writeHandoff(std::size_t op, int numSamples, bool required);
+
+    /// Every handoff's output slot from @p sequence's entry, or silence when it is not @p ready.
+    void deliverHandoffs(std::uint64_t sequence, int numSamples, bool ready);
 
     /// Which side of this block's table an op, parameter or modifier is on. A table resolved
     /// without a plan has no sides and resolves whole on the first.

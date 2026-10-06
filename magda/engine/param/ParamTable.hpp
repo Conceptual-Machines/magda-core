@@ -245,7 +245,7 @@ struct ParamTable {
      * @ref order and @ref movingOrder split by side, and the side of each parameter, modifier
      * and plan op. Filled with the table rather than when a plan is prepared, so a values publish
      * that moves the order moves the slices with it. Empty on a table built without a plan,
-     * which resolves whole on one side.
+     * which resolves whole on one side and is never split.
      */
     std::array<std::vector<ParamStep>, 2> sideOrder;
     std::array<std::vector<ParamStep>, 2> sideMovingOrder;

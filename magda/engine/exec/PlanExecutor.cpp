@@ -389,6 +389,8 @@ void PlanExecutor::reset() {
     paramWindowForOp_.clear();
     runSide_.clear();
     guarded_ = false;
+    handoffs_.reset();
+    aheadBlock_.reset();
     mixerParamForOp_.clear();
     for (auto& side : paramSides_) {
         side.scratch.clear();
@@ -886,7 +888,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
             // Everything that carries MIDI on from what reached it. A merge is the
             // obvious one and a fader carries a rack chain's MIDI out beside its
             // audio, but a conduit is a conduit: a note gate passes on whatever
-            // falls in its range.
+            // falls in its range, and a handoff passes on all of it.
             //
             // A Device is deliberately not one. Its MIDI output port carries what
             // the device produced and nothing it was handed: MIDI thru is the
@@ -916,7 +918,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
             }
 
             if (op.kind != OpKind::MergeMidi && op.kind != OpKind::Fader &&
-                op.kind != OpKind::MidiNoteGate)
+                op.kind != OpKind::MidiNoteGate && op.kind != OpKind::Handoff)
                 continue;
 
             int carried = 0;
@@ -1158,6 +1160,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
     silence_.setSize(context_.numChannels, context_.maxBlockSize, false, true, false);
     silence_.clear();
+    aheadOutput_.setSize(context_.numChannels, context_.maxBlockSize, false, true, false);
     noMidi_.clear();
 
     // The arena, as the render path sees it. Taken once, here, so that nothing
@@ -1173,6 +1176,15 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     for (std::size_t channel = 0; channel < channels; ++channel)
         slotChannels_[audioSlots_.size() * channels + channel] =
             silence_.getWritePointer(static_cast<int>(channel));
+
+    std::vector<int> handoffMidiBytes(numOps, 0);
+    for (std::size_t i = 0; i < numOps; ++i)
+        if (plan.ops[i].kind == OpKind::Handoff &&
+            plan.ops[i].outputs.front().kind == SignalKind::Midi)
+            handoffMidiBytes[i] = midiByteBounds_[static_cast<std::size_t>(
+                slotFor(PortRef{static_cast<OpId>(i), 0}))];
+    handoffs_.prepare(plan, renderAheadDepth_, context_.numChannels, context_.maxBlockSize,
+                      handoffMidiBytes);
 
     planFingerprint_ = magda::engine::planFingerprint(plan);
     plan_ = &plan;
@@ -1579,34 +1591,123 @@ void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedB
     }
 }
 
-void PlanExecutor::processSide(int side, const PlanValues& values, const BlockInfo& requestedBlock,
-                               juce::AudioBuffer<float>& output) {
-    // What cannot be split renders whole, at the callback.
+bool PlanExecutor::processSide(int side, std::uint64_t sequence, const PlanValues& values,
+                               const BlockInfo& requestedBlock, juce::AudioBuffer<float>& output) {
+    // A table without sides resolves whole on the ahead side, which may be blocks early.
     const auto* table = appliesValues(values) ? values.params.get() : nullptr;
-    if (!guarded_ || (table != nullptr && !table->opSide.empty() && !table->sidesAgree)) {
-        if (side == 1)
-            process(values, requestedBlock, output);
-        return;
+    const bool splits =
+        guarded_ && (table == nullptr || (!table->opSide.empty() && table->sidesAgree));
+
+    if (side == 0) {
+        if (!handoffs_.canWrite(sequence, splits))
+            return false;
+        if (!splits) {
+            handoffs_.publishWhole(sequence);
+            return true;
+        }
     }
 
     const juce::ScopedNoDenormals noDenormals;
 
     // The ahead side drives no hardware, so it has nothing to write into the callback's buffer.
-    auto& target = side == 1 ? output : silence_;
+    auto& target = side == 1 ? output : aheadOutput_;
     const auto start = beginBlock(values, requestedBlock, target);
-    if (!start.render) {
+
+    if (side == 1) {
+        // A block the ahead side marked whole, or never reached, renders whole and in order.
+        // Past it, the ahead side's state has moved on: the live side runs if these values can
+        // split, hearing whatever the ring has for the block, and otherwise the block is dropped.
+        const auto published = handoffs_.published(sequence, start.block.numSamples);
+        if (published == HandoffRing::Published::whole || !handoffs_.reached(sequence)) {
+            process(values, requestedBlock, output);
+            handoffs_.release(sequence);
+            return true;
+        }
+        if (!splits) {
+            handoffMisses_.fetch_add(1, std::memory_order_relaxed);
+            handoffs_.release(sequence);
+            return true;
+        }
+        if (start.render)
+            deliverHandoffs(sequence, start.block.numSamples,
+                            published == HandoffRing::Published::split);
+    } else {
+        aheadBlock_ = sequence;
+    }
+
+    if (start.render) {
+        renderMidiPrefix(values, start.block, side);
         resolveParameters(values, start.block, side);
+
+        for (std::size_t i = 0; i < plan_->ops.size(); ++i) {
+            if (inMidiPrefix_[i] != 0 || runSide_[i] != side)
+                continue;
+            renderOp(static_cast<OpId>(i), start.applyValues ? values.ops[i] : kUnityValue,
+                     start.block, target);
+        }
+    } else {
+        resolveParameters(values, start.block, side);
+    }
+
+    if (side == 0) {
+        aheadBlock_.reset();
+        handoffs_.publish(sequence, start.render ? start.block.numSamples : 0);
+    } else {
+        handoffs_.release(sequence);
+    }
+    return true;
+}
+
+void PlanExecutor::writeHandoff(std::size_t op, int numSamples, bool required) {
+    const auto block = *aheadBlock_;
+    const auto in = required ? plan_->ops[op].inputs[0] : PortRef{};
+    if (plan_->ops[op].outputs.front().kind == SignalKind::Audio) {
+        auto entry = handoffs_.audio(op, block, numSamples);
+        if (in.valid())
+            entry.copyFrom(audioIn(in, numSamples));
+        else
+            entry.clear();
         return;
     }
 
-    renderMidiPrefix(values, start.block, side);
-    resolveParameters(values, start.block, side);
+    auto& midi = handoffs_.midi(op, block);
+    auto& fractions = handoffs_.fractions(op, block);
+    midi.clear();
+    fractions.clear();
+    if (in.valid()) {
+        midi.addEvents(midiIn(in), 0, numSamples, 0);
+        fractions.addFrom(fractionsIn(in));
+    }
+    handoffs_.setPanic(op, block, in.valid() && midiInPanic(in));
+}
+
+void PlanExecutor::deliverHandoffs(std::uint64_t sequence, int numSamples, bool ready) {
+    if (!ready && handoffs_.handoffCount() > 0)
+        handoffMisses_.fetch_add(1, std::memory_order_relaxed);
 
     for (std::size_t i = 0; i < plan_->ops.size(); ++i) {
-        if (inMidiPrefix_[i] != 0 || runSide_[i] != side)
+        if (!handoffs_.holds(i))
             continue;
-        renderOp(static_cast<OpId>(i), start.applyValues ? values.ops[i] : kUnityValue, start.block,
-                 target);
+
+        const auto id = static_cast<OpId>(i);
+        if (plan_->ops[i].outputs.front().kind == SignalKind::Audio) {
+            auto out = audioOut(id, 0, numSamples);
+            if (ready)
+                out.copyFrom(handoffs_.audio(i, sequence, numSamples));
+            else
+                out.clear();
+            continue;
+        }
+
+        auto& out = midiOut(id, 0);
+        auto& fractions = fractionsOut(id, 0);
+        out.clear();
+        fractions.clear();
+        if (ready) {
+            out.addEvents(handoffs_.midi(i, sequence), 0, numSamples, 0);
+            fractions.addFrom(handoffs_.fractions(i, sequence));
+        }
+        setMidiOutPanic(id, 0, ready && handoffs_.panic(i, sequence));
     }
 }
 
@@ -1647,6 +1748,12 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
     const auto i = static_cast<std::size_t>(id);
     const auto& op = plan_->ops[i];
     const auto numSamples = block.numSamples;
+
+    // Ahead, a handoff's output slot belongs to the callback; its signal goes to the ring.
+    if (op.kind == OpKind::Handoff && aheadBlock_.has_value()) {
+        writeHandoff(i, numSamples, published.required);
+        return;
+    }
 
     if (!published.required) {
         for (std::size_t port = 0; port < op.outputs.size(); ++port) {
