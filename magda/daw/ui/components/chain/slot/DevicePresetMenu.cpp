@@ -153,6 +153,8 @@ void showMagdaPresetMenu(juce::Component* targetComponent, const juce::String& p
     menu.showMenuAsync(
         juce::PopupMenu::Options().withTargetComponent(targetComponent),
         [pluginFolder, indexedPresetPaths, actions = std::move(actions)](int chosen) {
+            if (actions.onDismissed)
+                actions.onDismissed();
             if (chosen == 0)
                 return;
 
@@ -330,13 +332,15 @@ void MagdaDevicePresetPresenter::clearCurrentPreset() {
 void MagdaDevicePresetPresenter::showMenu(
     juce::Component* targetComponent, const magda::DeviceInfo& device,
     const magda::ChainNodePath& devicePath,
-    std::function<void(const magda::DeviceInfo& liveDevice)> onLoaded) {
+    std::function<void(const magda::DeviceInfo& liveDevice)> onLoaded,
+    std::function<void()> onDismissed) {
     auto state = state_;
     const auto snapshotProvider = [device, devicePath]() -> std::optional<magda::DeviceInfo> {
         return snapshotDeviceForPreset(device, devicePath);
     };
 
     MagdaPresetMenuActions actions;
+    actions.onDismissed = std::move(onDismissed);
     actions.saveAs = [state, device, snapshotProvider]() {
         showSaveMagdaPresetDialog(
             device, state->currentPresetName, snapshotProvider,
@@ -386,9 +390,11 @@ void PluginDevicePresetPresenter::showMenu(juce::Component* targetComponent,
                                            const magda::DeviceInfo& device,
                                            const magda::ChainNodePath& devicePath,
                                            bool isInternalDevice,
-                                           const std::function<void()>& onSelectionChanged) {
+                                           const std::function<void()>& onSelectionChanged,
+                                           std::function<void()> onDismissed) {
     auto state = state_;
     PluginPresetMenuActions actions;
+    actions.onDismissed = std::move(onDismissed);
     actions.saveAs = [this, device, devicePath, onSelectionChanged]() {
         showSaveDialog(device, devicePath, onSelectionChanged);
     };
@@ -445,8 +451,11 @@ void showPluginPresetMenu(juce::Component* targetComponent, const magda::DeviceI
                           const juce::File& currentPluginPresetFile,
                           PluginPresetMenuActions actions) {
     auto* engine = getAudioEngine();
-    if (engine == nullptr || isInternalDevice)
+    if (engine == nullptr || isInternalDevice) {
+        if (actions.onDismissed)
+            actions.onDismissed();
         return;
+    }
 
     auto& scanner = magda::PluginPresetScanner::getInstance();
     const bool diskPresetsSupported = scanner.getPresetExtension(device).isNotEmpty();
@@ -495,6 +504,8 @@ void showPluginPresetMenu(juce::Component* targetComponent, const magda::DeviceI
     menu.showMenuAsync(
         juce::PopupMenu::Options().withTargetComponent(targetComponent),
         [device, devicePath, indexedPresetFiles, actions = std::move(actions)](int chosen) {
+            if (actions.onDismissed)
+                actions.onDismissed();
             if (chosen == 0)
                 return;
 

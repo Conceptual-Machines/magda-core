@@ -303,6 +303,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                                            BinaryData::iconpresetsroundboldm_svgSize);
     presetButton_->setTooltip("Presets");
     presetButton_->onClick = [this]() {
+        // Lit while its menu is open.
+        presetButton_->setActive(true);
         if (!isInternalDevice() && hasPluginPresetsAvailable())
             showPluginPresetMenu();
         else
@@ -842,6 +844,8 @@ void DeviceSlotComponent::styleDeviceHeaderButtons() {
     style(aiButton_.get(), DeviceIcon::Toggle, ActiveTheme::ACCENT_PRIMARY);
     style(learnButton_.get(), DeviceIcon::Toggle, ActiveTheme::ACCENT_ATTENTION);
     style(presetButton_.get(), DeviceIcon::Action, ActiveTheme::PRESET_INDIGO);
+    if (presetButton_)
+        presetButton_->setHoverColor(ActiveTheme::PRESET_INDIGO);
     style(multiOutButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_PRIMARY);
     style(randomButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_PRIMARY);
     style(exportClipButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_POSITIVE);
@@ -1123,12 +1127,17 @@ int DeviceSlotComponent::getPreferredWidth() const {
 
 void DeviceSlotComponent::showPresetMenu() {
     juce::Component::SafePointer<DeviceSlotComponent> self(this);
-    magdaPresetPresenter_.showMenu(presetButton_.get(), device_, nodePath_,
-                                   [self](const magda::DeviceInfo& liveDevice) {
-                                       if (self == nullptr)
-                                           return;
-                                       self->updateFromDevice(liveDevice);
-                                   });
+    magdaPresetPresenter_.showMenu(
+        presetButton_.get(), device_, nodePath_,
+        [self](const magda::DeviceInfo& liveDevice) {
+            if (self == nullptr)
+                return;
+            self->updateFromDevice(liveDevice);
+        },
+        [self]() {
+            if (self != nullptr && self->presetButton_)
+                self->presetButton_->setActive(false);
+        });
 }
 
 void DeviceSlotComponent::refreshPresetsButton() {
@@ -1143,11 +1152,16 @@ bool DeviceSlotComponent::hasPluginPresetsAvailable() const {
 
 void DeviceSlotComponent::showPluginPresetMenu() {
     juce::Component::SafePointer<DeviceSlotComponent> self(this);
-    pluginPresetPresenter_.showMenu(presetsButton_.get(), device_, nodePath_, isInternalDevice(),
-                                    [self]() {
-                                        if (self != nullptr)
-                                            self->refreshPresetsButton();
-                                    });
+    pluginPresetPresenter_.showMenu(
+        presetButton_.get(), device_, nodePath_, isInternalDevice(),
+        [self]() {
+            if (self != nullptr)
+                self->refreshPresetsButton();
+        },
+        [self]() {
+            if (self != nullptr && self->presetButton_)
+                self->presetButton_->setActive(false);
+        });
 }
 
 void DeviceSlotComponent::loadPluginPresetFile(const juce::File& file) {
