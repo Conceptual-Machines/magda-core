@@ -48,7 +48,7 @@ constexpr std::array<Style, 3> kStyles{Style::Anchored, Style::MemoryFill, Style
 constexpr int kWide = 1600;
 
 int defaultTransportHeight() {
-    return LayoutConfig::getInstance().defaultTransportHeight;
+    return LayoutConfig::getInstance().transportHeight;
 }
 
 // Everything on except, at most, the master buffer meter.
@@ -111,18 +111,6 @@ TEST_CASE("A wide bar shows the master buffer meter in every style", "[ui][trans
     REQUIRE(nothingButTheMeterCollapsed(l));
     REQUIRE(l.memoryMeterVisible);
     REQUIRE_FALSE(l.memoryMeter.isEmpty());
-}
-
-TEST_CASE("It fits at every height the transport can be dragged to", "[ui][transport-layout]") {
-    const auto& config = LayoutConfig::getInstance();
-    for (auto style : kStyles)
-        for (int height = config.minTransportHeight; height <= config.maxTransportHeight;
-             ++height) {
-            INFO("style " << styleKey(style) << " height " << height);
-            const auto l =
-                compute(LayoutConfig::defaultWindowWidth, height, nominalText(), 1.0f, style);
-            REQUIRE(nothingButTheMeterCollapsed(l));
-        }
 }
 
 // ---------------------------------------------------------------------------

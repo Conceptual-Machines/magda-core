@@ -251,7 +251,6 @@ class MainWindow::MainComponent : public juce::Component,
     std::unique_ptr<BottomPanel> bottomPanel;
 
     // Panel sizing (initialized from LayoutConfig)
-    int transportHeight;
     int leftPanelWidth;
     int rightPanelWidth;
     int bottomPanelHeight;
@@ -266,7 +265,6 @@ class MainWindow::MainComponent : public juce::Component,
 
     // Resize handles
     class ResizeHandle;
-    std::unique_ptr<ResizeHandle> transportResizer;
     std::unique_ptr<ResizeHandle> leftResizer;
     std::unique_ptr<ResizeHandle> rightResizer;
     std::unique_ptr<ResizeHandle> bottomResizer;

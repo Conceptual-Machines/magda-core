@@ -62,12 +62,12 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
         beginTest("Nothing but the master buffer meter collapses at the window MAGDA opens at");
         for (auto style : {Style::MemoryFill, Style::Justified}) {
             const auto other = compute(magda::LayoutConfig::defaultWindowWidth,
-                                       config.defaultTransportHeight, text, 1.0f, style);
+                                       config.transportHeight, text, 1.0f, style);
             expect(!other.overflowVisible,
                    juce::String("the overflow button is showing in ") + styleKey(style));
         }
-        const auto l = compute(magda::LayoutConfig::defaultWindowWidth,
-                               config.defaultTransportHeight, text, 1.0f, Style::Anchored);
+        const auto l = compute(magda::LayoutConfig::defaultWindowWidth, config.transportHeight,
+                               text, 1.0f, Style::Anchored);
         expect(l.navVisible, "navigation buttons collapsed");
         expect(l.loopBackVisible, "loop / back-to-arrangement collapsed");
         expect(l.punchVisible, "punch box collapsed");
@@ -80,7 +80,7 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
         for (float density : {0.6f, 1.0f, 1.4f}) {
             // The widest spacing needs a wider window than the one MAGDA opens at.
             const int width = density > 1.0f ? 1400 : magda::LayoutConfig::defaultWindowWidth;
-            const auto dense = compute(width, config.defaultTransportHeight, text, density);
+            const auto dense = compute(width, config.transportHeight, text, density);
             expect(!dense.overflowVisible,
                    "the overflow button is showing at density " + juce::String(density, 1));
         }

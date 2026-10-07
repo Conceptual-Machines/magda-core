@@ -668,7 +668,6 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
 
     // Initialize panel sizes from LayoutConfig, scaled to display size
     auto& layout = LayoutConfig::getInstance();
-    transportHeight = layout.defaultTransportHeight;
 
     // Scale side panel defaults based on screen width
     if (const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()) {
@@ -1065,15 +1064,6 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
 void MainWindow::MainComponent::setupResizeHandles() {
     auto& layout = LayoutConfig::getInstance();
 
-    // Transport resizer
-    transportResizer = std::make_unique<ResizeHandle>(ResizeHandle::Vertical);
-    transportResizer->onResize = [this, &layout](int delta) {
-        transportHeight = juce::jlimit(layout.minTransportHeight, layout.maxTransportHeight,
-                                       transportHeight + delta);
-        resized();
-    };
-    addAndMakeVisible(*transportResizer);
-
     // Left panel resizer
     leftResizer = std::make_unique<ResizeHandle>(ResizeHandle::Horizontal);
     leftResizer->onResize = [this, &layout](int delta) {
@@ -1444,7 +1434,6 @@ MainWindow::MainComponent::~MainComponent() {
     footerBar.reset();
 
     DBG("    [5m] Destroying resize handles...");
-    transportResizer.reset();
     leftResizer.reset();
     rightResizer.reset();
     bottomResizer.reset();
@@ -1518,8 +1507,7 @@ void MainWindow::MainComponent::resized() {
 void MainWindow::MainComponent::layoutTransportArea(juce::Rectangle<int>& bounds) {
     auto& layout = LayoutConfig::getInstance();
 
-    transportPanel->setBounds(bounds.removeFromTop(transportHeight));
-    transportResizer->setBounds(bounds.removeFromTop(layout.resizeHandleSize));
+    transportPanel->setBounds(bounds.removeFromTop(layout.transportHeight));
     bounds.removeFromTop(layout.panelPadding);  // Spacing below transport
 }
 
