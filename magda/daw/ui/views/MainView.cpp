@@ -2476,8 +2476,10 @@ MainView::MasterHeaderPanel::MasterHeaderPanel() {
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
     AutomationManager::getInstance().addListener(this);
+    Config::getInstance().addListener(this);
 
     setupControls();
+    applyHeaderStyle();
 
     // Sync initial state from master channel
     masterChannelChanged();
@@ -2485,6 +2487,7 @@ MainView::MasterHeaderPanel::MasterHeaderPanel() {
 }
 
 MainView::MasterHeaderPanel::~MasterHeaderPanel() {
+    Config::getInstance().removeListener(this);
     AutomationManager::getInstance().removeListener(this);
     TrackManager::getInstance().removeListener(this);
 }
@@ -2493,6 +2496,8 @@ void MainView::MasterHeaderPanel::setupControls() {
     // Speaker on/off button (toggles master mute) — one shared recipe with the
     // inspector / mixer master strip.
     speakerButton = makeMasterSpeakerButton();
+    applyGlyphMuteStyle(*speakerButton);
+    speakerButton->setIconPadding(6.0f);  // the track headers' glyph size on a 22px button
     speakerButton->setTooltip("Mute master");
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
@@ -2512,9 +2517,10 @@ void MainView::MasterHeaderPanel::setupControls() {
                                 ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     automationButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     automationButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    automationButton->setActiveBackgroundColor(
-        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
-    automationButton->setIconPadding(2.5f);
+    automationButton->setActiveBackgroundColor(ActiveTheme::SURFACE);
+    automationButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                                ActiveTheme::ACCENT_MODULATION);
+    automationButton->setIconPadding(3.0f);
     automationButton->onClick = [this]() {
         // Alt/Option-click toggles global show/hide of all automation lanes.
         if (juce::ModifierKeys::getCurrentModifiers().isAltDown()) {
@@ -2654,6 +2660,16 @@ void MainView::MasterHeaderPanel::resized() {
     peakMeter->setBounds(peakMeterBounds);
     peakValueLabel->setBounds(peakReadout);
     automationButton->setBounds(meterIconAligned.withSizeKeepingCentre(iconSize, iconSize));
+}
+
+void MainView::MasterHeaderPanel::applyHeaderStyle() {
+    volumeLabel->setFont(FontManager::getInstance().getMonoFont(10.0f));
+    speakerButton->setGlyphText(Config::getInstance().getMuteSoloStyle() == "letters" ? "M" : "");
+}
+
+void MainView::MasterHeaderPanel::configChanged() {
+    applyHeaderStyle();
+    repaint();
 }
 
 void MainView::MasterHeaderPanel::masterChannelChanged() {

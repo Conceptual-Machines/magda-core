@@ -330,17 +330,14 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
         BinaryData::master_off_svg, BinaryData::master_off_svgSize);
     configureMasterSpeakerButton(*muteButton);
     // v1: mute, solo and record keep the neutral chip and carry their state in the glyph.
-    muteButton->setActiveBackgroundColor(ActiveTheme::SURFACE);
-    muteButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                          ActiveTheme::STATUS_WARNING);
-    muteButton->setStateColourReplacement(juce::Colour(0xFF1E1E1E), ActiveTheme::ICON_NEUTRAL,
-                                          ActiveTheme::STATUS_WARNING);
+    applyGlyphMuteStyle(*muteButton);
     muteButton->setIconPadding(5.0f);
     muteButton->setTooltip(tr("tracks.mute.tooltip"));
 
     // Master-only speaker mute (shown instead of the "M" button for the master),
     // one shared recipe with the inspector / mixer / master header.
     masterMuteButton = magda::makeMasterSpeakerButton();
+    applyGlyphMuteStyle(*masterMuteButton);
 
     // Chord-track audition: one control folding mute / solo / monitor into a
     // 3-state axis (Silent / Audible / Solo). Left-click cycles, right-click opens
@@ -1345,6 +1342,7 @@ void TrackHeadersPanel::updateHeaderSelectionColours() {
         header->volumeLabel->setFont(valueFont);
         header->panLabel->setFont(valueFont);
         header->muteButton->setGlyphText(letters ? "M" : "");
+        header->masterMuteButton->setGlyphText(letters ? "M" : "");
         header->soloButton->setGlyphText(letters ? "S" : "");
         const bool colouredHead =
             fullBar && !header->isMaster && header->trackColour != juce::Colour(0xFF444444);

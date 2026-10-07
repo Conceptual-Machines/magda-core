@@ -413,7 +413,8 @@ class MainView::SelectionOverlayComponent : public juce::Component {
 // Master header panel - matches track header style with controls
 class MainView::MasterHeaderPanel : public juce::Component,
                                     public TrackManagerListener,
-                                    public AutomationManagerListener {
+                                    public AutomationManagerListener,
+                                    private ConfigListener {
   public:
     MasterHeaderPanel();
     ~MasterHeaderPanel() override;
@@ -449,6 +450,9 @@ class MainView::MasterHeaderPanel : public juce::Component,
 
     void setupControls();
     void updateAutomationButtonState();
+    /** Applies the header preferences: mono values, and M in place of the speaker. */
+    void applyHeaderStyle();
+    void configChanged() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MasterHeaderPanel)
 };

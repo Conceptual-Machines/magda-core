@@ -27,6 +27,16 @@ inline void configureMasterSpeakerButton(SvgButton& button) {
     button.setIconPadding(3.5f);  // larger speaker glyph
 }
 
+/** @brief The v1 header mute: the neutral chip stays, and the glyph turns warning yellow
+ *  (crossed speaker) when muted. Applied on top of configureMasterSpeakerButton. */
+inline void applyGlyphMuteStyle(SvgButton& button) {
+    button.setActiveBackgroundColor(ActiveTheme::SURFACE);
+    button.setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                     ActiveTheme::STATUS_WARNING);
+    button.setStateColourReplacement(juce::Colour(0xFF1E1E1E), ActiveTheme::ICON_NEUTRAL,
+                                     ActiveTheme::STATUS_WARNING);
+}
+
 inline std::unique_ptr<SvgButton> makeMasterSpeakerButton() {
     auto button = std::make_unique<SvgButton>(
         "Speaker", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
