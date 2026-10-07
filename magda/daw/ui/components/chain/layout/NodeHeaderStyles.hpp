@@ -169,15 +169,17 @@ inline void applyHeaderIconStyle(magda::SvgButton& btn, juce::Colour activeBg,
  *  turns blue while on, power (green while on), or close (red on hover). */
 enum class DeviceIcon { Action, Toggle, Power, Close, Window };
 
-/** The v1 device icon button: 30x26 hit area, 5px radius, a 17px glyph (14px for
- *  close, 16px for the plug-in window), grey at rest, light on a dark fill when
+/** The v1 device icon button: 30x26 hit area, 5px radius, a 12px glyph (10px for
+ *  close, 11px for the plug-in window), grey at rest, light on a dark fill when
  *  hovered. @p glyphKey is the colour the asset draws its glyph in. */
 inline void applyDeviceIconStyle(magda::SvgButton& btn, DeviceIcon kind,
                                  juce::Colour glyphKey = juce::Colour(0xFFB3B3B3)) {
     constexpr float kButtonHeight = 26.0f;
-    const float glyph = kind == DeviceIcon::Close    ? 14.0f
-                        : kind == DeviceIcon::Window ? 16.0f
-                                                     : 17.0f;
+    // The spec's 17 / 14 / 16px glyphs were drawn for a 1000px device; a slot
+    // here is about half that, so the icons scale down with it.
+    const float glyph = kind == DeviceIcon::Close    ? 10.0f
+                        : kind == DeviceIcon::Window ? 11.0f
+                                                     : 12.0f;
     btn.setIconPadding((kButtonHeight - glyph) / 2.0f);
     btn.setCornerRadius(5.0f);
     btn.setOriginalColor(glyphKey);
