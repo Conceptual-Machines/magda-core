@@ -831,19 +831,28 @@ void DeviceSlotComponent::paintShellRows(juce::Graphics& g, juce::Rectangle<floa
 
 void DeviceSlotComponent::styleDeviceHeaderButtons() {
     using node_header::DeviceIcon;
-    for (auto* button : {macroButton_.get(), modButton_.get(), aiButton_.get(), learnButton_.get()})
+    const juce::Colour key(0xFFB3B3B3);
+    // Each toggle lights in the accent it always had; the glyph carries it.
+    const auto style = [&](magda::SvgButton* button, DeviceIcon kind, ColourRole active) {
         if (button != nullptr)
-            applyDeviceIconStyle(*button, DeviceIcon::Toggle);
-    for (auto* button : {presetButton_.get(), multiOutButton_.get(), randomButton_.get(),
-                         exportClipButton_.get(), midiThruButton_.get(), stepRecordButton_.get()})
-        if (button != nullptr)
-            applyDeviceIconStyle(*button, DeviceIcon::Action);
+            applyDeviceIconStyle(*button, kind, key, active);
+    };
+    style(macroButton_.get(), DeviceIcon::Toggle, ActiveTheme::ACCENT_MODULATION);
+    style(modButton_.get(), DeviceIcon::Toggle, ActiveTheme::ACCENT_ATTENTION);
+    style(aiButton_.get(), DeviceIcon::Toggle, ActiveTheme::ACCENT_PRIMARY);
+    style(learnButton_.get(), DeviceIcon::Toggle, ActiveTheme::ACCENT_ATTENTION);
+    style(presetButton_.get(), DeviceIcon::Action, ActiveTheme::PRESET_INDIGO);
+    style(multiOutButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_PRIMARY);
+    style(randomButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_PRIMARY);
+    style(exportClipButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_POSITIVE);
+    style(midiThruButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_POSITIVE);
+    style(stepRecordButton_.get(), DeviceIcon::Action, ActiveTheme::STEP_RECORD);
     if (stepRecordButton_)
         stepRecordButton_->setNormalColor(ActiveTheme::STEP_RECORD);
     if (scButton_)
-        applyDeviceIconStyle(*scButton_, DeviceIcon::Action, juce::Colour(0xFF000000));
-    if (uiButton_)
-        applyDeviceIconStyle(*uiButton_, DeviceIcon::Window);
+        applyDeviceIconStyle(*scButton_, DeviceIcon::Action, juce::Colour(0xFF000000),
+                             ActiveTheme::ACCENT_ATTENTION);
+    style(uiButton_.get(), DeviceIcon::Window, ActiveTheme::ACCENT_PRIMARY);
     if (onButton_)
         applyDeviceIconStyle(*onButton_, DeviceIcon::Power, juce::Colour(0xFFE6E6E6));
     if (closeButton_)

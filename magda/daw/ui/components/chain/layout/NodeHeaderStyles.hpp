@@ -173,7 +173,8 @@ enum class DeviceIcon { Action, Toggle, Power, Close, Window };
  *  close, 11px for the plug-in window), grey at rest, light on a dark fill when
  *  hovered. @p glyphKey is the colour the asset draws its glyph in. */
 inline void applyDeviceIconStyle(magda::SvgButton& btn, DeviceIcon kind,
-                                 juce::Colour glyphKey = juce::Colour(0xFFB3B3B3)) {
+                                 juce::Colour glyphKey = juce::Colour(0xFFB3B3B3),
+                                 ColourRole activeRole = ActiveTheme::DEVICE_BLUE) {
     constexpr float kButtonHeight = 26.0f;
     // The spec's 17 / 14 / 16px glyphs were drawn for a 1000px device; a slot
     // here is about half that, so the icons scale down with it.
@@ -188,8 +189,7 @@ inline void applyDeviceIconStyle(magda::SvgButton& btn, DeviceIcon kind,
                                                 : ActiveTheme::DEVICE_ICON_HOVER);
     btn.setPressedColor(ActiveTheme::DEVICE_ICON_HOVER);
     btn.setHoverBackgroundColor(ActiveTheme::DEVICE_ICON_HOVER_BG);
-    btn.setActiveColor(kind == DeviceIcon::Power ? ActiveTheme::DEVICE_GREEN
-                                                 : ActiveTheme::DEVICE_BLUE);
+    btn.setActiveColor(kind == DeviceIcon::Power ? ActiveTheme::DEVICE_GREEN : activeRole);
     // State shows in the glyph colour only; clear any fill an older style set.
     btn.setActiveBackgroundColor(juce::Colours::transparentBlack);
     if (kind == DeviceIcon::Toggle || kind == DeviceIcon::Power)
