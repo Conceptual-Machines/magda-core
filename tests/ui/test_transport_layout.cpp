@@ -21,8 +21,10 @@ namespace {
 // that matter sweep around these rather than leaning on the exact numbers.
 TextWidths nominalText() {
     TextWidths text;
-    text.timecodeBox = 91;
-    text.headlineTimecodeBox = 127;
+    text.timecodeBox = 104;
+    text.timecodeOverlay = 11;
+    text.stackTimecodeBox = 91;
+    text.headlineTimecodeBox = 141;
     text.timecodeCaption = 20;
     text.timecodeGlyphInset = 4;
     text.tempo = 49;
@@ -333,8 +335,9 @@ TEST_CASE("Spacing density moves the layout with it", "[ui][transport-layout]") 
         compute(LayoutConfig::defaultWindowWidth, height, nominalText(), 0.6f, style);
     const auto normal =
         compute(LayoutConfig::defaultWindowWidth, height, nominalText(), 1.0f, style);
-    const auto spacious =
-        compute(LayoutConfig::defaultWindowWidth, height, nominalText(), 1.4f, style);
+    // The widest spacing pushes the right-hand cluster into the overflow menu at
+    // the smallest window; it holds everything once the window is wider.
+    const auto spacious = compute(1400, height, nominalText(), 1.4f, style);
 
     REQUIRE(nothingButTheMeterCollapsed(compact));
     REQUIRE(nothingButTheMeterCollapsed(normal));

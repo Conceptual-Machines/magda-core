@@ -37,8 +37,8 @@ class TransportPanel::KeyReadout : public juce::Component, public juce::Settable
 
         const auto rootFont = fonts.getUIFontBold(transport::kReadoutFontSize);
         g.setFont(rootFont);
-        g.setColour(
-            ActiveTheme::getColour(hasKey ? ActiveTheme::TEXT_PRIMARY : ActiveTheme::TEXT_DIM));
+        g.setColour(ActiveTheme::getColour(hasKey ? ActiveTheme::TEXT_PRIMARY
+                                                  : ActiveTheme::TRANSPORT_TEXT_DIM));
         const int rootWidth = juce::GlyphArrangement::getStringWidthInt(rootFont, rootText);
         g.drawText(rootText, area.removeFromLeft(rootWidth), juce::Justification::centredLeft,
                    false);
@@ -74,24 +74,22 @@ TransportPanel::TransportPanel() {
     updateKeyReadout();
 
     selChipButton = std::make_unique<juce::TextButton>(transport::kSelectionCaption);
-    styleToggle(*selChipButton, ActiveTheme::ACCENT_PRIMARY);
     selChipButton->onClick = [this]() {
         showLoopRange_ = false;
         updateRangeVisibility();
     };
     loopChipButton = std::make_unique<juce::TextButton>(transport::kLoopCaption);
-    styleToggle(*loopChipButton, ActiveTheme::ACCENT_POSITIVE);
     loopChipButton->onClick = [this]() {
         showLoopRange_ = true;
         updateRangeVisibility();
     };
 
     keepButton = std::make_unique<juce::TextButton>(transport::kKeepCaption);
-    styleToggle(*keepButton, ActiveTheme::ACCENT_ATTENTION);
     keepButton->setEnabled(false);
     keepButton->setTooltip("Rolling master buffer (not available yet)");
     for (auto* button : {selChipButton.get(), loopChipButton.get(), keepButton.get()})
         addAndMakeVisible(*button);
+    applyToggleColours();
 
     style_ = transport::styleFromKey(Config::getInstance().getTransportStyle());
     Config::getInstance().addListener(this);
@@ -199,18 +197,34 @@ void TransportPanel::showKeyMenu() {
                        });
 }
 
-void TransportPanel::styleToggle(juce::TextButton& button, ColourRole onRole) {
-    button.setColour(juce::TextButton::buttonColourId,
-                     ActiveTheme::getColour(ActiveTheme::SURFACE).darker(0.2f));
-    button.setColour(juce::TextButton::buttonOnColourId,
-                     ActiveTheme::getColour(onRole).darker(0.3f));
-    button.setColour(juce::TextButton::textColourOffId,
-                     ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-    button.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+void TransportPanel::styleToggle(juce::TextButton& button, juce::Colour offFill,
+                                 juce::Colour offText, juce::Colour onFill, juce::Colour onText) {
+    button.setColour(juce::TextButton::buttonColourId, offFill);
+    button.setColour(juce::TextButton::buttonOnColourId, onFill);
+    button.setColour(juce::TextButton::textColourOffId, offText);
+    button.setColour(juce::TextButton::textColourOnId, onText);
     button.setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
                              juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
     button.setWantsKeyboardFocus(false);
     button.setLookAndFeel(&magda::daw::ui::SmallButtonLookAndFeel::getInstance());
+}
+
+// SEL / LOOP read as text until chosen; AUTO / SNAP and KEEP sit on chips.
+void TransportPanel::applyToggleColours() {
+    const auto colour = [](ColourRole role) { return ActiveTheme::getColour(role); };
+    const auto none = juce::Colours::transparentBlack;
+    const auto chip = colour(ActiveTheme::TRANSPORT_CHIP);
+    const auto dim = colour(ActiveTheme::TRANSPORT_TEXT_DIM);
+
+    styleToggle(*selChipButton, none, dim, chip, colour(ActiveTheme::ACCENT_PRIMARY));
+    styleToggle(*loopChipButton, none, dim, chip, colour(ActiveTheme::ACCENT_POSITIVE));
+    styleToggle(*keepButton, chip, colour(ActiveTheme::TEXT_PRIMARY), chip,
+                colour(ActiveTheme::TEXT_PRIMARY));
+    keepButton->setColour(juce::ComboBox::outlineColourId,
+                          colour(ActiveTheme::TRANSPORT_WELL_BORDER));
+    for (auto* button : {autoGridButton.get(), snapButton.get()})
+        styleToggle(*button, chip, colour(ActiveTheme::TEXT_SECONDARY),
+                    colour(ActiveTheme::TRANSPORT_TOGGLE_ON), juce::Colours::white);
 }
 
 void TransportPanel::mixAnalysisChanged() {
@@ -269,10 +283,10 @@ void TransportPanel::paintFrame(juce::Graphics& g, juce::Rectangle<int> area) co
     if (area.isEmpty())
         return;
     const auto bounds = area.toFloat();
-    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    g.fillRoundedRectangle(bounds, 3.0f);
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-    g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TRANSPORT_WELL));
+    g.fillRoundedRectangle(bounds, 4.0f);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TRANSPORT_WELL_BORDER));
+    g.drawRoundedRectangle(bounds.reduced(0.5f), 4.0f, 1.0f);
 }
 
 // The master buffer is not built yet: the frame, dot, meter floor and length
@@ -281,8 +295,8 @@ void TransportPanel::paintMemory(juce::Graphics& g) const {
     const auto& l = layout_;
     if (!l.rightClusterVisible)
         return;
-    const auto dim = ActiveTheme::getColour(ActiveTheme::TEXT_DIM);
-    g.setColour(dim);
+    const auto dim = ActiveTheme::getColour(ActiveTheme::TRANSPORT_TEXT_DIM);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TRANSPORT_MEMORY));
     g.fillEllipse(l.memoryDot.toFloat());
 
     if (!l.memoryMeterVisible)
@@ -294,13 +308,22 @@ void TransportPanel::paintMemory(juce::Graphics& g) const {
 
     constexpr int kBarPitch = 3;
     const auto meter = l.memoryMeter.toFloat();
-    g.setColour(dim.withAlpha(0.6f));
+    const float floorY = meter.getCentreY() + 4.0f;
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TRANSPORT_METER_FLOOR));
     for (float x = meter.getX(); x + 1.0f <= meter.getRight(); x += kBarPitch)
-        g.fillRect(x, meter.getBottom() - 4.0f, 1.5f, 1.5f);
+        g.fillRect(x, floorY, 1.5f, 1.5f);
 
-    g.setFont(fonts.getUIFont(transport::kMemoryTimeFontSize));
+    // Held length bright, capacity dim.
+    const auto timeFont = fonts.getUIFont(transport::kMemoryTimeFontSize);
+    const juce::String held = "--:--";
+    auto timeArea = l.memoryTime;
+    g.setFont(timeFont);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+    g.drawText(held,
+               timeArea.removeFromLeft(juce::GlyphArrangement::getStringWidthInt(timeFont, held)),
+               juce::Justification::centredLeft, false);
     g.setColour(dim);
-    g.drawText("--:-- / --:--", l.memoryTime, juce::Justification::centredLeft, false);
+    g.drawText(" / --:--", timeArea, juce::Justification::centredLeft, false);
 }
 
 void TransportPanel::paintStackCaptions(juce::Graphics& g) const {
@@ -317,7 +340,7 @@ void TransportPanel::paintStackCaptions(juce::Graphics& g) const {
     caption(l.cursorCaption, transport::kCursorCaption, ActiveTheme::ACCENT_ATTENTION);
 
     // A short rule between each start and end.
-    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TRANSPORT_TEXT_DIM));
     for (const auto& [start, end] :
          {std::pair{l.selectionStart, l.selectionEnd}, std::pair{l.loopStart, l.loopEnd},
           std::pair{l.playhead, l.editCursor}}) {
@@ -336,7 +359,7 @@ void TransportPanel::paint(juce::Graphics& g) {
         paintFrame(g, frame);
 
     if (!l.tempoFrame.isEmpty()) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TRANSPORT_WELL_BORDER));
         g.drawVerticalLine(l.keyDividerX, static_cast<float>(l.tempoFrame.getY() + 8),
                            static_cast<float>(l.tempoFrame.getBottom() - 8));
     }
@@ -355,8 +378,8 @@ void TransportPanel::paint(juce::Graphics& g) {
     // CPU frame, with a fill rising behind the value as the load does.
     if (l.rightClusterVisible) {
         auto frameBounds = l.cpu.toFloat();
-        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
-        g.fillRoundedRectangle(frameBounds, 3.0f);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TRANSPORT_WELL));
+        g.fillRoundedRectangle(frameBounds, 4.0f);
 
         const auto sepY = static_cast<float>(l.cpuValue.getY());
         if (currentCpuUsage > 0.0f) {
@@ -378,8 +401,8 @@ void TransportPanel::paint(juce::Graphics& g) {
             g.fillRect(fillArea);
         }
 
-        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-        g.drawRoundedRectangle(frameBounds.reduced(0.5f), 3.0f, 1.0f);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TRANSPORT_WELL_BORDER));
+        g.drawRoundedRectangle(frameBounds.reduced(0.5f), 4.0f, 1.0f);
     }
 
     // Bottom border for visual separation from content below
@@ -405,13 +428,26 @@ void TransportPanel::resized() {
                                  LayoutConfig::getInstance().densityScale, style_);
     const auto& l = layout_;
 
-    // The headline playhead stands alone in its box; the Justified stack
-    // draws it at row size beside the edit cursor.
+    // The headline playhead stands alone in its box; the Justified stack draws
+    // every readout small, captioned on the left rather than lettered.
     const bool headline = !l.cursorFrame.isEmpty();
-    playheadPositionLabel->setFontSize(headline ? transport::kHeadlineFontSize
-                                                : BarsBeatsTicksLabel::kTextFontSize);
-    playheadPositionLabel->setOverlayLabel(headline ? "" : "P");
+    const bool stacked = !l.stackFrame.isEmpty();
+    playheadPositionLabel->setFontSize(headline ? transport::kHeadlineTimecodeFontSize
+                                                : transport::kStackTimecodeFontSize);
+    playheadPositionLabel->setOverlayLabel("");
     playheadPositionLabel->setTrailingInset(headline ? l.cursorTrailingInset : 0);
+    editCursorLabel->setFontSize(transport::kStackTimecodeFontSize);
+    editCursorLabel->setOverlayLabel("");
+    const float rangeFont =
+        stacked ? transport::kStackTimecodeFontSize : transport::kRowTimecodeFontSize;
+    for (auto* label : {selectionStartLabel.get(), loopStartLabel.get()}) {
+        label->setFontSize(rangeFont);
+        label->setOverlayLabel(stacked ? "" : "S");
+    }
+    for (auto* label : {selectionEndLabel.get(), loopEndLabel.get()}) {
+        label->setFontSize(rangeFont);
+        label->setOverlayLabel(stacked ? "" : "E");
+    }
     punchStartLabel->setTrailingInset(l.punchTrailingInset);
     punchEndLabel->setTrailingInset(l.punchTrailingInset);
 
@@ -821,6 +857,9 @@ void TransportPanel::setupTimeDisplayBoxes() {
         label->setDoubleClickResetsValue(false);
         label->setDrawBackground(false);
         label->setOverlayLabel(overlay);
+        label->setOverlayColour(ActiveTheme::getColour(ActiveTheme::TRANSPORT_TEXT_DIM));
+        label->setPacked(true);
+        label->setFontSize(transport::kRowTimecodeFontSize);
         label->setTextColour(textColour);
         addAndMakeVisible(*label);
     };
@@ -858,7 +897,7 @@ void TransportPanel::setupTimeDisplayBoxes() {
         }
     };
 
-    auto dimColour = ActiveTheme::getColour(ActiveTheme::TEXT_DIM);
+    auto dimColour = ActiveTheme::getColour(ActiveTheme::TRANSPORT_TEXT_DIM);
     setupBBTLabel(loopStartLabel, "S", dimColour);
     loopStartLabel->onValueChange = [this, enableLoopIfNeeded]() {
         enableLoopIfNeeded();
@@ -1201,10 +1240,12 @@ void TransportPanel::styleTransportButton(SvgButton& button, ColourRole accentRo
 
     // Transport SVGs are geometry templates. Their stable source keys are
     // replaced at paint time; no active colour is stored in a second asset.
-    button.setStateColourReplacement(juce::Colour(0xFF1A1A1A), ActiveTheme::PIANO_ROLL_BACKGROUND,
+    button.setStateColourReplacement(juce::Colour(0xFF1A1A1A), ActiveTheme::TRANSPORT_TILE,
+                                     accentRole);
+    button.setStateColourReplacement(juce::Colour(0xFF444444), ActiveTheme::TRANSPORT_WELL_BORDER,
                                      accentRole);
     const auto activeGlyphRole = activeGlyphUsesAccent ? accentRole : ActiveTheme::TEXT_BRIGHT;
-    button.setStateColourReplacement(juce::Colour(0xFFBCBCBC), ActiveTheme::ICON_TRANSPORT,
+    button.setStateColourReplacement(juce::Colour(0xFFBCBCBC), ActiveTheme::TRANSPORT_GLYPH,
                                      activeGlyphRole);
     button.setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
                                      activeGlyphRole);
@@ -1272,7 +1313,7 @@ void TransportPanel::setLoopRegion(double startTime, double endTime, bool loopEn
     // Grey out when no valid loop region, green when active
     bool hasValidLoop = loopEnabled && hasLoop;
     auto colour = hasValidLoop ? ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE)
-                               : ActiveTheme::getColour(ActiveTheme::TEXT_DIM);
+                               : ActiveTheme::getColour(ActiveTheme::TRANSPORT_TEXT_DIM);
     loopStartLabel->setTextColour(colour);
     loopEndLabel->setTextColour(colour);
 }
@@ -1428,11 +1469,9 @@ void TransportPanel::updatePunchLabelColors() {
 
     // Punch start label color matches punch in button state
     punchStartLabel->setTextColour(isPunchInEnabled ? activeColor : inactiveColor);
-    punchStartLabel->setAlpha(isPunchInEnabled ? 1.0f : 0.5f);
 
     // Punch end label color matches punch out button state
     punchEndLabel->setTextColour(isPunchOutEnabled ? activeColor : inactiveColor);
-    punchEndLabel->setAlpha(isPunchOutEnabled ? 1.0f : 0.5f);
 }
 
 void TransportPanel::lookAndFeelChanged() {
@@ -1499,14 +1538,15 @@ void TransportPanel::applyThemedLabelColours() {
     const bool hasValidLoop =
         cachedLoopEnabled && cachedLoopEnd > cachedLoopStart && cachedLoopStart >= 0.0;
     const auto loopColour = hasValidLoop ? ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE)
-                                         : ActiveTheme::getColour(ActiveTheme::TEXT_DIM);
+                                         : ActiveTheme::getColour(ActiveTheme::TRANSPORT_TEXT_DIM);
     loopStartLabel->setTextColour(loopColour);
     loopEndLabel->setTextColour(loopColour);
 
     // Punch labels track their arm state and the active palette.
     updatePunchLabelColors();
 
-    cpuTitleLabel->setColour(juce::Label::textColourId, secondary);
+    cpuTitleLabel->setColour(juce::Label::textColourId,
+                             ActiveTheme::getColour(ActiveTheme::TRANSPORT_TEXT_DIM));
     cpuValueLabel->setColour(juce::Label::textColourId, secondary);
     automationWriteLabel->setColour(juce::Label::textColourId,
                                     ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
@@ -1517,20 +1557,11 @@ void TransportPanel::applyThemedLabelColours() {
     // AUTO/SNAP capture concrete colours at construction; re-apply them so a
     // live theme switch restyles the toggles instead of leaving the old
     // palette behind.
-    styleToggle(*selChipButton, ActiveTheme::ACCENT_PRIMARY);
-    styleToggle(*loopChipButton, ActiveTheme::ACCENT_POSITIVE);
-    styleToggle(*keepButton, ActiveTheme::ACCENT_ATTENTION);
-
-    for (auto* button : {autoGridButton.get(), snapButton.get()}) {
-        if (button == nullptr)
-            continue;
-        button->setColour(juce::TextButton::buttonColourId,
-                          ActiveTheme::getColour(ActiveTheme::SURFACE).darker(0.2f));
-        button->setColour(juce::TextButton::buttonOnColourId,
-                          ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).darker(0.3f));
-        button->setColour(juce::TextButton::textColourOffId, secondary);
-        button->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    }
+    applyToggleColours();
+    for (auto* label : {selectionStartLabel.get(), selectionEndLabel.get(), loopStartLabel.get(),
+                        loopEndLabel.get(), playheadPositionLabel.get(), editCursorLabel.get(),
+                        punchStartLabel.get(), punchEndLabel.get()})
+        label->setOverlayColour(ActiveTheme::getColour(ActiveTheme::TRANSPORT_TEXT_DIM));
 
     repaint();
 }

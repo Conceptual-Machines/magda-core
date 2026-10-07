@@ -139,6 +139,12 @@
     "mixerKnobOuter": "#241F38",
     "mixerKnobOuterStroke": "#3E3560",
     "mixerKnobInner": "#161226",
-    "mixerKnobGuide": "#4A3F6B"
+    "mixerKnobGuide": "#4A3F6B",
+    "transportWell": "#0D0B17",
+    "transportWellBorder": "#2E2845",
+    "transportTile": "#0A0812",
+    "transportGlyph": "#DCD2F5",
+    "transportTextDim": "#5E537A",
+    "transportChip": "#1A172B"
   }
 }

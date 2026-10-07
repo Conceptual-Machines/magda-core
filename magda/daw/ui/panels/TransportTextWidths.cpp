@@ -41,11 +41,18 @@ TextWidths measureTextWidths() {
     TextWidths text;
     // The readout sizes itself: it knows its own segment shares and how large a
     // bar number the range can reach, which a box drawn around it does not.
-    text.timecodeBox = BarsBeatsTicksLabel::preferredWidthForRange(
-        kTimecodeMaxBeats, MIN_TIME_SIGNATURE_VALUE, MAX_TIME_SIGNATURE_VALUE, true);
-    text.headlineTimecodeBox = BarsBeatsTicksLabel::preferredWidthForRange(
-        kTimecodeMaxBeats, MIN_TIME_SIGNATURE_VALUE, MAX_TIME_SIGNATURE_VALUE, true,
-        kHeadlineFontSize);
+    const auto timecodeWidth = [](float fontSize) {
+        return BarsBeatsTicksLabel::preferredWidthForRange(
+            kTimecodeMaxBeats, MIN_TIME_SIGNATURE_VALUE, MAX_TIME_SIGNATURE_VALUE, true, fontSize);
+    };
+    text.timecodeBox = timecodeWidth(kRowTimecodeFontSize);
+    text.stackTimecodeBox = timecodeWidth(kStackTimecodeFontSize);
+    text.headlineTimecodeBox = timecodeWidth(kHeadlineTimecodeFontSize);
+    // Packed readouts draw their S / E / I / O letter before the digits.
+    const auto overlayFont = fonts.getUIFont(BarsBeatsTicksLabel::kPackedOverlayFontSize);
+    for (const char* letter : {"S", "E", "I", "O"})
+        text.timecodeOverlay = juce::jmax(text.timecodeOverlay, widthOf(overlayFont, letter));
+    text.timecodeOverlay += BarsBeatsTicksLabel::kPackedOverlayGap;
     // The caption TransportPanel draws over the box's top-right corner. The
     // layout reserves this much at the end of every readout, and the readout
     // keeps its digits out of it.

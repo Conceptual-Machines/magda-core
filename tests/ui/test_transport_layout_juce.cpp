@@ -35,8 +35,10 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
                    juce::String(text.cpuTitle) + " cpuValue=" + juce::String(text.cpuValue) +
                    " gridDivision=" + juce::String(text.gridDivision) +
                    " gridToggle=" + juce::String(text.gridToggle) +
-                   " headline=" + juce::String(text.headlineTimecodeBox) + " keyRoot=" +
-                   juce::String(text.keyRoot) + " keyQuality=" + juce::String(text.keyQuality) +
+                   " headline=" + juce::String(text.headlineTimecodeBox) +
+                   " stack=" + juce::String(text.stackTimecodeBox) + " overlay=" +
+                   juce::String(text.timecodeOverlay) + " keyRoot=" + juce::String(text.keyRoot) +
+                   " keyQuality=" + juce::String(text.keyQuality) +
                    " chip=" + juce::String(text.rangeChip) + " memCaption=" +
                    juce::String(text.memoryCaption) + " memTime=" + juce::String(text.memoryTime) +
                    " keep=" + juce::String(text.keep) + " banner=" + juce::String(text.banner));
@@ -76,8 +78,9 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
 
         beginTest("...and at every spacing density the preference offers");
         for (float density : {0.6f, 1.0f, 1.4f}) {
-            const auto dense = compute(magda::LayoutConfig::defaultWindowWidth,
-                                       config.defaultTransportHeight, text, density);
+            // The widest spacing needs a wider window than the one MAGDA opens at.
+            const int width = density > 1.0f ? 1400 : magda::LayoutConfig::defaultWindowWidth;
+            const auto dense = compute(width, config.defaultTransportHeight, text, density);
             expect(!dense.overflowVisible,
                    "the overflow button is showing at density " + juce::String(density, 1));
         }

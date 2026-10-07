@@ -67,8 +67,8 @@ constexpr int kAutoWriteGap = 8;
 constexpr int kFrameMargin = 3;        // vertical inset of every group frame
 constexpr int kFrameInsetY = 2;        // rows inside a frame, top and bottom
 constexpr int kMinButtonSize = 20;     //
-constexpr int kMaxButtonSize = 26;     // a taller bar gives the readouts room, not the icons
-constexpr int kButtonPercent = 64;     // icon tiles against the frame height
+constexpr int kMaxButtonSize = 28;     // a taller bar gives the readouts room, not the icons
+constexpr int kButtonPercent = 66;     // icon tiles against the frame height
 constexpr int kRowGap = 2;             // between stacked readout rows
 constexpr int kTimeSigOverlap = 4;     // the denominator tucks under the numerator's slash
 constexpr int kKeyGap = 3;             // between the key root and its quality
@@ -90,7 +90,8 @@ struct Metrics {
     int rowY1 = 0;
     int rowY2 = 0;
     int stackRowHeight = 0;  // three rows to a frame
-    int icon = 0;            // count-in / metronome
+    int icon = 0;            // metronome
+    int countInIcon = 0;     // the count-in dot, smaller than the icons beside it
     int punchIcon = 0;
 
     // Density-scaled spacing
@@ -105,6 +106,7 @@ struct Metrics {
 
     // Measured widths
     int timeBox = 0;
+    int stackBox = 0;
     int punchBox = 0;
     int headlineBox = 0;
     int captionColumn = 0;
@@ -145,6 +147,7 @@ Metrics metricsFor(int width, int height, const TextWidths& text, float densityS
     m.rowY2 = m.rowY1 + m.rowHeight + kRowGap;
     m.stackRowHeight = (m.frameHeight - (2 * kFrameInsetY)) / 3;
     m.icon = juce::jmax(12, m.rowHeight - 3);
+    m.countInIcon = juce::jmax(8, (m.icon * 2) / 3);
     m.punchIcon = (m.rowHeight / 2) + 2;
 
     m.edgePad = scaled(kEdgePad, densityScale);
@@ -162,8 +165,9 @@ Metrics metricsFor(int width, int height, const TextWidths& text, float densityS
     // A readout grows by what a decoration over its right end needs beyond
     // the inset its glyphs keep anyway.
     const auto grownBy = [&](int inset) { return juce::jmax(0, inset - text.timecodeGlyphInset); };
-    m.timeBox = text.timecodeBox;
-    m.punchBox = text.timecodeBox + grownBy(m.punchIcon + kPunchIconInset);
+    m.timeBox = text.timecodeBox + text.timecodeOverlay;
+    m.stackBox = text.stackTimecodeBox;
+    m.punchBox = m.timeBox + grownBy(m.punchIcon + kPunchIconInset);
     m.headlineBox = text.headlineTimecodeBox + grownBy(text.timecodeCaption);
     m.captionColumn = text.timecodeCaption;
 
@@ -248,8 +252,8 @@ int buildTempo(Layout& l, const Metrics& m, int x) {
 
     l.tempo = {x, m.frameY, m.tempoCell, m.frameHeight};
     x += m.tempoCell + m.itemGap;
-    l.countIn = {x, iconY, m.icon, m.icon};
-    x += m.icon + m.itemGap;
+    l.countIn = {x, m.frameY + ((m.frameHeight - m.countInIcon) / 2), m.countInIcon, m.countInIcon};
+    x += m.countInIcon + m.itemGap;
     l.timeSigNumerator = {x, m.frameY, m.timeSigNum, m.frameHeight};
     x += m.timeSigNum - kTimeSigOverlap;
     l.timeSigDenominator = {x, m.frameY, m.timeSigDen, m.frameHeight};
@@ -289,19 +293,19 @@ int buildRange(Layout& l, const Metrics& m, int x) {
 
 // SEL, LOOP and CUR as three lines of caption, start and end.
 int buildStack(Layout& l, const Metrics& m, int x) {
-    const int width =
-        m.framePad + m.captionColumn + m.itemGap + m.timeBox + m.dashWidth + m.timeBox + m.framePad;
+    const int width = m.framePad + m.captionColumn + m.itemGap + m.stackBox + m.dashWidth +
+                      m.stackBox + m.framePad;
     l.stackFrame = frameAt(m, x, width);
 
     const int captionX = x + m.framePad;
     const int startX = captionX + m.captionColumn + m.itemGap;
-    const int endX = startX + m.timeBox + m.dashWidth;
+    const int endX = startX + m.stackBox + m.dashWidth;
     const auto row = [&](int index, juce::Rectangle<int>& caption, juce::Rectangle<int>& start,
                          juce::Rectangle<int>& end) {
         const int y = m.rowY1 + (index * m.stackRowHeight);
         caption = {captionX, y, m.captionColumn, m.stackRowHeight};
-        start = {startX, y, m.timeBox, m.stackRowHeight};
-        end = {endX, y, m.timeBox, m.stackRowHeight};
+        start = {startX, y, m.stackBox, m.stackRowHeight};
+        end = {endX, y, m.stackBox, m.stackRowHeight};
     };
     row(0, l.selCaption, l.selectionStart, l.selectionEnd);
     row(1, l.loopCaption, l.loopStart, l.loopEnd);

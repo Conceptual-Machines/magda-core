@@ -221,7 +221,9 @@ class TransportPanel : public juce::Component,
     // Placeholder until the rolling master buffer exists.
     std::unique_ptr<juce::TextButton> keepButton;
 
-    void styleToggle(juce::TextButton& button, ColourRole onRole);
+    static void styleToggle(juce::TextButton& button, juce::Colour offFill, juce::Colour offText,
+                            juce::Colour onFill, juce::Colour onText);
+    void applyToggleColours();
     void paintFrame(juce::Graphics& g, juce::Rectangle<int> area) const;
     void paintMemory(juce::Graphics& g) const;
     void paintStackCaptions(juce::Graphics& g) const;

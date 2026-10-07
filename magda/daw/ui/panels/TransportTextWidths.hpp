@@ -19,8 +19,11 @@ inline constexpr const char* kSnapCaption = "SNAP";
 // resolve their own font publish theirs instead (BarsBeatsTicksLabel,
 // GridDivisionButton, SmallButtonLookAndFeel), and the measurement reads it
 // from them.
-inline constexpr float kHeadlineFontSize = 16.0f;  // BPM and the headline playhead
-inline constexpr float kReadoutFontSize = 14.0f;   // time signature and key root
+inline constexpr float kHeadlineFontSize = 16.0f;          // BPM
+inline constexpr float kHeadlineTimecodeFontSize = 18.0f;  // the playhead on its own
+inline constexpr float kRowTimecodeFontSize = 12.0f;       // two-row readouts
+inline constexpr float kStackTimecodeFontSize = 10.0f;     // the Justified three-line stack
+inline constexpr float kReadoutFontSize = 14.0f;           // time signature and key root
 inline constexpr float kKeyQualityFontSize = 10.0f;
 inline constexpr float kMemoryCaptionFontSize = 8.0f;
 inline constexpr float kMemoryTimeFontSize = 11.0f;

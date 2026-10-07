@@ -41,8 +41,33 @@ juce::Colour BarsBeatsTicksLabel::getTextColour() const {
 }
 
 void BarsBeatsTicksLabel::setOverlayLabel(const juce::String& label) {
+    if (overlayLabel_ == label)
+        return;
     overlayLabel_ = label;
+    resized();
     repaint();
+}
+
+void BarsBeatsTicksLabel::setOverlayColour(juce::Colour colour) {
+    overlayColour_ = colour;
+    hasOverlayColour_ = true;
+    repaint();
+}
+
+void BarsBeatsTicksLabel::setPacked(bool packed) {
+    if (packed_ == packed)
+        return;
+    packed_ = packed;
+    resized();
+    repaint();
+}
+
+int BarsBeatsTicksLabel::packedLead() const {
+    if (overlayLabel_.isEmpty())
+        return kEdgeInset;
+    const auto font = FontManager::getInstance().getUIFont(kPackedOverlayFontSize);
+    return kEdgeInset + juce::GlyphArrangement::getStringWidthInt(font, overlayLabel_) +
+           kPackedOverlayGap;
 }
 
 void BarsBeatsTicksLabel::setDrawBackground(bool draw) {
@@ -173,7 +198,7 @@ void BarsBeatsTicksLabel::paint(juce::Graphics& g) {
         auto dot1X = barsSegment_->getRight();
         auto dot2X = beatsSegment_->getRight();
         float dotY = bounds.getCentreY();
-        const float dotRadius = 1.5f * fontSize_ / kTextFontSize;
+        const float dotRadius = juce::jlimit(1.5f, 2.0f, 1.5f * fontSize_ / kTextFontSize);
 
         float dot1CenterX =
             static_cast<float>(dot1X) +
@@ -188,13 +213,17 @@ void BarsBeatsTicksLabel::paint(juce::Graphics& g) {
                       dotRadius * 2.0f);
     }
 
-    // Draw overlay label at top-left corner
     if (overlayLabel_.isNotEmpty()) {
-        auto overlayColour = getTextColour().withAlpha(0.5f);
-        g.setColour(overlayColour);
-        g.setFont(FontManager::getInstance().getUIFont(7.0f));
-        g.drawText(overlayLabel_, 2, 1, static_cast<int>(bounds.getWidth()) - 4, 8,
-                   juce::Justification::topLeft, false);
+        g.setColour(hasOverlayColour_ ? overlayColour_ : getTextColour().withAlpha(0.5f));
+        if (packed_) {
+            g.setFont(FontManager::getInstance().getUIFont(kPackedOverlayFontSize));
+            g.drawText(overlayLabel_, getLocalBounds().withTrimmedLeft(kEdgeInset),
+                       juce::Justification::centredLeft, false);
+        } else {
+            g.setFont(FontManager::getInstance().getUIFont(7.0f));
+            g.drawText(overlayLabel_, 2, 1, static_cast<int>(bounds.getWidth()) - 4, 8,
+                       juce::Justification::topLeft, false);
+        }
     }
 }
 
@@ -255,6 +284,18 @@ std::array<int, 3> BarsBeatsTicksLabel::shownSegmentWidths() const {
 }
 
 void BarsBeatsTicksLabel::resized() {
+    if (packed_) {
+        const auto widths = shownSegmentWidths();
+        int x = packedLead();
+        const int h = getHeight();
+        barsSegment_->setBounds(x, 0, widths[0], h);
+        x += widths[0] + kDotWidth;
+        beatsSegment_->setBounds(x, 0, widths[1], h);
+        x += widths[1] + kDotWidth;
+        ticksSegment_->setBounds(x, 0, widths[2], h);
+        return;
+    }
+
     auto bounds = getLocalBounds().reduced(kEdgeInset, 0);
     // The glyphs already stop kEdgeInset + half a segment pad short of the
     // edge; the inset only has to take the rest off the strip.

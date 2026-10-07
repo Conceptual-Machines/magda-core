@@ -17,6 +17,8 @@ namespace magda::daw::ui::transport {
  */
 struct TextWidths {
     int timecodeBox = 0;          // a whole bars.beats.ticks readout, as it sizes itself
+    int timecodeOverlay = 0;      // the S / E / I / O letter before the digits, with its gap
+    int stackTimecodeBox = 0;     // a readout at the Justified stack's smaller size
     int headlineTimecodeBox = 0;  // the same at the playhead headline size
     int timecodeCaption = 0;      // the widest of the SEL / LOOP / CUR captions, in their font
     int timecodeGlyphInset = 0;   // how far inside a readout's edge its last glyph already stops
