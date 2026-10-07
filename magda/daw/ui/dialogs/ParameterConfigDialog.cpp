@@ -16,6 +16,7 @@
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/PluginService.hpp"
+#include "ui/components/chain/params/ParamControlStyle.hpp"
 
 namespace magda::daw::ui {
 
@@ -582,6 +583,18 @@ ParameterConfigDialog::ParameterConfigDialog(juce::String pluginName)
     aiPromptButton_.onClick = [this]() { showAiPromptEditor(); };
     addAndMakeVisible(aiPromptButton_);
 
+    controlStyleLabel_.setText("Controls", juce::dontSendNotification);
+    controlStyleLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
+    controlStyleLabel_.setJustificationType(juce::Justification::centredRight);
+    addAndMakeVisible(controlStyleLabel_);
+    controlStyleCombo_.addItem("Use global", 1);
+    controlStyleCombo_.addItem("Text fields", 2);
+    controlStyleCombo_.addItem("Knobs", 3);
+    controlStyleCombo_.addItem("Sliders", 4);
+    controlStyleCombo_.setSelectedId(1, juce::dontSendNotification);
+    controlStyleCombo_.setTooltip("How this plug-in's parameters draw on its device.");
+    addAndMakeVisible(controlStyleCombo_);
+
     // Build mock data
     buildMockParameters();
     rebuildFilteredList();
@@ -659,8 +672,13 @@ void ParameterConfigDialog::resized() {
     applyButton_.setBounds(buttonRow.removeFromRight(buttonWidth));
     buttonRow.removeFromRight(buttonSpacing);
     cancelButton_.setBounds(buttonRow.removeFromRight(buttonWidth));
-    if (aiPromptButton_.isVisible())
+    if (aiPromptButton_.isVisible()) {
         aiPromptButton_.setBounds(buttonRow.removeFromLeft(110));
+        buttonRow.removeFromLeft(buttonSpacing);
+    }
+    controlStyleLabel_.setBounds(buttonRow.removeFromLeft(64));
+    buttonRow.removeFromLeft(4);
+    controlStyleCombo_.setBounds(buttonRow.removeFromLeft(120).reduced(0, 3));
 
     // Table takes remaining space
     table_.setBounds(bounds);
@@ -998,6 +1016,7 @@ void ParameterConfigDialog::resetParameterConfiguration() {
     }
     aiCustomPrompt_.clear();
     updateAiPromptButtonText();
+    controlStyleCombo_.setSelectedId(1, juce::dontSendNotification);
 
     rebuildFilteredList();
     table_.updateContent();
@@ -1232,6 +1251,9 @@ void ParameterConfigDialog::saveParameterConfiguration() {
     magda::PluginParameterConfig config;
     config.pluginId = pluginUniqueId_;
     config.aiPrompt = aiCustomPrompt_;
+    if (controlStyleCombo_.getSelectedId() > 1)
+        config.controlStyle = daw::ui::controlStyleKey(
+            static_cast<daw::ui::ParamControlStyle>(controlStyleCombo_.getSelectedId() - 2));
     config.entries.reserve(parameters_.size());
     int visibleCount = 0;
     for (size_t i = 0; i < parameters_.size(); ++i) {
@@ -1280,6 +1302,11 @@ void ParameterConfigDialog::loadParameterConfiguration() {
 
     aiCustomPrompt_ = config->aiPrompt;
     updateAiPromptButtonText();
+    controlStyleCombo_.setSelectedId(
+        config->controlStyle.isEmpty()
+            ? 1
+            : static_cast<int>(daw::ui::controlStyleFromKey(config->controlStyle)) + 2,
+        juce::dontSendNotification);
 
     // First, mark all as invisible
     for (auto& param : parameters_) {

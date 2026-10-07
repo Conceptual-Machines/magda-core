@@ -60,8 +60,9 @@ void setupDeviceSlotGainMeterControls(
     // Mix knob sits at the top of the meter strip. Drives an equal-power
     // crossfade between the DryGain/WetGain wrapper params. Hidden when the
     // device has no such pair (native MAGDA / Faust devices).
-    mixKnob = std::make_unique<juce::Slider>(juce::Slider::RotaryHorizontalVerticalDrag,
-                                             juce::Slider::NoTextBox);
+    mixKnob =
+        std::make_unique<juce::Slider>(juce::Slider::RotaryVerticalDrag, juce::Slider::NoTextBox);
+    mixKnob->setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
     mixKnob->setLookAndFeel(&node_header::MixKnobLookAndFeel::getInstance());
     mixKnob->setRange(0.0, 1.0, 0.001);
     mixKnob->setValue(1.0, juce::dontSendNotification);  // default to fully wet

@@ -49,7 +49,9 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/delete.svg
     ../../assets/icons/general/random.svg
     ../../assets/icons/general/sidechain.svg
-    ../../assets/icons/general/compare.svg
+    ../../assets/icons/general/midi_thru.svg
+    ../../assets/icons/general/locate.svg
+    ../../assets/icons/general/close.svg
     ../../assets/icons/general/add.svg
     ../../assets/icons/general/settings_nobg.svg
     ../../assets/icons/general/menu.svg
@@ -110,6 +112,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/trackchain/icon-sends-boldm.svg
     ../../assets/icons/trackchain/icon-inserts-boldm.svg
     ../../assets/icons/trackchain/oscilloscope3.svg
+    ../../assets/icons/trackchain/multiband-rack.svg
     ../../assets/icons/trackchain/icon-spectrum-boldm.svg
     ../../assets/icons/trackchain/icon-levels-boldm.svg
     ../../assets/icons/trackchain/icon-checkmix-boldm.svg

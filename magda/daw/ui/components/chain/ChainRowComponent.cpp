@@ -8,6 +8,7 @@
 #include "RackComponent.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
+#include "layout/NodeHeaderStyles.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -138,10 +139,8 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
                                                    BinaryData::power_svgSize);
     onButton_->setClickingTogglesState(true);
     onButton_->setToggleState(!chain.bypassed, juce::dontSendNotification);  // On = not bypassed
-    onButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
-    onButton_->setActiveColor(juce::Colours::white);
-    onButton_->setActiveBackgroundColor(
-        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
+    node_header::applyDeviceIconStyle(*onButton_, node_header::DeviceIcon::Power,
+                                      juce::Colour(0xFFE6E6E6), ActiveTheme::DEVICE_GREEN, 16.0f);
     onButton_->setActive(!chain.bypassed);
     onButton_->onClick = [this]() {
         onButton_->setActive(onButton_->getToggleState());
@@ -150,16 +149,12 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     addAndMakeVisible(*onButton_);
 
     // Delete button (reddish-purple background)
-    deleteButton_.setButtonText(juce::String::fromUTF8("\xc3\x97"));  // × symbol
-    deleteButton_.setColour(
-        juce::TextButton::buttonColourId,
-        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION)
-            .interpolatedWith(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR), 0.5f)
-            .darker(0.2f));
-    deleteButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-    deleteButton_.onClick = [this]() { onDeleteClicked(); };
-    deleteButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    addAndMakeVisible(deleteButton_);
+    deleteButton_ = std::make_unique<magda::SvgButton>("Close", BinaryData::close_svg,
+                                                       BinaryData::close_svgSize);
+    node_header::applyDeviceIconStyle(*deleteButton_, node_header::DeviceIcon::Close,
+                                      juce::Colour(0xFFB3B3B3), ActiveTheme::DEVICE_BLUE, 16.0f);
+    deleteButton_->onClick = [this]() { onDeleteClicked(); };
+    addAndMakeVisible(*deleteButton_);
 
     // Dim controls if chain starts bypassed
     if (chain.bypassed) {
@@ -317,7 +312,7 @@ void ChainRowComponent::resized() {
     // Spread across full width with right-side buttons anchored to the right
 
     // Right side buttons (from right to left)
-    deleteButton_.setBounds(bounds.removeFromRight(16));
+    deleteButton_->setBounds(bounds.removeFromRight(16));
     bounds.removeFromRight(2);
 
     onButton_->setBounds(bounds.removeFromRight(16));

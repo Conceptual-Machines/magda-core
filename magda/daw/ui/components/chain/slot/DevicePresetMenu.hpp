@@ -17,6 +17,7 @@ struct MagdaPresetMenuActions {
     std::function<void()> saveAs;
     std::function<void()> saveCurrent;
     std::function<void(const juce::String& presetRelativePath)> loadPreset;
+    std::function<void()> onDismissed;  // the menu closed, chosen or not
 };
 
 void showMagdaPresetMenu(juce::Component* targetComponent, const juce::String& pluginFolder,
@@ -45,7 +46,8 @@ class MagdaDevicePresetPresenter {
     void clearCurrentPreset();
     void showMenu(juce::Component* targetComponent, const magda::DeviceInfo& device,
                   const magda::ChainNodePath& devicePath,
-                  std::function<void(const magda::DeviceInfo& liveDevice)> onLoaded);
+                  std::function<void(const magda::DeviceInfo& liveDevice)> onLoaded,
+                  std::function<void()> onDismissed = {});
 
   private:
     struct State;
@@ -60,7 +62,8 @@ class PluginDevicePresetPresenter {
     juce::String getCurrentPresetLabel() const;
     void showMenu(juce::Component* targetComponent, const magda::DeviceInfo& device,
                   const magda::ChainNodePath& devicePath, bool isInternalDevice,
-                  const std::function<void()>& onSelectionChanged);
+                  const std::function<void()>& onSelectionChanged,
+                  std::function<void()> onDismissed = {});
     void loadFile(const magda::ChainNodePath& devicePath, const juce::File& file,
                   const std::function<void()>& onSelectionChanged);
     void showSaveDialog(const magda::DeviceInfo& device, const magda::ChainNodePath& devicePath,
@@ -80,6 +83,7 @@ struct PluginPresetMenuActions {
     std::function<void(const juce::File& file)> loadFile;
     std::function<void(const juce::File& currentFile, const juce::String& displayName)>
         selectionChanged;
+    std::function<void()> onDismissed;  // the menu closed, or never opened
 };
 
 void showPluginPresetMenu(juce::Component* targetComponent, const magda::DeviceInfo& device,

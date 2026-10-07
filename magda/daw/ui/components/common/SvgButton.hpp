@@ -145,6 +145,11 @@ class SvgButton : public juce::Button {
     }
     void setCornerRadius(float radius) {
         cornerRadius = radius;
+        hasCornerRadius_ = true;
+    }
+    /** A fixed fill behind the icon on hover, instead of a tint of the icon colour. */
+    void setHoverBackgroundColor(ColourRole role) {
+        hoverBackgroundRole_ = role;
     }
 
     // Set button as toggle/active state
@@ -196,6 +201,8 @@ class SvgButton : public juce::Button {
     std::optional<ColourRole> activeColorRole_;
     bool hasNormalColor_ = false;
     bool hasHoverColor_ = false;
+    bool hasCornerRadius_ = false;
+    std::optional<ColourRole> hoverBackgroundRole_;
     bool hasPressedColor_ = false;
     bool hasActiveColor_ = false;
     juce::Colour originalColor;  // Original SVG fill color to replace

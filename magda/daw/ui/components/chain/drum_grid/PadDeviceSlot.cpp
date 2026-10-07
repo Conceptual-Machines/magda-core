@@ -12,6 +12,7 @@
 #include "custom_ui/FaustUI.hpp"
 #include "engine/AudioEngine.hpp"
 #include "layout/DeviceSlotHeaderLayout.hpp"
+#include "layout/NodeHeaderStyles.hpp"
 #include "slot/DeviceSlotContentLayout.hpp"
 #include "slot/DeviceSlotInlineUiFactory.hpp"
 #include "slot/DeviceSlotParamLayoutFactory.hpp"
@@ -73,10 +74,9 @@ PadDeviceSlot::PadDeviceSlot() {
                                                    BinaryData::power_svgSize);
     onButton_->setClickingTogglesState(true);
     onButton_->setToggleState(true, juce::dontSendNotification);
-    onButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
-    onButton_->setActiveColor(juce::Colours::white);
-    onButton_->setActiveBackgroundColor(
-        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
+    magda::daw::ui::node_header::applyDeviceIconStyle(
+        *onButton_, magda::daw::ui::node_header::DeviceIcon::Power, juce::Colour(0xFFE6E6E6),
+        ActiveTheme::DEVICE_GREEN, 16.0f);
     onButton_->setActive(true);
     onButton_->onClick = [this]() {
         const bool active = onButton_->getToggleState();

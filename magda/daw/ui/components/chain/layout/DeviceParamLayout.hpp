@@ -55,6 +55,22 @@ class DeviceParamLayout {
     /// Cells per row — used by the host for setBounds() positioning.
     virtual int cellsPerRow() const = 0;
 
+    /// The most cells any shape of this layout uses; the host allocates this many.
+    virtual int maxCellCount() const {
+        return cellCount();
+    }
+
+    /// Reshape the grid for a control style. False when the layout keeps its
+    /// own shape (curated device layouts reflow columns instead).
+    virtual bool setShape(int cellsPerRow, int rows) {
+        juce::ignoreUnused(cellsPerRow, rows);
+        return false;
+    }
+    /// Curated native layouts keep their cells but take the style's column count.
+    virtual bool reflowsForControlStyle() const {
+        return false;
+    }
+
     /// Whether this layout uses pagination at all.
     virtual bool wantsPagination() const = 0;
 

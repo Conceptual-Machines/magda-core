@@ -373,6 +373,10 @@ struct DeviceInfo {
     // generic AI sound designer's system prompt for external plugins.
     juce::String aiSoundDesignerPrompt;
 
+    // Per-plugin parameter control style from its parameter config ("text",
+    // "knobs", "sliders"); empty follows the global preference.
+    juce::String controlStyle;
+
     // Device volume (gain knob on each device slot)
     float gainValue = 1.0f;  // Current gain value (linear)
     float gainDb = 0.0f;     // Current gain in dB for UI

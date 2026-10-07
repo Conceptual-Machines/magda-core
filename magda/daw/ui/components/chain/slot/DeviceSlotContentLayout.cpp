@@ -273,7 +273,9 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
             boundedBottomPanelHeight(controls.compiledPanelPreferredHeight, bodyHeight,
                                      controls.compiledPanelMinFractionNumerator,
                                      controls.compiledPanelMinFractionDenominator);
-        controls.compiledPanel->setBounds(contentArea.removeFromBottom(visualHeight));
+        // Inset like the parameter grid: 14px at the sides and foot.
+        controls.compiledPanel->setBounds(
+            contentArea.removeFromBottom(visualHeight).reduced(14, 0).withTrimmedBottom(14));
         controls.compiledPanel->setVisible(true);
 
         layoutParamGrid(controls.paramGrid, contentArea);

@@ -144,6 +144,45 @@ bool isExternalDevice(const magda::DeviceInfo& device) {
     return device.format != magda::PluginFormat::Internal;
 }
 
+namespace {
+
+/// One pair per stereo slice of each output bus, named after the bus; generic
+/// "Out n-m" names when the plug-in declares no buses.
+magda::MultiOutConfig describeMultiOut(juce::AudioPluginInstance& instance) {
+    magda::MultiOutConfig config;
+    config.isMultiOut = true;
+    config.totalOutputChannels = instance.getTotalNumOutputChannels();
+
+    int firstPin = 1;
+    for (int b = 0; b < instance.getBusCount(false); ++b) {
+        const auto* bus = instance.getBus(false, b);
+        if (bus == nullptr || bus->getNumberOfChannels() <= 0)
+            continue;
+        const int channels = bus->getNumberOfChannels();
+        const int pairs = std::max(1, channels / 2);
+        const int perPair = std::max(1, channels / pairs);
+        for (int p = 0; p < pairs; ++p) {
+            config.outputPairs.push_back(
+                {.outputIndex = static_cast<int>(config.outputPairs.size()),
+                 .name = pairs == 1 ? bus->getName() : bus->getName() + " " + juce::String(p + 1),
+                 .firstPin = firstPin,
+                 .numChannels = perPair});
+            firstPin += perPair;
+        }
+    }
+
+    if (config.outputPairs.empty())
+        for (int p = 0; p < config.totalOutputChannels / 2; ++p)
+            config.outputPairs.push_back(
+                {.outputIndex = p,
+                 .name = "Out " + juce::String(p * 2 + 1) + "-" + juce::String(p * 2 + 2),
+                 .firstPin = p * 2 + 1,
+                 .numChannels = 2});
+    return config;
+}
+
+}  // namespace
+
 /// enableAllBuses first: a plugin with a disabled sidechain or second output
 /// bus reports channels it does not have, and the plan's widths are read off it.
 ExternalDeviceResult adaptExternalPluginInstance(
@@ -175,6 +214,12 @@ ExternalDeviceResult adaptExternalPluginInstance(
     auto resolvedDevice = device;
     resolvedDevice.audioInputChannels = instance->getTotalNumInputChannels();
     resolvedDevice.audioOutputChannels = instance->getTotalNumOutputChannels();
+
+    // A hosted instrument with more than one stereo pair is multi-out: its pairs
+    // come from its output buses, and the device opens one port per extra pair.
+    if (resolvedDevice.isInstrument && resolvedDevice.audioOutputChannels > 2 &&
+        resolvedDevice.multiOut.totalOutputChannels != resolvedDevice.audioOutputChannels)
+        resolvedDevice.multiOut = describeMultiOut(*instance);
 
     // An imported .vstpreset is spent by the load that applies it; kept, it
     // would be applied again over whatever the next save wrote.

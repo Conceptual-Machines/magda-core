@@ -9,6 +9,7 @@
 
 #include "../../../../agents/gain_staging_agent.hpp"
 #include "../../components/chain/ChainNodePathDrag.hpp"
+#include "../../components/chain/layout/NodeHeaderStyles.hpp"
 #include "../../components/common/InternalFileDrag.hpp"
 #include "../../components/common/MasterSpeakerButton.hpp"
 #include "../../components/mixer/LevelMeterScale.hpp"
@@ -1094,11 +1095,9 @@ TrackChainContent::TrackChainContent()
     chainBypassButton_->setClickingTogglesState(true);
     chainBypassButton_->setToggleState(true,
                                        juce::dontSendNotification);  // Start active (not bypassed)
-    chainBypassButton_->setOriginalColor(juce::Colour(0xFFE6E6E6));
-    chainBypassButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
-    chainBypassButton_->setActiveColor(juce::Colours::white);
-    chainBypassButton_->setActiveBackgroundColor(
-        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
+    magda::daw::ui::node_header::applyDeviceIconStyle(
+        *chainBypassButton_, magda::daw::ui::node_header::DeviceIcon::Power,
+        juce::Colour(0xFFE6E6E6), ActiveTheme::DEVICE_GREEN, 17.0f);
     chainBypassButton_->setActive(true);  // Start active
     chainBypassButton_->onClick = [this]() {
         bool active = chainBypassButton_->getToggleState();
@@ -1167,10 +1166,9 @@ TrackChainContent::TrackChainContent()
 void TrackChainContent::lookAndFeelChanged() {
     mixerLookAndFeel_.refreshThemeColours();
     if (chainBypassButton_) {
-        chainBypassButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
-        chainBypassButton_->setActiveColor(juce::Colours::white);
-        chainBypassButton_->setActiveBackgroundColor(
-            ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
+        magda::daw::ui::node_header::applyDeviceIconStyle(
+            *chainBypassButton_, magda::daw::ui::node_header::DeviceIcon::Power,
+            juce::Colour(0xFFE6E6E6), ActiveTheme::DEVICE_GREEN, 17.0f);
         chainBypassButton_->repaint();
     }
 

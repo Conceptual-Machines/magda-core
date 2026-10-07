@@ -4767,3 +4767,35 @@ TEST_CASE("A preset request cannot change a replacement plugin assignment",
     CHECK_FALSE(result.ok());
     CHECK(raw->selectedProgram == 0);
 }
+
+TEST_CASE("A hosted instrument with extra output buses comes back multi-out",
+          "[engine][external][multiout]") {
+    auto model = externalDevice();
+    model.isInstrument = true;
+    model.deviceType = magda::DeviceType::Instrument;
+
+    auto result =
+        adapter::adaptExternalPluginInstance(std::make_unique<StubPlugin>(2, 2, 0, 3), model);
+    REQUIRE(result.device != nullptr);
+    REQUIRE(result.resolvedDevice.has_value());
+
+    const auto& multiOut = result.resolvedDevice->multiOut;
+    CHECK(multiOut.isMultiOut);
+    CHECK(multiOut.totalOutputChannels == 8);
+    REQUIRE(multiOut.outputPairs.size() == 4);
+    CHECK(multiOut.outputPairs[0].name == "Output");
+    CHECK(multiOut.outputPairs[3].name == "Out 4");
+    CHECK(multiOut.outputPairs[3].firstPin == 7);
+    CHECK(multiOut.outputPairs[3].numChannels == 2);
+}
+
+TEST_CASE("A stereo instrument stays single-out", "[engine][external][multiout]") {
+    auto model = externalDevice();
+    model.isInstrument = true;
+    model.deviceType = magda::DeviceType::Instrument;
+
+    auto result =
+        adapter::adaptExternalPluginInstance(std::make_unique<StubPlugin>(2, 2, 0), model);
+    REQUIRE(result.resolvedDevice.has_value());
+    CHECK_FALSE(result.resolvedDevice->multiOut.isMultiOut);
+}

@@ -164,6 +164,29 @@ class NodeComponent : public juce::Component,
   protected:
     // Override these to customize content
     virtual void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea);
+
+    // The main node frame: background, border and the header rule. Device
+    // slots replace it with the v1 device frame.
+    virtual void paintNodeFrame(juce::Graphics& g, juce::Rectangle<int> bounds, int headerHeight);
+
+    // Header layout metrics, and the close button the header uses; device
+    // slots substitute an icon button for the shared text "x".
+    virtual juce::Rectangle<int> getHeaderInnerArea(juce::Rectangle<int> header) const {
+        return header.reduced(3, 2);
+    }
+    virtual juce::Point<int> getHeaderButtonSize() const {
+        return {BUTTON_SIZE, BUTTON_SIZE};
+    }
+    virtual int getHeaderButtonGap() const {
+        return 4;
+    }
+    virtual juce::Component* getHeaderDeleteButton() {
+        return deleteButton_.get();
+    }
+    void styleHeaderPowerAndClose();
+    void hideBaseDeleteButton() {
+        deleteButton_->setVisible(false);
+    }
     virtual void resizedContent(juce::Rectangle<int> contentArea);
 
     // Override to add extra header buttons (between name and delete)
@@ -474,12 +497,15 @@ class NodeComponent : public juce::Component,
     const juce::Label& getNameLabel() const {
         return nameLabel_;
     }
+    juce::Label& getNameLabel() {
+        return nameLabel_;
+    }
 
   private:
     // Header controls
     std::unique_ptr<magda::SvgButton> bypassButton_;
     juce::Label nameLabel_;
-    juce::TextButton deleteButton_;
+    std::unique_ptr<magda::SvgButton> deleteButton_;
 
     // Mod panel controls (3 modulator slots)
     std::unique_ptr<juce::TextButton> modSlotButtons_[3];

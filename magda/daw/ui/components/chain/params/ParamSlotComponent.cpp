@@ -17,6 +17,41 @@
 
 namespace magda::daw::ui {
 
+namespace {
+
+// Booleans: a pill switch in the Knobs and Sliders styles; in Text the toggle
+// is an invisible hit area over the cell, which paints the "on" / "-" value.
+class ParamSwitchLookAndFeel : public juce::LookAndFeel_V4 {
+  public:
+    static ParamSwitchLookAndFeel& getInstance() {
+        static ParamSwitchLookAndFeel instance;
+        return instance;
+    }
+
+    void drawToggleButton(juce::Graphics& g, juce::ToggleButton& button, bool /*highlighted*/,
+                          bool /*down*/) override {
+        if (button.getProperties()["paramSwitchHidden"])
+            return;
+        const bool on = button.getToggleState();
+        auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
+        const float radius = bounds.getHeight() / 2.0f;
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_SLIDER_TRACK));
+        g.fillRoundedRectangle(bounds, radius);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
+        g.drawRoundedRectangle(bounds, radius, 1.0f);
+        const float thumb = bounds.getHeight() - 4.0f;
+        const float x = on ? bounds.getRight() - thumb - 2.0f : bounds.getX() + 2.0f;
+        g.setColour(
+            ActiveTheme::getColour(on ? ActiveTheme::DEVICE_BLUE : ActiveTheme::DEVICE_SWITCH_OFF));
+        g.fillEllipse(x, bounds.getY() + 2.0f, thumb, thumb);
+    }
+};
+
+constexpr float kKnobStartAngle = -0.75f * juce::MathConstants<float>::pi;
+constexpr float kKnobSweep = 1.5f * juce::MathConstants<float>::pi;
+
+}  // namespace
+
 // ============================================================================
 // Construction / Destruction
 // ============================================================================
@@ -40,6 +75,7 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
     valueSlider_.setBackgroundColour(juce::Colours::transparentBlack);
     valueSlider_.setShowFillIndicator(false);
     valueSlider_.onValueChanged = [this](double value) {
+        repaint();
         if (onValueChanged) {
             // The slider reads in the parameter's display units and everything
             // downstream speaks model ones, as the discrete widgets already do.
@@ -72,6 +108,7 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
                            .onMidiClear = onMidiClear});
     };
     valueSlider_.setRightClickEditsText(false);
+    applyControlStyleToWidgets();
 
     // Amount label for link mode drag tooltip
     amountLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
@@ -188,6 +225,8 @@ ParamSlotComponent::~ParamSlotComponent() {
             momentaryButton_->release();
 
         // Detach the shared LookAndFeel before the buttons die.
+        if (boolToggle_)
+            boolToggle_->setLookAndFeel(nullptr);
         for (auto& button : choiceButtons_) {
             if (button)
                 button->setLookAndFeel(nullptr);
@@ -484,6 +523,7 @@ void ParamSlotComponent::setParamValue(double modelValue) {
     // lane readout against the curve. setValueWithInterval(..., 0.0, ...)
     // writes the exact value and still triggers the label refresh.
     valueSlider_.setValueWithInterval(value, 0.0, juce::dontSendNotification);
+    repaint();
 
     // A discrete widget owns its own selection, and neither value-only refresh
     // path re-runs setParameterInfo: ParamHostComponent::updateParameterValues
@@ -497,8 +537,10 @@ void ParamSlotComponent::setParamValue(double modelValue) {
 }
 
 void ParamSlotComponent::syncBooleanToggle(double value) {
-    if (boolToggle_ && boolToggle_->isVisible())
+    if (boolToggle_ && boolToggle_->isVisible()) {
         boolToggle_->setToggleState(value >= 0.5, juce::dontSendNotification);
+        repaint(valueArea_);
+    }
 }
 
 void ParamSlotComponent::syncDiscreteSelection(double value) {
@@ -565,6 +607,43 @@ void ParamSlotComponent::setOverlayOnly(bool overlayOnly) {
     setInterceptsMouseClicks(!overlayOnly || isInLinkMode_, !overlayOnly || isInLinkMode_);
     resized();
     repaint();
+}
+
+void ParamSlotComponent::setControlStyle(ParamControlStyle style) {
+    if (style_ == style)
+        return;
+    style_ = style;
+    applyControlStyleToWidgets();
+    resized();
+    repaint();
+}
+
+void ParamSlotComponent::applyControlStyleToWidgets() {
+    auto& fonts = FontManager::getInstance();
+    const bool knobs = style_ == ParamControlStyle::Knobs;
+    const bool sliders = style_ == ParamControlStyle::Sliders;
+
+    valueSlider_.setDrawFrame(false);
+    valueSlider_.setDragsUpward(knobs);
+    valueSlider_.setJustification(knobs     ? juce::Justification::centred
+                                  : sliders ? juce::Justification::centredRight
+                                            : juce::Justification::centredLeft);
+    valueSlider_.setFont(style_ == ParamControlStyle::Text ? fonts.getUIFontMedium(13.5f)
+                                                           : fonts.getMonoFont(11.0f));
+    valueSlider_.setTextColour(ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
+
+    nameLabel_.setFont(fonts.getUIFont(knobs ? 10.0f : 10.5f));
+    nameLabel_.setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+    nameLabel_.setBorderSize({});
+    nameLabel_.setJustificationType(knobs ? juce::Justification::centred
+                                          : juce::Justification::centredLeft);
+
+    if (boolToggle_) {
+        boolToggle_->getProperties().set("paramSwitchHidden", style_ == ParamControlStyle::Text);
+        boolToggle_->setLookAndFeel(&ParamSwitchLookAndFeel::getInstance());
+        boolToggle_->setButtonText({});
+    }
 }
 
 void ParamSlotComponent::refreshLinkModeState() {
@@ -649,6 +728,7 @@ void ParamSlotComponent::setParameterInfo(const magda::ParameterInfo& info) {
             }
             configureBoolToggle(*boolToggle_, info, deferToSlot);
             boolToggle_->setVisible(true);
+            applyControlStyleToWidgets();
         }
     } else if (info.scale == magda::ParameterScale::Discrete && !info.choices.empty()) {
         if (wantsSegmentedChoices(info)) {
@@ -718,18 +798,16 @@ void ParamSlotComponent::applyTooltip(const juce::String& tooltip) {
     }
 }
 
-void ParamSlotComponent::setFonts(const juce::Font& labelFont, const juce::Font& valueFont) {
-    nameLabel_.setFont(labelFont);
-    valueSlider_.setFont(valueFont);
-    valueSlider_.setTextColour(ActiveTheme::getTextColour());
-    valueSlider_.setBackgroundColour(juce::Colours::transparentBlack);
+void ParamSlotComponent::setFonts(const juce::Font& /*labelFont*/,
+                                  const juce::Font& /*valueFont*/) {
+    // The device spec fixes each style's fonts, so the host's choice is ignored.
+    applyControlStyleToWidgets();
 }
 
 void ParamSlotComponent::lookAndFeelChanged() {
     const auto primaryText = ActiveTheme::getTextColour();
 
-    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    valueSlider_.setTextColour(primaryText);
+    applyControlStyleToWidgets();
 
     if (boolToggle_) {
         boolToggle_->setColour(juce::ToggleButton::textColourId, primaryText);
@@ -764,6 +842,27 @@ void ParamSlotComponent::lookAndFeelChanged() {
 void ParamSlotComponent::paint(juce::Graphics& g) {
     if (overlayOnly_)
         return;
+
+    if (!tileArea_.isEmpty()) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));
+        g.fillRoundedRectangle(tileArea_.toFloat(), 5.0f);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
+        g.drawRoundedRectangle(tileArea_.toFloat().reduced(0.5f), 5.0f, 1.0f);
+
+        if (valueSlider_.isVisible()) {
+            const auto normalised =
+                juce::jlimit(0.0f, 1.0f,
+                             magda::ParameterUtils::realToNormalized(
+                                 static_cast<float>(valueSlider_.getValue()), paramInfo_));
+            if (style_ == ParamControlStyle::Knobs)
+                paintKnob(g, normalised);
+            else if (style_ == ParamControlStyle::Sliders)
+                paintBar(g, normalised);
+        } else if (boolToggle_ && boolToggle_->isVisible()) {
+            paintBooleanValue(g);
+        }
+        return;
+    }
 
     // Draw cell background for toggle/combo widgets (TextSlider draws its own)
     if ((boolToggle_ && boolToggle_->isVisible()) ||
@@ -876,6 +975,9 @@ void ParamSlotComponent::resized() {
         return;
     }
 
+    if (layoutStyled(bounds))
+        return;
+
     int labelHeight = juce::jmin(12, getHeight() / 3);
     nameLabel_.setBounds(bounds.removeFromTop(labelHeight));
 
@@ -902,6 +1004,150 @@ void ParamSlotComponent::resized() {
     } else {
         valueSlider_.setBounds(bounds);
     }
+}
+
+bool ParamSlotComponent::layoutStyled(juce::Rectangle<int> bounds) {
+    const bool continuous = valueSlider_.isVisible();
+    const bool boolean = boolToggle_ != nullptr && boolToggle_->isVisible();
+    const bool combo = discreteCombo_ != nullptr && discreteCombo_->isVisible();
+    const bool momentary = momentaryButton_ != nullptr && momentaryButton_->isVisible();
+    const bool choices = !choiceButtons_.empty() && choiceButtons_.front()->isVisible();
+
+    tileArea_ = bounds;
+    auto inner = tileArea_.reduced(8, 5);
+    knobArea_ = barArea_ = {};
+
+    // Where a widget other than the value slider goes in each style.
+    juce::Rectangle<int> widgetArea;
+
+    switch (style_) {
+        case ParamControlStyle::Text: {
+            nameLabel_.setBounds(inner.removeFromTop(13));
+            valueArea_ = inner;
+            widgetArea =
+                inner.withSizeKeepingCentre(inner.getWidth(), juce::jmin(20, inner.getHeight()));
+            if (boolean)
+                boolToggle_->setBounds(tileArea_);
+            break;
+        }
+        case ParamControlStyle::Knobs: {
+            constexpr int kMaxKnob = 52;  // the disc plus its arc, grown with the cell
+            const int size = juce::jmin(kMaxKnob, inner.getHeight() - 26, inner.getWidth());
+            knobArea_ = inner.removeFromTop(juce::jmax(16, size))
+                            .withSizeKeepingCentre(juce::jmax(16, size), juce::jmax(16, size));
+            inner.removeFromTop(2);
+            nameLabel_.setBounds(inner.removeFromTop(12));
+            valueArea_ = inner.removeFromTop(13);
+            widgetArea = knobArea_.withSizeKeepingCentre(inner.getWidth(), 20);
+            if (boolean)
+                boolToggle_->setBounds(knobArea_.withSizeKeepingCentre(30, 16));
+            break;
+        }
+        case ParamControlStyle::Sliders: {
+            auto top = inner.removeFromTop(14);
+            valueArea_ = top.removeFromRight(top.getWidth() / 2);
+            nameLabel_.setBounds(top);
+            barArea_ =
+                inner.withSizeKeepingCentre(inner.getWidth(), juce::jmin(14, inner.getHeight()));
+            widgetArea =
+                inner.withSizeKeepingCentre(inner.getWidth(), juce::jmin(20, inner.getHeight()));
+            if (boolean)
+                boolToggle_->setBounds(barArea_.withWidth(30).withSizeKeepingCentre(30, 16));
+            break;
+        }
+    }
+
+    if (continuous) {
+        valueSlider_.setBounds(tileArea_);
+        valueSlider_.setTextArea(valueArea_ - tileArea_.getPosition());
+    }
+    if (combo)
+        discreteCombo_->setBounds(widgetArea);
+    if (momentary)
+        momentaryButton_->setBounds(widgetArea);
+    if (choices) {
+        const int count = static_cast<int>(choiceButtons_.size());
+        for (int i = 0; i < count; ++i) {
+            const int left = widgetArea.getX() + (widgetArea.getWidth() * i) / count;
+            const int right = widgetArea.getX() + (widgetArea.getWidth() * (i + 1)) / count;
+            choiceButtons_[static_cast<size_t>(i)]->setBounds(left, widgetArea.getY(), right - left,
+                                                              widgetArea.getHeight());
+        }
+    }
+    return true;
+}
+
+void ParamSlotComponent::paintKnob(juce::Graphics& g, float normalised) const {
+    const auto area = knobArea_.toFloat();
+    const auto centre = area.getCentre();
+    const float arcRadius = area.getWidth() / 2.0f - 1.0f;
+    const float discRadius = juce::jmax(4.0f, arcRadius - 3.0f);
+    const float valueAngle = kKnobStartAngle + kKnobSweep * normalised;
+    const auto stroke =
+        juce::PathStrokeType(2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+
+    juce::Path track;
+    track.addCentredArc(centre.x, centre.y, arcRadius, arcRadius, 0.0f, kKnobStartAngle,
+                        kKnobStartAngle + kKnobSweep, true);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
+    g.strokePath(track, stroke);
+
+    if (normalised > 0.0f) {
+        juce::Path value;
+        value.addCentredArc(centre.x, centre.y, arcRadius, arcRadius, 0.0f, kKnobStartAngle,
+                            valueAngle, true);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE));
+        g.strokePath(value, stroke);
+    }
+
+    const auto disc =
+        juce::Rectangle<float>(discRadius * 2.0f, discRadius * 2.0f).withCentre(centre);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_KNOB_DISC));
+    g.fillEllipse(disc);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
+    g.drawEllipse(disc.reduced(0.5f), 1.0f);
+
+    const auto tip = centre.getPointOnCircumference(discRadius * 0.78f, valueAngle);
+    const auto base = centre.getPointOnCircumference(discRadius * 0.3f, valueAngle);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_POINTER));
+    g.drawLine({base, tip}, 2.0f);
+}
+
+void ParamSlotComponent::paintBar(juce::Graphics& g, float normalised) const {
+    const auto area = barArea_.toFloat();
+    const auto track = area.withSizeKeepingCentre(area.getWidth(), 8.0f);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_SLIDER_TRACK));
+    g.fillRoundedRectangle(track, 4.0f);
+
+    const float fillWidth = track.getWidth() * normalised;
+    if (fillWidth > 0.0f) {
+        g.setGradientFill(juce::ColourGradient(
+            ActiveTheme::getColour(ActiveTheme::DEVICE_SLIDER_FILL_LO), track.getX(), 0.0f,
+            ActiveTheme::getColour(ActiveTheme::DEVICE_SLIDER_FILL_HI), track.getRight(), 0.0f,
+            false));
+        g.fillRoundedRectangle(track.withWidth(fillWidth), 4.0f);
+    }
+
+    const float handleX =
+        juce::jlimit(track.getX() + 3.0f, track.getRight() - 3.0f, track.getX() + fillWidth);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_POINTER));
+    g.fillRoundedRectangle(
+        juce::Rectangle<float>(6.0f, area.getHeight()).withCentre({handleX, area.getCentreY()}),
+        2.0f);
+}
+
+void ParamSlotComponent::paintBooleanValue(juce::Graphics& g) const {
+    auto& fonts = FontManager::getInstance();
+    const bool text = style_ == ParamControlStyle::Text;
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
+    g.setFont(text ? fonts.getUIFontMedium(13.5f) : fonts.getMonoFont(11.0f));
+    const auto value =
+        boolToggle_->getToggleState() ? juce::String("on") : juce::String::fromUTF8("\xe2\x80\x93");
+    g.drawText(value, valueArea_,
+               style_ == ParamControlStyle::Knobs     ? juce::Justification::centred
+               : style_ == ParamControlStyle::Sliders ? juce::Justification::centredRight
+                                                      : juce::Justification::centredLeft,
+               false);
 }
 
 // ============================================================================

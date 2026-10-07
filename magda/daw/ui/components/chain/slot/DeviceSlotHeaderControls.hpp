@@ -31,10 +31,26 @@ struct DeviceSlotCollapsedControls {
     DeviceSlotHeaderControls headerControls;
 };
 
-void layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
-                                    const DeviceSlotTraits& traits, const magda::DeviceInfo& device,
-                                    bool isInternalDevice, DeviceSlotHeaderControls controls,
-                                    int buttonSize);
+struct DeviceSlotHeaderMetrics {
+    int buttonWidth = 30;
+    int buttonHeight = 26;
+    int gap = 8;
+    int separatorMargin = 6;
+};
+
+/// Where the expanded header's two separators landed; empty when not drawn.
+struct DeviceSlotHeaderSeparators {
+    juce::Rectangle<int> left, right;
+};
+
+/// Sidechain, multi-out, MIDI thru and delta keep their visibility here but are
+/// placed by the footer and side strip, not the expanded header.
+DeviceSlotHeaderSeparators layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
+                                                          const DeviceSlotTraits& traits,
+                                                          const magda::DeviceInfo& device,
+                                                          bool isInternalDevice,
+                                                          DeviceSlotHeaderControls controls,
+                                                          const DeviceSlotHeaderMetrics& metrics);
 
 void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
                                        juce::Rectangle<int> collapsedMeterArea,

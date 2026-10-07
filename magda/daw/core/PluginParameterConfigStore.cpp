@@ -129,6 +129,7 @@ std::optional<PluginParameterConfig> parse(const juce::File& file, const juce::S
     config.pluginId = xml->getStringAttribute("pluginId", uniqueId);
     if (auto* promptElem = xml->getChildByName("AISoundDesignerPrompt"))
         config.aiPrompt = promptElem->getAllSubText().trim();
+    config.controlStyle = xml->getStringAttribute("controlStyle");
 
     if (auto* paramsElem = xml->getChildByName("Parameters")) {
         for (auto* paramElem : paramsElem->getChildIterator()) {
@@ -228,6 +229,8 @@ juce::XmlElement toXml(const juce::String& uniqueId, const PluginParameterConfig
 
     if (config.aiPrompt.isNotEmpty())
         root.createNewChildElement("AISoundDesignerPrompt")->addTextElement(config.aiPrompt);
+    if (config.controlStyle.isNotEmpty())
+        root.setAttribute("controlStyle", config.controlStyle);
 
     return root;
 }
@@ -359,6 +362,7 @@ PluginParameterConfig fromDevice(const DeviceInfo& device) {
     PluginParameterConfig config;
     config.pluginId = configIdFor(device);
     config.aiPrompt = device.aiSoundDesignerPrompt;
+    config.controlStyle = device.controlStyle;
     config.entries.reserve(device.parameters.size());
     for (size_t i = 0; i < device.parameters.size(); ++i)
         config.entries.push_back(entryFor(device, i));
@@ -374,6 +378,7 @@ bool applyToDevice(const juce::String& uniqueId, DeviceInfo& device) {
     device.miniMixerParameters.clear();
     device.aiSoundDesignerParameters.clear();
     device.aiSoundDesignerPrompt = config->aiPrompt;
+    device.controlStyle = config->controlStyle;
 
     // An entry is matched by stable id, and its selection stored as the slot
     // of the parameter it lands on (#2638).

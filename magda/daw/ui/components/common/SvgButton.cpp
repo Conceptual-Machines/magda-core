@@ -229,9 +229,10 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
         }
     }
 
-    // Corner radius: proportional to smaller dimension, capped
-    float cornerRadius = juce::jmin(getWidth(), getHeight()) * 0.15f;
-    cornerRadius = juce::jlimit(2.0f, 8.0f, cornerRadius);
+    // Corner radius: proportional to smaller dimension, capped, unless set.
+    const float radius =
+        hasCornerRadius_ ? cornerRadius
+                         : juce::jlimit(2.0f, 8.0f, juce::jmin(getWidth(), getHeight()) * 0.15f);
 
     // Check active state (only when enabled)
     const bool isActive = isEnabled() && (active || (getToggleState() && isToggleable()));
@@ -240,23 +241,24 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
     auto bgBounds = getLocalBounds().toFloat().reduced(0.5f);
     if (isActive && hasActiveBackgroundColor) {
         g.setColour(activeBackground);
-        g.fillRoundedRectangle(bgBounds, cornerRadius);
+        g.fillRoundedRectangle(bgBounds, radius);
     } else if (shouldDrawButtonAsDown) {
         g.setColour(iconColor.withAlpha(0.2f));
-        g.fillRoundedRectangle(bgBounds, cornerRadius);
+        g.fillRoundedRectangle(bgBounds, radius);
     } else if (shouldDrawButtonAsHighlighted) {
-        g.setColour(iconColor.withAlpha(0.1f));
-        g.fillRoundedRectangle(bgBounds, cornerRadius);
+        g.setColour(hoverBackgroundRole_ ? ActiveTheme::getColour(*hoverBackgroundRole_)
+                                         : iconColor.withAlpha(0.1f));
+        g.fillRoundedRectangle(bgBounds, radius);
     } else if (hasNormalBackgroundColor) {
         g.setColour(normalBackground);
-        g.fillRoundedRectangle(bgBounds, cornerRadius);
+        g.fillRoundedRectangle(bgBounds, radius);
     }
 
     // Draw border if set (colored differently while active, if configured)
     if (hasBorder) {
         g.setColour(isActive && hasActiveBorderColor ? activeBorder : border);
-        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(borderThickness * 0.5f),
-                               cornerRadius, borderThickness);
+        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(borderThickness * 0.5f), radius,
+                               borderThickness);
     }
 
     // Calculate icon bounds (centered with some padding)
