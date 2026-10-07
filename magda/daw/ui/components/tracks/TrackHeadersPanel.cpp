@@ -352,7 +352,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     soloButton->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     soloButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
                                           ActiveTheme::ICON_ON_ACCENT);
-    soloButton->setIconPadding(5.0f);
+    soloButton->setIconPadding(4.5f);
     soloButton->setTooltip(tr("tracks.solo.tooltip"));
     soloButton->setClickingTogglesState(true);
 
@@ -366,7 +366,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     recordButton->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
     recordButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
                                             ActiveTheme::ICON_ON_ACCENT);
-    recordButton->setIconPadding(5.0f);
+    recordButton->setIconPadding(4.5f);
     recordButton->setTooltip(tr("tracks.record.tooltip"));
     recordButton->setClickingTogglesState(true);
 
@@ -375,6 +375,9 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // green chip, Auto = blue chip. Left-click cycles, right-click opens a menu.
     // getTrackId / getTargets are wired in the per-track setup below.
     monitorButton = std::make_unique<MonitorControl>();
+    // Glyphs fit their own artwork, so paddings differ to land one visual size on 18px
+    // buttons: ring and dot 9px, speaker 11px, the wide monitor and automation about 11px.
+    monitorButton->setIconPadding(7.0f);
 
     // Automation button
     automationButton = std::make_unique<SvgButton>("Automation", BinaryData::automation_svg,
@@ -391,7 +394,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
         ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
     automationButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
                                                 ActiveTheme::TEXT_BRIGHT);
-    automationButton->setIconPadding(2.5f);
+    automationButton->setIconPadding(3.5f);
 
     // Volume label (shows dB, draggable)
     volumeLabel = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
