@@ -248,19 +248,6 @@ DrumGridUI::DrumGridUI() {
     editorToggle_.onClick = [this]() { setDetailCollapsed(!editorToggle_.getToggleState()); };
     addAndMakeVisible(editorToggle_);
 
-    padListToggle_ = std::make_unique<magda::SvgButton>(
-        "PadList", BinaryData::icontreeviewboldm_svg, BinaryData::icontreeviewboldm_svgSize);
-    padListToggle_->setTooltip("Pad list");
-    padListToggle_->onClick = [this]() { setPadListVisible(padListToggle_->getToggleState()); };
-    addAndMakeVisible(*padListToggle_);
-
-    chainsViewport_.setScrollBarsShown(true, false);
-    chainsViewport_.setScrollBarThickness(6);
-    chainsViewport_.setInterceptsMouseClicks(false, true);
-    chainsContainer_.setInterceptsMouseClicks(false, true);
-    chainsViewport_.setViewedComponent(&chainsContainer_, false);
-    addChildComponent(chainsViewport_);
-
     // Pad editor: VOL
     levelControl_.setRange(kMinPadDb, 12.0, 0.0);
     panControl_.setRange(-1.0, 1.0, 0.0);
@@ -340,12 +327,6 @@ DrumGridUI::DrumGridUI() {
     nextPageButton_->onClick = [this]() { goToNextPage(); };
     addAndMakeVisible(*prevPageButton_);
     addAndMakeVisible(*nextPageButton_);
-    clearMutesButton_.setTooltip("Clear mutes");
-    clearMutesButton_.onClick = [this]() { clearAll(true); };
-    clearSolosButton_.setTooltip("Clear solos");
-    clearSolosButton_.onClick = [this]() { clearAll(false); };
-    addAndMakeVisible(clearMutesButton_);
-    addAndMakeVisible(clearSolosButton_);
 
     styleControls();
     refreshPadButtons();
@@ -359,8 +340,7 @@ DrumGridUI::~DrumGridUI() {
 void DrumGridUI::styleControls() {
     using node_header::GlyphToggleLookAndFeel;
     auto& glyph = GlyphToggleLookAndFeel::getInstance();
-    for (auto* button : {&editorToggle_, &chainMuteButton_, &chainSoloButton_, &clearMutesButton_,
-                         &clearSolosButton_})
+    for (auto* button : {&editorToggle_, &chainMuteButton_, &chainSoloButton_})
         button->setLookAndFeel(&glyph);
     editorToggle_.setColour(juce::TextButton::textColourOnId,
                             ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE));
@@ -368,13 +348,7 @@ void DrumGridUI::styleControls() {
                                ActiveTheme::getColour(ActiveTheme::DEVICE_RED));
     chainSoloButton_.setColour(juce::TextButton::textColourOnId,
                                ActiveTheme::getColour(ActiveTheme::DEVICE_AMBER));
-    node_header::applyDeviceIconStyle(*padListToggle_, node_header::DeviceIcon::Toggle,
-                                      juce::Colour(0xFFB3B3B3), ActiveTheme::DEVICE_BLUE);
-    padListToggle_->setToggleState(padListVisible_, juce::dontSendNotification);
-    padListToggle_->setActive(padListVisible_);
     outputButton_.setLookAndFeel(&glyph);
-    chainsViewport_.getVerticalScrollBar().setColour(
-        juce::ScrollBar::thumbColourId, ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
 }
 
 void DrumGridUI::restoreDetailCollapsed(bool collapsed) {
@@ -446,19 +420,8 @@ void DrumGridUI::timerCallback() {
             changed = true;
         }
 
-        if (changed) {
-            // Update chain row if visible
-            for (auto& row : chainRows_) {
-                if (row->getPadIndex() == i) {
-                    juce::String displayName = getNoteName(i) + " " + info.sampleName;
-                    row->updateFromPad(displayName, info.level, info.pan, info.mute, info.solo,
-                                       false, info.busOutput);
-                    break;
-                }
-            }
-            if (i == selectedPad_)
-                detailNeedsRefresh = true;
-        }
+        if (changed && i == selectedPad_)
+            detailNeedsRefresh = true;
     }
 
     if (detailNeedsRefresh)
@@ -498,9 +461,6 @@ void DrumGridUI::updatePadInfo(int padIndex, const juce::String& sampleName, boo
         refreshDetailPanel();
         refreshPadChain();
     }
-
-    // Rebuild chain rows to reflect updated pad state
-    rebuildChainRows();
 }
 
 void DrumGridUI::setSelectedPad(int padIndex) {
@@ -524,22 +484,6 @@ void DrumGridUI::setSelectedPad(int padIndex) {
 
     refreshDetailPanel();
     refreshPadChain();
-
-    // Update chain row selection highlights — select the row whose chain covers the selected pad
-    int selectedChainIdx = padInfos_[static_cast<size_t>(selectedPad_)].chainIndex;
-    for (auto& row : chainRows_) {
-        int rowPad = row->getPadIndex();
-        int rowChainIdx = padInfos_[static_cast<size_t>(rowPad)].chainIndex;
-        row->setSelected(rowChainIdx >= 0 && rowChainIdx == selectedChainIdx);
-    }
-
-    // Scroll chains viewport to show the selected row
-    for (auto& row : chainRows_) {
-        if (row->isSelected()) {
-            chainsViewport_.setViewPosition(0, row->getY());
-            break;
-        }
-    }
 
     resized();
     if (onLayoutChanged)
@@ -623,8 +567,6 @@ void DrumGridUI::paint(juce::Graphics& g) {
     g.fillRect(railArea_);
     g.setColour(line);
     g.fillRect(railArea_.withLeft(railArea_.getRight() - 1));
-    g.setColour(colour(ActiveTheme::DEVICE_LINE2));
-    g.fillRect(railSeparator_);
 
     if (!editorArea_.isEmpty()) {
         g.setColour(colour(ActiveTheme::DEVICE_HEAD2));
@@ -801,10 +743,6 @@ void DrumGridUI::resized() {
     railArea_ = area.removeFromLeft(kRailWidth);
     auto rail = railArea_.reduced(5, 8);
     editorToggle_.setBounds(rail.removeFromTop(26).withSizeKeepingCentre(28, 26));
-    rail.removeFromTop(3);
-    padListToggle_->setBounds(rail.removeFromTop(26).withSizeKeepingCentre(28, 26));
-    rail.removeFromTop(6);
-    railSeparator_ = rail.removeFromTop(1).withSizeKeepingCentre(18, 1);
 
     padsArea_ = area.removeFromLeft(padsWidthFor(area.getHeight()));
     const auto grid = padsArea_.reduced(kPadPadding);
@@ -817,21 +755,6 @@ void DrumGridUI::resized() {
         auto& pad = padButtons_[static_cast<size_t>(i)];
         pad.setBounds(grid.getX() + col * (cellW + kPadGap), grid.getY() + row * (cellH + kPadGap),
                       cellW, cellH);
-        pad.setVisible(!padListVisible_);
-    }
-
-    chainsViewport_.setVisible(padListVisible_);
-    if (padListVisible_) {
-        chainsViewport_.setBounds(grid);
-        const int width = grid.getWidth() - chainsViewport_.getScrollBarThickness();
-        chainsContainer_.removeAllChildren();
-        int y = 0;
-        for (auto& row : chainRows_) {
-            row->setBounds(0, y, width, PadChainRowComponent::ROW_HEIGHT);
-            chainsContainer_.addAndMakeVisible(*row);
-            y += PadChainRowComponent::ROW_HEIGHT + 2;
-        }
-        chainsContainer_.setSize(width, juce::jmax(y, grid.getHeight()));
     }
 
     editorArea_ = {};
@@ -884,10 +807,6 @@ void DrumGridUI::layoutChain(juce::Rectangle<int> area) {
 
 void DrumGridUI::layoutFooter(juce::Rectangle<int> area) {
     auto inner = area.reduced(10, 0);
-    clearSolosButton_.setBounds(inner.removeFromRight(28).withSizeKeepingCentre(28, 24));
-    inner.removeFromRight(8);
-    clearMutesButton_.setBounds(inner.removeFromRight(28).withSizeKeepingCentre(28, 24));
-
     auto nav = inner.removeFromLeft(220);
     prevPageButton_->setBounds(nav.removeFromLeft(16).withSizeKeepingCentre(12, 12));
     nextPageButton_->setBounds(nav.removeFromRight(16).withSizeKeepingCentre(12, 12));
@@ -976,99 +895,6 @@ void DrumGridUI::itemDropped(const SourceDetails& details) {
     repaint();
 }
 
-// =============================================================================
-// Pad list
-// =============================================================================
-
-void DrumGridUI::rebuildChainRows() {
-    chainRows_.clear();
-    chainsContainer_.removeAllChildren();
-
-    // Build rows from padInfos — one row per pad that has a chain
-    // (A chain may cover multiple pads; we show the row for the lowest pad in the range)
-    std::set<int> seenChains;
-    for (int i = 0; i < kTotalPads; ++i) {
-        auto& info = padInfos_[static_cast<size_t>(i)];
-        if (info.sampleName.isEmpty() || info.chainIndex < 0)
-            continue;
-
-        // Skip if we already created a row for this chain
-        if (!seenChains.insert(info.chainIndex).second)
-            continue;
-
-        // --- Mix row ---
-        auto row = std::make_unique<PadChainRowComponent>(i);
-        juce::String displayName = getNoteName(i) + " " + info.sampleName;
-        row->updateFromPad(displayName, info.level, info.pan, info.mute, info.solo, info.bypassed,
-                           info.busOutput);
-
-        row->onClicked = [this](int padIndex) {
-            bool wasSelected = (padIndex == selectedPad_) ||
-                               (padInfos_[static_cast<size_t>(padIndex)].chainIndex >= 0 &&
-                                padInfos_[static_cast<size_t>(padIndex)].chainIndex ==
-                                    padInfos_[static_cast<size_t>(selectedPad_)].chainIndex);
-            if (!wasSelected)
-                setSelectedPad(padIndex);
-        };
-        row->onLevelChanged = [this](int padIndex, float val) {
-            if (onPadLevelChanged)
-                onPadLevelChanged(padIndex, val);
-        };
-        row->onPanChanged = [this](int padIndex, float val) {
-            if (onPadPanChanged)
-                onPadPanChanged(padIndex, val);
-        };
-        row->onFaderGestureEnd = [this]() { endFaderGesture(); };
-        row->onMuteChanged = [this](int padIndex, bool val) {
-            padInfos_[static_cast<size_t>(padIndex)].mute = val;
-            if (onPadMuteChanged)
-                onPadMuteChanged(padIndex, val);
-            refreshPadButtons();
-        };
-        row->onSoloChanged = [this](int padIndex, bool val) {
-            padInfos_[static_cast<size_t>(padIndex)].solo = val;
-            if (onPadSoloChanged)
-                onPadSoloChanged(padIndex, val);
-            refreshPadButtons();
-        };
-        row->onBypassChanged = [this](int padIndex, bool val) {
-            padInfos_[static_cast<size_t>(padIndex)].bypassed = val;
-            if (onPadBypassChanged)
-                onPadBypassChanged(padIndex, val);
-            if (padIndex == selectedPad_)
-                padChainView_.setAlpha(val ? 0.35f : 1.0f);
-        };
-        row->onDeleteClicked = [this](int padIndex) {
-            if (onPadDeleteRequested)
-                onPadDeleteRequested(padIndex);
-            else if (onClearRequested)
-                onClearRequested(padIndex);
-        };
-        row->onRightClicked = [this](int padIndex, juce::Point<int> screenPos) {
-            showChainContextMenu(padIndex, screenPos);
-        };
-        row->onOutputChanged = [this](int padIndex, int busIndex) {
-            padInfos_[static_cast<size_t>(padIndex)].busOutput = busIndex;
-            if (onPadOutputChanged)
-                onPadOutputChanged(padIndex, busIndex);
-        };
-
-        // By chain, the same comparison setSelectedPad() makes. A row is named
-        // by the lowest pad its chain covers, so selecting any other note of a
-        // ranged chain left the next rebuild unselecting its only row, and the
-        // range editor under it went unlaid out (#2211).
-        row->setSelected(info.chainIndex >= 0 &&
-                         info.chainIndex ==
-                             padInfos_[static_cast<size_t>(selectedPad_)].chainIndex);
-        chainRows_.push_back(std::move(row));
-    }
-
-    resized();
-    repaint();
-    if (onLayoutChanged)
-        onLayoutChanged();
-}
-
 void DrumGridUI::endFaderGesture() {
     faderGesture_ = nextFaderGesture_.fetch_add(1);
 }
@@ -1095,45 +921,12 @@ void DrumGridUI::showPadContextMenu(int padIndex, juce::Point<int> screenPos) {
                        });
 }
 
-void DrumGridUI::showChainContextMenu(int padIndex, juce::Point<int> screenPos) {
-    setSelectedPad(padIndex);
-
-    juce::PopupMenu menu;
-    const auto& info = padInfos_[static_cast<size_t>(padIndex)];
-    menu.addItem(1, "Analyze pad role", info.sampleName.isNotEmpty());
-    menu.addSeparator();
-    menu.addItem(2, "Delete");
-
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
-                           juce::Rectangle<int>(screenPos.x, screenPos.y, 1, 1)),
-                       [this, padIndex](int result) {
-                           if (result == 1 && onAnalyzePadRoleRequested)
-                               onAnalyzePadRoleRequested(padIndex);
-                           else if (result == 2 && onClearRequested)
-                               onClearRequested(padIndex);
-                       });
-}
-
 int DrumGridUI::getPreferredContentWidth() const {
     int width = kRailWidth + padsWidthFor(getHeight() - kFooterHeight);
     if (!detailCollapsed_)
         width += kEditorWidth;
     const int chainWidth = selectedPadHasChain() ? padChainView_.getContentWidth() : 0;
     return width + juce::jmax(kMinChainWidth, chainWidth);
-}
-
-juce::Rectangle<int> DrumGridUI::getRailMultiOutBounds() const {
-    return railArea_.withTrimmedBottom(8).removeFromBottom(26).withSizeKeepingCentre(28, 26);
-}
-
-void DrumGridUI::setPadListVisible(bool visible) {
-    if (padListVisible_ == visible)
-        return;
-    padListVisible_ = visible;
-    padListToggle_->setToggleState(visible, juce::dontSendNotification);
-    padListToggle_->setActive(visible);
-    resized();
-    repaint();
 }
 
 void DrumGridUI::setDetailCollapsed(bool collapsed) {
@@ -1167,22 +960,6 @@ void DrumGridUI::refreshPadChain() {
     }
     resized();
     repaint();
-}
-
-void DrumGridUI::clearAll(bool mutes) {
-    for (int i = 0; i < kTotalPads; ++i) {
-        auto& info = padInfos_[static_cast<size_t>(i)];
-        bool& flag = mutes ? info.mute : info.solo;
-        if (!flag || info.chainIndex < 0)
-            continue;
-        flag = false;
-        if (mutes && onPadMuteChanged)
-            onPadMuteChanged(i, false);
-        else if (!mutes && onPadSoloChanged)
-            onPadSoloChanged(i, false);
-    }
-    refreshPadButtons();
-    refreshDetailPanel();
 }
 
 void DrumGridUI::showOutputMenu() {
@@ -1267,8 +1044,6 @@ juce::String DrumGridUI::getNoteName(int padIndex) {
 }
 
 int DrumGridUI::padButtonIndexAtPoint(juce::Point<int> point) const {
-    if (padListVisible_)
-        return -1;
     for (int i = 0; i < kPadsPerPage; ++i) {
         if (padButtons_[static_cast<size_t>(i)].getBounds().contains(point))
             return i;

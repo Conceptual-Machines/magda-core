@@ -681,14 +681,6 @@ void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
     footerPageLabel_.setVisible(paged);
     if (footer.isEmpty())
         return;
-    // The Drum Grid lays out its own footer; multi-out sits on its rail.
-    if (traits_.isDrumGrid) {
-        for (auto* button : {scButton_.get(), midiThruButton_.get()})
-            if (button != nullptr)
-                button->setVisible(false);
-        return;
-    }
-
     constexpr int kButtonWidth = 30;
     constexpr int kButtonHeight = 26;
     constexpr int kGap = 8;
@@ -717,7 +709,7 @@ void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
         footerPrevPage_->setBounds(nav.removeFromLeft(16).withSizeKeepingCentre(12, 12));
         footerNextPage_->setBounds(nav.removeFromRight(16).withSizeKeepingCentre(12, 12));
         footerPageLabel_.setBounds(nav);
-    } else if (isInternalDevice()) {
+    } else if (isInternalDevice() && !traits_.isDrumGrid) {
         if (sidechain) {
             area.setLeft(area.getX() - kGap);
             footerSeparator_ = area.removeFromLeft(13).withSizeKeepingCentre(1, 18);
@@ -1398,8 +1390,9 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
 
     if (auto* drumGrid = customUI_.getDrumGridUI(); drumGrid != nullptr && !footerArea_.isEmpty()) {
         drumGrid->setBounds(contentArea.withBottom(footerArea_.getBottom()));
-        if (multiOutButton_ != nullptr && multiOutButton_->isVisible())
-            multiOutButton_->setBounds(drumGrid->getRailMultiOutBounds() + drumGrid->getPosition());
+        // Its footer holds the page controls; the slot's multi-out sits over it.
+        if (multiOutButton_ != nullptr)
+            multiOutButton_->toFront(false);
     }
 }
 

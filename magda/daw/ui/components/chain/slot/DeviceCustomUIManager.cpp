@@ -1196,27 +1196,15 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
                     });
     };
 
-    drumGridUI_->onPadBypassChanged = [postPadEdit](int padIndex, bool bypassed) {
-        postPadEdit(bypassed ? "Disable Pad" : "Enable Pad",
-                    [padIndex, bypassed](const magda::ChainNodePath& grid) {
-                        magda::TrackManager::getInstance().setPadBypassed(grid, padIndex, bypassed);
-                    });
-    };
-
     // The pad's output bus. `ChainInfo::outputIndex` is model state, and the
     // device sync turns a pad on a bus into a multi-out child track, so the row
     // selector only ever had to write the model (#2211).
     drumGridUI_->onPadOutputChanged = [this, postPadEdit, gridPath](int padIndex, int busIndex) {
-        // Refused for a grid inside a rack: nothing carries a bus off one, so
-        // the pads on it would go silent. Asked before the edit, the same way a
-        // range is, so a refusal snaps the row back to Main rather than leaving
-        // it showing a bus the model never took, and does not become an undo
-        // step that changed nothing.
-        if (busIndex != 0 && !magda::TrackManager::getInstance().padBusesAvailable(gridPath())) {
-            if (drumGridUI_ != nullptr)
-                drumGridUI_->rebuildChainRows();
+        // Refused for a grid inside a rack: nothing carries a bus off one, so the
+        // pads on it would go silent. The editor reads the model back on its next
+        // poll, so a refusal shows Main again and is no undo step.
+        if (busIndex != 0 && !magda::TrackManager::getInstance().padBusesAvailable(gridPath()))
             return;
-        }
 
         postPadEdit("Set Pad Output", [padIndex, busIndex](const magda::ChainNodePath& grid) {
             magda::TrackManager::getInstance().setPadOutput(grid, padIndex, busIndex);
@@ -1273,23 +1261,6 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
     drumGridUI_->onLayoutChanged = [cb = callbacks]() {
         if (cb.onLayoutChanged)
             cb.onLayoutChanged();
-    };
-
-    // Delete from a chain row removes the chain the row stands for, whatever
-    // range it answers to. `clearPad()` is the pad's own delete and refuses a
-    // chain shared with its neighbours, which after a range edit would leave a
-    // widened chain with no way off the grid at all (#2211).
-    drumGridUI_->onPadDeleteRequested = [this, postPadEdit](int padIndex) {
-        postPadEdit(
-            "Delete Pad Chain",
-            [padIndex](const magda::ChainNodePath& grid) {
-                auto& tm = magda::TrackManager::getInstance();
-                if (const auto* pad = tm.getPad(grid, padIndex))
-                    tm.removePadChain(grid, pad->id);
-            },
-            [this, padIndex]() {
-                drumGridUI_->updatePadInfo(padIndex, "", false, false, 0.0f, 0.0f, -1);
-            });
     };
 
     drumGridUI_->onAnalyzePadRoleRequested = [this, cb = callbacks, gridPath](int padIndex) {
@@ -1396,7 +1367,6 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             [this, srcPad, dstPad, updatePadFromModel]() {
                 updatePadFromModel(srcPad);
                 updatePadFromModel(dstPad);
-                drumGridUI_->rebuildChainRows();
             });
     };
 

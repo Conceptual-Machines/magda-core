@@ -11,7 +11,6 @@
 
 #include "ChainPanel.hpp"
 #include "core/ChainNodePath.hpp"
-#include "drum_grid/PadChainRowComponent.hpp"
 #include "layout/DashedAddButton.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -92,14 +91,8 @@ class DrumGridUI : public juce::Component,
     /** Called when pad solo changes. (padIndex, soloed) */
     std::function<void(int, bool)> onPadSoloChanged;
 
-    /** Called when pad bypass changes. (padIndex, bypassed) */
-    std::function<void(int, bool)> onPadBypassChanged;
-
     /** Called when a plugin is dropped onto a pad. (padIndex, DynamicObject with plugin info) */
     std::function<void(int, const juce::DynamicObject&)> onPluginDropped;
-
-    /** Called when delete is clicked on a chain row. (padIndex) */
-    std::function<void(int)> onPadDeleteRequested;
 
     /** Called when the user explicitly asks to analyse a pad sample role. (padIndex) */
     std::function<void(int)> onAnalyzePadRoleRequested;
@@ -147,14 +140,8 @@ class DrumGridUI : public juce::Component,
     /** @brief Show the selected pad's chain again after the model changed it. */
     void refreshPadChain();
 
-    /** Rebuild the pad list's rows from padInfos_. */
-    void rebuildChainRows();
-
     /** Width the panels want: rail, pads, the editor when open, and the chain. */
     int getPreferredContentWidth() const;
-
-    /** Where the device's multi-out button sits, at the foot of the rail. */
-    juce::Rectangle<int> getRailMultiOutBounds() const;
 
     //==============================================================================
     // Component overrides
@@ -255,13 +242,6 @@ class DrumGridUI : public juce::Component,
 
     // Rail
     juce::TextButton editorToggle_{"i"};
-    std::unique_ptr<magda::SvgButton> padListToggle_;
-    bool padListVisible_ = false;
-
-    // Pad list (rows in place of the pads)
-    juce::Viewport chainsViewport_;
-    juce::Component chainsContainer_;
-    std::vector<std::unique_ptr<PadChainRowComponent>> chainRows_;
 
     // Pad editor
     bool detailCollapsed_ = false;
@@ -279,14 +259,11 @@ class DrumGridUI : public juce::Component,
     // Footer
     std::unique_ptr<juce::ArrowButton> prevPageButton_;
     std::unique_ptr<juce::ArrowButton> nextPageButton_;
-    juce::TextButton clearMutesButton_{"M"};
-    juce::TextButton clearSolosButton_{"S"};
 
     // Areas laid out in resized() and painted in paint()
     juce::Rectangle<int> railArea_, padsArea_, editorArea_, chainArea_, footerArea_;
     juce::Rectangle<int> editorHeaderArea_, chainHeaderArea_, pageTextArea_;
     juce::Rectangle<int> levelLabelArea_, panLabelArea_, outputLabelArea_;
-    juce::Rectangle<int> railSeparator_;
 
     // Plugin drop highlight
     int dropHighlightPad_ = -1;
@@ -297,7 +274,6 @@ class DrumGridUI : public juce::Component,
 
     //==============================================================================
     void setDetailCollapsed(bool collapsed);
-    void setPadListVisible(bool visible);
     void refreshPadButtons();
     void styleControls();
     void layoutEditor(juce::Rectangle<int> area);
@@ -307,7 +283,6 @@ class DrumGridUI : public juce::Component,
     void paintChainHeader(juce::Graphics& g);
     void showOutputMenu();
     bool selectedPadHasChain() const;
-    void clearAll(bool mutes);
 
     /// Close the current fader gesture, so the next edit is a new undo step.
     void endFaderGesture();
@@ -322,7 +297,6 @@ class DrumGridUI : public juce::Component,
     int padButtonIndexAtPoint(juce::Point<int> point) const;
 
     void showPadContextMenu(int padIndex, juce::Point<int> screenPos);
-    void showChainContextMenu(int padIndex, juce::Point<int> screenPos);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumGridUI)
 };

@@ -112,7 +112,8 @@ HeaderControlVisibility getHeaderControlVisibility(const DeviceSlotTraits& trait
     visibility.ai = aiSoundDesignerControlVisible(traits, device);
     visibility.random = traits.isStepSequencer || traits.isPolyStepSequencer;
     visibility.stepRecord = visibility.random;
-    visibility.midiThru = supportsMidiSourceToggle(device);
+    // The Drum Grid plays its pads and emits no MIDI of its own.
+    visibility.midiThru = supportsMidiSourceToggle(device) && !traits.isDrumGrid;
     visibility.delta = device.deviceType == magda::DeviceType::Effect;
 
     if (isMidiUtilityDeviceSlot(traits)) {
