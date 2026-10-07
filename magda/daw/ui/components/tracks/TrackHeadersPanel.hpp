@@ -137,8 +137,10 @@ class TrackHeadersPanel : public juce::Component,
     bool isIORoutingVisible() const;
     std::function<void()> onIORoutingToggled;
     /** Paints the AUDIO / MIDI column labels over @p ioColumnStrip, a strip as wide as the
-     *  I/O column, aligned with the selects below. */
-    static void paintIOLabels(juce::Graphics& g, juce::Rectangle<int> ioColumnStrip);
+     *  I/O column, aligned with the selects below. A label that would touch @p occupied
+     *  (other controls in the row) is left out. */
+    static void paintIOLabels(juce::Graphics& g, juce::Rectangle<int> ioColumnStrip,
+                              juce::Rectangle<int> occupied);
 
     // Callbacks
     std::function<void(int, int)> onTrackHeightChanged;

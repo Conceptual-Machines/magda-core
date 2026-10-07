@@ -931,7 +931,7 @@ void MainView::paint(juce::Graphics& g) {
         g.fillRect(cornerBottomBorderLine);
     }
     if (!ioLabelsStrip.isEmpty())
-        TrackHeadersPanel::paintIOLabels(g, ioLabelsStrip);
+        TrackHeadersPanel::paintIOLabels(g, ioLabelsStrip, cornerButtonsRow);
     if (!markerCornerRightBorderLine.isEmpty()) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.fillRect(markerCornerRightBorderLine);
@@ -1205,6 +1205,7 @@ void MainView::resized() {
 
         // AUDIO / MIDI labels over the I/O column, in the lower row.
         repaint(ioLabelsStrip);
+        cornerButtonsRow = trackSmallButton->getBounds().getUnion(addTrackButton->getBounds());
         auto ioStrip = cornerArea;
         ioLabelsStrip = trackHeadersPanel->isIORoutingVisible()
                             ? axisSide.removeFrom(ioStrip, TrackHeadersPanel::IO_COLUMN_WIDTH)

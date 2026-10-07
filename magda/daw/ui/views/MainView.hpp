@@ -351,8 +351,10 @@ class MainView : public juce::Component,
     // Separator line positions in the corner toolbar (set during resized())
     juce::Rectangle<int> markerLaneSeparatorLine;
     juce::Rectangle<int> cornerSeparatorLine;
-    juce::Rectangle<int>
-        ioLabelsStrip;  // the corner's lower row over the I/O column; empty when off
+    // The corner's lower row over the I/O column (empty when off), and its buttons, which the
+    // labels give way to.
+    juce::Rectangle<int> ioLabelsStrip;
+    juce::Rectangle<int> cornerButtonsRow;
     juce::Rectangle<int> cornerBottomBorderLine;
     // Vertical border on the marker-lane row, separating the corner gutter
     // from the marker-lane content to its side.

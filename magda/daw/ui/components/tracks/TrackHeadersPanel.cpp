@@ -2269,13 +2269,16 @@ void TrackHeadersPanel::paintIOColumn(juce::Graphics& g, juce::Rectangle<int> io
                          static_cast<float>(ioArea.getRight()));
 }
 
-void TrackHeadersPanel::paintIOLabels(juce::Graphics& g, juce::Rectangle<int> ioColumnStrip) {
+void TrackHeadersPanel::paintIOLabels(juce::Graphics& g, juce::Rectangle<int> ioColumnStrip,
+                                      juce::Rectangle<int> occupied) {
     auto content = ioColumnStrip.reduced(IO_PAD_X, 0).withTrimmedLeft(1);
     const auto columns =
         splitIORow(content.withSizeKeepingCentre(content.getWidth(), IO_CAPTION_H), true, true);
     const auto dim = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2);
     const auto paintLabel = [&](juce::Rectangle<int> area, const char* svg, int svgSize,
                                 const juce::String& text) {
+        if (area.intersects(occupied.expanded(4, 0)))
+            return;
         area.removeFromLeft(2);
         if (auto icon = juce::Drawable::createFromImageData(svg, static_cast<size_t>(svgSize))) {
             icon->replaceColour(juce::Colour(0xFFB3B3B3), dim);
