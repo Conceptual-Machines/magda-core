@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <ranges>
 #include <span>
@@ -466,56 +467,7 @@ DeviceId TrackManager::addDeviceToChain(TrackId trackId, RackId rackId, ChainId 
 
 DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
                                               const DeviceInfo& device) {
-    if (auto* track = getTrack(chainPath.trackId)) {
-        if (!track->canHostInstrument() && device.isInstrument) {
-            return INVALID_DEVICE_ID;
-        }
-    }
-    // The chainPath should end with a Chain step
-
-    if (chainPath.steps.empty()) {
-        return INVALID_DEVICE_ID;
-    }
-
-    // Extract chainId from the last step (should be Chain type)
-    ChainId chainId = INVALID_CHAIN_ID;
-    if (chainPath.steps.back().type == ChainStepType::Chain) {
-        chainId = chainPath.steps.back().id;
-    } else {
-        return INVALID_DEVICE_ID;
-    }
-
-    // Build the parent rack path (everything except the last Chain step)
-    ChainNodePath rackPath;
-    rackPath.trackId = chainPath.trackId;
-    for (size_t i = 0; i < chainPath.steps.size() - 1; ++i) {
-        rackPath.steps.push_back(chainPath.steps[i]);
-    }
-    // Get the parent rack
-    if (auto* rack = getRackByPath(rackPath)) {
-        // Find the chain within the rack
-        ChainInfo* chain = nullptr;
-        for (auto& c : rack->chains) {
-            if (c.id == chainId) {
-                chain = &c;
-                break;
-            }
-        }
-
-        if (!chain) {
-            return INVALID_DEVICE_ID;
-        }
-
-        // Add the device
-        DeviceInfo newDevice = prepareNewDevice(chainPath.trackId, device);
-        seedSidechainModIfMissing(newDevice, chainPath.withDevice(newDevice.id));
-        chain->elements.push_back(makeDeviceElement(newDevice));
-        notifyTrackDevicesChanged(chainPath.trackId);
-        notifyDeviceAdded(chainPath.withDevice(newDevice.id), newDevice);
-        return newDevice.id;
-    }
-
-    return INVALID_DEVICE_ID;
+    return addDeviceToChainByPath(chainPath, device, std::numeric_limits<int>::max());
 }
 
 DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
@@ -525,56 +477,20 @@ DeviceId TrackManager::addDeviceToChainByPath(const ChainNodePath& chainPath,
             return INVALID_DEVICE_ID;
         }
     }
-    // Similar to the non-indexed version but inserts at a specific position
-    if (chainPath.steps.empty()) {
+
+    // A rack's chain or a Drum Grid pad's: both are ordinary chains by path.
+    auto* chain = getChainByPath(chainPath);
+    if (chain == nullptr)
         return INVALID_DEVICE_ID;
-    }
 
-    // Extract chainId from the last step (should be Chain type)
-    ChainId chainId = INVALID_CHAIN_ID;
-    if (chainPath.steps.back().type == ChainStepType::Chain) {
-        chainId = chainPath.steps.back().id;
-    } else {
-        return INVALID_DEVICE_ID;
-    }
+    DeviceInfo newDevice = prepareNewDevice(chainPath.trackId, device);
+    seedSidechainModIfMissing(newDevice, chainPath.withDevice(newDevice.id));
 
-    // Build the parent rack path (everything except the last Chain step)
-    ChainNodePath rackPath;
-    rackPath.trackId = chainPath.trackId;
-    for (size_t i = 0; i < chainPath.steps.size() - 1; ++i) {
-        rackPath.steps.push_back(chainPath.steps[i]);
-    }
-
-    // Get the parent rack
-    if (auto* rack = getRackByPath(rackPath)) {
-        // Find the chain within the rack
-        ChainInfo* chain = nullptr;
-        for (auto& c : rack->chains) {
-            if (c.id == chainId) {
-                chain = &c;
-                break;
-            }
-        }
-
-        if (!chain) {
-            return INVALID_DEVICE_ID;
-        }
-
-        // Add the device at the specified index
-        DeviceInfo newDevice = prepareNewDevice(chainPath.trackId, device);
-        seedSidechainModIfMissing(newDevice, chainPath.withDevice(newDevice.id));
-
-        // Clamp insert index to valid range
-        int maxIndex = static_cast<int>(chain->elements.size());
-        insertIndex = std::clamp(insertIndex, 0, maxIndex);
-
-        chain->elements.insert(chain->elements.begin() + insertIndex, makeDeviceElement(newDevice));
-        notifyTrackDevicesChanged(chainPath.trackId);
-        notifyDeviceAdded(chainPath.withDevice(newDevice.id), newDevice);
-        return newDevice.id;
-    }
-
-    return INVALID_DEVICE_ID;
+    insertIndex = std::clamp(insertIndex, 0, static_cast<int>(chain->elements.size()));
+    chain->elements.insert(chain->elements.begin() + insertIndex, makeDeviceElement(newDevice));
+    notifyTrackDevicesChanged(chainPath.trackId);
+    notifyDeviceAdded(chainPath.withDevice(newDevice.id), newDevice);
+    return newDevice.id;
 }
 
 void TrackManager::removeDeviceFromChain(TrackId trackId, RackId rackId, ChainId chainId,
