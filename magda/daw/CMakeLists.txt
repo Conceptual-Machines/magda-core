@@ -71,7 +71,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/power.svg
     ../../assets/icons/general/toggle_off.svg
     ../../assets/icons/general/toggle_on.svg
-    ../../assets/icons/general/toggle_on_outline.svg
     ../../assets/icons/general/input-output.svg
     ../../assets/icons/general/save.svg
     ../../assets/icons/general/folder-open.svg

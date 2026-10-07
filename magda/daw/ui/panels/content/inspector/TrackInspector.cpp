@@ -175,19 +175,17 @@ TrackInspector::TrackInspector() {
     };
     addAndMakeVisible(*recordButton_);
 
-    // Track enable/disable: drives the chain bypass — the same signal-flow
-    // power as the track chain header's power button. Chip-style bordered
-    // switch in the name row, matching the clip inspector's toggle.
-    enableButton_ = std::make_unique<SvgButton>(
-        "enable", BinaryData::toggle_off_svg, BinaryData::toggle_off_svgSize,
-        BinaryData::toggle_on_outline_svg, BinaryData::toggle_on_outline_svgSize);
+    // Track enable/disable: the same chain power as the track chain header's power button,
+    // and drawn like it: the power glyph, green while on, on the neutral chip.
+    enableButton_ =
+        std::make_unique<SvgButton>("enable", BinaryData::power_svg, BinaryData::power_svgSize);
     enableButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    enableButton_->setActiveBackgroundColor(ActiveTheme::SURFACE);
     enableButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-    // On: the outline switch, knob right, in green.
-    enableButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+    enableButton_->setStateColourReplacement(juce::Colour(0xFFE6E6E6), ActiveTheme::ICON_NEUTRAL,
                                              ActiveTheme::DEVICE_GREEN);
     enableButton_->setBorderThickness(1.0f);
-    enableButton_->setIconPadding(2.0f);
+    enableButton_->setIconPadding(6.5f);
     enableButton_->setTooltip(tr("tracks.enable.tooltip"));
     enableButton_->setClickingTogglesState(true);
     enableButton_->onClick = [this]() {
