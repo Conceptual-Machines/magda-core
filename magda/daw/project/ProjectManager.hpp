@@ -328,12 +328,6 @@ class ProjectManager {
      */
     void markDirty();
 
-    /**
-     * @brief Tell listeners the project info was edited in place
-     * For callers that write getMutableProjectInfo() directly.
-     */
-    void notifyPropertiesChanged();
-
     // ========================================================================
     // Listeners
     // ========================================================================

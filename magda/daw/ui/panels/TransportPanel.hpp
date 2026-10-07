@@ -212,11 +212,6 @@ class TransportPanel : public juce::Component,
     void showKeyMenu();
     void updateKeyReadout();
 
-    // The readouts are sized for the bars and beats this project can reach.
-    int timelineLengthBars_ = kDefaultTimelineLengthBars;
-    void syncFromProject();
-    int timecodeDigits() const;
-
     // SEL / LOOP chips choose which range the shared rows show.
     std::unique_ptr<juce::TextButton> selChipButton;
     std::unique_ptr<juce::TextButton> loopChipButton;

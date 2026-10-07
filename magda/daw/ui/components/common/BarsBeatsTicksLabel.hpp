@@ -31,11 +31,6 @@ class BarsBeatsTicksLabel : public juce::Component {
     static int preferredWidthForRange(double maxValue, int minBeatsPerBar, int maxBeatsPerBar,
                                       bool isPosition, float fontSize = kTextFontSize);
 
-    /** Width a label needs for a bar number of barDigits and a beat number of
-     *  beatDigits, when the caller knows those rather than a range. */
-    static int preferredWidthForDigits(int barDigits, int beatDigits,
-                                       float fontSize = kTextFontSize);
-
     /** Width each segment needs for the widest value it can show, in the order
      *  bars, beats, ticks. preferredWidthForRange() adds these up; the live
      *  layout shares the strip out by the digits on screen instead (see
@@ -108,6 +103,10 @@ class BarsBeatsTicksLabel : public juce::Component {
     // Text override: when set, displays this text instead of bars.beats.ticks segments
     void setTextOverride(const juce::String& text);
     void clearTextOverride();
+
+    /** Left edge of the bar number's glyphs, in this label's coordinates, for a
+     *  caller lining something up with the digits. */
+    int barsGlyphX() const;
 
     // Whether any segment is currently being dragged
     bool isDragging() const;

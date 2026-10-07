@@ -72,7 +72,6 @@ TransportPanel::TransportPanel() {
     keyReadout->onClick = [this]() { showKeyMenu(); };
     addAndMakeVisible(*keyReadout);
     updateKeyReadout();
-    timelineLengthBars_ = ProjectManager::getInstance().getCurrentProjectInfo().timelineLengthBars;
 
     selChipButton = std::make_unique<juce::TextButton>(transport::kSelectionCaption);
     selChipButton->onClick = [this]() {
@@ -149,28 +148,15 @@ void TransportPanel::configChanged() {
 }
 
 void TransportPanel::projectOpened(const ProjectInfo&) {
-    syncFromProject();
+    updateKeyReadout();
 }
 
 void TransportPanel::projectClosed() {
-    syncFromProject();
+    updateKeyReadout();
 }
 
 void TransportPanel::projectPropertiesChanged() {
-    syncFromProject();
-}
-
-int TransportPanel::timecodeDigits() const {
-    return (transport::timecodeBarDigits(timelineLengthBars_) * 100) +
-           transport::timecodeBeatDigits(timeSignatureNumerator);
-}
-
-void TransportPanel::syncFromProject() {
     updateKeyReadout();
-    const int before = timecodeDigits();
-    timelineLengthBars_ = ProjectManager::getInstance().getCurrentProjectInfo().timelineLengthBars;
-    if (timecodeDigits() != before)
-        resized();
 }
 
 void TransportPanel::updateKeyReadout() {
@@ -381,8 +367,9 @@ void TransportPanel::paint(juce::Graphics& g) {
     if (!l.clock.isEmpty()) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         g.setFont(FontManager::getInstance().getMonoFont(transport::kClockFontSize));
-        g.drawText(clockText_, l.clock.withTrimmedLeft(BarsBeatsTicksLabel::kEdgeInset),
-                   juce::Justification::centredLeft, false);
+        // Starts under the bar number's first glyph.
+        const int glyphX = playheadPositionLabel->getX() + playheadPositionLabel->barsGlyphX();
+        g.drawText(clockText_, l.clock.withLeft(glyphX), juce::Justification::centredLeft, false);
     }
 
     // The headline playhead carries its caption at the top-right.
@@ -445,10 +432,7 @@ void TransportPanel::resized() {
     // through the same code that places it, then sections are dropped into the
     // overflow menu in the declared priority order until the survivors fit.
     // Nothing here decides what fits.
-    const auto text =
-        transport::measureTextWidths(transport::timecodeBarDigits(timelineLengthBars_),
-                                     transport::timecodeBeatDigits(timeSignatureNumerator));
-    layout_ = transport::compute(getWidth(), getHeight(), text,
+    layout_ = transport::compute(getWidth(), getHeight(), transport::measureTextWidths(),
                                  LayoutConfig::getInstance().densityScale, style_);
     const auto& l = layout_;
 
@@ -876,7 +860,7 @@ void TransportPanel::setupTimeDisplayBoxes() {
     auto setupBBTLabel = [this](std::unique_ptr<BarsBeatsTicksLabel>& label,
                                 const juce::String& overlay, juce::Colour textColour) {
         label = std::make_unique<BarsBeatsTicksLabel>();
-        label->setRange(0.0, transport::kTimecodeRangeBeats, 0.0);
+        label->setRange(0.0, transport::kTimecodeMaxBeats, 0.0);
         label->setBarsBeatsIsPosition(true);
         label->setDoubleClickResetsValue(false);
         label->setDrawBackground(false);
@@ -1378,7 +1362,6 @@ void TransportPanel::setPunchRegion(double startTime, double endTime, bool punch
 }
 
 void TransportPanel::setTimeSignature(int numerator, int denominator) {
-    const int digitsBefore = timecodeDigits();
     timeSignatureNumerator = clampTimeSignatureValue(numerator);
     timeSignatureDenominator = clampTimeSignatureValue(denominator);
 
@@ -1399,8 +1382,6 @@ void TransportPanel::setTimeSignature(int numerator, int denominator) {
     setTimeSelection(cachedSelectionStart, cachedSelectionEnd, cachedSelectionActive);
     setLoopRegion(cachedLoopStart, cachedLoopEnd, cachedLoopEnabled);
     setPunchRegion(cachedPunchStart, cachedPunchEnd, cachedPunchInEnabled, cachedPunchOutEnabled);
-    if (timecodeDigits() != digitsBefore)
-        resized();
 }
 
 void TransportPanel::setTempo(double bpm) {

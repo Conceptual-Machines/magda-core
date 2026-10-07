@@ -242,7 +242,6 @@ void ProjectSettingsDialog::applySettings() {
     generalPage_.apply(info);
 
     pm.markDirty();
-    pm.notifyPropertiesChanged();
 
     // Apply the new length to the live timeline immediately.
     if (auto* tc = TimelineController::getCurrent()) {

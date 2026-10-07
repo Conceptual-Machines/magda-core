@@ -1056,11 +1056,6 @@ void ProjectManager::setLoopSettings(bool enabled, double startBeats, double end
     }
 }
 
-void ProjectManager::notifyPropertiesChanged() {
-    for (auto* listener : listeners_)
-        listener->projectPropertiesChanged();
-}
-
 SceneId ProjectManager::appendSessionScene() {
     const auto index = static_cast<int>(currentProject_.scenes.size());
     const auto id = currentProject_.nextSceneId++;

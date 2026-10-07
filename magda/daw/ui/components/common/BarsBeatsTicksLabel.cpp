@@ -237,6 +237,13 @@ void BarsBeatsTicksLabel::clearTextOverride() {
     repaint();
 }
 
+int BarsBeatsTicksLabel::barsGlyphX() const {
+    const auto font = FontManager::getInstance().getUIFont(fontSize_);
+    const int textWidth = juce::GlyphArrangement::getStringWidthInt(
+        font, juce::String(barsSegment_->getDisplayValue()));
+    return barsSegment_->getX() + ((barsSegment_->getWidth() - textWidth) / 2);
+}
+
 bool BarsBeatsTicksLabel::isDragging() const {
     return (barsSegment_ && barsSegment_->isDragging()) ||
            (beatsSegment_ && beatsSegment_->isDragging()) ||
@@ -275,11 +282,6 @@ int BarsBeatsTicksLabel::preferredWidthForRange(double maxValue, int minBeatsPer
     const auto needed =
         segmentWidthsFor(maxValue, minBeatsPerBar, maxBeatsPerBar, isPosition, fontSize);
     return needed[0] + needed[1] + needed[2] + (2 * kDotWidth) + (2 * kEdgeInset);
-}
-
-int BarsBeatsTicksLabel::preferredWidthForDigits(int barDigits, int beatDigits, float fontSize) {
-    return widthOfDigits(barDigits, fontSize) + widthOfDigits(beatDigits, fontSize) +
-           widthOfDigits(3, fontSize) + (2 * kDotWidth) + (2 * kEdgeInset);
 }
 
 std::array<int, 3> BarsBeatsTicksLabel::shownSegmentWidths() const {
