@@ -12,6 +12,7 @@
 #include "../../../components/common/MasterSpeakerButton.hpp"
 #include "../../../components/mixer/LevelMeterScale.hpp"
 #include "../../../engine/AudioEngine.hpp"
+#include "../../components/chain/layout/NodeHeaderStyles.hpp"
 #include "../../components/common/ColourSwatch.hpp"
 #include "../../components/mixer/RoutingSyncHelper.hpp"
 #include "../../state/TimelineController.hpp"
@@ -367,7 +368,9 @@ TrackInspector::TrackInspector() {
     addSendButton_ =
         std::make_unique<SvgButton>("AddSend", BinaryData::add_svg, BinaryData::add_svgSize);
     addSendButton_->setTooltip(tr("inspector.add_send"));
-    addSendButton_->setIconPadding(4.0f);
+    addSendButton_->setIconPadding(5.0f);
+    addSendButton_->setNormalBackgroundColor(ActiveTheme::SURFACE);
+    addSendButton_->setBorderColor(ActiveTheme::BORDER);
     addSendButton_->setOriginalColor(ActiveTheme::getSecondaryTextColour());
     addSendButton_->onClick = [this]() { showAddSendMenu(); };
     addAndMakeVisible(*addSendButton_);
@@ -531,11 +534,6 @@ void TrackInspector::applyThemeColours() {
 
     for (auto& label : sendDestLabels_)
         label->setColour(juce::Label::textColourId, primary);
-    for (auto& button : sendDeleteButtons_) {
-        button->setColour(juce::TextButton::buttonColourId,
-                          ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
-        button->setColour(juce::TextButton::textColourOffId, secondary);
-    }
 
     if (soloButton_) {
         soloButton_->setBorderColor(border);
@@ -779,8 +777,9 @@ void TrackInspector::resized() {
             // grow past the panel (#2425). One column where two will not fit,
             // because the name is the part that pays for the second.
             constexpr int columnGap = 8;
-            constexpr int levelWidth = 44;
-            constexpr int deleteWidth = 18;
+            constexpr int rowHeight = 22;
+            constexpr int levelWidth = 52;
+            constexpr int deleteWidth = 20;
             constexpr int leastName = 40;
             constexpr int entryLeast = leastName + levelWidth + deleteWidth + 8;
 
@@ -788,7 +787,7 @@ void TrackInspector::resized() {
             const auto entryWidth = (bounds.getWidth() - (columns - 1) * columnGap) / columns;
 
             for (size_t i = 0; i < sendDestLabels_.size(); i += static_cast<size_t>(columns)) {
-                auto sendRow = bounds.removeFromTop(18);
+                auto sendRow = bounds.removeFromTop(rowHeight);
 
                 for (auto column = 0; column < columns; ++column) {
                     const auto index = i + static_cast<size_t>(column);
@@ -808,7 +807,7 @@ void TrackInspector::resized() {
                     sendDestLabels_[index]->setBounds(entry);
                 }
 
-                bounds.removeFromTop(2);
+                bounds.removeFromTop(4);
             }
         }
 
@@ -1539,7 +1538,7 @@ void TrackInspector::rebuildSendsUI() {
         auto destLabel = std::make_unique<juce::Label>();
         const auto* destTrack = magda::TrackManager::getInstance().getTrack(send.destTrackId);
         destLabel->setText(destTrack ? destTrack->name : "?", juce::dontSendNotification);
-        destLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
+        destLabel->setFont(FontManager::getInstance().getUIFont(11.0f));
         destLabel->setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         useLocalizedLabelPainter(*destLabel);
         addAndMakeVisible(*destLabel);
@@ -1549,6 +1548,12 @@ void TrackInspector::rebuildSendsUI() {
         auto levelLabel = std::make_unique<magda::DraggableValueLabel>(
             magda::DraggableValueLabel::Format::Decibels);
         levelLabel->setRange(-60.0, 6.0, 0.0);
+        // A slider box: mono value over a soft fill, with a marker at the level.
+        levelLabel->setFont(FontManager::getInstance().getMonoFont(11.0f));
+        levelLabel->setFillProportionMapper(magda::level_meter_scale::dbFillProportion);
+        levelLabel->setFillColour(
+            ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE).withAlpha(0.28f));
+        levelLabel->setShowFillMarker(true);
         float levelDb = (send.level <= 0.0f) ? -60.0f : 20.0f * std::log10(send.level);
         levelLabel->setValue(levelDb, juce::dontSendNotification);
 
@@ -1599,15 +1604,11 @@ void TrackInspector::rebuildSendsUI() {
         addAndMakeVisible(*levelLabel);
         sendLevelLabels_.push_back(std::move(levelLabel));
 
-        // Delete button
-        auto deleteBtn = std::make_unique<juce::TextButton>("x");
-        deleteBtn->setConnectedEdges(juce::Button::ConnectedOnLeft |
-                                     juce::Button::ConnectedOnRight | juce::Button::ConnectedOnTop |
-                                     juce::Button::ConnectedOnBottom);
-        deleteBtn->setColour(juce::TextButton::buttonColourId,
-                             ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
-        deleteBtn->setColour(juce::TextButton::textColourOffId,
-                             ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        // Delete: a ghost cross that only boxes on hover.
+        auto deleteBtn =
+            std::make_unique<juce::TextButton>(juce::String(juce::CharPointer_UTF8("\xc3\x97")));
+        deleteBtn->setLookAndFeel(
+            &magda::daw::ui::node_header::GlyphToggleLookAndFeel::getInstance());
         deleteBtn->onClick = [srcId, busIndex]() {
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::RemoveSendCommand>(srcId, busIndex));

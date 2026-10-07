@@ -161,6 +161,11 @@ class DraggableValueLabel : public juce::Component,
         valueControl_.setDrawBorder(draw);
     }
 
+    /** Marks the fill's leading edge with a brighter 2px line. */
+    void setShowFillMarker(bool show) {
+        valueControl_.setShowFillMarker(show);
+    }
+
     // Custom fill indicator colour (defaults to the theme value fill if not set)
     void setFillColour(juce::Colour colour) {
         customFillColour_ = colour;
