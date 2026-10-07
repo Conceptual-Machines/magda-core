@@ -710,6 +710,11 @@ void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags chan
         trackContentPanel->setZoom(horizontalZoom);
         trackContentPanel->setVerticalZoom(verticalZoom);
 
+        // Size every surface for the new zoom before scrolling: a viewport whose
+        // content is still the old width clamps scrollX, and the ruler drifts
+        // off the tracks when zooming in near the right edge.
+        updateContentSizes();
+
         markerLaneViewport->setViewPosition(state.zoom.scrollX, 0);
         timelineViewport->setViewPosition(state.zoom.scrollX, 0);
         if (masterAutomationViewport)
@@ -719,7 +724,6 @@ void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags chan
         int currentScrollY = trackContentViewport->getViewPositionY();
         trackContentViewport->setViewPosition(state.zoom.scrollX, currentScrollY);
 
-        updateContentSizes();
         updateHorizontalZoomScrollBar();
         updateVerticalZoomScrollBar();
         updateGridDivisionDisplay();
