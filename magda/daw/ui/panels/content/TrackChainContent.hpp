@@ -184,13 +184,8 @@ class TrackChainContent : public PanelContent,
     TrackTitleLabel trackTitle_;
     HeaderDividers headerDividers_;
     MidiActivityLed midiLed_;
-    SvgButton muteButton_{"mute", BinaryData::master_on_svg,
-                          BinaryData::master_on_svgSize};  // Track mute
-    // Master uses a speaker toggle (matching the inspector/mixer) instead of "M".
-    // Dual-icon like those surfaces: audible = master_on, muted = master_off.
-    SvgButton masterMuteButton_{"masterMute", BinaryData::master_on_svg,
-                                BinaryData::master_on_svgSize, BinaryData::master_off_svg,
-                                BinaryData::master_off_svgSize};
+    // Track or master mute: the speaker, crossed out while muted.
+    SvgButton muteButton_{"mute", BinaryData::master_on_svg, BinaryData::master_on_svgSize};
     SvgButton soloButton_{"solo", BinaryData::solo_svg, BinaryData::solo_svgSize};  // Track solo
     // Chord track mirrors its header: audition (mute) speaker + input monitor.
     std::unique_ptr<magda::ChordAuditionControl> chordSpeakerButton_;
@@ -237,6 +232,7 @@ class TrackChainContent : public PanelContent,
     void updateFromSelectedTrack();
     void refreshTrackTitle(const magda::TrackInfo& track);
     void applyChainPowerStyle();
+    void syncMuteButton(bool muted);
     void hideHeaderControls();
     void rebuildNodeComponents();
     int calculateTotalContentWidth() const;
