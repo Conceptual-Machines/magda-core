@@ -2509,7 +2509,6 @@ void MainView::MasterHeaderPanel::setupControls() {
     // Speaker on/off button (toggles master mute) — one shared recipe with the
     // inspector / mixer master strip.
     speakerButton = makeMasterSpeakerButton();
-    applyGlyphMuteStyle(*speakerButton);
     speakerButton->setIconPadding(6.0f);  // the track headers' glyph size on a 22px button
     speakerButton->setTooltip("Mute master");
     speakerButton->onClick = [this]() {
@@ -2677,7 +2676,6 @@ void MainView::MasterHeaderPanel::resized() {
 
 void MainView::MasterHeaderPanel::applyHeaderStyle() {
     volumeLabel->setFont(FontManager::getInstance().getMonoFont(10.0f));
-    speakerButton->setGlyphText(Config::getInstance().getMuteSoloStyle() == "letters" ? "M" : "");
 }
 
 void MainView::MasterHeaderPanel::configChanged() {
@@ -2920,19 +2918,9 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
         addAndMakeVisible(*row->panLabel);
 
         // Mute button
-        row->muteButton = std::make_unique<juce::TextButton>("M");
-        row->muteButton->setConnectedEdges(
-            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-        row->muteButton->setColour(juce::TextButton::buttonColourId,
-                                   ActiveTheme::getColour(ActiveTheme::SURFACE));
-        row->muteButton->setColour(juce::TextButton::buttonOnColourId,
-                                   ActiveTheme::getColour(ActiveTheme::STATUS_WARNING));
-        row->muteButton->setColour(juce::TextButton::textColourOffId,
-                                   ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-        row->muteButton->setColour(juce::TextButton::textColourOnId,
-                                   ActiveTheme::getColour(ActiveTheme::BACKGROUND));
-        row->muteButton->setClickingTogglesState(true);
+        // Mute and solo use the shared recipes, sized for the 16px aux row controls.
+        row->muteButton = makeMasterSpeakerButton();
+        row->muteButton->setIconPadding(3.0f);
         row->muteButton->setToggleState(track.muted, juce::dontSendNotification);
         auto* muteBtnPtr = row->muteButton.get();
         row->muteButton->onClick = [tid, muteBtnPtr]() {
@@ -2942,19 +2930,10 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
         addAndMakeVisible(*row->muteButton);
 
         // Solo button
-        row->soloButton = std::make_unique<juce::TextButton>("S");
-        row->soloButton->setConnectedEdges(
-            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-        row->soloButton->setColour(juce::TextButton::buttonColourId,
-                                   ActiveTheme::getColour(ActiveTheme::SURFACE));
-        row->soloButton->setColour(juce::TextButton::buttonOnColourId,
-                                   ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
-        row->soloButton->setColour(juce::TextButton::textColourOffId,
-                                   ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-        row->soloButton->setColour(juce::TextButton::textColourOnId,
-                                   ActiveTheme::getColour(ActiveTheme::BACKGROUND));
-        row->soloButton->setClickingTogglesState(true);
+        row->soloButton =
+            std::make_unique<SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
+        configureSoloButton(*row->soloButton);
+        row->soloButton->setIconPadding(3.5f);
         row->soloButton->setToggleState(track.soloed, juce::dontSendNotification);
         auto* soloBtnPtr = row->soloButton.get();
         row->soloButton->onClick = [tid, soloBtnPtr]() {

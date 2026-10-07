@@ -147,8 +147,8 @@ class TrackInspector : public BaseInspector,
 
     // Update methods
     void applyThemeColours();
-    /** Applies the header preferences: track colour on the name row (spine or full), mono
-     *  values, and M / S letters in place of the mute and solo icons. */
+    /** Applies the header preferences: track colour on the name row (spine or full) and
+     *  mono values. */
     void applyHeaderStyle();
     void showColourMenu(juce::Component* target);
 

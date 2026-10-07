@@ -11,6 +11,7 @@
 #include "../../components/chain/ChainNodePathDrag.hpp"
 #include "../../components/chain/layout/NodeHeaderStyles.hpp"
 #include "../../components/common/InternalFileDrag.hpp"
+#include "../../components/common/MasterSpeakerButton.hpp"
 #include "../../components/mixer/LevelMeterScale.hpp"
 #include "../../debug/DebugSettings.hpp"
 #include "../../dialogs/ChainTreeDialog.hpp"
@@ -946,12 +947,7 @@ TrackChainContent::TrackChainContent()
     addChildComponent(midiLed_);
 
     // Mute and solo carry their state in the glyph colour, like the rack's chain M / S.
-    // The muted glyph (master_off) is drawn in #1E1E1E, so it gets its own replacement.
-    magda::daw::ui::node_header::applyDeviceIconStyle(
-        muteButton_, magda::daw::ui::node_header::DeviceIcon::Toggle, juce::Colour(0xFFB3B3B3),
-        ActiveTheme::STATUS_WARNING, 24.0f);
-    muteButton_.setStateColourReplacement(juce::Colour(0xFF1E1E1E), ActiveTheme::DEVICE_ICON,
-                                          ActiveTheme::STATUS_WARNING);
+    magda::daw::ui::node_header::applyDeviceMuteStyle(muteButton_, 24.0f);
     muteButton_.onClick = [this]() {
         const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
         if (track == nullptr)
@@ -1010,9 +1006,7 @@ TrackChainContent::TrackChainContent()
     };
     addChildComponent(monitorButton_);
 
-    magda::daw::ui::node_header::applyDeviceIconStyle(
-        soloButton_, magda::daw::ui::node_header::DeviceIcon::Toggle, juce::Colour(0xFFB3B3B3),
-        ActiveTheme::DEVICE_AMBER, 24.0f);
+    magda::daw::ui::node_header::applyDeviceSoloStyle(soloButton_, 24.0f);
     soloButton_.setTooltip(tr("tracks.solo.tooltip"));
     soloButton_.onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
@@ -1148,10 +1142,7 @@ void TrackChainContent::applyChainPowerStyle() {
 }
 
 void TrackChainContent::syncMuteButton(bool muted) {
-    muteButton_.setToggleState(muted, juce::dontSendNotification);
-    muteButton_.updateSvgData(muted ? BinaryData::master_off_svg : BinaryData::master_on_svg,
-                              muted ? BinaryData::master_off_svgSize
-                                    : BinaryData::master_on_svgSize);
+    syncMuteGlyph(muteButton_, muted);
     muteButton_.setTooltip(tr("tracks.mute.tooltip"));
     muteButton_.repaint();
 }

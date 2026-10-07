@@ -12,6 +12,7 @@
 #include "core/TrackCommands.hpp"
 #include "layout/DeviceShellPainter.hpp"
 #include "layout/NodeHeaderStyles.hpp"
+#include "ui/components/common/MasterSpeakerButton.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -102,16 +103,12 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     panLabel_.onDragEnd = [this](double) { dragBasePans_.clear(); };
     addAndMakeVisible(panLabel_);
 
-    muteButton_.setButtonText("M");
     muteButton_.setTooltip("Mute chain");
-    muteButton_.setClickingTogglesState(true);
-    muteButton_.setToggleState(chain.muted, juce::dontSendNotification);
+    syncMuteGlyph(muteButton_, chain.muted);
     muteButton_.onClick = [this]() { onMuteClicked(); };
     addAndMakeVisible(muteButton_);
 
-    soloButton_.setButtonText("S");
     soloButton_.setTooltip("Solo chain");
-    soloButton_.setClickingTogglesState(true);
     soloButton_.setToggleState(chain.solo, juce::dontSendNotification);
     soloButton_.onClick = [this]() { onSoloClicked(); };
     addAndMakeVisible(soloButton_);
@@ -166,12 +163,9 @@ void ChainRowComponent::styleControls() {
         value->setShowText(false);
     }
 
-    muteButton_.setLookAndFeel(&node_header::GlyphToggleLookAndFeel::getInstance());
-    muteButton_.setColour(juce::TextButton::textColourOnId,
-                          ActiveTheme::getColour(ActiveTheme::DEVICE_RED));
-    soloButton_.setLookAndFeel(&node_header::GlyphToggleLookAndFeel::getInstance());
-    soloButton_.setColour(juce::TextButton::textColourOnId,
-                          ActiveTheme::getColour(ActiveTheme::DEVICE_AMBER));
+    // The same mute / solo as every other view, in the chipless device style.
+    node_header::applyDeviceMuteStyle(muteButton_, BUTTON_HEIGHT);
+    node_header::applyDeviceSoloStyle(soloButton_, BUTTON_HEIGHT);
 
     // The device header's glyphs: power 12px and close 10px.
     node_header::applyDeviceIconStyle(*onButton_, DeviceIcon::Power, juce::Colour(0xFFE6E6E6),
@@ -391,7 +385,7 @@ void ChainRowComponent::updateFromChain(const magda::ChainInfo& chain) {
     // Don't clobber an in-progress rename if a property change arrives mid-edit.
     if (!nameLabel_.isBeingEdited())
         nameLabel_.setText(chain.name, juce::dontSendNotification);
-    muteButton_.setToggleState(chain.muted, juce::dontSendNotification);
+    syncMuteGlyph(muteButton_, chain.muted);
     soloButton_.setToggleState(chain.solo, juce::dontSendNotification);
     gainLabel_.setValue(chain.volume, juce::dontSendNotification);
     panLabel_.setValue(chain.pan, juce::dontSendNotification);
@@ -405,6 +399,7 @@ void ChainRowComponent::updateFromChain(const magda::ChainInfo& chain) {
 void ChainRowComponent::onMuteClicked() {
     auto& tm = magda::TrackManager::getInstance();
     const bool muted = muteButton_.getToggleState();
+    syncMuteGlyph(muteButton_, muted);
     for (const auto& path : editTargets())
         tm.setChainMuted(path, muted);
 }

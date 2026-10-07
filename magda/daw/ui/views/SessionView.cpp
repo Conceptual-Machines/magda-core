@@ -1224,15 +1224,8 @@ class SessionView::MiniChannelStrip : public juce::Component {
         // Solo target toggle.
         soloButton_ =
             std::make_unique<SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
-        soloButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-        soloButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-        soloButton_->setActiveBackgroundColor(
-            ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
-        soloButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                               ActiveTheme::ICON_ON_ACCENT);
-        soloButton_->setIconPadding(5.0f);
+        configureSoloButton(*soloButton_);
         soloButton_->setTooltip("Solo");
-        soloButton_->setClickingTogglesState(true);
         soloButton_->setToggleState(track.soloed, juce::dontSendNotification);
         soloButton_->onClick = [this]() {
             const bool newState = soloButton_->getToggleState();

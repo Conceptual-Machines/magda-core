@@ -308,15 +308,12 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
         "mute", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
         BinaryData::master_off_svg, BinaryData::master_off_svgSize);
     configureMasterSpeakerButton(*muteButton);
-    // v1: mute, solo and record keep the neutral chip and carry their state in the glyph.
-    applyGlyphMuteStyle(*muteButton);
     muteButton->setIconPadding(5.0f);
     muteButton->setTooltip(tr("tracks.mute.tooltip"));
 
     // Master-only speaker mute (shown instead of the "M" button for the master),
     // one shared recipe with the inspector / mixer / master header.
     masterMuteButton = magda::makeMasterSpeakerButton();
-    applyGlyphMuteStyle(*masterMuteButton);
 
     // Chord-track audition: one control folding mute / solo / monitor into a
     // 3-state axis (Silent / Audible / Solo). Left-click cycles, right-click opens
@@ -326,14 +323,8 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // Track solo: a ring, grey at rest and amber when soloed.
     soloButton =
         std::make_unique<magda::SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
-    soloButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-    soloButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    soloButton->setActiveBackgroundColor(ActiveTheme::SURFACE);
-    soloButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                          ActiveTheme::DEVICE_AMBER);
-    soloButton->setIconPadding(4.5f);
+    configureSoloButton(*soloButton);
     soloButton->setTooltip(tr("tracks.solo.tooltip"));
-    soloButton->setClickingTogglesState(true);
 
     // Track record-arm: a dot, grey at rest and red when armed.
     recordButton = std::make_unique<magda::SvgButton>("record", BinaryData::track_record_svg,
@@ -1311,18 +1302,14 @@ void TrackHeadersPanel::setGhostHeaders(const juce::StringArray& labels,
 }
 
 // Names read light on every head; a full-bar track colour turns them white. Values are
-// JetBrains Mono, and mute / solo can read as M and S.
+// JetBrains Mono.
 void TrackHeadersPanel::updateHeaderSelectionColours() {
     const auto& config = Config::getInstance();
     const bool fullBar = config.getTrackColourStyle() == "full";
-    const bool letters = config.getMuteSoloStyle() == "letters";
     const auto valueFont = FontManager::getInstance().getMonoFont(10.0f);
     for (auto& header : trackHeaders) {
         header->volumeLabel->setFont(valueFont);
         header->panLabel->setFont(valueFont);
-        header->muteButton->setGlyphText(letters ? "M" : "");
-        header->masterMuteButton->setGlyphText(letters ? "M" : "");
-        header->soloButton->setGlyphText(letters ? "S" : "");
         const bool colouredHead =
             fullBar && !header->isMaster && header->trackColour != juce::Colour(0xFF444444);
         header->nameLabel->setColour(juce::Label::textColourId,

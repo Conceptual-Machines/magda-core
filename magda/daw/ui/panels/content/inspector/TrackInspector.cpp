@@ -78,7 +78,7 @@ TrackInspector::TrackInspector() {
     colourSwatch_ = std::make_unique<magda::ColourSwatch>();
     auto* swatch = static_cast<magda::ColourSwatch*>(colourSwatch_.get());
     swatch->onColourClicked = [this, swatch]() { showColourMenu(swatch); };
-    // Right-clicking the name also picks the colour; under Full bar the swatch is hidden.
+    // Right-clicking the name also picks the colour.
     namePopupListener_.onPopup = [this]() { showColourMenu(&trackNameValue_); };
     trackNameValue_.addMouseListener(&namePopupListener_, false);
     addAndMakeVisible(*colourSwatch_);
@@ -106,7 +106,6 @@ TrackInspector::TrackInspector() {
     configureMasterSpeakerButton(*muteButton_);
     // v1: mute, solo, record, monitor and automation keep the neutral chip and carry their
     // state in the glyph. Paddings land the track headers' glyph sizes on 26x22 buttons.
-    applyGlyphMuteStyle(*muteButton_);
     muteButton_->setIconPadding(7.0f);
     muteButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
@@ -123,7 +122,6 @@ TrackInspector::TrackInspector() {
 
     // Speaker icon button (used for master mute instead of "M" text)
     speakerButton_ = magda::makeMasterSpeakerButton();
-    applyGlyphMuteStyle(*speakerButton_);
     speakerButton_->setIconPadding(7.0f);
     speakerButton_->onClick = [this]() {
         magda::UndoManager::getInstance().executeCommand(
@@ -140,13 +138,8 @@ TrackInspector::TrackInspector() {
     // Solo button (arrange track-header style)
     soloButton_ =
         std::make_unique<SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
-    soloButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-    soloButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    soloButton_->setActiveBackgroundColor(ActiveTheme::SURFACE);
-    soloButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                           ActiveTheme::DEVICE_AMBER);
+    configureSoloButton(*soloButton_);
     soloButton_->setIconPadding(6.5f);
-    soloButton_->setClickingTogglesState(true);
     soloButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::UndoManager::getInstance().executeCommand(
@@ -472,13 +465,9 @@ void TrackInspector::showColourMenu(juce::Component* target) {
 
 void TrackInspector::applyHeaderStyle() {
     const auto& config = magda::Config::getInstance();
-    const bool letters = config.getMuteSoloStyle() == "letters";
     const auto valueFont = FontManager::getInstance().getMonoFont(11.0f);
     gainLabel_->setFont(valueFont);
     panLabel_->setFont(valueFont);
-    muteButton_->setGlyphText(letters ? "M" : "");
-    speakerButton_->setGlyphText(letters ? "M" : "");
-    soloButton_->setGlyphText(letters ? "S" : "");
 
     // Full bar fills the name field with the track colour; Spine leaves the colour to the
     // swatch beside it, which stays the colour picker in both modes.
@@ -489,7 +478,6 @@ void TrackInspector::applyHeaderStyle() {
                          track->colour != juce::Colour(0xFF444444);
     if (nameFilled_ != fullBar) {
         nameFilled_ = fullBar;
-        colourSwatch_->setVisible(!fullBar && track != nullptr && trackNameValue_.isVisible());
         resized();
     }
     if (fullBar) {
@@ -653,9 +641,9 @@ void TrackInspector::resized() {
         masterGlyph_->setBounds(nameRow.removeFromRight(22).withSizeKeepingCentre(22, 22));
         nameRow.removeFromRight(4);
     } else {
-        // Colour spine on the left doubles as the colour swatch, matching the
-        // clip inspector's name row.
-        if (colourSwatch_->isVisible()) {
+        // The colour swatch is the colour picker: a spine on the left (Spine), or a chip
+        // beside the power button when the name field already carries the colour (Full bar).
+        if (colourSwatch_->isVisible() && !nameFilled_) {
             colourSwatch_->setBounds(nameRow.removeFromLeft(6));
             nameRow.removeFromLeft(6);
         }
@@ -663,6 +651,10 @@ void TrackInspector::resized() {
         // inspector's toggle.
         if (enableButton_->isVisible()) {
             enableButton_->setBounds(nameRow.removeFromRight(28));
+            nameRow.removeFromRight(6);
+        }
+        if (colourSwatch_->isVisible() && nameFilled_) {
+            colourSwatch_->setBounds(nameRow.removeFromRight(24));
             nameRow.removeFromRight(6);
         }
     }
@@ -1407,7 +1399,7 @@ void TrackInspector::showTrackControls(bool show) {
 
     trackNameLabel_.setVisible(show);
     trackNameValue_.setVisible(show);
-    colourSwatch_->setVisible(show && !isMaster && !nameFilled_);
+    colourSwatch_->setVisible(show && !isMaster);
     masterGlyph_->setVisible(show && isMaster);
 
     muteButton_->setVisible(p.mute && p.muteStyle == MuteStyle::Standard);

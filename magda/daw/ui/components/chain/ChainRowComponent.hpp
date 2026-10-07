@@ -1,5 +1,6 @@
 #pragma once
 
+#include <BinaryData.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
@@ -135,8 +136,8 @@ class ChainRowComponent : public juce::Component,
     ChainNameLabel nameLabel_;
     magda::DraggableValueLabel gainLabel_;
     magda::DraggableValueLabel panLabel_;
-    juce::TextButton muteButton_;
-    juce::TextButton soloButton_;
+    magda::SvgButton muteButton_{"mute", BinaryData::master_on_svg, BinaryData::master_on_svgSize};
+    magda::SvgButton soloButton_{"solo", BinaryData::solo_svg, BinaryData::solo_svgSize};
     std::unique_ptr<magda::SvgButton> onButton_;      // Bypass/enable toggle (power icon)
     std::unique_ptr<magda::SvgButton> deleteButton_;  // Delete chain
 

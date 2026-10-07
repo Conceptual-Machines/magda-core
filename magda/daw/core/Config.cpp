@@ -468,9 +468,11 @@ void Config::save() {
     else
         DBG("Config::save - " + configFile.getFullPathName());
 
+    // A listener can destroy others (e.g. a view rebuilding its buttons), so each is
+    // checked against the live list before it is called.
     auto listenersCopy = listeners_;
     for (auto* l : listenersCopy)
-        if (l != nullptr)
+        if (l != nullptr && std::ranges::find(listeners_, l) != listeners_.end())
             l->configChanged();
 }
 

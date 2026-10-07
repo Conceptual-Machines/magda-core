@@ -33,7 +33,23 @@ SvgButton::SvgButton(const juce::String& buttonName, const char* offSvgData, siz
 }
 
 // RAII cleanup handled automatically by ManagedDrawable
-SvgButton::~SvgButton() = default;
+SvgButton::~SvgButton() {
+    if (letterGlyph_.isNotEmpty())
+        Config::getInstance().removeListener(this);
+}
+
+void SvgButton::setLetterGlyph(const juce::String& letter) {
+    if (letterGlyph_.isEmpty() && letter.isNotEmpty())
+        Config::getInstance().addListener(this);
+    else if (letterGlyph_.isNotEmpty() && letter.isEmpty())
+        Config::getInstance().removeListener(this);
+    letterGlyph_ = letter;
+    repaint();
+}
+
+void SvgButton::configChanged() {
+    repaint();
+}
 
 juce::Colour SvgButton::resolveThemeColour(juce::Colour colour,
                                            const std::optional<ColourRole>& role) {
@@ -147,7 +163,7 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
     const auto border = resolveThemeColour(borderColor, borderColorRole_);
     const auto activeBorder = resolveThemeColour(activeBorderColor, activeBorderColorRole_);
 
-    if (glyphText_.isNotEmpty()) {
+    if (letterGlyph_.isNotEmpty() && Config::getInstance().getMuteSoloStyle() == "letters") {
         const bool on = isEnabled() && (active || (getToggleState() && isToggleable()));
         auto colour = normal;
         if (on)
@@ -319,7 +335,7 @@ void SvgButton::paintGlyphText(juce::Graphics& g, bool drawOn, bool highlighted,
     g.setColour(colour.withMultipliedAlpha(isEnabled() ? 1.0f : 0.25f));
     g.setFont(
         FontManager::getInstance().getMonoFont(juce::jmin(12.0f, getHeight() * 0.7f)).boldened());
-    g.drawText(glyphText_, getLocalBounds(), juce::Justification::centred, false);
+    g.drawText(letterGlyph_, getLocalBounds(), juce::Justification::centred, false);
 }
 
 }  // namespace magda

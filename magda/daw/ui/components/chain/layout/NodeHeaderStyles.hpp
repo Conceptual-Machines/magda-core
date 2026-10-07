@@ -198,6 +198,24 @@ inline void applyDeviceIconStyle(magda::SvgButton& btn, DeviceIcon kind,
         btn.setClickingTogglesState(true);
 }
 
+/** @brief Chipless mute (track chain header, rack chain rows): the device icon style, with the
+ *  speaker turning warning yellow and crossed (pair with syncMuteGlyph) when muted, or an M
+ *  under the Letters preference. Matches the chip mute in MasterSpeakerButton.hpp. */
+inline void applyDeviceMuteStyle(magda::SvgButton& btn, float buttonHeight = 26.0f) {
+    applyDeviceIconStyle(btn, DeviceIcon::Toggle, juce::Colour(0xFFB3B3B3),
+                         ActiveTheme::STATUS_WARNING, buttonHeight);
+    btn.setStateColourReplacement(juce::Colour(0xFF1E1E1E), ActiveTheme::DEVICE_ICON,
+                                  ActiveTheme::STATUS_WARNING);
+    btn.setLetterGlyph("M");
+}
+
+/** @brief Chipless solo: the ring, amber when soloed, or an S under the Letters preference. */
+inline void applyDeviceSoloStyle(magda::SvgButton& btn, float buttonHeight = 26.0f) {
+    applyDeviceIconStyle(btn, DeviceIcon::Toggle, juce::Colour(0xFFB3B3B3),
+                         ActiveTheme::DEVICE_AMBER, buttonHeight);
+    btn.setLetterGlyph("S");
+}
+
 /** @brief A text toggle with no fill (chain M / S): the glyph colour carries the state and
  *  hover fills like a device icon button. Set textColourOnId for the on colour. */
 class GlyphToggleLookAndFeel : public juce::LookAndFeel_V4 {

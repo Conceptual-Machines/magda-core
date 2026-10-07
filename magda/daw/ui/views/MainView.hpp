@@ -454,7 +454,7 @@ class MainView::MasterHeaderPanel : public juce::Component,
 
     void setupControls();
     void updateAutomationButtonState();
-    /** Applies the header preferences: mono values, and M in place of the speaker. */
+    /** Draws the volume value in JetBrains Mono. */
     void applyHeaderStyle();
     void configChanged() override;
 
@@ -501,8 +501,8 @@ class MainView::AuxHeadersPanel : public juce::Component, public TrackManagerLis
         std::unique_ptr<juce::Label> nameLabel;
         std::unique_ptr<DraggableValueLabel> volumeLabel;
         std::unique_ptr<DraggableValueLabel> panLabel;
-        std::unique_ptr<juce::TextButton> muteButton;
-        std::unique_ptr<juce::TextButton> soloButton;
+        std::unique_ptr<SvgButton> muteButton;
+        std::unique_ptr<SvgButton> soloButton;
         std::unique_ptr<LevelMeter> peakMeter;
     };
 
