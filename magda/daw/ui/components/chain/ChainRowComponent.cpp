@@ -173,13 +173,13 @@ void ChainRowComponent::styleControls() {
     soloButton_.setColour(juce::TextButton::textColourOnId,
                           ActiveTheme::getColour(ActiveTheme::DEVICE_AMBER));
 
-    // Spec glyphs: power 15px and close 12px in a 28x24 button.
+    // The device header's glyphs: power 12px and close 10px.
     node_header::applyDeviceIconStyle(*onButton_, DeviceIcon::Power, juce::Colour(0xFFE6E6E6),
                                       ActiveTheme::DEVICE_GREEN, BUTTON_HEIGHT);
-    onButton_->setIconPadding((BUTTON_HEIGHT - 15.0f) / 2.0f);
+    onButton_->setIconPadding((BUTTON_HEIGHT - 12.0f) / 2.0f);
     node_header::applyDeviceIconStyle(*deleteButton_, DeviceIcon::Close, juce::Colour(0xFFB3B3B3),
                                       ActiveTheme::DEVICE_BLUE, BUTTON_HEIGHT);
-    deleteButton_->setIconPadding((BUTTON_HEIGHT - 12.0f) / 2.0f);
+    deleteButton_->setIconPadding((BUTTON_HEIGHT - 10.0f) / 2.0f);
 }
 
 void ChainRowComponent::lookAndFeelChanged() {
