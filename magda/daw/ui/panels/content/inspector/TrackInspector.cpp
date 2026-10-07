@@ -209,7 +209,7 @@ TrackInspector::TrackInspector() {
             return std::vector<magda::TrackId>(selectedTrackIds_.begin(), selectedTrackIds_.end());
         return std::vector<magda::TrackId>{selectedTrackId_};
     };
-    monitorButton_.setIconPadding(9.0f);
+    monitorButton_.setIconPadding(7.0f);  // wide glyph: width-limited, so not raised with the row
     monitorButton_.setGlyphStyle(true);
     addAndMakeVisible(monitorButton_);
 
