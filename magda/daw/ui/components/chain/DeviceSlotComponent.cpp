@@ -8,6 +8,8 @@
 #include "ai/AIPanelComponent.hpp"
 #include "audio/DeviceMeters.hpp"
 #include "audio/DeviceParameterList.hpp"
+#include "audio/TrackMeters.hpp"
+#include "audio/io/AudioIOControl.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
@@ -41,6 +43,7 @@
 #include "slot/DeviceSlotContentPainter.hpp"
 #include "slot/DeviceSlotGainMeterControls.hpp"
 #include "slot/DeviceSlotHeaderControls.hpp"
+#include "slot/DeviceSlotHeaderSpec.hpp"
 #include "slot/DeviceSlotInlineUiFactory.hpp"
 #include "slot/DeviceSlotMidiActivity.hpp"
 #include "slot/DeviceSlotModMacroCommands.hpp"
@@ -58,6 +61,19 @@
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+// The side strip's delta solo: a text glyph styled like the device icon buttons.
+void styleDeltaButton(juce::TextButton& delta) {
+    delta.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    delta.setColour(juce::TextButton::buttonOnColourId,
+                    ActiveTheme::getColour(ActiveTheme::DEVICE_ICON_HOVER_BG));
+    delta.setColour(juce::TextButton::textColourOffId,
+                    ActiveTheme::getColour(ActiveTheme::DEVICE_ICON));
+    delta.setColour(juce::TextButton::textColourOnId,
+                    ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE));
+}
+}  // namespace
 
 namespace {
 
@@ -285,19 +301,13 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     presetButton_ =
         std::make_unique<magda::SvgButton>("Presets", BinaryData::iconpresetsroundboldm_svg,
                                            BinaryData::iconpresetsroundboldm_svgSize);
-    // Indigo sits between ACCENT_PRIMARY and ACCENT_MODULATION — distinct from both
-    // utility blue (ui/multiOut) and macro purple, signals "MAGDA presets".
-    applyHeaderIconStyle(*presetButton_, ActiveTheme::getColour(ActiveTheme::PRESET_INDIGO),
-                         /*toggling*/ false);
-    // Permanent "active" treatment: indigo pill + white icon. Using setActive()
-    // (not normalBackgroundColor) so hover/pressed don't wipe out the pill —
-    // the active branch wins first in SvgButton's paint priority.
-    presetButton_->setActive(true);
-    // Larger inner padding shrinks the icon glyph while leaving the pill at
-    // full button size.
-    presetButton_->setIconPadding(4.5f);
-    presetButton_->setTooltip("MAGDA Presets");
-    presetButton_->onClick = [this]() { showPresetMenu(); };
+    presetButton_->setTooltip("Presets");
+    presetButton_->onClick = [this]() {
+        if (!isInternalDevice() && hasPluginPresetsAvailable())
+            showPluginPresetMenu();
+        else
+            showPresetMenu();
+    };
     addAndMakeVisible(*presetButton_);
 
     // Plugin presets menu button — opens a hierarchical popup of disk-scanned
@@ -363,8 +373,9 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     addAndMakeVisible(*uiButton_);
 
     // Learn button (parameter pick mode)
-    learnButton_ = std::make_unique<magda::SvgButton>("Learn", BinaryData::learn_svg,
-                                                      BinaryData::learn_svgSize);
+    learnButton_ = std::make_unique<magda::SvgButton>("Locate", BinaryData::locate_svg,
+                                                      BinaryData::locate_svgSize);
+    learnButton_->setTooltip("Locate: move a control in the plug-in window to find its parameter");
     applyHeaderIconStyle(*learnButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
     learnButton_->setEnabled(false);
     learnButton_->onClick = [this]() {
@@ -408,13 +419,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     deltaButton_->setToggleState(device.deltaSolo, juce::dontSendNotification);
     deltaButton_->setTooltip("Delta Solo: processed signal minus dry input");
     deltaButton_->setLookAndFeel(&node_header::getDeltaSoloButtonLookAndFeel());
-    deltaButton_->setColour(juce::TextButton::buttonColourId,
-                            ActiveTheme::getColour(ActiveTheme::SURFACE));
-    deltaButton_->setColour(juce::TextButton::buttonOnColourId,
-                            ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).darker(0.3f));
-    deltaButton_->setColour(juce::TextButton::textColourOffId,
-                            ActiveTheme::getSecondaryTextColour());
-    deltaButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    styleDeltaButton(*deltaButton_);
     deltaButton_->onClick = [this]() {
         const bool enabled = deltaButton_->getToggleState();
         device_.deltaSolo = enabled;
@@ -490,20 +495,52 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         addAndMakeVisible(*midiThruButton_);
     }
 
+    closeButton_ = std::make_unique<magda::SvgButton>("Close", BinaryData::close_svg,
+                                                      BinaryData::close_svgSize);
+    closeButton_->setTooltip("Remove device");
+    closeButton_->onClick = [this]() {
+        if (onDeleteClicked)
+            onDeleteClicked();
+    };
+    addAndMakeVisible(*closeButton_);
+    hideBaseDeleteButton();
+    styleDeviceHeaderButtons();
+
     // Create parameter grid (owns slots + pagination).
     paramGrid_ = std::make_unique<ParamHostComponent>(createDeviceSlotParamLayout(traits_));
+    paramGrid_->setFooterPagination(true);
+
+    footerPrevPage_ = makeNavArrowButton("Previous page", 0.5f);
+    footerPrevPage_->onClick = [this]() { goToPrevPage(); };
+    addChildComponent(*footerPrevPage_);
+    footerNextPage_ = makeNavArrowButton("Next page", 0.0f);
+    footerNextPage_->onClick = [this]() { goToNextPage(); };
+    addChildComponent(*footerNextPage_);
+    footerPageLabel_.setJustificationType(juce::Justification::centred);
+    footerPageLabel_.setInterceptsMouseClicks(false, false);
+    addChildComponent(footerPageLabel_);
     paramGrid_->onPrevPage = [this]() { goToPrevPage(); };
     paramGrid_->onNextPage = [this]() { goToNextPage(); };
     paramGrid_->onPageSelected = [this](int pageIndex) {
         goToDeviceSlotParameterPage(device_, *paramGrid_, pageIndex,
                                     {.reloadParameterSlots = [this]() { updateParameterSlots(); },
                                      .updateParamModulation = [this]() { updateParamModulation(); },
-                                     .repaint = [this]() { repaint(); }});
+                                     .repaint =
+                                         [this]() {
+                                             refreshFooterPageControls();
+                                             repaint();
+                                         }});
     };
     addAndMakeVisible(*paramGrid_);
 
+    paramGrid_->onShapeChanged = [this]() {
+        updateParameterPagination();
+        updateParameterSlots();
+        resized();
+    };
+
     // Wire up mod/macro linking callbacks on each slot
-    for (int i = 0; i < paramGrid_->getSlotCount(); ++i) {
+    for (int i = 0; i < paramGrid_->getAllocatedSlotCount(); ++i) {
         auto* paramSlot = paramGrid_->getSlot(i);
         if (paramSlot == nullptr)
             continue;
@@ -567,53 +604,263 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     startTimerHz(30);
 }
 
+void DeviceSlotComponent::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int> bounds,
+                                         int headerHeight) {
+    constexpr float kRadius = 7.0f;
+    const auto frame = bounds.toFloat();
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_BG));
+    g.fillRoundedRectangle(frame, kRadius);
+
+    if (headerHeight > 0) {
+        // The header band keeps the frame's top corners and squares its bottom.
+        juce::Path header;
+        header.addRoundedRectangle(frame.getX(), frame.getY(), frame.getWidth(),
+                                   static_cast<float>(headerHeight), kRadius, kRadius, true, true,
+                                   false, false);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_HEAD));
+        g.fillPath(header);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
+        g.fillRect(frame.getX(), frame.getY() + static_cast<float>(headerHeight) - 1.0f,
+                   frame.getWidth(), 1.0f);
+
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
+        for (const auto& separator : {headerSeparators_.left, headerSeparators_.right})
+            if (!separator.isEmpty())
+                g.fillRect(separator);
+    }
+
+    paintShellRows(g, frame);
+
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FRAME_BORDER));
+    g.drawRoundedRectangle(frame.reduced(0.5f), kRadius, 1.0f);
+}
+
+bool DeviceSlotComponent::hasIdRow() const {
+    return !(traits_.isAnalysis || traits_.isFaust || traits_.isFaustInstrument ||
+             (traits_.compiledPresentation != nullptr &&
+              traits_.compiledPresentation->layoutCellCount == 0));
+}
+
+int DeviceSlotComponent::sideStripWidth() const {
+    const auto* track = magda::TrackManager::getInstance().getTrack(nodePath_.trackId);
+    const bool onChordTrack = track != nullptr && track->type == magda::TrackType::Chord;
+    if (stripsAnalysisChrome() || onChordTrack)
+        return 0;
+    // MIDI devices emit no audio; only the note-strip utilities keep a strip.
+    const bool midiDevice = device_.deviceType == magda::DeviceType::MIDI || traits_.isChordEngine;
+    if (midiDevice && !isMidiUtilityDeviceSlot(traits_))
+        return 0;
+    return SIDE_STRIP_WIDTH;
+}
+
+// Mix box on top, Δ at the foot, the 12px fader over the meter between them.
+void DeviceSlotComponent::layoutSideStrip(juce::Rectangle<int> strip) {
+    if (strip.isEmpty())
+        return;
+
+    auto area = strip.reduced(5, 6);
+    const bool utility = isMidiUtilityDeviceSlot(traits_);
+    const bool mix = !utility && hasWrapperMixPair();
+    if (mixKnob_) {
+        mixKnob_->setVisible(mix);
+        if (mix) {
+            mixKnob_->setBounds(area.removeFromTop(30));
+            area.removeFromTop(6);
+        }
+    }
+    if (deltaButton_ && deltaButton_->isVisible()) {
+        deltaButton_->setBounds(area.removeFromBottom(26));
+        area.removeFromBottom(6);
+    }
+
+    const auto fader = area.withSizeKeepingCentre(12, area.getHeight());
+    if (utility) {
+        midiNoteStrip_.setBounds(fader);
+        midiNoteStrip_.setVisible(true);
+        levelMeter_.setVisible(false);
+        if (gainSlider_)
+            gainSlider_->setVisible(false);
+        return;
+    }
+    midiNoteStrip_.setVisible(false);
+    levelMeter_.setBounds(fader);
+    levelMeter_.setVisible(true);
+    if (gainSlider_) {
+        gainSlider_->setBounds(fader);
+        gainSlider_->setVisible(true);
+        gainSlider_->toFront(false);
+    }
+}
+
+// [Sidechain] | info ... [MIDI LED][Thru][Multi-out], or the page arrows centred
+// for a plug-in with more than one page.
+void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
+    footerSeparator_ = footerInfoArea_ = midiLedArea_ = {};
+    const bool paged = !footer.isEmpty() && paramGrid_ != nullptr && paramGrid_->paginates() &&
+                       !paramGrid_->showsOwnPagination();
+    for (auto* arrow : {footerPrevPage_.get(), footerNextPage_.get()})
+        if (arrow != nullptr)
+            arrow->setVisible(paged);
+    footerPageLabel_.setVisible(paged);
+    if (footer.isEmpty())
+        return;
+
+    constexpr int kButtonWidth = 30;
+    constexpr int kButtonHeight = 26;
+    constexpr int kGap = 8;
+    auto area = footer.reduced(10, 0);
+    const auto place = [&](juce::Component& button, bool fromLeft) {
+        auto slot =
+            fromLeft ? area.removeFromLeft(kButtonWidth) : area.removeFromRight(kButtonWidth);
+        button.setBounds(slot.withSizeKeepingCentre(kButtonWidth, kButtonHeight));
+        if (fromLeft)
+            area.removeFromLeft(kGap);
+        else
+            area.removeFromRight(kGap);
+    };
+
+    const bool sidechain = scButton_ != nullptr && scButton_->isVisible();
+    if (sidechain)
+        place(*scButton_, true);
+    for (auto* button : {multiOutButton_.get(), midiThruButton_.get()})
+        if (button != nullptr && button->isVisible())
+            place(*button, false);
+    midiLedArea_ = area.removeFromRight(7).withSizeKeepingCentre(7, 7);
+    area.removeFromRight(kGap);
+
+    if (paged) {
+        auto nav = footer.withSizeKeepingCentre(96, kButtonHeight);
+        footerPrevPage_->setBounds(nav.removeFromLeft(16).withSizeKeepingCentre(12, 12));
+        footerNextPage_->setBounds(nav.removeFromRight(16).withSizeKeepingCentre(12, 12));
+        footerPageLabel_.setBounds(nav);
+    } else if (isInternalDevice()) {
+        if (sidechain) {
+            area.setLeft(area.getX() - kGap);
+            footerSeparator_ = area.removeFromLeft(13).withSizeKeepingCentre(1, 18);
+        }
+        footerInfoArea_ = area;
+    }
+}
+
+void DeviceSlotComponent::refreshFooterPageControls() {
+    if (paramGrid_ == nullptr)
+        return;
+    footerPageLabel_.setFont(FontManager::getInstance().getMonoFont(11.0f));
+    footerPageLabel_.setColour(juce::Label::textColourId,
+                               ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+    const int page = paramGrid_->getCurrentPage();
+    const int total = paramGrid_->getTotalPages();
+    footerPageLabel_.setText(juce::String(page + 1) + "/" + juce::String(total),
+                             juce::dontSendNotification);
+    if (footerPrevPage_)
+        footerPrevPage_->setEnabled(page > 0);
+    if (footerNextPage_)
+        footerNextPage_->setEnabled(page < total - 1);
+    layoutFooter(footerArea_);
+}
+
+void DeviceSlotComponent::paintShellRows(juce::Graphics& g, juce::Rectangle<float> frame) {
+    const auto line = ActiveTheme::getColour(ActiveTheme::DEVICE_LINE);
+
+    if (!idRowArea_.isEmpty()) {
+        const juce::Rectangle<float> row(frame.getX(), static_cast<float>(idRowArea_.getY()),
+                                         frame.getWidth(),
+                                         static_cast<float>(idRowArea_.getHeight()));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_ID_ROW));
+        g.fillRect(row);
+        g.setColour(line);
+        g.fillRect(row.getX(), row.getBottom() - 1.0f, row.getWidth(), 1.0f);
+    }
+
+    if (!sideStripArea_.isEmpty()) {
+        const juce::Rectangle<float> strip(
+            static_cast<float>(sideStripArea_.getX()), static_cast<float>(sideStripArea_.getY()),
+            frame.getRight() - static_cast<float>(sideStripArea_.getX()),
+            static_cast<float>(sideStripArea_.getHeight()));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_HEAD2));
+        g.fillRect(strip);
+        g.setColour(line);
+        g.fillRect(strip.getX(), strip.getY(), 1.0f, strip.getHeight());
+    }
+
+    if (footerArea_.isEmpty())
+        return;
+
+    const float top = static_cast<float>(footerArea_.getY());
+    juce::Path footer;
+    footer.addRoundedRectangle(frame.getX(), top, frame.getWidth(), frame.getBottom() - top, 7.0f,
+                               7.0f, false, false, true, true);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_HEAD2));
+    g.fillPath(footer);
+    g.setColour(line);
+    g.fillRect(frame.getX(), top, frame.getWidth(), 1.0f);
+
+    if (!footerSeparator_.isEmpty()) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
+        g.fillRect(footerSeparator_);
+    }
+
+    if (!footerInfoArea_.isEmpty()) {
+        double sampleRate = 0.0;
+        if (auto* engine = magda::TrackManager::getInstance().getAudioEngine())
+            if (auto* audioIO = engine->getAudioIO())
+                sampleRate = audioIO->status().sampleRate;
+        juce::String info = device_.audioOutputChannels == 1 ? "mono" : "stereo";
+        if (sampleRate > 0.0)
+            info << juce::String::fromUTF8(" \xc2\xb7 ")
+                 << juce::String(sampleRate / 1000.0, std::fmod(sampleRate, 1000.0) == 0.0 ? 0 : 1)
+                 << " kHz";
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+        g.setFont(FontManager::getInstance().getMonoFont(11.0f));
+        g.drawText(info, footerInfoArea_, juce::Justification::centredLeft, false);
+    }
+
+    if (!midiLedArea_.isEmpty()) {
+        const auto led = midiLedArea_.toFloat();
+        if (midiLedFrames_ > 0) {
+            const auto green = ActiveTheme::getColour(ActiveTheme::DEVICE_GREEN);
+            g.setColour(green.withAlpha(0.35f));
+            g.fillEllipse(led.expanded(3.0f));
+            g.setColour(green);
+        } else {
+            g.setColour(line);
+        }
+        g.fillEllipse(led);
+    }
+}
+
+void DeviceSlotComponent::styleDeviceHeaderButtons() {
+    using node_header::DeviceIcon;
+    for (auto* button : {macroButton_.get(), modButton_.get(), aiButton_.get(), learnButton_.get()})
+        if (button != nullptr)
+            applyDeviceIconStyle(*button, DeviceIcon::Toggle);
+    for (auto* button : {presetButton_.get(), multiOutButton_.get(), randomButton_.get(),
+                         exportClipButton_.get(), midiThruButton_.get(), stepRecordButton_.get()})
+        if (button != nullptr)
+            applyDeviceIconStyle(*button, DeviceIcon::Action);
+    if (stepRecordButton_)
+        stepRecordButton_->setNormalColor(ActiveTheme::STEP_RECORD);
+    if (scButton_)
+        applyDeviceIconStyle(*scButton_, DeviceIcon::Action, juce::Colour(0xFF000000));
+    if (uiButton_)
+        applyDeviceIconStyle(*uiButton_, DeviceIcon::Window);
+    if (onButton_)
+        applyDeviceIconStyle(*onButton_, DeviceIcon::Power, juce::Colour(0xFFE6E6E6));
+    if (closeButton_)
+        applyDeviceIconStyle(*closeButton_, DeviceIcon::Close);
+
+    auto& title = getNameLabel();
+    title.setFont(FontManager::getInstance().getHeadingFont(13.5f));
+    title.setColour(juce::Label::textColourId, ActiveTheme::getColour(ActiveTheme::DEVICE_TITLE));
+}
+
 void DeviceSlotComponent::lookAndFeelChanged() {
     NodeComponent::lookAndFeelChanged();
 
-    if (modButton_)
-        applyHeaderIconStyle(*modButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
-    if (macroButton_)
-        applyHeaderIconStyle(*macroButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
-    if (aiButton_)
-        applyHeaderIconStyle(*aiButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-    if (presetButton_)
-        applyHeaderIconStyle(*presetButton_, ActiveTheme::getColour(ActiveTheme::PRESET_INDIGO),
-                             false);
-    if (multiOutButton_)
-        applyHeaderIconStyle(*multiOutButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY),
-                             false);
-    if (uiButton_)
-        applyHeaderIconStyle(*uiButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-    if (learnButton_)
-        applyHeaderIconStyle(*learnButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
-    if (exportClipButton_)
-        applyHeaderIconStyle(*exportClipButton_,
-                             ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE), false);
-    if (randomButton_)
-        applyHeaderIconStyle(*randomButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY),
-                             false);
+    styleDeviceHeaderButtons();
 
-    if (scButton_)
-        scButton_->setActiveBackgroundColor(
-            ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).darker(0.3f));
-    if (onButton_) {
-        onButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
-        onButton_->setActiveBackgroundColor(
-            ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
-    }
     if (deltaButton_) {
-        deltaButton_->setColour(juce::TextButton::buttonColourId,
-                                ActiveTheme::getColour(ActiveTheme::SURFACE));
-        deltaButton_->setColour(juce::TextButton::buttonOnColourId,
-                                ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).darker(0.3f));
-        deltaButton_->setColour(juce::TextButton::textColourOffId,
-                                ActiveTheme::getSecondaryTextColour());
-    }
-    if (stepRecordButton_)
-        stepRecordButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STEP_RECORD));
-    if (midiThruButton_) {
-        midiThruButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
-        midiThruButton_->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE));
+        styleDeltaButton(*deltaButton_);
     }
 
     repaint();
@@ -640,6 +887,16 @@ void DeviceSlotComponent::timerCallback() {
     auto* engine = magda::TrackManager::getInstance().getAudioEngine();
     if (!engine)
         return;
+
+    // The footer LED holds for a few frames after the track's MIDI activity moves.
+    const auto midiCounter = engine->meters().midiActivity.getActivityCounter(nodePath_.trackId);
+    if (midiCounter != lastMidiActivity_) {
+        lastMidiActivity_ = midiCounter;
+        midiLedFrames_ = 4;
+        repaint(midiLedArea_.expanded(4));
+    } else if (midiLedFrames_ > 0 && --midiLedFrames_ == 0) {
+        repaint(midiLedArea_.expanded(4));
+    }
 
     // A faceplate bound to anything but the device rendering now rebinds here:
     // the slot is built before the plan that holds it, and a session remade for
@@ -1139,14 +1396,13 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
                             .manufacturer = device_.manufacturer,
                             .deviceName = device_.name,
                             .stepRecording = stepRecording},
-                           stripsAnalysisChrome() ? 0 : METER_STRIP_WIDTH, CONTENT_HEADER_HEIGHT,
-                           paginationRowHeight(), faustHeaderHeight());
+                           0, CONTENT_HEADER_HEIGHT, paginationRowHeight(), faustHeaderHeight());
 }
 
 int DeviceSlotComponent::paginationRowHeight() const {
     // 0 when the grid fits one page: it reserves no row then, so the painter
     // has nothing to rule off.
-    return paramGrid_ != nullptr && paramGrid_->paginates() ? PAGINATION_HEIGHT : 0;
+    return paramGrid_ != nullptr && paramGrid_->showsOwnPagination() ? PAGINATION_HEIGHT : 0;
 }
 
 int DeviceSlotComponent::faustHeaderHeight() const {
@@ -1165,8 +1421,19 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     // Chord-track devices emit no audio yet, so they show no output meter.
     const auto* slotTrack = magda::TrackManager::getInstance().getTrack(nodePath_.trackId);
     const bool onChordTrack = slotTrack && slotTrack->type == magda::TrackType::Chord;
+    juce::ignoreUnused(pluginPresetsAvailable);
+    idRowArea_ = sideStripArea_ = footerArea_ = {};
+    if (!collapsed_) {
+        if (hasIdRow())
+            idRowArea_ = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
+        footerArea_ = contentArea.removeFromBottom(FOOTER_BAR_HEIGHT);
+        if (const int strip = sideStripWidth(); strip > 0)
+            sideStripArea_ = contentArea.removeFromRight(strip);
+    }
+    layoutFooter(footerArea_);
+
     if (!prepareDeviceSlotContentFrame(
-            contentArea, traits_, device_, collapsed_, isInternalDevice(), pluginPresetsAvailable,
+            contentArea, traits_, device_, collapsed_, isInternalDevice(), false,
             {.pluginPresetsButton = presetsButton_.get(),
              .levelMeter = &levelMeter_,
              .midiNoteStrip = &midiNoteStrip_,
@@ -1184,10 +1451,11 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
              .uiButton = uiButton_.get(),
              .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get(),
              .mixKnob = mixKnob_.get()},
-            (stripsAnalysisChrome() || onChordTrack) ? 0 : METER_STRIP_WIDTH,
-            CONTENT_HEADER_HEIGHT)) {
+            0, 0)) {
         return;
     }
+    juce::ignoreUnused(onChordTrack);
+    layoutSideStrip(sideStripArea_);
 
     // (Second header carve + programs combo placement happen in the
     //  `if (!collapsed_)` block above so the dropdown can sit flush right.)
@@ -1204,16 +1472,16 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
                  ? FaustMeterPanel::kPreferredHeight
                  : 0,
          .compiledPanel = compiledBodyPanel,
+         // Device spec: the display is 250px in Text, 200px in Knobs and
+         // Sliders, plus the 14px under it.
          .compiledPanelPreferredHeight =
-             compiledPanel_ != nullptr ? compiledPanel_->preferredHeight() : 0,
-         .compiledPanelMinFractionNumerator =
-             traits_.compiledPresentation != nullptr
-                 ? traits_.compiledPresentation->visualMinFractionNumerator
-                 : 3,
-         .compiledPanelMinFractionDenominator =
-             traits_.compiledPresentation != nullptr
-                 ? traits_.compiledPresentation->visualMinFractionDenominator
-                 : 4,
+             compiledPanel_ != nullptr
+                 ? (resolveControlStyle(device_.controlStyle) == ParamControlStyle::Text ? 250
+                                                                                         : 200) +
+                       14
+                 : 0,
+         .compiledPanelMinFractionNumerator = 0,
+         .compiledPanelMinFractionDenominator = 1,
          .compiledPanelWantsFullBody = compiledPanel_ != nullptr && compiledPanel_->wantsFullBody(),
          .drumGridUI = customUI_.getDrumGridUI(),
          .activeCustomUI = activeCustomUI,
@@ -1222,7 +1490,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
 }
 
 void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
-    layoutExpandedDeviceSlotHeader(
+    headerSeparators_ = layoutExpandedDeviceSlotHeader(
         headerArea, traits_, device_, isInternalDevice(),
         {.gainLabel = &gainLabel_,
          .macroButton = exposesDeviceModulation() ? macroButton_.get() : nullptr,
@@ -1239,7 +1507,7 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
          .randomButton = randomButton_.get(),
          .stepRecordButton = stepRecordButton_.get(),
          .midiThruButton = midiThruButton_.get()},
-        BUTTON_SIZE);
+        DeviceSlotHeaderMetrics{});
 }
 
 void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
@@ -1525,6 +1793,7 @@ void DeviceSlotComponent::updateParameterValues() {
 
 void DeviceSlotComponent::updateParameterPagination() {
     updateDeviceSlotParameterPagination(device_, paramGrid_.get());
+    refreshFooterPageControls();
 }
 
 void DeviceSlotComponent::goToPrevPage() {
@@ -1532,14 +1801,22 @@ void DeviceSlotComponent::goToPrevPage() {
         device_, *paramGrid_,
         {.reloadParameterSlots = [this]() { updateParameterSlots(); },
          .updateParamModulation = [this]() { updateParamModulation(); },
-         .repaint = [this]() { repaint(); }});
+         .repaint =
+             [this]() {
+                 refreshFooterPageControls();
+                 repaint();
+             }});
 }
 
 void DeviceSlotComponent::goToNextPage() {
     goToNextDeviceSlotParameterPage(device_, *paramGrid_,
                                     {.reloadParameterSlots = [this]() { updateParameterSlots(); },
                                      .updateParamModulation = [this]() { updateParamModulation(); },
-                                     .repaint = [this]() { repaint(); }});
+                                     .repaint =
+                                         [this]() {
+                                             refreshFooterPageControls();
+                                             repaint();
+                                         }});
 }
 
 // ============================================================================

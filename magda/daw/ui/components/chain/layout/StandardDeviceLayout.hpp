@@ -19,10 +19,18 @@ class StandardDeviceLayout final : public DeviceParamLayout {
     static constexpr int kCellCount = kCellsPerRow * kRows;
 
     int cellCount() const override {
-        return kCellCount;
+        return cellsPerRow_ * rows_;
     }
     int cellsPerRow() const override {
-        return kCellsPerRow;
+        return cellsPerRow_;
+    }
+    int maxCellCount() const override {
+        return kCellCount;
+    }
+    bool setShape(int cellsPerRow, int rows) override {
+        cellsPerRow_ = juce::jlimit(1, kCellsPerRow, cellsPerRow);
+        rows_ = juce::jlimit(1, kRows, rows);
+        return true;
     }
     bool wantsPagination() const override {
         return true;
@@ -31,6 +39,10 @@ class StandardDeviceLayout final : public DeviceParamLayout {
     int totalPages(const magda::DeviceInfo& device) const override;
     ParamCell cellFor(const magda::DeviceInfo& device, int cellIndex,
                       int currentPage) const override;
+
+  private:
+    int cellsPerRow_ = kCellsPerRow;
+    int rows_ = kRows;
 };
 
 }  // namespace magda::daw::ui

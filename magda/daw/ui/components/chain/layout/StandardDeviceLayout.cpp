@@ -46,13 +46,14 @@ bool gateEnabled(const magda::DeviceInfo& device, const magda::ParameterInfo& pa
 }  // namespace
 
 int StandardDeviceLayout::totalPages(const magda::DeviceInfo& device) const {
-    const int total = std::max(1, (visibleCountFor(device) + kCellCount - 1) / kCellCount);
+    const int perPage = cellCount();
+    const int total = std::max(1, (visibleCountFor(device) + perPage - 1) / perPage);
     return total;
 }
 
 ParamCell StandardDeviceLayout::cellFor(const magda::DeviceInfo& device, int cellIndex,
                                         int currentPage) const {
-    const int slotIndex = currentPage * kCellCount + cellIndex;
+    const int slotIndex = currentPage * cellCount() + cellIndex;
     const int visCount = visibleCountFor(device);
 
     ParamCell cell;

@@ -186,9 +186,13 @@ ParamHostComponent::ParamHostComponent(std::unique_ptr<DeviceParamLayout> layout
     };
     addAndMakeVisible(*pageTabBar_);
 
-    for (int i = 0; i < cellCount_; ++i) {
+    // Enough cells for the layout's largest shape, so wiring done once at
+    // construction covers every cell a later control style puts on screen.
+    allocatedCells_ = juce::jlimit(cellCount_, kMaxCells, layout_->maxCellCount());
+    for (int i = 0; i < allocatedCells_; ++i) {
         paramSlots_[i] = std::make_unique<ParamSlotComponent>(i);
-        addAndMakeVisible(*paramSlots_[i]);
+        addChildComponent(*paramSlots_[i]);
+        paramSlots_[i]->setVisible(i < cellCount_);
     }
 }
 
@@ -285,7 +289,7 @@ void ParamHostComponent::updateParamModulation(
 
 void ParamHostComponent::updatePageControls(const magda::DeviceInfo& device, int currentPage,
                                             int totalPages) {
-    const bool wasPaginating = paginates();
+    const bool wasPaginating = showsOwnPagination();
     currentPage_ = currentPage;
     totalPages_ = totalPages;
     if (layout_->wantsPageTabs())
@@ -299,7 +303,7 @@ void ParamHostComponent::updatePageControls(const magda::DeviceInfo& device, int
     // Gaining or losing the row changes getChromeHeight(), which the parent
     // divides the body by. Without this the grid would keep the old geometry
     // until some unrelated resize.
-    if (paginates() != wasPaginating) {
+    if (showsOwnPagination() != wasPaginating) {
         if (auto* parent = getParentComponent())
             parent->resized();
     }
@@ -314,8 +318,16 @@ bool ParamHostComponent::paginates() const {
     return layout_->wantsPagination() && totalPages_ > 1;
 }
 
+bool ParamHostComponent::showsOwnPagination() const {
+    return paginates() && (!footerPagination_ || layout_->wantsPageTabs());
+}
+
+void ParamHostComponent::setFooterPagination(bool footer) {
+    footerPagination_ = footer;
+}
+
 void ParamHostComponent::setPaginationVisible(bool visible) {
-    const bool effective = visible && paginates();
+    const bool effective = visible && showsOwnPagination();
     const bool tabs = effective && layout_->wantsPageTabs();
     prevPageButton_->setVisible(effective && !tabs);
     nextPageButton_->setVisible(effective && !tabs);
@@ -360,7 +372,7 @@ void ParamHostComponent::setSlotSelected(int slotIndex, bool selected) {
 }
 
 int ParamHostComponent::getChromeHeight() const {
-    return 2 + (paginates() ? PAGINATION_HEIGHT + 4 : 0);
+    return 2 + (showsOwnPagination() ? PAGINATION_HEIGHT + 4 : 0);
 }
 
 void ParamHostComponent::setRowHeight(int rowHeight) {
@@ -381,12 +393,12 @@ void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::
 
     area.removeFromTop(2);
     juce::Rectangle<int> paginationArea;
-    if (paginates()) {
+    if (showsOwnPagination()) {
         paginationArea = area.removeFromTop(PAGINATION_HEIGHT);
         area.removeFromTop(4);
     }
 
-    if (paginates()) {
+    if (showsOwnPagination()) {
         if (layout_->wantsPageTabs()) {
             pageTabBar_->setBounds(paginationArea);
         } else {
@@ -396,18 +408,21 @@ void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::
         }
     }
 
-    area = area.reduced(2, 0);
+    // Device spec: 14px around the grid, 8px between cells.
+    constexpr int kPadding = 14;
+    constexpr int kGap = 8;
+    area = area.reduced(kPadding, kPadding - 2);
     const int numRows = (cellCount_ + cellsPerRow_ - 1) / cellsPerRow_;
-    const int cellWidth = area.getWidth() / cellsPerRow_;
+    const int cellWidth = (area.getWidth() - kGap * (cellsPerRow_ - 1)) / cellsPerRow_;
     const int cellHeight = rowHeight_ > 0 ? rowHeight_
-                           : numRows > 0  ? area.getHeight() / numRows
+                           : numRows > 0  ? (area.getHeight() - kGap * (numRows - 1)) / numRows
                                           : area.getHeight();
 
     for (int i = 0; i < cellCount_; ++i) {
         const int row = i / cellsPerRow_;
         const int col = i % cellsPerRow_;
-        const int x = area.getX() + col * cellWidth + 2;
-        const int y = area.getY() + row * cellHeight + 2;
+        const int x = area.getX() + col * (cellWidth + kGap);
+        const int y = area.getY() + row * (cellHeight + kGap);
 
         // A spanning cell keeps the gutters of a single one, so a wide control
         // lines up with its narrow neighbours instead of gaining extra padding
@@ -415,10 +430,10 @@ void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::
         const int span = i < static_cast<int>(cellSpans_.size())
                              ? std::max(1, cellSpans_[static_cast<size_t>(i)])
                              : 1;
-        const int width = span * cellWidth - 4;
+        const int width = span * cellWidth + (span - 1) * kGap;
 
         paramSlots_[i]->setFonts(labelFont, valueFont);
-        paramSlots_[i]->setBounds(x, y, width, cellHeight - 4);
+        paramSlots_[i]->setBounds(x, y, width, cellHeight);
         // Visibility is owned by updateParameterSlots() via the layout —
         // don't override it on layout passes.
     }
@@ -433,8 +448,33 @@ void ParamHostComponent::configChanged() {
 void ParamHostComponent::applyControlStyle() {
     controlStyleApplied_ = true;
     const auto style = resolveControlStyle(controlStyleOverride_);
-    for (int i = 0; i < cellCount_; ++i)
+    for (int i = 0; i < allocatedCells_; ++i)
         paramSlots_[i]->setControlStyle(style);
+
+    // Plug-ins: 8 columns in Text and Knobs (4 and 3 rows), 6 in Sliders.
+    // Curated native layouts keep their cells at 7 columns, 4 in Sliders.
+    const bool sliders = style == ParamControlStyle::Sliders;
+    const int previousCount = cellCount_;
+    const int previousColumns = cellsPerRow_;
+    if (layout_->setShape(sliders ? 6 : 8, style == ParamControlStyle::Knobs ? 3 : 4)) {
+        cellCount_ = layout_->cellCount();
+        cellsPerRow_ = layout_->cellsPerRow();
+    } else if (layout_->reflowsForControlStyle() && cellCount_ > 0) {
+        cellsPerRow_ = sliders ? 4 : 7;
+    }
+    const bool styleChanged = !lastAppliedStyle_.has_value() || *lastAppliedStyle_ != style;
+    lastAppliedStyle_ = style;
+    if (!styleChanged && cellCount_ == previousCount && cellsPerRow_ == previousColumns)
+        return;
+
+    for (int i = 0; i < allocatedCells_; ++i)
+        paramSlots_[i]->setVisible(i < cellCount_);
+    // The owner re-pages and refills the cells; deferred, since this can run
+    // from inside its own slot update.
+    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)]() {
+        if (safeThis != nullptr && safeThis->onShapeChanged)
+            safeThis->onShapeChanged();
+    });
 }
 
 void ParamHostComponent::resized() {

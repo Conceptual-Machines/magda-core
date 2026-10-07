@@ -16,6 +16,7 @@
 #include "slot/DeviceCustomUIManager.hpp"
 #include "slot/DeviceParameterChangeHandler.hpp"
 #include "slot/DevicePresetMenu.hpp"
+#include "slot/DeviceSlotHeaderControls.hpp"
 #include "slot/DeviceSlotTraits.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -61,7 +62,10 @@ class DeviceSlotComponent : public NodeComponent,
     static constexpr int PARAM_CELL_WIDTH = 54;
     static constexpr int PARAM_CELL_HEIGHT = 24;
     static constexpr int PAGINATION_HEIGHT = 18;
-    static constexpr int CONTENT_HEADER_HEIGHT = 26;
+    static constexpr int CONTENT_HEADER_HEIGHT = 30;  // the ID row: vendor / device
+    static constexpr int HEADER_BAR_HEIGHT = 46;
+    static constexpr int SIDE_STRIP_WIDTH = 40;
+    static constexpr int FOOTER_BAR_HEIGHT = 40;
     DeviceSlotComponent(const magda::DeviceInfo& device);
     ~DeviceSlotComponent() override;
 
@@ -104,6 +108,22 @@ class DeviceSlotComponent : public NodeComponent,
     juce::Point<float> getControllerIndicatorAnchor() const override;
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
+    int getHeaderHeight() const override {
+        return HEADER_BAR_HEIGHT;
+    }
+    juce::Rectangle<int> getHeaderInnerArea(juce::Rectangle<int> header) const override {
+        return header.reduced(10, 0);
+    }
+    juce::Point<int> getHeaderButtonSize() const override {
+        return {30, 26};
+    }
+    int getHeaderButtonGap() const override {
+        return 8;
+    }
+    juce::Component* getHeaderDeleteButton() override {
+        return closeButton_.get();
+    }
+    void paintNodeFrame(juce::Graphics& g, juce::Rectangle<int> bounds, int headerHeight) override;
     juce::Component* getHeaderPresetButton() override {
         return stripsAnalysisChrome() ? nullptr : presetButton_.get();
     }
@@ -238,6 +258,24 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<magda::SvgButton> uiButton_;
     std::unique_ptr<magda::SvgButton> learnButton_;
     std::unique_ptr<magda::SvgButton> onButton_;
+    std::unique_ptr<magda::SvgButton> closeButton_;
+    DeviceSlotHeaderSeparators headerSeparators_;
+    void styleDeviceHeaderButtons();
+
+    // v1 shell rows below the header: ID row, side strip and footer, in this
+    // component's coordinates; empty when not shown.
+    juce::Rectangle<int> idRowArea_, sideStripArea_, footerArea_;
+    juce::Rectangle<int> footerSeparator_, footerInfoArea_, midiLedArea_;
+    std::unique_ptr<juce::ArrowButton> footerPrevPage_, footerNextPage_;
+    juce::Label footerPageLabel_;
+    uint32_t lastMidiActivity_ = 0;
+    int midiLedFrames_ = 0;
+    bool hasIdRow() const;
+    int sideStripWidth() const;
+    void layoutSideStrip(juce::Rectangle<int> strip);
+    void layoutFooter(juce::Rectangle<int> footer);
+    void refreshFooterPageControls();
+    void paintShellRows(juce::Graphics& g, juce::Rectangle<float> frame);
     std::unique_ptr<juce::TextButton> deltaButton_;
     std::unique_ptr<magda::SvgButton> exportClipButton_;  // Export pattern/chords as MIDI clip
     std::unique_ptr<magda::SvgButton> randomButton_;      // Step-sequencer pattern randomize

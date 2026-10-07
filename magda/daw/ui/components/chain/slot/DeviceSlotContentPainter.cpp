@@ -35,11 +35,7 @@ void paintSeparators(juce::Graphics& g, juce::Rectangle<int> contentArea,
 
     const auto left = static_cast<float>(contentArea.getX() + 2);
     const auto right = static_cast<float>(contentArea.getRight() - 2);
-    const int headerBottom = contentArea.getY() + contentHeaderHeight;
-    if (!skipContentHeader) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-        g.drawHorizontalLine(headerBottom, left, right);
-    }
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
 
     // Rule under the pagination row. `paginationHeight` is 0 when the grid has
     // a single page: there is no row to separate, and drawing it anyway left a
@@ -110,10 +106,9 @@ void paintMidiUtilityHeader(juce::Graphics& g, juce::Rectangle<int> headerArea,
 
 void paintExternalHeader(juce::Graphics& g, juce::Rectangle<int> textArea,
                          const DeviceSlotContentPaintState& state) {
-    const auto textColour = state.bypassed ? ActiveTheme::getSecondaryTextColour().withAlpha(0.5f)
-                                           : ActiveTheme::getSecondaryTextColour();
-    g.setColour(textColour);
-    g.setFont(FontManager::getInstance().getUIFont(9.0f));
+    const auto dim = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM);
+    g.setColour(state.bypassed ? dim.withAlpha(0.5f) : dim);
+    g.setFont(FontManager::getInstance().getUIFont(11.5f));
     g.drawText(state.manufacturer + " / " + state.deviceName, textArea,
                juce::Justification::centredLeft);
 }
@@ -133,7 +128,7 @@ void paintDeviceSlotContent(juce::Graphics& g, juce::Rectangle<int> contentArea,
         return;
 
     auto headerArea = contentArea.removeFromTop(contentHeaderHeight);
-    auto textArea = headerArea.withTrimmedLeft(6).withTrimmedRight(2);
+    auto textArea = headerArea.withTrimmedLeft(12).withTrimmedRight(12);
 
     if (drum_grid_slot::paintContentHeader(g, state.traits.isDrumGrid, state.bypassed, textArea))
         return;

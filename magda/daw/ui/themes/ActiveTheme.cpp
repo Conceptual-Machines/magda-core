@@ -181,7 +181,36 @@ constexpr ActiveTheme::Palette darkPalette{
     0xFF1E2126,  // TRANSPORT_CHIP
     0xFF5B58DB,  // TRANSPORT_TOGGLE_ON
     0xFFD69C44,  // TRANSPORT_MEMORY
-    0xFF303740,  // TRANSPORT_METER_FLOOR
+    0xFF303740,  // TRANSPORT_METER_FLOOR    0xFF1C2026,  // DEVICE_BG
+    0xFF1F242B,  // DEVICE_HEAD
+    0xFF1A1E24,  // DEVICE_HEAD2
+    0xFF20252C,  // DEVICE_ID_ROW
+    0xFF191D23,  // DEVICE_FIELD
+    0xFF23282F,  // DEVICE_FIELD_BORDER
+    0xFF2B3239,  // DEVICE_LINE
+    0xFF363E46,  // DEVICE_LINE2
+    0xFF05070A,  // DEVICE_FRAME_BORDER
+    0xFFEEF1F4,  // DEVICE_TITLE
+    0xFFE6E9EC,  // DEVICE_TEXT
+    0xFFE9EDF1,  // DEVICE_VALUE_TEXT
+    0xFF8D959E,  // DEVICE_DIM
+    0xFF69707A,  // DEVICE_DIM2
+    0xFF868E97,  // DEVICE_ICON
+    0xFFCFD6DD,  // DEVICE_ICON_HOVER
+    0xFF262C33,  // DEVICE_ICON_HOVER_BG
+    0xFF5D656E,  // DEVICE_ICON_INACTIVE
+    0xFF41C46B,  // DEVICE_GREEN
+    0xFF6F9DFF,  // DEVICE_BLUE
+    0xFFE08A3C,  // DEVICE_AMBER
+    0xFFE0687A,  // DEVICE_RED
+    0xFF20252C,  // DEVICE_KNOB_DISC
+    0xFFDFE5EA,  // DEVICE_POINTER
+    0xFF0F1216,  // DEVICE_SLIDER_TRACK
+    0xFF2B3A4D,  // DEVICE_SLIDER_FILL_LO
+    0xFF4B6F9E,  // DEVICE_SLIDER_FILL_HI
+    0xFF4A525B,  // DEVICE_SWITCH_OFF
+    0xFF12161B,  // DEVICE_GRAPH_BG
+    0xFF1B2027,  // DEVICE_GRAPH_GRID
 };
 
 constexpr ActiveTheme::SyntaxPalette darkSyntaxPalette{
@@ -395,6 +424,36 @@ constexpr ActiveTheme::Palette lightPalette = [] {
     set(ColourRole::TRANSPORT_TOGGLE_ON, 0xFF5552C9);
     set(ColourRole::TRANSPORT_MEMORY, 0xFFB07A20);
     set(ColourRole::TRANSPORT_METER_FLOOR, 0xFFBAC4CC);
+    set(ColourRole::DEVICE_BG, 0xFFEEF1F4);
+    set(ColourRole::DEVICE_HEAD, 0xFFE6EAEE);
+    set(ColourRole::DEVICE_HEAD2, 0xFFE2E6EA);
+    set(ColourRole::DEVICE_ID_ROW, 0xFFE8ECF0);
+    set(ColourRole::DEVICE_FIELD, 0xFFF7F9FA);
+    set(ColourRole::DEVICE_FIELD_BORDER, 0xFFD3DAE0);
+    set(ColourRole::DEVICE_LINE, 0xFFC8D0D7);
+    set(ColourRole::DEVICE_LINE2, 0xFFB8C2CB);
+    set(ColourRole::DEVICE_FRAME_BORDER, 0xFFAEB8C1);
+    set(ColourRole::DEVICE_TITLE, 0xFF161C22);
+    set(ColourRole::DEVICE_TEXT, 0xFF1B242C);
+    set(ColourRole::DEVICE_VALUE_TEXT, 0xFF1B242C);
+    set(ColourRole::DEVICE_DIM, 0xFF52606C);
+    set(ColourRole::DEVICE_DIM2, 0xFF71808C);
+    set(ColourRole::DEVICE_ICON, 0xFF52606C);
+    set(ColourRole::DEVICE_ICON_HOVER, 0xFF1B242C);
+    set(ColourRole::DEVICE_ICON_HOVER_BG, 0xFFD8DEE4);
+    set(ColourRole::DEVICE_ICON_INACTIVE, 0xFF9AA5AF);
+    set(ColourRole::DEVICE_GREEN, 0xFF197A4B);
+    set(ColourRole::DEVICE_BLUE, 0xFF2E66C8);
+    set(ColourRole::DEVICE_AMBER, 0xFFC45A00);
+    set(ColourRole::DEVICE_RED, 0xFFC23A4E);
+    set(ColourRole::DEVICE_KNOB_DISC, 0xFFE3E8EC);
+    set(ColourRole::DEVICE_POINTER, 0xFF1B242C);
+    set(ColourRole::DEVICE_SLIDER_TRACK, 0xFFD3DAE0);
+    set(ColourRole::DEVICE_SLIDER_FILL_LO, 0xFF9DB6D8);
+    set(ColourRole::DEVICE_SLIDER_FILL_HI, 0xFF4E78B5);
+    set(ColourRole::DEVICE_SWITCH_OFF, 0xFF9AA5AF);
+    set(ColourRole::DEVICE_GRAPH_BG, 0xFFF4F6F8);
+    set(ColourRole::DEVICE_GRAPH_GRID, 0xFFDDE3E8);
 
     return palette;
 }();
@@ -593,6 +652,36 @@ constexpr ActiveTheme::Palette highContrastPalette = [] {
     palette[colourRoleIndex(ColourRole::TRANSPORT_TOGGLE_ON)] = 0xFF7A78FF;
     palette[colourRoleIndex(ColourRole::TRANSPORT_MEMORY)] = 0xFFFFC04D;
     palette[colourRoleIndex(ColourRole::TRANSPORT_METER_FLOOR)] = 0xFF5A5A5A;
+    palette[colourRoleIndex(ColourRole::DEVICE_BG)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::DEVICE_HEAD)] = 0xFF0A0A0A;
+    palette[colourRoleIndex(ColourRole::DEVICE_HEAD2)] = 0xFF050505;
+    palette[colourRoleIndex(ColourRole::DEVICE_ID_ROW)] = 0xFF0A0A0A;
+    palette[colourRoleIndex(ColourRole::DEVICE_FIELD)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::DEVICE_FIELD_BORDER)] = 0xFF8A8A8A;
+    palette[colourRoleIndex(ColourRole::DEVICE_LINE)] = 0xFF8A8A8A;
+    palette[colourRoleIndex(ColourRole::DEVICE_LINE2)] = 0xFFB0B0B0;
+    palette[colourRoleIndex(ColourRole::DEVICE_FRAME_BORDER)] = 0xFFFFFFFF;
+    palette[colourRoleIndex(ColourRole::DEVICE_TITLE)] = 0xFFFFFFFF;
+    palette[colourRoleIndex(ColourRole::DEVICE_TEXT)] = 0xFFFFFFFF;
+    palette[colourRoleIndex(ColourRole::DEVICE_VALUE_TEXT)] = 0xFFFFFFFF;
+    palette[colourRoleIndex(ColourRole::DEVICE_DIM)] = 0xFFD0D0D0;
+    palette[colourRoleIndex(ColourRole::DEVICE_DIM2)] = 0xFFB0B0B0;
+    palette[colourRoleIndex(ColourRole::DEVICE_ICON)] = 0xFFD8D8D8;
+    palette[colourRoleIndex(ColourRole::DEVICE_ICON_HOVER)] = 0xFFFFFFFF;
+    palette[colourRoleIndex(ColourRole::DEVICE_ICON_HOVER_BG)] = 0xFF303030;
+    palette[colourRoleIndex(ColourRole::DEVICE_ICON_INACTIVE)] = 0xFF808080;
+    palette[colourRoleIndex(ColourRole::DEVICE_GREEN)] = 0xFF54D68B;
+    palette[colourRoleIndex(ColourRole::DEVICE_BLUE)] = 0xFF7AB8FF;
+    palette[colourRoleIndex(ColourRole::DEVICE_AMBER)] = 0xFFFFC04D;
+    palette[colourRoleIndex(ColourRole::DEVICE_RED)] = 0xFFFF6B6B;
+    palette[colourRoleIndex(ColourRole::DEVICE_KNOB_DISC)] = 0xFF101010;
+    palette[colourRoleIndex(ColourRole::DEVICE_POINTER)] = 0xFFFFFFFF;
+    palette[colourRoleIndex(ColourRole::DEVICE_SLIDER_TRACK)] = 0xFF202020;
+    palette[colourRoleIndex(ColourRole::DEVICE_SLIDER_FILL_LO)] = 0xFF3A5A8A;
+    palette[colourRoleIndex(ColourRole::DEVICE_SLIDER_FILL_HI)] = 0xFF7AB8FF;
+    palette[colourRoleIndex(ColourRole::DEVICE_SWITCH_OFF)] = 0xFF808080;
+    palette[colourRoleIndex(ColourRole::DEVICE_GRAPH_BG)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::DEVICE_GRAPH_GRID)] = 0xFF404040;
 
     return palette;
 }();

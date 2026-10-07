@@ -14,20 +14,36 @@ void setVisibleIfPresent(juce::Component* component, bool shouldBeVisible) {
         component->setVisible(shouldBeVisible);
 }
 
-void placeLeft(juce::Rectangle<int>& area, juce::Component* component, int buttonSize) {
+void placeLeft(juce::Rectangle<int>& area, juce::Component* component,
+               const DeviceSlotHeaderMetrics& m) {
     if (component == nullptr)
         return;
 
-    component->setBounds(area.removeFromLeft(buttonSize));
-    area.removeFromLeft(4);
+    component->setBounds(
+        area.removeFromLeft(m.buttonWidth).withSizeKeepingCentre(m.buttonWidth, m.buttonHeight));
+    area.removeFromLeft(m.gap);
 }
 
-void placeRight(juce::Rectangle<int>& area, juce::Component* component, int buttonSize) {
+void placeRight(juce::Rectangle<int>& area, juce::Component* component,
+                const DeviceSlotHeaderMetrics& m) {
     if (component == nullptr || !component->isVisible())
         return;
 
-    component->setBounds(area.removeFromRight(buttonSize));
-    area.removeFromRight(4);
+    component->setBounds(
+        area.removeFromRight(m.buttonWidth).withSizeKeepingCentre(m.buttonWidth, m.buttonHeight));
+    area.removeFromRight(m.gap);
+}
+
+bool livesOutsideExpandedHeader(HeaderControlId id) {
+    return id == HeaderControlId::Sidechain || id == HeaderControlId::MultiOut ||
+           id == HeaderControlId::MidiThru || id == HeaderControlId::Delta;
+}
+
+juce::Rectangle<int> takeSeparator(juce::Rectangle<int>& area, bool fromLeft,
+                                   const DeviceSlotHeaderMetrics& m) {
+    const int width = (2 * m.separatorMargin) + 1;
+    auto slot = fromLeft ? area.removeFromLeft(width) : area.removeFromRight(width);
+    return slot.withSizeKeepingCentre(1, 18);
 }
 
 void placeCollapsedButton(juce::Rectangle<int>& area, juce::Component* component, int buttonSize) {
@@ -64,10 +80,13 @@ HeaderControlComponents getHeaderControlComponents(DeviceSlotHeaderControls cont
 
 }  // namespace
 
-void layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
-                                    const DeviceSlotTraits& traits, const magda::DeviceInfo& device,
-                                    bool isInternalDevice, DeviceSlotHeaderControls controls,
-                                    int buttonSize) {
+DeviceSlotHeaderSeparators layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
+                                                          const DeviceSlotTraits& traits,
+                                                          const magda::DeviceInfo& device,
+                                                          bool isInternalDevice,
+                                                          DeviceSlotHeaderControls controls,
+                                                          const DeviceSlotHeaderMetrics& metrics) {
+    DeviceSlotHeaderSeparators separators;
     setVisibleIfPresent(controls.gainLabel, false);
     const auto visibility = getHeaderControlVisibility(traits, device, isInternalDevice);
     auto specs = buildHeaderControlSpecs(traits, device, isInternalDevice,
@@ -78,18 +97,36 @@ void layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
     setVisibleIfPresent(controls.powerButton, visibility.power);
     setVisibleIfPresent(controls.presetButton, visibility.preset);
 
+    bool placedAnyLeft = false;
     for (auto& spec : specs) {
         setVisibleIfPresent(spec.component, spec.expandedVisible);
 
-        if (spec.side == HeaderControlSide::Left && spec.expandedVisible)
-            placeLeft(headerArea, spec.component, buttonSize);
+        if (spec.side == HeaderControlSide::Left && spec.expandedVisible &&
+            !livesOutsideExpandedHeader(spec.id)) {
+            placeLeft(headerArea, spec.component, metrics);
+            placedAnyLeft = true;
+        }
+    }
+    if (placedAnyLeft) {
+        // The separator carries its own margins in place of the last gap.
+        headerArea.setLeft(headerArea.getX() - metrics.gap);
+        separators.left = takeSeparator(headerArea, true, metrics);
     }
 
     const auto placedRight = [](const auto& spec) {
-        return spec.side == HeaderControlSide::Right && spec.expandedVisible;
+        return spec.side == HeaderControlSide::Right && spec.expandedVisible &&
+               !livesOutsideExpandedHeader(spec.id);
     };
-    for (auto& spec : specs | std::views::reverse | std::views::filter(placedRight))
-        placeRight(headerArea, spec.component, buttonSize);
+    bool separatorTaken = false;
+    for (auto& spec : specs | std::views::reverse | std::views::filter(placedRight)) {
+        if (!separatorTaken && spec.component != nullptr && spec.component->isVisible()) {
+            headerArea.setRight(headerArea.getRight() + metrics.gap);
+            separators.right = takeSeparator(headerArea, false, metrics);
+            separatorTaken = true;
+        }
+        placeRight(headerArea, spec.component, metrics);
+    }
+    return separators;
 }
 
 void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,

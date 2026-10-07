@@ -16,7 +16,7 @@ constexpr float kMinDb = -60.0f;
 constexpr float kMaxDb = 6.0f;
 constexpr float kPlotPadX = 8.0f;
 constexpr float kPlotPadY = 8.0f;
-constexpr float kMeterWidth = 58.0f;
+constexpr float kMeterWidth = 36.0f;
 constexpr int kPollMs = 33;
 constexpr float kHandlePickPx = 8.0f;
 
@@ -246,7 +246,7 @@ void CompiledCompressorCurveView::mouseUp(const juce::MouseEvent& e) {
 
 void CompiledCompressorCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG));
     g.fillRect(bounds);
 
     auto area = bounds.toFloat().reduced(kPlotPadX, kPlotPadY);
@@ -257,22 +257,18 @@ void CompiledCompressorCurveView::paint(juce::Graphics& g) {
     if (plotArea_.getWidth() < 16.0f || plotArea_.getHeight() < 16.0f)
         return;
 
-    const auto border = ActiveTheme::getColour(ActiveTheme::BORDER);
-    const auto text = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
-    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE);
-    const auto grColour = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
-    const auto keyColour = externalSidechain_
-                               ? ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY_SOFT)
-                               : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
-
-    g.setColour(border.withAlpha(0.55f));
-    g.drawRect(plotArea_, 1.0f);
+    const auto grid = ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_GRID);
+    const auto text = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2);
+    const auto curveColour = ActiveTheme::getColour(ActiveTheme::DEVICE_GREEN);
+    const auto amber = ActiveTheme::getColour(ActiveTheme::DEVICE_AMBER);
+    const auto keyColour = externalSidechain_ ? ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE)
+                                              : ActiveTheme::getColour(ActiveTheme::DEVICE_DIM);
 
     {
         juce::Graphics::ScopedSaveState clipGuard(g);
         g.reduceClipRegion(plotArea_.toNearestInt());
 
-        g.setColour(border.withAlpha(0.18f));
+        g.setColour(grid);
         for (float db : {-48.0f, -36.0f, -24.0f, -12.0f, 0.0f}) {
             const float x = dbToX(db);
             const float y = dbToY(db);
@@ -282,16 +278,10 @@ void CompiledCompressorCurveView::paint(juce::Graphics& g) {
                                  plotArea_.getRight());
         }
 
-        juce::Path diagonal;
-        diagonal.startNewSubPath(dbToX(kMinDb), dbToY(kMinDb));
-        diagonal.lineTo(dbToX(kMaxDb), dbToY(kMaxDb));
-        g.setColour(border.withAlpha(0.32f));
-        g.strokePath(diagonal, juce::PathStrokeType(1.0f));
-
         if (kneeDb_ > 0.1f) {
             const float kneeLeft = dbToX(thresholdDb_ - kneeDb_ * 0.5f);
             const float kneeRight = dbToX(thresholdDb_ + kneeDb_ * 0.5f);
-            g.setColour(grColour.withAlpha(0.08f));
+            g.setColour(amber.withAlpha(0.08f));
             g.fillRect(juce::Rectangle<float>(kneeLeft, plotArea_.getY(), kneeRight - kneeLeft,
                                               plotArea_.getHeight()));
         }
@@ -311,79 +301,45 @@ void CompiledCompressorCurveView::paint(juce::Graphics& g) {
             else
                 curve.lineTo(x, y);
         }
-
-        g.setColour(accent.withAlpha(0.95f));
-        g.strokePath(curve, juce::PathStrokeType(1.8f, juce::PathStrokeType::curved,
+        g.setColour(curveColour);
+        g.strokePath(curve, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved,
                                                  juce::PathStrokeType::rounded));
 
-        // Float-coord drawing for the crosshair lines: drawHorizontalLine /
-        // drawVerticalLine snap to integer pixels, so even a perfectly
-        // smoothed dB value will jump in 1-pixel steps. drawLine uses
-        // sub-pixel positioning + antialiasing for continuous motion.
+        // drawLine keeps sub-pixel positions, so the markers move smoothly.
         const float thresholdX = dbToX(thresholdDb_);
         const bool thresholdHot =
             hoveredHandle_ == Handle::Threshold || draggedHandle_ == Handle::Threshold;
-        g.setColour(grColour.withAlpha(thresholdHot ? 0.95f : 0.7f));
+        g.setColour(amber.withAlpha(thresholdHot ? 1.0f : 0.8f));
         g.drawLine(thresholdX, plotArea_.getY(), thresholdX, plotArea_.getBottom(), 1.0f);
-        g.fillEllipse(thresholdX - 4.0f, dbToY(thresholdDb_) - 4.0f, 8.0f, 8.0f);
+        if (thresholdHot)
+            g.fillEllipse(thresholdX - 4.0f, dbToY(thresholdDb_) - 4.0f, 8.0f, 8.0f);
 
         const float keyX = dbToX(smoothedKeyPeakDb_);
-        g.setColour(keyColour.withAlpha(0.8f));
+        g.setColour(keyColour.withAlpha(0.6f));
         g.drawLine(keyX, plotArea_.getY(), keyX, plotArea_.getBottom(), 1.0f);
-
-        const float inY = dbToY(smoothedInputPeakDb_);
-        const float outY = dbToY(smoothedOutputPeakDb_);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.65f));
-        g.drawLine(plotArea_.getX(), inY, plotArea_.getRight(), inY, 1.0f);
-        g.setColour(accent.withAlpha(0.65f));
-        g.drawLine(plotArea_.getX(), outY, plotArea_.getRight(), outY, 1.0f);
     }
 
-    auto font = FontManager::getInstance().getUIFont(9.0f);
-    g.setFont(font);
-    g.setColour(text.withAlpha(0.85f));
-    g.drawFittedText("THR " + juce::String(thresholdDb_, 1), plotArea_.toNearestInt().reduced(5, 4),
+    auto& fonts = FontManager::getInstance();
+    g.setFont(fonts.getMonoFont(10.0f));
+    g.setColour(text);
+    g.drawFittedText("THR " + juce::String(thresholdDb_, 1), plotArea_.toNearestInt().reduced(6, 5),
                      juce::Justification::topLeft, 1);
 
-    auto meter = meterArea.reduced(2.0f, 0.0f);
-    g.setColour(border.withAlpha(0.55f));
-    g.drawRoundedRectangle(meter, 3.0f, 1.0f);
-
-    auto grMeter = meter.removeFromLeft(22.0f).reduced(5.0f, 18.0f);
-    auto peakMeter = meter.reduced(2.0f, 18.0f);
-
-    g.setColour(border.withAlpha(0.25f));
-    g.fillRoundedRectangle(grMeter, 2.0f);
+    // GR column: caption, amber bar falling from the top, reading underneath.
+    auto column = meterArea.toNearestInt();
+    g.setFont(fonts.getMonoFont(9.0f));
+    g.drawText("GR", column.removeFromTop(16), juce::Justification::centred, false);
+    const auto reading = column.removeFromBottom(16);
+    auto bar =
+        column.toFloat().withSizeKeepingCentre(10.0f, static_cast<float>(column.getHeight()));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_SLIDER_TRACK));
+    g.fillRoundedRectangle(bar, 2.0f);
     const float gr01 = juce::jlimit(0.0f, 1.0f, smoothedGainReductionDb_ / 24.0f);
-    auto grFill = grMeter.withTrimmedTop(grMeter.getHeight() * (1.0f - gr01));
-    g.setColour(grColour.withAlpha(0.9f));
-    g.fillRoundedRectangle(grFill, 2.0f);
-
-    g.setColour(border.withAlpha(0.25f));
-    g.fillRoundedRectangle(peakMeter, 2.0f);
-    const float out01 =
-        juce::jmap(juce::jlimit(kMinDb, 0.0f, smoothedOutputPeakDb_), kMinDb, 0.0f, 0.0f, 1.0f);
-    auto outFill = peakMeter.withTrimmedTop(peakMeter.getHeight() * (1.0f - out01));
-    g.setColour(accent.withAlpha(0.8f));
-    g.fillRoundedRectangle(outFill, 2.0f);
-
-    const float key01 =
-        juce::jmap(juce::jlimit(kMinDb, 0.0f, smoothedKeyPeakDb_), kMinDb, 0.0f, 0.0f, 1.0f);
-    const float keyY = peakMeter.getBottom() - peakMeter.getHeight() * key01;
-    g.setColour(keyColour.withAlpha(0.9f));
-    g.drawLine(peakMeter.getX(), keyY, peakMeter.getRight(), keyY, 1.4f);
-
-    g.setColour(text.withAlpha(0.85f));
-    g.drawFittedText("GR", grMeter.withTrimmedTop(-17.0f).toNearestInt(),
-                     juce::Justification::centredTop, 1);
-    g.drawFittedText("OUT", peakMeter.withTrimmedTop(-17.0f).toNearestInt(),
-                     juce::Justification::centredTop, 1);
-    g.drawFittedText("-" + juce::String(smoothedGainReductionDb_, 1),
-                     grMeter.withTrimmedBottom(-17.0f).toNearestInt(),
-                     juce::Justification::centredBottom, 1);
-    g.drawFittedText(formatDb(smoothedOutputPeakDb_),
-                     peakMeter.withTrimmedBottom(-17.0f).toNearestInt(),
-                     juce::Justification::centredBottom, 1);
+    g.setColour(amber);
+    g.fillRoundedRectangle(bar.withHeight(bar.getHeight() * gr01), 2.0f);
+    g.setColour(text);
+    g.drawText(juce::String(smoothedGainReductionDb_, 1), reading, juce::Justification::centred,
+               false);
 }
 
 void CompiledCompressorCurveView::mouseWheelMove(const juce::MouseEvent& e,

@@ -6,6 +6,7 @@
 #include "ui/components/mixer/LevelMeter.hpp"
 #include "ui/components/mixer/LevelMeterScale.hpp"
 #include "ui/themes/ActiveTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui::node_header {
@@ -45,35 +46,27 @@ class FlatGainSliderLookAndFeel : public juce::LookAndFeel_V4 {
 // no track, no labels — so it reads at ~16px.
 class MixKnobLookAndFeel : public juce::LookAndFeel_V4 {
   public:
+    // The side strip's MIX box: caption over the wet percentage, dragged
+    // vertically like the knob it replaced.
     void drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height,
                           float sliderPosProportional, float /*rotaryStartAngle*/,
                           float /*rotaryEndAngle*/, juce::Slider& /*slider*/) override {
-        auto bounds = juce::Rectangle<int>(x, y, width, height).toFloat();
-        const float radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) * 0.5f - 1.0f;
-        if (radius <= 0.0f)
-            return;
-        const float cx = bounds.getCentreX();
-        const float cy = bounds.getCentreY();
+        auto box = juce::Rectangle<int>(x, y, width, height).toFloat().reduced(0.5f);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));
+        g.fillRoundedRectangle(box, 4.0f);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
+        g.drawRoundedRectangle(box, 4.0f, 1.0f);
 
-        // Body
-        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
-        g.fillEllipse(cx - radius, cy - radius, radius * 2.0f, radius * 2.0f);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-        g.drawEllipse(cx - radius, cy - radius, radius * 2.0f, radius * 2.0f, 1.0f);
-
-        // Pointer: -135deg = fully dry, +135deg = fully wet (standard knob sweep)
-        constexpr float startAngle = -2.356194f;  // -3π/4
-        constexpr float endAngle = 2.356194f;     // +3π/4
-        const float angle = startAngle + sliderPosProportional * (endAngle - startAngle);
-        const float pointerR = radius - 2.0f;
-        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-        const float px = cx + std::sin(angle) * pointerR;
-        const float py = cy - std::cos(angle) * pointerR;
-        g.drawLine(cx, cy, px, py, 1.5f);
-    }
-
-    int getSliderThumbRadius(juce::Slider&) override {
-        return 6;
+        auto& fonts = FontManager::getInstance();
+        auto area = box.toNearestInt().reduced(2, 3);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+        g.setFont(fonts.getMonoFont(9.0f));
+        g.drawText("MIX", area.removeFromTop(area.getHeight() / 2), juce::Justification::centred,
+                   false);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
+        g.setFont(fonts.getMonoFont(11.0f).boldened());
+        g.drawText(juce::String(juce::roundToInt(sliderPosProportional * 100.0f)), area,
+                   juce::Justification::centred, false);
     }
 
     static MixKnobLookAndFeel& getInstance() {
@@ -169,6 +162,33 @@ inline void applyHeaderIconStyle(magda::SvgButton& btn, juce::Colour activeBg,
     btn.setActiveColor(juce::Colours::white);
     btn.setActiveBackgroundColor(activeBg);
     if (toggling)
+        btn.setClickingTogglesState(true);
+}
+
+/** How a v1 device-shell icon button behaves: a plain action, a toggle that
+ *  turns blue while on, power (green while on), or close (red on hover). */
+enum class DeviceIcon { Action, Toggle, Power, Close, Window };
+
+/** The v1 device icon button: 30x26 hit area, 5px radius, a 17px glyph (14px for
+ *  close, 16px for the plug-in window), grey at rest, light on a dark fill when
+ *  hovered. @p glyphKey is the colour the asset draws its glyph in. */
+inline void applyDeviceIconStyle(magda::SvgButton& btn, DeviceIcon kind,
+                                 juce::Colour glyphKey = juce::Colour(0xFFB3B3B3)) {
+    constexpr float kButtonHeight = 26.0f;
+    const float glyph = kind == DeviceIcon::Close    ? 14.0f
+                        : kind == DeviceIcon::Window ? 16.0f
+                                                     : 17.0f;
+    btn.setIconPadding((kButtonHeight - glyph) / 2.0f);
+    btn.setCornerRadius(5.0f);
+    btn.setOriginalColor(glyphKey);
+    btn.setNormalColor(ActiveTheme::DEVICE_ICON);
+    btn.setHoverColor(kind == DeviceIcon::Close ? ActiveTheme::DEVICE_RED
+                                                : ActiveTheme::DEVICE_ICON_HOVER);
+    btn.setPressedColor(ActiveTheme::DEVICE_ICON_HOVER);
+    btn.setHoverBackgroundColor(ActiveTheme::DEVICE_ICON_HOVER_BG);
+    btn.setActiveColor(kind == DeviceIcon::Power ? ActiveTheme::DEVICE_GREEN
+                                                 : ActiveTheme::DEVICE_BLUE);
+    if (kind == DeviceIcon::Toggle || kind == DeviceIcon::Power)
         btn.setClickingTogglesState(true);
 }
 

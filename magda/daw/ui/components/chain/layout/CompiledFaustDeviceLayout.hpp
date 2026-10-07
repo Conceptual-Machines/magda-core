@@ -37,6 +37,9 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
     int cellsPerRow() const override {
         return cellsPerRow_;
     }
+    bool reflowsForControlStyle() const override {
+        return !columnMajor_;
+    }
     bool wantsPagination() const override {
         return false;
     }

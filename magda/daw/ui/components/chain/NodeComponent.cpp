@@ -490,20 +490,8 @@ void NodeComponent::paint(juce::Graphics& g) {
     }
 
     // === MAIN NODE AREA (remaining bounds) ===
-    // Background
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.03f));
-    g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
-
-    // Border
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-    g.drawRoundedRectangle(bounds.toFloat(), 4.0f, 1.0f);
-
-    // Header separator (only if header visible)
-    int headerHeight = getHeaderHeight();
-    if (headerHeight > 0) {
-        g.drawHorizontalLine(headerHeight, static_cast<float>(bounds.getX()),
-                             static_cast<float>(bounds.getRight()));
-    }
+    const int headerHeight = getHeaderHeight();
+    paintNodeFrame(g, bounds, headerHeight);
 
     // Calculate content area (below header)
     auto contentArea = bounds;
@@ -635,9 +623,11 @@ void NodeComponent::resized() {
         int buttonSize = juce::jmin(BUTTON_SIZE, area.getWidth() - 4);
 
         // Delete button at top (always visible)
-        deleteButton_.setBounds(
-            area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-        deleteButton_.setVisible(true);
+        if (auto* close = getHeaderDeleteButton()) {
+            close->setBounds(
+                area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
+            close->setVisible(true);
+        }
         area.removeFromTop(4);
 
         // Bypass button below delete (only if it was visible - devices use their own)
@@ -727,29 +717,30 @@ void NodeComponent::resized() {
     // === HEADER: [B] Name ... [X] === (only if header visible)
     int headerHeight = getHeaderHeight();
     if (headerHeight > 0) {
-        auto headerArea = bounds.removeFromTop(headerHeight).reduced(3, 2);
+        auto headerArea = getHeaderInnerArea(bounds.removeFromTop(headerHeight));
+        const auto buttonSize = getHeaderButtonSize();
+        const int gap = getHeaderButtonGap();
+        const auto placeRight = [&](juce::Component& button) {
+            button.setBounds(headerArea.removeFromRight(buttonSize.x)
+                                 .withSizeKeepingCentre(buttonSize.x, buttonSize.y));
+            headerArea.removeFromRight(gap);
+        };
 
         // Delete button on far right (if visible)
-        if (deleteButton_.isVisible()) {
-            deleteButton_.setBounds(headerArea.removeFromRight(BUTTON_SIZE));
-            headerArea.removeFromRight(4);
-        }
+        if (auto* close = getHeaderDeleteButton(); close != nullptr && close->isVisible())
+            placeRight(*close);
 
         // Power slot — defaults to base's bypassButton_, but subclasses can
         // substitute a custom-styled button via getHeaderPowerButton().
-        if (auto* power = getHeaderPowerButton(); power != nullptr && power->isVisible()) {
-            power->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
-            headerArea.removeFromRight(4);
-        }
+        if (auto* power = getHeaderPowerButton(); power != nullptr && power->isVisible())
+            placeRight(*power);
 
         // Preset slot — base class reserves the position so the right-edge
         // icon order is locked to [preset][power][delete] and a subclass
         // can't accidentally tuck a button between them in
         // resizedHeaderExtra.
-        if (auto* preset = getHeaderPresetButton(); preset != nullptr && preset->isVisible()) {
-            preset->setBounds(headerArea.removeFromRight(BUTTON_SIZE));
-            headerArea.removeFromRight(4);
-        }
+        if (auto* preset = getHeaderPresetButton(); preset != nullptr && preset->isVisible())
+            placeRight(*preset);
 
         // Let subclass add extra header buttons
         resizedHeaderExtra(headerArea);
@@ -759,7 +750,8 @@ void NodeComponent::resized() {
     } else {
         // Hide header controls
         bypassButton_->setVisible(false);
-        deleteButton_.setVisible(false);
+        if (auto* close = getHeaderDeleteButton())
+            close->setVisible(false);
         nameLabel_.setVisible(false);
     }
 
@@ -915,7 +907,20 @@ void NodeComponent::setBypassButtonVisible(bool visible) {
 }
 
 void NodeComponent::setDeleteButtonVisible(bool visible) {
-    deleteButton_.setVisible(visible);
+    if (auto* close = getHeaderDeleteButton())
+        close->setVisible(visible);
+}
+
+void NodeComponent::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int> bounds,
+                                   int headerHeight) {
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.03f));
+    g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
+    g.drawRoundedRectangle(bounds.toFloat(), 4.0f, 1.0f);
+    if (headerHeight > 0) {
+        g.drawHorizontalLine(headerHeight, static_cast<float>(bounds.getX()),
+                             static_cast<float>(bounds.getRight()));
+    }
 }
 
 void NodeComponent::paintContent(juce::Graphics& /*g*/, juce::Rectangle<int> /*contentArea*/) {

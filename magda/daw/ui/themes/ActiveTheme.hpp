@@ -225,6 +225,36 @@ enum class ColourRole : std::size_t {
     TRANSPORT_TOGGLE_ON,
     TRANSPORT_MEMORY,
     TRANSPORT_METER_FLOOR,
+    DEVICE_BG,
+    DEVICE_HEAD,
+    DEVICE_HEAD2,
+    DEVICE_ID_ROW,
+    DEVICE_FIELD,
+    DEVICE_FIELD_BORDER,
+    DEVICE_LINE,
+    DEVICE_LINE2,
+    DEVICE_FRAME_BORDER,
+    DEVICE_TITLE,
+    DEVICE_TEXT,
+    DEVICE_VALUE_TEXT,
+    DEVICE_DIM,
+    DEVICE_DIM2,
+    DEVICE_ICON,
+    DEVICE_ICON_HOVER,
+    DEVICE_ICON_HOVER_BG,
+    DEVICE_ICON_INACTIVE,
+    DEVICE_GREEN,
+    DEVICE_BLUE,
+    DEVICE_AMBER,
+    DEVICE_RED,
+    DEVICE_KNOB_DISC,
+    DEVICE_POINTER,
+    DEVICE_SLIDER_TRACK,
+    DEVICE_SLIDER_FILL_LO,
+    DEVICE_SLIDER_FILL_HI,
+    DEVICE_SWITCH_OFF,
+    DEVICE_GRAPH_BG,
+    DEVICE_GRAPH_GRID,
     count
 };
 
@@ -483,6 +513,36 @@ class ActiveTheme {
     static constexpr auto TRANSPORT_TOGGLE_ON = ColourRole::TRANSPORT_TOGGLE_ON;
     static constexpr auto TRANSPORT_MEMORY = ColourRole::TRANSPORT_MEMORY;
     static constexpr auto TRANSPORT_METER_FLOOR = ColourRole::TRANSPORT_METER_FLOOR;
+    static constexpr auto DEVICE_BG = ColourRole::DEVICE_BG;
+    static constexpr auto DEVICE_HEAD = ColourRole::DEVICE_HEAD;
+    static constexpr auto DEVICE_HEAD2 = ColourRole::DEVICE_HEAD2;
+    static constexpr auto DEVICE_ID_ROW = ColourRole::DEVICE_ID_ROW;
+    static constexpr auto DEVICE_FIELD = ColourRole::DEVICE_FIELD;
+    static constexpr auto DEVICE_FIELD_BORDER = ColourRole::DEVICE_FIELD_BORDER;
+    static constexpr auto DEVICE_LINE = ColourRole::DEVICE_LINE;
+    static constexpr auto DEVICE_LINE2 = ColourRole::DEVICE_LINE2;
+    static constexpr auto DEVICE_FRAME_BORDER = ColourRole::DEVICE_FRAME_BORDER;
+    static constexpr auto DEVICE_TITLE = ColourRole::DEVICE_TITLE;
+    static constexpr auto DEVICE_TEXT = ColourRole::DEVICE_TEXT;
+    static constexpr auto DEVICE_VALUE_TEXT = ColourRole::DEVICE_VALUE_TEXT;
+    static constexpr auto DEVICE_DIM = ColourRole::DEVICE_DIM;
+    static constexpr auto DEVICE_DIM2 = ColourRole::DEVICE_DIM2;
+    static constexpr auto DEVICE_ICON = ColourRole::DEVICE_ICON;
+    static constexpr auto DEVICE_ICON_HOVER = ColourRole::DEVICE_ICON_HOVER;
+    static constexpr auto DEVICE_ICON_HOVER_BG = ColourRole::DEVICE_ICON_HOVER_BG;
+    static constexpr auto DEVICE_ICON_INACTIVE = ColourRole::DEVICE_ICON_INACTIVE;
+    static constexpr auto DEVICE_GREEN = ColourRole::DEVICE_GREEN;
+    static constexpr auto DEVICE_BLUE = ColourRole::DEVICE_BLUE;
+    static constexpr auto DEVICE_AMBER = ColourRole::DEVICE_AMBER;
+    static constexpr auto DEVICE_RED = ColourRole::DEVICE_RED;
+    static constexpr auto DEVICE_KNOB_DISC = ColourRole::DEVICE_KNOB_DISC;
+    static constexpr auto DEVICE_POINTER = ColourRole::DEVICE_POINTER;
+    static constexpr auto DEVICE_SLIDER_TRACK = ColourRole::DEVICE_SLIDER_TRACK;
+    static constexpr auto DEVICE_SLIDER_FILL_LO = ColourRole::DEVICE_SLIDER_FILL_LO;
+    static constexpr auto DEVICE_SLIDER_FILL_HI = ColourRole::DEVICE_SLIDER_FILL_HI;
+    static constexpr auto DEVICE_SWITCH_OFF = ColourRole::DEVICE_SWITCH_OFF;
+    static constexpr auto DEVICE_GRAPH_BG = ColourRole::DEVICE_GRAPH_BG;
+    static constexpr auto DEVICE_GRAPH_GRID = ColourRole::DEVICE_GRAPH_GRID;
 
     // Runtime palette API. Theme changes are expected to happen on JUCE's
     // message thread, alongside the LookAndFeel refresh they trigger.
