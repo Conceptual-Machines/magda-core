@@ -167,7 +167,7 @@ Metrics metricsFor(int width, int height, const TextWidths& text, float densityS
     const auto grownBy = [&](int inset) { return juce::jmax(0, inset - text.timecodeGlyphInset); };
     m.timeBox = text.timecodeBox + text.timecodeOverlay;
     m.stackBox = text.stackTimecodeBox;
-    m.punchBox = m.timeBox + grownBy(m.punchIcon + kPunchIconInset);
+    m.punchBox = text.timecodeBox + grownBy(m.punchIcon + kPunchIconInset);
     m.headlineBox = text.headlineTimecodeBox + grownBy(text.timecodeCaption);
     m.captionColumn = text.timecodeCaption;
 

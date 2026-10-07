@@ -119,11 +119,10 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
                                       static_cast<float>(text.tempo) * 1.25f, 1.5f);
         }
 
-        beginTest("The timecode box holds the largest position its range can reach");
+        beginTest("The timecode box holds the largest bar the timeline can reach");
         {
-            // Positions are one-indexed and the labels accept kTimecodeMaxBeats
-            // beats, so at one beat per bar the bar number reaches six digits.
-            // Sizing the box for four clipped it.
+            // The timeline stops at 4096 bars, so a four-digit bar number is
+            // the widest a readout has to hold.
             const auto needed = magda::BarsBeatsTicksLabel::segmentWidthsFor(
                 kTimecodeMaxBeats, magda::MIN_TIME_SIGNATURE_VALUE, magda::MAX_TIME_SIGNATURE_VALUE,
                 true);

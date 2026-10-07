@@ -72,6 +72,7 @@ TransportPanel::TransportPanel() {
     keyReadout->onClick = [this]() { showKeyMenu(); };
     addAndMakeVisible(*keyReadout);
     updateKeyReadout();
+    timelineLengthBars_ = ProjectManager::getInstance().getCurrentProjectInfo().timelineLengthBars;
 
     selChipButton = std::make_unique<juce::TextButton>(transport::kSelectionCaption);
     selChipButton->onClick = [this]() {
@@ -148,15 +149,28 @@ void TransportPanel::configChanged() {
 }
 
 void TransportPanel::projectOpened(const ProjectInfo&) {
-    updateKeyReadout();
+    syncFromProject();
 }
 
 void TransportPanel::projectClosed() {
-    updateKeyReadout();
+    syncFromProject();
 }
 
 void TransportPanel::projectPropertiesChanged() {
+    syncFromProject();
+}
+
+int TransportPanel::timecodeDigits() const {
+    return (transport::timecodeBarDigits(timelineLengthBars_) * 100) +
+           transport::timecodeBeatDigits(timeSignatureNumerator);
+}
+
+void TransportPanel::syncFromProject() {
     updateKeyReadout();
+    const int before = timecodeDigits();
+    timelineLengthBars_ = ProjectManager::getInstance().getCurrentProjectInfo().timelineLengthBars;
+    if (timecodeDigits() != before)
+        resized();
 }
 
 void TransportPanel::updateKeyReadout() {
@@ -424,7 +438,10 @@ void TransportPanel::resized() {
     // through the same code that places it, then sections are dropped into the
     // overflow menu in the declared priority order until the survivors fit.
     // Nothing here decides what fits.
-    layout_ = transport::compute(getWidth(), getHeight(), transport::measureTextWidths(),
+    const auto text =
+        transport::measureTextWidths(transport::timecodeBarDigits(timelineLengthBars_),
+                                     transport::timecodeBeatDigits(timeSignatureNumerator));
+    layout_ = transport::compute(getWidth(), getHeight(), text,
                                  LayoutConfig::getInstance().densityScale, style_);
     const auto& l = layout_;
 
@@ -852,7 +869,7 @@ void TransportPanel::setupTimeDisplayBoxes() {
     auto setupBBTLabel = [this](std::unique_ptr<BarsBeatsTicksLabel>& label,
                                 const juce::String& overlay, juce::Colour textColour) {
         label = std::make_unique<BarsBeatsTicksLabel>();
-        label->setRange(0.0, transport::kTimecodeMaxBeats, 0.0);
+        label->setRange(0.0, transport::kTimecodeRangeBeats, 0.0);
         label->setBarsBeatsIsPosition(true);
         label->setDoubleClickResetsValue(false);
         label->setDrawBackground(false);
@@ -935,7 +952,7 @@ void TransportPanel::setupTimeDisplayBoxes() {
     // Punch start/end — stacked box in time display area
     auto accentPurple = ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION);
 
-    setupBBTLabel(punchStartLabel, "I", accentPurple);
+    setupBBTLabel(punchStartLabel, "", accentPurple);
     punchStartLabel->onValueChange = [this]() {
         double startBeats = punchStartLabel->getValue();
         double startSeconds = (startBeats * 60.0) / currentTempo;
@@ -943,7 +960,7 @@ void TransportPanel::setupTimeDisplayBoxes() {
             onPunchRegionEdit(startSeconds, cachedPunchEnd);
     };
 
-    setupBBTLabel(punchEndLabel, "O", accentPurple);
+    setupBBTLabel(punchEndLabel, "", accentPurple);
     punchEndLabel->onValueChange = [this]() {
         double endBeats = punchEndLabel->getValue();
         double endSeconds = (endBeats * 60.0) / currentTempo;
@@ -1350,6 +1367,7 @@ void TransportPanel::setPunchRegion(double startTime, double endTime, bool punch
 }
 
 void TransportPanel::setTimeSignature(int numerator, int denominator) {
+    const int digitsBefore = timecodeDigits();
     timeSignatureNumerator = clampTimeSignatureValue(numerator);
     timeSignatureDenominator = clampTimeSignatureValue(denominator);
 
@@ -1370,6 +1388,8 @@ void TransportPanel::setTimeSignature(int numerator, int denominator) {
     setTimeSelection(cachedSelectionStart, cachedSelectionEnd, cachedSelectionActive);
     setLoopRegion(cachedLoopStart, cachedLoopEnd, cachedLoopEnabled);
     setPunchRegion(cachedPunchStart, cachedPunchEnd, cachedPunchInEnabled, cachedPunchOutEnabled);
+    if (timecodeDigits() != digitsBefore)
+        resized();
 }
 
 void TransportPanel::setTempo(double bpm) {

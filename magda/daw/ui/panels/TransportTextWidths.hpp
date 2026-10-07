@@ -53,15 +53,16 @@ inline constexpr std::array<const char*, 2> kKeyQualityNames{"maj", "min"};
 inline constexpr std::array<const char*, 3> kBannerTexts{"AUTOMATION WRITE", "AUTOMATION TOUCH",
                                                          "AUTOMATION LATCH"};
 
-// The largest bar number the timecode readouts show, in any meter: five
-// digits. The range the labels accept follows from it, in beats at the fewest
-// beats per bar, so the labels and the width measured for them agree on how
-// large a bar number the box has to hold. (A round beat count at one beat per
-// bar put a sixth digit on the one-indexed bar number, and every readout in
-// every meter paid for it.)
-inline constexpr int kTimecodeMaxBars = 99999;
+// The largest bar number a readout is sized for: four digits, since the
+// timeline stops at 4096 bars (Project Settings). Expressed in beats at the
+// fewest beats per bar, which is where the bar number grows widest.
+inline constexpr int kTimecodeMaxBars = 9999;
 inline constexpr double kTimecodeMaxBeats =
     static_cast<double>((kTimecodeMaxBars - 1) * MIN_TIME_SIGNATURE_VALUE);
+
+// What the readouts accept, looser than what they are sized for so a typed
+// position in a long-bar meter is never clamped.
+inline constexpr double kTimecodeRangeBeats = 99998.0;
 
 // How far the retained peak has to run ahead of the average before the CPU
 // readout shows it as well.
@@ -80,6 +81,11 @@ juce::String cpuReadoutText(int averagePercent, int peakPercent);
  *  from TransportLayout so the arithmetic there stays a pure function and can
  *  be asserted without one.
  */
-TextWidths measureTextWidths();
+TextWidths measureTextWidths(int timecodeBarDigits = 4, int timecodeBeatDigits = 2);
+
+/** The digits the open project's positions can reach: its last bar and the
+ *  current meter's beat count. */
+int timecodeBarDigits(int timelineLengthBars);
+int timecodeBeatDigits(int beatsPerBar);
 
 }  // namespace magda::daw::ui::transport

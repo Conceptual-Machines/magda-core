@@ -277,6 +277,11 @@ int BarsBeatsTicksLabel::preferredWidthForRange(double maxValue, int minBeatsPer
     return needed[0] + needed[1] + needed[2] + (2 * kDotWidth) + (2 * kEdgeInset);
 }
 
+int BarsBeatsTicksLabel::preferredWidthForDigits(int barDigits, int beatDigits, float fontSize) {
+    return widthOfDigits(barDigits, fontSize) + widthOfDigits(beatDigits, fontSize) +
+           widthOfDigits(3, fontSize) + (2 * kDotWidth) + (2 * kEdgeInset);
+}
+
 std::array<int, 3> BarsBeatsTicksLabel::shownSegmentWidths() const {
     return {widthOfDigits(juce::String(barsSegment_->getDisplayValue()).length(), fontSize_),
             widthOfDigits(juce::String(beatsSegment_->getDisplayValue()).length(), fontSize_),

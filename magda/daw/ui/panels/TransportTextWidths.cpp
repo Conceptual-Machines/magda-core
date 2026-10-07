@@ -15,7 +15,15 @@ juce::String cpuReadoutText(int averagePercent, int peakPercent) {
     return juce::String(averagePercent) + "%";
 }
 
-TextWidths measureTextWidths() {
+int timecodeBarDigits(int timelineLengthBars) {
+    return juce::String(juce::jlimit(1, kTimecodeMaxBars, timelineLengthBars + 1)).length();
+}
+
+int timecodeBeatDigits(int beatsPerBar) {
+    return juce::String(juce::jmax(1, beatsPerBar)).length();
+}
+
+TextWidths measureTextWidths(int timecodeBarDigits, int timecodeBeatDigits) {
     auto& fonts = FontManager::getInstance();
     const auto widthOf = [](const juce::Font& font, juce::StringRef text) {
         return juce::GlyphArrangement::getStringWidthInt(font, text);
@@ -41,16 +49,17 @@ TextWidths measureTextWidths() {
     TextWidths text;
     // The readout sizes itself: it knows its own segment shares and how large a
     // bar number the range can reach, which a box drawn around it does not.
-    const auto timecodeWidth = [](float fontSize) {
-        return BarsBeatsTicksLabel::preferredWidthForRange(
-            kTimecodeMaxBeats, MIN_TIME_SIGNATURE_VALUE, MAX_TIME_SIGNATURE_VALUE, true, fontSize);
+    // Sized for the positions the open project can reach, not every meter's worst case.
+    const auto timecodeWidth = [&](float fontSize) {
+        return BarsBeatsTicksLabel::preferredWidthForDigits(timecodeBarDigits, timecodeBeatDigits,
+                                                            fontSize);
     };
     text.timecodeBox = timecodeWidth(kRowTimecodeFontSize);
     text.stackTimecodeBox = timecodeWidth(kStackTimecodeFontSize);
     text.headlineTimecodeBox = timecodeWidth(kHeadlineTimecodeFontSize);
-    // Packed readouts draw their S / E / I / O letter before the digits.
+    // The selection and loop readouts draw their S / E letter before the digits.
     const auto overlayFont = fonts.getUIFont(BarsBeatsTicksLabel::kPackedOverlayFontSize);
-    for (const char* letter : {"S", "E", "I", "O"})
+    for (const char* letter : {"S", "E"})
         text.timecodeOverlay = juce::jmax(text.timecodeOverlay, widthOf(overlayFont, letter));
     text.timecodeOverlay += BarsBeatsTicksLabel::kPackedOverlayGap;
     // The caption TransportPanel draws over the box's top-right corner. The
