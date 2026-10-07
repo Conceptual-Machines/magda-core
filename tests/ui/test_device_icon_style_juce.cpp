@@ -65,6 +65,16 @@ class DeviceIconStyleTest final : public juce::UnitTest {
         const auto green = ActiveTheme::getColour(ActiveTheme::DEVICE_GREEN);
         const auto white = juce::Colours::white;
 
+        beginTest("The device palette resolves to the spec's values");
+        expectEquals(ActiveTheme::getColour(ActiveTheme::DEVICE_GREEN).toDisplayString(false),
+                     juce::Colour(0xFF41C46Bu).toDisplayString(false));
+        expectEquals(ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE).toDisplayString(false),
+                     juce::Colour(0xFF6F9DFFu).toDisplayString(false));
+        expectEquals(ActiveTheme::getColour(ActiveTheme::DEVICE_ICON).toDisplayString(false),
+                     juce::Colour(0xFF868E97u).toDisplayString(false));
+        expectEquals(ActiveTheme::getColour(ActiveTheme::DEVICE_HEAD).toDisplayString(false),
+                     juce::Colour(0xFF1F242Bu).toDisplayString(false));
+
         beginTest("Close draws a grey cross, not a white one");
         {
             magda::SvgButton close("Close", BinaryData::close_svg, BinaryData::close_svgSize);

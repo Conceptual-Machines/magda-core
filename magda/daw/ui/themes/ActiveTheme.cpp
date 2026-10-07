@@ -181,7 +181,8 @@ constexpr ActiveTheme::Palette darkPalette{
     0xFF1E2126,  // TRANSPORT_CHIP
     0xFF5B58DB,  // TRANSPORT_TOGGLE_ON
     0xFFD69C44,  // TRANSPORT_MEMORY
-    0xFF303740,  // TRANSPORT_METER_FLOOR    0xFF1C2026,  // DEVICE_BG
+    0xFF303740,  // TRANSPORT_METER_FLOOR
+    0xFF1C2026,  // DEVICE_BG
     0xFF1F242B,  // DEVICE_HEAD
     0xFF1A1E24,  // DEVICE_HEAD2
     0xFF20252C,  // DEVICE_ID_ROW
@@ -212,6 +213,11 @@ constexpr ActiveTheme::Palette darkPalette{
     0xFF12161B,  // DEVICE_GRAPH_BG
     0xFF1B2027,  // DEVICE_GRAPH_GRID
 };
+
+// A dropped entry shifts every role after it and leaves the array's tail
+// zero-filled, so a zero anywhere means the table and the enum disagree.
+static_assert(std::ranges::none_of(darkPalette, [](juce::uint32 colour) { return colour == 0; }),
+              "darkPalette is missing an entry: every ColourRole needs a value");
 
 constexpr ActiveTheme::SyntaxPalette darkSyntaxPalette{
     0xFF0C0F14,  // EDITOR_BACKGROUND
