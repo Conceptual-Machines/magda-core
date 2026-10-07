@@ -473,8 +473,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // The plugin's own MIDI output always flows downstream; this controls
     // whether the raw input is merged through as well.
     if (supportsMidiSourceToggle(device)) {
-        midiThruButton_ = std::make_unique<magda::SvgButton>("MidiThru", BinaryData::compare_svg,
-                                                             BinaryData::compare_svgSize);
+        midiThruButton_ = std::make_unique<magda::SvgButton>("MidiThru", BinaryData::midi_thru_svg,
+                                                             BinaryData::midi_thru_svgSize);
         midiThruButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
         midiThruButton_->setNormalColor(juce::Colour(0xFFB3B3B3));
         midiThruButton_->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE));
