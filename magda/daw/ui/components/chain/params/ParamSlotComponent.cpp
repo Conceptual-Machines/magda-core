@@ -1031,8 +1031,8 @@ bool ParamSlotComponent::layoutStyled(juce::Rectangle<int> bounds) {
             break;
         }
         case ParamControlStyle::Knobs: {
-            constexpr int kKnob = 40;  // the 34px disc plus its arc
-            const int size = juce::jmin(kKnob, inner.getHeight() - 26, inner.getWidth());
+            constexpr int kMaxKnob = 52;  // the disc plus its arc, grown with the cell
+            const int size = juce::jmin(kMaxKnob, inner.getHeight() - 26, inner.getWidth());
             knobArea_ = inner.removeFromTop(juce::jmax(16, size))
                             .withSizeKeepingCentre(juce::jmax(16, size), juce::jmax(16, size));
             inner.removeFromTop(2);

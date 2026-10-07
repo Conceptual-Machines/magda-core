@@ -410,9 +410,10 @@ void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::
         }
     }
 
-    // Device spec: 14px around the grid, 8px between cells.
-    constexpr int kPadding = 14;
-    constexpr int kGap = 8;
+    // The spec's 14px padding and 8px gaps, scaled to a slot about half the
+    // spec's 1000px width.
+    constexpr int kPadding = 10;
+    constexpr int kGap = 6;
     area = area.reduced(kPadding, kPadding - 2);
     const int numRows = (cellCount_ + cellsPerRow_ - 1) / cellsPerRow_;
     const int cellWidth = (area.getWidth() - kGap * (cellsPerRow_ - 1)) / cellsPerRow_;

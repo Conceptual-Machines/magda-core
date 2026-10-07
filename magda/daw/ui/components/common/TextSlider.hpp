@@ -273,8 +273,8 @@ class TextSlider : public juce::Component,
     /** Whether the value control draws its own box; off when the owner paints
      *  the frame around a knob or bar. */
     void setDrawFrame(bool draw) {
-        valueControl_.setDrawBackground(draw);
-        valueControl_.setDrawBorder(draw);
+        drawFrame_ = draw;
+        updateLabel();
     }
 
     /** A horizontal slider normally drags left-right; a knob drags upward. */
@@ -763,6 +763,7 @@ class TextSlider : public juce::Component,
     Orientation orientation_ = Orientation::Horizontal;
     std::optional<juce::Rectangle<int>> textArea_;
     bool dragsUpward_ = false;
+    bool drawFrame_ = true;
     bool rightClickEditsText_ = true;
     bool showFillIndicator_ = true;
     juce::String emptyText_ = "-";
@@ -833,8 +834,9 @@ class TextSlider : public juce::Component,
         const bool hasMeter = meterPeakL_ > 0.001f || meterPeakR_ > 0.001f;
         valueControl_.setShowFillIndicator(showFillIndicator_ &&
                                            orientation_ == Orientation::Horizontal && !hasMeter);
-        valueControl_.setDrawBackground(orientation_ == Orientation::Horizontal && !hasMeter);
-        valueControl_.setDrawBorder(orientation_ == Orientation::Horizontal && !hasMeter);
+        const bool frame = drawFrame_ && orientation_ == Orientation::Horizontal && !hasMeter;
+        valueControl_.setDrawBackground(frame);
+        valueControl_.setDrawBorder(frame);
         valueControl_.setDragging(isLeftButtonDrag_);
         valueControl_.setTintState(toControlTintState(automationVisualState_));
         valueControl_.setEditorBoundsProvider(orientation_ == Orientation::Vertical

@@ -473,8 +473,10 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
 
     // "MIDI in thru" toggle for devices that can both receive and output MIDI.
     // The plugin's own MIDI output always flows downstream; this controls
-    // whether the raw input is merged through as well.
-    if (supportsMidiSourceToggle(device)) {
+    // whether the raw input is merged through as well. Always built: a hosted
+    // plug-in reports its MIDI output only once its instance loads, so the
+    // header layout decides visibility each pass.
+    {
         midiThruButton_ = std::make_unique<magda::SvgButton>("MidiThru", BinaryData::midi_thru_svg,
                                                              BinaryData::midi_thru_svgSize);
         midiThruButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
@@ -489,7 +491,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
             midiThruButton_->setActive(enabled);
             magda::TrackManager::getInstance().setDeviceInChainMidiInThruByPath(nodePath_, enabled);
         };
-        addAndMakeVisible(*midiThruButton_);
+        addChildComponent(*midiThruButton_);
     }
 
     closeButton_ = std::make_unique<magda::SvgButton>("Close", BinaryData::close_svg,
@@ -657,7 +659,9 @@ void DeviceSlotComponent::layoutSideStrip(juce::Rectangle<int> strip) {
 
     auto area = strip.reduced(5, 6);
     const bool utility = isMidiUtilityDeviceSlot(traits_);
-    const bool mix = !utility && hasWrapperMixPair();
+    // Dry/wet only means something on an audio effect.
+    const bool mix =
+        !utility && device_.deviceType == magda::DeviceType::Effect && hasWrapperMixPair();
     if (mixKnob_) {
         mixKnob_->setVisible(mix);
         if (mix) {
@@ -1107,7 +1111,7 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
 int DeviceSlotComponent::getPreferredWidth() const {
     // Meter strip + padding is added to content width (not via getMeterWidth since meter is
     // content-area only)
-    constexpr int meterExtra = METER_STRIP_WIDTH + 4;
+    const int meterExtra = sideStripWidth();
 
     if (collapsed_) {
         return getLeftPanelsWidth() + COLLAPSED_WIDTH + METER_STRIP_WIDTH + 2 +
@@ -2108,7 +2112,9 @@ int DeviceSlotComponent::getDynamicSlotWidth() const {
     if (traits_.compiledPresentation != nullptr &&
         traits_.compiledPresentation->preferredSlotWidth > 0)
         return traits_.compiledPresentation->preferredSlotWidth;
-    return PARAM_CELL_WIDTH * PARAMS_PER_ROW;
+    // Eight 64px cells with the grid's 6px gaps and 10px padding.
+    constexpr int kCell = 64;
+    return kCell * PARAMS_PER_ROW + 6 * (PARAMS_PER_ROW - 1) + 2 * 10;
 }
 
 // =============================================================================
