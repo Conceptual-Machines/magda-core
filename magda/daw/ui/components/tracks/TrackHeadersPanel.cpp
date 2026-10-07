@@ -2002,8 +2002,10 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
     // Calculate indent
     int indent = header.depth * INDENT_WIDTH;
     SideColumn outer(!headersOnRight_);  // outer edge: right normally, left when swapped
+    // The I/O column sits on the lane side, the same edge updateTrackHeaderLayout carves.
     if (showIORouting_)
-        paintIOColumn(g, header, outer.removeFrom(area, IO_COLUMN_WIDTH), isSelected);
+        paintIOColumn(g, header, SideColumn(headersOnRight_).removeFrom(area, IO_COLUMN_WIDTH),
+                      isSelected);
 
     // Draw indent guide lines for nested tracks on outer side
     if (header.depth > 0) {
