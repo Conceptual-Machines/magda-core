@@ -39,6 +39,12 @@ inline constexpr const char* kLoopCaption = "LOOP";
 inline constexpr const char* kCursorCaption = "CUR";
 inline constexpr float kTimecodeCaptionFontSize = 7.0f;
 
+inline constexpr float kClockFontSize = 9.0f;
+inline constexpr const char* kClockWidest = "8:88:88.888";
+
+/** The playhead clock under the headline: m:ss.mmm, with hours once past one. */
+juce::String clockText(double seconds);
+
 inline constexpr const char* kMemoryCaption = "MEM";
 inline constexpr const char* kKeepCaption = "KEEP";
 inline constexpr const char* kMemoryTimeWidest = "88:88 / 88:88";

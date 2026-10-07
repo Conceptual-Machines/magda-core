@@ -282,6 +282,9 @@ class TransportPanel : public juce::Component,
     int timeSignatureDenominator = DEFAULT_TIME_SIGNATURE_DENOMINATOR;
     int countInMode_ = 0;  // 0=none, 1=1bar, 2=2bars, 3=2beats, 4=1beat
 
+    // The playhead in seconds, drawn under the headline readout.
+    juce::String clockText_ = "0:00.000";
+
     // Cached state for display updates
     double cachedPlayheadPosition = 0.0;
     double cachedEditCursorPosition = 0.0;

@@ -20,6 +20,7 @@ struct TextWidths {
     int timecodeOverlay = 0;      // the S / E letter before the digits, with its gap
     int stackTimecodeBox = 0;     // a readout at the Justified stack's smaller size
     int headlineTimecodeBox = 0;  // the same at the playhead headline size
+    int clock = 0;                // the playhead in minutes and seconds under the headline
     int timecodeCaption = 0;      // the widest of the SEL / LOOP / CUR captions, in their font
     int timecodeGlyphInset = 0;   // how far inside a readout's edge its last glyph already stops
     int tempo = 0;                // "999.99" in the headline font
@@ -107,6 +108,7 @@ struct Layout {
     juce::Rectangle<int> selCaption, loopCaption, cursorCaption;  // Justified stack rows
     juce::Rectangle<int> selectionStart, selectionEnd, loopStart, loopEnd;
     juce::Rectangle<int> playhead, editCursor;
+    juce::Rectangle<int> clock;  // under the headline playhead; empty in the stack
     juce::Rectangle<int> gridDivision, autoGrid, snap;
     juce::Rectangle<int> memoryDot, memoryCaption, memoryMeter, memoryTime, keep;
     juce::Rectangle<int> qwerty, overflow;

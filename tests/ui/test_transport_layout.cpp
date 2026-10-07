@@ -25,6 +25,7 @@ TextWidths nominalText() {
     text.timecodeOverlay = 11;
     text.stackTimecodeBox = 91;
     text.headlineTimecodeBox = 141;
+    text.clock = 50;
     text.timecodeCaption = 20;
     text.timecodeGlyphInset = 4;
     text.tempo = 49;
@@ -274,6 +275,19 @@ TEST_CASE("Selection and loop share rows behind the chips except in the stack",
     REQUIRE(stack.selectionStart.getY() < stack.loopStart.getY());
     REQUIRE(stack.loopStart.getY() < stack.playhead.getY());
     REQUIRE(stack.playhead.getBottom() <= stack.stackFrame.getBottom());
+}
+
+TEST_CASE("The headline playhead carries a seconds clock beneath it", "[ui][transport-layout]") {
+    for (auto style : {Style::Anchored, Style::MemoryFill}) {
+        const auto l = compute(kWide, defaultTransportHeight(), nominalText(), 1.0f, style);
+        REQUIRE_FALSE(l.clock.isEmpty());
+        REQUIRE(l.clock.getY() >= l.playhead.getBottom());
+        REQUIRE(l.cursorFrame.contains(l.clock));
+        REQUIRE(l.clock.getWidth() >= nominalText().clock);
+    }
+    const auto stack =
+        compute(kWide, defaultTransportHeight(), nominalText(), 1.0f, Style::Justified);
+    REQUIRE(stack.clock.isEmpty());
 }
 
 TEST_CASE("The stack falls back to the headline playhead once SEL / LOOP drop",

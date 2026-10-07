@@ -214,7 +214,14 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
                    "the CPU readout clips once the peak runs ahead");
         }
 
+        beginTest("The playhead clock reads minutes, seconds and milliseconds");
+        expectEquals(clockText(0.0), juce::String("0:00.000"));
+        expectEquals(clockText(61.5), juce::String("1:01.500"));
+        expectEquals(clockText(3725.004), juce::String("1:02:05.004"));
+        expectEquals(clockText(-1.0), juce::String("0:00.000"));
+
         beginTest("Each readout is wide enough for the string it has to draw");
+        expect(l.clock.getWidth() >= text.clock);
         expect(l.playhead.getWidth() >= text.headlineTimecodeBox);
         expect(l.selectionStart.getWidth() >= text.timecodeBox);
         expect(l.key.getWidth() >= text.keyRoot + text.keyQuality);

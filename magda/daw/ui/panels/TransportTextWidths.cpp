@@ -1,5 +1,7 @@
 #include "TransportTextWidths.hpp"
 
+#include <cmath>
+
 #include "../components/common/BarsBeatsTicksLabel.hpp"
 #include "../components/common/GridDivisionMenu.hpp"
 #include "../themes/FontManager.hpp"
@@ -13,6 +15,21 @@ juce::String cpuReadoutText(int averagePercent, int peakPercent) {
     if (peakPercent > averagePercent + kCpuPeakMargin)
         return juce::String(averagePercent) + "/" + juce::String(peakPercent) + "%";
     return juce::String(averagePercent) + "%";
+}
+
+juce::String clockText(double seconds) {
+    const auto totalMs = static_cast<juce::int64>(std::llround(juce::jmax(0.0, seconds) * 1000.0));
+    const auto ms = static_cast<int>(totalMs % 1000);
+    const auto totalSeconds = totalMs / 1000;
+    const auto secs = static_cast<int>(totalSeconds % 60);
+    const auto mins = static_cast<int>((totalSeconds / 60) % 60);
+    const auto hours = static_cast<int>(totalSeconds / 3600);
+    const auto pad = [](int value, int width) {
+        return juce::String(value).paddedLeft('0', width);
+    };
+    if (hours > 0)
+        return juce::String(hours) + ":" + pad(mins, 2) + ":" + pad(secs, 2) + "." + pad(ms, 3);
+    return juce::String(mins) + ":" + pad(secs, 2) + "." + pad(ms, 3);
 }
 
 int timecodeBarDigits(int timelineLengthBars) {
@@ -95,6 +112,7 @@ TextWidths measureTextWidths(int timecodeBarDigits, int timecodeBeatDigits) {
     for (const char* quality : kKeyQualityNames)
         text.keyQuality = juce::jmax(text.keyQuality, widthOf(keyQualityFont, quality));
 
+    text.clock = widthOf(fonts.getMonoFont(kClockFontSize), kClockWidest);
     text.memoryCaption = widthOf(memoryCaptionFont, kMemoryCaption);
     text.memoryTime = widthOf(memoryTimeFont, kMemoryTimeWidest);
     for (const char* banner : kBannerTexts)

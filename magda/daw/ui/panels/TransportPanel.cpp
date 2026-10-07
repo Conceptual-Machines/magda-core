@@ -378,6 +378,13 @@ void TransportPanel::paint(juce::Graphics& g) {
                            static_cast<float>(l.tempoFrame.getBottom() - 8));
     }
 
+    if (!l.clock.isEmpty()) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        g.setFont(FontManager::getInstance().getMonoFont(transport::kClockFontSize));
+        g.drawText(clockText_, l.clock.withTrimmedLeft(BarsBeatsTicksLabel::kEdgeInset),
+                   juce::Justification::centredLeft, false);
+    }
+
     // The headline playhead carries its caption at the top-right.
     if (!l.cursorFrame.isEmpty()) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.5f));
@@ -1270,6 +1277,10 @@ void TransportPanel::styleTransportButton(SvgButton& button, ColourRole accentRo
 
 void TransportPanel::setPlayheadPosition(double positionInSeconds) {
     cachedPlayheadPosition = positionInSeconds;
+    if (auto text = transport::clockText(positionInSeconds); text != clockText_) {
+        clockText_ = text;
+        repaint(layout_.clock);
+    }
 
     // Convert seconds to beats
     double beats = (positionInSeconds * currentTempo) / 60.0;

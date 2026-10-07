@@ -69,6 +69,7 @@ constexpr int kFrameInsetY = 2;        // rows inside a frame, top and bottom
 constexpr int kMinButtonSize = 20;     //
 constexpr int kMaxButtonSize = 28;     // a taller bar gives the readouts room, not the icons
 constexpr int kButtonPercent = 66;     // icon tiles against the frame height
+constexpr int kClockHeight = 11;       // the seconds line under the headline playhead
 constexpr int kRowGap = 2;             // between stacked readout rows
 constexpr int kTimeSigOverlap = 4;     // the denominator tucks under the numerator's slash
 constexpr int kKeyGap = 3;             // between the key root and its quality
@@ -168,7 +169,8 @@ Metrics metricsFor(int width, int height, const TextWidths& text, float densityS
     m.timeBox = text.timecodeBox + text.timecodeOverlay;
     m.stackBox = text.stackTimecodeBox;
     m.punchBox = text.timecodeBox + grownBy(m.punchIcon + kPunchIconInset);
-    m.headlineBox = text.headlineTimecodeBox + grownBy(text.timecodeCaption);
+    m.headlineBox =
+        juce::jmax(text.headlineTimecodeBox + grownBy(text.timecodeCaption), text.clock);
     m.captionColumn = text.timecodeCaption;
 
     m.tempoCell = text.tempo + (2 * cellPad);
@@ -273,7 +275,10 @@ int buildTempo(Layout& l, const Metrics& m, int x) {
 int buildCursor(Layout& l, const Metrics& m, int x) {
     const int width = m.framePad + m.headlineBox + m.framePad;
     l.cursorFrame = frameAt(m, x, width);
-    l.playhead = {x + m.framePad, m.rowY1, m.headlineBox, m.frameHeight - (2 * kFrameInsetY)};
+    auto inner = juce::Rectangle<int>(x + m.framePad, m.rowY1, m.headlineBox,
+                                      m.frameHeight - (2 * kFrameInsetY));
+    l.clock = inner.removeFromBottom(kClockHeight);
+    l.playhead = inner;
     return width;
 }
 
