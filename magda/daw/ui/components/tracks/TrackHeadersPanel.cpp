@@ -1334,10 +1334,18 @@ void TrackHeadersPanel::setGhostHeaders(const juce::StringArray& labels,
     repaint();
 }
 
-// Names read light on every head; a full-bar track colour turns them white.
+// Names read light on every head; a full-bar track colour turns them white. Values are
+// JetBrains Mono, and mute / solo can read as M and S.
 void TrackHeadersPanel::updateHeaderSelectionColours() {
-    const bool fullBar = Config::getInstance().getTrackColourStyle() == "full";
+    const auto& config = Config::getInstance();
+    const bool fullBar = config.getTrackColourStyle() == "full";
+    const bool letters = config.getMuteSoloStyle() == "letters";
+    const auto valueFont = FontManager::getInstance().getMonoFont(10.0f);
     for (auto& header : trackHeaders) {
+        header->volumeLabel->setFont(valueFont);
+        header->panLabel->setFont(valueFont);
+        header->muteButton->setGlyphText(letters ? "M" : "");
+        header->soloButton->setGlyphText(letters ? "S" : "");
         const bool colouredHead =
             fullBar && !header->isMaster && header->trackColour != juce::Colour(0xFF444444);
         header->nameLabel->setColour(juce::Label::textColourId,

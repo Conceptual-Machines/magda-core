@@ -161,7 +161,16 @@ class SvgButton : public juce::Button {
         return active;
     }
 
+    /** Draws @p text (e.g. "M") in place of the icon, coloured like the glyph would be.
+     *  An empty string goes back to the icon. */
+    void setGlyphText(const juce::String& text) {
+        glyphText_ = text;
+        repaint();
+    }
+
   private:
+    void paintGlyphText(juce::Graphics& g, bool drawOn, bool highlighted, juce::Colour iconColour);
+
     static juce::Colour resolveThemeColour(juce::Colour colour,
                                            const std::optional<ColourRole>& role);
 
@@ -228,6 +237,7 @@ class SvgButton : public juce::Button {
     float inactiveIconOpacity = 1.0f;
 
     bool active = false;
+    juce::String glyphText_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SvgButton)
 };

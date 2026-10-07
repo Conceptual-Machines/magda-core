@@ -763,6 +763,14 @@ class AppearancePage : public juce::Component {
         trackColourStyleCombo.addItem(trOr("preferences.track_colour_style.full", "Full bar"), 2);
         addAndMakeVisible(trackColourStyleCombo);
 
+        setupComboLabel(*this, muteSoloStyleLabel,
+                        trOr("preferences.mute_solo_style.label", "Mute / solo"));
+        styleCombo(muteSoloStyleCombo);
+        muteSoloStyleCombo.addItem(trOr("preferences.mute_solo_style.icons", "Icons"), 1);
+        muteSoloStyleCombo.addItem(trOr("preferences.mute_solo_style.letters", "Letters (M / S)"),
+                                   2);
+        addAndMakeVisible(muteSoloStyleCombo);
+
         setupSectionHeader(*this, coloursHeader, tr("preferences.section.track_colour_palette"));
 
         colourHeaderLabel.setText(tr("preferences.colours.colour"), juce::dontSendNotification);
@@ -841,12 +849,12 @@ class AppearancePage : public juce::Component {
             label->setColour(juce::Label::textColourId, secondary);
         for (auto* label : {&themeLabel, &scaleLabel, &fontFamilyLabel, &fontScaleLabel,
                             &densityLabel, &transportStyleLabel, &deviceControlStyleLabel,
-                            &trackColourStyleLabel, &clipColourModeLabel})
+                            &trackColourStyleLabel, &muteSoloStyleLabel, &clipColourModeLabel})
             label->setColour(juce::Label::textColourId, primary);
 
-        for (auto* combo :
-             {&themeCombo, &scaleCombo, &fontFamilyCombo, &transportStyleCombo,
-              &deviceControlStyleCombo, &trackColourStyleCombo, &clipColourModeCombo}) {
+        for (auto* combo : {&themeCombo, &scaleCombo, &fontFamilyCombo, &transportStyleCombo,
+                            &deviceControlStyleCombo, &trackColourStyleCombo, &muteSoloStyleCombo,
+                            &clipColourModeCombo}) {
             combo->setColour(juce::ComboBox::backgroundColourId, surface);
             combo->setColour(juce::ComboBox::textColourId, primary);
             combo->setColour(juce::ComboBox::outlineColourId, border);
@@ -915,6 +923,8 @@ class AppearancePage : public juce::Component {
             juce::dontSendNotification);
         trackColourStyleCombo.setSelectedId(config.getTrackColourStyle() == "full" ? 2 : 1,
                                             juce::dontSendNotification);
+        muteSoloStyleCombo.setSelectedId(config.getMuteSoloStyle() == "letters" ? 2 : 1,
+                                         juce::dontSendNotification);
         deviceControlStyleCombo.setSelectedId(
             static_cast<int>(daw::ui::controlStyleFromKey(config.getDeviceControlStyle())) + 1,
             juce::dontSendNotification);
@@ -936,6 +946,7 @@ class AppearancePage : public juce::Component {
         config.setTransportStyle(transport::styleKey(
             static_cast<transport::Style>(juce::jmax(0, transportStyleCombo.getSelectedId() - 1))));
         config.setTrackColourStyle(trackColourStyleCombo.getSelectedId() == 2 ? "full" : "spine");
+        config.setMuteSoloStyle(muteSoloStyleCombo.getSelectedId() == 2 ? "letters" : "icons");
         config.setDeviceControlStyle(
             daw::ui::controlStyleKey(static_cast<daw::ui::ParamControlStyle>(
                 juce::jmax(0, deviceControlStyleCombo.getSelectedId() - 1))));
@@ -993,8 +1004,8 @@ class AppearancePage : public juce::Component {
 
     static int getLeftColumnContentHeight() {
         return kHeaderH + 4 + kRowH + 4 + kRowH + 4 + kRowH  // Display Scale (scale, font, size)
-               + kSectionGap + kHeaderH + 4 + kRowH + 4 + kRowH + 4 + kRowH + 4 +
-               kRowH;  // Density, transport, device controls, track colour
+               + kSectionGap + kHeaderH + 4 + kRowH + 4 + kRowH + 4 + kRowH + 4 + kRowH + 4 +
+               kRowH;  // Density, transport, device controls, track colour, mute / solo
     }
 
     static int getRightColumnContentHeight() {
@@ -1051,6 +1062,8 @@ class AppearancePage : public juce::Component {
         layoutComboRow(b, deviceControlStyleLabel, deviceControlStyleCombo, kRowH);
         b.removeFromTop(4);
         layoutComboRow(b, trackColourStyleLabel, trackColourStyleCombo, kRowH);
+        b.removeFromTop(4);
+        layoutComboRow(b, muteSoloStyleLabel, muteSoloStyleCombo, kRowH);
     }
 
     void layoutColoursSection(juce::Rectangle<int>& b) {
@@ -1423,6 +1436,8 @@ class AppearancePage : public juce::Component {
     juce::ComboBox deviceControlStyleCombo;
     juce::Label trackColourStyleLabel;
     juce::ComboBox trackColourStyleCombo;
+    juce::Label muteSoloStyleLabel;
+    juce::ComboBox muteSoloStyleCombo;
 
     std::unique_ptr<juce::FileChooser> fileChooser_;
     std::vector<ThemeFileEntry> userThemes_;
