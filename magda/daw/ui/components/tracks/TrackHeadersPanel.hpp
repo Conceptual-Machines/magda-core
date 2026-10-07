@@ -136,6 +136,9 @@ class TrackHeadersPanel : public juce::Component,
     void toggleIORouting();
     bool isIORoutingVisible() const;
     std::function<void()> onIORoutingToggled;
+    /** Paints the AUDIO / MIDI column labels over @p ioColumnStrip, a strip as wide as the
+     *  I/O column, aligned with the selects below. */
+    static void paintIOLabels(juce::Graphics& g, juce::Rectangle<int> ioColumnStrip);
 
     // Callbacks
     std::function<void(int, int)> onTrackHeightChanged;
@@ -222,7 +225,6 @@ class TrackHeadersPanel : public juce::Component,
 
         // Layout cache
         int nameRowBottomY = 0;  // Absolute Y of name row bottom (for meter separator line)
-        juce::Rectangle<int> ioAudioLabel, ioMidiLabel;  // empty when folded away
 
         // Meter levels
         float meterLevelL = 0.0f;
@@ -354,8 +356,7 @@ class TrackHeadersPanel : public juce::Component,
     void updateTrackHeaderLayout();
     void configChanged() override;
     void layoutIOColumn(TrackHeader& header, juce::Rectangle<int> ioArea);
-    void paintIOColumn(juce::Graphics& g, const TrackHeader& header, juce::Rectangle<int> ioArea,
-                       bool isSelected) const;
+    void paintIOColumn(juce::Graphics& g, juce::Rectangle<int> ioArea, bool isSelected) const;
     static void layoutMeterColumn(TrackHeader& header, juce::Rectangle<int>& workArea,
                                   const SideColumn& outer);
     void layoutControlArea(TrackHeader& header, juce::Rectangle<int>& tcpArea,

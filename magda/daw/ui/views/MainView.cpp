@@ -930,6 +930,8 @@ void MainView::paint(juce::Graphics& g) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.fillRect(cornerBottomBorderLine);
     }
+    if (!ioLabelsStrip.isEmpty())
+        TrackHeadersPanel::paintIOLabels(g, ioLabelsStrip);
     if (!markerCornerRightBorderLine.isEmpty()) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.fillRect(markerCornerRightBorderLine);
@@ -1200,6 +1202,16 @@ void MainView::resized() {
         addTrackButton->setBounds(btnSide.removeFrom(botRow, btnSize));
         axisSide.removeSpacing(botRow, gap);
         vAxisIcon->setBounds(axisSide.removeFrom(botRow, btnSize));
+
+        // AUDIO / MIDI labels over the I/O column, in the lower row.
+        repaint(ioLabelsStrip);
+        auto ioStrip = cornerArea;
+        ioLabelsStrip = trackHeadersPanel->isIORoutingVisible()
+                            ? axisSide.removeFrom(ioStrip, TrackHeadersPanel::IO_COLUMN_WIDTH)
+                                  .withY(botRow.getY())
+                                  .withHeight(botRow.getHeight())
+                            : juce::Rectangle<int>();
+        repaint(ioLabelsStrip);
     }
 
     markerLaneViewport->setVisible(markerLaneVisible_);

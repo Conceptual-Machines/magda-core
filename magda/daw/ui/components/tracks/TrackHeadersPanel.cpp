@@ -2040,8 +2040,7 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
     SideColumn outer(!headersOnRight_);  // outer edge: right normally, left when swapped
     // The I/O column sits on the lane side, the same edge updateTrackHeaderLayout carves.
     if (showIORouting_)
-        paintIOColumn(g, header, SideColumn(headersOnRight_).removeFrom(area, IO_COLUMN_WIDTH),
-                      isSelected);
+        paintIOColumn(g, SideColumn(headersOnRight_).removeFrom(area, IO_COLUMN_WIDTH), isSelected);
 
     // Draw indent guide lines for nested tracks on outer side
     if (header.depth > 0) {
@@ -2227,17 +2226,10 @@ void TrackHeadersPanel::layoutIOColumn(TrackHeader& header, juce::Rectangle<int>
     const bool hasAudio = (wantIn && p.audioIn) || (wantOut && p.audioOut);
     const bool hasMidi = (wantIn && p.midiIn) || (wantOut && p.midiOut);
 
-    // The Audio / MIDI labels share the name strip; the rows centre in the space below it,
-    // shrinking from 24px when a short track has less room.
+    // Rows centre in the column, shrinking from 24px when a short track has less room.
     auto content = ioArea.reduced(IO_PAD_X, 0);
-    content.removeFromLeft(1);  // the column's left border
-    const auto labelRow = content.removeFromTop(TH_NAME_STRIP_H);
-    const auto labels = splitIORow(
-        labelRow.withSizeKeepingCentre(labelRow.getWidth(), IO_CAPTION_H), hasAudio, hasMidi);
-    header.ioAudioLabel = labels.audio;
-    header.ioMidiLabel = labels.midi;
-
-    content.removeFromBottom(1);  // the column's bottom border
+    content.removeFromLeft(1);    // the column's left border
+    content.removeFromBottom(1);  // and its bottom border
     const int rowGap = 6;
     const int selectH =
         juce::jlimit(16, IO_SELECT_H, (content.getHeight() - 8 - (rows - 1) * rowGap) / rows);
@@ -2263,8 +2255,8 @@ void TrackHeadersPanel::layoutIOColumn(TrackHeader& header, juce::Rectangle<int>
                  p.midiOut ? header.midiOutputSelector.get() : nullptr);
 }
 
-void TrackHeadersPanel::paintIOColumn(juce::Graphics& g, const TrackHeader& header,
-                                      juce::Rectangle<int> ioArea, bool isSelected) const {
+void TrackHeadersPanel::paintIOColumn(juce::Graphics& g, juce::Rectangle<int> ioArea,
+                                      bool isSelected) const {
     const auto base = ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND);
     g.setColour(isSelected ? base.interpolatedWith(
                                  ActiveTheme::getColour(ActiveTheme::DEVICE_ICON_HOVER_BG), 0.3f)
@@ -2275,12 +2267,15 @@ void TrackHeadersPanel::paintIOColumn(juce::Graphics& g, const TrackHeader& head
                ioArea.getHeight());
     g.drawHorizontalLine(ioArea.getBottom() - 1, static_cast<float>(ioArea.getX()),
                          static_cast<float>(ioArea.getRight()));
+}
 
+void TrackHeadersPanel::paintIOLabels(juce::Graphics& g, juce::Rectangle<int> ioColumnStrip) {
+    auto content = ioColumnStrip.reduced(IO_PAD_X, 0).withTrimmedLeft(1);
+    const auto columns =
+        splitIORow(content.withSizeKeepingCentre(content.getWidth(), IO_CAPTION_H), true, true);
     const auto dim = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2);
     const auto paintLabel = [&](juce::Rectangle<int> area, const char* svg, int svgSize,
                                 const juce::String& text) {
-        if (area.isEmpty())
-            return;
         area.removeFromLeft(2);
         if (auto icon = juce::Drawable::createFromImageData(svg, static_cast<size_t>(svgSize))) {
             icon->replaceColour(juce::Colour(0xFFB3B3B3), dim);
@@ -2292,10 +2287,8 @@ void TrackHeadersPanel::paintIOColumn(juce::Graphics& g, const TrackHeader& head
         g.setFont(FontManager::getInstance().getMonoFont(9.5f).withExtraKerningFactor(0.1f));
         g.drawText(text, area, juce::Justification::centredLeft, false);
     };
-    paintLabel(header.ioAudioLabel, BinaryData::sinewave_svg, BinaryData::sinewave_svgSize,
-               "AUDIO");
-    paintLabel(header.ioMidiLabel, BinaryData::piano_roll_svg, BinaryData::piano_roll_svgSize,
-               "MIDI");
+    paintLabel(columns.audio, BinaryData::sinewave_svg, BinaryData::sinewave_svgSize, "AUDIO");
+    paintLabel(columns.midi, BinaryData::piano_roll_svg, BinaryData::piano_roll_svgSize, "MIDI");
 }
 
 namespace {
@@ -2584,7 +2577,6 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
             tcpArea.removeFromTop(6);
             layoutControlArea(header, tcpArea, inner, trackHeight);
             // After the control area, which starts by hiding every selector.
-            header.ioAudioLabel = header.ioMidiLabel = {};
             if (showIORouting_)
                 layoutIOColumn(header, ioArea);
         }
