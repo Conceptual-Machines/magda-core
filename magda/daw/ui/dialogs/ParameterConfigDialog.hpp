@@ -103,6 +103,9 @@ class ParameterConfigDialog : public juce::Component,
     juce::Rectangle<int> aiSpinnerBounds_;
     juce::TextButton aiPromptButton_;
     juce::String aiCustomPrompt_;
+    // This plugin's parameter control style; "Use global" leaves the preference in charge.
+    juce::Label controlStyleLabel_;
+    juce::ComboBox controlStyleCombo_;
     bool detecting_ = false;
     float aiSpinnerPhase_ = 0.0f;
     int aiTotal_ = 0;

@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 
+#include "core/Config.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/TypeIds.hpp"
@@ -28,7 +29,7 @@ class ParamPageTabBar;
  * DeviceSlotComponent constructs the host with the right layout for the
  * device family and wires per-slot callbacks via getSlot(i).
  */
-class ParamHostComponent : public juce::Component {
+class ParamHostComponent : public juce::Component, private magda::ConfigListener {
   public:
     static constexpr int kMaxCells = 64;
     static constexpr int PAGINATION_HEIGHT = 18;
@@ -119,6 +120,9 @@ class ParamHostComponent : public juce::Component {
 
     void resized() override;
 
+    // Re-resolves the control style when the global preference changes.
+    void configChanged() override;
+
     // Layout access (used by tests / future tooling).
     const DeviceParamLayout& getLayout() const {
         return *layout_;
@@ -144,6 +148,9 @@ class ParamHostComponent : public juce::Component {
     // body without the cells shrinking to match.
     int usedRows_ = 0;
     int rowHeight_ = 0;
+    juce::String controlStyleOverride_;  // the plugin's own choice; empty follows the global
+    bool controlStyleApplied_ = false;
+    void applyControlStyle();
     std::unique_ptr<ParamSlotComponent> paramSlots_[kMaxCells];
     std::unique_ptr<juce::ArrowButton> prevPageButton_;
     std::unique_ptr<juce::ArrowButton> nextPageButton_;

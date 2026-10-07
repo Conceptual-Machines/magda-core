@@ -317,6 +317,15 @@ class Config {
         transportStyle = style.empty() ? "anchored" : std::move(style);
     }
 
+    // Device parameter controls: "text", "knobs" or "sliders". A plugin's
+    // parameter config can override it.
+    const std::string& getDeviceControlStyle() const {
+        return deviceControlStyle;
+    }
+    void setDeviceControlStyle(std::string style) {
+        deviceControlStyle = style.empty() ? "text" : std::move(style);
+    }
+
     // Font size scale for MAGDA-owned UI fonts. This is independent from
     // Desktop UI scale, which changes both text and component geometry.
     double getUIFontScale() const {
@@ -1516,6 +1525,7 @@ class Config {
     double uiDensityScale = 1.0;
 
     std::string transportStyle = "anchored";
+    std::string deviceControlStyle = "text";
 
     // UI font scale: multiplier applied by FontManager to app-owned text fonts.
     double uiFontScale = 1.0;

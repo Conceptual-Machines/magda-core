@@ -142,6 +142,26 @@ TEST_CASE("parameter config save and load round-trip", "[param-config-store]") {
     REQUIRE(*loaded->entries[2].choices == std::vector<juce::String>{"LP", "BP", "HP"});
 }
 
+TEST_CASE("A plugin's control style override reaches its device", "[param-config-store]") {
+    TempDataDir temp;
+    auto device = makeExternalDevice();
+
+    auto config = store::fromDevice(device);
+    REQUIRE(config.controlStyle.isEmpty());
+    config.controlStyle = "knobs";
+    REQUIRE(store::save(device.uniqueId, config));
+    REQUIRE(store::load(device.uniqueId)->controlStyle == "knobs");
+
+    REQUIRE(store::applyToDevice(device.uniqueId, device));
+    REQUIRE(device.controlStyle == "knobs");
+
+    // Clearing the override puts the device back on the global preference.
+    config.controlStyle.clear();
+    REQUIRE(store::save(device.uniqueId, config));
+    REQUIRE(store::applyToDevice(device.uniqueId, device));
+    REQUIRE(device.controlStyle.isEmpty());
+}
+
 TEST_CASE("fromDevice describes every parameter, unselected device ticks nothing",
           "[param-config-store]") {
     const auto device = makeExternalDevice();

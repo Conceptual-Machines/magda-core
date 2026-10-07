@@ -43,6 +43,8 @@ struct PluginParameterConfig {
     juce::String pluginId;
     std::vector<PluginParameterConfigEntry> entries;
     juce::String aiPrompt;
+    /// "text", "knobs" or "sliders"; empty follows the global preference.
+    juce::String controlStyle;
 };
 
 /**

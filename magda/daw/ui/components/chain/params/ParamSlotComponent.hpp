@@ -13,6 +13,7 @@
 #include "core/controllers/ControllerRegistry.hpp"
 #include "core/controllers/MidiLearnCoordinator.hpp"
 #include "params/MomentaryParamButton.hpp"
+#include "params/ParamControlStyle.hpp"
 #include "params/ParamLinkResolver.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
@@ -56,6 +57,9 @@ class ParamSlotComponent : public juce::Component,
     void setFonts(const juce::Font& labelFont, const juce::Font& valueFont);
     bool isBeingDragged() const;  // Check if user is actively dragging this parameter
     void setOverlayOnly(bool overlayOnly);
+    /** Text keeps the bordered value field; Knobs and Sliders paint a tile with
+     *  a knob or a bar, the value slider still taking every drag. */
+    void setControlStyle(ParamControlStyle style);
     void setLinkOverlayVertical(bool vertical) {
         linkOverlayVertical_ = vertical;
     }
@@ -204,6 +208,14 @@ class ParamSlotComponent : public juce::Component,
     // Build a ParamLinkContext from current state
     ParamLinkContext buildLinkContext() const;
 
+    // Lays the label, value and knob or bar out inside the tile for the
+    // Knobs and Sliders styles. False when the widget keeps the text layout.
+    bool layoutStyled(juce::Rectangle<int> bounds);
+    void paintKnob(juce::Graphics& g, float normalised) const;
+    void paintBar(juce::Graphics& g, float normalised) const;
+    void paintBooleanValue(juce::Graphics& g) const;
+    void applyControlStyleToWidgets();
+
     // Create/refresh the segmented row for a discrete param. Reuses the
     // existing buttons when the choice count is unchanged so a value echo
     // doesn't churn child components on every refresh.
@@ -301,6 +313,8 @@ class ParamSlotComponent : public juce::Component,
     bool isInMidiLearnMode_ = false;
     bool hasMidiBinding_ = false;  // Persistent badge for already-mapped params
     bool overlayOnly_ = false;
+    ParamControlStyle style_ = ParamControlStyle::Text;
+    juce::Rectangle<int> tileArea_, knobArea_, barArea_, valueArea_;
     bool linkOverlayVertical_ = false;
 
     // Link mode drag state (for setting modulation amount via drag)

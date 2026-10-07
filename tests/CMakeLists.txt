@@ -820,6 +820,7 @@ target_sources(magda_juce_tests PRIVATE
     # A discrete cell's dropdown must not write the parameter on rebuild, and
     # must map an external plugin's TE-native value onto its choices.
     ui/test_param_slot_discrete_combo_juce.cpp
+    ../magda/daw/ui/components/chain/params/ParamControlStyle.cpp
     ../magda/daw/ui/components/chain/params/ParamSlotComponent.cpp
     ../magda/daw/ui/components/chain/params/ParamWidgetSetup.cpp
     ../magda/daw/ui/components/chain/params/ParamLinkResolver.cpp

@@ -157,6 +157,7 @@ ParamHostComponent::ParamHostComponent(std::unique_ptr<DeviceParamLayout> layout
     cellsPerRow_ = layout_->cellsPerRow();
     jassert(cellCount_ >= 0 && cellCount_ <= kMaxCells);
     jassert((cellCount_ == 0 && cellsPerRow_ == 0) || cellsPerRow_ > 0);
+    magda::Config::getInstance().addListener(this);
 
     prevPageButton_ = makeNavArrowButton("prev", 0.5f);
     prevPageButton_->onClick = [this]() {
@@ -191,11 +192,17 @@ ParamHostComponent::ParamHostComponent(std::unique_ptr<DeviceParamLayout> layout
     }
 }
 
-ParamHostComponent::~ParamHostComponent() = default;
+ParamHostComponent::~ParamHostComponent() {
+    magda::Config::getInstance().removeListener(this);
+}
 
 void ParamHostComponent::updateParameterSlots(
     const magda::DeviceInfo& device, int currentPage,
     const std::function<void(int paramIndex, double value)>& onValueChanged) {
+    if (controlStyleOverride_ != device.controlStyle || !controlStyleApplied_) {
+        controlStyleOverride_ = device.controlStyle;
+        applyControlStyle();
+    }
     const auto previousSpans = cellSpans_;
     cellSpans_.assign(static_cast<size_t>(std::max(0, cellCount_)), 1);
     usedRows_ = 0;
@@ -417,6 +424,17 @@ void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::
     }
 
     setPaginationVisible(true);
+}
+
+void ParamHostComponent::configChanged() {
+    applyControlStyle();
+}
+
+void ParamHostComponent::applyControlStyle() {
+    controlStyleApplied_ = true;
+    const auto style = resolveControlStyle(controlStyleOverride_);
+    for (int i = 0; i < cellCount_; ++i)
+        paramSlots_[i]->setControlStyle(style);
 }
 
 void ParamHostComponent::resized() {
