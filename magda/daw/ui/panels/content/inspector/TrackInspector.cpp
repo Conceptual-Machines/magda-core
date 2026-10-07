@@ -44,7 +44,7 @@ magda::track_controls::Metrics inspectorControlMetrics() {
     magda::track_controls::Metrics m;
     m.rowH = 22;
     m.buttonW = 26;
-    m.buttonH = 18;
+    m.buttonH = 22;  // the gain / pan row height, so the whole row lines up
     m.cellW = 26;
     m.gap = 4;
     m.rowGap = 4;
@@ -104,9 +104,9 @@ TrackInspector::TrackInspector() {
         BinaryData::master_off_svg, BinaryData::master_off_svgSize);
     configureMasterSpeakerButton(*muteButton_);
     // v1: mute, solo, record, monitor and automation keep the neutral chip and carry their
-    // state in the glyph. Paddings match the track headers' glyph sizes on 26x18 buttons.
+    // state in the glyph. Paddings land the track headers' glyph sizes on 26x22 buttons.
     applyGlyphMuteStyle(*muteButton_);
-    muteButton_->setIconPadding(5.0f);
+    muteButton_->setIconPadding(7.0f);
     muteButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             if (selectedTrackId_ == magda::MASTER_TRACK_ID)
@@ -123,7 +123,7 @@ TrackInspector::TrackInspector() {
     // Speaker icon button (used for master mute instead of "M" text)
     speakerButton_ = magda::makeMasterSpeakerButton();
     applyGlyphMuteStyle(*speakerButton_);
-    speakerButton_->setIconPadding(5.0f);
+    speakerButton_->setIconPadding(7.0f);
     speakerButton_->onClick = [this]() {
         magda::UndoManager::getInstance().executeCommand(
             std::make_unique<magda::SetMasterMuteCommand>(speakerButton_->getToggleState()));
@@ -144,7 +144,7 @@ TrackInspector::TrackInspector() {
     soloButton_->setActiveBackgroundColor(ActiveTheme::SURFACE);
     soloButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
                                            ActiveTheme::DEVICE_AMBER);
-    soloButton_->setIconPadding(4.5f);
+    soloButton_->setIconPadding(6.5f);
     soloButton_->setClickingTogglesState(true);
     soloButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
@@ -163,7 +163,7 @@ TrackInspector::TrackInspector() {
     recordButton_->setActiveBackgroundColor(ActiveTheme::SURFACE);
     recordButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
                                              ActiveTheme::DEVICE_RED);
-    recordButton_->setIconPadding(4.5f);
+    recordButton_->setIconPadding(6.5f);
     recordButton_->setClickingTogglesState(true);
     recordButton_->onClick = [this]() {
         DBG("TrackInspector::recordButton clicked - trackId="
@@ -211,7 +211,7 @@ TrackInspector::TrackInspector() {
             return std::vector<magda::TrackId>(selectedTrackIds_.begin(), selectedTrackIds_.end());
         return std::vector<magda::TrackId>{selectedTrackId_};
     };
-    monitorButton_.setIconPadding(7.0f);
+    monitorButton_.setIconPadding(9.0f);
     monitorButton_.setGlyphStyle(true);
     addAndMakeVisible(monitorButton_);
 
@@ -225,7 +225,7 @@ TrackInspector::TrackInspector() {
     automationIndicator_->setActiveBackgroundColor(ActiveTheme::SURFACE);
     automationIndicator_->setStateColourReplacement(
         juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL, ActiveTheme::ACCENT_MODULATION);
-    automationIndicator_->setIconPadding(5.0f);
+    automationIndicator_->setIconPadding(7.0f);
     automationIndicator_->onClick = [this]() {
         automatedSectionExpanded_ = !automatedSectionExpanded_;
         updateAutomatedParametersSummary();
