@@ -1260,7 +1260,6 @@ RackId TrackManager::wrapChainElementsInRack(const std::vector<ChainNodePath>& p
     rack.name = rackName.isEmpty() ? "Rack" : rackName;
     ChainInfo chain;
     chain.id = presetChainId != INVALID_CHAIN_ID ? presetChainId : allocateChainId();
-    chain.name = "Chain 1";
 
     ChainNodePath destinationPath = sourceChainPath;
     destinationPath.steps.push_back({ChainStepType::Rack, rack.id});
@@ -2590,7 +2589,6 @@ RackId TrackManager::createRackWithDevice(std::vector<ChainElement>& elements, i
 
     ChainInfo defaultChain;
     defaultChain.id = nextChainId_++;
-    defaultChain.name = "Chain 1";
     defaultChain.elements.push_back(makeDeviceElement(std::move(device)));
     rack.chains.push_back(std::move(defaultChain));
 
@@ -2613,7 +2611,6 @@ RackId TrackManager::addRackToChain(TrackId trackId, RackId parentRackId, ChainI
         // Add a default chain to the nested rack
         ChainInfo defaultChain;
         defaultChain.id = nextChainId_++;
-        defaultChain.name = "Chain 1";
         nestedRack.chains.push_back(std::move(defaultChain));
 
         RackId newRackId = nestedRack.id;
@@ -2673,7 +2670,6 @@ RackId TrackManager::addRackToChainByPath(const ChainNodePath& chainPath,
         // Add a default chain to the nested rack
         ChainInfo defaultChain;
         defaultChain.id = nextChainId_++;
-        defaultChain.name = "Chain 1";
         nestedRack.chains.push_back(std::move(defaultChain));
 
         RackId newRackId = nestedRack.id;

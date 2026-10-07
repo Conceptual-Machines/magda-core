@@ -288,7 +288,8 @@ NodeComponent::~NodeComponent() {
 
 void NodeComponent::styleHeaderPowerAndClose() {
     using node_header::DeviceIcon;
-    const auto height = static_cast<float>(BUTTON_SIZE);
+    // The collapsed strip stacks them at BUTTON_SIZE; expanded they take the header's size.
+    const auto height = static_cast<float>(collapsed_ ? BUTTON_SIZE : getHeaderButtonSize().y);
     node_header::applyDeviceIconStyle(*bypassButton_, DeviceIcon::Power, juce::Colour(0xFFE6E6E6),
                                       ActiveTheme::DEVICE_GREEN, height);
     if (deleteButton_)
@@ -1150,6 +1151,7 @@ void NodeComponent::setSelected(bool selected) {
 void NodeComponent::setCollapsed(bool collapsed) {
     if (collapsed_ != collapsed) {
         collapsed_ = collapsed;
+        styleHeaderPowerAndClose();
         resized();
         repaint();
         if (onCollapsedChanged) {

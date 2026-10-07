@@ -8,6 +8,8 @@
 #include "core/RackInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
+#include "layout/DashedAddButton.hpp"
+#include "layout/DeviceShellPainter.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
 
@@ -17,13 +19,10 @@ class ChainRowComponent;
 class ChainPanel;
 
 /**
- * @brief A rack container that holds multiple parallel chains
+ * @brief A rack of parallel chains in the v1 device shell.
  *
- * Inherits from NodeComponent for common header/footer layout.
- * Content area shows "Chains:" label and chain rows.
- *
- * Works recursively - can be nested inside ChainPanel at any depth.
- * Uses ChainNodePath to track its location in the hierarchy.
+ * Header, ID row, [chain list | selected chain's devices | side strip], footer.
+ * Works recursively: a chain's devices can include a nested rack, located by ChainNodePath.
  */
 class RackComponent : public NodeComponent, public juce::Timer {
   public:
@@ -36,7 +35,7 @@ class RackComponent : public NodeComponent, public juce::Timer {
 
     int getPreferredHeight() const;
     int getPreferredWidth() const override;
-    int getMinimumWidth() const;        // Width without chain panel expansion
+    int getMinimumWidth() const;        // Width with the device viewport at its narrowest
     void setAvailableWidth(int width);  // Set available width for chain panel
     magda::RackId getRackId() const {
         return rackId_;
@@ -69,9 +68,23 @@ class RackComponent : public NodeComponent, public juce::Timer {
     void chainNodeSelectionChanged(const magda::ChainNodePath& path) override;
 
   protected:
+    void paintNodeFrame(juce::Graphics& g, juce::Rectangle<int> bounds, int headerHeight) override;
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override;
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
+    void lookAndFeelChanged() override;
+    int getHeaderHeight() const override {
+        return HEADER_BAR_HEIGHT;
+    }
+    juce::Rectangle<int> getHeaderInnerArea(juce::Rectangle<int> header) const override {
+        return header.reduced(10, 0);
+    }
+    juce::Point<int> getHeaderButtonSize() const override {
+        return {30, 26};
+    }
+    int getHeaderButtonGap() const override {
+        return 8;
+    }
     juce::Component* getHeaderPresetButton() override {
         return presetButton_.get();
     }
@@ -89,8 +102,14 @@ class RackComponent : public NodeComponent, public juce::Timer {
     }
 
   private:
-    /// Every chain row stacked, each with the 2px gap that follows it.
+    /// Every chain row and the Add chain row, with the gaps between them.
     int stackedChainRowsHeight() const;
+    /// Width of everything but the device viewport.
+    int fixedWidth() const;
+    void styleShellControls();
+    void layoutChainList(juce::Rectangle<int> list);
+    void layoutSideStrip(juce::Rectangle<int> strip);
+    void layoutFooter(juce::Rectangle<int> footer);
 
     void initializeCommon(const magda::RackInfo& rack);
     void onAddChainClicked();
@@ -103,8 +122,7 @@ class RackComponent : public NodeComponent, public juce::Timer {
     std::unique_ptr<magda::SvgButton> modButton_;     // Modulators toggle
     std::unique_ptr<magda::SvgButton> macroButton_;   // Macros toggle
     std::unique_ptr<magda::SvgButton> presetButton_;  // MAGDA rack presets menu
-    std::unique_ptr<juce::TextButton> deltaButton_;
-    juce::TextButton addChainButton_;
+    DashedAddButton addChainButton_{"Add chain"};
 
     // Currently-loaded preset name (empty when none) — used as the default
     // for "Save as" and to surface the loaded preset in the popup tick.
@@ -116,17 +134,14 @@ class RackComponent : public NodeComponent, public juce::Timer {
     void saveCurrentRackPreset();
     void loadRackPresetByName(const juce::String& presetName);
 
-    // Level meter (right side of content area, like DeviceSlotComponent).
-    // The gain slider is drawn on top of it with a flat-thumb LookAndFeel, so
-    // dragging the thumb sets rack volume while the meter remains visible
-    // behind it. Width matches DeviceSlotComponent's strip so adjacent meters
-    // line up across racks and devices.
-    static constexpr int METER_STRIP_WIDTH = 18;
+    // Side strip fader: the gain slider overlays the meter, as on a device.
     magda::LevelMeter levelMeter_;
     std::unique_ptr<juce::Slider> gainSlider_;
 
-    // Content area
-    juce::Label chainsLabel_;  // "Chains:" label
+    // Shell rows in this component's coordinates; empty when not shown.
+    device_shell::ShellRows shellRows_;
+    juce::Rectangle<int> columnHeaderArea_, viewportArea_;
+    device_shell::MidiLed midiLed_;
 
     // Viewport for chain rows
     juce::Viewport chainViewport_;
@@ -185,9 +200,16 @@ class RackComponent : public NodeComponent, public juce::Timer {
         return METER_STRIP_WIDTH;
     }
 
-    static constexpr int CHAINS_LABEL_HEIGHT = 18;
-    static constexpr int MIN_CONTENT_HEIGHT = 30;
-    static constexpr int BASE_CHAINS_LIST_WIDTH = 360;
+    static constexpr int METER_STRIP_WIDTH = 18;  // collapsed strip meter
+    static constexpr int HEADER_BAR_HEIGHT = 46;
+    static constexpr int ID_ROW_HEIGHT = 30;
+    static constexpr int FOOTER_BAR_HEIGHT = 40;
+    static constexpr int SIDE_STRIP_WIDTH = 40;
+    static constexpr int CHAIN_LIST_WIDTH = 460;
+    static constexpr int COLUMN_HEADER_HEIGHT = 16;
+    static constexpr int ROW_GAP = 6;
+    static constexpr int ADD_CHAIN_HEIGHT = 34;
+    static constexpr int MIN_VIEWPORT_WIDTH = 53;  // 1px rule, 6px padding, 40px add slot
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RackComponent)
 };

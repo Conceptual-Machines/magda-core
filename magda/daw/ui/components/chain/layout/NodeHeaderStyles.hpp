@@ -198,4 +198,35 @@ inline void applyDeviceIconStyle(magda::SvgButton& btn, DeviceIcon kind,
         btn.setClickingTogglesState(true);
 }
 
+/** @brief A text toggle with no fill (chain M / S): the glyph colour carries the state and
+ *  hover fills like a device icon button. Set textColourOnId for the on colour. */
+class GlyphToggleLookAndFeel : public juce::LookAndFeel_V4 {
+  public:
+    void drawButtonBackground(juce::Graphics& g, juce::Button& button, const juce::Colour&,
+                              bool highlighted, bool down) override {
+        if (!highlighted && !down)
+            return;
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_ICON_HOVER_BG));
+        g.fillRoundedRectangle(button.getLocalBounds().toFloat(), 5.0f);
+    }
+
+    void drawButtonText(juce::Graphics& g, juce::TextButton& button, bool highlighted,
+                        bool /*down*/) override {
+        const auto colour =
+            button.getToggleState()
+                ? button.findColour(juce::TextButton::textColourOnId)
+                : ActiveTheme::getColour(highlighted ? ActiveTheme::DEVICE_ICON_HOVER
+                                                     : ActiveTheme::DEVICE_ICON);
+        g.setColour(colour);
+        g.setFont(FontManager::getInstance().getMonoFont(12.0f).boldened());
+        g.drawText(button.getButtonText(), button.getLocalBounds(), juce::Justification::centred,
+                   false);
+    }
+
+    static GlyphToggleLookAndFeel& getInstance() {
+        static GlyphToggleLookAndFeel instance;
+        return instance;
+    }
+};
+
 }  // namespace magda::daw::ui::node_header

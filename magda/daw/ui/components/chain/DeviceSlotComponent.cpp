@@ -29,6 +29,7 @@
 #include "custom_ui/StepSequencerUI.hpp"
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
 #include "engine/AudioEngine.hpp"
+#include "layout/DeviceShellPainter.hpp"
 #include "layout/DeviceSlotHeaderLayout.hpp"
 #include "layout/NodeHeaderStyles.hpp"
 #include "modulation/DeviceLinkCallbacks.hpp"
@@ -61,19 +62,6 @@
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
-
-namespace {
-// The side strip's delta solo: a text glyph styled like the device icon buttons.
-void styleDeltaButton(juce::TextButton& delta) {
-    delta.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    delta.setColour(juce::TextButton::buttonOnColourId,
-                    ActiveTheme::getColour(ActiveTheme::DEVICE_ICON_HOVER_BG));
-    delta.setColour(juce::TextButton::textColourOffId,
-                    ActiveTheme::getColour(ActiveTheme::DEVICE_ICON));
-    delta.setColour(juce::TextButton::textColourOnId,
-                    ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE));
-}
-}  // namespace
 
 namespace {
 
@@ -416,7 +404,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     deltaButton_->setToggleState(device.deltaSolo, juce::dontSendNotification);
     deltaButton_->setTooltip("Delta Solo: processed signal minus dry input");
     deltaButton_->setLookAndFeel(&node_header::getDeltaSoloButtonLookAndFeel());
-    styleDeltaButton(*deltaButton_);
+    device_shell::styleDeltaButton(*deltaButton_);
     deltaButton_->onClick = [this]() {
         const bool enabled = deltaButton_->getToggleState();
         device_.deltaSolo = enabled;
@@ -605,33 +593,19 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
 
 void DeviceSlotComponent::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int> bounds,
                                          int headerHeight) {
-    constexpr float kRadius = 7.0f;
-    const auto frame = bounds.toFloat();
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_BG));
-    g.fillRoundedRectangle(frame, kRadius);
-
-    if (headerHeight > 0) {
-        // The header band keeps the frame's top corners and squares its bottom.
-        juce::Path header;
-        header.addRoundedRectangle(frame.getX(), frame.getY(), frame.getWidth(),
-                                   static_cast<float>(headerHeight), kRadius, kRadius, true, true,
-                                   false, false);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_HEAD));
-        g.fillPath(header);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
-        g.fillRect(frame.getX(), frame.getY() + static_cast<float>(headerHeight) - 1.0f,
-                   frame.getWidth(), 1.0f);
-
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
-        for (const auto& separator : {headerSeparators_.left, headerSeparators_.right})
-            if (!separator.isEmpty())
-                g.fillRect(separator);
-    }
-
-    paintShellRows(g, frame);
-
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FRAME_BORDER));
-    g.drawRoundedRectangle(frame.reduced(0.5f), kRadius, 1.0f);
+    device_shell::paintFrame(g, bounds, headerHeight,
+                             {.headerSeparatorLeft = headerSeparators_.left,
+                              .headerSeparatorRight = headerSeparators_.right,
+                              .idRow = idRowArea_,
+                              .sideStrip = sideStripArea_,
+                              .footer = footerArea_,
+                              .footerSeparator = footerSeparator_,
+                              .footerInfo = footerInfoArea_,
+                              .midiLed = midiLedArea_},
+                             footerInfoArea_.isEmpty()
+                                 ? juce::String()
+                                 : device_shell::audioInfoText(device_.audioOutputChannels),
+                             midiLed_.isLit());
 }
 
 bool DeviceSlotComponent::hasIdRow() const {
@@ -760,76 +734,6 @@ void DeviceSlotComponent::refreshFooterPageControls() {
     layoutFooter(footerArea_);
 }
 
-void DeviceSlotComponent::paintShellRows(juce::Graphics& g, juce::Rectangle<float> frame) {
-    const auto line = ActiveTheme::getColour(ActiveTheme::DEVICE_LINE);
-
-    if (!idRowArea_.isEmpty()) {
-        const juce::Rectangle<float> row(frame.getX(), static_cast<float>(idRowArea_.getY()),
-                                         frame.getWidth(),
-                                         static_cast<float>(idRowArea_.getHeight()));
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_ID_ROW));
-        g.fillRect(row);
-        g.setColour(line);
-        g.fillRect(row.getX(), row.getBottom() - 1.0f, row.getWidth(), 1.0f);
-    }
-
-    if (!sideStripArea_.isEmpty()) {
-        const juce::Rectangle<float> strip(
-            static_cast<float>(sideStripArea_.getX()), static_cast<float>(sideStripArea_.getY()),
-            frame.getRight() - static_cast<float>(sideStripArea_.getX()),
-            static_cast<float>(sideStripArea_.getHeight()));
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_HEAD2));
-        g.fillRect(strip);
-        g.setColour(line);
-        g.fillRect(strip.getX(), strip.getY(), 1.0f, strip.getHeight());
-    }
-
-    if (footerArea_.isEmpty())
-        return;
-
-    const float top = static_cast<float>(footerArea_.getY());
-    juce::Path footer;
-    footer.addRoundedRectangle(frame.getX(), top, frame.getWidth(), frame.getBottom() - top, 7.0f,
-                               7.0f, false, false, true, true);
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_HEAD2));
-    g.fillPath(footer);
-    g.setColour(line);
-    g.fillRect(frame.getX(), top, frame.getWidth(), 1.0f);
-
-    if (!footerSeparator_.isEmpty()) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
-        g.fillRect(footerSeparator_);
-    }
-
-    if (!footerInfoArea_.isEmpty()) {
-        double sampleRate = 0.0;
-        if (auto* engine = magda::TrackManager::getInstance().getAudioEngine())
-            if (auto* audioIO = engine->getAudioIO())
-                sampleRate = audioIO->status().sampleRate;
-        juce::String info = device_.audioOutputChannels == 1 ? "mono" : "stereo";
-        if (sampleRate > 0.0)
-            info << juce::String::fromUTF8(" \xc2\xb7 ")
-                 << juce::String(sampleRate / 1000.0, std::fmod(sampleRate, 1000.0) == 0.0 ? 0 : 1)
-                 << " kHz";
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
-        g.setFont(FontManager::getInstance().getMonoFont(11.0f));
-        g.drawText(info, footerInfoArea_, juce::Justification::centredLeft, false);
-    }
-
-    if (!midiLedArea_.isEmpty()) {
-        const auto led = midiLedArea_.toFloat();
-        if (midiLedFrames_ > 0) {
-            const auto green = ActiveTheme::getColour(ActiveTheme::DEVICE_GREEN);
-            g.setColour(green.withAlpha(0.35f));
-            g.fillEllipse(led.expanded(3.0f));
-            g.setColour(green);
-        } else {
-            g.setColour(line);
-        }
-        g.fillEllipse(led);
-    }
-}
-
 void DeviceSlotComponent::styleDeviceHeaderButtons() {
     using node_header::DeviceIcon;
     const juce::Colour key(0xFFB3B3B3);
@@ -872,7 +776,7 @@ void DeviceSlotComponent::lookAndFeelChanged() {
     styleDeviceHeaderButtons();
 
     if (deltaButton_) {
-        styleDeltaButton(*deltaButton_);
+        device_shell::styleDeltaButton(*deltaButton_);
     }
 
     repaint();
@@ -901,14 +805,8 @@ void DeviceSlotComponent::timerCallback() {
         return;
 
     // The footer LED holds for a few frames after the track's MIDI activity moves.
-    const auto midiCounter = engine->meters().midiActivity.getActivityCounter(nodePath_.trackId);
-    if (midiCounter != lastMidiActivity_) {
-        lastMidiActivity_ = midiCounter;
-        midiLedFrames_ = 4;
+    if (midiLed_.update(engine->meters().midiActivity.getActivityCounter(nodePath_.trackId)))
         repaint(midiLedArea_.expanded(4));
-    } else if (midiLedFrames_ > 0 && --midiLedFrames_ == 0) {
-        repaint(midiLedArea_.expanded(4));
-    }
 
     // A faceplate bound to anything but the device rendering now rebinds here:
     // the slot is built before the plan that holds it, and a session remade for

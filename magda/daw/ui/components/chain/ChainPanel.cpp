@@ -24,7 +24,6 @@
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/panels/content/PluginBrowserContent.hpp"
 #include "ui/themes/ActiveTheme.hpp"
-#include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
@@ -133,19 +132,10 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
         if (!elementSlots_)
             return;
 
-        auto appendZone =
-            juce::Rectangle<int>(owner_.calculateAppendZoneX(), 0,
-                                 owner_.getScaledWidth(ChainPanel::APPEND_ZONE_WIDTH), getHeight());
         const bool appendHighlighted =
             owner_.dragInsertIndex_ == static_cast<int>(elementSlots_->size()) ||
             owner_.dropInsertIndex_ == static_cast<int>(elementSlots_->size());
-        auto appendColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
-                                .withAlpha(appendHighlighted ? 0.18f : 0.07f);
-        g.setColour(appendColour);
-        g.fillRoundedRectangle(appendZone.reduced(4, 6).toFloat(), 3.0f);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
-                        .withAlpha(appendHighlighted ? 0.75f : 0.28f));
-        g.drawRoundedRectangle(appendZone.reduced(4, 6).toFloat(), 3.0f, 1.0f);
+        owner_.addDeviceButton_.setHighlighted(appendHighlighted);
 
         // Draw insertion indicator during drag (reorder or drop)
         if (owner_.dragInsertIndex_ >= 0 || owner_.dropInsertIndex_ >= 0) {
@@ -351,15 +341,13 @@ ChainPanel::ChainPanel()
     elementViewport_->setScrollBarsShown(false, true);  // Horizontal only
     addAndMakeVisible(*elementViewport_);
 
-    // Add device button (inside the container, after all slots)
-    addDeviceButton_.setButtonText("+");
-    addDeviceButton_.setColour(juce::TextButton::buttonColourId,
-                               ActiveTheme::getColour(ActiveTheme::SURFACE));
-    addDeviceButton_.setColour(juce::TextButton::textColourOffId,
-                               ActiveTheme::getSecondaryTextColour());
+    elementViewport_->setScrollBarThickness(6);
+
+    // The add slot ends the chain, so an empty chain shows only it.
+    addDeviceButton_.setTooltip("Add a device to this chain");
     addDeviceButton_.onClick = [this]() { onAddDeviceClicked(); };
-    addDeviceButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     elementSlotsContainer_->addAndMakeVisible(addDeviceButton_);
+    lookAndFeelChanged();
 
     setVisible(false);
 }
@@ -372,8 +360,17 @@ void ChainPanel::paintContent(juce::Graphics& /*g*/, juce::Rectangle<int> /*cont
     // Chain panels no longer have chain-level mods/macros - these are at rack level only
 }
 
-void ChainPanel::resizedContent(juce::Rectangle<int> contentArea) {
-    // Viewport fills the content area
+void ChainPanel::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int> bounds,
+                                int /*headerHeight*/) {
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_WELL));
+    g.fillRect(bounds);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
+    g.fillRect(bounds.withWidth(1));
+}
+
+void ChainPanel::resizedContent(juce::Rectangle<int> /*contentArea*/) {
+    // The base insets content for a bordered frame; the viewport wants its own padding.
+    auto contentArea = getLocalBounds().withTrimmedLeft(1).reduced(PADDING);
     elementViewport_->setBounds(contentArea);
 
     // Calculate total width needed for all element slots
@@ -382,7 +379,7 @@ void ChainPanel::resizedContent(juce::Rectangle<int> contentArea) {
 
     // Account for horizontal scrollbar if needed
     if (totalWidth > contentArea.getWidth()) {
-        containerHeight = contentArea.getHeight() - 8;  // Space for scrollbar
+        containerHeight = contentArea.getHeight() - elementViewport_->getScrollBarThickness() - 2;
     }
 
     // Set container size and update element slots reference for arrow painting
@@ -401,10 +398,7 @@ void ChainPanel::resizedContent(juce::Rectangle<int> contentArea) {
         x += slotWidth + scaledArrowWidth;
     }
 
-    // Add device button in the reserved append zone after all slots.
-    int appendZoneWidth = getScaledWidth(APPEND_ZONE_WIDTH);
-    addDeviceButton_.setBounds(x + juce::jmax(0, (appendZoneWidth - 20) / 2),
-                               (containerHeight - 20) / 2, 20, 20);
+    addDeviceButton_.setBounds(x, 0, getScaledWidth(APPEND_ZONE_WIDTH), containerHeight);
 }
 
 int ChainPanel::calculateTotalContentWidth() const {
@@ -414,8 +408,7 @@ int ChainPanel::calculateTotalContentWidth() const {
 }
 
 int ChainPanel::getContentWidth() const {
-    // Content width + NodeComponent's reduced(2,1) padding (4px horizontal)
-    return calculateTotalContentWidth() + 4;
+    return calculateTotalContentWidth() + 1 + 2 * PADDING;
 }
 
 void ChainPanel::setMaxWidth(int maxWidth) {
@@ -447,12 +440,9 @@ int ChainPanel::getScaledWidth(int width) const {
 }
 
 void ChainPanel::lookAndFeelChanged() {
-    // The add-device button captures concrete colours at construction;
-    // re-apply so a live theme switch restyles it.
-    addDeviceButton_.setColour(juce::TextButton::buttonColourId,
-                               ActiveTheme::getColour(ActiveTheme::SURFACE));
-    addDeviceButton_.setColour(juce::TextButton::textColourOffId,
-                               ActiveTheme::getSecondaryTextColour());
+    elementViewport_->getHorizontalScrollBar().setColour(
+        juce::ScrollBar::thumbColourId, ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
+    repaint();
 }
 
 void ChainPanel::mouseEnter(const juce::MouseEvent&) {

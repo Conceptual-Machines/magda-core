@@ -43,6 +43,7 @@ target_sources(magda_daw_app PRIVATE
     params/ModulationBakeAction.cpp
     params/ParamWidgetSetup.cpp
     params/PagedControlPanel.cpp
+    layout/DeviceShellPainter.cpp
     layout/StandardDeviceLayout.cpp
     layout/FaustDeviceLayout.cpp
     layout/CompiledFaustDeviceLayout.cpp
@@ -146,6 +147,7 @@ target_sources(magda_daw_app PRIVATE
     params/ParamWidgetSetup.hpp
     params/PagedControlPanel.hpp
     layout/DeviceParamLayout.hpp
+    layout/DeviceShellPainter.hpp
     layout/StandardDeviceLayout.hpp
     layout/FaustDeviceLayout.hpp
     layout/CompiledFaustDeviceLayout.hpp

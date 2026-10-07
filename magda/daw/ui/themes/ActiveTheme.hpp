@@ -255,6 +255,10 @@ enum class ColourRole : std::size_t {
     DEVICE_SWITCH_OFF,
     DEVICE_GRAPH_BG,
     DEVICE_GRAPH_GRID,
+    DEVICE_ROW_HOVER,
+    DEVICE_ROW_SELECTED,
+    DEVICE_ROW_SELECTED_BORDER,
+    DEVICE_WELL,
     count
 };
 
@@ -543,6 +547,10 @@ class ActiveTheme {
     static constexpr auto DEVICE_SWITCH_OFF = ColourRole::DEVICE_SWITCH_OFF;
     static constexpr auto DEVICE_GRAPH_BG = ColourRole::DEVICE_GRAPH_BG;
     static constexpr auto DEVICE_GRAPH_GRID = ColourRole::DEVICE_GRAPH_GRID;
+    static constexpr auto DEVICE_ROW_HOVER = ColourRole::DEVICE_ROW_HOVER;
+    static constexpr auto DEVICE_ROW_SELECTED = ColourRole::DEVICE_ROW_SELECTED;
+    static constexpr auto DEVICE_ROW_SELECTED_BORDER = ColourRole::DEVICE_ROW_SELECTED_BORDER;
+    static constexpr auto DEVICE_WELL = ColourRole::DEVICE_WELL;
 
     // Runtime palette API. Theme changes are expected to happen on JUCE's
     // message thread, alongside the LookAndFeel refresh they trigger.

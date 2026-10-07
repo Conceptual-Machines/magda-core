@@ -2512,7 +2512,6 @@ RackId TrackManager::addRackToTrack(TrackId trackId, const juce::String& name) {
         // Add a default chain to the new rack
         ChainInfo defaultChain;
         defaultChain.id = nextChainId_++;
-        defaultChain.name = "Chain 1";
         rack.chains.push_back(std::move(defaultChain));
 
         RackId newRackId = rack.id;
@@ -2806,9 +2805,7 @@ ChainId TrackManager::addChainToRack(const ChainNodePath& rackPath, const juce::
     if (auto* rack = getRackByPath(rackPath)) {
         ChainInfo chain;
         chain.id = nextChainId_++;
-        chain.name = name.isEmpty()
-                         ? ("Chain " + juce::String(static_cast<int>(rack->chains.size()) + 1))
-                         : name;
+        chain.name = name;
         rack->chains.push_back(chain);
         notifyTrackDevicesChanged(rackPath.trackId);
         return chain.id;
@@ -3127,7 +3124,7 @@ TrackManager::ResolvedPath TrackManager::resolvePath(const ChainNodePath& path) 
                     const auto found = std::ranges::find_if(currentRack->chains, matchesChainId);
                     if (found != currentRack->chains.end()) {
                         currentChain = &(*found);
-                        pathNames.add(currentChain->name);
+                        pathNames.add(currentChain->displayName());
                     }
                 }
                 break;

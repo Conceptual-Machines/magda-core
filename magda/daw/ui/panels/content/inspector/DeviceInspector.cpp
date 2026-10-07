@@ -198,7 +198,7 @@ void DeviceInspector::updateFromSelectedChainNode() {
             case magda::ChainNodeType::Chain: {
                 typeStr = "Chain";
                 if (const auto* chain = tm.getChainByPath(selectedChainNode_))
-                    nameStr = chain->name;
+                    nameStr = chain->displayName();
                 break;
             }
             default:

@@ -785,7 +785,7 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     const RackInfo* getRackByPath(const ChainNodePath& rackPath) const;
 
     // Chain management (within racks) - works for nested racks via path
-    ChainId addChainToRack(const ChainNodePath& rackPath, const juce::String& name = "Chain");
+    ChainId addChainToRack(const ChainNodePath& rackPath, const juce::String& name = {});
     void removeChainFromRack(TrackId trackId, RackId rackId, ChainId chainId);
     void removeChainByPath(const ChainNodePath& chainPath);  // Path-based removal for nested chains
     /// Put @p chain back into the rack at @p rackPath, at @p index, under the id
