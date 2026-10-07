@@ -8,6 +8,7 @@
 #include "magda/daw/core/PadPathMigration.hpp"
 #include "magda/daw/core/RackInfo.hpp"
 #include "magda/daw/core/SelectionManager.hpp"
+#include "magda/daw/core/TrackCommands.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/UndoManager.hpp"
 
@@ -504,4 +505,47 @@ TEST_CASE("A load leaves an address an allocated rack can account for alone",
     const auto& untouched = tracks[0].macros[0].links[0].target.devicePath;
     CHECK(untouched == rackDevicePath);
     CHECK_FALSE(untouched.isPadOwned());
+}
+
+TEST_CASE("A pad chain takes the generic chain edits the rack view makes",
+          "[drumgrid][pads][path]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+
+    const auto trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
+    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
+    const auto voiceId = tm.setPadDevice(gridPath, 0, padVoice("Kick"));
+    REQUIRE(voiceId != INVALID_DEVICE_ID);
+    const auto padPath = TrackManager::padChainPath(gridPath, tm.getPad(gridPath, 0)->id);
+
+    DeviceInfo fx;
+    fx.name = "Pad FX";
+    fx.pluginId = "magdaeq";
+    fx.format = PluginFormat::Internal;
+    fx.deviceType = DeviceType::Effect;
+    const auto resolved = tm.resolvePath(padPath);
+    REQUIRE(resolved.valid);
+    REQUIRE(resolved.chain == tm.getPad(gridPath, 0));
+
+    const auto fxId = tm.addDeviceToChainByPath(padPath, fx, 1);
+    REQUIRE(fxId != INVALID_DEVICE_ID);
+    REQUIRE(tm.getPad(gridPath, 0)->getDevices().size() == 2);
+    CHECK(tm.resolvePath(padPath.withDevice(fxId)).device != nullptr);
+
+    tm.setDeviceInChainBypassedByPath(padPath.withDevice(fxId), true);
+    CHECK(tm.getDeviceInChainByPath(padPath.withDevice(fxId))->bypassed);
+
+    tm.setDeviceGainDb(padPath.withDevice(fxId), -6.0f);
+    CHECK(tm.getDeviceInChainByPath(padPath.withDevice(fxId))->gainDb == -6.0f);
+
+    UndoManager::getInstance().executeCommand(std::make_unique<MoveChainElementsCommand>(
+        std::vector<ChainNodePath>{padPath.withDevice(fxId)}, padPath, 0));
+    CHECK(tm.getPad(gridPath, 0)->getDevices().front()->id == fxId);
+
+    const auto before = tm.getPad(gridPath, 0)->getDevices().size();
+    UndoManager::getInstance().executeCommand(
+        std::make_unique<RemoveDeviceByPathCommand>(padPath.withDevice(fxId)));
+    CHECK(tm.getPad(gridPath, 0)->getDevices().size() == before - 1);
+    resetState();
 }

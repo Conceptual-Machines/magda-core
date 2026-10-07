@@ -262,7 +262,7 @@ TEST_CASE("TrackManager: Add Rack to Track", "[trackmanager][rack]") {
         auto* rack = fixture.tm().getRack(trackId, rackId);
         REQUIRE(rack != nullptr);
         REQUIRE(rack->chains.size() == 1);
-        REQUIRE(rack->chains[0].name == "Chain 1");
+        REQUIRE(rack->chains[0].name.isEmpty());
     }
 }
 
@@ -1224,7 +1224,7 @@ TEST_CASE("TrackManager: Add Nested Rack by Path", "[trackmanager][nested_rack][
         auto* nestedRack = fixture.tm().getRackByPath(chainPath.withRack(nestedRackId));
         REQUIRE(nestedRack != nullptr);
         REQUIRE(nestedRack->chains.size() == 1);
-        REQUIRE(nestedRack->chains[0].name == "Chain 1");
+        REQUIRE(nestedRack->chains[0].name.isEmpty());
     }
 }
 
@@ -1349,7 +1349,7 @@ TEST_CASE("TrackManager: resolvePath", "[trackmanager][path][resolution]") {
         REQUIRE(resolved.valid);
         REQUIRE(resolved.rack != nullptr);
         REQUIRE(resolved.chain != nullptr);
-        REQUIRE(resolved.chain->name == "Chain 1");
+        REQUIRE(resolved.chain->name.isEmpty());
         REQUIRE(resolved.device == nullptr);
     }
 
@@ -1418,7 +1418,7 @@ TEST_CASE("TrackManager: resolvePath", "[trackmanager][path][resolution]") {
 
         REQUIRE(resolved.valid);
         REQUIRE(resolved.displayPath.contains("My Rack"));
-        REQUIRE(resolved.displayPath.contains("Chain 1"));
+        REQUIRE(resolved.displayPath.contains("Chain"));
         REQUIRE(resolved.displayPath.contains("Compressor"));
     }
 }

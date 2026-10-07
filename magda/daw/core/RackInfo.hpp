@@ -61,7 +61,7 @@ inline const RackInfo& getRack(const ChainElement& element) {
  */
 struct ChainInfo {
     ChainId id = INVALID_CHAIN_ID;
-    juce::String name;                   // e.g., "Chain 1"
+    juce::String name;                   // empty until the user names it
     std::vector<ChainElement> elements;  // Ordered sequence of devices/racks
     int outputIndex = 0;                 // Output routing (0 = main, 1-N = aux)
     bool muted = false;
@@ -92,6 +92,11 @@ struct ChainInfo {
     /// are not wired yet.
     bool isActive() const {
         return !bypassed && outputIndex == 0;
+    }
+
+    /// A new chain is unnamed; anywhere a label is needed it reads as "Chain".
+    juce::String displayName() const {
+        return name.isEmpty() ? juce::String("Chain") : name;
     }
 
     // UI state

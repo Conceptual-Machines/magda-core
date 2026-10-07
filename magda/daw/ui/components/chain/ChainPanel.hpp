@@ -6,6 +6,7 @@
 #include "core/RackInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
+#include "layout/DashedAddButton.hpp"
 
 namespace magda::daw::ui {
 
@@ -63,6 +64,7 @@ class ChainPanel : public NodeComponent, private juce::Timer {
 
   protected:
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override;
+    void paintNodeFrame(juce::Graphics& g, juce::Rectangle<int> bounds, int headerHeight) override;
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void lookAndFeelChanged() override;
     void mouseEnter(const juce::MouseEvent& event) override;
@@ -100,17 +102,17 @@ class ChainPanel : public NodeComponent, private juce::Timer {
     // Chain elements (devices and nested racks) with viewport for horizontal scrolling
     std::unique_ptr<ZoomableViewport> elementViewport_;
     std::unique_ptr<ElementSlotsContainer> elementSlotsContainer_;
-    juce::TextButton addDeviceButton_;
+    DashedAddButton addDeviceButton_;
     std::vector<std::unique_ptr<NodeComponent>> elementSlots_;
 
     // Device selection
     magda::DeviceId selectedDeviceId_ = magda::INVALID_DEVICE_ID;
     void onDeviceSlotSelected(magda::DeviceId deviceId);
 
-    static constexpr int ARROW_WIDTH =
-        4;  // Small gap between device slots (meters act as separators)
+    static constexpr int ARROW_WIDTH = 6;         // Gap between device slots
+    static constexpr int PADDING = 6;             // Viewport inset, inside its 1px left rule
     static constexpr int DRAG_LEFT_PADDING = 12;  // Padding during drag for drop indicator
-    static constexpr int APPEND_ZONE_WIDTH = 48;
+    static constexpr int APPEND_ZONE_WIDTH = 40;  // The add slot
 
     // Drag-to-reorder state
     NodeComponent* draggedElement_ = nullptr;

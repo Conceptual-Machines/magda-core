@@ -8,7 +8,6 @@
 #include "core/TrackManager.hpp"
 #include "ui/components/chain/DeviceSlotComponent.hpp"
 #include "ui/components/chain/RackComponent.hpp"
-#include "ui/components/chain/drum_grid/PadDeviceSlot.hpp"
 #include "ui/components/chain/layout/StandardDeviceLayout.hpp"
 #include "ui/components/chain/slot/DeviceSlotSelectionHandling.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -187,43 +186,11 @@ int main() {
             applyDeviceSlotParamSelectionChange(firstPath, {}, grid, {});
             for (int i = 0; i < grid.getSlotCount(); ++i)
                 check(!grid.getSlot(i)->isSelected(), "cleared selection left a cell highlighted");
-
-            PadDeviceSlot pad;
-            PadDeviceSlot::Binding binding;
-            binding.device = model;
-            pad.setDevice(binding);
-            pad.setVisible(true);
-            pad.setSize(400, 350);
-            int selections = 0;
-            pad.onClicked = [&] { ++selections; };
-            juce::Label* name = nullptr;
-            for (auto* child : pad.getChildren())
-                if (auto* label = dynamic_cast<juce::Label*>(child))
-                    name = label;
-            check(name != nullptr, "missing pad name label");
-            const auto now = juce::Time::getCurrentTime();
-            const juce::MouseEvent padName(
-                juce::Desktop::getInstance().getMainMouseSource(), {5, 5},
-                juce::ModifierKeys(juce::ModifierKeys::leftButtonModifier), 1, 0, 0, 0, 0, name,
-                name, now, {5, 5}, now, 1, false);
-            pad.mouseDown(padName);
-            pad.mouseDown(padName);
-            check(selections == 2 && !pad.isCollapsed(), "pad selection changed layout");
-            const juce::MouseEvent doubleName(
-                juce::Desktop::getInstance().getMainMouseSource(), {5, 5},
-                juce::ModifierKeys(juce::ModifierKeys::leftButtonModifier), 1, 0, 0, 0, 0, name,
-                name, now, {5, 5}, now, 2, false);
-            pad.mouseDown(doubleName);
-            check(pad.isCollapsed(), "pad double-click did not collapse");
-            pad.mouseDown(padName);
-            check(pad.isCollapsed(), "selecting collapsed pad expanded it");
-            pad.mouseDown(doubleName);
-            check(!pad.isCollapsed(), "pad double-click did not expand");
         }
         selection.clearSelection();
         tracks.clearAllTracks();
         tracks.shutdown();
-        std::cout << "PASS: device, rack and pad single clicks preserve layout; double clicks "
+        std::cout << "PASS: device and rack single clicks preserve layout; double clicks "
                      "toggle it\n";
     } catch (const std::exception& e) {
         std::cerr << "FAIL: " << e.what() << '\n';

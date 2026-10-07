@@ -36,13 +36,9 @@ class ChainNameLabel : public juce::Label {
 };
 
 /**
- * @brief A single chain row within a rack - simple strip layout
+ * @brief One chain in a rack's chain list: [dot Name] [Gain] [Pan] [M][S][Power][x].
  *
- * Layout: [Name] [Gain] [Pan] [M] [S] [On] [X]
- *
- * Clicking the row will open a chain panel on the right side showing devices.
- * Note: Chain-level mods/macros removed - these are handled at rack level only.
- * Implements SelectionManagerListener for centralized exclusive selection.
+ * Clicking the row selects the chain, which shows its devices in the rack's viewport.
  */
 class ChainRowComponent : public juce::Component,
                           public magda::SelectionManagerListener,
@@ -54,11 +50,22 @@ class ChainRowComponent : public juce::Component,
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseEnter(const juce::MouseEvent& event) override;
+    void mouseExit(const juce::MouseEvent& event) override;
     void mouseDown(const juce::MouseEvent& event) override;
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
 
     static int getPreferredHeight();
+
+    /** @brief Column bounds inside a row; the rack's column header aligns to these. */
+    struct Columns {
+        juce::Rectangle<int> name, gain, pan, buttons;
+    };
+    static Columns columnsFor(juce::Rectangle<int> row);
+
+    /** The chain's position in its rack, which picks its colour dot. */
+    void setColourIndex(int index);
     magda::ChainId getChainId() const {
         return chainId_;
     }
@@ -113,14 +120,18 @@ class ChainRowComponent : public juce::Component,
     // Re-read this row's chain from the model and refresh its controls.
     void refreshFromModel();
 
+    void styleControls();
+
     RackComponent& owner_;
     magda::TrackId trackId_;
     magda::RackId rackId_;
     magda::ChainId chainId_;
     bool selected_ = false;
+    bool hovered_ = false;
+    int colourIndex_ = 0;
     magda::ChainNodePath nodePath_;  // For centralized selection
 
-    // Single row controls: Name | Gain | Pan | M | S | On | X
+    // Gain and pan keep the label's drag and edit gestures; the row paints their sliders.
     ChainNameLabel nameLabel_;
     magda::DraggableValueLabel gainLabel_;
     magda::DraggableValueLabel panLabel_;
@@ -137,7 +148,12 @@ class ChainRowComponent : public juce::Component,
     double dragStartGainDb_ = 0.0;
     double dragStartPan_ = 0.0;
 
-    static constexpr int ROW_HEIGHT = 22;
+    void lookAndFeelChanged() override;
+
+    static constexpr int ROW_HEIGHT = 38;
+    static constexpr int COLUMN_GAP = 8;
+    static constexpr int BUTTON_WIDTH = 28;
+    static constexpr float BUTTON_HEIGHT = 24.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChainRowComponent)
 };

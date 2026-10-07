@@ -212,6 +212,14 @@ constexpr ActiveTheme::Palette darkPalette{
     0xFF4A525B,  // DEVICE_SWITCH_OFF
     0xFF12161B,  // DEVICE_GRAPH_BG
     0xFF1B2027,  // DEVICE_GRAPH_GRID
+    0xFF1B2026,  // DEVICE_ROW_HOVER
+    0xFF1C222B,  // DEVICE_ROW_SELECTED
+    0xFF3A4B66,  // DEVICE_ROW_SELECTED_BORDER
+    0xFF0F1216,  // DEVICE_WELL
+    0xFF232C3A,  // DEVICE_PAD_HIT
+    0xFF5B7FBD,  // DEVICE_PAD_HIT_BORDER
+    0xFF171B20,  // DEVICE_PAD_EMPTY
+    0xFF161A1F,  // DEVICE_PANEL
 };
 
 // A dropped entry shifts every role after it and leaves the array's tail
@@ -460,6 +468,14 @@ constexpr ActiveTheme::Palette lightPalette = [] {
     set(ColourRole::DEVICE_SWITCH_OFF, 0xFF9AA5AF);
     set(ColourRole::DEVICE_GRAPH_BG, 0xFFF4F6F8);
     set(ColourRole::DEVICE_GRAPH_GRID, 0xFFDDE3E8);
+    set(ColourRole::DEVICE_ROW_HOVER, 0xFFE6EBF0);
+    set(ColourRole::DEVICE_ROW_SELECTED, 0xFFDCE6F3);
+    set(ColourRole::DEVICE_ROW_SELECTED_BORDER, 0xFF8FA8CC);
+    set(ColourRole::DEVICE_WELL, 0xFFE4E8EC);
+    set(ColourRole::DEVICE_PAD_HIT, 0xFFD6E2F4);
+    set(ColourRole::DEVICE_PAD_HIT_BORDER, 0xFF4E78B5);
+    set(ColourRole::DEVICE_PAD_EMPTY, 0xFFEAEEF2);
+    set(ColourRole::DEVICE_PANEL, 0xFFE9EDF1);
 
     return palette;
 }();
@@ -688,6 +704,14 @@ constexpr ActiveTheme::Palette highContrastPalette = [] {
     palette[colourRoleIndex(ColourRole::DEVICE_SWITCH_OFF)] = 0xFF808080;
     palette[colourRoleIndex(ColourRole::DEVICE_GRAPH_BG)] = 0xFF000000;
     palette[colourRoleIndex(ColourRole::DEVICE_GRAPH_GRID)] = 0xFF404040;
+    palette[colourRoleIndex(ColourRole::DEVICE_ROW_HOVER)] = 0xFF141414;
+    palette[colourRoleIndex(ColourRole::DEVICE_ROW_SELECTED)] = 0xFF0A1A33;
+    palette[colourRoleIndex(ColourRole::DEVICE_ROW_SELECTED_BORDER)] = 0xFF7AB8FF;
+    palette[colourRoleIndex(ColourRole::DEVICE_WELL)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::DEVICE_PAD_HIT)] = 0xFF0A1A33;
+    palette[colourRoleIndex(ColourRole::DEVICE_PAD_HIT_BORDER)] = 0xFF7AB8FF;
+    palette[colourRoleIndex(ColourRole::DEVICE_PAD_EMPTY)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::DEVICE_PANEL)] = 0xFF050505;
 
     return palette;
 }();

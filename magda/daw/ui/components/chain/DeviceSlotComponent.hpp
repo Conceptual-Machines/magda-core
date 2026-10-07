@@ -11,6 +11,7 @@
 #include "core/TrackManager.hpp"
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
+#include "layout/DeviceShellPainter.hpp"
 #include "params/ParamHostComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
 #include "slot/DeviceCustomUIManager.hpp"
@@ -101,11 +102,6 @@ class DeviceSlotComponent : public NodeComponent,
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override;
     void lookAndFeelChanged() override;
 
-    // Drum Grid clears the standard nameLabel_ and paints its custom
-    // "MDG2000" logo in paint(); anchor the dot to that logo's right
-    // edge so it sits next to the visible text rather than the empty
-    // label bounds.
-    juce::Point<float> getControllerIndicatorAnchor() const override;
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
     int getHeaderHeight() const override {
@@ -268,14 +264,12 @@ class DeviceSlotComponent : public NodeComponent,
     juce::Rectangle<int> footerSeparator_, footerInfoArea_, midiLedArea_;
     std::unique_ptr<juce::ArrowButton> footerPrevPage_, footerNextPage_;
     juce::Label footerPageLabel_;
-    uint32_t lastMidiActivity_ = 0;
-    int midiLedFrames_ = 0;
+    device_shell::MidiLed midiLed_;
     bool hasIdRow() const;
     int sideStripWidth() const;
     void layoutSideStrip(juce::Rectangle<int> strip);
     void layoutFooter(juce::Rectangle<int> footer);
     void refreshFooterPageControls();
-    void paintShellRows(juce::Graphics& g, juce::Rectangle<float> frame);
     std::unique_ptr<juce::TextButton> deltaButton_;
     std::unique_ptr<magda::SvgButton> exportClipButton_;  // Export pattern/chords as MIDI clip
     std::unique_ptr<magda::SvgButton> randomButton_;      // Step-sequencer pattern randomize
@@ -383,7 +377,6 @@ class DeviceSlotComponent : public NodeComponent,
     void bindFaustHeader();
     void refreshInlinePluginBindings();
     void setupCustomUILinking();
-    void wirePadChainLinkCallbacks();  // Wire link mode on PadDeviceSlot param slots
     template <typename LinkTarget>
     void wireSharedModMacroLinkCallbacks(LinkTarget& target, bool expandMacroPanelOnDirectLink);
 

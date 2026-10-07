@@ -27,14 +27,6 @@ bool isDrumGridPluginId(const juce::String& pluginId);
 
 void applySlotName(NodeComponent& slot, bool isDrumGrid, const juce::String& deviceName);
 
-bool paintHeaderLogo(juce::Graphics& g, bool isDrumGrid, bool collapsed, int headerHeight,
-                     int componentWidth, const juce::Component* modButton,
-                     std::initializer_list<const juce::Component*> rightEdgeButtons);
-
-std::optional<juce::Point<float>> getControllerIndicatorAnchor(bool isDrumGrid, bool collapsed,
-                                                               int headerHeight,
-                                                               const juce::Component* modButton);
-
 bool paintContentHeader(juce::Graphics& g, bool isDrumGrid, bool bypassed,
                         juce::Rectangle<int> textArea);
 
@@ -55,29 +47,12 @@ int getPreferredContentWidth(bool isDrumGrid, const DrumGridUI* drumGridUI);
 
 bool layoutDrumGridUI(DrumGridUI* drumGridUI, juce::Rectangle<int> contentArea);
 
-void setPadChainLinkContext(DrumGridUI* drumGridUI, const magda::ChainNodePath& nodePath,
-                            const magda::MacroArray* macros, const magda::ModArray* mods,
-                            const magda::MacroArray* trackMacros, const magda::ModArray* trackMods,
-                            int selectedModIndex, int selectedMacroIndex);
-
-/// The devices on @p grid's pads, for a link menu. Nothing for a device with no pads.
 void appendAvailableDevices(const magda::DeviceInfo* grid,
                             std::vector<std::pair<magda::DeviceId, juce::String>>& devices);
 
 /// The parameter names of the devices on @p grid's pads, by device.
 void appendDeviceParamNames(const magda::DeviceInfo* grid,
                             std::map<magda::DeviceId, std::vector<juce::String>>& paramsByDevice);
-
-struct PadChainLinkCallbacks {
-    std::function<magda::ChainNodePath()> getNodePath;
-    std::function<void()> updateParamModulation;
-    std::function<void()> updateModsPanel;
-    std::function<void()> updateMacroPanel;
-    std::function<void(int macroIndex, magda::ControlTarget target)> onMacroTargetChanged;
-    std::function<void(int paramIndex)> showAutomationLaneForParam;
-};
-
-void wirePadChainLinkCallbacks(DrumGridUI* drumGridUI, PadChainLinkCallbacks callbacks);
 
 }  // namespace drum_grid_slot
 

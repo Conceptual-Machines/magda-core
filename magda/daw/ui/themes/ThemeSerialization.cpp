@@ -193,6 +193,14 @@ constexpr std::array<const char*, static_cast<std::size_t>(ColourRole::count)> k
     "deviceSwitchOff",
     "deviceGraphBg",
     "deviceGraphGrid",
+    "deviceRowHover",
+    "deviceRowSelected",
+    "deviceRowSelectedBorder",
+    "deviceWell",
+    "devicePadHit",
+    "devicePadHitBorder",
+    "devicePadEmpty",
+    "devicePanel",
 }};
 
 static_assert(kColourRoleNames.size() == static_cast<std::size_t>(ColourRole::count),

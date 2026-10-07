@@ -2512,7 +2512,6 @@ RackId TrackManager::addRackToTrack(TrackId trackId, const juce::String& name) {
         // Add a default chain to the new rack
         ChainInfo defaultChain;
         defaultChain.id = nextChainId_++;
-        defaultChain.name = "Chain 1";
         rack.chains.push_back(std::move(defaultChain));
 
         RackId newRackId = rack.id;
@@ -2806,9 +2805,7 @@ ChainId TrackManager::addChainToRack(const ChainNodePath& rackPath, const juce::
     if (auto* rack = getRackByPath(rackPath)) {
         ChainInfo chain;
         chain.id = nextChainId_++;
-        chain.name = name.isEmpty()
-                         ? ("Chain " + juce::String(static_cast<int>(rack->chains.size()) + 1))
-                         : name;
+        chain.name = name;
         rack->chains.push_back(chain);
         notifyTrackDevicesChanged(rackPath.trackId);
         return chain.id;
@@ -3104,11 +3101,22 @@ TrackManager::ResolvedPath TrackManager::resolvePath(const ChainNodePath& path) 
     for (auto step : path.steps) {
         switch (step.type) {
             case ChainStepType::PadRack:
+                // A pad rack hangs off its grid device; the PadChain step after
+                // it resolves through the pad lookups (#2219).
+                break;
+            case ChainStepType::PadChain: {
+                ChainNodePath padPath;
+                padPath.trackId = path.trackId;
+                padPath.steps = {path.steps.front(), step};
+                if (const auto* pad = getChainByPath(padPath)) {
+                    currentChain = pad;
+                    pathNames.add(pad->displayName());
+                }
+                break;
+            }
             case ChainStepType::Rack: {
                 // A top-level rack lives in the track's own list, a nested one
-                // in the chain the previous step reached. A PadRack names a
-                // device, so it finds nothing here and contributes no name,
-                // exactly as the untyped spelling did (#2219).
+                // in the chain the previous step reached.
                 const auto& elements =
                     currentChain != nullptr ? currentChain->elements : track->chain.fxChainElements;
                 if (const auto* found = findRackAmong(elements, step.id)) {
@@ -3118,7 +3126,6 @@ TrackManager::ResolvedPath TrackManager::resolvePath(const ChainNodePath& path) 
                 }
                 break;
             }
-            case ChainStepType::PadChain:
             case ChainStepType::Chain: {
                 if (currentRack != nullptr) {
                     const auto matchesChainId = [&step](const ChainInfo& chain) {
@@ -3127,7 +3134,7 @@ TrackManager::ResolvedPath TrackManager::resolvePath(const ChainNodePath& path) 
                     const auto found = std::ranges::find_if(currentRack->chains, matchesChainId);
                     if (found != currentRack->chains.end()) {
                         currentChain = &(*found);
-                        pathNames.add(currentChain->name);
+                        pathNames.add(currentChain->displayName());
                     }
                 }
                 break;

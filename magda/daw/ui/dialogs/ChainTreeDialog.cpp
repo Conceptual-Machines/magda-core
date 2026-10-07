@@ -364,7 +364,7 @@ class ChainTreeDialog::ContentComponent : public juce::Component,
 
         for (const auto& chain : rack.chains) {
             auto chainPath = rackPath.withChain(chain.id);
-            auto* chainItem = new ChainTreeItem(chain.name, chainPath);
+            auto* chainItem = new ChainTreeItem(chain.displayName(), chainPath);
 
             for (const auto& element : chain.elements) {
                 if (isDevice(element)) {
