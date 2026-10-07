@@ -28,6 +28,7 @@
 #include "custom_ui/FaustUI.hpp"
 #include "custom_ui/StepSequencerUI.hpp"
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
+#include "drum_grid/DrumGridUI.hpp"
 #include "engine/AudioEngine.hpp"
 #include "layout/DeviceShellPainter.hpp"
 #include "layout/DeviceSlotHeaderLayout.hpp"
@@ -617,7 +618,8 @@ bool DeviceSlotComponent::hasIdRow() const {
 int DeviceSlotComponent::sideStripWidth() const {
     const auto* track = magda::TrackManager::getInstance().getTrack(nodePath_.trackId);
     const bool onChordTrack = track != nullptr && track->type == magda::TrackType::Chord;
-    if (stripsAnalysisChrome() || onChordTrack)
+    // The Drum Grid's pads and chain take the full width; its gain lives on the pads.
+    if (stripsAnalysisChrome() || onChordTrack || traits_.isDrumGrid)
         return 0;
     // MIDI devices emit no audio; only the note-strip utilities keep a strip.
     const bool midiDevice = device_.deviceType == magda::DeviceType::MIDI || traits_.isChordEngine;
@@ -679,6 +681,13 @@ void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
     footerPageLabel_.setVisible(paged);
     if (footer.isEmpty())
         return;
+    // The Drum Grid lays out its own footer; multi-out sits on its rail.
+    if (traits_.isDrumGrid) {
+        for (auto* button : {scButton_.get(), midiThruButton_.get()})
+            if (button != nullptr)
+                button->setVisible(false);
+        return;
+    }
 
     constexpr int kButtonWidth = 30;
     constexpr int kButtonHeight = 26;
@@ -1174,22 +1183,10 @@ void DeviceSlotComponent::updateParamModulation() {
 
     // Also update custom UI linkable sliders
     setupCustomUILinking();
-
-    drum_grid_slot::setPadChainLinkContext(customUI_.getDrumGridUI(), nodePath_,
-                                           context.deviceMacros, context.deviceMods,
-                                           context.trackMacros, context.trackMods,
-                                           context.selectedModIndex, context.selectedMacroIndex);
 }
 
 void DeviceSlotComponent::paint(juce::Graphics& g) {
-    // Call base class paint for standard rendering
     NodeComponent::paint(g);
-
-    drum_grid_slot::paintHeaderLogo(g, traits_.isDrumGrid, collapsed_, getHeaderHeight(),
-                                    getWidth(),
-                                    exposesDeviceModulation() ? modButton_.get() : nullptr,
-                                    {uiButton_.get(), scButton_.get(), multiOutButton_.get(),
-                                     onButton_.get(), exportClipButton_.get()});
 }
 
 void DeviceSlotComponent::deviceGainStageChanged(const magda::ChainNodePath& devicePath,
@@ -1292,15 +1289,6 @@ void DeviceSlotComponent::paintOverChildren(juce::Graphics& g) {
     g.fillRoundedRectangle(r, 2.0f);
     g.setColour(colour.withAlpha(0.95f));
     g.drawRoundedRectangle(r, 2.0f, 1.5f);
-}
-
-juce::Point<float> DeviceSlotComponent::getControllerIndicatorAnchor() const {
-    if (auto anchor = drum_grid_slot::getControllerIndicatorAnchor(
-            traits_.isDrumGrid, collapsed_, getHeaderHeight(),
-            exposesDeviceModulation() ? modButton_.get() : nullptr))
-        return *anchor;
-
-    return NodeComponent::getControllerIndicatorAnchor();
 }
 
 void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) {
@@ -1407,6 +1395,12 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
          .activeCustomUI = activeCustomUI,
          .paramGrid = paramGrid_.get()},
         faustHeaderHeight());
+
+    if (auto* drumGrid = customUI_.getDrumGridUI(); drumGrid != nullptr && !footerArea_.isEmpty()) {
+        drumGrid->setBounds(contentArea.withBottom(footerArea_.getBottom()));
+        if (multiOutButton_ != nullptr && multiOutButton_->isVisible())
+            multiOutButton_->setBounds(drumGrid->getRailMultiOutBounds() + drumGrid->getPosition());
+    }
 }
 
 void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
@@ -1866,7 +1860,6 @@ void DeviceSlotComponent::createCustomUI() {
 
     if (createdKind == DeviceSlotInlineUiKind::Custom) {
         updateDeviceSlotInlineUi(device_, compiledPanel_.get(), customUI_);
-        wirePadChainLinkCallbacks();
     }
 
     applyMidiOnlyDeviceHeaderVisibility(traits_, device_, modButton_.get(), macroButton_.get());
@@ -1900,69 +1893,6 @@ void DeviceSlotComponent::bindFaustHeader() {
 
 void DeviceSlotComponent::refreshInlinePluginBindings() {
     refreshDeviceSlotInlineUiPluginBindings(nodePath_, compiledPanel_.get(), customUI_);
-}
-
-void DeviceSlotComponent::wirePadChainLinkCallbacks() {
-    const auto* macros = getMacrosData();
-    const auto* mods = getModsData();
-    const magda::MacroArray* trackMacros = nullptr;
-    const magda::ModArray* trackMods = nullptr;
-    if (nodePath_.trackId != magda::INVALID_TRACK_ID) {
-        const auto* trackInfo = magda::TrackManager::getInstance().getTrack(nodePath_.trackId);
-        if (trackInfo) {
-            trackMods = &trackInfo->mods;
-            trackMacros = &trackInfo->macros;
-        }
-    }
-
-    auto& selMgr = magda::SelectionManager::getInstance();
-    int selectedModIndex = -1;
-    int selectedMacroIndex = -1;
-    if (selMgr.hasModSelection()) {
-        const auto& modSel = selMgr.getModSelection();
-        if (modSel.parentPath == nodePath_)
-            selectedModIndex = modSel.modIndex;
-    }
-    if (selectedModIndex_ >= 0)
-        selectedModIndex = selectedModIndex_;
-    if (selMgr.hasMacroSelection()) {
-        const auto& macroSel = selMgr.getMacroSelection();
-        if (macroSel.parentPath == nodePath_)
-            selectedMacroIndex = macroSel.macroIndex;
-    }
-    if (selectedMacroIndex_ >= 0)
-        selectedMacroIndex = selectedMacroIndex_;
-
-    drum_grid_slot::setPadChainLinkContext(customUI_.getDrumGridUI(), nodePath_, macros, mods,
-                                           trackMacros, trackMods, selectedModIndex,
-                                           selectedMacroIndex);
-
-    juce::Component::SafePointer<DeviceSlotComponent> safeThis(this);
-    drum_grid_slot::PadChainLinkCallbacks callbacks;
-    callbacks.getNodePath = [safeThis]() {
-        return safeThis != nullptr ? safeThis->nodePath_ : magda::ChainNodePath{};
-    };
-    callbacks.updateParamModulation = [safeThis]() {
-        if (safeThis != nullptr)
-            safeThis->updateParamModulation();
-    };
-    callbacks.updateModsPanel = [safeThis]() {
-        if (safeThis != nullptr)
-            safeThis->updateModsPanel();
-    };
-    callbacks.updateMacroPanel = [safeThis]() {
-        if (safeThis != nullptr)
-            safeThis->updateMacroPanel();
-    };
-    callbacks.onMacroTargetChanged = [safeThis](int macroIndex, magda::ControlTarget target) {
-        if (safeThis != nullptr)
-            safeThis->onMacroTargetChangedInternal(macroIndex, std::move(target));
-    };
-    callbacks.showAutomationLaneForParam = [safeThis](int paramIndex) {
-        if (safeThis != nullptr)
-            safeThis->showAutomationLaneForParam(paramIndex);
-    };
-    drum_grid_slot::wirePadChainLinkCallbacks(customUI_.getDrumGridUI(), std::move(callbacks));
 }
 
 void DeviceSlotComponent::setupCustomUILinking() {

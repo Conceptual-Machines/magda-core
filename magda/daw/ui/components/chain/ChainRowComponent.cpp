@@ -10,8 +10,8 @@
 #include "RackComponent.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
+#include "layout/DeviceShellPainter.hpp"
 #include "layout/NodeHeaderStyles.hpp"
-#include "ui/components/mixer/LevelMeterScale.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -200,25 +200,6 @@ ChainRowComponent::Columns ChainRowComponent::columnsFor(juce::Rectangle<int> ro
     return columns;
 }
 
-juce::Colour ChainRowComponent::chainColour(int index) {
-    // oklch(0.62 0.12 hue), the spec's chain dot, converted to sRGB.
-    static constexpr float hues[] = {240.0f, 150.0f, 25.0f, 300.0f, 85.0f, 195.0f, 345.0f, 120.0f};
-    const float hue = juce::degreesToRadians(hues[static_cast<size_t>(index) % std::size(hues)]);
-    const float L = 0.62f, a = 0.12f * std::cos(hue), b = 0.12f * std::sin(hue);
-    const float l = std::pow(L + 0.3963377774f * a + 0.2158037573f * b, 3.0f);
-    const float m = std::pow(L - 0.1055613458f * a - 0.0638541728f * b, 3.0f);
-    const float s = std::pow(L - 0.0894841775f * a - 1.2914855480f * b, 3.0f);
-    const auto encode = [](float linear) {
-        linear = juce::jlimit(0.0f, 1.0f, linear);
-        const float v = linear <= 0.0031308f ? 12.92f * linear
-                                             : 1.055f * std::pow(linear, 1.0f / 2.4f) - 0.055f;
-        return static_cast<juce::uint8>(juce::roundToInt(v * 255.0f));
-    };
-    return juce::Colour(encode(4.0767416621f * l - 3.3077115913f * m + 0.2309699292f * s),
-                        encode(-1.2684380046f * l + 2.6097574011f * m - 0.3413193965f * s),
-                        encode(-0.0041960863f * l - 0.7034186147f * m + 1.7076147010f * s));
-}
-
 void ChainRowComponent::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds().toFloat().reduced(0.5f);
     const auto fill = selected_  ? ActiveTheme::DEVICE_ROW_SELECTED
@@ -237,7 +218,7 @@ void ChainRowComponent::paint(juce::Graphics& g) {
     }
 
     const auto name = columnsFor(getLocalBounds()).name;
-    g.setColour(chainColour(colourIndex_));
+    g.setColour(device_shell::chainColour(colourIndex_));
     g.fillEllipse(name.withWidth(8).withSizeKeepingCentre(8, 8).toFloat());
     if (nameLabel_.getText().isEmpty() && !nameLabel_.isBeingEdited()) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
@@ -245,58 +226,8 @@ void ChainRowComponent::paint(juce::Graphics& g) {
         g.drawText("Chain", nameLabel_.getBounds(), juce::Justification::centredLeft, false);
     }
 
-    paintGain(g);
-    paintPan(g);
-}
-
-void ChainRowComponent::paintGain(juce::Graphics& g) const {
-    const auto track = gainLabel_.getBounds().toFloat();
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_WELL));
-    g.fillRoundedRectangle(track, 4.0f);
-
-    const double db = gainLabel_.getValue();
-    const float fill =
-        track.getWidth() * static_cast<float>(magda::level_meter_scale::dbFillProportion(db));
-    if (fill > 0.0f) {
-        g.setGradientFill(juce::ColourGradient(
-            ActiveTheme::getColour(ActiveTheme::DEVICE_SLIDER_FILL_LO), track.getX(), 0.0f,
-            ActiveTheme::getColour(ActiveTheme::DEVICE_SLIDER_FILL_HI), track.getRight(), 0.0f,
-            false));
-        g.fillRoundedRectangle(track.withWidth(fill), 4.0f);
-    }
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
-    g.drawRoundedRectangle(track.reduced(0.5f), 4.0f, 1.0f);
-
-    const auto text =
-        db <= kMinGainDb + 0.05 ? juce::String("-inf dB") : juce::String(db, 1) + " dB";
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
-    g.setFont(FontManager::getInstance().getMonoFont(10.5f));
-    g.drawText(text, gainLabel_.getBounds(), juce::Justification::centred, false);
-}
-
-void ChainRowComponent::paintPan(juce::Graphics& g) const {
-    const auto track = panLabel_.getBounds().toFloat();
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_WELL));
-    g.fillRoundedRectangle(track, 4.0f);
-
-    const float pan = static_cast<float>(juce::jlimit(-1.0, 1.0, panLabel_.getValue()));
-    const float centre = track.getCentreX();
-    const float reach = track.getWidth() * 0.5f * std::abs(pan);
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_SLIDER_FILL_HI));
-    g.fillRect(juce::Rectangle<float>(pan < 0.0f ? centre - reach : centre, track.getY() + 1.0f,
-                                      reach, track.getHeight() - 2.0f));
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
-    g.fillRect(
-        juce::Rectangle<float>(centre - 0.5f, track.getY() + 1.0f, 1.0f, track.getHeight() - 2.0f));
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
-    g.drawRoundedRectangle(track.reduced(0.5f), 4.0f, 1.0f);
-
-    const int amount = juce::roundToInt(std::abs(pan) * 100.0f);
-    const auto text =
-        amount == 0 ? juce::String("C") : juce::String(amount) + (pan < 0.0f ? " L" : " R");
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
-    g.setFont(FontManager::getInstance().getMonoFont(10.5f));
-    g.drawText(text, panLabel_.getBounds(), juce::Justification::centred, false);
+    device_shell::paintGainSlider(g, gainLabel_.getBounds(), gainLabel_.getValue(), kMinGainDb);
+    device_shell::paintPanSlider(g, panLabel_.getBounds(), panLabel_.getValue());
 }
 
 void ChainRowComponent::mouseEnter(const juce::MouseEvent& /*event*/) {

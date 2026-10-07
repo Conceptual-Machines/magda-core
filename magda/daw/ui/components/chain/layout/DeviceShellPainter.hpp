@@ -20,6 +20,16 @@ void paintFrame(juce::Graphics& g, juce::Rectangle<int> bounds, int headerHeight
 /** @brief Footer info text: "mono" or "stereo", then the interface rate when one is running. */
 juce::String audioInfoText(int outputChannels);
 
+/** @brief The shell's horizontal gain slider: 20px track, gradient fill on the meter scale,
+ *  the value centred; @p minDb reads as -inf. */
+void paintGainSlider(juce::Graphics& g, juce::Rectangle<int> area, double db, double minDb);
+
+/** @brief The bipolar pan slider: fills from a centre line, "C" / "15 L" / "15 R". */
+void paintPanSlider(juce::Graphics& g, juce::Rectangle<int> area, double pan);
+
+/** @brief A chain's colour dot by its position: oklch(0.62 0.12 hue) over a fixed hue cycle. */
+juce::Colour chainColour(int index);
+
 /** @brief The side strip's delta solo: a text glyph styled like the device icon buttons. */
 void styleDeltaButton(juce::TextButton& delta);
 

@@ -31,8 +31,6 @@ target_sources(magda_daw_app PRIVATE
     slot/StepSequencerClipExport.cpp
     drum_grid/DeviceSlotDrumGridBridge.cpp
     drum_grid/DrumGridUI.cpp
-    drum_grid/PadChainPanel.cpp
-    drum_grid/PadDeviceSlot.cpp
     drum_grid/PadChainRowComponent.cpp
     params/ParamHostComponent.cpp
     params/ParamControlStyle.cpp
@@ -134,8 +132,6 @@ target_sources(magda_daw_app PRIVATE
     slot/StepSequencerClipExport.hpp
     drum_grid/DeviceSlotDrumGridBridge.hpp
     drum_grid/DrumGridUI.hpp
-    drum_grid/PadChainPanel.hpp
-    drum_grid/PadDeviceSlot.hpp
     drum_grid/PadChainRowComponent.hpp
     params/ParamHostComponent.hpp
     params/MomentaryParamButton.hpp

@@ -102,11 +102,6 @@ class DeviceSlotComponent : public NodeComponent,
     void paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) override;
     void lookAndFeelChanged() override;
 
-    // Drum Grid clears the standard nameLabel_ and paints its custom
-    // "MDG2000" logo in paint(); anchor the dot to that logo's right
-    // edge so it sits next to the visible text rather than the empty
-    // label bounds.
-    juce::Point<float> getControllerIndicatorAnchor() const override;
     void resizedContent(juce::Rectangle<int> contentArea) override;
     void resizedHeaderExtra(juce::Rectangle<int>& headerArea) override;
     int getHeaderHeight() const override {
@@ -382,7 +377,6 @@ class DeviceSlotComponent : public NodeComponent,
     void bindFaustHeader();
     void refreshInlinePluginBindings();
     void setupCustomUILinking();
-    void wirePadChainLinkCallbacks();  // Wire link mode on PadDeviceSlot param slots
     template <typename LinkTarget>
     void wireSharedModMacroLinkCallbacks(LinkTarget& target, bool expandMacroPanelOnDirectLink);
 

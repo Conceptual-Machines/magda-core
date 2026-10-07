@@ -9,12 +9,12 @@
 #include <memory>
 #include <optional>
 
-#include "custom_ui/SamplerUI.hpp"
-#include "drum_grid/PadChainPanel.hpp"
+#include "ChainPanel.hpp"
+#include "core/ChainNodePath.hpp"
 #include "drum_grid/PadChainRowComponent.hpp"
-#include "params/ParamSlotComponent.hpp"
+#include "layout/DashedAddButton.hpp"
+#include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
-#include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::audio {
 class MagdaSamplerPlugin;
@@ -23,15 +23,10 @@ class MagdaSamplerPlugin;
 namespace magda::daw::ui {
 
 /**
- * @brief Custom inline UI for the Drum Grid plugin
+ * @brief The Drum Grid's body in the v1 shell: [rail | pads | pad editor | chain] over a footer.
  *
- * Layout:
- *   Left ~45%: 4x4 pad grid (16 pads visible per page, 4 pages = 64 pads)
- *   Right ~55%: Quick controls row + SamplerUI for selected pad
- *
- * Pads display note name + truncated sample name.
- * Pads are drop targets for audio files and plugins.
- * Click selects; selected pad highlighted.
+ * The selected pad's chain shows in the rack's chain view. Pads take sample and plugin drops;
+ * the rail toggles the editor and swaps the pads for the pad list.
  */
 class DrumGridUI : public juce::Component,
                    public juce::FileDragAndDropTarget,
@@ -45,13 +40,10 @@ class DrumGridUI : public juce::Component,
     static constexpr int kNumPages = kTotalPads / kPadsPerPage;
     static constexpr int kPluginParamSlots = 16;
 
-    // Fixed panel widths
-    static constexpr int kToggleColWidth = 28;
-    static constexpr int kPadGridWidth = 250;
-    static constexpr int kChainsPanelWidth = 340;
-    static constexpr int kDetailPanelWidth =
-        800;  // Accommodate sampler (750px), FX scroll in viewport
-    static constexpr int kGap = 6;
+    static constexpr int kRailWidth = 38;
+    static constexpr int kEditorWidth = 252;
+    static constexpr int kMinChainWidth = 264;
+    static constexpr int kFooterHeight = 40;
 
     DrumGridUI();
     ~DrumGridUI() override;
@@ -77,9 +69,6 @@ class DrumGridUI : public juce::Component,
 
     /** Called when a sample file is dropped onto a pad. (padIndex, file) */
     std::function<void(int, const juce::File&)> onSampleDropped;
-
-    /** Called when Load button is clicked for the selected pad. (padIndex) */
-    std::function<void(int)> onLoadRequested;
 
     /** Called when Clear button is clicked for the selected pad. (padIndex) */
     std::function<void(int)> onClearRequested;
@@ -149,27 +138,23 @@ class DrumGridUI : public juce::Component,
     /** Called when layout changes (e.g., chains panel toggled) so parent can resize. */
     std::function<void()> onLayoutChanged;
 
-    /** Get the PadChainPanel for wiring callbacks from DeviceSlotComponent. */
-    PadChainPanel& getPadChainPanel() {
-        return padChainPanel_;
-    }
-    const PadChainPanel& getPadChainPanel() const {
-        return padChainPanel_;
-    }
+    /// The path of a pad's chain, invalid while the pad has none.
+    std::function<magda::ChainNodePath(int padIndex)> getPadChainPath;
 
-    /** Rebuild visible chain rows from padInfos_. */
+    /** Called by the add slot of a pad with no chain yet. (padIndex) */
+    std::function<void(int)> onAddDeviceRequested;
+
+    /** @brief Show the selected pad's chain again after the model changed it. */
+    void refreshPadChain();
+
+    /** Rebuild the pad list's rows from padInfos_. */
     void rebuildChainRows();
 
-    /** Show or hide the chains panel. */
-    void setChainsPanelVisible(bool visible);
-
-    /** Whether the chains panel is currently visible. */
-    bool isChainsPanelVisible() const {
-        return chainsPanelVisible_;
-    }
-
-    /** Compute preferred content width based on visible panels. */
+    /** Width the panels want: rail, pads, the editor when open, and the chain. */
     int getPreferredContentWidth() const;
+
+    /** Where the device's multi-out button sits, at the foot of the rail. */
+    juce::Rectangle<int> getRailMultiOutBounds() const;
 
     //==============================================================================
     // Component overrides
@@ -208,6 +193,7 @@ class DrumGridUI : public juce::Component,
         void setMuted(bool muted);
         void setSoloed(bool soloed);
         void setTriggered(bool triggered);
+        void setStripeColour(juce::Colour colour);
 
         std::function<void(int)> onClicked;
         std::function<void(int, bool)> onNotePreview;  // (padIndex, isNoteOn)
@@ -218,9 +204,13 @@ class DrumGridUI : public juce::Component,
         void mouseDown(const juce::MouseEvent& e) override;
         void mouseDrag(const juce::MouseEvent& e) override;
         void mouseUp(const juce::MouseEvent& e) override;
+        void mouseEnter(const juce::MouseEvent& e) override;
+        void mouseExit(const juce::MouseEvent& e) override;
 
       private:
         int padIndex_ = 0;
+        juce::Colour stripe_;
+        bool hovered_ = false;
         juce::String noteName_;
         juce::String sampleName_;
         bool selected_ = false;
@@ -263,51 +253,40 @@ class DrumGridUI : public juce::Component,
     // Pad grid
     std::array<PadButton, kPadsPerPage> padButtons_;
 
-    // Pagination
-    // Opaque background strip — added to children BETWEEN the pad buttons and
-    // the nav arrow buttons so JUCE z-order paints it OVER pad pixels that
-    // overflow into the strip when the device slot is short, but UNDER the
-    // nav buttons and label so they remain visible.
-    class PaginationStripBg : public juce::Component {
-      public:
-        PaginationStripBg() {
-            setOpaque(true);
-            setInterceptsMouseClicks(false, false);
-        }
-        void paint(juce::Graphics& g) override;
-    };
-    PaginationStripBg paginationStripBg_;
-    std::unique_ptr<juce::ArrowButton> prevPageButton_;
-    std::unique_ptr<juce::ArrowButton> nextPageButton_;
-    juce::Label pageLabel_;
+    // Rail
+    juce::TextButton editorToggle_{"i"};
+    std::unique_ptr<magda::SvgButton> padListToggle_;
+    bool padListVisible_ = false;
 
-    // Detail panel (compact quick controls row)
-    juce::Label detailPadNameLabel_;
-    juce::Label detailSampleNameLabel_;
-    juce::Label levelLabel_;
-    juce::Label panLabel_;
-    TextSlider levelSlider_{TextSlider::Format::Decibels};
-    TextSlider panSlider_{TextSlider::Format::Decimal};
-    juce::TextButton muteButton_{"M"};
-    juce::TextButton soloButton_{"S"};
-    juce::TextButton loadButton_{"Load"};
-    juce::TextButton clearButton_{"Clear"};
-
-    // Per-pad FX chain panel (replaces old SamplerUI + param grid)
-    PadChainPanel padChainPanel_;
-    bool detailCollapsed_ = false;
-
-    // Chains panel
-    bool chainsPanelVisible_ = true;
-    juce::Label chainsLabel_;
+    // Pad list (rows in place of the pads)
     juce::Viewport chainsViewport_;
     juce::Component chainsContainer_;
     std::vector<std::unique_ptr<PadChainRowComponent>> chainRows_;
-    std::unique_ptr<magda::SvgButton> chainsToggleButton_;
 
-    // Paint rects (set in resized, used in paint)
-    juce::Rectangle<int> toggleColBounds_;
-    juce::Rectangle<int> paginationBounds_;
+    // Pad editor
+    bool detailCollapsed_ = false;
+    magda::DraggableValueLabel levelControl_{magda::DraggableValueLabel::Format::Decibels};
+    magda::DraggableValueLabel panControl_{magda::DraggableValueLabel::Format::Pan};
+    juce::TextButton outputButton_;
+    bool faderDragging_ = false;
+
+    // Chain
+    ChainPanel padChainView_;
+    DashedAddButton emptyAddButton_;
+    juce::TextButton chainMuteButton_{"M"};
+    juce::TextButton chainSoloButton_{"S"};
+
+    // Footer
+    std::unique_ptr<juce::ArrowButton> prevPageButton_;
+    std::unique_ptr<juce::ArrowButton> nextPageButton_;
+    juce::TextButton clearMutesButton_{"M"};
+    juce::TextButton clearSolosButton_{"S"};
+
+    // Areas laid out in resized() and painted in paint()
+    juce::Rectangle<int> railArea_, padsArea_, editorArea_, chainArea_, footerArea_;
+    juce::Rectangle<int> editorHeaderArea_, chainHeaderArea_, pageTextArea_;
+    juce::Rectangle<int> levelLabelArea_, panLabelArea_, outputLabelArea_;
+    juce::Rectangle<int> railSeparator_;
 
     // Plugin drop highlight
     int dropHighlightPad_ = -1;
@@ -318,7 +297,17 @@ class DrumGridUI : public juce::Component,
 
     //==============================================================================
     void setDetailCollapsed(bool collapsed);
+    void setPadListVisible(bool visible);
     void refreshPadButtons();
+    void styleControls();
+    void layoutEditor(juce::Rectangle<int> area);
+    void layoutChain(juce::Rectangle<int> area);
+    void layoutFooter(juce::Rectangle<int> area);
+    void paintEditor(juce::Graphics& g);
+    void paintChainHeader(juce::Graphics& g);
+    void showOutputMenu();
+    bool selectedPadHasChain() const;
+    void clearAll(bool mutes);
 
     /// Close the current fader gesture, so the next edit is a new undo step.
     void endFaderGesture();
@@ -332,8 +321,6 @@ class DrumGridUI : public juce::Component,
     /** Find which pad button (0-15) a screen point falls on, or -1 if none. */
     int padButtonIndexAtPoint(juce::Point<int> point) const;
 
-    void setupLabel(juce::Label& label, const juce::String& text, float fontSize);
-    static void setupButton(juce::TextButton& button);
     void showPadContextMenu(int padIndex, juce::Point<int> screenPos);
     void showChainContextMenu(int padIndex, juce::Point<int> screenPos);
 

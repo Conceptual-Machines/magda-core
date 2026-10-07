@@ -120,8 +120,6 @@ class ChainRowComponent : public juce::Component,
     // Re-read this row's chain from the model and refresh its controls.
     void refreshFromModel();
 
-    void paintGain(juce::Graphics& g) const;
-    void paintPan(juce::Graphics& g) const;
     void styleControls();
 
     RackComponent& owner_;
@@ -150,7 +148,6 @@ class ChainRowComponent : public juce::Component,
     double dragStartGainDb_ = 0.0;
     double dragStartPan_ = 0.0;
 
-    static juce::Colour chainColour(int index);
     void lookAndFeelChanged() override;
 
     static constexpr int ROW_HEIGHT = 38;
