@@ -254,10 +254,7 @@ void RackComponent::lookAndFeelChanged() {
 
 void RackComponent::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int> bounds,
                                    int headerHeight) {
-    device_shell::paintFrame(g, bounds, headerHeight, shellRows_,
-                             shellRows_.footerInfo.isEmpty() ? juce::String()
-                                                             : device_shell::audioInfoText(2),
-                             midiLed_.isLit());
+    device_shell::paintFrame(g, bounds, headerHeight, shellRows_, {}, midiLed_.isLit());
 }
 
 void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> /*contentArea*/) {
@@ -296,7 +293,7 @@ void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> /*conte
 
 void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
     shellRows_.idRow = shellRows_.sideStrip = shellRows_.footer = {};
-    shellRows_.footerInfo = shellRows_.midiLed = {};
+    shellRows_.midiLed = {};
     columnHeaderArea_ = viewportArea_ = {};
 
     // When collapsed, hide content controls only (buttons handled by resizedCollapsed)
@@ -365,12 +362,9 @@ void RackComponent::layoutSideStrip(juce::Rectangle<int> strip) {
     }
 }
 
-// Info on the left, the MIDI LED on the right.
+// Just the MIDI LED, on the right.
 void RackComponent::layoutFooter(juce::Rectangle<int> footer) {
-    auto area = footer.reduced(10, 0);
-    shellRows_.midiLed = area.removeFromRight(7).withSizeKeepingCentre(7, 7);
-    area.removeFromRight(8);
-    shellRows_.footerInfo = area;
+    shellRows_.midiLed = footer.reduced(10, 0).removeFromRight(7).withSizeKeepingCentre(7, 7);
 }
 
 void RackComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
