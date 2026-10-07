@@ -10,6 +10,7 @@ target_sources(magda_daw_app PRIVATE
     ScriptingConsoleContent.cpp
     PanelContent.cpp
     TrackChainContent.cpp
+    TrackChainHeaderParts.cpp
     MidiEditorContent.cpp
     PianoRollContent.cpp
     DrumGridClipContent.cpp
@@ -28,6 +29,7 @@ target_sources(magda_daw_app PRIVATE
     AIChatConsoleContent.hpp
     ScriptingConsoleContent.hpp
     TrackChainContent.hpp
+    TrackChainHeaderParts.hpp
     PianoRollContent.hpp
     WaveformEditorContent.hpp
 )

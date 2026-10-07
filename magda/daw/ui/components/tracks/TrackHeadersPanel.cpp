@@ -32,6 +32,7 @@
 #include "../automation/AutomationMenu.hpp"
 #include "../chain/ChainNodePathDrag.hpp"
 #include "../common/MasterSpeakerButton.hpp"
+#include "../common/MidiActivityLed.hpp"
 #include "../mixer/LevelMeter.hpp"
 #include "../mixer/LevelMeterScale.hpp"
 #include "../mixer/RoutingSyncHelper.hpp"
@@ -574,26 +575,10 @@ void TrackHeadersPanel::timerCallback() {
         if (counter != header->lastMidiCounter) {
             header->lastMidiCounter = counter;
 
-            // Only show activity when the track is actually receiving MIDI.
-            // Same predicate as MidiInputRouter: monitor
-            // enabled or record-armed - never gated on selection.
-            bool showActivity = false;
-            if (auto* trackInfo = TrackManager::getInstance().getTrack(header->trackId)) {
-                if (trackInfo->receivesLiveMidiInput()) {
-                    switch (trackInfo->inputMonitor) {
-                        case InputMonitorMode::In:
-                            showActivity = true;
-                            break;
-                        case InputMonitorMode::Auto:
-                            showActivity = !audioEngine_->isPlaying();
-                            break;
-                        case InputMonitorMode::Off:
-                            showActivity = false;
-                            break;
-                    }
-                }
-            }
-            if (showActivity) {
+            // Never gated on selection: the same predicate as MidiInputRouter.
+            const auto* trackInfo = TrackManager::getInstance().getTrack(header->trackId);
+            if (trackInfo != nullptr &&
+                daw::ui::showsLiveMidiActivity(*trackInfo, audioEngine_->isPlaying())) {
                 header->midiActivity = 1.0f;
                 header->midiHoldFrames = 4;  // Hold bright for ~130ms at 30fps
             }

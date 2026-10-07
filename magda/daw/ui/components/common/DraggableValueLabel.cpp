@@ -411,7 +411,10 @@ void DraggableValueLabel::syncValueControl() {
     valueControl_.setShowFillIndicator(showFillIndicator_);
     valueControl_.setDrawBackground(drawBackground_);
     valueControl_.setDrawBorder(drawBorder_);
-    valueControl_.setFontSize(fontSize_);
+    if (customFont_)
+        valueControl_.setFont(*customFont_);
+    else
+        valueControl_.setFontSize(fontSize_);
     valueControl_.setJustification(justification_);
     valueControl_.setDragging(isDragging_);
     valueControl_.setCoEditing(coEditing_);

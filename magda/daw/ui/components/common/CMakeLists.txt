@@ -5,6 +5,7 @@ target_sources(magda_daw_app PRIVATE
     SvgButton.cpp
     ChordAuditionControl.cpp
     MonitorControl.cpp
+    MidiActivityLed.cpp
     QwertyKeyboardPopup.cpp
     IconSelector.cpp
     ZoomControls.cpp
@@ -21,6 +22,7 @@ target_sources(magda_daw_app PRIVATE
     InternalFileDrag.hpp
     MasterSpeakerButton.hpp
     SvgButton.hpp
+    MidiActivityLed.hpp
     IconSelector.hpp
     ZoomControls.hpp
     ModeSwitcher.hpp
