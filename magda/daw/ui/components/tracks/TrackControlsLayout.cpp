@@ -1,6 +1,11 @@
 #include "TrackControlsLayout.hpp"
 
+#include <BinaryData.h>
+
 #include <algorithm>
+
+#include "ui/themes/ActiveTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda::track_controls {
 
@@ -116,6 +121,37 @@ void layoutRoutingRow(juce::Rectangle<int> row, juce::Component* dd1, juce::Comp
         dd->setBounds(row);
         dd->setVisible(true);
     }
+}
+
+void paintIOColumnLabel(juce::Graphics& g, juce::Rectangle<int> area, bool midi) {
+    constexpr int iconSize = 12;
+    const auto dim = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2);
+    area.removeFromLeft(2);
+    const auto* svg = midi ? BinaryData::piano_roll_svg : BinaryData::sinewave_svg;
+    const auto size = midi ? BinaryData::piano_roll_svgSize : BinaryData::sinewave_svgSize;
+    if (auto icon = juce::Drawable::createFromImageData(svg, static_cast<size_t>(size))) {
+        icon->replaceColour(juce::Colour(0xFFB3B3B3), dim);
+        icon->drawWithin(
+            g, area.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize).toFloat(),
+            juce::RectanglePlacement::centred, 1.0f);
+    }
+    area.removeFromLeft(4);
+    g.setColour(dim);
+    g.setFont(FontManager::getInstance().getMonoFont(9.5f).withExtraKerningFactor(0.1f));
+    g.drawText(midi ? "MIDI" : "AUDIO", area, juce::Justification::centredLeft, false);
+}
+
+void applyRoutingIconImage(juce::Component* component, const char* svgData, int svgSize) {
+    auto* button = dynamic_cast<juce::DrawableButton*>(component);
+    if (button == nullptr)
+        return;
+    if (auto svg = juce::Drawable::createFromImageData(svgData, static_cast<size_t>(svgSize))) {
+        svg->replaceColour(juce::Colour(0xFFB3B3B3),
+                           ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        ActiveTheme::applyToSvgIcon(*svg);
+        button->setImages(svg.get());
+    }
+    button->setAlpha(0.38f);
 }
 
 }  // namespace magda::track_controls

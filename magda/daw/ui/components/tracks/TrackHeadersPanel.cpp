@@ -287,21 +287,6 @@ class TrackNameLabel : public juce::Label {
   private:
     bool shadow_ = false;
 };
-
-// (Re)builds a routing icon's drawable with the active palette's tint. Called
-// at construction and again from lookAndFeelChanged: the tint is baked into
-// the drawable, so a live theme switch must rebuild the image to take effect.
-void applyRoutingIconImage(juce::Component* component, const char* svgData, int svgSize) {
-    auto* button = dynamic_cast<juce::DrawableButton*>(component);
-    if (button == nullptr)
-        return;
-    if (auto svg = juce::Drawable::createFromImageData(svgData, svgSize)) {
-        svg->replaceColour(juce::Colour(0xFFB3B3B3),
-                           ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-        ActiveTheme::applyToSvgIcon(*svg);
-        button->setImages(svg.get());
-    }
-}
 }  // namespace
 
 TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : name(trackName) {
@@ -471,16 +456,16 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // I/O routing icons (non-interactive visual indicators)
     auto inputDrawable =
         std::make_unique<juce::DrawableButton>("inputIcon", juce::DrawableButton::ImageFitted);
-    applyRoutingIconImage(inputDrawable.get(), BinaryData::Input_svg, BinaryData::Input_svgSize);
+    track_controls::applyRoutingIconImage(inputDrawable.get(), BinaryData::Input_svg,
+                                          BinaryData::Input_svgSize);
     inputDrawable->setInterceptsMouseClicks(false, false);
-    inputDrawable->setAlpha(0.38f);
     inputIcon = std::move(inputDrawable);
 
     auto outputDrawable =
         std::make_unique<juce::DrawableButton>("outputIcon", juce::DrawableButton::ImageFitted);
-    applyRoutingIconImage(outputDrawable.get(), BinaryData::Output_svg, BinaryData::Output_svgSize);
+    track_controls::applyRoutingIconImage(outputDrawable.get(), BinaryData::Output_svg,
+                                          BinaryData::Output_svgSize);
     outputDrawable->setInterceptsMouseClicks(false, false);
-    outputDrawable->setAlpha(0.38f);
     outputIcon = std::move(outputDrawable);
 }
 
@@ -1380,10 +1365,10 @@ void TrackHeadersPanel::lookAndFeelChanged() {
             header->midiColumnLabel->setColour(juce::Label::textColourId, secondary);
         // The routing icons and collapse chevrons bake the palette into their
         // drawables at construction; rebuild them with the active palette.
-        applyRoutingIconImage(header->inputIcon.get(), BinaryData::Input_svg,
-                              BinaryData::Input_svgSize);
-        applyRoutingIconImage(header->outputIcon.get(), BinaryData::Output_svg,
-                              BinaryData::Output_svgSize);
+        track_controls::applyRoutingIconImage(header->inputIcon.get(), BinaryData::Input_svg,
+                                              BinaryData::Input_svgSize);
+        track_controls::applyRoutingIconImage(header->outputIcon.get(), BinaryData::Output_svg,
+                                              BinaryData::Output_svgSize);
         if (header->collapseButton)
             updateCollapseButtonIcon(*header);
     }
@@ -2274,24 +2259,10 @@ void TrackHeadersPanel::paintIOLabels(juce::Graphics& g, juce::Rectangle<int> io
     auto content = ioColumnStrip.reduced(IO_PAD_X, 0).withTrimmedLeft(1);
     const auto columns =
         splitIORow(content.withSizeKeepingCentre(content.getWidth(), IO_CAPTION_H), true, true);
-    const auto dim = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2);
-    const auto paintLabel = [&](juce::Rectangle<int> area, const char* svg, int svgSize,
-                                const juce::String& text) {
-        if (area.intersects(occupied.expanded(4, 0)))
-            return;
-        area.removeFromLeft(2);
-        if (auto icon = juce::Drawable::createFromImageData(svg, static_cast<size_t>(svgSize))) {
-            icon->replaceColour(juce::Colour(0xFFB3B3B3), dim);
-            icon->drawWithin(g, area.removeFromLeft(IO_CAPTION_H).toFloat(),
-                             juce::RectanglePlacement::centred, 1.0f);
-        }
-        area.removeFromLeft(4);
-        g.setColour(dim);
-        g.setFont(FontManager::getInstance().getMonoFont(9.5f).withExtraKerningFactor(0.1f));
-        g.drawText(text, area, juce::Justification::centredLeft, false);
-    };
-    paintLabel(columns.audio, BinaryData::sinewave_svg, BinaryData::sinewave_svgSize, "AUDIO");
-    paintLabel(columns.midi, BinaryData::piano_roll_svg, BinaryData::piano_roll_svgSize, "MIDI");
+    if (!columns.audio.intersects(occupied.expanded(4, 0)))
+        track_controls::paintIOColumnLabel(g, columns.audio, false);
+    if (!columns.midi.intersects(occupied.expanded(4, 0)))
+        track_controls::paintIOColumnLabel(g, columns.midi, true);
 }
 
 namespace {

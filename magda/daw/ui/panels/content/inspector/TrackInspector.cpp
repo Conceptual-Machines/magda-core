@@ -344,18 +344,7 @@ TrackInspector::TrackInspector() {
     // as fixed technical tokens so the paired headers render at the same base
     // (Latin) size — a translated "Audio" would scale with the localized font
     // and tower over the fixed "MIDI" next to it.
-    audioColumnLabel_.setText(magda::technicalText(magda::TechnicalTextToken::Audio),
-                              juce::dontSendNotification);
-    audioColumnLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    audioColumnLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    audioColumnLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(audioColumnLabel_);
-
-    midiColumnLabel_.setText(magda::technicalText(magda::TechnicalTextToken::Midi),
-                             juce::dontSendNotification);
-    midiColumnLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    midiColumnLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    midiColumnLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(midiColumnLabel_);
 
     // I/O routing icons (non-interactive visual indicators). The tint is baked
@@ -415,10 +404,9 @@ TrackInspector::TrackInspector() {
     addAndMakeVisible(latencyValue_);
 
     for (auto* label :
-         {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &audioColumnLabel_,
-          &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_, &clipsSectionLabel_,
-          &clipCountLabel_, &automatedSectionLabel_, &automatedParamsLabel_, &latencyLabel_,
-          &latencyValue_}) {
+         {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &sendReceiveSectionLabel_,
+          &noSendsLabel_, &clipsSectionLabel_, &clipCountLabel_, &automatedSectionLabel_,
+          &automatedParamsLabel_, &latencyLabel_, &latencyValue_}) {
         useLocalizedLabelPainter(*label);
     }
 
@@ -529,9 +517,9 @@ void TrackInspector::applyThemeColours() {
     const auto surface = ActiveTheme::getColour(ActiveTheme::SURFACE);
     const auto border = ActiveTheme::getBorderColour();
 
-    for (auto* label : {&trackNameLabel_, &routingSectionLabel_, &audioColumnLabel_,
-                        &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_,
-                        &clipsSectionLabel_, &automatedSectionLabel_, &latencyLabel_})
+    for (auto* label :
+         {&trackNameLabel_, &routingSectionLabel_, &sendReceiveSectionLabel_, &noSendsLabel_,
+          &clipsSectionLabel_, &automatedSectionLabel_, &latencyLabel_})
         label->setColour(juce::Label::textColourId, secondary);
 
     for (auto* label : {&automatedParamsLabel_, &clipCountLabel_, &latencyValue_})
@@ -572,17 +560,10 @@ void TrackInspector::applyThemeColours() {
 }
 
 void TrackInspector::rebuildRoutingIcons() {
-    const auto applyIcon = [](juce::Component* component, const char* svgData, int svgSize) {
-        auto* button = dynamic_cast<juce::DrawableButton*>(component);
-        if (button == nullptr)
-            return;
-        if (auto svg = juce::Drawable::createFromImageData(svgData, svgSize)) {
-            ActiveTheme::applyToSvgIcon(*svg);
-            button->setImages(svg.get());
-        }
-    };
-    applyIcon(inputIcon_.get(), BinaryData::Input_svg, BinaryData::Input_svgSize);
-    applyIcon(outputIcon_.get(), BinaryData::Output_svg, BinaryData::Output_svgSize);
+    magda::track_controls::applyRoutingIconImage(inputIcon_.get(), BinaryData::Input_svg,
+                                                 BinaryData::Input_svgSize);
+    magda::track_controls::applyRoutingIconImage(outputIcon_.get(), BinaryData::Output_svg,
+                                                 BinaryData::Output_svgSize);
 }
 
 void TrackInspector::lookAndFeelChanged() {
@@ -601,10 +582,9 @@ void TrackInspector::hardwareChannelsChanged() {
 
 TrackInspector::~TrackInspector() {
     for (auto* label :
-         {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &audioColumnLabel_,
-          &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_, &clipsSectionLabel_,
-          &clipCountLabel_, &automatedSectionLabel_, &automatedParamsLabel_, &latencyLabel_,
-          &latencyValue_}) {
+         {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &sendReceiveSectionLabel_,
+          &noSendsLabel_, &clipsSectionLabel_, &clipCountLabel_, &automatedSectionLabel_,
+          &automatedParamsLabel_, &latencyLabel_, &latencyValue_}) {
         clearLocalizedLabelPainter(*label);
     }
     for (auto& label : sendDestLabels_)

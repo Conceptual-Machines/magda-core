@@ -116,15 +116,15 @@ class TrackInspector : public BaseInspector,
 
     // Routing section (unified input type toggle + selectors)
     juce::Label routingSectionLabel_;
-    std::unique_ptr<magda::InputTypeSelector> inputTypeSelector_;  // Hidden, internal state
-    std::unique_ptr<magda::RoutingSelector> audioInputSelector_;   // Audio input
-    std::unique_ptr<magda::RoutingSelector> inputSelector_;        // MIDI input
-    std::unique_ptr<magda::RoutingSelector> outputSelector_;       // Audio output
-    std::unique_ptr<magda::RoutingSelector> midiOutputSelector_;   // MIDI output
-    juce::Label audioColumnLabel_;                                 // "Audio" column header
-    juce::Label midiColumnLabel_;                                  // "MIDI" column header
-    std::unique_ptr<juce::Component> inputIcon_;                   // Non-interactive Input icon
-    std::unique_ptr<juce::Component> outputIcon_;                  // Non-interactive Output icon
+    std::unique_ptr<magda::InputTypeSelector> inputTypeSelector_;   // Hidden, internal state
+    std::unique_ptr<magda::RoutingSelector> audioInputSelector_;    // Audio input
+    std::unique_ptr<magda::RoutingSelector> inputSelector_;         // MIDI input
+    std::unique_ptr<magda::RoutingSelector> outputSelector_;        // Audio output
+    std::unique_ptr<magda::RoutingSelector> midiOutputSelector_;    // MIDI output
+    magda::track_controls::IOColumnLabel audioColumnLabel_{false};  // "AUDIO" column header
+    magda::track_controls::IOColumnLabel midiColumnLabel_{true};    // "MIDI" column header
+    std::unique_ptr<juce::Component> inputIcon_;                    // Non-interactive Input icon
+    std::unique_ptr<juce::Component> outputIcon_;                   // Non-interactive Output icon
 
     // Send/Receive section
     juce::Label sendReceiveSectionLabel_;
