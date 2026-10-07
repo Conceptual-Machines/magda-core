@@ -21,6 +21,7 @@
 #include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/ClipManager.hpp"
+#include "core/Config.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
 #include "core/TrackPropertyCommands.hpp"
@@ -59,7 +60,7 @@ TrackInspector::TrackInspector() {
     trackNameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     addAndMakeVisible(trackNameLabel_);
 
-    trackNameValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
+    trackNameValue_.setFont(FontManager::getInstance().getUIFontBold(13.0f));
     trackNameValue_.setEditable(true);
     trackNameValue_.onTextChange = [this]() {
         // The master track cannot be renamed; its name is fixed.
@@ -153,7 +154,10 @@ TrackInspector::TrackInspector() {
         "mute", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
         BinaryData::master_off_svg, BinaryData::master_off_svgSize);
     configureMasterSpeakerButton(*muteButton_);
-    muteButton_->setInactiveIconOpacity(0.58f);
+    // v1: mute, solo, record, monitor and automation keep the neutral chip and carry their
+    // state in the glyph. Paddings match the track headers' glyph sizes on 26x18 buttons.
+    applyGlyphMuteStyle(*muteButton_);
+    muteButton_->setIconPadding(5.0f);
     muteButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             if (selectedTrackId_ == magda::MASTER_TRACK_ID)
@@ -169,6 +173,8 @@ TrackInspector::TrackInspector() {
 
     // Speaker icon button (used for master mute instead of "M" text)
     speakerButton_ = magda::makeMasterSpeakerButton();
+    applyGlyphMuteStyle(*speakerButton_);
+    speakerButton_->setIconPadding(5.0f);
     speakerButton_->onClick = [this]() {
         magda::UndoManager::getInstance().executeCommand(
             std::make_unique<magda::SetMasterMuteCommand>(speakerButton_->getToggleState()));
@@ -186,11 +192,10 @@ TrackInspector::TrackInspector() {
         std::make_unique<SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
     soloButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     soloButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    soloButton_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+    soloButton_->setActiveBackgroundColor(ActiveTheme::SURFACE);
     soloButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                           ActiveTheme::ICON_ON_ACCENT);
-    soloButton_->setIconPadding(5.0f);  // match the arrange track-header solo glyph
-    soloButton_->setInactiveIconOpacity(0.58f);
+                                           ActiveTheme::DEVICE_AMBER);
+    soloButton_->setIconPadding(4.5f);
     soloButton_->setClickingTogglesState(true);
     soloButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
@@ -206,11 +211,10 @@ TrackInspector::TrackInspector() {
                                                 BinaryData::track_record_svgSize);
     recordButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     recordButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    recordButton_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
+    recordButton_->setActiveBackgroundColor(ActiveTheme::SURFACE);
     recordButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                             ActiveTheme::ICON_ON_ACCENT);
-    recordButton_->setIconPadding(5.0f);  // match the arrange track-header record glyph
-    recordButton_->setInactiveIconOpacity(0.58f);
+                                             ActiveTheme::DEVICE_RED);
+    recordButton_->setIconPadding(4.5f);
     recordButton_->setClickingTogglesState(true);
     recordButton_->onClick = [this]() {
         DBG("TrackInspector::recordButton clicked - trackId="
@@ -259,7 +263,8 @@ TrackInspector::TrackInspector() {
             return std::vector<magda::TrackId>(selectedTrackIds_.begin(), selectedTrackIds_.end());
         return std::vector<magda::TrackId>{selectedTrackId_};
     };
-    monitorButton_.setInactiveIconOpacity(0.58f);
+    monitorButton_.setIconPadding(7.0f);
+    monitorButton_.setGlyphStyle(true);
     addAndMakeVisible(monitorButton_);
 
     // Automation indicator — mirrors the arrange track-header automation button.
@@ -269,11 +274,10 @@ TrackInspector::TrackInspector() {
                                                        BinaryData::automation_svgSize);
     automationIndicator_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     automationIndicator_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    automationIndicator_->setActiveBackgroundColor(
-        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
+    automationIndicator_->setActiveBackgroundColor(ActiveTheme::SURFACE);
     automationIndicator_->setStateColourReplacement(
-        juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL, ActiveTheme::TEXT_BRIGHT);
-    automationIndicator_->setIconPadding(2.5f);
+        juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL, ActiveTheme::ACCENT_MODULATION);
+    automationIndicator_->setIconPadding(5.0f);
     automationIndicator_->onClick = [this]() {
         automatedSectionExpanded_ = !automatedSectionExpanded_;
         updateAutomatedParametersSummary();
@@ -382,6 +386,9 @@ TrackInspector::TrackInspector() {
     midiOutputSelector_->setSelectedId(1);   // "None"
     midiOutputSelector_->setEnabled(false);  // Disabled by default
     addAndMakeVisible(*midiOutputSelector_);
+    for (auto* selector : {audioInputSelector_.get(), inputSelector_.get(), outputSelector_.get(),
+                           midiOutputSelector_.get()})
+        selector->setFieldStyle(true);
 
     // Column header labels for routing selectors. "Audio" and "MIDI" are kept
     // as fixed technical tokens so the paired headers render at the same base
@@ -466,6 +473,43 @@ TrackInspector::TrackInspector() {
     }
 
     applyThemeColours();
+    applyHeaderStyle();
+    magda::Config::getInstance().addListener(this);
+}
+
+void TrackInspector::applyHeaderStyle() {
+    const auto& config = magda::Config::getInstance();
+    const bool letters = config.getMuteSoloStyle() == "letters";
+    const auto valueFont = FontManager::getInstance().getMonoFont(11.0f);
+    gainLabel_->setFont(valueFont);
+    panLabel_->setFont(valueFont);
+    muteButton_->setGlyphText(letters ? "M" : "");
+    speakerButton_->setGlyphText(letters ? "M" : "");
+    soloButton_->setGlyphText(letters ? "S" : "");
+
+    // Full bar fills the name field with the track colour; Spine leaves the colour to the
+    // swatch beside it, which stays the colour picker in both modes.
+    const auto* track = isMultiTrackMode_ || selectedTrackId_ == magda::MASTER_TRACK_ID
+                            ? nullptr
+                            : magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+    const bool fullBar = config.getTrackColourStyle() == "full" && track != nullptr &&
+                         track->colour != juce::Colour(0xFF444444);
+    if (fullBar) {
+        trackNameValue_.setColour(juce::Label::backgroundColourId,
+                                  magda::deriveTrackSwatch(track->colour));
+        trackNameValue_.setColour(juce::Label::textColourId, juce::Colours::white);
+        trackNameValue_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
+    } else {
+        trackNameValue_.setColour(juce::Label::backgroundColourId,
+                                  ActiveTheme::getColour(ActiveTheme::SURFACE));
+        trackNameValue_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
+        trackNameValue_.setColour(juce::Label::outlineColourId, ActiveTheme::getBorderColour());
+    }
+    repaint();
+}
+
+void TrackInspector::configChanged() {
+    applyHeaderStyle();
 }
 
 void TrackInspector::applyThemeColours() {
@@ -532,6 +576,7 @@ void TrackInspector::rebuildRoutingIcons() {
 
 void TrackInspector::lookAndFeelChanged() {
     applyThemeColours();
+    applyHeaderStyle();
     repaint();
 }
 
@@ -554,6 +599,7 @@ TrackInspector::~TrackInspector() {
     for (auto& label : sendDestLabels_)
         clearLocalizedLabelPainter(*label);
 
+    magda::Config::getInstance().removeListener(this);
     magda::MidiBridge::getInstance().removeMidiDeviceListListener(this);
     if (audioEngine_) {
         if (auto* hardware = audioEngine_->getAudioIO())
@@ -691,7 +737,7 @@ void TrackInspector::resized() {
     // composition comes from the policy; the shared routing-row layout splits
     // the width between whichever dropdowns exist.
     if (p.anyRouting()) {
-        const int selectorHeight = 18;
+        const int selectorHeight = 22;
         const int columnHeaderHeight = 14;
         const int numCols = ((p.audioIn || p.audioOut) ? 1 : 0) + ((p.midiIn || p.midiOut) ? 1 : 0);
         const int ddW = track_controls::routingDropdownWidth(bounds.getWidth(), numCols, m);
@@ -1116,6 +1162,7 @@ void TrackInspector::updateFromSelectedTrack() {
 
         trackNameValue_.setText(track->name, juce::dontSendNotification);
         trackNameValue_.setEditable(true);  // re-enable after a master selection
+        applyHeaderStyle();
         muteButton_->setToggleState(track->muted, juce::dontSendNotification);
         enableButton_->setToggleState(
             magda::TrackManager::getInstance().isChainEnabled(selectedTrackId_),

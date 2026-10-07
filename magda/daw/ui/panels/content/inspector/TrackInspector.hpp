@@ -35,6 +35,7 @@ class TrackInspector : public BaseInspector,
                        public magda::AutomationManagerListener,
                        public magda::MidiBridge::Listener,
                        private magda::HardwareChannels::Listener,
+                       private magda::ConfigListener,
                        public juce::Timer {
   public:
     TrackInspector();
@@ -146,6 +147,10 @@ class TrackInspector : public BaseInspector,
 
     // Update methods
     void applyThemeColours();
+    /** Applies the header preferences: track colour on the name row (spine or full), mono
+     *  values, and M / S letters in place of the mute and solo icons. */
+    void applyHeaderStyle();
+    void configChanged() override;
     void rebuildRoutingIcons();
     void updateFromSelectedTrack();
     void updateFromMultiTrackSelection();
