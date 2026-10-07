@@ -126,8 +126,8 @@ class ChainRowComponent : public juce::Component,
     magda::DraggableValueLabel panLabel_;
     juce::TextButton muteButton_;
     juce::TextButton soloButton_;
-    std::unique_ptr<magda::SvgButton> onButton_;  // Bypass/enable toggle (power icon)
-    juce::TextButton deleteButton_;               // Delete chain
+    std::unique_ptr<magda::SvgButton> onButton_;      // Bypass/enable toggle (power icon)
+    std::unique_ptr<magda::SvgButton> deleteButton_;  // Delete chain
 
     // Per-chain base values captured at drag start, so a multi-chain gain/pan
     // drag shifts every selected chain by the same delta from its own value

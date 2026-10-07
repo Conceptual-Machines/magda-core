@@ -15,6 +15,7 @@
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/controllers/ControllerActivation.hpp"
+#include "layout/NodeHeaderStyles.hpp"
 #include "modulation/MacroEditorPanel.hpp"
 #include "modulation/MacroPanelComponent.hpp"
 #include "modulation/ModsPanelComponent.hpp"
@@ -212,11 +213,6 @@ NodeComponent::NodeComponent() {
     bypassButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_svg,
                                                        BinaryData::power_svgSize);
     bypassButton_->setClickingTogglesState(true);
-    bypassButton_->setOriginalColor(juce::Colour(0xFFE6E6E6));
-    bypassButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
-    bypassButton_->setActiveColor(juce::Colours::white);
-    bypassButton_->setActiveBackgroundColor(
-        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
     bypassButton_->setActive(true);  // Default: not bypassed = active
     bypassButton_->onClick = [this]() {
         bool bypassed = !bypassButton_->getToggleState();  // Toggle OFF = bypassed
@@ -234,21 +230,16 @@ NodeComponent::NodeComponent() {
     nameLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(nameLabel_);
 
-    // Delete button (reddish-purple background)
-    deleteButton_.setButtonText(juce::String::fromUTF8("\xc3\x97"));  // × symbol
-    deleteButton_.setColour(
-        juce::TextButton::buttonColourId,
-        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION)
-            .interpolatedWith(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR), 0.5f)
-            .darker(0.2f));
-    deleteButton_.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-    deleteButton_.onClick = [this]() {
+    // Delete: a close icon, grey at rest and red on hover.
+    deleteButton_ = std::make_unique<magda::SvgButton>("Close", BinaryData::close_svg,
+                                                       BinaryData::close_svgSize);
+    deleteButton_->onClick = [this]() {
         if (onDeleteClicked) {
             onDeleteClicked();
         }
     };
-    deleteButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    addAndMakeVisible(deleteButton_);
+    addAndMakeVisible(*deleteButton_);
+    styleHeaderPowerAndClose();
 
     // === MOD PANEL CONTROLS ===
     for (auto& modSlotButton : modSlotButtons_) {
@@ -295,16 +286,20 @@ NodeComponent::~NodeComponent() {
     magda::ControllerRegistry::getInstance().removeListener(this);
 }
 
+void NodeComponent::styleHeaderPowerAndClose() {
+    using node_header::DeviceIcon;
+    const auto height = static_cast<float>(BUTTON_SIZE);
+    node_header::applyDeviceIconStyle(*bypassButton_, DeviceIcon::Power, juce::Colour(0xFFE6E6E6),
+                                      ActiveTheme::DEVICE_GREEN, height);
+    if (deleteButton_)
+        node_header::applyDeviceIconStyle(*deleteButton_, DeviceIcon::Close,
+                                          juce::Colour(0xFFB3B3B3), ActiveTheme::DEVICE_BLUE,
+                                          height);
+}
+
 void NodeComponent::lookAndFeelChanged() {
-    bypassButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
-    bypassButton_->setActiveBackgroundColor(
-        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
+    styleHeaderPowerAndClose();
     nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
-    deleteButton_.setColour(
-        juce::TextButton::buttonColourId,
-        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION)
-            .interpolatedWith(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR), 0.5f)
-            .darker(0.2f));
 
     for (auto& button : modSlotButtons_) {
         button->setColour(juce::TextButton::buttonColourId,

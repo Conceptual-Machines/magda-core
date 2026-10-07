@@ -181,10 +181,11 @@ class NodeComponent : public juce::Component,
         return 4;
     }
     virtual juce::Component* getHeaderDeleteButton() {
-        return &deleteButton_;
+        return deleteButton_.get();
     }
+    void styleHeaderPowerAndClose();
     void hideBaseDeleteButton() {
-        deleteButton_.setVisible(false);
+        deleteButton_->setVisible(false);
     }
     virtual void resizedContent(juce::Rectangle<int> contentArea);
 
@@ -504,7 +505,7 @@ class NodeComponent : public juce::Component,
     // Header controls
     std::unique_ptr<magda::SvgButton> bypassButton_;
     juce::Label nameLabel_;
-    juce::TextButton deleteButton_;
+    std::unique_ptr<magda::SvgButton> deleteButton_;
 
     // Mod panel controls (3 modulator slots)
     std::unique_ptr<juce::TextButton> modSlotButtons_[3];

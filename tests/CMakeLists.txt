@@ -817,6 +817,7 @@ target_sources(magda_juce_tests PRIVATE
     # ParamSlotComponent builds into magda_daw_app, so the test target needs it
     # and the param helpers it calls into compiled in directly.
     ui/test_param_slot_boolean_sync_juce.cpp
+    ui/test_device_icon_style_juce.cpp
     # A discrete cell's dropdown must not write the parameter on rebuild, and
     # must map an external plugin's TE-native value onto its choices.
     ui/test_param_slot_discrete_combo_juce.cpp

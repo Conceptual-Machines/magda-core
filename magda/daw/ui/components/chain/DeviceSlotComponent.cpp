@@ -395,11 +395,6 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                                                    BinaryData::power_svgSize);
     onButton_->setClickingTogglesState(true);
     onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);
-    onButton_->setOriginalColor(juce::Colour(0xFFE6E6E6));
-    onButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
-    onButton_->setActiveColor(juce::Colours::white);
-    onButton_->setActiveBackgroundColor(
-        ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).darker(0.3f));
     onButton_->setActive(!device.bypassed);
     onButton_->onClick = [this]() {
         bool active = onButton_->getToggleState();
