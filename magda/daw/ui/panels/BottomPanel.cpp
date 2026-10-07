@@ -2,6 +2,7 @@
 
 #include "../components/common/DraggableValueLabel.hpp"
 #include "../components/common/GridDivisionMenu.hpp"
+#include "../components/common/ResizeSeam.hpp"
 #include "../components/common/SvgButton.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
@@ -83,11 +84,11 @@ class BottomPanel::PropsResizeHandle : public juce::Component {
   public:
     PropsResizeHandle() {
         setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+        setRepaintsOnMouseActivity(true);
     }
 
     void paint(juce::Graphics& g) override {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::RESIZE_HANDLE));
-        g.fillAll();
+        daw::ui::paintResizeSeam(g, *this, true);
     }
 
     void mouseDown(const juce::MouseEvent& event) override {

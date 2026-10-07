@@ -10,6 +10,7 @@
 #include "../../core/SelectionManager.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
+#include "../components/common/ResizeSeam.hpp"
 #include "../debug/DebugDialog.hpp"
 #include "../debug/DebugSettings.hpp"
 #include "../dialogs/AISettingsDialog.hpp"
@@ -173,11 +174,11 @@ class MainWindow::MainComponent::ResizeHandle : public juce::Component {
     ResizeHandle(Direction dir) : direction(dir) {
         setMouseCursor(direction == Horizontal ? juce::MouseCursor::LeftRightResizeCursor
                                                : juce::MouseCursor::UpDownResizeCursor);
+        setRepaintsOnMouseActivity(true);
     }
 
     void paint(juce::Graphics& g) override {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::RESIZE_HANDLE));
-        g.fillAll();
+        daw::ui::paintResizeSeam(g, *this, direction == Horizontal);
     }
 
     void mouseDown(const juce::MouseEvent& event) override {
