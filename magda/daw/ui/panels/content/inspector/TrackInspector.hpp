@@ -161,7 +161,8 @@ class TrackInspector : public BaseInspector,
         }
     };
     NamePopupListener namePopupListener_;
-    bool nameFilled_ = false;  // Full bar: the name field carries the track colour
+    bool nameFilled_ = false;              // Full bar: the name field carries the track colour
+    juce::Colour nameFill_, nameOutline_;  // the rounded name field, painted behind the label
     void configChanged() override;
     void rebuildRoutingIcons();
     void updateFromSelectedTrack();

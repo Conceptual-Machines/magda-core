@@ -480,17 +480,14 @@ void TrackInspector::applyHeaderStyle() {
         nameFilled_ = fullBar;
         resized();
     }
-    if (fullBar) {
-        trackNameValue_.setColour(juce::Label::backgroundColourId,
-                                  magda::deriveTrackSwatch(track->colour));
-        trackNameValue_.setColour(juce::Label::textColourId, juce::Colours::white);
-        trackNameValue_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
-    } else {
-        trackNameValue_.setColour(juce::Label::backgroundColourId,
-                                  ActiveTheme::getColour(ActiveTheme::SURFACE));
-        trackNameValue_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
-        trackNameValue_.setColour(juce::Label::outlineColourId, ActiveTheme::getBorderColour());
-    }
+    // The field itself is painted rounded in paint(); the label only draws the text.
+    nameFill_ = fullBar ? magda::deriveTrackSwatch(track->colour)
+                        : ActiveTheme::getColour(ActiveTheme::SURFACE);
+    nameOutline_ = fullBar ? juce::Colours::transparentBlack : ActiveTheme::getBorderColour();
+    trackNameValue_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    trackNameValue_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
+    trackNameValue_.setColour(juce::Label::textColourId,
+                              fullBar ? juce::Colours::white : ActiveTheme::getTextColour());
     repaint();
 }
 
@@ -617,6 +614,16 @@ void TrackInspector::onDeactivated() {
 
 void TrackInspector::paint(juce::Graphics& g) {
     g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+
+    // The name field, rounded like the button chips beside it.
+    if (trackNameValue_.isVisible()) {
+        const auto field = trackNameValue_.getBounds().toFloat();
+        const float radius = juce::jlimit(2.0f, 8.0f, field.getHeight() * 0.15f);
+        g.setColour(nameFill_);
+        g.fillRoundedRectangle(field, radius);
+        g.setColour(nameOutline_);
+        g.drawRoundedRectangle(field.reduced(0.5f), radius, 1.0f);
+    }
 
     // Draw section separators
     g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
