@@ -21,6 +21,7 @@
 #include "audio/MidiBridge.hpp"
 #include "audio/io/AudioIOControl.hpp"
 #include "core/AutomationManager.hpp"
+#include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
@@ -38,7 +39,8 @@ class TrackHeadersPanel : public juce::Component,
                           public ViewModeListener,
                           public AutomationManagerListener,
                           public MidiBridge::Listener,
-                          private HardwareChannels::Listener {
+                          private HardwareChannels::Listener,
+                          private ConfigListener {
   public:
     static constexpr int TRACK_HEADER_WIDTH = 200;
     static constexpr int DEFAULT_TRACK_HEIGHT = 83;
@@ -220,7 +222,7 @@ class TrackHeadersPanel : public juce::Component,
 
         // Layout cache
         int nameRowBottomY = 0;  // Absolute Y of name row bottom (for meter separator line)
-        juce::Rectangle<int> ioInCaption, ioOutCaption;  // empty when folded away
+        juce::Rectangle<int> ioAudioLabel, ioMidiLabel;  // empty when folded away
 
         // Meter levels
         float meterLevelL = 0.0f;
@@ -350,6 +352,7 @@ class TrackHeadersPanel : public juce::Component,
 
     bool isResizeHandleArea(const juce::Point<int>& point, int& trackIndex) const;
     void updateTrackHeaderLayout();
+    void configChanged() override;
     void layoutIOColumn(TrackHeader& header, juce::Rectangle<int> ioArea);
     void paintIOColumn(juce::Graphics& g, const TrackHeader& header, juce::Rectangle<int> ioArea,
                        bool isSelected) const;

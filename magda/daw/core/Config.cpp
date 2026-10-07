@@ -168,6 +168,7 @@ void Config::save() {
     root->setProperty("uiDensityScale", uiDensityScale);
     root->setProperty("transportStyle", toJuceString(transportStyle));
     root->setProperty("deviceControlStyle", toJuceString(deviceControlStyle));
+    root->setProperty("trackColourStyle", toJuceString(trackColourStyle));
     root->setProperty("uiFontScale", uiFontScale);
     root->setProperty("uiFontFamily", toJuceString(uiFontFamily));
     root->setProperty("localizedUIFontScale", localizedUIFontScale);
@@ -583,6 +584,7 @@ void Config::load() {
     setUIDensityScale(getDouble("uiDensityScale", uiDensityScale));
     setTransportStyle(getString("transportStyle", transportStyle));
     setDeviceControlStyle(getString("deviceControlStyle", deviceControlStyle));
+    setTrackColourStyle(getString("trackColourStyle", trackColourStyle));
     setUIFontScale(getDouble("uiFontScale", uiFontScale));
     setUIFontFamily(getString("uiFontFamily", uiFontFamily));
     localizedUIFontScaleExplicit = obj->hasProperty("localizedUIFontScale");
