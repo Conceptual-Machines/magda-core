@@ -108,11 +108,9 @@ constexpr float MAX_DB = level_meter_scale::maxDb;
 constexpr int TH_PAD = 2;         // left padding inside the control area (matches the right)
 constexpr int TH_PAD_R = 2;       // right margin (small, so pan/monitor/icons reach the end)
 constexpr int TH_ICON_SIZE = 26;  // I/O routing icon cell width, matching pan/automation
-constexpr int TH_GAP = 6;         // gap between the left content and the right element
 constexpr int TH_DD_GAP = 6;      // gap between the two routing dropdowns
 constexpr int TH_BTN_MAX = 26;    // M/S/R button width
 constexpr int TH_PAN_W = 26;      // pan + automation width (right-aligned pair)
-constexpr int TH_MONITOR_W = 26;  // monitor button width, matching M/S/R
 // Compact name strip: holds the 18px label row with a little padding. Fixed
 // (no longer tied to the 0dB meter fraction, which the old colour bar used) so
 // the controls below get the rest of the track height at every size.
@@ -130,10 +128,6 @@ float dbToGain(float db) {
     if (db <= MIN_DB)
         return 0.0f;
     return std::pow(10.0f, db / 20.0f);
-}
-
-float dbToMeterPos(float db) {
-    return level_meter_scale::dbToMeterPos(db);
 }
 
 // MIDI activity indicator - small blinking dot
@@ -2191,8 +2185,6 @@ void TrackHeadersPanel::layoutMeterColumn(TrackHeader& header, juce::Rectangle<i
 
 namespace {
 constexpr int IO_PAD_X = 10;
-constexpr int IO_PAD_Y = 9;
-constexpr int IO_GAP = 7;
 constexpr int IO_SELECT_H = 24;
 constexpr int IO_CAPTION_H = 12;
 constexpr int IO_ICON_SLOT = 18;
@@ -2235,27 +2227,29 @@ void TrackHeadersPanel::layoutIOColumn(TrackHeader& header, juce::Rectangle<int>
     const bool hasAudio = (wantIn && p.audioIn) || (wantOut && p.audioOut);
     const bool hasMidi = (wantIn && p.midiIn) || (wantOut && p.midiOut);
 
-    auto content = ioArea.reduced(IO_PAD_X, IO_PAD_Y);
+    // The Audio / MIDI labels share the name strip; the rows centre in the space below it,
+    // shrinking from 24px when a short track has less room.
+    auto content = ioArea.reduced(IO_PAD_X, 0);
     content.removeFromLeft(1);  // the column's left border
-    const int rowsH = rows * IO_SELECT_H + (rows - 1) * IO_GAP;
-    const int withLabelsH = IO_CAPTION_H + IO_GAP + rowsH;
-    // Folded tracks drop the Audio / MIDI labels and keep both rows.
-    const bool labels = content.getHeight() >= withLabelsH;
-    content = content.withSizeKeepingCentre(content.getWidth(), labels ? withLabelsH : rowsH);
+    const auto labelRow = content.removeFromTop(TH_NAME_STRIP_H);
+    const auto labels = splitIORow(
+        labelRow.withSizeKeepingCentre(labelRow.getWidth(), IO_CAPTION_H), hasAudio, hasMidi);
+    header.ioAudioLabel = labels.audio;
+    header.ioMidiLabel = labels.midi;
 
-    if (labels) {
-        const auto columns = splitIORow(content.removeFromTop(IO_CAPTION_H), hasAudio, hasMidi);
-        header.ioAudioLabel = columns.audio;
-        header.ioMidiLabel = columns.midi;
-        content.removeFromTop(IO_GAP);
-    }
+    content.removeFromBottom(1);  // the column's bottom border
+    const int rowGap = 6;
+    const int selectH =
+        juce::jlimit(16, IO_SELECT_H, (content.getHeight() - 8 - (rows - 1) * rowGap) / rows);
+    content = content.withSizeKeepingCentre(
+        content.getWidth(), juce::jmin(content.getHeight(), rows * selectH + (rows - 1) * rowGap));
 
     const auto placeRow = [&](juce::Component* icon, juce::Component* audio,
                               juce::Component* midi) {
-        if (content.getHeight() < IO_SELECT_H)
+        if (content.getHeight() < selectH)
             return;
-        const auto columns = splitIORow(content.removeFromTop(IO_SELECT_H), hasAudio, hasMidi);
-        content.removeFromTop(IO_GAP);
+        const auto columns = splitIORow(content.removeFromTop(selectH), hasAudio, hasMidi);
+        content.removeFromTop(rowGap);
         icon->setBounds(columns.icon.withSizeKeepingCentre(15, 15));
         icon->setVisible(true);
         placeIOSelect(audio, columns.audio);
@@ -3153,7 +3147,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     menu.showMenuAsync(
         juce::PopupMenu::Options().withTargetScreenArea(
             localAreaToGlobal(juce::Rectangle<int>(position.x, position.y, 1, 1))),
-        [this, trackId = header.trackId, trackIndex](int result) {
+        [this, trackId = header.trackId](int result) {
             // Force-dismiss the menu synchronously. JUCE's item-click path only
             // exits modal state and relies on async component destruction, which
             // leaves the popup visually lingering until the next input event.
