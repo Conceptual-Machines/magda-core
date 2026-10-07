@@ -524,9 +524,15 @@ TEST_CASE("A pad chain takes the generic chain edits the rack view makes",
     fx.pluginId = "magdaeq";
     fx.format = PluginFormat::Internal;
     fx.deviceType = DeviceType::Effect;
+    const auto resolved = tm.resolvePath(padPath);
+    REQUIRE(resolved.valid);
+    REQUIRE(resolved.chain == tm.getPad(gridPath, 0));
+
     const auto fxId = tm.addDeviceToChainByPath(padPath, fx, 1);
     REQUIRE(fxId != INVALID_DEVICE_ID);
     REQUIRE(tm.getPad(gridPath, 0)->getDevices().size() == 2);
+    CHECK(tm.resolvePath(padPath.withDevice(fxId)).device != nullptr);
+
     tm.setDeviceInChainBypassedByPath(padPath.withDevice(fxId), true);
     CHECK(tm.getDeviceInChainByPath(padPath.withDevice(fxId))->bypassed);
 

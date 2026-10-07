@@ -27,6 +27,13 @@ constexpr int kPadPadding = 10;
 constexpr int kMinPadsWidth = 268;
 constexpr int kMaxPadsWidth = 396;
 constexpr int kPanelHeaderHeight = 30;
+
+/// The pads' width for a body this tall: a square grid within the spec's range.
+int padsWidthFor(int bodyHeight) {
+    const int cell = (bodyHeight - 2 * kPadPadding - 3 * kPadGap) / DrumGridUI::kGridRows;
+    return juce::jlimit(kMinPadsWidth, kMaxPadsWidth,
+                        DrumGridUI::kGridCols * cell + 3 * kPadGap + 2 * kPadPadding);
+}
 }  // namespace
 
 // =============================================================================
@@ -706,13 +713,18 @@ void DrumGridUI::paintChainHeader(juce::Graphics& g) {
     const auto& info = padInfos_[static_cast<size_t>(selectedPad_)];
 
     auto text = chainHeaderArea_.reduced(14, 0).withTrimmedRight(64);
+    g.setFont(fonts.getUIFont(12.0f));
     g.setColour(colour(ActiveTheme::DEVICE_DIM));
     g.setFont(fonts.getUIFont(12.0f));
     g.drawText("Chain", text.removeFromLeft(40), juce::Justification::centredLeft, false);
     if (info.chainIndex >= 0) {
+        const auto nameFont = fonts.getUIFont(12.0f);
+        const int nameWidth =
+            juce::jmin(text.getWidth() / 2,
+                       juce::GlyphArrangement::getStringWidthInt(nameFont, info.sampleName) + 8);
         g.setColour(colour(ActiveTheme::DEVICE_VALUE_TEXT));
-        g.drawText(info.sampleName, text.removeFromLeft(140), juce::Justification::centredLeft,
-                   true);
+        g.drawText(info.sampleName, text.removeFromLeft(nameWidth),
+                   juce::Justification::centredLeft, true);
         int devices = 0;
         if (getPadChainPath)
             if (const auto* chain = magda::TrackManager::getInstance().getChainByPath(
@@ -794,11 +806,7 @@ void DrumGridUI::resized() {
     rail.removeFromTop(6);
     railSeparator_ = rail.removeFromTop(1).withSizeKeepingCentre(18, 1);
 
-    // Pads take a square grid from the height, within the spec's width range.
-    const int cell = (area.getHeight() - 2 * kPadPadding - 3 * kPadGap) / kGridRows;
-    const int padsWidth = juce::jlimit(kMinPadsWidth, kMaxPadsWidth,
-                                       kGridCols * cell + 3 * kPadGap + 2 * kPadPadding);
-    padsArea_ = area.removeFromLeft(padsWidth);
+    padsArea_ = area.removeFromLeft(padsWidthFor(area.getHeight()));
     const auto grid = padsArea_.reduced(kPadPadding);
     const int cellW = (grid.getWidth() - 3 * kPadGap) / kGridCols;
     const int cellH = (grid.getHeight() - 3 * kPadGap) / kGridRows;
@@ -1107,8 +1115,7 @@ void DrumGridUI::showChainContextMenu(int padIndex, juce::Point<int> screenPos) 
 }
 
 int DrumGridUI::getPreferredContentWidth() const {
-    // The pads at their narrowest; the chain asks for its devices' width.
-    int width = kRailWidth + kMinPadsWidth;
+    int width = kRailWidth + padsWidthFor(getHeight() - kFooterHeight);
     if (!detailCollapsed_)
         width += kEditorWidth;
     const int chainWidth = selectedPadHasChain() ? padChainView_.getContentWidth() : 0;

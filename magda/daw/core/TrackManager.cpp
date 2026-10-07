@@ -3101,11 +3101,22 @@ TrackManager::ResolvedPath TrackManager::resolvePath(const ChainNodePath& path) 
     for (auto step : path.steps) {
         switch (step.type) {
             case ChainStepType::PadRack:
+                // A pad rack hangs off its grid device; the PadChain step after
+                // it resolves through the pad lookups (#2219).
+                break;
+            case ChainStepType::PadChain: {
+                ChainNodePath padPath;
+                padPath.trackId = path.trackId;
+                padPath.steps = {path.steps.front(), step};
+                if (const auto* pad = getChainByPath(padPath)) {
+                    currentChain = pad;
+                    pathNames.add(pad->displayName());
+                }
+                break;
+            }
             case ChainStepType::Rack: {
                 // A top-level rack lives in the track's own list, a nested one
-                // in the chain the previous step reached. A PadRack names a
-                // device, so it finds nothing here and contributes no name,
-                // exactly as the untyped spelling did (#2219).
+                // in the chain the previous step reached.
                 const auto& elements =
                     currentChain != nullptr ? currentChain->elements : track->chain.fxChainElements;
                 if (const auto* found = findRackAmong(elements, step.id)) {
@@ -3115,7 +3126,6 @@ TrackManager::ResolvedPath TrackManager::resolvePath(const ChainNodePath& path) 
                 }
                 break;
             }
-            case ChainStepType::PadChain:
             case ChainStepType::Chain: {
                 if (currentRack != nullptr) {
                     const auto matchesChainId = [&step](const ChainInfo& chain) {
