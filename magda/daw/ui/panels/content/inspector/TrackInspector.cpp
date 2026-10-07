@@ -180,14 +180,12 @@ TrackInspector::TrackInspector() {
     // switch in the name row, matching the clip inspector's toggle.
     enableButton_ = std::make_unique<SvgButton>(
         "enable", BinaryData::toggle_off_svg, BinaryData::toggle_off_svgSize,
-        BinaryData::toggle_on_svg, BinaryData::toggle_on_svgSize);
+        BinaryData::toggle_on_outline_svg, BinaryData::toggle_on_outline_svgSize);
     enableButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
     enableButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-    // On: a green track with a white knob.
+    // On: the outline switch, knob right, in green.
     enableButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
                                              ActiveTheme::DEVICE_GREEN);
-    enableButton_->setStateColourReplacement(juce::Colour(0xFF1E1E1E), juce::Colours::white,
-                                             juce::Colours::white);
     enableButton_->setBorderThickness(1.0f);
     enableButton_->setIconPadding(2.0f);
     enableButton_->setTooltip(tr("tracks.enable.tooltip"));
