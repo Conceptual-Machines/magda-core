@@ -183,10 +183,11 @@ TrackInspector::TrackInspector() {
         BinaryData::toggle_on_svg, BinaryData::toggle_on_svgSize);
     enableButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
     enableButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    // On: a green track with a white knob.
     enableButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                             ActiveTheme::ICON_NEUTRAL);
-    enableButton_->setStateColourReplacement(juce::Colour(0xFF1E1E1E), ActiveTheme::ICON_ON_ACCENT,
-                                             ActiveTheme::ICON_ON_ACCENT);
+                                             ActiveTheme::DEVICE_GREEN);
+    enableButton_->setStateColourReplacement(juce::Colour(0xFF1E1E1E), juce::Colours::white,
+                                             juce::Colours::white);
     enableButton_->setBorderThickness(1.0f);
     enableButton_->setIconPadding(2.0f);
     enableButton_->setTooltip(tr("tracks.enable.tooltip"));
