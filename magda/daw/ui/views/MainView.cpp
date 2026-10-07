@@ -373,7 +373,7 @@ void MainView::setupComponents() {
                 int contentWidth = trackContentPanel->getWidth();
                 trackContentPanel->setMinHeight(viewportHeight);
                 trackContentPanel->setSize(contentWidth, panelHeight);
-                trackHeadersPanel->setSize(trackHeaderWidth, panelHeight);
+                trackHeadersPanel->setSize(headerColumnWidth(), panelHeight);
 
                 trackContentViewport->setViewPosition(trackContentViewport->getViewPositionX(),
                                                       scrollY);
@@ -464,22 +464,19 @@ void MainView::setupComponents() {
 
     setupCornerButton(ioToggleButton, "IOToggle", BinaryData::inputoutput_svg,
                       BinaryData::inputoutput_svgSize);
-    ioToggleButton->onClick = [this]() {
-        trackHeadersPanel->toggleIORouting();
-        // Update button appearance to reflect state
-        if (trackHeadersPanel->isIORoutingVisible()) {
-            ioToggleButton->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-        } else {
-            ioToggleButton->setNormalColor(
-                ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.3f));
-        }
+    ioToggleButton->setActiveBackgroundColor(
+        ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE).withAlpha(0.22f));
+    ioToggleButton->setActiveBorderColor(
+        ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE).withAlpha(0.55f));
+    ioToggleButton->setActiveColor(ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE).brighter(0.5f));
+    ioToggleButton->onClick = [this]() { trackHeadersPanel->toggleIORouting(); };
+    trackHeadersPanel->onIORoutingToggled = [this]() {
+        ioToggleButton->setActive(trackHeadersPanel->isIORoutingVisible());
+        resized();
         updateContentSizes();
     };
     ioToggleButton->setTooltip("Toggle I/O routing");
-    if (!trackHeadersPanel->isIORoutingVisible()) {
-        ioToggleButton->setNormalColor(
-            ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.3f));
-    }
+    ioToggleButton->setActive(trackHeadersPanel->isIORoutingVisible());
 
     setupCornerButton(addTrackButton, "AddTrack", BinaryData::add_svg, BinaryData::add_svgSize);
     addTrackButton->onClick = []() {
@@ -941,7 +938,7 @@ void MainView::paint(juce::Graphics& g) {
     auto arrangementLayout = computeArrangementLayout();
     SideColumn headerColumn(!arrangementLayout.swapped);
     auto contentArea = arrangementLayout.horizontalScrollBarRowArea;
-    auto headerArea = headerColumn.removeFrom(contentArea, trackHeaderWidth);
+    auto headerArea = headerColumn.removeFrom(contentArea, headerColumnWidth());
     headerColumn.removeSpacing(contentArea, LayoutConfig::getInstance().componentSpacing);
 
     g.setColour(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
@@ -952,6 +949,16 @@ void MainView::paint(juce::Graphics& g) {
     // Draw resize handles
     paintResizeHandle(g);
     paintMasterResizeHandle(g);
+}
+
+int MainView::headerColumnWidth() const {
+    const bool io = trackHeadersPanel != nullptr && trackHeadersPanel->isIORoutingVisible();
+    return trackHeaderWidth + (io ? TrackHeadersPanel::IO_COLUMN_WIDTH : 0);
+}
+
+juce::Rectangle<int> MainView::mainHeaderPart(juce::Rectangle<int> column) const {
+    SideColumn headerColumn(!Config::getInstance().getScrollbarOnLeft());
+    return headerColumn.removeFrom(column, trackHeaderWidth);
 }
 
 MainView::ArrangementLayout MainView::computeArrangementLayout() const {
@@ -977,14 +984,15 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
     result.horizontalScrollBarRowArea = bounds.removeFromBottom(horizontalScrollbarHeight);
     result.horizontalScrollBarArea = result.horizontalScrollBarRowArea;
     headerColumn.removeSpacing(result.horizontalScrollBarArea,
-                               trackHeaderWidth + layout.componentSpacing);
+                               headerColumnWidth() + layout.componentSpacing);
 
     int effectiveMasterHeight = masterVisible_ ? masterStripHeight : 0;
     int effectiveResizeHandleHeight = masterVisible_ ? MASTER_RESIZE_HANDLE_HEIGHT : 0;
 
     if (masterVisible_) {
         auto masterRowArea = bounds.removeFromBottom(masterStripHeight);
-        result.masterHeaderArea = headerColumn.removeFrom(masterRowArea, trackHeaderWidth);
+        result.masterHeaderArea =
+            mainHeaderPart(headerColumn.removeFrom(masterRowArea, headerColumnWidth()));
         headerColumn.removeSpacing(masterRowArea, layout.componentSpacing);
         result.masterContentArea = masterRowArea;
     }
@@ -995,14 +1003,16 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
         masterVisible_ ? juce::jmax(0, masterAutomationHeight) : 0;
     if (effectiveMasterAutomationHeight > 0) {
         auto bandRow = bounds.removeFromBottom(effectiveMasterAutomationHeight);
-        result.masterAutomationHeaderArea = headerColumn.removeFrom(bandRow, trackHeaderWidth);
+        result.masterAutomationHeaderArea =
+            mainHeaderPart(headerColumn.removeFrom(bandRow, headerColumnWidth()));
         headerColumn.removeSpacing(bandRow, layout.componentSpacing);
         result.masterAutomationContentArea = bandRow;
     }
 
     if (auxVisible_) {
         auto auxRowArea = bounds.removeFromBottom(auxSectionHeight);
-        result.auxHeadersArea = headerColumn.removeFrom(auxRowArea, trackHeaderWidth);
+        result.auxHeadersArea =
+            mainHeaderPart(headerColumn.removeFrom(auxRowArea, headerColumnWidth()));
         headerColumn.removeSpacing(auxRowArea, layout.componentSpacing);
         result.auxContentArea = auxRowArea;
     }
@@ -1020,12 +1030,12 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
         result.verticalScrollBarArea = result.verticalScrollBarArea.reduced(1, 0);
 
     auto timelineStripArea = bounds.removeFromTop(getTimelineHeight());
-    result.cornerArea = headerColumn.removeFrom(timelineStripArea, trackHeaderWidth);
+    result.cornerArea = headerColumn.removeFrom(timelineStripArea, headerColumnWidth());
 
     headerColumn.removeSpacing(timelineStripArea, layout.componentSpacing);
     result.markerLaneArea = timelineStripArea.removeFromTop(getMarkerLaneHeight());
     result.timelineArea = timelineStripArea;
-    result.trackHeadersArea = headerColumn.removeFrom(bounds, trackHeaderWidth);
+    result.trackHeadersArea = headerColumn.removeFrom(bounds, headerColumnWidth());
     headerColumn.removeSpacing(bounds, layout.componentSpacing);
 
     result.trackContentArea = bounds;
@@ -1083,7 +1093,7 @@ void MainView::resized() {
         const int btnSize = 20;
         SideColumn headerColumn(!arrangementLayout.swapped);
         auto restoreArea = arrangementLayout.horizontalScrollBarRowArea;
-        auto headerArea = headerColumn.removeFrom(restoreArea, trackHeaderWidth);
+        auto headerArea = headerColumn.removeFrom(restoreArea, headerColumnWidth());
         showMasterButton->setBounds(
             headerArea.removeFromRight(btnSize).withSizeKeepingCentre(btnSize, btnSize));
         showMasterButton->toFront(false);
@@ -1463,7 +1473,7 @@ void MainView::updateContentSizes() {
     // Update track content and headers with same height
     trackContentPanel->setSize(contentWidth, contentHeight);
     trackContentPanel->setVerticalZoom(verticalZoom);
-    trackHeadersPanel->setSize(trackHeaderWidth, contentHeight);
+    trackHeadersPanel->setSize(headerColumnWidth(), contentHeight);
     trackHeadersPanel->setVerticalZoom(verticalZoom);
 
     // Keep the master automation band in step with the arrangement's horizontal

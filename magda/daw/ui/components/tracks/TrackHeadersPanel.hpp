@@ -127,9 +127,13 @@ class TrackHeadersPanel : public juce::Component,
         return verticalZoom;
     }
 
-    // I/O routing visibility
+    /** Width of the I/O column, added to the header column while it shows. */
+    static constexpr int IO_COLUMN_WIDTH = 200;
+
+    // I/O routing column, shown for every track at once.
     void toggleIORouting();
     bool isIORoutingVisible() const;
+    std::function<void()> onIORoutingToggled;
 
     // Callbacks
     std::function<void(int, int)> onTrackHeightChanged;
@@ -170,7 +174,6 @@ class TrackHeadersPanel : public juce::Component,
         float volume = 0.8f;
         float pan = 0.0f;
         int height = DEFAULT_TRACK_HEIGHT;
-        bool showIORouting = true;  // Per-track I/O routing visibility
 
         // Routing enables (for right-click menu)
         bool audioInEnabled = true;
@@ -217,6 +220,7 @@ class TrackHeadersPanel : public juce::Component,
 
         // Layout cache
         int nameRowBottomY = 0;  // Absolute Y of name row bottom (for meter separator line)
+        juce::Rectangle<int> ioInCaption, ioOutCaption;  // empty when folded away
 
         // Meter levels
         float meterLevelL = 0.0f;
@@ -346,6 +350,9 @@ class TrackHeadersPanel : public juce::Component,
 
     bool isResizeHandleArea(const juce::Point<int>& point, int& trackIndex) const;
     void updateTrackHeaderLayout();
+    void layoutIOColumn(TrackHeader& header, juce::Rectangle<int> ioArea);
+    void paintIOColumn(juce::Graphics& g, const TrackHeader& header, juce::Rectangle<int> ioArea,
+                       bool isSelected) const;
     static void layoutMeterColumn(TrackHeader& header, juce::Rectangle<int>& workArea,
                                   const SideColumn& outer);
     void layoutControlArea(TrackHeader& header, juce::Rectangle<int>& tcpArea,

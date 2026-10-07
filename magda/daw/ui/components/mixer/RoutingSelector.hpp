@@ -83,6 +83,12 @@ class RoutingSelector : public juce::Component, private juce::Timer {
         return readOnly_;
     }
 
+    /** Draws the v1 select: a dark well with an 11px label and a small caret, no divider. */
+    void setFieldStyle(bool fieldStyle) {
+        fieldStyle_ = fieldStyle;
+        repaint();
+    }
+
     // Current selection
     void setSelectedId(int id);
     int getSelectedId() const {
@@ -111,6 +117,7 @@ class RoutingSelector : public juce::Component, private juce::Timer {
     bool enabled_ = true;
     bool isHovering_ = false;
     bool readOnly_ = false;
+    bool fieldStyle_ = false;
     juce::String readOnlyDisplay_;
     int selectedId_ = -1;
     std::vector<RoutingOption> options_;
@@ -130,6 +137,8 @@ class RoutingSelector : public juce::Component, private juce::Timer {
     juce::Rectangle<int> getMainButtonArea() const;
     juce::Rectangle<int> getDropdownArea() const;
     juce::Rectangle<int> getLabelMeterArea() const;
+    juce::String getDisplayText() const;
+    void paintField(juce::Graphics& g);
 
     void updateMetering();
     void timerCallback() override;

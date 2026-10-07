@@ -104,6 +104,10 @@ RoutingSelector::RoutingSelector(Type type) : type_(type) {
 }
 
 void RoutingSelector::paint(juce::Graphics& g) {
+    if (fieldStyle_) {
+        paintField(g);
+        return;
+    }
     auto bounds = getLocalBounds().toFloat();
     auto mainArea = getMainButtonArea().toFloat();
     auto dropdownArea = getDropdownArea().toFloat();
@@ -144,10 +148,7 @@ void RoutingSelector::paint(juce::Graphics& g) {
         ActiveTheme::getColour(readOnly_ ? ActiveTheme::TEXT_SECONDARY : ActiveTheme::TEXT_PRIMARY)
             .withAlpha(readOnly_ ? 0.6f : 1.0f));
     g.setFont(FontManager::getInstance().getUIFont(9.0f));
-    const juce::String displayText =
-        readOnly_ ? (readOnlyDisplay_.isNotEmpty() ? readOnlyDisplay_ : juce::String("None"))
-                  : getSelectedName();
-    g.drawText(displayText, textBounds, juce::Justification::centredLeft, true);
+    g.drawText(getDisplayText(), textBounds, juce::Justification::centredLeft, true);
 
     // Draw dropdown arrow
     auto arrowBounds = dropdownArea.reduced(2.0f);
@@ -165,6 +166,42 @@ void RoutingSelector::paint(juce::Graphics& g) {
     // Draw border
     g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.8f));
     g.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.0f);
+}
+
+juce::String RoutingSelector::getDisplayText() const {
+    if (readOnly_)
+        return readOnlyDisplay_.isNotEmpty() ? readOnlyDisplay_ : juce::String("None");
+    return getSelectedName();
+}
+
+void RoutingSelector::paintField(juce::Graphics& g) {
+    constexpr float radius = 4.0f;
+    constexpr int caretWidth = 8;
+    auto bounds = getLocalBounds().toFloat();
+    const auto well = ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD);
+    g.setColour(isHovering_ && !readOnly_
+                    ? ActiveTheme::getColour(ActiveTheme::DEVICE_ICON_HOVER_BG)
+                    : well);
+    g.fillRoundedRectangle(bounds, radius);
+    g.setColour(well.darker(0.6f));
+    g.drawRoundedRectangle(bounds.reduced(0.5f), radius, 1.0f);
+
+    auto area = getLocalBounds().reduced(8, 0);
+    auto caretArea = area.removeFromRight(caretWidth).toFloat();
+    area.removeFromRight(4);
+    if (labelBars_.meters())
+        labelBars_.paint(g, area.removeFromRight(LABEL_METER_WIDTH).reduced(0, 6), 2);
+
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT)
+                    .withMultipliedAlpha(readOnly_ ? 0.5f : 1.0f));
+    g.setFont(FontManager::getInstance().getUIFont(11.0f));
+    g.drawText(getDisplayText(), area, juce::Justification::centredLeft, true);
+
+    juce::Path caret;
+    const auto c = caretArea.getCentre();
+    caret.addTriangle(c.x - 3.0f, c.y - 1.5f, c.x + 3.0f, c.y - 1.5f, c.x, c.y + 1.5f);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+    g.fillPath(caret);
 }
 
 void RoutingSelector::resized() {

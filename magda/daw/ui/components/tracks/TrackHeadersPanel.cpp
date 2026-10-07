@@ -422,6 +422,10 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     midiOutputSelector->setSelectedId(1);   // "None"
     midiOutputSelector->setEnabled(false);  // Disabled by default
 
+    for (auto* selector : {audioInputSelector.get(), inputSelector.get(), outputSelector.get(),
+                           midiOutputSelector.get()})
+        selector->setFieldStyle(true);
+
     // Send labels — created dynamically in setupTrackHeaderWithId based on actual sends
 
     // Meter component (stereo level display)
@@ -912,9 +916,6 @@ void TrackHeadersPanel::tracksChanged() {
 
         // Set track colour on swatch
         header->trackColour = track->colour;
-
-        // Inherit global I/O routing visibility
-        header->showIORouting = showIORouting_;
 
         // Use height from view settings
         header->height = track->viewSettings.getHeight(currentViewMode_);
@@ -2001,6 +2002,8 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
     // Calculate indent
     int indent = header.depth * INDENT_WIDTH;
     SideColumn outer(!headersOnRight_);  // outer edge: right normally, left when swapped
+    if (showIORouting_)
+        paintIOColumn(g, header, outer.removeFrom(area, IO_COLUMN_WIDTH), isSelected);
 
     // Draw indent guide lines for nested tracks on outer side
     if (header.depth > 0) {
@@ -2165,6 +2168,93 @@ void TrackHeadersPanel::layoutMeterColumn(TrackHeader& header, juce::Rectangle<i
 }
 
 namespace {
+constexpr int IO_PAD_X = 10;
+constexpr int IO_PAD_Y = 9;
+constexpr int IO_GAP = 7;
+constexpr int IO_SELECT_H = 24;
+constexpr int IO_CAPTION_H = 11;
+constexpr int IO_ICON_SLOT = 18;
+constexpr int IO_SELECT_GAP = 6;
+
+// One I/O row: the direction icon, then one or two selects sharing the rest.
+void layoutIORow(juce::Rectangle<int> row, juce::Component* icon, juce::Component* first,
+                 juce::Component* second) {
+    icon->setBounds(row.removeFromLeft(IO_ICON_SLOT).withSizeKeepingCentre(15, 15));
+    icon->setVisible(true);
+    row.removeFromLeft(4);
+    if (first != nullptr && second != nullptr) {
+        first->setBounds(row.removeFromLeft((row.getWidth() - IO_SELECT_GAP) / 2));
+        row.removeFromLeft(IO_SELECT_GAP);
+        second->setBounds(row);
+    } else if (auto* only = first != nullptr ? first : second) {
+        only->setBounds(row);
+    }
+    for (auto* select : {first, second})
+        if (select != nullptr)
+            select->setVisible(true);
+}
+}  // namespace
+
+void TrackHeadersPanel::layoutIOColumn(TrackHeader& header, juce::Rectangle<int> ioArea) {
+    const auto& p = header.policy;
+    const bool wantIn = !header.isMaster && p.anyInput();
+    const bool wantOut = !header.isMaster && p.anyOutput();
+    const int rows = (wantIn ? 1 : 0) + (wantOut ? 1 : 0);
+    if (rows == 0)
+        return;
+
+    auto content = ioArea.reduced(IO_PAD_X, IO_PAD_Y);
+    content.removeFromLeft(1);  // the column's left border
+    const int rowsH = rows * IO_SELECT_H + (rows - 1) * IO_GAP;
+    const int withCaptionsH = rowsH + rows * (IO_CAPTION_H + IO_GAP);
+    // Folded tracks drop the captions and keep both rows.
+    const bool captions = content.getHeight() >= withCaptionsH;
+    const int usedH = captions ? withCaptionsH : rowsH;
+    content = content.withSizeKeepingCentre(content.getWidth(), usedH);
+
+    const auto place = [&](juce::Rectangle<int>& caption, juce::Component* icon,
+                           juce::Component* first, juce::Component* second) {
+        if (captions) {
+            caption = content.removeFromTop(IO_CAPTION_H);
+            content.removeFromTop(IO_GAP);
+        }
+        if (content.getHeight() < IO_SELECT_H)
+            return;
+        layoutIORow(content.removeFromTop(IO_SELECT_H), icon, first, second);
+        content.removeFromTop(IO_GAP);
+    };
+    if (wantIn)
+        place(header.ioInCaption, header.inputIcon.get(),
+              p.audioIn ? header.audioInputSelector.get() : nullptr,
+              p.midiIn ? header.inputSelector.get() : nullptr);
+    if (wantOut)
+        place(header.ioOutCaption, header.outputIcon.get(),
+              p.audioOut ? header.outputSelector.get() : nullptr,
+              p.midiOut ? header.midiOutputSelector.get() : nullptr);
+}
+
+void TrackHeadersPanel::paintIOColumn(juce::Graphics& g, const TrackHeader& header,
+                                      juce::Rectangle<int> ioArea, bool isSelected) const {
+    const auto base = ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND);
+    g.setColour(isSelected ? base.interpolatedWith(
+                                 ActiveTheme::getColour(ActiveTheme::TRACK_HEADER_SELECTED), 0.3f)
+                           : base);
+    g.fillRect(ioArea);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
+    g.fillRect(headersOnRight_ ? ioArea.getRight() - 1 : ioArea.getX(), ioArea.getY(), 1,
+               ioArea.getHeight());
+    g.drawHorizontalLine(ioArea.getBottom() - 1, static_cast<float>(ioArea.getX()),
+                         static_cast<float>(ioArea.getRight()));
+
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+    g.setFont(FontManager::getInstance().getMonoFont(9.5f).withExtraKerningFactor(0.1f));
+    if (!header.ioInCaption.isEmpty())
+        g.drawText("IN", header.ioInCaption, juce::Justification::centredLeft, false);
+    if (!header.ioOutCaption.isEmpty())
+        g.drawText("OUT", header.ioOutCaption, juce::Justification::centredLeft, false);
+}
+
+namespace {
 
 // Header-tuned metrics for the shared track_controls layout.
 track_controls::Metrics headerControlMetrics() {
@@ -2307,8 +2397,6 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
     track_controls::layoutGainRow(paddedRow(tcpArea.removeFromTop(m.rowH)), mix, m);
 
     const bool wantButtons = !mix.buttons.empty() || mix.trailing != nullptr;
-    const bool wantOut = header.showIORouting && p.anyOutput();
-    const bool wantIn = header.showIORouting && p.anyInput();
     const bool wantSends = p.sends && !header.sendLabels.empty();
 
     int remaining = tcpArea.getHeight();
@@ -2319,8 +2407,6 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
         return true;
     };
     const bool showButtons = reserveRow(wantButtons);
-    const bool showOut = reserveRow(wantOut);
-    const bool showIn = reserveRow(wantIn);
     const bool showSends = reserveRow(wantSends);
 
     // Sends past the fourth go on a second row. A single row fits five at the
@@ -2358,22 +2444,6 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
             placeRow(perRow, std::min(2 * perRow, sendCount));
     }
 
-    // I/O routing rows — pinned to the bottom (output lowest, input above it).
-    if (showOut) {
-        auto row = paddedRow(tcpArea.removeFromBottom(m.rowH));
-        tcpArea.removeFromBottom(m.rowGap);
-        track_controls::layoutRoutingRow(row, p.audioOut ? header.outputSelector.get() : nullptr,
-                                         p.midiOut ? header.midiOutputSelector.get() : nullptr,
-                                         header.outputIcon.get(), m);
-    }
-    if (showIn) {
-        auto row = paddedRow(tcpArea.removeFromBottom(m.rowH));
-        tcpArea.removeFromBottom(m.rowGap);
-        track_controls::layoutRoutingRow(row, p.audioIn ? header.audioInputSelector.get() : nullptr,
-                                         p.midiIn ? header.inputSelector.get() : nullptr,
-                                         header.inputIcon.get(), m);
-    }
-
     // An External Instrument insert owns the track's MIDI send + audio return,
     // so the track-level audio-in and MIDI-out go read-only and mirror the
     // device's selection (editable only on the device). MIDI-in and audio-out
@@ -2406,6 +2476,8 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
             // the outer edge and spans the full height; the remaining
             // controls keep the usual inset.
             auto fullArea = headerArea;
+            const auto ioArea = showIORouting_ ? outer.removeFrom(fullArea, IO_COLUMN_WIDTH)
+                                               : juce::Rectangle<int>();
             layoutMeterColumn(header, fullArea, outer);
             auto workArea = fullArea.reduced(4);
 
@@ -2467,6 +2539,10 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
             // Controls in the bottom area (below 0dB line)
             tcpArea.removeFromTop(6);
             layoutControlArea(header, tcpArea, inner, trackHeight);
+            // After the control area, which starts by hiding every selector.
+            header.ioInCaption = header.ioOutCaption = {};
+            if (showIORouting_)
+                layoutIOColumn(header, ioArea);
         }
     }
 
@@ -3019,8 +3095,8 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
         }
 
         // Show/Hide I/O routing
-        menu.addItem(ToggleIORouting, header.showIORouting ? tr("tracks.hide_io_routing")
-                                                           : tr("tracks.show_io_routing"));
+        menu.addItem(ToggleIORouting,
+                     showIORouting_ ? tr("tracks.hide_io_routing") : tr("tracks.show_io_routing"));
     }
 
     // Show menu and handle result
@@ -3083,11 +3159,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                     trackId, /*duplicateContent=*/true, /*duplicateDevices=*/false);
                 UndoManager::getInstance().executeCommand(std::move(cmd));
             } else if (result == ToggleIORouting) {
-                if (trackIndex >= 0 && trackIndex < static_cast<int>(trackHeaders.size())) {
-                    trackHeaders[trackIndex]->showIORouting =
-                        !trackHeaders[trackIndex]->showIORouting;
-                    resized();
-                }
+                toggleIORouting();
             } else if (result == ToggleFreeze) {
                 auto* t = TrackManager::getInstance().getTrack(trackId);
                 if (t && audioEngine_ != nullptr)
@@ -3757,23 +3829,15 @@ void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
 }
 
 bool TrackHeadersPanel::isIORoutingVisible() const {
-    if (trackHeaders.empty())
-        return showIORouting_;
-    for (const auto& h : trackHeaders) {
-        if (h->showIORouting)
-            return true;
-    }
-    return false;
+    return showIORouting_;
 }
 
 void TrackHeadersPanel::toggleIORouting() {
-    // If any track has I/O visible, hide all; otherwise show all
-    const auto showsIORouting = [](const auto& h) { return h->showIORouting; };
-    const bool anyVisible = std::ranges::any_of(trackHeaders, showsIORouting);
-    for (auto& h : trackHeaders)
-        h->showIORouting = !anyVisible;
-    showIORouting_ = !anyVisible;
+    showIORouting_ = !showIORouting_;
     resized();
+    repaint();
+    if (onIORoutingToggled)
+        onIORoutingToggled();
 }
 
 }  // namespace magda

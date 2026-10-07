@@ -240,6 +240,10 @@ class MainView : public juce::Component,
         return getMarkerLaneHeight() + LayoutConfig::getInstance().getTimelineBodyHeight();
     }
     int trackHeaderWidth = LayoutConfig::getInstance().defaultTrackHeaderWidth;
+    /** The header column: the main headers plus the I/O column while it shows. */
+    int headerColumnWidth() const;
+    /** The main-header part of a header-column row, leaving the I/O column's strip empty. */
+    juce::Rectangle<int> mainHeaderPart(juce::Rectangle<int> column) const;
     bool markerLaneVisible_ = true;
     bool secondsRulerVisible_ = false;
     static constexpr int ARRANGEMENT_SCROLLBAR_SIZE = ZoomScrollBar::DEFAULT_THICKNESS;
