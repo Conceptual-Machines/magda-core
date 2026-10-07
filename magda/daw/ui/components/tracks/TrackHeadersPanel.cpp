@@ -324,13 +324,17 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
                          ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     nameLabel->setFont(FontManager::getInstance().getUIFontBold(12.0f));
 
-    // Track mute: speaker toggle (matching the master/inspector speaker instead
-    // of the "M" text button). audible = gray speaker (master_on), muted =
-    // yellow chip (master_off).
+    // Track mute: grey speaker while audible, crossed speaker (master_off) in yellow when muted.
     muteButton = std::make_unique<magda::SvgButton>(
         "mute", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
         BinaryData::master_off_svg, BinaryData::master_off_svgSize);
     configureMasterSpeakerButton(*muteButton);
+    // v1: mute, solo and record keep the neutral chip and carry their state in the glyph.
+    muteButton->setActiveBackgroundColor(ActiveTheme::SURFACE);
+    muteButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                          ActiveTheme::STATUS_WARNING);
+    muteButton->setStateColourReplacement(juce::Colour(0xFF1E1E1E), ActiveTheme::ICON_NEUTRAL,
+                                          ActiveTheme::STATUS_WARNING);
     muteButton->setTooltip(tr("tracks.mute.tooltip"));
 
     // Master-only speaker mute (shown instead of the "M" button for the master),
@@ -342,30 +346,26 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // a dropdown. Self-styling; getTrackId is wired in the per-track setup below.
     chordAuditionButton = std::make_unique<magda::ChordAuditionControl>();
 
-    // Track solo: target toggle (concentric ring) pairing with the mute speaker.
-    // inactive = gray target (solo_off), active = dark target (solo_on) on an
-    // amber chip.
+    // Track solo: a ring, grey at rest and amber when soloed.
     soloButton =
         std::make_unique<magda::SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
     soloButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     soloButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    soloButton->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+    soloButton->setActiveBackgroundColor(ActiveTheme::SURFACE);
     soloButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                          ActiveTheme::ICON_ON_ACCENT);
+                                          ActiveTheme::DEVICE_AMBER);
     soloButton->setIconPadding(4.5f);
     soloButton->setTooltip(tr("tracks.solo.tooltip"));
     soloButton->setClickingTogglesState(true);
 
-    // Track record-arm: filled-dot toggle pairing with the mute speaker / solo
-    // ring. idle = gray dot (track_record_off), armed = dark dot
-    // (track_record_on) on a red chip.
+    // Track record-arm: a dot, grey at rest and red when armed.
     recordButton = std::make_unique<magda::SvgButton>("record", BinaryData::track_record_svg,
                                                       BinaryData::track_record_svgSize);
     recordButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     recordButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    recordButton->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
+    recordButton->setActiveBackgroundColor(ActiveTheme::SURFACE);
     recordButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                            ActiveTheme::ICON_ON_ACCENT);
+                                            ActiveTheme::DEVICE_RED);
     recordButton->setIconPadding(4.5f);
     recordButton->setTooltip(tr("tracks.record.tooltip"));
     recordButton->setClickingTogglesState(true);
