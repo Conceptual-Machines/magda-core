@@ -136,7 +136,9 @@ void applyPlaceholder(ParamSlotComponent& slot) {
     slot.setParamName("-");
     slot.setShowEmptyText(true);
     slot.setEnabled(false);
-    slot.setVisible(true);
+    // The device spec draws no empty cells: a page past the last parameter
+    // simply ends.
+    slot.setVisible(false);
     slot.onValueChanged = nullptr;
 }
 

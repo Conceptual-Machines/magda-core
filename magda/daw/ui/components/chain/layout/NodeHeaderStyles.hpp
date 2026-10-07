@@ -188,6 +188,8 @@ inline void applyDeviceIconStyle(magda::SvgButton& btn, DeviceIcon kind,
     btn.setHoverBackgroundColor(ActiveTheme::DEVICE_ICON_HOVER_BG);
     btn.setActiveColor(kind == DeviceIcon::Power ? ActiveTheme::DEVICE_GREEN
                                                  : ActiveTheme::DEVICE_BLUE);
+    // State shows in the glyph colour only; clear any fill an older style set.
+    btn.setActiveBackgroundColor(juce::Colours::transparentBlack);
     if (kind == DeviceIcon::Toggle || kind == DeviceIcon::Power)
         btn.setClickingTogglesState(true);
 }
