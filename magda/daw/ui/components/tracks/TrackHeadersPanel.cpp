@@ -378,6 +378,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // Glyphs fit their own artwork, so paddings differ to land one visual size on 18px
     // buttons: ring and dot 9px, speaker 11px, the wide monitor and automation about 11px.
     monitorButton->setIconPadding(7.0f);
+    monitorButton->setGlyphStyle(true);
 
     // Automation button
     automationButton = std::make_unique<SvgButton>("Automation", BinaryData::automation_svg,
