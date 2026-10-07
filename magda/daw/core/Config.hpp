@@ -309,6 +309,14 @@ class Config {
         uiDensityScale = std::clamp(scale, 0.6, 1.4);
     }
 
+    // Transport bar arrangement: "anchored", "memory" or "justified".
+    const std::string& getTransportStyle() const {
+        return transportStyle;
+    }
+    void setTransportStyle(std::string style) {
+        transportStyle = style.empty() ? "anchored" : std::move(style);
+    }
+
     // Font size scale for MAGDA-owned UI fonts. This is independent from
     // Desktop UI scale, which changes both text and component geometry.
     double getUIFontScale() const {
@@ -1506,6 +1514,8 @@ class Config {
 
     // UI spacing density multiplier (1.0 = normal). Clamped to [0.6, 1.4].
     double uiDensityScale = 1.0;
+
+    std::string transportStyle = "anchored";
 
     // UI font scale: multiplier applied by FontManager to app-owned text fonts.
     double uiFontScale = 1.0;

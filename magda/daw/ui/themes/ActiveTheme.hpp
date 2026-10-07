@@ -216,6 +216,15 @@ enum class ColourRole : std::size_t {
     MIXER_KNOB_OUTER_STROKE,
     MIXER_KNOB_INNER,
     MIXER_KNOB_GUIDE,
+    TRANSPORT_WELL,
+    TRANSPORT_WELL_BORDER,
+    TRANSPORT_TILE,
+    TRANSPORT_GLYPH,
+    TRANSPORT_TEXT_DIM,
+    TRANSPORT_CHIP,
+    TRANSPORT_TOGGLE_ON,
+    TRANSPORT_MEMORY,
+    TRANSPORT_METER_FLOOR,
     count
 };
 
@@ -465,6 +474,15 @@ class ActiveTheme {
     static constexpr auto MIXER_KNOB_OUTER_STROKE = ColourRole::MIXER_KNOB_OUTER_STROKE;
     static constexpr auto MIXER_KNOB_INNER = ColourRole::MIXER_KNOB_INNER;
     static constexpr auto MIXER_KNOB_GUIDE = ColourRole::MIXER_KNOB_GUIDE;
+    static constexpr auto TRANSPORT_WELL = ColourRole::TRANSPORT_WELL;
+    static constexpr auto TRANSPORT_WELL_BORDER = ColourRole::TRANSPORT_WELL_BORDER;
+    static constexpr auto TRANSPORT_TILE = ColourRole::TRANSPORT_TILE;
+    static constexpr auto TRANSPORT_GLYPH = ColourRole::TRANSPORT_GLYPH;
+    static constexpr auto TRANSPORT_TEXT_DIM = ColourRole::TRANSPORT_TEXT_DIM;
+    static constexpr auto TRANSPORT_CHIP = ColourRole::TRANSPORT_CHIP;
+    static constexpr auto TRANSPORT_TOGGLE_ON = ColourRole::TRANSPORT_TOGGLE_ON;
+    static constexpr auto TRANSPORT_MEMORY = ColourRole::TRANSPORT_MEMORY;
+    static constexpr auto TRANSPORT_METER_FLOOR = ColourRole::TRANSPORT_METER_FLOOR;
 
     // Runtime palette API. Theme changes are expected to happen on JUCE's
     // message thread, alongside the LookAndFeel refresh they trigger.

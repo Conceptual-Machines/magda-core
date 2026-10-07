@@ -23,7 +23,7 @@ constexpr ActiveTheme::Palette darkPalette{
     0xFF28303A,  // SURFACE_HOVER
 
     // Transport and controls
-    0xFF151A21,  // TRANSPORT_BACKGROUND
+    0xFF16181C,  // TRANSPORT_BACKGROUND
     0xFF0C0F14,  // BUTTON_NORMAL
     0xFF1E242D,  // BUTTON_HOVER
     0xFF28303A,  // BUTTON_PRESSED
@@ -173,6 +173,15 @@ constexpr ActiveTheme::Palette darkPalette{
     0xFF3A3A45,  // MIXER_KNOB_OUTER_STROKE
     0xFF1E1E22,  // MIXER_KNOB_INNER
     0xFF404050,  // MIXER_KNOB_GUIDE
+    0xFF131518,  // TRANSPORT_WELL
+    0xFF24282D,  // TRANSPORT_WELL_BORDER
+    0xFF0F1114,  // TRANSPORT_TILE
+    0xFFD1D5DB,  // TRANSPORT_GLYPH
+    0xFF585E65,  // TRANSPORT_TEXT_DIM
+    0xFF1E2126,  // TRANSPORT_CHIP
+    0xFF5B58DB,  // TRANSPORT_TOGGLE_ON
+    0xFFD69C44,  // TRANSPORT_MEMORY
+    0xFF303740,  // TRANSPORT_METER_FLOOR
 };
 
 constexpr ActiveTheme::SyntaxPalette darkSyntaxPalette{
@@ -377,6 +386,15 @@ constexpr ActiveTheme::Palette lightPalette = [] {
     set(ColourRole::MIXER_KNOB_OUTER_STROKE, 0xFF9EABB5);
     set(ColourRole::MIXER_KNOB_INNER, 0xFFEEF1F3);
     set(ColourRole::MIXER_KNOB_GUIDE, 0xFF8997A2);
+    set(ColourRole::TRANSPORT_WELL, 0xFFE2E7EB);
+    set(ColourRole::TRANSPORT_WELL_BORDER, 0xFFC8D0D7);
+    set(ColourRole::TRANSPORT_TILE, 0xFFD9DFE4);
+    set(ColourRole::TRANSPORT_GLYPH, 0xFF26313A);
+    set(ColourRole::TRANSPORT_TEXT_DIM, 0xFF8A96A0);
+    set(ColourRole::TRANSPORT_CHIP, 0xFFD3DAE0);
+    set(ColourRole::TRANSPORT_TOGGLE_ON, 0xFF5552C9);
+    set(ColourRole::TRANSPORT_MEMORY, 0xFFB07A20);
+    set(ColourRole::TRANSPORT_METER_FLOOR, 0xFFBAC4CC);
 
     return palette;
 }();
@@ -566,6 +584,15 @@ constexpr ActiveTheme::Palette highContrastPalette = [] {
     palette[colourRoleIndex(ColourRole::LOOP_REGION)] = 0x14FFFFFF;
     palette[colourRoleIndex(ColourRole::LOOP_MARKER)] = 0xFF54D68B;
     palette[colourRoleIndex(ColourRole::OFFSET_MARKER)] = 0xFFFFD166;
+    palette[colourRoleIndex(ColourRole::TRANSPORT_WELL)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::TRANSPORT_WELL_BORDER)] = 0xFF8A8A8A;
+    palette[colourRoleIndex(ColourRole::TRANSPORT_TILE)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::TRANSPORT_GLYPH)] = 0xFFFFFFFF;
+    palette[colourRoleIndex(ColourRole::TRANSPORT_TEXT_DIM)] = 0xFFB0B0B0;
+    palette[colourRoleIndex(ColourRole::TRANSPORT_CHIP)] = 0xFF1A1A1A;
+    palette[colourRoleIndex(ColourRole::TRANSPORT_TOGGLE_ON)] = 0xFF7A78FF;
+    palette[colourRoleIndex(ColourRole::TRANSPORT_MEMORY)] = 0xFFFFC04D;
+    palette[colourRoleIndex(ColourRole::TRANSPORT_METER_FLOOR)] = 0xFF5A5A5A;
 
     return palette;
 }();

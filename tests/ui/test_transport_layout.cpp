@@ -1,10 +1,12 @@
 // Transport bar layout (#2071 / #2074). The decision about what fits is pure
-// arithmetic over (width, height, measured text, spacing density), so it can be
-// asserted without a window. The companion test_transport_layout_juce.cpp runs
-// the same assertions against the widths the shipped fonts actually produce.
+// arithmetic over (width, height, measured text, spacing density, style), so it
+// can be asserted without a window. The companion test_transport_layout_juce.cpp
+// runs the same assertions against the widths the shipped fonts actually produce.
 
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
+#include <cstdlib>
 #include <vector>
 
 #include "magda/daw/ui/layout/LayoutConfig.hpp"
@@ -15,111 +17,128 @@ using namespace magda::daw::ui::transport;
 
 namespace {
 
-// What the shipped Inter measures at the default font scale, as reported by
-// test_transport_layout_juce.cpp. The tests that matter sweep around these
-// rather than leaning on the exact numbers, so a font change moves them
-// without invalidating the test.
+// Roughly what the shipped Inter measures at the default font scale. The tests
+// that matter sweep around these rather than leaning on the exact numbers.
 TextWidths nominalText() {
     TextWidths text;
-    text.timecodeBox = 85;
+    text.timecodeBox = 104;
+    text.timecodeOverlay = 11;
+    text.stackTimecodeBox = 91;
+    text.headlineTimecodeBox = 141;
+    text.clock = 50;
     text.timecodeCaption = 20;
     text.timecodeGlyphInset = 4;
-    text.tempo = 43;
+    text.tempo = 49;
     text.timeSigNumerator = 20;
     text.timeSigDenominator = 16;
+    text.keyRoot = 19;
+    text.keyQuality = 17;
+    text.rangeChip = 26;
+    text.memoryCaption = 19;
+    text.memoryTime = 65;
+    text.keep = 25;
     text.cpuTitle = 17;
     text.cpuValue = 40;
     text.gridDivision = 18;
     text.gridToggle = 26;
+    text.banner = 106;
     return text;
 }
 
-// The transport is as tall as the window gives it, which at launch is
-// LayoutConfig's own default.
+constexpr std::array<Style, 3> kStyles{Style::Anchored, Style::MemoryFill, Style::Justified};
+constexpr int kWide = 1600;
+
 int defaultTransportHeight() {
-    return LayoutConfig::getInstance().defaultTransportHeight;
+    return LayoutConfig::getInstance().transportHeight;
 }
 
-bool nothingCollapsed(const Layout& l) {
+// Everything on except, at most, the master buffer meter.
+bool nothingButTheMeterCollapsed(const Layout& l) {
     return l.navVisible && l.loopBackVisible && l.punchVisible && l.selLoopTimesVisible &&
            l.gridVisible && l.rightClusterVisible && !l.overflowVisible;
 }
 
+// The horizontal extent of every group on screen, in left-to-right order.
+std::vector<juce::Rectangle<int>> groupsOf(const Layout& l) {
+    juce::Rectangle<int> buttons = l.play;
+    for (const auto& r :
+         {l.home, l.prev, l.next, l.stop, l.record, l.automationWrite, l.loop, l.backToArrangement})
+        if (!r.isEmpty())
+            buttons = buttons.getUnion(r);
+
+    std::vector<juce::Rectangle<int>> groups{buttons};
+    for (const auto& r : {l.punchFrame, l.tempoFrame, l.cursorFrame, l.rangeFrame, l.stackFrame,
+                          l.gridFrame, l.memoryFrame, l.qwerty, l.cpu, l.overflow})
+        if (!r.isEmpty())
+            groups.push_back(r);
+    std::sort(groups.begin(), groups.end(),
+              [](const auto& a, const auto& b) { return a.getX() < b.getX(); });
+    return groups;
+}
+
+std::vector<int> gapsBetween(const std::vector<juce::Rectangle<int>>& groups) {
+    std::vector<int> gaps;
+    for (size_t i = 1; i < groups.size(); ++i)
+        gaps.push_back(groups[i].getX() - groups[i - 1].getRight());
+    return gaps;
+}
+
 }  // namespace
 
+TEST_CASE("Style keys round-trip through the config word", "[ui][transport-layout]") {
+    for (auto style : kStyles)
+        REQUIRE(styleFromKey(styleKey(style)) == style);
+    REQUIRE(styleFromKey("") == Style::Anchored);
+    REQUIRE(styleFromKey("nonsense") == Style::Anchored);
+}
+
 // ---------------------------------------------------------------------------
-// The regression from #2071: the overflow button was on from the first frame at
-// the size the app opens itself at.
+// What fits. #2071 was the overflow button showing from the first frame.
 // ---------------------------------------------------------------------------
 
-TEST_CASE("The whole transport fits the window MAGDA opens at", "[ui][transport-layout]") {
-    const auto l =
-        compute(LayoutConfig::defaultWindowWidth, defaultTransportHeight(), nominalText(), 1.0f);
-
-    REQUIRE(nothingCollapsed(l));
-    REQUIRE(l.cpu.getWidth() > 0);
+TEST_CASE("The transport fits the window MAGDA opens at in every style", "[ui][transport-layout]") {
+    const auto style = GENERATE(Style::Anchored, Style::MemoryFill, Style::Justified);
+    const auto l = compute(LayoutConfig::defaultWindowWidth, defaultTransportHeight(),
+                           nominalText(), 1.0f, style);
+    INFO("style " << styleKey(style));
+    REQUIRE(nothingButTheMeterCollapsed(l));
     REQUIRE(l.overflow.isEmpty());
 }
 
-TEST_CASE("It keeps fitting as the text around it grows", "[ui][transport-layout]") {
-    // Roughly 15% wider strings than the shipped font draws, which covers a
-    // different UI font family or a nudged font scale. Past that the sections
-    // start collapsing, which is what the overflow menu is for.
-    for (int extra = 0; extra <= 3; ++extra) {
-        auto text = nominalText();
-        text.timecodeBox += extra * 4;
-        text.timecodeCaption += extra;
-        text.tempo += extra * 2;
-        text.timeSigNumerator += extra;
-        text.timeSigDenominator += extra;
-        text.cpuTitle += extra;
-        text.cpuValue += extra;
-        text.gridDivision += extra;
-        text.gridToggle += extra * 2;
-
-        INFO("text widths grown by " << extra << "px");
-        const auto l =
-            compute(LayoutConfig::defaultWindowWidth, defaultTransportHeight(), text, 1.0f);
-        REQUIRE(nothingCollapsed(l));
-    }
-}
-
-TEST_CASE("It fits at every height the transport can be dragged to", "[ui][transport-layout]") {
-    // The icon buttons are square, so a taller transport is also a wider one.
-    const auto& config = LayoutConfig::getInstance();
-    for (int height = config.minTransportHeight; height <= config.maxTransportHeight; ++height) {
-        INFO("transport height " << height);
-        const auto l = compute(LayoutConfig::defaultWindowWidth, height, nominalText(), 1.0f);
-        REQUIRE(nothingCollapsed(l));
-    }
+TEST_CASE("A wide bar shows the master buffer meter in every style", "[ui][transport-layout]") {
+    const auto style = GENERATE(Style::Anchored, Style::MemoryFill, Style::Justified);
+    const auto l = compute(kWide, defaultTransportHeight(), nominalText(), 1.0f, style);
+    INFO("style " << styleKey(style));
+    REQUIRE(nothingButTheMeterCollapsed(l));
+    REQUIRE(l.memoryMeterVisible);
+    REQUIRE_FALSE(l.memoryMeter.isEmpty());
 }
 
 // ---------------------------------------------------------------------------
-// The drop order, which is the part that used to be six hand-written copies of
-// the same two lines.
+// The drop order.
 // ---------------------------------------------------------------------------
 
 TEST_CASE("Sections drop in the declared order as the panel narrows", "[ui][transport-layout]") {
-    const int height = defaultTransportHeight();
+    const auto style = GENERATE(Style::Anchored, Style::MemoryFill, Style::Justified);
+    INFO("style " << styleKey(style));
     std::vector<Section> dropped;
-
-    for (int width = LayoutConfig::defaultWindowWidth; width >= 200; --width) {
-        const auto l = compute(width, height, nominalText(), 1.0f);
+    for (int width = kWide; width >= 200; --width) {
+        const auto l = compute(width, defaultTransportHeight(), nominalText(), 1.0f, style);
         for (auto section : kDropOrder)
             if (!l.isVisible(section) &&
                 std::find(dropped.begin(), dropped.end(), section) == dropped.end())
                 dropped.push_back(section);
     }
-
     REQUIRE(dropped == std::vector<Section>(kDropOrder.begin(), kDropOrder.end()));
 }
 
 TEST_CASE("A section that is on stays on as the panel widens", "[ui][transport-layout]") {
+    const auto style = GENERATE(Style::Anchored, Style::MemoryFill, Style::Justified);
+    INFO("style " << styleKey(style));
     const int height = defaultTransportHeight();
-    Layout narrower = compute(200, height, nominalText(), 1.0f);
-
-    for (int width = 201; width <= 1600; ++width) {
-        const auto wider = compute(width, height, nominalText(), 1.0f);
+    Layout narrower = compute(200, height, nominalText(), 1.0f, style);
+    for (int width = 201; width <= kWide; ++width) {
+        const auto wider = compute(width, height, nominalText(), 1.0f, style);
         INFO("width " << width);
         for (auto section : kDropOrder)
             REQUIRE((wider.isVisible(section) || !narrower.isVisible(section)));
@@ -127,145 +146,209 @@ TEST_CASE("A section that is on stays on as the panel widens", "[ui][transport-l
     }
 }
 
-// ---------------------------------------------------------------------------
-// The invariant the hardcoded estimates could not hold: what the fit decision
-// counted and what the placement occupies are the same width.
-// ---------------------------------------------------------------------------
-
-TEST_CASE("The arranged sections stay inside the width they were measured for",
-          "[ui][transport-layout]") {
-    const int height = defaultTransportHeight();
-
-    for (int width = 600; width <= 1600; width += 7) {
-        const auto l = compute(width, height, nominalText(), 1.0f);
-        INFO("width " << width);
-
-        // Right edge of the left-to-right flow.
-        const int flowRight = l.gridVisible ? l.snap.getRight() : l.editCursor.getRight();
-        // Left edge of whatever is pinned to the right.
-        const int clusterLeft = l.overflowVisible ? l.overflow.getX() : l.qwerty.getX();
-
-        REQUIRE(flowRight <= clusterLeft);
-        REQUIRE(l.cpu.getRight() <= width);
-        REQUIRE(l.overflow.getRight() <= width);
-    }
+TEST_CASE("The overflow button stands in for the right-hand cluster", "[ui][transport-layout]") {
+    for (auto style : kStyles)
+        for (int width = 300; width <= kWide; width += 3) {
+            const auto l = compute(width, defaultTransportHeight(), nominalText(), 1.0f, style);
+            INFO("style " << styleKey(style) << " width " << width);
+            REQUIRE(l.overflowVisible == !l.rightClusterVisible);
+            REQUIRE(l.overflow.isEmpty() == l.rightClusterVisible);
+        }
 }
 
 TEST_CASE("A dropped section leaves no rectangle behind", "[ui][transport-layout]") {
-    // Narrow enough that everything collapsible is gone.
-    const auto l = compute(400, defaultTransportHeight(), nominalText(), 1.0f);
+    const auto style = GENERATE(Style::Anchored, Style::MemoryFill, Style::Justified);
+    const auto l = compute(400, defaultTransportHeight(), nominalText(), 1.0f, style);
 
     REQUIRE(l.overflowVisible);
     REQUIRE(l.home.isEmpty());
     REQUIRE(l.loop.isEmpty());
-    REQUIRE(l.punchStart.isEmpty());
+    REQUIRE(l.punchFrame.isEmpty());
     REQUIRE(l.selectionStart.isEmpty());
+    REQUIRE(l.selChip.isEmpty());
+    REQUIRE(l.stackFrame.isEmpty());
     REQUIRE(l.autoGrid.isEmpty());
+    REQUIRE(l.memoryFrame.isEmpty());
+    REQUIRE(l.keep.isEmpty());
     REQUIRE(l.cpu.isEmpty());
     REQUIRE(l.qwerty.isEmpty());
 
     // The transport is still a transport.
     REQUIRE_FALSE(l.play.isEmpty());
     REQUIRE_FALSE(l.tempo.isEmpty());
+    REQUIRE_FALSE(l.key.isEmpty());
     REQUIRE_FALSE(l.playhead.isEmpty());
 }
 
-TEST_CASE("The overflow button appears exactly when something is hidden",
-          "[ui][transport-layout]") {
-    const int height = defaultTransportHeight();
+// ---------------------------------------------------------------------------
+// Placement: what the fit decision counted is what the groups occupy.
+// ---------------------------------------------------------------------------
 
-    for (int width = 300; width <= 1600; width += 3) {
-        const auto l = compute(width, height, nominalText(), 1.0f);
-        const bool anythingHidden = !nothingCollapsed(l);
-        INFO("width " << width);
-        REQUIRE(l.overflowVisible == anythingHidden);
+TEST_CASE("Groups never overlap and stay inside the bar", "[ui][transport-layout]") {
+    for (auto style : kStyles)
+        for (int width = 600; width <= kWide; width += 7) {
+            const auto l = compute(width, defaultTransportHeight(), nominalText(), 1.0f, style);
+            INFO("style " << styleKey(style) << " width " << width);
+            const auto groups = groupsOf(l);
+            REQUIRE(groups.front().getX() >= 0);
+            REQUIRE(groups.back().getRight() <= width);
+            for (int gap : gapsBetween(groups))
+                REQUIRE(gap >= 0);
+        }
+}
+
+TEST_CASE("The automation-write banner sits in a gap", "[ui][transport-layout]") {
+    for (auto style : kStyles)
+        for (int width = 600; width <= 2400; width += 13) {
+            const auto l = compute(width, defaultTransportHeight(), nominalText(), 1.0f, style);
+            INFO("style " << styleKey(style) << " width " << width);
+            if (!l.automationWriteLabelFits) {
+                REQUIRE(l.automationWriteLabel.isEmpty());
+                continue;
+            }
+            REQUIRE(l.automationWriteLabel.getWidth() >= nominalText().banner);
+            for (const auto& group : groupsOf(l))
+                REQUIRE_FALSE(group.intersects(l.automationWriteLabel));
+        }
+}
+
+TEST_CASE("Anchored centres the time and tempo cluster in the slack", "[ui][transport-layout]") {
+    const auto l = compute(kWide, defaultTransportHeight(), nominalText(), 1.0f, Style::Anchored);
+    const int leftEdge = l.punchFrame.getRight();
+    const int centreStart = l.tempoFrame.getX();
+    const int centreEnd = l.rangeFrame.getRight();
+    const int rightEdge = l.gridFrame.getX();
+    REQUIRE(std::abs((centreStart - leftEdge) - (rightEdge - centreEnd)) <= 1);
+    REQUIRE(centreStart - leftEdge > 20);
+}
+
+TEST_CASE("MemoryFill hands the slack to the meter", "[ui][transport-layout]") {
+    const int height = defaultTransportHeight();
+    const auto narrow = compute(1400, height, nominalText(), 1.0f, Style::MemoryFill);
+    const auto wide = compute(1800, height, nominalText(), 1.0f, Style::MemoryFill);
+    REQUIRE(narrow.memoryMeterVisible);
+    REQUIRE(wide.memoryMeter.getWidth() - narrow.memoryMeter.getWidth() == 400);
+
+    // Everything else stays packed against its neighbours.
+    for (const auto* l : {&narrow, &wide}) {
+        const auto gaps = gapsBetween(groupsOf(*l));
+        REQUIRE(*std::max_element(gaps.begin(), gaps.end()) <=
+                *std::min_element(gaps.begin(), gaps.end()) + 1);
     }
 }
 
+TEST_CASE("Justified spaces its groups evenly", "[ui][transport-layout]") {
+    const auto l = compute(kWide, defaultTransportHeight(), nominalText(), 1.0f, Style::Justified);
+    // The QWERTY toggle and CPU ride as one; their own gap stays packed.
+    auto groups = groupsOf(l);
+    groups[groups.size() - 2] = groups[groups.size() - 2].getUnion(groups.back());
+    groups.pop_back();
+    const auto gaps = gapsBetween(groups);
+    REQUIRE(*std::max_element(gaps.begin(), gaps.end()) -
+                *std::min_element(gaps.begin(), gaps.end()) <=
+            1);
+    REQUIRE(groups.back().getRight() == kWide - 5);
+}
+
 // ---------------------------------------------------------------------------
-// Density, which the old hardcoded widths ignored entirely.
+// The time readouts.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Selection and loop share rows behind the chips except in the stack",
+          "[ui][transport-layout]") {
+    const int height = defaultTransportHeight();
+    for (auto style : {Style::Anchored, Style::MemoryFill}) {
+        const auto l = compute(kWide, height, nominalText(), 1.0f, style);
+        REQUIRE(l.selectionAndLoopShareRows());
+        REQUIRE(l.selectionStart == l.loopStart);
+        REQUIRE(l.selectionEnd == l.loopEnd);
+        REQUIRE_FALSE(l.selChip.isEmpty());
+        REQUIRE(l.editCursor.isEmpty());
+        REQUIRE(l.playhead.getHeight() > l.selectionStart.getHeight());
+    }
+
+    const auto stack = compute(kWide, height, nominalText(), 1.0f, Style::Justified);
+    REQUIRE_FALSE(stack.selectionAndLoopShareRows());
+    REQUIRE(stack.selChip.isEmpty());
+    REQUIRE(stack.cursorFrame.isEmpty());
+    REQUIRE_FALSE(stack.editCursor.isEmpty());
+    REQUIRE(stack.selectionStart.getY() < stack.loopStart.getY());
+    REQUIRE(stack.loopStart.getY() < stack.playhead.getY());
+    REQUIRE(stack.playhead.getBottom() <= stack.stackFrame.getBottom());
+}
+
+TEST_CASE("The headline playhead carries a seconds clock beneath it", "[ui][transport-layout]") {
+    for (auto style : {Style::Anchored, Style::MemoryFill}) {
+        const auto l = compute(kWide, defaultTransportHeight(), nominalText(), 1.0f, style);
+        REQUIRE_FALSE(l.clock.isEmpty());
+        REQUIRE(l.clock.getY() >= l.playhead.getBottom());
+        REQUIRE(l.cursorFrame.contains(l.clock));
+        REQUIRE(l.clock.getWidth() >= nominalText().clock);
+    }
+    const auto stack =
+        compute(kWide, defaultTransportHeight(), nominalText(), 1.0f, Style::Justified);
+    REQUIRE(stack.clock.isEmpty());
+}
+
+TEST_CASE("The stack falls back to the headline playhead once SEL / LOOP drop",
+          "[ui][transport-layout]") {
+    for (int width = kWide; width >= 200; --width) {
+        const auto l =
+            compute(width, defaultTransportHeight(), nominalText(), 1.0f, Style::Justified);
+        if (l.selLoopTimesVisible)
+            continue;
+        REQUIRE(l.stackFrame.isEmpty());
+        REQUIRE_FALSE(l.cursorFrame.isEmpty());
+        REQUIRE(l.editCursor.isEmpty());
+        return;
+    }
+    FAIL("SEL / LOOP never dropped");
+}
+
+TEST_CASE("Readouts are wider than their digits by what is drawn over their end",
+          "[ui][transport-layout]") {
+    const auto text = nominalText();
+    for (auto style : kStyles)
+        for (int width = 600; width <= kWide; width += 50) {
+            const auto l = compute(width, defaultTransportHeight(), text, 1.0f, style);
+            INFO("style " << styleKey(style) << " width " << width);
+
+            if (!l.cursorFrame.isEmpty()) {
+                REQUIRE(l.cursorTrailingInset >= text.timecodeCaption);
+                REQUIRE(l.playhead.getWidth() >=
+                        text.headlineTimecodeBox + l.cursorTrailingInset - text.timecodeGlyphInset);
+            }
+            if (l.punchVisible) {
+                REQUIRE(l.punchIn.getRight() <= l.punchStart.getRight());
+                REQUIRE(l.punchIn.getX() >= l.punchStart.getRight() - l.punchTrailingInset);
+                REQUIRE(l.punchOut.getX() >= l.punchEnd.getRight() - l.punchTrailingInset);
+            }
+        }
+}
+
+// ---------------------------------------------------------------------------
+// Density.
 // ---------------------------------------------------------------------------
 
 TEST_CASE("Spacing density moves the layout with it", "[ui][transport-layout]") {
     const int height = defaultTransportHeight();
-    const auto compact = compute(LayoutConfig::defaultWindowWidth, height, nominalText(), 0.6f);
-    const auto normal = compute(LayoutConfig::defaultWindowWidth, height, nominalText(), 1.0f);
-    const auto spacious = compute(LayoutConfig::defaultWindowWidth, height, nominalText(), 1.4f);
+    const auto style = GENERATE(Style::Anchored, Style::MemoryFill, Style::Justified);
+    const auto compact =
+        compute(LayoutConfig::defaultWindowWidth, height, nominalText(), 0.6f, style);
+    const auto normal =
+        compute(LayoutConfig::defaultWindowWidth, height, nominalText(), 1.0f, style);
+    // The widest spacing pushes the right-hand cluster into the overflow menu at
+    // the smallest window; it holds everything once the window is wider.
+    const auto spacious = compute(1400, height, nominalText(), 1.4f, style);
 
-    // Everything still fits at every density the preference offers.
-    REQUIRE(nothingCollapsed(compact));
-    REQUIRE(nothingCollapsed(normal));
-    REQUIRE(nothingCollapsed(spacious));
+    REQUIRE(nothingButTheMeterCollapsed(compact));
+    REQUIRE(nothingButTheMeterCollapsed(normal));
+    REQUIRE(nothingButTheMeterCollapsed(spacious));
 
-    // ...and the spacing actually moves, rather than density being ignored.
-    // Read it off the pads themselves: the section widths also carry the
-    // leftover width shared out to the readouts, which moves the other way.
-    REQUIRE(compact.play.getX() < normal.play.getX());
-    REQUIRE(normal.play.getX() < spacious.play.getX());
+    REQUIRE(compact.home.getX() < normal.home.getX());
+    REQUIRE(normal.home.getX() < spacious.home.getX());
 
-    const auto metroPad = [](const Layout& l) { return l.tempo.getX() - l.transportRight; };
-    REQUIRE(metroPad(compact) < metroPad(normal));
-    REQUIRE(metroPad(normal) < metroPad(spacious));
-}
-
-// ---------------------------------------------------------------------------
-// The readouts share out whatever width is left over.
-// ---------------------------------------------------------------------------
-
-TEST_CASE("Spare width goes to the timecode readouts, up to a cap", "[ui][transport-layout]") {
-    const int height = defaultTransportHeight();
-    const auto text = nominalText();
-
-    // The narrowest width that still holds everything, where there is no spare
-    // to share out and the readouts sit at their intrinsic size.
-    int snug = 0;
-    for (int width = 400; width <= 2000 && snug == 0; ++width)
-        if (nothingCollapsed(compute(width, height, text, 1.0f)))
-            snug = width;
-    REQUIRE(snug > 0);
-
-    const auto tight = compute(snug, height, text, 1.0f);
-    const auto roomy = compute(snug + 120, height, text, 1.0f);
-    const auto huge = compute(snug + 1200, height, text, 1.0f);
-
-    REQUIRE(tight.playhead.getWidth() ==
-            text.timecodeBox + tight.timeBoxTrailingInset - text.timecodeGlyphInset);
-    REQUIRE(roomy.playhead.getWidth() > tight.playhead.getWidth());
-    REQUIRE(huge.playhead.getWidth() == roomy.playhead.getWidth());
-
-    // Every readout is the same width, whichever group it belongs to.
-    REQUIRE(roomy.selectionStart.getWidth() == roomy.playhead.getWidth());
-    REQUIRE(roomy.loopEnd.getWidth() == roomy.playhead.getWidth());
-    REQUIRE(roomy.punchStart.getWidth() == roomy.playhead.getWidth());
-}
-
-// ---------------------------------------------------------------------------
-// What is drawn over a readout's right end: the group caption (SEL / LOOP /
-// CUR) and, in the punch box, the in/out icons. The readout's digits have to
-// stop short of it, so the box carries that zone on top of the digits.
-// ---------------------------------------------------------------------------
-
-TEST_CASE("A readout is wider than its digits by what is drawn over its end",
-          "[ui][transport-layout]") {
-    const int height = defaultTransportHeight();
-    const auto text = nominalText();
-
-    for (int width = 600; width <= 1600; width += 50) {
-        const auto l = compute(width, height, text, 1.0f);
-        INFO("width " << width);
-
-        // The inset covers the caption and the punch icons, whichever is wider,
-        // and the readout grew by what that needs beyond the air its glyphs
-        // keep at the edge anyway.
-        REQUIRE(l.timeBoxTrailingInset >= text.timecodeCaption);
-        REQUIRE(l.playhead.getWidth() >=
-                text.timecodeBox + l.timeBoxTrailingInset - text.timecodeGlyphInset);
-
-        if (l.punchVisible) {
-            // The punch icons sit inside the zone the digits keep clear.
-            REQUIRE(l.punchIn.getRight() <= l.punchStart.getRight());
-            REQUIRE(l.punchIn.getX() >= l.punchStart.getRight() - l.timeBoxTrailingInset);
-            REQUIRE(l.punchOut.getX() >= l.punchEnd.getRight() - l.timeBoxTrailingInset);
-        }
-    }
+    const auto framePad = [](const Layout& l) { return l.tempo.getX() - l.tempoFrame.getX(); };
+    REQUIRE(framePad(compact) < framePad(normal));
+    REQUIRE(framePad(normal) < framePad(spacious));
 }

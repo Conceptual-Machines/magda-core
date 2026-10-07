@@ -1036,6 +1036,18 @@ void ProjectManager::setTimeSignature(int numerator, int denominator) {
     }
 }
 
+void ProjectManager::setKey(int root, int quality) {
+    root = juce::jlimit(-1, 11, root);
+    quality = juce::jlimit(0, 1, quality);
+    if (currentProject_.keyRoot != root || currentProject_.keyQuality != quality) {
+        currentProject_.keyRoot = root;
+        currentProject_.keyQuality = quality;
+        markDirty();
+        for (auto* listener : listeners_)
+            listener->projectPropertiesChanged();
+    }
+}
+
 void ProjectManager::setLoopSettings(bool enabled, double startBeats, double endBeats) {
     if (currentProject_.loopEnabled != enabled || currentProject_.loopStartBeats != startBeats ||
         currentProject_.loopEndBeats != endBeats) {

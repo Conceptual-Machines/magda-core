@@ -10,8 +10,10 @@
 #include "../components/common/GridDivisionMenu.hpp"
 #include "../components/common/SvgButton.hpp"
 #include "TransportLayout.hpp"
+#include "core/Config.hpp"
 #include "core/MixAnalysisService.hpp"
 #include "core/TempoUtils.hpp"
+#include "project/ProjectManager.hpp"
 
 namespace magda {
 
@@ -19,7 +21,10 @@ class QwertyMidiKeyboard;
 
 // Greys out / re-enables the transport when an offline mix-analysis render owns
 // the edit (#886) -- playback is blocked then, so the controls shouldn't look live.
-class TransportPanel : public juce::Component, public MixAnalysisService::Listener {
+class TransportPanel : public juce::Component,
+                       public MixAnalysisService::Listener,
+                       private ConfigListener,
+                       private ProjectManagerListener {
   public:
     TransportPanel();
     ~TransportPanel() override;
@@ -118,6 +123,13 @@ class TransportPanel : public juce::Component, public MixAnalysisService::Listen
     void setAudioDeviceInfo(const juce::String& deviceName, double sampleRate, int bufferSize);
 
   private:
+    // ConfigListener: the transport style lives in the Appearance preferences.
+    void configChanged() override;
+    // ProjectManagerListener: the key readout follows the project.
+    void projectOpened(const ProjectInfo& info) override;
+    void projectClosed() override;
+    void projectPropertiesChanged() override;
+
     void showCountInMenu();
     static juce::String countInModeLabel(int mode);
 
@@ -194,12 +206,29 @@ class TransportPanel : public juce::Component, public MixAnalysisService::Listen
     std::unique_ptr<DraggableValueLabel> timeSigNumeratorLabel;
     std::unique_ptr<DraggableValueLabel> timeSigDenominatorLabel;
 
-    // Layout sections
-    juce::Rectangle<int> getTransportControlsArea() const;
-    juce::Rectangle<int> getMetronomeBpmArea() const;
-    juce::Rectangle<int> getTimeDisplayArea() const;
-    juce::Rectangle<int> getTempoQuantizeArea() const;
-    juce::Rectangle<int> getCpuArea() const;
+    // Project key, shown after the meter; click picks root and quality.
+    class KeyReadout;
+    std::unique_ptr<KeyReadout> keyReadout;
+    void showKeyMenu();
+    void updateKeyReadout();
+
+    // SEL / LOOP chips choose which range the shared rows show.
+    std::unique_ptr<juce::TextButton> selChipButton;
+    std::unique_ptr<juce::TextButton> loopChipButton;
+    bool showLoopRange_ = false;
+    void updateRangeVisibility();
+
+    // Placeholder until the rolling master buffer exists.
+    std::unique_ptr<juce::TextButton> keepButton;
+
+    static void styleToggle(juce::TextButton& button, juce::Colour offFill, juce::Colour offText,
+                            juce::Colour onFill, juce::Colour onText);
+    void applyToggleColours();
+    void paintFrame(juce::Graphics& g, juce::Rectangle<int> area) const;
+    void paintMemory(juce::Graphics& g) const;
+    void paintStackCaptions(juce::Graphics& g) const;
+
+    daw::ui::transport::Style style_ = daw::ui::transport::Style::Anchored;
 
     // Where every child sits and which sections survived the last resized().
     // paint() and the overflow menu read it rather than keeping their own copy
@@ -247,6 +276,9 @@ class TransportPanel : public juce::Component, public MixAnalysisService::Listen
     int timeSignatureNumerator = DEFAULT_TIME_SIGNATURE_NUMERATOR;
     int timeSignatureDenominator = DEFAULT_TIME_SIGNATURE_DENOMINATOR;
     int countInMode_ = 0;  // 0=none, 1=1bar, 2=2bars, 3=2beats, 4=1beat
+
+    // The playhead in seconds, drawn under the headline readout.
+    juce::String clockText_ = "0:00.000";
 
     // Cached state for display updates
     double cachedPlayheadPosition = 0.0;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 #include "TransportLayout.hpp"
 #include "core/TempoUtils.hpp"
 
@@ -17,7 +19,14 @@ inline constexpr const char* kSnapCaption = "SNAP";
 // resolve their own font publish theirs instead (BarsBeatsTicksLabel,
 // GridDivisionButton, SmallButtonLookAndFeel), and the measurement reads it
 // from them.
-inline constexpr float kReadoutFontSize = 14.0f;  // BPM and time signature
+inline constexpr float kHeadlineFontSize = 16.0f;          // BPM
+inline constexpr float kHeadlineTimecodeFontSize = 18.0f;  // the playhead on its own
+inline constexpr float kRowTimecodeFontSize = 12.0f;       // two-row readouts
+inline constexpr float kStackTimecodeFontSize = 10.0f;     // the Justified three-line stack
+inline constexpr float kReadoutFontSize = 14.0f;           // time signature and key root
+inline constexpr float kKeyQualityFontSize = 10.0f;
+inline constexpr float kMemoryCaptionFontSize = 8.0f;
+inline constexpr float kMemoryTimeFontSize = 11.0f;
 inline constexpr float kCpuTitleFontSize = 8.0f;
 inline constexpr float kCpuValueFontSize = 11.0f;
 inline constexpr float kBannerFontSize = 10.0f;  // the AUTOMATION WRITE banner
@@ -29,6 +38,26 @@ inline constexpr const char* kSelectionCaption = "SEL";
 inline constexpr const char* kLoopCaption = "LOOP";
 inline constexpr const char* kCursorCaption = "CUR";
 inline constexpr float kTimecodeCaptionFontSize = 7.0f;
+
+inline constexpr float kClockFontSize = 9.0f;
+inline constexpr const char* kClockWidest = "8:88:88.888";
+
+/** The playhead clock under the headline: m:ss.mmm, with hours once past one. */
+juce::String clockText(double seconds);
+
+inline constexpr const char* kMemoryCaption = "MEM";
+inline constexpr const char* kKeepCaption = "KEEP";
+inline constexpr const char* kMemoryTimeWidest = "88:88 / 88:88";
+
+// Key names by ProjectInfo::keyRoot, and the readout shown when none is set.
+inline constexpr std::array<const char*, 12> kKeyRootNames{"C",  "C#", "D",  "D#", "E",  "F",
+                                                           "F#", "G",  "G#", "A",  "A#", "B"};
+inline constexpr const char* kNoKeyText = "--";
+inline constexpr std::array<const char*, 2> kKeyQualityNames{"maj", "min"};
+
+// Every text the automation-write banner can show.
+inline constexpr std::array<const char*, 3> kBannerTexts{"AUTOMATION WRITE", "AUTOMATION TOUCH",
+                                                         "AUTOMATION LATCH"};
 
 // The largest bar number the timecode readouts show, in any meter: five
 // digits. The range the labels accept follows from it, in beats at the fewest

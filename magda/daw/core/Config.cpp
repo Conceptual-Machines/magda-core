@@ -166,6 +166,7 @@ void Config::save() {
     root->setProperty("uiScale", uiScale);
     root->setProperty("theme", toJuceString(theme));
     root->setProperty("uiDensityScale", uiDensityScale);
+    root->setProperty("transportStyle", toJuceString(transportStyle));
     root->setProperty("uiFontScale", uiFontScale);
     root->setProperty("uiFontFamily", toJuceString(uiFontFamily));
     root->setProperty("localizedUIFontScale", localizedUIFontScale);
@@ -579,6 +580,7 @@ void Config::load() {
     uiScale = getDouble("uiScale", uiScale);
     setTheme(getString("theme", theme));
     setUIDensityScale(getDouble("uiDensityScale", uiDensityScale));
+    setTransportStyle(getString("transportStyle", transportStyle));
     setUIFontScale(getDouble("uiFontScale", uiFontScale));
     setUIFontFamily(getString("uiFontFamily", uiFontFamily));
     localizedUIFontScaleExplicit = obj->hasProperty("localizedUIFontScale");

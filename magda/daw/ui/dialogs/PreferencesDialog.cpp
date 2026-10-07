@@ -14,6 +14,7 @@
 #include "../../media_db/PresetDbIndexer.hpp"
 #include "../../project/ProjectManager.hpp"
 #include "../components/common/TextSlider.hpp"
+#include "../panels/TransportLayout.hpp"
 #include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
@@ -659,6 +660,8 @@ class GeneralPage : public juce::Component {
 
 // ---- Appearance tab: Application theme and track colours ------------------
 
+namespace transport = daw::ui::transport;
+
 class AppearancePage : public juce::Component {
   public:
     static constexpr int MAX_PALETTE_SIZE = 16;
@@ -732,6 +735,17 @@ class AppearancePage : public juce::Component {
         setupTextSlider(*this, densitySlider, densityLabel,
                         trOr("preferences.density.label", "Spacing"), 60.0, 140.0, 5.0,
                         magda::TechnicalTextToken::Percent);
+
+        setupComboLabel(*this, transportStyleLabel,
+                        trOr("preferences.transport_style.label", "Transport layout"));
+        styleCombo(transportStyleCombo);
+        transportStyleCombo.addItem(trOr("preferences.transport_style.anchored", "Anchored center"),
+                                    1);
+        transportStyleCombo.addItem(
+            trOr("preferences.transport_style.memory", "Memory fills the slack"), 2);
+        transportStyleCombo.addItem(
+            trOr("preferences.transport_style.justified", "Justified groups"), 3);
+        addAndMakeVisible(transportStyleCombo);
 
         setupSectionHeader(*this, coloursHeader, tr("preferences.section.track_colour_palette"));
 
@@ -810,10 +824,11 @@ class AppearancePage : public juce::Component {
               &hexHeaderLabel, &nameHeaderLabel, &clipColourHeader})
             label->setColour(juce::Label::textColourId, secondary);
         for (auto* label : {&themeLabel, &scaleLabel, &fontFamilyLabel, &fontScaleLabel,
-                            &densityLabel, &clipColourModeLabel})
+                            &densityLabel, &transportStyleLabel, &clipColourModeLabel})
             label->setColour(juce::Label::textColourId, primary);
 
-        for (auto* combo : {&themeCombo, &scaleCombo, &fontFamilyCombo, &clipColourModeCombo}) {
+        for (auto* combo : {&themeCombo, &scaleCombo, &fontFamilyCombo, &transportStyleCombo,
+                            &clipColourModeCombo}) {
             combo->setColour(juce::ComboBox::backgroundColourId, surface);
             combo->setColour(juce::ComboBox::textColourId, primary);
             combo->setColour(juce::ComboBox::outlineColourId, border);
@@ -877,6 +892,9 @@ class AppearancePage : public juce::Component {
                                       juce::dontSendNotification);
         fontScaleSlider.setValue(config.getUIFontScale() * 100.0, juce::dontSendNotification);
         densitySlider.setValue(config.getUIDensityScale() * 100.0, juce::dontSendNotification);
+        transportStyleCombo.setSelectedId(
+            static_cast<int>(transport::styleFromKey(config.getTransportStyle())) + 1,
+            juce::dontSendNotification);
 
         clearColourRows();
         const auto& palette = config.getTrackColourPalette();
@@ -892,6 +910,8 @@ class AppearancePage : public juce::Component {
     void applySettings(Config& config) {
         config.setTheme(themeValueForId(themeCombo.getSelectedId()));
         config.setUIDensityScale(densitySlider.getValue() / 100.0);
+        config.setTransportStyle(transport::styleKey(
+            static_cast<transport::Style>(juce::jmax(0, transportStyleCombo.getSelectedId() - 1))));
 
         const double newScale = scaleValueForId(scaleCombo.getSelectedId());
         if (newScale > 0.0) {
@@ -946,7 +966,7 @@ class AppearancePage : public juce::Component {
 
     static int getLeftColumnContentHeight() {
         return kHeaderH + 4 + kRowH + 4 + kRowH + 4 + kRowH  // Display Scale (scale, font, size)
-               + kSectionGap + kHeaderH + 4 + kRowH;         // Density
+               + kSectionGap + kHeaderH + 4 + kRowH + 4 + kRowH;  // Density, transport
     }
 
     static int getRightColumnContentHeight() {
@@ -997,6 +1017,8 @@ class AppearancePage : public juce::Component {
         densityHeader.setBounds(b.removeFromTop(kHeaderH));
         b.removeFromTop(4);
         layoutTextSliderRow(b, densityLabel, densitySlider, kRowH, kSliderH);
+        b.removeFromTop(4);
+        layoutComboRow(b, transportStyleLabel, transportStyleCombo, kRowH);
     }
 
     void layoutColoursSection(juce::Rectangle<int>& b) {
@@ -1363,6 +1385,8 @@ class AppearancePage : public juce::Component {
     juce::Label densityHeader;
     juce::Label densityLabel;
     magda::daw::ui::TextSlider densitySlider;
+    juce::Label transportStyleLabel;
+    juce::ComboBox transportStyleCombo;
 
     std::unique_ptr<juce::FileChooser> fileChooser_;
     std::vector<ThemeFileEntry> userThemes_;

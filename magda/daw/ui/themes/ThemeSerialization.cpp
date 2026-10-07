@@ -154,6 +154,15 @@ constexpr std::array<const char*, static_cast<std::size_t>(ColourRole::count)> k
     "mixerKnobOuterStroke",
     "mixerKnobInner",
     "mixerKnobGuide",
+    "transportWell",
+    "transportWellBorder",
+    "transportTile",
+    "transportGlyph",
+    "transportTextDim",
+    "transportChip",
+    "transportToggleOn",
+    "transportMemory",
+    "transportMeterFloor",
 }};
 
 static_assert(kColourRoleNames.size() == static_cast<std::size_t>(ColourRole::count),

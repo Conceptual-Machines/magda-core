@@ -291,6 +291,11 @@ class ProjectManager {
     void setTimeSignature(int numerator, int denominator);
 
     /**
+     * @brief Set the project key; root -1 clears it
+     */
+    void setKey(int root, int quality);
+
+    /**
      * @brief Set project loop settings
      */
     void setLoopSettings(bool enabled, double startBeats, double endBeats);

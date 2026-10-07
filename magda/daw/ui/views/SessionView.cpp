@@ -16,6 +16,7 @@
 #include "../components/common/InternalFileDrag.hpp"
 #include "../components/common/MasterSpeakerButton.hpp"
 #include "../components/common/MonitorControl.hpp"
+#include "../components/common/ResizeSeam.hpp"
 #include "../components/common/SvgButton.hpp"
 #include "../components/common/TextSlider.hpp"
 #include "../components/mixer/LevelMeter.hpp"
@@ -383,11 +384,11 @@ class SessionView::ResizeHandle : public juce::Component {
     ResizeHandle(Direction dir) : direction(dir) {
         setMouseCursor(direction == Horizontal ? juce::MouseCursor::LeftRightResizeCursor
                                                : juce::MouseCursor::UpDownResizeCursor);
+        setRepaintsOnMouseActivity(true);
     }
 
     void paint(juce::Graphics& g) override {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::RESIZE_HANDLE));
-        g.fillAll();
+        daw::ui::paintResizeSeam(g, *this, direction == Horizontal);
     }
 
     void mouseDown(const juce::MouseEvent& event) override {

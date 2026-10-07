@@ -29,7 +29,7 @@ class BarsBeatsTicksLabel : public juce::Component {
      *  a box before the label exists; it reads the same font and segment
      *  widths that resized() lays out with, so the two cannot disagree. */
     static int preferredWidthForRange(double maxValue, int minBeatsPerBar, int maxBeatsPerBar,
-                                      bool isPosition);
+                                      bool isPosition, float fontSize = kTextFontSize);
 
     /** Width each segment needs for the widest value it can show, in the order
      *  bars, beats, ticks. preferredWidthForRange() adds these up; the live
@@ -37,7 +37,8 @@ class BarsBeatsTicksLabel : public juce::Component {
      *  resized()), so a box sized for this holds the widest value while a
      *  typical one reads balanced. */
     static std::array<int, 3> segmentWidthsFor(double maxValue, int minBeatsPerBar,
-                                               int maxBeatsPerBar, bool isPosition);
+                                               int maxBeatsPerBar, bool isPosition,
+                                               float fontSize = kTextFontSize);
 
     BarsBeatsTicksLabel();
     ~BarsBeatsTicksLabel() override;
@@ -60,12 +61,25 @@ class BarsBeatsTicksLabel : public juce::Component {
         doubleClickResets_ = shouldReset;
     }
 
+    /** Size the digits draw at; kTextFontSize unless a caller wants a headline readout. */
+    void setFontSize(float size);
+
     // Custom text colour (default: uses TEXT_PRIMARY from theme)
     void setTextColour(juce::Colour colour);
     juce::Colour getTextColour() const;
 
-    // Overlay label drawn at top-left corner in tiny font
+    // Overlay label drawn at top-left corner in tiny font, or beside the
+    // digits in packed mode
     void setOverlayLabel(const juce::String& label);
+    void setOverlayColour(juce::Colour colour);
+
+    /** Packed: segments take the width their digits need, left to right after
+     *  the overlay letter, instead of sharing the whole box out. */
+    void setPacked(bool packed);
+
+    // Size the overlay letter is drawn at in packed mode, and the gap after it.
+    static constexpr float kPackedOverlayFontSize = 8.0f;
+    static constexpr int kPackedOverlayGap = 4;
 
     // Whether to draw background fill + border (default: true)
     void setDrawBackground(bool draw);
@@ -90,6 +104,10 @@ class BarsBeatsTicksLabel : public juce::Component {
     void setTextOverride(const juce::String& text);
     void clearTextOverride();
 
+    /** Left edge of the bar number's glyphs, in this label's coordinates, for a
+     *  caller lining something up with the digits. */
+    int barsGlyphX() const;
+
     // Whether any segment is currently being dragged
     bool isDragging() const;
 
@@ -105,8 +123,13 @@ class BarsBeatsTicksLabel : public juce::Component {
     // strip is shared out in these proportions.
     std::array<int, 3> shownSegmentWidths() const;
     // Width of a run of `digits` of the widest digit, plus the segment's air.
-    static int widthOfDigits(int digits);
+    static int widthOfDigits(int digits, float fontSize);
 
+    float fontSize_ = kTextFontSize;
+    bool packed_ = false;
+    juce::Colour overlayColour_;
+    bool hasOverlayColour_ = false;
+    int packedLead() const;
     int trailingInset_ = 0;
     // Digit counts of the bar and beat numbers last laid out for, so a value
     // that gains or loses a digit relayouts rather than just repaints.

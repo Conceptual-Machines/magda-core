@@ -102,9 +102,7 @@ struct LayoutConfig {
     static constexpr int defaultWindowHeight = 800;
 
     // Main window panels
-    int defaultTransportHeight = 48;
-    int minTransportHeight = 40;
-    int maxTransportHeight = 55;
+    int transportHeight = 48;  // fixed; the bar has no resize handle
 
     int footerHeight = 40;
 
