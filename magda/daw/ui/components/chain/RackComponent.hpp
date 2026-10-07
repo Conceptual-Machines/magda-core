@@ -201,7 +201,7 @@ class RackComponent : public NodeComponent, public juce::Timer {
     }
 
     static constexpr int METER_STRIP_WIDTH = 18;  // collapsed strip meter
-    static constexpr int HEADER_BAR_HEIGHT = 46;
+    static constexpr int HEADER_BAR_HEIGHT = 36;
     static constexpr int ID_ROW_HEIGHT = 30;
     static constexpr int FOOTER_BAR_HEIGHT = 40;
     static constexpr int SIDE_STRIP_WIDTH = 40;
