@@ -150,6 +150,18 @@ class TrackInspector : public BaseInspector,
     /** Applies the header preferences: track colour on the name row (spine or full), mono
      *  values, and M / S letters in place of the mute and solo icons. */
     void applyHeaderStyle();
+    void showColourMenu(juce::Component* target);
+
+    // Opens the colour menu on a right-click of the name field.
+    struct NamePopupListener : juce::MouseListener {
+        std::function<void()> onPopup;
+        void mouseDown(const juce::MouseEvent& e) override {
+            if (e.mods.isPopupMenu() && onPopup)
+                onPopup();
+        }
+    };
+    NamePopupListener namePopupListener_;
+    bool nameFilled_ = false;  // Full bar: the name field carries the track colour
     void configChanged() override;
     void rebuildRoutingIcons();
     void updateFromSelectedTrack();

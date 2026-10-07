@@ -76,61 +76,10 @@ TrackInspector::TrackInspector() {
     // Colour swatch
     colourSwatch_ = std::make_unique<magda::ColourSwatch>();
     auto* swatch = static_cast<magda::ColourSwatch*>(colourSwatch_.get());
-    swatch->onColourClicked = [this, swatch]() {
-        if (selectedTrackId_ == magda::INVALID_TRACK_ID && selectedTrackIds_.empty())
-            return;
-
-        auto menu = juce::PopupMenu();
-        menu.addItem(1, "None");
-        menu.addSeparator();
-
-        // Helper to create a colour chip icon for menu items
-        auto makeChip = [](juce::Colour colour) {
-            juce::Image chip(juce::Image::ARGB, 14, 14, true);
-            juce::Graphics cg(chip);
-            cg.setColour(colour);
-            cg.fillRoundedRectangle(0.0f, 0.0f, 14.0f, 14.0f, 2.0f);
-            auto drawable = std::make_unique<juce::DrawableImage>();
-            drawable->setImage(chip);
-            return drawable;
-        };
-
-        const auto palette =
-            magda::ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourPalette;
-        for (size_t i = 0; i < palette.size(); ++i) {
-            const auto colour = juce::Colour(palette[i].colour);
-            menu.addItem(static_cast<int>(i + 2), palette[i].name, true, false, makeChip(colour));
-        }
-
-        menu.showMenuAsync(
-            juce::PopupMenu::Options().withTargetComponent(swatch),
-            [this, swatch, palette](int result) {
-                if (result == 0)
-                    return;
-                auto trackIds = selectedTrackIds_.empty()
-                                    ? std::unordered_set<magda::TrackId>{selectedTrackId_}
-                                    : selectedTrackIds_;
-                if (result == 1) {
-                    // "None"
-                    swatch->clearColour();
-                    for (auto tid : trackIds) {
-                        magda::UndoManager::getInstance().executeCommand(
-                            std::make_unique<magda::SetTrackColourCommand>(
-                                tid, juce::Colour(0xFF444444)));
-                    }
-                } else {
-                    const auto idx = static_cast<size_t>(result - 2);
-                    if (idx < palette.size()) {
-                        const auto colour = juce::Colour(palette[idx].colour);
-                        swatch->setColour(colour);
-                        for (auto tid : trackIds) {
-                            magda::UndoManager::getInstance().executeCommand(
-                                std::make_unique<magda::SetTrackColourCommand>(tid, colour));
-                        }
-                    }
-                }
-            });
-    };
+    swatch->onColourClicked = [this, swatch]() { showColourMenu(swatch); };
+    // Right-clicking the name also picks the colour; under Full bar the swatch is hidden.
+    namePopupListener_.onPopup = [this]() { showColourMenu(&trackNameValue_); };
+    trackNameValue_.addMouseListener(&namePopupListener_, false);
     addAndMakeVisible(*colourSwatch_);
 
     // MAGDA glyph shown in the master track's (empty) colour-swatch slot.
@@ -477,6 +426,62 @@ TrackInspector::TrackInspector() {
     magda::Config::getInstance().addListener(this);
 }
 
+void TrackInspector::showColourMenu(juce::Component* target) {
+    if ((selectedTrackId_ == magda::INVALID_TRACK_ID && selectedTrackIds_.empty()) ||
+        selectedTrackId_ == magda::MASTER_TRACK_ID)
+        return;
+
+    auto menu = juce::PopupMenu();
+    menu.addItem(1, "None");
+    menu.addSeparator();
+
+    // Helper to create a colour chip icon for menu items
+    auto makeChip = [](juce::Colour colour) {
+        juce::Image chip(juce::Image::ARGB, 14, 14, true);
+        juce::Graphics cg(chip);
+        cg.setColour(colour);
+        cg.fillRoundedRectangle(0.0f, 0.0f, 14.0f, 14.0f, 2.0f);
+        auto drawable = std::make_unique<juce::DrawableImage>();
+        drawable->setImage(chip);
+        return drawable;
+    };
+
+    const auto palette =
+        magda::ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourPalette;
+    for (size_t i = 0; i < palette.size(); ++i) {
+        const auto colour = juce::Colour(palette[i].colour);
+        menu.addItem(static_cast<int>(i + 2), palette[i].name, true, false, makeChip(colour));
+    }
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(target), [this, palette](
+                                                                                   int result) {
+        auto* swatch = static_cast<magda::ColourSwatch*>(colourSwatch_.get());
+        if (result == 0)
+            return;
+        auto trackIds = selectedTrackIds_.empty()
+                            ? std::unordered_set<magda::TrackId>{selectedTrackId_}
+                            : selectedTrackIds_;
+        if (result == 1) {
+            // "None"
+            swatch->clearColour();
+            for (auto tid : trackIds) {
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetTrackColourCommand>(tid, juce::Colour(0xFF444444)));
+            }
+        } else {
+            const auto idx = static_cast<size_t>(result - 2);
+            if (idx < palette.size()) {
+                const auto colour = juce::Colour(palette[idx].colour);
+                swatch->setColour(colour);
+                for (auto tid : trackIds) {
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::SetTrackColourCommand>(tid, colour));
+                }
+            }
+        }
+    });
+}
+
 void TrackInspector::applyHeaderStyle() {
     const auto& config = magda::Config::getInstance();
     const bool letters = config.getMuteSoloStyle() == "letters";
@@ -494,6 +499,11 @@ void TrackInspector::applyHeaderStyle() {
                             : magda::TrackManager::getInstance().getTrack(selectedTrackId_);
     const bool fullBar = config.getTrackColourStyle() == "full" && track != nullptr &&
                          track->colour != juce::Colour(0xFF444444);
+    if (nameFilled_ != fullBar) {
+        nameFilled_ = fullBar;
+        colourSwatch_->setVisible(!fullBar && track != nullptr && trackNameValue_.isVisible());
+        resized();
+    }
     if (fullBar) {
         trackNameValue_.setColour(juce::Label::backgroundColourId,
                                   magda::deriveTrackSwatch(track->colour));
@@ -670,8 +680,10 @@ void TrackInspector::resized() {
     } else {
         // Colour spine on the left doubles as the colour swatch, matching the
         // clip inspector's name row.
-        colourSwatch_->setBounds(nameRow.removeFromLeft(6));
-        nameRow.removeFromLeft(6);
+        if (colourSwatch_->isVisible()) {
+            colourSwatch_->setBounds(nameRow.removeFromLeft(6));
+            nameRow.removeFromLeft(6);
+        }
         // Enable/disable switch on the right, same position as the clip
         // inspector's toggle.
         if (enableButton_->isVisible()) {
@@ -1419,7 +1431,7 @@ void TrackInspector::showTrackControls(bool show) {
 
     trackNameLabel_.setVisible(show);
     trackNameValue_.setVisible(show);
-    colourSwatch_->setVisible(show && !isMaster);
+    colourSwatch_->setVisible(show && !isMaster && !nameFilled_);
     masterGlyph_->setVisible(show && isMaster);
 
     muteButton_->setVisible(p.mute && p.muteStyle == MuteStyle::Standard);
