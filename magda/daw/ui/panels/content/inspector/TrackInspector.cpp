@@ -453,7 +453,7 @@ void TrackInspector::showColourMenu(juce::Component* target) {
             const auto idx = static_cast<size_t>(result - 2);
             if (idx < palette.size()) {
                 const auto colour = juce::Colour(palette[idx].colour);
-                swatch->setColour(colour);
+                swatch->setColour(magda::deriveTrackSwatch(colour));
                 for (auto tid : trackIds) {
                     magda::UndoManager::getInstance().executeCommand(
                         std::make_unique<magda::SetTrackColourCommand>(tid, colour));
@@ -1145,7 +1145,8 @@ void TrackInspector::updateFromSelectedTrack() {
         if (track->colour == juce::Colour(0xFF444444))
             swatch->clearColour();
         else
-            swatch->setColour(track->colour);
+            // The headers' normalised colour, so the swatch matches the name field.
+            swatch->setColour(magda::deriveTrackSwatch(track->colour));
 
         trackNameValue_.setText(track->name, juce::dontSendNotification);
         trackNameValue_.setEditable(true);  // re-enable after a master selection
