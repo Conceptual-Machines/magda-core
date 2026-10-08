@@ -2524,6 +2524,84 @@ RackId TrackManager::addRackToTrack(TrackId trackId, const juce::String& name) {
     return INVALID_RACK_ID;
 }
 
+namespace {
+
+// A band inserted at @p index takes half of the band it lands in, so the crossover between them
+// goes in at that band's centre.
+bool insertBandCrossover(RackInfo& rack, int index) {
+    if (!rack.multiband)
+        return true;
+    const auto at = static_cast<std::size_t>(std::max(index - 1, 0));
+    if (!canSplitBand(rack.crossovers, at))
+        return false;
+    rack.crossovers.insert(rack.crossovers.begin() + static_cast<std::ptrdiff_t>(at),
+                           {bandSplitFrequency(rack.crossovers, at)});
+    return true;
+}
+
+// A removed band merges into its lower neighbour, the lowest into the one above.
+void removeBandCrossover(RackInfo& rack, std::ptrdiff_t index) {
+    if (!rack.multiband || rack.crossovers.empty())
+        return;
+    rack.crossovers.erase(rack.crossovers.begin() + std::max<std::ptrdiff_t>(index - 1, 0));
+}
+
+}  // namespace
+
+RackId TrackManager::addMultibandRackToTrack(TrackId trackId, const juce::String& name) {
+    auto* track = getTrack(trackId);
+    if (track == nullptr)
+        return INVALID_RACK_ID;
+    RackInfo rack;
+    rack.id = nextRackId_++;
+    rack.name = name;
+    rack.multiband = true;
+    rack.crossovers = defaultCrossovers();
+    for (std::size_t band = 0; band <= rack.crossovers.size(); ++band) {
+        ChainInfo chain;
+        chain.id = nextChainId_++;
+        rack.chains.push_back(std::move(chain));
+    }
+    const auto rackId = rack.id;
+    track->chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+    notifyTrackDevicesChanged(trackId);
+    return rackId;
+}
+
+void TrackManager::setRackCrossover(const ChainNodePath& rackPath, int index, Crossover crossover) {
+    auto* rack = getRackByPath(rackPath);
+    if (rack == nullptr || index < 0 || index >= static_cast<int>(rack->crossovers.size()))
+        return;
+    const auto at = static_cast<std::size_t>(index);
+    crossover.frequencyHz = clampCrossoverFrequency(rack->crossovers, at, crossover.frequencyHz);
+    if (rack->crossovers[at] == crossover)
+        return;
+    rack->crossovers[at] = crossover;
+    notifyTrackPropertyChanged(rackPath.trackId);
+}
+
+void TrackManager::setRackCrossovers(const ChainNodePath& rackPath,
+                                     std::vector<Crossover> crossovers) {
+    auto* rack = getRackByPath(rackPath);
+    if (rack == nullptr || !rack->multiband || crossovers == rack->crossovers)
+        return;
+    rack->crossovers = std::move(crossovers);
+    normaliseMultiband(*rack);
+    notifyTrackPropertyChanged(rackPath.trackId);
+}
+
+ChainId TrackManager::splitRackBand(const ChainNodePath& rackPath, int band) {
+    const auto* rack = getRackByPath(rackPath);
+    if (rack == nullptr || !rack->multiband || band < 0 ||
+        band >= static_cast<int>(rack->chains.size()))
+        return INVALID_CHAIN_ID;
+    ChainInfo chain;
+    chain.id = nextChainId_++;
+    const auto chainId = chain.id;
+    return insertChainIntoRackByPath(rackPath, std::move(chain), band + 1) ? chainId
+                                                                           : INVALID_CHAIN_ID;
+}
+
 void TrackManager::clearSelectionsUnderDevice(const DeviceInfo& device,
                                               const ChainNodePath& devicePath) {
     SelectionManager::getInstance().clearSelectionForDeletedChainNode(devicePath);
@@ -2813,6 +2891,8 @@ const RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) const
 
 ChainId TrackManager::addChainToRack(const ChainNodePath& rackPath, const juce::String& name) {
     if (auto* rack = getRackByPath(rackPath)) {
+        if (!insertBandCrossover(*rack, static_cast<int>(rack->chains.size())))
+            return INVALID_CHAIN_ID;
         ChainInfo chain;
         chain.id = nextChainId_++;
         chain.name = name;
@@ -2833,6 +2913,7 @@ void TrackManager::removeChainFromRack(TrackId trackId, RackId rackId, ChainId c
             const auto chainPath = ChainNodePath::rack(trackId, rackId).withChain(chainId);
             clearSelectionsUnderChain(it->elements, chainPath);
             SelectionManager::getInstance().clearSelectionForDeletedChainNode(chainPath);
+            removeBandCrossover(*rack, it - chains.begin());
             chains.erase(it);
             notifyTrackDevicesChanged(trackId);
         }
@@ -2871,6 +2952,7 @@ void TrackManager::removeChainByPath(const ChainNodePath& chainPath) {
             DBG("Removed chain via path: " << it->name << " (id=" << chainId << ")");
             clearSelectionsUnderChain(it->elements, chainPath);
             SelectionManager::getInstance().clearSelectionForDeletedChainNode(chainPath);
+            removeBandCrossover(*rack, it - chains.begin());
             chains.erase(it);
             notifyTrackDevicesChanged(chainPath.trackId);
         }
@@ -2886,6 +2968,8 @@ bool TrackManager::insertChainIntoRackByPath(const ChainNodePath& rackPath, Chai
         return false;
 
     index = std::clamp(index, 0, static_cast<int>(rack->chains.size()));
+    if (!insertBandCrossover(*rack, index))
+        return false;
     rack->chains.insert(rack->chains.begin() + index, std::move(chain));
     notifyTrackDevicesChanged(rackPath.trackId);
     return true;

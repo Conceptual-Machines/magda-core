@@ -169,6 +169,8 @@ enum class OpKind : std::uint8_t {
 
     /// Notes routed to one output per pad layer by that layer's zones (#3007).
     MidiZoneSplit,
+    /// A multiband rack's input split into its bands, one audio output per band, low to high.
+    BandSplit,
 };
 
 /// The most outputs a MidiZoneSplit has: its executor routes a note by a 64-bit port mask.
@@ -254,6 +256,7 @@ enum class OpRole : std::uint8_t {
 
     PadLayerSplit,   ///< one pad's notes, split across its layers by their zones
     RackChainSplit,  ///< a rack's notes, split across its chains by their zones
+    RackBandSplit,   ///< a multiband rack's input, split into its bands
 };
 
 // The four things that identify a fade, packed into OpKey::index, low bits

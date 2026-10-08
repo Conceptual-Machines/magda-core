@@ -360,6 +360,7 @@ void PlanExecutor::reset() {
     feedbackCarries_.clear();
     notePassing_.clear();
     zoneSplitForOp_.clear();
+    bandSplitForOp_.clear();
     audioSlots_.clear();
     midiSlots_.clear();
     midiFractions_.clear();
@@ -1076,6 +1077,22 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
         midiDelayForOp_[i] = static_cast<int>(midiDelays_.size());
         midiDelays_.push_back(std::move(line));
+    }
+
+    bandSplitForOp_.assign(numOps, nullptr);
+    for (std::size_t i = 0; i < numOps; ++i) {
+        if (plan.ops[i].kind != OpKind::BandSplit)
+            continue;
+        if (const auto from = carriedFrom(i); from != INVALID_OP_ID)
+            if (const auto& adopted = previous->bandSplitForOp_[static_cast<std::size_t>(from)];
+                adopted != nullptr &&
+                adopted->hasConfiguration(context_.sampleRate, context_.maxBlockSize)) {
+                bandSplitForOp_[i] = adopted;
+                continue;
+            }
+        auto splitter = std::make_shared<BandSplitter>();
+        splitter->prepare(context_.sampleRate, context_.maxBlockSize);
+        bandSplitForOp_[i] = std::move(splitter);
     }
 
     // Crossfades, on the edges the pass that built this plan decided had moved.
@@ -2125,6 +2142,40 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
 
             if (auto* tap = midiTapForOp_[i]; tap != nullptr)
                 tap->write(out, block);
+            break;
+        }
+
+        case OpKind::BandSplit: {
+            const auto bands = static_cast<int>(op.outputs.size());
+            auto& splitter = *bandSplitForOp_[i];
+            if (published.crossoverCount > 0) {
+                std::array<Crossover, kMaxCrossovers> crossovers{};
+                for (std::size_t c = 0; c < published.crossoverCount; ++c)
+                    crossovers[c] = {published.crossoverHz[c], published.crossoverSlope[c]};
+                splitter.setCrossovers(std::span(crossovers.data(), published.crossoverCount));
+            }
+            if (!op.inputs[0].valid()) {
+                for (int band = 0; band < bands; ++band)
+                    audioOut(id, band, numSamples).clear();
+                break;
+            }
+            const auto in = audioIn(op.inputs[0], numSamples);
+            const auto channels =
+                std::min(static_cast<int>(in.getNumChannels()), BandSplitter::kMaxChannels);
+            std::array<const float*, BandSplitter::kMaxChannels> inputs{};
+            std::array<float*, BandSplitter::kMaxBands * BandSplitter::kMaxChannels> outputs{};
+            for (int c = 0; c < channels; ++c)
+                inputs[static_cast<std::size_t>(c)] =
+                    in.getChannelPointer(static_cast<std::size_t>(c));
+            for (int band = 0; band < bands; ++band) {
+                auto out = audioOut(id, band, numSamples);
+                for (int c = 0; c < channels; ++c)
+                    outputs[static_cast<std::size_t>(band * channels + c)] =
+                        out.getChannelPointer(static_cast<std::size_t>(c));
+            }
+            splitter.process(std::span(inputs.data(), static_cast<std::size_t>(channels)),
+                             std::span(outputs.data(), static_cast<std::size_t>(bands * channels)),
+                             numSamples);
             break;
         }
 

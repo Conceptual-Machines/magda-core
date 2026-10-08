@@ -39,6 +39,7 @@ int arityOf(OpKind kind) {
         case OpKind::Output:
         case OpKind::MidiNoteGate:
         case OpKind::MidiZoneSplit:
+        case OpKind::BandSplit:
             return 1;
         case OpKind::ModSource:
             return 2;  // the source's audio at this tap's point, the source's MIDI
@@ -109,6 +110,8 @@ const char* toString(OpKind kind) {
             return "Handoff";
         case OpKind::MidiZoneSplit:
             return "MidiZoneSplit";
+        case OpKind::BandSplit:
+            return "BandSplit";
     }
     return "?";
 }
@@ -201,6 +204,8 @@ const char* toString(OpRole role) {
             return "padLayerSplit";
         case OpRole::RackChainSplit:
             return "rackChainSplit";
+        case OpRole::RackBandSplit:
+            return "rackBandSplit";
     }
     return "?";
 }

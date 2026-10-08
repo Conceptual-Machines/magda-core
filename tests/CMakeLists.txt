@@ -414,6 +414,8 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES engine/test_plan_note_gate.cpp)
     # A pad's notes across its layers by their zones (#3007).
     list(APPEND TEST_SOURCES engine/test_plan_zone_split.cpp)
+    # The multiband rack crossover.
+    list(APPEND TEST_SOURCES engine/test_band_splitter.cpp)
     # The panic flag beside a MIDI port (#2418).
     list(APPEND TEST_SOURCES engine/test_plan_midi_panic.cpp)
     # A stretcher primed off the audio thread for a start the pool saw coming (#2786)

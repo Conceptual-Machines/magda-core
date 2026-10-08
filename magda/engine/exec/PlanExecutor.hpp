@@ -15,6 +15,7 @@
 #include <string>
 #include <vector>
 
+#include "exec/BandSplitter.hpp"
 #include "exec/HandoffRing.hpp"
 #include "exec/PlanBindings.hpp"
 #include "exec/PlanLayout.hpp"
@@ -771,6 +772,10 @@ class PlanExecutor {
     /// Per MidiZoneSplit op, else null. Not carried across a swap: a note-off
     /// the new table has no entry for goes to every output instead.
     std::vector<std::unique_ptr<ZoneSplitState>> zoneSplitForOp_;
+
+    /// Per BandSplit op, else null. Carried across a swap the way a delay line is, so a moved
+    /// plan does not restart the filters from silence.
+    std::vector<std::shared_ptr<BandSplitter>> bandSplitForOp_;
 
     /// Identity of the prepared plan; values not carrying the same one were
     /// resolved against something else and are not applied.

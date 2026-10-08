@@ -1737,6 +1737,31 @@ void AddChainByPathCommand::undo() {
     executed_ = false;
 }
 
+SplitRackBandCommand::SplitRackBandCommand(ChainNodePath rackPath, int band)
+    : rackPath_(std::move(rackPath)), band_(band) {}
+
+// The split is the inverse of removing the new band, so undo and redo land on the same crossover.
+void SplitRackBandCommand::execute() {
+    auto& tracks = TrackManager::getInstance();
+    if (hasCreatedChain_) {
+        executed_ = tracks.insertChainIntoRackByPath(rackPath_, createdChain_, band_ + 1);
+        return;
+    }
+    const auto chainId = tracks.splitRackBand(rackPath_, band_);
+    if (const auto* chain = tracks.getChainByPath(rackPath_.withChain(chainId))) {
+        createdChain_ = *chain;
+        hasCreatedChain_ = true;
+        executed_ = true;
+    }
+}
+
+void SplitRackBandCommand::undo() {
+    if (!executed_)
+        return;
+    TrackManager::getInstance().removeChainByPath(rackPath_.withChain(createdChain_.id));
+    executed_ = false;
+}
+
 SetRackPropertiesByPathCommand::SetRackPropertiesByPathCommand(ChainNodePath rackPath,
                                                                RackPropertyPatch patch)
     : rackPath_(std::move(rackPath)), patch_(std::move(patch)) {}
@@ -1751,6 +1776,7 @@ void SetRackPropertiesByPathCommand::execute() {
         previousDeltaSolo_ = rack->deltaSolo;
         previousVolumeDb_ = rack->volume;
         previousChainSelector_ = rack->chainSelector;
+        previousCrossovers_ = rack->crossovers;
         captured_ = true;
     }
     if (patch_.bypassed)
@@ -1759,6 +1785,8 @@ void SetRackPropertiesByPathCommand::execute() {
         tracks.setRackVolume(rackPath_, *patch_.volumeDb);
     if (patch_.chainSelector)
         tracks.setRackChainSelector(rackPath_, *patch_.chainSelector);
+    if (patch_.crossovers)
+        tracks.setRackCrossovers(rackPath_, *patch_.crossovers);
     executed_ = true;
 }
 
@@ -1770,6 +1798,7 @@ void SetRackPropertiesByPathCommand::undo() {
     tracks.setRackDeltaSoloByPath(rackPath_, previousDeltaSolo_);
     tracks.setRackVolume(rackPath_, previousVolumeDb_);
     tracks.setRackChainSelector(rackPath_, previousChainSelector_);
+    tracks.setRackCrossovers(rackPath_, previousCrossovers_);
     executed_ = false;
 }
 
@@ -1956,6 +1985,7 @@ void RemoveChainByPathCommand::execute() {
 
     savedIndex_ = static_cast<int>(std::distance(rack->chains.begin(), refound));
     savedChain_ = *refound;
+    savedCrossovers_ = rack->crossovers;
     tm.removeChainByPath(chainPath_);
     executed_ = true;
     DBG("UNDO: Removed chain " << savedChain_.name << " (id=" << savedChain_.id << ") at index "
@@ -1966,7 +1996,9 @@ void RemoveChainByPathCommand::undo() {
     if (!executed_)
         return;
 
-    TrackManager::getInstance().insertChainIntoRackByPath(rackPath_, savedChain_, savedIndex_);
+    auto& tm = TrackManager::getInstance();
+    tm.insertChainIntoRackByPath(rackPath_, savedChain_, savedIndex_);
+    tm.setRackCrossovers(rackPath_, savedCrossovers_);
     DBG("UNDO: Restored chain " << savedChain_.name << " (id=" << savedChain_.id << ") at index "
                                 << savedIndex_);
 }

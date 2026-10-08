@@ -1001,6 +1001,104 @@ TEST_CASE("Delta solo turned on mid-render reads a dry line that has been runnin
         CHECK(harness.outputSample(0, sample) == approx(0.0f));
 }
 
+namespace {
+
+class SineSource final : public EngineAudioSource {
+  public:
+    explicit SineSource(double hz) : step_(2.0 * juce::MathConstants<double>::pi * hz / 44100.0) {}
+
+    void render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) override {
+        for (int sample = 0; sample < block.numSamples; ++sample) {
+            const auto value = static_cast<float>(std::sin(phase_));
+            phase_ += step_;
+            for (std::size_t channel = 0; channel < out.getNumChannels(); ++channel)
+                out.setSample(static_cast<int>(channel), sample, value);
+        }
+    }
+
+  private:
+    double step_;
+    double phase_ = 0.0;
+};
+
+std::unique_ptr<RackInfo> makeMultibandRack() {
+    auto rack = std::make_unique<RackInfo>();
+    rack->id = 5;
+    rack->multiband = true;
+    rack->crossovers = {{180.0f}, {3200.0f}};
+    for (ChainId id : {10, 11, 12}) {
+        ChainInfo band;
+        band.id = id;
+        rack->chains.push_back(std::move(band));
+    }
+    return rack;
+}
+
+// RMS of the output over blocks 200-400, past the crossover's settling.
+float settledRms(Harness& harness) {
+    double sum = 0.0;
+    int count = 0;
+    for (int block = 0; block < 400; ++block) {
+        harness.render(kBlockSize, static_cast<std::int64_t>(block) * kBlockSize);
+        if (block < 200)
+            continue;
+        for (int sample = 0; sample < kBlockSize; ++sample, ++count)
+            sum += std::pow(harness.outputSample(0, sample), 2.0);
+    }
+    return static_cast<float>(std::sqrt(sum / count));
+}
+
+}  // namespace
+
+TEST_CASE("A multiband rack feeds each chain its own band", "[engine][exec][multiband]") {
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(ChainElement{makeMultibandRack()});
+    Harness harness({track}, makeMaster());
+
+    const auto split = harness.opWithRole(OpRole::RackBandSplit, 1);
+    CHECK(harness.plan.ops[static_cast<std::size_t>(split)].outputs.size() == 3);
+    int fedFaders = 0;
+    for (const auto& op : harness.plan.ops)
+        if (op.key.role == OpRole::RackChainFader && op.inputs[0].op == split) {
+            CHECK(op.inputs[0].port == static_cast<int>(op.key.chainId - 10));
+            ++fedFaders;
+        }
+    CHECK(fedFaders == 3);
+}
+
+TEST_CASE("A multiband rack sums its bands back flat", "[engine][exec][multiband]") {
+    const auto hz = GENERATE(60.0, 1000.0, 8000.0);
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(ChainElement{makeMultibandRack()});
+    Harness harness({track}, makeMaster());
+    SineSource source(hz);
+    harness.bindings.clipAudio[1] = &source;
+    harness.prepareCleanly();
+    CHECK(settledRms(harness) == approx(std::sqrt(0.5f)).margin(0.01));
+}
+
+TEST_CASE("Muting a band takes out only its frequencies", "[engine][exec][multiband]") {
+    auto rack = makeMultibandRack();
+    rack->chains[1].muted = true;
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(ChainElement{std::move(rack)});
+
+    SECTION("a tone in the muted band goes") {
+        Harness harness({track}, makeMaster());
+        SineSource source(1000.0);
+        harness.bindings.clipAudio[1] = &source;
+        harness.prepareCleanly();
+        CHECK(settledRms(harness) < 0.05f);
+    }
+    SECTION("a tone in another band stays") {
+        Harness harness({track}, makeMaster());
+        SineSource source(40.0);
+        harness.bindings.clipAudio[1] = &source;
+        harness.prepareCleanly();
+        CHECK(settledRms(harness) == approx(std::sqrt(0.5f)).margin(0.02));
+    }
+}
+
 TEST_CASE("Delta solo around a rack measures its output against its input", "[engine][exec]") {
     auto rack = std::make_unique<RackInfo>();
     rack->id = 5;

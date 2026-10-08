@@ -896,6 +896,17 @@ juce::var ProjectSerializer::serializeRackInfo(const RackInfo& rack) {
     obj->setProperty("volume", rack.volume);
     obj->setProperty("pan", rack.pan);
     obj->setProperty("chainSelector", rack.chainSelector);
+    if (rack.multiband) {
+        obj->setProperty("multiband", true);
+        juce::Array<juce::var> crossovers;
+        for (const auto& crossover : rack.crossovers) {
+            auto* item = new juce::DynamicObject();
+            item->setProperty("frequencyHz", crossover.frequencyHz);
+            item->setProperty("slope", slopeDbPerOctave(crossover.slope));
+            crossovers.add(juce::var(item));
+        }
+        obj->setProperty("crossovers", juce::var(crossovers));
+    }
 
     // Chains
     juce::Array<juce::var> chainsArray;
@@ -995,6 +1006,20 @@ bool ProjectSerializer::deserializeRackInfo(const juce::var& json, RackInfo& out
             outRack.mods.push_back(mod);
         }
     }
+
+    outRack.multiband = static_cast<bool>(obj->getProperty("multiband"));
+    outRack.crossovers.clear();
+    if (const auto* crossovers = obj->getProperty("crossovers").getArray()) {
+        for (const auto& item : *crossovers) {
+            const int slope = item.getProperty("slope", 24);
+            outRack.crossovers.push_back(
+                {static_cast<float>(item.getProperty("frequencyHz", 1000.0)),
+                 slope == 12   ? CrossoverSlope::Db12
+                 : slope == 48 ? CrossoverSlope::Db48
+                               : CrossoverSlope::Db24});
+        }
+    }
+    normaliseMultiband(outRack);
 
     // Sidechain
     auto sidechainVar = obj->getProperty("sidechain");

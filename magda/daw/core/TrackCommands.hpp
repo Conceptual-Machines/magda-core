@@ -665,10 +665,30 @@ class AddChainByPathCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+/** Split one band of a multiband rack at its centre; the upper half is a new, empty band. */
+class SplitRackBandCommand : public UndoableCommand {
+  public:
+    SplitRackBandCommand(ChainNodePath rackPath, int band);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Split Band";
+    }
+
+  private:
+    ChainNodePath rackPath_;
+    int band_ = 0;
+    ChainInfo createdChain_;
+    bool hasCreatedChain_ = false;
+    bool executed_ = false;
+};
+
 struct RackPropertyPatch {
     std::optional<bool> bypassed;
     std::optional<float> volumeDb;
     std::optional<float> chainSelector;
+    std::optional<std::vector<Crossover>> crossovers;
 };
 
 /** Apply one atomic rack property patch at any nesting depth. */
@@ -689,6 +709,7 @@ class SetRackPropertiesByPathCommand : public UndoableCommand {
     bool previousDeltaSolo_ = false;
     float previousVolumeDb_ = 0.0f;
     float previousChainSelector_ = 0.0f;
+    std::vector<Crossover> previousCrossovers_;
     bool captured_ = false;
     bool executed_ = false;
 };
@@ -810,6 +831,8 @@ class RemoveChainByPathCommand : public UndoableCommand {
     ChainNodePath rackPath_;
     ChainInfo savedChain_;
     int savedIndex_ = -1;
+    /// A multiband rack's crossovers, which the removal merged one of away.
+    std::vector<Crossover> savedCrossovers_;
     bool executed_ = false;
 };
 

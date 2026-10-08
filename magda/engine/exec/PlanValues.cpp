@@ -467,6 +467,22 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
             break;
         }
 
+        case OpRole::RackBandSplit: {
+            const auto* rack = findRack(*track, key.rackId);
+            if (rack == nullptr) {
+                report(id, "no rack " + std::to_string(key.rackId) +
+                               " in the model, leaving its bands unsplit");
+                break;
+            }
+            const auto count = std::min<std::size_t>(rack->crossovers.size(), kMaxCrossovers);
+            value.crossoverCount = static_cast<std::uint8_t>(count);
+            for (std::size_t i = 0; i < count; ++i) {
+                value.crossoverHz[i] = rack->crossovers[i].frequencyHz;
+                value.crossoverSlope[i] = rack->crossovers[i].slope;
+            }
+            break;
+        }
+
         case OpRole::RackChainFader: {
             const auto* rack = findRack(*track, key.rackId);
             const auto* chain = rack == nullptr ? nullptr : findChain(*rack, key.chainId);

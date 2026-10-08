@@ -266,6 +266,7 @@ class Compiler {
     ChainSignal emitDevice(const DeviceInfo& device, const ChainSite& site, ChainSignal signal);
     ChainSignal emitInsert(const DeviceInfo& device, const ChainSite& site, ChainSignal signal);
     ChainSignal emitRack(const RackInfo& rack, const ChainSite& site, ChainSignal signal);
+    OpId emitBandSplit(const RackInfo& rack, const ChainSite& site, PortRef input);
     ChainSignal emitPadRack(const DeviceInfo& device, const ChainSite& site, ChainSignal signal);
 
     /// Delta solo: @p wet minus @p dry, which is what the device or rack the
@@ -1306,6 +1307,24 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     return out;
 }
 
+// A multiband rack's chains read their own band of the input rather than all of it.
+OpId Compiler::emitBandSplit(const RackInfo& rack, const ChainSite& site, PortRef input) {
+    if (!rack.isMultiband() || !input.valid())
+        return INVALID_OP_ID;
+    if (rack.chains.size() != rack.crossovers.size() + 1 ||
+        rack.crossovers.size() > static_cast<std::size_t>(kMaxCrossovers)) {
+        diagnose("multiband rack " + std::to_string(rack.id) + ": " +
+                 std::to_string(rack.chains.size()) + " bands for " +
+                 std::to_string(rack.crossovers.size()) +
+                 " crossovers, its chains run in parallel instead");
+        return INVALID_OP_ID;
+    }
+    const OpKey key{site.trackId,          rack.id, INVALID_CHAIN_ID, INVALID_DEVICE_ID,
+                    OpRole::RackBandSplit, 0,       site.segment};
+    return addOp(OpKind::BandSplit, key, {input},
+                 std::vector<PortDesc>(rack.chains.size(), PortDesc{SignalKind::Audio}));
+}
+
 ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, ChainSignal signal) {
     if (rack.bypassed) {
         // The device case one level up, and unreachable the same way: the
@@ -1381,6 +1400,8 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
                 split.zoneRoutes.push_back(chain.zones);
     }
 
+    const OpId bandSplitOp = emitBandSplit(rack, site, signal.audio);
+
     for (const auto& chain : rack.chains) {
         if (chain.outputIndex != 0) {
             // Not the same mechanism as a multi-out track, which reads an
@@ -1401,6 +1422,8 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
         const ChainSite chainSite{site.trackId, rack.id, chain.id, site.segment};
 
         auto chainSignal = signal;
+        if (bandSplitOp != INVALID_OP_ID)
+            chainSignal.audio = PortRef{bandSplitOp, static_cast<int>(&chain - rack.chains.data())};
         if (splitOp != INVALID_OP_ID) {
             const auto port = std::ranges::find(splitChains, chain.id) - splitChains.begin();
             chainSignal.midi = PortRef{splitOp, static_cast<int>(port)};

@@ -98,6 +98,8 @@ std::optional<std::size_t> inPlaceInputOf(const PlanOp& op) {
         case OpKind::MergeMidi:
         case OpKind::MidiNoteGate:
         case OpKind::MidiZoneSplit:
+        // Every band reads all of the input, so no band can write over it.
+        case OpKind::BandSplit:
         case OpKind::ModSource:
         case OpKind::Output:
         // An insert's send writes nothing, and its return writes what came back

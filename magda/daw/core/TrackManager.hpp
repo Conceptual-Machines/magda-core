@@ -808,6 +808,14 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
 
     // Rack management on track
     RackId addRackToTrack(TrackId trackId, const juce::String& name = "Rack");
+    /// A rack whose chains are frequency bands: low, mid and high to start with.
+    RackId addMultibandRackToTrack(TrackId trackId, const juce::String& name = "Multiband Rack");
+    /// Moves or re-slopes one crossover, kept between its neighbours.
+    void setRackCrossover(const ChainNodePath& rackPath, int index, Crossover crossover);
+    /// Replaces every crossover at once; the count must match the bands.
+    void setRackCrossovers(const ChainNodePath& rackPath, std::vector<Crossover> crossovers);
+    /// Splits band @p band at its centre; the upper half becomes a new, empty band.
+    ChainId splitRackBand(const ChainNodePath& rackPath, int band);
     void removeRackFromTrack(TrackId trackId, RackId rackId);
     RackInfo* getRack(TrackId trackId, RackId rackId);
     const RackInfo* getRack(TrackId trackId, RackId rackId) const;
