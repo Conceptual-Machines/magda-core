@@ -75,13 +75,7 @@ class DrumGridUI : public juce::Component,
     /** Called when Clear button is clicked for the selected pad. (padIndex) */
     std::function<void(int)> onClearRequested;
 
-    /** Called when pad level changes. (padIndex, levelDb) */
-    std::function<void(int, float)> onPadLevelChanged;
-
-    /** Called when pad pan changes. (padIndex, pan -1..1) */
-    std::function<void(int, float)> onPadPanChanged;
-
-    /** Which fader drag the level and pan callbacks currently belong to.
+    /** Which fader drag the layer level and pan callbacks currently belong to.
         Bumped when a drag ends, so consecutive gestures on the same fader are
         separate undo steps rather than one merged run (#2211). */
     int getFaderGesture() const {
@@ -102,9 +96,6 @@ class DrumGridUI : public juce::Component,
 
     /** Called when a pad is dragged and dropped onto another pad. (sourcePad, targetPad) */
     std::function<void(int, int)> onPadsSwapped;
-
-    /** Called when pad output bus changes. (padIndex, busIndex) */
-    std::function<void(int, int)> onPadOutputChanged;
 
     /** Called when play button is pressed/released on a pad. (padIndex, isNoteOn) */
     std::function<void(int, bool)> onNotePreview;
@@ -260,14 +251,10 @@ class DrumGridUI : public juce::Component,
     juce::TextButton editorToggle_{"i"};
 
     // Pad editor
-    // MIX, VEL and FADE list every layer in that view; PAD is the pad's own mix.
-    enum class EditorTab { Mix, Velocity, Fade, Pad };
+    // Each tab lists every layer in that view; the pad's own mix is its mixer channel (#3010).
+    enum class EditorTab { Mix, Velocity, Fade };
     EditorTab editorTab_ = EditorTab::Mix;
     bool detailCollapsed_ = false;
-    magda::DraggableValueLabel levelControl_{magda::DraggableValueLabel::Format::Decibels};
-    magda::DraggableValueLabel panControl_{magda::DraggableValueLabel::Format::Pan};
-    juce::TextButton outputButton_;
-    bool faderDragging_ = false;
 
     // Layers of the selected pad, and which one the chain view shows
     std::vector<PadLayerView> layers_;
@@ -291,7 +278,6 @@ class DrumGridUI : public juce::Component,
     // Areas laid out in resized() and painted in paint()
     juce::Rectangle<int> railArea_, padsArea_, editorArea_, chainArea_, footerArea_;
     juce::Rectangle<int> editorHeaderArea_, chainHeaderArea_, pageTextArea_;
-    juce::Rectangle<int> levelLabelArea_, panLabelArea_, outputLabelArea_;
     juce::Rectangle<int> tabsArea_;
 
     // Plugin drop highlight
@@ -310,10 +296,8 @@ class DrumGridUI : public juce::Component,
     void layoutFooter(juce::Rectangle<int> area);
     void paintEditor(juce::Graphics& g);
     void paintChainHeader(juce::Graphics& g);
-    void showOutputMenu();
     bool selectedPadHasChain() const;
 
-    std::vector<juce::Component*> volumeControls();
     const PadLayerView* selectedLayer() const;
     void refreshLayers();
     void layoutLayerList(juce::Rectangle<int> area);

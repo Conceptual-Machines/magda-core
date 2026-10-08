@@ -1089,19 +1089,6 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         return devicePath_;
     };
 
-    // A pad's fader, run now: the sound has to follow the mouse, and a fader
-    // notifies trackPropertyChanged, which by design does not rebuild the chain
-    // components. `SetPadFaderCommand` stores the one value it changed rather
-    // than snapshotting the pad rack, which is what makes it cheap enough to
-    // run per mouse move, and coalesces within a drag (#2211).
-    auto padFader = [this, gridPath](int padIndex, magda::SetPadFaderCommand::Target target,
-                                     float value) {
-        const auto grid = gridPath();
-        if (!grid.isValid() || drumGridUI_ == nullptr)
-            return;
-        magda::setPadFader(grid, padIndex, target, value, drumGridUI_->getFaderGesture());
-    };
-
     // One undoable pad edit, posted rather than run now, with a follow-up that
     // runs only if there is still a UI to run it on.
     //
@@ -1168,20 +1155,6 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             });
     };
 
-    // A pad's fader, pan and switches are its chain's, so they are set the way
-    // any other chain's are.
-    //
-    // The faders are run now, not posted: they notify trackPropertyChanged,
-    // which by design does not rebuild the chain, and a fader wants the sound
-    // to move under the mouse. They coalesce into one undo step per drag.
-    drumGridUI_->onPadLevelChanged = [padFader](int padIndex, float levelDb) {
-        padFader(padIndex, magda::SetPadFaderCommand::Target::Volume, levelDb);
-    };
-
-    drumGridUI_->onPadPanChanged = [padFader](int padIndex, float pan) {
-        padFader(padIndex, magda::SetPadFaderCommand::Target::Pan, pan);
-    };
-
     drumGridUI_->onPadMuteChanged = [postPadEdit](int padIndex, bool muted) {
         postPadEdit(muted ? "Mute Pad" : "Unmute Pad",
                     [padIndex, muted](const magda::ChainNodePath& grid) {
@@ -1194,21 +1167,6 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
                     [padIndex, soloed](const magda::ChainNodePath& grid) {
                         magda::TrackManager::getInstance().setPadSolo(grid, padIndex, soloed);
                     });
-    };
-
-    // The pad's output bus. `ChainInfo::outputIndex` is model state, and the
-    // device sync turns a pad on a bus into a multi-out child track, so the row
-    // selector only ever had to write the model (#2211).
-    drumGridUI_->onPadOutputChanged = [this, postPadEdit, gridPath](int padIndex, int busIndex) {
-        // Refused for a grid inside a rack: nothing carries a bus off one, so the
-        // pads on it would go silent. The editor reads the model back on its next
-        // poll, so a refusal shows Main again and is no undo step.
-        if (busIndex != 0 && !magda::TrackManager::getInstance().padBusesAvailable(gridPath()))
-            return;
-
-        postPadEdit("Set Pad Output", [padIndex, busIndex](const magda::ChainNodePath& grid) {
-            magda::TrackManager::getInstance().setPadOutput(grid, padIndex, busIndex);
-        });
     };
 
     // Plugin drag and drop onto pads: an instrument replaces the pad

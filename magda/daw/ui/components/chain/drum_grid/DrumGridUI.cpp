@@ -22,7 +22,6 @@ namespace magda::daw::ui {
 std::atomic<int> DrumGridUI::nextFaderGesture_{0};
 
 namespace {
-constexpr double kMinPadDb = -60.0;
 constexpr int kPadGap = 6;
 constexpr int kPadPadding = 10;
 constexpr int kMinPadsWidth = 268;
@@ -249,44 +248,6 @@ DrumGridUI::DrumGridUI() {
     editorToggle_.onClick = [this]() { setDetailCollapsed(!editorToggle_.getToggleState()); };
     addAndMakeVisible(editorToggle_);
 
-    // Pad editor: VOL
-    levelControl_.setRange(kMinPadDb, 12.0, 0.0);
-    panControl_.setRange(-1.0, 1.0, 0.0);
-    for (auto* control : {&levelControl_, &panControl_}) {
-        control->setDrawBackground(false);
-        control->setDrawBorder(false);
-        control->setShowFillIndicator(false);
-        control->setShowText(false);
-        control->onDragStart = [this]() { faderDragging_ = true; };
-        control->onDragEnd = [this](double) {
-            faderDragging_ = false;
-            endFaderGesture();
-        };
-        addAndMakeVisible(*control);
-    }
-    levelControl_.onValueChange = [this]() {
-        padInfos_[static_cast<size_t>(selectedPad_)].level =
-            static_cast<float>(levelControl_.getValue());
-        if (onPadLevelChanged)
-            onPadLevelChanged(selectedPad_, static_cast<float>(levelControl_.getValue()));
-        // A typed value or a reset has no drag to end, so it closes its own gesture (#2211).
-        if (!faderDragging_)
-            endFaderGesture();
-        repaint(editorArea_);
-    };
-    panControl_.onValueChange = [this]() {
-        padInfos_[static_cast<size_t>(selectedPad_)].pan =
-            static_cast<float>(panControl_.getValue());
-        if (onPadPanChanged)
-            onPadPanChanged(selectedPad_, static_cast<float>(panControl_.getValue()));
-        if (!faderDragging_)
-            endFaderGesture();
-        repaint(editorArea_);
-    };
-    outputButton_.setTooltip("Pad output");
-    outputButton_.onClick = [this]() { showOutputMenu(); };
-    addAndMakeVisible(outputButton_);
-
     addLayerButton_.setTooltip("Add a layer to this pad");
     addLayerButton_.onClick = [this]() {
         if (onAddLayerRequested)
@@ -346,8 +307,7 @@ DrumGridUI::DrumGridUI() {
 
 DrumGridUI::~DrumGridUI() {
     stopTimer();
-    for (auto* button : {&editorToggle_, &outputButton_})
-        button->setLookAndFeel(nullptr);
+    editorToggle_.setLookAndFeel(nullptr);
 }
 
 void DrumGridUI::styleControls() {
@@ -359,7 +319,6 @@ void DrumGridUI::styleControls() {
     // The same mute / solo as every other view, in the chipless device style.
     node_header::applyDeviceMuteStyle(chainMuteButton_, 24.0f);
     node_header::applyDeviceSoloStyle(chainSoloButton_, 24.0f);
-    outputButton_.setLookAndFeel(&glyph);
 }
 
 void DrumGridUI::restoreDetailCollapsed(bool collapsed) {
@@ -629,7 +588,7 @@ void DrumGridUI::paintEditor(juce::Graphics& g) {
     g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f));
     for (const auto& [tab, name] :
          {std::pair{EditorTab::Mix, "MIX"}, std::pair{EditorTab::Velocity, "VEL"},
-          std::pair{EditorTab::Fade, "FADE"}, std::pair{EditorTab::Pad, "PAD"}}) {
+          std::pair{EditorTab::Fade, "FADE"}}) {
         const auto area = tabBounds(tab);
         const bool active = tab == editorTab_;
         g.setColour(colour(active ? ActiveTheme::DEVICE_VALUE_TEXT : ActiveTheme::DEVICE_DIM2));
@@ -641,33 +600,6 @@ void DrumGridUI::paintEditor(juce::Graphics& g) {
     }
     g.setColour(colour(ActiveTheme::DEVICE_LINE));
     g.fillRect(tabsArea_.withTop(tabsArea_.getBottom() - 1));
-
-    if (editorTab_ != EditorTab::Pad)
-        return;
-
-    const auto label = [&](juce::Rectangle<int> area, const juce::String& name,
-                           const juce::String& value) {
-        g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f));
-        g.setColour(colour(ActiveTheme::DEVICE_DIM2));
-        g.drawText(name, area, juce::Justification::centredLeft, false);
-        g.setColour(colour(ActiveTheme::DEVICE_VALUE_TEXT).withAlpha(0.8f));
-        g.drawText(value, area, juce::Justification::centredRight, false);
-    };
-    const double db = levelControl_.getValue();
-    const int pan = juce::roundToInt(panControl_.getValue() * 100.0);
-    label(levelLabelArea_, "VOLUME",
-          db <= kMinPadDb + 0.05 ? juce::String("-inf dB") : juce::String(db, 1) + " dB");
-    label(panLabelArea_, "PAN",
-          pan == 0 ? juce::String("C") : juce::String(std::abs(pan)) + (pan < 0 ? " L" : " R"));
-    label(outputLabelArea_, "OUTPUT", {});
-    device_shell::paintGainSlider(g, levelControl_.getBounds(), db, kMinPadDb);
-    device_shell::paintPanSlider(g, panControl_.getBounds(), panControl_.getValue());
-
-    const auto field = outputButton_.getBounds().toFloat();
-    g.setColour(colour(ActiveTheme::DEVICE_FIELD));
-    g.fillRoundedRectangle(field, 4.0f);
-    g.setColour(colour(ActiveTheme::DEVICE_FIELD_BORDER));
-    g.drawRoundedRectangle(field.reduced(0.5f), 4.0f, 1.0f);
 }
 
 void DrumGridUI::paintChainHeader(juce::Graphics& g) {
@@ -789,8 +721,6 @@ void DrumGridUI::resized() {
 
 void DrumGridUI::layoutEditor(juce::Rectangle<int> area) {
     const bool visible = !area.isEmpty();
-    for (auto* control : volumeControls())
-        control->setVisible(visible && editorTab_ == EditorTab::Pad);
     if (!visible) {
         layerList_.setVisible(false);
         return;
@@ -798,20 +728,7 @@ void DrumGridUI::layoutEditor(juce::Rectangle<int> area) {
 
     editorHeaderArea_ = area.removeFromTop(kPanelHeaderHeight);
     tabsArea_ = area.removeFromTop(28);
-    layoutLayerList(editorTab_ != EditorTab::Pad ? area : juce::Rectangle<int>{});
-    auto body = area.reduced(10);
-
-    levelLabelArea_ = body.removeFromTop(16);
-    body.removeFromTop(4);
-    levelControl_.setBounds(body.removeFromTop(20));
-    body.removeFromTop(10);
-    panLabelArea_ = body.removeFromTop(16);
-    body.removeFromTop(4);
-    panControl_.setBounds(body.removeFromTop(20));
-    body.removeFromTop(10);
-    outputLabelArea_ = body.removeFromTop(16);
-    body.removeFromTop(4);
-    outputButton_.setBounds(body.removeFromTop(30));
+    layoutLayerList(area);
 }
 
 void DrumGridUI::layoutLayerList(juce::Rectangle<int> area) {
@@ -1019,24 +936,6 @@ void DrumGridUI::refreshPadChain() {
     repaint();
 }
 
-void DrumGridUI::showOutputMenu() {
-    const int current = padInfos_[static_cast<size_t>(selectedPad_)].busOutput;
-    juce::PopupMenu menu;
-    menu.addItem(1, "Main", true, current == 0);
-    for (int bus = 1; bus < magda::kPadBusCount; ++bus)
-        menu.addItem(bus + 1, "Bus " + juce::String(bus), true, current == bus);
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&outputButton_),
-                       [safeThis = juce::Component::SafePointer(this)](int result) {
-                           if (result <= 0 || safeThis == nullptr)
-                               return;
-                           const int pad = safeThis->selectedPad_;
-                           safeThis->padInfos_[static_cast<size_t>(pad)].busOutput = result - 1;
-                           if (safeThis->onPadOutputChanged)
-                               safeThis->onPadOutputChanged(pad, result - 1);
-                           safeThis->refreshDetailPanel();
-                       });
-}
-
 void DrumGridUI::refreshPadButtons() {
     const int pageStart = currentPage_ * kPadsPerPage;
     for (int i = 0; i < kPadsPerPage; ++i) {
@@ -1059,33 +958,23 @@ void DrumGridUI::refreshPadButtons() {
 
 void DrumGridUI::refreshDetailPanel() {
     const auto& info = padInfos_[static_cast<size_t>(selectedPad_)];
-    levelControl_.setValue(info.level, juce::dontSendNotification);
-    panControl_.setValue(info.pan, juce::dontSendNotification);
-    outputButton_.setButtonText(info.busOutput == 0 ? juce::String("Main")
-                                                    : "Bus " + juce::String(info.busOutput));
     const bool hasChain = info.chainIndex >= 0;
     for (auto* button : {&chainMuteButton_, &chainSoloButton_})
         button->setEnabled(hasChain);
     syncMuteGlyph(chainMuteButton_, info.mute);
     chainSoloButton_.setToggleState(info.solo, juce::dontSendNotification);
-    for (auto* control : volumeControls())
-        control->setEnabled(hasChain);
     repaint();
 }
 
-std::vector<juce::Component*> DrumGridUI::volumeControls() {
-    return {&levelControl_, &panControl_, &outputButton_};
-}
-
 juce::Rectangle<int> DrumGridUI::tabBounds(EditorTab tab) const {
-    const int width = tabsArea_.getWidth() / 4;
+    const int width = tabsArea_.getWidth() / 3;
     return tabsArea_.withWidth(width).translated(width * static_cast<int>(tab), 0);
 }
 
 void DrumGridUI::mouseDown(const juce::MouseEvent& event) {
     if (editorArea_.isEmpty() || !tabsArea_.contains(event.getPosition()))
         return;
-    for (const auto tab : {EditorTab::Mix, EditorTab::Velocity, EditorTab::Fade, EditorTab::Pad})
+    for (const auto tab : {EditorTab::Mix, EditorTab::Velocity, EditorTab::Fade})
         if (tabBounds(tab).contains(event.getPosition()) && tab != editorTab_) {
             editorTab_ = tab;
             layoutEditor(editorArea_);
