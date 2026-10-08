@@ -479,6 +479,7 @@ TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(au
     // Register as AutomationManager listener
     AutomationManager::getInstance().addListener(this);
     Config::getInstance().addListener(this);
+    showIORouting_ = Config::getInstance().getShowTrackIORouting();
 
     // Set up MIDI activity monitoring
     // MIDI activity is handled via the lock-free MidiActivityMonitor
@@ -3831,6 +3832,9 @@ bool TrackHeadersPanel::isIORoutingVisible() const {
 
 void TrackHeadersPanel::toggleIORouting() {
     showIORouting_ = !showIORouting_;
+    auto& config = Config::getInstance();
+    config.setShowTrackIORouting(showIORouting_);
+    config.save();
     resized();
     repaint();
     if (onIORoutingToggled)

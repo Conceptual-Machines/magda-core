@@ -169,6 +169,7 @@ void Config::save() {
     root->setProperty("transportStyle", toJuceString(transportStyle));
     root->setProperty("deviceControlStyle", toJuceString(deviceControlStyle));
     root->setProperty("trackColourStyle", toJuceString(trackColourStyle));
+    root->setProperty("showTrackIORouting", showTrackIORouting);
     root->setProperty("muteSoloStyle", toJuceString(muteSoloStyle));
     root->setProperty("uiFontScale", uiFontScale);
     root->setProperty("uiFontFamily", toJuceString(uiFontFamily));
@@ -588,6 +589,7 @@ void Config::load() {
     setTransportStyle(getString("transportStyle", transportStyle));
     setDeviceControlStyle(getString("deviceControlStyle", deviceControlStyle));
     setTrackColourStyle(getString("trackColourStyle", trackColourStyle));
+    showTrackIORouting = getBool("showTrackIORouting", showTrackIORouting);
     setMuteSoloStyle(getString("muteSoloStyle", muteSoloStyle));
     setUIFontScale(getDouble("uiFontScale", uiFontScale));
     setUIFontFamily(getString("uiFontFamily", uiFontFamily));
