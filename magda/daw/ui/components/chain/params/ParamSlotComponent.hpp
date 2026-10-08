@@ -321,8 +321,6 @@ class ParamSlotComponent : public juce::Component,
     // macro and mod bars.
     juce::Rectangle<int> modRowArea_;
     static constexpr int kModRowHeight = 7;
-    /// A blue dot when a macro reaches this parameter, an orange one when a modifier does.
-    void paintLinkDots(juce::Graphics& g) const;
     bool linkOverlayVertical_ = false;
 
     // Link mode drag state (for setting modulation amount via drag)

@@ -861,7 +861,6 @@ void ParamSlotComponent::paint(juce::Graphics& g) {
         } else if (boolToggle_ && boolToggle_->isVisible()) {
             paintBooleanValue(g);
         }
-        paintLinkDots(g);
         return;
     }
 
@@ -876,30 +875,6 @@ void ParamSlotComponent::paint(juce::Graphics& g) {
         g.fillRect(valueBounds);
         g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(valueBounds);
-    }
-}
-
-void ParamSlotComponent::paintLinkDots(juce::Graphics& g) const {
-    auto ctx = buildLinkContext();
-    ctx.selectedModIndex = -1;
-    ctx.selectedMacroIndex = -1;
-    const bool macros = !getLinkedMacros(ctx).empty();
-    const bool mods = !getLinkedMods(ctx).empty();
-    if (!macros && !mods)
-        return;
-
-    // Bottom left corner of the cell, clear of every style's controls.
-    constexpr float size = 6.0f;
-    constexpr float gap = 4.0f;
-    float x = static_cast<float>(tileArea_.getX()) + 6.0f;
-    const float y = static_cast<float>(tileArea_.getBottom()) - 6.0f - size;
-    for (const auto& [shown, role] : {std::pair{mods, ActiveTheme::ACCENT_ATTENTION},
-                                      std::pair{macros, ActiveTheme::ACCENT_MODULATION}}) {
-        if (!shown)
-            continue;
-        g.setColour(ActiveTheme::getColour(role));
-        g.fillEllipse(x, y, size, size);
-        x += size + gap;
     }
 }
 
