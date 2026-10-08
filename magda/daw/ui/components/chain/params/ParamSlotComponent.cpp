@@ -1054,13 +1054,12 @@ bool ParamSlotComponent::layoutStyled(juce::Rectangle<int> bounds) {
             auto top = inner.removeFromTop(14);
             valueArea_ = top.removeFromRight(top.getWidth() / 2);
             nameLabel_.setBounds(top);
-            // The track with its modulation row right under it, centred as one block
-            const int trackHeight = juce::jmin(14, inner.getHeight());
-            auto block = inner.withSizeKeepingCentre(
-                inner.getWidth(), juce::jmin(inner.getHeight(), trackHeight + 3 + kModRowHeight));
-            barArea_ = block.removeFromTop(trackHeight);
-            block.removeFromTop(3);
-            modRowArea_ = block.removeFromTop(kModRowHeight);
+            // Rows: name and value, the track centred in the middle, the modulation row at
+            // the bottom of the cell.
+            modRowArea_ = inner.removeFromBottom(juce::jmin(kModRowHeight, inner.getHeight() / 3));
+            inner.removeFromBottom(2);
+            barArea_ =
+                inner.withSizeKeepingCentre(inner.getWidth(), juce::jmin(14, inner.getHeight()));
             widgetArea =
                 inner.withSizeKeepingCentre(inner.getWidth(), juce::jmin(20, inner.getHeight()));
             if (boolean)
