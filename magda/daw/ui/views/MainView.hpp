@@ -233,8 +233,9 @@ class MainView : public juce::Component,
 
     // Layout - uses LayoutConfig for centralized configuration
     // The marker lane folds away while the project has no markers.
+    void syncMarkerLaneToggle();
     bool markerLaneShown() const {
-        return markerLaneVisible_ && hasMarkers_;
+        return markerLaneVisible_;
     }
     int getMarkerLaneHeight() const {
         return markerLaneShown() ? LayoutConfig::getInstance().markerLaneHeight : 0;
@@ -249,7 +250,7 @@ class MainView : public juce::Component,
     int headerColumnWidth() const;
     /** The main-header part of a header-column row, leaving the I/O column's strip empty. */
     juce::Rectangle<int> mainHeaderPart(juce::Rectangle<int> column) const;
-    bool markerLaneVisible_ = true;
+    bool markerLaneVisible_ = false;
     bool hasMarkers_ = false;
     bool secondsRulerVisible_ = false;
     static constexpr int ARRANGEMENT_SCROLLBAR_SIZE = ZoomScrollBar::DEFAULT_THICKNESS;

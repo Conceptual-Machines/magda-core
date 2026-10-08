@@ -429,7 +429,8 @@ void MainView::setupComponents() {
         timeline->setMarkerLaneVisible(markerLaneVisible_);
         resized();
     };
-    markerLaneToggleButton->setTooltip("Hide marker lane");
+    markerLaneToggleButton->setTooltip(markerLaneVisible_ ? "Hide marker lane"
+                                                          : "Show marker lane");
 
     setupCornerButton(secondsRulerToggleButton, "SecondsRulerToggle", BinaryData::clock_svg,
                       BinaryData::clock_svgSize);
@@ -693,6 +694,12 @@ void MainView::timerCallback() {
 void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags changes) {
     if (const bool hasMarkers = !state.markers.empty(); hasMarkers != hasMarkers_) {
         hasMarkers_ = hasMarkers;
+        // The lane folds away with the last marker and opens with the first; the toggle follows.
+        markerLaneVisible_ = hasMarkers;
+        markerLaneToggleButton->setToggleState(hasMarkers, juce::dontSendNotification);
+        markerLaneToggleButton->setTooltip(hasMarkers ? "Hide marker lane" : "Show marker lane");
+        markerLaneViewport->setVisible(markerLaneShown());
+        timeline->setMarkerLaneVisible(markerLaneVisible_);
         resized();
     }
 
