@@ -1024,6 +1024,8 @@ bool ParamSlotComponent::layoutStyled(juce::Rectangle<int> bounds) {
     switch (style_) {
         case ParamControlStyle::Text: {
             nameLabel_.setBounds(inner.removeFromTop(13));
+            modRowArea_ = inner.removeFromBottom(juce::jmin(kModRowHeight, inner.getHeight() / 3));
+            inner.removeFromBottom(2);
             valueArea_ = inner;
             widgetArea =
                 inner.withSizeKeepingCentre(inner.getWidth(), juce::jmin(20, inner.getHeight()));

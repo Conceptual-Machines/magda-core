@@ -317,8 +317,8 @@ class ParamSlotComponent : public juce::Component,
     bool overlayOnly_ = false;
     ParamControlStyle style_ = ParamControlStyle::Text;
     juce::Rectangle<int> tileArea_, knobArea_, barArea_, valueArea_;
-    // Knob and slider cells: the row under the value (knob) or track (slider) that holds the
-    // macro and mod bars.
+    // The row at the foot of the cell (under the knob's value) that holds the macro and mod
+    // bars.
     juce::Rectangle<int> modRowArea_;
     static constexpr int kModRowHeight = 7;
     bool linkOverlayVertical_ = false;
