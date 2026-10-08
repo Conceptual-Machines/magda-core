@@ -86,6 +86,13 @@ int main() {
             first.setNodePath(firstPath);
             second.setNodePath(secondPath);
             RackComponent rack(track, *tracks.getRack(track, rackId));
+            rack.setSize(0, 0);
+            rack.setSize(rack.getPreferredWidth(), rack.getPreferredHeight());
+            for (const auto* name : {"Power", "Close"})
+                for (auto* child : rack.getChildren())
+                    if (child->getName() == name)
+                        check(child->isVisible() && !child->getBounds().isEmpty(),
+                              "rack header power/close lost after an empty layout");
             for (auto* node :
                  {static_cast<NodeComponent*>(&first), static_cast<NodeComponent*>(&second),
                   static_cast<NodeComponent*>(&rack)}) {
