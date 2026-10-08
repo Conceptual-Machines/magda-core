@@ -15,14 +15,15 @@ struct LayoutConfig {
     int chordRowHeight = 0;        // Chord row disabled (now in piano roll only)
     int markerLaneHeight = 24;     // Named timeline markers above the existing ruler
     int arrangementBarHeight = 0;  // Arrangement sections disabled in the compact ruler
-    int timeRulerHeight = 60;      // Full compact ruler height
+    int timeRulerHeight = 52;      // Full compact ruler height; fits the corner's two button rows
 
     // Time ruler details
     int rulerMajorTickHeight = 14;              // Shortened to avoid overlap with loop markers
     int rulerMinorTickHeight = 6;               // Shortened to avoid overlap with loop markers
     static constexpr int loopStripHeight = 12;  // Loop row (loop region strip)
-    int secondsRowHeight = 11;                  // Seconds row (when shown)
-    int playheadRowHeight = 12;                 // Bottom row: just tall enough for the triangle
+    static constexpr int arrangementLoopRowHeight = 8;  // The arrangement ruler's slimmer loop row
+    int secondsRowHeight = 11;                          // Seconds row (when shown)
+    int playheadRowHeight = 10;  // Bottom row: just tall enough for the triangle
     int rulerLabelFontSize = 11;
     int rulerLabelTopMargin = 10;  // Space between separator line and time labels
 

@@ -246,7 +246,7 @@ class TimelineComponent : public juce::Component, public TimelineStateListener {
     // Draws a bar-number label, masking the dashed marker guide behind it with
     // a small padded background box so the line never slashes through the digits.
     void drawBarNumberLabel(juce::Graphics& g, const juce::String& text, int x, int labelY,
-                            int labelHeight);
+                            int labelHeight, bool strong);
     // Draws a bar's time (bars translated to seconds) in the seconds row, at the
     // same x as the bar number.
     void drawSecondsBandLabel(juce::Graphics& g, int x, const juce::String& text, bool isFirstBar);
