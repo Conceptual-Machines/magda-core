@@ -29,7 +29,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     void setZoom(double pixelsPerBeat);
     void setTimelineLength(double lengthInSeconds);
     void setDisplayMode(DisplayMode mode);
-    /** 22px editor ruler: short ticks, the loop strip on top, labels beside their lines. */
+    /** 22px editor ruler: short ticks and the loop strip on top. */
     void setCompact(bool compact) {
         compact_ = compact;
         initLoopInteraction();

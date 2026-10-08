@@ -526,14 +526,10 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     int loopStripSpace = hasLoopStrip && !compact_ ? loopStripHeight() : 0;
     int labelY = compact_ && hasLoopStrip ? loopStripHeight() : 1;
     int labelBottom = tickBottom - tickHeightMajor() - loopStripSpace;
-    // Compact labels sit just right of their line instead of centred on it.
     const auto labelBox = [&](int x, int halfWidth) {
-        return compact_ ? juce::Rectangle<int>(x + 4, labelY, halfWidth * 2, labelBottom - labelY)
-                        : juce::Rectangle<int>(x - halfWidth, labelY, halfWidth * 2,
-                                               labelBottom - labelY);
+        return juce::Rectangle<int>(x - halfWidth, labelY, halfWidth * 2, labelBottom - labelY);
     };
-    const auto labelJustification =
-        compact_ ? juce::Justification::centredLeft : juce::Justification::centred;
+    const auto labelJustification = juce::Justification::centred;
     int mediumTickHeight = tickHeightMajor() * 2 / 3;
 
     // Determine bar label interval. When the display interval already spans
