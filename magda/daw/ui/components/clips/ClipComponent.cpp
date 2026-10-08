@@ -437,8 +437,8 @@ void ClipComponent::paint(juce::Graphics& g) {
 
         // Narrow loops keep only the hairline; below a few pixels even that turns the clip
         // into a solid mass, so nothing is drawn.
-        constexpr float MIN_DENT_PIXEL_WIDTH = 32.0f;
-        constexpr float MIN_HAIRLINE_PIXEL_WIDTH = 6.0f;
+        constexpr float MIN_DENT_PIXEL_WIDTH = 16.0f;
+        constexpr float MIN_HAIRLINE_PIXEL_WIDTH = 4.0f;
         const bool drawDents = loopPixelWidth >= MIN_DENT_PIXEL_WIDTH;
         if (loopPixelWidth < MIN_HAIRLINE_PIXEL_WIDTH)
             numBoundaries = 0;
