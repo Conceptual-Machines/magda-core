@@ -470,9 +470,12 @@ void ClipComponent::paint(juce::Graphics& g) {
             // A selected clip's black header swallows the lane colour, so its top dent is white.
             const bool selected =
                 isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_);
-            if (drawDents) {
+            // The top dent gives way to the clip name
+            if (drawDents && x - dent > static_cast<float>(headerNameRight_ + 3)) {
                 g.setColour(selected ? juce::Colours::white : laneColour);
                 g.fillPath(topDent);
+            }
+            if (drawDents) {
                 g.setColour(laneColour);
                 g.fillPath(bottomDent);
             }
@@ -1019,6 +1022,7 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
 void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
                                     juce::Rectangle<int> bounds) {
     auto headerArea = bounds.removeFromTop(HEADER_HEIGHT);
+    headerNameRight_ = 0;
 
     // Selected clips paint a black header in place of the clip-coloured one.
     // This replaces the old white selection rectangle so it can't fight overlay
@@ -1086,6 +1090,10 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
                     displayName += " #" + juce::String(groupIndex);
             }
             g.drawText(displayName, nameArea, juce::Justification::centredLeft, true);
+            headerNameRight_ =
+                nameArea.getX() +
+                juce::jmin(nameArea.getWidth(), juce::GlyphArrangement::getStringWidthInt(
+                                                    g.getCurrentFont(), displayName));
         }
     }
 
