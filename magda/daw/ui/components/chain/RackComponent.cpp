@@ -374,6 +374,18 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
 
     shellRows_.sideStrip = contentArea.removeFromRight(SIDE_STRIP_WIDTH);
     layoutSideStrip(shellRows_.sideStrip);
+    // A multiband rack's faceplate stands beside its bands.
+    faceplateArea_ = {};
+    if (multiband_) {
+        faceplateArea_ = contentArea.removeFromLeft(FACEPLATE_WIDTH)
+                             .withTrimmedTop(8)
+                             .withTrimmedLeft(12)
+                             .withTrimmedBottom(12);
+        if (crossoverDisplay_) {
+            crossoverDisplay_->setBounds(faceplateArea_);
+            crossoverDisplay_->setVisible(true);
+        }
+    }
     layoutChainList(contentArea.removeFromLeft(CHAIN_LIST_WIDTH));
 
     viewportArea_ = contentArea;
@@ -383,17 +395,8 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
 
 void RackComponent::layoutChainList(juce::Rectangle<int> list) {
     auto area = list.withTrimmedTop(4).reduced(12, 0).withTrimmedBottom(12);
-    if (multiband_) {
-        area.removeFromTop(4);
-        faceplateArea_ = area.removeFromTop(FACEPLATE_HEIGHT);
-        if (crossoverDisplay_) {
-            crossoverDisplay_->setBounds(faceplateArea_);
-            crossoverDisplay_->setVisible(true);
-        }
-    } else {
-        faceplateArea_ = {};
+    if (!multiband_)
         chainTabsArea_ = area.removeFromTop(CHAIN_TABS_HEIGHT);
-    }
     area.removeFromTop(ROW_GAP);
     columnHeaderArea_ = area.removeFromTop(COLUMN_HEADER_HEIGHT);
 
@@ -409,7 +412,7 @@ void RackComponent::layoutChainList(juce::Rectangle<int> list) {
     chainRowsContainer_.setSize(width, juce::jmax(totalHeight, area.getHeight()));
     int y = 0;
     if (multiband_) {
-        // Bands read high to low, like the display above them; each divider is the crossover
+        // Bands read high to low; each divider is the crossover
         // between the bands either side of it.
         for (int band = static_cast<int>(chainRows_.size()) - 1; band >= 0; --band) {
             chainRows_[static_cast<std::size_t>(band)]->setBounds(
@@ -515,14 +518,16 @@ int RackComponent::stackedChainRowsHeight() const {
 
 int RackComponent::getPreferredHeight() const {
     // Content padding: NodeComponent insets the content 1px top and bottom.
-    const int top = multiband_ ? 4 + FACEPLATE_HEIGHT : CHAIN_TABS_HEIGHT;
-    return HEADER_BAR_HEIGHT + 4 + top + ROW_GAP + COLUMN_HEADER_HEIGHT + ROW_GAP +
-           stackedChainRowsHeight() + 12 + FOOTER_BAR_HEIGHT + 2;
+    const int top = multiband_ ? 0 : CHAIN_TABS_HEIGHT;
+    const int list = 4 + top + ROW_GAP + COLUMN_HEADER_HEIGHT + ROW_GAP + stackedChainRowsHeight();
+    const int body = multiband_ ? juce::jmax(list, 8 + FACEPLATE_MIN_HEIGHT) : list;
+    return HEADER_BAR_HEIGHT + body + 12 + FOOTER_BAR_HEIGHT + 2;
 }
 
 int RackComponent::fixedWidth() const {
     // Content padding: NodeComponent insets the content 2px each side.
-    return CHAIN_LIST_WIDTH + SIDE_STRIP_WIDTH + 4 + getLeftPanelsWidth() + getRightPanelsWidth();
+    return CHAIN_LIST_WIDTH + (multiband_ ? FACEPLATE_WIDTH : 0) + SIDE_STRIP_WIDTH + 4 +
+           getLeftPanelsWidth() + getRightPanelsWidth();
 }
 
 int RackComponent::getPreferredWidth() const {

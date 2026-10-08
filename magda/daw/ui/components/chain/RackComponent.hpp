@@ -239,7 +239,8 @@ class RackComponent : public NodeComponent, public juce::Timer {
     static constexpr int CHAIN_TABS_HEIGHT = 28;
     static constexpr int ROW_GAP = 6;
     static constexpr int ADD_CHAIN_HEIGHT = 34;
-    static constexpr int FACEPLATE_HEIGHT = 150;
+    static constexpr int FACEPLATE_WIDTH = 380;
+    static constexpr int FACEPLATE_MIN_HEIGHT = 150;
     static constexpr int MIN_VIEWPORT_WIDTH = 53;  // 1px rule, 6px padding, 40px add slot
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RackComponent)
