@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include "ClipInfo.hpp"
 #include "ClipManager.hpp"
 #include "UndoManager.hpp"
@@ -58,6 +60,15 @@ std::vector<MidiNoteStartBeat> calculateBentMidiNoteStartBeats(
  */
 std::vector<std::pair<size_t, double>> computeLegatoNoteLengths(
     const ClipInfo& clip, const std::vector<size_t>& noteIndices);
+
+/** @brief Splits note @p noteIndex in two at clip beat @p splitBeat; nullopt unless it falls inside
+ * the note. */
+std::optional<MidiEventState> splitMidiNoteAt(const MidiEventState& state, size_t noteIndex,
+                                              double splitBeat);
+
+/** @brief Joins note @p noteIndex with the next note of the same pitch; nullopt when there is none.
+ */
+std::optional<MidiEventState> glueMidiNoteToNext(const MidiEventState& state, size_t noteIndex);
 
 /**
  * @brief Command for adding a MIDI note to a clip

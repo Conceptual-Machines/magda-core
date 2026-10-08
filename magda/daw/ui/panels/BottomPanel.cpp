@@ -4,6 +4,8 @@
 #include "../components/common/GridDivisionMenu.hpp"
 #include "../components/common/ResizeSeam.hpp"
 #include "../components/common/SvgButton.hpp"
+#include "../components/pianoroll/MidiEditTool.hpp"
+#include "../components/pianoroll/MidiEditorKey.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
 #include "../themes/ActiveTheme.hpp"
@@ -11,6 +13,7 @@
 #include "../themes/SmallButtonLookAndFeel.hpp"
 #include "AudioEngine.hpp"
 #include "BinaryData.h"
+#include "TransportTextWidths.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "content/AudioClipPropertiesContent.hpp"
 #include "content/AutomationClipEditorContent.hpp"
@@ -28,6 +31,7 @@
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/UndoManager.hpp"
+#include "music/NotationSettings.hpp"
 #include "state/PanelController.hpp"
 #include "ui/components/common/NoteSlicePopup.hpp"
 #include "ui/components/common/TimeBendPopup.hpp"
@@ -77,6 +81,23 @@ std::shared_ptr<daw::audio::MagdaDevice> chordEngineOn(TrackId trackId) {
     return found;
 }
 
+// v1 toolbar button: 28px, radius 6, a filled chip with a hairline when engaged.
+void styleV1Button(SvgButton& button) {
+    button.setOriginalColor(juce::Colour(0xFFB3B3B3));
+    button.setNormalColor(ActiveTheme::TEXT_SECONDARY);
+    button.setHoverColor(ActiveTheme::TEXT_PRIMARY);
+    button.setActiveColor(ActiveTheme::TEXT_PRIMARY);
+    button.setActiveBackgroundColor(ActiveTheme::MIDI_TOOL_ACTIVE);
+    button.setActiveBorderColor(ActiveTheme::MIDI_TOOL_ACTIVE_BORDER);
+    button.setHoverBackgroundColor(ActiveTheme::MIDI_TOOL_ACTIVE);
+    button.setBorderThickness(1.0f);
+    button.setCornerRadius(6.0f);
+    button.setIconPadding(7.0f);
+}
+
+constexpr int kV1ToolbarHeight = 40;
+constexpr int kV1Button = 28;
+
 }  // namespace
 
 // Resize handle between waveform editor and properties panel
@@ -121,9 +142,24 @@ class BottomPanel::HeaderBar : public juce::Component {
     static constexpr int HEIGHT = 28;
     std::function<void()> onDoubleClick;
 
+    // v1 toolbar decoration, set by the layout: recessed groups and vertical dividers.
+    bool v1 = false;
+    std::vector<juce::Rectangle<int>> wells;
+    std::vector<int> dividers;
+
     void paint(juce::Graphics& g) override {
-        g.setColour(ActiveTheme::getPanelBackgroundColour());
+        g.setColour(v1 ? ActiveTheme::getColour(ActiveTheme::MIDI_TOOLBAR)
+                       : ActiveTheme::getPanelBackgroundColour());
         g.fillAll();
+        if (v1) {
+            for (const auto& well : wells) {
+                g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_LANE));
+                g.fillRoundedRectangle(well.toFloat(), 7.0f);
+            }
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
+            for (int x : dividers)
+                g.fillRect(x, 10, 1, getHeight() - 20);
+        }
         // Bottom border
         g.setColour(ActiveTheme::getBorderColour());
         g.fillRect(0, getHeight() - 1, getWidth(), 1);
@@ -136,6 +172,62 @@ class BottomPanel::HeaderBar : public juce::Component {
 
   private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(HeaderBar)
+};
+
+// The song key as a chip: a square swatch, the root and the quality; violet while lit.
+class BottomPanel::KeyChip : public juce::Component, public juce::SettableTooltipClient {
+  public:
+    std::function<void()> onClick;
+
+    void paint(juce::Graphics& g) override {
+        const auto key = MidiEditorKeyState::songKey();
+        const bool lit = key.valid() && MidiEditorKeyState::getInstance().isLit();
+        const auto violet = ActiveTheme::getColour(ActiveTheme::MIDI_KEY_ON);
+        auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+
+        g.setColour(lit ? violet.withAlpha(0.2f)
+                        : ActiveTheme::getColour(ActiveTheme::MIDI_TOOL_ACTIVE)
+                              .withAlpha(isMouseOver() ? 1.0f : 0.0f));
+        g.fillRoundedRectangle(bounds, 6.0f);
+        g.setColour(lit ? violet : ActiveTheme::getColour(ActiveTheme::MIDI_TOOL_ACTIVE_BORDER));
+        g.drawRoundedRectangle(bounds, 6.0f, 1.0f);
+
+        auto content = getLocalBounds().reduced(9, 0);
+        auto swatch = content.removeFromLeft(8).withSizeKeepingCentre(8, 8).toFloat();
+        g.setColour(lit ? violet.brighter(0.6f) : ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+        g.fillRoundedRectangle(swatch, 1.5f);
+        content.removeFromLeft(6);
+
+        auto& fonts = FontManager::getInstance();
+        if (!key.valid()) {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+            g.setFont(fonts.getUIFont(12.0f));
+            g.drawText("No key", content, juce::Justification::centredLeft);
+            return;
+        }
+        const auto root = music::NotationSettings::getInstance().formatRoot(
+            daw::ui::transport::kKeyRootNames[static_cast<size_t>(key.root)]);
+        const auto rootFont = fonts.getUIFontBold(13.0f);
+        g.setFont(rootFont);
+        g.setColour(lit ? ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY)
+                        : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        const int rootWidth = juce::GlyphArrangement::getStringWidthInt(rootFont, root);
+        g.drawText(root, content.removeFromLeft(rootWidth + 4), juce::Justification::centredLeft);
+        g.setFont(fonts.getUIFont(12.0f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        g.drawText(key.quality == 1 ? "min" : "maj", content, juce::Justification::centredLeft);
+    }
+
+    void mouseEnter(const juce::MouseEvent&) override {
+        repaint();
+    }
+    void mouseExit(const juce::MouseEvent&) override {
+        repaint();
+    }
+    void mouseUp(const juce::MouseEvent& e) override {
+        if (onClick && getLocalBounds().contains(e.getPosition()))
+            onClick();
+    }
 };
 
 daw::ui::PanelContentType BottomPanel::getActiveContentType() const {
@@ -156,20 +248,20 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     addChildComponent(headerBar_.get());
 
     // Create editor tab icon buttons (hidden by default)
-    pianoRollTab_ = std::make_unique<SvgButton>("PianoRollTab", BinaryData::piano_roll_svg,
-                                                BinaryData::piano_roll_svgSize);
+    pianoRollTab_ = std::make_unique<SvgButton>("PianoRollTab", BinaryData::mepianoroll_svg,
+                                                BinaryData::mepianoroll_svgSize);
     pianoRollTab_->setTooltip("Piano Roll");
-    pianoRollTab_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    styleV1Button(*pianoRollTab_);
     pianoRollTab_->onClick = [this]() {
         if (!updatingTabs_)
             onEditorTabChanged(0);
     };
     headerBar_->addChildComponent(pianoRollTab_.get());
 
-    drumGridTab_ = std::make_unique<SvgButton>("DrumGridTab", BinaryData::drum_grid_svg,
-                                               BinaryData::drum_grid_svgSize);
+    drumGridTab_ = std::make_unique<SvgButton>("DrumGridTab", BinaryData::medrumgrid_svg,
+                                               BinaryData::medrumgrid_svgSize);
     drumGridTab_->setTooltip("Drum Grid");
-    drumGridTab_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    styleV1Button(*drumGridTab_);
     drumGridTab_->onClick = [this]() {
         if (!updatingTabs_)
             onEditorTabChanged(1);
@@ -186,10 +278,10 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
 
     // Multi-track overlay selector (ghost notes, #1281) — applies to piano
     // roll and drum grid; opens the sticky multi-select track menu.
-    overlayTracksButton_ = std::make_unique<SvgButton>("OverlayTracks", BinaryData::stacks_svg,
-                                                       BinaryData::stacks_svgSize);
-    overlayTracksButton_->setTooltip("Overlay tracks (ghost notes)");
-    overlayTracksButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    overlayTracksButton_ = std::make_unique<SvgButton>(
+        "OverlayTracks", BinaryData::melayerclips_svg, BinaryData::melayerclips_svgSize);
+    overlayTracksButton_->setTooltip("Layer clips from other tracks (ghost notes)");
+    styleV1Button(*overlayTracksButton_);
     overlayTracksButton_->onClick = [this]() {
         if (auto* editor = dynamic_cast<daw::ui::MidiEditorContent*>(getActiveContent())) {
             editor->showOverlayTracksMenu(overlayTracksButton_.get(),
@@ -199,15 +291,50 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     headerBar_->addChildComponent(overlayTracksButton_.get());
 
     // Fullscreen toggle (issue #1282) — applies to piano roll and drum grid.
-    fullscreenToggle_ = std::make_unique<SvgButton>("EditorFullscreen", BinaryData::enter_fs_svg,
-                                                    BinaryData::enter_fs_svgSize);
-    fullscreenToggle_->setTooltip("Toggle MIDI editor fullscreen");
-    fullscreenToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    fullscreenToggle_ = std::make_unique<SvgButton>("EditorFullscreen", BinaryData::memaximise_svg,
+                                                    BinaryData::memaximise_svgSize);
+    fullscreenToggle_->setTooltip("Maximise the editor");
+    styleV1Button(*fullscreenToggle_);
     fullscreenToggle_->onClick = [this]() {
         if (onFullscreenToggleRequested)
             onFullscreenToggleRequested();
     };
     headerBar_->addChildComponent(fullscreenToggle_.get());
+
+    static constexpr std::array<std::pair<const char*, const char*>, 5> kToolNames{{
+        {"Pointer", "Pointer (1)"},
+        {"Pencil", "Pencil: draw notes (2)"},
+        {"Slice", "Slice: cut a note where you click (3)"},
+        {"Glue", "Glue: join a note to the next one of its pitch (4)"},
+        {"Erase", "Erase: click or sweep over notes (5)"},
+    }};
+    const std::array<std::pair<const char*, int>, 5> toolIcons{{
+        {BinaryData::mepointer_svg, BinaryData::mepointer_svgSize},
+        {BinaryData::mepencil_svg, BinaryData::mepencil_svgSize},
+        {BinaryData::meslice_svg, BinaryData::meslice_svgSize},
+        {BinaryData::meglue_svg, BinaryData::meglue_svgSize},
+        {BinaryData::meerase_svg, BinaryData::meerase_svgSize},
+    }};
+    for (size_t i = 0; i < toolButtons_.size(); ++i) {
+        auto button = std::make_unique<SvgButton>(kToolNames[i].first, toolIcons[i].first,
+                                                  static_cast<size_t>(toolIcons[i].second));
+        button->setTooltip(kToolNames[i].second);
+        styleV1Button(*button);
+        button->onClick = [i]() {
+            MidiEditToolState::getInstance().setTool(static_cast<MidiEditTool>(i));
+        };
+        headerBar_->addChildComponent(button.get());
+        toolButtons_[i] = std::move(button);
+    }
+    MidiEditToolState::getInstance().addChangeListener(this);
+    syncToolButtons();
+
+    keyChip_ = std::make_unique<KeyChip>();
+    keyChip_->setTooltip("Song key: scale highlight and fold-to-key while lit");
+    keyChip_->onClick = [this]() { showKeyChipMenu(); };
+    headerBar_->addChildComponent(keyChip_.get());
+    MidiEditorKeyState::getInstance().addChangeListener(this);
+    ProjectManager::getInstance().addListener(this);
 
     // Create audio clip properties side panel (hidden by default)
     audioPropsPanel_ = std::make_unique<daw::ui::AudioClipPropertiesContent>();
@@ -293,6 +420,9 @@ BottomPanel::~BottomPanel() {
     TrackManager::getInstance().removeListener(this);
     SelectionManager::getInstance().removeListener(this);
     PluginPreferences::getInstance().removeListener(this);
+    ProjectManager::getInstance().removeListener(this);
+    MidiEditToolState::getInstance().removeChangeListener(this);
+    MidiEditorKeyState::getInstance().removeChangeListener(this);
     // TimelineController listener removed automatically by timelineListenerGuard_
 
     // Explicitly destroy before base class teardown to avoid repaint during partial destruction
@@ -301,6 +431,9 @@ BottomPanel::~BottomPanel() {
     drumGridTab_.reset();
     overlayTracksButton_.reset();
     fullscreenToggle_.reset();
+    for (auto& button : toolButtons_)
+        button.reset();
+    keyChip_.reset();
     propsResizer_.reset();
     audioPropsPanel_.reset();
     chordResizer_.reset();
@@ -479,17 +612,10 @@ void BottomPanel::setupHeaderControls() {
     // Loop toggle (dual icon: off/on). Toggles the clip's source loop, the same
     // clip->loopEnabled the editors render (mirrors the Clip Inspector toggle).
     // Same transport loop glyph as the clip headers.
-    loopButton_ = std::make_unique<SvgButton>("Loop", BinaryData::loop_icon_svg,
-                                              BinaryData::loop_icon_svgSize);
+    loopButton_ =
+        std::make_unique<SvgButton>("Loop", BinaryData::meloop_svg, BinaryData::meloop_svgSize);
     loopButton_->setTooltip("Loop clip");
-    // Borderless icon; recolour its baked #BCBCBC fill by state. Off = grey
-    // glyph, no fill; engaged = solid blue chip with a white glyph. Matches the
-    // Clip Inspector loop toggle (both drive the same clip loop). Green stays the
-    // ruler's range-marker language.
-    loopButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
-    loopButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-    loopButton_->setActiveColor(juce::Colours::white);
-    loopButton_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+    styleV1Button(*loopButton_);
     loopButton_->setClickingTogglesState(false);  // manual active state
     loopButton_->onClick = [this]() {
         // Automation clip editor: loop lives on the automation clip (same
@@ -580,14 +706,10 @@ void BottomPanel::setupHeaderControls() {
     headerBar_->addChildComponent(sliceButton_.get());
 
     // Time bend button: one geometry, with pressed colour supplied in code.
-    bendButton_ = std::make_unique<SvgButton>("TimeBend", BinaryData::time_bend_svg,
-                                              BinaryData::time_bend_svgSize);
-    bendButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                           ActiveTheme::ACCENT_INFO);
-    bendButton_->setTooltip("Time Bend selected notes");
-    bendButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-    bendButton_->setBorderThickness(1.0f);
-    bendButton_->setCornerRadius(3.0f);
+    bendButton_ = std::make_unique<SvgButton>("TimeBend", BinaryData::metimebend_svg,
+                                              BinaryData::metimebend_svgSize);
+    bendButton_->setTooltip("Time Bend the selected notes");
+    styleV1Button(*bendButton_);
     bendButton_->onClick = [this]() {
         const auto& noteSel = SelectionManager::getInstance().getNoteSelection();
         if (!noteSel.isValid() || noteSel.noteIndices.size() < 2)
@@ -619,11 +741,14 @@ void BottomPanel::refreshHeaderControlColours() {
     const auto textOff = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
     const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
 
+    // AUTO and SNAP engage in the v1 violet; REL keeps the primary accent.
+    const auto quantiseOn = ActiveTheme::getColour(ActiveTheme::MIDI_KEY_ON);
     for (auto* button : {timeModeButton_.get(), autoGridButton_.get(), snapButton_.get()}) {
         if (button == nullptr)
             continue;
         button->setColour(juce::TextButton::buttonColourId, surface);
-        button->setColour(juce::TextButton::buttonOnColourId, accentOn);
+        button->setColour(juce::TextButton::buttonOnColourId,
+                          button == timeModeButton_.get() ? accentOn : quantiseOn);
         button->setColour(juce::TextButton::textColourOffId, textOff);
         button->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
     }
@@ -669,17 +794,11 @@ void BottomPanel::paint(juce::Graphics& g) {
 
     const bool hasHeader = shouldShowHeaderFor(getActiveContent());
 
-    // Sidebar column divider in header (for MIDI editor tab icons)
+    // Time Bend is an action on the selection: full strength once it has two notes to bend.
     if (hasHeader && showEditorTabs_) {
-        g.setColour(ActiveTheme::getBorderColour());
-        g.fillRect(SIDEBAR_WIDTH, 0, 1, HeaderBar::HEIGHT - 1);
-
-        // Update bend button active state based on note selection
         const auto& noteSel = SelectionManager::getInstance().getNoteSelection();
-        bool hasAnyNotes = noteSel.isValid() && !noteSel.noteIndices.empty();
-        bool hasBendNotes = noteSel.isValid() && noteSel.noteIndices.size() >= 2;
-        sliceButton_->setActive(hasAnyNotes);
-        bendButton_->setActive(hasBendNotes);
+        const bool hasBendNotes = noteSel.isValid() && noteSel.noteIndices.size() >= 2;
+        bendButton_->setAlpha(hasBendNotes ? 1.0f : 0.45f);
     }
 
     // Vertical border on the left of the collapsed side panel strip
@@ -687,7 +806,7 @@ void BottomPanel::paint(juce::Graphics& g) {
         if (show && collapsed) {
             g.setColour(ActiveTheme::getBorderColour());
             int stripX = getWidth() - 28;
-            int top = hasHeader ? HeaderBar::HEIGHT : 0;
+            int top = hasHeader ? headerHeight() : 0;
             g.fillRect(stripX, top, 1, getHeight() - top);
         }
     };
@@ -721,7 +840,7 @@ void BottomPanel::resized() {
 
     // Position header bar at the top
     if (hasHeader) {
-        headerBar_->setBounds(getLocalBounds().removeFromTop(HeaderBar::HEIGHT));
+        headerBar_->setBounds(getLocalBounds().removeFromTop(headerHeight()));
         headerBar_->toFront(false);
 
         // Layout MIDI/audio grid controls in the header (if present)
@@ -733,7 +852,12 @@ void BottomPanel::resized() {
              content->getContentType() == daw::ui::PanelContentType::ChordClipView ||
              content->getContentType() == daw::ui::PanelContentType::WaveformEditor ||
              content->getContentType() == daw::ui::PanelContentType::AutomationClipEditor);
-        if (hasMidiControls)
+        headerBar_->v1 = usesV1Toolbar();
+        headerBar_->wells.clear();
+        headerBar_->dividers.clear();
+        if (hasMidiControls && headerBar_->v1)
+            layoutV1Toolbar(headerBar_->getLocalBounds());
+        else if (hasMidiControls)
             layoutMidiHeaderControls(headerBar_->getLocalBounds());
 
         // Let content type layout its own header controls
@@ -753,7 +877,7 @@ void BottomPanel::resized() {
     if (showPropsPanel_ && !propsPanelCollapsed_) {
         auto fullContent = getLocalBounds();
         if (hasHeader)
-            fullContent.removeFromTop(HeaderBar::HEIGHT);
+            fullContent.removeFromTop(headerHeight());
 
         int resizerX = fullContent.getRight() - propsPanelWidth_ - RESIZE_HANDLE_SIZE;
         propsResizer_->setBounds(resizerX, fullContent.getY(), RESIZE_HANDLE_SIZE,
@@ -779,7 +903,7 @@ void BottomPanel::resized() {
         constexpr int stripWidth = 28;
         auto fullContent = getLocalBounds();
         if (hasHeader)
-            fullContent.removeFromTop(HeaderBar::HEIGHT);
+            fullContent.removeFromTop(headerHeight());
         propsCollapseButton_->setBounds(fullContent.getRight() - stripWidth + 4,
                                         fullContent.getBottom() - collapseBtnSize - 4,
                                         collapseBtnSize, collapseBtnSize);
@@ -795,7 +919,7 @@ void BottomPanel::resized() {
         if (showChordPanel_ && !chordPanelCollapsed_) {
             auto fullContent = getLocalBounds();
             if (hasHeader)
-                fullContent.removeFromTop(HeaderBar::HEIGHT);
+                fullContent.removeFromTop(headerHeight());
 
             int resizerX = fullContent.getRight() - chordPanelWidth_ - RESIZE_HANDLE_SIZE;
             chordResizer_->setBounds(resizerX, fullContent.getY(), RESIZE_HANDLE_SIZE,
@@ -821,7 +945,7 @@ void BottomPanel::resized() {
             constexpr int stripWidth = 28;
             auto fullContent = getLocalBounds();
             if (hasHeader)
-                fullContent.removeFromTop(HeaderBar::HEIGHT);
+                fullContent.removeFromTop(headerHeight());
             chordCollapseButton_->setBounds(fullContent.getRight() - stripWidth + 4,
                                             fullContent.getBottom() - collapseBtnSize - 4,
                                             collapseBtnSize, collapseBtnSize);
@@ -839,7 +963,7 @@ void BottomPanel::resized() {
         if (showPostFxPanel_) {
             auto fullContent = getLocalBounds();
             if (hasHeader)
-                fullContent.removeFromTop(HeaderBar::HEIGHT);
+                fullContent.removeFromTop(headerHeight());
 
             const int postFxWidth = effectivePostFxWidth();
             int resizerX = fullContent.getRight() - postFxWidth - RESIZE_HANDLE_SIZE;
@@ -1240,12 +1364,8 @@ void BottomPanel::updateContentBasedOnSelection() {
 
 void BottomPanel::setPianoRollFullscreenActive(bool active) {
     pianoRollFullscreenActive_ = active;
-    if (fullscreenToggle_) {
-        fullscreenToggle_->updateSvgData(
-            active ? BinaryData::exit_fs_svg : BinaryData::enter_fs_svg,
-            active ? BinaryData::exit_fs_svgSize : BinaryData::enter_fs_svgSize);
+    if (fullscreenToggle_)
         fullscreenToggle_->setActive(active);
-    }
 }
 
 void BottomPanel::onContentWillSwitch(daw::ui::PanelContent* outgoing,
@@ -1311,17 +1431,15 @@ void BottomPanel::addMidiControlsToHeader() {
     syncLoopButtonState();
     clipEnabledButton_->setVisible(true);
     syncClipEnabledButtonState();
-    if (showEditorTabs_) {
-        pianoRollTab_->setVisible(true);
-        drumGridTab_->setVisible(true);
-        sliceButton_->setVisible(true);
-        bendButton_->setVisible(true);
-    } else {
-        pianoRollTab_->setVisible(false);
-        drumGridTab_->setVisible(false);
-        sliceButton_->setVisible(false);
-        bendButton_->setVisible(false);
-    }
+    pianoRollTab_->setVisible(showEditorTabs_);
+    drumGridTab_->setVisible(showEditorTabs_);
+    bendButton_->setVisible(showEditorTabs_);
+    // The v1 toolbar slices with the Slice tool and leaves clip power to the inspector.
+    sliceButton_->setVisible(false);
+    clipEnabledButton_->setVisible(!showEditorTabs_);
+    for (auto& button : toolButtons_)
+        button->setVisible(showEditorTabs_);
+    keyChip_->setVisible(showEditorTabs_);
     overlayTracksButton_->setVisible(showEditorTabs_);
     updateOverlayTracksButtonState();
 }
@@ -1354,6 +1472,11 @@ void BottomPanel::hideMidiHeaderControls() {
     drumGridTab_->setVisible(false);
     sliceButton_->setVisible(false);
     bendButton_->setVisible(false);
+    for (auto& button : toolButtons_)
+        if (button)
+            button->setVisible(false);
+    if (keyChip_)
+        keyChip_->setVisible(false);
     if (overlayTracksButton_)
         overlayTracksButton_->setVisible(false);
     if (fullscreenToggle_)
@@ -1481,6 +1604,152 @@ void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
     }
 }
 
+bool BottomPanel::usesV1Toolbar() const {
+    return showEditorTabs_;
+}
+
+int BottomPanel::headerHeight() const {
+    return usesV1Toolbar() ? kV1ToolbarHeight : HeaderBar::HEIGHT;
+}
+
+void BottomPanel::layoutV1Toolbar(juce::Rectangle<int> headerBounds) {
+    constexpr int pad = 3;
+    constexpr int gap = 2;
+    constexpr int textHeight = 22;
+    const int y = headerBounds.getCentreY() - kV1Button / 2;
+    const int textY = headerBounds.getCentreY() - textHeight / 2;
+    auto& wells = headerBar_->wells;
+    auto& dividers = headerBar_->dividers;
+    const auto wellAround = [&](int left, int right) {
+        wells.push_back({left - pad, y - pad, right - left + pad * 2, kV1Button + pad * 2});
+    };
+
+    // Left: editor mode pair | layer clips
+    int x = headerBounds.getX() + 8 + pad;
+    wellAround(x, x + kV1Button * 2 + gap);
+    pianoRollTab_->setBounds(x, y, kV1Button, kV1Button);
+    drumGridTab_->setBounds(x + kV1Button + gap, y, kV1Button, kV1Button);
+    x += kV1Button * 2 + gap + pad + 8;
+    dividers.push_back(x);
+    x += 8;
+    overlayTracksButton_->setBounds(x, y, kV1Button, kV1Button);
+
+    // Centre: tools | time bend | key chip
+    constexpr int keyChipWidth = 80;
+    const int toolsWidth = kV1Button * 5 + gap * 4;
+    const int centreWidth = toolsWidth + pad + 16 + kV1Button + 16 + keyChipWidth;
+    x = headerBounds.getCentreX() - centreWidth / 2;
+    wellAround(x, x + toolsWidth);
+    for (auto& button : toolButtons_) {
+        button->setBounds(x, y, kV1Button, kV1Button);
+        x += kV1Button + gap;
+    }
+    x += pad - gap + 8;
+    dividers.push_back(x);
+    x += 8;
+    bendButton_->setBounds(x, y, kV1Button, kV1Button);
+    x += kV1Button + 8;
+    dividers.push_back(x);
+    x += 8;
+    keyChip_->setBounds(x, y, keyChipWidth, kV1Button);
+
+    // Right, from the edge: maximise | ABS | quantise | loop
+    x = headerBounds.getRight() - 8;
+    if (fullscreenToggle_->isVisible()) {
+        x -= kV1Button;
+        fullscreenToggle_->setBounds(x, y, kV1Button, kV1Button);
+        x -= 6;
+    }
+    if (timeModeButton_->isVisible()) {
+        x -= 34;
+        timeModeButton_->setBounds(x, textY, 34, textHeight);
+        x -= 8;
+    }
+    dividers.push_back(x);
+    x -= 8 + pad;
+    const int quantiseRight = x;
+    x -= 44;
+    snapButton_->setBounds(x, textY, 44, textHeight);
+    x -= gap + 44;
+    autoGridButton_->setBounds(x, textY, 44, textHeight);
+    x -= gap + 52;
+    gridDivisionButton_->setBounds(x, textY, 52, textHeight);
+    wellAround(x, quantiseRight);
+    x -= pad + 8;
+    dividers.push_back(x);
+    x -= 8 + kV1Button;
+    loopButton_->setBounds(x, y, kV1Button, kV1Button);
+}
+
+void BottomPanel::syncToolButtons() {
+    const auto tool = MidiEditToolState::getInstance().getTool();
+    for (size_t i = 0; i < toolButtons_.size(); ++i)
+        if (toolButtons_[i])
+            toolButtons_[i]->setActive(static_cast<size_t>(tool) == i);
+}
+
+void BottomPanel::refreshKeyDisplay() {
+    if (keyChip_)
+        keyChip_->repaint();
+    if (auto* content = getActiveContent())
+        content->repaint();
+}
+
+void BottomPanel::changeListenerCallback(juce::ChangeBroadcaster* source) {
+    if (source == &MidiEditToolState::getInstance())
+        syncToolButtons();
+    else if (source == &MidiEditorKeyState::getInstance())
+        refreshKeyDisplay();
+}
+
+void BottomPanel::projectOpened(const ProjectInfo&) {
+    refreshKeyDisplay();
+}
+
+void BottomPanel::projectClosed() {
+    refreshKeyDisplay();
+}
+
+void BottomPanel::projectPropertiesChanged() {
+    refreshKeyDisplay();
+}
+
+void BottomPanel::showKeyChipMenu() {
+    const auto key = MidiEditorKeyState::songKey();
+    constexpr int kLitId = 1;
+    constexpr int kNoKeyId = 2;
+    constexpr int kRootIdBase = 100;
+    constexpr int kQualityIdBase = 200;
+
+    juce::PopupMenu menu;
+    menu.addItem(kLitId, "Highlight scale and fold to key", key.valid(),
+                 MidiEditorKeyState::getInstance().isLit());
+    menu.addSeparator();
+    menu.addItem(kNoKeyId, "No Key", true, !key.valid());
+    for (int i = 0; i < static_cast<int>(daw::ui::transport::kKeyRootNames.size()); ++i)
+        menu.addItem(kRootIdBase + i,
+                     music::NotationSettings::getInstance().formatRoot(
+                         daw::ui::transport::kKeyRootNames[static_cast<size_t>(i)]),
+                     true, key.root == i);
+    menu.addSeparator();
+    menu.addItem(kQualityIdBase, "Major", key.valid(), key.valid() && key.quality == 0);
+    menu.addItem(kQualityIdBase + 1, "Minor", key.valid(), key.valid() && key.quality == 1);
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(keyChip_.get()),
+                       [key](int result) {
+                           auto& projects = ProjectManager::getInstance();
+                           auto& keyState = MidiEditorKeyState::getInstance();
+                           if (result == kLitId)
+                               keyState.setLit(!keyState.isLit());
+                           else if (result == kNoKeyId)
+                               projects.setKey(-1, key.quality);
+                           else if (result >= kQualityIdBase)
+                               projects.setKey(key.root, result - kQualityIdBase);
+                           else if (result >= kRootIdBase)
+                               projects.setKey(result - kRootIdBase, key.quality);
+                       });
+}
+
 juce::Rectangle<int> BottomPanel::getTabBarBounds() {
     // No tab bar for bottom panel - content is auto-switched based on selection
     return {};
@@ -1490,7 +1759,7 @@ juce::Rectangle<int> BottomPanel::getContentBounds() {
     auto bounds = getLocalBounds();
     // Reserve header space
     if (shouldShowHeaderFor(getActiveContent())) {
-        bounds.removeFromTop(HeaderBar::HEIGHT);
+        bounds.removeFromTop(headerHeight());
     }
     // Reserve space for properties side panel + resize handle when expanded,
     // or a small strip for the collapse button when collapsed

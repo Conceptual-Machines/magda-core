@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <functional>
 #include <memory>
 
@@ -10,6 +11,7 @@
 #include "core/PluginPreferences.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
+#include "project/ProjectManager.hpp"
 #include "utils/ScopedListener.hpp"
 
 namespace magda {
@@ -43,7 +45,9 @@ class BottomPanel : public daw::ui::TabbedPanel,
                     public TrackManagerListener,
                     public SelectionManagerListener,
                     public PluginPreferences::Listener,
-                    public TimelineStateListener {
+                    public TimelineStateListener,
+                    public ProjectManagerListener,
+                    private juce::ChangeListener {
   public:
     BottomPanel();
     ~BottomPanel() override;
@@ -96,6 +100,11 @@ class BottomPanel : public daw::ui::TabbedPanel,
     // TimelineStateListener
     void timelineStateChanged(const TimelineState& state, ChangeFlags changes) override;
 
+    // ProjectManagerListener: the key chip follows the song key
+    void projectOpened(const ProjectInfo& info) override;
+    void projectClosed() override;
+    void projectPropertiesChanged() override;
+
     // DragAndDropTarget implementation (plugin drops)
     bool isInterestedInDragSource(const SourceDetails& details) override;
     void itemDragEnter(const SourceDetails& details) override;
@@ -130,6 +139,18 @@ class BottomPanel : public daw::ui::TabbedPanel,
     // Centralised header bar — content types populate it via populateHeader()
     class HeaderBar;
     std::unique_ptr<HeaderBar> headerBar_;
+
+    // v1 MIDI editor toolbar: edit tools and the song-key chip (piano roll and drum grid only)
+    class KeyChip;
+    std::array<std::unique_ptr<SvgButton>, 5> toolButtons_;
+    std::unique_ptr<KeyChip> keyChip_;
+    bool usesV1Toolbar() const;
+    int headerHeight() const;
+    void layoutV1Toolbar(juce::Rectangle<int> headerBounds);
+    void syncToolButtons();
+    void showKeyChipMenu();
+    void refreshKeyDisplay();
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
 
     void addMidiControlsToHeader();
     void addGridControlsToHeader();

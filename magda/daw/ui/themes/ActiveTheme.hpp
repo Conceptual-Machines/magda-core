@@ -263,6 +263,28 @@ enum class ColourRole : std::size_t {
     DEVICE_PAD_HIT_BORDER,
     DEVICE_PAD_EMPTY,
     DEVICE_PANEL,
+    MIDI_TOOLBAR,
+    MIDI_RAIL,
+    MIDI_LANE,
+    MIDI_TOOL_ACTIVE,
+    MIDI_TOOL_ACTIVE_BORDER,
+    MIDI_ROW_OUT,
+    MIDI_ROW_IN,
+    MIDI_ROW_ROOT,
+    MIDI_ROW_LINE,
+    MIDI_KEY_WHITE,
+    MIDI_KEY_WHITE_OUT,
+    MIDI_KEY_BLACK,
+    MIDI_PLAYHEAD,
+    MIDI_NOTE,
+    MIDI_KEY_ON,
+    MIDI_MUTE,
+    MIDI_MONITOR,
+    MIDI_CHORD_BLOCK,
+    MIDI_CHORD_BLOCK_CURRENT,
+    MIDI_DRUM_ROW,
+    MIDI_DRUM_LABEL,
+    MIDI_DRUM_GROUP,
     count
 };
 
@@ -559,6 +581,28 @@ class ActiveTheme {
     static constexpr auto DEVICE_PAD_HIT_BORDER = ColourRole::DEVICE_PAD_HIT_BORDER;
     static constexpr auto DEVICE_PAD_EMPTY = ColourRole::DEVICE_PAD_EMPTY;
     static constexpr auto DEVICE_PANEL = ColourRole::DEVICE_PANEL;
+    static constexpr auto MIDI_TOOLBAR = ColourRole::MIDI_TOOLBAR;
+    static constexpr auto MIDI_RAIL = ColourRole::MIDI_RAIL;
+    static constexpr auto MIDI_LANE = ColourRole::MIDI_LANE;
+    static constexpr auto MIDI_TOOL_ACTIVE = ColourRole::MIDI_TOOL_ACTIVE;
+    static constexpr auto MIDI_TOOL_ACTIVE_BORDER = ColourRole::MIDI_TOOL_ACTIVE_BORDER;
+    static constexpr auto MIDI_ROW_OUT = ColourRole::MIDI_ROW_OUT;
+    static constexpr auto MIDI_ROW_IN = ColourRole::MIDI_ROW_IN;
+    static constexpr auto MIDI_ROW_ROOT = ColourRole::MIDI_ROW_ROOT;
+    static constexpr auto MIDI_ROW_LINE = ColourRole::MIDI_ROW_LINE;
+    static constexpr auto MIDI_KEY_WHITE = ColourRole::MIDI_KEY_WHITE;
+    static constexpr auto MIDI_KEY_WHITE_OUT = ColourRole::MIDI_KEY_WHITE_OUT;
+    static constexpr auto MIDI_KEY_BLACK = ColourRole::MIDI_KEY_BLACK;
+    static constexpr auto MIDI_PLAYHEAD = ColourRole::MIDI_PLAYHEAD;
+    static constexpr auto MIDI_NOTE = ColourRole::MIDI_NOTE;
+    static constexpr auto MIDI_KEY_ON = ColourRole::MIDI_KEY_ON;
+    static constexpr auto MIDI_MUTE = ColourRole::MIDI_MUTE;
+    static constexpr auto MIDI_MONITOR = ColourRole::MIDI_MONITOR;
+    static constexpr auto MIDI_CHORD_BLOCK = ColourRole::MIDI_CHORD_BLOCK;
+    static constexpr auto MIDI_CHORD_BLOCK_CURRENT = ColourRole::MIDI_CHORD_BLOCK_CURRENT;
+    static constexpr auto MIDI_DRUM_ROW = ColourRole::MIDI_DRUM_ROW;
+    static constexpr auto MIDI_DRUM_LABEL = ColourRole::MIDI_DRUM_LABEL;
+    static constexpr auto MIDI_DRUM_GROUP = ColourRole::MIDI_DRUM_GROUP;
 
     // Runtime palette API. Theme changes are expected to happen on JUCE's
     // message thread, alongside the LookAndFeel refresh they trigger.

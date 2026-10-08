@@ -8,6 +8,8 @@ target_sources(magda_daw_app PRIVATE
     VelocityLaneComponent.cpp
     CCLaneComponent.cpp
     MidiDrawerComponent.cpp
+    MidiEditTool.cpp
+    MidiEditorKey.cpp
     NoteComponent.hpp
     PianoRollGridComponent.hpp
     PianoRollKeyboard.hpp
@@ -17,4 +19,6 @@ target_sources(magda_daw_app PRIVATE
     VelocityLaneComponent.hpp
     CCLaneComponent.hpp
     MidiDrawerComponent.hpp
+    MidiEditTool.hpp
+    MidiEditorKey.hpp
 )

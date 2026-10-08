@@ -104,6 +104,24 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/midi_editor/icon-fold-boldm.svg
     ../../assets/icons/midi_editor/lanes.svg
     ../../assets/icons/midi_editor/stacks.svg
+    ../../assets/icons/midi_editor/v1/me-cc.svg
+    ../../assets/icons/midi_editor/v1/me-chord-track.svg
+    ../../assets/icons/midi_editor/v1/me-drum-grid.svg
+    ../../assets/icons/midi_editor/v1/me-erase.svg
+    ../../assets/icons/midi_editor/v1/me-fold.svg
+    ../../assets/icons/midi_editor/v1/me-glue.svg
+    ../../assets/icons/midi_editor/v1/me-layer-clips.svg
+    ../../assets/icons/midi_editor/v1/me-loop.svg
+    ../../assets/icons/midi_editor/v1/me-maximise.svg
+    ../../assets/icons/midi_editor/v1/me-monitor-off.svg
+    ../../assets/icons/midi_editor/v1/me-monitor-on.svg
+    ../../assets/icons/midi_editor/v1/me-mpe.svg
+    ../../assets/icons/midi_editor/v1/me-pencil.svg
+    ../../assets/icons/midi_editor/v1/me-piano-roll.svg
+    ../../assets/icons/midi_editor/v1/me-pointer.svg
+    ../../assets/icons/midi_editor/v1/me-slice.svg
+    ../../assets/icons/midi_editor/v1/me-time-bend.svg
+    ../../assets/icons/midi_editor/v1/me-velocity.svg
     # Track chain icons
     ../../assets/icons/trackchain/icon-mods-boldm.svg
     ../../assets/icons/trackchain/icon-racks-boldm.svg

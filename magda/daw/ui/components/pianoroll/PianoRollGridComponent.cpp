@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <map>
 
 #include "../../state/TimelineController.hpp"
 #include "../../state/TimelineEvents.hpp"
@@ -12,6 +13,7 @@
 #include "../../themes/CursorManager.hpp"
 #include "../../utils/SelectionPolicy.hpp"
 #include "../../windows/CommandIDs.hpp"
+#include "MidiEditTool.hpp"
 #include "PhaseMarker.hpp"
 #include "PitchFoldMap.hpp"
 #include "VelocityReadout.hpp"
@@ -687,8 +689,15 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
+    const auto tool = MidiEditToolState::getInstance().getTool();
+    if (tool == MidiEditTool::Erase) {
+        isErasing_ = true;
+        eraseNotesAt(e.getPosition());
+        return;
+    }
+
     // Alt is the note pencil (Shift is the scroll modifier now).
-    if (e.mods.isAltDown() && onNoteAdded) {
+    if ((e.mods.isAltDown() || tool == MidiEditTool::Pencil) && onNoteAdded) {
         auto insertPos = getNoteInsertPosition(e.getPosition());
         if (insertPos.has_value()) {
             const auto* clip = ClipManager::getInstance().getClip(insertPos->clipId);
@@ -734,6 +743,11 @@ void PianoRollGridComponent::mouseDrag(const juce::MouseEvent& e) {
     if (isEditCursorClick_)
         return;
 
+    if (isErasing_) {
+        eraseNotesAt(e.getPosition());
+        return;
+    }
+
     if (isDrawingNote_) {
         drawingNoteEndBeat_ = clipBeatForDisplayX(drawingNoteClipId_, e.x);
         repaint();
@@ -755,6 +769,11 @@ void PianoRollGridComponent::mouseDrag(const juce::MouseEvent& e) {
 void PianoRollGridComponent::mouseUp(const juce::MouseEvent& e) {
     if (isExpressionDragging_) {
         handleExpressionMouseUp(e);
+        return;
+    }
+
+    if (isErasing_) {
+        commitErase();
         return;
     }
 
@@ -1089,7 +1108,15 @@ bool PianoRollGridComponent::perform(const InvocationInfo& info) {
     return true;
 }
 
+bool PianoRollGridComponent::keyStateChanged(bool /*isKeyDown*/) {
+    MidiEditToolState::getInstance().handleKeyStateChanged();
+    return false;
+}
+
 bool PianoRollGridComponent::keyPressed(const juce::KeyPress& key) {
+    if (MidiEditToolState::getInstance().handleKeyPressed(key))
+        return true;
+
     // Handle pending chord confirmation/cancellation
     if (pendingChord_.active) {
         if (key.getKeyCode() == juce::KeyPress::returnKey) {
@@ -2060,11 +2087,30 @@ void PianoRollGridComponent::updateEmptyGridCursor(const juce::ModifierKeys& mod
         return;
     }
 
-    if (mods.isAltDown()) {
+    if (auto toolCursor = cursorForMidiEditTool(MidiEditToolState::getInstance().getTool())) {
+        setMouseCursor(*toolCursor);
+    } else if (mods.isAltDown()) {
         setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
     } else {
         setMouseCursor(juce::MouseCursor::NormalCursor);
     }
+}
+
+void PianoRollGridComponent::eraseNotesAt(juce::Point<int> position) {
+    for (auto& nc : noteComponents_) {
+        if (nc->isVisible() && !nc->isGhost() && nc->getBounds().contains(position)) {
+            nc->setVisible(false);
+            erasedNotes_[nc->getSourceClipId()].push_back(nc->getNoteIndex());
+        }
+    }
+}
+
+void PianoRollGridComponent::commitErase() {
+    isErasing_ = false;
+    auto erased = std::exchange(erasedNotes_, {});
+    for (auto& [clipId, indices] : erased)
+        if (onDeleteNotes)
+            onDeleteNotes(clipId, std::move(indices));
 }
 
 void PianoRollGridComponent::modifierKeysChanged(const juce::ModifierKeys& modifiers) {

@@ -6,8 +6,10 @@
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../utils/SelectionPolicy.hpp"
+#include "MidiEditTool.hpp"
 #include "NoteGridHost.hpp"
 #include "core/ClipManager.hpp"
+#include "core/MidiNoteCommands.hpp"
 #include "core/TrackManager.hpp"
 
 namespace {
@@ -110,6 +112,11 @@ void NoteComponent::mouseDown(const juce::MouseEvent& e) {
     if (isEraseClick) {
         if (onNoteDeleted)
             onNoteDeleted(noteIndex_);
+        dragMode_ = DragMode::None;
+        return;
+    }
+
+    if (!e.mods.isPopupMenu() && handleToolClick(e)) {
         dragMode_ = DragMode::None;
         return;
     }
@@ -473,8 +480,38 @@ bool NoteComponent::isOnRightEdge(int x) const {
     return x > getWidth() - RESIZE_HANDLE_WIDTH;
 }
 
+bool NoteComponent::handleToolClick(const juce::MouseEvent& e) {
+    if (sourceClipId_ == INVALID_CLIP_ID || parentGrid_ == nullptr)
+        return false;
+    switch (MidiEditToolState::getInstance().getTool()) {
+        case MidiEditTool::Slice: {
+            double beat = startBeat_ + e.position.x / parentGrid_->getPixelsPerBeat();
+            if (snapBeatToGrid)
+                beat = snapBeatToGrid(beat);
+            splitMidiNoteWithUndo(sourceClipId_, noteIndex_, beat);
+            return true;
+        }
+        case MidiEditTool::Glue:
+            glueMidiNoteWithUndo(sourceClipId_, noteIndex_);
+            return true;
+        case MidiEditTool::Erase:
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<DeleteMidiNoteCommand>(sourceClipId_, noteIndex_));
+            return true;
+        case MidiEditTool::Pointer:
+        case MidiEditTool::Pencil:
+            break;
+    }
+    return false;
+}
+
 void NoteComponent::updateCursor() {
     const auto mods = juce::ModifierKeys::currentModifiers;
+    const auto tool = MidiEditToolState::getInstance().getTool();
+    if (tool != MidiEditTool::Pointer && tool != MidiEditTool::Pencil) {
+        setMouseCursor(*cursorForMidiEditTool(tool));
+        return;
+    }
     if (mods.isShiftDown() && mods.isCtrlDown()) {
         setMouseCursor(CursorManager::getInstance().getEraseCursor());
     } else if (mods.isAltDown() && !mods.isCommandDown() && !mods.isShiftDown()) {

@@ -66,6 +66,9 @@ class NoteComponent : public juce::Component, private juce::Timer {
     }
     void setSelected(bool selected);
     void setGhost(bool ghost);
+    bool isGhost() const {
+        return ghost_;
+    }
 
     // Update note data from clip
     void updateFromNote(const MidiNote& note, juce::Colour colour);
@@ -99,6 +102,9 @@ class NoteComponent : public juce::Component, private juce::Timer {
     std::function<void(size_t /*noteIndex*/, int /*velocityDelta*/)> onVelocityWheel;
 
   private:
+    // Slice, Glue and Erase act on this note directly; returns true when the click was theirs.
+    bool handleToolClick(const juce::MouseEvent& e);
+
     size_t noteIndex_;
     ClipId sourceClipId_;
     NoteGridHost* parentGrid_;

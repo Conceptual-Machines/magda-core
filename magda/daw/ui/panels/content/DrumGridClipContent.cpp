@@ -24,6 +24,7 @@
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TimeBendPopup.hpp"
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
+#include "ui/components/pianoroll/MidiEditTool.hpp"
 #include "ui/components/pianoroll/NoteComponent.hpp"
 #include "ui/components/pianoroll/NoteGridHost.hpp"
 #include "ui/components/pianoroll/VelocityReadout.hpp"
@@ -645,7 +646,10 @@ class DrumGridClipGrid : public juce::Component,
     }
 
     void mouseMove(const juce::MouseEvent& e) override {
-        if (e.mods.isShiftDown()) {
+        if (auto toolCursor =
+                magda::cursorForMidiEditTool(magda::MidiEditToolState::getInstance().getTool())) {
+            setMouseCursor(*toolCursor);
+        } else if (e.mods.isShiftDown()) {
             setMouseCursor(magda::CursorManager::getInstance().getNoteRepeatCursor());
         } else if (e.mods.isAltDown() && isNearGridLine(e.x)) {
             setMouseCursor(juce::MouseCursor::IBeamCursor);
@@ -844,6 +848,12 @@ class DrumGridClipGrid : public juce::Component,
         emptyClickRow_ = -1;
         isRepeatStamping_ = false;
 
+        if (magda::MidiEditToolState::getInstance().getTool() == magda::MidiEditTool::Erase) {
+            isErasing_ = true;
+            eraseNotesAt(e.getPosition());
+            return;
+        }
+
         int row = e.y / rowHeight_;
         if (row >= 0 && row < static_cast<int>(padRows_->size())) {
             emptyClickRow_ = row;
@@ -877,6 +887,11 @@ class DrumGridClipGrid : public juce::Component,
         if (!padRows_ || padRows_->empty())
             return;
 
+        if (isErasing_) {
+            eraseNotesAt(e.getPosition());
+            return;
+        }
+
         if (isRepeatStamping_) {
             repeatStampEndBeat_ = displayBeatToClipBeat(pixelToBeat(e.x));
             repaint();
@@ -900,6 +915,13 @@ class DrumGridClipGrid : public juce::Component,
 
         // Don't deselect on right-click release (context menu was shown)
         if (e.mods.isPopupMenu()) {
+            return;
+        }
+
+        if (isErasing_) {
+            isErasing_ = false;
+            if (!erasedNotes_.empty() && onDeleteNotes)
+                onDeleteNotes(clipId_, std::exchange(erasedNotes_, {}));
             return;
         }
 
@@ -977,7 +999,24 @@ class DrumGridClipGrid : public juce::Component,
         emptyClickRow_ = -1;
     }
 
+    void eraseNotesAt(juce::Point<int> position) {
+        for (auto& nc : noteComponents_) {
+            if (nc->isVisible() && nc->getBounds().contains(position)) {
+                nc->setVisible(false);
+                erasedNotes_.push_back(nc->getNoteIndex());
+            }
+        }
+    }
+
+    bool keyStateChanged(bool /*isKeyDown*/) override {
+        magda::MidiEditToolState::getInstance().handleKeyStateChanged();
+        return false;
+    }
+
     bool keyPressed(const juce::KeyPress& key) override {
+        if (magda::MidiEditToolState::getInstance().handleKeyPressed(key))
+            return true;
+
         // Arrow up/down: move selected notes by semitone (or octave with Shift)
         // Alt+arrows reserved for viewport scrolling
         if (!key.getModifiers().isAltDown() && (key.getKeyCode() == juce::KeyPress::upKey ||
@@ -1106,6 +1145,8 @@ class DrumGridClipGrid : public juce::Component,
 
     // Rubber band selection state
     bool isDragSelecting_ = false;
+    bool isErasing_ = false;
+    std::vector<size_t> erasedNotes_;
     juce::Point<int> dragSelectStart_;
     juce::Point<int> dragSelectEnd_;
     int emptyClickRow_ = -1;
