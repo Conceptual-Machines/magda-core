@@ -455,16 +455,14 @@ void ClipComponent::paint(juce::Graphics& g) {
                      juce::roundToInt(start * zoom);
             }
 
-            // A small dent in the clip's top and bottom edges, cut in the lane's colour
+            // A small dent in the clip's top edge, cut in the lane's colour
             const auto x = static_cast<float>(clipBounds.getX() + bx);
             const auto top = static_cast<float>(clipBounds.getY());
-            const auto bottom = static_cast<float>(clipBounds.getBottom());
             constexpr float dent = 4.0f;
-            juce::Path dents;
-            dents.addTriangle(x - dent, top, x + dent, top, x, top + dent);
-            dents.addTriangle(x - dent, bottom, x + dent, bottom, x, bottom - dent);
+            juce::Path notch;
+            notch.addTriangle(x - dent, top, x + dent, top, x, top + dent);
             g.setColour(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
-            g.fillPath(dents);
+            g.fillPath(notch);
         }
     }
 
