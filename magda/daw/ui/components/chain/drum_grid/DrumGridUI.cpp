@@ -682,7 +682,8 @@ void DrumGridUI::paintEditor(juce::Graphics& g) {
 
     g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f));
     for (const auto& [tab, name] :
-         {std::pair{EditorTab::Velocity, "VEL"}, std::pair{EditorTab::Volume, "VOL"}}) {
+         {std::pair{EditorTab::Layers, "LAYERS"}, std::pair{EditorTab::Velocity, "VEL"},
+          std::pair{EditorTab::Volume, "VOL"}}) {
         const auto area = tabBounds(tab);
         const bool active = tab == editorTab_;
         g.setColour(colour(active ? ActiveTheme::DEVICE_VALUE_TEXT : ActiveTheme::DEVICE_DIM2));
@@ -695,6 +696,8 @@ void DrumGridUI::paintEditor(juce::Graphics& g) {
     g.setColour(colour(ActiveTheme::DEVICE_LINE));
     g.fillRect(tabsArea_.withTop(tabsArea_.getBottom() - 1));
 
+    if (editorTab_ == EditorTab::Layers)
+        return;
     if (editorTab_ == EditorTab::Velocity) {
         paintZones(g);
         return;
@@ -854,9 +857,8 @@ void DrumGridUI::layoutEditor(juce::Rectangle<int> area) {
     }
 
     editorHeaderArea_ = area.removeFromTop(kPanelHeaderHeight);
-    layoutLayerList(area);
-    area.removeFromTop(layerList_.isVisible() ? layerList_.getHeight() : 0);
     tabsArea_ = area.removeFromTop(28);
+    layoutLayerList(editorTab_ == EditorTab::Layers ? area : juce::Rectangle<int>{});
     auto body = area.reduced(10);
 
     if (editorTab_ == EditorTab::Velocity) {
@@ -910,8 +912,8 @@ void DrumGridUI::layoutEditor(juce::Rectangle<int> area) {
 }
 
 void DrumGridUI::layoutLayerList(juce::Rectangle<int> area) {
-    // Every layer, then Add layer; it scrolls past what leaves the editor its body.
-    const bool show = selectedPadHasChain() && !layers_.empty();
+    // Every layer, then Add layer, scrolling when they outgrow the panel.
+    const bool show = !area.isEmpty() && selectedPadHasChain() && !layers_.empty();
     layerList_.setVisible(show);
     if (!show)
         return;
@@ -919,14 +921,11 @@ void DrumGridUI::layoutLayerList(juce::Rectangle<int> area) {
     constexpr int kGap = 4;
     constexpr int kAddHeight = 22;
     constexpr int kPadding = 8;
-    constexpr int kBodyHeight = 28 + 230;
     const int rows = static_cast<int>(layerRows_.size());
     const int content = rows * (PadLayerRow::kHeight + kGap) + kAddHeight + 2 * kPadding;
-    const int height = juce::jlimit(PadLayerRow::kHeight + kAddHeight + 2 * kPadding, content,
-                                    area.getHeight() - kBodyHeight);
-    layerList_.setBounds(area.removeFromTop(height));
+    layerList_.setBounds(area);
 
-    const int width = layerList_.getWidth() - (content > height ? 8 : 0);
+    const int width = area.getWidth() - (content > area.getHeight() ? 8 : 0);
     layerListContent_.setSize(width, content);
     auto list = layerListContent_.getLocalBounds().reduced(kPadding);
     for (auto& row : layerRows_) {
@@ -1179,14 +1178,14 @@ std::vector<juce::Component*> DrumGridUI::zoneControls() {
 }
 
 juce::Rectangle<int> DrumGridUI::tabBounds(EditorTab tab) const {
-    const int width = tabsArea_.getWidth() / 2;
+    const int width = tabsArea_.getWidth() / 3;
     return tabsArea_.withWidth(width).translated(width * static_cast<int>(tab), 0);
 }
 
 void DrumGridUI::mouseDown(const juce::MouseEvent& event) {
     if (editorArea_.isEmpty() || !tabsArea_.contains(event.getPosition()))
         return;
-    for (const auto tab : {EditorTab::Velocity, EditorTab::Volume})
+    for (const auto tab : {EditorTab::Layers, EditorTab::Velocity, EditorTab::Volume})
         if (tabBounds(tab).contains(event.getPosition()) && tab != editorTab_) {
             editorTab_ = tab;
             layoutEditor(editorArea_);

@@ -27,8 +27,8 @@ namespace magda::daw::ui {
  * @brief The Drum Grid's body in the v1 shell: [rail | pads | pad editor | chain] over a footer.
  *
  * The selected pad's chain shows in the rack's chain view. Pads take sample and plugin drops;
- * the rail toggles the editor and swaps the pads for the pad list. The editor lists the pad's
- * layers; the chain view shows the selected one (#3007).
+ * the rail toggles the editor and swaps the pads for the pad list. The editor's LAYERS tab lists
+ * the pad's layers; the chain view shows the selected one (#3007).
  */
 class DrumGridUI : public juce::Component,
                    public juce::FileDragAndDropTarget,
@@ -260,8 +260,8 @@ class DrumGridUI : public juce::Component,
     juce::TextButton editorToggle_{"i"};
 
     // Pad editor
-    enum class EditorTab { Velocity, Volume };
-    EditorTab editorTab_ = EditorTab::Volume;
+    enum class EditorTab { Layers, Velocity, Volume };
+    EditorTab editorTab_ = EditorTab::Layers;
     bool detailCollapsed_ = false;
     magda::DraggableValueLabel velocityLowControl_{magda::DraggableValueLabel::Format::Integer};
     magda::DraggableValueLabel velocityHighControl_{magda::DraggableValueLabel::Format::Integer};
