@@ -455,16 +455,23 @@ void ClipComponent::paint(juce::Graphics& g) {
                      juce::roundToInt(start * zoom);
             }
 
-            // A dent in the clip's top and bottom edges, cut in the lane's colour
+            // A dent in the clip's top and bottom edges
             const auto x = static_cast<float>(clipBounds.getX() + bx);
             const auto top = static_cast<float>(clipBounds.getY());
             const auto bottom = static_cast<float>(clipBounds.getBottom());
             constexpr float dent = 7.0f;
-            juce::Path dents;
-            dents.addTriangle(x - dent, top, x + dent, top, x, top + dent);
-            dents.addTriangle(x - dent, bottom, x + dent, bottom, x, bottom - dent);
-            g.setColour(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
-            g.fillPath(dents);
+            juce::Path topDent;
+            topDent.addTriangle(x - dent, top, x + dent, top, x, top + dent);
+            juce::Path bottomDent;
+            bottomDent.addTriangle(x - dent, bottom, x + dent, bottom, x, bottom - dent);
+            const auto laneColour = ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND);
+            // A selected clip's black header swallows the lane colour, so its top dent is white.
+            const bool selected =
+                isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_);
+            g.setColour(selected ? juce::Colours::white : laneColour);
+            g.fillPath(topDent);
+            g.setColour(laneColour);
+            g.fillPath(bottomDent);
 
             // A dark hairline through the content between the dents, darker than the grid
             g.setColour(juce::Colours::black.withAlpha(0.35f));
