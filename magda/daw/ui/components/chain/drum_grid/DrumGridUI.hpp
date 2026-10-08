@@ -27,8 +27,8 @@ namespace magda::daw::ui {
  * @brief The Drum Grid's body in the v1 shell: [rail | pads | pad editor | chain] over a footer.
  *
  * The selected pad's chain shows in the rack's chain view. Pads take sample and plugin drops;
- * the rail toggles the editor and swaps the pads for the pad list. A pad with several layers
- * lists them above the chain view, which shows the selected layer (#3007).
+ * the rail toggles the editor and swaps the pads for the pad list. The editor lists the pad's
+ * layers; the chain view shows the selected one (#3007).
  */
 class DrumGridUI : public juce::Component,
                    public juce::FileDragAndDropTarget,
@@ -260,7 +260,7 @@ class DrumGridUI : public juce::Component,
     juce::TextButton editorToggle_{"i"};
 
     // Pad editor
-    enum class EditorTab { Velocity, Key, Volume };
+    enum class EditorTab { Velocity, Volume };
     EditorTab editorTab_ = EditorTab::Volume;
     bool detailCollapsed_ = false;
     magda::DraggableValueLabel velocityLowControl_{magda::DraggableValueLabel::Format::Integer};
@@ -268,12 +268,10 @@ class DrumGridUI : public juce::Component,
     magda::DraggableValueLabel velocityFadeLowControl_{magda::DraggableValueLabel::Format::Integer};
     magda::DraggableValueLabel velocityFadeHighControl_{
         magda::DraggableValueLabel::Format::Integer};
-    magda::DraggableValueLabel keyLowControl_{magda::DraggableValueLabel::Format::MidiNote};
-    magda::DraggableValueLabel keyHighControl_{magda::DraggableValueLabel::Format::MidiNote};
-    magda::DraggableValueLabel keyFadeLowControl_{magda::DraggableValueLabel::Format::Integer};
-    magda::DraggableValueLabel keyFadeHighControl_{magda::DraggableValueLabel::Format::Integer};
     juce::TextButton roundRobinButton_;
     bool zoneDragging_ = false;
+    magda::DraggableValueLabel layerGainControl_{magda::DraggableValueLabel::Format::Decibels};
+    magda::DraggableValueLabel layerPanControl_{magda::DraggableValueLabel::Format::Pan};
     magda::DraggableValueLabel levelControl_{magda::DraggableValueLabel::Format::Decibels};
     magda::DraggableValueLabel panControl_{magda::DraggableValueLabel::Format::Pan};
     juce::TextButton outputButton_;
@@ -284,6 +282,8 @@ class DrumGridUI : public juce::Component,
     magda::ChainId selectedLayer_ = magda::INVALID_CHAIN_ID;
     std::vector<std::unique_ptr<PadLayerRow>> layerRows_;
     DashedAddButton addLayerButton_{"Add layer"};
+    juce::Viewport layerList_;
+    juce::Component layerListContent_;
 
     // Chain
     ChainPanel padChainView_;
@@ -301,7 +301,7 @@ class DrumGridUI : public juce::Component,
     juce::Rectangle<int> editorHeaderArea_, chainHeaderArea_, pageTextArea_;
     juce::Rectangle<int> levelLabelArea_, panLabelArea_, outputLabelArea_;
     juce::Rectangle<int> tabsArea_, zoneRangeLabelArea_, zoneFadeLabelArea_, zoneBarArea_,
-        roundRobinLabelArea_;
+        roundRobinLabelArea_, layerMixLabelArea_;
 
     // Plugin drop highlight
     int dropHighlightPad_ = -1;
@@ -328,6 +328,7 @@ class DrumGridUI : public juce::Component,
     void refreshLayers();
     void refreshZoneControls();
     void commitZones();
+    void layoutLayerList(juce::Rectangle<int> area);
     void paintZones(juce::Graphics& g);
     juce::Rectangle<int> tabBounds(EditorTab tab) const;
 

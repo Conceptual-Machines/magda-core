@@ -9,34 +9,12 @@
 namespace magda::daw::ui {
 
 namespace {
-constexpr double kMinGainDb = -60.0;
 constexpr int kButtonWidth = 24;
 constexpr float kButtonHeight = 22.0f;
 constexpr float kDisabledAlpha = 0.55f;
 }  // namespace
 
 PadLayerRow::PadLayerRow() {
-    gainLabel_.setRange(kMinGainDb, 6.0, 0.0);
-    panLabel_.setRange(-1.0, 1.0, 0.0);
-    for (auto* value : {&gainLabel_, &panLabel_}) {
-        value->onDragStart = [this]() { dragging_ = true; };
-        value->onDragEnd = [this](double) {
-            dragging_ = false;
-            if (onGestureEnd)
-                onGestureEnd();
-        };
-        value->onValueChange = [this]() {
-            layer_.volume = static_cast<float>(gainLabel_.getValue());
-            layer_.pan = static_cast<float>(panLabel_.getValue());
-            if (onMixChanged)
-                onMixChanged(layer_.id, layer_.volume, layer_.pan);
-            if (!dragging_ && onGestureEnd)
-                onGestureEnd();
-            repaint();
-        };
-        addAndMakeVisible(*value);
-    }
-
     muteButton_.setTooltip("Mute layer");
     muteButton_.onClick = [this]() {
         layer_.mute = muteButton_.getToggleState();
@@ -76,12 +54,6 @@ PadLayerRow::~PadLayerRow() {
 
 void PadLayerRow::styleControls() {
     using node_header::DeviceIcon;
-    for (auto* value : {&gainLabel_, &panLabel_}) {
-        value->setDrawBackground(false);
-        value->setDrawBorder(false);
-        value->setShowFillIndicator(false);
-        value->setShowText(false);
-    }
     node_header::applyDeviceMuteStyle(muteButton_, kButtonHeight);
     node_header::applyDeviceSoloStyle(soloButton_, kButtonHeight);
     node_header::applyDeviceIconStyle(powerButton_, DeviceIcon::Power, juce::Colour(0xFFE6E6E6),
@@ -101,10 +73,6 @@ void PadLayerRow::setLayer(const PadLayerView& layer, int index, bool selected, 
     layer_ = layer;
     index_ = index;
     selected_ = selected;
-    if (!dragging_) {
-        gainLabel_.setValue(layer.volume, juce::dontSendNotification);
-        panLabel_.setValue(layer.pan, juce::dontSendNotification);
-    }
     syncMuteGlyph(muteButton_, layer.mute);
     soloButton_.setToggleState(layer.solo, juce::dontSendNotification);
     powerButton_.setToggleState(!layer.bypassed, juce::dontSendNotification);
@@ -136,7 +104,7 @@ void PadLayerRow::paint(juce::Graphics& g) {
         g.fillRect(juce::Rectangle<float>(0.0f, 4.0f, 2.0f, bounds.getHeight() - 7.0f));
     }
 
-    auto name = getLocalBounds().reduced(10, 0).removeFromLeft(100);
+    auto name = getLocalBounds().reduced(10, 0).withTrimmedRight(4 * kButtonWidth + 3 * 3 + 6);
     g.setColour(device_shell::chainColour(index_));
     g.fillEllipse(name.removeFromLeft(8).withSizeKeepingCentre(8, 8).toFloat());
     name.removeFromLeft(8);
@@ -147,19 +115,10 @@ void PadLayerRow::paint(juce::Graphics& g) {
                     : FontManager::getInstance().getUIFont(12.0f).italicised());
     g.drawText(named ? layer_.name : "Layer " + juce::String(index_ + 1), name,
                juce::Justification::centredLeft, true);
-
-    device_shell::paintGainSlider(g, gainLabel_.getBounds(), gainLabel_.getValue(), kMinGainDb);
-    device_shell::paintPanSlider(g, panLabel_.getBounds(), panLabel_.getValue());
 }
 
 void PadLayerRow::resized() {
-    auto area = getLocalBounds().reduced(10, 0);
-    area.removeFromLeft(100 + 8);
-    auto buttons = area.removeFromRight(4 * kButtonWidth + 3 * 3);
-    area.removeFromRight(8);
-    panLabel_.setBounds(area.removeFromRight(56).withSizeKeepingCentre(56, 18));
-    area.removeFromRight(8);
-    gainLabel_.setBounds(area.withSizeKeepingCentre(area.getWidth(), 18));
+    auto buttons = getLocalBounds().reduced(6, 0).removeFromRight(4 * kButtonWidth + 3 * 3);
 
     for (juce::Component* button :
          {static_cast<juce::Component*>(&muteButton_), static_cast<juce::Component*>(&soloButton_),

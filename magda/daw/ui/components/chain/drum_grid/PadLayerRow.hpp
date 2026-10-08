@@ -7,7 +7,6 @@
 #include <memory>
 
 #include "core/RackInfo.hpp"
-#include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
 
 namespace magda::daw::ui {
@@ -25,7 +24,8 @@ struct PadLayerView {
 };
 
 /**
- * @brief A pad layer in the rack chain-row style: [dot Name] [Gain] [Pan] [M][S][Power][x].
+ * @brief A pad layer in the rack chain-row style, narrowed for the pad panel:
+ * [dot Name] [M][S][Power][x]. Its gain and pan are in the pad editor.
  */
 class PadLayerRow : public juce::Component {
   public:
@@ -38,13 +38,10 @@ class PadLayerRow : public juce::Component {
     }
 
     std::function<void(magda::ChainId)> onSelect;
-    /// (layer, gainDb, pan) on every move; the drag's end arrives as onGestureEnd.
-    std::function<void(magda::ChainId, float, float)> onMixChanged;
-    std::function<void()> onGestureEnd;
     std::function<void(magda::ChainId, bool mute, bool solo, bool bypassed)> onSwitchesChanged;
     std::function<void(magda::ChainId)> onRemove;
 
-    static constexpr int kHeight = 30;
+    static constexpr int kHeight = 28;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -61,10 +58,7 @@ class PadLayerRow : public juce::Component {
     int index_ = 0;
     bool selected_ = false;
     bool hovered_ = false;
-    bool dragging_ = false;
 
-    magda::DraggableValueLabel gainLabel_{magda::DraggableValueLabel::Format::Decibels};
-    magda::DraggableValueLabel panLabel_{magda::DraggableValueLabel::Format::Pan};
     magda::SvgButton muteButton_{"mute", BinaryData::master_on_svg, BinaryData::master_on_svgSize};
     magda::SvgButton soloButton_{"solo", BinaryData::solo_svg, BinaryData::solo_svgSize};
     magda::SvgButton powerButton_{"Power", BinaryData::power_svg, BinaryData::power_svgSize};
