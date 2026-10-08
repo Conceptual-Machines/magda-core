@@ -1691,8 +1691,8 @@ void BottomPanel::syncToolButtons() {
 void BottomPanel::refreshKeyDisplay() {
     if (keyChip_)
         keyChip_->repaint();
-    if (auto* content = getActiveContent())
-        content->repaint();
+    if (auto* editor = dynamic_cast<daw::ui::MidiEditorContent*>(getActiveContent()))
+        editor->songKeyChanged();
 }
 
 void BottomPanel::changeListenerCallback(juce::ChangeBroadcaster* source) {

@@ -171,6 +171,9 @@ class MidiEditorContent : public PanelContent,
     static void styleRailButton(magda::SvgButton& button);
     static constexpr int RAIL_BUTTON = 28;
 
+    /// The song key or the key chip changed: refold and repaint the scale shading.
+    void songKeyChanged();
+
     /// Effective grid division, including the current Auto zoom resolution.
     double getGridResolutionBeats() const {
         return gridResolutionBeats_;

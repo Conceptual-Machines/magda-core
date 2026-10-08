@@ -3,10 +3,11 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
-#include "core/ClipTypes.hpp"
+#include "core/ClipInfo.hpp"
 
 namespace magda {
 
@@ -50,6 +51,17 @@ class VelocityLaneComponent : public juce::Component {
     // Selection awareness
     void setSelectedNoteIndices(const std::vector<size_t>& indices);
 
+    // Piano roll: out-of-scale notes take the amber tint while the key is lit.
+    void setScaleAware(bool scaleAware) {
+        scaleAware_ = scaleAware;
+        repaint();
+    }
+    // Drum grid: show and edit only this pitch's hits; nullopt shows every note.
+    void setNoteFilter(std::optional<int> noteNumber) {
+        noteFilter_ = noteNumber;
+        repaint();
+    }
+
     // Callback for velocity changes
     std::function<void(ClipId, size_t noteIndex, int newVelocity)> onVelocityChanged;
 
@@ -65,6 +77,11 @@ class VelocityLaneComponent : public juce::Component {
   private:
     ClipId clipId_ = INVALID_CLIP_ID;
     std::vector<ClipId> clipIds_;
+    bool scaleAware_ = false;
+    std::optional<int> noteFilter_;
+    bool passesFilter(const MidiNote& note) const {
+        return !noteFilter_ || note.noteNumber == *noteFilter_;
+    }
     double pixelsPerBeat_ = 50.0;
     int scrollOffsetX_ = 0;
     int leftPadding_ = 2;

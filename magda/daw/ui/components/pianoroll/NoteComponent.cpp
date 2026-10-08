@@ -7,6 +7,7 @@
 #include "../../themes/FontManager.hpp"
 #include "../../utils/SelectionPolicy.hpp"
 #include "MidiEditTool.hpp"
+#include "MidiEditorKey.hpp"
 #include "NoteGridHost.hpp"
 #include "core/ClipManager.hpp"
 #include "core/MidiNoteCommands.hpp"
@@ -45,12 +46,28 @@ void NoteComponent::paint(juce::Graphics& g) {
         return;
     }
 
-    // Background fill — gradient based on velocity
+    if (style_ == Style::DrumHit) {
+        paintDrumHit(g, bounds);
+        return;
+    }
+
+    // Out-of-scale notes take the amber hatch while the key is lit
+    const bool outOfScale = style_ == Style::ScaleAware &&
+                            !MidiEditorKeyState::getInstance().activeScale().contains(noteNumber_);
     float velocityRatio = velocity_ / 127.0f;
-    auto baseColour = isSelected_ ? colour_.brighter(0.3f) : colour_;
-    auto fillColour = baseColour.darker(1.0f - velocityRatio);
+    auto noteColour = outOfScale ? ActiveTheme::getColour(ActiveTheme::MIDI_MUTE) : colour_;
+    auto baseColour = isSelected_ ? noteColour.brighter(0.5f) : noteColour;
+    auto fillColour = baseColour.darker(0.6f * (1.0f - velocityRatio));
     g.setColour(fillColour);
     g.fillRoundedRectangle(bounds, CORNER_RADIUS);
+    if (outOfScale) {
+        g.saveState();
+        g.reduceClipRegion(bounds.toNearestInt());
+        g.setColour(fillColour.darker(0.5f).withAlpha(0.6f));
+        for (float x = bounds.getX() - bounds.getHeight(); x < bounds.getRight(); x += 5.0f)
+            g.drawLine(x, bounds.getBottom(), x + bounds.getHeight(), bounds.getY(), 1.2f);
+        g.restoreState();
+    }
 
     // Border
     g.setColour(isSelected_ ? ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT)
@@ -86,6 +103,23 @@ void NoteComponent::paint(juce::Graphics& g) {
             g.setColour(handleColour);
             g.fillRect(getWidth() - RESIZE_HANDLE_WIDTH, 0, RESIZE_HANDLE_WIDTH, getHeight());
         }
+    }
+}
+
+void NoteComponent::paintDrumHit(juce::Graphics& g, juce::Rectangle<float> bounds) {
+    // Full at velocity 100 and up, light for accents (120+), faded for ghosts below 100.
+    const auto blue = colour_;
+    juce::Colour fill = velocity_ >= 120   ? blue.brighter(0.45f)
+                        : velocity_ >= 100 ? blue
+                                           : blue.withMultipliedSaturation(0.7f).darker(0.9f);
+    if (isSelected_)
+        fill = ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT);
+    g.setColour(fill);
+    g.fillRoundedRectangle(bounds, CORNER_RADIUS);
+    if (hoverLeftEdge_ || hoverRightEdge_) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.4f));
+        g.fillRect(hoverLeftEdge_ ? 0 : getWidth() - RESIZE_HANDLE_WIDTH, 0, RESIZE_HANDLE_WIDTH,
+                   getHeight());
     }
 }
 

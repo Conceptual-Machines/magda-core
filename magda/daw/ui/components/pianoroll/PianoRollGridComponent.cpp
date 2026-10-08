@@ -14,6 +14,7 @@
 #include "../../utils/SelectionPolicy.hpp"
 #include "../../windows/CommandIDs.hpp"
 #include "MidiEditTool.hpp"
+#include "MidiEditorKey.hpp"
 #include "PhaseMarker.hpp"
 #include "PitchFoldMap.hpp"
 #include "VelocityReadout.hpp"
@@ -302,8 +303,8 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     {
         int playheadX = 0;
         if (getPlayheadDisplayX(playheadX) && playheadX >= 0 && playheadX <= bounds.getRight()) {
-            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-            g.fillRect(playheadX - 1, 0, 2, bounds.getHeight());
+            g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_PLAYHEAD));
+            g.fillRect(playheadX, 0, 1, bounds.getHeight());
         }
     }
 
@@ -436,8 +437,7 @@ void PianoRollGridComponent::paintOverlayNotes(juce::Graphics& g) {
 }
 
 void PianoRollGridComponent::paintGrid(juce::Graphics& g, juce::Rectangle<int> area) {
-    // Background - match the white key color from keyboard
-    g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_ROW_OUT));
     g.fillRect(area);
 
     // Use the full timeline length for drawing grid lines
@@ -446,8 +446,9 @@ void PianoRollGridComponent::paintGrid(juce::Graphics& g, juce::Rectangle<int> a
     // The grid area starts after left padding
     auto gridArea = area.withTrimmedLeft(leftPadding_);
 
-    // Draw row backgrounds - alternate for black/white keys (only in grid area).
-    // Iterate rows (not pitches) so folded mode draws exactly the visible rows.
+    // Row shading: with a lit key, in-scale rows lift and root rows warm with a hairline;
+    // without one, white-key rows lift. Rows, not pitches, so a fold draws only what shows.
+    const auto key = MidiEditorKeyState::getInstance().activeScale();
     const int rows = foldRowCount();
     for (int row = 0; row < rows; row++) {
         int y = row * noteHeight_;
@@ -456,9 +457,15 @@ void PianoRollGridComponent::paintGrid(juce::Graphics& g, juce::Rectangle<int> a
             continue;
         }
 
-        // Black key rows are darker
-        if (isBlackKey(noteForRow(row))) {
-            g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_BLACK_KEY));
+        const int note = noteForRow(row);
+        const bool lifted = key.valid() ? key.contains(note) : !isBlackKey(note);
+        if (key.isRoot(note)) {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_ROW_ROOT));
+            g.fillRect(gridArea.getX(), y, gridArea.getWidth(), noteHeight_);
+            g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_PLAYHEAD).withAlpha(0.35f));
+            g.fillRect(gridArea.getX(), y + noteHeight_ - 1, gridArea.getWidth(), 1);
+        } else if (lifted) {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_ROW_IN));
             g.fillRect(gridArea.getX(), y, gridArea.getWidth(), noteHeight_);
         }
     }
@@ -480,10 +487,11 @@ void PianoRollGridComponent::paintGrid(juce::Graphics& g, juce::Rectangle<int> a
         g.fillRect(area.getX(), area.getY(), leftPadding_, area.getHeight());
     }
 
-    // Draw horizontal grid lines at each row boundary (at bottom of each row, -1 to match
-    // keyboard)
-    g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_SUBDIVISION));
+    // Row boundaries, one pixel above the next row to match the keyboard
+    g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_ROW_LINE));
     for (int row = 0; row < rows; row++) {
+        if (key.isRoot(noteForRow(row)))
+            continue;
         int y = row * noteHeight_ + noteHeight_ - 1;
         if (y >= area.getY() && y <= area.getBottom()) {
             g.drawHorizontalLine(y, static_cast<float>(gridArea.getX()),
@@ -511,7 +519,7 @@ void PianoRollGridComponent::paintBeatLines(juce::Graphics& g, juce::Rectangle<i
     // Pass 1: Subdivision lines at grid resolution (finest, drawn first)
     // Use integer counter to avoid floating-point drift (important for triplets etc.)
     {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_SUBDIVISION));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_ROW_LINE));
         int numLines = static_cast<int>(std::ceil(lengthBeats / gridRes));
         for (int i = 0; i <= numLines; i++) {
             double beat = i * gridRes;
@@ -528,7 +536,7 @@ void PianoRollGridComponent::paintBeatLines(juce::Graphics& g, juce::Rectangle<i
     }
 
     // Pass 2: Beat lines (always visible)
-    g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_BEAT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_ROW_LINE).brighter(0.25f));
     for (int b = 1; b * sigBeat <= lengthBeats + 0.001; b++) {
         const double beat = b * sigBeat;
         // Skip bar boundaries (drawn in pass 3)
@@ -541,7 +549,7 @@ void PianoRollGridComponent::paintBeatLines(juce::Graphics& g, juce::Rectangle<i
     }
 
     // Pass 3: Bar lines (brightest, always visible, drawn last)
-    g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_GRID_BAR));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_TOOL_ACTIVE_BORDER));
     for (int bar = 0; bar * barBeats <= lengthBeats + 0.001; bar++) {
         int x = beatToPixel(bar * barBeats);
         if (x >= left && x <= right)
@@ -2480,6 +2488,7 @@ void PianoRollGridComponent::createNoteComponents() {
             };
 
             noteComp->setGhost(!isClipSelected(clipId));
+            noteComp->setStyle(NoteComponent::Style::ScaleAware);
             noteComp->updateFromNote(visibleNote, noteColour);
             noteComp->setInterceptsMouseClicks(!pitchExpressionMode_, !pitchExpressionMode_);
             addAndMakeVisible(noteComp.get());
@@ -2608,12 +2617,15 @@ juce::Colour PianoRollGridComponent::getColourForClip(ClipId clipId) const {
     // the arrangement clip and the colour swatch, so notes match the clip rather
     // than showing the raw picked colour (#1706).
     juce::Colour base = deriveTrackSwatch(clip->colour);
-    if (const auto* track = TrackManager::getInstance().getTrack(clip->trackId);
-        track != nullptr && track->type == TrackType::Chord)
+    const auto* track = TrackManager::getInstance().getTrack(clip->trackId);
+    const bool chordTrack = track != nullptr && track->type == TrackType::Chord;
+    if (chordTrack)
         base = deriveTrackSwatch(track->colour);
 
-    // Slightly desaturated for multi-clip view so overlaid clips stay distinct.
-    return clipIds_.size() == 1 ? base : base.withSaturation(0.7f);
+    // One clip edits in the v1 note blue; several keep their swatches so they stay distinct.
+    if (clipIds_.size() <= 1)
+        return chordTrack ? base : ActiveTheme::getColour(ActiveTheme::MIDI_NOTE);
+    return base.withSaturation(0.7f);
 }
 
 bool PianoRollGridComponent::isClipSelected(ClipId clipId) const {

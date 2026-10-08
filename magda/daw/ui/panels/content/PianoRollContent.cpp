@@ -31,6 +31,7 @@
 #include "ui/components/common/TimeBendPopup.hpp"
 #include "ui/components/pianoroll/CCLaneComponent.hpp"
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
+#include "ui/components/pianoroll/MidiEditorKey.hpp"
 #include "ui/components/pianoroll/MidiTakeLanesComponent.hpp"
 #include "ui/components/pianoroll/OctaveLabelStrip.hpp"
 #include "ui/components/pianoroll/PianoRollGridComponent.hpp"
@@ -333,9 +334,9 @@ PianoRollContent::PianoRollContent() {
     // Apply any overlay tracks chosen in another editor session
     applyOverlayTracks();
 
-    // Setup MIDI drawer (stacked lanes: velocity + CC + pitchbend). The base
-    // wires onLanesChanged -> refreshLaneDrawer + updateLaneToggleStates().
     setupMidiDrawer();
+    if (auto* velocity = midiDrawer_->getVelocityLane())
+        velocity->setScaleAware(true);
 
     // Register as SelectionManager listener (PianoRoll-specific)
     magda::SelectionManager::getInstance().addListener(this);
@@ -391,6 +392,14 @@ std::vector<int> PianoRollContent::collectUsedPitches() const {
             collect(id);
     } else if (editingClipId_ != magda::INVALID_CLIP_ID) {
         collect(editingClipId_);
+    }
+    // Fold-to-key: a lit key keeps its scale rows around the used notes.
+    if (const auto key = magda::MidiEditorKeyState::getInstance().activeScale(); key.valid()) {
+        const int low = usedPitches.empty() ? 48 : std::max(MIN_NOTE, *usedPitches.begin() - 12);
+        const int high = usedPitches.empty() ? 84 : std::min(MAX_NOTE, *usedPitches.rbegin() + 12);
+        for (int note = low; note <= high; ++note)
+            if (key.contains(note))
+                usedPitches.insert(note);
     }
     return {usedPitches.begin(), usedPitches.end()};
 }

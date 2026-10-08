@@ -860,8 +860,19 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         int playheadX = timeToPixel(playheadPosition);
         if (playheadX >= 0 && playheadX <= width) {
             int tickAreaTop = height - tickHeightMajor();
-            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-            g.fillRect(playheadX - 1, tickAreaTop, 2, tickHeightMajor());
+            if (compact_) {
+                // Editor rulers mark the playhead with an orange head pointing into the grid.
+                const auto x = static_cast<float>(playheadX);
+                juce::Path head;
+                head.addTriangle(x - 5.0f, static_cast<float>(height - 9), x + 5.0f,
+                                 static_cast<float>(height - 9), x, static_cast<float>(height));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_PLAYHEAD));
+                g.fillPath(head);
+                g.fillRect(playheadX, 0, 1, height);
+            } else {
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+                g.fillRect(playheadX - 1, tickAreaTop, 2, tickHeightMajor());
+            }
         }
     }
 }

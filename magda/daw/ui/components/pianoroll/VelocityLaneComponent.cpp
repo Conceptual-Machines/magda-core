@@ -5,6 +5,7 @@
 #include "../../state/TimelineController.hpp"
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "MidiEditorKey.hpp"
 #include "VelocityLaneUtils.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
@@ -143,6 +144,8 @@ size_t VelocityLaneComponent::findNoteAtX(int x) const {
 
     for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
         const auto& note = clip->midiNotes[i];
+        if (!passesFilter(note))
+            continue;
         double noteStart = relativeMode_ ? note.startBeat : (clipStartBeats_ + note.startBeat);
         double dist = std::abs(clickBeat - noteStart);
 
@@ -262,7 +265,7 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
     // Background
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_LANE));
     g.fillRect(bounds);
 
     // Draw horizontal grid lines at 25%, 50%, 75%, 100%
@@ -338,11 +341,19 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
             clipOffsetBeats = timelineStartBeats(*clip, tempo) - clipStartBeats_;
         }
 
-        juce::Colour noteColour = clip->colour;
+        const juce::Colour clipColour = clipsToRender.size() == 1
+                                            ? ActiveTheme::getColour(ActiveTheme::MIDI_NOTE)
+                                            : clip->colour;
+        const auto key = MidiEditorKeyState::getInstance().activeScale();
         bool isPrimaryClip = (renderClipId == clipId_);
 
         for (size_t i = 0; i < clip->midiNotes.size(); ++i) {
             const auto& note = clip->midiNotes[i];
+            if (!passesFilter(note))
+                continue;
+            const juce::Colour noteColour = scaleAware_ && !key.contains(note.noteNumber)
+                                                ? ActiveTheme::getColour(ActiveTheme::MIDI_MUTE)
+                                                : clipColour;
 
             // Calculate x position - use preview position if available (primary clip only)
             double noteStart = note.startBeat;

@@ -81,6 +81,12 @@ void MidiEditorContent::rebuildFoldMap() {
     onFoldMapChanged();
 }
 
+void MidiEditorContent::songKeyChanged() {
+    if (foldEnabled_)
+        applyFold();
+    repaint();
+}
+
 void MidiEditorContent::applyFold() {
     foldMap_.setEnabled(foldEnabled_);
     rebuildFoldMap();
