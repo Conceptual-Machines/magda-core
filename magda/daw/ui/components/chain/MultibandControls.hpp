@@ -54,10 +54,14 @@ class CrossoverDisplay : public juce::Component, private magda::TrackManagerList
     float xForFrequency(float hz) const;
     float frequencyForX(float x) const;
     int crossoverAt(float x) const;
+    /// Band @p band's name label, which selects the band when clicked.
+    juce::Rectangle<float> bandLabel(std::size_t band) const;
+    int bandLabelAt(juce::Point<float> point) const;
 
     magda::ChainNodePath rackPath_;
     CrossoverEdit edit_;
     int hovered_ = -1;
+    int hoveredBand_ = -1;
     int dragging_ = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CrossoverDisplay)

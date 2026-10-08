@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <functional>
 #include <ranges>
+#include <tuple>
 
 #include "ChainPanel.hpp"
 #include "ChainRowComponent.hpp"
@@ -227,7 +228,26 @@ void RackComponent::timerCallback() {
         levelMeter_.setLevels(levels.peakL, levels.peakR);
 }
 
+void RackComponent::toggleMultibandView(bool faceplate) {
+    auto& shown = faceplate ? faceplateShown_ : bandsShown_;
+    const auto& other = faceplate ? bandsShown_ : faceplateShown_;
+    if (shown && !other)
+        return;  // One of the two always shows.
+    shown = !shown;
+    if (auto* rack = magda::TrackManager::getInstance().getRackByPath(rackPath_)) {
+        rack->faceplateShown = faceplateShown_;
+        rack->bandsShown = bandsShown_;
+    }
+    childLayoutChanged();
+}
+
 void RackComponent::mouseDown(const juce::MouseEvent& e) {
+    if (!collapsed_ && multiband_) {
+        if (faceplateToggleArea_.contains(e.getPosition()))
+            return toggleMultibandView(true);
+        if (bandsToggleArea_.contains(e.getPosition()))
+            return toggleMultibandView(false);
+    }
     if (!collapsed_ && chainTabsArea_.contains(e.getPosition())) {
         for (int i = 0; i < kNumChainViews; ++i)
             if (const auto view = static_cast<ChainView>(i);
@@ -326,6 +346,24 @@ void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> /*conte
         }
     }
 
+    for (const auto& [area, label, on] :
+         {std::tuple{bandsToggleArea_, "BANDS", bandsShown_},
+          std::tuple{faceplateToggleArea_, "FACEPLATE", faceplateShown_}}) {
+        if (area.isEmpty())
+            continue;
+        g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f));
+        g.setColour(
+            ActiveTheme::getColour(on ? ActiveTheme::DEVICE_VALUE_TEXT : ActiveTheme::DEVICE_DIM2));
+        g.drawText(label, area, juce::Justification::centredLeft, false);
+        if (on) {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE));
+            g.fillRect(area.withTop(area.getBottom() - 5)
+                           .withHeight(2)
+                           .withWidth(juce::roundToInt(
+                               juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), label))));
+        }
+    }
+
     if (!selectorCaption_.isEmpty()) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
         g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f));
@@ -342,13 +380,15 @@ void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> /*conte
 
 void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
     shellRows_.sideStrip = {};
-    shellRows_.midiLed = selectorCaption_ = {};
     columnHeaderArea_ = viewportArea_ = chainTabsArea_ = {};
 
     // When collapsed, hide content controls only (buttons handled by resizedCollapsed)
     // NOTE: Side panels (macro/mods) visibility is managed by base class
     if (collapsed_) {
-        shellRows_.footer = {};
+        shellRows_.footer = shellRows_.midiLed = selectorCaption_ = {};
+        faceplateToggleArea_ = bandsToggleArea_ = {};
+        if (crossoverDisplay_)
+            crossoverDisplay_->setVisible(false);
         if (selector_)
             selector_->setVisible(false);
         addChainButton_.setVisible(false);
@@ -364,8 +404,9 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
         return;
     }
 
-    addChainButton_.setVisible(true);
-    chainViewport_.setVisible(true);
+    const bool bandsShown = !multiband_ || bandsShown_;
+    addChainButton_.setVisible(bandsShown);
+    chainViewport_.setVisible(bandsShown);
     modButton_->setVisible(true);
     macroButton_->setVisible(true);
     if (presetButton_)
@@ -374,12 +415,16 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
 
     shellRows_.sideStrip = contentArea.removeFromRight(SIDE_STRIP_WIDTH);
     layoutSideStrip(shellRows_.sideStrip);
-    layoutChainList(contentArea.removeFromLeft(CHAIN_LIST_WIDTH));
+    if (bandsShown)
+        layoutChainList(contentArea.removeFromLeft(CHAIN_LIST_WIDTH));
     // A multiband rack's faceplate stands beside its bands, where a rack's chain list ends.
     faceplateArea_ = {};
-    if (multiband_) {
+    if (crossoverDisplay_)
+        crossoverDisplay_->setVisible(multiband_ && faceplateShown_);
+    if (multiband_ && faceplateShown_) {
         faceplateArea_ = contentArea.removeFromLeft(FACEPLATE_WIDTH)
                              .withTrimmedTop(8)
+                             .withTrimmedLeft(bandsShown ? 0 : 12)
                              .withTrimmedRight(12)
                              .withTrimmedBottom(12);
         if (crossoverDisplay_) {
@@ -455,11 +500,15 @@ void RackComponent::resizedShellFooter(juce::Rectangle<int> footer) {
 void RackComponent::layoutFooter(juce::Rectangle<int> footer) {
     auto area = footer.reduced(12, 0);
     shellRows_.midiLed = area.removeFromRight(7).withSizeKeepingCentre(7, 7);
+    selectorCaption_ = faceplateToggleArea_ = bandsToggleArea_ = {};
     auto selector = area.withWidth(juce::jmin(area.getWidth(), CHAIN_LIST_WIDTH - 24));
-    // Bands are chosen by frequency, never by the selector.
+    // Bands are chosen by frequency, never by the selector; the footer toggles the views instead.
     if (multiband_) {
         if (selector_)
             selector_->setVisible(false);
+        bandsToggleArea_ = area.removeFromLeft(48);
+        area.removeFromLeft(10);
+        faceplateToggleArea_ = area.removeFromLeft(72);
         return;
     }
     selectorCaption_ = selector.removeFromLeft(88);
@@ -520,14 +569,20 @@ int RackComponent::getPreferredHeight() const {
     // Content padding: NodeComponent insets the content 1px top and bottom.
     const int top = multiband_ ? 0 : CHAIN_TABS_HEIGHT;
     const int list = 4 + top + ROW_GAP + COLUMN_HEADER_HEIGHT + ROW_GAP + stackedChainRowsHeight();
-    const int body = multiband_ ? juce::jmax(list, 8 + FACEPLATE_MIN_HEIGHT) : list;
+    const int faceplate = 8 + FACEPLATE_MIN_HEIGHT;
+    const int body = !multiband_       ? list
+                     : !bandsShown_    ? faceplate
+                     : faceplateShown_ ? juce::jmax(list, faceplate)
+                                       : list;
     return HEADER_BAR_HEIGHT + body + 12 + FOOTER_BAR_HEIGHT + 2;
 }
 
 int RackComponent::fixedWidth() const {
     // Content padding: NodeComponent insets the content 2px each side.
-    return CHAIN_LIST_WIDTH + (multiband_ ? FACEPLATE_WIDTH : 0) + SIDE_STRIP_WIDTH + 4 +
-           getLeftPanelsWidth() + getRightPanelsWidth();
+    const bool bands = !multiband_ || bandsShown_;
+    const bool faceplate = multiband_ && faceplateShown_;
+    return (bands ? CHAIN_LIST_WIDTH : 0) + (faceplate ? FACEPLATE_WIDTH : 0) + SIDE_STRIP_WIDTH +
+           4 + getLeftPanelsWidth() + getRightPanelsWidth();
 }
 
 int RackComponent::getPreferredWidth() const {
@@ -682,6 +737,8 @@ void RackComponent::rebuildChainRows() {
 
 void RackComponent::syncMultiband(const magda::RackInfo& rack) {
     multiband_ = rack.isMultiband();
+    faceplateShown_ = rack.faceplateShown;
+    bandsShown_ = rack.bandsShown || !rack.faceplateShown;
     if (!multiband_) {
         crossoverDisplay_.reset();
         crossoverDividers_.clear();
@@ -752,6 +809,8 @@ void RackComponent::clearDeviceSelection() {
 void RackComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) {
     // First let base class handle visual selection state
     NodeComponent::chainNodeSelectionChanged(path);
+    if (crossoverDisplay_)
+        crossoverDisplay_->repaint();
 
     // Check if the selected path is one of our chains
     if (path.trackId != trackId_) {

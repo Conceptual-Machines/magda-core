@@ -231,6 +231,24 @@ int main() {
                   "bands are not high to low with their crossovers between them");
             check(split != nullptr && split->getY() > rows[0]->getBottom(),
                   "Split band is not under the bands");
+            {
+                // The MID label sits centred between the crossovers on the log axis.
+                const auto plot = faceplate->getLocalBounds().toFloat().reduced(1.0f);
+                const auto xFor = [&](float hz) {
+                    return plot.getX() + plot.getWidth() * std::log(hz / 20.0f) / std::log(1000.0f);
+                };
+                const juce::Point<float> mid{(xFor(180.0f) + xFor(3200.0f)) / 2.0f,
+                                             plot.getY() + 14.0f};
+                const auto now = juce::Time::getCurrentTime();
+                const juce::MouseEvent event(juce::Desktop::getInstance().getMainMouseSource(), mid,
+                                             juce::ModifierKeys::leftButtonModifier, 1, 0, 0, 0, 0,
+                                             faceplate, faceplate, now, mid, now, 1, false);
+                faceplate->mouseDown(event);
+                const auto* rack = tracks.getRack(track, bandsId);
+                check(selection.getSelectedChainNode() ==
+                          ChainNodePath::rack(track, bandsId).withChain(rack->chains[1].id),
+                      "clicking a faceplate band label did not select the band");
+            }
             const auto container = rows[0]->getParentComponent();
             check(container->getHeight() >= split->getBottom(), "band list is clipped");
         }

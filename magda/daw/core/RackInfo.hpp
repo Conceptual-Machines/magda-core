@@ -175,6 +175,9 @@ struct RackInfo {
     bool isMultiband() const {
         return multiband;
     }
+    /// Which of a multiband rack's faceplate and band list show; at least one does.
+    bool faceplateShown = true;
+    bool bandsShown = true;
 
     // UI panel state
     bool modPanelOpen = false;    // Modulator panel visible
@@ -215,6 +218,8 @@ struct RackInfo {
             chainSelector = other.chainSelector;
             multiband = other.multiband;
             crossovers = other.crossovers;
+            faceplateShown = other.faceplateShown;
+            bandsShown = other.bandsShown;
             modPanelOpen = other.modPanelOpen;
             paramPanelOpen = other.paramPanelOpen;
             macros = other.macros;

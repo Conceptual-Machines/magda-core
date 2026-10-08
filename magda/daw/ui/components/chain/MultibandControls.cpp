@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "layout/DeviceShellPainter.hpp"
@@ -135,6 +136,32 @@ int CrossoverDisplay::crossoverAt(float x) const {
     return -1;
 }
 
+juce::Rectangle<float> CrossoverDisplay::bandLabel(std::size_t band) const {
+    const auto* rack = rackAt(rackPath_);
+    if (rack == nullptr || band > rack->crossovers.size())
+        return {};
+    const auto plot = plotArea();
+    const auto& crossovers = rack->crossovers;
+    const float left = band > 0 ? xForFrequency(crossovers[band - 1].frequencyHz) : plot.getX();
+    const float right =
+        band < crossovers.size() ? xForFrequency(crossovers[band].frequencyHz) : plot.getRight();
+    const auto name = bandName(static_cast<int>(band), static_cast<int>(crossovers.size() + 1));
+    const auto font = FontManager::getInstance().getMonoFont(10.0f).withExtraKerningFactor(0.08f);
+    const float width = juce::GlyphArrangement::getStringWidth(font, name.toUpperCase()) + 8.0f;
+    return juce::Rectangle<float>(width, 18.0f)
+        .withCentre({(left + right) / 2.0f, plot.getY() + 14.0f});
+}
+
+int CrossoverDisplay::bandLabelAt(juce::Point<float> point) const {
+    const auto* rack = rackAt(rackPath_);
+    if (rack == nullptr)
+        return -1;
+    for (std::size_t band = 0; band <= rack->crossovers.size(); ++band)
+        if (bandLabel(band).contains(point))
+            return static_cast<int>(band);
+    return -1;
+}
+
 void CrossoverDisplay::paint(juce::Graphics& g) {
     const auto* rack = rackAt(rackPath_);
     const auto bounds = getLocalBounds().toFloat();
@@ -154,17 +181,24 @@ void CrossoverDisplay::paint(juce::Graphics& g) {
     };
 
     auto& fonts = FontManager::getInstance();
+    const auto& selected = magda::SelectionManager::getInstance().getSelectedChainNode();
     for (std::size_t band = 0; band < bands; ++band) {
         const auto colour = device_shell::chainColour(static_cast<int>(band));
         const auto region = juce::Rectangle<float>::leftTopRightBottom(
             edgeX(band, false), plot.getY(), edgeX(band, true), plot.getBottom());
-        g.setColour(colour.withAlpha(0.08f));
+        const bool isSelected =
+            band < rack->chains.size() && selected == rackPath_.withChain(rack->chains[band].id);
+        g.setColour(colour.withAlpha(isSelected ? 0.16f : 0.08f));
         g.fillRect(region);
+        const auto label = bandLabel(band);
+        if (isSelected || static_cast<int>(band) == hoveredBand_) {
+            g.setColour(colour.withAlpha(isSelected ? 0.25f : 0.12f));
+            g.fillRoundedRectangle(label, 3.0f);
+        }
         g.setColour(colour);
         g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f));
-        g.drawText(bandName(static_cast<int>(band), static_cast<int>(bands)).toUpperCase(),
-                   region.withHeight(20.0f).translated(0.0f, 4.0f), juce::Justification::centred,
-                   false);
+        g.drawText(bandName(static_cast<int>(band), static_cast<int>(bands)).toUpperCase(), label,
+                   juce::Justification::centred, false);
     }
 
     // Frequency grid labels along the bottom.
@@ -224,25 +258,35 @@ void CrossoverDisplay::paint(juce::Graphics& g) {
 
 void CrossoverDisplay::mouseMove(const juce::MouseEvent& e) {
     const int over = crossoverAt(e.position.x);
-    if (over != hovered_) {
+    const int band = over >= 0 ? -1 : bandLabelAt(e.position);
+    if (over != hovered_ || band != hoveredBand_) {
         hovered_ = over;
-        setMouseCursor(over >= 0 ? juce::MouseCursor::LeftRightResizeCursor
-                                 : juce::MouseCursor::NormalCursor);
+        hoveredBand_ = band;
+        setMouseCursor(over >= 0   ? juce::MouseCursor::LeftRightResizeCursor
+                       : band >= 0 ? juce::MouseCursor::PointingHandCursor
+                                   : juce::MouseCursor::NormalCursor);
         repaint();
     }
 }
 
 void CrossoverDisplay::mouseExit(const juce::MouseEvent&) {
-    if (hovered_ >= 0 && dragging_ < 0) {
-        hovered_ = -1;
+    if ((hovered_ >= 0 || hoveredBand_ >= 0) && dragging_ < 0) {
+        hovered_ = hoveredBand_ = -1;
         repaint();
     }
 }
 
 void CrossoverDisplay::mouseDown(const juce::MouseEvent& e) {
     dragging_ = crossoverAt(e.position.x);
-    if (dragging_ >= 0)
+    if (dragging_ >= 0) {
         edit_.begin();
+        return;
+    }
+    const int band = bandLabelAt(e.position);
+    const auto* rack = rackAt(rackPath_);
+    if (band >= 0 && rack != nullptr && band < static_cast<int>(rack->chains.size()))
+        magda::SelectionManager::getInstance().selectChainNode(
+            rackPath_.withChain(rack->chains[static_cast<std::size_t>(band)].id));
 }
 
 void CrossoverDisplay::mouseDrag(const juce::MouseEvent& e) {

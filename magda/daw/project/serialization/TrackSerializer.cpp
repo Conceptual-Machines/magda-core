@@ -906,6 +906,8 @@ juce::var ProjectSerializer::serializeRackInfo(const RackInfo& rack) {
             crossovers.add(juce::var(item));
         }
         obj->setProperty("crossovers", juce::var(crossovers));
+        obj->setProperty("faceplateShown", rack.faceplateShown);
+        obj->setProperty("bandsShown", rack.bandsShown);
     }
 
     // Chains
@@ -1019,6 +1021,13 @@ bool ProjectSerializer::deserializeRackInfo(const juce::var& json, RackInfo& out
                                : CrossoverSlope::Db24});
         }
     }
+    outRack.faceplateShown = static_cast<bool>(obj->getProperty("faceplateShown").isVoid()
+                                                   ? juce::var(true)
+                                                   : obj->getProperty("faceplateShown"));
+    outRack.bandsShown =
+        !outRack.faceplateShown ||
+        static_cast<bool>(obj->getProperty("bandsShown").isVoid() ? juce::var(true)
+                                                                  : obj->getProperty("bandsShown"));
     normaliseMultiband(outRack);
 
     // Sidechain
