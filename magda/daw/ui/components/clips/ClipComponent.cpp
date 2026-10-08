@@ -454,21 +454,22 @@ void ClipComponent::paint(juce::Graphics& g) {
                      juce::roundToInt(start * zoom);
             }
 
-            // A dark hairline through the content; the header fill runs 2px past HEADER_HEIGHT,
-            // so it starts below that.
-            // It fades from dark at the top to faint at the bottom, with a faint light edge on
-            // its right so it reads as a fold.
+            // The line starts below the header fill, which runs 2px past HEADER_HEIGHT.
+            // A bright core with a soft glow fading out to either side
             const auto lineX = static_cast<float>(clipBounds.getX() + bx);
             const auto lineTop = static_cast<float>(clipBounds.getY() + HEADER_HEIGHT + 2);
-            const auto lineBottom = static_cast<float>(clipBounds.getBottom());
-            g.setGradientFill(juce::ColourGradient(juce::Colours::black.withAlpha(0.55f), 0.0f,
-                                                   lineTop, juce::Colours::black.withAlpha(0.1f),
-                                                   0.0f, lineBottom, false));
-            g.fillRect(lineX, lineTop, 1.0f, lineBottom - lineTop);
-            g.setGradientFill(juce::ColourGradient(juce::Colours::white.withAlpha(0.12f), 0.0f,
-                                                   lineTop, juce::Colours::white.withAlpha(0.0f),
-                                                   0.0f, lineBottom, false));
-            g.fillRect(lineX + 1.0f, lineTop, 1.0f, lineBottom - lineTop);
+            const auto lineHeight = static_cast<float>(clipBounds.getBottom()) - lineTop;
+            constexpr float glow = 6.0f;
+            const auto glowColour = juce::Colours::white.withAlpha(0.18f);
+            const auto clear = juce::Colours::white.withAlpha(0.0f);
+            g.setGradientFill(
+                juce::ColourGradient(clear, lineX - glow, 0.0f, glowColour, lineX, 0.0f, false));
+            g.fillRect(lineX - glow, lineTop, glow, lineHeight);
+            g.setGradientFill(juce::ColourGradient(glowColour, lineX + 1.0f, 0.0f, clear,
+                                                   lineX + 1.0f + glow, 0.0f, false));
+            g.fillRect(lineX + 1.0f, lineTop, glow, lineHeight);
+            g.setColour(juce::Colours::white.withAlpha(0.55f));
+            g.fillRect(lineX, lineTop, 1.0f, lineHeight);
         }
     }
 
