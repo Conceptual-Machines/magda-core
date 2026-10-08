@@ -960,10 +960,7 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
     ModulationPaintContext paintCtx;
     paintCtx.sliderBounds = valueSlider_.getBounds();
     paintCtx.cellBounds = getLocalBounds();
-    if (style_ == ParamControlStyle::Knobs && !knobArea_.isEmpty())
-        paintCtx.indicatorBand = knobArea_.withTop(knobArea_.getBottom() - 3).withHeight(7);
-    else if (style_ == ParamControlStyle::Sliders && !barArea_.isEmpty())
-        paintCtx.indicatorBand = barArea_.withTop(barArea_.getBottom() + 2).withHeight(7);
+    paintCtx.indicatorBand = modRowArea_;
     paintCtx.currentParamValue = normalizedParamValue;
     paintCtx.isInLinkMode = isInLinkMode_;
     paintCtx.isLinkModeDrag = isLinkModeDrag_;
@@ -1044,7 +1041,7 @@ bool ParamSlotComponent::layoutStyled(juce::Rectangle<int> bounds) {
 
     tileArea_ = bounds;
     auto inner = tileArea_.reduced(8, 5);
-    knobArea_ = barArea_ = {};
+    knobArea_ = barArea_ = modRowArea_ = {};
 
     // Where a widget other than the value slider goes in each style.
     juce::Rectangle<int> widgetArea;
@@ -1061,12 +1058,15 @@ bool ParamSlotComponent::layoutStyled(juce::Rectangle<int> bounds) {
         }
         case ParamControlStyle::Knobs: {
             constexpr int kMaxKnob = 52;  // the disc plus its arc, grown with the cell
-            const int size = juce::jmin(kMaxKnob, inner.getHeight() - 26, inner.getWidth());
+            const int size =
+                juce::jmin(kMaxKnob, inner.getHeight() - 28 - kModRowHeight, inner.getWidth());
             knobArea_ = inner.removeFromTop(juce::jmax(16, size))
                             .withSizeKeepingCentre(juce::jmax(16, size), juce::jmax(16, size));
             inner.removeFromTop(2);
             nameLabel_.setBounds(inner.removeFromTop(12));
             valueArea_ = inner.removeFromTop(13);
+            inner.removeFromTop(2);
+            modRowArea_ = inner.removeFromTop(kModRowHeight);
             widgetArea = knobArea_.withSizeKeepingCentre(inner.getWidth(), 20);
             if (boolean)
                 boolToggle_->setBounds(knobArea_.withSizeKeepingCentre(30, 16));
@@ -1076,6 +1076,7 @@ bool ParamSlotComponent::layoutStyled(juce::Rectangle<int> bounds) {
             auto top = inner.removeFromTop(14);
             valueArea_ = top.removeFromRight(top.getWidth() / 2);
             nameLabel_.setBounds(top);
+            modRowArea_ = inner.removeFromBottom(juce::jmin(kModRowHeight, inner.getHeight() / 3));
             barArea_ =
                 inner.withSizeKeepingCentre(inner.getWidth(), juce::jmin(14, inner.getHeight()));
             widgetArea =

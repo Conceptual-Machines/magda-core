@@ -142,9 +142,12 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
         return;
     }
 
-    // 100% amount spans the full cell, or the band under a knob or slider
+    // 100% amount spans the full cell, or the row under a knob or slider, which clips the bars
     const auto& band = ctx.indicatorBand;
     const bool underControl = !band.isEmpty();
+    juce::Graphics::ScopedSaveState clipped(g);
+    if (underControl)
+        g.reduceClipRegion(band);
     int maxWidth = underControl ? band.getWidth() : cellBounds.getWidth();
     int leftX = underControl ? band.getX() : 0;
     const int macroY = underControl ? band.getY() : sliderBounds.getY() + 2;
