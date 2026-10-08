@@ -398,15 +398,13 @@ void ClipComponent::paint(juce::Graphics& g) {
         paintMidiClip(g, *clip, bounds, overlaps.showThrough);
     }
 
-    // Draw header (name, loop indicator)
+    // Draw header (name)
     paintClipHeader(g, *clip, bounds);
 
     const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
 
-    // Draw loop boundary corner cuts (after header so they cut through
-    // everything). The toggle is the clip's; where the loop LENGTH comes from
-    // depends on content: MIDI keeps it in clip beats, audio derives it from
-    // the event's source region.
+    // Loop boundary lines, after the header so they run through it. MIDI keeps
+    // the loop length in clip beats; audio derives it from the event's source region.
     const auto* loopEvent = clip->primaryEvent();
     const double beatsPerSecondForLoop = tempo / 60.0;
     double loopCutLengthBeats = 0.0;
@@ -437,7 +435,6 @@ void ClipComponent::paint(juce::Graphics& g) {
         // Calculate pixel spacing between loop boundaries to scale indicators
         float loopPixelWidth =
             static_cast<float>(loopLengthBeats / beatRange) * clipBounds.getWidth();
-        auto clipHeight = static_cast<float>(clipBounds.getHeight());
 
         // Below this per-loop pixel width the markers pack so densely they
         // turn the clip into a solid black mass — hide them entirely.
@@ -453,37 +450,10 @@ void ClipComponent::paint(juce::Graphics& g) {
             float bx = static_cast<float>(clipBounds.getX()) +
                        static_cast<float>(boundaryBeat / beatRange) * clipBounds.getWidth();
 
-            // Shadow gradient on right side of boundary (fold effect)
-            float shadeWidth = juce::jmin(6.0f, loopPixelWidth * 0.15f);
-            if (shadeWidth >= 1.0f) {
-                auto top = static_cast<float>(clipBounds.getY());
-                auto bot = static_cast<float>(clipBounds.getBottom());
-                juce::ColourGradient shade(juce::Colours::black.withAlpha(0.45f), bx, 0.0f,
-                                           juce::Colours::transparentBlack, bx + shadeWidth, 0.0f,
-                                           false);
-                g.setGradientFill(shade);
-                g.fillRect(bx, top, shadeWidth, bot - top);
-            }
-
-            // Vertical line at loop boundary
-            g.setColour(markerColour.withAlpha(0.7f));
+            // A thin line marks each loop boundary
+            g.setColour(markerColour.withAlpha(0.55f));
             g.drawVerticalLine(static_cast<int>(bx), static_cast<float>(clipBounds.getY()),
                                static_cast<float>(clipBounds.getBottom()));
-
-            // Scale triangle size: up to 10px, but no more than 1/3 of the loop pixel
-            // width or 1/4 of clip height, so they don't overlap when zoomed out
-            float cutSize = juce::jmin(6.0f, loopPixelWidth * 0.33f, clipHeight * 0.25f);
-            if (cutSize < 2.0f)
-                continue;  // Too small to draw meaningfully
-
-            auto top = static_cast<float>(clipBounds.getY());
-            juce::Path cut;
-            // Left triangle
-            cut.addTriangle(bx - cutSize, top, bx, top, bx, top + cutSize);
-            // Right triangle
-            cut.addTriangle(bx, top, bx + cutSize, top, bx, top + cutSize);
-            g.setColour(markerColour.withAlpha(0.8f));
-            g.fillPath(cut);
         }
     }
 
@@ -1098,28 +1068,6 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
         g.setFont(FontManager::getInstance().getUIFont(12.0f));
         g.drawText(juce::CharPointer_UTF8("\xe2\x99\xa9"), musicalArea,
                    juce::Justification::centred, false);
-    }
-
-    // Loop indicator: the transport's circular-arrows loop glyph, so "loop"
-    // reads the same everywhere (and stays distinct from the ghost link icon).
-    // Cache one drawable per foreground variant — selection flips foreground,
-    // so we can't bake a single colour at construction.
-    if (clip.loopEnabled && headerArea.getWidth() > 16) {
-        headerArea.removeFromRight(2);  // right padding
-        // Same box as the ghost link icon on the left (HEADER_HEIGHT reduced
-        // by 3) so the two header glyphs read at the same size.
-        auto loopArea = headerArea.removeFromRight(HEADER_HEIGHT).reduced(3);
-        if (loopArea.getWidth() > 0 && loopArea.getHeight() > 0) {
-            static const auto loopIcon = juce::Drawable::createFromImageData(
-                BinaryData::loop_icon_svg, BinaryData::loop_icon_svgSize);
-            if (loopIcon) {
-                auto themedIcon = loopIcon->createCopy();
-                themedIcon->replaceColour(juce::Colour(0xFFBCBCBC), headerForeground);
-                ActiveTheme::applyToSvgIcon(*themedIcon);
-                themedIcon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred,
-                                       1.0f);
-            }
-        }
     }
 }
 
