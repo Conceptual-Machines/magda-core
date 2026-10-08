@@ -1,6 +1,7 @@
 #include "BottomPanel.hpp"
 
 #include "../components/common/DraggableValueLabel.hpp"
+#include "../components/common/EditToolbar.hpp"
 #include "../components/common/GridDivisionMenu.hpp"
 #include "../components/common/ResizeSeam.hpp"
 #include "../components/common/SvgButton.hpp"
@@ -80,22 +81,9 @@ std::shared_ptr<daw::audio::MagdaDevice> chordEngineOn(TrackId trackId) {
     return found;
 }
 
-// v1 toolbar button: 28px, radius 6, a filled chip with a hairline when engaged.
-void styleV1Button(SvgButton& button) {
-    button.setOriginalColor(juce::Colour(0xFFB3B3B3));
-    button.setNormalColor(ActiveTheme::TEXT_SECONDARY);
-    button.setHoverColor(ActiveTheme::TEXT_PRIMARY);
-    button.setActiveColor(ActiveTheme::TEXT_PRIMARY);
-    button.setActiveBackgroundColor(ActiveTheme::MIDI_TOOL_ACTIVE);
-    button.setActiveBorderColor(ActiveTheme::MIDI_TOOL_ACTIVE_BORDER);
-    button.setHoverBackgroundColor(ActiveTheme::MIDI_TOOL_ACTIVE);
-    button.setBorderThickness(1.0f);
-    button.setCornerRadius(6.0f);
-    button.setIconPadding(7.0f);
-}
-
-constexpr int kV1ToolbarHeight = 40;
-constexpr int kV1Button = 28;
+using edit_toolbar::styleButton;
+constexpr int kV1ToolbarHeight = edit_toolbar::kHeight;
+constexpr int kV1Button = edit_toolbar::kButton;
 
 }  // namespace
 
@@ -250,7 +238,7 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     pianoRollTab_ = std::make_unique<SvgButton>("PianoRollTab", BinaryData::mepianoroll_svg,
                                                 BinaryData::mepianoroll_svgSize);
     pianoRollTab_->setTooltip("Piano Roll");
-    styleV1Button(*pianoRollTab_);
+    styleButton(*pianoRollTab_);
     pianoRollTab_->onClick = [this]() {
         if (!updatingTabs_)
             onEditorTabChanged(0);
@@ -260,7 +248,7 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     drumGridTab_ = std::make_unique<SvgButton>("DrumGridTab", BinaryData::medrumgrid_svg,
                                                BinaryData::medrumgrid_svgSize);
     drumGridTab_->setTooltip("Drum Grid");
-    styleV1Button(*drumGridTab_);
+    styleButton(*drumGridTab_);
     drumGridTab_->onClick = [this]() {
         if (!updatingTabs_)
             onEditorTabChanged(1);
@@ -280,7 +268,7 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     overlayTracksButton_ = std::make_unique<SvgButton>(
         "OverlayTracks", BinaryData::melayerclips_svg, BinaryData::melayerclips_svgSize);
     overlayTracksButton_->setTooltip("Layer clips from other tracks (ghost notes)");
-    styleV1Button(*overlayTracksButton_);
+    styleButton(*overlayTracksButton_);
     overlayTracksButton_->onClick = [this]() {
         if (auto* editor = dynamic_cast<daw::ui::MidiEditorContent*>(getActiveContent())) {
             editor->showOverlayTracksMenu(overlayTracksButton_.get(),
@@ -293,40 +281,22 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     fullscreenToggle_ = std::make_unique<SvgButton>("EditorFullscreen", BinaryData::memaximise_svg,
                                                     BinaryData::memaximise_svgSize);
     fullscreenToggle_->setTooltip("Maximise the editor");
-    styleV1Button(*fullscreenToggle_);
+    styleButton(*fullscreenToggle_);
     fullscreenToggle_->onClick = [this]() {
         if (onFullscreenToggleRequested)
             onFullscreenToggleRequested();
     };
     headerBar_->addChildComponent(fullscreenToggle_.get());
 
-    static constexpr std::array<std::pair<const char*, const char*>, 5> kToolNames{{
-        {"Pointer", "Pointer (1)"},
-        {"Pencil", "Pencil: draw notes (2)"},
-        {"Slice", "Slice: cut a note where you click (3)"},
-        {"Glue", "Glue: join a note to the next one of its pitch (4)"},
-        {"Erase", "Erase: click or sweep over notes (5)"},
-    }};
-    const std::array<std::pair<const char*, int>, 5> toolIcons{{
-        {BinaryData::mepointer_svg, BinaryData::mepointer_svgSize},
-        {BinaryData::mepencil_svg, BinaryData::mepencil_svgSize},
-        {BinaryData::meslice_svg, BinaryData::meslice_svgSize},
-        {BinaryData::meglue_svg, BinaryData::meglue_svgSize},
-        {BinaryData::meerase_svg, BinaryData::meerase_svgSize},
-    }};
-    for (size_t i = 0; i < toolButtons_.size(); ++i) {
-        auto button = std::make_unique<SvgButton>(kToolNames[i].first, toolIcons[i].first,
-                                                  static_cast<size_t>(toolIcons[i].second));
-        button->setTooltip(kToolNames[i].second);
-        styleV1Button(*button);
-        button->onClick = [i]() {
-            MidiEditToolState::getInstance().setTool(static_cast<MidiEditTool>(i));
-        };
-        headerBar_->addChildComponent(button.get());
-        toolButtons_[i] = std::move(button);
-    }
-    MidiEditToolState::getInstance().addChangeListener(this);
-    syncToolButtons();
+    toolButtons_ = std::make_unique<EditToolButtons>(
+        EditToolState::midiEditor(), std::array<const char*, 5>{
+                                         "Pointer (1)",
+                                         "Pencil: draw notes (2)",
+                                         "Slice: cut a note where you click (3)",
+                                         "Glue: join a note to the next one of its pitch (4)",
+                                         "Erase: click or sweep over notes (5)",
+                                     });
+    headerBar_->addChildComponent(toolButtons_.get());
 
     keyChip_ = std::make_unique<KeyChip>();
     keyChip_->setTooltip("Song key: scale highlight and fold-to-key while lit");
@@ -420,7 +390,6 @@ BottomPanel::~BottomPanel() {
     SelectionManager::getInstance().removeListener(this);
     PluginPreferences::getInstance().removeListener(this);
     ProjectManager::getInstance().removeListener(this);
-    MidiEditToolState::getInstance().removeChangeListener(this);
     MidiEditorKeyState::getInstance().removeChangeListener(this);
     // TimelineController listener removed automatically by timelineListenerGuard_
 
@@ -430,8 +399,7 @@ BottomPanel::~BottomPanel() {
     drumGridTab_.reset();
     overlayTracksButton_.reset();
     fullscreenToggle_.reset();
-    for (auto& button : toolButtons_)
-        button.reset();
+    toolButtons_.reset();
     keyChip_.reset();
     propsResizer_.reset();
     audioPropsPanel_.reset();
@@ -614,7 +582,7 @@ void BottomPanel::setupHeaderControls() {
     loopButton_ =
         std::make_unique<SvgButton>("Loop", BinaryData::meloop_svg, BinaryData::meloop_svgSize);
     loopButton_->setTooltip("Loop clip");
-    styleV1Button(*loopButton_);
+    styleButton(*loopButton_);
     loopButton_->setClickingTogglesState(false);  // manual active state
     loopButton_->onClick = [this]() {
         // Automation clip editor: loop lives on the automation clip (same
@@ -681,7 +649,7 @@ void BottomPanel::setupHeaderControls() {
     bendButton_ = std::make_unique<SvgButton>("TimeBend", BinaryData::metimebend_svg,
                                               BinaryData::metimebend_svgSize);
     bendButton_->setTooltip("Time Bend the selected notes");
-    styleV1Button(*bendButton_);
+    styleButton(*bendButton_);
     bendButton_->onClick = [this]() {
         const auto& noteSel = SelectionManager::getInstance().getNoteSelection();
         if (!noteSel.isValid() || noteSel.noteIndices.size() < 2)
@@ -1408,8 +1376,7 @@ void BottomPanel::addMidiControlsToHeader() {
     bendButton_->setVisible(showEditorTabs_);
     // The v1 toolbar leaves clip power to the inspector.
     clipEnabledButton_->setVisible(!showEditorTabs_);
-    for (auto& button : toolButtons_)
-        button->setVisible(showEditorTabs_);
+    toolButtons_->setVisible(showEditorTabs_);
     keyChip_->setVisible(showEditorTabs_);
     overlayTracksButton_->setVisible(showEditorTabs_);
     updateOverlayTracksButtonState();
@@ -1442,9 +1409,8 @@ void BottomPanel::hideMidiHeaderControls() {
     pianoRollTab_->setVisible(false);
     drumGridTab_->setVisible(false);
     bendButton_->setVisible(false);
-    for (auto& button : toolButtons_)
-        if (button)
-            button->setVisible(false);
+    if (toolButtons_)
+        toolButtons_->setVisible(false);
     if (keyChip_)
         keyChip_->setVisible(false);
     if (overlayTracksButton_)
@@ -1585,12 +1551,8 @@ void BottomPanel::layoutV1Toolbar(juce::Rectangle<int> headerBounds) {
     const int toolsWidth = kV1Button * 5 + gap * 4;
     const int centreWidth = toolsWidth + pad + 16 + kV1Button + 16 + keyChipWidth;
     x = headerBounds.getCentreX() - centreWidth / 2;
-    wellAround(x, x + toolsWidth);
-    for (auto& button : toolButtons_) {
-        button->setBounds(x, y, kV1Button, kV1Button);
-        x += kV1Button + gap;
-    }
-    x += pad - gap + 8;
+    toolButtons_->setBounds(x - pad, y - pad, EditToolButtons::kWidth, EditToolButtons::kHeight);
+    x += toolsWidth + pad + 8;
     dividers.push_back(x);
     x += 8;
     bendButton_->setBounds(x, y, kV1Button, kV1Button);
@@ -1627,13 +1589,6 @@ void BottomPanel::layoutV1Toolbar(juce::Rectangle<int> headerBounds) {
     loopButton_->setBounds(x, y, kV1Button, kV1Button);
 }
 
-void BottomPanel::syncToolButtons() {
-    const auto tool = MidiEditToolState::getInstance().getTool();
-    for (size_t i = 0; i < toolButtons_.size(); ++i)
-        if (toolButtons_[i])
-            toolButtons_[i]->setActive(static_cast<size_t>(tool) == i);
-}
-
 void BottomPanel::refreshKeyDisplay() {
     if (keyChip_)
         keyChip_->repaint();
@@ -1642,9 +1597,7 @@ void BottomPanel::refreshKeyDisplay() {
 }
 
 void BottomPanel::changeListenerCallback(juce::ChangeBroadcaster* source) {
-    if (source == &MidiEditToolState::getInstance())
-        syncToolButtons();
-    else if (source == &MidiEditorKeyState::getInstance())
+    if (source == &MidiEditorKeyState::getInstance())
         refreshKeyDisplay();
 }
 

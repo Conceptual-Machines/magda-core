@@ -23,6 +23,7 @@ namespace magda {
 
 // Forward declaration
 class AudioEngine;
+class ArrangementToolbar;
 struct ProjectInfo;
 class SongNavigatorPanel;
 class MasterAutomationHeaderPanel;
@@ -257,6 +258,7 @@ class MainView : public juce::Component,
 
     struct ArrangementLayout {
         bool swapped = false;
+        juce::Rectangle<int> toolbarArea;
         juce::Rectangle<int> cornerArea;
         juce::Rectangle<int> markerLaneArea;
         juce::Rectangle<int> timelineArea;
@@ -338,7 +340,8 @@ class MainView : public juce::Component,
     // Audio engine reference for metering
     AudioEngine* audioEngine_ = nullptr;
 
-    // Corner toolbar buttons (above track headers)
+    std::unique_ptr<ArrangementToolbar> toolbar_;
+    // Corner toolbar buttons (above track headers); the zoom and ruler ones live in toolbar_
     std::unique_ptr<SvgButton> zoomFitButton;
     std::unique_ptr<SvgButton> zoomSelButton;
     std::unique_ptr<SvgButton> markerLaneToggleButton;
@@ -350,12 +353,10 @@ class MainView : public juce::Component,
     std::unique_ptr<SvgButton> ioToggleButton;
     std::unique_ptr<SvgButton> addTrackButton;
     std::unique_ptr<SvgButton> showMasterButton;
-    std::unique_ptr<SvgButton> hAxisIcon;
     std::unique_ptr<SvgButton> vAxisIcon;
 
     // Separator line positions in the corner toolbar (set during resized())
     juce::Rectangle<int> markerLaneSeparatorLine;
-    juce::Rectangle<int> cornerSeparatorLine;
     // The corner's lower row over the I/O column (empty when off), and its buttons, which the
     // labels give way to.
     juce::Rectangle<int> ioLabelsStrip;

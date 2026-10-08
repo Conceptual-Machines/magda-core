@@ -16,6 +16,7 @@
 #include "../../utils/TimelineUtils.hpp"
 #include "../automation/AutomationLaneComponent.hpp"
 #include "../clips/ClipComponent.hpp"
+#include "../common/EditTool.hpp"
 #include "../common/InternalFileDrag.hpp"
 #include "TrackControlsPolicy.hpp"
 #include "core/AutomationCommands.hpp"
@@ -212,6 +213,8 @@ TrackContentPanel::TrackContentPanel() {
     // Register as AutomationManager listener
     AutomationManager::getInstance().addListener(this);
 
+    EditToolState::arrangement().addChangeListener(this);
+
     // Build tracks from TrackManager
     tracksChanged();
 
@@ -237,6 +240,8 @@ TrackContentPanel::~TrackContentPanel() {
 
     // Unregister from AutomationManager
     AutomationManager::getInstance().removeListener(this);
+
+    EditToolState::arrangement().removeChangeListener(this);
 
     // Unregister from controller if we have one
     if (timelineController) {
@@ -1313,6 +1318,9 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
         }
     }
 
+    if (handleToolMouseDown(event))
+        return;
+
     const bool isModifiedSelectionClick = event.mods.isCommandDown() && !event.mods.isShiftDown();
     if (isModifiedSelectionClick) {
         if (auto* clipComp = getClipComponentAt(event.x, event.y)) {
@@ -1359,9 +1367,11 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
     bool selectionEdgeIsLeft = false;
     onSelectionEdge = isOnSelectionEdge(event.x, event.y, selectionEdgeIsLeft);
 
-    // Alt is the clip pencil (Shift is the scroll modifier now).
-    if (!onClip && event.mods.isAltDown() && isInSelectableArea(event.x, event.y) &&
-        !onSelectionEdge && !isOnExistingSelection(event.x, event.y)) {
+    // Alt is the clip pencil (Shift is the scroll modifier now), as is the Pencil tool.
+    const bool pencil =
+        event.mods.isAltDown() || EditToolState::arrangement().getTool() == EditTool::Pencil;
+    if (!onClip && pencil && isInSelectableArea(event.x, event.y) && !onSelectionEdge &&
+        !isOnExistingSelection(event.x, event.y)) {
         int trackIndex = getTrackIndexAtY(event.y);
         if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
             selectTrack(trackIndex);
@@ -1459,6 +1469,11 @@ void TrackContentPanel::mouseDown(const juce::MouseEvent& event) {
 }
 
 void TrackContentPanel::mouseDrag(const juce::MouseEvent& event) {
+    if (isErasingSweep_) {
+        eraseClipAt(event.x, event.y);
+        return;
+    }
+
     if (isDrawingClip_) {
         drawingClipEndBeat_ = snappedBeatForPixel(event.x);
         repaintVisible();
@@ -1620,6 +1635,12 @@ void TrackContentPanel::mouseDrag(const juce::MouseEvent& event) {
 }
 
 void TrackContentPanel::mouseUp(const juce::MouseEvent& event) {
+    if (isErasingSweep_) {
+        isErasingSweep_ = false;
+        UndoManager::getInstance().endCompoundOperation();
+        return;
+    }
+
     // Right-click on empty space shows context menu
     if (event.mods.isPopupMenu()) {
         if (getClipComponentAt(event.x, event.y) == nullptr) {
@@ -2382,9 +2403,17 @@ void TrackContentPanel::updateCursorForPosition(int x, int y) {
     // held shows the pen before the gesture starts. (Shift can't advertise —
     // it's the Shift+wheel scroll modifier, and flashing the pen on every
     // Shift press read as noise.)
-    if (juce::ModifierKeys::currentModifiers.isAltDown() && canDrawClipAt(x, y)) {
+    const auto tool = EditToolState::arrangement().getTool();
+    if ((juce::ModifierKeys::currentModifiers.isAltDown() || tool == EditTool::Pencil) &&
+        canDrawClipAt(x, y)) {
         setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
         return;
+    }
+    if (tool != EditTool::Pencil && getClipComponentAt(x, y) != nullptr) {
+        if (auto toolCursor = cursorForEditTool(tool)) {
+            setMouseCursor(*toolCursor);
+            return;
+        }
     }
     // Zone model + cursor policy live in the shared hit tester (#1719), so
     // the cursor and the mouseDown gesture can never disagree.
@@ -2403,6 +2432,80 @@ bool TrackContentPanel::canDrawClipAt(int x, int y) {
         return false;
     const int trackIndex = getTrackIndexAtY(y);
     return trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size());
+}
+
+bool TrackContentPanel::clipIsEditable(ClipId clipId) const {
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    if (clip == nullptr)
+        return false;
+    const auto* track = TrackManager::getInstance().getTrack(clip->trackId);
+    return track == nullptr || !track->frozen;
+}
+
+bool TrackContentPanel::handleToolMouseDown(const juce::MouseEvent& event) {
+    const auto tool = EditToolState::arrangement().getTool();
+    if (event.mods.isPopupMenu() ||
+        (tool != EditTool::Slice && tool != EditTool::Glue && tool != EditTool::Erase))
+        return false;
+
+    if (tool == EditTool::Erase) {
+        isErasingSweep_ = true;
+        UndoManager::getInstance().beginCompoundOperation("Erase Clips");
+        eraseClipAt(event.x, event.y);
+        return true;
+    }
+
+    auto* clipComp = getClipComponentAt(event.x, event.y);
+    if (clipComp == nullptr || !clipIsEditable(clipComp->getClipId()))
+        return true;
+    const auto clipId = clipComp->getClipId();
+    const auto& clips = ClipManager::getInstance();
+    const auto* clip = clips.getClip(clipId);
+    const double bpm = getTempo();
+
+    if (tool == EditTool::Slice) {
+        const double beat = snappedBeatForPixel(event.x);
+        if (beat > clip->getStartBeats(bpm) && beat < clip->getEndBeats(bpm))
+            UndoManager::getInstance().executeCommand(
+                std::make_unique<SplitClipCommand>(clipId, BeatPosition{beat}, bpm));
+        return true;
+    }
+
+    // Glue: join with the next clip on the same track.
+    ClipId nextId = INVALID_CLIP_ID;
+    double nextStart = 0.0;
+    for (auto id : clips.getClipsOnTrack(clip->trackId, clip->view)) {
+        const auto* other = clips.getClip(id);
+        if (id == clipId || other == nullptr ||
+            other->getStartBeats(bpm) < clip->getStartBeats(bpm))
+            continue;
+        if (nextId == INVALID_CLIP_ID || other->getStartBeats(bpm) < nextStart) {
+            nextId = id;
+            nextStart = other->getStartBeats(bpm);
+        }
+    }
+    if (nextId != INVALID_CLIP_ID) {
+        auto cmd = std::make_unique<JoinClipsCommand>(clipId, nextId, bpm);
+        if (cmd->canExecute()) {
+            UndoManager::getInstance().executeCommand(std::move(cmd));
+            SelectionManager::getInstance().selectClip(clipId);
+        }
+    }
+    return true;
+}
+
+void TrackContentPanel::eraseClipAt(int x, int y) {
+    if (auto* clipComp = getClipComponentAt(x, y)) {
+        const auto clipId = clipComp->getClipId();
+        if (clipIsEditable(clipId)) {
+            SelectionManager::getInstance().clearSelection();
+            UndoManager::getInstance().executeCommand(std::make_unique<DeleteClipCommand>(clipId));
+        }
+    }
+}
+
+void TrackContentPanel::changeListenerCallback(juce::ChangeBroadcaster*) {
+    refreshCursorFromMouse();
 }
 
 void TrackContentPanel::modifierKeysChanged(const juce::ModifierKeys& modifiers) {
@@ -2888,6 +2991,11 @@ bool TrackContentPanel::checkIfMarqueeNeeded(const juce::Point<int>& currentPoin
 // Keyboard Handling
 // ============================================================================
 
+bool TrackContentPanel::keyStateChanged(bool isKeyDown) {
+    EditToolState::arrangement().handleKeyStateChanged();
+    return juce::Component::keyStateChanged(isKeyDown);
+}
+
 bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
     auto& selectionManager = SelectionManager::getInstance();
     auto forwardToParent = [this, &key]() {
@@ -2902,6 +3010,9 @@ bool TrackContentPanel::keyPressed(const juce::KeyPress& key) {
 
     // Note: Cmd+Z / Cmd+Shift+Z (undo/redo) are handled globally by
     // MainComponent's ApplicationCommandManager key mappings.
+
+    if (EditToolState::arrangement().handleKeyPressed(key))
+        return true;
 
     // Cmd/Ctrl+A: Select all clips
     if (key == juce::KeyPress('a', juce::ModifierKeys::commandModifier, 0)) {

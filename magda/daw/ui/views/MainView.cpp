@@ -10,6 +10,7 @@
 
 #include "../components/automation/AutomationMenu.hpp"
 #include "../components/automation/MasterAutomationLanes.hpp"
+#include "../components/common/EditToolbar.hpp"
 #include "../components/common/MasterSpeakerButton.hpp"
 #include "../components/common/SideColumn.hpp"
 #include "../components/mixer/ClickableLabel.hpp"
@@ -18,6 +19,7 @@
 #include "../components/navigation/SongNavigatorPanel.hpp"
 #include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
+#include "ArrangementToolbar.hpp"
 #include "ArrangementViewportPolicy.hpp"
 #include "Config.hpp"
 #include "audio/TrackMeters.hpp"
@@ -504,15 +506,12 @@ void MainView::setupComponents() {
             ViewModeController::getInstance().getViewMode(), !masterVisible_);
     };
 
-    // Axis label icons (non-interactive)
-    setupCornerButton(hAxisIcon, "HAxis", BinaryData::horizontal_svg,
-                      BinaryData::horizontal_svgSize);
-    hAxisIcon->setInterceptsMouseClicks(false, false);
-    // Faint watermark rather than a solid grey glyph.
-    hAxisIcon->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.28f));
-    hAxisIcon->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.28f));
-    hAxisIcon->setBorderThickness(0.0f);
+    toolbar_ = std::make_unique<ArrangementToolbar>();
+    toolbar_->setViewGroups({{zoomFitButton.get(), zoomSelButton.get(), zoomLoopButton.get()},
+                             {markerLaneToggleButton.get(), secondsRulerToggleButton.get()}});
+    addAndMakeVisible(*toolbar_);
 
+    // Axis label icon (non-interactive)
     setupCornerButton(vAxisIcon, "VAxis", BinaryData::vertical_svg, BinaryData::vertical_svgSize);
     vAxisIcon->setInterceptsMouseClicks(false, false);
     vAxisIcon->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.28f));
@@ -933,10 +932,6 @@ void MainView::paint(juce::Graphics& g) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.fillRect(markerLaneSeparatorLine);
     }
-    if (!cornerSeparatorLine.isEmpty()) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-        g.fillRect(cornerSeparatorLine);
-    }
     if (!cornerBottomBorderLine.isEmpty()) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.fillRect(cornerBottomBorderLine);
@@ -978,6 +973,7 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
     ArrangementLayout result;
     auto bounds = getLocalBounds();
     auto& layout = LayoutConfig::getInstance();
+    result.toolbarArea = bounds.removeFromTop(edit_toolbar::kHeight);
 
     result.swapped = Config::getInstance().getScrollbarOnLeft();
     SideColumn headerColumn(!result.swapped);
@@ -1053,8 +1049,8 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
 
     result.trackContentArea = bounds;
     result.overlayArea = bounds;
-    result.playheadArea =
-        bounds.withTop(getTimelineHeight() - LayoutConfig::getInstance().playheadRowHeight);
+    result.playheadArea = bounds.withTop(result.timelineArea.getBottom() -
+                                         LayoutConfig::getInstance().playheadRowHeight);
 
     // Extend the playhead line down through the master automation band so it
     // tracks the tempo / master lanes too (the band was carved off the bottom
@@ -1084,6 +1080,7 @@ void MainView::resized() {
                                         trackHeadersPanel->getTotalTracksHeight(),
                                         arrangementLayout.trackContentArea.getHeight()));
     scrollContainer_->toFront(false);
+    toolbar_->setBounds(arrangementLayout.toolbarArea);
 
     if (masterVisible_) {
         masterHeaderPanel->setBounds(arrangementLayout.masterHeaderArea);
@@ -1135,26 +1132,17 @@ void MainView::resized() {
         const auto cornerArea = arrangementLayout.cornerArea;
         const int btnSize = 23;
         const int gap = 6;
-        const int rowGap = 4;
         const int margin = 8;
         const int markerLaneHeight = getMarkerLaneHeight();
         const auto markerCornerArea = cornerArea.withHeight(markerLaneHeight);
         const auto timelineCornerArea = cornerArea.withTrimmedTop(markerLaneHeight);
         auto grid = timelineCornerArea.withTrimmedLeft(margin).withTrimmedRight(margin);
-        // Centre the two button rows vertically so the icons get even top/bottom
-        // padding inside the gutter rather than sitting flush against the marker
-        // lane separator above.
-        const int rowsBlockHeight = btnSize * 2 + rowGap;
-        grid.removeFromTop(juce::jmax(0, (grid.getHeight() - rowsBlockHeight) / 2));
-        auto topRow = grid.removeFromTop(btnSize);
-        grid.removeFromTop(rowGap);
+        grid.removeFromTop(juce::jmax(0, (grid.getHeight() - btnSize) / 2));
         auto botRow = grid.removeFromTop(btnSize);
 
         // Invalidate old separator line position before updating
         if (!markerLaneSeparatorLine.isEmpty())
             repaint(markerLaneSeparatorLine.expanded(1));
-        if (!cornerSeparatorLine.isEmpty())
-            repaint(cornerSeparatorLine.expanded(1));
 
         // Store separator line position (drawn in paint())
         // Span the full header column width (corner area + componentSpacing gap)
@@ -1175,33 +1163,15 @@ void MainView::resized() {
             markerLaneShown()
                 ? juce::Rectangle<int>(markerBorderX, markerCornerArea.getY(), 1, markerLaneHeight)
                 : juce::Rectangle<int>();
-        cornerSeparatorLine =
-            juce::Rectangle<int>(lineX, topRow.getBottom() + rowGap / 2, lineW, 1);
         // Bottom border closing off the gutter at the ruler/track boundary, so
         // it lines up with the ruler bottom and reads as separate from tracks.
         if (!cornerBottomBorderLine.isEmpty())
             repaint(cornerBottomBorderLine.expanded(1));
         cornerBottomBorderLine = juce::Rectangle<int>(lineX, cornerArea.getBottom() - 1, lineW, 1);
 
-        // Top row: action buttons on inner side, axis label on outer side
+        // Track-height row: action buttons on inner side, axis label on outer side.
         SideColumn btnSide(!arrangementLayout.swapped);
         SideColumn axisSide(arrangementLayout.swapped);
-
-        zoomFitButton->setBounds(btnSide.removeFrom(topRow, btnSize));
-        btnSide.removeSpacing(topRow, gap);
-        zoomSelButton->setBounds(btnSide.removeFrom(topRow, btnSize));
-        btnSide.removeSpacing(topRow, gap);
-        zoomLoopButton->setBounds(btnSide.removeFrom(topRow, btnSize));
-        btnSide.removeSpacing(topRow, gap);
-        markerLaneToggleButton->setBounds(btnSide.removeFrom(topRow, btnSize));
-        btnSide.removeSpacing(topRow, gap);
-        secondsRulerToggleButton->setBounds(btnSide.removeFrom(topRow, btnSize));
-        axisSide.removeSpacing(topRow, gap);
-        hAxisIcon->setBounds(axisSide.removeFrom(topRow, btnSize));
-
-        // Bottom row: action buttons on inner side, axis label on outer side.
-        // The two show/hide toggles (markers above, I/O below) sit at the end of
-        // each row, vertically aligned.
         trackSmallButton->setBounds(btnSide.removeFrom(botRow, btnSize));
         btnSide.removeSpacing(botRow, gap);
         trackMediumButton->setBounds(btnSide.removeFrom(botRow, btnSize));
@@ -1990,7 +1960,7 @@ juce::Rectangle<int> MainView::getResizeHandleArea() const {
     // Starts below the corner toolbar / timeline area
     auto& layout = LayoutConfig::getInstance();
     auto arrangementLayout = computeArrangementLayout();
-    int top = getTimelineHeight();
+    int top = arrangementLayout.trackHeadersArea.getY();
     int x = arrangementLayout.swapped
                 ? arrangementLayout.trackHeadersArea.getX() - layout.componentSpacing
                 : arrangementLayout.trackHeadersArea.getRight();

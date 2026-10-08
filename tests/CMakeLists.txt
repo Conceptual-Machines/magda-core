@@ -886,6 +886,7 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/components/common/ValueLabelControl.cpp
     ../magda/daw/ui/components/common/DraggableValueLabel.cpp
     ../magda/daw/ui/components/common/SvgButton.cpp
+    ../magda/daw/ui/components/common/EditTool.cpp
     ../magda/daw/ui/components/common/InternalFileDrag.cpp
     ../magda/daw/ui/themes/CursorManager.cpp
     ../magda/daw/ui/themes/FontManager.cpp
