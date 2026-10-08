@@ -132,6 +132,9 @@ class DrumGridUI : public juce::Component,
     std::function<std::vector<PadLayerView>(int padIndex)> getPadLayers;
 
     std::function<void(int padIndex)> onAddLayerRequested;
+    /// A device dropped on the chain area of a pad that has one, for the layer it shows.
+    std::function<void(int padIndex, magda::ChainId layerId, const magda::DeviceInfo& device)>
+        onDeviceDroppedOnLayer;
     std::function<void(int padIndex, magda::ChainId layerId)> onRemoveLayerRequested;
     std::function<void(int padIndex, magda::ChainId layerId, bool mute, bool solo, bool bypassed)>
         onLayerSwitchesChanged;
@@ -316,6 +319,10 @@ class DrumGridUI : public juce::Component,
     int padButtonIndexAtPoint(juce::Point<int> point) const;
 
     void showPadContextMenu(int padIndex, juce::Point<int> screenPos);
+
+    /// A drop that landed on the chain area rather than on a pad: true when taken.
+    bool dropOnChainArea(juce::Point<int> point, const juce::var& description,
+                         const juce::StringArray& files);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumGridUI)
 };

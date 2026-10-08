@@ -503,6 +503,9 @@ void DrumGridUI::filesDropped(const juce::StringArray& files, int x, int y) {
     fileDropCount_ = 0;
     repaint();
 
+    if (dropOnChainArea({x, y}, {}, files))
+        return;
+
     int btnIdx = padButtonIndexAtPoint({x, y});
     if (btnIdx < 0 || !onSampleDropped)
         return;
@@ -839,8 +842,8 @@ void DrumGridUI::itemDropped(const SourceDetails& details) {
     dropHighlightPad_ = -1;
 
     int btnIdx = padButtonIndexAtPoint(details.localPosition);
-    DBG("DrumGridUI::itemDropped at " << details.localPosition.toString() << " btnIdx=" << btnIdx);
     if (btnIdx < 0) {
+        dropOnChainArea(details.localPosition, details.description, {});
         repaint();
         return;
     }
@@ -862,6 +865,37 @@ void DrumGridUI::itemDropped(const SourceDetails& details) {
     }
 
     repaint();
+}
+
+bool DrumGridUI::dropOnChainArea(juce::Point<int> point, const juce::var& description,
+                                 const juce::StringArray& files) {
+    if (!chainArea_.contains(point))
+        return false;
+
+    std::optional<magda::DeviceInfo> device;
+    const auto sample = std::ranges::find_if(files, isAudioFile);
+    if (sample != files.end()) {
+        device = magda::padSamplerDevice(*sample, magda::padNoteFor(selectedPad_));
+    } else if (auto* obj = description.getDynamicObject();
+               obj != nullptr && obj->getProperty("type").toString() == "plugin") {
+        // A pad with no chain yet is made by the drop, as on the pad itself.
+        if (!selectedPadHasChain()) {
+            if (onPluginDropped)
+                onPluginDropped(selectedPad_, *obj);
+            return true;
+        }
+        device = magda::TrackManager::deviceInfoFromPluginObject(*obj);
+    }
+    if (!device)
+        return false;
+
+    if (!selectedPadHasChain()) {
+        if (onSampleDropped)
+            onSampleDropped(selectedPad_, juce::File(*sample));
+    } else if (onDeviceDroppedOnLayer) {
+        onDeviceDroppedOnLayer(selectedPad_, selectedLayer_, *device);
+    }
+    return true;
 }
 
 void DrumGridUI::endFaderGesture() {

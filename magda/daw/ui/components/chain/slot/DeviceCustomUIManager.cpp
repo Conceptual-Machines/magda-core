@@ -1397,6 +1397,15 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             },
             [this]() { drumGridUI_->refreshPadChain(); });
     };
+    drumGridUI_->onDeviceDroppedOnLayer = [this, postPadEdit](int, magda::ChainId layerId,
+                                                              const magda::DeviceInfo& device) {
+        postPadEdit(
+            "Add Pad Device",
+            [layerId, device](const magda::ChainNodePath& grid) {
+                magda::TrackManager::getInstance().addDeviceToPad(grid, layerId, device);
+            },
+            [this]() { drumGridUI_->refreshPadChain(); });
+    };
     drumGridUI_->onRemoveLayerRequested = [this, postPadEdit](int, magda::ChainId layerId) {
         postPadEdit(
             "Remove Pad Layer",
