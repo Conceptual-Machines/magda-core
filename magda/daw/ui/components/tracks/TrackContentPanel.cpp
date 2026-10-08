@@ -541,6 +541,14 @@ void TrackContentPanel::paint(juce::Graphics& g) {
     paintClipGhosts(g);
 }
 
+juce::RectangleList<int> TrackContentPanel::getVisibleClipBounds() const {
+    juce::RectangleList<int> bounds;
+    for (const auto& clip : clipComponents_)
+        if (clip != nullptr && clip->isVisible())
+            bounds.add(clip->getBounds());
+    return bounds;
+}
+
 void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
     const auto& projectDefaults = ProjectManager::getInstance().getCurrentProjectInfo().defaults;
 

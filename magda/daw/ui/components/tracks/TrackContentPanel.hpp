@@ -52,6 +52,9 @@ class TrackContentPanel : public juce::Component,
 
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
+
+    /** The visible clips' bounds in this panel's coordinates. */
+    juce::RectangleList<int> getVisibleClipBounds() const;
     void resized() final;
 
     // Keyboard handling

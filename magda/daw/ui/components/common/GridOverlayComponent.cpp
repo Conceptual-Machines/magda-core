@@ -109,6 +109,10 @@ void GridOverlayComponent::timelineStateChanged(const TimelineState& state, Chan
 
 void GridOverlayComponent::paint(juce::Graphics& g) {
     auto area = getLocalBounds();
+    // The grid sits on top of the arrangement but reads as behind the clips.
+    if (getOccludedAreas)
+        for (const auto& occluded : getOccludedAreas())
+            g.excludeClipRegion(occluded);
     drawTimeGrid(g, area);
     drawBeatOverlay(g, area);
 }

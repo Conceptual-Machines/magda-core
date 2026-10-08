@@ -246,6 +246,12 @@ void MainView::setupComponents() {
     // Create grid overlay component (vertical time grid lines - below selection and playhead)
     gridOverlay = std::make_unique<GridOverlayComponent>();
     gridOverlay->setController(timelineController.get());
+    gridOverlay->getOccludedAreas = [this]() {
+        juce::RectangleList<int> areas;
+        for (const auto& clip : trackContentPanel->getVisibleClipBounds())
+            areas.add(gridOverlay->getLocalArea(trackContentPanel.get(), clip));
+        return areas;
+    };
     addAndMakeVisible(*gridOverlay);
 
     // Create selection overlay component (below playhead)
