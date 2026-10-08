@@ -5,6 +5,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "core/MacroInfo.hpp"
@@ -75,6 +76,8 @@ class NodeComponent : public juce::Component,
     // Header accessors
     void setNodeName(const juce::String& name);
     void setNodeNameFont(const juce::Font& font);
+    /// Dim text after the name in the header: vendor / device, chain count.
+    void setHeaderSubtitle(const juce::String& text, std::optional<juce::Colour> colour = {});
     juce::String getNodeName() const;
     void setBypassed(bool bypassed);
     bool isBypassed() const;
@@ -188,6 +191,17 @@ class NodeComponent : public juce::Component,
         deleteButton_->setVisible(false);
     }
     virtual void resizedContent(juce::Rectangle<int> contentArea);
+
+    /// True for a v1 shell, whose side panels sit between its header and its footer, inside
+    /// the frame. Otherwise they take the node's full height beside it.
+    virtual bool sidePanelsInsideShell() const {
+        return false;
+    }
+    /// The shell's footer, laid out across the side panels and the body alike.
+    virtual int getShellFooterHeight() const {
+        return 0;
+    }
+    virtual void resizedShellFooter(juce::Rectangle<int> /*footer*/) {}
 
     // Override to add extra header buttons (between name and delete)
     virtual void resizedHeaderExtra(juce::Rectangle<int>& headerArea);
@@ -341,10 +355,9 @@ class NodeComponent : public juce::Component,
     // Layout constants
     static constexpr int HEADER_HEIGHT = 24;
     static constexpr int BUTTON_SIZE = 18;
-    static constexpr int DEFAULT_PANEL_WIDTH = 150;  // Width for 2-column panels (params, macros)
+    static constexpr int DEFAULT_PANEL_WIDTH = 170;  // Two columns of macro or mod cards
     static constexpr int AI_PANEL_WIDTH = 200;       // Width for AI sound-design panel
-    static constexpr int SINGLE_COLUMN_PANEL_WIDTH = 70;  // Width for 1-column panels (mods)
-    static constexpr int GAIN_PANEL_WIDTH = 32;           // Width for gain panel (right side)
+    static constexpr int GAIN_PANEL_WIDTH = 32;      // Width for gain panel (right side)
 
     // === Mods/Macros Panel Support ===
 
@@ -474,6 +487,9 @@ class NodeComponent : public juce::Component,
     void updateMacroValueDisplay(int macroIndex, float value);
 
   private:
+    void layoutSidePanels(juce::Rectangle<int>& bounds);
+    void layoutHeader(juce::Rectangle<int> headerStrip);
+    void paintSidePanelsInShell(juce::Graphics& g, juce::Rectangle<int>& band);
     // Shift+click range selection: select every sibling node between the
     // selection anchor and this node (siblings = NodeComponents sharing this
     // node's parent, in child order)
@@ -505,6 +521,7 @@ class NodeComponent : public juce::Component,
     // Header controls
     std::unique_ptr<magda::SvgButton> bypassButton_;
     juce::Label nameLabel_;
+    juce::Label headerSubtitle_;
     std::unique_ptr<magda::SvgButton> deleteButton_;
 
     // Mod panel controls (3 modulator slots)

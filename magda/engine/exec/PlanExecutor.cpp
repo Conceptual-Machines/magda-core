@@ -71,7 +71,7 @@ std::map<DeviceKey, std::set<OpKey>> midiBehindDevices(const RenderPlan& plan) {
 /// the pairs correct if a device ever reports more than two channels; the model
 /// has no way to express one today.
 float channelGain(const OpValue& value, int channel) {
-    return channel % 2 == 0 ? value.gainLeft : value.gainRight;
+    return (channel % 2 == 0 ? value.gainLeft : value.gainRight) * value.zoneGain;
 }
 
 void copyWithGain(juce::dsp::AudioBlock<float> destination, juce::dsp::AudioBlock<float> source,
@@ -588,6 +588,8 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 mixerParamForOp_[i].gain = params->find(key);
                 key.kind = ParamKey::Kind::TrackPan;
                 mixerParamForOp_[i].pan = params->find(key);
+            } else if (const auto selector = chainSelectorKeyFor(op); selector.has_value()) {
+                mixerParamForOp_[i].selector = params->find(*selector);
             } else if (op.kind == OpKind::Fader && op.key.role == OpRole::RackChainFader &&
                        op.padLevelParam >= 0) {
                 // The exception to the line above: a Drum Grid's pad level and
@@ -1818,6 +1820,15 @@ void PlanExecutor::deliverHandoffs(std::uint64_t sequence, int numSamples, bool 
 
 OpValue PlanExecutor::mixerValueFor(std::size_t op, const OpValue& published) const {
     const auto params = mixerParamForOp_[op];
+    if (params.selector != INVALID_PARAM_ID && tableFor(op) != nullptr) {
+        const auto selector = sideOfOp(op).values[params.selector];
+        if (selector.empty())
+            return published;
+        OpValue value = published;
+        value.zoneGain = plan_->ops[op].chainZones.selectorGain(selector.value());
+        return value;
+    }
+
     if (params.gain == INVALID_PARAM_ID || tableFor(op) == nullptr)
         return published;
 

@@ -24,18 +24,6 @@ void applySlotName(NodeComponent& slot, bool isDrumGrid, const juce::String& dev
     slot.setNodeNameFont(FontManager::getInstance().getUIFontBold(10.0f));
 }
 
-bool paintContentHeader(juce::Graphics& g, bool isDrumGrid, bool bypassed,
-                        juce::Rectangle<int> textArea) {
-    if (!isDrumGrid)
-        return false;
-
-    const auto dim = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM);
-    g.setColour(bypassed ? dim.withAlpha(0.5f) : dim);
-    g.setFont(FontManager::getInstance().getUIFont(11.5f));
-    g.drawText("MAGDA / Drum Grid", textArea, juce::Justification::centredLeft);
-    return true;
-}
-
 bool shouldShowModButton(bool isDrumGrid, magda::DeviceType deviceType) {
     // Analysis devices (oscilloscope / spectrum) expose no mods.
     return (deviceType != magda::DeviceType::MIDI && deviceType != magda::DeviceType::Analysis) ||

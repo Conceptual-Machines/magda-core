@@ -966,3 +966,50 @@ TEST_CASE("A lane added in a values publish goes on moving", "[engine][param][ta
         session.process(64, output);
     CHECK(device->firstValue > first);
 }
+
+TEST_CASE("A rack macro reaches the rack's chain selector", "[engine][param][table]") {
+    RackInfo rack;
+    rack.id = 4;
+    rack.macros = createDefaultMacros(1);
+    rack.mods = createDefaultMods(0);
+    rack.chainSelector = 10.0f;
+
+    ChainInfo chain;
+    chain.id = 10;
+    rack.chains.push_back(std::move(chain));
+
+    rack.macros[0].value = 1.0f;
+    rack.macros[0].links.push_back(
+        MacroLink{ControlTarget::rackChainSelector(ChainNodePath::rack(1, 4)), 0.5f, false});
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+
+    const auto table = tableFor({track});
+    REQUIRE(table.diagnostics.empty());
+
+    const auto key = paramKeyFor(ControlTarget::rackChainSelector(ChainNodePath::rack(1, 4)));
+    REQUIRE(key.has_value());
+    CHECK(key->kind == ParamKey::Kind::ChainSelector);
+    CHECK(key->rackId == 4);
+
+    const auto param = table.find(*key);
+    REQUIRE(param != INVALID_PARAM_ID);
+    // The macro sets it outright: the stored 10 is for an unlinked rack.
+    CHECK(resolved(table)[param].value() == approx(63.5f));
+}
+
+TEST_CASE("A rack nothing reaches carries no chain selector", "[engine][param][table]") {
+    RackInfo rack;
+    rack.id = 4;
+    rack.macros = createDefaultMacros(1);
+    rack.mods = createDefaultMods(0);
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+
+    const auto table = tableFor({track});
+    const auto key = paramKeyFor(ControlTarget::rackChainSelector(ChainNodePath::rack(1, 4)));
+    REQUIRE(key.has_value());
+    CHECK(table.find(*key) == INVALID_PARAM_ID);
+}

@@ -7,6 +7,7 @@
 #include "core/TrackManager.hpp"
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/MidiLearnCoordinator.hpp"
+#include "modulation/SyncDivisionUi.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -75,9 +76,11 @@ ModKnobComponent::ModKnobComponent(int modIndex) : modIndex_(modIndex) {
 
     // Name label - editable on double-click
     nameLabel_.setText(currentMod_.name, juce::dontSendNotification);
-    nameLabel_.setFont(FontManager::getInstance().getUIFont(8.0f));
-    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
-    nameLabel_.setJustificationType(juce::Justification::centred);
+    nameLabel_.setFont(FontManager::getInstance().getUIFont(11.5f));
+    nameLabel_.setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
+    nameLabel_.setBorderSize({});
+    nameLabel_.setJustificationType(juce::Justification::centredLeft);
     nameLabel_.setEditable(false, true, false);  // Single-click doesn't edit, double-click does
     nameLabel_.onTextChange = [this]() { onNameLabelEdited(); };
     // Pass single clicks through to parent for selection (double-click still edits)
@@ -136,67 +139,113 @@ void ModKnobComponent::setSelected(bool selected) {
     }
 }
 
-void ModKnobComponent::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds().reduced(KNOB_PADDING);
-
-    // Guard against invalid bounds
-    if (bounds.getWidth() <= 0 || bounds.getHeight() <= 0) {
-        return;
+juce::String ModKnobComponent::typeTag() const {
+    switch (currentMod_.type) {
+        case magda::ModType::Envelope:
+            return "ADSR";
+        case magda::ModType::Random:
+            return currentMod_.randomType == 1 ? "NOISE" : "S&H";
+        case magda::ModType::Follower:
+            return "FOL";
+        case magda::ModType::LFO:
+            break;
     }
+    switch (currentMod_.waveform) {
+        case magda::LFOWaveform::Sine:
+            return "SINE";
+        case magda::LFOWaveform::Triangle:
+            return "TRI";
+        case magda::LFOWaveform::Square:
+            return "SQR";
+        case magda::LFOWaveform::Saw:
+            return "SAW";
+        case magda::LFOWaveform::ReverseSaw:
+            return "RAMP";
+        case magda::LFOWaveform::Custom:
+            return "CURVE";
+    }
+    return {};
+}
 
-    // Check if this mod is in link mode (link button is active)
-    bool isInLinkMode =
+juce::String ModKnobComponent::timingText() const {
+    const auto ms = [](float value) { return juce::String(juce::roundToInt(value)) + " ms"; };
+    switch (currentMod_.type) {
+        case magda::ModType::Envelope:
+            return ms(currentMod_.envAttackMs + currentMod_.envDecayMs);
+        case magda::ModType::Follower:
+            return ms(currentMod_.followerReleaseMs);
+        case magda::ModType::LFO:
+        case magda::ModType::Random:
+            break;
+    }
+    if (currentMod_.tempoSync)
+        return syncDivisionLabelForIndex(syncDivisionToIndex(currentMod_.syncDivision));
+    return juce::String(currentMod_.rate, currentMod_.rate < 10.0f ? 2 : 1) + " Hz";
+}
+
+juce::Rectangle<int> ModKnobComponent::bottomRow() const {
+    return getLocalBounds().reduced(CARD_PADDING, 6).removeFromBottom(BOTTOM_ROW_HEIGHT);
+}
+
+void ModKnobComponent::paint(juce::Graphics& g) {
+    const auto bounds = getLocalBounds().toFloat();
+    if (bounds.isEmpty())
+        return;
+
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
+    const bool inLinkMode =
         magda::LinkModeManager::getInstance().isModInLinkMode(parentPath_, modIndex_);
 
-    // Background - orange tint when in link mode, normal otherwise
-    if (isInLinkMode) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.15f));
-        g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
-    } else {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE).brighter(0.04f));
-        g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
-    }
-
-    // Border - grey when selected, default otherwise
+    g.setColour(inLinkMode ? accent.withAlpha(0.15f)
+                           : ActiveTheme::getColour(selected_ ? ActiveTheme::DEVICE_ROW_SELECTED
+                                                              : ActiveTheme::DEVICE_FIELD));
+    g.fillRoundedRectangle(bounds, 5.0f);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
+    g.drawRoundedRectangle(bounds.reduced(0.5f), 5.0f, 1.0f);
     if (selected_) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_SCALE_TEXT));
-        g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 3.0f, 2.0f);
-    } else {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-        g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 3.0f, 1.0f);
+        g.setColour(accent);
+        g.fillRect(juce::Rectangle<float>(0.0f, 4.0f, 2.0f, bounds.getHeight() - 8.0f));
     }
 
-    // Draw indicator dot above link button if mod is linked to any parameters
+    auto& fonts = FontManager::getInstance();
+    const auto top = getLocalBounds().reduced(CARD_PADDING, 6).removeFromTop(NAME_LABEL_HEIGHT);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+    g.setFont(fonts.getMonoFont(9.0f).withExtraKerningFactor(0.06f));
+    g.drawText(typeTag(), top, juce::Justification::centredRight, false);
+
+    const auto bottom = bottomRow();
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
+    g.setFont(fonts.getMonoFont(10.5f));
+    g.drawText(timingText(), bottom.withRight(linkButton_->getX() - 2),
+               juce::Justification::centredLeft, true);
     if (currentMod_.isLinked()) {
-        float dotSize = 5.0f;
-        float centerX = getLocalBounds().getCentreX();
-        float dotY = bounds.getBottom() - LINK_BUTTON_HEIGHT - dotSize - 2.0f;
-
-        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
-        g.fillEllipse(centerX - dotSize * 0.5f, dotY, dotSize, dotSize);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+        g.setFont(fonts.getMonoFont(10.0f));
+        g.drawText(juce::String(static_cast<int>(currentMod_.links.size())),
+                   bottom.withLeft(linkButton_->getRight() + 2), juce::Justification::centredLeft,
+                   false);
     }
 
-    // Draw disabled overlay when mod is disabled
     if (!currentMod_.enabled) {
         g.setColour(juce::Colours::black.withAlpha(0.5f));
-        g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
+        g.fillRoundedRectangle(bounds, 5.0f);
     }
 }
 
 void ModKnobComponent::resized() {
-    auto bounds = getLocalBounds().reduced(KNOB_PADDING);
+    auto inner = getLocalBounds().reduced(CARD_PADDING, 6);
+    // The name leaves room for the type tag on its right.
+    nameLabel_.setBounds(inner.removeFromTop(NAME_LABEL_HEIGHT).withTrimmedRight(40));
 
-    // Name label at top
-    nameLabel_.setBounds(bounds.removeFromTop(NAME_LABEL_HEIGHT));
+    auto bottom = bottomRow();
+    const int linkWidth = LINK_BUTTON_HEIGHT + 4;
+    auto linkSlot = bottom.removeFromRight(linkWidth + 12);
+    linkButton_->setBounds(
+        linkSlot.removeFromLeft(linkWidth).withSizeKeepingCentre(linkWidth, LINK_BUTTON_HEIGHT));
 
-    // Link button at the very bottom
-    auto linkButtonBounds = bounds.removeFromBottom(LINK_BUTTON_HEIGHT);
-    linkButton_->setBounds(linkButtonBounds);
-
-    // Waveform display takes remaining space in the middle
-    if (bounds.getHeight() > 4) {
-        waveformDisplay_.setBounds(bounds.reduced(2));
-    }
+    inner.removeFromBottom(BOTTOM_ROW_HEIGHT + 4);
+    inner.removeFromTop(4);
+    waveformDisplay_.setBounds(inner);
 }
 
 void ModKnobComponent::mouseDown(const juce::MouseEvent& e) {
@@ -281,12 +330,6 @@ void ModKnobComponent::modLinkModeChanged(bool active, const magda::ModSelection
 void ModKnobComponent::onLinkButtonClicked() {
     // Toggle link mode for this mod
     magda::LinkModeManager::getInstance().toggleModLinkMode(parentPath_, modIndex_);
-}
-
-void ModKnobComponent::paintLinkIndicator(juce::Graphics& g, juce::Rectangle<int> area) {
-    // No longer needed - link button handles this
-    (void)g;
-    (void)area;
 }
 
 void ModKnobComponent::showContextMenu() {

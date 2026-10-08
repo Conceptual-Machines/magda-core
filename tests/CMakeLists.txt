@@ -827,6 +827,7 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/components/chain/params/ParamSlotComponent.cpp
     ../magda/daw/ui/components/chain/params/ParamWidgetSetup.cpp
     ../magda/daw/ui/components/chain/params/ParamLinkResolver.cpp
+    ../magda/daw/ui/components/chain/params/ParamLinksPopover.cpp
     ../magda/daw/ui/components/chain/params/ParamLinkMenu.cpp
     ../magda/daw/ui/components/chain/params/ModulationBakeAction.cpp
     ../magda/daw/ui/components/chain/params/ParamModulationPainter.cpp

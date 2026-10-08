@@ -1,7 +1,10 @@
 target_sources(magda_daw_app PRIVATE
     ChainNodePathDrag.cpp
+    PluginDrop.cpp
     NodeComponent.cpp
     ChainRowComponent.cpp
+    ZoneBar.cpp
+    ChainSelectorControl.cpp
     RackComponent.cpp
     ChainPanel.cpp
     DeviceSlotComponent.cpp
@@ -36,6 +39,7 @@ target_sources(magda_daw_app PRIVATE
     params/ParamControlStyle.cpp
     params/ParamSlotComponent.cpp
     params/ParamLinkResolver.cpp
+    params/ParamLinksPopover.cpp
     params/ParamModulationPainter.cpp
     params/ParamLinkMenu.cpp
     params/ModulationBakeAction.cpp
@@ -104,6 +108,8 @@ target_sources(magda_daw_app PRIVATE
     modulation/LFOPhaseOverlay.cpp
     NodeComponent.hpp
     ChainRowComponent.hpp
+    ZoneBar.hpp
+    ChainSelectorControl.hpp
     RackComponent.hpp
     ChainPanel.hpp
     DeviceSlotComponent.hpp
@@ -137,6 +143,7 @@ target_sources(magda_daw_app PRIVATE
     params/MomentaryParamButton.hpp
     params/ParamSlotComponent.hpp
     params/ParamLinkResolver.hpp
+    params/ParamLinksPopover.hpp
     params/ParamModulationPainter.hpp
     params/ParamLinkMenu.hpp
     params/ModulationBakeAction.hpp

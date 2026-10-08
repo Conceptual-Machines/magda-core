@@ -46,6 +46,8 @@ struct ParamKey {
         TrackVolume,  ///< the track fader, in dB
         TrackPan,     ///< the track pan, -1 to 1
         SendLevel,    ///< one send slot's level, in dB, by its index
+
+        ChainSelector,  ///< a rack's chain selector, 0-127, scoped to the rack
     };
 
     /// Who owns the macro or modifier. Always Device for a device parameter.
@@ -100,6 +102,9 @@ std::optional<ParamKey> paramKeyFor(const magda::ControlTarget& target);
 /// The modifier a ControlTarget's scope and modId name, as a source: the same
 /// key with no parameter index. Empty when the target names no modifier.
 std::optional<ParamKey> modifierKeyFor(const magda::ControlTarget& target);
+
+/// The chain selector a plain rack chain's fader reads, or none for any other op.
+std::optional<ParamKey> chainSelectorKeyFor(const PlanOp& op);
 
 /// Canonical text, e.g. "T1/D7:param3", "T1/R4:macro0", "T1:mod2.param0",
 /// and "T1/R5/D90:param0" for a device inside a rack. Injective over keys:

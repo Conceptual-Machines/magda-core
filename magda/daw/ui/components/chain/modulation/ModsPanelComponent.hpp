@@ -15,9 +15,8 @@
 namespace magda::daw::ui {
 
 /**
- * @brief Empty slot button for adding new mods
- *
- * Shows a popup menu with modulator type options (LFO, Curve)
+ * @brief An empty mod slot. The first one reads "Add mod" with LFO ENV RND FOL shortcuts;
+ * any click elsewhere opens the full type menu, Curve included.
  */
 class AddModButton : public juce::Component {
   public:
@@ -30,9 +29,17 @@ class AddModButton : public juce::Component {
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseEnter(const juce::MouseEvent& e) override;
     void mouseExit(const juce::MouseEvent& e) override;
+    void mouseMove(const juce::MouseEvent& e) override;
+
+    /// The first empty slot, which shows its label and shortcuts without a hover.
+    void setPrimary(bool primary);
 
   private:
     void showAddMenu();
+    /// The shortcut rectangles, LFO ENV RND FOL, along the bottom of a primary slot.
+    juce::Rectangle<int> shortcutBounds(int index) const;
+
+    bool primary_ = false;
 };
 
 /**
@@ -102,6 +109,10 @@ class ModsPanelComponent : public PagedControlPanel {
     juce::String getPanelTitle() const override {
         return "MODS";
     }
+    juce::Colour getTitleColour() const override;
+    juce::String getFooterText() const override;
+    void onAddPage() override;
+    void onRemovePage() override;
     int getGridColumns() const override {
         return 2;  // Two columns for mods (2x4 grid)
     }
@@ -114,10 +125,12 @@ class ModsPanelComponent : public PagedControlPanel {
     std::vector<std::pair<magda::ModId, juce::String>> availableModifiers_;
     magda::ChainNodePath parentPath_;
     int currentModCount_ = 0;  // Track how many actual mods exist
+    int targetCount_ = 0;      // Distinct parameters the mods reach
     int allocatedPages_ = 1;   // Track how many pages of slots are allocated (UI only)
 
     void ensureKnobCount(int count);
     void ensureSlotCount(int count);  // Ensure we have knobs + add buttons for all slots
+    void markPrimarySlot();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ModsPanelComponent)
 };

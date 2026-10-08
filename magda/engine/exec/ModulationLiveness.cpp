@@ -114,6 +114,8 @@ std::vector<ParamId> paramsReadBy(const PlanOp& op, const ParamTable& table) {
         add(table.find(key));
         key.kind = ParamKey::Kind::TrackPan;
         add(table.find(key));
+    } else if (const auto selector = chainSelectorKeyFor(op); selector.has_value()) {
+        add(table.find(*selector));
     } else if (op.kind == OpKind::Fader && op.key.role == OpRole::RackChainFader &&
                op.padLevelParam >= 0) {
         add(table.deviceParam(op.key.deviceKey(), op.padLevelParam));

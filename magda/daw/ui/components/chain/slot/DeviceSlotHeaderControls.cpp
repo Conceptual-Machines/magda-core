@@ -43,7 +43,7 @@ juce::Rectangle<int> takeSeparator(juce::Rectangle<int>& area, bool fromLeft,
                                    const DeviceSlotHeaderMetrics& m) {
     const int width = (2 * m.separatorMargin) + 1;
     auto slot = fromLeft ? area.removeFromLeft(width) : area.removeFromRight(width);
-    return slot.withSizeKeepingCentre(1, 18);
+    return slot.withSizeKeepingCentre(1, m.separatorHeight);
 }
 
 void placeCollapsedButton(juce::Rectangle<int>& area, juce::Component* component, int buttonSize) {

@@ -273,6 +273,7 @@ void appendRack(const RackInfo& rack, TrackId trackId, std::optional<RackId> par
     rackDto.bypassed = rack.bypassed;
     rackDto.volumeDb = rack.volume;
     rackDto.pan = rack.pan;
+    rackDto.chainSelector = rack.chainSelector;
     for (const auto& chain : rack.chains)
         rackDto.chainIds.push_back(chain.id);
     graph.racks.push_back(std::move(rackDto));
@@ -290,6 +291,7 @@ void appendRack(const RackInfo& rack, TrackId trackId, std::optional<RackId> par
         chainDto.bypassed = chain.bypassed;
         chainDto.volumeDb = chain.volume;
         chainDto.pan = chain.pan;
+        chainDto.zones = chain.zones;
 
         for (const auto& element : chain.elements) {
             if (isDevice(element)) {

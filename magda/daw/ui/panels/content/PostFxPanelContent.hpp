@@ -60,7 +60,6 @@ class PostFxPanelContent : public juce::Component, public magda::TrackManagerLis
     int contentWidth() const;  // container width: max(content, viewport)
     int appendZoneX() const;   // x of the "+" add strip, pinned to the right
     static void applyReorder(magda::TrackId trackId, int fromIndex, int insertIndex);
-    static magda::DeviceInfo deviceInfoFromDragObject(const juce::DynamicObject& obj);
 
     magda::TrackId trackId_ = magda::INVALID_TRACK_ID;
 

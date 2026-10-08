@@ -15,6 +15,7 @@
 #include "params/MomentaryParamButton.hpp"
 #include "params/ParamControlStyle.hpp"
 #include "params/ParamLinkResolver.hpp"
+#include "params/ParamLinksPopover.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::ui {
@@ -194,6 +195,7 @@ class ParamSlotComponent : public juce::Component,
     void lookAndFeelChanged() override;
     void mouseEnter(const juce::MouseEvent& e) override;
     void mouseExit(const juce::MouseEvent& e) override;
+    void modifierKeysChanged(const juce::ModifierKeys& modifiers) override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
@@ -315,6 +317,8 @@ class ParamSlotComponent : public juce::Component,
     bool overlayOnly_ = false;
     ParamControlStyle style_ = ParamControlStyle::Text;
     juce::Rectangle<int> tileArea_, knobArea_, barArea_, valueArea_;
+    /// A blue dot when a macro reaches this parameter, an orange one when a modifier does.
+    void paintLinkDots(juce::Graphics& g) const;
     bool linkOverlayVertical_ = false;
 
     // Link mode drag state (for setting modulation amount via drag)
@@ -325,6 +329,11 @@ class ParamSlotComponent : public juce::Component,
 
     // Overlay slider for link mode
     std::unique_ptr<juce::Slider> linkModeSlider_;
+
+    /// The links popover, open while Alt is held over the cell (or the mouse is in it).
+    std::unique_ptr<ParamLinksPopover> linksPopover_;
+    void showLinksPopover();
+    void hideLinksPopover();
     void showLinkModeSlider(bool isNewLink, float initialAmount);
     void hideLinkModeSlider();
     void handleLinkModeClick();

@@ -127,7 +127,6 @@ class MacroKnobComponent : public juce::Component,
     void endAutomationGesture();
 
     void showLinkMenu();
-    static void paintLinkIndicator(juce::Graphics& g, juce::Rectangle<int> area);
     void onNameLabelEdited();
     void onLinkButtonClicked();
 
@@ -163,10 +162,12 @@ class MacroKnobComponent : public juce::Component,
     // Helper to get knob bounds for hit testing
     juce::Rectangle<int> getKnobBounds() const;
 
-    static constexpr int KNOB_SIZE = 30;
-    static constexpr int NAME_LABEL_HEIGHT = 11;
+    juce::Rectangle<int> bottomRow() const;
+
+    static constexpr int CARD_PADDING = 8;
+    static constexpr int NAME_LABEL_HEIGHT = 15;
     static constexpr int VALUE_SLIDER_HEIGHT = 14;
-    static constexpr int LINK_BUTTON_HEIGHT = 12;
+    static constexpr int LINK_BUTTON_HEIGHT = 11;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MacroKnobComponent)
 };

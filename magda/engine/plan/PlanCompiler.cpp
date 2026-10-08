@@ -1357,6 +1357,30 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
     std::vector<PortRef> chainAudio;
     std::vector<PortRef> chainMidi;
 
+    // Split the notes across the chains only where a chain's key or velocity
+    // zone chooses between them; otherwise every chain hears every note.
+    std::vector<ChainId> splitChains;
+    for (const auto& chain : rack.chains)
+        if (chain.outputIndex == 0)
+            splitChains.push_back(chain.id);
+    OpId splitOp = INVALID_OP_ID;
+    const bool zoned = std::ranges::any_of(rack.chains, [](const ChainInfo& chain) {
+        return chain.outputIndex == 0 && !chain.zones.notesOpen();
+    });
+    if (zoned && splitChains.size() > kMaxZoneRoutes) {
+        diagnose("rack " + std::to_string(rack.id) + ": more than " +
+                 std::to_string(kMaxZoneRoutes) + " chains, their zones are not applied");
+    } else if (signal.midi.valid() && zoned) {
+        const OpKey splitKey{site.trackId,           rack.id, INVALID_CHAIN_ID, INVALID_DEVICE_ID,
+                             OpRole::RackChainSplit, 0,       site.segment};
+        splitOp = addOp(OpKind::MidiZoneSplit, splitKey, {signal.midi},
+                        std::vector<PortDesc>(splitChains.size(), PortDesc{SignalKind::Midi}));
+        auto& split = plan_.ops[static_cast<std::size_t>(splitOp)];
+        for (const auto& chain : rack.chains)
+            if (chain.outputIndex == 0)
+                split.zoneRoutes.push_back(chain.zones);
+    }
+
     for (const auto& chain : rack.chains) {
         if (chain.outputIndex != 0) {
             // Not the same mechanism as a multi-out track, which reads an
@@ -1377,12 +1401,17 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
         const ChainSite chainSite{site.trackId, rack.id, chain.id, site.segment};
 
         auto chainSignal = signal;
+        if (splitOp != INVALID_OP_ID) {
+            const auto port = std::ranges::find(splitChains, chain.id) - splitChains.begin();
+            chainSignal.midi = PortRef{splitOp, static_cast<int>(port)};
+        }
+        const auto chainMidiIn = chainSignal.midi;
         if (!chain.bypassed)
             chainSignal = emitElements(chain.elements, chainSite, chainSignal);
 
         // A chain that leaves the MIDI stream untouched is transparent to it;
         // only chains that generate MIDI contribute to the rack's MIDI output.
-        const auto generatesMidi = chainSignal.midi.valid() && !(chainSignal.midi == signal.midi);
+        const auto generatesMidi = chainSignal.midi.valid() && !(chainSignal.midi == chainMidiIn);
 
         // Both signals leave the chain through its fader, which is what makes
         // the chain switchable as a unit: mute and a sibling's solo take the
@@ -1401,6 +1430,7 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
                   alignInputs(faderKey, OpKind::Fader,
                               {chainSignal.audio, generatesMidi ? chainSignal.midi : noInput()}),
                   std::move(faderOutputs));
+        plan_.ops[static_cast<std::size_t>(faderOp)].chainZones = chain.zones;
 
         chainAudio.push_back(PortRef{faderOp, 0});
         if (generatesMidi)
@@ -1499,7 +1529,7 @@ ChainSignal Compiler::emitPadRack(const DeviceInfo& device, const ChainSite& sit
         // Split across the layers only where their zones choose between notes
         // (#3007); a lone layer with open zones takes the pad's notes as they are.
         OpId splitOp = INVALID_OP_ID;
-        const bool zoned = layers.size() > 1 || !layers.front()->zones.isOpen();
+        const bool zoned = layers.size() > 1 || !layers.front()->zones.notesOpen();
         if (padMidi.valid() && zoned) {
             const OpKey splitKey{site.trackId,          pads.id, pad.id,      device.id,
                                  OpRole::PadLayerSplit, 0,       site.segment};

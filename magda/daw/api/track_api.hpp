@@ -211,6 +211,7 @@ class TrackApi {
     virtual const RackInfo* getRackByPath(const ChainNodePath& rackPath) const = 0;
     virtual void setRackBypassedByPath(const ChainNodePath& rackPath, bool bypassed) = 0;
     virtual void setRackVolume(const ChainNodePath& rackPath, float volumeDb) = 0;
+    virtual void setRackChainSelector(const ChainNodePath& rackPath, float value) = 0;
 
     virtual ChainId addChainToRack(const ChainNodePath& rackPath, const juce::String& name) = 0;
     virtual void removeChainByPath(const ChainNodePath& chainPath) = 0;
@@ -222,6 +223,7 @@ class TrackApi {
     virtual void setChainVolume(const ChainNodePath& chainPath, float volumeDb) = 0;
     virtual void setChainPan(const ChainNodePath& chainPath, float pan) = 0;
     virtual void setChainName(const ChainNodePath& chainPath, const juce::String& name) = 0;
+    virtual void setChainZones(const ChainNodePath& chainPath, const ChainZones& zones) = 0;
 
     virtual DeviceId addDeviceToChainByPath(const ChainNodePath& chainPath,
                                             const DeviceInfo& device) = 0;

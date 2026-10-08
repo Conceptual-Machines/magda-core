@@ -486,6 +486,7 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
 
             const auto gain = faderGainFromDecibels(chain->volume);
             applyLinearPanLaw(gain, faderPanPosition(chain->pan), value.gainLeft, value.gainRight);
+            value.zoneGain = chain->zones.selectorGain(rack->chainSelector);
             break;
         }
 
@@ -542,6 +543,7 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         // rather than passing them to a silenced fader.
         case OpRole::PadNoteGate:
         case OpRole::PadLayerSplit:
+        case OpRole::RackChainSplit:
         case OpRole::DeviceInject:
         case OpRole::RackMix:
         case OpRole::RackMidiMix:

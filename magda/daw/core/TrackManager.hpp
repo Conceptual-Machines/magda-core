@@ -878,6 +878,10 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setChainExpanded(TrackId trackId, RackId rackId, ChainId chainId, bool expanded);
     void setRackVolume(TrackId trackId, RackId rackId, float volume);
     void setRackVolume(const ChainNodePath& rackPath, float volume);
+    /// The rack's chain selector, clamped to 0-127 (#1808).
+    void setRackChainSelector(const ChainNodePath& rackPath, float value);
+    /// A rack chain's key, velocity and selector zones, clamped (#1808).
+    void setChainZones(const ChainNodePath& chainPath, const ChainZones& zones);
 
     // Device management within chains
     DeviceId addDeviceToChain(TrackId trackId, RackId rackId, ChainId chainId,

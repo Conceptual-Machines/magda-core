@@ -6,6 +6,7 @@
 #include <functional>
 #include <memory>
 
+#include "ZoneBar.hpp"
 #include "core/RackInfo.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -63,8 +64,6 @@ class PadLayerRow : public juce::Component {
     void lookAndFeelChanged() override;
 
   private:
-    class ZoneBar;
-
     void styleControls();
     void reportSwitches();
 

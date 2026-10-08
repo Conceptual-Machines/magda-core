@@ -45,7 +45,7 @@ class DrumGridUI : public juce::Component,
     static constexpr int kRailWidth = 38;
     static constexpr int kEditorWidth = 300;
     static constexpr int kMinChainWidth = 264;
-    static constexpr int kFooterHeight = 40;
+    static constexpr int kFooterHeight = 24;
 
     DrumGridUI();
     ~DrumGridUI() override;

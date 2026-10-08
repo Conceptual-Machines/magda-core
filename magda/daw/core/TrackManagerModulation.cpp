@@ -249,10 +249,12 @@ void TrackManager::setMacroTarget(const ChainNodePath& path, int macroIndex,
     if (!macro.getLink(target)) {
         MacroLink newLink;
         newLink.target = target;
-        // ModParam picks come from a menu (no drag overlay); 100% so the link
-        // is immediately audible. Knob-target picks default to 30% to leave
-        // headroom for the overlay drag.
-        newLink.amount = target.kind == ControlTarget::Kind::ModParam ? 1.0f : 0.3f;
+        // ModParam and chain-selector picks come from a menu (no drag overlay);
+        // 100% so the link is immediately audible. Knob-target picks default to
+        // 30% to leave headroom for the overlay drag.
+        const bool fromMenu = target.kind == ControlTarget::Kind::ModParam ||
+                              target.kind == ControlTarget::Kind::RackChainSelector;
+        newLink.amount = fromMenu ? 1.0f : 0.3f;
         newLink.bipolar = false;
         macro.links.push_back(newLink);
         notifyDeviceModifiersChanged(path.trackId);

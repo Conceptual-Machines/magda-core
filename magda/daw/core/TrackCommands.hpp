@@ -668,6 +668,7 @@ class AddChainByPathCommand : public UndoableCommand {
 struct RackPropertyPatch {
     std::optional<bool> bypassed;
     std::optional<float> volumeDb;
+    std::optional<float> chainSelector;
 };
 
 /** Apply one atomic rack property patch at any nesting depth. */
@@ -687,6 +688,7 @@ class SetRackPropertiesByPathCommand : public UndoableCommand {
     bool previousBypassed_ = false;
     bool previousDeltaSolo_ = false;
     float previousVolumeDb_ = 0.0f;
+    float previousChainSelector_ = 0.0f;
     bool captured_ = false;
     bool executed_ = false;
 };
@@ -699,6 +701,7 @@ struct ChainPropertyPatch {
     std::optional<bool> bypassed;
     std::optional<float> volumeDb;
     std::optional<float> pan;
+    std::optional<ChainZones> zones;
 };
 
 /** Apply one atomic chain property patch at any nesting depth. */

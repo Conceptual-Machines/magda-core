@@ -34,6 +34,12 @@ void DefaultControllerParamWriter::write(const ResolveResult& resolved, float va
         case ControlTarget::Kind::SendLevel:
             writeSendLevel(resolved.target, clamped);
             break;
+        case ControlTarget::Kind::RackChainSelector:
+            TrackManager::getInstance().setRackChainSelector(
+                resolved.target.devicePath,
+                ParameterUtils::normalizedToReal(clamped,
+                                                 getParameterInfoForTarget(resolved.target)));
+            break;
         case ControlTarget::Kind::Tempo:
             // Not reachable from a control surface yet: OSC sets tempo through
             // ProjectApi, which is where the project's own limits live. Wire it

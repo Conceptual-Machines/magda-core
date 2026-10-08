@@ -3853,6 +3853,32 @@ TEST_CASE("RackInfo panel UI state roundtrip", "[project][serialization][rack][u
     REQUIRE(loaded.chains.size() == 1);
 }
 
+TEST_CASE("A rack's chain selector and chain zones roundtrip",
+          "[project][serialization][rack][1808]") {
+    RackInfo rack;
+    rack.id = 7;
+    rack.chainSelector = 42.5f;
+
+    ChainInfo chain;
+    chain.id = 8;
+    chain.zones.keyLow = 36;
+    chain.zones.keyHigh = 59;
+    chain.zones.keyFadeHigh = 4;
+    chain.zones.velocityLow = 64;
+    chain.zones.selectorLow = 20;
+    chain.zones.selectorHigh = 90;
+    chain.zones.selectorFadeLow = 10;
+    chain.zones.selectorFadeHigh = 5;
+    rack.chains.push_back(chain);
+
+    RackInfo loaded;
+    REQUIRE(
+        ProjectSerializer::deserializeRackInfo(ProjectSerializer::serializeRackInfo(rack), loaded));
+    CHECK(loaded.chainSelector == 42.5f);
+    REQUIRE(loaded.chains.size() == 1);
+    CHECK(loaded.chains[0].zones == chain.zones);
+}
+
 TEST_CASE("Delta solo state roundtrips and defaults off for older projects",
           "[project][serialization][delta_solo]") {
     DeviceInfo device;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
 #include "core/SelectionManager.hpp"
@@ -53,6 +55,21 @@ std::vector<ResolvedMacroLink> getLinkedMacros(const ParamLinkContext& ctx);
 bool hasActiveLinks(const ParamLinkContext& ctx);
 float computeTotalModModulation(const ParamLinkContext& ctx);
 float computeTotalMacroModulation(const ParamLinkContext& ctx);
+
+/** @brief One source linked to a parameter, as a cell's chip names it: M1, LFO1, ENV1. */
+struct LinkChip {
+    juce::String text;
+    bool isMacro = false;
+};
+
+/// Every macro and modifier linked to the context's parameter, macros first.
+std::vector<LinkChip> linkChips(const ParamLinkContext& ctx);
+
+/// The normalised offset every macro in @p macros and enabled modifier in @p mods puts on
+/// @p target; for targets that are not a device parameter.
+float totalLinkOffset(const magda::ControlTarget& target,
+                      const std::vector<const magda::MacroArray*>& macros,
+                      const std::vector<const magda::ModArray*>& mods);
 
 /**
  * @brief Resolve a ModSelection to a concrete ModInfo pointer.

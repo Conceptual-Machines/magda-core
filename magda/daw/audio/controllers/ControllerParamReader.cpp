@@ -24,6 +24,14 @@ std::optional<float> DefaultControllerParamReader::read(const ResolveResult& res
             return readTrackLevel(resolved.target);
         case ControlTarget::Kind::SendLevel:
             return readSendLevel(resolved.target);
+        case ControlTarget::Kind::RackChainSelector: {
+            const auto* rack =
+                TrackManager::getInstance().getRackByPath(resolved.target.devicePath);
+            if (rack == nullptr)
+                return std::nullopt;
+            return ParameterUtils::realToNormalized(rack->chainSelector,
+                                                    getParameterInfoForTarget(resolved.target));
+        }
         case ControlTarget::Kind::ModParam:
         case ControlTarget::Kind::Tempo:
             // See the header: neither has a reading, for reasons that are about

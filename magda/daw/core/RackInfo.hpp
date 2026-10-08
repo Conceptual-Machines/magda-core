@@ -162,6 +162,8 @@ struct RackInfo {
     bool expanded = true;  // UI collapsed state
     float volume = 0.0f;   // Rack output volume in dB (0 = unity)
     float pan = 0.0f;      // Rack output pan (-1 to 1)
+    /// Picks which chains sound by their selector zones, 0-127 (#1808).
+    float chainSelector = 0.0f;
 
     // UI panel state
     bool modPanelOpen = false;    // Modulator panel visible
@@ -199,6 +201,7 @@ struct RackInfo {
             expanded = other.expanded;
             volume = other.volume;
             pan = other.pan;
+            chainSelector = other.chainSelector;
             modPanelOpen = other.modPanelOpen;
             paramPanelOpen = other.paramPanelOpen;
             macros = other.macros;

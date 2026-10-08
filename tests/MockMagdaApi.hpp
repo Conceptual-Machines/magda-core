@@ -731,6 +731,10 @@ class MockTrackApi : public TrackApi {
         if (auto* rack = resolveRack(rackPath))
             rack->volume = volumeDb;
     }
+    void setRackChainSelector(const ChainNodePath& rackPath, float value) override {
+        if (auto* rack = resolveRack(rackPath))
+            rack->chainSelector = value;
+    }
 
     ChainId addChainToRack(const ChainNodePath& rackPath, const juce::String& name) override {
         auto* rack = resolveRack(rackPath);
@@ -787,6 +791,10 @@ class MockTrackApi : public TrackApi {
     void setChainName(const ChainNodePath& chainPath, const juce::String& name) override {
         if (auto* chain = resolveChain(chainPath))
             chain->name = name;
+    }
+    void setChainZones(const ChainNodePath& chainPath, const ChainZones& zones) override {
+        if (auto* chain = resolveChain(chainPath))
+            chain->zones = zones.clamped();
     }
 
     DeviceId addDeviceToChainByPath(const ChainNodePath& chainPath,

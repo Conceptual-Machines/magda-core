@@ -895,6 +895,7 @@ juce::var ProjectSerializer::serializeRackInfo(const RackInfo& rack) {
     obj->setProperty("paramPanelOpen", rack.paramPanelOpen);
     obj->setProperty("volume", rack.volume);
     obj->setProperty("pan", rack.pan);
+    obj->setProperty("chainSelector", rack.chainSelector);
 
     // Chains
     juce::Array<juce::var> chainsArray;
@@ -950,6 +951,8 @@ bool ProjectSerializer::deserializeRackInfo(const juce::var& json, RackInfo& out
         outRack.paramPanelOpen = static_cast<bool>(obj->getProperty("paramPanelOpen"));
     outRack.volume = obj->getProperty("volume");
     outRack.pan = obj->getProperty("pan");
+    outRack.chainSelector =
+        juce::jlimit(0.0f, 127.0f, static_cast<float>(obj->getProperty("chainSelector")));
 
     // Chains
     auto chainsVar = obj->getProperty("chains");
@@ -1040,6 +1043,10 @@ juce::var ProjectSerializer::serializeChainInfo(const ChainInfo& chain) {
         zones->setProperty("velocityFadeLow", chain.zones.velocityFadeLow);
         zones->setProperty("velocityFadeHigh", chain.zones.velocityFadeHigh);
         zones->setProperty("roundRobin", chain.zones.roundRobin);
+        zones->setProperty("selectorLow", chain.zones.selectorLow);
+        zones->setProperty("selectorHigh", chain.zones.selectorHigh);
+        zones->setProperty("selectorFadeLow", chain.zones.selectorFadeLow);
+        zones->setProperty("selectorFadeHigh", chain.zones.selectorFadeHigh);
         obj->setProperty("zones", juce::var(zones));
     }
 
@@ -1112,6 +1119,10 @@ bool ProjectSerializer::deserializeChainInfo(const juce::var& json, ChainInfo& o
         z.velocityFadeLow = read("velocityFadeLow", z.velocityFadeLow, 0, 127);
         z.velocityFadeHigh = read("velocityFadeHigh", z.velocityFadeHigh, 0, 127);
         z.roundRobin = static_cast<bool>(zones->getProperty("roundRobin"));
+        z.selectorLow = read("selectorLow", z.selectorLow, 0, 127);
+        z.selectorHigh = read("selectorHigh", z.selectorHigh, 0, 127);
+        z.selectorFadeLow = read("selectorFadeLow", z.selectorFadeLow, 0, 127);
+        z.selectorFadeHigh = read("selectorFadeHigh", z.selectorFadeHigh, 0, 127);
     }
 
     // Elements

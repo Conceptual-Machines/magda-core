@@ -199,6 +199,8 @@ const char* toString(OpRole role) {
             return "handoff";
         case OpRole::PadLayerSplit:
             return "padLayerSplit";
+        case OpRole::RackChainSplit:
+            return "rackChainSplit";
     }
     return "?";
 }
@@ -540,7 +542,7 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
 
         // One zone per output port, so the executor can index one by the other.
         if (op.kind == OpKind::MidiZoneSplit
-                ? op.zoneRoutes.size() != op.outputs.size() || op.outputs.size() > 64
+                ? op.zoneRoutes.size() != op.outputs.size() || op.outputs.size() > kMaxZoneRoutes
                 : !op.zoneRoutes.empty())
             problems.push_back(label + "carries " + std::to_string(op.zoneRoutes.size()) +
                                " zone routes for " + std::to_string(op.outputs.size()) +

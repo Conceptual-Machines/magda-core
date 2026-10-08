@@ -27,9 +27,6 @@ bool isDrumGridPluginId(const juce::String& pluginId);
 
 void applySlotName(NodeComponent& slot, bool isDrumGrid, const juce::String& deviceName);
 
-bool paintContentHeader(juce::Graphics& g, bool isDrumGrid, bool bypassed,
-                        juce::Rectangle<int> textArea);
-
 bool shouldShowModButton(bool isDrumGrid, magda::DeviceType deviceType);
 
 bool shouldShowMacroButton(bool isDrumGrid, magda::DeviceType deviceType, bool isArpeggiator,

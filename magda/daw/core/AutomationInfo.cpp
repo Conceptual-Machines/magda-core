@@ -124,6 +124,9 @@ ParameterInfo getParameterInfoForTarget(const AutomationTarget& target) {
         case ControlTarget::Kind::TrackPan:
             return ParameterPresets::pan(-1, "Pan");
 
+        case ControlTarget::Kind::RackChainSelector:
+            return ParameterPresets::chainSelector(-1);
+
         case ControlTarget::Kind::SendLevel: {
             juce::String name = juce::String("Send ") + juce::String(target.sendBusIndex + 1);
             return ParameterPresets::faderVolume(-1, name);
@@ -219,6 +222,8 @@ juce::String getDisplayNameForTarget(const AutomationTarget& target) {
         }
         case ControlTarget::Kind::Tempo:
             return "Tempo";
+        case ControlTarget::Kind::RackChainSelector:
+            return "Chain Select";
     }
     return "Unknown";
 }

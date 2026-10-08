@@ -32,10 +32,11 @@ struct DeviceSlotCollapsedControls {
 };
 
 struct DeviceSlotHeaderMetrics {
-    int buttonWidth = 30;
-    int buttonHeight = 26;
-    int gap = 8;
+    int buttonWidth = 24;
+    int buttonHeight = 20;
+    int gap = 4;
     int separatorMargin = 6;
+    int separatorHeight = 14;
 };
 
 /// Where the expanded header's two separators landed; empty when not drawn.

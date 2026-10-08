@@ -1659,6 +1659,12 @@ TEST_CASE("Rack and chain writes have closed path-addressed contracts",
     CHECK(validateJson(object({{"rackPath", rackPath}}), rackUpdate.inputSchema).empty());
     CHECK_FALSE(validateJson(object({{"rackPath", rackPath}, {"pan", 0.5}}), rackUpdate.inputSchema)
                     .empty());
+    CHECK(validateJson(object({{"rackPath", rackPath}, {"chainSelector", 64.0}}),
+                       rackUpdate.inputSchema)
+              .empty());
+    CHECK_FALSE(validateJson(object({{"rackPath", rackPath}, {"chainSelector", 200.0}}),
+                             rackUpdate.inputSchema)
+                    .empty());
 
     requireEditOperation("racks.remove");
     const auto& chainCreate = requireEditOperation("chains.create");
@@ -1673,6 +1679,17 @@ TEST_CASE("Rack and chain writes have closed path-addressed contracts",
     CHECK_FALSE(
         validateJson(object({{"chainPath", chainPath}, {"pan", 2.0}}), chainUpdate.inputSchema)
             .empty());
+    CHECK(validateJson(object({{"chainPath", chainPath},
+                               {"zones", object({{"keyHigh", 59}, {"selectorFadeLow", 8}})}}),
+                       chainUpdate.inputSchema)
+              .empty());
+    CHECK_FALSE(
+        validateJson(object({{"chainPath", chainPath}, {"zones", object({{"keyHigh", 200}})}}),
+                     chainUpdate.inputSchema)
+            .empty());
+    CHECK_FALSE(validateJson(object({{"chainPath", chainPath}, {"zones", object({{"pitch", 1}})}}),
+                             chainUpdate.inputSchema)
+                    .empty());
     requireEditOperation("chains.remove");
 
     magda::test::MockMagdaApi api;

@@ -1,57 +1,16 @@
 #include "params/PagedControlPanel.hpp"
 
-#include "ui/components/chain/layout/DeviceSlotHeaderLayout.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
-#include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
-PagedControlPanel::PagedControlPanel(int itemsPerPage) : itemsPerPage_(itemsPerPage) {
-    // Previous / next page buttons
-    prevButton_ = makeNavArrowButton("prev", 0.5f);
-    prevButton_->onClick = [this]() { prevPage(); };
-    addChildComponent(*prevButton_);
+namespace {
+constexpr int kGlyphWidth = 14;
+constexpr int kPageLabelWidth = 30;
+}  // namespace
 
-    nextButton_ = makeNavArrowButton("next", 0.0f);
-    nextButton_->onClick = [this]() { nextPage(); };
-    addChildComponent(*nextButton_);
-
-    // Page indicator label
-    pageLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    pageLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    pageLabel_.setJustificationType(juce::Justification::centred);
-    addChildComponent(pageLabel_);
-
-    // Add page button
-    addPageButton_.setButtonText("+");
-    addPageButton_.setColour(juce::TextButton::buttonColourId,
-                             ActiveTheme::getColour(ActiveTheme::SURFACE));
-    addPageButton_.setColour(juce::TextButton::textColourOffId,
-                             ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
-    addPageButton_.onClick = [this]() {
-        onAddPage();
-        if (onAddPageRequested) {
-            onAddPageRequested(itemsPerPage_);
-        }
-    };
-    addPageButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    addChildComponent(addPageButton_);
-
-    // Remove page button
-    removePageButton_.setButtonText("-");
-    removePageButton_.setColour(juce::TextButton::buttonColourId,
-                                ActiveTheme::getColour(ActiveTheme::SURFACE));
-    removePageButton_.setColour(juce::TextButton::textColourOffId,
-                                ActiveTheme::getColour(ActiveTheme::ACCENT_RED));
-    removePageButton_.onClick = [this]() {
-        if (onRemovePageRequested) {
-            onRemovePageRequested(itemsPerPage_);
-        }
-    };
-    removePageButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    addChildComponent(removePageButton_);
-}
+PagedControlPanel::PagedControlPanel(int itemsPerPage) : itemsPerPage_(itemsPerPage) {}
 
 int PagedControlPanel::getTotalPages() const {
     int totalItems = getTotalItemCount();
@@ -66,7 +25,6 @@ void PagedControlPanel::setCurrentPage(int page) {
     if (currentPage_ != newPage) {
         currentPage_ = newPage;
         onPageChanged();
-        updateNavButtons();
         resized();
         repaint();
     }
@@ -85,7 +43,6 @@ void PagedControlPanel::setItemsPerPage(int count) {
         itemsPerPage_ = count;
         currentPage_ = 0;  // Reset to first page
         onPageChanged();
-        updateNavButtons();
         resized();
         repaint();
     }
@@ -118,140 +75,157 @@ void PagedControlPanel::onAddPage() {
 void PagedControlPanel::setCanAddPage(bool canAdd) {
     if (canAddPage_ != canAdd) {
         canAddPage_ = canAdd;
-        updateNavButtons();
-        resized();
         repaint();
     }
 }
 
 void PagedControlPanel::setCanRemovePage(bool canRemove) {
-    if (canRemovePage_ != canRemove) {
-        canRemovePage_ = canRemove;
-        updateNavButtons();
-        resized();
-        repaint();
-    }
+    canRemovePage_ = canRemove;
 }
 
 void PagedControlPanel::setMinPages(int minPages) {
-    if (minPages >= 1 && minPages_ != minPages) {
+    if (minPages >= 1)
         minPages_ = minPages;
-        updateNavButtons();
-    }
 }
 
-void PagedControlPanel::updateNavButtons() {
-    int totalPages = getTotalPages();
-    bool showNav = totalPages > 1 || canAddPage_ || canRemovePage_;
+juce::Rectangle<int> PagedControlPanel::headerArea() const {
+    return getLocalBounds().removeFromTop(HEADER_HEIGHT);
+}
 
-    prevButton_->setVisible(showNav && totalPages > 1);
-    nextButton_->setVisible(showNav && totalPages > 1);
-    pageLabel_.setVisible(showNav);
-    addPageButton_.setVisible(canAddPage_);
-    removePageButton_.setVisible(canRemovePage_);
+juce::Rectangle<int> PagedControlPanel::footerArea() const {
+    return getLocalBounds().removeFromBottom(FOOTER_HEIGHT);
+}
 
-    if (showNav) {
-        prevButton_->setEnabled(currentPage_ > 0);
-        nextButton_->setEnabled(currentPage_ < totalPages - 1);
-        pageLabel_.setText(juce::String(currentPage_ + 1) + "/" + juce::String(totalPages),
-                           juce::dontSendNotification);
+juce::Rectangle<int> PagedControlPanel::gridArea() const {
+    return getLocalBounds()
+        .withTrimmedTop(HEADER_HEIGHT)
+        .withTrimmedBottom(FOOTER_HEIGHT)
+        .reduced(GRID_PADDING);
+}
 
-        // Remove button only enabled if we have more than minPages
-        removePageButton_.setEnabled(totalPages > minPages_);
-    }
+juce::Rectangle<int> PagedControlPanel::addBounds() const {
+    return headerArea().reduced(8, 0).removeFromRight(kGlyphWidth);
+}
+
+juce::Rectangle<int> PagedControlPanel::nextBounds() const {
+    return addBounds().translated(-kGlyphWidth - 8, 0);
+}
+
+juce::Rectangle<int> PagedControlPanel::pageBounds() const {
+    const auto next = nextBounds();
+    return next.withWidth(kPageLabelWidth).withRightX(next.getX());
+}
+
+juce::Rectangle<int> PagedControlPanel::prevBounds() const {
+    const auto page = pageBounds();
+    return page.withWidth(kGlyphWidth).withRightX(page.getX());
+}
+
+juce::Rectangle<int> PagedControlPanel::getCellBounds(int slotOnPage) const {
+    const auto grid = gridArea();
+    const int cols = juce::jmax(1, getGridColumns());
+    const int rows = juce::jmax(1, (itemsPerPage_ + cols - 1) / cols);
+    const int width = (grid.getWidth() - (cols - 1) * GRID_SPACING) / cols;
+    const int height = (grid.getHeight() - (rows - 1) * GRID_SPACING) / rows;
+    const int col = slotOnPage % cols;
+    const int row = slotOnPage / cols;
+    return {grid.getX() + col * (width + GRID_SPACING), grid.getY() + row * (height + GRID_SPACING),
+            width, height};
 }
 
 void PagedControlPanel::paint(juce::Graphics& g) {
-    // Background
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
-    g.fillRect(getLocalBounds());
+    auto& fonts = FontManager::getInstance();
+    const auto line = ActiveTheme::getColour(ActiveTheme::DEVICE_LINE);
+    const auto dim = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2);
+    const auto mono = fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f);
 
-    // Show empty state message if no items
-    if (getTotalItemCount() == 0 && canAddPage_) {
-        g.setColour(ActiveTheme::getSecondaryTextColour());
-        g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        auto bounds = getLocalBounds().reduced(4);
-        // Skip nav area if it exists
-        int totalPages = getTotalPages();
-        bool showNav = totalPages > 1 || canAddPage_ || canRemovePage_;
-        if (showNav) {
-            bounds.removeFromTop(NAV_HEIGHT);
-        }
-        g.drawText("Click + to add", bounds, juce::Justification::centred);
+    const auto header = headerArea();
+    g.setColour(getTitleColour());
+    g.setFont(mono);
+    g.drawText(getPanelTitle(), header.reduced(12, 0), juce::Justification::centredLeft, false);
+
+    const int totalPages = getTotalPages();
+    g.setFont(fonts.getMonoFont(11.0f));
+    g.setColour(currentPage_ > 0 ? dim.brighter(0.4f) : dim.withAlpha(0.4f));
+    g.drawText(juce::String::fromUTF8("\xe2\x80\xb9"), prevBounds(), juce::Justification::centred);
+    g.setColour(currentPage_ < totalPages - 1 ? dim.brighter(0.4f) : dim.withAlpha(0.4f));
+    g.drawText(juce::String::fromUTF8("\xe2\x80\xba"), nextBounds(), juce::Justification::centred);
+    g.setColour(dim);
+    g.setFont(fonts.getMonoFont(10.0f));
+    g.drawText(juce::String(currentPage_ + 1) + "/" + juce::String(totalPages), pageBounds(),
+               juce::Justification::centred);
+    if (canAddPage_) {
+        g.setColour(dim.brighter(0.4f));
+        g.setFont(fonts.getMonoFont(13.0f));
+        g.drawText("+", addBounds(), juce::Justification::centred);
+    }
+    g.setColour(line);
+    g.fillRect(header.withTop(header.getBottom() - 1));
+
+    const auto footer = footerArea();
+    g.fillRect(footer.withHeight(1));
+    if (const auto text = getFooterText(); text.isNotEmpty()) {
+        g.setColour(dim);
+        g.setFont(mono);
+        g.drawText(text, footer.reduced(12, 0), juce::Justification::centredLeft, false);
     }
 }
 
 void PagedControlPanel::resized() {
-    auto bounds = getLocalBounds().reduced(2);
-    int totalPages = getTotalPages();
-    bool showNav = totalPages > 1 || canAddPage_ || canRemovePage_;
-
-    // Navigation area at top (only if multiple pages or can add/remove)
-    // Layout: - < page > +
-    if (showNav) {
-        auto navArea = bounds.removeFromTop(NAV_HEIGHT);
-        int buttonWidth = 16;
-
-        // Remove button on the left
-        if (canRemovePage_) {
-            removePageButton_.setBounds(navArea.removeFromLeft(buttonWidth));
-            navArea.removeFromLeft(2);  // spacing
-        }
-
-        // Add button on the right
-        if (canAddPage_) {
-            addPageButton_.setBounds(navArea.removeFromRight(buttonWidth));
-            navArea.removeFromRight(2);  // spacing
-        }
-
-        // Prev/Next buttons around page label
-        if (totalPages > 1) {
-            placeNavArrow(*prevButton_, navArea, true);
-            placeNavArrow(*nextButton_, navArea, false);
-        }
-        pageLabel_.setBounds(navArea);
-    }
-
-    updateNavButtons();
-
-    // Grid area for items
-    int visibleCount = getVisibleItemCount();
-    if (visibleCount <= 0)
-        return;
-
-    int gridCols = getGridColumns();
-    int rows = (visibleCount + gridCols - 1) / gridCols;
-    int itemWidth = (bounds.getWidth() - (gridCols - 1) * GRID_SPACING) / gridCols;
-    int itemHeight = (bounds.getHeight() - (rows - 1) * GRID_SPACING) / rows;
-
-    int firstIdx = getFirstVisibleIndex();
-    for (int i = 0; i < visibleCount; ++i) {
-        int col = i % gridCols;
-        int row = i / gridCols;
-        int x = bounds.getX() + col * (itemWidth + GRID_SPACING);
-        int y = bounds.getY() + row * (itemHeight + GRID_SPACING);
-
+    const int visibleCount = getVisibleItemCount();
+    const int firstIdx = getFirstVisibleIndex();
+    for (int i = 0; i < juce::jmax(0, visibleCount); ++i) {
         if (auto* item = getItemComponent(firstIdx + i)) {
-            item->setBounds(x, y, itemWidth, itemHeight);
+            item->setBounds(getCellBounds(i));
             item->setVisible(true);
         }
     }
 
     // Hide items not on current page
-    int totalItems = getTotalItemCount();
+    const int totalItems = getTotalItemCount();
     for (int i = 0; i < totalItems; ++i) {
         if (i < firstIdx || i > getLastVisibleIndex()) {
-            if (auto* item = getItemComponent(i)) {
+            if (auto* item = getItemComponent(i))
                 item->setVisible(false);
-            }
         }
     }
 }
 
 void PagedControlPanel::mouseDown(const juce::MouseEvent& e) {
-    if (e.mods.isLeftButtonDown() && onPanelClicked) {
-        onPanelClicked();
+    const auto at = e.getPosition();
+    if (headerArea().contains(at)) {
+        if (e.mods.isPopupMenu()) {
+            showPageMenu();
+        } else if (prevBounds().expanded(2).contains(at)) {
+            prevPage();
+        } else if (nextBounds().expanded(2).contains(at)) {
+            nextPage();
+        } else if (canAddPage_ && addBounds().expanded(2).contains(at)) {
+            onAddPage();
+            if (onAddPageRequested)
+                onAddPageRequested(itemsPerPage_);
+        } else if (onPanelClicked) {
+            onPanelClicked();
+        }
+        return;
     }
+    if (e.mods.isLeftButtonDown() && onPanelClicked)
+        onPanelClicked();
+}
+
+void PagedControlPanel::showPageMenu() {
+    if (!canRemovePage_)
+        return;
+    juce::PopupMenu menu;
+    menu.addItem(1, "Remove last page", getTotalPages() > minPages_);
+    auto safeThis = juce::Component::SafePointer<PagedControlPanel>(this);
+    menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis](int result) {
+        if (safeThis == nullptr || result != 1)
+            return;
+        safeThis->onRemovePage();
+        if (safeThis->onRemovePageRequested)
+            safeThis->onRemovePageRequested(safeThis->itemsPerPage_);
+    });
 }
 
 }  // namespace magda::daw::ui

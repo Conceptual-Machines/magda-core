@@ -63,10 +63,9 @@ class DeviceSlotComponent : public NodeComponent,
     static constexpr int PARAM_CELL_WIDTH = 54;
     static constexpr int PARAM_CELL_HEIGHT = 24;
     static constexpr int PAGINATION_HEIGHT = 18;
-    static constexpr int CONTENT_HEADER_HEIGHT = 30;  // the ID row: vendor / device
-    static constexpr int HEADER_BAR_HEIGHT = 46;
+    static constexpr int HEADER_BAR_HEIGHT = 28;
     static constexpr int SIDE_STRIP_WIDTH = 40;
-    static constexpr int FOOTER_BAR_HEIGHT = 40;
+    static constexpr int FOOTER_BAR_HEIGHT = 24;
     DeviceSlotComponent(const magda::DeviceInfo& device);
     ~DeviceSlotComponent() override;
 
@@ -107,14 +106,21 @@ class DeviceSlotComponent : public NodeComponent,
     int getHeaderHeight() const override {
         return HEADER_BAR_HEIGHT;
     }
+    bool sidePanelsInsideShell() const override {
+        return true;
+    }
+    int getShellFooterHeight() const override {
+        return collapsed_ ? 0 : FOOTER_BAR_HEIGHT;
+    }
+    void resizedShellFooter(juce::Rectangle<int> footer) override;
     juce::Rectangle<int> getHeaderInnerArea(juce::Rectangle<int> header) const override {
         return header.reduced(10, 0);
     }
     juce::Point<int> getHeaderButtonSize() const override {
-        return {30, 26};
+        return {24, 20};
     }
     int getHeaderButtonGap() const override {
-        return 8;
+        return 4;
     }
     juce::Component* getHeaderDeleteButton() override {
         return closeButton_.get();
@@ -260,12 +266,11 @@ class DeviceSlotComponent : public NodeComponent,
 
     // v1 shell rows below the header: ID row, side strip and footer, in this
     // component's coordinates; empty when not shown.
-    juce::Rectangle<int> idRowArea_, sideStripArea_, footerArea_;
+    juce::Rectangle<int> sideStripArea_, footerArea_;
     juce::Rectangle<int> footerSeparator_, footerInfoArea_, midiLedArea_;
     std::unique_ptr<juce::ArrowButton> footerPrevPage_, footerNextPage_;
     juce::Label footerPageLabel_;
     device_shell::MidiLed midiLed_;
-    bool hasIdRow() const;
     int sideStripWidth() const;
     void layoutSideStrip(juce::Rectangle<int> strip);
     void layoutFooter(juce::Rectangle<int> footer);

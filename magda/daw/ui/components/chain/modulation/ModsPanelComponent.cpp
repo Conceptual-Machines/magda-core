@@ -1,5 +1,7 @@
 #include "modulation/ModsPanelComponent.hpp"
 
+#include <array>
+
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -8,34 +10,69 @@ namespace magda::daw::ui {
 // AddModButton implementation
 AddModButton::AddModButton() = default;
 
-void AddModButton::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds();
+namespace {
+constexpr std::array<const char*, 4> kShortcutNames{"LFO", "ENV", "RND", "FOL"};
+constexpr std::array<magda::ModType, 4> kShortcutTypes{
+    magda::ModType::LFO, magda::ModType::Envelope, magda::ModType::Random,
+    magda::ModType::Follower};
+}  // namespace
 
-    // Only show content on hover (grid is drawn by parent)
-    if (!isMouseOver()) {
-        return;
+void AddModButton::setPrimary(bool primary) {
+    if (primary_ != primary) {
+        primary_ = primary;
+        repaint();
     }
-
-    // Hover state - highlight background
-    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE).brighter(0.08f));
-    g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
-
-    // + icon
-    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
-    auto centerX = bounds.getCentreX();
-    auto centerY = bounds.getCentreY();
-    float size = 20.0f;
-    g.fillRect(centerX - size * 0.5f, centerY - 1.5f, size, 3.0f);
-    g.fillRect(centerX - 1.5f, centerY - size * 0.5f, 3.0f, size);
-
-    // "Add Mod" text
-    g.setFont(FontManager::getInstance().getUIFont(8.0f));
-    g.setColour(ActiveTheme::getSecondaryTextColour());
-    g.drawText("Add Mod", bounds.removeFromBottom(16), juce::Justification::centred);
 }
 
-void AddModButton::mouseDown(const juce::MouseEvent& /*e*/) {
+juce::Rectangle<int> AddModButton::shortcutBounds(int index) const {
+    auto row = getLocalBounds().reduced(6, 8).removeFromBottom(14);
+    const int width = row.getWidth() / static_cast<int>(kShortcutNames.size());
+    return row.withWidth(width).translated(width * index, 0);
+}
+
+void AddModButton::paint(juce::Graphics& g) {
+    auto& fonts = FontManager::getInstance();
+    const bool hovered = isMouseOver(true);
+    if (!primary_ && !hovered)
+        return;
+
+    auto bounds = getLocalBounds();
+    const auto dim = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2);
+    const auto text = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM);
+    auto label = bounds.withSizeKeepingCentre(bounds.getWidth(), 36).translated(0, -8);
+    g.setColour(hovered ? text : dim);
+    g.setFont(fonts.getUIFont(16.0f));
+    g.drawText("+", label.removeFromTop(18), juce::Justification::centred);
+    g.setColour(text);
+    g.setFont(fonts.getUIFont(12.0f));
+    g.drawText("Add mod", label, juce::Justification::centred);
+
+    if (!primary_)
+        return;
+    g.setFont(fonts.getMonoFont(9.0f).withExtraKerningFactor(0.06f));
+    for (int i = 0; i < static_cast<int>(kShortcutNames.size()); ++i) {
+        const auto area = shortcutBounds(i);
+        const bool over = hovered && area.contains(getMouseXYRelative());
+        g.setColour(over ? ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION) : dim);
+        g.drawText(kShortcutNames[static_cast<std::size_t>(i)], area, juce::Justification::centred);
+    }
+}
+
+void AddModButton::mouseDown(const juce::MouseEvent& e) {
+    if (primary_) {
+        for (int i = 0; i < static_cast<int>(kShortcutNames.size()); ++i) {
+            if (shortcutBounds(i).contains(e.getPosition())) {
+                if (onAddMod)
+                    onAddMod(kShortcutTypes[static_cast<std::size_t>(i)], magda::LFOWaveform::Sine);
+                return;
+            }
+        }
+    }
     showAddMenu();
+}
+
+void AddModButton::mouseMove(const juce::MouseEvent&) {
+    repaint();
 }
 
 void AddModButton::showAddMenu() {
@@ -87,28 +124,14 @@ ModsPanelComponent::ModsPanelComponent() : PagedControlPanel(magda::MODS_PER_PAG
     setCanRemovePage(true);
     setMinPages(1);  // Always keep at least 1 page
 
-    // Wire up page management callbacks
-    onAddPageRequested = [this](int /*itemsPerPage*/) {
-        allocatedPages_++;
-        ensureSlotCount(allocatedPages_ * magda::MODS_PER_PAGE);
-        resized();
-        repaint();
-    };
-
-    onRemovePageRequested = [this](int /*itemsPerPage*/) {
-        if (allocatedPages_ > 1) {
-            // Only allow removing page if last page is completely empty
-            int lastPageStartIndex = (allocatedPages_ - 1) * magda::MODS_PER_PAGE;
-            if (currentModCount_ <= lastPageStartIndex) {
-                allocatedPages_--;
-                resized();
-                repaint();
-            }
-        }
-    };
-
     // Start with 1 page (4 slots) with + buttons in empty slots
     ensureSlotCount(allocatedPages_ * magda::MODS_PER_PAGE);
+    markPrimarySlot();
+}
+
+void ModsPanelComponent::markPrimarySlot() {
+    for (int i = 0; i < static_cast<int>(addButtons_.size()); ++i)
+        addButtons_[static_cast<std::size_t>(i)]->setPrimary(i == currentModCount_);
 }
 
 void ModsPanelComponent::ensureKnobCount(int count) {
@@ -213,6 +236,27 @@ void ModsPanelComponent::ensureSlotCount(int count) {
     }
 }
 
+// Pages of empty slots are the panel's own: nothing in the model holds them.
+void ModsPanelComponent::onAddPage() {
+    allocatedPages_++;
+    ensureSlotCount(allocatedPages_ * magda::MODS_PER_PAGE);
+    markPrimarySlot();
+    setCurrentPage(allocatedPages_ - 1);
+    resized();
+    repaint();
+}
+
+// Only a page with no mods on it goes.
+void ModsPanelComponent::onRemovePage() {
+    const int lastPageStart = (allocatedPages_ - 1) * magda::MODS_PER_PAGE;
+    if (allocatedPages_ <= 1 || currentModCount_ > lastPageStart)
+        return;
+    allocatedPages_--;
+    setCurrentPage(juce::jmin(getCurrentPage(), allocatedPages_ - 1));
+    resized();
+    repaint();
+}
+
 void ModsPanelComponent::setMods(const magda::ModArray& mods) {
     currentModCount_ = static_cast<int>(mods.size());
     ensureKnobCount(currentModCount_);
@@ -221,13 +265,21 @@ void ModsPanelComponent::setMods(const magda::ModArray& mods) {
     int requiredPages = currentModCount_ > 0
                             ? (currentModCount_ + magda::MODS_PER_PAGE - 1) / magda::MODS_PER_PAGE
                             : 1;
-    if (requiredPages != allocatedPages_) {
+    if (requiredPages > allocatedPages_) {
         allocatedPages_ = requiredPages;
         ensureSlotCount(allocatedPages_ * magda::MODS_PER_PAGE);
         // Clamp current page if it's now out of range
         if (getCurrentPage() >= allocatedPages_)
             setCurrentPage(juce::jmax(0, allocatedPages_ - 1));
     }
+
+    std::vector<magda::ControlTarget> targets;
+    for (const auto& mod : mods)
+        for (const auto& link : mod.links)
+            if (std::ranges::find(targets, link.target) == targets.end())
+                targets.push_back(link.target);
+    targetCount_ = static_cast<int>(targets.size());
+    markPrimarySlot();
 
     // Update existing mods
     for (size_t i = 0; i < mods.size() && i < knobs_.size(); ++i) {
@@ -277,38 +329,20 @@ void ModsPanelComponent::repaintWaveforms() {
 }
 
 void ModsPanelComponent::paint(juce::Graphics& g) {
-    // Call base class paint for background
     PagedControlPanel::paint(g);
 
-    // Calculate grid area (same as resized() logic in PagedControlPanel)
-    auto bounds = getLocalBounds().reduced(2);
-    int totalPages = getTotalPages();
-    bool showNav = totalPages > 1 || canAddPage() || canRemovePage();
-    if (showNav) {
-        bounds.removeFromTop(NAV_HEIGHT);
-    }
-
-    // Draw grid cells
-    int visibleCount = getVisibleItemCount();
-    if (visibleCount <= 0)
-        return;
-
-    int gridCols = getGridColumns();
-    int rows = (visibleCount + gridCols - 1) / gridCols;
-    int itemWidth = (bounds.getWidth() - (gridCols - 1) * GRID_SPACING) / gridCols;
-    int itemHeight = (bounds.getHeight() - (rows - 1) * GRID_SPACING) / rows;
-
-    // Draw grid cell outlines for all slots
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
-
-    for (int i = 0; i < visibleCount; ++i) {
-        int col = i % gridCols;
-        int row = i / gridCols;
-        int x = bounds.getX() + col * (itemWidth + GRID_SPACING);
-        int y = bounds.getY() + row * (itemHeight + GRID_SPACING);
-
-        auto cellBounds = juce::Rectangle<int>(x, y, itemWidth, itemHeight).toFloat();
-        g.drawRoundedRectangle(cellBounds.reduced(0.5f), 3.0f, 1.0f);
+    // Empty slots are dashed outlines; a mod's card draws its own.
+    const int first = getFirstVisibleIndex();
+    const float dashes[] = {3.0f, 3.0f};
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
+    for (int i = 0; i < getVisibleItemCount(); ++i) {
+        if (first + i < currentModCount_)
+            continue;
+        juce::Path outline;
+        outline.addRoundedRectangle(getCellBounds(i).toFloat().reduced(0.5f), 5.0f);
+        juce::Path dashed;
+        juce::PathStrokeType(1.0f).createDashedStroke(dashed, outline, dashes, 2);
+        g.fillPath(dashed);
     }
 }
 
@@ -332,6 +366,16 @@ juce::Component* ModsPanelComponent::getItemComponent(int index) {
     }
 
     return nullptr;
+}
+
+juce::Colour ModsPanelComponent::getTitleColour() const {
+    return ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
+}
+
+juce::String ModsPanelComponent::getFooterText() const {
+    return juce::String(currentModCount_) + (currentModCount_ == 1 ? " mod" : " mods") +
+           juce::String::fromUTF8(" \xc2\xb7 ") + juce::String(targetCount_) +
+           (targetCount_ == 1 ? " target" : " targets");
 }
 
 }  // namespace magda::daw::ui

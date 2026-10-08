@@ -597,7 +597,6 @@ void DeviceSlotComponent::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int>
     device_shell::paintFrame(g, bounds, headerHeight,
                              {.headerSeparatorLeft = headerSeparators_.left,
                               .headerSeparatorRight = headerSeparators_.right,
-                              .idRow = idRowArea_,
                               .sideStrip = sideStripArea_,
                               .footer = footerArea_,
                               .footerSeparator = footerSeparator_,
@@ -607,12 +606,6 @@ void DeviceSlotComponent::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int>
                                  ? juce::String()
                                  : device_shell::audioInfoText(device_.audioOutputChannels),
                              midiLed_.isLit());
-}
-
-bool DeviceSlotComponent::hasIdRow() const {
-    return !(traits_.isAnalysis || traits_.isFaust || traits_.isFaustInstrument ||
-             (traits_.compiledPresentation != nullptr &&
-              traits_.compiledPresentation->layoutCellCount == 0));
 }
 
 int DeviceSlotComponent::sideStripWidth() const {
@@ -671,6 +664,11 @@ void DeviceSlotComponent::layoutSideStrip(juce::Rectangle<int> strip) {
 
 // [Sidechain] | info ... [MIDI LED][Thru][Multi-out], or the page arrows centred
 // for a plug-in with more than one page.
+void DeviceSlotComponent::resizedShellFooter(juce::Rectangle<int> footer) {
+    footerArea_ = footer;
+    layoutFooter(footerArea_);
+}
+
 void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
     footerSeparator_ = footerInfoArea_ = midiLedArea_ = {};
     const bool paged = !footer.isEmpty() && paramGrid_ != nullptr && paramGrid_->paginates() &&
@@ -681,18 +679,17 @@ void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
     footerPageLabel_.setVisible(paged);
     if (footer.isEmpty())
         return;
-    constexpr int kButtonWidth = 30;
-    constexpr int kButtonHeight = 26;
-    constexpr int kGap = 8;
+    // The header's button size, so a button styled for one fits the other.
+    const auto size = getHeaderButtonSize();
+    const int gap = getHeaderButtonGap();
     auto area = footer.reduced(10, 0);
-    const auto place = [&](juce::Component& button, bool fromLeft) {
-        auto slot =
-            fromLeft ? area.removeFromLeft(kButtonWidth) : area.removeFromRight(kButtonWidth);
-        button.setBounds(slot.withSizeKeepingCentre(kButtonWidth, kButtonHeight));
+    const auto place = [&](juce::Component& component, bool fromLeft) {
+        auto slot = fromLeft ? area.removeFromLeft(size.x) : area.removeFromRight(size.x);
+        component.setBounds(slot.withSizeKeepingCentre(size.x, size.y));
         if (fromLeft)
-            area.removeFromLeft(kGap);
+            area.removeFromLeft(gap);
         else
-            area.removeFromRight(kGap);
+            area.removeFromRight(gap);
     };
 
     const bool sidechain = scButton_ != nullptr && scButton_->isVisible();
@@ -702,17 +699,17 @@ void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
         if (button != nullptr && button->isVisible())
             place(*button, false);
     midiLedArea_ = area.removeFromRight(7).withSizeKeepingCentre(7, 7);
-    area.removeFromRight(kGap);
+    area.removeFromRight(gap);
 
     if (paged) {
-        auto nav = footer.withSizeKeepingCentre(96, kButtonHeight);
+        auto nav = footer.withSizeKeepingCentre(96, size.y);
         footerPrevPage_->setBounds(nav.removeFromLeft(16).withSizeKeepingCentre(12, 12));
         footerNextPage_->setBounds(nav.removeFromRight(16).withSizeKeepingCentre(12, 12));
         footerPageLabel_.setBounds(nav);
     } else if (isInternalDevice() && !traits_.isDrumGrid) {
         if (sidechain) {
-            area.setLeft(area.getX() - kGap);
-            footerSeparator_ = area.removeFromLeft(13).withSizeKeepingCentre(1, 18);
+            area.setLeft(area.getX() - gap);
+            footerSeparator_ = area.removeFromLeft(13).withSizeKeepingCentre(1, 14);
         }
         footerInfoArea_ = area;
     }
@@ -739,9 +736,10 @@ void DeviceSlotComponent::styleDeviceHeaderButtons() {
     using node_header::DeviceIcon;
     const juce::Colour key(0xFFB3B3B3);
     // Each toggle lights in the accent it always had; the glyph carries it.
+    const auto height = static_cast<float>(getHeaderButtonSize().y);
     const auto style = [&](magda::SvgButton* button, DeviceIcon kind, ColourRole active) {
         if (button != nullptr)
-            applyDeviceIconStyle(*button, kind, key, active);
+            applyDeviceIconStyle(*button, kind, key, active, height);
     };
     style(macroButton_.get(), DeviceIcon::Toggle, ActiveTheme::ACCENT_MODULATION);
     style(modButton_.get(), DeviceIcon::Toggle, ActiveTheme::ACCENT_ATTENTION);
@@ -759,12 +757,14 @@ void DeviceSlotComponent::styleDeviceHeaderButtons() {
         stepRecordButton_->setNormalColor(ActiveTheme::STEP_RECORD);
     if (scButton_)
         applyDeviceIconStyle(*scButton_, DeviceIcon::Action, juce::Colour(0xFF000000),
-                             ActiveTheme::ACCENT_ATTENTION);
+                             ActiveTheme::ACCENT_ATTENTION, height);
     style(uiButton_.get(), DeviceIcon::Window, ActiveTheme::ACCENT_PRIMARY);
     if (onButton_)
-        applyDeviceIconStyle(*onButton_, DeviceIcon::Power, juce::Colour(0xFFE6E6E6));
+        applyDeviceIconStyle(*onButton_, DeviceIcon::Power, juce::Colour(0xFFE6E6E6),
+                             ActiveTheme::DEVICE_BLUE, height);
     if (closeButton_)
-        applyDeviceIconStyle(*closeButton_, DeviceIcon::Close);
+        applyDeviceIconStyle(*closeButton_, DeviceIcon::Close, juce::Colour(0xFFB3B3B3),
+                             ActiveTheme::DEVICE_BLUE, height);
 
     auto& title = getNameLabel();
     title.setFont(FontManager::getInstance().getHeadingFont(13.5f));
@@ -1286,17 +1286,18 @@ void DeviceSlotComponent::paintOverChildren(juce::Graphics& g) {
 void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) {
     const auto stepRecording = getSequencerDeviceHeaderState(traits_, customUI_).stepRecording;
 
-    paintDeviceSlotContent(g, contentArea,
-                           {.traits = traits_,
-                            .loadState = device_.loadState,
-                            .collapsed = collapsed_,
-                            .bypassed = isBypassed(),
-                            .internalDevice = isInternalDevice(),
-                            .hasCustomUI = customUI_.hasAnyUI(),
-                            .manufacturer = device_.manufacturer,
-                            .deviceName = device_.name,
-                            .stepRecording = stepRecording},
-                           0, CONTENT_HEADER_HEIGHT, paginationRowHeight(), faustHeaderHeight());
+    const DeviceSlotContentPaintState state{.traits = traits_,
+                                            .loadState = device_.loadState,
+                                            .collapsed = collapsed_,
+                                            .bypassed = isBypassed(),
+                                            .internalDevice = isInternalDevice(),
+                                            .hasCustomUI = customUI_.hasAnyUI(),
+                                            .manufacturer = device_.manufacturer,
+                                            .deviceName = device_.name,
+                                            .stepRecording = stepRecording};
+    const auto subtitle = deviceSlotSubtitle(state);
+    setHeaderSubtitle(subtitle.text, subtitle.colour);
+    paintDeviceSlotContent(g, contentArea, state, 0, paginationRowHeight(), faustHeaderHeight());
 }
 
 int DeviceSlotComponent::paginationRowHeight() const {
@@ -1322,15 +1323,14 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     const auto* slotTrack = magda::TrackManager::getInstance().getTrack(nodePath_.trackId);
     const bool onChordTrack = slotTrack && slotTrack->type == magda::TrackType::Chord;
     juce::ignoreUnused(pluginPresetsAvailable);
-    idRowArea_ = sideStripArea_ = footerArea_ = {};
-    if (!collapsed_) {
-        if (hasIdRow())
-            idRowArea_ = contentArea.removeFromTop(CONTENT_HEADER_HEIGHT);
-        footerArea_ = contentArea.removeFromBottom(FOOTER_BAR_HEIGHT);
-        if (const int strip = sideStripWidth(); strip > 0)
-            sideStripArea_ = contentArea.removeFromRight(strip);
+    // The footer was laid out by resizedShellFooter, across the side panels too.
+    sideStripArea_ = {};
+    if (collapsed_) {
+        footerArea_ = {};
+        layoutFooter(footerArea_);
+    } else if (const int strip = sideStripWidth(); strip > 0) {
+        sideStripArea_ = contentArea.removeFromRight(strip);
     }
-    layoutFooter(footerArea_);
 
     if (!prepareDeviceSlotContentFrame(
             contentArea, traits_, device_, collapsed_, isInternalDevice(), false,

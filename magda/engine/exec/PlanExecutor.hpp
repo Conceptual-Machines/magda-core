@@ -1016,6 +1016,9 @@ class PlanExecutor {
 
         /// A fader's pan. Invalid on a send, which has none.
         ParamId pan = INVALID_PARAM_ID;
+
+        /// A rack chain fader's rack chain selector, 0-127.
+        ParamId selector = INVALID_PARAM_ID;
     };
 
     /// Per op, resolved at prepare so the audio thread never looks a key up.

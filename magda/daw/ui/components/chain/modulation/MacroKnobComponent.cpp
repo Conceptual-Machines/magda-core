@@ -76,9 +76,9 @@ MacroKnobComponent::MacroKnobComponent(int macroIndex) : macroIndex_(macroIndex)
 
     // Name label - editable on double-click
     nameLabel_.setText(currentMacro_.name, juce::dontSendNotification);
-    nameLabel_.setFont(FontManager::getInstance().getUIFont(8.0f));
-    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
-    nameLabel_.setJustificationType(juce::Justification::centred);
+    nameLabel_.setFont(FontManager::getInstance().getUIFont(11.5f));
+    nameLabel_.setBorderSize({});
+    nameLabel_.setJustificationType(juce::Justification::centredLeft);
     nameLabel_.setEditable(false, true, false);  // Single-click doesn't edit, double-click does
     nameLabel_.onTextChange = [this]() { onNameLabelEdited(); };
     // Pass single clicks through to parent for selection (double-click still edits)
@@ -88,8 +88,11 @@ MacroKnobComponent::MacroKnobComponent(int macroIndex) : macroIndex_(macroIndex)
     // Value slider - visible for macros (unlike mods)
     valueSlider_.setRange(0.0, 1.0, 0.01);
     valueSlider_.setValue(currentMacro_.value, juce::dontSendNotification);
-    valueSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    valueSlider_.setFont(FontManager::getInstance().getMonoFont(10.5f));
     valueSlider_.setShowFillIndicator(false);
+    valueSlider_.setJustification(juce::Justification::centredLeft);
+    valueSlider_.setValueFormatter(
+        [](double value) { return juce::String(juce::roundToInt(value * 100.0)) + "%"; });
     valueSlider_.onValueChanged = [this](double value) {
         currentMacro_.value = static_cast<float>(value);
         if (onValueChanged) {
@@ -191,7 +194,8 @@ void MacroKnobComponent::setMacroInfo(const magda::MacroInfo& macro) {
     currentMacro_ = macro;
     nameLabel_.setText(macro.name, juce::dontSendNotification);
     valueSlider_.setValue(macro.value, juce::dontSendNotification);
-    repaint();  // Update link indicator
+    resized();  // linked and unlinked cards lay out differently
+    repaint();
 }
 
 void MacroKnobComponent::setValueOnly(float value) {
@@ -223,91 +227,78 @@ void MacroKnobComponent::setSelected(bool selected) {
 }
 
 void MacroKnobComponent::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds();
-
-    // Guard against invalid bounds
-    if (bounds.getWidth() <= 0 || bounds.getHeight() <= 0) {
+    const auto bounds = getLocalBounds().toFloat();
+    if (bounds.isEmpty())
         return;
-    }
 
-    // Check if this macro is in link mode (link button is active)
-    bool isInLinkMode =
+    const bool linked = currentMacro_.isLinked();
+    const bool inLinkMode =
         magda::LinkModeManager::getInstance().isMacroInLinkMode(parentPath_, macroIndex_);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION);
 
-    // Background - purple tint when in link mode, normal otherwise
-    if (isInLinkMode) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).withAlpha(0.15f));
-        g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
-    } else {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE).brighter(0.04f));
-        g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
+    g.setColour(inLinkMode ? accent.withAlpha(0.15f)
+                           : ActiveTheme::getColour(selected_ ? ActiveTheme::DEVICE_ROW_SELECTED
+                                                              : ActiveTheme::DEVICE_FIELD));
+    g.fillRoundedRectangle(bounds, 5.0f);
+    g.setColour(ActiveTheme::getColour(selected_ ? ActiveTheme::DEVICE_ROW_SELECTED_BORDER
+                                                 : ActiveTheme::DEVICE_FIELD_BORDER));
+    g.drawRoundedRectangle(bounds.reduced(0.5f), 5.0f, 1.0f);
+
+    // The knob: a disc with a 300-degree track, lit in the accent once the macro reaches something.
+    const auto knobArea = getKnobBounds().toFloat();
+    const float diameter =
+        juce::jmax(10.0f, juce::jmin(28.0f, knobArea.getHeight(), knobArea.getWidth() - 16.0f));
+    const auto knob = juce::Rectangle<float>(diameter, diameter).withCentre(knobArea.getCentre());
+    const float startAngle = juce::MathConstants<float>::pi * (7.0f / 6.0f);
+    const float sweep = juce::MathConstants<float>::pi * (5.0f / 3.0f);
+    const float valueAngle = startAngle + currentMacro_.value * sweep;
+    const float radius = diameter / 2.0f - 1.5f;
+
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_KNOB_DISC));
+    g.fillEllipse(knob.reduced(3.0f));
+    juce::Path track;
+    track.addCentredArc(knob.getCentreX(), knob.getCentreY(), radius, radius, 0.0f, startAngle,
+                        startAngle + sweep, true);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
+    g.strokePath(track, juce::PathStrokeType(2.0f));
+    if (linked) {
+        juce::Path arc;
+        arc.addCentredArc(knob.getCentreX(), knob.getCentreY(), radius, radius, 0.0f, startAngle,
+                          valueAngle, true);
+        g.setColour(accent);
+        g.strokePath(arc, juce::PathStrokeType(2.0f));
+    }
+    const float pointer = diameter / 2.0f - 5.0f;
+    g.setColour(
+        ActiveTheme::getColour(linked ? ActiveTheme::DEVICE_VALUE_TEXT : ActiveTheme::DEVICE_DIM2));
+    g.drawLine(knob.getCentreX(), knob.getCentreY(),
+               knob.getCentreX() + std::sin(valueAngle) * pointer,
+               knob.getCentreY() - std::cos(valueAngle) * pointer, 1.5f);
+
+    // Bottom row: the value (a dash until linked), then the link count beside its button.
+    const auto bottom = bottomRow();
+    auto& fonts = FontManager::getInstance();
+    if (!linked) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+        g.setFont(fonts.getMonoFont(10.5f));
+        g.drawText(juce::String::fromUTF8("\xe2\x80\x93"), bottom, juce::Justification::centredLeft,
+                   false);
+    }
+    if (linked) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+        g.setFont(fonts.getMonoFont(10.0f));
+        g.drawText(juce::String(static_cast<int>(currentMacro_.links.size())),
+                   bottom.withLeft(linkButton_->getRight() + 2), juce::Justification::centredLeft,
+                   false);
     }
 
-    // Border - grey when selected, default otherwise
-    if (selected_) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_SCALE_TEXT));
-        g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 3.0f, 2.0f);
-    } else {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-        g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 3.0f, 1.0f);
-    }
-
-    // Draw knob below the name label
-    auto knobBounds = bounds.reduced(1);
-    knobBounds.removeFromTop(NAME_LABEL_HEIGHT);  // Skip name label
-    auto knobArea = knobBounds.removeFromTop(KNOB_SIZE);
-
-    // Center the knob horizontally
-    auto knobDiameter = static_cast<float>(KNOB_SIZE - 4);
-    float knobX = knobArea.getCentreX() - knobDiameter / 2.0f;
-    float knobY = knobArea.getCentreY() - knobDiameter / 2.0f;
-    auto knobRect = juce::Rectangle<float>(knobX, knobY, knobDiameter, knobDiameter);
-
-    // Knob body (dark circle)
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
-    g.fillEllipse(knobRect);
-
-    // Knob border
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).brighter(0.2f));
-    g.drawEllipse(knobRect.reduced(0.5f), 1.0f);
-
-    // Value arc - JUCE addCentredArc uses 0 at TOP (12 o'clock), clockwise positive
-    // 7 o'clock = 210° = 7π/6, 5 o'clock = 150° = 5π/6
-    // Sweep clockwise from 7 through 9, 12, 3 to 5 = 300°
-    const float startAngle = juce::MathConstants<float>::pi * (7.0f / 6.0f);  // 7π/6 = 7 o'clock
-    const float sweepRange = juce::MathConstants<float>::pi * (5.0f / 3.0f);  // 300° sweep
-    float valueAngle = startAngle + (currentMacro_.value * sweepRange);
-
-    // Draw value arc
-    juce::Path arcPath;
-    float arcRadius = knobDiameter / 2.0f - 3.0f;
-    arcPath.addCentredArc(knobRect.getCentreX(), knobRect.getCentreY(), arcRadius, arcRadius, 0.0f,
-                          startAngle, valueAngle, true);
-    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
-    g.strokePath(arcPath, juce::PathStrokeType(2.0f));
-
-    // Draw pointer line - JUCE angles: 0 at top, clockwise positive
-    // x = sin(angle), y = -cos(angle) for screen coords
-    float pointerLength = knobDiameter / 2.0f - 5.0f;
-    float pointerX = knobRect.getCentreX() + std::sin(valueAngle) * pointerLength;
-    float pointerY = knobRect.getCentreY() - std::cos(valueAngle) * pointerLength;
-
-    g.setColour(ActiveTheme::getTextColour());
-    g.drawLine(knobRect.getCentreX(), knobRect.getCentreY(), pointerX, pointerY, 1.5f);
-
-    // Binding indicator dot at top-right.
-    //   Orange — explicit MIDI Learn binding on this macro (user-mapped).
-    //   Green  — automap profile binding only (factory default).
-    //   Grey   — automap binding exists but is shadowed by a Learn override
-    //            on a plugin param sharing the same CC.
-    // The Learn'd colour wins over green so the user can tell at a glance
-    // which macros they've personally mapped vs profile defaults.
+    // Binding dot, top right: orange for a MIDI Learn mapping, green for an automap default,
+    // grey for an automap default a Learn override shadows.
     if (hasAutomap_ || hasLearnedBinding_) {
         constexpr float dotSize = 6.0f;
-        constexpr float margin = 3.0f;
-        auto r = getLocalBounds().toFloat();
-        juce::Rectangle<float> dot(r.getRight() - margin - dotSize, r.getY() + margin, dotSize,
-                                   dotSize);
+        constexpr float margin = 5.0f;
+        juce::Rectangle<float> dot(bounds.getRight() - margin - dotSize, bounds.getY() + margin,
+                                   dotSize, dotSize);
         juce::Colour colour;
         if (hasLearnedBinding_)
             colour = ActiveTheme::getColour(ActiveTheme::MIDI_LEARN).withAlpha(0.9f);
@@ -321,27 +312,32 @@ void MacroKnobComponent::paint(juce::Graphics& g) {
 }
 
 void MacroKnobComponent::resized() {
-    auto bounds = getLocalBounds().reduced(1);
+    auto inner = getLocalBounds().reduced(CARD_PADDING, 6);
+    nameLabel_.setBounds(inner.removeFromTop(NAME_LABEL_HEIGHT));
 
-    // Name label at top
-    nameLabel_.setBounds(bounds.removeFromTop(NAME_LABEL_HEIGHT));
+    auto bottom = bottomRow();
+    const int linkWidth = LINK_BUTTON_HEIGHT + 4;
+    // The count sits after the button, so the pair stays right-aligned.
+    auto linkSlot = bottom.removeFromRight(linkWidth + 12);
+    linkButton_->setBounds(
+        linkSlot.removeFromLeft(linkWidth).withSizeKeepingCentre(linkWidth, LINK_BUTTON_HEIGHT));
+    valueSlider_.setBounds(bottom);
+    valueSlider_.setVisible(currentMacro_.isLinked());
+    nameLabel_.setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(currentMacro_.isLinked()
+                                                    ? ActiveTheme::DEVICE_TEXT
+                                                    : ActiveTheme::DEVICE_DIM2));
+}
 
-    // Skip knob area (drawn in paint())
-    bounds.removeFromTop(KNOB_SIZE);
-
-    // Position link button at the very bottom, horizontally centered to match mod knob sizing
-    auto linkArea = bounds.removeFromBottom(LINK_BUTTON_HEIGHT);
-    int linkWidth = juce::jmin(linkArea.getWidth(), LINK_BUTTON_HEIGHT * 3);
-    linkButton_->setBounds(linkArea.withSizeKeepingCentre(linkWidth, LINK_BUTTON_HEIGHT));
-
-    // Value slider right above link button
-    valueSlider_.setBounds(bounds.removeFromBottom(VALUE_SLIDER_HEIGHT));
+juce::Rectangle<int> MacroKnobComponent::bottomRow() const {
+    return getLocalBounds().reduced(CARD_PADDING, 6).removeFromBottom(VALUE_SLIDER_HEIGHT);
 }
 
 juce::Rectangle<int> MacroKnobComponent::getKnobBounds() const {
-    auto bounds = getLocalBounds().reduced(1);
-    bounds.removeFromTop(NAME_LABEL_HEIGHT);  // Skip name label
-    return bounds.removeFromTop(KNOB_SIZE);
+    auto inner = getLocalBounds().reduced(CARD_PADDING, 6);
+    inner.removeFromTop(NAME_LABEL_HEIGHT);
+    inner.removeFromBottom(VALUE_SLIDER_HEIGHT);
+    return inner.reduced(0, 2);
 }
 
 void MacroKnobComponent::mouseDown(const juce::MouseEvent& e) {
@@ -441,12 +437,6 @@ void MacroKnobComponent::onLinkButtonClicked() {
     magda::LinkModeManager::getInstance().toggleMacroLinkMode(parentPath_, macroIndex_);
 }
 
-void MacroKnobComponent::paintLinkIndicator(juce::Graphics& g, juce::Rectangle<int> area) {
-    // No longer needed - link button handles this
-    (void)g;
-    (void)area;
-}
-
 void MacroKnobComponent::showLinkMenu() {
     juce::PopupMenu menu;
 
@@ -481,6 +471,14 @@ void MacroKnobComponent::showLinkMenu() {
             modsMenu.addSubMenu(modName, perModMenu);
         }
         menu.addSubMenu("Modulators", modsMenu);
+    }
+
+    // A rack's own chain selector (#1808).
+    constexpr int kChainSelectId = 45000;
+    if (parentPath_.getType() == magda::ChainNodeType::Rack) {
+        const auto selector = magda::ControlTarget::rackChainSelector(parentPath_);
+        menu.addItem(kChainSelectId, "Chain Select", true,
+                     currentMacro_.getLink(selector) != nullptr);
     }
 
     // Add submenu for each available device, optionally grouped by chain.
@@ -549,7 +547,8 @@ void MacroKnobComponent::showLinkMenu() {
         if (!link.target.isValid())
             continue;
         juce::String paramName;
-        if (link.target.kind == magda::ControlTarget::Kind::ModParam) {
+        if (link.target.kind == magda::ControlTarget::Kind::ModParam ||
+            link.target.kind == magda::ControlTarget::Kind::RackChainSelector) {
             paramName = magda::getDisplayNameForTarget(link.target);
         } else {
             auto it = deviceParamNames_.find(link.target.deviceId());
@@ -653,6 +652,13 @@ void MacroKnobComponent::showLinkMenu() {
             t.modParamIndex = 0;  // Rate
             if (safeThis->onTargetChanged)
                 safeThis->onTargetChanged(t);
+            return;
+        }
+
+        constexpr int kChainSelectId = 45000;
+        if (result == kChainSelectId) {
+            if (safeThis->onTargetChanged)
+                safeThis->onTargetChanged(magda::ControlTarget::rackChainSelector(parentPath));
             return;
         }
 

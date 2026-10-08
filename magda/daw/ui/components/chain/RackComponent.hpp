@@ -4,7 +4,9 @@
 
 #include <functional>
 
+#include "ChainSelectorControl.hpp"
 #include "NodeComponent.hpp"
+#include "ZoneBar.hpp"
 #include "core/RackInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -79,11 +81,18 @@ class RackComponent : public NodeComponent, public juce::Timer {
     juce::Rectangle<int> getHeaderInnerArea(juce::Rectangle<int> header) const override {
         return header.reduced(10, 0);
     }
+    bool sidePanelsInsideShell() const override {
+        return true;
+    }
+    int getShellFooterHeight() const override {
+        return collapsed_ ? 0 : FOOTER_BAR_HEIGHT;
+    }
+    void resizedShellFooter(juce::Rectangle<int> footer) override;
     juce::Point<int> getHeaderButtonSize() const override {
-        return {30, 26};
+        return {24, 20};
     }
     int getHeaderButtonGap() const override {
-        return 8;
+        return 4;
     }
     juce::Component* getHeaderPresetButton() override {
         return presetButton_.get();
@@ -108,6 +117,18 @@ class RackComponent : public NodeComponent, public juce::Timer {
     int fixedWidth() const;
     void styleShellControls();
     void layoutChainList(juce::Rectangle<int> list);
+
+    /// The chain list's tabs, as the Drum Grid lists a pad's layers (#1808).
+    enum class ChainView { Mix, Key, Velocity, Fade };
+    static constexpr int kNumChainViews = 4;
+    juce::Rectangle<int> chainTabBounds(ChainView view) const;
+    void setChainView(ChainView view);
+    ChainView chainView_ = ChainView::Mix;
+    juce::Rectangle<int> chainTabsArea_;
+
+    /// The rack's chain selector, in the footer under the chain list.
+    std::unique_ptr<ChainSelectorControl> selector_;
+    juce::Rectangle<int> selectorCaption_;
     void layoutSideStrip(juce::Rectangle<int> strip);
     void layoutFooter(juce::Rectangle<int> footer);
 
@@ -201,12 +222,12 @@ class RackComponent : public NodeComponent, public juce::Timer {
     }
 
     static constexpr int METER_STRIP_WIDTH = 18;  // collapsed strip meter
-    static constexpr int HEADER_BAR_HEIGHT = 36;
-    static constexpr int ID_ROW_HEIGHT = 30;
-    static constexpr int FOOTER_BAR_HEIGHT = 40;
+    static constexpr int HEADER_BAR_HEIGHT = 28;
+    static constexpr int FOOTER_BAR_HEIGHT = 24;
     static constexpr int SIDE_STRIP_WIDTH = 40;
     static constexpr int CHAIN_LIST_WIDTH = 460;
     static constexpr int COLUMN_HEADER_HEIGHT = 16;
+    static constexpr int CHAIN_TABS_HEIGHT = 28;
     static constexpr int ROW_GAP = 6;
     static constexpr int ADD_CHAIN_HEIGHT = 34;
     static constexpr int MIN_VIEWPORT_WIDTH = 53;  // 1px rule, 6px padding, 40px add slot

@@ -3928,7 +3928,7 @@ HandlerResult racksUpdate(MagdaApi& api, const juce::var& input, const RequestCo
     const auto path = nodePath(input, "rackPath");
     if (!path || path->getType() != ChainNodeType::Rack)
         return HandlerResult::fail(ErrorCode::ValidationFailed, "rackPath must address a rack");
-    if (!has(input, "bypassed") && !has(input, "volumeDb"))
+    if (!has(input, "bypassed") && !has(input, "volumeDb") && !has(input, "chainSelector"))
         return HandlerResult::fail(ErrorCode::ValidationFailed,
                                    "rack update requires at least one property");
     const auto* rack = api.tracks().getRackByPath(*path);
@@ -3940,8 +3940,11 @@ HandlerResult racksUpdate(MagdaApi& api, const juce::var& input, const RequestCo
         patch.bypassed = readBool(input, "bypassed");
     if (has(input, "volumeDb"))
         patch.volumeDb = static_cast<float>(readDouble(input, "volumeDb"));
+    if (has(input, "chainSelector"))
+        patch.chainSelector = static_cast<float>(readDouble(input, "chainSelector"));
     const bool unchanged = (!patch.bypassed || *patch.bypassed == rack->bypassed) &&
-                           (!patch.volumeDb || *patch.volumeDb == rack->volume);
+                           (!patch.volumeDb || *patch.volumeDb == rack->volume) &&
+                           (!patch.chainSelector || *patch.chainSelector == rack->chainSelector);
     if (unchanged) {
         const auto projection = rackProjection(api, *path);
         return projection ? HandlerResult::unchanged(toJson(*projection))
@@ -3987,7 +3990,7 @@ HandlerResult chainsUpdate(MagdaApi& api, const juce::var& input, const RequestC
                                    "chainPath must address a rack chain");
     if (!has(input, "name") && !has(input, "outputIndex") && !has(input, "muted") &&
         !has(input, "solo") && !has(input, "bypassed") && !has(input, "volumeDb") &&
-        !has(input, "pan"))
+        !has(input, "pan") && !has(input, "zones"))
         return HandlerResult::fail(ErrorCode::ValidationFailed,
                                    "chain update requires at least one property");
     const auto* chain = api.tracks().getChainByPath(*path);
@@ -4009,6 +4012,8 @@ HandlerResult chainsUpdate(MagdaApi& api, const juce::var& input, const RequestC
         patch.volumeDb = static_cast<float>(readDouble(input, "volumeDb"));
     if (has(input, "pan"))
         patch.pan = static_cast<float>(readDouble(input, "pan"));
+    if (has(input, "zones"))
+        patch.zones = zonesFromJson(input["zones"], chain->zones).clamped();
 
     const bool unchanged = (!patch.name || *patch.name == chain->name) &&
                            (!patch.outputIndex || *patch.outputIndex == chain->outputIndex) &&
@@ -4016,7 +4021,8 @@ HandlerResult chainsUpdate(MagdaApi& api, const juce::var& input, const RequestC
                            (!patch.solo || *patch.solo == chain->solo) &&
                            (!patch.bypassed || *patch.bypassed == chain->bypassed) &&
                            (!patch.volumeDb || *patch.volumeDb == chain->volume) &&
-                           (!patch.pan || *patch.pan == chain->pan);
+                           (!patch.pan || *patch.pan == chain->pan) &&
+                           (!patch.zones || *patch.zones == chain->zones);
     if (unchanged) {
         const auto projection = chainProjection(api, *path);
         return projection
