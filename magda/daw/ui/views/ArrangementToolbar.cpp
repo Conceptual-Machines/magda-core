@@ -47,9 +47,6 @@ void ArrangementToolbar::resized() {
     dividers_.clear();
     const int y = getHeight() / 2 - kButton / 2;
 
-    tools_->setBounds(getWidth() / 2 - EditToolButtons::kWidth / 2, y - kWellPad,
-                      EditToolButtons::kWidth, EditToolButtons::kHeight);
-
     int x = getWidth() - 8 - kWellPad;
     for (auto group = viewGroups_.rbegin(); group != viewGroups_.rend(); ++group) {
         const int right = x;
@@ -67,6 +64,11 @@ void ArrangementToolbar::resized() {
             x -= 8 + kWellPad;
         }
     }
+    // Centred, but slid left of the view groups when the toolbar is narrow.
+    const int viewLeft = wells_.empty() ? getWidth() : wells_.back().getX();
+    const int toolsX = juce::jmax(8, juce::jmin(getWidth() / 2 - EditToolButtons::kWidth / 2,
+                                                viewLeft - 16 - EditToolButtons::kWidth));
+    tools_->setBounds(toolsX, y - kWellPad, EditToolButtons::kWidth, EditToolButtons::kHeight);
     repaint();
 }
 
