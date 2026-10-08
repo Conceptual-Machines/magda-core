@@ -287,35 +287,6 @@ DrumGridUI::DrumGridUI() {
     outputButton_.onClick = [this]() { showOutputMenu(); };
     addAndMakeVisible(outputButton_);
 
-    // Pad editor: VEL and KEY, on the selected layer's zones
-    velocityLowControl_.setRange(1.0, 127.0, 1.0);
-    velocityHighControl_.setRange(1.0, 127.0, 127.0);
-    for (auto* fade : {&velocityFadeLowControl_, &velocityFadeHighControl_})
-        fade->setRange(0.0, 127.0, 0.0);
-    for (auto* control : {&velocityLowControl_, &velocityHighControl_, &velocityFadeLowControl_,
-                          &velocityFadeHighControl_}) {
-        control->setSnapToInteger(true);
-        control->setFont(FontManager::getInstance().getMonoFont(11.0f));
-        control->onDragStart = [this]() { zoneDragging_ = true; };
-        control->onDragEnd = [this](double) {
-            zoneDragging_ = false;
-            commitZones();
-        };
-        control->onValueChange = [this]() {
-            if (!zoneDragging_)
-                commitZones();
-            repaint(editorArea_);
-        };
-        addChildComponent(*control);
-    }
-    roundRobinButton_.setClickingTogglesState(true);
-    roundRobinButton_.setTooltip("Take turns with the pad's other round-robin layers");
-    roundRobinButton_.onClick = [this]() {
-        roundRobinButton_.setButtonText(roundRobinButton_.getToggleState() ? "On" : "Off");
-        commitZones();
-    };
-    addChildComponent(roundRobinButton_);
-
     addLayerButton_.setTooltip("Add a layer to this pad");
     addLayerButton_.onClick = [this]() {
         if (onAddLayerRequested)
@@ -326,30 +297,6 @@ DrumGridUI::DrumGridUI() {
     layerList_.setScrollBarsShown(true, false);
     layerList_.setScrollBarThickness(6);
     addChildComponent(layerList_);
-
-    // The selected layer's gain and pan, live and one undo step per drag.
-    layerGainControl_.setRange(kMinPadDb, 6.0, 0.0);
-    layerPanControl_.setRange(-1.0, 1.0, 0.0);
-    for (auto* control : {&layerGainControl_, &layerPanControl_}) {
-        control->setDrawBackground(false);
-        control->setDrawBorder(false);
-        control->setShowFillIndicator(false);
-        control->setShowText(false);
-        control->onDragStart = [this]() { faderDragging_ = true; };
-        control->onDragEnd = [this](double) {
-            faderDragging_ = false;
-            endFaderGesture();
-        };
-        control->onValueChange = [this]() {
-            if (const auto* layer = selectedLayer(); layer != nullptr && onLayerMixChanged)
-                onLayerMixChanged(layer->id, static_cast<float>(layerGainControl_.getValue()),
-                                  static_cast<float>(layerPanControl_.getValue()));
-            if (!faderDragging_)
-                endFaderGesture();
-            repaint(editorArea_);
-        };
-        addChildComponent(*control);
-    }
 
     // Chain: the rack's chain view on the selected pad
     padChainView_.onLayoutChanged = [this]() {
@@ -399,7 +346,7 @@ DrumGridUI::DrumGridUI() {
 
 DrumGridUI::~DrumGridUI() {
     stopTimer();
-    for (auto* button : {&editorToggle_, &outputButton_, &roundRobinButton_})
+    for (auto* button : {&editorToggle_, &outputButton_})
         button->setLookAndFeel(nullptr);
 }
 
@@ -413,7 +360,6 @@ void DrumGridUI::styleControls() {
     node_header::applyDeviceMuteStyle(chainMuteButton_, 24.0f);
     node_header::applyDeviceSoloStyle(chainSoloButton_, 24.0f);
     outputButton_.setLookAndFeel(&glyph);
-    roundRobinButton_.setLookAndFeel(&glyph);
 }
 
 void DrumGridUI::restoreDetailCollapsed(bool collapsed) {
@@ -682,8 +628,8 @@ void DrumGridUI::paintEditor(juce::Graphics& g) {
 
     g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f));
     for (const auto& [tab, name] :
-         {std::pair{EditorTab::Layers, "LAYERS"}, std::pair{EditorTab::Velocity, "VEL"},
-          std::pair{EditorTab::Volume, "VOL"}}) {
+         {std::pair{EditorTab::Mix, "MIX"}, std::pair{EditorTab::Velocity, "VEL"},
+          std::pair{EditorTab::Fade, "FADE"}, std::pair{EditorTab::Pad, "PAD"}}) {
         const auto area = tabBounds(tab);
         const bool active = tab == editorTab_;
         g.setColour(colour(active ? ActiveTheme::DEVICE_VALUE_TEXT : ActiveTheme::DEVICE_DIM2));
@@ -696,12 +642,8 @@ void DrumGridUI::paintEditor(juce::Graphics& g) {
     g.setColour(colour(ActiveTheme::DEVICE_LINE));
     g.fillRect(tabsArea_.withTop(tabsArea_.getBottom() - 1));
 
-    if (editorTab_ == EditorTab::Layers)
+    if (editorTab_ != EditorTab::Pad)
         return;
-    if (editorTab_ == EditorTab::Velocity) {
-        paintZones(g);
-        return;
-    }
 
     const auto label = [&](juce::Rectangle<int> area, const juce::String& name,
                            const juce::String& value) {
@@ -848,9 +790,7 @@ void DrumGridUI::resized() {
 void DrumGridUI::layoutEditor(juce::Rectangle<int> area) {
     const bool visible = !area.isEmpty();
     for (auto* control : volumeControls())
-        control->setVisible(visible && editorTab_ == EditorTab::Volume);
-    for (auto* control : zoneControls())
-        control->setVisible(false);
+        control->setVisible(visible && editorTab_ == EditorTab::Pad);
     if (!visible) {
         layerList_.setVisible(false);
         return;
@@ -858,45 +798,8 @@ void DrumGridUI::layoutEditor(juce::Rectangle<int> area) {
 
     editorHeaderArea_ = area.removeFromTop(kPanelHeaderHeight);
     tabsArea_ = area.removeFromTop(28);
-    layoutLayerList(editorTab_ == EditorTab::Layers ? area : juce::Rectangle<int>{});
+    layoutLayerList(editorTab_ != EditorTab::Pad ? area : juce::Rectangle<int>{});
     auto body = area.reduced(10);
-
-    if (editorTab_ == EditorTab::Velocity) {
-        const auto pair = [&body](juce::Component& left, juce::Component& right) {
-            auto row = body.removeFromTop(24);
-            left.setBounds(row.removeFromLeft((row.getWidth() - 8) / 2));
-            row.removeFromLeft(8);
-            right.setBounds(row);
-            left.setVisible(true);
-            right.setVisible(true);
-        };
-        layerMixLabelArea_ = body.removeFromTop(16);
-        body.removeFromTop(4);
-        {
-            auto row = body.removeFromTop(20);
-            layerGainControl_.setBounds(row.removeFromLeft((row.getWidth() - 8) / 2));
-            row.removeFromLeft(8);
-            layerPanControl_.setBounds(row);
-            layerGainControl_.setVisible(true);
-            layerPanControl_.setVisible(true);
-        }
-        body.removeFromTop(10);
-        zoneRangeLabelArea_ = body.removeFromTop(16);
-        body.removeFromTop(4);
-        pair(velocityLowControl_, velocityHighControl_);
-        body.removeFromTop(8);
-        zoneBarArea_ = body.removeFromTop(10);
-        body.removeFromTop(10);
-        zoneFadeLabelArea_ = body.removeFromTop(16);
-        body.removeFromTop(4);
-        pair(velocityFadeLowControl_, velocityFadeHighControl_);
-        body.removeFromTop(10);
-        auto row = body.removeFromTop(24);
-        roundRobinButton_.setBounds(row.removeFromRight(56));
-        roundRobinButton_.setVisible(true);
-        roundRobinLabelArea_ = row;
-        return;
-    }
 
     levelLabelArea_ = body.removeFromTop(16);
     body.removeFromTop(4);
@@ -928,7 +831,11 @@ void DrumGridUI::layoutLayerList(juce::Rectangle<int> area) {
     const int width = area.getWidth() - (content > area.getHeight() ? 8 : 0);
     layerListContent_.setSize(width, content);
     auto list = layerListContent_.getLocalBounds().reduced(kPadding);
+    const auto view = editorTab_ == EditorTab::Velocity ? PadLayerRow::View::Velocity
+                      : editorTab_ == EditorTab::Fade   ? PadLayerRow::View::Fade
+                                                        : PadLayerRow::View::Mix;
     for (auto& row : layerRows_) {
+        row->setView(view);
         row->setBounds(list.removeFromTop(PadLayerRow::kHeight));
         row->setVisible(true);
         list.removeFromTop(kGap);
@@ -1163,7 +1070,6 @@ void DrumGridUI::refreshDetailPanel() {
     chainSoloButton_.setToggleState(info.solo, juce::dontSendNotification);
     for (auto* control : volumeControls())
         control->setEnabled(hasChain);
-    refreshZoneControls();
     repaint();
 }
 
@@ -1171,21 +1077,15 @@ std::vector<juce::Component*> DrumGridUI::volumeControls() {
     return {&levelControl_, &panControl_, &outputButton_};
 }
 
-std::vector<juce::Component*> DrumGridUI::zoneControls() {
-    return {&velocityLowControl_,      &velocityHighControl_, &velocityFadeLowControl_,
-            &velocityFadeHighControl_, &roundRobinButton_,    &layerGainControl_,
-            &layerPanControl_};
-}
-
 juce::Rectangle<int> DrumGridUI::tabBounds(EditorTab tab) const {
-    const int width = tabsArea_.getWidth() / 3;
+    const int width = tabsArea_.getWidth() / 4;
     return tabsArea_.withWidth(width).translated(width * static_cast<int>(tab), 0);
 }
 
 void DrumGridUI::mouseDown(const juce::MouseEvent& event) {
     if (editorArea_.isEmpty() || !tabsArea_.contains(event.getPosition()))
         return;
-    for (const auto tab : {EditorTab::Layers, EditorTab::Velocity, EditorTab::Volume})
+    for (const auto tab : {EditorTab::Mix, EditorTab::Velocity, EditorTab::Fade, EditorTab::Pad})
         if (tabBounds(tab).contains(event.getPosition()) && tab != editorTab_) {
             editorTab_ = tab;
             layoutEditor(editorArea_);
@@ -1211,7 +1111,15 @@ void DrumGridUI::refreshLayers() {
             row->onSelect = [this](magda::ChainId id) {
                 selectedLayer_ = id;
                 refreshPadChain();
-                refreshZoneControls();
+            };
+            row->onMixChanged = [this](magda::ChainId id, float volume, float pan) {
+                if (onLayerMixChanged)
+                    onLayerMixChanged(id, volume, pan);
+            };
+            row->onGestureEnd = [this]() { endFaderGesture(); };
+            row->onZonesChanged = [this](magda::ChainId id, const magda::ChainZones& zones) {
+                if (onLayerZonesChanged)
+                    onLayerZonesChanged(id, zones);
             };
             row->onSwitchesChanged = [this](magda::ChainId id, bool mute, bool solo,
                                             bool bypassed) {
@@ -1229,99 +1137,7 @@ void DrumGridUI::refreshLayers() {
     for (std::size_t i = 0; i < layers_.size(); ++i)
         layerRows_[i]->setLayer(layers_[i], static_cast<int>(i), layers_[i].id == selectedLayer_,
                                 layers_.size() > 1);
-    refreshZoneControls();
     layoutEditor(editorArea_);
-}
-
-void DrumGridUI::refreshZoneControls() {
-    const auto* layer = selectedLayer();
-    for (auto* control : zoneControls())
-        control->setEnabled(layer != nullptr && selectedPadHasChain());
-    if (layer == nullptr || zoneDragging_)
-        return;
-
-    if (!faderDragging_) {
-        layerGainControl_.setValue(layer->volume, juce::dontSendNotification);
-        layerPanControl_.setValue(layer->pan, juce::dontSendNotification);
-    }
-    const auto& zones = layer->zones;
-    velocityLowControl_.setValue(zones.velocityLow, juce::dontSendNotification);
-    velocityHighControl_.setValue(zones.velocityHigh, juce::dontSendNotification);
-    velocityFadeLowControl_.setValue(zones.velocityFadeLow, juce::dontSendNotification);
-    velocityFadeHighControl_.setValue(zones.velocityFadeHigh, juce::dontSendNotification);
-    roundRobinButton_.setToggleState(zones.roundRobin, juce::dontSendNotification);
-    roundRobinButton_.setButtonText(zones.roundRobin ? "On" : "Off");
-}
-
-void DrumGridUI::commitZones() {
-    const auto* layer = selectedLayer();
-    if (layer == nullptr || !onLayerZonesChanged)
-        return;
-
-    // A pad plays one note, so its layers' key zones are not edited here.
-    auto zones = layer->zones;
-    zones.velocityLow = juce::roundToInt(velocityLowControl_.getValue());
-    zones.velocityHigh = juce::roundToInt(velocityHighControl_.getValue());
-    zones.velocityFadeLow = juce::roundToInt(velocityFadeLowControl_.getValue());
-    zones.velocityFadeHigh = juce::roundToInt(velocityFadeHighControl_.getValue());
-    zones.roundRobin = roundRobinButton_.getToggleState();
-    if (zones != layer->zones)
-        onLayerZonesChanged(layer->id, zones);
-}
-
-void DrumGridUI::paintZones(juce::Graphics& g) {
-    auto& fonts = FontManager::getInstance();
-    const auto colour = [](ColourRole role) { return ActiveTheme::getColour(role); };
-    const auto label = [&](juce::Rectangle<int> area, const juce::String& name,
-                           const juce::String& value) {
-        g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f));
-        g.setColour(colour(ActiveTheme::DEVICE_DIM2));
-        g.drawText(name, area, juce::Justification::centredLeft, false);
-        g.setColour(colour(ActiveTheme::DEVICE_VALUE_TEXT).withAlpha(0.8f));
-        g.drawText(value, area, juce::Justification::centredRight, false);
-    };
-
-    const int low = juce::roundToInt(velocityLowControl_.getValue());
-    const int high = juce::roundToInt(velocityHighControl_.getValue());
-    const int fadeLow = juce::roundToInt(velocityFadeLowControl_.getValue());
-    const int fadeHigh = juce::roundToInt(velocityFadeHighControl_.getValue());
-    label(zoneRangeLabelArea_, "VELOCITY",
-          juce::String(low) + juce::String::fromUTF8("\xe2\x80\x93") + juce::String(high));
-    label(zoneFadeLabelArea_, "CROSSFADE", juce::String(fadeLow) + " / " + juce::String(fadeHigh));
-    label(roundRobinLabelArea_, "ROUND ROBIN", {});
-
-    const double db = layerGainControl_.getValue();
-    const int pan = juce::roundToInt(layerPanControl_.getValue() * 100.0);
-    label(
-        layerMixLabelArea_, "LAYER",
-        (db <= kMinPadDb + 0.05 ? juce::String("-inf dB") : juce::String(db, 1) + " dB") + "  " +
-            (pan == 0 ? juce::String("C") : juce::String(std::abs(pan)) + (pan < 0 ? " L" : " R")));
-    device_shell::paintGainSlider(g, layerGainControl_.getBounds(), db, kMinPadDb);
-    device_shell::paintPanSlider(g, layerPanControl_.getBounds(), layerPanControl_.getValue());
-
-    // The range over its whole span, its fades ramping in from each edge.
-    const auto bar = zoneBarArea_.toFloat();
-    g.setColour(colour(ActiveTheme::DEVICE_WELL));
-    g.fillRoundedRectangle(bar, 2.0f);
-    constexpr float floor = 1.0f;
-    const auto xFor = [&bar](int value) {
-        return bar.getX() + (static_cast<float>(value) - floor) / (128.0f - floor) * bar.getWidth();
-    };
-    const float left = xFor(low);
-    const float right = xFor(high + 1);
-    if (right > left) {
-        juce::Path shape;
-        shape.startNewSubPath(left, bar.getBottom());
-        shape.lineTo(xFor(low + fadeLow), bar.getY());
-        shape.lineTo(xFor(high + 1 - fadeHigh), bar.getY());
-        shape.lineTo(right, bar.getBottom());
-        shape.closeSubPath();
-        g.setColour(colour(ActiveTheme::DEVICE_BLUE).withAlpha(0.35f));
-        g.fillPath(shape);
-        g.setColour(colour(ActiveTheme::DEVICE_BLUE));
-        g.fillRect(juce::Rectangle<float>(left, bar.getY(), 2.0f, bar.getHeight()));
-        g.fillRect(juce::Rectangle<float>(right - 2.0f, bar.getY(), 2.0f, bar.getHeight()));
-    }
 }
 
 void DrumGridUI::lookAndFeelChanged() {

@@ -27,8 +27,8 @@ namespace magda::daw::ui {
  * @brief The Drum Grid's body in the v1 shell: [rail | pads | pad editor | chain] over a footer.
  *
  * The selected pad's chain shows in the rack's chain view. Pads take sample and plugin drops;
- * the rail toggles the editor and swaps the pads for the pad list. The editor's LAYERS tab lists
- * the pad's layers; the chain view shows the selected one (#3007).
+ * the rail toggles the editor and swaps the pads for the pad list. The editor lists the pad's
+ * layers in a mix, velocity or crossfade view; the chain view shows the selected one (#3007).
  */
 class DrumGridUI : public juce::Component,
                    public juce::FileDragAndDropTarget,
@@ -43,7 +43,7 @@ class DrumGridUI : public juce::Component,
     static constexpr int kPluginParamSlots = 16;
 
     static constexpr int kRailWidth = 38;
-    static constexpr int kEditorWidth = 252;
+    static constexpr int kEditorWidth = 300;
     static constexpr int kMinChainWidth = 264;
     static constexpr int kFooterHeight = 40;
 
@@ -146,7 +146,7 @@ class DrumGridUI : public juce::Component,
         onLayerSwitchesChanged;
     /// Live, per move; coalesces into one undo step per fader gesture.
     std::function<void(magda::ChainId layerId, float volumeDb, float pan)> onLayerMixChanged;
-    /// Once per gesture: a zone change recompiles the pad.
+    /// Once per drag: a zone change recompiles the pad.
     std::function<void(magda::ChainId layerId, const magda::ChainZones& zones)> onLayerZonesChanged;
 
     /** Called by the add slot of a pad with no chain yet. (padIndex) */
@@ -260,18 +260,10 @@ class DrumGridUI : public juce::Component,
     juce::TextButton editorToggle_{"i"};
 
     // Pad editor
-    enum class EditorTab { Layers, Velocity, Volume };
-    EditorTab editorTab_ = EditorTab::Layers;
+    // MIX, VEL and FADE list every layer in that view; PAD is the pad's own mix.
+    enum class EditorTab { Mix, Velocity, Fade, Pad };
+    EditorTab editorTab_ = EditorTab::Mix;
     bool detailCollapsed_ = false;
-    magda::DraggableValueLabel velocityLowControl_{magda::DraggableValueLabel::Format::Integer};
-    magda::DraggableValueLabel velocityHighControl_{magda::DraggableValueLabel::Format::Integer};
-    magda::DraggableValueLabel velocityFadeLowControl_{magda::DraggableValueLabel::Format::Integer};
-    magda::DraggableValueLabel velocityFadeHighControl_{
-        magda::DraggableValueLabel::Format::Integer};
-    juce::TextButton roundRobinButton_;
-    bool zoneDragging_ = false;
-    magda::DraggableValueLabel layerGainControl_{magda::DraggableValueLabel::Format::Decibels};
-    magda::DraggableValueLabel layerPanControl_{magda::DraggableValueLabel::Format::Pan};
     magda::DraggableValueLabel levelControl_{magda::DraggableValueLabel::Format::Decibels};
     magda::DraggableValueLabel panControl_{magda::DraggableValueLabel::Format::Pan};
     juce::TextButton outputButton_;
@@ -300,8 +292,7 @@ class DrumGridUI : public juce::Component,
     juce::Rectangle<int> railArea_, padsArea_, editorArea_, chainArea_, footerArea_;
     juce::Rectangle<int> editorHeaderArea_, chainHeaderArea_, pageTextArea_;
     juce::Rectangle<int> levelLabelArea_, panLabelArea_, outputLabelArea_;
-    juce::Rectangle<int> tabsArea_, zoneRangeLabelArea_, zoneFadeLabelArea_, zoneBarArea_,
-        roundRobinLabelArea_, layerMixLabelArea_;
+    juce::Rectangle<int> tabsArea_;
 
     // Plugin drop highlight
     int dropHighlightPad_ = -1;
@@ -323,13 +314,9 @@ class DrumGridUI : public juce::Component,
     bool selectedPadHasChain() const;
 
     std::vector<juce::Component*> volumeControls();
-    std::vector<juce::Component*> zoneControls();
     const PadLayerView* selectedLayer() const;
     void refreshLayers();
-    void refreshZoneControls();
-    void commitZones();
     void layoutLayerList(juce::Rectangle<int> area);
-    void paintZones(juce::Graphics& g);
     juce::Rectangle<int> tabBounds(EditorTab tab) const;
 
     /// Close the current fader gesture, so the next edit is a new undo step.
