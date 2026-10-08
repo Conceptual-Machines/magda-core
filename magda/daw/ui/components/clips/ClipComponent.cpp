@@ -465,6 +465,11 @@ void ClipComponent::paint(juce::Graphics& g) {
             dents.addTriangle(x - dent, bottom, x + dent, bottom, x, bottom - dent);
             g.setColour(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
             g.fillPath(dents);
+
+            // A dark hairline through the content between the dents, darker than the grid
+            g.setColour(juce::Colours::black.withAlpha(0.35f));
+            g.drawVerticalLine(clipBounds.getX() + bx, top + static_cast<float>(HEADER_HEIGHT),
+                               bottom - dent);
         }
     }
 
