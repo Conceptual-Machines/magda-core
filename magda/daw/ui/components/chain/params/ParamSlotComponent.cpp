@@ -960,6 +960,10 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
     ModulationPaintContext paintCtx;
     paintCtx.sliderBounds = valueSlider_.getBounds();
     paintCtx.cellBounds = getLocalBounds();
+    if (style_ == ParamControlStyle::Knobs && !knobArea_.isEmpty())
+        paintCtx.indicatorBand = knobArea_.withTop(knobArea_.getBottom() - 3).withHeight(7);
+    else if (style_ == ParamControlStyle::Sliders && !barArea_.isEmpty())
+        paintCtx.indicatorBand = barArea_.withTop(barArea_.getBottom() + 2).withHeight(7);
     paintCtx.currentParamValue = normalizedParamValue;
     paintCtx.isInLinkMode = isInLinkMode_;
     paintCtx.isLinkModeDrag = isLinkModeDrag_;
