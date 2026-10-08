@@ -430,7 +430,6 @@ void ClipComponent::paint(juce::Graphics& g) {
         const double loopLengthBeats = loopCutLengthBeats;
         double beatRange = juce::jmax(1.0, clipLengthInBeats);
         int numBoundaries = static_cast<int>(clipLengthInBeats / loopLengthBeats);
-        auto markerColour = juce::Colours::lightgrey;
 
         // Calculate pixel spacing between loop boundaries to scale indicators
         float loopPixelWidth =
@@ -447,12 +446,18 @@ void ClipComponent::paint(juce::Graphics& g) {
             if (boundaryBeat >= clipLengthInBeats)
                 break;
 
-            float bx = static_cast<float>(clipBounds.getX()) +
-                       static_cast<float>(boundaryBeat / beatRange) * clipBounds.getWidth();
+            // Rounded the way the grid places a beat, so a boundary on a bar meets its line.
+            int bx = static_cast<int>(boundaryBeat / beatRange * clipBounds.getWidth() + 0.5);
+            if (parentPanel_ != nullptr && !isDragging_) {
+                const double zoom = parentPanel_->getZoom();
+                const double start = clip->placement.startBeat;
+                bx = juce::roundToInt((start + boundaryBeat) * zoom) -
+                     juce::roundToInt(start * zoom);
+            }
 
-            // A thin line marks each loop boundary
-            g.setColour(markerColour.withAlpha(0.55f));
-            g.drawVerticalLine(static_cast<int>(bx), static_cast<float>(clipBounds.getY()),
+            // A dark fold in the clip's own colour, so it does not read as a grid line
+            g.setColour(juce::Colours::black.withAlpha(0.4f));
+            g.drawVerticalLine(clipBounds.getX() + bx, static_cast<float>(clipBounds.getY()),
                                static_cast<float>(clipBounds.getBottom()));
         }
     }
