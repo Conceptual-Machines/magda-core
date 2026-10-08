@@ -15,7 +15,7 @@ struct LayoutConfig {
     int chordRowHeight = 0;        // Chord row disabled (now in piano roll only)
     int markerLaneHeight = 24;     // Named timeline markers above the existing ruler
     int arrangementBarHeight = 0;  // Arrangement sections disabled in the compact ruler
-    int timeRulerHeight = 52;      // Full compact ruler height; fits the corner's two button rows
+    int timeRulerHeight = 50;      // Full compact ruler height; fits the corner's two button rows
 
     // Time ruler details
     int rulerMajorTickHeight = 14;              // Shortened to avoid overlap with loop markers
