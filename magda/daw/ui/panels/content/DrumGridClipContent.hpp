@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <memory>
+#include <set>
 
 #include "MidiEditorContent.hpp"
 #include "audio/plugins/DrumGridTemplates.hpp"
@@ -68,7 +70,11 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
         juce::String name;
         juce::String role;  // canonical role id (see DrumGridRoles.hpp), empty = unset
         bool hasChain = false;
+        bool muted = false;
+        int group = -1;         // kit group (KICK, SNARE, HATS, PERC) once any row has a role
+        bool isHeader = false;  // a group's header row; carries no note
     };
+    static constexpr std::array<const char*, 4> kGroupNames{"KICK", "SNARE", "HATS", "PERC"};
 
   private:
     // MidiEditorContent virtual implementations
@@ -141,6 +147,12 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     void drawChordLane(juce::Graphics& g, juce::Rectangle<int> area);
 
     void buildPadRows();
+    void toggleGroupCollapsed(int group);
+    void togglePadMuted(int noteNumber);
+    // The row the drum lane's velocity shows; -1 shows every hit.
+    void selectRow(int noteNumber);
+    int selectedRowNote_ = -1;
+    static std::set<int> collapsedGroups_;
     void refreshPadRowNames();
     void findDrumGrid();
     /// The pad device on the edited clip's track, or null.
