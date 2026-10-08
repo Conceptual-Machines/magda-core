@@ -460,7 +460,7 @@ void ClipComponent::paint(juce::Graphics& g) {
             const auto lineTop = static_cast<float>(clipBounds.getY() + HEADER_HEIGHT + 2);
             const auto lineHeight = static_cast<float>(clipBounds.getBottom()) - lineTop;
             constexpr float glow = 6.0f;
-            const auto glowColour = juce::Colours::white.withAlpha(0.18f);
+            const auto glowColour = juce::Colours::white.withAlpha(0.13f);
             const auto clear = juce::Colours::white.withAlpha(0.0f);
             g.setGradientFill(
                 juce::ColourGradient(clear, lineX - glow, 0.0f, glowColour, lineX, 0.0f, false));
@@ -468,7 +468,7 @@ void ClipComponent::paint(juce::Graphics& g) {
             g.setGradientFill(juce::ColourGradient(glowColour, lineX + 1.0f, 0.0f, clear,
                                                    lineX + 1.0f + glow, 0.0f, false));
             g.fillRect(lineX + 1.0f, lineTop, glow, lineHeight);
-            g.setColour(juce::Colours::white.withAlpha(0.55f));
+            g.setColour(juce::Colours::white.withAlpha(0.4f));
             g.fillRect(lineX, lineTop, 1.0f, lineHeight);
         }
     }
