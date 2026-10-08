@@ -1,6 +1,8 @@
 // Full component regression check. Run with run_chain_interaction_check.py.
+#include <functional>
 #include <iostream>
 #include <stdexcept>
+#include <typeinfo>
 
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/ClipManager.hpp"
@@ -186,6 +188,44 @@ int main() {
             applyDeviceSlotParamSelectionChange(firstPath, {}, grid, {});
             for (int i = 0; i < grid.getSlotCount(); ++i)
                 check(!grid.getSlot(i)->isSelected(), "cleared selection left a cell highlighted");
+        }
+        {
+            // A multiband rack: faceplate on top, bands high to low split by their crossovers.
+            const auto bandsId = tracks.addMultibandRackToTrack(track);
+            RackComponent bands(track, *tracks.getRack(track, bandsId));
+            bands.setVisible(true);
+            bands.setSize(bands.getPreferredWidth(), bands.getPreferredHeight());
+            std::vector<juce::Component*> rows, dividers;
+            juce::Component* faceplate = nullptr;
+            juce::Component* split = nullptr;
+            const std::function<void(juce::Component&)> walk = [&](juce::Component& parent) {
+                for (auto* child : parent.getChildren()) {
+                    const juce::String type = typeid(*child).name();
+                    if (type.contains("CrossoverDisplay"))
+                        faceplate = child;
+                    else if (type.contains("CrossoverDivider"))
+                        dividers.push_back(child);
+                    else if (type.contains("ChainRowComponent"))
+                        rows.push_back(child);
+                    else if (auto* button = dynamic_cast<juce::Button*>(child);
+                             button != nullptr && button->getButtonText() == "Split band")
+                        split = child;
+                    walk(*child);
+                }
+            };
+            walk(bands);
+            check(faceplate != nullptr && faceplate->isVisible() &&
+                      !faceplate->getBounds().isEmpty(),
+                  "multiband faceplate missing");
+            check(rows.size() == 3 && dividers.size() == 2, "multiband rows or dividers missing");
+            check(rows[2]->getY() < dividers[1]->getY() && dividers[1]->getY() < rows[1]->getY() &&
+                      rows[1]->getY() < dividers[0]->getY() &&
+                      dividers[0]->getY() < rows[0]->getY(),
+                  "bands are not high to low with their crossovers between them");
+            check(split != nullptr && split->getY() > rows[0]->getBottom(),
+                  "Split band is not under the bands");
+            const auto container = rows[0]->getParentComponent();
+            check(container->getHeight() >= split->getBottom(), "band list is clipped");
         }
         selection.clearSelection();
         tracks.clearAllTracks();

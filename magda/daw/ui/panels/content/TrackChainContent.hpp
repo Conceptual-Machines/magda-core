@@ -142,11 +142,11 @@ class TrackChainContent : public PanelContent,
     void showAiReasoning(const juce::String& text);
 
     // Header bar controls - LEFT side (action buttons)
-    std::unique_ptr<magda::SvgButton> globalModsButton_;    // Toggle global modulators panel
-    std::unique_ptr<magda::SvgButton> gainStagingButton_;   // Start/stop a gain-staging pass
-    std::unique_ptr<magda::SvgButton> macroButton_;         // Toggle global macros panel
-    std::unique_ptr<magda::SvgButton> addRackButton_;       // Add rack button
-    std::unique_ptr<magda::SvgButton> treeViewButton_;      // Show chain tree dialog
+    std::unique_ptr<magda::SvgButton> globalModsButton_;   // Toggle global modulators panel
+    std::unique_ptr<magda::SvgButton> gainStagingButton_;  // Start/stop a gain-staging pass
+    std::unique_ptr<magda::SvgButton> macroButton_;        // Toggle global macros panel
+    std::unique_ptr<magda::SvgButton> addRackButton_;      // Add rack button
+    std::unique_ptr<magda::SvgButton> addMultibandRackButton_;
     std::unique_ptr<magda::SvgButton> presetButton_;        // MAGDA track-chain presets menu
     std::unique_ptr<magda::SvgButton> oscToggleButton_;     // Toggle oscilloscope in post-fx
     std::unique_ptr<magda::SvgButton> specToggleButton_;    // Toggle spectrum analyzer in post-fx
