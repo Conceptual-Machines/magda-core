@@ -888,21 +888,18 @@ void ParamSlotComponent::paintLinkDots(juce::Graphics& g) const {
     if (!macros && !mods)
         return;
 
-    // In their own slot when the layout gives one, else top right clear of the MIDI-mapped dot.
+    // Bottom left corner of the cell, clear of every style's controls.
     constexpr float size = 6.0f;
     constexpr float gap = 4.0f;
-    const bool slotted = !linkDotsArea_.isEmpty();
-    float x = slotted ? static_cast<float>(linkDotsArea_.getRight()) - size
-                      : static_cast<float>(tileArea_.getRight()) - 3.0f - 5.0f - gap - size;
-    const float y = slotted ? static_cast<float>(linkDotsArea_.getCentreY()) - size / 2.0f
-                            : static_cast<float>(tileArea_.getY()) + 4.0f;
+    float x = static_cast<float>(tileArea_.getX()) + 6.0f;
+    const float y = static_cast<float>(tileArea_.getBottom()) - 6.0f - size;
     for (const auto& [shown, role] : {std::pair{mods, ActiveTheme::ACCENT_ATTENTION},
                                       std::pair{macros, ActiveTheme::ACCENT_MODULATION}}) {
         if (!shown)
             continue;
         g.setColour(ActiveTheme::getColour(role));
         g.fillEllipse(x, y, size, size);
-        x -= size + gap;
+        x += size + gap;
     }
 }
 
@@ -1044,7 +1041,7 @@ bool ParamSlotComponent::layoutStyled(juce::Rectangle<int> bounds) {
 
     tileArea_ = bounds;
     auto inner = tileArea_.reduced(8, 5);
-    knobArea_ = barArea_ = modRowArea_ = linkDotsArea_ = {};
+    knobArea_ = barArea_ = modRowArea_ = {};
 
     // Where a widget other than the value slider goes in each style.
     juce::Rectangle<int> widgetArea;
@@ -1080,7 +1077,6 @@ bool ParamSlotComponent::layoutStyled(juce::Rectangle<int> bounds) {
         }
         case ParamControlStyle::Sliders: {
             auto top = inner.removeFromTop(14);
-            linkDotsArea_ = top.removeFromRight(20);
             valueArea_ = top.removeFromRight(top.getWidth() / 2);
             nameLabel_.setBounds(top);
             // The track with its modulation row right under it, centred as one block
