@@ -2839,11 +2839,12 @@ void prepareDrumGridAdsrMacros(DeviceInfo& drumGridDevice) {
     }
 }
 
-/// A pad device's own address in the model: `PadRack(grid) > PadChain(pad) >
-/// Device`, rooted at the track whatever the grid is nested in.
-ChainNodePath padDevicePath(TrackId trackId, DeviceId gridDeviceId, ChainId padChainId,
+/// A device on @p pad's first layer: `PadRack(grid) > PadChain(pad) >
+/// PadLayer(layer) > Device`, rooted at the track whatever the grid is nested in.
+ChainNodePath padDevicePath(TrackId trackId, DeviceId gridDeviceId, const ChainInfo& pad,
                             DeviceId padDeviceId) {
-    return ChainNodePath::padChain(trackId, gridDeviceId, padChainId).withDevice(padDeviceId);
+    return ChainNodePath::padLayer(trackId, gridDeviceId, pad.id, pad.layers.front().id)
+        .withDevice(padDeviceId);
 }
 
 /// Flatten the pad sampler's envelope so the DrumGrid ADSR macros, which are
@@ -2873,10 +2874,12 @@ void linkAssignedDrumGridSamplerAdsrMacros(DeviceInfo& drumGridDevice, TrackId t
     constexpr std::array<int, 4> indices = {Sampler::kAttack, Sampler::kDecay, Sampler::kSustain,
                                             Sampler::kRelease};
     for (const auto& pad : drumGridDevice.pads->chains) {
-        const auto devices = pad.getDevices();
+        if (pad.layers.empty())
+            continue;
+        const auto devices = pad.layers.front().getDevices();
         if (devices.empty() || !devices.front()->pluginId.equalsIgnoreCase(Sampler::xmlTypeName))
             continue;
-        const auto path = padDevicePath(trackId, drumGridDevice.id, pad.id, devices.front()->id);
+        const auto path = padDevicePath(trackId, drumGridDevice.id, pad, devices.front()->id);
         zeroSamplerAdsrBase(path, sampler);
         for (size_t i = 0; i < indices.size(); ++i) {
             MacroLink link;
@@ -2932,11 +2935,10 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
             gridPath, i, padSamplerDevice(audioFile.getFullPathName(), kPadBaseNote + i));
 
         const auto* pad = trackManager.getPad(gridPath, i);
-        if (samplerDeviceId == INVALID_DEVICE_ID || pad == nullptr)
+        if (samplerDeviceId == INVALID_DEVICE_ID || pad == nullptr || pad->layers.empty())
             continue;
 
-        const auto samplerPath =
-            padDevicePath(newTrackId, drumGridDeviceId, pad->id, samplerDeviceId);
+        const auto samplerPath = padDevicePath(newTrackId, drumGridDeviceId, *pad, samplerDeviceId);
         trackManager.setDeviceParameterValue(samplerPath,
                                              daw::audio::MagdaSamplerPlugin::kSampleStart,
                                              static_cast<float>(slice.sourceStart));

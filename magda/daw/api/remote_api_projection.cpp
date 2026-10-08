@@ -251,10 +251,11 @@ void appendPadDevices(const DeviceInfo& grid, const ChainNodePath& gridPath,
     for (auto& pad : makePadDtos(grid, gridPath))
         graph.pads.push_back(std::move(pad));
 
-    for (const auto& pad : grid.pads->chains) {
-        const auto chainPath = ChainNodePath::padChain(gridPath.trackId, grid.id, pad.id);
-        appendPadElements(pad.elements, chainPath, gridPath.trackId, std::nullopt, pad.id, graph);
-    }
+    for (const auto& pad : grid.pads->chains)
+        for (const auto& layer : pad.layers)
+            appendPadElements(layer.elements,
+                              ChainNodePath::padLayer(gridPath.trackId, grid.id, pad.id, layer.id),
+                              gridPath.trackId, std::nullopt, layer.id, graph);
 }
 
 // `rackPath` addresses this rack; each chain and device extends it, so nesting
@@ -557,10 +558,11 @@ std::vector<PadDto> makePadDtos(const DeviceInfo& grid, const ChainNodePath& gri
             dto.solo = pad->solo;
             dto.bypassed = pad->bypassed;
             dto.outputBus = pad->outputIndex;
-            for (const auto& element : pad->elements)
-                if (isDevice(element))
-                    dto.devicePaths.push_back(
-                        makeDevicePathDto(chainPath.withDevice(getDevice(element).id)));
+            for (const auto& layer : pad->layers)
+                for (const auto& element : layer.elements)
+                    if (isDevice(element))
+                        dto.devicePaths.push_back(makeDevicePathDto(
+                            chainPath.withPadLayer(layer.id).withDevice(getDevice(element).id)));
         }
         result.push_back(std::move(dto));
     }
@@ -791,6 +793,9 @@ DevicePathDto makeDevicePathDto(const ChainNodePath& path) {
             case ChainStepType::PadChain:
                 dto.steps.push_back({"pad_chain", step.id});
                 break;
+            case ChainStepType::PadLayer:
+                dto.steps.push_back({"pad_layer", step.id});
+                break;
             case ChainStepType::Segment:
                 // Non-leading segments are not produced by any factory; drop
                 // rather than emit a step type the public contract lacks.
@@ -827,6 +832,8 @@ std::optional<ChainNodePath> toChainNodePath(const DevicePathDto& dto) {
             path.steps.push_back({ChainStepType::PadRack, step.id});
         else if (step.type == "pad_chain")
             path.steps.push_back({ChainStepType::PadChain, step.id});
+        else if (step.type == "pad_layer")
+            path.steps.push_back({ChainStepType::PadLayer, step.id});
         else
             return std::nullopt;
     }

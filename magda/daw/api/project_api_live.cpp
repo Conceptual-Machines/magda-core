@@ -85,8 +85,9 @@ void inspectElements(const std::vector<ChainElement>& elements,
         if (device.pluginId.isNotEmpty() && !std::ranges::contains(available, device.pluginId))
             ++unavailable;
         if (device.pads)
-            for (const auto& chain : device.pads->chains)
-                inspectElements(chain.elements, available, unavailable);
+            for (const auto& pad : device.pads->chains)
+                for (const auto& layer : pad.layers)
+                    inspectElements(layer.elements, available, unavailable);
     }
 }
 

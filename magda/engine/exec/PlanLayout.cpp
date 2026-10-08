@@ -97,6 +97,7 @@ std::optional<std::size_t> inPlaceInputOf(const PlanOp& op) {
         case OpKind::SessionMidi:
         case OpKind::MergeMidi:
         case OpKind::MidiNoteGate:
+        case OpKind::MidiZoneSplit:
         case OpKind::ModSource:
         case OpKind::Output:
         // An insert's send writes nothing, and its return writes what came back

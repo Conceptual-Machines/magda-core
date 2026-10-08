@@ -543,7 +543,7 @@ const juce::var& devicePathSchema() {
             "steps":{"type":"array","items":{
                 "type":"object",
                 "properties":{
-                    "type":{"type":"string","enum":["rack","chain","device","pad_rack","pad_chain"]},
+                    "type":{"type":"string","enum":["rack","chain","device","pad_rack","pad_chain","pad_layer"]},
                     "id":{"type":"integer","minimum":0}
                 },
                 "required":["type","id"],

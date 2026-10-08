@@ -84,6 +84,7 @@ DeviceInfo makeDrumGrid(DeviceId id, std::vector<ChainInfo> pads) {
     rack->id = padRackIdFor(id);
     rack->chains = std::move(pads);
     drumGrid.pads.reset(std::move(rack));
+    stampPadRackId(drumGrid);  // each pad's devices become its first layer
 
     return drumGrid;
 }
@@ -356,8 +357,9 @@ TEST_CASE("A pad fader binds by the pad's slot, not by its chain id", "[engine][
     const auto plan = compileWith(std::move(drumGrid));
 
     std::vector<const magda::engine::PlanOp*> padFaders;
+    // A pad's fader carries its grid's id; its layers' faders carry none.
     for (const auto* op : opsOfKind(plan, OpKind::Fader))
-        if (op->key.role == OpRole::RackChainFader)
+        if (op->key.role == OpRole::RackChainFader && op->key.deviceId != INVALID_DEVICE_ID)
             padFaders.push_back(op);
 
     REQUIRE(padFaders.size() == 2);
@@ -517,7 +519,7 @@ TEST_CASE("A modifier on a pad device is collected as a modulation source",
     follower.type = magda::ModType::Follower;
     follower.enabled = true;
     follower.tapPoint = magda::ModTapPoint::PostFader;
-    getDevice(drumGrid.pads->chains[0].elements[0]).mods.push_back(follower);
+    getDevice(drumGrid.pads->chains[0].layers[0].elements[0]).mods.push_back(follower);
 
     auto track = makeTrack(1);
     track.chain.fxChainElements.push_back(std::move(drumGrid));
@@ -553,4 +555,59 @@ TEST_CASE("Each pad's gate is tapped, and the tap goes with the pad",
                          nullptr);
 
     CHECK(tappedPads(store) == std::set<ChainId>{0});
+}
+
+TEST_CASE("A pad with one open layer compiles no zone split", "[engine][plan][padrack][3007]") {
+    const auto plan = compileWith(makeDrumGrid(10, {makePad(0, 36, 36, 60, 101)}));
+
+    CHECK(opsOfKind(plan, OpKind::MidiZoneSplit).empty());
+    CHECK(magda::engine::validatePlan(plan).empty());
+}
+
+TEST_CASE("A layered pad splits its notes across one chain per layer",
+          "[engine][plan][padrack][3007]") {
+    auto drumGrid = makeDrumGrid(10, {makePad(0, 36, 36, 60, 101)});
+    auto& pad = drumGrid.pads->chains[0];
+    auto& second = magda::addPadLayer(*drumGrid.pads.get(), pad);
+    second.elements.push_back(makePadInstrument(102));
+    second.zones.velocityLow = 64;
+    pad.layers[0].zones.velocityHigh = 63;
+
+    const auto plan = compileWith(std::move(drumGrid));
+
+    const auto problems = magda::engine::validatePlan(plan);
+    for (const auto& problem : problems)
+        UNSCOPED_INFO("validate: " << problem);
+    REQUIRE(problems.empty());
+
+    const auto splits = opsOfKind(plan, OpKind::MidiZoneSplit);
+    REQUIRE(splits.size() == 1);
+    REQUIRE(splits[0]->outputs.size() == 2);
+    CHECK(splits[0]->zoneRoutes[0].velocityHigh == 63);
+    CHECK(splits[0]->zoneRoutes[1].velocityLow == 64);
+
+    // Each layer's fader is keyed by its own id, apart from the pad's.
+    int layerFaders = 0;
+    for (const auto* fader : opsOfKind(plan, OpKind::Fader))
+        if (fader->key.role == OpRole::RackChainFader &&
+            fader->key.deviceId == magda::INVALID_DEVICE_ID)
+            ++layerFaders;
+    CHECK(layerFaders == 2);
+}
+
+TEST_CASE("A bypassed layer is left out of its pad", "[engine][plan][padrack][3007]") {
+    auto drumGrid = makeDrumGrid(10, {makePad(0, 36, 36, 60, 101)});
+    auto& pad = drumGrid.pads->chains[0];
+    auto& second = magda::addPadLayer(*drumGrid.pads.get(), pad);
+    second.elements.push_back(makePadInstrument(102));
+    second.bypassed = true;
+
+    const auto plan = compileWith(std::move(drumGrid));
+
+    CHECK(opsOfKind(plan, OpKind::MidiZoneSplit).empty());
+    int devices = 0;
+    for (const auto* device : opsOfKind(plan, OpKind::Device))
+        if (device->key.deviceId == 102)
+            ++devices;
+    CHECK(devices == 0);
 }

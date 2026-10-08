@@ -107,4 +107,47 @@ class SetPadFaderCommand : public UndoableCommand {
 void setPadFader(const ChainNodePath& gridPath, int padIndex, SetPadFaderCommand::Target target,
                  float value, int gesture);
 
+/** @brief A pad layer's fader, pan and zones (#3007). */
+struct PadLayerSettings {
+    float volume = 0.0f;
+    float pan = 0.0f;
+    ChainZones zones;
+    bool operator==(const PadLayerSettings&) const = default;
+};
+
+/**
+ * @brief A pad layer's settings, set live and undone as one step per gesture.
+ *
+ * The `SetPadFaderCommand` shape, one level down: a drag on a layer's fader or
+ * zone fields coalesces while it carries the same @p gesture.
+ */
+class SetPadLayerCommand : public UndoableCommand {
+  public:
+    SetPadLayerCommand(ChainNodePath gridPath, ChainId layerId, PadLayerSettings settings,
+                       int gesture);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return "Edit Pad Layer";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override;
+    void mergeWith(const UndoableCommand* other) override;
+
+  private:
+    void apply(const PadLayerSettings& settings) const;
+
+    ChainNodePath gridPath_;
+    ChainId layerId_ = INVALID_CHAIN_ID;
+    PadLayerSettings oldSettings_;
+    PadLayerSettings newSettings_;
+    int gesture_ = 0;
+    bool valid_ = false;
+};
+
+/// Set a pad layer's settings as one undoable step, coalescing within @p gesture.
+void setPadLayer(const ChainNodePath& gridPath, ChainId layerId, const PadLayerSettings& settings,
+                 int gesture);
+
 }  // namespace magda

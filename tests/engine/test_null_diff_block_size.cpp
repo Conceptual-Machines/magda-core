@@ -683,7 +683,10 @@ TEST_CASE("An epsilon is bought by a plugin, not declared", "[nulldiff][blocksiz
             sampler.id = 905;
             sampler.name = "Padded";
             sampler.format = PluginFormat::VST3;
-            pad.elements.emplace_back(std::move(sampler));
+            ChainInfo layer;
+            layer.id = 2;
+            layer.elements.emplace_back(std::move(sampler));
+            pad.layers.push_back(std::move(layer));
             pads->chains.push_back(std::move(pad));
         }
         grid.pads.reset(std::move(pads));

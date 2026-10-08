@@ -1,5 +1,6 @@
 #include "PadPathMigration.hpp"
 
+#include <algorithm>
 #include <functional>
 #include <vector>
 
@@ -71,8 +72,9 @@ const DeviceInfo* findPadOwner(const std::vector<ChainElement>& elements, Device
 
             if (device.pads)
                 for (const auto& pad : device.pads->chains)
-                    if (const auto* found = findPadOwner(pad.elements, deviceId))
-                        return found;
+                    for (const auto& layer : pad.layers)
+                        if (const auto* found = findPadOwner(layer.elements, deviceId))
+                            return found;
             continue;
         }
 
@@ -95,11 +97,21 @@ bool resolvesAsPad(const TrackInfo& track, const ChainNodePath& path) {
     if (owner == nullptr)
         return false;
 
+    // Layers are loaded by now, and a pad saved before them has one.
     for (const auto& pad : owner->pads->chains)
         if (pad.id == path.steps[1].id)
-            return resolvesOrdinary(pad.elements, path, 2);
+            return !pad.layers.empty() && resolvesOrdinary(pad.layers.front().elements, path, 2);
 
     return false;
+}
+
+/// The pad a typed pad address names, or null.
+const ChainInfo* findAddressedPad(const TrackInfo& track, const ChainNodePath& path) {
+    const auto* owner = findPadOwner(track.chain.fxChainElements, path.getPadOwnerDeviceId());
+    if (owner == nullptr)
+        return nullptr;
+    const auto found = std::ranges::find(owner->pads->chains, path.getPadChainId(), &ChainInfo::id);
+    return found == owner->pads->chains.end() ? nullptr : &*found;
 }
 
 void collectLinks(MacroArray& macros, ModArray& mods, std::vector<ChainNodePath*>& out) {
@@ -131,7 +143,8 @@ void collectTrackPaths(TrackInfo& track, std::vector<ChainNodePath*>& out) {
                 collectLinks(device.macros, device.mods, out);
                 if (device.pads)
                     for (auto& pad : device.pads->chains)
-                        walk(pad.elements);
+                        for (auto& layer : pad.layers)
+                            walk(layer.elements);
             }
         };
 
@@ -140,6 +153,22 @@ void collectTrackPaths(TrackInfo& track, std::vector<ChainNodePath*>& out) {
         collectLinks(element.device.macros, element.device.mods, out);
     for (auto& element : track.chain.mixerAnalysisElements)
         collectLinks(element.device.macros, element.device.mods, out);
+}
+
+/// Route a typed address saved before layers (#3007) through the pad's first
+/// layer, which is where the load put that pad's devices.
+void insertPadLayerStep(const TrackInfo& track, ChainNodePath& path) {
+    if (!path.isPadOwned() || path.steps.size() < 3 ||
+        path.steps[1].type != ChainStepType::PadChain ||
+        path.steps[2].type == ChainStepType::PadLayer)
+        return;
+
+    const auto* pad = findAddressedPad(track, path);
+    if (pad == nullptr || pad->layers.empty())
+        return;
+
+    path.steps.insert(path.steps.begin() + 2,
+                      ChainPathStep{ChainStepType::PadLayer, pad->layers.front().id});
 }
 
 }  // namespace
@@ -155,6 +184,8 @@ void migrateLegacyPadPaths(std::vector<TrackInfo>& tracks, TrackInfo* masterTrac
                 paths.push_back(&lane.target.devicePath);
 
         for (auto* path : paths) {
+            insertPadLayerStep(track, *path);
+
             if (path->steps.size() < 2 || path->steps[0].type != ChainStepType::Rack ||
                 path->steps[1].type != ChainStepType::Chain)
                 continue;
@@ -171,6 +202,7 @@ void migrateLegacyPadPaths(std::vector<TrackInfo>& tracks, TrackInfo* masterTrac
 
             path->steps[0].type = ChainStepType::PadRack;
             path->steps[1].type = ChainStepType::PadChain;
+            insertPadLayerStep(track, *path);
         }
     };
 

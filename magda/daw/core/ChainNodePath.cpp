@@ -88,7 +88,7 @@ bool fromVar(const juce::var& v, ChainNodePath& out) {
             if (!readRequiredInt(*stepObj, "type", rawType))
                 return false;
             if (rawType < static_cast<int>(ChainStepType::Rack) ||
-                rawType > static_cast<int>(ChainStepType::PadChain))
+                rawType > static_cast<int>(ChainStepType::PadLayer))
                 return false;
 
             ChainPathStep step;
@@ -117,6 +117,10 @@ bool fromVar(const juce::var& v, ChainNodePath& out) {
                 return false;
             if (i == 1 && path.steps.front().type == ChainStepType::PadRack &&
                 step.type != ChainStepType::PadChain)
+                return false;
+            // A layer belongs to a pad, so it only ever follows the pair.
+            if (step.type == ChainStepType::PadLayer &&
+                (i != 2 || path.steps.front().type != ChainStepType::PadRack))
                 return false;
 
             path.steps.push_back(step);

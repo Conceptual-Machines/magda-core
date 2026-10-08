@@ -218,7 +218,8 @@ void everyDevice(const TrackInfo& track, std::vector<const DeviceInfo*>& out) {
 
             if (element.device.pads)
                 for (const auto& pad : element.device.pads->chains)
-                    everyDevice(pad.elements, track.id, out);
+                    for (const auto& layer : pad.layers)
+                        everyDevice(layer.elements, track.id, out);
         }
 }
 

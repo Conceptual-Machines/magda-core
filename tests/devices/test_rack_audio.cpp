@@ -756,8 +756,8 @@ TEST_CASE("A rack preset re-keys the pads of a device it carries",
     const auto& grid = getDevice(liveRack->chains[0].elements[0]);
     REQUIRE(static_cast<bool>(grid.pads));
     REQUIRE(grid.pads->chains.size() == 1);
-    REQUIRE(grid.pads->chains[0].elements.size() == 1);
-    const auto& padDevice = getDevice(grid.pads->chains[0].elements[0]);
+    REQUIRE(grid.pads->chains[0].layers[0].elements.size() == 1);
+    const auto& padDevice = getDevice(grid.pads->chains[0].layers[0].elements[0]);
 
     // The grid got a fresh id, and so did the device on its pad.
     CHECK(grid.id != 92);
@@ -795,8 +795,8 @@ TEST_CASE("A chain preset re-keys the pads of a device it carries",
     const auto& grid = getDevice(track->chain.fxChainElements[0]);
     REQUIRE(static_cast<bool>(grid.pads));
     REQUIRE(grid.pads->chains.size() == 1);
-    REQUIRE(grid.pads->chains[0].elements.size() == 1);
-    const auto& padDevice = getDevice(grid.pads->chains[0].elements[0]);
+    REQUIRE(grid.pads->chains[0].layers[0].elements.size() == 1);
+    const auto& padDevice = getDevice(grid.pads->chains[0].layers[0].elements[0]);
 
     CHECK(grid.id != 200);
     CHECK(padDevice.id != occupantId);

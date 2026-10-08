@@ -1693,7 +1693,7 @@ TEST_CASE("pads.list reads all slots without exposing sampler state", "[remote][
     sampler.id = 8;
     sampler.name = "Kick";
     sampler.pluginState = "secret absolute path";
-    pad.elements.push_back(makeDeviceElement(sampler));
+    pad.layers.front().elements.push_back(makeDeviceElement(sampler));
     api.devices_.devices[path] = grid;
     RemoteApiService service(api);
 

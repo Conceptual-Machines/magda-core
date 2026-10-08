@@ -38,6 +38,7 @@ int arityOf(OpKind kind) {
         case OpKind::Meter:
         case OpKind::Output:
         case OpKind::MidiNoteGate:
+        case OpKind::MidiZoneSplit:
             return 1;
         case OpKind::ModSource:
             return 2;  // the source's audio at this tap's point, the source's MIDI
@@ -106,6 +107,8 @@ const char* toString(OpKind kind) {
             return "FeedbackReturn";
         case OpKind::Handoff:
             return "Handoff";
+        case OpKind::MidiZoneSplit:
+            return "MidiZoneSplit";
     }
     return "?";
 }
@@ -194,6 +197,8 @@ const char* toString(OpRole role) {
             return "edgeCrossfade";
         case OpRole::Handoff:
             return "handoff";
+        case OpRole::PadLayerSplit:
+            return "padLayerSplit";
     }
     return "?";
 }
@@ -500,6 +505,7 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
             // output port is what its input has to agree with.
             const bool midiSlot =
                 op.kind == OpKind::MergeMidi || op.kind == OpKind::MidiNoteGate ||
+                op.kind == OpKind::MidiZoneSplit ||
                 ((op.kind == OpKind::Device || op.kind == OpKind::Fader ||
                   op.kind == OpKind::ModSource || op.kind == OpKind::InsertSend) &&
                  slot == 1);
@@ -531,6 +537,14 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
         if (op.audioInputChannels > 2 || (op.audioInputChannels != 0 && op.kind != OpKind::Device))
             problems.push_back(label + "reads its audio input at " +
                                std::to_string(op.audioInputChannels) + " channels");
+
+        // One zone per output port, so the executor can index one by the other.
+        if (op.kind == OpKind::MidiZoneSplit
+                ? op.zoneRoutes.size() != op.outputs.size() || op.outputs.size() > 64
+                : !op.zoneRoutes.empty())
+            problems.push_back(label + "carries " + std::to_string(op.zoneRoutes.size()) +
+                               " zone routes for " + std::to_string(op.outputs.size()) +
+                               " outputs");
 
         // A delay's sample count is not in the plan: it is resolved when the
         // plan is prepared, from the latency the ops upstream of its consumer

@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 
+#include "PadLayerTestPaths.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/ControlTarget.hpp"
 #include "magda/daw/core/DrumGridPads.hpp"
@@ -85,9 +86,9 @@ TEST_CASE("A pad edit lands on the pad, not on a rack that shares its number",
     // On the pad.
     const auto* pad = tm.getPad(gridPath, padIndex);
     REQUIRE(pad != nullptr);
-    REQUIRE(pad->elements.size() == 1);
-    CHECK(getDevice(pad->elements[0]).id == voiceId);
-    CHECK(getDevice(pad->elements[0]).name == "Kick");
+    REQUIRE(pad->layers[0].elements.size() == 1);
+    CHECK(getDevice(pad->layers[0].elements[0]).id == voiceId);
+    CHECK(getDevice(pad->layers[0].elements[0]).name == "Kick");
 
     // And nowhere near the rack, whatever its number.
     if (rack != nullptr)
@@ -156,24 +157,24 @@ TEST_CASE("A pad's chain takes devices, drops them and reorders them",
 
     {
         const auto* padNow = tm.getPad(gridPath, padIndex);
-        REQUIRE(padNow->elements.size() == 2);
-        CHECK(getDevice(padNow->elements[0]).id == voiceId);
-        CHECK(getDevice(padNow->elements[1]).id == effectId);
+        REQUIRE(padNow->layers[0].elements.size() == 2);
+        CHECK(getDevice(padNow->layers[0].elements[0]).id == voiceId);
+        CHECK(getDevice(padNow->layers[0].elements[1]).id == effectId);
     }
 
     tm.moveDeviceInPad(gridPath, padChainId, 1, 0);
     {
         const auto* padNow = tm.getPad(gridPath, padIndex);
-        REQUIRE(padNow->elements.size() == 2);
-        CHECK(getDevice(padNow->elements[0]).id == effectId);
-        CHECK(getDevice(padNow->elements[1]).id == voiceId);
+        REQUIRE(padNow->layers[0].elements.size() == 2);
+        CHECK(getDevice(padNow->layers[0].elements[0]).id == effectId);
+        CHECK(getDevice(padNow->layers[0].elements[1]).id == voiceId);
     }
 
     tm.removeDeviceFromPad(gridPath, padChainId, effectId);
     {
         const auto* padNow = tm.getPad(gridPath, padIndex);
-        REQUIRE(padNow->elements.size() == 1);
-        CHECK(getDevice(padNow->elements[0]).id == voiceId);
+        REQUIRE(padNow->layers[0].elements.size() == 1);
+        CHECK(getDevice(padNow->layers[0].elements[0]).id == voiceId);
     }
 }
 
@@ -195,14 +196,14 @@ TEST_CASE("Dropping an instrument on a pad replaces what it held", "[drumgrid][p
     effect.pluginId = "magda_filter";
     effect.format = PluginFormat::Internal;
     tm.addDeviceToPad(gridPath, pad->id, effect);
-    REQUIRE(tm.getPad(gridPath, padIndex)->elements.size() == 2);
+    REQUIRE(tm.getPad(gridPath, padIndex)->layers[0].elements.size() == 2);
 
     // The pad's slot means the whole pad, effects and all.
     const auto snareId = tm.setPadDevice(gridPath, padIndex, padVoice("Snare"));
     const auto* padNow = tm.getPad(gridPath, padIndex);
-    REQUIRE(padNow->elements.size() == 1);
-    CHECK(getDevice(padNow->elements[0]).id == snareId);
-    CHECK(getDevice(padNow->elements[0]).name == "Snare");
+    REQUIRE(padNow->layers[0].elements.size() == 1);
+    CHECK(getDevice(padNow->layers[0].elements[0]).id == snareId);
+    CHECK(getDevice(padNow->layers[0].elements[0]).name == "Snare");
     CHECK(padNow->name == "Snare");
 }
 
@@ -245,8 +246,8 @@ TEST_CASE("Two pads trade what they answer to", "[drumgrid][pads][commands]") {
     const auto* atThree = tm.getPad(gridPath, 3);
     REQUIRE(atZero != nullptr);
     REQUIRE(atThree != nullptr);
-    CHECK(getDevice(atZero->elements[0]).id == snareId);
-    CHECK(getDevice(atThree->elements[0]).id == kickId);
+    CHECK(getDevice(atZero->layers[0].elements[0]).id == snareId);
+    CHECK(getDevice(atThree->layers[0].elements[0]).id == kickId);
 
     // The chains stayed put and their ranges traded, so a chain id still names
     // the devices it always named.
@@ -284,9 +285,9 @@ TEST_CASE("A duplicated Drum Grid keeps nothing of the original's pad keys",
 
     const auto* copiedPad = findPadChain(*copiedGrid.pads.get(), padIndex);
     REQUIRE(copiedPad != nullptr);
-    REQUIRE(copiedPad->elements.size() == 1);
-    CHECK(getDevice(copiedPad->elements[0]).id != voiceId);
-    CHECK(getDevice(copiedPad->elements[0]).id != INVALID_DEVICE_ID);
+    REQUIRE(copiedPad->layers[0].elements.size() == 1);
+    CHECK(getDevice(copiedPad->layers[0].elements[0]).id != voiceId);
+    CHECK(getDevice(copiedPad->layers[0].elements[0]).id != INVALID_DEVICE_ID);
 }
 
 namespace {
@@ -344,7 +345,7 @@ TEST_CASE("A duplicated grid's pad links follow the pads, whoever owns the link"
     const auto* pad = tm.getPad(gridPath, padIndex);
     REQUIRE(pad != nullptr);
 
-    const auto padDevicePath = TrackManager::padChainPath(gridPath, pad->id).withDevice(voiceId);
+    const auto padDevicePath = magda::test::firstLayerPath(gridPath, pad->id).withDevice(voiceId);
     const auto rackDevicePath =
         ChainNodePath::chainDevice(trackId, rackB, rackChainId, rackDeviceId);
 
@@ -394,8 +395,8 @@ TEST_CASE("A duplicated grid's pad links follow the pads, whoever owns the link"
 
     const auto* copiedPad = findPadChain(*copiedGrid->pads.get(), padIndex);
     REQUIRE(copiedPad != nullptr);
-    REQUIRE(copiedPad->elements.size() == 1);
-    const auto copiedVoiceId = getDevice(copiedPad->elements[0]).id;
+    REQUIRE(copiedPad->layers[0].elements.size() == 1);
+    const auto copiedVoiceId = getDevice(copiedPad->layers[0].elements[0]).id;
     CHECK(copiedVoiceId != voiceId);
 
     // Every link into the pad, from every scope, lands on the copy's pad.
@@ -403,11 +404,12 @@ TEST_CASE("A duplicated grid's pad links follow the pads, whoever owns the link"
         INFO("link owner: " << owner);
         REQUIRE_FALSE(macros[0].links.empty());
         const auto& path = firstLinkPath(macros);
-        REQUIRE(path.steps.size() == 3);
+        REQUIRE(path.steps.size() == 4);
         CHECK(path.trackId == copyTrackId);
         CHECK(path.steps[0].id == copiedGrid->id);
         CHECK(path.steps[1].id == copiedPad->id);
-        CHECK(path.steps[2].id == copiedVoiceId);
+        CHECK(path.steps[2].id == copiedPad->layers[0].id);
+        CHECK(path.steps[3].id == copiedVoiceId);
     };
 
     expectPadLink(copiedGrid->macros, "the grid");
@@ -444,7 +446,7 @@ TEST_CASE("A pad device's gain is model state", "[drumgrid][pads][commands]") {
 
     tm.setPadDeviceGainDb(gridPath, pad->id, voiceId, -6.0f);
 
-    const auto& device = getDevice(tm.getPad(gridPath, padIndex)->elements[0]);
+    const auto& device = getDevice(tm.getPad(gridPath, padIndex)->layers[0].elements[0]);
     CHECK(device.gainDb == -6.0f);
 
     // Both, because the audio path reads the linear one and the slider the dB.
@@ -464,16 +466,16 @@ TEST_CASE("A pad device's power is model state", "[drumgrid][pads][commands]") {
     const auto voiceId = tm.setPadDevice(gridPath, padIndex, padVoice("Kick"));
     const auto* pad = tm.getPad(gridPath, padIndex);
     REQUIRE(pad != nullptr);
-    CHECK_FALSE(getDevice(pad->elements[0]).bypassed);
+    CHECK_FALSE(getDevice(pad->layers[0].elements[0]).bypassed);
 
     // Powering a pad device off writes the model, which is what a save reads
     // and what the sync puts back onto the plugin. Toggling the plugin alone
     // used to be lost on reload.
     tm.setPadDeviceBypassed(gridPath, pad->id, voiceId, true);
-    CHECK(getDevice(tm.getPad(gridPath, padIndex)->elements[0]).bypassed);
+    CHECK(getDevice(tm.getPad(gridPath, padIndex)->layers[0].elements[0]).bypassed);
 
     tm.setPadDeviceBypassed(gridPath, pad->id, voiceId, false);
-    CHECK_FALSE(getDevice(tm.getPad(gridPath, padIndex)->elements[0]).bypassed);
+    CHECK_FALSE(getDevice(tm.getPad(gridPath, padIndex)->layers[0].elements[0]).bypassed);
 }
 
 // ============================================================================
@@ -499,7 +501,7 @@ TEST_CASE("A pad device is found by id like any other device", "[drumgrid][pads]
     // The address a stored link carries: the grid's own DeviceId in the rack
     // step, then the pad chain, then the device.
     CHECK(tm.findDevicePath(voiceId) ==
-          TrackManager::padChainPath(gridPath, pad->id).withDevice(voiceId));
+          magda::test::firstLayerPath(gridPath, pad->id).withDevice(voiceId));
 
     // The devices it could already find still resolve the same way.
     CHECK(tm.findDevicePath(gridId) == gridPath);
@@ -568,7 +570,7 @@ TEST_CASE("A pad moved off its own note stops being that pad", "[drumgrid][pads]
 
     CHECK(tm.getPad(gridPath, padIndex) == nullptr);
     REQUIRE(tm.getPad(gridPath, movedTo) != nullptr);
-    CHECK(tm.getPad(gridPath, movedTo)->elements.size() == 1);
+    CHECK(tm.getPad(gridPath, movedTo)->layers[0].elements.size() == 1);
 }
 
 TEST_CASE("A pad edit is one undo step", "[drumgrid][pads][commands][undo]") {
@@ -585,8 +587,8 @@ TEST_CASE("A pad edit is one undo step", "[drumgrid][pads][commands][undo]") {
         TrackManager::getInstance().setPadDevice(gridPath, padIndex, padVoice("Kick"));
     });
     REQUIRE(tm.getPad(gridPath, padIndex) != nullptr);
-    REQUIRE(tm.getPad(gridPath, padIndex)->elements.size() == 1);
-    const auto voiceId = getDevice(tm.getPad(gridPath, padIndex)->elements[0]).id;
+    REQUIRE(tm.getPad(gridPath, padIndex)->layers[0].elements.size() == 1);
+    const auto voiceId = getDevice(tm.getPad(gridPath, padIndex)->layers[0].elements[0]).id;
 
     editPads(gridPath, "Mute Pad",
              [gridPath]() { TrackManager::getInstance().setPadMuted(gridPath, padIndex, true); });
@@ -604,12 +606,12 @@ TEST_CASE("A pad edit is one undo step", "[drumgrid][pads][commands][undo]") {
     // still names the one the first run handed out.
     REQUIRE(undo.redo());
     REQUIRE(tm.getPad(gridPath, padIndex) != nullptr);
-    REQUIRE(tm.getPad(gridPath, padIndex)->elements.size() == 1);
-    CHECK(getDevice(tm.getPad(gridPath, padIndex)->elements[0]).id == voiceId);
+    REQUIRE(tm.getPad(gridPath, padIndex)->layers[0].elements.size() == 1);
+    CHECK(getDevice(tm.getPad(gridPath, padIndex)->layers[0].elements[0]).id == voiceId);
 
     REQUIRE(undo.redo());
     CHECK(tm.getPad(gridPath, padIndex)->muted);
-    CHECK(getDevice(tm.getPad(gridPath, padIndex)->elements[0]).id == voiceId);
+    CHECK(getDevice(tm.getPad(gridPath, padIndex)->layers[0].elements[0]).id == voiceId);
 }
 
 TEST_CASE("A pad device resolves through the generic path lookup", "[drumgrid][pads][commands]") {
@@ -681,11 +683,13 @@ TEST_CASE("A device inside a rack inside a pad resolves too", "[drumgrid][pads][
     nested.id = kNested;
     innerChain.elements.push_back(makeDeviceElement(nested));
     inner.chains.push_back(std::move(innerChain));
-    tm.getPadChain(gridPath, padChainId)->elements.push_back(makeRackElement(std::move(inner)));
+    tm.getPadChain(gridPath, padChainId)
+        ->layers[0]
+        .elements.push_back(makeRackElement(std::move(inner)));
 
     const auto path = tm.findDevicePath(kNested);
     REQUIRE(path.isValid());
-    CHECK(path == TrackManager::padChainPath(gridPath, padChainId)
+    CHECK(path == magda::test::firstLayerPath(gridPath, padChainId)
                       .withRack(77)
                       .withChain(3)
                       .withDevice(kNested));
@@ -910,7 +914,7 @@ TEST_CASE("A copied Drum Grid's pads get ids of their own", "[drumgrid][pads][co
         REQUIRE(grid != nullptr);
         MacroLink link;
         link.target = ControlTarget::pluginParam(
-            TrackManager::padChainPath(gridPath, padChainId).withDevice(voiceId), 0);
+            magda::test::firstLayerPath(gridPath, padChainId).withDevice(voiceId), 0);
         link.amount = 1.0f;
         grid->macros[0].links.push_back(link);
     }
@@ -929,20 +933,20 @@ TEST_CASE("A copied Drum Grid's pads get ids of their own", "[drumgrid][pads][co
     REQUIRE(clone.pads);
     REQUIRE(clone.pads->chains.size() == 1);
 
-    const auto& clonedVoice = getDevice(clone.pads->chains[0].elements[0]);
+    const auto& clonedVoice = getDevice(clone.pads->chains[0].layers[0].elements[0]);
     CHECK(clonedVoice.id != voiceId);
 
     // The pad rack carries the clone's own id, and the copied macro names the
     // clone's pad rather than the original's.
     CHECK(clone.pads->id == padRackIdFor(clone.id));
     const auto clonePath = ChainNodePath::topLevelDevice(trackId, clone.id);
-    CHECK(
-        clone.macros[0].links[0].target.devicePath ==
-        TrackManager::padChainPath(clonePath, clone.pads->chains[0].id).withDevice(clonedVoice.id));
+    CHECK(clone.macros[0].links[0].target.devicePath ==
+          magda::test::firstLayerPath(clonePath, clone.pads->chains[0].id)
+              .withDevice(clonedVoice.id));
 
     // And each id now resolves to its own copy.
     CHECK(tm.findDevicePath(voiceId) ==
-          TrackManager::padChainPath(gridPath, padChainId).withDevice(voiceId));
+          magda::test::firstLayerPath(gridPath, padChainId).withDevice(voiceId));
     CHECK(tm.findDevicePath(clonedVoice.id).getDeviceId() == clonedVoice.id);
 }
 
@@ -1041,12 +1045,14 @@ TEST_CASE("A copied link into a rack inside a pad follows the copy", "[drumgrid]
         nested.id = kNested;
         innerChain.elements.push_back(makeDeviceElement(nested));
         inner.chains.push_back(std::move(innerChain));
-        tm.getPadChain(gridPath, padChainId)->elements.push_back(makeRackElement(std::move(inner)));
+        tm.getPadChain(gridPath, padChainId)
+            ->layers[0]
+            .elements.push_back(makeRackElement(std::move(inner)));
 
         auto* grid = tm.getDeviceInChainByPath(gridPath);
         REQUIRE(grid != nullptr);
         MacroLink link;
-        link.target = ControlTarget::pluginParam(TrackManager::padChainPath(gridPath, padChainId)
+        link.target = ControlTarget::pluginParam(magda::test::firstLayerPath(gridPath, padChainId)
                                                      .withRack(kInnerRack)
                                                      .withChain(kInnerChain)
                                                      .withDevice(kNested),
@@ -1061,15 +1067,15 @@ TEST_CASE("A copied link into a rack inside a pad follows the copy", "[drumgrid]
                                          /*reassignIds=*/true));
 
     const auto& clone = getDevice(tm.getTrack(trackId)->chain.fxChainElements[1]);
-    const auto& clonedRack = getRack(clone.pads->chains[0].elements[1]);
+    const auto& clonedRack = getRack(clone.pads->chains[0].layers[0].elements[1]);
     const auto& clonedNested = getDevice(clonedRack.chains[0].elements[0]);
 
     // Every id moved, and the link names the copy's own.
     CHECK(clonedRack.id != kInnerRack);
     CHECK(clonedNested.id != kNested);
     CHECK(clone.macros[0].links[0].target.devicePath ==
-          TrackManager::padChainPath(ChainNodePath::topLevelDevice(trackId, clone.id),
-                                     clone.pads->chains[0].id)
+          magda::test::firstLayerPath(ChainNodePath::topLevelDevice(trackId, clone.id),
+                                      clone.pads->chains[0].id)
               .withRack(clonedRack.id)
               .withChain(clonedRack.chains[0].id)
               .withDevice(clonedNested.id));
@@ -1272,4 +1278,135 @@ TEST_CASE("A rack carrying a routed grid is refused even at track level",
     REQUIRE(elements.size() == 1);
     CHECK(isDevice(elements[0]));
     CHECK(getDevice(elements[0]).id == gridId);
+}
+
+// Pad layers (#3007).
+
+namespace {
+
+struct LayeredGrid {
+    TrackId trackId = INVALID_TRACK_ID;
+    ChainNodePath gridPath;
+    ChainId padId = INVALID_CHAIN_ID;
+};
+
+LayeredGrid gridWithKick() {
+    auto& tm = TrackManager::getInstance();
+    LayeredGrid grid;
+    grid.trackId = tm.createTrack("Drums");
+    const auto gridId = tm.addDeviceToTrack(grid.trackId, drumGridDevice());
+    grid.gridPath = ChainNodePath::topLevelDevice(grid.trackId, gridId);
+    REQUIRE(tm.setPadDevice(grid.gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
+    grid.padId = tm.getPad(grid.gridPath, 0)->id;
+    return grid;
+}
+
+}  // namespace
+
+TEST_CASE("A new pad has one layer holding its devices", "[drumgrid][pads][layers][3007]") {
+    resetState();
+    const auto grid = gridWithKick();
+    const auto* pad = TrackManager::getInstance().getPad(grid.gridPath, 0);
+
+    REQUIRE(pad->layers.size() == 1);
+    CHECK(pad->elements.empty());
+    REQUIRE(pad->layers[0].elements.size() == 1);
+    CHECK(pad->layers[0].id != pad->id);
+}
+
+TEST_CASE("Adding, reordering, powering and removing layers each undo in one step",
+          "[drumgrid][pads][layers][3007]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    auto& undo = UndoManager::getInstance();
+    const auto grid = gridWithKick();
+    const auto firstLayer = tm.getPad(grid.gridPath, 0)->layers[0].id;
+
+    ChainId added = INVALID_CHAIN_ID;
+    editPads(grid.gridPath, "Add Pad Layer", [&] { added = tm.addPadLayer(grid.gridPath, 0); });
+    REQUIRE(added != INVALID_CHAIN_ID);
+    REQUIRE(tm.getPad(grid.gridPath, 0)->layers.size() == 2);
+
+    editPads(grid.gridPath, "Move Pad Layer", [&] { tm.movePadLayer(grid.gridPath, added, 0); });
+    CHECK(tm.getPad(grid.gridPath, 0)->layers[0].id == added);
+
+    editPads(grid.gridPath, "Set Pad Layer",
+             [&] { tm.setPadLayerBypassed(grid.gridPath, firstLayer, true); });
+    CHECK(findPadLayer(*tm.getPad(grid.gridPath, 0), firstLayer)->bypassed);
+
+    editPads(grid.gridPath, "Remove Pad Layer", [&] { tm.removePadLayer(grid.gridPath, added); });
+    CHECK(tm.getPad(grid.gridPath, 0)->layers.size() == 1);
+
+    undo.undo();
+    CHECK(tm.getPad(grid.gridPath, 0)->layers.size() == 2);
+    undo.undo();
+    CHECK_FALSE(findPadLayer(*tm.getPad(grid.gridPath, 0), firstLayer)->bypassed);
+    undo.undo();
+    CHECK(tm.getPad(grid.gridPath, 0)->layers[0].id == firstLayer);
+    undo.undo();
+    CHECK(tm.getPad(grid.gridPath, 0)->layers.size() == 1);
+
+    undo.redo();
+    CHECK(tm.getPad(grid.gridPath, 0)->layers.size() == 2);
+}
+
+TEST_CASE("A pad's last layer cannot be removed", "[drumgrid][pads][layers][3007]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    const auto grid = gridWithKick();
+    const auto only = tm.getPad(grid.gridPath, 0)->layers[0].id;
+
+    CHECK_FALSE(tm.removePadLayer(grid.gridPath, only));
+    CHECK(tm.getPad(grid.gridPath, 0)->layers.size() == 1);
+}
+
+TEST_CASE("A layer's zones are clamped and its settings undo per gesture",
+          "[drumgrid][pads][layers][3007]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    const auto grid = gridWithKick();
+    const auto layerId = tm.getPad(grid.gridPath, 0)->layers[0].id;
+
+    PadLayerSettings settings;
+    settings.zones.velocityLow = 90;
+    settings.zones.velocityHigh = 40;  // below the low end: clamped up to it
+    settings.zones.velocityFadeLow = 50;
+    setPadLayer(grid.gridPath, layerId, settings, 7);
+    settings.volume = -6.0f;
+    setPadLayer(grid.gridPath, layerId, settings, 7);
+
+    const auto* layer = findPadLayer(*tm.getPad(grid.gridPath, 0), layerId);
+    CHECK(layer->zones.velocityLow == 90);
+    CHECK(layer->zones.velocityHigh == 90);
+    CHECK(layer->zones.velocityFadeLow == 0);
+    CHECK(layer->volume == -6.0f);
+
+    UndoManager::getInstance().undo();
+    layer = findPadLayer(*tm.getPad(grid.gridPath, 0), layerId);
+    CHECK(layer->zones.isOpen());
+    CHECK(layer->volume == 0.0f);
+}
+
+TEST_CASE("A device on a layer resolves by its layer path", "[drumgrid][pads][layers][3007]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    const auto grid = gridWithKick();
+    const auto layerId = tm.addPadLayer(grid.gridPath, 0);
+    const auto snareId = tm.addDeviceToPad(grid.gridPath, layerId, padVoice("Snare"));
+    REQUIRE(snareId != INVALID_DEVICE_ID);
+
+    const auto layerPath =
+        ChainNodePath::padLayer(grid.trackId, grid.gridPath.getDeviceId(), grid.padId, layerId);
+    const auto* device = tm.getDeviceInChainByPath(layerPath.withDevice(snareId));
+    REQUIRE(device != nullptr);
+    CHECK(device->name == "Snare");
+    CHECK(tm.getChainByPath(layerPath) != nullptr);
+    CHECK(tm.findDevicePath(snareId) == layerPath.withDevice(snareId));
+
+    // The same device under the pad's other layer is not there.
+    const auto otherLayer = tm.getPad(grid.gridPath, 0)->layers[0].id;
+    CHECK(
+        tm.getDeviceInChainByPath(ChainNodePath::padLayer(grid.trackId, grid.gridPath.getDeviceId(),
+                                                          grid.padId, otherLayer)
+                                      .withDevice(snareId)) == nullptr);
 }
