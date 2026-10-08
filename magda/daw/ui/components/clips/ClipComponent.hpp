@@ -140,7 +140,6 @@ class ClipComponent : public juce::Component,
     ClipId clipId_;
     TrackContentPanel* parentPanel_;
     bool isSelected_ = false;
-    int headerNameRight_ = 0;  // right edge of the drawn clip name, for the loop dents
     std::vector<BeatRange> bothPlayRanges_;
     std::vector<BeatRange> showThroughRanges_;
     bool isMarqueeHighlighted_ = false;

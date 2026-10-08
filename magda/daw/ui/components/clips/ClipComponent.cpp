@@ -435,11 +435,8 @@ void ClipComponent::paint(juce::Graphics& g) {
         float loopPixelWidth =
             static_cast<float>(loopLengthBeats / beatRange) * clipBounds.getWidth();
 
-        // Dents shrink with the loop width until too small to read, then only the hairline
-        // stays; below a few pixels even that turns the clip into a solid mass.
+        // Below a few pixels per loop the hairlines would turn the clip into a solid mass.
         constexpr float MIN_HAIRLINE_PIXEL_WIDTH = 4.0f;
-        const float dentSize = juce::jmin(7.0f, loopPixelWidth * 0.2f);
-        const bool drawDents = dentSize >= 2.5f;
         if (loopPixelWidth < MIN_HAIRLINE_PIXEL_WIDTH)
             numBoundaries = 0;
 
@@ -457,34 +454,12 @@ void ClipComponent::paint(juce::Graphics& g) {
                      juce::roundToInt(start * zoom);
             }
 
-            // A dent in the clip's top and bottom edges
-            const auto x = static_cast<float>(clipBounds.getX() + bx);
-            const auto top = static_cast<float>(clipBounds.getY());
-            const auto bottom = static_cast<float>(clipBounds.getBottom());
-            const float dent = drawDents ? dentSize : 0.0f;
-            juce::Path topDent;
-            topDent.addTriangle(x - dent, top, x + dent, top, x, top + dent);
-            juce::Path bottomDent;
-            bottomDent.addTriangle(x - dent, bottom, x + dent, bottom, x, bottom - dent);
-            const auto laneColour = ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND);
-            // A selected clip's black header swallows the lane colour, so its top dent is white.
-            const bool selected =
-                isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_);
-            // The top dent gives way to the clip name
-            if (drawDents && x - dent > static_cast<float>(headerNameRight_ + 3)) {
-                g.setColour(selected ? juce::Colours::white : laneColour);
-                g.fillPath(topDent);
-            }
-            if (drawDents) {
-                g.setColour(laneColour);
-                g.fillPath(bottomDent);
-            }
-
-            // A dark hairline through the content between the dents, darker than the grid
+            // A dark hairline through the content, darker than the grid. The header fill
+            // runs 2px past HEADER_HEIGHT, so it starts below that.
             g.setColour(juce::Colours::black.withAlpha(0.35f));
-            // The header fill runs 2px past HEADER_HEIGHT; start below it.
-            g.drawVerticalLine(clipBounds.getX() + bx, top + static_cast<float>(HEADER_HEIGHT + 2),
-                               bottom - dent);
+            g.drawVerticalLine(clipBounds.getX() + bx,
+                               static_cast<float>(clipBounds.getY() + HEADER_HEIGHT + 2),
+                               static_cast<float>(clipBounds.getBottom()));
         }
     }
 
@@ -1022,7 +997,6 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
 void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
                                     juce::Rectangle<int> bounds) {
     auto headerArea = bounds.removeFromTop(HEADER_HEIGHT);
-    headerNameRight_ = 0;
 
     // Selected clips paint a black header in place of the clip-coloured one.
     // This replaces the old white selection rectangle so it can't fight overlay
@@ -1090,10 +1064,6 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
                     displayName += " #" + juce::String(groupIndex);
             }
             g.drawText(displayName, nameArea, juce::Justification::centredLeft, true);
-            headerNameRight_ =
-                nameArea.getX() +
-                juce::jmin(nameArea.getWidth(), juce::GlyphArrangement::getStringWidthInt(
-                                                    g.getCurrentFont(), displayName));
         }
     }
 
