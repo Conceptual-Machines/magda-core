@@ -454,12 +454,21 @@ void ClipComponent::paint(juce::Graphics& g) {
                      juce::roundToInt(start * zoom);
             }
 
-            // A dark hairline through the content, darker than the grid. The header fill
-            // runs 2px past HEADER_HEIGHT, so it starts below that.
-            g.setColour(juce::Colours::black.withAlpha(0.35f));
-            g.drawVerticalLine(clipBounds.getX() + bx,
-                               static_cast<float>(clipBounds.getY() + HEADER_HEIGHT + 2),
-                               static_cast<float>(clipBounds.getBottom()));
+            // A dark hairline through the content; the header fill runs 2px past HEADER_HEIGHT,
+            // so it starts below that.
+            // It fades from dark at the top to faint at the bottom, with a faint light edge on
+            // its right so it reads as a fold.
+            const auto lineX = static_cast<float>(clipBounds.getX() + bx);
+            const auto lineTop = static_cast<float>(clipBounds.getY() + HEADER_HEIGHT + 2);
+            const auto lineBottom = static_cast<float>(clipBounds.getBottom());
+            g.setGradientFill(juce::ColourGradient(juce::Colours::black.withAlpha(0.55f), 0.0f,
+                                                   lineTop, juce::Colours::black.withAlpha(0.1f),
+                                                   0.0f, lineBottom, false));
+            g.fillRect(lineX, lineTop, 1.0f, lineBottom - lineTop);
+            g.setGradientFill(juce::ColourGradient(juce::Colours::white.withAlpha(0.12f), 0.0f,
+                                                   lineTop, juce::Colours::white.withAlpha(0.0f),
+                                                   0.0f, lineBottom, false));
+            g.fillRect(lineX + 1.0f, lineTop, 1.0f, lineBottom - lineTop);
         }
     }
 
