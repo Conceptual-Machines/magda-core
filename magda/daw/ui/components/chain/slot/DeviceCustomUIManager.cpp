@@ -1389,13 +1389,14 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
                                   layer.solo, layer.bypassed, layer.zones});
         return layers;
     };
-    drumGridUI_->onAddLayerRequested = [this, postPadEdit](int padIndex) {
+    // Either may make or empty the pad, so the pad is read back whole.
+    drumGridUI_->onAddLayerRequested = [postPadEdit, updatePadFromModel](int padIndex) {
         postPadEdit(
             "Add Pad Layer",
             [padIndex](const magda::ChainNodePath& grid) {
                 magda::TrackManager::getInstance().addPadLayer(grid, padIndex);
             },
-            [this]() { drumGridUI_->refreshPadChain(); });
+            [padIndex, updatePadFromModel]() { updatePadFromModel(padIndex); });
     };
     drumGridUI_->onDeviceDroppedOnLayer = [this, postPadEdit](int, magda::ChainId layerId,
                                                               const magda::DeviceInfo& device) {
@@ -1406,14 +1407,15 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             },
             [this]() { drumGridUI_->refreshPadChain(); });
     };
-    drumGridUI_->onRemoveLayerRequested = [this, postPadEdit](int, magda::ChainId layerId) {
-        postPadEdit(
-            "Remove Pad Layer",
-            [layerId](const magda::ChainNodePath& grid) {
-                magda::TrackManager::getInstance().removePadLayer(grid, layerId);
-            },
-            [this]() { drumGridUI_->refreshPadChain(); });
-    };
+    drumGridUI_->onRemoveLayerRequested =
+        [postPadEdit, updatePadFromModel](int padIndex, magda::ChainId layerId) {
+            postPadEdit(
+                "Remove Pad Layer",
+                [layerId](const magda::ChainNodePath& grid) {
+                    magda::TrackManager::getInstance().removePadLayer(grid, layerId);
+                },
+                [padIndex, updatePadFromModel]() { updatePadFromModel(padIndex); });
+        };
     drumGridUI_->onLayerSwitchesChanged = [this, postPadEdit](int, magda::ChainId layerId,
                                                               bool mute, bool solo, bool bypassed) {
         postPadEdit(

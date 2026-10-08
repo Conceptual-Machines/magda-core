@@ -709,10 +709,11 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setPadDeviceGainDb(const ChainNodePath& gridPath, ChainId padChainId, DeviceId deviceId,
                             float gainDb);
 
-    /// Add an empty layer to pad @p padIndex. Its id, or INVALID_CHAIN_ID.
+    /// Add an empty layer to pad @p padIndex, making the pad if it is empty. Its id, or
+    /// INVALID_CHAIN_ID.
     ChainId addPadLayer(const ChainNodePath& gridPath, int padIndex);
 
-    /// Remove a layer. Refused, false, for a pad's only layer.
+    /// Remove a layer; removing a pad's only layer empties the pad.
     bool removePadLayer(const ChainNodePath& gridPath, ChainId layerId);
 
     /// Move a layer to @p toIndex among its pad's layers.

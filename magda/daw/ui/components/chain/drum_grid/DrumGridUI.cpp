@@ -736,7 +736,7 @@ void DrumGridUI::layoutEditor(juce::Rectangle<int> area) {
 
 void DrumGridUI::layoutLayerList(juce::Rectangle<int> area) {
     // Every layer, then Add layer, scrolling when they outgrow the panel.
-    const bool show = !area.isEmpty() && selectedPadHasChain() && !layers_.empty();
+    const bool show = !area.isEmpty();
     layerList_.setVisible(show);
     if (!show)
         return;
@@ -1058,8 +1058,7 @@ void DrumGridUI::refreshLayers() {
         }
     }
     for (std::size_t i = 0; i < layers_.size(); ++i)
-        layerRows_[i]->setLayer(layers_[i], static_cast<int>(i), layers_[i].id == selectedLayer_,
-                                layers_.size() > 1);
+        layerRows_[i]->setLayer(layers_[i], static_cast<int>(i), layers_[i].id == selectedLayer_);
     layoutEditor(editorArea_);
 }
 

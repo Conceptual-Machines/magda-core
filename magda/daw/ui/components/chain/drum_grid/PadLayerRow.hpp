@@ -38,7 +38,7 @@ class PadLayerRow : public juce::Component {
     PadLayerRow();
     ~PadLayerRow() override;
 
-    void setLayer(const PadLayerView& layer, int index, bool selected, bool removable);
+    void setLayer(const PadLayerView& layer, int index, bool selected);
     void setView(View view);
     magda::ChainId getLayerId() const {
         return layer_.id;

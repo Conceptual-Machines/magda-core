@@ -274,7 +274,7 @@ void PadLayerRow::setView(View view) {
     repaint();
 }
 
-void PadLayerRow::setLayer(const PadLayerView& layer, int index, bool selected, bool removable) {
+void PadLayerRow::setLayer(const PadLayerView& layer, int index, bool selected) {
     layer_ = layer;
     index_ = index;
     selected_ = selected;
@@ -286,7 +286,6 @@ void PadLayerRow::setLayer(const PadLayerView& layer, int index, bool selected, 
     soloButton_.setToggleState(layer.solo, juce::dontSendNotification);
     powerButton_.setToggleState(!layer.bypassed, juce::dontSendNotification);
     powerButton_.setActive(!layer.bypassed);
-    removeButton_.setEnabled(removable);
     roundRobinButton_.setToggleState(layer.zones.roundRobin, juce::dontSendNotification);
     zoneBar_->setZones(layer.zones);
     setAlpha(layer.bypassed ? kDisabledAlpha : 1.0f);

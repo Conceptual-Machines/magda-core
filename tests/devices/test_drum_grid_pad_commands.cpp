@@ -1350,14 +1350,21 @@ TEST_CASE("Adding, reordering, powering and removing layers each undo in one ste
     CHECK(tm.getPad(grid.gridPath, 0)->layers.size() == 2);
 }
 
-TEST_CASE("A pad's last layer cannot be removed", "[drumgrid][pads][layers][3007]") {
+TEST_CASE("Removing a pad's last layer empties the pad, and adding one makes it again",
+          "[drumgrid][pads][layers][3007]") {
     resetState();
     auto& tm = TrackManager::getInstance();
     const auto grid = gridWithKick();
     const auto only = tm.getPad(grid.gridPath, 0)->layers[0].id;
 
-    CHECK_FALSE(tm.removePadLayer(grid.gridPath, only));
+    CHECK(tm.removePadLayer(grid.gridPath, only));
+    CHECK(tm.getPad(grid.gridPath, 0) == nullptr);
+
+    const auto added = tm.addPadLayer(grid.gridPath, 0);
+    REQUIRE(added != INVALID_CHAIN_ID);
+    REQUIRE(tm.getPad(grid.gridPath, 0) != nullptr);
     CHECK(tm.getPad(grid.gridPath, 0)->layers.size() == 1);
+    CHECK(tm.getPad(grid.gridPath, 0)->layers[0].id == added);
 }
 
 TEST_CASE("A layer's zones are clamped and its settings undo per gesture",

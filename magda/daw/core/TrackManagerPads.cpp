@@ -554,10 +554,15 @@ void TrackManager::removePadChain(const ChainNodePath& gridPath, ChainId padChai
 // ============================================================================
 
 ChainId TrackManager::addPadLayer(const ChainNodePath& gridPath, int padIndex) {
+    // An empty pad's first layer is the pad itself coming into being.
+    if (mutablePad(gridPath, padIndex) == nullptr) {
+        const auto padId = ensurePad(gridPath, padIndex);
+        const auto* pad = padId != INVALID_CHAIN_ID ? mutablePad(gridPath, padIndex) : nullptr;
+        return pad != nullptr ? pad->layers.front().id : INVALID_CHAIN_ID;
+    }
+
     auto* pads = getPads(gridPath);
     auto* pad = mutablePad(gridPath, padIndex);
-    if (pads == nullptr || pad == nullptr)
-        return INVALID_CHAIN_ID;
 
     const auto id = magda::addPadLayer(*pads, *pad).id;
     notifyTrackDevicesChanged(gridPath.trackId);
@@ -567,9 +572,14 @@ ChainId TrackManager::addPadLayer(const ChainNodePath& gridPath, int padIndex) {
 bool TrackManager::removePadLayer(const ChainNodePath& gridPath, ChainId layerId) {
     auto* pads = getPads(gridPath);
     auto* pad = pads != nullptr ? padOfLayer(*pads, layerId) : nullptr;
-    // A pad always keeps one layer; clearing the pad is what removes the last.
-    if (pad == nullptr || pad->layers.size() < 2)
+    if (pad == nullptr)
         return false;
+
+    // A pad is its layers, so taking away the last one empties the pad.
+    if (pad->layers.size() == 1) {
+        removePadChain(gridPath, pad->id);
+        return true;
+    }
 
     const auto layerPath = padChainPath(gridPath, pad->id).withPadLayer(layerId);
     const auto found = std::ranges::find(pad->layers, layerId, &ChainInfo::id);
