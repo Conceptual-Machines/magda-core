@@ -12,6 +12,7 @@
 
 #include "ChainPanel.hpp"
 #include "core/ChainNodePath.hpp"
+#include "drum_grid/PadLayerRow.hpp"
 #include "layout/DashedAddButton.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -26,7 +27,8 @@ namespace magda::daw::ui {
  * @brief The Drum Grid's body in the v1 shell: [rail | pads | pad editor | chain] over a footer.
  *
  * The selected pad's chain shows in the rack's chain view. Pads take sample and plugin drops;
- * the rail toggles the editor and swaps the pads for the pad list.
+ * the rail toggles the editor and swaps the pads for the pad list. The editor lists the pad's
+ * layers in a mix, velocity or crossfade view; the chain view shows the selected one (#3007).
  */
 class DrumGridUI : public juce::Component,
                    public juce::FileDragAndDropTarget,
@@ -41,7 +43,7 @@ class DrumGridUI : public juce::Component,
     static constexpr int kPluginParamSlots = 16;
 
     static constexpr int kRailWidth = 38;
-    static constexpr int kEditorWidth = 252;
+    static constexpr int kEditorWidth = 300;
     static constexpr int kMinChainWidth = 264;
     static constexpr int kFooterHeight = 40;
 
@@ -73,13 +75,7 @@ class DrumGridUI : public juce::Component,
     /** Called when Clear button is clicked for the selected pad. (padIndex) */
     std::function<void(int)> onClearRequested;
 
-    /** Called when pad level changes. (padIndex, levelDb) */
-    std::function<void(int, float)> onPadLevelChanged;
-
-    /** Called when pad pan changes. (padIndex, pan -1..1) */
-    std::function<void(int, float)> onPadPanChanged;
-
-    /** Which fader drag the level and pan callbacks currently belong to.
+    /** Which fader drag the layer level and pan callbacks currently belong to.
         Bumped when a drag ends, so consecutive gestures on the same fader are
         separate undo steps rather than one merged run (#2211). */
     int getFaderGesture() const {
@@ -100,9 +96,6 @@ class DrumGridUI : public juce::Component,
 
     /** Called when a pad is dragged and dropped onto another pad. (sourcePad, targetPad) */
     std::function<void(int, int)> onPadsSwapped;
-
-    /** Called when pad output bus changes. (padIndex, busIndex) */
-    std::function<void(int, int)> onPadOutputChanged;
 
     /** Called when play button is pressed/released on a pad. (padIndex, isNoteOn) */
     std::function<void(int, bool)> onNotePreview;
@@ -132,8 +125,23 @@ class DrumGridUI : public juce::Component,
     /** Called when layout changes (e.g., chains panel toggled) so parent can resize. */
     std::function<void()> onLayoutChanged;
 
-    /// The path of a pad's chain, invalid while the pad has none.
-    std::function<magda::ChainNodePath(int padIndex)> getPadChainPath;
+    /// The path of a pad's layer, its first for an invalid id; invalid while the pad has none.
+    std::function<magda::ChainNodePath(int padIndex, magda::ChainId layerId)> getPadChainPath;
+
+    /// A pad's layers as the model holds them, read whenever the pad is shown.
+    std::function<std::vector<PadLayerView>(int padIndex)> getPadLayers;
+
+    std::function<void(int padIndex)> onAddLayerRequested;
+    /// A device dropped on the chain area of a pad that has one, for the layer it shows.
+    std::function<void(int padIndex, magda::ChainId layerId, const magda::DeviceInfo& device)>
+        onDeviceDroppedOnLayer;
+    std::function<void(int padIndex, magda::ChainId layerId)> onRemoveLayerRequested;
+    std::function<void(int padIndex, magda::ChainId layerId, bool mute, bool solo, bool bypassed)>
+        onLayerSwitchesChanged;
+    /// Live, per move; coalesces into one undo step per fader gesture.
+    std::function<void(magda::ChainId layerId, float volumeDb, float pan)> onLayerMixChanged;
+    /// Once per drag: a zone change recompiles the pad.
+    std::function<void(magda::ChainId layerId, const magda::ChainZones& zones)> onLayerZonesChanged;
 
     /** Called by the add slot of a pad with no chain yet. (padIndex) */
     std::function<void(int)> onAddDeviceRequested;
@@ -151,6 +159,7 @@ class DrumGridUI : public juce::Component,
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
     void timerCallback() override;
+    void mouseDown(const juce::MouseEvent& event) override;
 
     // FileDragAndDropTarget
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
@@ -245,11 +254,18 @@ class DrumGridUI : public juce::Component,
     juce::TextButton editorToggle_{"i"};
 
     // Pad editor
+    // Each tab lists every layer in that view; the pad's own mix is its mixer channel (#3010).
+    enum class EditorTab { Mix, Velocity, Fade };
+    EditorTab editorTab_ = EditorTab::Mix;
     bool detailCollapsed_ = false;
-    magda::DraggableValueLabel levelControl_{magda::DraggableValueLabel::Format::Decibels};
-    magda::DraggableValueLabel panControl_{magda::DraggableValueLabel::Format::Pan};
-    juce::TextButton outputButton_;
-    bool faderDragging_ = false;
+
+    // Layers of the selected pad, and which one the chain view shows
+    std::vector<PadLayerView> layers_;
+    magda::ChainId selectedLayer_ = magda::INVALID_CHAIN_ID;
+    std::vector<std::unique_ptr<PadLayerRow>> layerRows_;
+    DashedAddButton addLayerButton_{"Add layer"};
+    juce::Viewport layerList_;
+    juce::Component layerListContent_;
 
     // Chain
     ChainPanel padChainView_;
@@ -265,7 +281,7 @@ class DrumGridUI : public juce::Component,
     // Areas laid out in resized() and painted in paint()
     juce::Rectangle<int> railArea_, padsArea_, editorArea_, chainArea_, footerArea_;
     juce::Rectangle<int> editorHeaderArea_, chainHeaderArea_, pageTextArea_;
-    juce::Rectangle<int> levelLabelArea_, panLabelArea_, outputLabelArea_;
+    juce::Rectangle<int> tabsArea_;
 
     // Plugin drop highlight
     int dropHighlightPad_ = -1;
@@ -283,8 +299,12 @@ class DrumGridUI : public juce::Component,
     void layoutFooter(juce::Rectangle<int> area);
     void paintEditor(juce::Graphics& g);
     void paintChainHeader(juce::Graphics& g);
-    void showOutputMenu();
     bool selectedPadHasChain() const;
+
+    const PadLayerView* selectedLayer() const;
+    void refreshLayers();
+    void layoutLayerList(juce::Rectangle<int> area);
+    juce::Rectangle<int> tabBounds(EditorTab tab) const;
 
     /// Close the current fader gesture, so the next edit is a new undo step.
     void endFaderGesture();
@@ -299,6 +319,10 @@ class DrumGridUI : public juce::Component,
     int padButtonIndexAtPoint(juce::Point<int> point) const;
 
     void showPadContextMenu(int padIndex, juce::Point<int> screenPos);
+
+    /// A drop that landed on the chain area rather than on a pad: true when taken.
+    bool dropOnChainArea(juce::Point<int> point, const juce::var& description,
+                         const juce::StringArray& files);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DrumGridUI)
 };

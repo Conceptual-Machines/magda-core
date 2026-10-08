@@ -20,6 +20,19 @@ using namespace magda;
 
 namespace {
 
+/// The first layer of pad @p padId on the grid @p gridId, wherever on @p trackId it stands.
+ChainNodePath padLayerOf(TrackId trackId, DeviceId gridId, ChainId padId) {
+    const auto* grid = chain_walk::findDevice(
+        TrackManager::getInstance().getTrack(trackId)->chain.fxChainElements,
+        ChainNodePath::trackLevel(trackId), chain_walk::Pads::Skip,
+        [gridId](const DeviceInfo& device, const ChainNodePath&) { return device.id == gridId; });
+    REQUIRE(grid != nullptr);
+    const auto* pad = findPadChainById(*grid->pads.get(), padId);
+    REQUIRE(pad != nullptr);
+    REQUIRE_FALSE(pad->layers.empty());
+    return ChainNodePath::padLayer(trackId, gridId, padId, pad->layers.front().id);
+}
+
 DeviceInfo effect(const juce::String& name) {
     DeviceInfo device;
     device.name = name;
@@ -132,7 +145,7 @@ TEST_CASE("A device's address survives a round trip through its parent", "[chain
     const auto nested = ChainNodePath::rack(7, 1).withChain(2).withDevice(3);
     CHECK(chain_walk::deviceIn(nested.parentChain(), 3) == nested);
 
-    const auto onPad = ChainNodePath::padChain(7, 3, 4).withDevice(5);
+    const auto onPad = ChainNodePath::padLayer(7, 3, 4, 6).withDevice(5);
     CHECK(chain_walk::deviceIn(onPad.parentChain(), 5) == onPad);
 }
 
@@ -189,7 +202,7 @@ TEST_CASE("A pad device is addressed off the track by its grid's id", "[chain-wa
         [&paths](const DeviceInfo&, const ChainNodePath& path) { paths.push_back(path); });
 
     REQUIRE(paths.size() == 2);
-    CHECK(paths[1] == ChainNodePath::padChain(trackId, gridId, padChainId).withDevice(padDeviceId));
+    CHECK(paths[1] == padLayerOf(trackId, gridId, padChainId).withDevice(padDeviceId));
 
     tm.clearAllTracks();
 }
@@ -293,8 +306,7 @@ TEST_CASE("Moving a Drum Grid off a track drops that track's links into its pads
     const auto padDeviceId = tm.addDeviceToPad(gridPath, padChainId, effect("OnPad"));
     REQUIRE(padDeviceId != INVALID_DEVICE_ID);
 
-    const auto padDevicePath =
-        ChainNodePath::padChain(source, gridId, padChainId).withDevice(padDeviceId);
+    const auto padDevicePath = padLayerOf(source, gridId, padChainId).withDevice(padDeviceId);
 
     // A track macro driving a parameter of the device on the pad.
     auto* sourceTrack = tm.getTrack(source);
@@ -309,8 +321,7 @@ TEST_CASE("Moving a Drum Grid off a track drops that track's links into its pads
 
     // And the grid really did move, so the link had nothing left to name.
     CHECK(tm.getDeviceInChainByPath(
-              ChainNodePath::padChain(destination, gridId, padChainId).withDevice(padDeviceId)) !=
-          nullptr);
+              padLayerOf(destination, gridId, padChainId).withDevice(padDeviceId)) != nullptr);
 
     tm.clearAllTracks();
 }
@@ -330,8 +341,8 @@ TEST_CASE("Duplicating a track addresses the copy's pads the typed way", "[chain
     const auto padDeviceId = tm.addDeviceToPad(gridPath, padChainId, effect("OnPad"));
     REQUIRE(padDeviceId != INVALID_DEVICE_ID);
 
-    auto* padDevice = tm.getDeviceInChainByPath(
-        ChainNodePath::padChain(source, gridId, padChainId).withDevice(padDeviceId));
+    auto* padDevice =
+        tm.getDeviceInChainByPath(padLayerOf(source, gridId, padChainId).withDevice(padDeviceId));
     REQUIRE(padDevice != nullptr);
     // A mod link with no path of its own: the remap stamps the owner's address
     // into it, which is the one place the pad address the duplicate builds is
@@ -355,7 +366,7 @@ TEST_CASE("Duplicating a track addresses the copy's pads the typed way", "[chain
     REQUIRE(copiedGrid.pads);
     REQUIRE_FALSE(copiedGrid.pads->chains.empty());
 
-    const auto& copiedPad = copiedGrid.pads->chains.front();
+    const auto& copiedPad = copiedGrid.pads->chains.front().layers.front();
     REQUIRE_FALSE(copiedPad.elements.empty());
     const auto& copiedPadDevice = getDevice(copiedPad.elements.front());
     REQUIRE_FALSE(copiedPadDevice.mods.empty());
@@ -386,7 +397,7 @@ TEST_CASE("A moved grid's pad device keeps its own links pointing at itself",
     const auto padDeviceId = tm.addDeviceToPad(gridPath, padChainId, effect("OnPad"));
     REQUIRE(padDeviceId != INVALID_DEVICE_ID);
 
-    const auto before = ChainNodePath::padChain(source, gridId, padChainId).withDevice(padDeviceId);
+    const auto before = padLayerOf(source, gridId, padChainId).withDevice(padDeviceId);
     auto* padDevice = tm.getDeviceInChainByPath(before);
     REQUIRE(padDevice != nullptr);
     padDevice->mods.push_back(ModInfo(0));
@@ -395,8 +406,7 @@ TEST_CASE("A moved grid's pad device keeps its own links pointing at itself",
 
     REQUIRE(tm.moveChainElement(gridPath, ChainNodePath::trackLevel(destination), 0));
 
-    const auto after =
-        ChainNodePath::padChain(destination, gridId, padChainId).withDevice(padDeviceId);
+    const auto after = padLayerOf(destination, gridId, padChainId).withDevice(padDeviceId);
     const auto* moved = tm.getDeviceInChainByPath(after);
     REQUIRE(moved != nullptr);
     REQUIRE_FALSE(moved->mods.empty());
@@ -427,8 +437,7 @@ TEST_CASE("A pad device left behind loses its link to a device that moved away",
     const auto leavingId = tm.addDeviceToTrack(source, effect("Leaves"));
     const auto leavingPath = ChainNodePath::topLevelDevice(source, leavingId);
 
-    const auto padDevicePath =
-        ChainNodePath::padChain(source, gridId, padChainId).withDevice(padDeviceId);
+    const auto padDevicePath = padLayerOf(source, gridId, padChainId).withDevice(padDeviceId);
     auto* padDevice = tm.getDeviceInChainByPath(padDevicePath);
     REQUIRE(padDevice != nullptr);
     padDevice->mods.push_back(ModInfo(0));

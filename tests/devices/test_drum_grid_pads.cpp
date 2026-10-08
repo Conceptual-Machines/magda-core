@@ -5,6 +5,7 @@
 #include "magda/daw/core/DeviceState.hpp"
 #include "magda/daw/core/DrumGridPads.hpp"
 #include "magda/daw/core/RackInfo.hpp"
+#include "magda/daw/project/serialization/ProjectSerializer.hpp"
 
 // A Drum Grid's pads as model state (#2207).
 //
@@ -115,13 +116,14 @@ TEST_CASE("Pad chain ids are handed out once each", "[drumgrid][pads]") {
     for (int pad : {5, 0, 12, 63})
         ids.insert(magda::ensurePadChain(pads, pad).id);
 
+    // Each pad and its first layer take one id apiece.
     CHECK(ids.size() == 4);
-    CHECK(magda::nextPadChainId(pads) == 4);
+    CHECK(magda::nextPadChainId(pads) == 8);
 
     // A pad removed does not free its id for the next one: anything naming a
     // pad chain would then follow the name onto different devices.
     pads.chains.erase(pads.chains.begin());
-    CHECK(magda::nextPadChainId(pads) == 4);
+    CHECK(magda::nextPadChainId(pads) == 8);
 }
 
 TEST_CASE("A pad chain covering a range answers for every pad in it", "[drumgrid][pads]") {
@@ -188,7 +190,7 @@ TEST_CASE("A pad is named by the sample its sampler plays", "[drumgrid][pads][26
 
     auto sampler = magda::padSamplerDevice(sample.getFullPathName(), 36);
     sampler.name = "Sampler";
-    pad.elements.push_back(sampler);
+    pad.layers.emplace_back().elements.push_back(sampler);
     CHECK(magda::padVoiceName(pad) == sample.getFileNameWithoutExtension());
 
     // Once the sample is gone, the device's own name is what is left.
@@ -253,13 +255,13 @@ TEST_CASE("A pre-#2207 Drum Grid's pads are read out of a v2 document", "[drumgr
     CHECK(second.bypassed);
     CHECK(second.outputIndex == 2);
 
-    REQUIRE(second.elements.size() == 1);
-    REQUIRE(magda::isDevice(second.elements[0]));
+    REQUIRE(second.layers[0].elements.size() == 1);
+    REQUIRE(magda::isDevice(second.layers[0].elements[0]));
 
     // The plan keys an op on the DeviceId and routes on the instrument flag, so
     // a migrated pad device that kept the defaults would collide with every
     // other pad and route nowhere.
-    const auto& padDevice = magda::getDevice(second.elements[0]);
+    const auto& padDevice = magda::getDevice(second.layers[0].elements[0]);
     CHECK(padDevice.pluginId == "magdasampler");
     CHECK(padDevice.id == 901);
     CHECK(padDevice.isInstrument);
@@ -275,8 +277,8 @@ TEST_CASE("Each migrated pad device keeps its own id", "[drumgrid][pads]") {
 
     std::set<magda::DeviceId> ids;
     for (const auto& chain : rack->chains) {
-        REQUIRE(chain.elements.size() == 1);
-        ids.insert(magda::getDevice(chain.elements[0]).id);
+        REQUIRE(chain.layers[0].elements.size() == 1);
+        ids.insert(magda::getDevice(chain.layers[0].elements[0]).id);
     }
 
     CHECK(ids.size() == 2);
@@ -298,8 +300,8 @@ TEST_CASE("A pad device saved with no id stays invalid rather than inventing one
 
     const auto rack = magda::readLegacyPads("drumgrid", ds::encode(doc));
     REQUIRE(rack != nullptr);
-    REQUIRE(rack->chains[0].elements.size() == 1);
-    CHECK(magda::getDevice(rack->chains[0].elements[0]).id == magda::INVALID_DEVICE_ID);
+    REQUIRE(rack->chains[0].layers[0].elements.size() == 1);
+    CHECK(magda::getDevice(rack->chains[0].layers[0].elements[0]).id == magda::INVALID_DEVICE_ID);
 }
 
 TEST_CASE("A pre-#2207 Drum Grid's pads are read out of engine XML", "[drumgrid][pads]") {
@@ -327,8 +329,9 @@ TEST_CASE("A pre-#2207 Drum Grid's pads are read out of engine XML", "[drumgrid]
     CHECK(pad.solo);
     CHECK(pad.outputIndex == 1);
 
-    REQUIRE(pad.elements.size() == 1);
-    CHECK(magda::getDevice(pad.elements[0]).pluginId == "magdasampler");
+    REQUIRE(pad.layers.size() == 1);
+    REQUIRE(pad.layers[0].elements.size() == 1);
+    CHECK(magda::getDevice(pad.layers[0].elements[0]).pluginId == "magdasampler");
 }
 
 TEST_CASE("A device that is not a Drum Grid has no pads", "[drumgrid][pads]") {
@@ -387,7 +390,7 @@ TEST_CASE("A migrated internal pad device is internal", "[drumgrid][pads]") {
     const auto rack = magda::readLegacyPads("drumgrid", encodedDrumGridWithPads());
     REQUIRE(rack != nullptr);
 
-    const auto& device = magda::getDevice(rack->chains[0].elements[0]);
+    const auto& device = magda::getDevice(rack->chains[0].layers[0].elements[0]);
 
     // Left at PluginFormat's VST3 default, an internal device claims a floating
     // editor window it does not have and the creation paths try to instantiate
@@ -422,9 +425,9 @@ TEST_CASE("An external pad plugin keeps its real identity", "[drumgrid][pads]") 
 
     const auto rack = magda::readLegacyPads("drumgrid", ds::encode(doc));
     REQUIRE(rack != nullptr);
-    REQUIRE(rack->chains[0].elements.size() == 1);
+    REQUIRE(rack->chains[0].layers[0].elements.size() == 1);
 
-    const auto& device = magda::getDevice(rack->chains[0].elements[0]);
+    const auto& device = magda::getDevice(rack->chains[0].layers[0].elements[0]);
     CHECK(device.name == "Kick 2");
     CHECK(device.manufacturer == "Sonic Academy");
     CHECK(device.format == magda::PluginFormat::VST3);
@@ -461,9 +464,9 @@ TEST_CASE("An external effect in a pad is not an instrument", "[drumgrid][pads]"
 
     const auto rack = magda::readLegacyPads("drumgrid", ds::encode(doc));
     REQUIRE(rack != nullptr);
-    REQUIRE(rack->chains[0].elements.size() == 2);
+    REQUIRE(rack->chains[0].layers[0].elements.size() == 2);
 
-    const auto& effect = magda::getDevice(rack->chains[0].elements[1]);
+    const auto& effect = magda::getDevice(rack->chains[0].layers[0].elements[1]);
     CHECK(effect.name == "Pro-Q 4");
     CHECK_FALSE(effect.isInstrument);
     CHECK(effect.deviceType == magda::DeviceType::Effect);
@@ -502,14 +505,14 @@ TEST_CASE("A pad's instrument is found by its flag, not its position", "[drumgri
 
     const auto rack = magda::readLegacyPads("drumgrid", ds::encode(doc));
     REQUIRE(rack != nullptr);
-    REQUIRE(rack->chains[0].elements.size() == 2);
+    REQUIRE(rack->chains[0].layers[0].elements.size() == 2);
 
-    const auto& first = magda::getDevice(rack->chains[0].elements[0]);
+    const auto& first = magda::getDevice(rack->chains[0].layers[0].elements[0]);
     CHECK(first.name == "Pro-Q 4");
     CHECK_FALSE(first.isInstrument);
     CHECK(first.deviceType == magda::DeviceType::Effect);
 
-    const auto& second = magda::getDevice(rack->chains[0].elements[1]);
+    const auto& second = magda::getDevice(rack->chains[0].layers[0].elements[1]);
     CHECK(second.name == "Kick 2");
     CHECK(second.isInstrument);
     CHECK(second.deviceType == magda::DeviceType::Instrument);
@@ -536,5 +539,72 @@ TEST_CASE("An external pad plugin with no saved flag is not called an instrument
 
     const auto rack = magda::readLegacyPads("drumgrid", ds::encode(doc));
     REQUIRE(rack != nullptr);
-    CHECK_FALSE(magda::getDevice(rack->chains[0].elements[0]).isInstrument);
+    CHECK_FALSE(magda::getDevice(rack->chains[0].layers[0].elements[0]).isInstrument);
+}
+
+TEST_CASE("A pad saved before layers loads with its chain as its only layer",
+          "[drumgrid][pads][layers][3007]") {
+    // The shape a project saved before layers has: devices on the pad itself.
+    magda::RackInfo saved;
+    magda::ChainInfo pad;
+    pad.id = 4;
+    pad.lowNote = pad.highNote = pad.rootNote = 36;
+    pad.volume = -3.0f;
+    magda::DeviceInfo kick;
+    kick.id = 12;
+    kick.name = "Kick";
+    pad.elements.push_back(kick);
+    saved.chains.push_back(pad);
+
+    magda::DeviceInfo grid;
+    grid.id = 9;
+    grid.pluginId = "drumgrid";
+    grid.pads.reset(std::make_unique<magda::RackInfo>(saved));
+    const auto json = magda::ProjectSerializer::serializeDeviceInfo(grid);
+
+    magda::DeviceInfo loaded;
+    REQUIRE(magda::ProjectSerializer::deserializeDeviceInfo(json, loaded));
+    REQUIRE(loaded.pads);
+    const auto& loadedPad = loaded.pads->chains.at(0);
+    CHECK(loadedPad.elements.empty());
+    CHECK(loadedPad.volume == -3.0f);
+    REQUIRE(loadedPad.layers.size() == 1);
+    CHECK(loadedPad.layers[0].id != loadedPad.id);
+    REQUIRE(loadedPad.layers[0].elements.size() == 1);
+    CHECK(magda::getDevice(loadedPad.layers[0].elements[0]).id == 12);
+}
+
+TEST_CASE("A layered pad's zones survive a save and reload", "[drumgrid][pads][layers][3007]") {
+    magda::DeviceInfo grid;
+    grid.id = 9;
+    grid.pluginId = "drumgrid";
+    auto& pads = magda::ensurePads(grid);
+    auto& pad = magda::ensurePadChain(pads, 0);
+    auto& second = magda::addPadLayer(pads, pad);
+    second.zones.velocityLow = 64;
+    second.zones.velocityFadeLow = 8;
+    second.zones.roundRobin = true;
+    second.muted = true;
+    const auto secondId = second.id;
+
+    magda::DeviceInfo loaded;
+    REQUIRE(magda::ProjectSerializer::deserializeDeviceInfo(
+        magda::ProjectSerializer::serializeDeviceInfo(grid), loaded));
+    const auto& loadedPad = loaded.pads->chains.at(0);
+    REQUIRE(loadedPad.layers.size() == 2);
+    const auto* layer = magda::findPadLayer(loadedPad, secondId);
+    REQUIRE(layer != nullptr);
+    CHECK(layer->zones == second.zones);
+    CHECK(layer->muted);
+    CHECK(loadedPad.layers[0].zones.isOpen());
+}
+
+TEST_CASE("Zone gain fades in from each edge", "[drumgrid][pads][layers][3007]") {
+    magda::ChainZones zones;
+    zones.velocityLow = 20;
+    zones.velocityFadeLow = 3;
+    CHECK(zones.gainFor(60, 19) == 0.0f);
+    CHECK(zones.gainFor(60, 20) == 0.25f);
+    CHECK(zones.gainFor(60, 22) == 0.75f);
+    CHECK(zones.gainFor(60, 23) == 1.0f);
 }

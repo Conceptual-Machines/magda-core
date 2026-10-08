@@ -647,7 +647,8 @@ class EngineHostPublishTest final : public juce::UnitTest {
             auto sampler = polySynth(magda::DeviceId{2});
             sampler.name = "Padded VST";
             sampler.format = magda::PluginFormat::VST3;
-            pad.elements.emplace_back(std::move(sampler));
+            pad.layers.emplace_back().elements.emplace_back(std::move(sampler));
+            pad.layers.back().id = 2;
 
             pads->chains.push_back(std::move(pad));
         }
@@ -1581,7 +1582,8 @@ class EngineHostPublishTest final : public juce::UnitTest {
         {
             magda::ChainInfo pad;
             pad.id = 1;
-            pad.elements.emplace_back(polySynth(4));
+            pad.layers.emplace_back().elements.emplace_back(polySynth(4));
+            pad.layers.back().id = 2;
             pads->chains.push_back(std::move(pad));
         }
         grid.pads.reset(std::move(pads));
@@ -1595,7 +1597,8 @@ class EngineHostPublishTest final : public juce::UnitTest {
         {
             magda::ChainInfo pad;
             pad.id = 1;
-            pad.elements.emplace_back(polySynth(7));
+            pad.layers.emplace_back().elements.emplace_back(polySynth(7));
+            pad.layers.back().id = 2;
             postFxPads->chains.push_back(std::move(pad));
         }
         postFxGrid.pads.reset(std::move(postFxPads));
@@ -1620,13 +1623,13 @@ class EngineHostPublishTest final : public juce::UnitTest {
                    magda::ChainNodePath::chainDevice(trackId, 1, 1, 2),
                "One in a rack chain");
         expect(pathOf(magda::ChainSegment::Fx, 4) ==
-                   magda::ChainNodePath::padChain(trackId, 3, 1).withDevice(4),
+                   magda::ChainNodePath::padLayer(trackId, 3, 1, 2).withDevice(4),
                "One on a Drum Grid's pad, rooted at the grid rather than at the section");
         expect(pathOf(magda::ChainSegment::PostFx, 5) ==
                    magda::ChainNodePath::postFxDevice(trackId, 5),
                "One in the post-FX stage");
         expect(pathOf(magda::ChainSegment::PostFx, 7) ==
-                   magda::ChainNodePath::padChain(trackId, 5, 1).withDevice(7),
+                   magda::ChainNodePath::padLayer(trackId, 5, 1, 2).withDevice(7),
                "And a pad of that one, which is rooted at its grid as well");
         expect(pathOf(magda::ChainSegment::MixerAnalysis, 6) ==
                    magda::ChainNodePath::mixerAnalysisDevice(trackId, 6),

@@ -826,6 +826,7 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
         auto pads = std::make_unique<RackInfo>();
         if (!deserializeRackInfo(padsVar, *pads))
             return false;
+        migratePadLayers(*pads);
         outDevice.pads.reset(std::move(pads));
         stampPadRackId(outDevice);
     } else {
@@ -1028,12 +1029,33 @@ juce::var ProjectSerializer::serializeChainInfo(const ChainInfo& chain) {
         obj->setProperty("rootNote", chain.rootNote);
     }
 
+    if (!chain.zones.isOpen()) {
+        auto* zones = new juce::DynamicObject();
+        zones->setProperty("keyLow", chain.zones.keyLow);
+        zones->setProperty("keyHigh", chain.zones.keyHigh);
+        zones->setProperty("keyFadeLow", chain.zones.keyFadeLow);
+        zones->setProperty("keyFadeHigh", chain.zones.keyFadeHigh);
+        zones->setProperty("velocityLow", chain.zones.velocityLow);
+        zones->setProperty("velocityHigh", chain.zones.velocityHigh);
+        zones->setProperty("velocityFadeLow", chain.zones.velocityFadeLow);
+        zones->setProperty("velocityFadeHigh", chain.zones.velocityFadeHigh);
+        zones->setProperty("roundRobin", chain.zones.roundRobin);
+        obj->setProperty("zones", juce::var(zones));
+    }
+
     // Elements
     juce::Array<juce::var> elementsArray;
     for (const auto& element : chain.elements) {
         elementsArray.add(serializeChainElement(element));
     }
     obj->setProperty("elements", juce::var(elementsArray));
+
+    if (!chain.layers.empty()) {
+        juce::Array<juce::var> layersArray;
+        for (const auto& layer : chain.layers)
+            layersArray.add(serializeChainInfo(layer));
+        obj->setProperty("layers", juce::var(layersArray));
+    }
 
     return {obj};
 }
@@ -1072,6 +1094,26 @@ bool ProjectSerializer::deserializeChainInfo(const juce::var& json, ChainInfo& o
     if (obj->hasProperty("rootNote"))
         outChain.rootNote = static_cast<int>(obj->getProperty("rootNote"));
 
+    // Clamped into MIDI's range; an inverted range is kept and plays nothing.
+    if (const auto zonesVar = obj->getProperty("zones"); zonesVar.isObject()) {
+        auto* zones = zonesVar.getDynamicObject();
+        const auto read = [zones](const char* name, int fallback, int low, int high) {
+            return zones->hasProperty(name)
+                       ? juce::jlimit(low, high, static_cast<int>(zones->getProperty(name)))
+                       : fallback;
+        };
+        auto& z = outChain.zones;
+        z.keyLow = read("keyLow", z.keyLow, 0, 127);
+        z.keyHigh = read("keyHigh", z.keyHigh, 0, 127);
+        z.keyFadeLow = read("keyFadeLow", z.keyFadeLow, 0, 127);
+        z.keyFadeHigh = read("keyFadeHigh", z.keyFadeHigh, 0, 127);
+        z.velocityLow = read("velocityLow", z.velocityLow, 1, 127);
+        z.velocityHigh = read("velocityHigh", z.velocityHigh, 1, 127);
+        z.velocityFadeLow = read("velocityFadeLow", z.velocityFadeLow, 0, 127);
+        z.velocityFadeHigh = read("velocityFadeHigh", z.velocityFadeHigh, 0, 127);
+        z.roundRobin = static_cast<bool>(zones->getProperty("roundRobin"));
+    }
+
     // Elements
     auto elementsVar = obj->getProperty("elements");
     if (elementsVar.isArray()) {
@@ -1083,6 +1125,16 @@ bool ProjectSerializer::deserializeChainInfo(const juce::var& json, ChainInfo& o
                 return false;
             }
             outChain.elements.push_back(std::move(element));
+        }
+    }
+
+    if (const auto layersVar = obj->getProperty("layers"); layersVar.isArray()) {
+        outChain.layers.clear();
+        for (const auto& layerVar : *layersVar.getArray()) {
+            ChainInfo layer;
+            if (!deserializeChainInfo(layerVar, layer))
+                return false;
+            outChain.layers.push_back(std::move(layer));
         }
     }
 

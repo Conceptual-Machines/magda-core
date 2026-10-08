@@ -147,12 +147,26 @@ void TrackManager::setPads(const ChainNodePath& gridPath, const PadRack& pads) {
 
 ChainInfo* TrackManager::getPadChain(const ChainNodePath& gridPath, ChainId padChainId) {
     auto* pads = getPads(gridPath);
-    if (pads == nullptr)
-        return nullptr;
+    return pads != nullptr ? findPadChainById(*pads, padChainId) : nullptr;
+}
 
-    const auto found = std::ranges::find_if(
-        pads->chains, [padChainId](const ChainInfo& chain) { return chain.id == padChainId; });
-    return found == pads->chains.end() ? nullptr : &*found;
+TrackManager::PadLayerRef TrackManager::resolvePadLayer(const ChainNodePath& gridPath,
+                                                        ChainId chainId) {
+    auto* pads = getPads(gridPath);
+    if (pads == nullptr)
+        return {};
+
+    // A pad's own id stands for its first layer, for callers that only know pads.
+    if (auto* pad = padOfLayer(*pads, chainId))
+        return {pad, findPadLayer(*pad, chainId)};
+    const auto found = std::ranges::find(pads->chains, chainId, &ChainInfo::id);
+    if (found == pads->chains.end() || found->layers.empty())
+        return {};
+    return {&*found, &found->layers.front()};
+}
+
+ChainNodePath TrackManager::padLayerPath(const ChainNodePath& gridPath, const PadLayerRef& ref) {
+    return padChainPath(gridPath, ref.pad->id).withPadLayer(ref.layer->id);
 }
 
 const ChainInfo* TrackManager::getPad(const ChainNodePath& gridPath, int padIndex) const {
@@ -180,16 +194,17 @@ ChainId TrackManager::ensurePad(const ChainNodePath& gridPath, int padIndex) {
 
 DeviceId TrackManager::addDeviceToPad(const ChainNodePath& gridPath, ChainId padChainId,
                                       const DeviceInfo& device, int insertIndex) {
-    auto* pad = getPadChain(gridPath, padChainId);
-    if (pad == nullptr)
+    const auto ref = resolvePadLayer(gridPath, padChainId);
+    if (!ref)
         return INVALID_DEVICE_ID;
+    auto* pad = ref.layer;
 
     if (auto* track = getTrack(gridPath.trackId);
         track != nullptr && !track->canHostInstrument() && device.isInstrument)
         return INVALID_DEVICE_ID;
 
     auto newDevice = prepareNewDevice(gridPath.trackId, device);
-    const auto devicePath = padChainPath(gridPath, padChainId).withDevice(newDevice.id);
+    const auto devicePath = padLayerPath(gridPath, ref).withDevice(newDevice.id);
     seedSidechainModIfMissing(newDevice, devicePath);
 
     const auto at = insertIndex < 0
@@ -204,9 +219,10 @@ DeviceId TrackManager::addDeviceToPad(const ChainNodePath& gridPath, ChainId pad
 
 void TrackManager::removeDeviceFromPad(const ChainNodePath& gridPath, ChainId padChainId,
                                        DeviceId deviceId) {
-    auto* pad = getPadChain(gridPath, padChainId);
-    if (pad == nullptr)
+    const auto ref = resolvePadLayer(gridPath, padChainId);
+    if (!ref)
         return;
+    auto* pad = ref.layer;
 
     const auto found = std::ranges::find_if(pad->elements, [deviceId](const ChainElement& element) {
         return magda::isDevice(element) && magda::getDevice(element).id == deviceId;
@@ -214,15 +230,15 @@ void TrackManager::removeDeviceFromPad(const ChainNodePath& gridPath, ChainId pa
     if (found == pad->elements.end())
         return;
 
-    SelectionManager::getInstance().clearSelectionForDeletedChainNode(
-        padChainPath(gridPath, padChainId).withDevice(deviceId));
+    clearSelectionsUnderDevice(magda::getDevice(*found),
+                               padLayerPath(gridPath, ref).withDevice(deviceId));
     pad->elements.erase(found);
     notifyTrackDevicesChanged(gridPath.trackId);
 }
 
 void TrackManager::setPadDeviceBypassed(const ChainNodePath& gridPath, ChainId padChainId,
                                         DeviceId deviceId, bool bypassed) {
-    auto* pad = getPadChain(gridPath, padChainId);
+    auto* pad = resolvePadLayer(gridPath, padChainId).layer;
     if (pad == nullptr)
         return;
 
@@ -242,7 +258,7 @@ void TrackManager::setPadDeviceBypassed(const ChainNodePath& gridPath, ChainId p
 
 void TrackManager::setPadDeviceGainDb(const ChainNodePath& gridPath, ChainId padChainId,
                                       DeviceId deviceId, float gainDb) {
-    auto* pad = getPadChain(gridPath, padChainId);
+    auto* pad = resolvePadLayer(gridPath, padChainId).layer;
     if (pad == nullptr)
         return;
 
@@ -264,7 +280,7 @@ void TrackManager::setPadDeviceGainDb(const ChainNodePath& gridPath, ChainId pad
 
 void TrackManager::moveDeviceInPad(const ChainNodePath& gridPath, ChainId padChainId, int fromIndex,
                                    int toIndex) {
-    auto* pad = getPadChain(gridPath, padChainId);
+    auto* pad = resolvePadLayer(gridPath, padChainId).layer;
     if (pad == nullptr)
         return;
 
@@ -285,15 +301,17 @@ DeviceId TrackManager::setPadDevice(const ChainNodePath& gridPath, int padIndex,
     if (padChainId == INVALID_CHAIN_ID)
         return INVALID_DEVICE_ID;
 
+    auto* pads = getPads(gridPath);
     auto* pad = getPadChain(gridPath, padChainId);
-    if (pad == nullptr)
+    if (pads == nullptr || pad == nullptr)
         return INVALID_DEVICE_ID;
 
-    // Dropping an instrument on a pad replaces the pad, effects and all: that
-    // is what the pad's slot means. Selections pointing into what is going away
-    // are cleared first, the same as any other device removal.
-    clearSelectionsUnderChain(pad->elements, padChainPath(gridPath, padChainId));
-    pad->elements.clear();
+    // Dropping an instrument on a pad replaces the pad, layers, effects and
+    // all: that is what the pad's slot means. Selections pointing into what is
+    // going away are cleared first, the same as any other device removal.
+    clearSelectionsUnderPad(*pad, padChainPath(gridPath, padChainId));
+    pad->layers.clear();
+    magda::addPadLayer(*pads, *pad);
 
     // Named after what is on it, which is what the grid shows on the pad.
     pad->name = device.name;
@@ -317,9 +335,7 @@ void TrackManager::clearPad(const ChainNodePath& gridPath, int padIndex) {
     if (pad->lowNote != note || pad->highNote != note)
         return;
 
-    const auto chainPath = padChainPath(gridPath, pad->id);
-    clearSelectionsUnderChain(pad->elements, chainPath);
-    SelectionManager::getInstance().clearSelectionForDeletedChainNode(chainPath);
+    clearSelectionsUnderPad(*pad, padChainPath(gridPath, pad->id));
 
     std::erase_if(pads->chains, [id = pad->id](const ChainInfo& chain) { return chain.id == id; });
     notifyTrackDevicesChanged(gridPath.trackId);
@@ -527,12 +543,136 @@ void TrackManager::removePadChain(const ChainNodePath& gridPath, ChainId padChai
     if (found == pads->chains.end())
         return;
 
-    const auto chainPath = padChainPath(gridPath, padChainId);
-    clearSelectionsUnderChain(found->elements, chainPath);
-    SelectionManager::getInstance().clearSelectionForDeletedChainNode(chainPath);
+    clearSelectionsUnderPad(*found, padChainPath(gridPath, padChainId));
 
     pads->chains.erase(found);
     notifyTrackDevicesChanged(gridPath.trackId);
+}
+
+// ============================================================================
+// Pad layers (#3007)
+// ============================================================================
+
+ChainId TrackManager::addPadLayer(const ChainNodePath& gridPath, int padIndex) {
+    // An empty pad's first layer is the pad itself coming into being.
+    if (mutablePad(gridPath, padIndex) == nullptr) {
+        const auto padId = ensurePad(gridPath, padIndex);
+        const auto* pad = padId != INVALID_CHAIN_ID ? mutablePad(gridPath, padIndex) : nullptr;
+        return pad != nullptr ? pad->layers.front().id : INVALID_CHAIN_ID;
+    }
+
+    auto* pads = getPads(gridPath);
+    auto* pad = mutablePad(gridPath, padIndex);
+
+    const auto id = magda::addPadLayer(*pads, *pad).id;
+    notifyTrackDevicesChanged(gridPath.trackId);
+    return id;
+}
+
+bool TrackManager::removePadLayer(const ChainNodePath& gridPath, ChainId layerId) {
+    auto* pads = getPads(gridPath);
+    auto* pad = pads != nullptr ? padOfLayer(*pads, layerId) : nullptr;
+    if (pad == nullptr)
+        return false;
+
+    // A pad is its layers, so taking away the last one empties the pad.
+    if (pad->layers.size() == 1) {
+        removePadChain(gridPath, pad->id);
+        return true;
+    }
+
+    const auto layerPath = padChainPath(gridPath, pad->id).withPadLayer(layerId);
+    const auto found = std::ranges::find(pad->layers, layerId, &ChainInfo::id);
+    clearSelectionsUnderChain(found->elements, layerPath);
+    SelectionManager::getInstance().clearSelectionForDeletedChainNode(layerPath);
+
+    pad->layers.erase(found);
+    notifyTrackDevicesChanged(gridPath.trackId);
+    return true;
+}
+
+void TrackManager::movePadLayer(const ChainNodePath& gridPath, ChainId layerId, int toIndex) {
+    auto* pads = getPads(gridPath);
+    auto* pad = pads != nullptr ? padOfLayer(*pads, layerId) : nullptr;
+    if (pad == nullptr)
+        return;
+
+    const auto count = static_cast<int>(pad->layers.size());
+    const auto from = static_cast<int>(std::ranges::find(pad->layers, layerId, &ChainInfo::id) -
+                                       pad->layers.begin());
+    if (toIndex < 0 || toIndex >= count || toIndex == from)
+        return;
+
+    auto moved = std::move(pad->layers[static_cast<std::size_t>(from)]);
+    pad->layers.erase(pad->layers.begin() + from);
+    pad->layers.insert(pad->layers.begin() + toIndex, std::move(moved));
+    notifyTrackDevicesChanged(gridPath.trackId);
+}
+
+ChainInfo* TrackManager::mutablePadLayer(const ChainNodePath& gridPath, ChainId layerId) {
+    auto* pads = getPads(gridPath);
+    auto* pad = pads != nullptr ? padOfLayer(*pads, layerId) : nullptr;
+    return pad != nullptr ? findPadLayer(*pad, layerId) : nullptr;
+}
+
+void TrackManager::setPadLayerZones(const ChainNodePath& gridPath, ChainId layerId,
+                                    const ChainZones& zones) {
+    auto* layer = mutablePadLayer(gridPath, layerId);
+    if (layer == nullptr)
+        return;
+
+    auto clamped = zones;
+    clamped.keyLow = juce::jlimit(0, 127, zones.keyLow);
+    clamped.keyHigh = juce::jlimit(clamped.keyLow, 127, zones.keyHigh);
+    clamped.velocityLow = juce::jlimit(1, 127, zones.velocityLow);
+    clamped.velocityHigh = juce::jlimit(clamped.velocityLow, 127, zones.velocityHigh);
+    const auto keySpan = clamped.keyHigh - clamped.keyLow;
+    const auto velocitySpan = clamped.velocityHigh - clamped.velocityLow;
+    clamped.keyFadeLow = juce::jlimit(0, keySpan, zones.keyFadeLow);
+    clamped.keyFadeHigh = juce::jlimit(0, keySpan, zones.keyFadeHigh);
+    clamped.velocityFadeLow = juce::jlimit(0, velocitySpan, zones.velocityFadeLow);
+    clamped.velocityFadeHigh = juce::jlimit(0, velocitySpan, zones.velocityFadeHigh);
+
+    if (layer->zones == clamped)
+        return;
+    layer->zones = clamped;
+    notifyTrackDevicesChanged(gridPath.trackId);
+}
+
+void TrackManager::setPadLayerVolume(const ChainNodePath& gridPath, ChainId layerId, float volume) {
+    if (auto* layer = mutablePadLayer(gridPath, layerId)) {
+        layer->volume = juce::jlimit(-60.0f, 6.0f, volume);
+        notifyTrackPropertyChanged(gridPath.trackId);
+    }
+}
+
+void TrackManager::setPadLayerPan(const ChainNodePath& gridPath, ChainId layerId, float pan) {
+    if (auto* layer = mutablePadLayer(gridPath, layerId)) {
+        layer->pan = juce::jlimit(-1.0f, 1.0f, pan);
+        notifyTrackPropertyChanged(gridPath.trackId);
+    }
+}
+
+void TrackManager::setPadLayerMuted(const ChainNodePath& gridPath, ChainId layerId, bool muted) {
+    if (auto* layer = mutablePadLayer(gridPath, layerId)) {
+        layer->muted = muted;
+        notifyTrackDevicesChanged(gridPath.trackId);
+    }
+}
+
+void TrackManager::setPadLayerSolo(const ChainNodePath& gridPath, ChainId layerId, bool solo) {
+    if (auto* layer = mutablePadLayer(gridPath, layerId)) {
+        layer->solo = solo;
+        notifyTrackDevicesChanged(gridPath.trackId);
+    }
+}
+
+void TrackManager::setPadLayerBypassed(const ChainNodePath& gridPath, ChainId layerId,
+                                       bool bypassed) {
+    if (auto* layer = mutablePadLayer(gridPath, layerId)) {
+        layer->bypassed = bypassed;
+        notifyTrackDevicesChanged(gridPath.trackId);
+    }
 }
 
 ChainInfo* TrackManager::mutablePad(const ChainNodePath& gridPath, int padIndex) {

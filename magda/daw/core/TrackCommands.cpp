@@ -1430,10 +1430,11 @@ void ReplaceDeviceByPathCommand::execute() {
     } else if (devicePath_.isMixerAnalysis()) {
         replacementId = tm.stageFlatSectionReplacement(devicePath_, replacement_, insertIndex_);
         replacementPath_ = ChainNodePath::mixerAnalysisDevice(devicePath_.trackId, replacementId);
-    } else if (parentPath_.isPadOwned()) {
+    } else if (parentPath_.isPadOwned() &&
+               parentPath_.steps.size() == parentPath_.padChainDepth()) {
         const auto gridPath = tm.findDevicePath(parentPath_.getPadOwnerDeviceId());
-        replacementId =
-            tm.addDeviceToPad(gridPath, parentPath_.getPadChainId(), replacement_, insertIndex_);
+        replacementId = tm.addDeviceToPad(gridPath, parentPath_.getPadDeviceChainId(), replacement_,
+                                          insertIndex_);
         replacementPath_ = parentPath_.withDevice(replacementId);
     } else if (devicePath_.topLevelDeviceId != INVALID_DEVICE_ID) {
         replacementId = tm.addDeviceToTrack(devicePath_.trackId, replacement_, insertIndex_);

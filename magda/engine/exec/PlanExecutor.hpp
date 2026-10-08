@@ -761,6 +761,17 @@ class PlanExecutor {
     /// still be rendering, so reading its flag would be a race.
     std::vector<std::shared_ptr<std::atomic<char>>> notePassing_;
 
+    /** @brief Where a zone split sent each sounding note, and whose turn is next. */
+    struct ZoneSplitState {
+        /// Output mask per (channel, note), so a note-off follows its note-on.
+        std::array<std::uint64_t, 16 * 128> routed{};
+        std::uint32_t nextTurn = 0;
+    };
+
+    /// Per MidiZoneSplit op, else null. Not carried across a swap: a note-off
+    /// the new table has no entry for goes to every output instead.
+    std::vector<std::unique_ptr<ZoneSplitState>> zoneSplitForOp_;
+
     /// Identity of the prepared plan; values not carrying the same one were
     /// resolved against something else and are not applied.
     std::uint64_t planFingerprint_ = 0;

@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "../engine/PluginService.hpp"
+#include "DrumGridPads.hpp"
 #include "RackInfo.hpp"
 
 namespace magda {
@@ -123,6 +124,56 @@ void setPadFader(const ChainNodePath& gridPath, int padIndex, SetPadFaderCommand
                  float value, int gesture) {
     UndoManager::getInstance().executeCommand(
         std::make_unique<SetPadFaderCommand>(gridPath, padIndex, target, value, gesture));
+}
+
+// ============================================================================
+// SetPadLayerCommand
+// ============================================================================
+
+SetPadLayerCommand::SetPadLayerCommand(ChainNodePath gridPath, ChainId layerId,
+                                       PadLayerSettings settings, int gesture)
+    : gridPath_(std::move(gridPath)), layerId_(layerId), newSettings_(settings), gesture_(gesture) {
+    auto& tm = TrackManager::getInstance();
+    const auto* pads = tm.getPads(gridPath_);
+    const auto* pad = pads != nullptr ? padOfLayer(*pads, layerId_) : nullptr;
+    if (const auto* layer = pad != nullptr ? findPadLayer(*pad, layerId_) : nullptr) {
+        oldSettings_ = {layer->volume, layer->pan, layer->zones};
+        valid_ = true;
+    }
+}
+
+void SetPadLayerCommand::apply(const PadLayerSettings& settings) const {
+    auto& tm = TrackManager::getInstance();
+    tm.setPadLayerVolume(gridPath_, layerId_, settings.volume);
+    tm.setPadLayerPan(gridPath_, layerId_, settings.pan);
+    tm.setPadLayerZones(gridPath_, layerId_, settings.zones);
+}
+
+void SetPadLayerCommand::execute() {
+    if (valid_)
+        apply(newSettings_);
+}
+
+void SetPadLayerCommand::undo() {
+    if (valid_)
+        apply(oldSettings_);
+}
+
+bool SetPadLayerCommand::canMergeWith(const UndoableCommand* other) const {
+    const auto* otherLayer = dynamic_cast<const SetPadLayerCommand*>(other);
+    return otherLayer != nullptr && otherLayer->gridPath_ == gridPath_ &&
+           otherLayer->layerId_ == layerId_ && otherLayer->gesture_ == gesture_;
+}
+
+void SetPadLayerCommand::mergeWith(const UndoableCommand* other) {
+    if (const auto* otherLayer = dynamic_cast<const SetPadLayerCommand*>(other))
+        newSettings_ = otherLayer->newSettings_;
+}
+
+void setPadLayer(const ChainNodePath& gridPath, ChainId layerId, const PadLayerSettings& settings,
+                 int gesture) {
+    UndoManager::getInstance().executeCommand(
+        std::make_unique<SetPadLayerCommand>(gridPath, layerId, settings, gesture));
 }
 
 }  // namespace magda

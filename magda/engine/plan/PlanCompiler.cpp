@@ -1456,21 +1456,30 @@ ChainSignal Compiler::emitPadRack(const DeviceInfo& device, const ChainSite& sit
         if (pad.bypassed)
             continue;
 
-        const ChainSite padSite{site.trackId, pads.id, pad.id, site.segment};
-
         // A pad plugin's DeviceId arrives when the Drum Grid restores it, so a
         // project that has not been opened since carries none. Two such devices
         // in one pad would key the same op, and a plan that does not validate
         // costs the whole project rather than the pad.
-        const auto unkeyable = std::ranges::find_if(pad.elements, [](const ChainElement& element) {
-            return isDevice(element) && getDevice(element).id == INVALID_DEVICE_ID;
+        const auto unkeyable = std::ranges::any_of(pad.layers, [](const ChainInfo& layer) {
+            return std::ranges::any_of(layer.elements, [](const ChainElement& element) {
+                return isDevice(element) && getDevice(element).id == INVALID_DEVICE_ID;
+            });
         });
-        if (unkeyable != pad.elements.end()) {
+        if (unkeyable) {
             diagnose("device " + std::to_string(device.id) + " on track " +
                      std::to_string(site.trackId) + " pad " + std::to_string(pad.id) +
                      ": a plugin has no device id, so the pad is not compiled");
             continue;
         }
+
+        // A bypassed layer is an instrument chain with nothing to pass through,
+        // so it is left out rather than wired around.
+        std::vector<const ChainInfo*> layers;
+        for (const auto& layer : pad.layers)
+            if (!layer.bypassed)
+                layers.push_back(&layer);
+        if (layers.empty())
+            continue;
 
         // The pad's own notes, transposed onto its root. A pad with no range
         // takes everything, which is what a plain parallel chain does.
@@ -1487,9 +1496,51 @@ ChainSignal Compiler::emitPadRack(const DeviceInfo& device, const ChainSite& sit
             padMidi = PortRef{gateOp, 0};
         }
 
-        // No audio in: a pad generates rather than processes, so the bus flows
-        // past it the way it flows past an instrument.
-        const auto padOut = emitElements(pad.elements, padSite, ChainSignal{noInput(), padMidi});
+        // Split across the layers only where their zones choose between notes
+        // (#3007); a lone layer with open zones takes the pad's notes as they are.
+        OpId splitOp = INVALID_OP_ID;
+        const bool zoned = layers.size() > 1 || !layers.front()->zones.isOpen();
+        if (padMidi.valid() && zoned) {
+            const OpKey splitKey{site.trackId,          pads.id, pad.id,      device.id,
+                                 OpRole::PadLayerSplit, 0,       site.segment};
+            splitOp = addOp(OpKind::MidiZoneSplit, splitKey, {padMidi},
+                            std::vector<PortDesc>(layers.size(), PortDesc{SignalKind::Midi}));
+            auto& split = plan_.ops[static_cast<std::size_t>(splitOp)];
+            for (const auto* layer : layers)
+                split.zoneRoutes.push_back(layer->zones);
+        }
+
+        // Each layer is an instrument chain behind its own fader, keyed by the
+        // layer's id, which no pad in the grid shares.
+        std::vector<PortRef> layerAudio;
+        for (std::size_t index = 0; index < layers.size(); ++index) {
+            const auto& layer = *layers[index];
+            const PortRef layerMidi =
+                splitOp != INVALID_OP_ID ? PortRef{splitOp, static_cast<int>(index)} : padMidi;
+            const ChainSite layerSite{site.trackId, pads.id, layer.id, site.segment};
+
+            // No audio in: a pad generates rather than processes, so the bus
+            // flows past it the way it flows past an instrument.
+            const auto layerOut =
+                emitElements(layer.elements, layerSite, ChainSignal{noInput(), layerMidi});
+
+            const OpKey layerFaderKey{
+                site.trackId,           pads.id, layer.id,    INVALID_DEVICE_ID,
+                OpRole::RackChainFader, 0,       site.segment};
+            layerAudio.push_back(PortRef{
+                addOp(OpKind::Fader, layerFaderKey,
+                      alignInputs(layerFaderKey, OpKind::Fader, {layerOut.audio, noInput()}),
+                      {SignalKind::Audio}),
+                0});
+        }
+
+        PortRef padAudio = layerAudio.front();
+        if (layerAudio.size() > 1) {
+            const OpKey layerMixKey{site.trackId,    pads.id, pad.id,      device.id,
+                                    OpRole::RackMix, 0,       site.segment};
+            padAudio = emitMix(layerMixKey, layerAudio);
+        }
+        const ChainSignal padOut{padAudio, padMidi};
 
         // Keyed with the device that owns the pad, so the executor can reach its
         // parameters. A rack's own chain faders carry no device id, so the two

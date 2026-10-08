@@ -224,14 +224,16 @@ void allocateStagedPadDeviceIds(std::vector<TrackInfo>& tracks, TrackInfo* maste
 
                 stampPadRackId(device);
                 for (auto& pad : device.pads->chains) {
-                    for (auto& padElement : pad.elements) {
-                        if (!isDevice(padElement))
-                            continue;
-                        auto& padDevice = getDevice(padElement);
-                        if (padDevice.id == INVALID_DEVICE_ID)
-                            unkeyed.push_back(&padDevice);
-                        else
-                            next = std::max(next, padDevice.id + 1);
+                    for (auto& layer : pad.layers) {
+                        for (auto& padElement : layer.elements) {
+                            if (!isDevice(padElement))
+                                continue;
+                            auto& padDevice = getDevice(padElement);
+                            if (padDevice.id == INVALID_DEVICE_ID)
+                                unkeyed.push_back(&padDevice);
+                            else
+                                next = std::max(next, padDevice.id + 1);
+                        }
                     }
                 }
             }

@@ -9,6 +9,7 @@
 #include <tuple>
 #include <vector>
 
+#include "core/ChainZones.hpp"
 #include "core/TypeIds.hpp"
 
 /**
@@ -165,6 +166,9 @@ enum class OpKind : std::uint8_t {
     /// (live, or driving hardware) takes a signal that may be rendered ahead (#1898). Passes
     /// its input through; deterministic itself, so it renders with its producer.
     Handoff,
+
+    /// Notes routed to one output per pad layer by that layer's zones (#3007).
+    MidiZoneSplit,
 };
 
 /**
@@ -244,6 +248,8 @@ enum class OpRole : std::uint8_t {
 
     /// A handoff, keyed at its producer's location; OpKey::index orders the handoffs there.
     Handoff,
+
+    PadLayerSplit,  ///< one pad's notes, split across its layers by their zones
 };
 
 // The four things that identify a fade, packed into OpKey::index, low bits
@@ -471,6 +477,10 @@ struct PlanOp {
     std::uint8_t noteGateLow = 0;
     std::uint8_t noteGateHigh = 127;
     std::int8_t noteGateTranspose = 0;
+
+    /// A MidiZoneSplit's zones, one per output port and in port order. Topology
+    /// for the same reason a note gate's range is.
+    std::vector<ChainZones> zoneRoutes;
 
     /// A pad fader's level and pan, as parameter indices of the device that
     /// owns the pad (OpKey::deviceId).

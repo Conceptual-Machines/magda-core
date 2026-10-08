@@ -1089,19 +1089,6 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         return devicePath_;
     };
 
-    // A pad's fader, run now: the sound has to follow the mouse, and a fader
-    // notifies trackPropertyChanged, which by design does not rebuild the chain
-    // components. `SetPadFaderCommand` stores the one value it changed rather
-    // than snapshotting the pad rack, which is what makes it cheap enough to
-    // run per mouse move, and coalesces within a drag (#2211).
-    auto padFader = [this, gridPath](int padIndex, magda::SetPadFaderCommand::Target target,
-                                     float value) {
-        const auto grid = gridPath();
-        if (!grid.isValid() || drumGridUI_ == nullptr)
-            return;
-        magda::setPadFader(grid, padIndex, target, value, drumGridUI_->getFaderGesture());
-    };
-
     // One undoable pad edit, posted rather than run now, with a follow-up that
     // runs only if there is still a UI to run it on.
     //
@@ -1168,20 +1155,6 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             });
     };
 
-    // A pad's fader, pan and switches are its chain's, so they are set the way
-    // any other chain's are.
-    //
-    // The faders are run now, not posted: they notify trackPropertyChanged,
-    // which by design does not rebuild the chain, and a fader wants the sound
-    // to move under the mouse. They coalesce into one undo step per drag.
-    drumGridUI_->onPadLevelChanged = [padFader](int padIndex, float levelDb) {
-        padFader(padIndex, magda::SetPadFaderCommand::Target::Volume, levelDb);
-    };
-
-    drumGridUI_->onPadPanChanged = [padFader](int padIndex, float pan) {
-        padFader(padIndex, magda::SetPadFaderCommand::Target::Pan, pan);
-    };
-
     drumGridUI_->onPadMuteChanged = [postPadEdit](int padIndex, bool muted) {
         postPadEdit(muted ? "Mute Pad" : "Unmute Pad",
                     [padIndex, muted](const magda::ChainNodePath& grid) {
@@ -1194,21 +1167,6 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
                     [padIndex, soloed](const magda::ChainNodePath& grid) {
                         magda::TrackManager::getInstance().setPadSolo(grid, padIndex, soloed);
                     });
-    };
-
-    // The pad's output bus. `ChainInfo::outputIndex` is model state, and the
-    // device sync turns a pad on a bus into a multi-out child track, so the row
-    // selector only ever had to write the model (#2211).
-    drumGridUI_->onPadOutputChanged = [this, postPadEdit, gridPath](int padIndex, int busIndex) {
-        // Refused for a grid inside a rack: nothing carries a bus off one, so the
-        // pads on it would go silent. The editor reads the model back on its next
-        // poll, so a refusal shows Main again and is no undo step.
-        if (busIndex != 0 && !magda::TrackManager::getInstance().padBusesAvailable(gridPath()))
-            return;
-
-        postPadEdit("Set Pad Output", [padIndex, busIndex](const magda::ChainNodePath& grid) {
-            magda::TrackManager::getInstance().setPadOutput(grid, padIndex, busIndex);
-        });
     };
 
     // Plugin drag and drop onto pads: an instrument replaces the pad
@@ -1274,18 +1232,24 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         std::shared_ptr<daw::audio::MagdaSamplerPlugin> sampler;
         const auto grid = gridPath();
         if (const auto* pad = magda::TrackManager::getInstance().getPad(grid, padIndex)) {
-            const auto padPath = magda::TrackManager::padChainPath(grid, pad->id);
-            for (const auto* device : pad->getDevices()) {
-                if (!device->pluginId.equalsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName))
-                    continue;
+            for (const auto& layer : pad->layers) {
+                const auto layerPath =
+                    magda::TrackManager::padChainPath(grid, pad->id).withPadLayer(layer.id);
+                for (const auto* device : layer.getDevices()) {
+                    if (!device->pluginId.equalsIgnoreCase(
+                            daw::audio::MagdaSamplerPlugin::xmlTypeName))
+                        continue;
 
-                std::shared_ptr<daw::audio::MagdaDevice> rendered;
-                if (auto* engine = magda::TrackManager::getInstance().getAudioEngine())
-                    rendered =
-                        engine->renderedDevice(magda::chain_walk::deviceIn(padPath, device->id));
+                    std::shared_ptr<daw::audio::MagdaDevice> rendered;
+                    if (auto* engine = magda::TrackManager::getInstance().getAudioEngine())
+                        rendered = engine->renderedDevice(
+                            magda::chain_walk::deviceIn(layerPath, device->id));
 
-                sampler = std::dynamic_pointer_cast<daw::audio::MagdaSamplerPlugin>(rendered);
-                break;
+                    sampler = std::dynamic_pointer_cast<daw::audio::MagdaSamplerPlugin>(rendered);
+                    break;
+                }
+                if (sampler != nullptr)
+                    break;
             }
         }
 
@@ -1404,13 +1368,96 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
                                                        isNoteOn ? 100 : 0, isNoteOn);
     };
 
-    // The selected pad's chain shows in the rack chain view, addressed by its path.
-    drumGridUI_->getPadChainPath = [gridPath](int padIndex) {
+    // The selected pad's layer shows in the rack chain view, addressed by its path.
+    drumGridUI_->getPadChainPath = [gridPath](int padIndex, magda::ChainId layerId) {
         auto& tm = magda::TrackManager::getInstance();
         const auto grid = gridPath();
-        if (const auto* pad = tm.getPad(grid, padIndex))
-            return magda::TrackManager::padChainPath(grid, pad->id);
-        return magda::ChainNodePath{};
+        const auto* pad = tm.getPad(grid, padIndex);
+        if (pad == nullptr || pad->layers.empty())
+            return magda::ChainNodePath{};
+        const auto* layer = magda::findPadLayer(*pad, layerId);
+        return magda::TrackManager::padChainPath(grid, pad->id)
+            .withPadLayer(layer != nullptr ? layer->id : pad->layers.front().id);
+    };
+
+    // Pad layers (#3007): structure through the pad snapshot, faders live.
+    drumGridUI_->getPadLayers = [gridPath](int padIndex) {
+        std::vector<PadLayerView> layers;
+        if (const auto* pad = magda::TrackManager::getInstance().getPad(gridPath(), padIndex))
+            for (const auto& layer : pad->layers)
+                layers.push_back({layer.id, layer.name, layer.volume, layer.pan, layer.muted,
+                                  layer.solo, layer.bypassed, layer.zones});
+        return layers;
+    };
+    // Either may make or empty the pad, so the pad is read back whole.
+    drumGridUI_->onAddLayerRequested = [postPadEdit, updatePadFromModel](int padIndex) {
+        postPadEdit(
+            "Add Pad Layer",
+            [padIndex](const magda::ChainNodePath& grid) {
+                magda::TrackManager::getInstance().addPadLayer(grid, padIndex);
+            },
+            [padIndex, updatePadFromModel]() { updatePadFromModel(padIndex); });
+    };
+    drumGridUI_->onDeviceDroppedOnLayer = [this, postPadEdit](int, magda::ChainId layerId,
+                                                              const magda::DeviceInfo& device) {
+        postPadEdit(
+            "Add Pad Device",
+            [layerId, device](const magda::ChainNodePath& grid) {
+                magda::TrackManager::getInstance().addDeviceToPad(grid, layerId, device);
+            },
+            [this]() { drumGridUI_->refreshPadChain(); });
+    };
+    drumGridUI_->onRemoveLayerRequested =
+        [postPadEdit, updatePadFromModel](int padIndex, magda::ChainId layerId) {
+            postPadEdit(
+                "Remove Pad Layer",
+                [layerId](const magda::ChainNodePath& grid) {
+                    magda::TrackManager::getInstance().removePadLayer(grid, layerId);
+                },
+                [padIndex, updatePadFromModel]() { updatePadFromModel(padIndex); });
+        };
+    drumGridUI_->onLayerSwitchesChanged = [this, postPadEdit](int, magda::ChainId layerId,
+                                                              bool mute, bool solo, bool bypassed) {
+        postPadEdit(
+            "Set Pad Layer",
+            [layerId, mute, solo, bypassed](const magda::ChainNodePath& grid) {
+                auto& tm = magda::TrackManager::getInstance();
+                tm.setPadLayerMuted(grid, layerId, mute);
+                tm.setPadLayerSolo(grid, layerId, solo);
+                tm.setPadLayerBypassed(grid, layerId, bypassed);
+            },
+            [this]() { drumGridUI_->refreshPadChain(); });
+    };
+    // The layer's current settings with one part replaced, set as one coalescing step.
+    auto setLayer = [this, gridPath](magda::ChainId layerId,
+                                     const std::function<void(magda::PadLayerSettings&)>& change) {
+        const auto grid = gridPath();
+        auto* pads = magda::TrackManager::getInstance().getPads(grid);
+        const auto* pad = pads != nullptr ? magda::padOfLayer(*pads, layerId) : nullptr;
+        const auto* layer = pad != nullptr ? magda::findPadLayer(*pad, layerId) : nullptr;
+        if (layer == nullptr || drumGridUI_ == nullptr)
+            return;
+        magda::PadLayerSettings settings{layer->volume, layer->pan, layer->zones};
+        change(settings);
+        magda::setPadLayer(grid, layerId, settings, drumGridUI_->getFaderGesture());
+    };
+    drumGridUI_->onLayerMixChanged = [setLayer](magda::ChainId layerId, float volume, float pan) {
+        setLayer(layerId, [volume, pan](magda::PadLayerSettings& settings) {
+            settings.volume = volume;
+            settings.pan = pan;
+        });
+    };
+    // Posted: a zone change rebuilds the chain this UI sits in.
+    drumGridUI_->onLayerZonesChanged = [this, setLayer](magda::ChainId layerId,
+                                                        const magda::ChainZones& zones) {
+        juce::MessageManager::callAsync(
+            [safeUi = juce::Component::SafePointer<DrumGridUI>(drumGridUI_.get()), setLayer,
+             layerId, zones]() {
+                if (safeUi == nullptr)
+                    return;
+                setLayer(layerId,
+                         [zones](magda::PadLayerSettings& settings) { settings.zones = zones; });
+            });
     };
 
     // Adding a device to a pad's chain. An instrument replaces the pad; an

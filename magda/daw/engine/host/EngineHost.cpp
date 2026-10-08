@@ -263,10 +263,12 @@ std::vector<engine::DeviceKey> keysOfDeviceAt(const ChainNodePath& devicePath) {
     std::set<const DeviceInfo*> subtree{target};
     if (target->pads)
         for (const auto& pad : target->pads->chains)
-            chain_walk::forEachDevice(pad.elements, devicePath, chain_walk::Pads::Enter,
-                                      [&subtree](const DeviceInfo& device, const ChainNodePath&) {
-                                          subtree.insert(&device);
-                                      });
+            for (const auto& layer : pad.layers)
+                chain_walk::forEachDevice(
+                    layer.elements, devicePath, chain_walk::Pads::Enter,
+                    [&subtree](const DeviceInfo& device, const ChainNodePath&) {
+                        subtree.insert(&device);
+                    });
 
     return keysOfDevices(subtree);
 }
@@ -2272,7 +2274,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             Grid grid{device.id, device.name, {}};
             for (std::size_t i = 0; i < device.pads->chains.size(); ++i) {
                 const auto& pad = device.pads->chains[i];
-                if (pad.outputIndex > 0 && !pad.elements.empty())
+                if (pad.outputIndex > 0 && padHasDevices(pad))
                     grid.buses.emplace(pad.outputIndex, pad.name.isNotEmpty()
                                                             ? pad.name
                                                             : "Pad " + juce::String(i + 1));

@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "PadLayerTestPaths.hpp"
 #include "magda/daw/core/AutomationInfo.hpp"
 #include "magda/daw/core/ChainNodePath.hpp"
 #include "magda/daw/core/ClipManager.hpp"
@@ -128,7 +129,7 @@ TEST_CASE("A pad and a rack sharing both numbers resolve to their own devices",
     REQUIRE(rackDeviceId != INVALID_DEVICE_ID);
 
     const auto padDevicePath =
-        TrackManager::padChainPath(gridPath, padChainId).withDevice(padVoiceId);
+        magda::test::firstLayerPath(gridPath, padChainId).withDevice(padVoiceId);
     const auto rackDevicePath =
         ChainNodePath::chainDevice(trackId, rackId, rackChainId, rackDeviceId);
 
@@ -172,19 +173,22 @@ TEST_CASE("A rack nested inside a pad chain resolves through the typed prefix",
     nested.id = kNested;
     innerChain.elements.push_back(makeDeviceElement(nested));
     inner.chains.push_back(std::move(innerChain));
-    tm.getPadChain(gridPath, padChainId)->elements.push_back(makeRackElement(std::move(inner)));
+    tm.getPadChain(gridPath, padChainId)
+        ->layers[0]
+        .elements.push_back(makeRackElement(std::move(inner)));
 
     const auto path = tm.findDevicePath(kNested);
     REQUIRE(path.isValid());
 
-    // The pad pair leads and stays typed; the tail is an ordinary route.
-    REQUIRE(path.steps.size() == 5);
+    // The pad pair and its layer lead and stay typed; the tail is an ordinary route.
+    REQUIRE(path.steps.size() == 6);
     CHECK(path.steps[0].type == ChainStepType::PadRack);
     CHECK(path.steps[1].type == ChainStepType::PadChain);
-    CHECK(path.steps[2].type == ChainStepType::Rack);
-    CHECK(path.steps[3].type == ChainStepType::Chain);
-    CHECK(path.steps[4].type == ChainStepType::Device);
-    CHECK(path.getRackIdAt(2) == 77);
+    CHECK(path.steps[2].type == ChainStepType::PadLayer);
+    CHECK(path.steps[3].type == ChainStepType::Rack);
+    CHECK(path.steps[4].type == ChainStepType::Chain);
+    CHECK(path.steps[5].type == ChainStepType::Device);
+    CHECK(path.getRackIdAt(3) == 77);
 
     const auto* resolved = tm.getDeviceInChainByPath(path);
     REQUIRE(resolved != nullptr);
@@ -219,7 +223,9 @@ TEST_CASE("A chain inside a rack nested under a pad is addressable", "[drumgrid]
     nested.id = kNested;
     innerChain.elements.push_back(makeDeviceElement(nested));
     inner.chains.push_back(std::move(innerChain));
-    tm.getPadChain(gridPath, padChainId)->elements.push_back(makeRackElement(std::move(inner)));
+    tm.getPadChain(gridPath, padChainId)
+        ->layers[0]
+        .elements.push_back(makeRackElement(std::move(inner)));
 
     const auto padChainPath = TrackManager::padChainPath(gridPath, padChainId);
 
@@ -228,8 +234,9 @@ TEST_CASE("A chain inside a rack nested under a pad is addressable", "[drumgrid]
     REQUIRE(root != nullptr);
     CHECK(root->id == padChainId);
 
-    // And the chain of the rack it holds, through the same generic call.
-    const auto nestedChainPath = padChainPath.withRack(91).withChain(6);
+    // And the chain of the rack its layer holds, through the same generic call.
+    const auto nestedChainPath =
+        magda::test::firstLayerPath(gridPath, padChainId).withRack(91).withChain(6);
     const auto* nestedChain = tm.getChainByPath(nestedChainPath);
     REQUIRE(nestedChain != nullptr);
     CHECK(nestedChain->id == 6);
@@ -260,7 +267,7 @@ TEST_CASE("A pad address is answered only by the track it names",
     auto* pad = tm.getPad(gridPath, 0);
     REQUIRE(pad != nullptr);
 
-    const auto padDevicePath = TrackManager::padChainPath(gridPath, pad->id).withDevice(voiceId);
+    const auto padDevicePath = magda::test::firstLayerPath(gridPath, pad->id).withDevice(voiceId);
     REQUIRE(tm.getDeviceInChainByPath(padDevicePath) != nullptr);
 
     // The master track exists and owns no such grid, so the same steps under it
@@ -293,7 +300,8 @@ TEST_CASE("Duplicating a track re-points a pad link at the copy's own pad device
     const auto padChainId = pad->id;
 
     // A track macro pointing into the pad: the link a duplication has to move.
-    const auto padDevicePath = TrackManager::padChainPath(gridPath, padChainId).withDevice(voiceId);
+    const auto padDevicePath =
+        magda::test::firstLayerPath(gridPath, padChainId).withDevice(voiceId);
     {
         auto* track = tm.getTrack(trackId);
         REQUIRE(track != nullptr);
@@ -386,8 +394,10 @@ TEST_CASE("A project saved before the pad step types still resolves and is retyp
     auto* pad = tm.getPad(gridPath, 0);
     REQUIRE(pad != nullptr);
 
-    const auto typed = TrackManager::padChainPath(gridPath, pad->id).withDevice(voiceId);
-    const auto legacy = asLegacySpelling(typed);
+    // Saved before layers too, so a load adds the pad's first layer (#3007).
+    const auto typed = magda::test::firstLayerPath(gridPath, pad->id).withDevice(voiceId);
+    const auto legacy =
+        asLegacySpelling(TrackManager::padChainPath(gridPath, pad->id).withDevice(voiceId));
 
     // Untyped, it still resolves: the pad route is tried after the ordinary one.
     const auto* resolved = tm.getDeviceInChainByPath(legacy);
@@ -441,8 +451,9 @@ TEST_CASE("A load retypes an address a rack answers only the prefix of",
     REQUIRE(rackChain != nullptr);
     REQUIRE(rackChain->elements.empty());
 
-    const auto typed = TrackManager::padChainPath(gridPath, rackChainId).withDevice(voiceId);
-    const auto legacy = asLegacySpelling(typed);
+    const auto typed = magda::test::firstLayerPath(gridPath, rackChainId).withDevice(voiceId);
+    const auto legacy =
+        asLegacySpelling(TrackManager::padChainPath(gridPath, rackChainId).withDevice(voiceId));
 
     // Untyped, it already resolves through the pad, which is what the migration
     // has to agree with.
@@ -517,7 +528,8 @@ TEST_CASE("A pad chain takes the generic chain edits the rack view makes",
     const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
     const auto voiceId = tm.setPadDevice(gridPath, 0, padVoice("Kick"));
     REQUIRE(voiceId != INVALID_DEVICE_ID);
-    const auto padPath = TrackManager::padChainPath(gridPath, tm.getPad(gridPath, 0)->id);
+    // The rack view shows a pad's layer, so that is the chain these address (#3007).
+    const auto padPath = magda::test::firstLayerPath(gridPath, tm.getPad(gridPath, 0)->id);
 
     DeviceInfo fx;
     fx.name = "Pad FX";
@@ -526,11 +538,11 @@ TEST_CASE("A pad chain takes the generic chain edits the rack view makes",
     fx.deviceType = DeviceType::Effect;
     const auto resolved = tm.resolvePath(padPath);
     REQUIRE(resolved.valid);
-    REQUIRE(resolved.chain == tm.getPad(gridPath, 0));
+    REQUIRE(resolved.chain == &tm.getPad(gridPath, 0)->layers[0]);
 
     const auto fxId = tm.addDeviceToChainByPath(padPath, fx, 1);
     REQUIRE(fxId != INVALID_DEVICE_ID);
-    REQUIRE(tm.getPad(gridPath, 0)->getDevices().size() == 2);
+    REQUIRE(tm.getPad(gridPath, 0)->layers[0].getDevices().size() == 2);
     CHECK(tm.resolvePath(padPath.withDevice(fxId)).device != nullptr);
 
     tm.setDeviceInChainBypassedByPath(padPath.withDevice(fxId), true);
@@ -541,11 +553,11 @@ TEST_CASE("A pad chain takes the generic chain edits the rack view makes",
 
     UndoManager::getInstance().executeCommand(std::make_unique<MoveChainElementsCommand>(
         std::vector<ChainNodePath>{padPath.withDevice(fxId)}, padPath, 0));
-    CHECK(tm.getPad(gridPath, 0)->getDevices().front()->id == fxId);
+    CHECK(tm.getPad(gridPath, 0)->layers[0].getDevices().front()->id == fxId);
 
-    const auto before = tm.getPad(gridPath, 0)->getDevices().size();
+    const auto before = tm.getPad(gridPath, 0)->layers[0].getDevices().size();
     UndoManager::getInstance().executeCommand(
         std::make_unique<RemoveDeviceByPathCommand>(padPath.withDevice(fxId)));
-    CHECK(tm.getPad(gridPath, 0)->getDevices().size() == before - 1);
+    CHECK(tm.getPad(gridPath, 0)->layers[0].getDevices().size() == before - 1);
     resetState();
 }

@@ -62,10 +62,16 @@ float faderPositionToGain(float position) {
 /// discover one.
 constexpr int kMaxTrackWalk = 64;
 
+/// A chain of @p rack, or a layer of one of its pads (#3007).
 const ChainInfo* findChain(const RackInfo& rack, ChainId chainId) {
-    const auto found = std::ranges::find_if(
-        rack.chains, [chainId](const ChainInfo& chain) { return chain.id == chainId; });
-    return found == rack.chains.end() ? nullptr : &*found;
+    for (const auto& chain : rack.chains) {
+        if (chain.id == chainId)
+            return &chain;
+        if (const auto layer = std::ranges::find(chain.layers, chainId, &ChainInfo::id);
+            layer != chain.layers.end())
+            return &*layer;
+    }
+    return nullptr;
 }
 
 const DeviceInfo* findDeviceIn(const std::vector<ChainElement>& elements, DeviceId deviceId) {
@@ -89,16 +95,33 @@ const DeviceInfo* findDeviceIn(const std::vector<PostFxChainElement>& elements, 
 /// Drum Grid's own rule, and it matters because removing a pad's last plugin
 /// leaves the chain behind: an empty soloed pad would otherwise silence every
 /// populated pad beside it, where the device plays them.
-bool isChainActive(const RackInfo& rack, const ChainInfo& chain) {
+bool isActiveAmong(const std::vector<ChainInfo>& siblings, const ChainInfo& chain, bool pads) {
     if (chain.muted)
         return false;
 
-    const auto counts = [pads = isPadRackId(rack.id)](const ChainInfo& c) {
-        return c.solo && (!pads || !c.elements.empty());
+    const auto counts = [pads](const ChainInfo& c) {
+        return c.solo && (!pads || padHasDevices(c));
     };
 
-    const auto anySolo = std::ranges::any_of(rack.chains, counts);
+    const auto anySolo = std::ranges::any_of(siblings, counts);
     return !anySolo || counts(chain);
+}
+
+/// A pad layer is in the mix when its pad is, and solo among its sibling
+/// layers counts only on layers holding something, the pad rule one level down.
+bool isChainActive(const RackInfo& rack, const ChainInfo& chain) {
+    const auto pads = isPadRackId(rack.id);
+    for (const auto& pad : rack.chains) {
+        if (&pad == &chain)
+            return isActiveAmong(rack.chains, chain, pads);
+        if (std::ranges::none_of(pad.layers, [&chain](const ChainInfo& l) { return &l == &chain; }))
+            continue;
+        if (chain.muted || !isActiveAmong(rack.chains, pad, pads))
+            return false;
+        const auto counts = [](const ChainInfo& c) { return c.solo && !c.elements.empty(); };
+        return !std::ranges::any_of(pad.layers, counts) || counts(chain);
+    }
+    return isActiveAmong(rack.chains, chain, pads);
 }
 
 class Resolver {
@@ -180,8 +203,9 @@ class Resolver {
                     if (insideInactiveChain)
                         silencedRacks_.insert(pads.id);
                     for (const auto& pad : pads.chains)
-                        collectSilencedRacks(pad.elements,
-                                             insideInactiveChain || !isChainActive(pads, pad));
+                        for (const auto& layer : pad.layers)
+                            collectSilencedRacks(layer.elements, insideInactiveChain ||
+                                                                     !isChainActive(pads, layer));
                 }
                 continue;
             }
@@ -517,6 +541,7 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         // for a chain taken out of the mix, so a muted pad passes no notes
         // rather than passing them to a silenced fader.
         case OpRole::PadNoteGate:
+        case OpRole::PadLayerSplit:
         case OpRole::DeviceInject:
         case OpRole::RackMix:
         case OpRole::RackMidiMix:
@@ -616,6 +641,7 @@ void resolveRequiredOps(const RenderPlan& plan, PlanValues& values) {
                     case OpKind::MixAudio:
                     case OpKind::MergeMidi:
                     case OpKind::MidiNoteGate:
+                    case OpKind::MidiZoneSplit:
                     case OpKind::Subtract:
                     case OpKind::Device:
                     case OpKind::Gain:

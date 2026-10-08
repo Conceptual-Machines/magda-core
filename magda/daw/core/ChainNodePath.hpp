@@ -21,7 +21,7 @@ namespace magda {
  * is as much rack 1 as it is Drum Grid 1's pads, and generic resolvers and
  * remappers had to guess from the path's shape (#2219).
  */
-enum class ChainStepType { Rack, Chain, Device, Segment, PadRack, PadChain };
+enum class ChainStepType { Rack, Chain, Device, Segment, PadRack, PadChain, PadLayer };
 
 /**
  * @brief A single step in a chain node path
@@ -45,9 +45,10 @@ inline bool isRackStep(ChainStepType type) {
     return type == ChainStepType::Rack || type == ChainStepType::PadRack;
 }
 
-/// True for the two step types that name a chain. Both carry a ChainId.
+/// True for the step types that name a chain. Each carries a ChainId.
 inline bool isChainStep(ChainStepType type) {
-    return type == ChainStepType::Chain || type == ChainStepType::PadChain;
+    return type == ChainStepType::Chain || type == ChainStepType::PadChain ||
+           type == ChainStepType::PadLayer;
 }
 
 /**
@@ -98,6 +99,7 @@ struct ChainNodePath {
                 return ChainNodeType::Rack;
             case ChainStepType::Chain:
             case ChainStepType::PadChain:
+            case ChainStepType::PadLayer:
                 return ChainNodeType::Chain;
             case ChainStepType::Device:
                 return ChainNodeType::Device;
@@ -139,6 +141,26 @@ struct ChainNodePath {
         if (steps.size() > 1 && isPadOwned() && steps[1].type == ChainStepType::PadChain)
             return steps[1].id;
         return INVALID_CHAIN_ID;
+    }
+
+    // The pad layer this path descends through, or INVALID_CHAIN_ID.
+    ChainId getPadLayerId() const {
+        if (steps.size() > 2 && getPadChainId() != INVALID_CHAIN_ID &&
+            steps[2].type == ChainStepType::PadLayer)
+            return steps[2].id;
+        return INVALID_CHAIN_ID;
+    }
+
+    // The chain a pad-owned address holds its devices in: the layer when the
+    // path names one, else the pad, which stands for its first layer.
+    ChainId getPadDeviceChainId() const {
+        const auto layer = getPadLayerId();
+        return layer != INVALID_CHAIN_ID ? layer : getPadChainId();
+    }
+
+    // How many leading steps address the pad's chain: the pad, and its layer if named.
+    std::size_t padChainDepth() const {
+        return getPadLayerId() != INVALID_CHAIN_ID ? 3 : 2;
     }
 
     bool isMixerAnalysis() const {
@@ -266,6 +288,12 @@ struct ChainNodePath {
         return p;
     }
 
+    // A layer of a pad: Track > PadRack(owner) > PadChain(pad) > PadLayer(layer).
+    static ChainNodePath padLayer(TrackId track, DeviceId owner, ChainId padChainId,
+                                  ChainId layerId) {
+        return padChain(track, owner, padChainId).withPadLayer(layerId);
+    }
+
     // The track's post-fader FX list itself, as a container: Track >
     // Segment(PostFx). What an insert into that list is addressed by, the way a
     // chain path addresses an insert into a chain (#2232).
@@ -339,6 +367,10 @@ struct ChainNodePath {
         return extendedWith({ChainStepType::PadChain, c});
     }
 
+    ChainNodePath withPadLayer(ChainId c) const {
+        return extendedWith({ChainStepType::PadLayer, c});
+    }
+
     ChainNodePath withDevice(DeviceId d) const {
         return extendedWith({ChainStepType::Device, d});
     }
@@ -407,6 +439,9 @@ struct ChainNodePath {
                     break;
                 case ChainStepType::PadChain:
                     result += " > PadChain[" + juce::String(step.id) + "]";
+                    break;
+                case ChainStepType::PadLayer:
+                    result += " > PadLayer[" + juce::String(step.id) + "]";
                     break;
                 case ChainStepType::Segment: {
                     auto seg = static_cast<ChainSegment>(step.id);

@@ -33,6 +33,9 @@ namespace pad_paths {
  * past the pair is an ordinary route through the pad chain's own elements and
  * was never ambiguous, so it is left alone.
  *
+ * A typed address into a pad saved before layers (#3007) gains the pad's first
+ * layer, where its devices now live.
+ *
  * Runs after pad device ids are allocated, because a pad chain is matched by
  * the id of the device that owns it.
  */

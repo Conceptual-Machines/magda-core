@@ -82,8 +82,9 @@ void appendAvailableDevices(const magda::DeviceInfo* grid,
         return;
 
     for (const auto& pad : grid->pads->chains)
-        for (const auto* device : pad.getDevices())
-            devices.emplace_back(device->id, pad.name + ": " + device->name);
+        for (const auto& layer : pad.layers)
+            for (const auto* device : layer.getDevices())
+                devices.emplace_back(device->id, pad.name + ": " + device->name);
 }
 
 void appendDeviceParamNames(const magda::DeviceInfo* grid,
@@ -92,7 +93,8 @@ void appendDeviceParamNames(const magda::DeviceInfo* grid,
         return;
 
     for (const auto& pad : grid->pads->chains)
-        for (const auto* device : pad.getDevices())
-            paramsByDevice[device->id] = device->paramNamesByIndex();
+        for (const auto& layer : pad.layers)
+            for (const auto* device : layer.getDevices())
+                paramsByDevice[device->id] = device->paramNamesByIndex();
 }
 }  // namespace magda::daw::ui::drum_grid_slot

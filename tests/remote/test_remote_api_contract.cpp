@@ -1702,8 +1702,9 @@ TEST_CASE("Drum Grid pad discovery returns empty slots and addressable child dev
     DeviceInfo sampler;
     sampler.id = 11;
     sampler.name = "Sampler";
-    kick.elements.push_back(makeDeviceElement(sampler));
+    kick.layers.front().elements.push_back(makeDeviceElement(sampler));
     const auto chainId = kick.id;
+    const auto layerPath = ChainNodePath::padLayer(1, 7, chainId, kick.layers.front().id);
     track.chain.fxChainElements.push_back(makeDeviceElement(grid));
 
     const auto gridPath = ChainNodePath::topLevelDevice(1, 7);
@@ -1713,8 +1714,7 @@ TEST_CASE("Drum Grid pad discovery returns empty slots and addressable child dev
     REQUIRE(slots[0].chainId == chainId);
     REQUIRE(toChainNodePath(*slots[0].chainPath) == ChainNodePath::padChain(1, 7, chainId));
     REQUIRE(slots[0].devicePaths.size() == 1);
-    REQUIRE(toChainNodePath(slots[0].devicePaths.front()) ==
-            ChainNodePath::padChain(1, 7, chainId).withDevice(11));
+    REQUIRE(toChainNodePath(slots[0].devicePaths.front()) == layerPath.withDevice(11));
     REQUIRE_FALSE(slots[1].populated);
     REQUIRE_FALSE(slots[1].chainPath);
 
@@ -1726,8 +1726,7 @@ TEST_CASE("Drum Grid pad discovery returns empty slots and addressable child dev
     auto changed = track;
     magda::getDevice(changed.chain.fxChainElements.front()).pads->chains.front().volume = -3.0f;
     REQUIRE(makeDeviceGraphDto({changed}) != graph);
-    REQUIRE(toChainNodePath(graph.devices[1].devicePath) ==
-            ChainNodePath::padChain(1, 7, chainId).withDevice(11));
+    REQUIRE(toChainNodePath(graph.devices[1].devicePath) == layerPath.withDevice(11));
     const auto* list = OperationRegistry::instance().find("pads.list");
     REQUIRE(list != nullptr);
     for (const auto& slot : slots)

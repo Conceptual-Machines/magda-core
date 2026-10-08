@@ -73,7 +73,11 @@ void requirePadsAreReal(const magda::DeviceInfo& drumGrid) {
         CHECK(pad.rootNote >= 0);
         CHECK(pad.rootNote <= 127);
 
-        for (const auto& element : pad.elements) {
+        // Saved before layers, so the pad's chain is its only layer (#3007).
+        REQUIRE(pad.layers.size() == 1);
+        CHECK(pad.elements.empty());
+
+        for (const auto& element : pad.layers.front().elements) {
             REQUIRE(magda::isDevice(element));
             const auto& device = magda::getDevice(element);
             INFO("pad device " << device.name << " / " << device.pluginId);
@@ -101,7 +105,7 @@ void requirePadsAreReal(const magda::DeviceInfo& drumGrid) {
         // At most one instrument per pad. Position does not decide which, so
         // two would mean the flag is being read off the wrong thing.
         int instruments = 0;
-        for (const auto& element : pad.elements)
+        for (const auto& element : pad.layers.front().elements)
             if (magda::getDevice(element).isInstrument)
                 ++instruments;
         CHECK(instruments <= 1);
@@ -118,7 +122,7 @@ void requirePadsAreReal(const magda::DeviceInfo& drumGrid) {
     std::set<magda::DeviceId> ids;
     int padDevices = 0;
     for (const auto& pad : drumGrid.pads->chains) {
-        for (const auto& element : pad.elements) {
+        for (const auto& element : pad.layers.front().elements) {
             const auto id = magda::getDevice(element).id;
             INFO("pad device " << magda::getDevice(element).name);
             CHECK(id != magda::INVALID_DEVICE_ID);

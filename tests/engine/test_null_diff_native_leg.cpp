@@ -422,7 +422,10 @@ TEST_CASE("A plugin inside a Drum Grid pad is reported", "[nulldiff][native]") {
     padPlugin.deviceType = DeviceType::Instrument;
     padPlugin.isInstrument = true;
     padPlugin.format = PluginFormat::VST3;
-    pad.elements.emplace_back(std::move(padPlugin));
+    ChainInfo layer;
+    layer.id = 2;
+    layer.elements.emplace_back(std::move(padPlugin));
+    pad.layers.push_back(std::move(layer));
 
     rack->chains.push_back(std::move(pad));
     grid.pads.reset(std::move(rack));

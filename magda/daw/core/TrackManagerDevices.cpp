@@ -55,9 +55,10 @@ bool anyPadOnABusInSubtree(const ChainElement& element) {
 
         if (device.pads)
             for (const auto& pad : device.pads->chains)
-                for (const auto& padElement : pad.elements)
-                    if (anyPadOnABusInSubtree(padElement))
-                        return true;
+                for (const auto& layer : pad.layers)
+                    for (const auto& padElement : layer.elements)
+                        if (anyPadOnABusInSubtree(padElement))
+                            return true;
         return false;
     }
 
@@ -82,9 +83,10 @@ bool anyPadOnABusBelowRoot(const ChainElement& element) {
         const auto& device = magda::getDevice(element);
         if (device.pads)
             for (const auto& pad : device.pads->chains)
-                for (const auto& padElement : pad.elements)
-                    if (anyPadOnABusInSubtree(padElement))
-                        return true;
+                for (const auto& layer : pad.layers)
+                    for (const auto& padElement : layer.elements)
+                        if (anyPadOnABusInSubtree(padElement))
+                            return true;
         return false;
     }
 
@@ -117,9 +119,10 @@ bool ownsMultiOutChildTracks(const TrackManager& tm, const ChainElement& element
 
         if (device.pads)
             for (const auto& pad : device.pads->chains)
-                for (const auto& padElement : pad.elements)
-                    if (ownsMultiOutChildTracks(tm, padElement, sourceTrackId))
-                        return true;
+                for (const auto& layer : pad.layers)
+                    for (const auto& padElement : layer.elements)
+                        if (ownsMultiOutChildTracks(tm, padElement, sourceTrackId))
+                            return true;
         return false;
     }
 
@@ -190,6 +193,7 @@ void remapPresetPath(ChainNodePath& path, const PresetIdRemap& remap) {
                 touched = remapId(remap.devices, step.id) || touched;
                 break;
             case ChainStepType::PadChain:
+            case ChainStepType::PadLayer:
                 break;  // Pad chain ids are rack-local and survive the copy
             case ChainStepType::Segment:
                 break;  // Segment steps carry no remappable ID
@@ -247,8 +251,11 @@ void remapPresetLinksRecursive(std::vector<ChainElement>& elements, const Preset
 void remapRackPresetLinks(RackInfo& rack, const PresetIdRemap& remap,
                           PresetState state = PresetState::Strip) {
     remapPresetLinks(rack.macros, rack.mods, remap);
-    for (auto& chain : rack.chains)
+    for (auto& chain : rack.chains) {
         remapPresetLinksRecursive(chain.elements, remap, state);
+        for (auto& layer : chain.layers)
+            remapPresetLinksRecursive(layer.elements, remap, state);
+    }
 }
 
 void remapPresetLinksRecursive(std::vector<ChainElement>& elements, const PresetIdRemap& remap,
@@ -1442,6 +1449,9 @@ DeviceInfo* TrackManager::getDeviceInPadByPath(const ChainNodePath& devicePath) 
     // on load, and until a project is re-saved this still resolves them, tried
     // only after the ordinary rack route has failed so an allocated rack
     // sharing the number wins exactly as it used to (#2219).
+    //
+    // A typed address goes on through the pad's `PadLayer` step (#3007); an
+    // untyped one predates layers and lands in the pad's first.
     if (devicePath.steps.size() < 3)
         return nullptr;
     const bool typed = devicePath.steps[0].type == ChainStepType::PadRack &&
@@ -1459,9 +1469,18 @@ DeviceInfo* TrackManager::getDeviceInPadByPath(const ChainNodePath& devicePath) 
     if (owner == nullptr)
         return nullptr;
 
-    for (auto& pad : owner->pads->chains)
-        if (pad.id == devicePath.steps[1].id)
-            return followChainSteps(pad.elements, devicePath, 2);
+    for (auto& pad : owner->pads->chains) {
+        if (pad.id != devicePath.steps[1].id)
+            continue;
+        if (legacy)
+            return pad.layers.empty()
+                       ? nullptr
+                       : followChainSteps(pad.layers.front().elements, devicePath, 2);
+        if (devicePath.steps[2].type != ChainStepType::PadLayer)
+            return nullptr;
+        auto* layer = findPadLayer(pad, devicePath.steps[2].id);
+        return layer != nullptr ? followChainSteps(layer->elements, devicePath, 3) : nullptr;
+    }
 
     return nullptr;
 }
@@ -1478,8 +1497,12 @@ ChainInfo* TrackManager::getChainInPadByPath(const ChainNodePath& chainPath) {
         chainPath.getPadChainId() == INVALID_CHAIN_ID)
         return nullptr;
 
-    // The tail is whole pairs, and the address ends on the chain it names.
-    if ((chainPath.steps.size() - 2) % 2 != 0)
+    // A layer step, if any, then whole pairs, ending on the chain it names.
+    const bool throughLayer = chainPath.getPadLayerId() != INVALID_CHAIN_ID;
+    const std::size_t tailStart = throughLayer ? 3 : 2;
+    if (chainPath.steps.size() > 2 && !throughLayer)
+        return nullptr;
+    if ((chainPath.steps.size() - tailStart) % 2 != 0)
         return nullptr;
 
     auto* track = getTrack(chainPath.trackId);
@@ -1500,7 +1523,13 @@ ChainInfo* TrackManager::getChainInPadByPath(const ChainNodePath& chainPath) {
     if (current == nullptr)
         return nullptr;
 
-    for (std::size_t index = 2; index < chainPath.steps.size(); index += 2) {
+    if (throughLayer) {
+        current = findPadLayer(*current, chainPath.getPadLayerId());
+        if (current == nullptr)
+            return nullptr;
+    }
+
+    for (std::size_t index = tailStart; index < chainPath.steps.size(); index += 2) {
         const auto& rackStep = chainPath.steps[index];
         const auto& chainStep = chainPath.steps[index + 1];
         if (rackStep.type != ChainStepType::Rack || chainStep.type != ChainStepType::Chain)
@@ -1766,10 +1795,13 @@ ChainNodePath findDeviceUnder(const std::vector<ChainElement>& elements,
             // project has saved to a pad device carries.
             const auto gridPath = devicePathUnder(parentChain, device.id);
             for (const auto& pad : device.pads->chains)
-                if (auto found = findDeviceUnder(
-                        pad.elements, TrackManager::padChainPath(gridPath, pad.id), deviceId);
-                    found.isValid())
-                    return found;
+                for (const auto& layer : pad.layers)
+                    if (auto found = findDeviceUnder(
+                            layer.elements,
+                            TrackManager::padChainPath(gridPath, pad.id).withPadLayer(layer.id),
+                            deviceId);
+                        found.isValid())
+                        return found;
             continue;
         }
 
@@ -2153,7 +2185,8 @@ void TrackManager::rekeyPads(DeviceInfo& device, ChainIdRemap& remap) {
     // or a mod addressing anything in the pad subtree was pointing at, and a
     // link left on the old address resolves to nothing.
     for (auto& pad : device.pads->chains)
-        reassignChainElementIds(pad.elements, remap);
+        for (auto& layer : pad.layers)
+            reassignChainElementIds(layer.elements, remap);
 }
 
 void TrackManager::reassignChainElementIds(std::vector<ChainElement>& elements,
@@ -2182,7 +2215,8 @@ void TrackManager::reassignChainElementIds(std::vector<ChainElement>& elements,
             // Pad chain ids are rack-local and stay as they are, which is what
             // keeps a link naming a pad still naming it.
             for (auto& pad : device.pads->chains)
-                reassignChainElementIds(pad.elements, remap);
+                for (auto& layer : pad.layers)
+                    reassignChainElementIds(layer.elements, remap);
             continue;
         }
 

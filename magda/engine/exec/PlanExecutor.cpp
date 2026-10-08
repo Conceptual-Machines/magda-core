@@ -359,6 +359,7 @@ void PlanExecutor::reset() {
     feedbackForOp_.clear();
     feedbackCarries_.clear();
     notePassing_.clear();
+    zoneSplitForOp_.clear();
     audioSlots_.clear();
     midiSlots_.clear();
     midiFractions_.clear();
@@ -923,7 +924,8 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
             }
 
             if (op.kind != OpKind::MergeMidi && op.kind != OpKind::Fader &&
-                op.kind != OpKind::MidiNoteGate && op.kind != OpKind::Handoff)
+                op.kind != OpKind::MidiNoteGate && op.kind != OpKind::MidiZoneSplit &&
+                op.kind != OpKind::Handoff)
                 continue;
 
             int carried = 0;
@@ -1086,8 +1088,12 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     // shape also turned the monitor off. Starting every gate closed would call
     // that "already silent" and let the notes hang (#2612).
     notePassing_.assign(numOps, nullptr);
+    zoneSplitForOp_.clear();
+    zoneSplitForOp_.resize(numOps);
     for (std::size_t i = 0; i < numOps; ++i) {
-        if (plan.ops[i].kind != OpKind::MidiNoteGate)
+        if (plan.ops[i].kind == OpKind::MidiZoneSplit)
+            zoneSplitForOp_[i] = std::make_unique<ZoneSplitState>();
+        else if (plan.ops[i].kind != OpKind::MidiNoteGate)
             continue;
 
         if (const auto from = carriedFrom(i); from != INVALID_OP_ID)
@@ -2108,6 +2114,116 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
 
             if (auto* tap = midiTapForOp_[i]; tap != nullptr)
                 tap->write(out, block);
+            break;
+        }
+
+        case OpKind::MidiZoneSplit: {
+            // One output per pad layer (#3007). A note-on reaches every layer
+            // whose zones take it, at a velocity scaled by its fade, and one of
+            // the round-robin layers by turn; its note-off follows it.
+            const auto outputs = static_cast<int>(op.outputs.size());
+            for (int port = 0; port < outputs; ++port) {
+                midiOut(id, port).clear();
+                fractionsOut(id, port).clear();
+            }
+
+            auto& passing = *notePassing_[i];
+            const bool wasPassing =
+                passing.exchange(value.silent ? 0 : 1, std::memory_order_relaxed) != 0;
+            auto& state = *zoneSplitForOp_[i];
+
+            if (value.silent) {
+                for (int port = 0; port < outputs; ++port)
+                    setMidiOutPanic(id, port, wasPassing);
+                state.routed.fill(0);
+                break;
+            }
+
+            const bool panic = midiInPanic(op.inputs[0]);
+            for (int port = 0; port < outputs; ++port)
+                setMidiOutPanic(id, port, panic);
+            if (panic)
+                state.routed.fill(0);
+
+            const auto everyOutput =
+                outputs >= 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << outputs) - 1;
+            const auto slotOf = [](const juce::MidiMessage& message) {
+                return static_cast<std::size_t>(((message.getChannel() - 1) & 15) * 128 +
+                                                message.getNoteNumber());
+            };
+
+            for (const auto metadata : midiIn(op.inputs[0])) {
+                const auto message = metadata.getMessage();
+                const auto at = metadata.samplePosition;
+
+                if (!message.isNoteOnOrOff() && !message.isAftertouch()) {
+                    for (int port = 0; port < outputs; ++port)
+                        midiOut(id, port).addEvent(message, at);
+                    continue;
+                }
+
+                auto& routed = state.routed[slotOf(message)];
+
+                if (message.isNoteOn()) {
+                    const int note = message.getNoteNumber();
+                    const int velocity = message.getVelocity();
+                    std::uint64_t mask = 0;
+                    int turns = 0;
+                    for (int port = 0; port < outputs; ++port) {
+                        const auto& zones = op.zoneRoutes[static_cast<std::size_t>(port)];
+                        if (zones.gainFor(note, velocity) <= 0.0f)
+                            continue;
+                        if (zones.roundRobin)
+                            ++turns;
+                        else
+                            mask |= std::uint64_t{1} << port;
+                    }
+                    if (turns > 0) {
+                        auto turn =
+                            static_cast<int>(state.nextTurn++ % static_cast<unsigned>(turns));
+                        for (int port = 0; port < outputs; ++port) {
+                            const auto& zones = op.zoneRoutes[static_cast<std::size_t>(port)];
+                            if (!zones.roundRobin || zones.gainFor(note, velocity) <= 0.0f)
+                                continue;
+                            if (turn-- == 0) {
+                                mask |= std::uint64_t{1} << port;
+                                break;
+                            }
+                        }
+                    }
+
+                    routed |= mask;
+                    for (int port = 0; port < outputs; ++port) {
+                        if ((mask & (std::uint64_t{1} << port)) == 0)
+                            continue;
+                        const auto gain =
+                            op.zoneRoutes[static_cast<std::size_t>(port)].gainFor(note, velocity);
+                        const auto scaled = static_cast<juce::uint8>(
+                            std::clamp(static_cast<int>(std::lround(velocity * gain)), 1, 127));
+                        midiOut(id, port).addEvent(
+                            juce::MidiMessage::noteOn(message.getChannel(), note, scaled), at);
+                    }
+                    continue;
+                }
+
+                // Unknown to this table (a swap happened since the note-on):
+                // every output, since a stray note-off ends nothing.
+                const auto mask = routed != 0 ? routed : everyOutput;
+                for (int port = 0; port < outputs; ++port)
+                    if ((mask & (std::uint64_t{1} << port)) != 0)
+                        midiOut(id, port).addEvent(message, at);
+                if (message.isNoteOff())
+                    routed = 0;
+            }
+
+            for (const auto& entry : fractionsIn(op.inputs[0]).entries()) {
+                const auto routed = state.routed[static_cast<std::size_t>(
+                    ((entry.channel - 1) & 15) * 128 + (entry.note & 127))];
+                for (int port = 0; port < outputs; ++port)
+                    if ((routed & (std::uint64_t{1} << port)) != 0)
+                        fractionsOut(id, port).add(entry.sample, entry.channel, entry.note,
+                                                   entry.fraction);
+            }
             break;
         }
 
