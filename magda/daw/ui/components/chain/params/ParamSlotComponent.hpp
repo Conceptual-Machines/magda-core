@@ -317,8 +317,9 @@ class ParamSlotComponent : public juce::Component,
     bool overlayOnly_ = false;
     ParamControlStyle style_ = ParamControlStyle::Text;
     juce::Rectangle<int> tileArea_, knobArea_, barArea_, valueArea_;
-    /// A blue dot when a macro reaches this parameter, an orange one when a modifier does.
-    void paintLinkDots(juce::Graphics& g) const;
+    // The row at the foot of the cell that holds the macro and mod bars.
+    juce::Rectangle<int> modRowArea_;
+    static constexpr int kModRowHeight = 7;
     bool linkOverlayVertical_ = false;
 
     // Link mode drag state (for setting modulation amount via drag)

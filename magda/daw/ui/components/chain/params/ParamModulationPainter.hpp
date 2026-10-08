@@ -16,6 +16,9 @@ namespace magda::daw::ui {
 struct ModulationPaintContext {
     juce::Rectangle<int> sliderBounds;
     juce::Rectangle<int> cellBounds;
+    // Knob and slider cells: the band under the control both bars stack in; empty keeps the
+    // text cell's macro-on-top, mod-on-bottom layout.
+    juce::Rectangle<int> indicatorBand;
     float currentParamValue = 0.0f;
     bool isInLinkMode = false;
     bool isLinkModeDrag = false;

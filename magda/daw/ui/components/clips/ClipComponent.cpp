@@ -398,15 +398,13 @@ void ClipComponent::paint(juce::Graphics& g) {
         paintMidiClip(g, *clip, bounds, overlaps.showThrough);
     }
 
-    // Draw header (name, loop indicator)
+    // Draw header (name)
     paintClipHeader(g, *clip, bounds);
 
     const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
 
-    // Draw loop boundary corner cuts (after header so they cut through
-    // everything). The toggle is the clip's; where the loop LENGTH comes from
-    // depends on content: MIDI keeps it in clip beats, audio derives it from
-    // the event's source region.
+    // Loop boundary lines, after the header so they run through it. MIDI keeps
+    // the loop length in clip beats; audio derives it from the event's source region.
     const auto* loopEvent = clip->primaryEvent();
     const double beatsPerSecondForLoop = tempo / 60.0;
     double loopCutLengthBeats = 0.0;
@@ -432,17 +430,14 @@ void ClipComponent::paint(juce::Graphics& g) {
         const double loopLengthBeats = loopCutLengthBeats;
         double beatRange = juce::jmax(1.0, clipLengthInBeats);
         int numBoundaries = static_cast<int>(clipLengthInBeats / loopLengthBeats);
-        auto markerColour = juce::Colours::lightgrey;
 
         // Calculate pixel spacing between loop boundaries to scale indicators
         float loopPixelWidth =
             static_cast<float>(loopLengthBeats / beatRange) * clipBounds.getWidth();
-        auto clipHeight = static_cast<float>(clipBounds.getHeight());
 
-        // Below this per-loop pixel width the markers pack so densely they
-        // turn the clip into a solid black mass — hide them entirely.
-        constexpr float MIN_LOOP_MARKER_PIXEL_WIDTH = 32.0f;
-        if (loopPixelWidth < MIN_LOOP_MARKER_PIXEL_WIDTH)
+        // Below a few pixels per loop the hairlines would turn the clip into a solid mass.
+        constexpr float MIN_HAIRLINE_PIXEL_WIDTH = 4.0f;
+        if (loopPixelWidth < MIN_HAIRLINE_PIXEL_WIDTH)
             numBoundaries = 0;
 
         for (int i = 1; i <= numBoundaries; ++i) {
@@ -450,40 +445,31 @@ void ClipComponent::paint(juce::Graphics& g) {
             if (boundaryBeat >= clipLengthInBeats)
                 break;
 
-            float bx = static_cast<float>(clipBounds.getX()) +
-                       static_cast<float>(boundaryBeat / beatRange) * clipBounds.getWidth();
-
-            // Shadow gradient on right side of boundary (fold effect)
-            float shadeWidth = juce::jmin(6.0f, loopPixelWidth * 0.15f);
-            if (shadeWidth >= 1.0f) {
-                auto top = static_cast<float>(clipBounds.getY());
-                auto bot = static_cast<float>(clipBounds.getBottom());
-                juce::ColourGradient shade(juce::Colours::black.withAlpha(0.45f), bx, 0.0f,
-                                           juce::Colours::transparentBlack, bx + shadeWidth, 0.0f,
-                                           false);
-                g.setGradientFill(shade);
-                g.fillRect(bx, top, shadeWidth, bot - top);
+            // Rounded the way the grid places a beat, so a boundary on a bar meets its line.
+            int bx = static_cast<int>(boundaryBeat / beatRange * clipBounds.getWidth() + 0.5);
+            if (parentPanel_ != nullptr && !isDragging_) {
+                const double zoom = parentPanel_->getZoom();
+                const double start = clip->placement.startBeat;
+                bx = juce::roundToInt((start + boundaryBeat) * zoom) -
+                     juce::roundToInt(start * zoom);
             }
 
-            // Vertical line at loop boundary
-            g.setColour(markerColour.withAlpha(0.7f));
-            g.drawVerticalLine(static_cast<int>(bx), static_cast<float>(clipBounds.getY()),
-                               static_cast<float>(clipBounds.getBottom()));
-
-            // Scale triangle size: up to 10px, but no more than 1/3 of the loop pixel
-            // width or 1/4 of clip height, so they don't overlap when zoomed out
-            float cutSize = juce::jmin(6.0f, loopPixelWidth * 0.33f, clipHeight * 0.25f);
-            if (cutSize < 2.0f)
-                continue;  // Too small to draw meaningfully
-
-            auto top = static_cast<float>(clipBounds.getY());
-            juce::Path cut;
-            // Left triangle
-            cut.addTriangle(bx - cutSize, top, bx, top, bx, top + cutSize);
-            // Right triangle
-            cut.addTriangle(bx, top, bx + cutSize, top, bx, top + cutSize);
-            g.setColour(markerColour.withAlpha(0.8f));
-            g.fillPath(cut);
+            // The line starts below the header fill, which runs 2px past HEADER_HEIGHT.
+            // A bright core with a soft glow fading out to either side
+            const auto lineX = static_cast<float>(clipBounds.getX() + bx);
+            const auto lineTop = static_cast<float>(clipBounds.getY() + HEADER_HEIGHT + 2);
+            const auto lineHeight = static_cast<float>(clipBounds.getBottom()) - lineTop;
+            constexpr float glow = 6.0f;
+            const auto glowColour = juce::Colours::white.withAlpha(0.13f);
+            const auto clear = juce::Colours::white.withAlpha(0.0f);
+            g.setGradientFill(
+                juce::ColourGradient(clear, lineX - glow, 0.0f, glowColour, lineX, 0.0f, false));
+            g.fillRect(lineX - glow, lineTop, glow, lineHeight);
+            g.setGradientFill(juce::ColourGradient(glowColour, lineX + 1.0f, 0.0f, clear,
+                                                   lineX + 1.0f + glow, 0.0f, false));
+            g.fillRect(lineX + 1.0f, lineTop, glow, lineHeight);
+            g.setColour(juce::Colours::white.withAlpha(0.4f));
+            g.fillRect(lineX, lineTop, 1.0f, lineHeight);
         }
     }
 
@@ -1098,28 +1084,6 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
         g.setFont(FontManager::getInstance().getUIFont(12.0f));
         g.drawText(juce::CharPointer_UTF8("\xe2\x99\xa9"), musicalArea,
                    juce::Justification::centred, false);
-    }
-
-    // Loop indicator: the transport's circular-arrows loop glyph, so "loop"
-    // reads the same everywhere (and stays distinct from the ghost link icon).
-    // Cache one drawable per foreground variant — selection flips foreground,
-    // so we can't bake a single colour at construction.
-    if (clip.loopEnabled && headerArea.getWidth() > 16) {
-        headerArea.removeFromRight(2);  // right padding
-        // Same box as the ghost link icon on the left (HEADER_HEIGHT reduced
-        // by 3) so the two header glyphs read at the same size.
-        auto loopArea = headerArea.removeFromRight(HEADER_HEIGHT).reduced(3);
-        if (loopArea.getWidth() > 0 && loopArea.getHeight() > 0) {
-            static const auto loopIcon = juce::Drawable::createFromImageData(
-                BinaryData::loop_icon_svg, BinaryData::loop_icon_svgSize);
-            if (loopIcon) {
-                auto themedIcon = loopIcon->createCopy();
-                themedIcon->replaceColour(juce::Colour(0xFFBCBCBC), headerForeground);
-                ActiveTheme::applyToSvgIcon(*themedIcon);
-                themedIcon->drawWithin(g, loopArea.toFloat(), juce::RectanglePlacement::centred,
-                                       1.0f);
-            }
-        }
     }
 }
 

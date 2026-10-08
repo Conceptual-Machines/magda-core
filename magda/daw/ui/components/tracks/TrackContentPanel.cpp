@@ -541,6 +541,22 @@ void TrackContentPanel::paint(juce::Graphics& g) {
     paintClipGhosts(g);
 }
 
+juce::RectangleList<int> TrackContentPanel::getVisibleClipBounds() const {
+    juce::RectangleList<int> bounds;
+    // Each clip clears its whole lane height, so no grid stubs show in the lane's margins.
+    for (const auto& clip : clipComponents_) {
+        if (clip == nullptr || !clip->isVisible())
+            continue;
+        auto area = clip->getBounds();
+        if (const int lane = getTrackIndexAtY(area.getCentreY()); lane >= 0) {
+            const auto laneArea = getTrackLaneArea(lane);
+            area = area.withTop(laneArea.getY()).withBottom(laneArea.getBottom());
+        }
+        bounds.add(area);
+    }
+    return bounds;
+}
+
 void TrackContentPanel::paintOverChildren(juce::Graphics& g) {
     const auto& projectDefaults = ProjectManager::getInstance().getCurrentProjectInfo().defaults;
 

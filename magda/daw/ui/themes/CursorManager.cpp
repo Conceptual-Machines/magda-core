@@ -1,5 +1,7 @@
 #include "CursorManager.hpp"
 
+#include "BinaryData.h"
+
 namespace magda {
 
 CursorManager& CursorManager::getInstance() {
@@ -11,12 +13,49 @@ CursorManager::CursorManager() {
     zoomCursor = createZoomCursor(ZoomGlyph::None);
     zoomInCursor = createZoomCursor(ZoomGlyph::Plus);
     zoomOutCursor = createZoomCursor(ZoomGlyph::Minus);
-    noteDrawCursor = createNoteDrawCursor();
-    eraseCursor = createEraseCursor();
+    noteDrawCursor =
+        createIconCursor(BinaryData::mepencil_svg, BinaryData::mepencil_svgSize, {6.0f, 42.0f});
+    eraseCursor =
+        createIconCursor(BinaryData::meerase_svg, BinaryData::meerase_svgSize, {8.0f, 38.0f});
+    glueCursor =
+        createIconCursor(BinaryData::meglue_svg, BinaryData::meglue_svgSize, {5.0f, 43.0f});
     noteRepeatCursor = createNoteRepeatCursor();
-    bladeCursor = createBladeCursor();
+    bladeCursor =
+        createIconCursor(BinaryData::meslice_svg, BinaryData::meslice_svgSize, {24.0f, 24.0f});
     ghostCopyCursor = createGhostCopyCursor();
     curveBendCursor = createCurveBendCursor();
+}
+
+juce::MouseCursor CursorManager::createIconCursor(const char* svg, int svgSize,
+                                                  juce::Point<float> hotspot) {
+    // The MIDI editor's 48-unit tool icon as a black glyph with a white halo, so it reads over
+    // the dark grid and a bright note alike.
+    constexpr int size = 28;
+    constexpr float glyph = 22.0f;
+    constexpr float margin = (size - glyph) / 2.0f;
+    const auto drawable = juce::Drawable::createFromImageData(svg, static_cast<size_t>(svgSize));
+    if (drawable == nullptr)
+        return juce::MouseCursor(juce::MouseCursor::NormalCursor);
+
+    const auto placement = juce::AffineTransform::scale(glyph / 48.0f).translated(margin, margin);
+    auto tinted = [&](juce::Colour colour) {
+        auto copy = drawable->createCopy();
+        copy->replaceColour(juce::Colour(0xFFB3B3B3), colour);
+        return copy;
+    };
+
+    juce::Image img(juce::Image::ARGB, size, size, true);
+    {
+        juce::Graphics g(img);
+        const auto halo = tinted(juce::Colours::white);
+        for (float dx : {-1.5f, 0.0f, 1.5f})
+            for (float dy : {-1.5f, 0.0f, 1.5f})
+                halo->draw(g, 1.0f, placement.translated(dx, dy));
+        tinted(juce::Colours::black)->draw(g, 1.0f, placement);
+    }
+
+    const auto spot = hotspot.transformedBy(placement).roundToInt();
+    return {img, spot.x, spot.y};
 }
 
 juce::MouseCursor CursorManager::createCurveBendCursor() {
@@ -98,50 +137,6 @@ juce::MouseCursor CursorManager::createGhostCopyCursor() {
     return {img, 14, 14};
 }
 
-juce::MouseCursor CursorManager::createBladeCursor() {
-    // Scissors glyph: two crossed blades pivoting at the centre, finger rings
-    // at the top. Hotspot sits at the blade tips (bottom centre) so the cut
-    // lands where the user points.
-    const int size = 28;
-    juce::Image img(juce::Image::ARGB, size, size, true);
-    juce::Graphics g(img);
-
-    juce::Path blades;
-    // Left ring -> right blade tip
-    blades.startNewSubPath(9.5f, 7.0f);
-    blades.lineTo(18.5f, 23.0f);
-    // Right ring -> left blade tip
-    blades.startNewSubPath(18.5f, 7.0f);
-    blades.lineTo(9.5f, 23.0f);
-
-    juce::Path rings;
-    rings.addEllipse(5.5f, 2.0f, 6.0f, 6.0f);
-    rings.addEllipse(16.5f, 2.0f, 6.0f, 6.0f);
-
-    const auto outlineStroke =
-        juce::PathStrokeType(4.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
-    const auto bodyStroke =
-        juce::PathStrokeType(2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
-
-    // White outline pass for contrast on both dark and light regions
-    g.setColour(juce::Colours::white);
-    g.strokePath(blades, outlineStroke);
-    g.strokePath(rings, outlineStroke);
-
-    g.setColour(juce::Colours::black);
-    g.strokePath(blades, bodyStroke);
-    g.strokePath(rings, bodyStroke);
-
-    // Pivot screw
-    g.setColour(juce::Colours::white);
-    g.fillEllipse(12.5f, 13.5f, 3.0f, 3.0f);
-    g.setColour(juce::Colours::black);
-    g.fillEllipse(13.25f, 14.25f, 1.5f, 1.5f);
-
-    // Hotspot at the blade tips (bottom centre)
-    return {img, 14, 23};
-}
-
 juce::MouseCursor CursorManager::createZoomCursor(ZoomGlyph glyph) {
     const int size = 28;
     juce::Image img(juce::Image::ARGB, size, size, true);
@@ -192,89 +187,6 @@ juce::MouseCursor CursorManager::createZoomCursor(ZoomGlyph glyph) {
 
     // Hotspot at center of the lens
     return {img, static_cast<int>(cx), static_cast<int>(cy)};
-}
-
-juce::MouseCursor CursorManager::createNoteDrawCursor() {
-    const int size = 28;
-    juce::Image img(juce::Image::ARGB, size, size, true);
-    juce::Graphics g(img);
-
-    juce::Path pencil;
-    pencil.startNewSubPath(5.0f, 22.0f);
-    pencil.lineTo(8.0f, 15.0f);
-    pencil.lineTo(18.5f, 4.5f);
-    pencil.lineTo(23.5f, 9.5f);
-    pencil.lineTo(13.0f, 20.0f);
-    pencil.closeSubPath();
-
-    juce::Path tip;
-    tip.startNewSubPath(5.0f, 22.0f);
-    tip.lineTo(8.0f, 15.0f);
-    tip.lineTo(11.0f, 18.0f);
-    tip.closeSubPath();
-
-    juce::Path bodyDivider;
-    bodyDivider.startNewSubPath(16.6f, 6.4f);
-    bodyDivider.lineTo(21.6f, 11.4f);
-
-    // White outline pass for visibility on dark and light backgrounds.
-    g.setColour(juce::Colours::white);
-    g.strokePath(pencil, juce::PathStrokeType(4.2f, juce::PathStrokeType::curved,
-                                              juce::PathStrokeType::rounded));
-    g.fillPath(tip);
-
-    g.setColour(juce::Colours::black);
-    g.strokePath(pencil, juce::PathStrokeType(2.2f, juce::PathStrokeType::curved,
-                                              juce::PathStrokeType::rounded));
-    g.strokePath(bodyDivider, juce::PathStrokeType(1.4f, juce::PathStrokeType::curved,
-                                                   juce::PathStrokeType::rounded));
-
-    g.setColour(juce::Colour(0xFF5599FF));
-    g.fillPath(tip);
-    g.setColour(juce::Colours::black);
-    g.strokePath(tip, juce::PathStrokeType(1.0f));
-
-    // Hotspot at pencil tip.
-    return {img, 5, 22};
-}
-
-juce::MouseCursor CursorManager::createEraseCursor() {
-    const int size = 28;
-    juce::Image img(juce::Image::ARGB, size, size, true);
-    juce::Graphics g(img);
-
-    juce::Path eraser;
-    eraser.startNewSubPath(6.0f, 18.5f);
-    eraser.lineTo(15.5f, 9.0f);
-    eraser.lineTo(23.0f, 16.5f);
-    eraser.lineTo(15.0f, 24.5f);
-    eraser.lineTo(9.0f, 24.5f);
-    eraser.closeSubPath();
-
-    juce::Path cut;
-    cut.startNewSubPath(12.0f, 12.5f);
-    cut.lineTo(19.5f, 20.0f);
-
-    g.setColour(juce::Colours::white);
-    g.strokePath(eraser, juce::PathStrokeType(4.0f, juce::PathStrokeType::curved,
-                                              juce::PathStrokeType::rounded));
-
-    g.setColour(juce::Colour(0xFFFF6666));
-    g.fillPath(eraser);
-    g.setColour(juce::Colours::black);
-    g.strokePath(eraser, juce::PathStrokeType(1.4f, juce::PathStrokeType::curved,
-                                              juce::PathStrokeType::rounded));
-    g.strokePath(cut, juce::PathStrokeType(1.4f, juce::PathStrokeType::curved,
-                                           juce::PathStrokeType::rounded));
-
-    g.setColour(juce::Colours::white);
-    g.drawLine(5.0f, 5.0f, 12.0f, 12.0f, 4.2f);
-    g.drawLine(12.0f, 5.0f, 5.0f, 12.0f, 4.2f);
-    g.setColour(juce::Colours::black);
-    g.drawLine(5.0f, 5.0f, 12.0f, 12.0f, 2.0f);
-    g.drawLine(12.0f, 5.0f, 5.0f, 12.0f, 2.0f);
-
-    return {img, 8, 20};
 }
 
 juce::MouseCursor CursorManager::createNoteRepeatCursor() {

@@ -141,10 +141,12 @@ class PianoRollContent : public MidiEditorContent,
     int chordLaneLeftX() const {
         return sidebarWidth() + ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH;
     }
-    // Top y of the chord lane. The ruler sits at the very top, so the chord lane
-    // (when visible) starts just below it; 0 when the chord row is hidden.
+    // The chord lane sits above the ruler; chord-focus editors keep the ruler on top.
     int chordRowTop() const {
-        return showChordRow_ ? RULER_HEIGHT : 0;
+        return chordFocusMode() ? RULER_HEIGHT : 0;
+    }
+    int rulerTop() const {
+        return showChordRow_ && !chordFocusMode() ? chordRowHeight() : 0;
     }
     // Called when the chord lane is clicked at the given clip-relative beat.
     // Return true to consume the click (the standard piano roll returns false so
@@ -179,12 +181,12 @@ class PianoRollContent : public MidiEditorContent,
     void onVelocityEdited() override;
 
     // Layout constants (PianoRoll-specific)
-    static constexpr int SIDEBAR_WIDTH = 32;
+    static constexpr int SIDEBAR_WIDTH = 36;
     static constexpr int ZOOM_STRIP_WIDTH = 16;
     static constexpr int OCTAVE_LABEL_WIDTH = 32;
     static constexpr int KEYBOARD_WIDTH = 60;
     static constexpr int DEFAULT_NOTE_HEIGHT = magda::ClipInfo::DEFAULT_MIDI_EDITOR_ROW_HEIGHT;
-    static constexpr int CHORD_ROW_HEIGHT = 24;
+    static constexpr int CHORD_ROW_HEIGHT = 26;
     static constexpr int HEADER_HEIGHT = CHORD_ROW_HEIGHT + RULER_HEIGHT;
     static constexpr int MIN_NOTE = 0;    // C-2
     static constexpr int MAX_NOTE = 127;  // G9
@@ -208,7 +210,8 @@ class PianoRollContent : public MidiEditorContent,
 
     // Chord row visibility
     bool showChordRow_ = false;
-    bool isSyncingChords_ = false;  // Re-entry guard for syncChordAnnotations
+    double playheadTimelineBeat_ = -1.0;  // negative while stopped
+    bool isSyncingChords_ = false;        // Re-entry guard for syncChordAnnotations
 
     // Progression overlay (#1504): ghost the chord-track progression behind a
     // normal track's chord lane for reference. Global toggle, shared across
@@ -235,12 +238,11 @@ class PianoRollContent : public MidiEditorContent,
     std::unique_ptr<magda::SvgButton> chordDetectBtn_;
     std::unique_ptr<magda::SvgButton> progressionOverlayToggle_;  // #1504 ghost overlay
     std::unique_ptr<magda::SvgButton> gridToggleBtn_;             // chord mode: show/hide grid
-    std::unique_ptr<magda::SvgButton> velocityToggle_;
-    std::unique_ptr<magda::SvgButton> pitchGlideToggle_;
-    std::unique_ptr<magda::SvgButton> ccLanesBtn_;
 
-    // CC strip button is lit while the drawer is open with CC/pitchbend lanes
-    void updateLaneToggleStates() override;
+    // MPE in the lane header turns on per-note glide editing in the grid.
+    void onLaneModeChanged(magda::MidiDrawerComponent::LaneMode mode) override;
+    // The chord lane follows the clip: its stored choice, else on with a Chord Engine.
+    void syncChordLaneFromClip();
 
     // Live MIDI note monitor hooks (plumbing lives in MidiEditorContent).
     void highlightMonitoredNote(int noteNumber, bool noteOn) override;

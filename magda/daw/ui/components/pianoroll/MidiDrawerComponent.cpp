@@ -2,6 +2,8 @@
 
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../common/SvgButton.hpp"
+#include "BinaryData.h"
 #include "CCLaneComponent.hpp"
 #include "VelocityLaneComponent.hpp"
 
@@ -41,9 +43,53 @@ MidiDrawerComponent::MidiDrawerComponent() {
         }
     };
     addChildComponent(pbRangeLabel_.get());
+
+    velocityCaption_ = juce::String(juce::CharPointer_UTF8("VEL \xc2\xb7 0\xe2\x80\x93"
+                                                           "127"));
+
+    const std::array<std::tuple<const char*, int, const char*>, 3> pickers{{
+        {BinaryData::mevelocity_svg, BinaryData::mevelocity_svgSize, "Velocity"},
+        {BinaryData::mecc_svg, BinaryData::mecc_svgSize, "CC and pitchbend lanes"},
+        {BinaryData::mempe_svg, BinaryData::mempe_svgSize, "MPE: per-note pitch glide"},
+    }};
+    for (size_t i = 0; i < laneButtons_.size(); ++i) {
+        const auto& [svg, size, tip] = pickers[i];
+        auto button = std::make_unique<SvgButton>(tip, svg, static_cast<size_t>(size));
+        button->setTooltip(tip);
+        button->setOriginalColor(juce::Colour(0xFFB3B3B3));
+        button->setNormalColor(ActiveTheme::TEXT_SECONDARY);
+        button->setHoverColor(ActiveTheme::TEXT_PRIMARY);
+        button->setActiveColor(ActiveTheme::TEXT_PRIMARY);
+        button->setActiveBackgroundColor(ActiveTheme::MIDI_TOOL_ACTIVE);
+        button->setActiveBorderColor(ActiveTheme::MIDI_TOOL_ACTIVE_BORDER);
+        button->setBorderThickness(1.0f);
+        button->setCornerRadius(6.0f);
+        button->setIconPadding(6.0f);
+        button->onClick = [this, i]() {
+            setLaneMode(static_cast<LaneMode>(i));
+            if (onLaneModeChanged)
+                onLaneModeChanged(laneMode_);
+        };
+        addAndMakeVisible(button.get());
+        laneButtons_[i] = std::move(button);
+    }
+    setLaneMode(LaneMode::Velocity);
 }
 
 MidiDrawerComponent::~MidiDrawerComponent() = default;
+
+void MidiDrawerComponent::setLaneMode(LaneMode mode) {
+    laneMode_ = mode;
+    for (size_t i = 0; i < laneButtons_.size(); ++i)
+        laneButtons_[i]->setActive(static_cast<size_t>(mode) == i);
+    resized();
+    repaint();
+}
+
+void MidiDrawerComponent::setVelocityCaption(juce::String caption) {
+    velocityCaption_ = std::move(caption);
+    repaint();
+}
 
 // ============================================================================
 // Settings forwarding
@@ -155,16 +201,23 @@ juce::Rectangle<int> MidiDrawerComponent::getLaneRowBounds(int laneIndex) const 
 }
 
 void MidiDrawerComponent::resized() {
-    // Visible lanes are stacked vertically, right of the left margin column.
-    // Velocity is shown only when toggled on (slot 0); CC lanes follow.
-    velocityLane_->setVisible(velocityVisible_);
-    if (velocityVisible_)
+    const bool pickerFits = leftMargin_ >= 90;
+    for (size_t i = 0; i < laneButtons_.size(); ++i) {
+        laneButtons_[i]->setVisible(pickerFits);
+        laneButtons_[i]->setBounds(6 + static_cast<int>(i) * 28, RESIZE_HANDLE_HEIGHT + 4, 26, 26);
+    }
+
+    velocityLane_->setVisible(!showsCcLanes());
+    if (!showsCcLanes())
         velocityLane_->setBounds(getLaneRowBounds(0).withTrimmedLeft(leftMargin_));
 
     for (size_t i = 0; i < ccTabs_.size(); ++i) {
-        if (ccTabs_[i].ccLane)
+        if (!ccTabs_[i].ccLane)
+            continue;
+        ccTabs_[i].ccLane->setVisible(showsCcLanes());
+        if (showsCcLanes())
             ccTabs_[i].ccLane->setBounds(
-                getLaneRowBounds(firstCcSlot() + static_cast<int>(i)).withTrimmedLeft(leftMargin_));
+                getLaneRowBounds(static_cast<int>(i)).withTrimmedLeft(leftMargin_));
     }
 
     updatePbRangeVisibility();
@@ -176,7 +229,7 @@ void MidiDrawerComponent::paint(juce::Graphics& g) {
     // Left margin background
     if (leftMargin_ > 0) {
         auto leftArea = fullBounds.removeFromLeft(leftMargin_);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_LANE));
         g.fillRect(leftArea);
 
         // Top border across full width
@@ -219,35 +272,49 @@ void MidiDrawerComponent::paintOverChildren(juce::Graphics& g) {
 
 void MidiDrawerComponent::paintLaneHeaders(juce::Graphics& g) {
     const auto textColour = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
+    const auto& fonts = FontManager::getInstance();
 
-    // Control name at the top of each lane's row, close button on removable lanes
+    if (!showsCcLanes()) {
+        const auto caption =
+            laneMode_ == LaneMode::MPE
+                ? juce::String(juce::CharPointer_UTF8("MPE \xc2\xb7 glide on the notes"))
+                : velocityCaption_;
+        g.setFont(fonts.getMonoFont(9.0f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+        g.drawText(caption, 4, getHeight() - 18, leftMargin_ - 8, 14, juce::Justification::centred,
+                   true);
+        return;
+    }
+
+    // Each CC lane's name below the picker, with a close button
     for (int lane = 0; lane < getLaneCount(); ++lane) {
         auto row = getLaneRowBounds(lane);
         if (row.isEmpty())
             continue;
+        const int top = juce::jmax(row.getY() + 4, RESIZE_HANDLE_HEIGHT + PICKER_HEIGHT);
 
-        const bool isVelocityRow = velocityVisible_ && lane == 0;
-        const bool removable = !isVelocityRow;
-        juce::String name = isVelocityRow ? juce::String("Velocity")
-                                          : ccTabs_[static_cast<size_t>(lane - firstCcSlot())].name;
-
-        g.setFont(FontManager::getInstance().getUIFont(10.0f));
+        g.setFont(fonts.getUIFont(10.0f));
         g.setColour(textColour);
-        g.drawText(name, 4, row.getY() + 4, leftMargin_ - (removable ? 20 : 8), 14,
+        g.drawText(ccTabs_[static_cast<size_t>(lane)].name, 6, top, leftMargin_ - 26, 14,
                    juce::Justification::centredLeft, true);
 
-        if (removable) {
-            // Close button "x" in the top-right corner of the lane's header column
-            g.setColour(textColour.withAlpha(0.6f));
-            auto closeX = static_cast<float>(leftMargin_ - 11);
-            auto closeY = static_cast<float>(row.getY() + 11);
-            g.drawLine(closeX - 2.5f, closeY - 2.5f, closeX + 2.5f, closeY + 2.5f, 1.0f);
-            g.drawLine(closeX + 2.5f, closeY - 2.5f, closeX - 2.5f, closeY + 2.5f, 1.0f);
-        }
+        g.setColour(textColour.withAlpha(0.6f));
+        auto closeX = static_cast<float>(leftMargin_ - 11);
+        auto closeY = static_cast<float>(top + 7);
+        g.drawLine(closeX - 2.5f, closeY - 2.5f, closeX + 2.5f, closeY + 2.5f, 1.0f);
+        g.drawLine(closeX + 2.5f, closeY - 2.5f, closeX - 2.5f, closeY + 2.5f, 1.0f);
+    }
+
+    if (ccTabs_.empty()) {
+        g.setFont(fonts.getUIFont(10.0f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+        g.drawText("No CC lanes", leftMargin_ + 8, RESIZE_HANDLE_HEIGHT,
+                   getWidth() - leftMargin_ - 16, getHeight() - RESIZE_HANDLE_HEIGHT,
+                   juce::Justification::centredLeft, true);
     }
 
     // "+" button at the bottom of the header column
-    g.setFont(FontManager::getInstance().getUIFont(14.0f));
+    g.setFont(fonts.getUIFont(14.0f));
     g.setColour(textColour);
     g.drawText("+", 0, getHeight() - ADD_BUTTON_HEIGHT, leftMargin_, ADD_BUTTON_HEIGHT,
                juce::Justification::centred, false);
@@ -287,17 +354,21 @@ void MidiDrawerComponent::mouseDown(const juce::MouseEvent& e) {
     if (e.x >= leftMargin_ || e.y < RESIZE_HANDLE_HEIGHT)
         return;
 
+    if (!showsCcLanes())
+        return;
+
     // "+" button at the bottom of the header column
     if (e.y >= getHeight() - ADD_BUTTON_HEIGHT) {
         showAddLaneMenu();
         return;
     }
 
-    // Close button (top-right corner of a removable lane's header)
+    // Close button beside a lane's name
     for (size_t i = 0; i < ccTabs_.size(); ++i) {
-        auto row = getLaneRowBounds(firstCcSlot() + static_cast<int>(i));
+        auto row = getLaneRowBounds(static_cast<int>(i));
+        const int top = juce::jmax(row.getY() + 4, RESIZE_HANDLE_HEIGHT + PICKER_HEIGHT);
         if (row.contains(e.getPosition())) {
-            if (e.x >= leftMargin_ - 18 && e.y <= row.getY() + 18)
+            if (e.x >= leftMargin_ - 18 && e.y >= top && e.y <= top + 14)
                 removeTab(static_cast<int>(i));
             return;
         }
@@ -347,9 +418,8 @@ void MidiDrawerComponent::addCCTab(int ccNumber) {
     addAndMakeVisible(tab.ccLane.get());
 
     ccTabs_.push_back(std::move(tab));
+    setLaneMode(LaneMode::CC);
     growDrawerForLanes();
-    resized();
-    repaint();
     if (onLanesChanged)
         onLanesChanged();
 }
@@ -372,9 +442,8 @@ void MidiDrawerComponent::addPitchBendTab() {
     addAndMakeVisible(tab.ccLane.get());
 
     ccTabs_.push_back(std::move(tab));
+    setLaneMode(LaneMode::CC);
     growDrawerForLanes();
-    resized();
-    repaint();
     if (onLanesChanged)
         onLanesChanged();
 }
@@ -392,21 +461,12 @@ void MidiDrawerComponent::removeTab(int ccIdx) {
         onLanesChanged();
 }
 
-void MidiDrawerComponent::setVelocityLaneVisible(bool visible) {
-    if (velocityVisible_ == visible)
-        return;
-    velocityVisible_ = visible;
-    velocityLane_->setVisible(visible);
-    resized();
-    repaint();
-}
-
 void MidiDrawerComponent::updatePbRangeVisibility() {
     // The PB range editor sits left of the icon column, in the pitchbend lane's row
     int pbLaneIndex = -1;
     for (size_t i = 0; i < ccTabs_.size(); ++i) {
         if (ccTabs_[i].isPitchBend) {
-            pbLaneIndex = firstCcSlot() + static_cast<int>(i);
+            pbLaneIndex = static_cast<int>(i);
             if (ccTabs_[i].ccLane) {
                 pbRangeLabel_->setText(juce::String(ccTabs_[i].ccLane->getPitchBendRange()),
                                        juce::dontSendNotification);
@@ -415,7 +475,7 @@ void MidiDrawerComponent::updatePbRangeVisibility() {
         }
     }
 
-    bool showPbRange = pbLaneIndex >= 0 && leftMargin_ > 4;
+    bool showPbRange = showsCcLanes() && pbLaneIndex >= 0 && leftMargin_ > 4;
     pbRangeLabel_->setVisible(showPbRange);
     if (showPbRange) {
         auto row = getLaneRowBounds(pbLaneIndex);

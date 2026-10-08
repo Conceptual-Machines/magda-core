@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <memory>
+#include <set>
 
 #include "MidiEditorContent.hpp"
 #include "audio/plugins/DrumGridTemplates.hpp"
@@ -68,7 +70,11 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
         juce::String name;
         juce::String role;  // canonical role id (see DrumGridRoles.hpp), empty = unset
         bool hasChain = false;
+        bool muted = false;
+        int group = -1;         // kit group (KICK, SNARE, HATS, PERC) once any row has a role
+        bool isHeader = false;  // a group's header row; carries no note
     };
+    static constexpr std::array<const char*, 4> kGroupNames{"KICK", "SNARE", "HATS", "PERC"};
 
   private:
     // MidiEditorContent virtual implementations
@@ -88,7 +94,6 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     // rows to those that have notes rather than using the pitch fold map.
     void onFoldMapChanged() override;
     void recenterOnNotes() override;
-    void updateLaneToggleStates() override;
 
     // Override velocity lane methods
     void updateVelocityLane() final;
@@ -101,7 +106,8 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     bool hasPadDevice_ = false;
 
     // Layout constants (DrumGrid-specific)
-    static constexpr int SIDEBAR_WIDTH = 32;
+    static constexpr int SIDEBAR_WIDTH = 36;
+    static constexpr int CHORD_LANE_HEIGHT = 26;
     static constexpr int ZOOM_STRIP_WIDTH = 16;
     static constexpr int DEFAULT_LABEL_WIDTH = 200;
     static constexpr int MIN_LABEL_WIDTH = 80;
@@ -124,13 +130,29 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     std::unique_ptr<DrumGridClipGrid> gridComponent_;
     std::unique_ptr<magda::SvgButton> foldToggle_;
     std::unique_ptr<magda::SvgButton> previewToggle_;  // #1705 audition notes on click
-    std::unique_ptr<magda::SvgButton> ccLanesBtn_;
+    std::unique_ptr<magda::SvgButton> chordToggle_;
     std::unique_ptr<DrumGridRowLabels> rowLabels_;
     std::unique_ptr<DrumGridLabelDivider> labelDivider_;
     std::unique_ptr<VerticalZoomStrip> verticalZoomStrip_;
-    std::unique_ptr<magda::SvgButton> controlsToggle_;
+
+    // Chord lane: the chord track's progression above the ruler, on per clip.
+    bool showChordLane_ = false;
+    double playheadTimelineBeat_ = -1.0;
+    int rulerTop() const {
+        return showChordLane_ ? CHORD_LANE_HEIGHT : 0;
+    }
+    int gridLeftX() const {
+        return SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH + labelWidth_ + LABEL_DIVIDER_WIDTH;
+    }
+    void drawChordLane(juce::Graphics& g, juce::Rectangle<int> area);
 
     void buildPadRows();
+    void toggleGroupCollapsed(int group);
+    void togglePadMuted(int noteNumber);
+    // The row the drum lane's velocity shows; -1 shows every hit.
+    void selectRow(int noteNumber);
+    int selectedRowNote_ = -1;
+    static std::set<int> collapsedGroups_;
     void refreshPadRowNames();
     void findDrumGrid();
     /// The pad device on the edited clip's track, or null.

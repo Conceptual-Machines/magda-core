@@ -28,6 +28,71 @@ void SetMidiEventStateCommand::undo() {
     executed_ = false;
 }
 
+std::optional<MidiEventState> splitMidiNoteAt(const MidiEventState& state, size_t noteIndex,
+                                              double splitBeat) {
+    constexpr double kEpsilon = 1e-9;
+    if (noteIndex >= state.notes.size())
+        return std::nullopt;
+    const auto& note = state.notes[noteIndex];
+    const double offset = splitBeat - note.startBeat;
+    if (offset <= kEpsilon || offset >= note.lengthBeats - kEpsilon)
+        return std::nullopt;
+
+    auto head = note;
+    head.lengthBeats = offset;
+    auto tail = note;
+    tail.startBeat = splitBeat;
+    tail.lengthBeats = note.lengthBeats - offset;
+    tail.id = INVALID_EVENT_ID;
+    head.pitchExpression.clear();
+    tail.pitchExpression.clear();
+    for (auto point : note.pitchExpression) {
+        if (point.beat < offset) {
+            head.pitchExpression.push_back(point);
+        } else {
+            point.beat -= offset;
+            tail.pitchExpression.push_back(point);
+        }
+    }
+
+    auto after = state;
+    tail.id = after.nextEventId++;
+    after.notes[noteIndex] = head;
+    after.notes.insert(after.notes.begin() + static_cast<std::ptrdiff_t>(noteIndex) + 1, tail);
+    return after;
+}
+
+std::optional<MidiEventState> glueMidiNoteToNext(const MidiEventState& state, size_t noteIndex) {
+    if (noteIndex >= state.notes.size())
+        return std::nullopt;
+    const auto& note = state.notes[noteIndex];
+
+    std::optional<size_t> next;
+    for (size_t i = 0; i < state.notes.size(); ++i) {
+        const auto& other = state.notes[i];
+        if (i == noteIndex || other.noteNumber != note.noteNumber ||
+            other.startBeat < note.startBeat)
+            continue;
+        if (!next || other.startBeat < state.notes[*next].startBeat)
+            next = i;
+    }
+    if (!next)
+        return std::nullopt;
+
+    const auto& follower = state.notes[*next];
+    auto after = state;
+    auto& joined = after.notes[noteIndex];
+    const double offset = follower.startBeat - note.startBeat;
+    joined.lengthBeats = std::max(note.lengthBeats, offset + follower.lengthBeats);
+    for (auto point : follower.pitchExpression) {
+        point.beat += offset;
+        joined.pitchExpression.push_back(point);
+    }
+    std::ranges::sort(joined.pitchExpression, {}, &MidiPitchExpressionPoint::beat);
+    after.notes.erase(after.notes.begin() + static_cast<std::ptrdiff_t>(*next));
+    return after;
+}
+
 std::vector<MidiNoteStartBeat> collectMidiNoteStartBeats(const ClipInfo& clip,
                                                          const std::vector<size_t>& noteIndices) {
     std::vector<MidiNoteStartBeat> starts;

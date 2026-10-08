@@ -1,9 +1,12 @@
 #include "PianoRollKeyboard.hpp"
 
+#include <juce_audio_basics/juce_audio_basics.h>
+
 #include <cmath>
 
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "MidiEditorKey.hpp"
 #include "PitchFoldMap.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/GestureRouter.hpp"
@@ -25,15 +28,16 @@ int PianoRollKeyboard::noteForRow(int row) const {
 void PianoRollKeyboard::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
 
-    // The keyboard follows the physical instrument convention in every app
-    // theme. These are deliberately fixed rather than theme/custom palette
-    // roles; only interaction and pitch highlights use the active theme.
-    constexpr juce::uint32 naturalKeyColour = 0xFFE8E8E8;
-    constexpr juce::uint32 accidentalKeyColour = 0xFF1A1A1A;
-    constexpr juce::uint32 keySeparatorColour = 0xFFCCCCCC;
+    // Keys stay physical (light naturals, dark accidentals) in every theme. With a lit key,
+    // out-of-scale naturals grey out and the root is labelled in orange.
+    const auto naturalKey = ActiveTheme::getColour(ActiveTheme::MIDI_KEY_WHITE);
+    const auto naturalOutOfScale = ActiveTheme::getColour(ActiveTheme::MIDI_KEY_WHITE_OUT);
+    const auto accidentalKey = ActiveTheme::getColour(ActiveTheme::MIDI_KEY_BLACK);
+    const auto keySeparator = naturalKey.darker(0.2f);
+    const auto key = MidiEditorKeyState::getInstance().activeScale();
 
     // Background
-    g.setColour(juce::Colour(accidentalKeyColour));
+    g.setColour(accidentalKey);
     g.fillRect(bounds);
 
     const int rows = rowCount();
@@ -58,11 +62,19 @@ void PianoRollKeyboard::paint(juce::Graphics& g) {
             // Highlight color for pressed key
             g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_KEY_HIGHLIGHT));
         } else if (isBlackKey(note)) {
-            g.setColour(juce::Colour(accidentalKeyColour));
+            g.setColour(accidentalKey);
         } else {
-            g.setColour(juce::Colour(naturalKeyColour));
+            g.setColour(key.contains(note) ? naturalKey : naturalOutOfScale);
         }
         g.fillRect(keyArea);
+
+        if (key.isRoot(note) && noteHeight_ >= 9) {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_PLAYHEAD));
+            g.setFont(FontManager::getInstance().getUIFontBold(
+                juce::jmin(10.0f, static_cast<float>(noteHeight_) - 1.0f)));
+            g.drawText(juce::MidiMessage::getMidiNoteName(note, true, true, 4),
+                       keyArea.withTrimmedRight(4), juce::Justification::centredRight, false);
+        }
 
         if (highlightedNotes_.find(note) != highlightedNotes_.end()) {
             g.setColour(ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_PITCH_HIGHLIGHT)
@@ -74,7 +86,7 @@ void PianoRollKeyboard::paint(juce::Graphics& g) {
 
         // Subtle separator line between white keys
         if (!isBlackKey(note)) {
-            g.setColour(juce::Colour(keySeparatorColour));
+            g.setColour(keySeparator);
             g.drawHorizontalLine(y + noteHeight_ - 1, static_cast<float>(bounds.getX()),
                                  static_cast<float>(bounds.getRight()));
         }

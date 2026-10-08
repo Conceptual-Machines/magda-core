@@ -231,8 +231,12 @@ class MainView : public juce::Component,
     int zoomAnchorViewportX = 0;  // Viewport-relative position to keep stable
 
     // Layout - uses LayoutConfig for centralized configuration
+    // The marker lane folds away while the project has no markers.
+    bool markerLaneShown() const {
+        return markerLaneVisible_ && hasMarkers_;
+    }
     int getMarkerLaneHeight() const {
-        return markerLaneVisible_ ? LayoutConfig::getInstance().markerLaneHeight : 0;
+        return markerLaneShown() ? LayoutConfig::getInstance().markerLaneHeight : 0;
     }
     // The ruler height is fixed; the seconds row is one of its internal rows, so
     // toggling it never changes the total height.
@@ -245,6 +249,7 @@ class MainView : public juce::Component,
     /** The main-header part of a header-column row, leaving the I/O column's strip empty. */
     juce::Rectangle<int> mainHeaderPart(juce::Rectangle<int> column) const;
     bool markerLaneVisible_ = true;
+    bool hasMarkers_ = false;
     bool secondsRulerVisible_ = false;
     static constexpr int ARRANGEMENT_SCROLLBAR_SIZE = ZoomScrollBar::DEFAULT_THICKNESS;
 

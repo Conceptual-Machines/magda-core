@@ -67,6 +67,15 @@ class NoteComponent : public juce::Component, private juce::Timer {
     void setSelected(bool selected);
     void setGhost(bool ghost);
 
+    // Piano roll notes mark out-of-scale pitches; drum hits shade by velocity tier.
+    enum class Style { Plain, ScaleAware, DrumHit };
+    void setStyle(Style style) {
+        style_ = style;
+    }
+    bool isGhost() const {
+        return ghost_;
+    }
+
     // Update note data from clip
     void updateFromNote(const MidiNote& note, juce::Colour colour);
     void updatePreviewPitch(int noteNumber);
@@ -99,6 +108,10 @@ class NoteComponent : public juce::Component, private juce::Timer {
     std::function<void(size_t /*noteIndex*/, int /*velocityDelta*/)> onVelocityWheel;
 
   private:
+    // Slice, Glue and Erase act on this note directly; returns true when the click was theirs.
+    bool handleToolClick(const juce::MouseEvent& e);
+    void paintDrumHit(juce::Graphics& g, juce::Rectangle<float> bounds);
+
     size_t noteIndex_;
     ClipId sourceClipId_;
     NoteGridHost* parentGrid_;
@@ -111,6 +124,7 @@ class NoteComponent : public juce::Component, private juce::Timer {
     int velocity_ = 100;
     juce::Colour colour_;
     bool ghost_ = false;
+    Style style_ = Style::Plain;
 
     // Interaction state
     enum class DragMode { None, Move, ResizeLeft, ResizeRight };

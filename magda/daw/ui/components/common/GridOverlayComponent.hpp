@@ -2,6 +2,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
+
 #include "../../../utils/ScopedListener.hpp"
 #include "../../layout/LayoutConfig.hpp"
 #include "../../state/TimelineController.hpp"
@@ -33,6 +35,9 @@ class GridOverlayComponent : public juce::Component, public TimelineStateListene
     bool hitTest(int /*x*/, int /*y*/) override {
         return false;
     }
+
+    // Areas the grid leaves bare (the clips), in this component's coordinates.
+    std::function<juce::RectangleList<int>()> getOccludedAreas;
 
     // Connect to timeline controller for state updates
     void setController(TimelineController* controller);

@@ -39,25 +39,31 @@ double projectSignatureBeat() {
 }  // namespace
 
 // Static members — persist across editor switches
-bool MidiEditorContent::velocityDrawerOpen_ = false;
-bool MidiEditorContent::velocityLaneVisible_ = false;
+bool MidiEditorContent::velocityDrawerOpen_ = true;
+magda::MidiDrawerComponent::LaneMode MidiEditorContent::laneMode_ =
+    magda::MidiDrawerComponent::LaneMode::Velocity;
 bool MidiEditorContent::foldEnabled_ = false;
 bool MidiEditorContent::notePreviewEnabled_ = false;
 std::vector<magda::TrackId> MidiEditorContent::overlayTrackIds_;
 
 void MidiEditorContent::syncNotePreviewToggle(magda::SvgButton& button, bool on) {
-    // Same glyphs as the mute button (master_on speaker / master_off speaker-off),
-    // recoloured instead of chipped: accent blue when on, dimmed grey when off.
-    // The two source SVGs bake different fills, so set the recolour source to
-    // match each glyph before driving the active state.
-    if (on) {
-        button.updateSvgData(BinaryData::master_on_svg, BinaryData::master_on_svgSize);
-        button.setOriginalColor(juce::Colour(0xFFB3B3B3));
-    } else {
-        button.updateSvgData(BinaryData::master_off_svg, BinaryData::master_off_svgSize);
-        button.setOriginalColor(juce::Colour(0xFF1E1E1E));
-    }
+    button.updateSvgData(on ? BinaryData::memonitoron_svg : BinaryData::memonitoroff_svg,
+                         on ? BinaryData::memonitoron_svgSize : BinaryData::memonitoroff_svgSize);
+    button.setOriginalColor(juce::Colour(0xFFB3B3B3));
+    button.setActiveColor(ActiveTheme::MIDI_MONITOR);
     button.setActive(on);
+}
+
+void MidiEditorContent::styleRailButton(magda::SvgButton& button) {
+    button.setOriginalColor(juce::Colour(0xFFB3B3B3));
+    button.setNormalColor(ActiveTheme::TEXT_SECONDARY);
+    button.setHoverColor(ActiveTheme::TEXT_PRIMARY);
+    button.setActiveColor(ActiveTheme::TEXT_PRIMARY);
+    button.setActiveBackgroundColor(ActiveTheme::MIDI_TOOL_ACTIVE);
+    button.setActiveBorderColor(ActiveTheme::MIDI_TOOL_ACTIVE_BORDER);
+    button.setBorderThickness(1.0f);
+    button.setCornerRadius(6.0f);
+    button.setIconPadding(7.0f);
 }
 
 std::vector<int> MidiEditorContent::collectUsedPitches() const {
@@ -73,6 +79,12 @@ std::vector<int> MidiEditorContent::collectUsedPitches() const {
 void MidiEditorContent::rebuildFoldMap() {
     foldMap_.rebuild(collectUsedPitches());
     onFoldMapChanged();
+}
+
+void MidiEditorContent::songKeyChanged() {
+    if (foldEnabled_)
+        applyFold();
+    repaint();
 }
 
 void MidiEditorContent::applyFold() {
@@ -224,6 +236,7 @@ MidiEditorContent::MidiEditorContent() {
     // Create time ruler
     timeRuler_ = std::make_unique<magda::TimeRuler>();
     timeRuler_->setDisplayMode(magda::TimeRuler::DisplayMode::BarsBeats);
+    timeRuler_->setCompact(true);
     timeRuler_->setLeftPadding(GRID_LEFT_PADDING);
     timeRuler_->setRelativeMode(relativeTimeMode_);
     addAndMakeVisible(timeRuler_.get());
@@ -1095,14 +1108,14 @@ void MidiEditorContent::setupMidiDrawer() {
         }
     };
 
-    // Adding/removing a CC lane recomputes whether the drawer is shown (so a CC
-    // lane can open the drawer without the velocity lane, and removing the last
-    // lane closes it) and refreshes the sidebar toggle states.
-    midiDrawer_->setVelocityLaneVisible(velocityLaneVisible_);
-    midiDrawer_->onLanesChanged = [this]() {
-        refreshLaneDrawer();
-        updateLaneToggleStates();
+    // Adding a CC lane switches the lane to CC, so both paths sync the shared mode.
+    midiDrawer_->setLaneMode(laneMode_);
+    const auto syncLaneMode = [this]() {
+        laneMode_ = midiDrawer_->getLaneMode();
+        onLaneModeChanged(laneMode_);
     };
+    midiDrawer_->onLaneModeChanged = [syncLaneMode](auto) { syncLaneMode(); };
+    midiDrawer_->onLanesChanged = syncLaneMode;
 
     addChildComponent(midiDrawer_.get());
 }
@@ -1117,11 +1130,9 @@ void MidiEditorContent::setVelocityDrawerVisible(bool visible) {
 }
 
 void MidiEditorContent::refreshLaneDrawer() {
-    if (midiDrawer_)
-        midiDrawer_->setVelocityLaneVisible(velocityLaneVisible_);
-    // The drawer area is shown when either the velocity lane is toggled on or
-    // any CC lane exists, so velocity and CC are independent.
-    velocityDrawerOpen_ = velocityLaneVisible_ || (midiDrawer_ && midiDrawer_->hasExtraLanes());
+    if (midiDrawer_ && midiDrawer_->getLaneMode() != laneMode_)
+        midiDrawer_->setLaneMode(laneMode_);
+    onLaneModeChanged(laneMode_);
     updateVelocityLane();
     resized();
     repaint();

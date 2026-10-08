@@ -1203,6 +1203,8 @@ struct ClipInfo {
     int gridDenominator = 4;
     bool gridSnapEnabled = true;
     int midiEditorRowHeight = 0;  // 0 = editor default
+    // Piano roll chord lane, per clip; unset follows the track (on with a Chord Engine).
+    std::optional<bool> chordLaneVisible;
 
     // Session launch properties
     LaunchMode launchMode = LaunchMode::Trigger;

@@ -246,6 +246,12 @@ void MainView::setupComponents() {
     // Create grid overlay component (vertical time grid lines - below selection and playhead)
     gridOverlay = std::make_unique<GridOverlayComponent>();
     gridOverlay->setController(timelineController.get());
+    gridOverlay->getOccludedAreas = [this]() {
+        juce::RectangleList<int> areas;
+        for (const auto& clip : trackContentPanel->getVisibleClipBounds())
+            areas.add(gridOverlay->getLocalArea(trackContentPanel.get(), clip));
+        return areas;
+    };
     addAndMakeVisible(*gridOverlay);
 
     // Create selection overlay component (below playhead)
@@ -417,7 +423,7 @@ void MainView::setupComponents() {
         markerLaneVisible_ = markerLaneToggleButton->getToggleState();
         markerLaneToggleButton->setTooltip(markerLaneVisible_ ? "Hide marker lane"
                                                               : "Show marker lane");
-        markerLaneViewport->setVisible(markerLaneVisible_);
+        markerLaneViewport->setVisible(markerLaneShown());
         timeline->setMarkerLaneVisible(markerLaneVisible_);
         resized();
     };
@@ -686,6 +692,11 @@ void MainView::timerCallback() {
 // ===== TimelineStateListener Implementation =====
 
 void MainView::timelineStateChanged(const TimelineState& state, ChangeFlags changes) {
+    if (const bool hasMarkers = !state.markers.empty(); hasMarkers != hasMarkers_) {
+        hasMarkers_ = hasMarkers;
+        resized();
+    }
+
     // Timeline length changes: the ruler and track content cache their own
     // length, so push the new value to them (e.g. from Project Settings). The
     // Zoom flag that accompanies a length change handles the resize/scrollbars.
@@ -1124,7 +1135,7 @@ void MainView::resized() {
         const auto cornerArea = arrangementLayout.cornerArea;
         const int btnSize = 23;
         const int gap = 6;
-        const int rowGap = 8;
+        const int rowGap = 4;
         const int margin = 8;
         const int markerLaneHeight = getMarkerLaneHeight();
         const auto markerCornerArea = cornerArea.withHeight(markerLaneHeight);
@@ -1151,8 +1162,8 @@ void MainView::resized() {
                                               : cornerArea.getX();
         int lineW = cornerArea.getWidth() + layout.componentSpacing;
         markerLaneSeparatorLine =
-            markerLaneVisible_ ? juce::Rectangle<int>(lineX, markerCornerArea.getBottom(), lineW, 1)
-                               : juce::Rectangle<int>();
+            markerLaneShown() ? juce::Rectangle<int>(lineX, markerCornerArea.getBottom(), lineW, 1)
+                              : juce::Rectangle<int>();
         // Vertical border closing off the marker-lane gutter from the marker
         // content beside it (the content sits opposite the header column).
         if (!markerCornerRightBorderLine.isEmpty())
@@ -1161,7 +1172,7 @@ void MainView::resized() {
                                       ? arrangementLayout.markerLaneArea.getRight()
                                       : arrangementLayout.markerLaneArea.getX() - 1;
         markerCornerRightBorderLine =
-            markerLaneVisible_
+            markerLaneShown()
                 ? juce::Rectangle<int>(markerBorderX, markerCornerArea.getY(), 1, markerLaneHeight)
                 : juce::Rectangle<int>();
         cornerSeparatorLine =
@@ -1215,7 +1226,7 @@ void MainView::resized() {
         repaint(ioLabelsStrip);
     }
 
-    markerLaneViewport->setVisible(markerLaneVisible_);
+    markerLaneViewport->setVisible(markerLaneShown());
     markerLaneViewport->setBounds(arrangementLayout.markerLaneArea);
     timelineViewport->setBounds(arrangementLayout.timelineArea);
     trackHeadersViewport->setBounds(arrangementLayout.trackHeadersArea);

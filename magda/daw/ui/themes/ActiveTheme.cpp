@@ -220,6 +220,28 @@ constexpr ActiveTheme::Palette darkPalette{
     0xFF5B7FBD,  // DEVICE_PAD_HIT_BORDER
     0xFF171B20,  // DEVICE_PAD_EMPTY
     0xFF161A1F,  // DEVICE_PANEL
+    0xFF1B2026,  // MIDI_TOOLBAR
+    0xFF151A20,  // MIDI_RAIL
+    0xFF12151C,  // MIDI_LANE
+    0xFF2A3038,  // MIDI_TOOL_ACTIVE
+    0xFF3F4854,  // MIDI_TOOL_ACTIVE_BORDER
+    0xFF161920,  // MIDI_ROW_OUT
+    0xFF20242D,  // MIDI_ROW_IN
+    0xFF29282B,  // MIDI_ROW_ROOT
+    0xFF0E1215,  // MIDI_ROW_LINE
+    0xFFF0F4F7,  // MIDI_KEY_WHITE
+    0xFFA9AFB6,  // MIDI_KEY_WHITE_OUT
+    0xFF181B20,  // MIDI_KEY_BLACK
+    0xFFE08529,  // MIDI_PLAYHEAD
+    0xFF5F8CC2,  // MIDI_NOTE
+    0xFF6C5CE7,  // MIDI_KEY_ON
+    0xFFE0A53A,  // MIDI_MUTE
+    0xFF5BC07A,  // MIDI_MONITOR
+    0xFF1D2935,  // MIDI_CHORD_BLOCK
+    0xFF293A4E,  // MIDI_CHORD_BLOCK_CURRENT
+    0xFF0D1218,  // MIDI_DRUM_ROW
+    0xFF0F1217,  // MIDI_DRUM_LABEL
+    0xFF0C0D11,  // MIDI_DRUM_GROUP
 };
 
 // A dropped entry shifts every role after it and leaves the array's tail
@@ -476,6 +498,28 @@ constexpr ActiveTheme::Palette lightPalette = [] {
     set(ColourRole::DEVICE_PAD_HIT_BORDER, 0xFF4E78B5);
     set(ColourRole::DEVICE_PAD_EMPTY, 0xFFEAEEF2);
     set(ColourRole::DEVICE_PANEL, 0xFFE9EDF1);
+    set(ColourRole::MIDI_TOOLBAR, 0xFFE6EAEE);
+    set(ColourRole::MIDI_RAIL, 0xFFDFE4E9);
+    set(ColourRole::MIDI_LANE, 0xFFE9EDF1);
+    set(ColourRole::MIDI_TOOL_ACTIVE, 0xFFD2D9E0);
+    set(ColourRole::MIDI_TOOL_ACTIVE_BORDER, 0xFFAAB4BE);
+    set(ColourRole::MIDI_ROW_OUT, 0xFFDDE2E7);
+    set(ColourRole::MIDI_ROW_IN, 0xFFEEF1F4);
+    set(ColourRole::MIDI_ROW_ROOT, 0xFFF3ECE2);
+    set(ColourRole::MIDI_ROW_LINE, 0xFFCFD5DB);
+    set(ColourRole::MIDI_KEY_WHITE, 0xFFFFFFFF);
+    set(ColourRole::MIDI_KEY_WHITE_OUT, 0xFFC9CED4);
+    set(ColourRole::MIDI_KEY_BLACK, 0xFF2A2F36);
+    set(ColourRole::MIDI_PLAYHEAD, 0xFFD0731A);
+    set(ColourRole::MIDI_NOTE, 0xFF4A78B0);
+    set(ColourRole::MIDI_KEY_ON, 0xFF5A4AD8);
+    set(ColourRole::MIDI_MUTE, 0xFFC98A1E);
+    set(ColourRole::MIDI_MONITOR, 0xFF2F9A55);
+    set(ColourRole::MIDI_CHORD_BLOCK, 0xFFD4E0EE);
+    set(ColourRole::MIDI_CHORD_BLOCK_CURRENT, 0xFFB9CDE4);
+    set(ColourRole::MIDI_DRUM_ROW, 0xFFEEF1F4);
+    set(ColourRole::MIDI_DRUM_LABEL, 0xFFE6EAEE);
+    set(ColourRole::MIDI_DRUM_GROUP, 0xFFDCE1E6);
 
     return palette;
 }();
@@ -712,6 +756,28 @@ constexpr ActiveTheme::Palette highContrastPalette = [] {
     palette[colourRoleIndex(ColourRole::DEVICE_PAD_HIT_BORDER)] = 0xFF7AB8FF;
     palette[colourRoleIndex(ColourRole::DEVICE_PAD_EMPTY)] = 0xFF000000;
     palette[colourRoleIndex(ColourRole::DEVICE_PANEL)] = 0xFF050505;
+    palette[colourRoleIndex(ColourRole::MIDI_TOOLBAR)] = 0xFF0A0A0A;
+    palette[colourRoleIndex(ColourRole::MIDI_RAIL)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::MIDI_LANE)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::MIDI_TOOL_ACTIVE)] = 0xFF303030;
+    palette[colourRoleIndex(ColourRole::MIDI_TOOL_ACTIVE_BORDER)] = 0xFFB0B0B0;
+    palette[colourRoleIndex(ColourRole::MIDI_ROW_OUT)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::MIDI_ROW_IN)] = 0xFF141414;
+    palette[colourRoleIndex(ColourRole::MIDI_ROW_ROOT)] = 0xFF2A2016;
+    palette[colourRoleIndex(ColourRole::MIDI_ROW_LINE)] = 0xFF404040;
+    palette[colourRoleIndex(ColourRole::MIDI_KEY_WHITE)] = 0xFFFFFFFF;
+    palette[colourRoleIndex(ColourRole::MIDI_KEY_WHITE_OUT)] = 0xFF8A8A8A;
+    palette[colourRoleIndex(ColourRole::MIDI_KEY_BLACK)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::MIDI_PLAYHEAD)] = 0xFFFFA24A;
+    palette[colourRoleIndex(ColourRole::MIDI_NOTE)] = 0xFF7AB8FF;
+    palette[colourRoleIndex(ColourRole::MIDI_KEY_ON)] = 0xFFA79BFF;
+    palette[colourRoleIndex(ColourRole::MIDI_MUTE)] = 0xFFFFC04D;
+    palette[colourRoleIndex(ColourRole::MIDI_MONITOR)] = 0xFF54D68B;
+    palette[colourRoleIndex(ColourRole::MIDI_CHORD_BLOCK)] = 0xFF10233A;
+    palette[colourRoleIndex(ColourRole::MIDI_CHORD_BLOCK_CURRENT)] = 0xFF1D3D63;
+    palette[colourRoleIndex(ColourRole::MIDI_DRUM_ROW)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::MIDI_DRUM_LABEL)] = 0xFF050505;
+    palette[colourRoleIndex(ColourRole::MIDI_DRUM_GROUP)] = 0xFF0A0A0A;
 
     return palette;
 }();

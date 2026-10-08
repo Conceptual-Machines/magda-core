@@ -142,13 +142,20 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
         return;
     }
 
-    // Use FULL cell width for modulation bars (100% amount = full cell width left to right)
-    int maxWidth = cellBounds.getWidth();
-    int leftX = 0;
+    // 100% amount spans the full cell, or the row under a knob or slider, which clips the bars
+    const auto& band = ctx.indicatorBand;
+    const bool underControl = !band.isEmpty();
+    juce::Graphics::ScopedSaveState clipped(g);
+    if (underControl)
+        g.reduceClipRegion(band);
+    int maxWidth = underControl ? band.getWidth() : cellBounds.getWidth();
+    int leftX = underControl ? band.getX() : 0;
+    const int macroY = underControl ? band.getY() : sliderBounds.getY() + 2;
+    const int modY = underControl ? band.getY() + 4 : sliderBounds.getBottom() - 6;
 
     // Bar heights (thickness)
-    const int movementBarHeight = 5;  // Thicker bar for movement (normal mode)
-    const int amountBarHeight = 3;    // Thinner bar for amount (link mode)
+    const int movementBarHeight = underControl ? 3 : 5;  // Thicker bar for movement (normal mode)
+    const int amountBarHeight = 3;                       // Thinner bar for amount (link mode)
 
     // ========================================================================
     // In LINK MODE: Show AMOUNT lines (what you're editing)
@@ -158,7 +165,7 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
     if (ctx.isInLinkMode) {
         // If we're dragging in MOD link mode, show mod amount preview at BOTTOM
         if (ctx.isLinkModeDrag && ctx.activeMod.isValid()) {
-            int y = sliderBounds.getBottom() - 6;
+            int y = modY;
 
             // Bar starts from current param value and extends by drag amount (bipolar mode)
             int startX = leftX + static_cast<int>(maxWidth * ctx.currentParamValue);
@@ -171,7 +178,7 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
 
         // Draw MACRO amount line at TOP - only for the ACTIVE macro in link mode
         if (ctx.activeMacro.isValid() && ctx.activeMacro.macroIndex >= 0) {
-            int y = sliderBounds.getY() + 2;
+            int y = macroY;
             magda::ControlTarget thisTarget =
                 magda::ControlTarget::pluginParam(ctx.linkCtx.devicePath, ctx.linkCtx.paramIndex);
 
@@ -200,7 +207,7 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
                               ctx.linkCtx.rackMods, ctx.linkCtx.trackMods);
 
             if (modPtr) {
-                int y = sliderBounds.getBottom() - 6;
+                int y = modY;
                 magda::ControlTarget thisTarget = magda::ControlTarget::pluginParam(
                     ctx.linkCtx.devicePath, ctx.linkCtx.paramIndex);
 
@@ -221,7 +228,7 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
     if (!ctx.isInLinkMode) {
         const float selectedMacroModulation = getSelectedDeviceMacroModulation(ctx.linkCtx);
         if (selectedMacroModulation != 0.0f) {
-            int y = sliderBounds.getY() + 2;
+            int y = macroY;
             int startX = leftX + static_cast<int>(maxWidth * ctx.currentParamValue);
             int barWidth = static_cast<int>(maxWidth * selectedMacroModulation);
 
@@ -237,7 +244,7 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
         float totalMacroModulation = computeTotalMacroModulation(ctx.linkCtx);
 
         if (totalMacroModulation != 0.0f) {
-            int y = sliderBounds.getY() + 2;
+            int y = macroY;
 
             int startX = leftX + static_cast<int>(maxWidth * ctx.currentParamValue);
             int barWidth = static_cast<int>(maxWidth * totalMacroModulation);
@@ -252,7 +259,7 @@ void paintModulationIndicators(juce::Graphics& g, const ModulationPaintContext& 
     float totalModModulation = computeTotalModModulation(ctx.linkCtx);
 
     if (totalModModulation != 0.0f) {
-        int y = sliderBounds.getBottom() - 6;
+        int y = modY;
 
         int startX = leftX + static_cast<int>(maxWidth * ctx.currentParamValue);
         int barWidth = static_cast<int>(maxWidth * totalModModulation);

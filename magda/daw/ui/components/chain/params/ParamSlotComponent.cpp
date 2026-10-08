@@ -861,7 +861,6 @@ void ParamSlotComponent::paint(juce::Graphics& g) {
         } else if (boolToggle_ && boolToggle_->isVisible()) {
             paintBooleanValue(g);
         }
-        paintLinkDots(g);
         return;
     }
 
@@ -876,30 +875,6 @@ void ParamSlotComponent::paint(juce::Graphics& g) {
         g.fillRect(valueBounds);
         g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(valueBounds);
-    }
-}
-
-void ParamSlotComponent::paintLinkDots(juce::Graphics& g) const {
-    auto ctx = buildLinkContext();
-    ctx.selectedModIndex = -1;
-    ctx.selectedMacroIndex = -1;
-    const bool macros = !getLinkedMacros(ctx).empty();
-    const bool mods = !getLinkedMods(ctx).empty();
-    if (!macros && !mods)
-        return;
-
-    // Top right, clear of the MIDI-mapped dot in the corner.
-    constexpr float size = 6.0f;
-    constexpr float gap = 4.0f;
-    float x = static_cast<float>(tileArea_.getRight()) - 3.0f - 5.0f - gap - size;
-    const float y = static_cast<float>(tileArea_.getY()) + 4.0f;
-    for (const auto& [shown, role] : {std::pair{mods, ActiveTheme::ACCENT_ATTENTION},
-                                      std::pair{macros, ActiveTheme::ACCENT_MODULATION}}) {
-        if (!shown)
-            continue;
-        g.setColour(ActiveTheme::getColour(role));
-        g.fillEllipse(x, y, size, size);
-        x -= size + gap;
     }
 }
 
@@ -960,6 +935,7 @@ void ParamSlotComponent::paintOverChildren(juce::Graphics& g) {
     ModulationPaintContext paintCtx;
     paintCtx.sliderBounds = valueSlider_.getBounds();
     paintCtx.cellBounds = getLocalBounds();
+    paintCtx.indicatorBand = modRowArea_;
     paintCtx.currentParamValue = normalizedParamValue;
     paintCtx.isInLinkMode = isInLinkMode_;
     paintCtx.isLinkModeDrag = isLinkModeDrag_;
@@ -1040,10 +1016,14 @@ bool ParamSlotComponent::layoutStyled(juce::Rectangle<int> bounds) {
 
     tileArea_ = bounds;
     auto inner = tileArea_.reduced(8, 5);
-    knobArea_ = barArea_ = {};
+    knobArea_ = barArea_ = modRowArea_ = {};
 
     // Where a widget other than the value slider goes in each style.
     juce::Rectangle<int> widgetArea;
+
+    // Every style keeps the macro and mod lines in a row at the foot of the cell.
+    modRowArea_ = inner.removeFromBottom(juce::jmin(kModRowHeight, inner.getHeight() / 3));
+    inner.removeFromBottom(2);
 
     switch (style_) {
         case ParamControlStyle::Text: {
@@ -1057,7 +1037,10 @@ bool ParamSlotComponent::layoutStyled(juce::Rectangle<int> bounds) {
         }
         case ParamControlStyle::Knobs: {
             constexpr int kMaxKnob = 52;  // the disc plus its arc, grown with the cell
-            const int size = juce::jmin(kMaxKnob, inner.getHeight() - 26, inner.getWidth());
+            const int size = juce::jmin(kMaxKnob, inner.getHeight() - 27, inner.getWidth());
+            // Spare height drops the stack up to 10px from the top of the cell
+            const int stackHeight = juce::jmax(16, size) + 27;
+            inner.removeFromTop(juce::jlimit(0, 10, inner.getHeight() - stackHeight));
             knobArea_ = inner.removeFromTop(juce::jmax(16, size))
                             .withSizeKeepingCentre(juce::jmax(16, size), juce::jmax(16, size));
             inner.removeFromTop(2);
@@ -1072,6 +1055,7 @@ bool ParamSlotComponent::layoutStyled(juce::Rectangle<int> bounds) {
             auto top = inner.removeFromTop(14);
             valueArea_ = top.removeFromRight(top.getWidth() / 2);
             nameLabel_.setBounds(top);
+            // The track centred between the name row and the modulation row
             barArea_ =
                 inner.withSizeKeepingCentre(inner.getWidth(), juce::jmin(14, inner.getHeight()));
             widgetArea =

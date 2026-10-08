@@ -334,6 +334,14 @@ class Config {
         trackColourStyle = style == "full" ? "full" : "spine";
     }
 
+    // Arrangement track headers show the I/O routing column.
+    bool getShowTrackIORouting() const {
+        return showTrackIORouting;
+    }
+    void setShowTrackIORouting(bool show) {
+        showTrackIORouting = show;
+    }
+
     // Track header mute / solo: "icons" (speaker and ring) or "letters" (M and S).
     const std::string& getMuteSoloStyle() const {
         return muteSoloStyle;
@@ -1543,6 +1551,7 @@ class Config {
     std::string transportStyle = "anchored";
     std::string deviceControlStyle = "text";
     std::string trackColourStyle = "spine";
+    bool showTrackIORouting = true;
     std::string muteSoloStyle = "icons";
 
     // UI font scale: multiplier applied by FontManager to app-owned text fonts.

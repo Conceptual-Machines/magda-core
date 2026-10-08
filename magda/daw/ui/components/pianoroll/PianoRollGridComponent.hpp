@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -62,6 +63,7 @@ class PianoRollGridComponent : public juce::Component,
 
     // Keyboard handling
     bool keyPressed(const juce::KeyPress& key) override;
+    bool keyStateChanged(bool isKeyDown) override;
 
     // ApplicationCommandTarget: context-scoped commands (#25). When the grid is
     // focused these win over the global handlers; getNextCommandTarget() chains
@@ -394,6 +396,12 @@ class PianoRollGridComponent : public juce::Component,
     bool playheadClickNoSnap_ = false;  // Alt held on the pending click -> free (unsnapped)
     juce::Point<int> playheadClickStart_;
     static constexpr int PLAYHEAD_CLICK_DRAG_THRESHOLD = 5;
+
+    // Erase-tool sweep: notes crossed so far, hidden until mouseUp deletes them.
+    bool isErasing_ = false;
+    std::map<ClipId, std::vector<size_t>> erasedNotes_;
+    void eraseNotesAt(juce::Point<int> position);
+    void commitErase();
 
     // Shift-drag note creation state
     bool isDrawingNote_ = false;

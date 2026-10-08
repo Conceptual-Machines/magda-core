@@ -26,6 +26,8 @@ set(TEST_SOURCES
     midi/test_midi_clip_sync.cpp
     midi/test_midi_clip_split.cpp
     midi/test_midi_legato.cpp
+    midi/test_midi_split_glue.cpp
+    midi/test_midi_key_scale.cpp
     midi/test_midi_offset.cpp
     clips/test_pianoroll_note_position.cpp
     clips/test_pianoroll_shown_content.cpp

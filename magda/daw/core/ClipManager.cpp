@@ -2971,6 +2971,13 @@ void ClipManager::setClipMidiEditorRowHeight(ClipId clipId, int rowHeight) {
     }
 }
 
+void ClipManager::setClipChordLaneVisible(ClipId clipId, bool visible) {
+    if (auto* clip = getClip(clipId); clip != nullptr && clip->chordLaneVisible != visible) {
+        clip->chordLaneVisible = visible;
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
 // ============================================================================
 // Content-Level Operations (Editor Operations)
 // ============================================================================
@@ -3847,6 +3854,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
                 newClip->gridDenominator = clipData.gridDenominator;
                 newClip->gridSnapEnabled = clipData.gridSnapEnabled;
                 newClip->midiEditorRowHeight = clipData.midiEditorRowHeight;
+                newClip->chordLaneVisible = clipData.chordLaneVisible;
 
                 // Cross-view translation: pasting into session view
                 if (targetView == ClipView::Session && targetSceneIndex >= 0) {
