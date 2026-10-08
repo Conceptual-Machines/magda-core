@@ -12,6 +12,7 @@
 #include "layout/NodeHeaderStyles.hpp"
 #include "ui/components/chain/layout/DeviceSlotHeaderLayout.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
+#include "ui/components/common/MasterSpeakerButton.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/utils/AudioFileTypes.hpp"
@@ -299,13 +300,12 @@ DrumGridUI::DrumGridUI() {
     };
     addChildComponent(emptyAddButton_);
 
-    for (auto* button : {&chainMuteButton_, &chainSoloButton_}) {
-        button->setClickingTogglesState(true);
+    for (auto* button : {&chainMuteButton_, &chainSoloButton_})
         addAndMakeVisible(*button);
-    }
     chainMuteButton_.setTooltip("Mute pad");
     chainMuteButton_.onClick = [this]() {
         const bool muted = chainMuteButton_.getToggleState();
+        syncMuteGlyph(chainMuteButton_, muted);
         padInfos_[static_cast<size_t>(selectedPad_)].mute = muted;
         if (onPadMuteChanged)
             onPadMuteChanged(selectedPad_, muted);
@@ -340,14 +340,12 @@ DrumGridUI::~DrumGridUI() {
 void DrumGridUI::styleControls() {
     using node_header::GlyphToggleLookAndFeel;
     auto& glyph = GlyphToggleLookAndFeel::getInstance();
-    for (auto* button : {&editorToggle_, &chainMuteButton_, &chainSoloButton_})
-        button->setLookAndFeel(&glyph);
+    editorToggle_.setLookAndFeel(&glyph);
     editorToggle_.setColour(juce::TextButton::textColourOnId,
                             ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE));
-    chainMuteButton_.setColour(juce::TextButton::textColourOnId,
-                               ActiveTheme::getColour(ActiveTheme::DEVICE_RED));
-    chainSoloButton_.setColour(juce::TextButton::textColourOnId,
-                               ActiveTheme::getColour(ActiveTheme::DEVICE_AMBER));
+    // The same mute / solo as every other view, in the chipless device style.
+    node_header::applyDeviceMuteStyle(chainMuteButton_, 24.0f);
+    node_header::applyDeviceSoloStyle(chainSoloButton_, 24.0f);
     outputButton_.setLookAndFeel(&glyph);
 }
 
@@ -1009,7 +1007,7 @@ void DrumGridUI::refreshDetailPanel() {
     const bool hasChain = info.chainIndex >= 0;
     for (auto* button : {&chainMuteButton_, &chainSoloButton_})
         button->setEnabled(hasChain);
-    chainMuteButton_.setToggleState(info.mute, juce::dontSendNotification);
+    syncMuteGlyph(chainMuteButton_, info.mute);
     chainSoloButton_.setToggleState(info.solo, juce::dontSendNotification);
     for (juce::Component* control : {static_cast<juce::Component*>(&levelControl_),
                                      static_cast<juce::Component*>(&panControl_),

@@ -12,6 +12,7 @@
 #include "../../../components/common/MasterSpeakerButton.hpp"
 #include "../../../components/mixer/LevelMeterScale.hpp"
 #include "../../../engine/AudioEngine.hpp"
+#include "../../components/chain/layout/NodeHeaderStyles.hpp"
 #include "../../components/common/ColourSwatch.hpp"
 #include "../../components/mixer/RoutingSyncHelper.hpp"
 #include "../../state/TimelineController.hpp"
@@ -21,6 +22,7 @@
 #include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/ClipManager.hpp"
+#include "core/Config.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
 #include "core/TrackPropertyCommands.hpp"
@@ -43,7 +45,7 @@ magda::track_controls::Metrics inspectorControlMetrics() {
     magda::track_controls::Metrics m;
     m.rowH = 22;
     m.buttonW = 26;
-    m.buttonH = 18;
+    m.buttonH = 22;  // the gain / pan row height, so the whole row lines up
     m.cellW = 26;
     m.gap = 4;
     m.rowGap = 4;
@@ -59,7 +61,7 @@ TrackInspector::TrackInspector() {
     trackNameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     addAndMakeVisible(trackNameLabel_);
 
-    trackNameValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
+    trackNameValue_.setFont(FontManager::getInstance().getUIFontBold(13.0f));
     trackNameValue_.setEditable(true);
     trackNameValue_.onTextChange = [this]() {
         // The master track cannot be renamed; its name is fixed.
@@ -75,61 +77,10 @@ TrackInspector::TrackInspector() {
     // Colour swatch
     colourSwatch_ = std::make_unique<magda::ColourSwatch>();
     auto* swatch = static_cast<magda::ColourSwatch*>(colourSwatch_.get());
-    swatch->onColourClicked = [this, swatch]() {
-        if (selectedTrackId_ == magda::INVALID_TRACK_ID && selectedTrackIds_.empty())
-            return;
-
-        auto menu = juce::PopupMenu();
-        menu.addItem(1, "None");
-        menu.addSeparator();
-
-        // Helper to create a colour chip icon for menu items
-        auto makeChip = [](juce::Colour colour) {
-            juce::Image chip(juce::Image::ARGB, 14, 14, true);
-            juce::Graphics cg(chip);
-            cg.setColour(colour);
-            cg.fillRoundedRectangle(0.0f, 0.0f, 14.0f, 14.0f, 2.0f);
-            auto drawable = std::make_unique<juce::DrawableImage>();
-            drawable->setImage(chip);
-            return drawable;
-        };
-
-        const auto palette =
-            magda::ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourPalette;
-        for (size_t i = 0; i < palette.size(); ++i) {
-            const auto colour = juce::Colour(palette[i].colour);
-            menu.addItem(static_cast<int>(i + 2), palette[i].name, true, false, makeChip(colour));
-        }
-
-        menu.showMenuAsync(
-            juce::PopupMenu::Options().withTargetComponent(swatch),
-            [this, swatch, palette](int result) {
-                if (result == 0)
-                    return;
-                auto trackIds = selectedTrackIds_.empty()
-                                    ? std::unordered_set<magda::TrackId>{selectedTrackId_}
-                                    : selectedTrackIds_;
-                if (result == 1) {
-                    // "None"
-                    swatch->clearColour();
-                    for (auto tid : trackIds) {
-                        magda::UndoManager::getInstance().executeCommand(
-                            std::make_unique<magda::SetTrackColourCommand>(
-                                tid, juce::Colour(0xFF444444)));
-                    }
-                } else {
-                    const auto idx = static_cast<size_t>(result - 2);
-                    if (idx < palette.size()) {
-                        const auto colour = juce::Colour(palette[idx].colour);
-                        swatch->setColour(colour);
-                        for (auto tid : trackIds) {
-                            magda::UndoManager::getInstance().executeCommand(
-                                std::make_unique<magda::SetTrackColourCommand>(tid, colour));
-                        }
-                    }
-                }
-            });
-    };
+    swatch->onColourClicked = [this, swatch]() { showColourMenu(swatch); };
+    // Right-clicking the name also picks the colour.
+    namePopupListener_.onPopup = [this]() { showColourMenu(&trackNameValue_); };
+    trackNameValue_.addMouseListener(&namePopupListener_, false);
     addAndMakeVisible(*colourSwatch_);
 
     // MAGDA glyph shown in the master track's (empty) colour-swatch slot.
@@ -153,7 +104,9 @@ TrackInspector::TrackInspector() {
         "mute", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
         BinaryData::master_off_svg, BinaryData::master_off_svgSize);
     configureMasterSpeakerButton(*muteButton_);
-    muteButton_->setInactiveIconOpacity(0.58f);
+    // v1: mute, solo, record, monitor and automation keep the neutral chip and carry their
+    // state in the glyph. Paddings land the track headers' glyph sizes on 26x22 buttons.
+    muteButton_->setIconPadding(7.0f);
     muteButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             if (selectedTrackId_ == magda::MASTER_TRACK_ID)
@@ -169,6 +122,7 @@ TrackInspector::TrackInspector() {
 
     // Speaker icon button (used for master mute instead of "M" text)
     speakerButton_ = magda::makeMasterSpeakerButton();
+    speakerButton_->setIconPadding(7.0f);
     speakerButton_->onClick = [this]() {
         magda::UndoManager::getInstance().executeCommand(
             std::make_unique<magda::SetMasterMuteCommand>(speakerButton_->getToggleState()));
@@ -184,14 +138,8 @@ TrackInspector::TrackInspector() {
     // Solo button (arrange track-header style)
     soloButton_ =
         std::make_unique<SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
-    soloButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-    soloButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    soloButton_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
-    soloButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                           ActiveTheme::ICON_ON_ACCENT);
-    soloButton_->setIconPadding(5.0f);  // match the arrange track-header solo glyph
-    soloButton_->setInactiveIconOpacity(0.58f);
-    soloButton_->setClickingTogglesState(true);
+    configureSoloButton(*soloButton_);
+    soloButton_->setIconPadding(6.5f);
     soloButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::UndoManager::getInstance().executeCommand(
@@ -206,11 +154,10 @@ TrackInspector::TrackInspector() {
                                                 BinaryData::track_record_svgSize);
     recordButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     recordButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    recordButton_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
+    recordButton_->setActiveBackgroundColor(ActiveTheme::SURFACE);
     recordButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                             ActiveTheme::ICON_ON_ACCENT);
-    recordButton_->setIconPadding(5.0f);  // match the arrange track-header record glyph
-    recordButton_->setInactiveIconOpacity(0.58f);
+                                             ActiveTheme::DEVICE_RED);
+    recordButton_->setIconPadding(6.5f);
     recordButton_->setClickingTogglesState(true);
     recordButton_->onClick = [this]() {
         DBG("TrackInspector::recordButton clicked - trackId="
@@ -222,20 +169,17 @@ TrackInspector::TrackInspector() {
     };
     addAndMakeVisible(*recordButton_);
 
-    // Track enable/disable: drives the chain bypass — the same signal-flow
-    // power as the track chain header's power button. Chip-style bordered
-    // switch in the name row, matching the clip inspector's toggle.
-    enableButton_ = std::make_unique<SvgButton>(
-        "enable", BinaryData::toggle_off_svg, BinaryData::toggle_off_svgSize,
-        BinaryData::toggle_on_svg, BinaryData::toggle_on_svgSize);
+    // Track enable/disable: the same chain power as the track chain header's power button,
+    // and drawn like it: the power glyph, green while on, on the neutral chip.
+    enableButton_ =
+        std::make_unique<SvgButton>("enable", BinaryData::power_svg, BinaryData::power_svgSize);
     enableButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    enableButton_->setActiveBackgroundColor(ActiveTheme::SURFACE);
     enableButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-    enableButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                             ActiveTheme::ICON_NEUTRAL);
-    enableButton_->setStateColourReplacement(juce::Colour(0xFF1E1E1E), ActiveTheme::ICON_ON_ACCENT,
-                                             ActiveTheme::ICON_ON_ACCENT);
+    enableButton_->setStateColourReplacement(juce::Colour(0xFFE6E6E6), ActiveTheme::ICON_NEUTRAL,
+                                             ActiveTheme::DEVICE_GREEN);
     enableButton_->setBorderThickness(1.0f);
-    enableButton_->setIconPadding(2.0f);
+    enableButton_->setIconPadding(6.5f);
     enableButton_->setTooltip(tr("tracks.enable.tooltip"));
     enableButton_->setClickingTogglesState(true);
     enableButton_->onClick = [this]() {
@@ -259,7 +203,8 @@ TrackInspector::TrackInspector() {
             return std::vector<magda::TrackId>(selectedTrackIds_.begin(), selectedTrackIds_.end());
         return std::vector<magda::TrackId>{selectedTrackId_};
     };
-    monitorButton_.setInactiveIconOpacity(0.58f);
+    monitorButton_.setIconPadding(7.0f);  // wide glyph: width-limited, so not raised with the row
+    monitorButton_.setGlyphStyle(true);
     addAndMakeVisible(monitorButton_);
 
     // Automation indicator — mirrors the arrange track-header automation button.
@@ -269,11 +214,10 @@ TrackInspector::TrackInspector() {
                                                        BinaryData::automation_svgSize);
     automationIndicator_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     automationIndicator_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    automationIndicator_->setActiveBackgroundColor(
-        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
+    automationIndicator_->setActiveBackgroundColor(ActiveTheme::SURFACE);
     automationIndicator_->setStateColourReplacement(
-        juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL, ActiveTheme::TEXT_BRIGHT);
-    automationIndicator_->setIconPadding(2.5f);
+        juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL, ActiveTheme::ACCENT_MODULATION);
+    automationIndicator_->setIconPadding(7.0f);
     automationIndicator_->onClick = [this]() {
         automatedSectionExpanded_ = !automatedSectionExpanded_;
         updateAutomatedParametersSummary();
@@ -382,23 +326,15 @@ TrackInspector::TrackInspector() {
     midiOutputSelector_->setSelectedId(1);   // "None"
     midiOutputSelector_->setEnabled(false);  // Disabled by default
     addAndMakeVisible(*midiOutputSelector_);
+    for (auto* selector : {audioInputSelector_.get(), inputSelector_.get(), outputSelector_.get(),
+                           midiOutputSelector_.get()})
+        selector->setFieldStyle(true);
 
     // Column header labels for routing selectors. "Audio" and "MIDI" are kept
     // as fixed technical tokens so the paired headers render at the same base
     // (Latin) size — a translated "Audio" would scale with the localized font
     // and tower over the fixed "MIDI" next to it.
-    audioColumnLabel_.setText(magda::technicalText(magda::TechnicalTextToken::Audio),
-                              juce::dontSendNotification);
-    audioColumnLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    audioColumnLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    audioColumnLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(audioColumnLabel_);
-
-    midiColumnLabel_.setText(magda::technicalText(magda::TechnicalTextToken::Midi),
-                             juce::dontSendNotification);
-    midiColumnLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    midiColumnLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    midiColumnLabel_.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(midiColumnLabel_);
 
     // I/O routing icons (non-interactive visual indicators). The tint is baked
@@ -425,7 +361,9 @@ TrackInspector::TrackInspector() {
     addSendButton_ =
         std::make_unique<SvgButton>("AddSend", BinaryData::add_svg, BinaryData::add_svgSize);
     addSendButton_->setTooltip(tr("inspector.add_send"));
-    addSendButton_->setIconPadding(4.0f);
+    addSendButton_->setIconPadding(5.0f);
+    addSendButton_->setNormalBackgroundColor(ActiveTheme::SURFACE);
+    addSendButton_->setBorderColor(ActiveTheme::BORDER);
     addSendButton_->setOriginalColor(ActiveTheme::getSecondaryTextColour());
     addSendButton_->onClick = [this]() { showAddSendMenu(); };
     addAndMakeVisible(*addSendButton_);
@@ -458,14 +396,103 @@ TrackInspector::TrackInspector() {
     addAndMakeVisible(latencyValue_);
 
     for (auto* label :
-         {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &audioColumnLabel_,
-          &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_, &clipsSectionLabel_,
-          &clipCountLabel_, &automatedSectionLabel_, &automatedParamsLabel_, &latencyLabel_,
-          &latencyValue_}) {
+         {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &sendReceiveSectionLabel_,
+          &noSendsLabel_, &clipsSectionLabel_, &clipCountLabel_, &automatedSectionLabel_,
+          &automatedParamsLabel_, &latencyLabel_, &latencyValue_}) {
         useLocalizedLabelPainter(*label);
     }
 
     applyThemeColours();
+    applyHeaderStyle();
+    magda::Config::getInstance().addListener(this);
+}
+
+void TrackInspector::showColourMenu(juce::Component* target) {
+    if ((selectedTrackId_ == magda::INVALID_TRACK_ID && selectedTrackIds_.empty()) ||
+        selectedTrackId_ == magda::MASTER_TRACK_ID)
+        return;
+
+    auto menu = juce::PopupMenu();
+    menu.addItem(1, "None");
+    menu.addSeparator();
+
+    // Helper to create a colour chip icon for menu items
+    auto makeChip = [](juce::Colour colour) {
+        juce::Image chip(juce::Image::ARGB, 14, 14, true);
+        juce::Graphics cg(chip);
+        cg.setColour(colour);
+        cg.fillRoundedRectangle(0.0f, 0.0f, 14.0f, 14.0f, 2.0f);
+        auto drawable = std::make_unique<juce::DrawableImage>();
+        drawable->setImage(chip);
+        return drawable;
+    };
+
+    const auto palette =
+        magda::ProjectManager::getInstance().getCurrentProjectInfo().defaults.colourPalette;
+    for (size_t i = 0; i < palette.size(); ++i) {
+        const auto colour = juce::Colour(palette[i].colour);
+        menu.addItem(static_cast<int>(i + 2), palette[i].name, true, false, makeChip(colour));
+    }
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(target), [this, palette](
+                                                                                   int result) {
+        auto* swatch = static_cast<magda::ColourSwatch*>(colourSwatch_.get());
+        if (result == 0)
+            return;
+        auto trackIds = selectedTrackIds_.empty()
+                            ? std::unordered_set<magda::TrackId>{selectedTrackId_}
+                            : selectedTrackIds_;
+        if (result == 1) {
+            // "None"
+            swatch->clearColour();
+            for (auto tid : trackIds) {
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetTrackColourCommand>(tid, juce::Colour(0xFF444444)));
+            }
+        } else {
+            const auto idx = static_cast<size_t>(result - 2);
+            if (idx < palette.size()) {
+                const auto colour = juce::Colour(palette[idx].colour);
+                swatch->setColour(magda::deriveTrackSwatch(colour));
+                for (auto tid : trackIds) {
+                    magda::UndoManager::getInstance().executeCommand(
+                        std::make_unique<magda::SetTrackColourCommand>(tid, colour));
+                }
+            }
+        }
+    });
+}
+
+void TrackInspector::applyHeaderStyle() {
+    const auto& config = magda::Config::getInstance();
+    const auto valueFont = FontManager::getInstance().getMonoFont(11.0f);
+    gainLabel_->setFont(valueFont);
+    panLabel_->setFont(valueFont);
+
+    // Full bar fills the name field with the track colour; Spine leaves the colour to the
+    // swatch beside it, which stays the colour picker in both modes.
+    const auto* track = isMultiTrackMode_ || selectedTrackId_ == magda::MASTER_TRACK_ID
+                            ? nullptr
+                            : magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+    const bool fullBar = config.getTrackColourStyle() == "full" && track != nullptr &&
+                         track->colour != juce::Colour(0xFF444444);
+    if (nameFilled_ != fullBar) {
+        nameFilled_ = fullBar;
+        resized();
+    }
+    // The field itself is painted rounded in paint(); the label only draws the text.
+    nameFill_ = fullBar ? magda::deriveTrackSwatch(track->colour)
+                        : ActiveTheme::getColour(ActiveTheme::SURFACE);
+    nameOutline_ = fullBar ? juce::Colours::transparentBlack : ActiveTheme::getBorderColour();
+    trackNameValue_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    trackNameValue_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
+    trackNameValue_.setColour(juce::Label::textColourId,
+                              fullBar ? juce::Colours::white : ActiveTheme::getTextColour());
+    repaint();
+}
+
+void TrackInspector::configChanged() {
+    applyHeaderStyle();
 }
 
 void TrackInspector::applyThemeColours() {
@@ -474,9 +501,9 @@ void TrackInspector::applyThemeColours() {
     const auto surface = ActiveTheme::getColour(ActiveTheme::SURFACE);
     const auto border = ActiveTheme::getBorderColour();
 
-    for (auto* label : {&trackNameLabel_, &routingSectionLabel_, &audioColumnLabel_,
-                        &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_,
-                        &clipsSectionLabel_, &automatedSectionLabel_, &latencyLabel_})
+    for (auto* label :
+         {&trackNameLabel_, &routingSectionLabel_, &sendReceiveSectionLabel_, &noSendsLabel_,
+          &clipsSectionLabel_, &automatedSectionLabel_, &latencyLabel_})
         label->setColour(juce::Label::textColourId, secondary);
 
     for (auto* label : {&automatedParamsLabel_, &clipCountLabel_, &latencyValue_})
@@ -492,11 +519,6 @@ void TrackInspector::applyThemeColours() {
 
     for (auto& label : sendDestLabels_)
         label->setColour(juce::Label::textColourId, primary);
-    for (auto& button : sendDeleteButtons_) {
-        button->setColour(juce::TextButton::buttonColourId,
-                          ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
-        button->setColour(juce::TextButton::textColourOffId, secondary);
-    }
 
     if (soloButton_) {
         soloButton_->setBorderColor(border);
@@ -517,21 +539,15 @@ void TrackInspector::applyThemeColours() {
 }
 
 void TrackInspector::rebuildRoutingIcons() {
-    const auto applyIcon = [](juce::Component* component, const char* svgData, int svgSize) {
-        auto* button = dynamic_cast<juce::DrawableButton*>(component);
-        if (button == nullptr)
-            return;
-        if (auto svg = juce::Drawable::createFromImageData(svgData, svgSize)) {
-            ActiveTheme::applyToSvgIcon(*svg);
-            button->setImages(svg.get());
-        }
-    };
-    applyIcon(inputIcon_.get(), BinaryData::Input_svg, BinaryData::Input_svgSize);
-    applyIcon(outputIcon_.get(), BinaryData::Output_svg, BinaryData::Output_svgSize);
+    magda::track_controls::applyRoutingIconImage(inputIcon_.get(), BinaryData::Input_svg,
+                                                 BinaryData::Input_svgSize);
+    magda::track_controls::applyRoutingIconImage(outputIcon_.get(), BinaryData::Output_svg,
+                                                 BinaryData::Output_svgSize);
 }
 
 void TrackInspector::lookAndFeelChanged() {
     applyThemeColours();
+    applyHeaderStyle();
     repaint();
 }
 
@@ -545,15 +561,15 @@ void TrackInspector::hardwareChannelsChanged() {
 
 TrackInspector::~TrackInspector() {
     for (auto* label :
-         {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &audioColumnLabel_,
-          &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_, &clipsSectionLabel_,
-          &clipCountLabel_, &automatedSectionLabel_, &automatedParamsLabel_, &latencyLabel_,
-          &latencyValue_}) {
+         {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &sendReceiveSectionLabel_,
+          &noSendsLabel_, &clipsSectionLabel_, &clipCountLabel_, &automatedSectionLabel_,
+          &automatedParamsLabel_, &latencyLabel_, &latencyValue_}) {
         clearLocalizedLabelPainter(*label);
     }
     for (auto& label : sendDestLabels_)
         clearLocalizedLabelPainter(*label);
 
+    magda::Config::getInstance().removeListener(this);
     magda::MidiBridge::getInstance().removeMidiDeviceListListener(this);
     if (audioEngine_) {
         if (auto* hardware = audioEngine_->getAudioIO())
@@ -599,6 +615,16 @@ void TrackInspector::onDeactivated() {
 void TrackInspector::paint(juce::Graphics& g) {
     g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
 
+    // The name field, rounded like the button chips beside it.
+    if (trackNameValue_.isVisible()) {
+        const auto field = trackNameValue_.getBounds().toFloat();
+        const float radius = juce::jlimit(2.0f, 8.0f, field.getHeight() * 0.15f);
+        g.setColour(nameFill_);
+        g.fillRoundedRectangle(field, radius);
+        g.setColour(nameOutline_);
+        g.drawRoundedRectangle(field.reduced(0.5f), radius, 1.0f);
+    }
+
     // Draw section separators
     g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     auto area = getLocalBounds().reduced(8);
@@ -622,14 +648,20 @@ void TrackInspector::resized() {
         masterGlyph_->setBounds(nameRow.removeFromRight(22).withSizeKeepingCentre(22, 22));
         nameRow.removeFromRight(4);
     } else {
-        // Colour spine on the left doubles as the colour swatch, matching the
-        // clip inspector's name row.
-        colourSwatch_->setBounds(nameRow.removeFromLeft(6));
-        nameRow.removeFromLeft(6);
+        // The colour swatch is the colour picker: a spine on the left (Spine), or a chip
+        // beside the power button when the name field already carries the colour (Full bar).
+        if (colourSwatch_->isVisible() && !nameFilled_) {
+            colourSwatch_->setBounds(nameRow.removeFromLeft(6));
+            nameRow.removeFromLeft(6);
+        }
         // Enable/disable switch on the right, same position as the clip
         // inspector's toggle.
         if (enableButton_->isVisible()) {
             enableButton_->setBounds(nameRow.removeFromRight(28));
+            nameRow.removeFromRight(6);
+        }
+        if (colourSwatch_->isVisible() && nameFilled_) {
+            colourSwatch_->setBounds(nameRow.removeFromRight(24));
             nameRow.removeFromRight(6);
         }
     }
@@ -691,7 +723,7 @@ void TrackInspector::resized() {
     // composition comes from the policy; the shared routing-row layout splits
     // the width between whichever dropdowns exist.
     if (p.anyRouting()) {
-        const int selectorHeight = 18;
+        const int selectorHeight = 22;
         const int columnHeaderHeight = 14;
         const int numCols = ((p.audioIn || p.audioOut) ? 1 : 0) + ((p.midiIn || p.midiOut) ? 1 : 0);
         const int ddW = track_controls::routingDropdownWidth(bounds.getWidth(), numCols, m);
@@ -744,8 +776,9 @@ void TrackInspector::resized() {
             // grow past the panel (#2425). One column where two will not fit,
             // because the name is the part that pays for the second.
             constexpr int columnGap = 8;
-            constexpr int levelWidth = 44;
-            constexpr int deleteWidth = 18;
+            constexpr int rowHeight = 22;
+            constexpr int levelWidth = 52;
+            constexpr int deleteWidth = 20;
             constexpr int leastName = 40;
             constexpr int entryLeast = leastName + levelWidth + deleteWidth + 8;
 
@@ -753,7 +786,7 @@ void TrackInspector::resized() {
             const auto entryWidth = (bounds.getWidth() - (columns - 1) * columnGap) / columns;
 
             for (size_t i = 0; i < sendDestLabels_.size(); i += static_cast<size_t>(columns)) {
-                auto sendRow = bounds.removeFromTop(18);
+                auto sendRow = bounds.removeFromTop(rowHeight);
 
                 for (auto column = 0; column < columns; ++column) {
                     const auto index = i + static_cast<size_t>(column);
@@ -773,7 +806,7 @@ void TrackInspector::resized() {
                     sendDestLabels_[index]->setBounds(entry);
                 }
 
-                bounds.removeFromTop(2);
+                bounds.removeFromTop(4);
             }
         }
 
@@ -1112,10 +1145,12 @@ void TrackInspector::updateFromSelectedTrack() {
         if (track->colour == juce::Colour(0xFF444444))
             swatch->clearColour();
         else
-            swatch->setColour(track->colour);
+            // The headers' normalised colour, so the swatch matches the name field.
+            swatch->setColour(magda::deriveTrackSwatch(track->colour));
 
         trackNameValue_.setText(track->name, juce::dontSendNotification);
         trackNameValue_.setEditable(true);  // re-enable after a master selection
+        applyHeaderStyle();
         muteButton_->setToggleState(track->muted, juce::dontSendNotification);
         enableButton_->setToggleState(
             magda::TrackManager::getInstance().isChainEnabled(selectedTrackId_),
@@ -1503,7 +1538,7 @@ void TrackInspector::rebuildSendsUI() {
         auto destLabel = std::make_unique<juce::Label>();
         const auto* destTrack = magda::TrackManager::getInstance().getTrack(send.destTrackId);
         destLabel->setText(destTrack ? destTrack->name : "?", juce::dontSendNotification);
-        destLabel->setFont(FontManager::getInstance().getUIFont(10.0f));
+        destLabel->setFont(FontManager::getInstance().getUIFont(11.0f));
         destLabel->setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
         useLocalizedLabelPainter(*destLabel);
         addAndMakeVisible(*destLabel);
@@ -1513,6 +1548,12 @@ void TrackInspector::rebuildSendsUI() {
         auto levelLabel = std::make_unique<magda::DraggableValueLabel>(
             magda::DraggableValueLabel::Format::Decibels);
         levelLabel->setRange(-60.0, 6.0, 0.0);
+        // A slider box: mono value over a soft fill, with a marker at the level.
+        levelLabel->setFont(FontManager::getInstance().getMonoFont(11.0f));
+        levelLabel->setFillProportionMapper(magda::level_meter_scale::dbFillProportion);
+        levelLabel->setFillColour(
+            ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE).withAlpha(0.28f));
+        levelLabel->setShowFillMarker(true);
         float levelDb = (send.level <= 0.0f) ? -60.0f : 20.0f * std::log10(send.level);
         levelLabel->setValue(levelDb, juce::dontSendNotification);
 
@@ -1563,15 +1604,11 @@ void TrackInspector::rebuildSendsUI() {
         addAndMakeVisible(*levelLabel);
         sendLevelLabels_.push_back(std::move(levelLabel));
 
-        // Delete button
-        auto deleteBtn = std::make_unique<juce::TextButton>("x");
-        deleteBtn->setConnectedEdges(juce::Button::ConnectedOnLeft |
-                                     juce::Button::ConnectedOnRight | juce::Button::ConnectedOnTop |
-                                     juce::Button::ConnectedOnBottom);
-        deleteBtn->setColour(juce::TextButton::buttonColourId,
-                             ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
-        deleteBtn->setColour(juce::TextButton::textColourOffId,
-                             ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        // Delete: a ghost cross that only boxes on hover.
+        auto deleteBtn =
+            std::make_unique<juce::TextButton>(juce::String(juce::CharPointer_UTF8("\xc3\x97")));
+        deleteBtn->setLookAndFeel(
+            &magda::daw::ui::node_header::GlyphToggleLookAndFeel::getInstance());
         deleteBtn->onClick = [srcId, busIndex]() {
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::RemoveSendCommand>(srcId, busIndex));

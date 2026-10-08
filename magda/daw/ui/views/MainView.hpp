@@ -240,6 +240,10 @@ class MainView : public juce::Component,
         return getMarkerLaneHeight() + LayoutConfig::getInstance().getTimelineBodyHeight();
     }
     int trackHeaderWidth = LayoutConfig::getInstance().defaultTrackHeaderWidth;
+    /** The header column: the main headers plus the I/O column while it shows. */
+    int headerColumnWidth() const;
+    /** The main-header part of a header-column row, leaving the I/O column's strip empty. */
+    juce::Rectangle<int> mainHeaderPart(juce::Rectangle<int> column) const;
     bool markerLaneVisible_ = true;
     bool secondsRulerVisible_ = false;
     static constexpr int ARRANGEMENT_SCROLLBAR_SIZE = ZoomScrollBar::DEFAULT_THICKNESS;
@@ -347,6 +351,10 @@ class MainView : public juce::Component,
     // Separator line positions in the corner toolbar (set during resized())
     juce::Rectangle<int> markerLaneSeparatorLine;
     juce::Rectangle<int> cornerSeparatorLine;
+    // The corner's lower row over the I/O column (empty when off), and its buttons, which the
+    // labels give way to.
+    juce::Rectangle<int> ioLabelsStrip;
+    juce::Rectangle<int> cornerButtonsRow;
     juce::Rectangle<int> cornerBottomBorderLine;
     // Vertical border on the marker-lane row, separating the corner gutter
     // from the marker-lane content to its side.
@@ -409,7 +417,8 @@ class MainView::SelectionOverlayComponent : public juce::Component {
 // Master header panel - matches track header style with controls
 class MainView::MasterHeaderPanel : public juce::Component,
                                     public TrackManagerListener,
-                                    public AutomationManagerListener {
+                                    public AutomationManagerListener,
+                                    private ConfigListener {
   public:
     MasterHeaderPanel();
     ~MasterHeaderPanel() override;
@@ -445,6 +454,9 @@ class MainView::MasterHeaderPanel : public juce::Component,
 
     void setupControls();
     void updateAutomationButtonState();
+    /** Draws the volume value in JetBrains Mono. */
+    void applyHeaderStyle();
+    void configChanged() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MasterHeaderPanel)
 };
@@ -489,8 +501,8 @@ class MainView::AuxHeadersPanel : public juce::Component, public TrackManagerLis
         std::unique_ptr<juce::Label> nameLabel;
         std::unique_ptr<DraggableValueLabel> volumeLabel;
         std::unique_ptr<DraggableValueLabel> panLabel;
-        std::unique_ptr<juce::TextButton> muteButton;
-        std::unique_ptr<juce::TextButton> soloButton;
+        std::unique_ptr<SvgButton> muteButton;
+        std::unique_ptr<SvgButton> soloButton;
         std::unique_ptr<LevelMeter> peakMeter;
     };
 

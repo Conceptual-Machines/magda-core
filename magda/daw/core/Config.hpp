@@ -326,6 +326,22 @@ class Config {
         deviceControlStyle = style.empty() ? "text" : std::move(style);
     }
 
+    // Track header colour: "spine" (a stripe on the outer edge) or "full" (the head bar).
+    const std::string& getTrackColourStyle() const {
+        return trackColourStyle;
+    }
+    void setTrackColourStyle(std::string style) {
+        trackColourStyle = style == "full" ? "full" : "spine";
+    }
+
+    // Track header mute / solo: "icons" (speaker and ring) or "letters" (M and S).
+    const std::string& getMuteSoloStyle() const {
+        return muteSoloStyle;
+    }
+    void setMuteSoloStyle(std::string style) {
+        muteSoloStyle = style == "letters" ? "letters" : "icons";
+    }
+
     // Font size scale for MAGDA-owned UI fonts. This is independent from
     // Desktop UI scale, which changes both text and component geometry.
     double getUIFontScale() const {
@@ -1526,6 +1542,8 @@ class Config {
 
     std::string transportStyle = "anchored";
     std::string deviceControlStyle = "text";
+    std::string trackColourStyle = "spine";
+    std::string muteSoloStyle = "icons";
 
     // UI font scale: multiplier applied by FontManager to app-owned text fonts.
     double uiFontScale = 1.0;

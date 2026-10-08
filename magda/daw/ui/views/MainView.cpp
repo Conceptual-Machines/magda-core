@@ -373,7 +373,7 @@ void MainView::setupComponents() {
                 int contentWidth = trackContentPanel->getWidth();
                 trackContentPanel->setMinHeight(viewportHeight);
                 trackContentPanel->setSize(contentWidth, panelHeight);
-                trackHeadersPanel->setSize(trackHeaderWidth, panelHeight);
+                trackHeadersPanel->setSize(headerColumnWidth(), panelHeight);
 
                 trackContentViewport->setViewPosition(trackContentViewport->getViewPositionX(),
                                                       scrollY);
@@ -464,22 +464,19 @@ void MainView::setupComponents() {
 
     setupCornerButton(ioToggleButton, "IOToggle", BinaryData::inputoutput_svg,
                       BinaryData::inputoutput_svgSize);
-    ioToggleButton->onClick = [this]() {
-        trackHeadersPanel->toggleIORouting();
-        // Update button appearance to reflect state
-        if (trackHeadersPanel->isIORoutingVisible()) {
-            ioToggleButton->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-        } else {
-            ioToggleButton->setNormalColor(
-                ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.3f));
-        }
+    ioToggleButton->setActiveBackgroundColor(
+        ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE).withAlpha(0.22f));
+    ioToggleButton->setActiveBorderColor(
+        ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE).withAlpha(0.55f));
+    ioToggleButton->setActiveColor(ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE).brighter(0.5f));
+    ioToggleButton->onClick = [this]() { trackHeadersPanel->toggleIORouting(); };
+    trackHeadersPanel->onIORoutingToggled = [this]() {
+        ioToggleButton->setActive(trackHeadersPanel->isIORoutingVisible());
+        resized();
         updateContentSizes();
     };
     ioToggleButton->setTooltip("Toggle I/O routing");
-    if (!trackHeadersPanel->isIORoutingVisible()) {
-        ioToggleButton->setNormalColor(
-            ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.3f));
-    }
+    ioToggleButton->setActive(trackHeadersPanel->isIORoutingVisible());
 
     setupCornerButton(addTrackButton, "AddTrack", BinaryData::add_svg, BinaryData::add_svgSize);
     addTrackButton->onClick = []() {
@@ -933,6 +930,8 @@ void MainView::paint(juce::Graphics& g) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.fillRect(cornerBottomBorderLine);
     }
+    if (!ioLabelsStrip.isEmpty())
+        TrackHeadersPanel::paintIOLabels(g, ioLabelsStrip, cornerButtonsRow);
     if (!markerCornerRightBorderLine.isEmpty()) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.fillRect(markerCornerRightBorderLine);
@@ -941,7 +940,7 @@ void MainView::paint(juce::Graphics& g) {
     auto arrangementLayout = computeArrangementLayout();
     SideColumn headerColumn(!arrangementLayout.swapped);
     auto contentArea = arrangementLayout.horizontalScrollBarRowArea;
-    auto headerArea = headerColumn.removeFrom(contentArea, trackHeaderWidth);
+    auto headerArea = headerColumn.removeFrom(contentArea, headerColumnWidth());
     headerColumn.removeSpacing(contentArea, LayoutConfig::getInstance().componentSpacing);
 
     g.setColour(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
@@ -952,6 +951,16 @@ void MainView::paint(juce::Graphics& g) {
     // Draw resize handles
     paintResizeHandle(g);
     paintMasterResizeHandle(g);
+}
+
+int MainView::headerColumnWidth() const {
+    const bool io = trackHeadersPanel != nullptr && trackHeadersPanel->isIORoutingVisible();
+    return trackHeaderWidth + (io ? TrackHeadersPanel::IO_COLUMN_WIDTH : 0);
+}
+
+juce::Rectangle<int> MainView::mainHeaderPart(juce::Rectangle<int> column) const {
+    SideColumn headerColumn(!Config::getInstance().getScrollbarOnLeft());
+    return headerColumn.removeFrom(column, trackHeaderWidth);
 }
 
 MainView::ArrangementLayout MainView::computeArrangementLayout() const {
@@ -977,14 +986,15 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
     result.horizontalScrollBarRowArea = bounds.removeFromBottom(horizontalScrollbarHeight);
     result.horizontalScrollBarArea = result.horizontalScrollBarRowArea;
     headerColumn.removeSpacing(result.horizontalScrollBarArea,
-                               trackHeaderWidth + layout.componentSpacing);
+                               headerColumnWidth() + layout.componentSpacing);
 
     int effectiveMasterHeight = masterVisible_ ? masterStripHeight : 0;
     int effectiveResizeHandleHeight = masterVisible_ ? MASTER_RESIZE_HANDLE_HEIGHT : 0;
 
     if (masterVisible_) {
         auto masterRowArea = bounds.removeFromBottom(masterStripHeight);
-        result.masterHeaderArea = headerColumn.removeFrom(masterRowArea, trackHeaderWidth);
+        result.masterHeaderArea =
+            mainHeaderPart(headerColumn.removeFrom(masterRowArea, headerColumnWidth()));
         headerColumn.removeSpacing(masterRowArea, layout.componentSpacing);
         result.masterContentArea = masterRowArea;
     }
@@ -995,14 +1005,16 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
         masterVisible_ ? juce::jmax(0, masterAutomationHeight) : 0;
     if (effectiveMasterAutomationHeight > 0) {
         auto bandRow = bounds.removeFromBottom(effectiveMasterAutomationHeight);
-        result.masterAutomationHeaderArea = headerColumn.removeFrom(bandRow, trackHeaderWidth);
+        result.masterAutomationHeaderArea =
+            mainHeaderPart(headerColumn.removeFrom(bandRow, headerColumnWidth()));
         headerColumn.removeSpacing(bandRow, layout.componentSpacing);
         result.masterAutomationContentArea = bandRow;
     }
 
     if (auxVisible_) {
         auto auxRowArea = bounds.removeFromBottom(auxSectionHeight);
-        result.auxHeadersArea = headerColumn.removeFrom(auxRowArea, trackHeaderWidth);
+        result.auxHeadersArea =
+            mainHeaderPart(headerColumn.removeFrom(auxRowArea, headerColumnWidth()));
         headerColumn.removeSpacing(auxRowArea, layout.componentSpacing);
         result.auxContentArea = auxRowArea;
     }
@@ -1020,12 +1032,12 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
         result.verticalScrollBarArea = result.verticalScrollBarArea.reduced(1, 0);
 
     auto timelineStripArea = bounds.removeFromTop(getTimelineHeight());
-    result.cornerArea = headerColumn.removeFrom(timelineStripArea, trackHeaderWidth);
+    result.cornerArea = headerColumn.removeFrom(timelineStripArea, headerColumnWidth());
 
     headerColumn.removeSpacing(timelineStripArea, layout.componentSpacing);
     result.markerLaneArea = timelineStripArea.removeFromTop(getMarkerLaneHeight());
     result.timelineArea = timelineStripArea;
-    result.trackHeadersArea = headerColumn.removeFrom(bounds, trackHeaderWidth);
+    result.trackHeadersArea = headerColumn.removeFrom(bounds, headerColumnWidth());
     headerColumn.removeSpacing(bounds, layout.componentSpacing);
 
     result.trackContentArea = bounds;
@@ -1083,7 +1095,7 @@ void MainView::resized() {
         const int btnSize = 20;
         SideColumn headerColumn(!arrangementLayout.swapped);
         auto restoreArea = arrangementLayout.horizontalScrollBarRowArea;
-        auto headerArea = headerColumn.removeFrom(restoreArea, trackHeaderWidth);
+        auto headerArea = headerColumn.removeFrom(restoreArea, headerColumnWidth());
         showMasterButton->setBounds(
             headerArea.removeFromRight(btnSize).withSizeKeepingCentre(btnSize, btnSize));
         showMasterButton->toFront(false);
@@ -1190,6 +1202,17 @@ void MainView::resized() {
         addTrackButton->setBounds(btnSide.removeFrom(botRow, btnSize));
         axisSide.removeSpacing(botRow, gap);
         vAxisIcon->setBounds(axisSide.removeFrom(botRow, btnSize));
+
+        // AUDIO / MIDI labels over the I/O column, in the lower row.
+        repaint(ioLabelsStrip);
+        cornerButtonsRow = trackSmallButton->getBounds().getUnion(addTrackButton->getBounds());
+        auto ioStrip = cornerArea;
+        ioLabelsStrip = trackHeadersPanel->isIORoutingVisible()
+                            ? axisSide.removeFrom(ioStrip, TrackHeadersPanel::IO_COLUMN_WIDTH)
+                                  .withY(botRow.getY())
+                                  .withHeight(botRow.getHeight())
+                            : juce::Rectangle<int>();
+        repaint(ioLabelsStrip);
     }
 
     markerLaneViewport->setVisible(markerLaneVisible_);
@@ -1463,7 +1486,7 @@ void MainView::updateContentSizes() {
     // Update track content and headers with same height
     trackContentPanel->setSize(contentWidth, contentHeight);
     trackContentPanel->setVerticalZoom(verticalZoom);
-    trackHeadersPanel->setSize(trackHeaderWidth, contentHeight);
+    trackHeadersPanel->setSize(headerColumnWidth(), contentHeight);
     trackHeadersPanel->setVerticalZoom(verticalZoom);
 
     // Keep the master automation band in step with the arrangement's horizontal
@@ -2466,8 +2489,10 @@ MainView::MasterHeaderPanel::MasterHeaderPanel() {
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
     AutomationManager::getInstance().addListener(this);
+    Config::getInstance().addListener(this);
 
     setupControls();
+    applyHeaderStyle();
 
     // Sync initial state from master channel
     masterChannelChanged();
@@ -2475,6 +2500,7 @@ MainView::MasterHeaderPanel::MasterHeaderPanel() {
 }
 
 MainView::MasterHeaderPanel::~MasterHeaderPanel() {
+    Config::getInstance().removeListener(this);
     AutomationManager::getInstance().removeListener(this);
     TrackManager::getInstance().removeListener(this);
 }
@@ -2483,6 +2509,7 @@ void MainView::MasterHeaderPanel::setupControls() {
     // Speaker on/off button (toggles master mute) — one shared recipe with the
     // inspector / mixer master strip.
     speakerButton = makeMasterSpeakerButton();
+    speakerButton->setIconPadding(6.0f);  // the track headers' glyph size on a 22px button
     speakerButton->setTooltip("Mute master");
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
@@ -2502,9 +2529,10 @@ void MainView::MasterHeaderPanel::setupControls() {
                                 ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     automationButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     automationButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    automationButton->setActiveBackgroundColor(
-        ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
-    automationButton->setIconPadding(2.5f);
+    automationButton->setActiveBackgroundColor(ActiveTheme::SURFACE);
+    automationButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                                ActiveTheme::ACCENT_MODULATION);
+    automationButton->setIconPadding(3.0f);
     automationButton->onClick = [this]() {
         // Alt/Option-click toggles global show/hide of all automation lanes.
         if (juce::ModifierKeys::getCurrentModifiers().isAltDown()) {
@@ -2644,6 +2672,15 @@ void MainView::MasterHeaderPanel::resized() {
     peakMeter->setBounds(peakMeterBounds);
     peakValueLabel->setBounds(peakReadout);
     automationButton->setBounds(meterIconAligned.withSizeKeepingCentre(iconSize, iconSize));
+}
+
+void MainView::MasterHeaderPanel::applyHeaderStyle() {
+    volumeLabel->setFont(FontManager::getInstance().getMonoFont(10.0f));
+}
+
+void MainView::MasterHeaderPanel::configChanged() {
+    applyHeaderStyle();
+    repaint();
 }
 
 void MainView::MasterHeaderPanel::masterChannelChanged() {
@@ -2881,19 +2918,9 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
         addAndMakeVisible(*row->panLabel);
 
         // Mute button
-        row->muteButton = std::make_unique<juce::TextButton>("M");
-        row->muteButton->setConnectedEdges(
-            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-        row->muteButton->setColour(juce::TextButton::buttonColourId,
-                                   ActiveTheme::getColour(ActiveTheme::SURFACE));
-        row->muteButton->setColour(juce::TextButton::buttonOnColourId,
-                                   ActiveTheme::getColour(ActiveTheme::STATUS_WARNING));
-        row->muteButton->setColour(juce::TextButton::textColourOffId,
-                                   ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-        row->muteButton->setColour(juce::TextButton::textColourOnId,
-                                   ActiveTheme::getColour(ActiveTheme::BACKGROUND));
-        row->muteButton->setClickingTogglesState(true);
+        // Mute and solo use the shared recipes, sized for the 16px aux row controls.
+        row->muteButton = makeMasterSpeakerButton();
+        row->muteButton->setIconPadding(3.0f);
         row->muteButton->setToggleState(track.muted, juce::dontSendNotification);
         auto* muteBtnPtr = row->muteButton.get();
         row->muteButton->onClick = [tid, muteBtnPtr]() {
@@ -2903,19 +2930,10 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
         addAndMakeVisible(*row->muteButton);
 
         // Solo button
-        row->soloButton = std::make_unique<juce::TextButton>("S");
-        row->soloButton->setConnectedEdges(
-            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-        row->soloButton->setColour(juce::TextButton::buttonColourId,
-                                   ActiveTheme::getColour(ActiveTheme::SURFACE));
-        row->soloButton->setColour(juce::TextButton::buttonOnColourId,
-                                   ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
-        row->soloButton->setColour(juce::TextButton::textColourOffId,
-                                   ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-        row->soloButton->setColour(juce::TextButton::textColourOnId,
-                                   ActiveTheme::getColour(ActiveTheme::BACKGROUND));
-        row->soloButton->setClickingTogglesState(true);
+        row->soloButton =
+            std::make_unique<SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
+        configureSoloButton(*row->soloButton);
+        row->soloButton->setIconPadding(3.5f);
         row->soloButton->setToggleState(track.soloed, juce::dontSendNotification);
         auto* soloBtnPtr = row->soloButton.get();
         row->soloButton->onClick = [tid, soloBtnPtr]() {

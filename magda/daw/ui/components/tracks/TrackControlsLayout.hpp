@@ -68,4 +68,26 @@ int routingDropdownWidth(int rowWidth, int numDropdowns, const Metrics& m);
 void layoutRoutingRow(juce::Rectangle<int> row, juce::Component* dd1, juce::Component* dd2,
                       juce::Component* icon, const Metrics& m);
 
+/** @brief Paints an AUDIO or MIDI routing column label (small icon, mono caps) into @p area,
+ *  left-aligned. Shared by the arrangement's I/O column and the inspector. */
+void paintIOColumnLabel(juce::Graphics& g, juce::Rectangle<int> area, bool midi);
+
+/** @brief A routing column label component that paints with paintIOColumnLabel. */
+class IOColumnLabel : public juce::Component {
+  public:
+    explicit IOColumnLabel(bool midi) : midi_(midi) {
+        setInterceptsMouseClicks(false, false);
+    }
+    void paint(juce::Graphics& g) override {
+        paintIOColumnLabel(g, getLocalBounds(), midi_);
+    }
+
+  private:
+    bool midi_;
+};
+
+/** @brief Tints a routing direction icon the way the track headers do. The tint is baked in,
+ *  so call it again on a theme change. */
+void applyRoutingIconImage(juce::Component* component, const char* svgData, int svgSize);
+
 }  // namespace magda::track_controls

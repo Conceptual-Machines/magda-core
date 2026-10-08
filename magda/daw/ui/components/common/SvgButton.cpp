@@ -2,6 +2,8 @@
 
 #include <juce_graphics/juce_graphics.h>
 
+#include "../../themes/FontManager.hpp"
+
 namespace magda {
 
 SvgButton::SvgButton(const juce::String& buttonName, const char* svgData, size_t svgDataSize)
@@ -31,7 +33,23 @@ SvgButton::SvgButton(const juce::String& buttonName, const char* offSvgData, siz
 }
 
 // RAII cleanup handled automatically by ManagedDrawable
-SvgButton::~SvgButton() = default;
+SvgButton::~SvgButton() {
+    if (letterGlyph_.isNotEmpty())
+        Config::getInstance().removeListener(this);
+}
+
+void SvgButton::setLetterGlyph(const juce::String& letter) {
+    if (letterGlyph_.isEmpty() && letter.isNotEmpty())
+        Config::getInstance().addListener(this);
+    else if (letterGlyph_.isNotEmpty() && letter.isEmpty())
+        Config::getInstance().removeListener(this);
+    letterGlyph_ = letter;
+    repaint();
+}
+
+void SvgButton::configChanged() {
+    repaint();
+}
 
 juce::Colour SvgButton::resolveThemeColour(juce::Colour colour,
                                            const std::optional<ColourRole>& role) {
@@ -144,6 +162,17 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
         resolveThemeColour(activeBackgroundColor, activeBackgroundColorRole_);
     const auto border = resolveThemeColour(borderColor, borderColorRole_);
     const auto activeBorder = resolveThemeColour(activeBorderColor, activeBorderColorRole_);
+
+    if (letterGlyph_.isNotEmpty() && Config::getInstance().getMuteSoloStyle() == "letters") {
+        const bool on = isEnabled() && (active || (getToggleState() && isToggleable()));
+        auto colour = normal;
+        if (on)
+            colour = activeColour;
+        else if (shouldDrawButtonAsHighlighted || shouldDrawButtonAsDown)
+            colour = hover;
+        paintGlyphText(g, on, shouldDrawButtonAsHighlighted, colour);
+        return;
+    }
 
     if (dualIconMode) {
         // Dual-icon mode: use pre-baked off/on images. Toggleable buttons
@@ -273,6 +302,40 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
     float opacity = isEnabled() ? 1.0f : 0.25f;
     if (!bounds.isEmpty())
         iconCopy->drawWithin(g, bounds, juce::RectanglePlacement::centred, opacity);
+}
+
+void SvgButton::paintGlyphText(juce::Graphics& g, bool drawOn, bool highlighted,
+                               juce::Colour iconColour) {
+    const auto bounds = getLocalBounds().toFloat();
+    const float radius =
+        hasCornerRadius_ ? cornerRadius
+                         : juce::jlimit(2.0f, 8.0f, juce::jmin(getWidth(), getHeight()) * 0.15f);
+    if (drawOn && hasActiveBackgroundColor) {
+        g.setColour(resolveThemeColour(activeBackgroundColor, activeBackgroundColorRole_));
+        g.fillRoundedRectangle(bounds.reduced(0.5f), radius);
+    } else if (hasNormalBackgroundColor) {
+        g.setColour(resolveThemeColour(normalBackgroundColor, normalBackgroundColorRole_));
+        g.fillRoundedRectangle(bounds.reduced(0.5f), radius);
+    } else if (highlighted && hoverBackgroundRole_) {
+        g.setColour(ActiveTheme::getColour(*hoverBackgroundRole_));
+        g.fillRoundedRectangle(bounds.reduced(0.5f), radius);
+    }
+    if (hasBorder) {
+        g.setColour(resolveThemeColour(borderColor, borderColorRole_));
+        g.drawRoundedRectangle(bounds.reduced(borderThickness * 0.5f), radius, borderThickness);
+    }
+
+    // The glyph key's state replacement wins, as it would on the icon.
+    auto colour = iconColour;
+    const auto key = hasOriginalColor ? originalColor : juce::Colour(0xFFB3B3B3);
+    for (const auto& r : stateColourReplacements_)
+        if (r.source == key)
+            colour = drawOn ? resolveThemeColour(r.active, r.activeRole)
+                            : resolveThemeColour(r.inactive, r.inactiveRole);
+    g.setColour(colour.withMultipliedAlpha(isEnabled() ? 1.0f : 0.25f));
+    g.setFont(
+        FontManager::getInstance().getMonoFont(juce::jmin(12.0f, getHeight() * 0.7f)).boldened());
+    g.drawText(letterGlyph_, getLocalBounds(), juce::Justification::centred, false);
 }
 
 }  // namespace magda

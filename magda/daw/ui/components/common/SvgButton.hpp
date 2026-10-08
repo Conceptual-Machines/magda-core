@@ -7,10 +7,11 @@
 
 #include "../../themes/ActiveTheme.hpp"
 #include "../../utils/ComponentManager.hpp"
+#include "core/Config.hpp"
 
 namespace magda {
 
-class SvgButton : public juce::Button {
+class SvgButton : public juce::Button, private ConfigListener {
   public:
     // Single icon constructor (legacy - colors icon based on state)
     SvgButton(const juce::String& buttonName, const char* svgData, size_t svgDataSize);
@@ -161,7 +162,13 @@ class SvgButton : public juce::Button {
         return active;
     }
 
+    /** Mute / solo buttons: draws @p letter ("M" or "S") in place of the icon while the
+     *  Mute / solo preference is Letters, coloured like the glyph, and repaints when it changes. */
+    void setLetterGlyph(const juce::String& letter);
+
   private:
+    void paintGlyphText(juce::Graphics& g, bool drawOn, bool highlighted, juce::Colour iconColour);
+
     static juce::Colour resolveThemeColour(juce::Colour colour,
                                            const std::optional<ColourRole>& role);
 
@@ -228,6 +235,8 @@ class SvgButton : public juce::Button {
     float inactiveIconOpacity = 1.0f;
 
     bool active = false;
+    juce::String letterGlyph_;
+    void configChanged() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SvgButton)
 };

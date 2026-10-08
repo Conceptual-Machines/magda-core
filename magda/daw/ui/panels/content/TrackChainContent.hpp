@@ -9,11 +9,13 @@
 #include "../../../core/LinkModeManager.hpp"
 #include "../../themes/MixerLookAndFeel.hpp"
 #include "PanelContent.hpp"
+#include "TrackChainHeaderParts.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "ui/components/common/ChordAuditionControl.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
+#include "ui/components/common/MidiActivityLed.hpp"
 #include "ui/components/common/SvgButton.hpp"
 
 namespace magda::daw::ui {
@@ -179,20 +181,19 @@ class TrackChainContent : public PanelContent,
     void loadTrackPresetByName(const juce::String& presetName);
 
     // Header bar controls - RIGHT side (track info)
-    juce::Label trackNameLabel_;
-    SvgButton muteButton_{"mute", BinaryData::master_on_svg,
-                          BinaryData::master_on_svgSize};  // Track mute
-    // Master uses a speaker toggle (matching the inspector/mixer) instead of "M".
-    // Dual-icon like those surfaces: audible = master_on, muted = master_off.
-    SvgButton masterMuteButton_{"masterMute", BinaryData::master_on_svg,
-                                BinaryData::master_on_svgSize, BinaryData::master_off_svg,
-                                BinaryData::master_off_svgSize};
+    TrackTitleLabel trackTitle_;
+    HeaderDividers headerDividers_;
+    MidiActivityLed midiLed_;
+    // Track or master mute: the speaker, crossed out while muted.
+    SvgButton muteButton_{"mute", BinaryData::master_on_svg, BinaryData::master_on_svgSize};
     SvgButton soloButton_{"solo", BinaryData::solo_svg, BinaryData::solo_svgSize};  // Track solo
     // Chord track mirrors its header: audition (mute) speaker + input monitor.
     std::unique_ptr<magda::ChordAuditionControl> chordSpeakerButton_;
     juce::TextButton monitorButton_;
     magda::DraggableValueLabel volumeLabel_{magda::DraggableValueLabel::Format::Decibels};
     magda::DraggableValueLabel panLabel_{magda::DraggableValueLabel::Format::Pan};
+    HeaderValueField gainField_{HeaderValueField::Kind::Gain, volumeLabel_};
+    HeaderValueField panField_{HeaderValueField::Kind::Pan, panLabel_};
     std::unique_ptr<magda::SvgButton> chainBypassButton_;  // On/off - bypasses entire track chain
 
     // Global mods/macros panel visibility
@@ -229,6 +230,9 @@ class TrackChainContent : public PanelContent,
     magda::MixerLookAndFeel mixerLookAndFeel_;
 
     void updateFromSelectedTrack();
+    void refreshTrackTitle(const magda::TrackInfo& track);
+    void applyChainPowerStyle();
+    void syncMuteButton(bool muted);
     void hideHeaderControls();
     void rebuildNodeComponents();
     int calculateTotalContentWidth() const;
@@ -299,6 +303,8 @@ class TrackChainContent : public PanelContent,
     int calculateInsertIndex(int mouseX) const;
     int calculateIndicatorX(int index) const;
     int calculateAppendZoneX() const;
+    juce::Rectangle<int> emptyDropTargetBounds() const;  // container coords
+    juce::Rectangle<int> appendSlotBounds() const;       // container coords
 
     // Timer callback for detecting stale drop state
     void timerCallback() override;

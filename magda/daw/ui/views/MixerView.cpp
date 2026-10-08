@@ -591,14 +591,8 @@ void MixerView::ChannelStrip::setupControls() {
     // Solo target toggle, matching the track header.
     soloButton =
         std::make_unique<magda::SvgButton>("solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
-    soloButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-    soloButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    soloButton->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
-    soloButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                          ActiveTheme::ICON_ON_ACCENT);
-    soloButton->setIconPadding(5.0f);
+    configureSoloButton(*soloButton);
     soloButton->setTooltip(tr("tracks.solo.tooltip"));
-    soloButton->setClickingTogglesState(true);
     soloButton->onClick = [this]() {
         const bool newState = soloButton->getToggleState();
         for (auto tid : getMultiEditTargets(trackId_, isMaster_))

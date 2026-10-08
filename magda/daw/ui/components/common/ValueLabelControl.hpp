@@ -28,6 +28,8 @@ class ValueLabelControl : public juce::Component {
     void clearTextOverride();
     void setFillMode(FillMode mode);
     void setShowFillIndicator(bool show);
+    // A 2px line at the fill's leading edge, in a brighter fill colour (left-to-right only).
+    void setShowFillMarker(bool show);
     // Curve the fill so its extent matches a non-linear scale (e.g. a level
     // meter's power curve). The fill uses pow(linearNorm, exponent); 1.0 (the
     // default) is the usual linear fill. Lets the master volume fill line up
@@ -92,6 +94,7 @@ class ValueLabelControl : public juce::Component {
     std::function<double(double)> fillProportionMapper_;
     TintState tintState_ = TintState::None;
     bool showFillIndicator_ = true;
+    bool showFillMarker_ = false;
     bool drawBackground_ = true;
     bool drawBorder_ = true;
     bool dragging_ = false;

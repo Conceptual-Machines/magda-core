@@ -1,5 +1,6 @@
 #pragma once
 
+#include <BinaryData.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -253,8 +254,9 @@ class DrumGridUI : public juce::Component,
     // Chain
     ChainPanel padChainView_;
     DashedAddButton emptyAddButton_;
-    juce::TextButton chainMuteButton_{"M"};
-    juce::TextButton chainSoloButton_{"S"};
+    magda::SvgButton chainMuteButton_{"mute", BinaryData::master_on_svg,
+                                      BinaryData::master_on_svgSize};
+    magda::SvgButton chainSoloButton_{"solo", BinaryData::solo_svg, BinaryData::solo_svgSize};
 
     // Footer
     std::unique_ptr<juce::ArrowButton> prevPageButton_;

@@ -75,6 +75,11 @@ void ValueLabelControl::setFillMode(FillMode mode) {
     repaint();
 }
 
+void ValueLabelControl::setShowFillMarker(bool show) {
+    showFillMarker_ = show;
+    repaint();
+}
+
 void ValueLabelControl::setShowFillIndicator(bool show) {
     showFillIndicator_ = show;
     repaint();
@@ -289,6 +294,11 @@ void ValueLabelControl::paint(juce::Graphics& g) {
                 auto fillBounds =
                     bounds.withWidth(static_cast<float>(bounds.getWidth() * normalizedValue));
                 g.fillRoundedRectangle(fillBounds, 2.0f);
+                if (showFillMarker_) {
+                    g.setColour(fillBase.brighter(0.8f).withMultipliedAlpha(alpha));
+                    g.fillRect(juce::jmax(bounds.getX(), fillBounds.getRight() - 2.0f),
+                               bounds.getY(), 2.0f, bounds.getHeight());
+                }
             }
         }
     }

@@ -168,6 +168,8 @@ void Config::save() {
     root->setProperty("uiDensityScale", uiDensityScale);
     root->setProperty("transportStyle", toJuceString(transportStyle));
     root->setProperty("deviceControlStyle", toJuceString(deviceControlStyle));
+    root->setProperty("trackColourStyle", toJuceString(trackColourStyle));
+    root->setProperty("muteSoloStyle", toJuceString(muteSoloStyle));
     root->setProperty("uiFontScale", uiFontScale);
     root->setProperty("uiFontFamily", toJuceString(uiFontFamily));
     root->setProperty("localizedUIFontScale", localizedUIFontScale);
@@ -466,9 +468,11 @@ void Config::save() {
     else
         DBG("Config::save - " + configFile.getFullPathName());
 
+    // A listener can destroy others (e.g. a view rebuilding its buttons), so each is
+    // checked against the live list before it is called.
     auto listenersCopy = listeners_;
     for (auto* l : listenersCopy)
-        if (l != nullptr)
+        if (l != nullptr && std::ranges::find(listeners_, l) != listeners_.end())
             l->configChanged();
 }
 
@@ -583,6 +587,8 @@ void Config::load() {
     setUIDensityScale(getDouble("uiDensityScale", uiDensityScale));
     setTransportStyle(getString("transportStyle", transportStyle));
     setDeviceControlStyle(getString("deviceControlStyle", deviceControlStyle));
+    setTrackColourStyle(getString("trackColourStyle", trackColourStyle));
+    setMuteSoloStyle(getString("muteSoloStyle", muteSoloStyle));
     setUIFontScale(getDouble("uiFontScale", uiFontScale));
     setUIFontFamily(getString("uiFontFamily", uiFontFamily));
     localizedUIFontScaleExplicit = obj->hasProperty("localizedUIFontScale");

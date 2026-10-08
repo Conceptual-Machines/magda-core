@@ -124,7 +124,14 @@ class DraggableValueLabel : public juce::Component,
     // Font size for display text
     void setFontSize(float size) {
         fontSize_ = size;
+        customFont_.reset();
         valueControl_.setFontSize(size);
+    }
+
+    /** Draws the value in @p font instead of the UI font at the set size. */
+    void setFont(const juce::Font& font) {
+        customFont_ = font;
+        valueControl_.setFont(font);
     }
 
     // Whether to draw the background fill
@@ -152,6 +159,11 @@ class DraggableValueLabel : public juce::Component,
     void setDrawBorder(bool draw) {
         drawBorder_ = draw;
         valueControl_.setDrawBorder(draw);
+    }
+
+    /** Marks the fill's leading edge with a brighter 2px line. */
+    void setShowFillMarker(bool show) {
+        valueControl_.setShowFillMarker(show);
     }
 
     // Custom fill indicator colour (defaults to the theme value fill if not set)
@@ -259,6 +271,7 @@ class DraggableValueLabel : public juce::Component,
     bool drawBackground_ = true;
     bool drawBorder_ = true;
     float fontSize_ = 10.0f;
+    std::optional<juce::Font> customFont_;
     juce::Justification justification_ = juce::Justification::centred;
     juce::String textOverride_;
 

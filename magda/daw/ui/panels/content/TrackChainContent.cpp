@@ -87,23 +87,6 @@ std::vector<magda::ChainNodePath> dragObjectToChainNodePaths(const juce::Dynamic
     return paths;
 }
 
-juce::Colour analysisToggleAccent(ColourRole role) {
-    const auto accent = ActiveTheme::getColour(role);
-    if (ThemeManager::isLightTheme())
-        return accent.withMultipliedSaturation(1.15f).darker(0.10f);
-
-    return accent.withMultipliedSaturation(0.55f).withMultipliedBrightness(0.85f);
-}
-
-void applyAnalysisToggleTheme(magda::SvgButton& button, juce::Colour activeColour) {
-    const bool light = ThemeManager::isLightTheme();
-    button.setNormalColor(ActiveTheme::getSecondaryTextColour());
-    button.setHoverColor(ActiveTheme::getTextColour());
-    button.setActiveColor(light ? activeColour.darker(0.12f) : juce::Colours::white.darker(0.18f));
-    button.setActiveBackgroundColor(activeColour.withAlpha(light ? 0.10f : 0.20f));
-    button.setActiveBorderColor(activeColour);
-    button.setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-}
 }  // namespace
 
 //==============================================================================
@@ -392,27 +375,24 @@ class TrackChainContent::ChainContainer : public juce::Component,
     }
 
     void paint(juce::Graphics& g) override {
-        auto appendZone = juce::Rectangle<int>(
-            owner_.calculateAppendZoneX(), 0,
-            owner_.getScaledWidth(TrackChainContent::APPEND_ZONE_WIDTH), getHeight());
+        const bool empty = owner_.nodeComponents_.empty();
         const bool appendHighlighted =
             owner_.dragInsertIndex_ == static_cast<int>(owner_.nodeComponents_.size()) ||
             owner_.dropInsertIndex_ == static_cast<int>(owner_.nodeComponents_.size());
-        auto appendColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
-                                .withAlpha(appendHighlighted ? 0.18f : 0.06f);
-        g.setColour(appendColour);
-        g.fillRoundedRectangle(appendZone.reduced(6, 10).toFloat(), 4.0f);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
-                        .withAlpha(appendHighlighted ? 0.75f : 0.24f));
-        g.drawRoundedRectangle(appendZone.reduced(6, 10).toFloat(), 4.0f, 1.0f);
+        const auto target = empty ? owner_.emptyDropTargetBounds() : owner_.appendSlotBounds();
+        paintDashedTarget(g, target.toFloat(), appendHighlighted);
+        if (empty) {
+            paintEmptyHint(g, target);
+            return;
+        }
 
         // Draw insertion indicator during drag (reorder or drop)
         if (owner_.dragInsertIndex_ >= 0 || owner_.dropInsertIndex_ >= 0) {
             int indicatorIndex =
                 owner_.dragInsertIndex_ >= 0 ? owner_.dragInsertIndex_ : owner_.dropInsertIndex_;
             int indicatorX = owner_.calculateIndicatorX(indicatorIndex);
-            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-            g.fillRect(indicatorX - 2, 0, 4, getHeight());
+            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE));
+            g.fillRect(indicatorX - 1, 0, 2, getHeight());
         }
 
         // Draw ghost image during drag
@@ -620,6 +600,42 @@ class TrackChainContent::ChainContainer : public juce::Component,
     }
 
   private:
+    static void paintDashedTarget(juce::Graphics& g, juce::Rectangle<float> bounds,
+                                  bool highlighted) {
+        juce::Path outline;
+        outline.addRoundedRectangle(bounds.reduced(0.5f), 6.0f);
+        const float dashes[] = {4.0f, 3.0f};
+        juce::Path dashed;
+        juce::PathStrokeType(1.0f).createDashedStroke(dashed, outline, dashes, 2);
+        g.setColour(ActiveTheme::getColour(highlighted ? ActiveTheme::DEVICE_BLUE
+                                                       : ActiveTheme::DEVICE_LINE2));
+        g.fillPath(dashed);
+    }
+
+    // "Drop a device here, or press [+]" under the add button, the + drawn as a keycap.
+    void paintEmptyHint(juce::Graphics& g, juce::Rectangle<int> target) const {
+        const auto font = FontManager::getInstance().getUIFont(12.0f);
+        const juce::String text = "Drop a device here, or press";
+        constexpr int keySize = 18;
+        constexpr int keyGap = 6;
+        const int textWidth =
+            static_cast<int>(std::ceil(juce::GlyphArrangement::getStringWidth(font, text)));
+        const int lineWidth = textWidth + keyGap + keySize;
+        const int lineY = owner_.addDeviceButton_.getBottom() + 14;
+        auto line =
+            juce::Rectangle<int>(target.getCentreX() - lineWidth / 2, lineY, lineWidth, keySize);
+
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+        g.setFont(font);
+        g.drawText(text, line.removeFromLeft(textWidth), juce::Justification::centredLeft, false);
+        line.removeFromLeft(keyGap);
+        const auto key = line.removeFromLeft(keySize).toFloat();
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
+        g.drawRoundedRectangle(key.reduced(0.5f), 3.0f, 1.0f);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+        g.drawText("+", key.toNearestInt(), juce::Justification::centred, false);
+    }
+
     void clearDropFeedback() {
         owner_.dropInsertIndex_ = -1;
         owner_.stopTimer();
@@ -764,10 +780,11 @@ TrackChainContent::TrackChainContent()
     addAndMakeVisible(*chainViewport_);
 
     addDeviceButton_.setButtonText("+");
-    addDeviceButton_.setColour(
-        juce::TextButton::buttonColourId,
-        ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.24f));
-    addDeviceButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
+    addDeviceButton_.setTooltip("Add a device");
+    addDeviceButton_.setColour(juce::TextButton::buttonColourId,
+                               ActiveTheme::getColour(ActiveTheme::DEVICE_ICON_HOVER_BG));
+    addDeviceButton_.setColour(juce::TextButton::textColourOffId,
+                               ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
     addDeviceButton_.onClick = [this]() { onAddDeviceClicked(); };
     addDeviceButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     chainContainer_->addAndMakeVisible(addDeviceButton_);
@@ -785,13 +802,8 @@ TrackChainContent::TrackChainContent()
     // Global mods toggle button (same icon as rack/device mod buttons)
     globalModsButton_ = std::make_unique<magda::SvgButton>("Mod", BinaryData::iconmodsboldm_svg,
                                                            BinaryData::iconmodsboldm_svgSize);
-    globalModsButton_->setClickingTogglesState(true);
-    globalModsButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    globalModsButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
-    globalModsButton_->setActiveColor(juce::Colours::white);
-    globalModsButton_->setActiveBackgroundColor(
-        ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
-    globalModsButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    applyChainHeaderIconStyle(*globalModsButton_, true);
+    globalModsButton_->setTooltip("Track modulators");
     globalModsButton_->onClick = [this]() {
         globalModsButton_->setActive(globalModsButton_->getToggleState());
         globalModsVisible_ = globalModsButton_->getToggleState();
@@ -810,12 +822,8 @@ TrackChainContent::TrackChainContent()
     // Macro button (global macros toggle)
     macroButton_ =
         std::make_unique<magda::SvgButton>("Macro", BinaryData::knob_svg, BinaryData::knob_svgSize);
-    macroButton_->setClickingTogglesState(true);
-    macroButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    macroButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
-    macroButton_->setActiveColor(juce::Colours::white);
-    macroButton_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
-    macroButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    applyChainHeaderIconStyle(*macroButton_, true);
+    macroButton_->setTooltip("Track macros");
     macroButton_->onClick = [this]() {
         macroButton_->setActive(macroButton_->getToggleState());
         globalMacrosVisible_ = macroButton_->getToggleState();
@@ -831,14 +839,10 @@ TrackChainContent::TrackChainContent()
     };
     addChildComponent(*macroButton_);
 
-    // Add rack button (rack icon with blue fill, grey border)
     addRackButton_ = std::make_unique<magda::SvgButton>("Rack", BinaryData::iconracksboldm_svg,
                                                         BinaryData::iconracksboldm_svgSize);
-    addRackButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // Match SVG fill color
-    addRackButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-    addRackButton_->setHoverColor(
-        ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).brighter(0.2f));
-    addRackButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    applyChainHeaderIconStyle(*addRackButton_, false);
+    addRackButton_->setTooltip("Add rack");
     addRackButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::TrackManager::getInstance().addRackToTrack(selectedTrackId_);
@@ -849,10 +853,8 @@ TrackChainContent::TrackChainContent()
     // Tree view button (show chain tree dialog)
     treeViewButton_ = std::make_unique<magda::SvgButton>("Tree", BinaryData::icontreeviewboldm_svg,
                                                          BinaryData::icontreeviewboldm_svgSize);
-    treeViewButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    treeViewButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
-    treeViewButton_->setHoverColor(ActiveTheme::getTextColour());
-    treeViewButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    applyChainHeaderIconStyle(*treeViewButton_, false);
+    treeViewButton_->setTooltip("Chain tree");
     treeViewButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::ChainTreeDialog::show(selectedTrackId_);
@@ -860,16 +862,10 @@ TrackChainContent::TrackChainContent()
     };
     addChildComponent(*treeViewButton_);
 
-    // Preset button (MAGDA track-chain presets menu) — same indigo cue as
-    // device / rack preset buttons so it reads as the same feature, just
-    // sitting on the LEFT of the track header instead of inside a node.
     presetButton_ =
         std::make_unique<magda::SvgButton>("Presets", BinaryData::iconpresetsroundboldm_svg,
                                            BinaryData::iconpresetsroundboldm_svgSize);
-    presetButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    presetButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::PRESET_INDIGO));
-    presetButton_->setHoverColor(ActiveTheme::getColour(ActiveTheme::PRESET_INDIGO).brighter(0.2f));
-    presetButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    applyChainHeaderIconStyle(*presetButton_, false);
     presetButton_->setTooltip("MAGDA Track Presets");
     presetButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
@@ -877,17 +873,11 @@ TrackChainContent::TrackChainContent()
     };
     addChildComponent(*presetButton_);
 
-    // Gain-staging pass toggle. Steps the GainStagingManager through
-    // start (collect) -> stop (compute + apply) -> clear for the selected
-    // track. Active tint follows the mode: red while collecting, amber once
-    // staged. The icon recolors via SvgButton's black-replacement path
-    // (the SVG uses currentColor).
+    // Gain-staging pass: start (collect) -> stop (compute + apply) for the selected track.
+    // The engaged tint follows the mode: red while collecting, amber while the AI runs.
     gainStagingButton_ = std::make_unique<magda::SvgButton>(
         "GainStaging", BinaryData::gainstaging_svg, BinaryData::gainstaging_svgSize);
-    gainStagingButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
-    gainStagingButton_->setHoverColor(ActiveTheme::getTextColour());
-    gainStagingButton_->setActiveColor(juce::Colours::white.darker(0.18f));
-    gainStagingButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    applyChainHeaderIconStyle(*gainStagingButton_, false);
     gainStagingButton_->onClick = [this]() {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID || aiProcessing_)
             return;
@@ -914,21 +904,14 @@ TrackChainContent::TrackChainContent()
     addChildComponent(*gainStagingButton_);
     refreshGainStagingButton();
 
-    // Analysis-device toggles — one-click add/remove of an Oscilloscope or
-    // Spectrum in this track's post-fx. Lit while the device is present; the
-    // model keeps them unique per kind, so this is a clean on/off.
-    // Active colours are chosen to NOT clash with the mod (orange) and macro
-    // (purple) toggles next door.
+    // Analysis-device toggles: one-click add/remove of an analyser in this track's post-fx,
+    // lit while it is present (the model keeps one per kind).
     auto setupAnalysisToggle = [this](std::unique_ptr<magda::SvgButton>& button, const char* name,
                                       const char* svg, size_t svgSize, const juce::String& tooltip,
-                                      const juce::String& pluginId, const juce::String& displayName,
-                                      juce::Colour activeBg) {
+                                      const juce::String& pluginId,
+                                      const juce::String& displayName) {
         button = std::make_unique<magda::SvgButton>(name, svg, svgSize);
-        // Tell SvgButton the icon's native fill so it recolors the glyph (grey
-        // idle, white when engaged). Engaged look = subtle tint + coloured
-        // border rather than a solid candy fill.
-        button->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        applyAnalysisToggleTheme(*button, activeBg);
+        applyChainHeaderIconStyle(*button, false);
         button->setTooltip(tooltip);
         button->onClick = [this, pluginId, displayName]() {
             togglePostFxAnalysisDevice(pluginId, displayName);
@@ -937,22 +920,19 @@ TrackChainContent::TrackChainContent()
     };
     setupAnalysisToggle(oscToggleButton_, "Oscilloscope", BinaryData::oscilloscope3_svg,
                         BinaryData::oscilloscope3_svgSize, "Oscilloscope (post-FX)", "oscilloscope",
-                        "Oscilloscope", analysisToggleAccent(ActiveTheme::ACCENT_POSITIVE));
+                        "Oscilloscope");
     setupAnalysisToggle(specToggleButton_, "Spectrum", BinaryData::iconspectrumboldm_svg,
                         BinaryData::iconspectrumboldm_svgSize, "Spectrum Analyzer (post-FX)",
-                        "spectrumanalyzer", "Spectrum Analyzer",
-                        analysisToggleAccent(ActiveTheme::ACCENT_INFO));
+                        "spectrumanalyzer", "Spectrum Analyzer");
     setupAnalysisToggle(levelsToggleButton_, "Levels", BinaryData::iconlevelsboldm_svg,
                         BinaryData::iconlevelsboldm_svgSize, "Levels meter (post-FX)", "levels",
-                        "Levels", analysisToggleAccent(ActiveTheme::ACCENT_PRIMARY));
+                        "Levels");
 
     // Post-FX panel show/hide toggle. The panel itself lives in BottomPanel,
     // which wires onPostFxPanelToggled / setPostFxPanelOpen.
     postFxPanelButton_ = std::make_unique<magda::SvgButton>("PostFx", BinaryData::postfx_svg,
                                                             BinaryData::postfx_svgSize);
-    postFxPanelButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    applyAnalysisToggleTheme(*postFxPanelButton_,
-                             ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+    applyChainHeaderIconStyle(*postFxPanelButton_, false);
     postFxPanelButton_->setTooltip("Show/hide the post-FX panel");
     postFxPanelButton_->onClick = [this]() {
         if (onPostFxPanelToggled)
@@ -962,40 +942,26 @@ TrackChainContent::TrackChainContent()
 
     // === HEADER BAR CONTROLS - RIGHT SIDE (track info) ===
 
-    // Track name label - clicks pass through for track selection
-    trackNameLabel_.setFont(FontManager::getInstance().getUIFontBold(11.0f));
-    trackNameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
-    trackNameLabel_.setJustificationType(juce::Justification::centredRight);
-    trackNameLabel_.setInterceptsMouseClicks(false, false);
-    addChildComponent(trackNameLabel_);
+    addChildComponent(trackTitle_);
+    addChildComponent(headerDividers_);
+    addChildComponent(midiLed_);
 
-    // Mute button (arrange track-header style)
-    muteButton_.setOriginalColor(juce::Colour(0xFFB3B3B3));
-    muteButton_.setNormalColor(ActiveTheme::getSecondaryTextColour());
-    muteButton_.setHoverColor(ActiveTheme::getTextColour());
-    muteButton_.setActiveColor(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
-    muteButton_.setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-    muteButton_.setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    muteButton_.setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::STATUS_WARNING));
-    muteButton_.setIconPadding(3.5f);
-    muteButton_.setTooltip(tr("tracks.mute.tooltip"));
-    muteButton_.setClickingTogglesState(true);
+    // Mute and solo carry their state in the glyph colour, like the rack's chain M / S.
+    magda::daw::ui::node_header::applyDeviceMuteStyle(muteButton_, 24.0f);
     muteButton_.onClick = [this]() {
-        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+        const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+        if (track == nullptr)
+            return;
+        const bool muted = muteButton_.getToggleState();
+        syncMuteButton(muted);
+        if (track->type == magda::TrackType::Master)
             magda::UndoManager::getInstance().executeCommand(
-                std::make_unique<magda::SetTrackMuteCommand>(selectedTrackId_,
-                                                             muteButton_.getToggleState()));
-        }
+                std::make_unique<magda::SetMasterMuteCommand>(muted));
+        else
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetTrackMuteCommand>(selectedTrackId_, muted));
     };
     addChildComponent(muteButton_);
-
-    // Master mute: speaker toggle shown in place of "M" when the master is selected.
-    configureMasterSpeakerButton(masterMuteButton_);
-    masterMuteButton_.onClick = [this]() {
-        magda::UndoManager::getInstance().executeCommand(
-            std::make_unique<magda::SetMasterMuteCommand>(masterMuteButton_.getToggleState()));
-    };
-    addChildComponent(masterMuteButton_);
 
     // Chord-track audition: the same 3-state control (Silent / Audible / Solo) as
     // the chord track header, folding mute / solo / monitor into one chord glyph.
@@ -1040,17 +1006,8 @@ TrackChainContent::TrackChainContent()
     };
     addChildComponent(monitorButton_);
 
-    // Solo button (arrange track-header style)
-    soloButton_.setOriginalColor(juce::Colour(0xFFB3B3B3));
-    soloButton_.setNormalColor(ActiveTheme::getSecondaryTextColour());
-    soloButton_.setHoverColor(ActiveTheme::getTextColour());
-    soloButton_.setActiveColor(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
-    soloButton_.setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-    soloButton_.setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    soloButton_.setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
-    soloButton_.setIconPadding(5.0f);
+    magda::daw::ui::node_header::applyDeviceSoloStyle(soloButton_, 24.0f);
     soloButton_.setTooltip(tr("tracks.solo.tooltip"));
-    soloButton_.setClickingTogglesState(true);
     soloButton_.onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::UndoManager::getInstance().executeCommand(
@@ -1064,30 +1021,28 @@ TrackChainContent::TrackChainContent()
     volumeLabel_.setRange(-60.0, 6.0, 0.0);
     volumeLabel_.setFillProportionMapper(magda::level_meter_scale::dbFillProportion);
     volumeLabel_.setValue(0.0, juce::dontSendNotification);  // Unity gain (0 dB)
-    volumeLabel_.setFontSize(10.0f);
-    volumeLabel_.setFillColour(ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
     volumeLabel_.onValueChange = [this]() {
+        gainField_.refresh();
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             float gain = dbToGain(static_cast<float>(volumeLabel_.getValue()));
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetTrackVolumeCommand>(selectedTrackId_, gain));
         }
     };
-    addChildComponent(volumeLabel_);
+    addChildComponent(gainField_);
 
     // Pan label (L/C/R format, draggable)
     panLabel_.setRange(-1.0, 1.0, 0.0);
     panLabel_.setValue(0.0, juce::dontSendNotification);  // Center
-    panLabel_.setFontSize(10.0f);
-    panLabel_.setFillColour(ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
     panLabel_.onValueChange = [this]() {
+        panField_.refresh();
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetTrackPanCommand>(
                     selectedTrackId_, static_cast<float>(panLabel_.getValue())));
         }
     };
-    addChildComponent(panLabel_);
+    addChildComponent(panField_);
 
     // Chain bypass button (power icon - same as device bypass buttons)
     chainBypassButton_ = std::make_unique<magda::SvgButton>("Power", BinaryData::power_svg,
@@ -1095,9 +1050,7 @@ TrackChainContent::TrackChainContent()
     chainBypassButton_->setClickingTogglesState(true);
     chainBypassButton_->setToggleState(true,
                                        juce::dontSendNotification);  // Start active (not bypassed)
-    magda::daw::ui::node_header::applyDeviceIconStyle(
-        *chainBypassButton_, magda::daw::ui::node_header::DeviceIcon::Power,
-        juce::Colour(0xFFE6E6E6), ActiveTheme::DEVICE_GREEN, 17.0f);
+    applyChainPowerStyle();
     chainBypassButton_->setActive(true);  // Start active
     chainBypassButton_->onClick = [this]() {
         bool active = chainBypassButton_->getToggleState();
@@ -1166,33 +1119,39 @@ TrackChainContent::TrackChainContent()
 void TrackChainContent::lookAndFeelChanged() {
     mixerLookAndFeel_.refreshThemeColours();
     if (chainBypassButton_) {
-        magda::daw::ui::node_header::applyDeviceIconStyle(
-            *chainBypassButton_, magda::daw::ui::node_header::DeviceIcon::Power,
-            juce::Colour(0xFFE6E6E6), ActiveTheme::DEVICE_GREEN, 17.0f);
+        applyChainPowerStyle();
         chainBypassButton_->repaint();
     }
 
-    if (oscToggleButton_)
-        applyAnalysisToggleTheme(*oscToggleButton_,
-                                 analysisToggleAccent(ActiveTheme::ACCENT_POSITIVE));
-    if (specToggleButton_)
-        applyAnalysisToggleTheme(*specToggleButton_,
-                                 analysisToggleAccent(ActiveTheme::ACCENT_INFO));
-    if (levelsToggleButton_)
-        applyAnalysisToggleTheme(*levelsToggleButton_,
-                                 analysisToggleAccent(ActiveTheme::ACCENT_PRIMARY));
-    if (postFxPanelButton_)
-        applyAnalysisToggleTheme(*postFxPanelButton_,
-                                 ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-
-    // The add-device button captures concrete colours at construction;
-    // re-apply so a live theme switch restyles it.
-    addDeviceButton_.setColour(
-        juce::TextButton::buttonColourId,
-        ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.24f));
-    addDeviceButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
+    // The add-device button captures concrete colours; re-apply on a live theme switch.
+    addDeviceButton_.setColour(juce::TextButton::buttonColourId,
+                               ActiveTheme::getColour(ActiveTheme::DEVICE_ICON_HOVER_BG));
+    addDeviceButton_.setColour(juce::TextButton::textColourOffId,
+                               ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
 
     repaint();
+}
+
+void TrackChainContent::applyChainPowerStyle() {
+    magda::daw::ui::node_header::applyDeviceIconStyle(
+        *chainBypassButton_, magda::daw::ui::node_header::DeviceIcon::Power,
+        juce::Colour(0xFFE6E6E6), ActiveTheme::DEVICE_GREEN, 24.0f);
+    // On: a solid green tint behind the green glyph, no border.
+    chainBypassButton_->setActiveBackgroundColor(
+        ActiveTheme::getColour(ActiveTheme::DEVICE_GREEN).withAlpha(0.18f));
+}
+
+void TrackChainContent::syncMuteButton(bool muted) {
+    syncMuteGlyph(muteButton_, muted);
+    muteButton_.setTooltip(tr("tracks.mute.tooltip"));
+    muteButton_.repaint();
+}
+
+void TrackChainContent::refreshTrackTitle(const magda::TrackInfo& track) {
+    const bool isMaster = track.type == magda::TrackType::Master;
+    const int number =
+        isMaster ? 0 : magda::TrackManager::getInstance().getTrackIndex(selectedTrackId_) + 1;
+    trackTitle_.setTrack(number, track.name);
 }
 
 TrackChainContent::~TrackChainContent() {
@@ -1888,17 +1847,34 @@ void TrackChainContent::layoutChainContent() {
         x += nodeWidth + scaledArrowWidth + scaledSlotSpacing;
     }
 
-    // Append "+" lives in the append zone, which is pinned to the right edge
-    // of the container (see calculateAppendZoneX) rather than trailing the last
-    // node, so it sits all the way to the right.
-    const int appendZoneWidth = getScaledWidth(APPEND_ZONE_WIDTH);
-    const int appendX = calculateAppendZoneX();
-    constexpr int buttonSize = 20;
+    // An empty chain centres a large drop target; once devices exist it collapses to the
+    // append slot pinned at the right edge (see calculateAppendZoneX).
     addDeviceButton_.setVisible(selectedTrackId_ != magda::INVALID_TRACK_ID);
-    addDeviceButton_.setBounds(appendX + juce::jmax(0, (appendZoneWidth - buttonSize) / 2),
-                               juce::jmax(0, (chainHeight - buttonSize) / 2), buttonSize,
-                               buttonSize);
+    if (nodeComponents_.empty()) {
+        constexpr int buttonSize = 28;
+        const auto target = emptyDropTargetBounds();
+        addDeviceButton_.setBounds(target.getCentreX() - buttonSize / 2,
+                                   target.getCentreY() - buttonSize + 2, buttonSize, buttonSize);
+    } else {
+        constexpr int buttonSize = 20;
+        addDeviceButton_.setBounds(
+            appendSlotBounds().withSizeKeepingCentre(buttonSize, buttonSize));
+    }
     addDeviceButton_.toFront(false);
+    chainContainer_->repaint();
+}
+
+juce::Rectangle<int> TrackChainContent::emptyDropTargetBounds() const {
+    const auto container = chainContainer_->getLocalBounds();
+    const auto visible = chainViewport_->getViewArea();
+    return visible.withSizeKeepingCentre(juce::jmin(380, container.getWidth() - 16),
+                                         juce::jmin(150, visible.getHeight() - 16));
+}
+
+juce::Rectangle<int> TrackChainContent::appendSlotBounds() const {
+    return juce::Rectangle<int>(calculateAppendZoneX(), 0, getScaledWidth(APPEND_ZONE_WIDTH),
+                                chainContainer_->getHeight())
+        .reduced(6, 10);
 }
 
 int TrackChainContent::calculateTotalContentWidth() const {
@@ -1962,13 +1938,14 @@ void TrackChainContent::trackPropertyChanged(int trackId) {
         // transient UI state (e.g. AI results in step sequencer).
         const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
         if (track) {
-            trackNameLabel_.setText(track->name, juce::dontSendNotification);
-            muteButton_.setToggleState(track->muted, juce::dontSendNotification);
-            syncMasterSpeakerButton(masterMuteButton_, track->muted);
+            refreshTrackTitle(*track);
+            syncMuteButton(track->muted);
             chordSpeakerButton_->refresh();
             soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
             volumeLabel_.setValue(gainToDb(track->volume), juce::dontSendNotification);
             panLabel_.setValue(track->pan, juce::dontSendNotification);
+            gainField_.refresh();
+            panField_.refresh();
         }
     }
 }
@@ -2367,11 +2344,11 @@ void TrackChainContent::updateFromSelectedTrack() {
     } else {
         const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
         if (track) {
-            trackNameLabel_.setText(track->name, juce::dontSendNotification);
+            refreshTrackTitle(*track);
+            midiLed_.setTrack(selectedTrackId_);
 
             // Update mute/solo state
-            muteButton_.setToggleState(track->muted, juce::dontSendNotification);
-            syncMasterSpeakerButton(masterMuteButton_, track->muted);
+            syncMuteButton(track->muted);
             soloButton_.setToggleState(track->soloed, juce::dontSendNotification);
 
             // Convert linear gain to dB for volume slider
@@ -2380,6 +2357,8 @@ void TrackChainContent::updateFromSelectedTrack() {
 
             // Update pan slider
             panLabel_.setValue(track->pan, juce::dontSendNotification);
+            gainField_.refresh();
+            panField_.refresh();
 
             // Bind automation targets so these labels mirror the track
             // header's purple/grey state via the AutomationManager observer.
@@ -2422,14 +2401,15 @@ void TrackChainContent::updateFromSelectedTrack() {
                 refreshAnalysisToggles();
                 refreshGainStagingButton();
             }
-            trackNameLabel_.setVisible(true);
+            trackTitle_.setVisible(true);
+            headerDividers_.setVisible(!isChord);
+            midiLed_.setVisible(!isMaster && !isChord);
             soloButton_.setVisible(!isMaster && !isChord);
-            volumeLabel_.setVisible(true);
-            panLabel_.setVisible(!isMaster && !isChord);
+            gainField_.setVisible(true);
+            panField_.setVisible(!isMaster && !isChord);
             chainBypassButton_->setVisible(!isMaster && !isChord);
 
-            muteButton_.setVisible(!isMaster && !isChord);
-            masterMuteButton_.setVisible(isMaster);
+            muteButton_.setVisible(!isChord);
             chordSpeakerButton_->setVisible(isChord);
             // Monitor is folded into the chord audition control now, so the chord
             // track no longer shows a standalone monitor button.
@@ -2488,21 +2468,18 @@ void TrackChainContent::populateHeader(juce::Component& headerBar) {
     headerBar.addAndMakeVisible(oscToggleButton_.get());
     headerBar.addAndMakeVisible(specToggleButton_.get());
     headerBar.addAndMakeVisible(levelsToggleButton_.get());
-    headerBar.addAndMakeVisible(trackNameLabel_);
+    headerBar.addAndMakeVisible(headerDividers_);
+    headerDividers_.toBack();
+    headerBar.addAndMakeVisible(trackTitle_);
+    headerBar.addAndMakeVisible(midiLed_);
     const auto* selTrack = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
     const bool isMaster = selTrack && selTrack->type == magda::TrackType::Master;
-    if (isMaster) {
-        headerBar.addChildComponent(muteButton_);
-        headerBar.addAndMakeVisible(masterMuteButton_);
-    } else {
-        headerBar.addAndMakeVisible(muteButton_);
-        headerBar.addChildComponent(masterMuteButton_);
-    }
+    headerBar.addAndMakeVisible(muteButton_);
     headerBar.addAndMakeVisible(soloButton_);
     headerBar.addChildComponent(*chordSpeakerButton_);
     headerBar.addChildComponent(monitorButton_);
-    headerBar.addAndMakeVisible(volumeLabel_);
-    headerBar.addAndMakeVisible(panLabel_);
+    headerBar.addAndMakeVisible(gainField_);
+    headerBar.addAndMakeVisible(panField_);
     headerBar.addAndMakeVisible(chainBypassButton_.get());
     headerBar.addChildComponent(linkModeLabel_);
     headerBar.addChildComponent(gainStagingLabel_);
@@ -2524,14 +2501,15 @@ void TrackChainContent::depopulateHeader(juce::Component& /*headerBar*/) {
     addChildComponent(oscToggleButton_.get());
     addChildComponent(specToggleButton_.get());
     addChildComponent(levelsToggleButton_.get());
-    addChildComponent(&trackNameLabel_);
+    addChildComponent(&trackTitle_);
+    addChildComponent(&headerDividers_);
+    addChildComponent(&midiLed_);
     addChildComponent(&muteButton_);
-    addChildComponent(&masterMuteButton_);
     addChildComponent(&soloButton_);
     addChildComponent(*chordSpeakerButton_);
     addChildComponent(&monitorButton_);
-    addChildComponent(&volumeLabel_);
-    addChildComponent(&panLabel_);
+    addChildComponent(&gainField_);
+    addChildComponent(&panField_);
     addChildComponent(chainBypassButton_.get());
     addChildComponent(&linkModeLabel_);
     addChildComponent(&gainStagingLabel_);
@@ -2541,96 +2519,90 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
     if (selectedTrackId_ == magda::INVALID_TRACK_ID)
         return;
 
-    // Chord track: no left chain tools; the right side mirrors the chord track
-    // header (volume + one chord audition control that folds in mute / solo /
-    // monitor). Name fills the rest.
-    if (const auto* chordTrack = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
-        chordTrack && chordTrack->type == magda::TrackType::Chord) {
-        auto a = headerBounds.reduced(8, 4);
-        chordSpeakerButton_->setBounds(a.removeFromRight(22).withSizeKeepingCentre(22, 22));
-        a.removeFromRight(4);
-        volumeLabel_.setBounds(a.removeFromRight(60));
-        a.removeFromRight(8);
-        trackNameLabel_.setBounds(a);
+    constexpr int iconWidth = 26;
+    constexpr int iconGap = 2;
+    constexpr int groupGap = 8;
+    constexpr int fieldHeight = 22;
 
-        if (linkModeLabel_.isVisible())
-            linkModeLabel_.setBounds(headerBounds);
-        if (gainStagingLabel_.isVisible())
-            gainStagingLabel_.setBounds(headerBounds);
+    if (linkModeLabel_.isVisible())
+        linkModeLabel_.setBounds(headerBounds);
+    if (gainStagingLabel_.isVisible())
+        gainStagingLabel_.setBounds(headerBounds);
+
+    // Chord track: no chain tools; the right side mirrors the chord track header (volume
+    // and one audition control folding in mute / solo / monitor).
+    const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+    if (track != nullptr && track->type == magda::TrackType::Chord) {
+        auto a = headerBounds.reduced(8, 2);
+        chordSpeakerButton_->setBounds(a.removeFromRight(22).withSizeKeepingCentre(22, 22));
+        a.removeFromRight(groupGap);
+        gainField_.setBounds(
+            a.removeFromRight(gainField_.getPreferredWidth())
+                .withSizeKeepingCentre(gainField_.getPreferredWidth(), fieldHeight));
+        a.removeFromRight(groupGap);
+        trackTitle_.setBounds(a);
         return;
     }
 
-    auto headerArea = headerBounds.reduced(8, 4);
+    const bool isMaster = track != nullptr && track->type == magda::TrackType::Master;
+    auto area = headerBounds.reduced(8, 2);
+    std::vector<int> dividers;
+    const auto dividerLeft = [&] {
+        area.removeFromLeft(groupGap);
+        dividers.push_back(area.getX() - headerBounds.getX());
+        area.removeFromLeft(1 + groupGap);
+    };
+    const auto dividerRight = [&] {
+        area.removeFromRight(groupGap);
+        dividers.push_back(area.getRight() - 1 - headerBounds.getX());
+        area.removeFromRight(1 + groupGap);
+    };
+    const auto placeLeft = [&](juce::Component& c) {
+        c.setBounds(area.removeFromLeft(iconWidth));
+        area.removeFromLeft(iconGap);
+    };
+    const auto placeRight = [&](juce::Component& c) {
+        c.setBounds(area.removeFromRight(iconWidth));
+        area.removeFromRight(iconGap);
+    };
 
-    // LEFT SIDE - Action buttons
-    macroButton_->setBounds(headerArea.removeFromLeft(20));
-    headerArea.removeFromLeft(2);
-    globalModsButton_->setBounds(headerArea.removeFromLeft(20));
-    headerArea.removeFromLeft(8);
-    addRackButton_->setBounds(headerArea.removeFromLeft(20));
-    headerArea.removeFromLeft(4);
-    treeViewButton_->setBounds(headerArea.removeFromLeft(20));
-    headerArea.removeFromLeft(8);
-    // Track-chain presets button — sits on the LEFT of the header (devices
-    // and racks have theirs on the right inside their own node header).
-    presetButton_->setBounds(headerArea.removeFromLeft(20));
-    headerArea.removeFromLeft(8);
-    gainStagingButton_->setBounds(headerArea.removeFromLeft(20));
+    // Left: the views group, then the track label.
+    placeLeft(*macroButton_);
+    placeLeft(*globalModsButton_);
+    placeLeft(*addRackButton_);
+    placeLeft(*treeViewButton_);
+    placeLeft(*presetButton_);
+    placeLeft(*gainStagingButton_);
+    dividerLeft();
 
-    // RIGHT SIDE - Track info (from right to left)
-    const auto* selTrack = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
-    bool isMaster = selTrack && selTrack->type == magda::TrackType::Master;
-
+    // Right, outermost first: power | gain, pan | MIDI, mute, solo | analysis views.
     if (!isMaster) {
-        chainBypassButton_->setBounds(headerArea.removeFromRight(17));
-        headerArea.removeFromRight(4);
+        placeRight(*chainBypassButton_);
+        dividerRight();
+        panField_.setBounds(area.removeFromRight(panField_.getPreferredWidth())
+                                .withSizeKeepingCentre(panField_.getPreferredWidth(), fieldHeight));
+        area.removeFromRight(4);
     }
-    if (!isMaster) {
-        panLabel_.setBounds(headerArea.removeFromRight(30));
-        headerArea.removeFromRight(4);
-    }
-    volumeLabel_.setBounds(headerArea.removeFromRight(60));
-    headerArea.removeFromRight(4);
-    if (!isMaster) {
-        soloButton_.setBounds(headerArea.removeFromRight(18));
-        headerArea.removeFromRight(2);
-    }
-    if (isMaster) {
-        masterMuteButton_.setBounds(headerArea.removeFromRight(20).withSizeKeepingCentre(20, 20));
-        masterMuteButton_.setVisible(true);
-        muteButton_.setVisible(false);
-    } else {
-        muteButton_.setBounds(headerArea.removeFromRight(18));
-        muteButton_.setVisible(true);
-        masterMuteButton_.setVisible(false);
-    }
-    headerArea.removeFromRight(8);
-    // Post-FX panel toggle + analysis-device toggles — grouped with the track's
-    // output controls (solo/mute/volume) rather than the left chain buttons.
-    levelsToggleButton_->setBounds(headerArea.removeFromRight(20));
-    headerArea.removeFromRight(4);
-    specToggleButton_->setBounds(headerArea.removeFromRight(20));
-    headerArea.removeFromRight(4);
-    oscToggleButton_->setBounds(headerArea.removeFromRight(20));
-    headerArea.removeFromRight(4);
-    postFxPanelButton_->setBounds(headerArea.removeFromRight(20));
-    headerArea.removeFromRight(8);
-    trackNameLabel_.setBounds(headerArea);  // Name takes remaining space
+    gainField_.setBounds(area.removeFromRight(gainField_.getPreferredWidth())
+                             .withSizeKeepingCentre(gainField_.getPreferredWidth(), fieldHeight));
+    dividerRight();
+    if (!isMaster)
+        placeRight(soloButton_);
+    placeRight(muteButton_);
+    if (!isMaster)
+        midiLed_.setBounds(area.removeFromRight(iconWidth));
+    soloButton_.setVisible(!isMaster);
+    panField_.setVisible(!isMaster);
+    dividerRight();
+    placeRight(*levelsToggleButton_);
+    placeRight(*specToggleButton_);
+    placeRight(*oscToggleButton_);
+    placeRight(*postFxPanelButton_);
 
-    // Hide solo/pan for master
-    if (isMaster) {
-        soloButton_.setVisible(false);
-        panLabel_.setVisible(false);
-    }
-
-    // Link mode label - centered in header, overlays track name when visible
-    if (linkModeLabel_.isVisible()) {
-        linkModeLabel_.setBounds(headerBounds);
-    }
-    // Gain-staging banner - centered, same treatment as the link-mode label.
-    if (gainStagingLabel_.isVisible()) {
-        gainStagingLabel_.setBounds(headerBounds);
-    }
+    area.removeFromRight(groupGap);
+    trackTitle_.setBounds(area);
+    headerDividers_.setBounds(headerBounds);
+    headerDividers_.setDividers(std::move(dividers));
 }
 
 void TrackChainContent::hideHeaderControls() {
@@ -2660,14 +2632,15 @@ void TrackChainContent::hideHeaderControls() {
     macroButton_->setToggleState(false, juce::dontSendNotification);
     macroButton_->setActive(false);
     // Right side - track info
-    trackNameLabel_.setVisible(false);
+    trackTitle_.setVisible(false);
+    headerDividers_.setVisible(false);
+    midiLed_.setVisible(false);
     muteButton_.setVisible(false);
-    masterMuteButton_.setVisible(false);
     chordSpeakerButton_->setVisible(false);
     monitorButton_.setVisible(false);
     soloButton_.setVisible(false);
-    volumeLabel_.setVisible(false);
-    panLabel_.setVisible(false);
+    gainField_.setVisible(false);
+    panField_.setVisible(false);
     volumeLabel_.clearAutomationTarget();
     panLabel_.clearAutomationTarget();
     chainBypassButton_->setVisible(false);

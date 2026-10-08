@@ -35,6 +35,7 @@ class TrackInspector : public BaseInspector,
                        public magda::AutomationManagerListener,
                        public magda::MidiBridge::Listener,
                        private magda::HardwareChannels::Listener,
+                       private magda::ConfigListener,
                        public juce::Timer {
   public:
     TrackInspector();
@@ -115,15 +116,15 @@ class TrackInspector : public BaseInspector,
 
     // Routing section (unified input type toggle + selectors)
     juce::Label routingSectionLabel_;
-    std::unique_ptr<magda::InputTypeSelector> inputTypeSelector_;  // Hidden, internal state
-    std::unique_ptr<magda::RoutingSelector> audioInputSelector_;   // Audio input
-    std::unique_ptr<magda::RoutingSelector> inputSelector_;        // MIDI input
-    std::unique_ptr<magda::RoutingSelector> outputSelector_;       // Audio output
-    std::unique_ptr<magda::RoutingSelector> midiOutputSelector_;   // MIDI output
-    juce::Label audioColumnLabel_;                                 // "Audio" column header
-    juce::Label midiColumnLabel_;                                  // "MIDI" column header
-    std::unique_ptr<juce::Component> inputIcon_;                   // Non-interactive Input icon
-    std::unique_ptr<juce::Component> outputIcon_;                  // Non-interactive Output icon
+    std::unique_ptr<magda::InputTypeSelector> inputTypeSelector_;   // Hidden, internal state
+    std::unique_ptr<magda::RoutingSelector> audioInputSelector_;    // Audio input
+    std::unique_ptr<magda::RoutingSelector> inputSelector_;         // MIDI input
+    std::unique_ptr<magda::RoutingSelector> outputSelector_;        // Audio output
+    std::unique_ptr<magda::RoutingSelector> midiOutputSelector_;    // MIDI output
+    magda::track_controls::IOColumnLabel audioColumnLabel_{false};  // "AUDIO" column header
+    magda::track_controls::IOColumnLabel midiColumnLabel_{true};    // "MIDI" column header
+    std::unique_ptr<juce::Component> inputIcon_;                    // Non-interactive Input icon
+    std::unique_ptr<juce::Component> outputIcon_;                   // Non-interactive Output icon
 
     // Send/Receive section
     juce::Label sendReceiveSectionLabel_;
@@ -146,6 +147,23 @@ class TrackInspector : public BaseInspector,
 
     // Update methods
     void applyThemeColours();
+    /** Applies the header preferences: track colour on the name row (spine or full) and
+     *  mono values. */
+    void applyHeaderStyle();
+    void showColourMenu(juce::Component* target);
+
+    // Opens the colour menu on a right-click of the name field.
+    struct NamePopupListener : juce::MouseListener {
+        std::function<void()> onPopup;
+        void mouseDown(const juce::MouseEvent& e) override {
+            if (e.mods.isPopupMenu() && onPopup)
+                onPopup();
+        }
+    };
+    NamePopupListener namePopupListener_;
+    bool nameFilled_ = false;              // Full bar: the name field carries the track colour
+    juce::Colour nameFill_, nameOutline_;  // the rounded name field, painted behind the label
+    void configChanged() override;
     void rebuildRoutingIcons();
     void updateFromSelectedTrack();
     void updateFromMultiTrackSelection();

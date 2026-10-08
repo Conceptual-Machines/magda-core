@@ -21,6 +21,7 @@
 #include "audio/MidiBridge.hpp"
 #include "audio/io/AudioIOControl.hpp"
 #include "core/AutomationManager.hpp"
+#include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
@@ -38,7 +39,8 @@ class TrackHeadersPanel : public juce::Component,
                           public ViewModeListener,
                           public AutomationManagerListener,
                           public MidiBridge::Listener,
-                          private HardwareChannels::Listener {
+                          private HardwareChannels::Listener,
+                          private ConfigListener {
   public:
     static constexpr int TRACK_HEADER_WIDTH = 200;
     static constexpr int DEFAULT_TRACK_HEIGHT = 83;
@@ -127,9 +129,18 @@ class TrackHeadersPanel : public juce::Component,
         return verticalZoom;
     }
 
-    // I/O routing visibility
+    /** Width of the I/O column, added to the header column while it shows. */
+    static constexpr int IO_COLUMN_WIDTH = 200;
+
+    // I/O routing column, shown for every track at once.
     void toggleIORouting();
     bool isIORoutingVisible() const;
+    std::function<void()> onIORoutingToggled;
+    /** Paints the AUDIO / MIDI column labels over @p ioColumnStrip, a strip as wide as the
+     *  I/O column, aligned with the selects below. A label that would touch @p occupied
+     *  (other controls in the row) is left out. */
+    static void paintIOLabels(juce::Graphics& g, juce::Rectangle<int> ioColumnStrip,
+                              juce::Rectangle<int> occupied);
 
     // Callbacks
     std::function<void(int, int)> onTrackHeightChanged;
@@ -170,7 +181,6 @@ class TrackHeadersPanel : public juce::Component,
         float volume = 0.8f;
         float pan = 0.0f;
         int height = DEFAULT_TRACK_HEIGHT;
-        bool showIORouting = true;  // Per-track I/O routing visibility
 
         // Routing enables (for right-click menu)
         bool audioInEnabled = true;
@@ -346,6 +356,9 @@ class TrackHeadersPanel : public juce::Component,
 
     bool isResizeHandleArea(const juce::Point<int>& point, int& trackIndex) const;
     void updateTrackHeaderLayout();
+    void configChanged() override;
+    void layoutIOColumn(TrackHeader& header, juce::Rectangle<int> ioArea);
+    void paintIOColumn(juce::Graphics& g, juce::Rectangle<int> ioArea, bool isSelected) const;
     static void layoutMeterColumn(TrackHeader& header, juce::Rectangle<int>& workArea,
                                   const SideColumn& outer);
     void layoutControlArea(TrackHeader& header, juce::Rectangle<int>& tcpArea,
