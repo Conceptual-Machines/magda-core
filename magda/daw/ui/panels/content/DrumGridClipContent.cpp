@@ -780,6 +780,7 @@ class DrumGridClipGrid : public juce::Component,
             menu.addItem(11, "Paste", magda::ClipManager::getInstance().hasNotesInClipboard());
             menu.addItem(12, "Duplicate", hasSelection);
             menu.addItem(13, "Delete", hasSelection);
+            menu.addItem(15, "Slice...", hasSelection);
             menu.addSeparator();
             addDefaultNoteMenuItems(menu);
             menu.addSeparator();
@@ -835,6 +836,8 @@ class DrumGridClipGrid : public juce::Component,
                         onDuplicateNotes(clipId_, indices);
                     else if (result == 13 && onDeleteNotes)
                         onDeleteNotes(clipId_, indices);
+                    else if (result == 15)
+                        magda::showSliceNotesPopup(clipId_, indices);
                     else if (handleDefaultNoteMenuResult(result))
                         return;
                     else if (result >= 1 && result <= 3 && onQuantizeNotes) {
@@ -1598,6 +1601,7 @@ class DrumGridClipGrid : public juce::Component,
                 menu.addItem(11, "Paste", magda::ClipManager::getInstance().hasNotesInClipboard());
                 menu.addItem(12, "Duplicate", hasSelection);
                 menu.addItem(13, "Delete", hasSelection);
+                menu.addItem(15, "Slice...", hasSelection);
                 menu.addSeparator();
                 addDefaultNoteMenuItems(menu);
                 menu.addSeparator();
@@ -1653,6 +1657,8 @@ class DrumGridClipGrid : public juce::Component,
                             onDuplicateNotes(clipId_, indices);
                         else if (result == 13 && onDeleteNotes)
                             onDeleteNotes(clipId_, indices);
+                        else if (result == 15)
+                            magda::showSliceNotesPopup(clipId_, indices);
                         else if (handleDefaultNoteMenuResult(result))
                             return;
                         else if (result >= 1 && result <= 3 && onQuantizeNotes) {

@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <optional>
+#include <vector>
 
 #include "core/ClipInfo.hpp"
 
@@ -45,5 +46,7 @@ std::optional<juce::MouseCursor> cursorForMidiEditTool(MidiEditTool tool);
 void splitMidiNoteWithUndo(ClipId clipId, size_t noteIndex, double clipBeat);
 /** @brief Undoable join of a clip's note with the next note of its pitch. */
 void glueMidiNoteWithUndo(ClipId clipId, size_t noteIndex);
+/** @brief The "slice into equal parts" popup for selected notes, opened at the mouse. */
+void showSliceNotesPopup(ClipId clipId, std::vector<size_t> noteIndices);
 
 }  // namespace magda

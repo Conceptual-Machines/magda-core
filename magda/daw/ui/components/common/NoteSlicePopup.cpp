@@ -137,12 +137,17 @@ void NoteSlicePopup::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void NoteSlicePopup::showAbove(std::unique_ptr<NoteSlicePopup> popup, juce::Component* anchor) {
+    const auto screenBounds = anchor->getScreenBounds();
+    showAbovePoint(std::move(popup), {screenBounds.getCentreX(), screenBounds.getY()});
+}
+
+void NoteSlicePopup::showAbovePoint(std::unique_ptr<NoteSlicePopup> popup,
+                                    juce::Point<int> screenPoint) {
     dismissCurrent();
 
     auto* raw = popup.release();
-    auto screenBounds = anchor->getScreenBounds();
-    int x = screenBounds.getCentreX() - raw->getWidth() / 2;
-    int y = screenBounds.getY() - raw->getHeight() - 4;
+    int x = screenPoint.x - raw->getWidth() / 2;
+    int y = screenPoint.y - raw->getHeight() - 4;
     raw->setTopLeftPosition(x, y);
     raw->setAlwaysOnTop(true);
     raw->addToDesktop(juce::ComponentPeer::windowHasDropShadow);

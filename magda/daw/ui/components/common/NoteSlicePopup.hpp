@@ -30,6 +30,8 @@ class NoteSlicePopup : public juce::Component {
     std::function<void(int subdivisions)> onApply;
 
     static void showAbove(std::unique_ptr<NoteSlicePopup> popup, juce::Component* anchor);
+    /** Opens with its bottom edge just above @p screenPoint, e.g. where a menu was picked. */
+    static void showAbovePoint(std::unique_ptr<NoteSlicePopup> popup, juce::Point<int> screenPoint);
     static void dismissCurrent();
 
   private:

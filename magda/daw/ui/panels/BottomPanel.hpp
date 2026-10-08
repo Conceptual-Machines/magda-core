@@ -193,7 +193,6 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<juce::TextButton> snapButton_;
     std::unique_ptr<SvgButton> loopButton_;         // toggles the clip's source loop
     std::unique_ptr<SvgButton> clipEnabledButton_;  // enable/disable the edited clip (#1736)
-    std::unique_ptr<SvgButton> sliceButton_;
     std::unique_ptr<SvgButton> bendButton_;
 
     // Header control state

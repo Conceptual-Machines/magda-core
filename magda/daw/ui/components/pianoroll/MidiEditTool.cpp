@@ -3,7 +3,9 @@
 #include "../../themes/CursorManager.hpp"
 #include "core/ClipManager.hpp"
 #include "core/MidiNoteCommands.hpp"
+#include "core/SelectionManager.hpp"
 #include "core/UndoManager.hpp"
+#include "ui/components/common/NoteSlicePopup.hpp"
 
 namespace magda {
 
@@ -76,6 +78,19 @@ void glueMidiNoteWithUndo(ClipId clipId, size_t noteIndex) {
     if (auto after = glueMidiNoteToNext(before, noteIndex))
         UndoManager::getInstance().executeCommand(std::make_unique<SetMidiEventStateCommand>(
             clipId, std::move(before), std::move(*after), "Glue MIDI Notes"));
+}
+
+void showSliceNotesPopup(ClipId clipId, std::vector<size_t> noteIndices) {
+    if (noteIndices.empty())
+        return;
+    auto popup = std::make_unique<daw::ui::NoteSlicePopup>(clipId, noteIndices.size());
+    popup->onApply = [clipId, noteIndices](int subdivisions) {
+        auto command = std::make_unique<SliceMidiNotesCommand>(clipId, noteIndices, subdivisions);
+        auto* sliced = command.get();
+        UndoManager::getInstance().executeCommand(std::move(command));
+        SelectionManager::getInstance().selectNotes(clipId, sliced->getSlicedNoteIndices());
+    };
+    daw::ui::NoteSlicePopup::showAbovePoint(std::move(popup), juce::Desktop::getMousePosition());
 }
 
 }  // namespace magda

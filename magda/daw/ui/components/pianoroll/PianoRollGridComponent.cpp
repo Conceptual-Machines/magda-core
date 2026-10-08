@@ -655,6 +655,7 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
                 menu.addSubMenu("Quantize", quantizeMenu, hasSelection);
             }
             menu.addItem(14, "Legato", selectedIndices.size() >= 2);
+            menu.addItem(15, "Slice...", !selectedIndices.empty());
 
             menu.showMenuAsync(juce::PopupMenu::Options(), [this,
                                                             indices = std::move(selectedIndices),
@@ -672,6 +673,8 @@ void PianoRollGridComponent::mouseDown(const juce::MouseEvent& e) {
                     onDeleteNotes(clipId_, indices);
                 else if (result == 14 && onLegatoNotes)
                     onLegatoNotes(clipId_, indices);
+                else if (result == 15)
+                    showSliceNotesPopup(clipId_, indices);
                 else if (handleDefaultNoteMenuResult(result))
                     return;
                 else if (result >= 1 && result <= 3 && onQuantizeNotes) {
@@ -2446,6 +2449,7 @@ void PianoRollGridComponent::createNoteComponents() {
                     menu.addSubMenu("Quantize", quantizeMenu, hasSelection);
                 }
                 menu.addItem(14, "Legato", selectedIndices.size() >= 2);
+                menu.addItem(15, "Slice...", !selectedIndices.empty());
 
                 menu.showMenuAsync(
                     juce::PopupMenu::Options(), [this, clipId, indices = std::move(selectedIndices),
@@ -2462,6 +2466,8 @@ void PianoRollGridComponent::createNoteComponents() {
                             onDeleteNotes(clipId, indices);
                         else if (result == 14 && onLegatoNotes)
                             onLegatoNotes(clipId, indices);
+                        else if (result == 15)
+                            showSliceNotesPopup(clipId, indices);
                         else if (handleDefaultNoteMenuResult(result))
                             return;
                         else if (result >= 1 && result <= 3 && onQuantizeNotes) {

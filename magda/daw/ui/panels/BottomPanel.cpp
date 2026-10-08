@@ -33,7 +33,6 @@
 #include "core/UndoManager.hpp"
 #include "music/NotationSettings.hpp"
 #include "state/PanelController.hpp"
-#include "ui/components/common/NoteSlicePopup.hpp"
 #include "ui/components/common/TimeBendPopup.hpp"
 
 namespace magda {
@@ -677,33 +676,6 @@ void BottomPanel::setupHeaderControls() {
             [newState](auto& manager, ClipId id) { manager.setClipEnabled(id, newState); }));
     };
     headerBar_->addChildComponent(clipEnabledButton_.get());
-
-    // Note slice button: one geometry, with pressed colour supplied in code.
-    sliceButton_ = std::make_unique<SvgButton>("NoteSlice", BinaryData::note_slice_svg,
-                                               BinaryData::note_slice_svgSize);
-    sliceButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                            ActiveTheme::ACCENT_INFO);
-    sliceButton_->setTooltip("Slice selected notes");
-    sliceButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-    sliceButton_->setBorderThickness(1.0f);
-    sliceButton_->setCornerRadius(3.0f);
-    sliceButton_->onClick = [this]() {
-        const auto& noteSel = SelectionManager::getInstance().getNoteSelection();
-        if (!noteSel.isValid() || noteSel.noteIndices.empty())
-            return;
-
-        auto clipId = noteSel.clipId;
-        auto indices = noteSel.noteIndices;
-        auto popup = std::make_unique<daw::ui::NoteSlicePopup>(clipId, indices.size());
-        popup->onApply = [clipId, indices](int subdivisions) {
-            auto cmd = std::make_unique<SliceMidiNotesCommand>(clipId, indices, subdivisions);
-            auto* cmdPtr = cmd.get();
-            UndoManager::getInstance().executeCommand(std::move(cmd));
-            SelectionManager::getInstance().selectNotes(clipId, cmdPtr->getSlicedNoteIndices());
-        };
-        daw::ui::NoteSlicePopup::showAbove(std::move(popup), sliceButton_.get());
-    };
-    headerBar_->addChildComponent(sliceButton_.get());
 
     // Time bend button: one geometry, with pressed colour supplied in code.
     bendButton_ = std::make_unique<SvgButton>("TimeBend", BinaryData::metimebend_svg,
@@ -1434,8 +1406,7 @@ void BottomPanel::addMidiControlsToHeader() {
     pianoRollTab_->setVisible(showEditorTabs_);
     drumGridTab_->setVisible(showEditorTabs_);
     bendButton_->setVisible(showEditorTabs_);
-    // The v1 toolbar slices with the Slice tool and leaves clip power to the inspector.
-    sliceButton_->setVisible(false);
+    // The v1 toolbar leaves clip power to the inspector.
     clipEnabledButton_->setVisible(!showEditorTabs_);
     for (auto& button : toolButtons_)
         button->setVisible(showEditorTabs_);
@@ -1470,7 +1441,6 @@ void BottomPanel::hideMidiHeaderControls() {
         clipEnabledButton_->setVisible(false);
     pianoRollTab_->setVisible(false);
     drumGridTab_->setVisible(false);
-    sliceButton_->setVisible(false);
     bendButton_->setVisible(false);
     for (auto& button : toolButtons_)
         if (button)
@@ -1577,30 +1547,6 @@ void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
         const int sz = h - vPad * 2;
         loopButton_->setBounds(headerBounds.getX() + (SIDEBAR_WIDTH - sz) / 2, y + (h - sz) / 2, sz,
                                sz);
-    }
-
-    if (showEditorTabs_) {
-        int iconSize = h - 8;
-        int tabY = y + (h - iconSize) / 2;
-        int tabX = headerBounds.getX() + SIDEBAR_WIDTH + 4;
-        pianoRollTab_->setBounds(tabX, tabY, iconSize, iconSize);
-        tabX += iconSize + 4;
-        drumGridTab_->setBounds(tabX, tabY, iconSize, iconSize);
-        tabX += iconSize + 12;
-        overlayTracksButton_->setBounds(tabX, tabY, iconSize, iconSize);
-
-        // Note tools centered horizontally in header
-        const int toolGap = 4;
-        const int toolsWidth = iconSize * 2 + toolGap;
-        int toolX = headerBounds.getCentreX() - toolsWidth / 2;
-        sliceButton_->setBounds(toolX, tabY, iconSize, iconSize);
-        toolX += iconSize + toolGap;
-        bendButton_->setBounds(toolX, tabY, iconSize, iconSize);
-        sliceButton_->setVisible(true);
-        bendButton_->setVisible(true);
-    } else {
-        sliceButton_->setVisible(false);
-        bendButton_->setVisible(false);
     }
 }
 
