@@ -435,11 +435,11 @@ void ClipComponent::paint(juce::Graphics& g) {
         float loopPixelWidth =
             static_cast<float>(loopLengthBeats / beatRange) * clipBounds.getWidth();
 
-        // Narrow loops keep only the hairline; below a few pixels even that turns the clip
-        // into a solid mass, so nothing is drawn.
-        constexpr float MIN_DENT_PIXEL_WIDTH = 16.0f;
+        // Dents shrink with the loop width until too small to read, then only the hairline
+        // stays; below a few pixels even that turns the clip into a solid mass.
         constexpr float MIN_HAIRLINE_PIXEL_WIDTH = 4.0f;
-        const bool drawDents = loopPixelWidth >= MIN_DENT_PIXEL_WIDTH;
+        const float dentSize = juce::jmin(7.0f, loopPixelWidth * 0.2f);
+        const bool drawDents = dentSize >= 2.5f;
         if (loopPixelWidth < MIN_HAIRLINE_PIXEL_WIDTH)
             numBoundaries = 0;
 
@@ -461,7 +461,7 @@ void ClipComponent::paint(juce::Graphics& g) {
             const auto x = static_cast<float>(clipBounds.getX() + bx);
             const auto top = static_cast<float>(clipBounds.getY());
             const auto bottom = static_cast<float>(clipBounds.getBottom());
-            const float dent = drawDents ? 7.0f : 0.0f;
+            const float dent = drawDents ? dentSize : 0.0f;
             juce::Path topDent;
             topDent.addTriangle(x - dent, top, x + dent, top, x, top + dent);
             juce::Path bottomDent;
