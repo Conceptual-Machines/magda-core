@@ -29,6 +29,12 @@ class TimeRuler : public juce::Component, private juce::Timer {
     void setZoom(double pixelsPerBeat);
     void setTimelineLength(double lengthInSeconds);
     void setDisplayMode(DisplayMode mode);
+    /** 22px editor ruler: short ticks, the loop strip on top, labels beside their lines. */
+    void setCompact(bool compact) {
+        compact_ = compact;
+        initLoopInteraction();
+        repaint();
+    }
     void setScrollOffset(int offsetPixels);
 
     // For bars/beats mode
@@ -192,12 +198,20 @@ class TimeRuler : public juce::Component, private juce::Timer {
     static constexpr int LOOP_STRIP_HEIGHT = LayoutConfig::loopStripHeight;
 
     // Tick heights sourced from LayoutConfig for consistency with TimelineComponent
-    static int tickHeightMajor() {
-        return LayoutConfig::getInstance().rulerMajorTickHeight;
+    int tickHeightMajor() const {
+        return compact_ ? 6 : LayoutConfig::getInstance().rulerMajorTickHeight;
     }
-    static int tickHeightMinor() {
-        return LayoutConfig::getInstance().rulerMinorTickHeight;
+    int tickHeightMinor() const {
+        return compact_ ? 3 : LayoutConfig::getInstance().rulerMinorTickHeight;
     }
+    int loopStripHeight() const {
+        return compact_ ? 6 : LOOP_STRIP_HEIGHT;
+    }
+    // Compact rulers carry the loop strip along the top edge, above the labels.
+    int loopStripTop() const {
+        return compact_ ? 0 : getHeight() - tickHeightMajor() - LOOP_STRIP_HEIGHT;
+    }
+    bool compact_ = false;
 
     // Drawing helpers
     void drawSecondsMode(juce::Graphics& g);

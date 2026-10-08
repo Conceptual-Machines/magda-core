@@ -650,6 +650,7 @@ class ClipManager {
     void setClipGridSettings(ClipId clipId, bool autoGrid, int numerator, int denominator);
     void setClipSnapEnabled(ClipId clipId, bool enabled);
     void setClipMidiEditorRowHeight(ClipId clipId, int rowHeight);
+    void setClipChordLaneVisible(ClipId clipId, bool visible);
 
     // ========================================================================
     // Content-Level Operations (Editor Operations)

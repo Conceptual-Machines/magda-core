@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <array>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -12,17 +13,14 @@ namespace magda {
 
 class VelocityLaneComponent;
 class CCLaneComponent;
+class SvgButton;
 
 /**
- * @brief Drawer container for MIDI editor lanes (velocity, CC, pitchbend)
+ * @brief The MIDI editor's lane: velocity, the clip's CC and pitchbend lanes, or MPE.
  *
- * Lanes are stacked vertically (like automation lanes), all visible at once:
- * - Permanent velocity lane at the top (VelocityLaneComponent)
- * - Added CC/Pitchbend lanes below it
- * Each lane is identified by its control name in the left margin (keyboard
- * column), with a close button on removable lanes and a "+" button at the
- * bottom to add CC or Pitchbend lanes.
- * Forwards clip/zoom/scroll to all lanes.
+ * The picker at the top of the left column chooses what the lane shows. CC mode stacks the
+ * added CC/pitchbend lanes, each named in the left column with a close button, and "+"
+ * adds one. Forwards clip/zoom/scroll to all lanes.
  */
 class MidiDrawerComponent : public juce::Component {
   public:
@@ -66,19 +64,18 @@ class MidiDrawerComponent : public juce::Component {
     static constexpr int ADD_BUTTON_HEIGHT = 20;
     static constexpr int PREFERRED_LANE_HEIGHT = 80;
 
-    // Show the add-lane menu (also reachable from the editor sidebar's CC button)
+    // Show the add-lane menu (the "+" in CC mode)
     void showAddLaneMenu();
 
-    // Velocity is a toggleable lane (not permanently shown), so the editor can
-    // open CC lanes without forcing the velocity lane and vice-versa.
-    void setVelocityLaneVisible(bool visible);
-    bool isVelocityLaneVisible() const {
-        return velocityVisible_;
+    enum class LaneMode { Velocity, CC, MPE };
+    void setLaneMode(LaneMode mode);
+    LaneMode getLaneMode() const {
+        return laneMode_;
     }
-    // True when nothing is shown — the host should hide the drawer entirely.
-    bool isDrawerEmpty() const {
-        return !velocityVisible_ && ccTabs_.empty();
-    }
+    // Fires when the picker changes the mode (not on setLaneMode).
+    std::function<void(LaneMode)> onLaneModeChanged;
+    // Dim caption at the foot of the left column, e.g. "VEL · selected row".
+    void setVelocityCaption(juce::String caption);
 
     // True when any CC/pitchbend lane is open
     bool hasExtraLanes() const {
@@ -133,18 +130,19 @@ class MidiDrawerComponent : public juce::Component {
     void paintLaneHeaders(juce::Graphics& g);
     void mouseDown(const juce::MouseEvent& e) override;
 
-    // Velocity visibility — when off, the velocity lane is hidden and CC lanes
-    // take the whole drawer.
-    bool velocityVisible_ = true;
-    // Row slot of the first CC lane: velocity occupies slot 0 only when shown.
-    int firstCcSlot() const {
-        return velocityVisible_ ? 1 : 0;
+    LaneMode laneMode_ = LaneMode::Velocity;
+    std::array<std::unique_ptr<SvgButton>, 3> laneButtons_;
+    juce::String velocityCaption_;
+    bool showsCcLanes() const {
+        return laneMode_ == LaneMode::CC;
     }
+    // Header rows of the left column: the picker, then lane names below it.
+    static constexpr int PICKER_HEIGHT = 34;
 
-    // Stacked lane rows (full component coords). Indexed by visible slot:
-    // slot 0 = velocity (when shown), then CC lanes.
+    // Stacked lane rows (full component coords): the CC lanes in CC mode, else the one
+    // velocity row.
     int getLaneCount() const {
-        return firstCcSlot() + static_cast<int>(ccTabs_.size());
+        return showsCcLanes() ? static_cast<int>(ccTabs_.size()) : 1;
     }
     juce::Rectangle<int> getLaneRowBounds(int laneIndex) const;
 

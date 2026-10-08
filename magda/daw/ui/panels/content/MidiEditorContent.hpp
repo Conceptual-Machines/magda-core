@@ -8,6 +8,7 @@
 #include "PanelContent.hpp"
 #include "core/ClipManager.hpp"
 #include "core/GestureRouter.hpp"
+#include "ui/components/pianoroll/MidiDrawerComponent.hpp"
 #include "ui/components/pianoroll/PitchFoldMap.hpp"
 #include "ui/layout/LayoutConfig.hpp"
 #include "ui/state/TimelineController.hpp"
@@ -16,7 +17,6 @@
 namespace magda {
 class TimeRuler;
 class VelocityLaneComponent;
-class MidiDrawerComponent;
 class MidiBridge;
 class SvgButton;
 struct MidiNoteEvent;
@@ -164,10 +164,12 @@ class MidiEditorContent : public PanelContent,
     static void setNotePreviewEnabled(bool enabled) {
         notePreviewEnabled_ = enabled;
     }
-    // Update a gutter preview toggle to reflect `on`: crossed speaker in dimmed
-    // grey when off, plain speaker in accent blue when on (glyph + colour). Shared
-    // by the piano roll and drum grid so both toggles read identically (#1705).
+    // Rail monitor toggle: crossed speaker in grey when off, sounding speaker in green when
+    // on. Shared by the piano roll and drum grid so both read identically (#1705).
     static void syncNotePreviewToggle(magda::SvgButton& button, bool on);
+    // v1 rail button: 28px, radius 6, a filled chip with a hairline when engaged.
+    static void styleRailButton(magda::SvgButton& button);
+    static constexpr int RAIL_BUTTON = 28;
 
     /// Effective grid division, including the current Auto zoom resolution.
     double getGridResolutionBeats() const {
@@ -189,15 +191,15 @@ class MidiEditorContent : public PanelContent,
     void updateGridResolution();
 
     // --- Layout constants ---
-    // A bit taller so the bar numbers + loop markers don't look crammed.
-    static constexpr int RULER_HEIGHT = 42;
+    // The compact v1 ruler: loop strip on top, labels beside their lines.
+    static constexpr int RULER_HEIGHT = 22;
     // Single source in LayoutConfig so the piano-roll and drum-grid bodies +
     // ruler share one padding and can't drift (leaves room for the bar-1
     // playhead triangle clear of the left column).
     static constexpr int GRID_LEFT_PADDING = magda::LayoutConfig::MIDI_GRID_LEFT_PADDING;
     static constexpr double MIN_HORIZONTAL_ZOOM = 10.0;
     static constexpr double MAX_HORIZONTAL_ZOOM = 500.0;
-    static constexpr int DEFAULT_DRAWER_HEIGHT = 100;
+    static constexpr int DEFAULT_DRAWER_HEIGHT = 110;
     static constexpr int MIN_DRAWER_HEIGHT = 60;
     static constexpr int MAX_DRAWER_HEIGHT = 400;
     static constexpr int VELOCITY_LANE_HEIGHT = 80;
@@ -216,22 +218,18 @@ class MidiEditorContent : public PanelContent,
     // Push overlayTrackIds_ into the editor's grid renderer
     virtual void applyOverlayTracks() {}
 
-    // --- Lane drawer state (static so it persists across editor switches) ---
-    // velocityLaneVisible_ is the velocity toggle; velocityDrawerOpen_ is the
-    // derived "drawer area shown" (velocity visible OR a CC lane exists), so the
-    // velocity and CC lanes toggle independently — opening CC no longer forces
-    // the velocity lane.
+    // --- Lane (static so it persists across editor switches) ---
+    // The lane is always shown; its header picks what it shows.
     static bool velocityDrawerOpen_;
-    static bool velocityLaneVisible_;
+    static magda::MidiDrawerComponent::LaneMode laneMode_;
+    // Subclass reacts to the lane header, e.g. the piano roll's MPE glide editing.
+    virtual void onLaneModeChanged(magda::MidiDrawerComponent::LaneMode /*mode*/) {}
     void setVelocityDrawerVisible(bool visible);
     static bool isVelocityDrawerVisible() {
         return velocityDrawerOpen_;
     }
-    // Push the velocity-visible flag into the drawer, recompute drawer-open, and
-    // relayout. Called by the velocity toggle and on CC lane add/remove.
+    // Push the shared lane mode into the drawer and relayout.
     void refreshLaneDrawer();
-    // Subclass updates its sidebar toggle active states (velocity + CC).
-    virtual void updateLaneToggleStates() {}
 
     // --- Fold (shared): collapse the vertical axis to the clip's used pitches
     //     (piano roll: used notes; drum grid: used pads). foldEnabled_ is static

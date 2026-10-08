@@ -12,6 +12,7 @@
 #include "BinaryData.h"
 #include "audio/plugins/DrumGridRoles.hpp"
 #include "audio/plugins/DrumGridTemplates.hpp"
+#include "core/ChordProgressionContext.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/DrumGridPads.hpp"
 #include "core/DrumkitManager.hpp"
@@ -21,6 +22,7 @@
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "music/NotationSettings.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TimeBendPopup.hpp"
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
@@ -2065,42 +2067,32 @@ DrumGridClipContent::DrumGridClipContent() {
     if (timeRuler_)
         timeRuler_->setGestureContext(magda::GestureContext::DrumGrid);
 
-    // Create controls toggle button (bar chart icon)
-    controlsToggle_ = std::make_unique<magda::SvgButton>(
-        "ControlsToggle", BinaryData::bar_chart_svg, BinaryData::bar_chart_svgSize);
-    controlsToggle_->setTooltip("Toggle velocity lane");
-    controlsToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    controlsToggle_->setActive(velocityLaneVisible_);
-    controlsToggle_->onClick = [this]() {
-        velocityLaneVisible_ = !velocityLaneVisible_;
-        refreshLaneDrawer();
-        updateLaneToggleStates();
+    chordToggle_ = std::make_unique<magda::SvgButton>("ChordToggle", BinaryData::mechordtrack_svg,
+                                                      BinaryData::mechordtrack_svgSize);
+    chordToggle_->setTooltip("Chord track");
+    styleRailButton(*chordToggle_);
+    const auto violet = ActiveTheme::getColour(ActiveTheme::MIDI_KEY_ON);
+    chordToggle_->setActiveColor(violet.brighter(0.7f));
+    chordToggle_->setActiveBackgroundColor(violet.withAlpha(0.28f));
+    chordToggle_->setActiveBorderColor(violet);
+    chordToggle_->onClick = [this]() {
+        showChordLane_ = !showChordLane_;
+        chordToggle_->setActive(showChordLane_);
+        if (editingClipId_ != magda::INVALID_CLIP_ID)
+            magda::ClipManager::getInstance().setClipChordLaneVisible(editingClipId_,
+                                                                      showChordLane_);
+        resized();
+        repaint();
     };
-    addAndMakeVisible(controlsToggle_.get());
+    addAndMakeVisible(chordToggle_.get());
 
-    // Fold toggle (collapse to pads that have notes) — mirrors the piano roll.
-    foldToggle_ = std::make_unique<magda::SvgButton>("FoldToggle", BinaryData::iconfoldboldm_svg,
-                                                     BinaryData::iconfoldboldm_svgSize);
-    foldToggle_->setTooltip("Fold to used pads");
-    foldToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    foldToggle_->setActive(foldEnabled_);
-    foldToggle_->onClick = [this]() {
-        foldEnabled_ = !foldEnabled_;
-        foldToggle_->setActive(foldEnabled_);
-        applyFold();
-    };
-    addAndMakeVisible(foldToggle_.get());
-
-    // Note preview toggle: when lit, clicking or adding a note auditions it
-    // through the track instrument (#1705). Off by default; shares the
-    // editor-wide static preview state with the piano roll. Same speaker glyphs
-    // as the mute button, recoloured to match the other gutter icons (secondary
-    // grey off) and accent blue when on.
-    previewToggle_ = std::make_unique<magda::SvgButton>("NotePreview", BinaryData::master_off_svg,
-                                                        BinaryData::master_off_svgSize);
-    previewToggle_->setTooltip("Preview notes (click a note to hear it)");
-    previewToggle_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-    previewToggle_->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+    // Monitor: clicking or adding a hit auditions it through the track (#1705).
+    previewToggle_ = std::make_unique<magda::SvgButton>("NotePreview", BinaryData::memonitoroff_svg,
+                                                        BinaryData::memonitoroff_svgSize);
+    previewToggle_->setTooltip("Monitor: hear hits as you click them");
+    styleRailButton(*previewToggle_);
+    previewToggle_->setActiveBackgroundColor(juce::Colours::transparentBlack);
+    previewToggle_->setActiveBorderColor(juce::Colours::transparentBlack);
     syncNotePreviewToggle(*previewToggle_, isNotePreviewEnabled());
     previewToggle_->onClick = [this]() {
         setNotePreviewEnabled(!isNotePreviewEnabled());
@@ -2108,19 +2100,17 @@ DrumGridClipContent::DrumGridClipContent() {
     };
     addAndMakeVisible(previewToggle_.get());
 
-    // CC lanes button (opens the drawer + the add-lane menu) — same affordance
-    // as the piano roll so drum clips can add CC / pitchbend lanes.
-    ccLanesBtn_ = std::make_unique<magda::SvgButton>("CCLanes", BinaryData::iconccboldm_svg,
-                                                     BinaryData::iconccboldm_svgSize);
-    ccLanesBtn_->setTooltip("Add CC / pitchbend lane");
-    ccLanesBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    ccLanesBtn_->onClick = [this]() {
-        // Adding a CC lane opens the drawer on its own (without the velocity
-        // lane) via onLanesChanged.
-        if (midiDrawer_)
-            midiDrawer_->showAddLaneMenu();
+    foldToggle_ = std::make_unique<magda::SvgButton>("FoldToggle", BinaryData::mefold_svg,
+                                                     BinaryData::mefold_svgSize);
+    foldToggle_->setTooltip("Fold to used pads");
+    styleRailButton(*foldToggle_);
+    foldToggle_->setActive(foldEnabled_);
+    foldToggle_->onClick = [this]() {
+        foldEnabled_ = !foldEnabled_;
+        foldToggle_->setActive(foldEnabled_);
+        applyFold();
     };
-    addAndMakeVisible(ccLanesBtn_.get());
+    addAndMakeVisible(foldToggle_.get());
 
     verticalZoomStrip_ = std::make_unique<VerticalZoomStrip>(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT);
     verticalZoomStrip_->setGestureContext(magda::GestureContext::DrumGrid);
@@ -2455,8 +2445,11 @@ void DrumGridClipContent::setGridPixelsPerBeat(double ppb) {
 }
 
 void DrumGridClipContent::setGridPlayheadBeat(double timelineBeat) {
+    playheadTimelineBeat_ = timelineBeat;
     if (gridComponent_)
         gridComponent_->setPlayheadBeat(timelineBeat);
+    if (showChordLane_)
+        repaint(gridLeftX(), 0, getWidth() - gridLeftX(), CHORD_LANE_HEIGHT);
 }
 
 void DrumGridClipContent::setGridEditCursorPosition(double pos, bool visible) {
@@ -2496,11 +2489,63 @@ void DrumGridClipContent::paint(juce::Graphics& g) {
     if (getWidth() <= 0 || getHeight() <= 0)
         return;
 
-    // Draw sidebar on the left
     auto sidebarArea = getLocalBounds().removeFromLeft(SIDEBAR_WIDTH);
     drawSidebar(g, sidebarArea);
 
-    // MidiDrawerComponent has its own tab bar — no legacy velocity header needed
+    const int leftColumns = ZOOM_STRIP_WIDTH + labelWidth_ + LABEL_DIVIDER_WIDTH;
+    g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_LANE));
+    g.fillRect(SIDEBAR_WIDTH, 0, leftColumns, rulerTop() + RULER_HEIGHT);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
+    g.fillRect(SIDEBAR_WIDTH, rulerTop() + RULER_HEIGHT - 1, leftColumns, 1);
+
+    if (showChordLane_) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+        g.setFont(FontManager::getInstance().getUIFontBold(9.0f).withExtraKerningFactor(0.15f));
+        g.drawText("CHORDS", SIDEBAR_WIDTH + 10, 0, leftColumns - 10, CHORD_LANE_HEIGHT,
+                   juce::Justification::centredLeft);
+        drawChordLane(g, {gridLeftX(), 0, getWidth() - gridLeftX(), CHORD_LANE_HEIGHT});
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
+        g.fillRect(SIDEBAR_WIDTH, CHORD_LANE_HEIGHT - 1, getWidth() - SIDEBAR_WIDTH, 1);
+    }
+}
+
+void DrumGridClipContent::drawChordLane(juce::Graphics& g, juce::Rectangle<int> area) {
+    g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_LANE));
+    g.fillRect(area);
+
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    if (clip == nullptr)
+        return;
+    // The progression is in timeline beats; the grid shows clip beats in REL mode.
+    const bool relative = relativeTimeMode_ || clip->view == magda::ClipView::Session;
+    const double offset = relative ? clip->placement.startBeat : 0.0;
+    const int scrollX = viewport_ ? viewport_->getViewPositionX() : 0;
+    const auto& notation = magda::music::NotationSettings::getInstance();
+
+    g.saveState();
+    g.reduceClipRegion(area);
+    for (const auto& chord : magda::ChordProgressionContext::current()) {
+        const double start = chord.startBeat - offset;
+        const int x1 =
+            area.getX() + static_cast<int>(start * horizontalZoom_) + GRID_LEFT_PADDING - scrollX;
+        const int x2 = x1 + static_cast<int>(chord.lengthBeats * horizontalZoom_);
+        if (x2 < area.getX() || x1 > area.getRight())
+            continue;
+        const juce::Rectangle<int> block(x1 + 1, area.getCentreY() - 9, x2 - x1 - 2, 18);
+        const bool current = playheadTimelineBeat_ >= chord.startBeat &&
+                             playheadTimelineBeat_ < chord.startBeat + chord.lengthBeats;
+        g.setColour(ActiveTheme::getColour(current ? ActiveTheme::MIDI_CHORD_BLOCK_CURRENT
+                                                   : ActiveTheme::MIDI_CHORD_BLOCK));
+        g.fillRoundedRectangle(block.toFloat(), 3.0f);
+        g.setColour(
+            ActiveTheme::getColour(ActiveTheme::MIDI_NOTE).withAlpha(current ? 1.0f : 0.7f));
+        g.fillRect(block.withWidth(2));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        g.setFont(FontManager::getInstance().getUIFontMedium(11.0f));
+        g.drawText(notation.format(chord.name), block.withTrimmedLeft(7),
+                   juce::Justification::centredLeft, true);
+    }
+    g.restoreState();
 }
 
 void DrumGridClipContent::resized() {
@@ -2509,20 +2554,14 @@ void DrumGridClipContent::resized() {
     // Skip sidebar (painted in paint())
     bounds.removeFromLeft(SIDEBAR_WIDTH);
 
-    // Sidebar icons: fold toggle at the top, controls (velocity/CC) at the
-    // bottom — mirrors the piano roll's sidebar layout.
-    int iconSize = 22;
-    int iconPadding = (SIDEBAR_WIDTH - iconSize) / 2;
-    if (previewToggle_)
-        previewToggle_->setBounds(iconPadding, RULER_HEIGHT + iconPadding, iconSize, iconSize);
-    if (foldToggle_)
-        foldToggle_->setBounds(iconPadding, RULER_HEIGHT + 2 * iconPadding + iconSize, iconSize,
-                               iconSize);
-    controlsToggle_->setBounds(iconPadding, getHeight() - iconSize - iconPadding, iconSize,
-                               iconSize);
-    if (ccLanesBtn_)
-        ccLanesBtn_->setBounds(iconPadding, getHeight() - 2 * (iconSize + iconPadding), iconSize,
-                               iconSize);
+    // Rail, top to bottom: chord track, monitor, fold
+    const int railX = (SIDEBAR_WIDTH - RAIL_BUTTON) / 2;
+    int railY = railX;
+    for (auto* button : {chordToggle_.get(), previewToggle_.get(), foldToggle_.get()}) {
+        button->setBounds(railX, railY, RAIL_BUTTON, RAIL_BUTTON);
+        railY += RAIL_BUTTON + 4;
+    }
+    bounds.removeFromTop(rulerTop());
 
     // MIDI drawer at bottom (if open)
     if (velocityDrawerOpen_) {
@@ -2572,8 +2611,8 @@ void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
     // Modifier-driven zoom is resolved through GestureRouter (#1350) so the
     // bindings are configurable; each branch keeps its own zoom math, and the
     // positional plain-wheel scrolling below stays in this handler.
-    const bool overTimeRuler = e.y < RULER_HEIGHT && e.x >= SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH +
-                                                                labelWidth_ + LABEL_DIVIDER_WIDTH;
+    const bool overTimeRuler =
+        e.y >= rulerTop() && e.y < rulerTop() + RULER_HEIGHT && e.x >= gridLeftX();
     const auto gesture = magda::GestureRouter::getInstance().resolve(
         magda::GestureContext::DrumGrid,
         overTimeRuler ? magda::GestureArea::Ruler : magda::GestureArea::Main, wheel, e.mods,
@@ -2590,13 +2629,14 @@ void DrumGridClipContent::mouseWheelMove(const juce::MouseEvent& e,
 
     // Vertical (row height) zoom.
     if (gesture.type == magda::GestureActionType::ZoomVertical) {
-        const int mouseYInContent = e.y - RULER_HEIGHT + viewport_->getViewPositionY();
+        const int gridTop = rulerTop() + RULER_HEIGHT;
+        const int mouseYInContent = e.y - gridTop + viewport_->getViewPositionY();
         const int anchorRow = juce::jlimit(0, juce::jmax(0, static_cast<int>(padRows_.size()) - 1),
                                            mouseYInContent / juce::jmax(1, rowHeight_));
         const int heightDelta = magda::quantizedGestureStep(gesture.magnitude);
         if (heightDelta == 0)
             return;
-        setRowHeightAnchored(rowHeight_ + heightDelta, anchorRow, e.y - RULER_HEIGHT, true);
+        setRowHeightAnchored(rowHeight_ + heightDelta, anchorRow, e.y - gridTop, true);
         return;
     }
 
@@ -2731,6 +2771,10 @@ void DrumGridClipContent::setClip(magda::ClipId clipId) {
 
     editingClipId_ = clipId;
     loadRowHeightFromClip(editingClipId_);
+    if (const auto* clip = magda::ClipManager::getInstance().getClip(clipId)) {
+        showChordLane_ = clip->chordLaneVisible.value_or(false);
+        chordToggle_->setActive(showChordLane_);
+    }
     findDrumGrid();
     buildPadRows();
 
@@ -2843,30 +2887,11 @@ void DrumGridClipContent::applyOverlayTracks() {
 // ============================================================================
 
 void DrumGridClipContent::drawSidebar(juce::Graphics& g, juce::Rectangle<int> area) {
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_RAIL));
     g.fillRect(area);
-
     g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawVerticalLine(area.getRight() - 1, static_cast<float>(area.getY()),
                        static_cast<float>(area.getBottom()));
-
-    // Hairline dividers framing the icon clusters, matching the piano roll:
-    // the top tool group (fold) and the bottom lane-toggle group (CC /
-    // velocity). Layout mirrors resized() so the lines sit in the gaps.
-    const int iconSize = 22;
-    const int padding = (SIDEBAR_WIDTH - iconSize) / 2;
-
-    const int topClusterBottom = RULER_HEIGHT + padding + iconSize;
-    const int bottomClusterTop = getHeight() - 2 * (iconSize + padding);
-    const int topDividerY = topClusterBottom + padding / 2;
-    const int bottomDividerY = bottomClusterTop - padding / 2;
-
-    const auto x1 = static_cast<float>(area.getX() + 5);
-    const auto x2 = static_cast<float>(area.getRight() - 5);
-    if (foldToggle_ && bottomDividerY - topDividerY > padding) {
-        g.drawHorizontalLine(topDividerY, x1, x2);
-        g.drawHorizontalLine(bottomDividerY, x1, x2);
-    }
 }
 
 void DrumGridClipContent::updateVelocityLane() {
@@ -2963,13 +2988,6 @@ void DrumGridClipContent::recenterOnNotes() {
     // used rows into view.
     if (viewport_)
         viewport_->setViewPosition(viewport_->getViewPositionX(), 0);
-}
-
-void DrumGridClipContent::updateLaneToggleStates() {
-    if (controlsToggle_)
-        controlsToggle_->setActive(velocityLaneVisible_);
-    if (ccLanesBtn_ && midiDrawer_)
-        ccLanesBtn_->setActive(midiDrawer_->hasExtraLanes());
 }
 
 void DrumGridClipContent::buildPadRows() {

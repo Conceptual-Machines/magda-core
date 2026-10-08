@@ -511,6 +511,8 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     obj->setProperty("gridSnapEnabled", clip.gridSnapEnabled);
     if (clip.midiEditorRowHeight > 0)
         obj->setProperty("midiEditorRowHeight", clip.midiEditorRowHeight);
+    if (clip.chordLaneVisible)
+        obj->setProperty("chordLaneVisible", *clip.chordLaneVisible);
 
     // Per-clip mix
     obj->setProperty("volumeDB", clip.volumeDB);
@@ -791,6 +793,8 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     outClip.gridNumerator = obj->getProperty("gridNumerator");
     outClip.gridDenominator = obj->getProperty("gridDenominator");
     outClip.gridSnapEnabled = static_cast<bool>(obj->getProperty("gridSnapEnabled"));
+    if (obj->hasProperty("chordLaneVisible"))
+        outClip.chordLaneVisible = static_cast<bool>(obj->getProperty("chordLaneVisible"));
     if (obj->hasProperty("midiEditorRowHeight")) {
         outClip.midiEditorRowHeight =
             juce::jlimit(ClipInfo::MIN_MIDI_EDITOR_ROW_HEIGHT, ClipInfo::MAX_MIDI_EDITOR_ROW_HEIGHT,
