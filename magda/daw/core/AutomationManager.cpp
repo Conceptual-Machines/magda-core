@@ -35,6 +35,7 @@ bool isPostFxAutomationTarget(const AutomationTarget& target) {
         case ControlTarget::Kind::PluginParam:
         case ControlTarget::Kind::DeviceMacro:
         case ControlTarget::Kind::ModParam:
+        case ControlTarget::Kind::RackChainSelector:
             return target.devicePath.isPostFx();
         case ControlTarget::Kind::TrackVolume:
         case ControlTarget::Kind::TrackPan:
@@ -94,6 +95,13 @@ std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& target) 
                 return 0.75;  // Default to unity when bus not found
             const float db = gainToDb(found->level);
             return static_cast<double>(ParameterUtils::realToNormalized(db, paramInfo));
+        }
+        case ControlTarget::Kind::RackChainSelector: {
+            const auto* rack = TrackManager::getInstance().getRackByPath(target.devicePath);
+            if (rack == nullptr)
+                return std::nullopt;
+            return static_cast<double>(
+                ParameterUtils::realToNormalized(rack->chainSelector, paramInfo));
         }
         case ControlTarget::Kind::PluginParam: {
             auto resolved = TrackManager::getInstance().resolvePath(target.devicePath);

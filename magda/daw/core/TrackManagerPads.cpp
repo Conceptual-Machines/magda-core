@@ -621,18 +621,7 @@ void TrackManager::setPadLayerZones(const ChainNodePath& gridPath, ChainId layer
     if (layer == nullptr)
         return;
 
-    auto clamped = zones;
-    clamped.keyLow = juce::jlimit(0, 127, zones.keyLow);
-    clamped.keyHigh = juce::jlimit(clamped.keyLow, 127, zones.keyHigh);
-    clamped.velocityLow = juce::jlimit(1, 127, zones.velocityLow);
-    clamped.velocityHigh = juce::jlimit(clamped.velocityLow, 127, zones.velocityHigh);
-    const auto keySpan = clamped.keyHigh - clamped.keyLow;
-    const auto velocitySpan = clamped.velocityHigh - clamped.velocityLow;
-    clamped.keyFadeLow = juce::jlimit(0, keySpan, zones.keyFadeLow);
-    clamped.keyFadeHigh = juce::jlimit(0, keySpan, zones.keyFadeHigh);
-    clamped.velocityFadeLow = juce::jlimit(0, velocitySpan, zones.velocityFadeLow);
-    clamped.velocityFadeHigh = juce::jlimit(0, velocitySpan, zones.velocityFadeHigh);
-
+    const auto clamped = zones.clamped();
     if (layer->zones == clamped)
         return;
     layer->zones = clamped;

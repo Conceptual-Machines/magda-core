@@ -3067,6 +3067,25 @@ void TrackManager::setRackVolume(const ChainNodePath& rackPath, float volume) {
     }
 }
 
+void TrackManager::setRackChainSelector(const ChainNodePath& rackPath, float value) {
+    auto* rack = getRackByPath(rackPath);
+    const auto clamped = juce::jlimit(0.0f, 127.0f, value);
+    if (rack == nullptr || rack->chainSelector == clamped)
+        return;
+    rack->chainSelector = clamped;
+    notifyTrackPropertyChanged(rackPath.trackId);
+}
+
+// Zones are compiled into the plan's split, so a change recompiles rather than republishes.
+void TrackManager::setChainZones(const ChainNodePath& chainPath, const ChainZones& zones) {
+    auto* chain = getChainByPath(chainPath);
+    const auto clamped = zones.clamped();
+    if (chain == nullptr || chain->zones == clamped)
+        return;
+    chain->zones = clamped;
+    notifyTrackDevicesChanged(chainPath.trackId);
+}
+
 void TrackManager::setChainExpanded(TrackId trackId, RackId rackId, ChainId chainId,
                                     bool expanded) {
     if (auto* chain = getChain(trackId, rackId, chainId)) {

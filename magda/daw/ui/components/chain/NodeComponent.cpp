@@ -230,6 +230,11 @@ NodeComponent::NodeComponent() {
     nameLabel_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(nameLabel_);
 
+    headerSubtitle_.setFont(FontManager::getInstance().getMonoFont(11.0f));
+    headerSubtitle_.setJustificationType(juce::Justification::centredLeft);
+    headerSubtitle_.setInterceptsMouseClicks(false, false);
+    addChildComponent(headerSubtitle_);
+
     // Delete: a close icon, grey at rest and red on hover.
     deleteButton_ = std::make_unique<magda::SvgButton>("Close", BinaryData::close_svg,
                                                        BinaryData::close_svgSize);
@@ -415,6 +420,23 @@ void NodeComponent::paint(juce::Graphics& g) {
         g.restoreState();
 
         // Dim/selection drawn in paintOverChildren
+        return;
+    }
+
+    if (sidePanelsInsideShell()) {
+        if (gainPanelVisible_) {
+            auto gainArea = bounds.removeFromRight(getGainPanelWidth());
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.02f));
+            g.fillRect(gainArea);
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
+            g.drawRect(gainArea);
+            paintGainPanel(g, gainArea);
+        }
+        const int headerHeight = getHeaderHeight();
+        paintNodeFrame(g, bounds, headerHeight);
+        auto band = bounds.withTrimmedTop(headerHeight).withTrimmedBottom(getShellFooterHeight());
+        paintSidePanelsInShell(g, band);
+        paintContent(g, band);
         return;
     }
 
@@ -644,6 +666,71 @@ void NodeComponent::resized() {
         return;
     }
 
+    // Shell-hosted panels sit under the full-width header and over the footer.
+    if (sidePanelsInsideShell()) {
+        if (gainPanelVisible_)
+            resizedGainPanel(bounds.removeFromRight(getGainPanelWidth()));
+        if (const int meterWidth = getMeterWidth(); meterWidth > 0)
+            bounds.removeFromRight(meterWidth);
+        layoutHeader(bounds.removeFromTop(getHeaderHeight()));
+        const auto footer = bounds.removeFromBottom(getShellFooterHeight());
+        layoutSidePanels(bounds);
+        resizedShellFooter(footer);
+        resizedContent(bounds.reduced(2, 1));
+        return;
+    }
+
+    layoutSidePanels(bounds);
+
+    // === RIGHT SIDE PANEL: [Gain] ===
+    if (gainPanelVisible_) {
+        auto gainArea = bounds.removeFromRight(getGainPanelWidth());
+        resizedGainPanel(gainArea);
+    }
+
+    // === MAIN NODE AREA (remaining bounds) ===
+
+    // Reserve meter strip on the right edge (subclasses override getMeterWidth())
+    int meterWidth = getMeterWidth();
+    if (meterWidth > 0)
+        bounds.removeFromRight(meterWidth);
+
+    layoutHeader(bounds.removeFromTop(getHeaderHeight()));
+
+    // === CONTENT (remaining area) ===
+    // Reduce by 2 horizontally, 1 vertically to keep border visible
+    auto contentArea = bounds.reduced(2, 1);
+    resizedContent(contentArea);
+}
+
+// On the shell's own background, each panel ruled off from the next.
+void NodeComponent::paintSidePanelsInShell(juce::Graphics& g, juce::Rectangle<int>& band) {
+    const auto rule = [&g](juce::Rectangle<int> area) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
+        g.fillRect(area.removeFromRight(1));
+    };
+    if (isParamPanelLaidOut())
+        rule(band.removeFromLeft(getParamPanelWidth()));
+    if (const int width = getExtraRightPanelWidth(); width > 0) {
+        auto area = band.removeFromLeft(width);
+        paintExtraRightPanel(g, area);
+        rule(area);
+    }
+    if (isModPanelLaidOut())
+        rule(band.removeFromLeft(getModPanelWidth()));
+    if (const int width = getExtraLeftPanelWidth(); width > 0) {
+        auto area = band.removeFromLeft(width);
+        paintExtraLeftPanel(g, area);
+        rule(area);
+    }
+    if (aiPanelVisible_) {
+        auto area = band.removeFromLeft(getAIPanelWidth());
+        paintAIPanel(g, area);
+        rule(area);
+    }
+}
+
+void NodeComponent::layoutSidePanels(juce::Rectangle<int>& bounds) {
     // === LEFT SIDE PANELS: [Macros][MacroEditor][Mods][ModEditor] ===
     if (isParamPanelLaidOut()) {
         auto paramArea = bounds.removeFromLeft(getParamPanelWidth());
@@ -696,24 +783,12 @@ void NodeComponent::resized() {
         // text / input box / footer linger over the device's main content.
         aiPanel_->setVisible(false);
     }
+}
 
-    // === RIGHT SIDE PANEL: [Gain] ===
-    if (gainPanelVisible_) {
-        auto gainArea = bounds.removeFromRight(getGainPanelWidth());
-        resizedGainPanel(gainArea);
-    }
-
-    // === MAIN NODE AREA (remaining bounds) ===
-
-    // Reserve meter strip on the right edge (subclasses override getMeterWidth())
-    int meterWidth = getMeterWidth();
-    if (meterWidth > 0)
-        bounds.removeFromRight(meterWidth);
-
+void NodeComponent::layoutHeader(juce::Rectangle<int> headerStrip) {
     // === HEADER: [B] Name ... [X] === (only if header visible)
-    int headerHeight = getHeaderHeight();
-    if (headerHeight > 0) {
-        auto headerArea = getHeaderInnerArea(bounds.removeFromTop(headerHeight));
+    if (!headerStrip.isEmpty()) {
+        auto headerArea = getHeaderInnerArea(headerStrip);
         const auto buttonSize = getHeaderButtonSize();
         const int gap = getHeaderButtonGap();
         const auto placeRight = [&](juce::Component& button) {
@@ -741,7 +816,20 @@ void NodeComponent::resized() {
         // Let subclass add extra header buttons
         resizedHeaderExtra(headerArea);
 
-        nameLabel_.setBounds(headerArea);
+        // The name keeps its text width, up to most of the header; the subtitle takes the rest.
+        if (headerSubtitle_.getText().isNotEmpty()) {
+            const auto border = nameLabel_.getBorderSize().getLeftAndRight();
+            const int nameWidth = juce::roundToInt(juce::GlyphArrangement::getStringWidth(
+                                      nameLabel_.getFont(), nameLabel_.getText())) +
+                                  border + 2;
+            nameLabel_.setBounds(
+                headerArea.removeFromLeft(juce::jmin(nameWidth, headerArea.getWidth() * 3 / 5)));
+            headerSubtitle_.setBounds(headerArea);
+            headerSubtitle_.setVisible(!headerArea.isEmpty());
+        } else {
+            nameLabel_.setBounds(headerArea);
+            headerSubtitle_.setVisible(false);
+        }
         nameLabel_.setVisible(true);
     } else {
         // Hide header controls
@@ -749,20 +837,33 @@ void NodeComponent::resized() {
         if (auto* close = getHeaderDeleteButton())
             close->setVisible(false);
         nameLabel_.setVisible(false);
+        headerSubtitle_.setVisible(false);
     }
-
-    // === CONTENT (remaining area) ===
-    // Reduce by 2 horizontally, 1 vertically to keep border visible
-    auto contentArea = bounds.reduced(2, 1);
-    resizedContent(contentArea);
 }
 
 void NodeComponent::setNodeName(const juce::String& name) {
+    if (name == nameLabel_.getText())
+        return;
     nameLabel_.setText(name, juce::dontSendNotification);
+    if (headerSubtitle_.getText().isNotEmpty())
+        resized();
 }
 
 void NodeComponent::setNodeNameFont(const juce::Font& font) {
     nameLabel_.setFont(font);
+}
+
+void NodeComponent::setHeaderSubtitle(const juce::String& text,
+                                      std::optional<juce::Colour> colour) {
+    const auto shade = colour.value_or(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+    if (text == headerSubtitle_.getText() &&
+        shade == headerSubtitle_.findColour(juce::Label::textColourId))
+        return;
+    const bool relayout = text.isEmpty() != headerSubtitle_.getText().isEmpty();
+    headerSubtitle_.setText(text, juce::dontSendNotification);
+    headerSubtitle_.setColour(juce::Label::textColourId, shade);
+    if (relayout)
+        resized();
 }
 
 juce::String NodeComponent::getNodeName() const {
@@ -1029,7 +1130,9 @@ void NodeComponent::paintGainPanel(juce::Graphics& g, juce::Rectangle<int> panel
 }
 
 void NodeComponent::resizedModPanel(juce::Rectangle<int> panelArea) {
-    panelArea.removeFromTop(16);  // Skip header
+    // Outside a shell the title strip is painted here; inside, the panel draws its own header.
+    if (!sidePanelsInsideShell())
+        panelArea.removeFromTop(16);
 
     // If we have a real mods panel, use it
     if (modsPanel_) {
@@ -1065,7 +1168,8 @@ void NodeComponent::resizedExtraLeftPanel(juce::Rectangle<int> panelArea) {
 }
 
 void NodeComponent::resizedParamPanel(juce::Rectangle<int> panelArea) {
-    panelArea.removeFromTop(16);  // Skip header
+    if (!sidePanelsInsideShell())
+        panelArea.removeFromTop(16);
 
     // If we have a real macros panel, use it
     if (macroPanel_) {

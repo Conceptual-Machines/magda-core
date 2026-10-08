@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <set>
 #include <string>
@@ -3039,4 +3040,83 @@ TEST_CASE("A device with more pairs than one op can carry says so", "[engine][pl
         requireWellFormed(plan);
         CHECK(plan.ops[static_cast<std::size_t>(trackInput(plan, 2))].inputs.size() == 1);
     }
+}
+
+namespace {
+
+/// A two-chain instrument rack on track 1, the first chain's zones set by @p zoned.
+std::vector<TrackInfo> zonedRackTracks(const ChainZones& zones) {
+    RackInfo rack;
+    rack.id = 4;
+    rack.chainSelector = 32.0f;
+    for (ChainId chainId : {10, 11}) {
+        ChainInfo chain;
+        chain.id = chainId;
+        chain.elements.push_back(makeDeviceElement(makeInstrument(chainId + 90)));
+        rack.chains.push_back(std::move(chain));
+    }
+    rack.chains[0].zones = zones;
+
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    tracks[0].chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+    return tracks;
+}
+
+}  // namespace
+
+TEST_CASE("A rack with open zones sends every note to every chain", "[engine][plan][compiler]") {
+    ChainZones selectorOnly;
+    selectorOnly.selectorLow = 64;
+    const auto plan = magda::engine::compileRenderPlan(zonedRackTracks(selectorOnly), makeMaster(),
+                                                       withoutDeviceMeters());
+    requireWellFormed(plan);
+    CHECK(countRole(plan, OpRole::RackChainSplit) == 0);
+}
+
+TEST_CASE("A rack chain's key zone splits the rack's notes", "[engine][plan][compiler]") {
+    ChainZones low;
+    low.keyHigh = 59;
+    const auto plan =
+        magda::engine::compileRenderPlan(zonedRackTracks(low), makeMaster(), withoutDeviceMeters());
+    requireWellFormed(plan);
+
+    const auto splits = opsWithRole(plan, OpRole::RackChainSplit);
+    REQUIRE(splits.size() == 1);
+    const auto& split = plan.ops[static_cast<std::size_t>(splits.front())];
+    CHECK(split.kind == OpKind::MidiZoneSplit);
+    REQUIRE(split.zoneRoutes.size() == 2);
+    CHECK(split.zoneRoutes[0].keyHigh == 59);
+    CHECK(split.zoneRoutes[1].notesOpen());
+
+    // Each chain's instrument reads its own port of the split.
+    const auto devices = opsWithRole(plan, OpRole::DeviceProcess);
+    REQUIRE(devices.size() == 2);
+    for (std::size_t chain = 0; chain < devices.size(); ++chain) {
+        const auto& device = plan.ops[static_cast<std::size_t>(devices[chain])];
+        CHECK(device.inputs[1].op == splits.front());
+        CHECK(device.inputs[1].port == static_cast<int>(chain));
+    }
+}
+
+TEST_CASE("A rack chain's fader plays at its selector zone's level", "[engine][plan][values]") {
+    ChainZones zones;
+    zones.selectorLow = 0;
+    zones.selectorHigh = 63;
+    zones.selectorFadeHigh = 63;
+    const auto tracks = zonedRackTracks(zones);
+    const auto master = makeMaster();
+    const auto plan = magda::engine::compileRenderPlan(tracks, master, withoutDeviceMeters());
+    requireWellFormed(plan);
+
+    magda::engine::PlanValues values;
+    magda::engine::resolvePlanValues(plan, tracks, master, values);
+
+    const auto faders = opsWithRole(plan, OpRole::RackChainFader);
+    REQUIRE(faders.size() == 2);
+    const auto& faded = values.ops[static_cast<std::size_t>(faders[0])];
+    const auto& open = values.ops[static_cast<std::size_t>(faders[1])];
+    // Selector 32 sits 31 steps from the top of a 63-step fade.
+    CHECK(faded.zoneGain == Catch::Approx(32.0f / 64.0f));
+    CHECK(faded.gainLeft == Catch::Approx(open.gainLeft));
+    CHECK(open.zoneGain == 1.0f);
 }

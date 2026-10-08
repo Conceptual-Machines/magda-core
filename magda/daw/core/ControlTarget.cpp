@@ -6,11 +6,11 @@ namespace magda {
 
 namespace {
 
-constexpr std::array<ControlTarget::Kind, 7> ALL_KINDS = {
+constexpr std::array<ControlTarget::Kind, 8> ALL_KINDS = {
     ControlTarget::Kind::PluginParam, ControlTarget::Kind::DeviceMacro,
     ControlTarget::Kind::ModParam,    ControlTarget::Kind::TrackVolume,
     ControlTarget::Kind::TrackPan,    ControlTarget::Kind::SendLevel,
-    ControlTarget::Kind::Tempo,
+    ControlTarget::Kind::Tempo,       ControlTarget::Kind::RackChainSelector,
 };
 
 }  // namespace

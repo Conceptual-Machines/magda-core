@@ -8,6 +8,7 @@
 #include "ChainNodePathDrag.hpp"
 #include "DeviceSlotComponent.hpp"
 #include "NodeComponent.hpp"
+#include "PluginDrop.hpp"
 #include "RackComponent.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
@@ -231,39 +232,7 @@ class ChainPanel::ElementSlotsContainer : public juce::Component, public juce::D
                 return;
             }
 
-            device.name = obj->getProperty("name").toString().toStdString();
-            device.manufacturer = obj->getProperty("manufacturer").toString().toStdString();
-            auto uniqueId = obj->getProperty("uniqueId").toString();
-            device.pluginId = uniqueId.isNotEmpty() ? uniqueId
-                                                    : obj->getProperty("name").toString() + "_" +
-                                                          obj->getProperty("format").toString();
-            const auto rawCategory = obj->hasProperty("rawCategory")
-                                         ? obj->getProperty("rawCategory").toString()
-                                         : obj->getProperty("category").toString();
-            const auto rawSubcategory = obj->hasProperty("rawSubcategory")
-                                            ? obj->getProperty("rawSubcategory").toString()
-                                            : obj->getProperty("subcategory").toString();
-            device.isInstrument = rawCategory.isNotEmpty()
-                                      ? rawCategory == "Instrument"
-                                      : static_cast<bool>(obj->getProperty("isInstrument"));
-            if (rawSubcategory == "MIDI")
-                device.deviceType = magda::DeviceType::MIDI;
-            else if (device.isInstrument)
-                device.deviceType = magda::DeviceType::Instrument;
-            device.browserCategoryOverride = obj->getProperty("categoryOverride").toString();
-            device.uniqueId = obj->getProperty("uniqueId").toString();
-            device.fileOrIdentifier = obj->getProperty("fileOrIdentifier").toString();
-
-            juce::String format = obj->getProperty("format").toString();
-            if (format == "VST3") {
-                device.format = magda::PluginFormat::VST3;
-            } else if (format == "AU") {
-                device.format = magda::PluginFormat::AU;
-            } else if (format == "LV2") {
-                device.format = magda::PluginFormat::LV2;
-            } else if (format == "Internal") {
-                device.format = magda::PluginFormat::Internal;
-            }
+            device = deviceInfoFromPluginDrag(*obj);
             validDrop = true;
         }
 

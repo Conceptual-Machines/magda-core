@@ -132,6 +132,21 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
     deleteButton_->onClick = [this]() { onDeleteClicked(); };
     addAndMakeVisible(*deleteButton_);
 
+    zones_ = chain.zones;
+    zoneBar_.setZones(chain.zones);
+    zoneBar_.onCommit = [this](const magda::ChainZones& zones) { commitZones(zones); };
+    addChildComponent(zoneBar_);
+
+    roundRobinButton_.setClickingTogglesState(true);
+    roundRobinButton_.setToggleState(chain.zones.roundRobin, juce::dontSendNotification);
+    roundRobinButton_.setTooltip("Round robin: take turns with the other RR chains, one note each");
+    roundRobinButton_.onClick = [this]() {
+        auto zones = zones_;
+        zones.roundRobin = roundRobinButton_.getToggleState();
+        commitZones(zones);
+    };
+    addChildComponent(roundRobinButton_);
+
     styleControls();
     setAlpha(chain.bypassed ? kDisabledAlpha : 1.0f);
 
@@ -140,6 +155,7 @@ ChainRowComponent::ChainRowComponent(RackComponent& owner, magda::TrackId trackI
 }
 
 ChainRowComponent::~ChainRowComponent() {
+    roundRobinButton_.setLookAndFeel(nullptr);
     removeMouseListener(this);
     magda::SelectionManager::getInstance().removeListener(this);
     magda::TrackManager::getInstance().removeListener(this);
@@ -174,6 +190,9 @@ void ChainRowComponent::styleControls() {
     node_header::applyDeviceIconStyle(*deleteButton_, DeviceIcon::Close, juce::Colour(0xFFB3B3B3),
                                       ActiveTheme::DEVICE_BLUE, BUTTON_HEIGHT);
     deleteButton_->setIconPadding((BUTTON_HEIGHT - 10.0f) / 2.0f);
+    roundRobinButton_.setLookAndFeel(&node_header::GlyphToggleLookAndFeel::getInstance());
+    roundRobinButton_.setColour(juce::TextButton::textColourOnId,
+                                ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE));
 }
 
 void ChainRowComponent::lookAndFeelChanged() {
@@ -220,8 +239,10 @@ void ChainRowComponent::paint(juce::Graphics& g) {
         g.drawText("Chain", nameLabel_.getBounds(), juce::Justification::centredLeft, false);
     }
 
-    device_shell::paintGainSlider(g, gainLabel_.getBounds(), gainLabel_.getValue(), kMinGainDb);
-    device_shell::paintPanSlider(g, panLabel_.getBounds(), panLabel_.getValue());
+    if (view_ == View::Mix) {
+        device_shell::paintGainSlider(g, gainLabel_.getBounds(), gainLabel_.getValue(), kMinGainDb);
+        device_shell::paintPanSlider(g, panLabel_.getBounds(), panLabel_.getValue());
+    }
 }
 
 void ChainRowComponent::mouseEnter(const juce::MouseEvent& /*event*/) {
@@ -365,6 +386,12 @@ void ChainRowComponent::resized() {
     gainLabel_.setBounds(columns.gain.withSizeKeepingCentre(columns.gain.getWidth(), 20));
     panLabel_.setBounds(columns.pan.withSizeKeepingCentre(columns.pan.getWidth(), 20));
 
+    auto zoneArea = columns.gain.getUnion(columns.buttons);
+    if (view_ == View::Velocity)
+        roundRobinButton_.setBounds(
+            zoneArea.removeFromRight(BUTTON_WIDTH).withSizeKeepingCentre(BUTTON_WIDTH, 20));
+    zoneBar_.setBounds(zoneArea.reduced(0, 6));
+
     auto buttons = columns.buttons;
     for (juce::Component* button :
          {static_cast<juce::Component*>(&muteButton_), static_cast<juce::Component*>(&soloButton_),
@@ -391,9 +418,49 @@ void ChainRowComponent::updateFromChain(const magda::ChainInfo& chain) {
     panLabel_.setValue(chain.pan, juce::dontSendNotification);
     onButton_->setToggleState(!chain.bypassed, juce::dontSendNotification);
     onButton_->setActive(!chain.bypassed);
+    zones_ = chain.zones;
+    zoneBar_.setZones(chain.zones);
+    roundRobinButton_.setToggleState(chain.zones.roundRobin, juce::dontSendNotification);
+    if (const auto* rack = magda::TrackManager::getInstance().getRackByPath(nodePath_.parent()))
+        zoneBar_.setMarker(modulatedSelector_.value_or(rack->chainSelector));
 
     setAlpha(chain.bypassed ? kDisabledAlpha : 1.0f);
     repaint();
+}
+
+void ChainRowComponent::setModulatedSelector(std::optional<float> value) {
+    modulatedSelector_ = value;
+    if (const auto* rack = magda::TrackManager::getInstance().getRackByPath(nodePath_.parent()))
+        zoneBar_.setMarker(value.value_or(rack->chainSelector));
+}
+
+void ChainRowComponent::setView(View view) {
+    view_ = view;
+    const bool mix = view == View::Mix;
+    for (juce::Component* control :
+         {static_cast<juce::Component*>(&gainLabel_), static_cast<juce::Component*>(&panLabel_),
+          static_cast<juce::Component*>(&muteButton_), static_cast<juce::Component*>(&soloButton_),
+          static_cast<juce::Component*>(onButton_.get()),
+          static_cast<juce::Component*>(deleteButton_.get())})
+        control->setVisible(mix);
+    zoneBar_.setVisible(!mix);
+    zoneBar_.setAxis(view == View::Key        ? ZoneBar::Axis::Key
+                     : view == View::Velocity ? ZoneBar::Axis::Velocity
+                                              : ZoneBar::Axis::Selector);
+    zoneBar_.setShoulderFades(true);
+    roundRobinButton_.setVisible(view == View::Velocity);
+    resized();
+    repaint();
+}
+
+// Deferred and undoable: a zone change recompiles the rack and refreshes this row.
+void ChainRowComponent::commitZones(const magda::ChainZones& zones) {
+    magda::ChainPropertyPatch patch;
+    patch.zones = zones;
+    juce::MessageManager::callAsync([path = nodePath_, patch]() {
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetChainPropertiesByPathCommand>(path, patch));
+    });
 }
 
 void ChainRowComponent::onMuteClicked() {

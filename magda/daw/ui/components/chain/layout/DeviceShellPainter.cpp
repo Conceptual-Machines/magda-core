@@ -35,18 +35,8 @@ void paintHeader(juce::Graphics& g, juce::Rectangle<float> frame, int headerHeig
             g.fillRect(separator);
 }
 
-void paintIdRowAndStrip(juce::Graphics& g, juce::Rectangle<float> frame, const ShellRows& rows) {
+void paintSideStrip(juce::Graphics& g, juce::Rectangle<float> frame, const ShellRows& rows) {
     const auto line = ActiveTheme::getColour(ActiveTheme::DEVICE_LINE);
-
-    if (!rows.idRow.isEmpty()) {
-        const juce::Rectangle<float> row(frame.getX(), static_cast<float>(rows.idRow.getY()),
-                                         frame.getWidth(),
-                                         static_cast<float>(rows.idRow.getHeight()));
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_ID_ROW));
-        g.fillRect(row);
-        g.setColour(line);
-        g.fillRect(row.getX(), row.getBottom() - 1.0f, row.getWidth(), 1.0f);
-    }
 
     if (!rows.sideStrip.isEmpty()) {
         const juce::Rectangle<float> strip(
@@ -107,7 +97,7 @@ void paintFrame(juce::Graphics& g, juce::Rectangle<int> bounds, int headerHeight
 
     if (headerHeight > 0)
         paintHeader(g, frame, headerHeight, rows);
-    paintIdRowAndStrip(g, frame, rows);
+    paintSideStrip(g, frame, rows);
     if (!rows.footer.isEmpty())
         paintFooter(g, frame, rows, footerInfo, midiLedLit);
 

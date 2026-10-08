@@ -263,7 +263,7 @@ class TrackChainContent : public PanelContent,
     void onDeviceSlotSelected(magda::DeviceId deviceId);
     void clearDeviceSelection();
 
-    static constexpr int MODS_PANEL_WIDTH = 160;
+    static constexpr int MODS_PANEL_WIDTH = 170;
     static constexpr int MIN_CHAIN_HEIGHT = 280;  // Minimum content height before scrolling
 
     // Horizontal zoom

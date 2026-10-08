@@ -46,6 +46,7 @@ enum class ReferenceRouteKind {
     TrackVolume,
     TrackPan,
     Tempo,
+    RackChainSelector,
 };
 
 struct ReferenceAddress {

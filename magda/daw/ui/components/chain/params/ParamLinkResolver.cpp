@@ -181,6 +181,42 @@ float computeTotalMacroModulation(const ParamLinkContext& ctx) {
            sumLinkedOffsets(ctx.trackMacros, macroTarget, everyLink);
 }
 
+std::vector<LinkChip> linkChips(const ParamLinkContext& ctx) {
+    auto all = ctx;
+    all.selectedModIndex = -1;
+    all.selectedMacroIndex = -1;
+
+    std::vector<LinkChip> chips;
+    for (const auto& macro : getLinkedMacros(all))
+        chips.push_back({"M" + juce::String(macro.macroIndex + 1), true});
+
+    for (const auto& mod : getLinkedMods(all)) {
+        const auto* mods = mod.scope == ResolvedModLink::Scope::Device ? all.deviceMods
+                           : mod.scope == ResolvedModLink::Scope::Rack ? all.rackMods
+                                                                       : all.trackMods;
+        juce::String text = "MOD" + juce::String(mod.modIndex + 1);
+        if (mods != nullptr && mod.modIndex >= 0 && mod.modIndex < static_cast<int>(mods->size()))
+            if (const auto name = (*mods)[static_cast<std::size_t>(mod.modIndex)]
+                                      .name.removeCharacters(" ")
+                                      .toUpperCase();
+                name.isNotEmpty())
+                text = name;
+        chips.push_back({text.substring(0, 6), false});
+    }
+    return chips;
+}
+
+float totalLinkOffset(const magda::ControlTarget& target,
+                      const std::vector<const magda::MacroArray*>& macros,
+                      const std::vector<const magda::ModArray*>& mods) {
+    float offset = 0.0f;
+    for (const auto* scope : macros)
+        offset += sumLinkedOffsets(scope, target, everyLink);
+    for (const auto* scope : mods)
+        offset += sumLinkedOffsets(scope, target, linkIsEnabled);
+    return offset;
+}
+
 const magda::ModInfo* resolveModPtr(const magda::ModSelection& sel,
                                     const magda::ChainNodePath& devicePath,
                                     const magda::ModArray* deviceMods,

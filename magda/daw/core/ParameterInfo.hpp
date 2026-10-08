@@ -360,6 +360,18 @@ inline ParameterInfo faderVolume(int index, const juce::String& name) {
     return info;
 }
 
+/** @brief A rack's chain selector, linear 0-127 (#1808). */
+inline ParameterInfo chainSelector(int index, const juce::String& name = "Chain Select") {
+    ParameterInfo info;
+    info.paramIndex = index;
+    info.name = name;
+    info.minValue = 0.0f;
+    info.maxValue = 127.0f;
+    info.defaultValue = 0.0f;
+    info.scale = ParameterScale::Linear;
+    return info;
+}
+
 /**
  * @brief Create a pan parameter (-100% L to +100% R)
  * @param index Parameter index

@@ -1079,6 +1079,14 @@ void TrackApiLive::setChainPan(const ChainNodePath& chainPath, float pan) {
     TrackManager::getInstance().setChainPan(chainPath, pan);
 }
 
+void TrackApiLive::setChainZones(const ChainNodePath& chainPath, const ChainZones& zones) {
+    TrackManager::getInstance().setChainZones(chainPath, zones);
+}
+
+void TrackApiLive::setRackChainSelector(const ChainNodePath& rackPath, float value) {
+    TrackManager::getInstance().setRackChainSelector(rackPath, value);
+}
+
 void TrackApiLive::setChainName(const ChainNodePath& chainPath, const juce::String& name) {
     TrackManager::getInstance().setChainName(chainPath, name);
 }

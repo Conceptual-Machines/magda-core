@@ -623,3 +623,63 @@ TEST_CASE("A fader nothing automates keeps the published value", "[engine][param
     CHECK(render(session, 0.0) == approx(magda::engine::faderGainFromVolume(0.5f) *
                                          magda::engine::faderGainFromVolume(master.volume)));
 }
+
+namespace {
+
+/// A rack on track 1 whose one chain holds the tone and fades out across the
+/// whole chain selector, so its level reads the selector back (#1808).
+std::vector<TrackInfo> rackFadingAcrossSelector(float selector) {
+    RackInfo rack;
+    rack.id = 4;
+    rack.chainSelector = selector;
+    ChainInfo chain;
+    chain.id = 10;
+    chain.zones.selectorFadeHigh = 127;
+    chain.elements.push_back(makeDeviceElement(makeDevice(7)));
+    rack.chains.push_back(std::move(chain));
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+    return {track};
+}
+
+/// The first sample of a block at @p beat, with @p lanes playing.
+float renderRackAt(const std::vector<TrackInfo>& tracks, double beat,
+                   const std::vector<AutomationLaneInfo>& lanes) {
+    const auto master = makeMaster();
+    const auto plan =
+        std::make_shared<const magda::engine::RenderPlan>(compileRenderPlan(tracks, master));
+    magda::engine::PlanValues values;
+    magda::engine::resolvePlanValues(*plan, tracks, master, values, lanes);
+
+    ToneFactory factory;
+    magda::engine::EngineSession session(factory);
+    REQUIRE(session
+                .publish(plan, magda::engine::RenderContext{44100.0, 64, 2},
+                         magda::engine::collectRuntimeStateIds(tracks, master), values)
+                .published);
+    return render(session, beat);
+}
+
+}  // namespace
+
+TEST_CASE("The rack's chain selector sets a chain's level", "[engine][param][bake][1808]") {
+    // Selector 0 is the top of the fade, full level; the fade takes it down
+    // one 128th per step.
+    const auto full = renderRackAt(rackFadingAcrossSelector(0.0f), 0.0, {});
+    REQUIRE(full > 0.0f);
+    CHECK(renderRackAt(rackFadingAcrossSelector(64.0f), 0.0, {}) == approx(full * 64.0f / 128.0f));
+    CHECK(renderRackAt(rackFadingAcrossSelector(127.0f), 0.0, {}) == approx(full * 1.0f / 128.0f));
+}
+
+TEST_CASE("A lane over the chain selector moves a chain's level", "[engine][param][bake][1808]") {
+    const auto tracks = rackFadingAcrossSelector(0.0f);
+    const auto full = renderRackAt(tracks, 0.0, {});
+
+    // 0 to 127 across four beats, against a stored selector of 0.
+    const auto sweep = lane(ControlTarget::rackChainSelector(ChainNodePath::rack(1, 4)),
+                            {point(0.0, 0.0), point(4.0, 1.0)});
+    CHECK(renderRackAt(tracks, 0.0, {sweep}) == approx(full));
+    CHECK(renderRackAt(tracks, 2.0, {sweep}) == approx(full * (127.0f - 63.5f + 1.0f) / 128.0f));
+    CHECK(renderRackAt(tracks, 4.0, {sweep}) == approx(full * 1.0f / 128.0f));
+}

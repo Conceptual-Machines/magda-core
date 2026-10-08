@@ -45,6 +45,7 @@ class TrackApiLive : public TrackApi {
     const RackInfo* getRackByPath(const ChainNodePath& rackPath) const override;
     void setRackBypassedByPath(const ChainNodePath& rackPath, bool bypassed) override;
     void setRackVolume(const ChainNodePath& rackPath, float volumeDb) override;
+    void setRackChainSelector(const ChainNodePath& rackPath, float value) override;
     ChainId addChainToRack(const ChainNodePath& rackPath, const juce::String& name) override;
     void removeChainByPath(const ChainNodePath& chainPath) override;
     const ChainInfo* getChainByPath(const ChainNodePath& chainPath) const override;
@@ -55,6 +56,7 @@ class TrackApiLive : public TrackApi {
     void setChainVolume(const ChainNodePath& chainPath, float volumeDb) override;
     void setChainPan(const ChainNodePath& chainPath, float pan) override;
     void setChainName(const ChainNodePath& chainPath, const juce::String& name) override;
+    void setChainZones(const ChainNodePath& chainPath, const ChainZones& zones) override;
     DeviceId addDeviceToChainByPath(const ChainNodePath& chainPath,
                                     const DeviceInfo& device) override;
 

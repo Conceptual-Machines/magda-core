@@ -861,6 +861,7 @@ void ParamSlotComponent::paint(juce::Graphics& g) {
         } else if (boolToggle_ && boolToggle_->isVisible()) {
             paintBooleanValue(g);
         }
+        paintLinkDots(g);
         return;
     }
 
@@ -875,6 +876,30 @@ void ParamSlotComponent::paint(juce::Graphics& g) {
         g.fillRect(valueBounds);
         g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRect(valueBounds);
+    }
+}
+
+void ParamSlotComponent::paintLinkDots(juce::Graphics& g) const {
+    auto ctx = buildLinkContext();
+    ctx.selectedModIndex = -1;
+    ctx.selectedMacroIndex = -1;
+    const bool macros = !getLinkedMacros(ctx).empty();
+    const bool mods = !getLinkedMods(ctx).empty();
+    if (!macros && !mods)
+        return;
+
+    // Top right, clear of the MIDI-mapped dot in the corner.
+    constexpr float size = 6.0f;
+    constexpr float gap = 4.0f;
+    float x = static_cast<float>(tileArea_.getRight()) - 3.0f - 5.0f - gap - size;
+    const float y = static_cast<float>(tileArea_.getY()) + 4.0f;
+    for (const auto& [shown, role] : {std::pair{mods, ActiveTheme::ACCENT_ATTENTION},
+                                      std::pair{macros, ActiveTheme::ACCENT_MODULATION}}) {
+        if (!shown)
+            continue;
+        g.setColour(ActiveTheme::getColour(role));
+        g.fillEllipse(x, y, size, size);
+        x -= size + gap;
     }
 }
 
@@ -1154,10 +1179,67 @@ void ParamSlotComponent::paintBooleanValue(juce::Graphics& g) const {
 // Mouse handling
 // ============================================================================
 
-void ParamSlotComponent::mouseEnter(const juce::MouseEvent& /*e*/) {
+void ParamSlotComponent::mouseEnter(const juce::MouseEvent& e) {
     if (isInLinkMode_) {
         setMouseCursor(juce::MouseCursor::PointingHandCursor);
     }
+    if (e.mods.isAltDown())
+        showLinksPopover();
+}
+
+void ParamSlotComponent::modifierKeysChanged(const juce::ModifierKeys& modifiers) {
+    if (modifiers.isAltDown() && isMouseOver(true))
+        showLinksPopover();
+    else if (!modifiers.isAltDown() && linksPopover_ != nullptr &&
+             !linksPopover_->isMouseOver(true))
+        hideLinksPopover();
+    Component::modifierKeysChanged(modifiers);
+}
+
+void ParamSlotComponent::showLinksPopover() {
+    if (linksPopover_ != nullptr)
+        return;
+    auto* top = getTopLevelComponent();
+    if (top == nullptr || top == this || !hasActiveLinks(buildLinkContext()))
+        return;
+
+    auto safeThis = juce::Component::SafePointer<ParamSlotComponent>(this);
+    linksPopover_ = std::make_unique<ParamLinksPopover>(
+        paramInfo_.name,
+        [safeThis]() {
+            return safeThis != nullptr ? safeThis->buildLinkContext() : ParamLinkContext{};
+        },
+        [safeThis]() {
+            return safeThis == nullptr ? 0.0f
+                                       : magda::ParameterUtils::realToNormalized(
+                                             static_cast<float>(safeThis->valueSlider_.getValue()),
+                                             safeThis->paramInfo_);
+        });
+    if (linksPopover_->getNumChildComponents() == 0) {
+        linksPopover_.reset();
+        return;
+    }
+    // Deferred: the popover asks from inside its own handlers.
+    linksPopover_->onDismiss = [safeThis]() {
+        juce::MessageManager::callAsync([safeThis]() {
+            if (safeThis != nullptr)
+                safeThis->hideLinksPopover();
+        });
+    };
+
+    // Under the cell, kept inside the window.
+    const auto cell = top->getLocalArea(this, getLocalBounds());
+    auto bounds = linksPopover_->getBounds().withPosition(cell.getX(), cell.getBottom() + 4);
+    if (bounds.getBottom() > top->getHeight())
+        bounds.setY(cell.getY() - bounds.getHeight() - 4);
+    bounds.setX(juce::jlimit(0, juce::jmax(0, top->getWidth() - bounds.getWidth()), bounds.getX()));
+    linksPopover_->setBounds(bounds);
+    top->addAndMakeVisible(*linksPopover_);
+    linksPopover_->toFront(true);
+}
+
+void ParamSlotComponent::hideLinksPopover() {
+    linksPopover_.reset();
 }
 
 void ParamSlotComponent::mouseExit(const juce::MouseEvent& /*e*/) {

@@ -9,11 +9,11 @@ namespace magda::daw::ui::device_shell {
 /** @brief The rows a v1 shell paints around its body; an empty rectangle is not drawn. */
 struct ShellRows {
     juce::Rectangle<int> headerSeparatorLeft, headerSeparatorRight;
-    juce::Rectangle<int> idRow, sideStrip, footer;
+    juce::Rectangle<int> sideStrip, footer;
     juce::Rectangle<int> footerSeparator, footerInfo, midiLed;
 };
 
-/** @brief Frame, header band, ID row, side strip and footer of a device or rack shell. */
+/** @brief Frame, header band, side strip and footer of a device or rack shell. */
 void paintFrame(juce::Graphics& g, juce::Rectangle<int> bounds, int headerHeight,
                 const ShellRows& rows, const juce::String& footerInfo, bool midiLedLit);
 

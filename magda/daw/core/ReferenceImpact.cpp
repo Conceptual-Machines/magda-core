@@ -93,6 +93,10 @@ ReferenceAddress targetAddress(const ControlTarget& target, const DevicesByPath&
             address.kind = ReferenceAddressKind::Routing;
             address.route = ReferenceRouteKind::Tempo;
             break;
+        case ControlTarget::Kind::RackChainSelector:
+            address.kind = ReferenceAddressKind::Routing;
+            address.route = ReferenceRouteKind::RackChainSelector;
+            break;
     }
     return address;
 }
@@ -357,6 +361,8 @@ const char* toString(ReferenceRouteKind kind) {
             return "track_pan";
         case ReferenceRouteKind::Tempo:
             return "tempo";
+        case ReferenceRouteKind::RackChainSelector:
+            return "rack_chain_selector";
     }
     return "unknown";
 }

@@ -33,6 +33,7 @@ namespace magda {
  *  - `SendLevel`   — `devicePath` (track-level path) + `sendBusIndex`.
  *  - `Tempo`       — edit-scoped; no `devicePath`, no secondary fields. A
  *    global timeline value not bound to any track or device.
+ *  - `RackChainSelector` — `devicePath` (rack path).
  */
 struct ControlTarget {
     enum class Kind {
@@ -45,6 +46,8 @@ struct ControlTarget {
         // Edit-scoped (no devicePath). Keep new edit-scoped kinds appended so
         // the serialized integer values of the device-bound kinds stay stable.
         Tempo,
+        // A rack's chain selector, 0-127 (#1808). `devicePath` is the rack's.
+        RackChainSelector,
     };
 
     Kind kind = Kind::PluginParam;
@@ -77,6 +80,8 @@ struct ControlTarget {
                 return sendBusIndex >= 0;
             case Kind::Tempo:
                 return true;
+            case Kind::RackChainSelector:
+                return devicePath.getType() == ChainNodeType::Rack;
         }
         return false;
     }
@@ -96,6 +101,7 @@ struct ControlTarget {
             case Kind::SendLevel:
                 return sendBusIndex == other.sendBusIndex;
             case Kind::Tempo:
+            case Kind::RackChainSelector:
                 return true;
         }
         return false;
@@ -151,6 +157,13 @@ struct ControlTarget {
         t.kind = Kind::SendLevel;
         t.devicePath = ChainNodePath::trackLevel(track);
         t.sendBusIndex = sendBusIndex;
+        return t;
+    }
+
+    static ControlTarget rackChainSelector(const ChainNodePath& rackPath) {
+        ControlTarget t;
+        t.kind = Kind::RackChainSelector;
+        t.devicePath = rackPath;
         return t;
     }
 
@@ -211,6 +224,8 @@ inline const char* toString(ControlTarget::Kind kind) {
             return "send_level";
         case ControlTarget::Kind::Tempo:
             return "tempo";
+        case ControlTarget::Kind::RackChainSelector:
+            return "rack_chain_selector";
     }
     return "unknown";
 }

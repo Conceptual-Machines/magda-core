@@ -9,20 +9,8 @@ namespace magda::daw::ui {
 /**
  * @brief Base class for paginated control panels (macros, mods, etc.)
  *
- * Provides common pagination functionality:
- * - 2-column grid layout
- * - Configurable items per page
- * - Page navigation (< Page X/Y >)
- *
- * Layout:
- * +------------------+
- * |   < Page 1/2 >   |  <- Navigation (only if multiple pages)
- * +------------------+
- * | [C1] [C2]        |
- * | [C3] [C4]        |  <- 2xN grid
- * | [C5] [C6]        |
- * | [C7] [C8]        |
- * +------------------+
+ * A v1 side panel: a header with the title and `‹ 1/2 › +`, a grid of cards, and a footer
+ * line. Right-clicking the header offers to remove the last page.
  */
 class PagedControlPanel : public juce::Component {
   public:
@@ -44,7 +32,7 @@ class PagedControlPanel : public juce::Component {
         return itemsPerPage_;
     }
 
-    // Enable/disable add/remove page buttons
+    // Enable/disable adding and removing pages
     void setCanAddPage(bool canAdd);
     bool canAddPage() const {
         return canAddPage_;
@@ -55,7 +43,7 @@ class PagedControlPanel : public juce::Component {
         return canRemovePage_;
     }
 
-    // Minimum pages required (remove button disabled if at this count)
+    // Minimum pages required (removal is refused at this count)
     void setMinPages(int minPages);
     int getMinPages() const {
         return minPages_;
@@ -72,48 +60,63 @@ class PagedControlPanel : public juce::Component {
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
 
+    static constexpr int HEADER_HEIGHT = 28;
+    static constexpr int FOOTER_HEIGHT = 26;
+
   protected:
     // Subclasses must implement these
     virtual int getTotalItemCount() const = 0;
     virtual juce::Component* getItemComponent(int index) = 0;
     virtual juce::String getPanelTitle() const = 0;
+    virtual juce::Colour getTitleColour() const = 0;
+
+    /// The footer line, e.g. "4 of 16 mapped"; empty draws no footer text.
+    virtual juce::String getFooterText() const {
+        return {};
+    }
 
     // Called when page changes - subclasses can update item visibility
     virtual void onPageChanged();
 
     // Called when add page is requested - subclasses can add items
     virtual void onAddPage();
+    // Called when removing the last page is requested, before onRemovePageRequested
+    virtual void onRemovePage() {}
 
     // Layout helpers
     int getFirstVisibleIndex() const;
     int getLastVisibleIndex() const;
     int getVisibleItemCount() const;
 
+    /// Where the card in slot @p slotOnPage of the current page sits.
+    juce::Rectangle<int> getCellBounds(int slotOnPage) const;
+
     // Grid configuration - subclasses can override
     virtual int getGridColumns() const {
         return 2;
     }
 
-    // Navigation area height (only shown if multiple pages)
-    static constexpr int NAV_HEIGHT = 16;
-    static constexpr int GRID_SPACING = 2;
-    static constexpr int CELL_PADDING = 8;  // Padding inside grid area
+    static constexpr int GRID_PADDING = 10;
+    static constexpr int GRID_SPACING = 6;
 
   private:
-    void updateNavButtons();
+    juce::Rectangle<int> headerArea() const;
+    juce::Rectangle<int> footerArea() const;
+    juce::Rectangle<int> gridArea() const;
+
+    /// The header's clickable glyphs, right to left: + › 1/2 ‹.
+    juce::Rectangle<int> addBounds() const;
+    juce::Rectangle<int> nextBounds() const;
+    juce::Rectangle<int> pageBounds() const;
+    juce::Rectangle<int> prevBounds() const;
+
+    void showPageMenu();
 
     int itemsPerPage_;
     int currentPage_ = 0;
     bool canAddPage_ = false;
     bool canRemovePage_ = false;
     int minPages_ = 2;  // Minimum pages before remove is disabled
-
-    // Navigation controls
-    std::unique_ptr<juce::ArrowButton> prevButton_;
-    std::unique_ptr<juce::ArrowButton> nextButton_;
-    juce::TextButton addPageButton_;
-    juce::TextButton removePageButton_;
-    juce::Label pageLabel_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PagedControlPanel)
 };

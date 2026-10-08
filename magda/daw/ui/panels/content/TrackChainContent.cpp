@@ -36,6 +36,7 @@
 #include "engine/PluginService.hpp"
 #include "ui/components/chain/DeviceSlotComponent.hpp"
 #include "ui/components/chain/NodeComponent.hpp"
+#include "ui/components/chain/PluginDrop.hpp"
 #include "ui/components/chain/RackComponent.hpp"
 #include "ui/components/chain/modulation/MacroEditorPanel.hpp"
 #include "ui/components/chain/modulation/MacroPanelComponent.hpp"
@@ -518,41 +519,7 @@ class TrackChainContent::ChainContainer : public juce::Component,
             }
 
             // Create DeviceInfo from dropped plugin
-            magda::DeviceInfo device;
-            device.name = obj->getProperty("name").toString().toStdString();
-            device.manufacturer = obj->getProperty("manufacturer").toString().toStdString();
-            auto uniqueId = obj->getProperty("uniqueId").toString();
-            device.pluginId = uniqueId.isNotEmpty() ? uniqueId
-                                                    : obj->getProperty("name").toString() + "_" +
-                                                          obj->getProperty("format").toString();
-            const auto rawCategory = obj->hasProperty("rawCategory")
-                                         ? obj->getProperty("rawCategory").toString()
-                                         : obj->getProperty("category").toString();
-            const auto rawSubcategory = obj->hasProperty("rawSubcategory")
-                                            ? obj->getProperty("rawSubcategory").toString()
-                                            : obj->getProperty("subcategory").toString();
-            device.isInstrument = rawCategory.isNotEmpty()
-                                      ? rawCategory == "Instrument"
-                                      : static_cast<bool>(obj->getProperty("isInstrument"));
-            if (rawSubcategory == "MIDI")
-                device.deviceType = magda::DeviceType::MIDI;
-            else if (device.isInstrument)
-                device.deviceType = magda::DeviceType::Instrument;
-            device.browserCategoryOverride = obj->getProperty("categoryOverride").toString();
-            // External plugin identification - critical for loading
-            device.uniqueId = obj->getProperty("uniqueId").toString();
-            device.fileOrIdentifier = obj->getProperty("fileOrIdentifier").toString();
-
-            juce::String format = obj->getProperty("format").toString();
-            if (format == "VST3") {
-                device.format = magda::PluginFormat::VST3;
-            } else if (format == "AU") {
-                device.format = magda::PluginFormat::AU;
-            } else if (format == "LV2") {
-                device.format = magda::PluginFormat::LV2;
-            } else if (format == "Internal") {
-                device.format = magda::PluginFormat::Internal;
-            }
+            const auto device = deviceInfoFromPluginDrag(*obj);
 
             owner_.scrollToEndAfterNextDeviceChange_ = shouldScrollToEnd;
             owner_.suppressNextImplicitScrollToEnd_ = !shouldScrollToEnd;
@@ -1220,16 +1187,6 @@ void TrackChainContent::initGlobalModsPanel() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
             magda::TrackManager::getInstance().setModEnabled(
                 ChainNodePath::trackLevel(selectedTrackId_), modIndex, enabled);
-    };
-    globalModsPanel_->onAddPageRequested = [this](int) {
-        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().addModPage(
-                ChainNodePath::trackLevel(selectedTrackId_));
-    };
-    globalModsPanel_->onRemovePageRequested = [this](int) {
-        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            magda::TrackManager::getInstance().removeModPage(
-                ChainNodePath::trackLevel(selectedTrackId_));
     };
     globalModsPanel_->onPanelClicked = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {

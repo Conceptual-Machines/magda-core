@@ -147,9 +147,27 @@ std::optional<ParamKey> paramKeyFor(const magda::ControlTarget& target) {
         // to any track, and nothing here can carry one.
         case magda::ControlTarget::Kind::Tempo:
             return std::nullopt;
+
+        case magda::ControlTarget::Kind::RackChainSelector:
+            key.kind = ParamKey::Kind::ChainSelector;
+            if (!fillScope(target.devicePath, key) || key.scope != ParamKey::Scope::Rack)
+                return std::nullopt;
+            return key;
     }
 
     return std::nullopt;
+}
+
+std::optional<ParamKey> chainSelectorKeyFor(const PlanOp& op) {
+    if (op.kind != OpKind::Fader || op.key.role != OpRole::RackChainFader ||
+        op.key.deviceId != INVALID_DEVICE_ID || op.key.rackId == INVALID_RACK_ID)
+        return std::nullopt;
+    ParamKey key;
+    key.kind = ParamKey::Kind::ChainSelector;
+    key.scope = ParamKey::Scope::Rack;
+    key.trackId = op.key.trackId;
+    key.rackId = op.key.rackId;
+    return key;
 }
 
 std::optional<ParamKey> modifierKeyFor(const magda::ControlTarget& target) {
@@ -206,6 +224,9 @@ std::string toString(const ParamKey& key) {
             break;
         case ParamKey::Kind::SendLevel:
             text += ":send" + std::to_string(key.index);
+            break;
+        case ParamKey::Kind::ChainSelector:
+            text += ":chainSelector";
             break;
     }
 

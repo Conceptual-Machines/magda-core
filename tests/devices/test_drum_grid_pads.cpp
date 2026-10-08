@@ -608,3 +608,33 @@ TEST_CASE("Zone gain fades in from each edge", "[drumgrid][pads][layers][3007]")
     CHECK(zones.gainFor(60, 22) == 0.75f);
     CHECK(zones.gainFor(60, 23) == 1.0f);
 }
+
+TEST_CASE("Selector gain fades a chain in and out across its zone", "[racks][zones][1808]") {
+    magda::ChainZones zones;
+    zones.selectorLow = 10;
+    zones.selectorHigh = 20;
+    zones.selectorFadeLow = 3;
+    zones.selectorFadeHigh = 1;
+    CHECK(zones.selectorGain(9.5f) == 0.0f);
+    CHECK(zones.selectorGain(10.0f) == 0.25f);
+    CHECK(zones.selectorGain(11.0f) == 0.5f);
+    CHECK(zones.selectorGain(15.0f) == 1.0f);
+    CHECK(zones.selectorGain(20.0f) == 0.5f);
+    CHECK(zones.selectorGain(20.5f) == 0.0f);
+    CHECK(zones.notesOpen());
+    CHECK_FALSE(zones.selectorOpen());
+}
+
+TEST_CASE("Clamped zones keep each range and its fades inside MIDI", "[racks][zones][1808]") {
+    magda::ChainZones zones;
+    zones.keyLow = 80;
+    zones.keyHigh = 70;
+    zones.velocityLow = 0;
+    zones.selectorLow = 100;
+    zones.selectorHigh = 110;
+    zones.selectorFadeLow = 50;
+    const auto clamped = zones.clamped();
+    CHECK(clamped.keyHigh == 80);
+    CHECK(clamped.velocityLow == 1);
+    CHECK(clamped.selectorFadeLow == 10);
+}

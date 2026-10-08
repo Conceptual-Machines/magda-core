@@ -1457,8 +1457,13 @@ bool Interpreter::executeSetRack(const Params& params) {
                                     static_cast<float>(params.getFloat("volume_db")));
         changed = true;
     }
+    if (params.has("chain_selector")) {
+        api_.tracks().setRackChainSelector(ChainNodePath::rack(ctx_.currentTrackId, rackId),
+                                           static_cast<float>(params.getFloat("chain_selector")));
+        changed = true;
+    }
     if (!changed) {
-        ctx_.setError("rack.set supports bypassed and volume_db");
+        ctx_.setError("rack.set supports bypassed, volume_db and chain_selector");
         return false;
     }
     ctx_.currentRackId = rackId;
@@ -1555,6 +1560,40 @@ bool Interpreter::executeSetRackChain(const Params& params) {
         api_.tracks().setChainOutput(ctx_.currentTrackId, rackId, chainId, params.getInt("output"));
         changed = true;
     }
+
+    // Zone fields by their snake_case names, merged over the chain's zones (#1808).
+    static constexpr std::pair<const char*, int ChainZones::*> zoneFields[] = {
+        {"key_low", &ChainZones::keyLow},
+        {"key_high", &ChainZones::keyHigh},
+        {"key_fade_low", &ChainZones::keyFadeLow},
+        {"key_fade_high", &ChainZones::keyFadeHigh},
+        {"velocity_low", &ChainZones::velocityLow},
+        {"velocity_high", &ChainZones::velocityHigh},
+        {"velocity_fade_low", &ChainZones::velocityFadeLow},
+        {"velocity_fade_high", &ChainZones::velocityFadeHigh},
+        {"selector_low", &ChainZones::selectorLow},
+        {"selector_high", &ChainZones::selectorHigh},
+        {"selector_fade_low", &ChainZones::selectorFadeLow},
+        {"selector_fade_high", &ChainZones::selectorFadeHigh},
+    };
+    const auto chainPath = ChainNodePath::chain(ctx_.currentTrackId, rackId, chainId);
+    auto zones = api_.tracks().getChainByPath(chainPath)->zones;
+    bool zoned = false;
+    for (const auto& [name, field] : zoneFields) {
+        if (params.has(name)) {
+            zones.*field = params.getInt(name);
+            zoned = true;
+        }
+    }
+    if (params.has("round_robin")) {
+        zones.roundRobin = params.getBool("round_robin");
+        zoned = true;
+    }
+    if (zoned) {
+        api_.tracks().setChainZones(chainPath, zones);
+        changed = true;
+    }
+
     if (!changed) {
         ctx_.setError("rack.chain_set requires one or more supported properties");
         return false;

@@ -744,6 +744,44 @@ const juce::var& deviceSchema() {
     return value;
 }
 
+/// A chain's zones (#1808): every field, as chains report them.
+const char* const kZoneSchema = R"json({
+    "type":"object",
+    "properties":{
+        "keyLow":{"type":"integer","minimum":0,"maximum":127},
+        "keyHigh":{"type":"integer","minimum":0,"maximum":127},
+        "keyFadeLow":{"type":"integer","minimum":0,"maximum":127},
+        "keyFadeHigh":{"type":"integer","minimum":0,"maximum":127},
+        "velocityLow":{"type":"integer","minimum":1,"maximum":127},
+        "velocityHigh":{"type":"integer","minimum":1,"maximum":127},
+        "velocityFadeLow":{"type":"integer","minimum":0,"maximum":127},
+        "velocityFadeHigh":{"type":"integer","minimum":0,"maximum":127},
+        "selectorLow":{"type":"integer","minimum":0,"maximum":127},
+        "selectorHigh":{"type":"integer","minimum":0,"maximum":127},
+        "selectorFadeLow":{"type":"integer","minimum":0,"maximum":127},
+        "selectorFadeHigh":{"type":"integer","minimum":0,"maximum":127},
+        "roundRobin":{"type":"boolean"}
+    },
+    "additionalProperties":false
+})json";
+
+const juce::var& chainZonesSchema() {
+    static const auto value = [] {
+        auto schema = parseSchema(kZoneSchema);
+        juce::Array<juce::var> required;
+        for (const auto& property : schema["properties"].getDynamicObject()->getProperties())
+            required.add(property.name.toString());
+        schema.getDynamicObject()->setProperty("required", required);
+        return schema;
+    }();
+    return value;
+}
+
+const juce::var& chainZonesPatchSchema() {
+    static const auto value = parseSchema(kZoneSchema);
+    return value;
+}
+
 const juce::var& chainSchema() {
     static const auto value = [] {
         auto schema = parseSchema(R"json({
@@ -759,14 +797,16 @@ const juce::var& chainSchema() {
             "bypassed":{"type":"boolean"},
             "volumeDb":{"type":"number"},
             "pan":{"type":"number","minimum":-1,"maximum":1},
+            "zones":{},
             "deviceIds":{"type":"array","items":{"type":"integer","minimum":0}},
             "nestedRackIds":{"type":"array","items":{"type":"integer","minimum":0}}
         },
         "required":["id","rackId","nodePath","name","outputIndex","muted","solo","bypassed","volumeDb",
-                    "pan","deviceIds","nestedRackIds"],
+                    "pan","zones","deviceIds","nestedRackIds"],
         "additionalProperties":false
     })json");
         schema["properties"].getDynamicObject()->setProperty("nodePath", devicePathSchema());
+        schema["properties"].getDynamicObject()->setProperty("zones", chainZonesSchema());
         return schema;
     }();
     return value;
@@ -786,10 +826,11 @@ const juce::var& rackSchema() {
             "bypassed":{"type":"boolean"},
             "volumeDb":{"type":"number"},
             "pan":{"type":"number","minimum":-1,"maximum":1},
+            "chainSelector":{"type":"number","minimum":0,"maximum":127},
             "chainIds":{"type":"array","items":{"type":"integer","minimum":0}}
         },
         "required":["id","trackId","parentRackId","parentChainId","nodePath","name","bypassed",
-                    "volumeDb","pan","chainIds"],
+                    "volumeDb","pan","chainSelector","chainIds"],
         "additionalProperties":false
     })json");
         schema["properties"].getDynamicObject()->setProperty("nodePath", devicePathSchema());
@@ -1952,6 +1993,46 @@ juce::var toJson(const DeviceDto& dto) {
     return object;
 }
 
+juce::var toJson(const ChainZones& zones) {
+    auto* object = new juce::DynamicObject();
+    object->setProperty("keyLow", zones.keyLow);
+    object->setProperty("keyHigh", zones.keyHigh);
+    object->setProperty("keyFadeLow", zones.keyFadeLow);
+    object->setProperty("keyFadeHigh", zones.keyFadeHigh);
+    object->setProperty("velocityLow", zones.velocityLow);
+    object->setProperty("velocityHigh", zones.velocityHigh);
+    object->setProperty("velocityFadeLow", zones.velocityFadeLow);
+    object->setProperty("velocityFadeHigh", zones.velocityFadeHigh);
+    object->setProperty("selectorLow", zones.selectorLow);
+    object->setProperty("selectorHigh", zones.selectorHigh);
+    object->setProperty("selectorFadeLow", zones.selectorFadeLow);
+    object->setProperty("selectorFadeHigh", zones.selectorFadeHigh);
+    object->setProperty("roundRobin", zones.roundRobin);
+    return object;
+}
+
+ChainZones zonesFromJson(const juce::var& json, ChainZones zones) {
+    const auto read = [&json](const char* name, int& field) {
+        if (json.hasProperty(name))
+            field = static_cast<int>(json[name]);
+    };
+    read("keyLow", zones.keyLow);
+    read("keyHigh", zones.keyHigh);
+    read("keyFadeLow", zones.keyFadeLow);
+    read("keyFadeHigh", zones.keyFadeHigh);
+    read("velocityLow", zones.velocityLow);
+    read("velocityHigh", zones.velocityHigh);
+    read("velocityFadeLow", zones.velocityFadeLow);
+    read("velocityFadeHigh", zones.velocityFadeHigh);
+    read("selectorLow", zones.selectorLow);
+    read("selectorHigh", zones.selectorHigh);
+    read("selectorFadeLow", zones.selectorFadeLow);
+    read("selectorFadeHigh", zones.selectorFadeHigh);
+    if (json.hasProperty("roundRobin"))
+        zones.roundRobin = static_cast<bool>(json["roundRobin"]);
+    return zones;
+}
+
 juce::var toJson(const ChainDto& dto) {
     auto* object = new juce::DynamicObject();
     object->setProperty("id", dto.id);
@@ -1964,6 +2045,7 @@ juce::var toJson(const ChainDto& dto) {
     object->setProperty("bypassed", dto.bypassed);
     object->setProperty("volumeDb", dto.volumeDb);
     object->setProperty("pan", dto.pan);
+    object->setProperty("zones", toJson(dto.zones));
     object->setProperty("deviceIds", integerArray(dto.deviceIds));
     object->setProperty("nestedRackIds", integerArray(dto.nestedRackIds));
     return object;
@@ -1980,6 +2062,7 @@ juce::var toJson(const RackDto& dto) {
     object->setProperty("bypassed", dto.bypassed);
     object->setProperty("volumeDb", dto.volumeDb);
     object->setProperty("pan", dto.pan);
+    object->setProperty("chainSelector", dto.chainSelector);
     object->setProperty("chainIds", integerArray(dto.chainIds));
     return object;
 }
@@ -2478,6 +2561,7 @@ std::optional<ChainDto> chainFromJson(const juce::var& json, Error& error) {
     dto.bypassed = static_cast<bool>(json["bypassed"]);
     dto.volumeDb = static_cast<double>(json["volumeDb"]);
     dto.pan = static_cast<double>(json["pan"]);
+    dto.zones = zonesFromJson(json["zones"]);
     dto.deviceIds = readIntegerArray<DeviceId>(json["deviceIds"]);
     dto.nestedRackIds = readIntegerArray<RackId>(json["nestedRackIds"]);
     return dto;
@@ -2496,6 +2580,7 @@ std::optional<RackDto> rackFromJson(const juce::var& json, Error& error) {
     dto.bypassed = static_cast<bool>(json["bypassed"]);
     dto.volumeDb = static_cast<double>(json["volumeDb"]);
     dto.pan = static_cast<double>(json["pan"]);
+    dto.chainSelector = static_cast<double>(json["chainSelector"]);
     dto.chainIds = readIntegerArray<ChainId>(json["chainIds"]);
     return dto;
 }
@@ -3908,7 +3993,8 @@ OperationRegistry::OperationRegistry() {
             "properties":{
                 "rackPath":{},
                 "bypassed":{"type":"boolean"},
-                "volumeDb":{"type":"number"}
+                "volumeDb":{"type":"number"},
+                "chainSelector":{"type":"number","minimum":0,"maximum":127}
             },
             "required":["rackPath"],
             "additionalProperties":false
@@ -3945,7 +4031,8 @@ OperationRegistry::OperationRegistry() {
                 "solo":{"type":"boolean"},
                 "bypassed":{"type":"boolean"},
                 "volumeDb":{"type":"number"},
-                "pan":{"type":"number","minimum":-1,"maximum":1}
+                "pan":{"type":"number","minimum":-1,"maximum":1},
+                "zones":{}
             },
             "required":["chainPath"],
             "additionalProperties":false
@@ -3953,6 +4040,8 @@ OperationRegistry::OperationRegistry() {
         chainSchema());
     operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
         "chainPath", devicePathSchema());
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "zones", chainZonesPatchSchema());
 
     add("selection.get", "Get the current selection", OperationAccess::Read,
         &handlers::selectionGet, emptyObjectSchema(), selectionSchema());

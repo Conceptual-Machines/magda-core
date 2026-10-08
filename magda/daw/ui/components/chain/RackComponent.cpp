@@ -181,6 +181,17 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     initializeModsMacrosPanels();
     styleShellControls();
 
+    selector_ = std::make_unique<ChainSelectorControl>(rackPath_);
+    selector_->onModulatedValue = [this](std::optional<float> value) {
+        for (auto& row : chainRows_)
+            row->setModulatedSelector(value);
+    };
+    selector_->onValueChange = [this]() {
+        magda::TrackManager::getInstance().setRackChainSelector(
+            rackPath_, static_cast<float>(selector_->getValue()));
+    };
+    addChildComponent(*selector_);
+
     // Build chain rows
     updateFromRack(rack);
 
@@ -216,8 +227,28 @@ void RackComponent::timerCallback() {
 }
 
 void RackComponent::mouseDown(const juce::MouseEvent& e) {
+    if (!collapsed_ && chainTabsArea_.contains(e.getPosition())) {
+        for (int i = 0; i < kNumChainViews; ++i)
+            if (const auto view = static_cast<ChainView>(i);
+                chainTabBounds(view).contains(e.getPosition()))
+                setChainView(view);
+        return;
+    }
     // Let the base class handle selection - it will call selectChainNode in mouseUp
     NodeComponent::mouseDown(e);
+}
+
+juce::Rectangle<int> RackComponent::chainTabBounds(ChainView view) const {
+    const int width = chainTabsArea_.getWidth() / kNumChainViews;
+    return chainTabsArea_.withWidth(width).translated(width * static_cast<int>(view), 0);
+}
+
+void RackComponent::setChainView(ChainView view) {
+    if (view == chainView_)
+        return;
+    chainView_ = view;
+    resized();
+    repaint();
 }
 
 void RackComponent::mouseWheelMove(const juce::MouseEvent& e,
@@ -229,13 +260,14 @@ void RackComponent::styleShellControls() {
     using node_header::DeviceIcon;
     const juce::Colour key(0xFFB3B3B3);
     // Collapsed, the strip stacks them at 16px.
-    const float height = collapsed_ ? 16.0f : 26.0f;
+    const float height = collapsed_ ? 16.0f : static_cast<float>(getHeaderButtonSize().y);
     node_header::applyDeviceIconStyle(*macroButton_, DeviceIcon::Toggle, key,
                                       ActiveTheme::ACCENT_MODULATION, height);
     node_header::applyDeviceIconStyle(*modButton_, DeviceIcon::Toggle, key,
                                       ActiveTheme::ACCENT_ATTENTION, height);
     node_header::applyDeviceIconStyle(*presetButton_, DeviceIcon::Action, key,
-                                      ActiveTheme::PRESET_INDIGO);
+                                      ActiveTheme::PRESET_INDIGO,
+                                      static_cast<float>(getHeaderButtonSize().y));
     presetButton_->setHoverColor(ActiveTheme::PRESET_INDIGO);
     styleHeaderPowerAndClose();
     chainViewport_.getVerticalScrollBar().setColour(
@@ -262,16 +294,23 @@ void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> /*conte
         return;
 
     auto& fonts = FontManager::getInstance();
-    if (!shellRows_.idRow.isEmpty()) {
-        auto text = shellRows_.idRow.reduced(12, 0);
-        const int chains = static_cast<int>(chainRows_.size());
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
-        g.setFont(fonts.getMonoFont(11.0f));
-        g.drawText(juce::String(chains) + (chains == 1 ? " chain" : " chains"), text,
-                   juce::Justification::centredRight, false);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
-        g.setFont(fonts.getUIFont(11.5f));
-        g.drawText("MAGDA / Rack", text, juce::Justification::centredLeft, false);
+    if (!chainTabsArea_.isEmpty()) {
+        g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f));
+        for (const auto& [view, name] :
+             {std::pair{ChainView::Mix, "MIX"}, std::pair{ChainView::Key, "KEY"},
+              std::pair{ChainView::Velocity, "VEL"}, std::pair{ChainView::Fade, "FADE"}}) {
+            const auto area = chainTabBounds(view);
+            const bool active = view == chainView_;
+            g.setColour(ActiveTheme::getColour(active ? ActiveTheme::DEVICE_VALUE_TEXT
+                                                      : ActiveTheme::DEVICE_DIM2));
+            g.drawText(name, area, juce::Justification::centred, false);
+            if (active) {
+                g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE));
+                g.fillRect(area.withTop(area.getBottom() - 2));
+            }
+        }
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
+        g.fillRect(chainTabsArea_.withTop(chainTabsArea_.getBottom() - 1));
     }
 
     if (!columnHeaderArea_.isEmpty()) {
@@ -279,8 +318,16 @@ void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> /*conte
         g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
         g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f));
         g.drawText("CHAIN", columns.name, juce::Justification::centredLeft, false);
-        g.drawText("GAIN", columns.gain, juce::Justification::centredLeft, false);
-        g.drawText("PAN", columns.pan, juce::Justification::centredLeft, false);
+        if (chainView_ == ChainView::Mix) {
+            g.drawText("GAIN", columns.gain, juce::Justification::centredLeft, false);
+            g.drawText("PAN", columns.pan, juce::Justification::centredLeft, false);
+        }
+    }
+
+    if (!selectorCaption_.isEmpty()) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+        g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f));
+        g.drawText("CHAIN SELECT", selectorCaption_, juce::Justification::centredLeft, false);
     }
 
     if (!viewportArea_.isEmpty()) {
@@ -292,13 +339,16 @@ void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> /*conte
 }
 
 void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
-    shellRows_.idRow = shellRows_.sideStrip = shellRows_.footer = {};
-    shellRows_.midiLed = {};
-    columnHeaderArea_ = viewportArea_ = {};
+    shellRows_.sideStrip = {};
+    shellRows_.midiLed = selectorCaption_ = {};
+    columnHeaderArea_ = viewportArea_ = chainTabsArea_ = {};
 
     // When collapsed, hide content controls only (buttons handled by resizedCollapsed)
     // NOTE: Side panels (macro/mods) visibility is managed by base class
     if (collapsed_) {
+        shellRows_.footer = {};
+        if (selector_)
+            selector_->setVisible(false);
         addChainButton_.setVisible(false);
         chainViewport_.setVisible(false);
         chainViewport_.setBounds(0, 0, 0, 0);  // Clear stale bounds
@@ -320,10 +370,7 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
         presetButton_->setVisible(true);
     levelMeter_.setVisible(true);
 
-    shellRows_.idRow = contentArea.removeFromTop(ID_ROW_HEIGHT);
-    shellRows_.footer = contentArea.removeFromBottom(FOOTER_BAR_HEIGHT);
     shellRows_.sideStrip = contentArea.removeFromRight(SIDE_STRIP_WIDTH);
-    layoutFooter(shellRows_.footer);
     layoutSideStrip(shellRows_.sideStrip);
     layoutChainList(contentArea.removeFromLeft(CHAIN_LIST_WIDTH));
 
@@ -333,8 +380,14 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
 }
 
 void RackComponent::layoutChainList(juce::Rectangle<int> list) {
-    auto area = list.withTrimmedTop(10).reduced(12, 0).withTrimmedBottom(12);
+    auto area = list.withTrimmedTop(4).reduced(12, 0).withTrimmedBottom(12);
+    chainTabsArea_ = area.removeFromTop(CHAIN_TABS_HEIGHT);
+    area.removeFromTop(ROW_GAP);
     columnHeaderArea_ = area.removeFromTop(COLUMN_HEADER_HEIGHT);
+
+    const auto rowView = static_cast<ChainRowComponent::View>(static_cast<int>(chainView_));
+    for (auto& row : chainRows_)
+        row->setView(rowView);
     area.removeFromTop(ROW_GAP);
     chainViewport_.setBounds(area);
 
@@ -362,21 +415,34 @@ void RackComponent::layoutSideStrip(juce::Rectangle<int> strip) {
     }
 }
 
-// Just the MIDI LED, on the right.
+void RackComponent::resizedShellFooter(juce::Rectangle<int> footer) {
+    shellRows_.footer = footer;
+    layoutFooter(footer);
+}
+
+// The chain selector under the chain list, and the MIDI LED on the right.
 void RackComponent::layoutFooter(juce::Rectangle<int> footer) {
-    shellRows_.midiLed = footer.reduced(10, 0).removeFromRight(7).withSizeKeepingCentre(7, 7);
+    auto area = footer.reduced(12, 0);
+    shellRows_.midiLed = area.removeFromRight(7).withSizeKeepingCentre(7, 7);
+    auto selector = area.withWidth(juce::jmin(area.getWidth(), CHAIN_LIST_WIDTH - 24));
+    selectorCaption_ = selector.removeFromLeft(88);
+    if (selector_) {
+        selector_->setBounds(selector.withSizeKeepingCentre(selector.getWidth(), 16));
+        selector_->setVisible(true);
+    }
 }
 
 void RackComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
-    const auto placeLeft = [&headerArea](juce::Component& button) {
-        button.setBounds(headerArea.removeFromLeft(30).withSizeKeepingCentre(30, 26));
-        headerArea.removeFromLeft(8);
+    const auto placeLeft = [this, &headerArea](juce::Component& button) {
+        const auto size = getHeaderButtonSize();
+        button.setBounds(headerArea.removeFromLeft(size.x).withSizeKeepingCentre(size.x, size.y));
+        headerArea.removeFromLeft(getHeaderButtonGap());
     };
     placeLeft(*macroButton_);
     placeLeft(*modButton_);
     // The separator carries its own 6px margins in place of the last gap.
-    headerArea.setLeft(headerArea.getX() - 8);
-    shellRows_.headerSeparatorLeft = headerArea.removeFromLeft(13).withSizeKeepingCentre(1, 18);
+    headerArea.setLeft(headerArea.getX() - getHeaderButtonGap());
+    shellRows_.headerSeparatorLeft = headerArea.removeFromLeft(13).withSizeKeepingCentre(1, 14);
 }
 
 juce::String RackComponent::getCollapsedName() const {
@@ -411,7 +477,7 @@ int RackComponent::stackedChainRowsHeight() const {
 
 int RackComponent::getPreferredHeight() const {
     // Content padding: NodeComponent insets the content 1px top and bottom.
-    return HEADER_BAR_HEIGHT + ID_ROW_HEIGHT + 10 + COLUMN_HEADER_HEIGHT + ROW_GAP +
+    return HEADER_BAR_HEIGHT + 4 + CHAIN_TABS_HEIGHT + ROW_GAP + COLUMN_HEADER_HEIGHT + ROW_GAP +
            stackedChainRowsHeight() + 12 + FOOTER_BAR_HEIGHT + 2;
 }
 
@@ -454,6 +520,8 @@ void RackComponent::updateFromRack(const magda::RackInfo& rack) {
     setBypassed(rack.bypassed);
     if (gainSlider_)
         gainSlider_->setValue(rack.volume, juce::dontSendNotification);
+    if (selector_ && !selector_->getModulatedValue())
+        selector_->setValue(rack.chainSelector, juce::dontSendNotification);
     rebuildChainRows();
 
     // Refresh both panels if either is visible.
@@ -529,6 +597,8 @@ void RackComponent::rebuildChainRows() {
             auto row = std::make_unique<ChainRowComponent>(*this, trackId_, rackId_, chain);
             // Set the full nested path (includes parent rack/chain context)
             row->setNodePath(rackPath_.withChain(chain.id));
+            if (selector_)
+                row->setModulatedSelector(selector_->getModulatedValue());
             // Wire up double-click to toggle expand/collapse
             row->onDoubleClick = [this](magda::ChainId chainId) {
                 if (selectedChainId_ == chainId) {
@@ -553,6 +623,9 @@ void RackComponent::rebuildChainRows() {
     chainRows_ = std::move(newRows);
     for (size_t i = 0; i < chainRows_.size(); ++i)
         chainRows_[i]->setColourIndex(static_cast<int>(i));
+    const int chains = static_cast<int>(chainRows_.size());
+    setHeaderSubtitle(juce::String::fromUTF8("Rack \xc2\xb7 ") + juce::String(chains) +
+                      (chains == 1 ? " chain" : " chains"));
 
     resized();
     repaint();
@@ -838,8 +911,7 @@ void RackComponent::onMacroPageRemoveRequested(int /*itemsToRemove*/) {
 // === Panel width overrides ===
 
 int RackComponent::getParamPanelWidth() const {
-    // Width for 2 columns of macro knobs (2x4 grid)
-    return 130;
+    return DEFAULT_PANEL_WIDTH;
 }
 
 int RackComponent::getModPanelWidth() const {

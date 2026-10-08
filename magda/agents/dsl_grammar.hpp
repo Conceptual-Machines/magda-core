@@ -148,10 +148,11 @@ METHOD CHAINING:
 - .fx.add(name="Pro-Q 3", format="VST3") - Add plugin with format hint (VST3, AU, VST)
 - .rack.new(name="Parallel") - Add a top-level rack with its default chain
 - .rack.delete(id=12) - Remove a top-level rack by its state-snapshot id
-- .rack.set(id=12, bypassed=true, volume_db=-3) - Control a rack
+- .rack.set(id=12, bypassed=true, volume_db=-3, chain_selector=64) - Control a rack; chain_selector 0-127 picks chains by their selector zones
 - .rack.chain_new(name="Wet") - Add a chain to the preceding/new rack
 - .rack.chain_delete(rack_id=12, chain_id=34) - Remove a rack chain
 - .rack.chain_set(rack_id=12, chain_id=34, muted=true, solo=true, bypassed=false, volume_db=-6, pan=0.2, output=1) - Configure a chain
+- .rack.chain_set(rack_id=12, chain_id=34, key_low=36, key_high=59, key_fade_high=4, velocity_low=1, velocity_high=127, selector_low=0, selector_high=63, selector_fade_high=16, round_robin=false) - Set a chain's key, velocity and chain-selector zones (0-127, fades ramp in from each edge)
 - .delete() - Delete track
 - .clip.rename(index=0, name="Intro") - Rename clip at index on track
 - .clip.rename(name="Intro") - Rename all currently selected clips (omit index)

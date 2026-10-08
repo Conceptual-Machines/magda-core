@@ -38,6 +38,9 @@ struct OpValue {
     float gainLeft = 1.0f;
     float gainRight = 1.0f;
 
+    /// A rack chain's level from its selector zone, applied over both gains.
+    float zoneGain = 1.0f;
+
     /// The op contributes nothing this block. Silence rather than a zero gain,
     /// because the one thing that sets it (a rack chain taken out of the mix by
     /// mute or by a sibling's solo) gates the chain's MIDI as well as its

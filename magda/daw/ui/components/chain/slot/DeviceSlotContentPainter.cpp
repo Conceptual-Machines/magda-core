@@ -1,6 +1,5 @@
 #include "slot/DeviceSlotContentPainter.hpp"
 
-#include "drum_grid/DeviceSlotDrumGridBridge.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -18,16 +17,15 @@ bool skipsContentHeader(const DeviceSlotContentPaintState& state) {
 
 void paintSeparators(juce::Graphics& g, juce::Rectangle<int> contentArea,
                      const DeviceSlotContentPaintState& state, int meterStripWidth,
-                     int contentHeaderHeight, int paginationHeight, int faustHeaderHeight) {
+                     int paginationHeight, int faustHeaderHeight) {
     if (state.collapsed)
         return;
 
-    const bool skipContentHeader = skipsContentHeader(state);
     // Vertical separator before the meter strip — skip it when there's no strip
     // (meterStripWidth <= 0, e.g. post-FX analysis devices).
     if (meterStripWidth > 0) {
         const int lineX = contentArea.getRight() - meterStripWidth - 4;
-        const int meterTop = contentArea.getY() + (skipContentHeader ? 0 : contentHeaderHeight);
+        const int meterTop = contentArea.getY();
         g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawVerticalLine(lineX, static_cast<float>(meterTop + 2),
                            static_cast<float>(contentArea.getBottom() - 2));
@@ -45,8 +43,7 @@ void paintSeparators(juce::Graphics& g, juce::Rectangle<int> contentArea,
         (!state.internalDevice || runtimeFaust || !state.hasCustomUI)) {
         constexpr int paginationTopPadding = 2;
         constexpr int paginationBottomPadding = 4;
-        const int paramGridTop =
-            contentArea.getY() + (runtimeFaust ? faustHeaderHeight : contentHeaderHeight);
+        const int paramGridTop = contentArea.getY() + (runtimeFaust ? faustHeaderHeight : 0);
         const int paginationBottom =
             paramGridTop + paginationTopPadding + paginationHeight + paginationBottomPadding;
         g.drawHorizontalLine(paginationBottom, left, right);
@@ -72,74 +69,44 @@ bool paintLoadState(juce::Graphics& g, juce::Rectangle<int> contentArea,
     return false;
 }
 
-void paintMidiUtilityHeader(juce::Graphics& g, juce::Rectangle<int> headerArea,
-                            juce::Rectangle<int> textArea,
-                            const DeviceSlotContentPaintState& state) {
-    const auto textColour = state.bypassed ? ActiveTheme::getSecondaryTextColour().withAlpha(0.5f)
-                                           : ActiveTheme::getSecondaryTextColour();
-    g.setColour(textColour);
-
-    if ((state.traits.isStepSequencer || state.traits.isPolyStepSequencer) &&
-        state.stepRecording.active) {
-        const int maxSteps = juce::jmax(1, state.stepRecording.maxSteps);
-        const int displayPosition = juce::jlimit(0, maxSteps - 1, state.stepRecording.position);
-        g.saveState();
-        g.setColour(ActiveTheme::getColour(ActiveTheme::STEP_RECORD).withAlpha(0.9f));
-        g.fillRect(headerArea);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
-        g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
-        g.drawText("STEP RECORDING  " + juce::String(displayPosition + 1) + "/" +
-                       juce::String(maxSteps),
-                   textArea, juce::Justification::centredLeft);
-        g.restoreState();
-        return;
-    }
-
-    g.setFont(FontManager::getInstance().getMicrogrammaFont(9.0f));
-    const juce::String label = state.traits.isChordEngine         ? "MAGDA Chord Engine"
-                               : state.traits.isArpeggiator       ? "MAGDA Arpeggiator"
-                               : state.traits.isStrum             ? "MAGDA Strum"
-                               : state.traits.isPolyStepSequencer ? "MAGDA Poly Sequencer"
-                                                                  : "MAGDA Step Sequencer";
-    g.drawText(label, textArea, juce::Justification::centredLeft);
-}
-
-void paintExternalHeader(juce::Graphics& g, juce::Rectangle<int> textArea,
-                         const DeviceSlotContentPaintState& state) {
-    const auto dim = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM);
-    g.setColour(state.bypassed ? dim.withAlpha(0.5f) : dim);
-    g.setFont(FontManager::getInstance().getUIFont(11.5f));
-    g.drawText(state.manufacturer + " / " + state.deviceName, textArea,
-               juce::Justification::centredLeft);
-}
-
 }  // namespace
 
 void paintDeviceSlotContent(juce::Graphics& g, juce::Rectangle<int> contentArea,
                             const DeviceSlotContentPaintState& state, int meterStripWidth,
-                            int contentHeaderHeight, int paginationHeight, int faustHeaderHeight) {
-    paintSeparators(g, contentArea, state, meterStripWidth, contentHeaderHeight, paginationHeight,
-                    faustHeaderHeight);
+                            int paginationHeight, int faustHeaderHeight) {
+    paintSeparators(g, contentArea, state, meterStripWidth, paginationHeight, faustHeaderHeight);
+    paintLoadState(g, contentArea, state.loadState);
+}
 
-    if (paintLoadState(g, contentArea, state.loadState))
-        return;
-
+DeviceSlotSubtitle deviceSlotSubtitle(const DeviceSlotContentPaintState& state) {
+    // Analysis devices (oscilloscope / spectrum) and Faust patches carry their name alone.
     if (skipsContentHeader(state))
-        return;
+        return {};
 
-    auto headerArea = contentArea.removeFromTop(contentHeaderHeight);
-    auto textArea = headerArea.withTrimmedLeft(12).withTrimmedRight(12);
+    const auto dim = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2);
+    const auto shade = state.bypassed ? dim.withAlpha(0.5f) : dim;
+    const auto& traits = state.traits;
 
-    if (drum_grid_slot::paintContentHeader(g, state.traits.isDrumGrid, state.bypassed, textArea))
-        return;
-
-    if (state.traits.isChordEngine || state.traits.isArpeggiator || state.traits.isStrum ||
-        state.traits.isStepSequencer || state.traits.isPolyStepSequencer) {
-        paintMidiUtilityHeader(g, headerArea, textArea, state);
-
-    } else {
-        paintExternalHeader(g, textArea, state);
+    if ((traits.isStepSequencer || traits.isPolyStepSequencer) && state.stepRecording.active) {
+        const int maxSteps = juce::jmax(1, state.stepRecording.maxSteps);
+        const int position = juce::jlimit(0, maxSteps - 1, state.stepRecording.position);
+        return {"STEP RECORDING " + juce::String(position + 1) + "/" + juce::String(maxSteps),
+                ActiveTheme::getColour(ActiveTheme::STEP_RECORD)};
     }
+
+    if (traits.isDrumGrid)
+        return {"MAGDA / Drum Grid", shade};
+    if (traits.isChordEngine)
+        return {"MAGDA / Chord Engine", shade};
+    if (traits.isArpeggiator)
+        return {"MAGDA / Arpeggiator", shade};
+    if (traits.isStrum)
+        return {"MAGDA / Strum", shade};
+    if (traits.isPolyStepSequencer)
+        return {"MAGDA / Poly Sequencer", shade};
+    if (traits.isStepSequencer)
+        return {"MAGDA / Step Sequencer", shade};
+    return {state.manufacturer, shade};
 }
 
 }  // namespace magda::daw::ui

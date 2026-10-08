@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "../core/ChainNodePath.hpp"
+#include "../core/ChainZones.hpp"
 #include "../core/ClipTypes.hpp"
 #include "../core/ParameterInfo.hpp"
 #include "../core/TypeIds.hpp"
@@ -430,6 +431,7 @@ struct ChainDto {
     bool bypassed = false;
     double volumeDb = 0.0;
     double pan = 0.0;
+    ChainZones zones;
     std::vector<DeviceId> deviceIds;
     std::vector<RackId> nestedRackIds;
 
@@ -446,6 +448,7 @@ struct RackDto {
     bool bypassed = false;
     double volumeDb = 0.0;
     double pan = 0.0;
+    double chainSelector = 0.0;
     std::vector<ChainId> chainIds;
 
     bool operator==(const RackDto&) const = default;
@@ -867,6 +870,9 @@ juce::var toJson(const ChordEntryDto& dto);
 juce::var toJson(const ChordTrackDto& dto);
 juce::var toJson(const ClipDto& dto);
 juce::var toJson(const DeviceDto& dto);
+juce::var toJson(const ChainZones& zones);
+/// @p zones with whichever fields @p json carries written over it.
+ChainZones zonesFromJson(const juce::var& json, ChainZones zones = {});
 juce::var toJson(const ChainDto& dto);
 juce::var toJson(const RackDto& dto);
 juce::var toJson(const DeviceGraphDto& dto);

@@ -27,6 +27,14 @@ struct DeviceSlotContentPaintState {
 
 void paintDeviceSlotContent(juce::Graphics& g, juce::Rectangle<int> contentArea,
                             const DeviceSlotContentPaintState& state, int meterStripWidth,
-                            int contentHeaderHeight, int paginationHeight, int faustHeaderHeight);
+                            int paginationHeight, int faustHeaderHeight);
+
+/** @brief What the device header shows after the name, and in what colour. */
+struct DeviceSlotSubtitle {
+    juce::String text;
+    juce::Colour colour;
+};
+
+DeviceSlotSubtitle deviceSlotSubtitle(const DeviceSlotContentPaintState& state);
 
 }  // namespace magda::daw::ui

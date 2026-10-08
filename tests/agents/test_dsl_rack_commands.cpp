@@ -68,3 +68,26 @@ TEST_CASE("DSL fx.add after rack.new lands inside the rack chain", "[dsl][racks]
     CHECK(track->chain.fxChainElements.size() == 2);  // rack + reverb on the track
     tracks.clearAllTracks();
 }
+
+TEST_CASE("DSL sets a rack's chain selector and a chain's zones", "[dsl][racks][1808]") {
+    auto& tracks = TrackManager::getInstance();
+    tracks.clearAllTracks();
+    const auto trackId = tracks.createTrack("Keys", TrackType::Media);
+
+    MagdaApiLive api;
+    dsl::Interpreter interpreter(api);
+    REQUIRE(interpreter.execute("track(id=1).rack.new(name=\"Split\")"
+                                ".rack.set(chain_selector=70)"
+                                ".rack.chain_set(key_high=59, key_fade_high=4, selector_low=64,"
+                                " selector_fade_low=200, round_robin=true)"));
+
+    const auto& rack = getRack(tracks.getTrack(trackId)->chain.fxChainElements.front());
+    CHECK(rack.chainSelector == Approx(70.0f));
+    const auto& zones = rack.chains.front().zones;
+    CHECK(zones.keyHigh == 59);
+    CHECK(zones.keyFadeHigh == 4);
+    CHECK(zones.selectorLow == 64);
+    CHECK(zones.selectorFadeLow == 63);  // clamped to the selector span
+    CHECK(zones.roundRobin);
+    tracks.clearAllTracks();
+}

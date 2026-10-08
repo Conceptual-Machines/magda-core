@@ -74,12 +74,16 @@ class MacroPanelComponent : public PagedControlPanel {
     juce::String getPanelTitle() const override {
         return "MACROS";
     }
+    juce::Colour getTitleColour() const override;
+    juce::String getFooterText() const override;
 
   private:
     std::vector<std::unique_ptr<MacroKnobComponent>> knobs_;
     std::vector<std::pair<magda::DeviceId, juce::String>> availableDevices_;
     std::vector<std::pair<magda::ModId, juce::String>> availableModifiers_;
     magda::ChainNodePath parentPath_;
+    int macroCount_ = 0;
+    int mappedCount_ = 0;
 
     void ensureKnobCount(int count);
 

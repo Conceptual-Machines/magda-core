@@ -152,6 +152,7 @@ bool remapControlTarget(ControlTarget& target,
             case ControlTarget::Kind::TrackPan:
             case ControlTarget::Kind::SendLevel:
             case ControlTarget::Kind::Tempo:
+            case ControlTarget::Kind::RackChainSelector:
                 break;
         }
     }
@@ -1749,12 +1750,15 @@ void SetRackPropertiesByPathCommand::execute() {
         previousBypassed_ = rack->bypassed;
         previousDeltaSolo_ = rack->deltaSolo;
         previousVolumeDb_ = rack->volume;
+        previousChainSelector_ = rack->chainSelector;
         captured_ = true;
     }
     if (patch_.bypassed)
         tracks.setRackBypassedByPath(rackPath_, *patch_.bypassed);
     if (patch_.volumeDb)
         tracks.setRackVolume(rackPath_, *patch_.volumeDb);
+    if (patch_.chainSelector)
+        tracks.setRackChainSelector(rackPath_, *patch_.chainSelector);
     executed_ = true;
 }
 
@@ -1765,6 +1769,7 @@ void SetRackPropertiesByPathCommand::undo() {
     tracks.setRackBypassedByPath(rackPath_, previousBypassed_);
     tracks.setRackDeltaSoloByPath(rackPath_, previousDeltaSolo_);
     tracks.setRackVolume(rackPath_, previousVolumeDb_);
+    tracks.setRackChainSelector(rackPath_, previousChainSelector_);
     executed_ = false;
 }
 
@@ -1795,6 +1800,8 @@ void SetChainPropertiesByPathCommand::execute() {
         tracks.setChainVolume(chainPath_, *patch_.volumeDb);
     if (patch_.pan)
         tracks.setChainPan(chainPath_, *patch_.pan);
+    if (patch_.zones)
+        tracks.setChainZones(chainPath_, *patch_.zones);
     executed_ = true;
 }
 
@@ -1809,6 +1816,7 @@ void SetChainPropertiesByPathCommand::undo() {
     tracks.setChainBypassed(chainPath_, previous_.bypassed);
     tracks.setChainVolume(chainPath_, previous_.volume);
     tracks.setChainPan(chainPath_, previous_.pan);
+    tracks.setChainZones(chainPath_, previous_.zones);
     executed_ = false;
 }
 

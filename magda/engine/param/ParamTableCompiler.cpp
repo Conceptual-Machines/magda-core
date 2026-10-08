@@ -241,6 +241,7 @@ struct Node {
     const magda::ModArray* mods = nullptr;
     const magda::DeviceInfo* device = nullptr;
     const magda::TrackInfo* track = nullptr;
+    const magda::RackInfo* rack = nullptr;
 
     /// The track this scope is sidechained from, or none. What the modifiers
     /// living here listen to instead of their own track (ModSources.hpp).
@@ -262,6 +263,7 @@ class Builder {
 
     void collectTargets();
     void allocateMixer(const magda::TrackInfo& track);
+    void allocateChainSelector(const Node& node);
     void allocate();
     void allocateDevice(const Node& node);
     void allocateMacros(const Node& node);
@@ -557,6 +559,18 @@ void Builder::allocateMixer(const magda::TrackInfo& track) {
     }
 }
 
+/// A rack's chain selector, carried only when something reaches it. What reaches it sets it
+/// outright, so it carries no base of its own: the stored value is for an unlinked rack.
+void Builder::allocateChainSelector(const Node& node) {
+    if (node.rack == nullptr)
+        return;
+    ParamKey key = node.scope;
+    key.kind = ParamKey::Kind::ChainSelector;
+    if (targeted_.count(key) == 0)
+        return;
+    add(key, paramSpecFrom(magda::ParameterPresets::chainSelector(-1)), 0.0f);
+}
+
 void Builder::walkTrack(const magda::TrackInfo& track) {
     Node node;
     node.scope.scope = ParamKey::Scope::Track;
@@ -609,6 +623,7 @@ void Builder::walkTrack(const magda::TrackInfo& track) {
             rackNode.scope.rackId = rack.id;
             rackNode.macros = &rack.macros;
             rackNode.mods = &rack.mods;
+            rackNode.rack = &rack;
             rackNode.sidechainSource = sidechainSourceOf(rack.sidechain);
             nodes_.push_back(rackNode);
             return chain_walk::Descend::Into;
@@ -727,6 +742,7 @@ void Builder::allocate() {
         allocateDevice(node);
         if (node.track != nullptr)
             allocateMixer(*node.track);
+        allocateChainSelector(node);
         allocateMacros(node);
         allocateMods(node);
     }

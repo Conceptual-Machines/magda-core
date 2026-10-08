@@ -4,9 +4,11 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <optional>
 #include <utility>
 #include <vector>
 
+#include "ZoneBar.hpp"
 #include "core/RackInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -39,12 +41,15 @@ class ChainNameLabel : public juce::Label {
 /**
  * @brief One chain in a rack's chain list: [dot Name] [Gain] [Pan] [M][S][Power][x].
  *
- * Clicking the row selects the chain, which shows its devices in the rack's viewport.
+ * Clicking the row selects the chain, which shows its devices in the rack's viewport. The
+ * zone views swap the mix controls for the chain's key, velocity or selector zone (#1808).
  */
 class ChainRowComponent : public juce::Component,
                           public magda::SelectionManagerListener,
                           public magda::TrackManagerListener {
   public:
+    enum class View { Mix, Key, Velocity, Fade };
+
     ChainRowComponent(RackComponent& owner, magda::TrackId trackId, magda::RackId rackId,
                       const magda::ChainInfo& chain);
     ~ChainRowComponent() override;
@@ -78,6 +83,12 @@ class ChainRowComponent : public juce::Component,
     }
 
     void updateFromChain(const magda::ChainInfo& chain);
+
+    /// Which controls the row shows; Fade is the chain's range on the rack's chain selector.
+    void setView(View view);
+
+    /// Where macros and modifiers hold the rack's selector, drawn in place of its stored value.
+    void setModulatedSelector(std::optional<float> value);
 
     void setSelected(bool selected);
     bool isSelected() const {
@@ -122,6 +133,7 @@ class ChainRowComponent : public juce::Component,
     void refreshFromModel();
 
     void styleControls();
+    void commitZones(const magda::ChainZones& zones);
 
     RackComponent& owner_;
     magda::TrackId trackId_;
@@ -140,6 +152,11 @@ class ChainRowComponent : public juce::Component,
     magda::SvgButton soloButton_{"solo", BinaryData::solo_svg, BinaryData::solo_svgSize};
     std::unique_ptr<magda::SvgButton> onButton_;      // Bypass/enable toggle (power icon)
     std::unique_ptr<magda::SvgButton> deleteButton_;  // Delete chain
+    ZoneBar zoneBar_;
+    juce::TextButton roundRobinButton_{"RR"};
+    magda::ChainZones zones_;
+    View view_ = View::Mix;
+    std::optional<float> modulatedSelector_;
 
     // Per-chain base values captured at drag start, so a multi-chain gain/pan
     // drag shifts every selected chain by the same delta from its own value

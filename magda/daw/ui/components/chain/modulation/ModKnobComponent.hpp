@@ -12,6 +12,7 @@
 #include "core/SelectionManager.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
+#include "ui/themes/ActiveTheme.hpp"
 
 namespace magda::daw::ui {
 
@@ -47,6 +48,15 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
             return;
         const float centerY = height * 0.5f;
 
+        // A graph well with a faint quarter grid, as the device graphs have.
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG));
+        g.fillRoundedRectangle(bounds, 3.0f);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_GRID));
+        for (int i = 1; i < 4; ++i)
+            g.fillRect(juce::Rectangle<float>(bounds.getX() + width * static_cast<float>(i) / 4.0f,
+                                              bounds.getY(), 1.0f, height));
+        g.fillRect(juce::Rectangle<float>(bounds.getX(), centerY, width, 1.0f));
+
         // ADSR envelopes draw their shape instead of a periodic waveform.
         if (mod_->type == magda::ModType::Envelope) {
             paintEnvelope(g, bounds);
@@ -80,7 +90,7 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
         }
 
         // Draw the waveform line (thinner for mini display)
-        g.setColour(juce::Colours::orange.withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.5f));
         g.strokePath(waveformPath, juce::PathStrokeType(1.0f));
 
         // Draw current phase indicator (smaller dot)
@@ -88,7 +98,7 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
         float currentValue = mod_->value;
         float currentY = centerY + (0.5f - currentValue) * (height - 2.0f);
 
-        g.setColour(juce::Colours::orange);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
         g.fillEllipse(currentX - 2.0f, currentY - 2.0f, 4.0f, 4.0f);
     }
 
@@ -120,7 +130,7 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
         path.lineTo(xS, sustainY);
         path.lineTo(xR, bottom);
 
-        g.setColour(juce::Colours::orange.withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.5f));
         g.strokePath(path, juce::PathStrokeType(1.0f));
 
         if (mod_->envStage != 0) {
@@ -142,7 +152,7 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
                 default:
                     break;
             }
-            g.setColour(juce::Colours::orange);
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
             g.fillEllipse(dotX - 2.0f, (bottom - v * h) - 2.0f, 4.0f, 4.0f);
         }
     }
@@ -167,11 +177,11 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
             else
                 path.lineTo(x, y);
         }
-        g.setColour(juce::Colours::orange.withAlpha(0.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.5f));
         g.strokePath(path, juce::PathStrokeType(1.0f));
 
         const float v = juce::jlimit(0.0f, 1.0f, mod_->value);
-        g.setColour(juce::Colours::orange);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
         g.fillEllipse(bounds.getRight() - 3.0f, bottom - v * h - 2.0f, 4.0f, 4.0f);
     }
 
@@ -274,7 +284,6 @@ class ModKnobComponent : public juce::Component, public magda::LinkModeManagerLi
     void modLinkModeChanged(bool active, const magda::ModSelection& selection) override;
 
     void showContextMenu();
-    static void paintLinkIndicator(juce::Graphics& g, juce::Rectangle<int> area);
     void onNameLabelEdited();
     void onLinkButtonClicked();
 
@@ -295,10 +304,16 @@ class ModKnobComponent : public juce::Component, public magda::LinkModeManagerLi
     bool isDragging_ = false;
     static constexpr int DRAG_THRESHOLD = 5;
 
-    static constexpr int KNOB_PADDING = 4;
-    static constexpr int NAME_LABEL_HEIGHT = 11;
-    static constexpr int AMOUNT_SLIDER_HEIGHT = 14;
-    static constexpr int LINK_BUTTON_HEIGHT = 12;
+    /// SINE, ADSR, S&H and so on: what kind of mod this is, top right of the card.
+    juce::String typeTag() const;
+    /// The rate, division or time the card shows bottom left.
+    juce::String timingText() const;
+    juce::Rectangle<int> bottomRow() const;
+
+    static constexpr int CARD_PADDING = 8;
+    static constexpr int NAME_LABEL_HEIGHT = 15;
+    static constexpr int BOTTOM_ROW_HEIGHT = 14;
+    static constexpr int LINK_BUTTON_HEIGHT = 11;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ModKnobComponent)
 };

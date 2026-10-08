@@ -171,6 +171,9 @@ enum class OpKind : std::uint8_t {
     MidiZoneSplit,
 };
 
+/// The most outputs a MidiZoneSplit has: its executor routes a note by a 64-bit port mask.
+constexpr std::size_t kMaxZoneRoutes = 64;
+
 /**
  * @brief The op's structural role at its model location.
  *
@@ -249,7 +252,8 @@ enum class OpRole : std::uint8_t {
     /// A handoff, keyed at its producer's location; OpKey::index orders the handoffs there.
     Handoff,
 
-    PadLayerSplit,  ///< one pad's notes, split across its layers by their zones
+    PadLayerSplit,   ///< one pad's notes, split across its layers by their zones
+    RackChainSplit,  ///< a rack's notes, split across its chains by their zones
 };
 
 // The four things that identify a fade, packed into OpKey::index, low bits
@@ -478,8 +482,8 @@ struct PlanOp {
     std::uint8_t noteGateHigh = 127;
     std::int8_t noteGateTranspose = 0;
 
-    /// A MidiZoneSplit's zones, one per output port and in port order. Topology
-    /// for the same reason a note gate's range is.
+    /// A MidiZoneSplit's zones, one per output port and in port order, at most
+    /// kMaxZoneRoutes. Topology for the same reason a note gate's range is.
     std::vector<ChainZones> zoneRoutes;
 
     /// A pad fader's level and pan, as parameter indices of the device that
@@ -492,6 +496,10 @@ struct PlanOp {
     /// table like a track's does. -1 for every other fader.
     int padLevelParam = -1;
     int padPanParam = -1;
+
+    /// A rack chain fader's zones, of which the executor reads the selector
+    /// zone when the rack's chain selector is modulated (#1808).
+    ChainZones chainZones;
 };
 
 /** @brief Producer ops an op waits on, each counted once however many slots it feeds. */
