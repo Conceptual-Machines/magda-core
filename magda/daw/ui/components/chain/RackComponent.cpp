@@ -374,19 +374,19 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
 
     shellRows_.sideStrip = contentArea.removeFromRight(SIDE_STRIP_WIDTH);
     layoutSideStrip(shellRows_.sideStrip);
-    // A multiband rack's faceplate stands beside its bands.
+    layoutChainList(contentArea.removeFromLeft(CHAIN_LIST_WIDTH));
+    // A multiband rack's faceplate stands beside its bands, where a rack's chain list ends.
     faceplateArea_ = {};
     if (multiband_) {
         faceplateArea_ = contentArea.removeFromLeft(FACEPLATE_WIDTH)
                              .withTrimmedTop(8)
-                             .withTrimmedLeft(12)
+                             .withTrimmedRight(12)
                              .withTrimmedBottom(12);
         if (crossoverDisplay_) {
             crossoverDisplay_->setBounds(faceplateArea_);
             crossoverDisplay_->setVisible(true);
         }
     }
-    layoutChainList(contentArea.removeFromLeft(CHAIN_LIST_WIDTH));
 
     viewportArea_ = contentArea;
     if (chainPanel_ && chainPanel_->isVisible())
