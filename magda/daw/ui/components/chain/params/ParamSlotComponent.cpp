@@ -1060,6 +1060,9 @@ bool ParamSlotComponent::layoutStyled(juce::Rectangle<int> bounds) {
             constexpr int kMaxKnob = 52;  // the disc plus its arc, grown with the cell
             const int size =
                 juce::jmin(kMaxKnob, inner.getHeight() - 28 - kModRowHeight, inner.getWidth());
+            // Spare height drops the stack up to 10px from the top of the cell
+            const int stackHeight = juce::jmax(16, size) + 28 + kModRowHeight;
+            inner.removeFromTop(juce::jlimit(0, 10, inner.getHeight() - stackHeight));
             knobArea_ = inner.removeFromTop(juce::jmax(16, size))
                             .withSizeKeepingCentre(juce::jmax(16, size), juce::jmax(16, size));
             inner.removeFromTop(2);
