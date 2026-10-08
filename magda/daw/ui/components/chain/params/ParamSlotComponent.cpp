@@ -1021,11 +1021,13 @@ bool ParamSlotComponent::layoutStyled(juce::Rectangle<int> bounds) {
     // Where a widget other than the value slider goes in each style.
     juce::Rectangle<int> widgetArea;
 
+    // Every style keeps the macro and mod lines in a row at the foot of the cell.
+    modRowArea_ = inner.removeFromBottom(juce::jmin(kModRowHeight, inner.getHeight() / 3));
+    inner.removeFromBottom(2);
+
     switch (style_) {
         case ParamControlStyle::Text: {
             nameLabel_.setBounds(inner.removeFromTop(13));
-            modRowArea_ = inner.removeFromBottom(juce::jmin(kModRowHeight, inner.getHeight() / 3));
-            inner.removeFromBottom(2);
             valueArea_ = inner;
             widgetArea =
                 inner.withSizeKeepingCentre(inner.getWidth(), juce::jmin(20, inner.getHeight()));
@@ -1035,18 +1037,15 @@ bool ParamSlotComponent::layoutStyled(juce::Rectangle<int> bounds) {
         }
         case ParamControlStyle::Knobs: {
             constexpr int kMaxKnob = 52;  // the disc plus its arc, grown with the cell
-            const int size =
-                juce::jmin(kMaxKnob, inner.getHeight() - 28 - kModRowHeight, inner.getWidth());
+            const int size = juce::jmin(kMaxKnob, inner.getHeight() - 27, inner.getWidth());
             // Spare height drops the stack up to 10px from the top of the cell
-            const int stackHeight = juce::jmax(16, size) + 28 + kModRowHeight;
+            const int stackHeight = juce::jmax(16, size) + 27;
             inner.removeFromTop(juce::jlimit(0, 10, inner.getHeight() - stackHeight));
             knobArea_ = inner.removeFromTop(juce::jmax(16, size))
                             .withSizeKeepingCentre(juce::jmax(16, size), juce::jmax(16, size));
             inner.removeFromTop(2);
             nameLabel_.setBounds(inner.removeFromTop(12));
             valueArea_ = inner.removeFromTop(13);
-            inner.removeFromTop(2);
-            modRowArea_ = inner.removeFromTop(kModRowHeight);
             widgetArea = knobArea_.withSizeKeepingCentre(inner.getWidth(), 20);
             if (boolean)
                 boolToggle_->setBounds(knobArea_.withSizeKeepingCentre(30, 16));
@@ -1056,10 +1055,7 @@ bool ParamSlotComponent::layoutStyled(juce::Rectangle<int> bounds) {
             auto top = inner.removeFromTop(14);
             valueArea_ = top.removeFromRight(top.getWidth() / 2);
             nameLabel_.setBounds(top);
-            // Rows: name and value, the track centred in the middle, the modulation row at
-            // the bottom of the cell.
-            modRowArea_ = inner.removeFromBottom(juce::jmin(kModRowHeight, inner.getHeight() / 3));
-            inner.removeFromBottom(2);
+            // The track centred between the name row and the modulation row
             barArea_ =
                 inner.withSizeKeepingCentre(inner.getWidth(), juce::jmin(14, inner.getHeight()));
             widgetArea =
