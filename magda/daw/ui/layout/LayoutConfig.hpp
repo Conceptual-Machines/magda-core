@@ -21,8 +21,8 @@ struct LayoutConfig {
     int rulerMajorTickHeight = 14;              // Shortened to avoid overlap with loop markers
     int rulerMinorTickHeight = 6;               // Shortened to avoid overlap with loop markers
     static constexpr int loopStripHeight = 12;  // Loop row (loop region strip)
-    static constexpr int arrangementLoopRowHeight = 8;  // The arrangement ruler's slimmer loop row
-    int secondsRowHeight = 11;                          // Seconds row (when shown)
+    static constexpr int arrangementLoopRowHeight = 10;  // The arrangement ruler's slimmer loop row
+    int secondsRowHeight = 11;                           // Seconds row (when shown)
     int playheadRowHeight = 10;  // Bottom row: just tall enough for the triangle
     int rulerLabelFontSize = 11;
     int rulerLabelTopMargin = 10;  // Space between separator line and time labels
