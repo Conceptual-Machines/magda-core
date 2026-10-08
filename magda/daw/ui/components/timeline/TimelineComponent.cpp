@@ -958,8 +958,8 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
     const bool showSecondsRow = secondsRowShown();
     const auto rows = rulerRows();
 
-    // Labels sit in the bars row; a bar's tick rises from the bottom of the ruler to just
-    // under its number, so each number stands on its own line. Beat and finer ticks stay short.
+    // Labels sit in the bars row; ticks stay in the playhead row so the loop and selection
+    // strips above run unbroken.
     int rulerBottom = rows.playheadBottom;
     int labelFontSize = layout.rulerLabelFontSize;
     const int barFontH =
@@ -967,10 +967,9 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
     int labelY = rows.barsTop + juce::jmax(0, (rows.barsBottom - rows.barsTop - barFontH) / 2);
     int labelHeight = juce::jmax(barFontH, rows.barsBottom - labelY);
     int tickBottom = rulerBottom;
-    const int barTickTop = showSecondsRow ? rows.loopTop : labelY + barFontH + 1;
-    int majorTickHeight = juce::jmax(4, tickBottom - barTickTop);
-    const int mediumTickHeight = juce::jmin(majorTickHeight, 9);
-    int minorTickHeight = juce::jmin(majorTickHeight, 5);
+    int majorTickHeight = rows.playheadBottom - rows.playheadTop;
+    const int mediumTickHeight = juce::jmin(majorTickHeight, 6);
+    int minorTickHeight = juce::jmin(majorTickHeight, 4);
 
     // Loop edges are marked only by the triangular flags in the loop strip; the
     // ruler ticks are never recoloured at loop boundaries.
