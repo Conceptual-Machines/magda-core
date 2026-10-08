@@ -7,7 +7,7 @@
 namespace magda::LoopStripRenderer {
 
 // Loop indicator shared by every ruler (arrangement + clip editors) so the loop
-// looks identical everywhere: a quiet ~38% rail between two brighter rectangular
+// looks identical everywhere: a quiet gradient rail between two brighter rectangular
 // handles, filling [stripTop, stripTop + stripHeight]. The rectangular handles
 // mirror the time-range selection handles so the two read as the same kind of
 // thing (loop = green, selection = blue), and sit cleanly under the playhead's
@@ -36,7 +36,11 @@ inline void draw(juce::Graphics& g, float xStart, float xEnd, int stripTop, int 
     const float x0 = juce::jmax(0.0f, xStart);
     const float x1 = juce::jmin(static_cast<float>(viewWidth), xEnd);
     if (x1 > x0) {
-        g.setColour(base.withAlpha(0.38f));
+        // A slight top-to-bottom gradient gives the rail a raised look
+        const float railBottom = railTop + static_cast<float>(railH);
+        g.setGradientFill(juce::ColourGradient(base.brighter(0.25f).withAlpha(0.5f), 0.0f, railTop,
+                                               base.darker(0.3f).withAlpha(0.3f), 0.0f, railBottom,
+                                               false));
         g.fillRoundedRectangle(x0, railTop, x1 - x0, static_cast<float>(railH),
                                static_cast<float>(railH) / 2.0f);
     }
