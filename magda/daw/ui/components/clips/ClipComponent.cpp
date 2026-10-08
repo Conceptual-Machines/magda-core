@@ -435,8 +435,11 @@ void ClipComponent::paint(juce::Graphics& g) {
         float loopPixelWidth =
             static_cast<float>(loopLengthBeats / beatRange) * clipBounds.getWidth();
 
-        // Below a few pixels per loop the hairlines would turn the clip into a solid mass.
+        // The bottom dent shrinks with the loop width until too small to read; below a few
+        // pixels per loop even the hairlines would turn the clip into a solid mass.
         constexpr float MIN_HAIRLINE_PIXEL_WIDTH = 4.0f;
+        const float dentSize = juce::jmin(7.0f, loopPixelWidth * 0.2f);
+        const float dent = dentSize >= 2.5f ? dentSize : 0.0f;
         if (loopPixelWidth < MIN_HAIRLINE_PIXEL_WIDTH)
             numBoundaries = 0;
 
@@ -456,10 +459,20 @@ void ClipComponent::paint(juce::Graphics& g) {
 
             // A dark hairline through the content, darker than the grid. The header fill
             // runs 2px past HEADER_HEIGHT, so it starts below that.
+            const auto x = static_cast<float>(clipBounds.getX() + bx);
+            const auto bottom = static_cast<float>(clipBounds.getBottom());
             g.setColour(juce::Colours::black.withAlpha(0.35f));
             g.drawVerticalLine(clipBounds.getX() + bx,
                                static_cast<float>(clipBounds.getY() + HEADER_HEIGHT + 2),
-                               static_cast<float>(clipBounds.getBottom()));
+                               bottom - dent);
+
+            // A dent in the clip's bottom edge, cut in the lane's colour
+            if (dent > 0.0f) {
+                juce::Path notch;
+                notch.addTriangle(x - dent, bottom, x + dent, bottom, x, bottom - dent);
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
+                g.fillPath(notch);
+            }
         }
     }
 
