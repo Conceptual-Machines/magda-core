@@ -888,11 +888,14 @@ void ParamSlotComponent::paintLinkDots(juce::Graphics& g) const {
     if (!macros && !mods)
         return;
 
-    // Top right, clear of the MIDI-mapped dot in the corner.
+    // In their own slot when the layout gives one, else top right clear of the MIDI-mapped dot.
     constexpr float size = 6.0f;
     constexpr float gap = 4.0f;
-    float x = static_cast<float>(tileArea_.getRight()) - 3.0f - 5.0f - gap - size;
-    const float y = static_cast<float>(tileArea_.getY()) + 4.0f;
+    const bool slotted = !linkDotsArea_.isEmpty();
+    float x = slotted ? static_cast<float>(linkDotsArea_.getRight()) - size
+                      : static_cast<float>(tileArea_.getRight()) - 3.0f - 5.0f - gap - size;
+    const float y = slotted ? static_cast<float>(linkDotsArea_.getCentreY()) - size / 2.0f
+                            : static_cast<float>(tileArea_.getY()) + 4.0f;
     for (const auto& [shown, role] : {std::pair{mods, ActiveTheme::ACCENT_ATTENTION},
                                       std::pair{macros, ActiveTheme::ACCENT_MODULATION}}) {
         if (!shown)
@@ -1041,7 +1044,7 @@ bool ParamSlotComponent::layoutStyled(juce::Rectangle<int> bounds) {
 
     tileArea_ = bounds;
     auto inner = tileArea_.reduced(8, 5);
-    knobArea_ = barArea_ = modRowArea_ = {};
+    knobArea_ = barArea_ = modRowArea_ = linkDotsArea_ = {};
 
     // Where a widget other than the value slider goes in each style.
     juce::Rectangle<int> widgetArea;
@@ -1077,11 +1080,16 @@ bool ParamSlotComponent::layoutStyled(juce::Rectangle<int> bounds) {
         }
         case ParamControlStyle::Sliders: {
             auto top = inner.removeFromTop(14);
+            linkDotsArea_ = top.removeFromRight(20);
             valueArea_ = top.removeFromRight(top.getWidth() / 2);
             nameLabel_.setBounds(top);
-            modRowArea_ = inner.removeFromBottom(juce::jmin(kModRowHeight, inner.getHeight() / 3));
-            barArea_ =
-                inner.withSizeKeepingCentre(inner.getWidth(), juce::jmin(14, inner.getHeight()));
+            // The track with its modulation row right under it, centred as one block
+            const int trackHeight = juce::jmin(14, inner.getHeight());
+            auto block = inner.withSizeKeepingCentre(
+                inner.getWidth(), juce::jmin(inner.getHeight(), trackHeight + 3 + kModRowHeight));
+            barArea_ = block.removeFromTop(trackHeight);
+            block.removeFromTop(3);
+            modRowArea_ = block.removeFromTop(kModRowHeight);
             widgetArea =
                 inner.withSizeKeepingCentre(inner.getWidth(), juce::jmin(20, inner.getHeight()));
             if (boolean)

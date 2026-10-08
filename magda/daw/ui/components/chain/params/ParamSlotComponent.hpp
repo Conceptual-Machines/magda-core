@@ -320,6 +320,7 @@ class ParamSlotComponent : public juce::Component,
     // Knob and slider cells: the row under the value (knob) or track (slider) that holds the
     // macro and mod bars.
     juce::Rectangle<int> modRowArea_;
+    juce::Rectangle<int> linkDotsArea_;  // sliders: the link dots' slot after the value
     static constexpr int kModRowHeight = 7;
     /// A blue dot when a macro reaches this parameter, an orange one when a modifier does.
     void paintLinkDots(juce::Graphics& g) const;
