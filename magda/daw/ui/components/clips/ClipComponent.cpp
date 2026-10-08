@@ -475,7 +475,8 @@ void ClipComponent::paint(juce::Graphics& g) {
 
             // A dark hairline through the content between the dents, darker than the grid
             g.setColour(juce::Colours::black.withAlpha(0.35f));
-            g.drawVerticalLine(clipBounds.getX() + bx, top + static_cast<float>(HEADER_HEIGHT),
+            // The header fill runs 2px past HEADER_HEIGHT; start below it.
+            g.drawVerticalLine(clipBounds.getX() + bx, top + static_cast<float>(HEADER_HEIGHT + 2),
                                bottom - dent);
         }
     }
