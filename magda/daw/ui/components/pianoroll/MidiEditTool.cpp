@@ -21,6 +21,17 @@ void MidiEditToolState::setTool(MidiEditTool tool) {
     sendChangeMessage();
 }
 
+void MidiEditToolState::setAltHeld(bool held) {
+    if (held && !altSwapped_ && tool_ != MidiEditTool::Pencil) {
+        altSwapped_ = true;
+        toolBeforeAlt_ = tool_;
+        setTool(MidiEditTool::Pencil);
+    } else if (!held && altSwapped_) {
+        altSwapped_ = false;
+        setTool(toolBeforeAlt_);
+    }
+}
+
 bool MidiEditToolState::handleKeyPressed(const juce::KeyPress& key) {
     const int code = key.getKeyCode();
     if (code < '1' || code > '5' || key.getModifiers().isAnyModifierKeyDown())
@@ -51,7 +62,7 @@ std::optional<juce::MouseCursor> cursorForMidiEditTool(MidiEditTool tool) {
         case MidiEditTool::Slice:
             return cursors.getBladeCursor();
         case MidiEditTool::Glue:
-            return juce::MouseCursor(juce::MouseCursor::PointingHandCursor);
+            return cursors.getGlueCursor();
         case MidiEditTool::Erase:
             return cursors.getEraseCursor();
         case MidiEditTool::Pointer:

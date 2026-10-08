@@ -29,6 +29,8 @@ class MidiEditToolState : public juce::ChangeBroadcaster {
     bool handleKeyPressed(const juce::KeyPress& key);
     /** Call from keyStateChanged so a held tool key reverts on release. */
     void handleKeyStateChanged();
+    /** Option/Alt held over a grid swaps to the Pencil until it is released. */
+    void setAltHeld(bool held);
 
   private:
     static constexpr juce::uint32 kHoldMs = 350;
@@ -36,6 +38,8 @@ class MidiEditToolState : public juce::ChangeBroadcaster {
     MidiEditTool tool_ = MidiEditTool::Pointer;
     MidiEditTool toolBeforeHold_ = MidiEditTool::Pointer;
     int heldKeyCode_ = 0;
+    bool altSwapped_ = false;
+    MidiEditTool toolBeforeAlt_ = MidiEditTool::Pointer;
     juce::uint32 heldSinceMs_ = 0;
 };
 

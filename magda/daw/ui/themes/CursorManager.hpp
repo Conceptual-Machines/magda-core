@@ -37,6 +37,9 @@ class CursorManager {
     const juce::MouseCursor& getBladeCursor() const {
         return bladeCursor;
     }
+    const juce::MouseCursor& getGlueCursor() const {
+        return glueCursor;
+    }
     const juce::MouseCursor& getGhostCopyCursor() const {
         return ghostCopyCursor;
     }
@@ -52,10 +55,10 @@ class CursorManager {
     // Draw a magnifying glass cursor with optional +/- glyph
     enum class ZoomGlyph { None, Plus, Minus };
     static juce::MouseCursor createZoomCursor(ZoomGlyph glyph);
-    static juce::MouseCursor createNoteDrawCursor();
-    static juce::MouseCursor createEraseCursor();
+    // A cursor from a 48-unit MIDI editor icon; @p hotspot is in the icon's units.
+    static juce::MouseCursor createIconCursor(const char* svg, int svgSize,
+                                              juce::Point<float> hotspot);
     static juce::MouseCursor createNoteRepeatCursor();
-    static juce::MouseCursor createBladeCursor();
     static juce::MouseCursor createGhostCopyCursor();
     static juce::MouseCursor createCurveBendCursor();
 
@@ -66,6 +69,7 @@ class CursorManager {
     juce::MouseCursor eraseCursor;
     juce::MouseCursor noteRepeatCursor;
     juce::MouseCursor bladeCursor;
+    juce::MouseCursor glueCursor;
     juce::MouseCursor ghostCopyCursor;
     juce::MouseCursor curveBendCursor;
 };

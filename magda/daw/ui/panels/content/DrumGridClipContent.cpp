@@ -693,7 +693,13 @@ class DrumGridClipGrid : public juce::Component,
         }
     }
 
-    void mouseExit(const juce::MouseEvent& /*e*/) override {
+    void modifierKeysChanged(const juce::ModifierKeys& modifiers) override {
+        magda::MidiEditToolState::getInstance().setAltHeld(modifiers.isAltDown());
+    }
+
+    void mouseExit(const juce::MouseEvent& e) override {
+        if (!e.mods.isAltDown())
+            magda::MidiEditToolState::getInstance().setAltHeld(false);
         setMouseCursor(juce::MouseCursor::NormalCursor);
         if (nearPhaseMarker_) {
             nearPhaseMarker_ = false;

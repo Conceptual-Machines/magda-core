@@ -956,7 +956,9 @@ void PianoRollGridComponent::mouseMove(const juce::MouseEvent& e) {
     }
 }
 
-void PianoRollGridComponent::mouseExit(const juce::MouseEvent& /*e*/) {
+void PianoRollGridComponent::mouseExit(const juce::MouseEvent& e) {
+    if (!e.mods.isAltDown())
+        MidiEditToolState::getInstance().setAltHeld(false);
     setMouseCursor(juce::MouseCursor::NormalCursor);
     isPendingPlayheadClick_ = false;
     if (nearPhaseMarker_) {
@@ -2125,6 +2127,7 @@ void PianoRollGridComponent::commitErase() {
 }
 
 void PianoRollGridComponent::modifierKeysChanged(const juce::ModifierKeys& modifiers) {
+    MidiEditToolState::getInstance().setAltHeld(modifiers.isAltDown());
     // Pressing/releasing Alt while hovering must swap the cursor -- pencil
     // normally, bend while editing glides -- without waiting for a mouse move.
     if (isMouseOver() && !juce::Component::isMouseButtonDownAnywhere())
