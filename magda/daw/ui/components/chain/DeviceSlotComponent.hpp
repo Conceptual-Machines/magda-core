@@ -306,6 +306,8 @@ class DeviceSlotComponent : public NodeComponent,
     void refreshFaceplateSlotControls();
     void writeFaceplateSlot(int slot, int choiceIndex);
     int faceplateSlotControlWidth(const FaceplateSlotControl& control) const;
+    static int faceplateSlotWidthFor(const magda::ParameterInfo& param);
+    static constexpr int kDropdownWidth = 72;
     bool faceplateSlotShown(const FaceplateSlotControl& control) const;
     /// Carve the faceplate-strip controls off the top of the laid-out faceplate.
     void layoutFaceplateSlotControls();

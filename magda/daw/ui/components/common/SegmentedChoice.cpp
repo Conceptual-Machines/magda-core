@@ -31,8 +31,12 @@ void SegmentedChoice::setSelectedIndex(int index) {
 }
 
 int SegmentedChoice::getPreferredWidth() const {
+    return preferredWidthFor(options_);
+}
+
+int SegmentedChoice::preferredWidthFor(const juce::StringArray& options) {
     float width = 2.0f * kInset;
-    for (const auto& option : options_)
+    for (const auto& option : options)
         width += juce::GlyphArrangement::getStringWidth(segmentFont(), option.toUpperCase()) +
                  2.0f * kSegmentPadding;
     return juce::roundToInt(width);

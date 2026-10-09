@@ -806,15 +806,29 @@ std::vector<int> DeviceSlotComponent::resolveFaceplateStripSlots() const {
     const auto* spec = traits_.compiledPresentation;
     if (spec == nullptr || spec->createPanel == nullptr || spec->columnMajorGrid)
         return {};
-    if (!spec->faceplateSlots.empty())
-        return {spec->faceplateSlots.begin(), spec->faceplateSlots.end()};
-    // Otherwise every control the grid would draw as a dropdown stands on the faceplate.
+    // The spec's list, else every control the grid would draw as a dropdown.
+    std::vector<int> candidates(spec->faceplateSlots.begin(), spec->faceplateSlots.end());
+    if (candidates.empty())
+        for (int slot = 0; slot < spec->layoutCellCount; ++slot) {
+            const auto* param = device_.findParameterByIndex(slot);
+            if (param != nullptr && !param->hidden &&
+                param->scale == magda::ParameterScale::Discrete && !param->choices.empty() &&
+                !wantsSegmentedChoices(*param))
+                candidates.push_back(slot);
+        }
+
+    // As many as fit across the faceplate; the rest stay in the grid.
     std::vector<int> slots;
-    for (int slot = 0; slot < spec->layoutCellCount; ++slot) {
+    int room = faceplateWidth() - 28;
+    for (const int slot : candidates) {
         const auto* param = device_.findParameterByIndex(slot);
-        if (param != nullptr && !param->hidden && param->scale == magda::ParameterScale::Discrete &&
-            !param->choices.empty() && !wantsSegmentedChoices(*param))
-            slots.push_back(slot);
+        if (param == nullptr)
+            continue;
+        const int width = faceplateSlotWidthFor(*param);
+        if (width > room)
+            break;
+        room -= width + 8;
+        slots.push_back(slot);
     }
     return slots;
 }
@@ -882,7 +896,16 @@ bool DeviceSlotComponent::faceplateSlotShown(const FaceplateSlotControl& control
 }
 
 int DeviceSlotComponent::faceplateSlotControlWidth(const FaceplateSlotControl& control) const {
-    return control.segments != nullptr ? control.segments->getPreferredWidth() : 72;
+    return control.segments != nullptr ? control.segments->getPreferredWidth() : kDropdownWidth;
+}
+
+int DeviceSlotComponent::faceplateSlotWidthFor(const magda::ParameterInfo& param) {
+    if (static_cast<int>(param.choices.size()) > kMaxSegmentedChoices)
+        return kDropdownWidth;
+    juce::StringArray options;
+    for (const auto& choice : param.choices)
+        options.add(choice);
+    return magda::SegmentedChoice::preferredWidthFor(options);
 }
 
 void DeviceSlotComponent::layoutFaceplateSlotControls() {

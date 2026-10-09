@@ -16,6 +16,7 @@ class SegmentedChoice : public juce::Component {
     }
     /// Width that fits every option at its text width.
     int getPreferredWidth() const;
+    static int preferredWidthFor(const juce::StringArray& options);
 
     std::function<void(int index)> onChange;
 
