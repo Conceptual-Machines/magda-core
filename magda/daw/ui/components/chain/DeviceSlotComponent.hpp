@@ -20,6 +20,7 @@
 #include "slot/DeviceSlotHeaderControls.hpp"
 #include "slot/DeviceSlotTraits.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
+#include "ui/components/common/SegmentedChoice.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
 #include "ui/components/mixer/MidiNoteStrip.hpp"
@@ -287,6 +288,26 @@ class DeviceSlotComponent : public NodeComponent,
     /// The faceplate leads, at its spec's width, and only the spec's knobs remain.
     bool faceplateFirst() const;
     int faceplateWidth() const;
+
+    /// The faceplate-first style's header controls: segments for a short choice, else a dropdown.
+    struct HeaderSlotControl {
+        int slot = -1;
+        std::unique_ptr<magda::SegmentedChoice> segments;
+        std::unique_ptr<juce::ComboBox> dropdown;
+        juce::Component* component() const {
+            return segments != nullptr ? static_cast<juce::Component*>(segments.get())
+                                       : dropdown.get();
+        }
+    };
+    std::vector<HeaderSlotControl> headerSlotControls_;
+    juce::Rectangle<int> headerTrailingSeparator_;
+    void createHeaderSlotControls();
+    void refreshHeaderSlotControls();
+    void writeHeaderSlot(int slot, int choiceIndex);
+    int headerSlotControlWidth(const HeaderSlotControl& control) const;
+    bool headerSlotShown(const HeaderSlotControl& control) const;
+    int getHeaderTrailingWidth() const override;
+    void resizedHeaderTrailing(juce::Rectangle<int> area) override;
     std::unique_ptr<juce::TextButton> deltaButton_;
     std::unique_ptr<magda::SvgButton> exportClipButton_;  // Export pattern/chords as MIDI clip
     std::unique_ptr<magda::SvgButton> randomButton_;      // Step-sequencer pattern randomize

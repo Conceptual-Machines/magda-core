@@ -38,6 +38,7 @@
 #include "modulation/ModsPanelComponent.hpp"
 #include "params/ParamHostComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
+#include "params/ParamWidgetSetup.hpp"
 #include "slot/DevicePresetMenu.hpp"
 #include "slot/DeviceSlotAnalyzerContextActions.hpp"
 #include "slot/DeviceSlotAutomationControls.hpp"
@@ -583,6 +584,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Set initial mod/macro data for param slots
     updateParamModulation();
 
+    createHeaderSlotControls();
+
     // Create custom UI for internal devices
     if (isInternalDevice()) {
         createCustomUI();
@@ -620,6 +623,10 @@ void DeviceSlotComponent::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int>
                                  ? juce::String()
                                  : device_shell::audioInfoText(device_.audioOutputChannels),
                              midiLed_.isLit());
+    if (getHeaderTrailingWidth() > 0 && !collapsed_) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
+        g.fillRect(headerTrailingSeparator_);
+    }
 }
 
 int DeviceSlotComponent::sideStripWidth() const {
@@ -752,6 +759,90 @@ bool DeviceSlotComponent::faceplateShown() const {
 
 bool DeviceSlotComponent::paramsShown() const {
     return !hasFaceplate() || device_.paramsShown || !device_.faceplateShown;
+}
+
+void DeviceSlotComponent::createHeaderSlotControls() {
+    if (!faceplateFirst())
+        return;
+    for (const int slot : traits_.compiledPresentation->headerSlots) {
+        const auto* param = device_.findParameterByIndex(slot);
+        HeaderSlotControl control;
+        control.slot = slot;
+        if (param != nullptr && static_cast<int>(param->choices.size()) <= kMaxSegmentedChoices) {
+            control.segments = std::make_unique<magda::SegmentedChoice>();
+            control.segments->onChange = [this, slot](int index) { writeHeaderSlot(slot, index); };
+        } else {
+            control.dropdown = std::make_unique<juce::ComboBox>();
+        }
+        addChildComponent(*control.component());
+        headerSlotControls_.push_back(std::move(control));
+    }
+    refreshHeaderSlotControls();
+}
+
+void DeviceSlotComponent::refreshHeaderSlotControls() {
+    for (auto& control : headerSlotControls_) {
+        const auto* param = device_.findParameterByIndex(control.slot);
+        if (!headerSlotShown(control))
+            continue;
+        if (control.segments != nullptr) {
+            juce::StringArray options;
+            for (const auto& choice : param->choices)
+                options.add(choice);
+            control.segments->setOptions(options);
+            control.segments->setSelectedIndex(magda::ParameterUtils::choiceIndexForModelValue(
+                magda::ParameterModelValue{param->currentValue}, *param));
+        } else {
+            const int slot = control.slot;
+            configureDiscreteCombo(*control.dropdown, *param, [this, slot](double index) {
+                writeHeaderSlot(slot, static_cast<int>(index));
+            });
+        }
+    }
+}
+
+void DeviceSlotComponent::writeHeaderSlot(int slot, int choiceIndex) {
+    const auto* param = device_.findParameterByIndex(slot);
+    if (param == nullptr)
+        return;
+    const auto model = magda::ParameterUtils::modelValueForChoiceIndex(choiceIndex, *param);
+    applyDeviceSlotParameterValue(device_, nodePath_, *paramGrid_, compiledPanel_.get(), traits_,
+                                  {.reloadParameterSlots = [this]() { updateParameterSlots(); },
+                                   .updateParamModulation = [this]() { updateParamModulation(); }},
+                                  slot, model.value);
+    refreshHeaderSlotControls();
+    resized();
+}
+
+bool DeviceSlotComponent::headerSlotShown(const HeaderSlotControl& control) const {
+    // One choice is no choice: an engine that offers a single mode hides the control.
+    const auto* param = device_.findParameterByIndex(control.slot);
+    return param != nullptr && param->choices.size() > 1;
+}
+
+int DeviceSlotComponent::headerSlotControlWidth(const HeaderSlotControl& control) const {
+    return control.segments != nullptr ? control.segments->getPreferredWidth() : 72;
+}
+
+int DeviceSlotComponent::getHeaderTrailingWidth() const {
+    int width = 0;
+    for (const auto& control : headerSlotControls_)
+        if (headerSlotShown(control))
+            width += headerSlotControlWidth(control) + 8;
+    return width > 0 ? width + 13 : 0;  // The separator before them, with its margins.
+}
+
+void DeviceSlotComponent::resizedHeaderTrailing(juce::Rectangle<int> area) {
+    headerTrailingSeparator_ = area.removeFromLeft(13).withSizeKeepingCentre(1, 14);
+    for (const auto& control : headerSlotControls_) {
+        auto* component = control.component();
+        component->setVisible(headerSlotShown(control));
+        if (!component->isVisible())
+            continue;
+        component->setBounds(area.removeFromLeft(headerSlotControlWidth(control))
+                                 .withSizeKeepingCentre(headerSlotControlWidth(control), 22));
+        area.removeFromLeft(8);
+    }
 }
 
 bool DeviceSlotComponent::faceplateFirst() const {
@@ -1211,6 +1302,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
 
     // Update parameter slots with current parameter data for current page
     updateParameterSlots();
+    refreshHeaderSlotControls();
 
     updateParamModulation();
     repaint();
@@ -1499,6 +1591,9 @@ void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
+    for (const auto& control : headerSlotControls_)
+        control.component()->setVisible(false);
+    headerTrailingSeparator_ = {};
     layoutCollapsedDeviceSlotControls(
         area, collapsedMeterArea_, traits_, device_, isInternalDevice(),
         {.levelMeter = stripsAnalysisChrome() ? nullptr : &levelMeter_,

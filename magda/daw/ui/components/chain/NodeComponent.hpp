@@ -205,6 +205,11 @@ class NodeComponent : public juce::Component,
 
     // Override to add extra header buttons (between name and delete)
     virtual void resizedHeaderExtra(juce::Rectangle<int>& headerArea);
+    /// Width wanted after the title and subtitle; 0 lets the subtitle take the rest.
+    virtual int getHeaderTrailingWidth() const {
+        return 0;
+    }
+    virtual void resizedHeaderTrailing(juce::Rectangle<int> /*area*/) {}
 
     /**
      * Override to expose a preset menu button. The base class reserves a
