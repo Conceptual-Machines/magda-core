@@ -1,6 +1,7 @@
 <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="0" y="0" width="48" height="48" fill="#808080" fill-opacity="0"></rect>
-  <g transform="translate(24 24) scale(0.82) translate(-24 -24)">
+  <!-- Near-invisible: JUCE drops fully transparent shapes, and this pins the 48px bounds. -->
+  <rect x="0" y="0" width="48" height="48" fill="#808080" fill-opacity="0.01"></rect>
+  <g transform="translate(24 24) scale(0.9) translate(-24 -24)">
     <path fill-rule="evenodd" d="M24 3A21 21 0 1 1 24 45A21 21 0 1 1 24 3ZM24 7A17 17 0 1 0 24 41A17 17 0 1 0 24 7Z" fill="#B3B3B3"/>
     <rect x="20" y="6" width="8" height="5" fill="#B3B3B3"/>
     <circle cx="12.5" cy="25" r="3.2" fill="#B3B3B3"/>

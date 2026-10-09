@@ -1,5 +1,12 @@
 <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
   <rect x="0" y="0" width="48" height="48" fill="#808080" fill-opacity="0"></rect>
   <path fill-rule="evenodd" d="M10 3H31L41 13V43C41 44.1 40.1 45 39 45H10C8.9 45 8 44.1 8 43V5C8 3.9 8.9 3 10 3ZM12 7V41H37V15H29V7Z" fill="#B3B3B3"/>
-  <path fill-rule="evenodd" d="M24.5 20A9 9 0 1 1 24.5 38A9 9 0 1 1 24.5 20ZM23 22.5H26V29H23Z" fill="#B3B3B3"/>
+  <g transform="translate(15.5 18.5) scale(0.043)">
+    <path d="M0 263.499V484H114.527V263.499H0Z" fill="#B3B3B3"/>
+    <path d="M114.527 235.1V32L0 0V235.1H114.527Z" fill="#B3B3B3"/>
+    <path d="M306.091 263.499V484H420V263.499H306.091Z" fill="#B3B3B3"/>
+    <path d="M153.252 113V235.1H267.778V113H153.252Z" fill="#B3B3B3"/>
+    <path d="M153.252 263.499L153.252 382.5H267.778V263.499H153.252Z" fill="#B3B3B3"/>
+    <path d="M420 235.1V0L305.473 32V235.1H420Z" fill="#B3B3B3"/>
+  </g>
 </svg>
