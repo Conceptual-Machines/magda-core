@@ -220,11 +220,6 @@ float yToLinearDb(float y, juce::Rectangle<float> area) {
 // so the "hot zone" is a vertical column rather than a point.
 constexpr float kHitRadiusPx = 12.0f;
 
-// Collapse-toggle chevron sits in the top-right of the curve plot. Square
-// hit area; the chevron path is drawn inside it.
-constexpr float kCollapseButtonSize = 18.0f;
-constexpr float kCollapseButtonMargin = 4.0f;
-
 // The active band's live readout owns a strip along the top of the plot. The
 // per-band number rides above its dot and must stay out of that strip, so both
 // are laid out from the same numbers.
@@ -310,11 +305,6 @@ void CompiledEqCurveView::timerCallback() {
     repaint();
 }
 
-bool CompiledEqCurveView::wantsFullBody() const {
-    // Curve fills the slot when the plugin's collapse toggle is on.
-    return compiledPlugin_ != nullptr && compiledPlugin_->isCurveCollapsed();
-}
-
 void CompiledEqCurveView::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
     g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
@@ -323,11 +313,6 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
     plotArea_ = bounds.reduced(kPlotPadX, kPlotPadY);
     if (plotArea_.getWidth() < 8.0f || plotArea_.getHeight() < 8.0f)
         return;
-
-    // Reserve the top-right corner for the collapse toggle.
-    collapseButtonArea_ = juce::Rectangle<float>(
-        plotArea_.getRight() - kCollapseButtonSize - kCollapseButtonMargin,
-        plotArea_.getY() + kCollapseButtonMargin, kCollapseButtonSize, kCollapseButtonSize);
 
     // 0 dB centre line + ±12 dB guides.
     g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.18f));
@@ -455,32 +440,6 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
                              juce::Justification::centred, 1);
         }
     }
-
-    // Collapse toggle — chevron in the top-right corner. Points up when
-    // collapsed ("click to expand the grid"), down when expanded ("click to
-    // hide the grid"). Drawn last so it sits on top of curve/dots.
-    const bool collapsed = compiledPlugin_ != nullptr && compiledPlugin_->isCurveCollapsed();
-    const auto chevronColour = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY)
-                                   .withAlpha(collapseButtonHovered_ ? 0.95f : 0.55f);
-    if (collapseButtonHovered_) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.08f));
-        g.fillRoundedRectangle(collapseButtonArea_, 3.0f);
-    }
-    const auto centre = collapseButtonArea_.getCentre();
-    const float armLen = kCollapseButtonSize * 0.28f;
-    juce::Path chevron;
-    if (collapsed) {
-        chevron.startNewSubPath(centre.x - armLen, centre.y + armLen * 0.5f);
-        chevron.lineTo(centre.x, centre.y - armLen * 0.5f);
-        chevron.lineTo(centre.x + armLen, centre.y + armLen * 0.5f);
-    } else {
-        chevron.startNewSubPath(centre.x - armLen, centre.y - armLen * 0.5f);
-        chevron.lineTo(centre.x, centre.y + armLen * 0.5f);
-        chevron.lineTo(centre.x + armLen, centre.y - armLen * 0.5f);
-    }
-    g.setColour(chevronColour);
-    g.strokePath(chevron, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved,
-                                               juce::PathStrokeType::rounded));
 }
 
 // ============================================================================
@@ -537,22 +496,6 @@ void CompiledEqCurveView::setBandEnabled(int band, bool enabled) {
 void CompiledEqCurveView::mouseMove(const juce::MouseEvent& e) {
     if (draggedBand_ != -1)
         return;
-    const bool overChevron = collapseButtonArea_.contains(e.position);
-    if (overChevron != collapseButtonHovered_) {
-        collapseButtonHovered_ = overChevron;
-        setMouseCursor(overChevron ? juce::MouseCursor::PointingHandCursor
-                                   : juce::MouseCursor::NormalCursor);
-        repaint();
-    }
-    if (overChevron) {
-        // Hovering the chevron — clear any band hover so the halo doesn't
-        // fight with the toggle.
-        if (hoveredBand_ != -1) {
-            hoveredBand_ = -1;
-            repaint();
-        }
-        return;
-    }
     const int picked = findBandAt(e.position);
     if (picked != hoveredBand_) {
         hoveredBand_ = picked;
@@ -570,10 +513,6 @@ void CompiledEqCurveView::mouseExit(const juce::MouseEvent&) {
         hoveredBand_ = -1;
         needsRepaint = true;
     }
-    if (collapseButtonHovered_) {
-        collapseButtonHovered_ = false;
-        needsRepaint = true;
-    }
     if (needsRepaint) {
         setMouseCursor(juce::MouseCursor::NormalCursor);
         repaint();
@@ -581,17 +520,6 @@ void CompiledEqCurveView::mouseExit(const juce::MouseEvent&) {
 }
 
 void CompiledEqCurveView::mouseDown(const juce::MouseEvent& e) {
-    // Chevron takes precedence over band hit-testing.
-    if (collapseButtonArea_.contains(e.position)) {
-        if (compiledPlugin_ != nullptr) {
-            compiledPlugin_->setCurveCollapsed(!compiledPlugin_->isCurveCollapsed());
-            if (onLayoutChanged_)
-                onLayoutChanged_();
-            repaint();
-        }
-        return;
-    }
-
     const int picked = findBandAt(e.position);
     if (picked == -1)
         return;
@@ -734,6 +662,7 @@ const CompiledPresentationSpec& getMagdaEqPresentation() {
         // surface, but the curve view earns equal real estate as a readout.
         .visualMinFractionNumerator = 2,
         .visualMinFractionDenominator = 4,
+        .faceplateStacked = true,
         // 8 column strips at ~72 px each ≈ 576 px — about 30 % wider than
         // the default 432 px slot. Gives each cell enough horizontal room
         // for "100.0 Hz" / "0.0 dB" / "HighShelf" without truncation.

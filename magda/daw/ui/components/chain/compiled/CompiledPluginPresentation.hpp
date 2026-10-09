@@ -82,6 +82,9 @@ struct CompiledPresentationSpec {
     /// drop the numerator so the grid claims more of the body.
     int visualMinFractionNumerator = 3;
     int visualMinFractionDenominator = 4;
+    /// Set, the faceplate spans the device under its grid, taking the fraction above of
+    /// the height, instead of standing beside the knobs.
+    bool faceplateStacked = false;
     /// When > 0, overrides the default device slot width (in pixels).
     /// Lets plugins with denser surfaces (e.g. the 8-band EQ's column
     /// strips) opt out of the global `BASE_SLOT_WIDTH` and request a

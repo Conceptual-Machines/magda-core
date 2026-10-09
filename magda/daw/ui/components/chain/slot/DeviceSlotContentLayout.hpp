@@ -51,6 +51,8 @@ struct DeviceSlotContentBodyControls {
     juce::Component* compiledPanel = nullptr;
     int compiledPanelWidth = 0;
     int compiledPanelBandRows = 0;
+    // Set, the faceplate spans the width under the grid, at this share of the height.
+    float compiledPanelStackedFraction = 0.0f;
     bool compiledPanelShown = true;
     bool paramGridShown = true;
     // When true, hide the param grid entirely and give the compiled panel

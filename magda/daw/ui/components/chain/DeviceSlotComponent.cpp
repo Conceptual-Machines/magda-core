@@ -931,6 +931,14 @@ void DeviceSlotComponent::layoutFaceplateSlotControls() {
     }
 }
 
+float DeviceSlotComponent::faceplateStackedFraction() const {
+    const auto* spec = traits_.compiledPresentation;
+    if (spec == nullptr || !spec->faceplateStacked || spec->visualMinFractionDenominator <= 0)
+        return 0.0f;
+    return static_cast<float>(spec->visualMinFractionNumerator) /
+           static_cast<float>(spec->visualMinFractionDenominator);
+}
+
 int DeviceSlotComponent::faceplateBandRows() const {
     const auto* spec = traits_.compiledPresentation;
     return spec != nullptr && !spec->bandSlots.empty() ? 1 : 0;
@@ -1267,7 +1275,7 @@ int DeviceSlotComponent::getPreferredWidth() const {
         contentWidth = !paramsShown()     ? faceplateWidth()
                        : faceplateShown() ? FaceplateBelowGeometry::kColumnWidth + faceplateWidth()
                                           : FaceplateBelowGeometry::kColumnWidth * 4;
-    else if (hasFaceplate())
+    else if (hasFaceplate() && faceplateStackedFraction() <= 0.0f)
         contentWidth =
             (paramsShown() ? contentWidth : 0) + (faceplateShown() ? faceplateWidth() : 0);
     return getTotalWidth(contentWidth) + meterExtra;
@@ -1631,6 +1639,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
          .compiledPanel = compiledBodyPanel,
          .compiledPanelWidth = faceplateWidth(),
          .compiledPanelBandRows = faceplateBandRows(),
+         .compiledPanelStackedFraction = faceplateStackedFraction(),
          .compiledPanelShown = faceplateShown(),
          .paramGridShown = paramsShown(),
          .compiledPanelWantsFullBody = compiledPanel_ != nullptr && compiledPanel_->wantsFullBody(),

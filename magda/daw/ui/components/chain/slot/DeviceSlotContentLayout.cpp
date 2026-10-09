@@ -281,6 +281,16 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
             layoutParamGrid(controls.paramGrid, contentArea);
             return;
         }
+        if (controls.compiledPanelStackedFraction > 0.0f && controls.paramGridShown) {
+            if (controls.compiledPanelShown) {
+                const int height = juce::roundToInt(static_cast<float>(contentArea.getHeight()) *
+                                                    controls.compiledPanelStackedFraction);
+                controls.compiledPanel->setBounds(
+                    contentArea.removeFromBottom(height).reduced(14, 0).withTrimmedBottom(14));
+            }
+            layoutParamGrid(controls.paramGrid, contentArea);
+            return;
+        }
         if (controls.compiledPanelShown) {
             // Inset like the parameter grid: 14px at the outer edges, top and foot.
             const bool beside = controls.paramGridShown;

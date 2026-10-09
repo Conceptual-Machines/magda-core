@@ -48,7 +48,6 @@ class CompiledEqCurveView final : public juce::Component,
     void setOnLayoutChanged(std::function<void()> cb) override {
         onLayoutChanged_ = std::move(cb);
     }
-    bool wantsFullBody() const override;
     int preferredHeight() const override {
         return getPreferredHeight();
     }
@@ -92,14 +91,6 @@ class CompiledEqCurveView final : public juce::Component,
 
     int hoveredBand_ = -1;
     int draggedBand_ = -1;
-
-    // Small toggle in the curve's top-right corner that flips the slot
-    // between "curve fills body" (collapsed) and "curve + param grid"
-    // (expanded). The actual state lives on the plugin's ValueTree via
-    // `MagdaEqCompiledPlugin::curveCollapsed_` so it survives project
-    // reload; this rect is recomputed in paint() and consulted by mouseDown.
-    juce::Rectangle<float> collapseButtonArea_;
-    bool collapseButtonHovered_ = false;
 
     std::function<void()> onLayoutChanged_;
 
