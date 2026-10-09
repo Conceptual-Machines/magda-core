@@ -198,9 +198,9 @@ int main() {
                 check(!grid.getSlot(i)->isSelected(), "cleared selection left a cell highlighted");
         }
         {
-            // A curated device's controls stand in balanced rows of at most four.
+            // A curated device's controls stand in balanced rows of at most two.
             for (const auto [cells, columns] :
-                 {std::pair{3, 3}, std::pair{6, 3}, std::pair{7, 4}, std::pair{15, 4}}) {
+                 {std::pair{3, 2}, std::pair{6, 2}, std::pair{7, 2}, std::pair{15, 2}}) {
                 ParamHostComponent grid(std::make_unique<CompiledFaustDeviceLayout>(cells, cells));
                 DeviceInfo model;
                 for (int index = 0; index < cells; ++index) {
