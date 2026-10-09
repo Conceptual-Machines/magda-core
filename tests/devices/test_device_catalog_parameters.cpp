@@ -9,6 +9,7 @@
 #include "magda/daw/audio/plugins/FaustParamPool.hpp"
 #include "magda/daw/audio/plugins/FaustPlugin.hpp"
 #include "magda/daw/audio/plugins/StepSequencerPlugin.hpp"
+#include "magda/daw/audio/plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "magda/daw/core/ChainRoutingModel.hpp"
 #include "magda/daw/core/ChainWalk.hpp"
@@ -175,4 +176,18 @@ TEST_CASE("A device added to a track takes a parameter write",
     tracks.setDeviceParameterValue(path, 0, moved);
     CHECK(tracks.getDeviceInChainByPath(path)->findParameterByIndex(0)->currentValue ==
           Catch::Approx(moved));
+}
+
+TEST_CASE("A MAGDA device's declared sidechain reaches the model", "[device][catalog][sidechain]") {
+    auto compressor =
+        internalDevice(magda::daw::audio::compiled::MagdaCompressorCompiledPlugin::xmlTypeName);
+    REQUIRE_FALSE(compressor.sidechainPort.declared());
+    CHECK(applyDeviceDeclaration(compressor));
+    CHECK(compressor.sidechainPort.takesAudio());
+    CHECK(supportsSidechainRoutingMenu(compressor));
+
+    // A device with no key keeps none.
+    auto poly = internalDevice(kPolySynth);
+    applyDeviceDeclaration(poly);
+    CHECK_FALSE(poly.sidechainPort.takesAudio());
 }
