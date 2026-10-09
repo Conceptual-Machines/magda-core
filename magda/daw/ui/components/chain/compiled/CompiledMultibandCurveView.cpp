@@ -902,7 +902,7 @@ const CompiledPresentationSpec& getMagdaMultibandPresentation() {
         .visualMinFractionNumerator = 3,
         .visualMinFractionDenominator = 4,
         .knobSlots = kKnobSlots,
-        .faceplateWidth = 420,
+        .faceplateWidth = 600,
         .bandSlots = kBandSlots,
         .mixSlot = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin::kMixSlot,
     };
