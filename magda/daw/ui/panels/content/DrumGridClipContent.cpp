@@ -669,7 +669,7 @@ class DrumGridClipGrid : public juce::Component,
 
     void mouseMove(const juce::MouseEvent& e) override {
         if (auto toolCursor =
-                magda::cursorForMidiEditTool(magda::MidiEditToolState::getInstance().getTool())) {
+                magda::cursorForEditTool(magda::EditToolState::midiEditor().getTool())) {
             setMouseCursor(*toolCursor);
         } else if (e.mods.isShiftDown()) {
             setMouseCursor(magda::CursorManager::getInstance().getNoteRepeatCursor());
@@ -694,12 +694,12 @@ class DrumGridClipGrid : public juce::Component,
     }
 
     void modifierKeysChanged(const juce::ModifierKeys& modifiers) override {
-        magda::MidiEditToolState::getInstance().setAltHeld(modifiers.isAltDown());
+        magda::EditToolState::midiEditor().setAltHeld(modifiers.isAltDown());
     }
 
     void mouseExit(const juce::MouseEvent& e) override {
         if (!e.mods.isAltDown())
-            magda::MidiEditToolState::getInstance().setAltHeld(false);
+            magda::EditToolState::midiEditor().setAltHeld(false);
         setMouseCursor(juce::MouseCursor::NormalCursor);
         if (nearPhaseMarker_) {
             nearPhaseMarker_ = false;
@@ -879,7 +879,7 @@ class DrumGridClipGrid : public juce::Component,
         emptyClickRow_ = -1;
         isRepeatStamping_ = false;
 
-        if (magda::MidiEditToolState::getInstance().getTool() == magda::MidiEditTool::Erase) {
+        if (magda::EditToolState::midiEditor().getTool() == magda::EditTool::Erase) {
             isErasing_ = true;
             eraseNotesAt(e.getPosition());
             return;
@@ -1041,12 +1041,12 @@ class DrumGridClipGrid : public juce::Component,
     }
 
     bool keyStateChanged(bool /*isKeyDown*/) override {
-        magda::MidiEditToolState::getInstance().handleKeyStateChanged();
+        magda::EditToolState::midiEditor().handleKeyStateChanged();
         return false;
     }
 
     bool keyPressed(const juce::KeyPress& key) override {
-        if (magda::MidiEditToolState::getInstance().handleKeyPressed(key))
+        if (magda::EditToolState::midiEditor().handleKeyPressed(key))
             return true;
 
         // Arrow up/down: move selected notes by semitone (or octave with Shift)

@@ -67,12 +67,14 @@ add_library(magda_engine STATIC
     exec/PlanLayout.cpp
     exec/PlanLayoutDump.cpp
     exec/PlanValues.cpp
+    exec/BandSplitter.cpp
     exec/ModulationLiveness.cpp
     exec/RuntimeStateStore.cpp
     exec/EngineSession.cpp
     exec/OfflineRender.cpp
     exec/PlanExecutor.hpp
     exec/PlanLayout.hpp
+    exec/BandSplitter.hpp
     exec/PlanLayoutDump.hpp
     exec/PlanValues.hpp
     exec/PlanBindings.hpp

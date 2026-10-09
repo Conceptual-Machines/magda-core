@@ -832,10 +832,11 @@ void NodeComponent::layoutHeader(juce::Rectangle<int> headerStrip) {
         }
         nameLabel_.setVisible(true);
     } else {
-        // Hide header controls
-        bypassButton_->setVisible(false);
+        // Visibility says whether a subclass wants the button, so an empty header only clears
+        // bounds.
+        bypassButton_->setBounds({});
         if (auto* close = getHeaderDeleteButton())
-            close->setVisible(false);
+            close->setBounds({});
         nameLabel_.setVisible(false);
         headerSubtitle_.setVisible(false);
     }

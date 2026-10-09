@@ -18,6 +18,7 @@ namespace magda {
 
 class DraggableValueLabel;
 class SvgButton;
+class EditToolButtons;
 
 namespace daw::audio {
 class MagdaDevice;
@@ -142,12 +143,11 @@ class BottomPanel : public daw::ui::TabbedPanel,
 
     // v1 MIDI editor toolbar: edit tools and the song-key chip (piano roll and drum grid only)
     class KeyChip;
-    std::array<std::unique_ptr<SvgButton>, 5> toolButtons_;
+    std::unique_ptr<EditToolButtons> toolButtons_;
     std::unique_ptr<KeyChip> keyChip_;
     bool usesV1Toolbar() const;
     int headerHeight() const;
     void layoutV1Toolbar(juce::Rectangle<int> headerBounds);
-    void syncToolButtons();
     void showKeyChipMenu();
     void refreshKeyDisplay();
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;

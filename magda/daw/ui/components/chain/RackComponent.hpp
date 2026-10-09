@@ -5,6 +5,7 @@
 #include <functional>
 
 #include "ChainSelectorControl.hpp"
+#include "MultibandControls.hpp"
 #include "NodeComponent.hpp"
 #include "ZoneBar.hpp"
 #include "core/RackInfo.hpp"
@@ -171,6 +172,19 @@ class RackComponent : public NodeComponent, public juce::Timer {
     // Chain rows
     std::vector<std::unique_ptr<ChainRowComponent>> chainRows_;
 
+    /// A multiband rack's faceplate over its bands, and the crossovers between band rows.
+    bool multiband_ = false;
+    std::unique_ptr<multiband::CrossoverDisplay> crossoverDisplay_;
+    std::vector<std::unique_ptr<multiband::CrossoverDivider>> crossoverDividers_;
+    juce::Rectangle<int> faceplateArea_;
+    /// The footer's bands and faceplate toggles.
+    std::unique_ptr<magda::SvgButton> bandsToggle_, faceplateToggle_;
+    bool faceplateShown_ = true;
+    bool bandsShown_ = true;
+    void toggleMultibandView(bool faceplate);
+    void syncMultiband(const magda::RackInfo& rack);
+    void splitSelectedBand();
+
     // Chain panel (shown within rack when chain is selected)
     std::unique_ptr<ChainPanel> chainPanel_;
     magda::ChainId selectedChainId_ = magda::INVALID_CHAIN_ID;
@@ -230,6 +244,8 @@ class RackComponent : public NodeComponent, public juce::Timer {
     static constexpr int CHAIN_TABS_HEIGHT = 28;
     static constexpr int ROW_GAP = 6;
     static constexpr int ADD_CHAIN_HEIGHT = 34;
+    static constexpr int FACEPLATE_WIDTH = 380;
+    static constexpr int FACEPLATE_MIN_HEIGHT = 150;
     static constexpr int MIN_VIEWPORT_WIDTH = 53;  // 1px rule, 6px padding, 40px add slot
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RackComponent)

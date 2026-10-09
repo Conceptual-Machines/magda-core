@@ -6,6 +6,7 @@ target_sources(magda_daw_app PRIVATE
     ZoneBar.cpp
     ChainSelectorControl.cpp
     RackComponent.cpp
+    MultibandControls.cpp
     ChainPanel.cpp
     DeviceSlotComponent.cpp
     ai/AIPanelComponent.cpp
@@ -111,6 +112,7 @@ target_sources(magda_daw_app PRIVATE
     ZoneBar.hpp
     ChainSelectorControl.hpp
     RackComponent.hpp
+    MultibandControls.hpp
     ChainPanel.hpp
     DeviceSlotComponent.hpp
     ai/AIPanelComponent.hpp

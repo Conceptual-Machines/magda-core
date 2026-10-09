@@ -2,11 +2,13 @@
 
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <memory>
 #include <variant>
 #include <vector>
 
 #include "ChainZones.hpp"
+#include "Crossover.hpp"
 #include "DeviceInfo.hpp"
 #include "MacroInfo.hpp"
 #include "ModInfo.hpp"
@@ -165,6 +167,18 @@ struct RackInfo {
     /// Picks which chains sound by their selector zones, 0-127 (#1808).
     float chainSelector = 0.0f;
 
+    /// A multiband rack splits its input at `crossovers`: its chains are the bands, low to high,
+    /// one more than there are crossovers.
+    bool multiband = false;
+    std::vector<Crossover> crossovers;
+
+    bool isMultiband() const {
+        return multiband;
+    }
+    /// Which of a multiband rack's faceplate and band list show; at least one does.
+    bool faceplateShown = true;
+    bool bandsShown = true;
+
     // UI panel state
     bool modPanelOpen = false;    // Modulator panel visible
     bool paramPanelOpen = false;  // Macro panel visible
@@ -202,6 +216,10 @@ struct RackInfo {
             volume = other.volume;
             pan = other.pan;
             chainSelector = other.chainSelector;
+            multiband = other.multiband;
+            crossovers = other.crossovers;
+            faceplateShown = other.faceplateShown;
+            bandsShown = other.bandsShown;
             modPanelOpen = other.modPanelOpen;
             paramPanelOpen = other.paramPanelOpen;
             macros = other.macros;
@@ -266,6 +284,28 @@ inline ChainInfo& ChainInfo::operator=(const ChainInfo& other) {
         }
     }
     return *this;
+}
+
+/**
+ * @brief Repairs a stored multiband rack: crossovers ascending and spaced, one fewer than bands.
+ *
+ * Missing crossovers split the top band; extra ones are dropped from the top.
+ */
+inline void normaliseMultiband(RackInfo& rack) {
+    if (!rack.multiband) {
+        rack.crossovers.clear();
+        return;
+    }
+    auto& crossovers = rack.crossovers;
+    std::ranges::sort(crossovers, {}, &Crossover::frequencyHz);
+    const auto bands = std::max<std::size_t>(rack.chains.size(), 1);
+    if (crossovers.size() >= bands)
+        crossovers.resize(bands - 1);
+    while (crossovers.size() + 1 < bands && static_cast<int>(crossovers.size()) < kMaxCrossovers)
+        crossovers.push_back({bandSplitFrequency(crossovers, crossovers.size())});
+    for (std::size_t i = 0; i < crossovers.size(); ++i)
+        crossovers[i].frequencyHz =
+            clampCrossoverFrequency(crossovers, i, crossovers[i].frequencyHz);
 }
 
 // Factory function to create a ChainElement from a RackInfo

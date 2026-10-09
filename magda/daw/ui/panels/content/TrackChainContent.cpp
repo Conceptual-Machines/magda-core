@@ -14,7 +14,6 @@
 #include "../../components/common/MasterSpeakerButton.hpp"
 #include "../../components/mixer/LevelMeterScale.hpp"
 #include "../../debug/DebugSettings.hpp"
-#include "../../dialogs/ChainTreeDialog.hpp"
 #include "../../dialogs/GainStagingDialog.hpp"
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -817,17 +816,15 @@ TrackChainContent::TrackChainContent()
     };
     addChildComponent(*addRackButton_);
 
-    // Tree view button (show chain tree dialog)
-    treeViewButton_ = std::make_unique<magda::SvgButton>("Tree", BinaryData::icontreeviewboldm_svg,
-                                                         BinaryData::icontreeviewboldm_svgSize);
-    applyChainHeaderIconStyle(*treeViewButton_, false);
-    treeViewButton_->setTooltip("Chain tree");
-    treeViewButton_->onClick = [this]() {
-        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            magda::ChainTreeDialog::show(selectedTrackId_);
-        }
+    addMultibandRackButton_ = std::make_unique<magda::SvgButton>(
+        "MultibandRack", BinaryData::multibandrack_svg, BinaryData::multibandrack_svgSize);
+    applyChainHeaderIconStyle(*addMultibandRackButton_, false);
+    addMultibandRackButton_->setTooltip("Add multiband rack");
+    addMultibandRackButton_->onClick = [this]() {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().addMultibandRackToTrack(selectedTrackId_);
     };
-    addChildComponent(*treeViewButton_);
+    addChildComponent(*addMultibandRackButton_);
 
     presetButton_ =
         std::make_unique<magda::SvgButton>("Presets", BinaryData::iconpresetsroundboldm_svg,
@@ -2347,7 +2344,7 @@ void TrackChainContent::updateFromSelectedTrack() {
             globalModsButton_->setVisible(showChainTools);
             macroButton_->setVisible(showChainTools);
             addRackButton_->setVisible(showChainTools);
-            treeViewButton_->setVisible(showChainTools);
+            addMultibandRackButton_->setVisible(showChainTools);
             presetButton_->setVisible(showChainTools);
             gainStagingButton_->setVisible(showChainTools);
             postFxPanelButton_->setVisible(showChainTools);
@@ -2418,7 +2415,7 @@ void TrackChainContent::populateHeader(juce::Component& headerBar) {
     headerBar.addAndMakeVisible(globalModsButton_.get());
     headerBar.addAndMakeVisible(macroButton_.get());
     headerBar.addAndMakeVisible(addRackButton_.get());
-    headerBar.addAndMakeVisible(treeViewButton_.get());
+    headerBar.addAndMakeVisible(addMultibandRackButton_.get());
     headerBar.addAndMakeVisible(presetButton_.get());
     headerBar.addAndMakeVisible(gainStagingButton_.get());
     headerBar.addAndMakeVisible(postFxPanelButton_.get());
@@ -2451,7 +2448,7 @@ void TrackChainContent::depopulateHeader(juce::Component& /*headerBar*/) {
     addChildComponent(globalModsButton_.get());
     addChildComponent(macroButton_.get());
     addChildComponent(addRackButton_.get());
-    addChildComponent(treeViewButton_.get());
+    addChildComponent(addMultibandRackButton_.get());
     addChildComponent(presetButton_.get());
     addChildComponent(gainStagingButton_.get());
     addChildComponent(postFxPanelButton_.get());
@@ -2527,7 +2524,7 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
     placeLeft(*macroButton_);
     placeLeft(*globalModsButton_);
     placeLeft(*addRackButton_);
-    placeLeft(*treeViewButton_);
+    placeLeft(*addMultibandRackButton_);
     placeLeft(*presetButton_);
     placeLeft(*gainStagingButton_);
     dividerLeft();
@@ -2567,7 +2564,7 @@ void TrackChainContent::hideHeaderControls() {
     globalModsButton_->setVisible(false);
     macroButton_->setVisible(false);
     addRackButton_->setVisible(false);
-    treeViewButton_->setVisible(false);
+    addMultibandRackButton_->setVisible(false);
     presetButton_->setVisible(false);
     gainStagingButton_->setVisible(false);
     gainStagingLabel_.setVisible(false);

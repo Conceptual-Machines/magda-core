@@ -1,6 +1,8 @@
 // Full component regression check. Run with run_chain_interaction_check.py.
+#include <functional>
 #include <iostream>
 #include <stdexcept>
+#include <typeinfo>
 
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/ClipManager.hpp"
@@ -84,6 +86,13 @@ int main() {
             first.setNodePath(firstPath);
             second.setNodePath(secondPath);
             RackComponent rack(track, *tracks.getRack(track, rackId));
+            rack.setSize(0, 0);
+            rack.setSize(rack.getPreferredWidth(), rack.getPreferredHeight());
+            for (const auto* name : {"Power", "Close"})
+                for (auto* child : rack.getChildren())
+                    if (child->getName() == name)
+                        check(child->isVisible() && !child->getBounds().isEmpty(),
+                              "rack header power/close lost after an empty layout");
             for (auto* node :
                  {static_cast<NodeComponent*>(&first), static_cast<NodeComponent*>(&second),
                   static_cast<NodeComponent*>(&rack)}) {
@@ -186,6 +195,62 @@ int main() {
             applyDeviceSlotParamSelectionChange(firstPath, {}, grid, {});
             for (int i = 0; i < grid.getSlotCount(); ++i)
                 check(!grid.getSlot(i)->isSelected(), "cleared selection left a cell highlighted");
+        }
+        {
+            // A multiband rack: faceplate on top, bands high to low split by their crossovers.
+            const auto bandsId = tracks.addMultibandRackToTrack(track);
+            RackComponent bands(track, *tracks.getRack(track, bandsId));
+            bands.setVisible(true);
+            bands.setSize(bands.getPreferredWidth(), bands.getPreferredHeight());
+            std::vector<juce::Component*> rows, dividers;
+            juce::Component* faceplate = nullptr;
+            juce::Component* split = nullptr;
+            const std::function<void(juce::Component&)> walk = [&](juce::Component& parent) {
+                for (auto* child : parent.getChildren()) {
+                    const juce::String type = typeid(*child).name();
+                    if (type.contains("CrossoverDisplay"))
+                        faceplate = child;
+                    else if (type.contains("CrossoverDivider"))
+                        dividers.push_back(child);
+                    else if (type.contains("ChainRowComponent"))
+                        rows.push_back(child);
+                    else if (auto* button = dynamic_cast<juce::Button*>(child);
+                             button != nullptr && button->getButtonText() == "Split band")
+                        split = child;
+                    walk(*child);
+                }
+            };
+            walk(bands);
+            check(faceplate != nullptr && faceplate->isVisible() &&
+                      !faceplate->getBounds().isEmpty(),
+                  "multiband faceplate missing");
+            check(rows.size() == 3 && dividers.size() == 2, "multiband rows or dividers missing");
+            check(rows[2]->getY() < dividers[1]->getY() && dividers[1]->getY() < rows[1]->getY() &&
+                      rows[1]->getY() < dividers[0]->getY() &&
+                      dividers[0]->getY() < rows[0]->getY(),
+                  "bands are not high to low with their crossovers between them");
+            check(split != nullptr && split->getY() > rows[0]->getBottom(),
+                  "Split band is not under the bands");
+            {
+                // The MID label sits centred between the crossovers on the log axis.
+                const auto plot = faceplate->getLocalBounds().toFloat().reduced(1.0f);
+                const auto xFor = [&](float hz) {
+                    return plot.getX() + plot.getWidth() * std::log(hz / 20.0f) / std::log(1000.0f);
+                };
+                const juce::Point<float> mid{(xFor(180.0f) + xFor(3200.0f)) / 2.0f,
+                                             plot.getY() + 14.0f};
+                const auto now = juce::Time::getCurrentTime();
+                const juce::MouseEvent event(juce::Desktop::getInstance().getMainMouseSource(), mid,
+                                             juce::ModifierKeys::leftButtonModifier, 1, 0, 0, 0, 0,
+                                             faceplate, faceplate, now, mid, now, 1, false);
+                faceplate->mouseDown(event);
+                const auto* rack = tracks.getRack(track, bandsId);
+                check(selection.getSelectedChainNode() ==
+                          ChainNodePath::rack(track, bandsId).withChain(rack->chains[1].id),
+                      "clicking a faceplate band label did not select the band");
+            }
+            const auto container = rows[0]->getParentComponent();
+            check(container->getHeight() >= split->getBottom(), "band list is clipped");
         }
         selection.clearSelection();
         tracks.clearAllTracks();

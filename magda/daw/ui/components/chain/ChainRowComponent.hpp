@@ -72,6 +72,8 @@ class ChainRowComponent : public juce::Component,
 
     /** The chain's position in its rack, which picks its colour dot. */
     void setColourIndex(int index);
+    /// What the row shows while the chain is unnamed: "Chain", or a multiband rack's band name.
+    void setPlaceholderName(const juce::String& name);
     magda::ChainId getChainId() const {
         return chainId_;
     }
@@ -141,6 +143,7 @@ class ChainRowComponent : public juce::Component,
     magda::ChainId chainId_;
     bool selected_ = false;
     bool hovered_ = false;
+    juce::String placeholderName_ = "Chain";
     int colourIndex_ = 0;
     magda::ChainNodePath nodePath_;  // For centralized selection
 

@@ -3,6 +3,8 @@ target_sources(magda_daw_app PRIVATE
     NoteSlicePopup.cpp
     TimeBendPopup.cpp
     SvgButton.cpp
+    EditTool.cpp
+    EditToolbar.cpp
     ChordAuditionControl.cpp
     MonitorControl.cpp
     MidiActivityLed.cpp
@@ -22,6 +24,8 @@ target_sources(magda_daw_app PRIVATE
     InternalFileDrag.hpp
     MasterSpeakerButton.hpp
     SvgButton.hpp
+    EditTool.hpp
+    EditToolbar.hpp
     MidiActivityLed.hpp
     IconSelector.hpp
     ZoomControls.hpp

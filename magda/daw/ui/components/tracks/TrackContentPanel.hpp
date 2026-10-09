@@ -41,6 +41,7 @@ class TrackContentPanel : public juce::Component,
                           public SelectionManagerListener,
                           public AutomationManagerListener,
                           public ViewModeListener,
+                          private juce::ChangeListener,
                           private juce::Timer {
   public:
     static constexpr int DEFAULT_TRACK_HEIGHT = 83;
@@ -59,6 +60,7 @@ class TrackContentPanel : public juce::Component,
 
     // Keyboard handling
     bool keyPressed(const juce::KeyPress& key) override;
+    bool keyStateChanged(bool isKeyDown) override;
 
     // TimelineStateListener implementation
     void timelineStateChanged(const TimelineState& state, ChangeFlags changes) override;
@@ -442,6 +444,13 @@ class TrackContentPanel : public juce::Component,
     void createMidiClipFromBeatRange(TrackId trackId, double startBeat, double endBeat);
     double snappedBeatForPixel(int x) const;
     ClipComponent* getClipComponentAt(int x, int y) const;
+
+    // Toolbar edit tools: Slice, Glue and Erase act on the clip under the pointer
+    bool handleToolMouseDown(const juce::MouseEvent& event);
+    bool clipIsEditable(ClipId clipId) const;
+    void eraseClipAt(int x, int y);
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
+    bool isErasingSweep_ = false;
 
     // Shift-drag clip drawing
     bool isDrawingClip_ = false;

@@ -1,11 +1,13 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <span>
 #include <string>
 #include <vector>
 
+#include "core/Crossover.hpp"
 #include "param/ParamTable.hpp"
 #include "plan/RenderPlan.hpp"
 
@@ -68,6 +70,12 @@ struct OpValue {
     /// must continue advancing. Resolved off the audio thread; true is the
     /// conservative default for absent, stale and hand-built value tables.
     bool required = true;
+
+    /// A BandSplit's crossovers, low to high. Values rather than topology, so dragging one
+    /// recompiles nothing; split into arrays to keep every other op's value small.
+    std::uint8_t crossoverCount = 0;
+    std::array<float, kMaxCrossovers> crossoverHz{};
+    std::array<CrossoverSlope, kMaxCrossovers> crossoverSlope{};
 };
 
 /**

@@ -709,3 +709,42 @@ TEST_CASE("Delete Track from a menu on an unselected track deletes only that tra
     CHECK(tm.getTrack(first) != nullptr);
     CHECK(tm.getTrack(second) != nullptr);
 }
+
+TEST_CASE("Splitting and merging multiband bands round-trips through undo",
+          "[structural][undo][roundtrip][multiband]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    const auto trackId = tm.createTrack("Track");
+    const auto rackId = tm.addMultibandRackToTrack(trackId);
+    const auto rackPath = ChainNodePath::rack(trackId, rackId);
+    const auto* rack = tm.getRackByPath(rackPath);
+    REQUIRE(rack->chains.size() == 3);
+    REQUIRE(rack->crossovers.size() == 2);
+
+    SECTION("a split adds a crossover at the band's centre") {
+        requireUndoRoundTrip(std::make_unique<SplitRackBandCommand>(rackPath, 1));
+        rack = tm.getRackByPath(rackPath);
+        REQUIRE(rack->chains.size() == 4);
+        REQUIRE(rack->crossovers.size() == 3);
+        CHECK(rack->crossovers[1].frequencyHz == std::sqrt(180.0f * 3200.0f));
+    }
+
+    SECTION("removing a band merges it into its lower neighbour") {
+        const auto mid = rack->chains[1].id;
+        requireUndoRoundTrip(std::make_unique<RemoveChainByPathCommand>(rackPath.withChain(mid)));
+        rack = tm.getRackByPath(rackPath);
+        REQUIRE(rack->chains.size() == 2);
+        REQUIRE(rack->crossovers.size() == 1);
+        CHECK(rack->crossovers[0].frequencyHz == 3200.0f);
+    }
+
+    SECTION("moving a crossover keeps it between its neighbours") {
+        RackPropertyPatch patch;
+        patch.crossovers = std::vector<Crossover>{{180.0f}, {900.0f, CrossoverSlope::Db48}};
+        requireUndoRoundTrip(std::make_unique<SetRackPropertiesByPathCommand>(rackPath, patch));
+
+        tm.setRackCrossover(rackPath, 0, {5000.0f});
+        rack = tm.getRackByPath(rackPath);
+        CHECK(rack->crossovers[0].frequencyHz < rack->crossovers[1].frequencyHz);
+    }
+}

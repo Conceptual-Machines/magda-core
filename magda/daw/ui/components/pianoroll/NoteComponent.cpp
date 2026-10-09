@@ -517,23 +517,23 @@ bool NoteComponent::isOnRightEdge(int x) const {
 bool NoteComponent::handleToolClick(const juce::MouseEvent& e) {
     if (sourceClipId_ == INVALID_CLIP_ID || parentGrid_ == nullptr)
         return false;
-    switch (MidiEditToolState::getInstance().getTool()) {
-        case MidiEditTool::Slice: {
+    switch (EditToolState::midiEditor().getTool()) {
+        case EditTool::Slice: {
             double beat = startBeat_ + e.position.x / parentGrid_->getPixelsPerBeat();
             if (snapBeatToGrid)
                 beat = snapBeatToGrid(beat);
             splitMidiNoteWithUndo(sourceClipId_, noteIndex_, beat);
             return true;
         }
-        case MidiEditTool::Glue:
+        case EditTool::Glue:
             glueMidiNoteWithUndo(sourceClipId_, noteIndex_);
             return true;
-        case MidiEditTool::Erase:
+        case EditTool::Erase:
             UndoManager::getInstance().executeCommand(
                 std::make_unique<DeleteMidiNoteCommand>(sourceClipId_, noteIndex_));
             return true;
-        case MidiEditTool::Pointer:
-        case MidiEditTool::Pencil:
+        case EditTool::Pointer:
+        case EditTool::Pencil:
             break;
     }
     return false;
@@ -541,9 +541,9 @@ bool NoteComponent::handleToolClick(const juce::MouseEvent& e) {
 
 void NoteComponent::updateCursor() {
     const auto mods = juce::ModifierKeys::currentModifiers;
-    const auto tool = MidiEditToolState::getInstance().getTool();
-    if (tool != MidiEditTool::Pointer && tool != MidiEditTool::Pencil) {
-        setMouseCursor(*cursorForMidiEditTool(tool));
+    const auto tool = EditToolState::midiEditor().getTool();
+    if (tool != EditTool::Pointer && tool != EditTool::Pencil) {
+        setMouseCursor(*cursorForEditTool(tool));
         return;
     }
     if (mods.isShiftDown() && mods.isCtrlDown()) {

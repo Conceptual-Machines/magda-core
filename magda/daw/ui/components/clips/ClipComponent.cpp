@@ -17,6 +17,7 @@
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../utils/SelectionPolicy.hpp"
+#include "../common/EditTool.hpp"
 #include "../common/Toast.hpp"
 #include "../tracks/TrackContentPanel.hpp"
 #include "../waveform/ClipWaveformPainter.hpp"
@@ -1325,6 +1326,12 @@ void ClipComponent::resized() {
 
 bool ClipComponent::hitTest(int x, int y) {
     if (x < 0 || x >= getWidth() || y < 0 || y >= getHeight())
+        return false;
+
+    // Slice, Glue and Erase belong to the panel, which also sweeps the Erase across clips.
+    const auto tool = EditToolState::arrangement().getTool();
+    if ((tool == EditTool::Slice || tool == EditTool::Glue || tool == EditTool::Erase) &&
+        !juce::ModifierKeys::getCurrentModifiers().isPopupMenu())
         return false;
 
     // Selection edges remain draggable across the lane. Inside the selection,

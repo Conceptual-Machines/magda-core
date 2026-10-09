@@ -234,9 +234,14 @@ void ChainRowComponent::paint(juce::Graphics& g) {
     g.setColour(device_shell::chainColour(colourIndex_));
     g.fillEllipse(name.withWidth(8).withSizeKeepingCentre(8, 8).toFloat());
     if (nameLabel_.getText().isEmpty() && !nameLabel_.isBeingEdited()) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
-        g.setFont(FontManager::getInstance().getUIFont(12.0f).italicised());
-        g.drawText("Chain", nameLabel_.getBounds(), juce::Justification::centredLeft, false);
+        // A band name is the band's real name until the user gives it another.
+        const bool bandName = placeholderName_ != "Chain";
+        g.setColour(ActiveTheme::getColour(bandName ? ActiveTheme::DEVICE_VALUE_TEXT
+                                                    : ActiveTheme::DEVICE_DIM2));
+        const auto font = FontManager::getInstance().getUIFont(12.0f);
+        g.setFont(bandName ? font : font.italicised());
+        g.drawText(placeholderName_, nameLabel_.getBounds(), juce::Justification::centredLeft,
+                   false);
     }
 
     if (view_ == View::Mix) {
@@ -371,6 +376,13 @@ void ChainRowComponent::setNodePath(const magda::ChainNodePath& path) {
     // Reflect current selection state (handles selection made before the row
     // existed, and multi-selection where this chain is one of several).
     setSelected(magda::SelectionManager::getInstance().isChainNodeSelected(nodePath_));
+}
+
+void ChainRowComponent::setPlaceholderName(const juce::String& name) {
+    if (placeholderName_ != name) {
+        placeholderName_ = name;
+        repaint();
+    }
 }
 
 void ChainRowComponent::setColourIndex(int index) {

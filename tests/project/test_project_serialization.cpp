@@ -3879,6 +3879,33 @@ TEST_CASE("A rack's chain selector and chain zones roundtrip",
     CHECK(loaded.chains[0].zones == chain.zones);
 }
 
+TEST_CASE("A multiband rack's crossovers roundtrip and repair", "[project][serialization][rack]") {
+    RackInfo rack;
+    rack.id = 3;
+    rack.multiband = true;
+    rack.crossovers = {{180.0f, CrossoverSlope::Db12}, {3200.0f, CrossoverSlope::Db48}};
+    for (ChainId id : {1, 2, 3}) {
+        ChainInfo chain;
+        chain.id = id;
+        rack.chains.push_back(std::move(chain));
+    }
+
+    RackInfo loaded;
+    REQUIRE(
+        ProjectSerializer::deserializeRackInfo(ProjectSerializer::serializeRackInfo(rack), loaded));
+    CHECK(loaded.multiband);
+    CHECK(loaded.crossovers == rack.crossovers);
+
+    SECTION("a stored rack missing a crossover gets one by splitting the top band") {
+        rack.crossovers.pop_back();
+        RackInfo repaired;
+        REQUIRE(ProjectSerializer::deserializeRackInfo(ProjectSerializer::serializeRackInfo(rack),
+                                                       repaired));
+        REQUIRE(repaired.crossovers.size() == 2);
+        CHECK(repaired.crossovers[1].frequencyHz > 180.0f);
+    }
+}
+
 TEST_CASE("Delta solo state roundtrips and defaults off for older projects",
           "[project][serialization][delta_solo]") {
     DeviceInfo device;
