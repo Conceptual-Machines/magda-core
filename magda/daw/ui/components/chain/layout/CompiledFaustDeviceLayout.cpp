@@ -47,6 +47,10 @@ ParamCell CompiledFaustDeviceLayout::cellFor(const magda::DeviceInfo& device, in
     // run top-to-bottom instead of left-to-right. Used by the 8-band EQ so
     // each band's {Type, Freq, Gain, Q} forms a vertical strip.
     int paramSlotIdx = knobSlots_.empty() ? cellIndex : knobSlots_[static_cast<size_t>(cellIndex)];
+    if (paramSlotIdx < 0) {  // A gap that starts the next group on a row of its own.
+        cell.mode = ParamCell::Mode::Hidden;
+        return cell;
+    }
     if (columnMajor_ && cellsPerRow_ > 0) {
         const int numRows = (cellCount_ + cellsPerRow_ - 1) / cellsPerRow_;
         const int row = cellIndex / cellsPerRow_;

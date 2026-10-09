@@ -96,7 +96,8 @@ struct CompiledPresentationSpec {
     /// Optional device-specific enablement for a parameter slot. This changes
     /// interaction/presentation only; the parameter remains automatable.
     bool (*isParameterEnabled)(const magda::DeviceInfo& device, int slotIndex) = nullptr;
-    /// The slots that remain as knobs; empty keeps every slot in the grid.
+    /// The slots that remain as knobs, in order; -1 leaves a cell empty to group them.
+    /// Empty keeps every slot in the grid.
     std::span<const int> knobSlots;
     /// Most knob columns beside the faceplate; 0 takes the default of two.
     int knobColumns = 0;
