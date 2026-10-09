@@ -97,7 +97,7 @@ struct CompiledPresentationSpec {
     /// interaction/presentation only; the parameter remains automatable.
     bool (*isParameterEnabled)(const magda::DeviceInfo& device, int slotIndex) = nullptr;
     /// The faceplate-first style: the faceplate stands left at this width and
-    /// only these slots remain as a row of knobs. Empty keeps every slot in the grid.
+    /// only these slots remain as knobs. Empty keeps every slot in the grid.
     std::span<const int> knobSlots;
     int faceplateWidth = 0;
     /// Discrete slots the faceplate-first style shows in the header instead.

@@ -275,6 +275,22 @@ int main() {
                                      " controls has " + std::to_string(grid.getCellsPerRow()) +
                                      " columns, not " + std::to_string(columns);
                 check(grid.getCellsPerRow() == columns, message.c_str());
+                {
+                    // A faceplate-first device's knobs wrap the same way: four make a 2 x 2.
+                    static constexpr int knobs[] = {0, 1, 2, 5};
+                    ParamHostComponent grid(
+                        std::make_unique<CompiledFaustDeviceLayout>(6, 6, false, nullptr, knobs));
+                    DeviceInfo model;
+                    for (int index = 0; index < 6; ++index) {
+                        ParameterInfo parameter;
+                        parameter.paramIndex = index;
+                        parameter.name = "Control " + juce::String(index);
+                        model.parameters.push_back(parameter);
+                    }
+                    grid.updateParameterSlots(model, 0, {});
+                    check(grid.getCellsPerRow() == 2 && grid.getSlotCount() == 4,
+                          "four faceplate-first knobs are not a 2 x 2");
+                }
             }
         }
         {

@@ -43,7 +43,7 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
         return cellsPerRow_;
     }
     bool reflowsForControlStyle() const override {
-        return !columnMajor_ && knobSlots_.empty();
+        return !columnMajor_;
     }
     int minRowsForStyle(int styleRows) const override {
         return columnMajor_ ? 0 : styleRows;
@@ -60,7 +60,7 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
     int cellsPerRow_;
     bool columnMajor_;
     ParameterEnabledPredicate isParameterEnabled_;
-    std::vector<int> knobSlots_;  // The faceplate-first style's knob row, in order.
+    std::vector<int> knobSlots_;  // The faceplate-first style's knobs, in order.
 };
 
 }  // namespace magda::daw::ui
