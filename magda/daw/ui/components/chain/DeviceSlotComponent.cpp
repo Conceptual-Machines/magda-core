@@ -819,7 +819,7 @@ std::vector<int> DeviceSlotComponent::resolveFaceplateStripSlots() const {
 
     // As many as fit across the faceplate; the rest stay in the grid.
     std::vector<int> slots;
-    int room = faceplateWidth() - 28;
+    int room = faceplateWidth() - 14;  // Beside the knobs only its right edge is inset.
     for (const int slot : candidates) {
         const auto* param = device_.findParameterByIndex(slot);
         if (param == nullptr)
@@ -860,7 +860,12 @@ void DeviceSlotComponent::refreshFaceplateSlotControls() {
         const auto* param = device_.findParameterByIndex(control.slot);
         if (!faceplateSlotShown(control))
             continue;
-        if (control.segments != nullptr) {
+        if (control.segments != nullptr && isOffOnChoice(*param)) {
+            // An Off / On choice is one toggle under its own name, not two nameless segments.
+            control.segments->setToggle(param->name);
+            control.segments->setSelectedIndex(magda::ParameterUtils::choiceIndexForModelValue(
+                magda::ParameterModelValue{param->currentValue}, *param));
+        } else if (control.segments != nullptr) {
             juce::StringArray options;
             for (const auto& choice : param->choices)
                 options.add(choice);
@@ -900,6 +905,8 @@ int DeviceSlotComponent::faceplateSlotControlWidth(const FaceplateSlotControl& c
 }
 
 int DeviceSlotComponent::faceplateSlotWidthFor(const magda::ParameterInfo& param) {
+    if (isOffOnChoice(param))
+        return magda::SegmentedChoice::preferredWidthFor(juce::StringArray(param.name));
     if (static_cast<int>(param.choices.size()) > kMaxSegmentedChoices)
         return kDropdownWidth;
     juce::StringArray options;

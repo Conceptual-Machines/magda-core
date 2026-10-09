@@ -17,6 +17,7 @@
 #include "ui/components/chain/layout/CompiledFaustDeviceLayout.hpp"
 #include "ui/components/chain/layout/StandardDeviceLayout.hpp"
 #include "ui/components/chain/slot/DeviceSlotSelectionHandling.hpp"
+#include "ui/components/common/SegmentedChoice.hpp"
 #include "ui/themes/FontManager.hpp"
 
 using namespace magda;
@@ -258,6 +259,15 @@ int main() {
             wheel.deltaY = 0.5f;
             faceplate.mouseWheelMove(event(start, start), wheel);
             check(written[Filter::kDriveSlot] > 0.0f, "scrolling up did not raise drive");
+        }
+        {
+            // The Compressor's four choices fit across its faceplate, Autogain as one toggle.
+            int strip = 0;
+            for (const auto& options :
+                 {juce::StringArray{"Clean", "Glue"}, juce::StringArray{"Peak", "RMS"},
+                  juce::StringArray{"Pre", "Post"}, juce::StringArray{"Autogain"}})
+                strip += SegmentedChoice::preferredWidthFor(options) + 8;
+            check(strip - 8 <= 420 - 14, "the Compressor's choices overrun its faceplate");
         }
         {
             // A curated device's controls stand in balanced rows of at most two.

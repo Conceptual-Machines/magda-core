@@ -19,7 +19,7 @@ std::unique_ptr<DeviceParamLayout> createDeviceSlotParamLayout(const DeviceSlotT
             traits.compiledPresentation->layoutCellsPerRow,
             traits.compiledPresentation->columnMajorGrid,
             traits.compiledPresentation->isParameterEnabled, traits.compiledPresentation->knobSlots,
-            excludedSlots);
+            excludedSlots, traits.compiledPresentation->knobColumns);
     }
 
     return std::make_unique<StandardDeviceLayout>();

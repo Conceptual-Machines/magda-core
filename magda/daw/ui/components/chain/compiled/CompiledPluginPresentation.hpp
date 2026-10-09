@@ -98,6 +98,8 @@ struct CompiledPresentationSpec {
     bool (*isParameterEnabled)(const magda::DeviceInfo& device, int slotIndex) = nullptr;
     /// The slots that remain as knobs; empty keeps every slot in the grid.
     std::span<const int> knobSlots;
+    /// Most knob columns beside the faceplate; 0 takes the default of two.
+    int knobColumns = 0;
     /// The faceplate's width beside the knobs; 0 takes the default.
     int faceplateWidth = 0;
     /// Discrete slots shown in a strip across the top of the faceplate.

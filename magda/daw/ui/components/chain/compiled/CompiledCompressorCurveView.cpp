@@ -375,6 +375,8 @@ const CompiledPresentationSpec& getMagdaCompressorPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledCompressorCurveView>(pluginId);
         },
+        .knobColumns = 3,
+        .faceplateWidth = 420,  // Room for its four choices across the top.
         .mixSlot = magda::daw::audio::compiled::MagdaCompressorCompiledPlugin::kMixSlot,
     };
     return kSpec;

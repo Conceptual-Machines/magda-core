@@ -895,6 +895,7 @@ const CompiledPresentationSpec& getMagdaMultibandPresentation() {
         },
         .visualMinFractionNumerator = 3,
         .visualMinFractionDenominator = 4,
+        .knobColumns = 3,
         .mixSlot = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin::kMixSlot,
     };
     return kSpec;

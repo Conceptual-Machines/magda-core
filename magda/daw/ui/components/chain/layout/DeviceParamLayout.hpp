@@ -67,6 +67,10 @@ class DeviceParamLayout {
         return false;
     }
     /// Curated native layouts keep their cells but take the style's column count.
+    /// Most columns a reflowing grid wraps at.
+    virtual int maxColumns() const {
+        return 2;
+    }
     /// Rows a short grid is sized and centred as, given the style's row count; 0 stretches.
     virtual int minRowsForStyle(int /*styleRows*/) const {
         return 0;

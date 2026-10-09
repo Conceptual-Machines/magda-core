@@ -141,6 +141,11 @@ void configureDiscreteCombo(juce::ComboBox& combo, const magda::ParameterInfo& i
                                juce::dontSendNotification);
 }
 
+bool isOffOnChoice(const magda::ParameterInfo& info) {
+    return info.choices.size() == 2 && juce::String(info.choices[0]).equalsIgnoreCase("Off") &&
+           juce::String(info.choices[1]).equalsIgnoreCase("On");
+}
+
 bool wantsSegmentedChoices(const magda::ParameterInfo& info) {
     return info.radioChoices && !info.choices.empty() &&
            static_cast<int>(info.choices.size()) <= kMaxSegmentedChoices;

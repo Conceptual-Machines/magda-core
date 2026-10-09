@@ -30,8 +30,9 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
     CompiledFaustDeviceLayout(int cellCount, int cellsPerRow, bool columnMajor = false,
                               ParameterEnabledPredicate isParameterEnabled = nullptr,
                               std::span<const int> knobSlots = {},
-                              std::span<const int> excludedSlots = {})
-        : columnMajor_(columnMajor),
+                              std::span<const int> excludedSlots = {}, int maxColumns = 0)
+        : maxColumns_(maxColumns > 0 ? maxColumns : 2),
+          columnMajor_(columnMajor),
           isParameterEnabled_(isParameterEnabled),
           knobSlots_(knobSlots.begin(), knobSlots.end()) {
         // Slots the device shows elsewhere (its mix, its faceplate strip) leave the grid.
@@ -53,6 +54,9 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
     bool reflowsForControlStyle() const override {
         return !columnMajor_;
     }
+    int maxColumns() const override {
+        return maxColumns_;
+    }
     int minRowsForStyle(int styleRows) const override {
         return columnMajor_ ? 0 : styleRows;
     }
@@ -66,6 +70,7 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
   private:
     int cellCount_ = 0;
     int cellsPerRow_ = 0;
+    int maxColumns_ = 2;
     bool columnMajor_;
     ParameterEnabledPredicate isParameterEnabled_;
     std::vector<int> knobSlots_;  // The faceplate-first style's knobs, in order.

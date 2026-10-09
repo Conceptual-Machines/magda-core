@@ -551,6 +551,8 @@ void ParamSlotComponent::syncDiscreteSelection(double value) {
 
     if (discreteCombo_ && discreteCombo_->isVisible())
         discreteCombo_->setSelectedItemIndex(selected, juce::dontSendNotification);
+    if (boolToggle_ && boolToggle_->isVisible())
+        boolToggle_->setToggleState(selected == 1, juce::dontSendNotification);
 
     for (int i = 0; i < static_cast<int>(choiceButtons_.size()); ++i) {
         if (auto& button = choiceButtons_[static_cast<size_t>(i)])
@@ -730,6 +732,15 @@ void ParamSlotComponent::setParameterInfo(const magda::ParameterInfo& info) {
             boolToggle_->setVisible(true);
             applyControlStyleToWidgets();
         }
+    } else if (info.scale == magda::ParameterScale::Discrete && isOffOnChoice(info)) {
+        // An Off / On choice is a switch, as a boolean parameter is; the cell already names it.
+        if (!boolToggle_) {
+            boolToggle_ = std::make_unique<juce::ToggleButton>();
+            addAndMakeVisible(*boolToggle_);
+        }
+        configureBoolToggle(*boolToggle_, info, deferChoiceToSlot);
+        boolToggle_->setVisible(true);
+        applyControlStyleToWidgets();
     } else if (info.scale == magda::ParameterScale::Discrete && !info.choices.empty()) {
         if (wantsSegmentedChoices(info)) {
             rebuildChoiceButtons(info, deferChoiceToSlot);
