@@ -23,19 +23,6 @@ void ClipInspector::paint(juce::Graphics& g) {
         g.setColour(nameOutline_);
         g.drawRoundedRectangle(field.reduced(0.5f), radius, 1.0f);
     }
-
-    // Segmented chip behind the view|type indicator icons in the name row.
-    if (clipTypeIcon_ && clipTypeIcon_->isVisible() && !viewTypeChipBounds_.isEmpty()) {
-        auto chip = viewTypeChipBounds_.toFloat();
-        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
-        g.fillRoundedRectangle(chip, 4.0f);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-        g.drawRoundedRectangle(chip.reduced(0.5f), 4.0f, 1.0f);
-        if (clipViewIcon_ && clipViewIcon_->isVisible()) {
-            g.drawLine(chip.getCentreX(), chip.getY() + 4.0f, chip.getCentreX(),
-                       chip.getBottom() - 4.0f, 1.0f);
-        }
-    }
 }
 
 void ClipInspector::lookAndFeelChanged() {

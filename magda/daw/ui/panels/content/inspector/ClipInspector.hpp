@@ -97,7 +97,6 @@ class ClipInspector : public BaseInspector,
     juce::Colour nameFill_, nameOutline_;
     void applyHeaderStyle();
     void configChanged() override;
-    juce::Rectangle<int> viewTypeChipBounds_;  // segmented chip behind view|type icons
 
     // Position section
     juce::Label playbackColumnLabel_;

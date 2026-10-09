@@ -23,12 +23,12 @@ void ClipInspector::resized() {
         bounds.removeFromTop(4);
     }
 
-    // Clip name header row (outside viewport): colour spine on the left
-    // (doubles as the colour swatch), name, ghost badge, view|type indicator
-    // chip (background painted in paint()), enable/disable switch.
+    // Header: a 16px row of view, type and ghost icons where the track inspector shows its
+    // caption, then the name row: colour spine or chip, name, enable/disable power.
     {
-        const int iconSize = 16;
+        const int iconSize = 14;
         const int gap = 6;
+        auto iconRow = bounds.removeFromTop(16);
         auto headerRow = bounds.removeFromTop(24);
 
         // As in the track inspector: a spine on the left, or a chip beside the power button
@@ -36,6 +36,7 @@ void ClipInspector::resized() {
         if (!nameFilled_) {
             colourSwatch_->setBounds(headerRow.removeFromLeft(6));
             headerRow.removeFromLeft(gap);
+            iconRow.removeFromLeft(6 + gap);
         }
         if (clipEnabledToggle_->isVisible()) {
             clipEnabledToggle_->setBounds(headerRow.removeFromRight(28));
@@ -45,25 +46,18 @@ void ClipInspector::resized() {
             colourSwatch_->setBounds(headerRow.removeFromRight(24));
             headerRow.removeFromRight(gap);
         }
-
-        const int cellW = 24;
-        const bool hasViewIcon = clipViewIcon_->isVisible();
-        auto chip = headerRow.removeFromRight(cellW * (hasViewIcon ? 2 : 1));
-        viewTypeChipBounds_ = chip;
-        if (hasViewIcon) {
-            clipViewIcon_->setBounds(
-                chip.removeFromLeft(cellW).withSizeKeepingCentre(iconSize, iconSize));
-        }
-        clipTypeIcon_->setBounds(
-            chip.removeFromLeft(cellW).withSizeKeepingCentre(iconSize, iconSize));
-        headerRow.removeFromRight(gap);
-
-        if (clipGhostIcon_->isVisible()) {
-            clipGhostIcon_->setBounds(
-                headerRow.removeFromRight(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-            headerRow.removeFromRight(4);
-        }
         clipNameValue_.setBounds(headerRow);
+
+        auto placeIcon = [&](juce::Component& icon) {
+            icon.setBounds(
+                iconRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+            iconRow.removeFromLeft(gap);
+        };
+        if (clipViewIcon_->isVisible())
+            placeIcon(*clipViewIcon_);
+        placeIcon(*clipTypeIcon_);
+        if (clipGhostIcon_->isVisible())
+            placeIcon(*clipGhostIcon_);
     }
     bounds.removeFromTop(8);
 
