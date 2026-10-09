@@ -31,13 +31,14 @@ bool gateEnabled(const magda::DeviceInfo& device, const magda::ParameterInfo& pa
 
 juce::Rectangle<int> CompiledFaustDeviceLayout::cellBounds(int cell, juce::Rectangle<int> area,
                                                            bool faceplateShown) const {
-    const int bandCells = cellCount_ - leadingColumnCells_;
-    const int bandRows = (bandCells + kBandColumns - 1) / kBandColumns;
-    const auto geometry = FaceplateBelowGeometry::of(area, faceplateShown, bandRows);
+    // One row: each band's knobs side by side within its third, low to high.
+    const int perBand = juce::jmax(1, (cellCount_ - leadingColumnCells_) / kBands);
+    const auto geometry = FaceplateBelowGeometry::of(area, faceplateShown, 1);
     if (cell < leadingColumnCells_)
         return FaceplateBelowGeometry::cell(geometry.globals, cell, 1, leadingColumnCells_);
-    return FaceplateBelowGeometry::cell(geometry.bands, cell - leadingColumnCells_, kBandColumns,
-                                        bandRows);
+    const int index = cell - leadingColumnCells_;
+    const auto third = FaceplateBelowGeometry::cell(geometry.bands, index / perBand, kBands, 1);
+    return FaceplateBelowGeometry::cell(third.expanded(10, 8), index % perBand, perBand, 1);
 }
 
 int CompiledFaustDeviceLayout::totalPages(const magda::DeviceInfo&) const {

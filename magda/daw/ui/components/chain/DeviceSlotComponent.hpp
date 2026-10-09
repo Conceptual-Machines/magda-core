@@ -287,7 +287,7 @@ class DeviceSlotComponent : public NodeComponent,
     void toggleDeviceView(bool faceplate);
     /// The faceplate's width: its spec's, or the default.
     int faceplateWidth() const;
-    /// Rows of band knobs over a faceplate-below device's faceplate; 0 for any other.
+    /// Rows of band knobs over a faceplate-below device's faceplate (one); 0 for any other.
     int faceplateBandRows() const;
 
     /// A spec's faceplate-strip controls: segments for a short choice, else a dropdown.

@@ -263,10 +263,10 @@ int main() {
         }
         {
             // Multiband: whole-device knobs in a left column, band knobs above the faceplate.
-            static constexpr int knobs[] = {0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11};
+            static constexpr int knobs[] = {0, 1, 2, 3, 4, 6, 9, 7, 10, 8, 11};
             const CompiledFaustDeviceLayout layout(12, 3, false, nullptr, knobs, {}, 0, 5);
             const juce::Rectangle<int> content(0, 0, 504, 300);
-            const auto faceplate = FaceplateBelowGeometry::of(content, true, 2).faceplate;
+            const auto faceplate = FaceplateBelowGeometry::of(content, true, 1).faceplate;
             for (int cell = 0; cell < 5; ++cell)
                 check(layout.cellBounds(cell, content, true).getRight() <=
                           FaceplateBelowGeometry::kColumnWidth,
@@ -276,11 +276,10 @@ int main() {
                 check(bounds.getBottom() <= faceplate.getY() && !bounds.intersects(faceplate),
                       "a band knob overlaps the faceplate");
             }
-            check(layout.cellBounds(5, content, true).getX() <
-                          layout.cellBounds(6, content, true).getX() &&
-                      layout.cellBounds(6, content, true).getX() <
-                          layout.cellBounds(7, content, true).getX(),
-                  "the band knobs are not low, mid, high from left to right");
+            for (int cell = 5; cell < 10; ++cell)
+                check(layout.cellBounds(cell, content, true).getRight() <=
+                          layout.cellBounds(cell + 1, content, true).getX(),
+                      "the band knobs are not one row, low to high");
         }
         {
             // The Compressor's four choices fit across its faceplate, Autogain as one toggle.

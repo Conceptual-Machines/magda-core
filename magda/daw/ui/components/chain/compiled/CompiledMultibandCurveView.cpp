@@ -890,8 +890,8 @@ const CompiledPresentationSpec& getMagdaMultibandPresentation() {
     // The whole-device controls in a column; each band's input and gain over its band.
     static constexpr int kKnobSlots[] = {MB::kAmountSlot, MB::kAttackSlot, MB::kReleaseSlot,
                                          MB::kInputSlot, MB::kOutputSlot};
-    static constexpr int kBandSlots[] = {MB::kLowInputSlot, MB::kMidInputSlot, MB::kHighInputSlot,
-                                         MB::kLowGainSlot,  MB::kMidGainSlot,  MB::kHighGainSlot};
+    static constexpr int kBandSlots[] = {MB::kLowInputSlot, MB::kLowGainSlot,   MB::kMidInputSlot,
+                                         MB::kMidGainSlot,  MB::kHighInputSlot, MB::kHighGainSlot};
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin::xmlTypeName,
         .layoutCellCount = 12,

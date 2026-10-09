@@ -62,7 +62,7 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
     }
     juce::Rectangle<int> cellBounds(int cell, juce::Rectangle<int> area,
                                     bool faceplateShown) const override;
-    static constexpr int kBandColumns = 3;
+    static constexpr int kBands = 3;
     int maxColumns() const override {
         return maxColumns_;
     }

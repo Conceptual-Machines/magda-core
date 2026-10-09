@@ -939,8 +939,7 @@ void DeviceSlotComponent::layoutFaceplateSlotControls() {
 
 int DeviceSlotComponent::faceplateBandRows() const {
     const auto* spec = traits_.compiledPresentation;
-    const auto bands = spec != nullptr ? static_cast<int>(spec->bandSlots.size()) : 0;
-    return (bands + 2) / 3;
+    return spec != nullptr && !spec->bandSlots.empty() ? 1 : 0;
 }
 
 int DeviceSlotComponent::faceplateWidth() const {
