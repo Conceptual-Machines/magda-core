@@ -376,3 +376,73 @@ TEST_CASE("The native compiler resolves loop length in its authoritative unit",
     CHECK(static_cast<double>(musicalRead.loopLengthSamples) / kRate == Approx(4.0));
     CHECK(static_cast<double>(sourceRead.loopLengthSamples) / kRate == Approx(2.0));
 }
+
+namespace {
+
+constexpr double kWarpRate = 48000.0;
+
+/// A 16-beat clip warped through a non-identity map, at 100 bpm under a 120 bpm project.
+magda::ClipId makeWarpedClip(const juce::String& path, bool looped) {
+    auto& clips = ClipManager::getInstance();
+    auto& pool = SourcePool::getInstance();
+    pool.seedFactsForTesting(path, 8.0, kWarpRate);
+    pool.resolveFacts(pool.acquire(path));
+
+    const auto clipId = clips.createAudioClipBeats(kTrack, 0.0, 16.0, path);
+    clips.getClip(clipId)->primaryEvent()->interpBpm = 100.0;
+    clips.setClipWarpEnabled(clipId, true);
+    clips.getClip(clipId)->primaryEvent()->warpMarkers = {{0.0, 0.0}, {2.0, 2.5}, {8.0, 8.0}};
+    if (looped)
+        clips.setClipLoopEnabled(clipId, true, 120.0);
+    return clipId;
+}
+
+/// Where the native engine reads at @p beat, from whichever clip covers it.
+double readingAt(const juce::String& path, double beat) {
+    const auto map = makeTempoMap(120.0);
+    const auto arranged = ClipManager::getInstance().getArrangementClips();
+    const std::vector<ClipInfo> all(arranged.begin(), arranged.end());
+    const auto sourceId = SourcePool::getInstance().acquire(path);
+    const auto snapshot =
+        compile(all, map, {ClipSourceInfo{sourceId, path.toStdString(), kWarpRate, 8.0}});
+    const auto seconds = map.beatToTime(beat);
+    for (const auto& clip : snapshot.find(kTrack)->audio)
+        for (const auto& event : clip.events)
+            if (seconds >= event.span.seconds.start && seconds < event.span.seconds.end)
+                return magda::engine::readingPositionAt(clip, event, seconds, beat, kWarpRate);
+    return -1.0;
+}
+
+}  // namespace
+
+TEST_CASE("Splitting a warped clip resumes the right half where the whole clip read",
+          "[engine][clip][tempo][sequence][warp]") {
+    ModelFixture fixture;
+    const juce::String path = "/tmp/magda-fixtures/split-warp.wav";
+    const auto clipId = makeWarpedClip(path, false);
+    const auto whole = readingAt(path, 8.0);
+
+    const auto rightId = ClipManager::getInstance().splitClipAtBeat(clipId, 6.0, 120.0);
+    REQUIRE(rightId != magda::INVALID_CLIP_ID);
+
+    CHECK(readingAt(path, 8.0) == Approx(whole).margin(1.0));
+    // The fork applies the offset in warp time: six beats at 100 bpm.
+    const auto& right = *ClipManager::getInstance().getClip(rightId)->primaryEvent();
+    CHECK(right.engineOffsetSeconds(false, 120.0) == Approx(3.6).margin(1.0e-4));
+}
+
+TEST_CASE("Trimming a warped clip's start keeps what plays after the trim",
+          "[engine][clip][tempo][sequence][warp]") {
+    for (const bool looped : {false, true}) {
+        CAPTURE(looped);
+        ModelFixture fixture;
+        const juce::String path = "/tmp/magda-fixtures/trim-warp.wav";
+        const auto clipId = makeWarpedClip(path, looped);
+        const auto whole = readingAt(path, 8.0);
+
+        ClipManager::getInstance().resizeClipBeats(clipId, 10.0, true, 120.0);
+        REQUIRE(ClipManager::getInstance().getClip(clipId)->placement.startBeat == Approx(6.0));
+
+        CHECK(readingAt(path, 8.0) == Approx(whole).margin(1.0));
+    }
+}

@@ -254,16 +254,13 @@ class ClipOperations {
                 audioEvent.startBeat -= deltaBeat;
             clip.audio().envelopeWindow->startBeat -= deltaBeat;
         } else if (event != nullptr && !event->sourceFilePath().isEmpty()) {
-            const bool isAutoTempo = event->autoTempo && event->interpBpm > 0.0 && isValidBpm(bpm);
-
-            // Beat mode and manual stretch differ only in how a timeline delta
-            // becomes a source delta: via project BPM, or via speedRatio.
-            const double sourceDelta = isAutoTempo
-                                           ? (actualDelta * bpm / 60.0) * 60.0 / event->interpBpm
-                                           : actualDelta * event->speedRatio;
+            const bool beatFace =
+                (event->autoTempo || event->warpEnabled) && event->interpBpm > 0.0;
+            const double warpDelta =
+                event->warpExtentSeconds(actualDelta * bpm / 60.0, actualDelta);
 
             if (!clip.loopEnabled) {
-                event->setAnchorSeconds(event->anchorSeconds() + sourceDelta);
+                event->advanceAnchor(warpDelta);
                 event->loopStartSamples = event->sourceAnchorSamples;
             } else {
                 // With no region set, beat mode has no period to wrap in:
@@ -271,14 +268,20 @@ class ClipOperations {
                 // speedRatio is pinned to 1, so using it as a source period
                 // would wrap by the wrong amount. Leave the phase alone, as
                 // the beat-domain path did before the event split.
-                const double sourceLength =
-                    event->loopLengthSamples > 0
-                        ? event->loopLengthSeconds()
-                        : (isAutoTempo ? 0.0 : clipLength * event->speedRatio);
+                const double sourceLength = event->loopLengthSamples > 0
+                                                ? event->loopLengthSeconds()
+                                                : (beatFace ? 0.0 : clipLength * event->speedRatio);
                 if (sourceLength > 0.0) {
-                    event->setAnchorSeconds(
-                        event->loopStartSeconds() +
-                        wrapPhase(event->loopPhaseSeconds() + sourceDelta, sourceLength));
+                    // Wrapped in warp time, where a warped loop folds.
+                    const double loopStartWarp =
+                        event->warpedSourceSeconds(event->loopStartSeconds());
+                    const double loopLengthWarp =
+                        event->warpedSourceSeconds(event->loopStartSeconds() + sourceLength) -
+                        loopStartWarp;
+                    const double phaseWarp =
+                        event->warpedSourceSeconds(event->anchorSeconds()) - loopStartWarp;
+                    event->setAnchorSeconds(event->unwarpedSourceSeconds(
+                        loopStartWarp + wrapPhase(phaseWarp + warpDelta, loopLengthWarp)));
                 }
             }
         } else if (clip.isMidi()) {
