@@ -19,7 +19,7 @@ drive  = hslider("Drive [idx:2]", 0.0, 0.0, 1.0, 0.001)
 mode   = nentry("Mode [idx:3] [style:menu{'LP':0;'BP':1;'HP':2}]", 0, 0, 2, 1);
 
 nf = log(cutoff / 20.0) / log(1000.0);
-q  = 0.7 + res * 9.3;
+q  = 0.7 * pow(10.0 / 0.7, res);  // Q 0.7..10, exponential
 
 drivenIn(x) = (1.0 - drive) * x
             + drive * (ma.tanh(4.0 * x) / ma.tanh(4.0));

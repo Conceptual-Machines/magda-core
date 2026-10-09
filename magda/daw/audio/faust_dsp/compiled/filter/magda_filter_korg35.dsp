@@ -23,8 +23,8 @@ mode   = nentry("Mode [idx:3] [style:menu{'LP':0;'HP':1}]", 0, 0, 1, 1);
 // value drives the filter as expected.
 nf = log(cutoff / 20.0) / log(1000.0);
 
-// Korg35 Q range 0.7..10 (lib examples cap at 10).
-q = 0.7 + res * 9.3;
+// Korg35 Q range 0.7..10 (lib examples cap at 10), exponential.
+q = 0.7 * pow(10.0 / 0.7, res);
 
 drivenIn(x) = (1.0 - drive) * x
             + drive * (ma.tanh(4.0 * x) / ma.tanh(4.0));

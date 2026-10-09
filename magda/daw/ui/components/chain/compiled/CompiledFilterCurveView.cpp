@@ -284,15 +284,20 @@ CompiledFilterCurveView::FilterMode CompiledFilterCurveView::modeForIndex() cons
 }
 
 float CompiledFilterCurveView::qValue() const {
+    // The engines' own exponential ranges (faust_dsp/compiled/filter).
+    const auto exponential = [this](float low, float high) {
+        return low * std::pow(high / low, resonance_);
+    };
     switch (family_) {
         case FilterFamily::SVF:
-            return 0.5f + resonance_ * 11.5f;
+            return exponential(0.5f, 40.0f);
         case FilterFamily::Ladder:
             return 0.6f + resonance_ * 9.4f;
-        case FilterFamily::Korg35:
         case FilterFamily::Oberheim:
+            return exponential(0.5f, 30.0f);
+        case FilterFamily::Korg35:
         case FilterFamily::SallenKey:
-            return 0.7f + resonance_ * 9.3f;
+            return exponential(0.7f, 10.0f);
     }
     return 1.0f;
 }
