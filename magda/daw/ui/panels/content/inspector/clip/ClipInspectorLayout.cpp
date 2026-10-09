@@ -23,12 +23,11 @@ void ClipInspector::resized() {
         bounds.removeFromTop(4);
     }
 
-    // Header: a 16px row of view, type and ghost icons where the track inspector shows its
-    // caption, then the name row: colour spine or chip, name, enable/disable power.
+    // Header: colour spine or chip, name, ghost badge, enable/disable power. The view and
+    // type icons sit faintly in the name field's right end, as a watermark.
     {
-        const int iconSize = 14;
+        const int iconSize = 18;
         const int gap = 6;
-        auto iconRow = bounds.removeFromTop(16);
         auto headerRow = bounds.removeFromTop(24);
 
         // As in the track inspector: a spine on the left, or a chip beside the power button
@@ -36,7 +35,6 @@ void ClipInspector::resized() {
         if (!nameFilled_) {
             colourSwatch_->setBounds(headerRow.removeFromLeft(6));
             headerRow.removeFromLeft(gap);
-            iconRow.removeFromLeft(6 + gap);
         }
         if (clipEnabledToggle_->isVisible()) {
             clipEnabledToggle_->setBounds(headerRow.removeFromRight(28));
@@ -46,18 +44,24 @@ void ClipInspector::resized() {
             colourSwatch_->setBounds(headerRow.removeFromRight(24));
             headerRow.removeFromRight(gap);
         }
+        if (clipGhostIcon_->isVisible()) {
+            clipGhostIcon_->setBounds(headerRow.removeFromRight(20).withSizeKeepingCentre(20, 20));
+            headerRow.removeFromRight(4);
+        }
         clipNameValue_.setBounds(headerRow);
 
-        auto placeIcon = [&](juce::Component& icon) {
-            icon.setBounds(
-                iconRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-            iconRow.removeFromLeft(gap);
-        };
-        if (clipViewIcon_->isVisible())
-            placeIcon(*clipViewIcon_);
-        placeIcon(*clipTypeIcon_);
-        if (clipGhostIcon_->isVisible())
-            placeIcon(*clipGhostIcon_);
+        auto watermark = headerRow.reduced(6, 0);
+        int watermarkWidth = 0;
+        for (auto* icon : {clipTypeIcon_.get(), clipViewIcon_.get()}) {
+            if (!icon->isVisible())
+                continue;
+            icon->setBounds(
+                watermark.removeFromRight(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+            icon->setAlpha(0.35f);
+            watermark.removeFromRight(4);
+            watermarkWidth += iconSize + 4;
+        }
+        clipNameValue_.setBorderSize(juce::BorderSize<int>(1, 6, 1, 6 + watermarkWidth));
     }
     bounds.removeFromTop(8);
 

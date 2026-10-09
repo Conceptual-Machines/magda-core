@@ -34,10 +34,6 @@ void ClipInspector::lookAndFeelChanged() {
 
     applyHeaderStyle();
 
-    if (clipTypeIcon_)
-        clipTypeIcon_->setNormalColor(secondary);
-    if (clipViewIcon_)
-        clipViewIcon_->setNormalColor(secondary);
     if (clipGhostIcon_) {
         clipGhostIcon_->setNormalColor(secondary);
         clipGhostIcon_->setNormalBackgroundColor(surface);
@@ -133,6 +129,10 @@ void ClipInspector::applyHeaderStyle() {
     clipNameValue_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
     clipNameValue_.setColour(juce::Label::textColourId,
                              fullBar ? juce::Colours::white : ActiveTheme::getTextColour());
+    // The watermark icons take the name text's colour, so they read on a filled field too.
+    for (auto* icon : {clipTypeIcon_.get(), clipViewIcon_.get()})
+        icon->setNormalColor(fullBar ? juce::Colours::white
+                                     : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     repaint();
 }
 
