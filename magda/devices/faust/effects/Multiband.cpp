@@ -32,24 +32,16 @@ float ratioSlope(float ratio) {
 
 float dynamicsGainDb(float levelDb, float lowerThresholdDb, float upperThresholdDb,
                      float belowRatio, float aboveRatio, float rangeDb, float amount) {
-    const float lower = std::min(lowerThresholdDb, upperThresholdDb);
-    const float upper = std::max(lowerThresholdDb, upperThresholdDb);
-
-    float anchorDb = 0.0f;
-    float ratio = 1.0f;
-    if (levelDb < lower) {
-        anchorDb = lower;
-        ratio = belowRatio;
-    } else if (levelDb > upper) {
-        anchorDb = upper;
-        ratio = aboveRatio;
-    } else {
-        return 0.0f;
-    }
-
-    const float targetLevelDb = anchorDb + (levelDb - anchorDb) * ratioSlope(ratio);
-    const float unclampedGainDb = targetLevelDb - levelDb;
-    return std::clamp(unclampedGainDb, -rangeDb, rangeDb) * amount;
+    // The stages are independent: crossed thresholds put a level under both, as in OTT.
+    auto stageGainDb = [levelDb](float anchorDb, float ratio) {
+        return anchorDb + (levelDb - anchorDb) * ratioSlope(ratio) - levelDb;
+    };
+    float gainDb = 0.0f;
+    if (levelDb < lowerThresholdDb)
+        gainDb += stageGainDb(lowerThresholdDb, belowRatio);
+    if (levelDb > upperThresholdDb)
+        gainDb += stageGainDb(upperThresholdDb, aboveRatio);
+    return std::clamp(gainDb, -rangeDb, rangeDb) * amount;
 }
 
 }  // namespace

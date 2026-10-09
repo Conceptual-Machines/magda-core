@@ -566,13 +566,6 @@ void CompiledMultibandCurveView::mouseDrag(const juce::MouseEvent& e) {
     auto& target = isLimitHandle(draggedHandle_)            ? limitDb_[idx]
                    : isUpperThresholdHandle(draggedHandle_) ? upperThresholdDb_[idx]
                                                             : lowerThresholdDb_[idx];
-    if (!isLimitHandle(draggedHandle_)) {
-        constexpr float kMinThresholdGapDb = 1.0f;
-        if (isUpperThresholdHandle(draggedHandle_))
-            db = std::max(db, lowerThresholdDb_[idx] + kMinThresholdGapDb);
-        else
-            db = std::min(db, upperThresholdDb_[idx] - kMinThresholdGapDb);
-    }
     if (std::fabs(db - target) > 0.05f) {
         target = db;
         if (onParameterChanged)
