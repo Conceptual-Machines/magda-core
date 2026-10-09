@@ -15,8 +15,6 @@ namespace magda::daw::ui {
 
 namespace {
 
-constexpr float kPlotPadX = 8.0f;
-constexpr float kPlotPadY = 8.0f;
 constexpr int kPollMs = 33;
 constexpr float kMinFreq = 20.0f;
 constexpr float kMaxFreq = 20000.0f;
@@ -53,30 +51,12 @@ float invLogLerp(float v, float lo, float hi) {
     return std::log(juce::jlimit(lo, hi, v) / lo) / std::log(hi / lo);
 }
 
-juce::String ratioLabel(float ratio) {
-    ratio = juce::jlimit(kRatioMin, kRatioMax, ratio);
-    if (std::abs(ratio - 1.0f) < 0.02f)
-        return "1:1";
-    if (ratio >= 1.0f)
-        return juce::String(ratio, ratio < 10.0f ? 1 : 0) + ":1";
-    const float inverse = 1.0f / ratio;
-    return "1:" + juce::String(inverse, inverse < 10.0f ? 1 : 0);
-}
-
 float adjustRatio(float ratio, float octaves) {
     return juce::jlimit(kRatioMin, kRatioMax, ratio * std::pow(2.0f, octaves));
 }
 
 float adjustTimeMs(float value, float octaves, float minValue, float maxValue) {
     return juce::jlimit(minValue, maxValue, value * std::pow(2.0f, octaves));
-}
-
-juce::String timeLabel(float ms) {
-    if (ms < 10.0f)
-        return juce::String(ms, 1) + " ms";
-    if (ms < 100.0f)
-        return juce::String(ms, 0) + " ms";
-    return juce::String(static_cast<int>(std::round(ms))) + " ms";
 }
 
 }  // namespace
