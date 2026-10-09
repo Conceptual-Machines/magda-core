@@ -5,11 +5,13 @@
 #include <typeinfo>
 
 #include "audio/AudioThumbnailManager.hpp"
+#include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "core/ClipManager.hpp"
 #include "core/ModulatorEngine.hpp"
 #include "core/TrackManager.hpp"
 #include "ui/components/chain/DeviceSlotComponent.hpp"
 #include "ui/components/chain/RackComponent.hpp"
+#include "ui/components/chain/compiled/CompiledFilterCurveView.hpp"
 #include "ui/components/chain/layout/CompiledFaustDeviceLayout.hpp"
 #include "ui/components/chain/layout/StandardDeviceLayout.hpp"
 #include "ui/components/chain/slot/DeviceSlotSelectionHandling.hpp"
@@ -196,6 +198,32 @@ int main() {
             applyDeviceSlotParamSelectionChange(firstPath, {}, grid, {});
             for (int i = 0; i < grid.getSlotCount(); ++i)
                 check(!grid.getSlot(i)->isSelected(), "cleared selection left a cell highlighted");
+        }
+        {
+            // A faceplate reads its links afresh: a chain rebuild frees the arrays a
+            // kept context named, and the drop that causes it updates the faceplate.
+            const auto filterPath = ChainNodePath::topLevelDevice(track, 1000);
+            DeviceInfo filter;
+            filter.id = 1000;
+            filter.pluginId = magda::daw::audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName;
+            auto mods = std::make_unique<ModArray>(1);
+            (*mods)[0].links.push_back({ControlTarget::pluginParam(filterPath, 0), 0.5f});
+            int resolved = 0;
+            CompiledFilterCurveView faceplate(filter.pluginId);
+            faceplate.setLinkContextProvider([&]() {
+                ++resolved;
+                ParamLinkContext context;
+                context.deviceId = filter.id;
+                context.devicePath = filterPath;
+                context.deviceMods = mods.get();
+                return std::optional{context};
+            });
+            faceplate.updateFromDevice(filter);
+            faceplate.updateFromDevice(filter);
+            mods = std::make_unique<ModArray>(*mods);  // The rebuild: old storage freed.
+            const int before = resolved;
+            faceplate.updateFromDevice(filter);
+            check(resolved > before, "the faceplate read its links without resolving them");
         }
         {
             // A curated device's controls stand in balanced rows of at most two.

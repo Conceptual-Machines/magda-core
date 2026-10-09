@@ -158,15 +158,7 @@ void CompiledFilterCurveView::setRawState(int engine, int modeIndex, float cutof
 void CompiledFilterCurveView::updateFromDevice(const magda::DeviceInfo& device,
                                                const ParamLinkContext* linkContext) {
     deviceSnapshot_ = device;
-    // Hold onto the last non-null link context: the slider-drag callback
-    // calls updateFromDevice(device_) without one, but we still need the
-    // cached mods/macros to compute simulated modulation correctly. The
-    // full-refresh path (DeviceSlotComponent::updateParamModulation) keeps
-    // it current whenever mods/macros change.
-    if (linkContext != nullptr) {
-        hasLinkContext_ = true;
-        linkContext_ = *linkContext;
-    }
+    juce::ignoreUnused(linkContext);  // Read fresh through linkContextProvider_.
 
     updateTargetValues();
 
@@ -195,7 +187,8 @@ void CompiledFilterCurveView::updateFromDevice(const magda::DeviceInfo& device,
 
 void CompiledFilterCurveView::updateTargetValues() {
     using FilterFamily = CompiledFilterCurveView::FilterFamily;
-    const ParamLinkContext* linkContext = hasLinkContext_ ? &linkContext_ : nullptr;
+    const auto resolved = linkContextProvider_ ? linkContextProvider_() : std::nullopt;
+    const ParamLinkContext* linkContext = resolved ? &*resolved : nullptr;
     const float cutoff =
         modulatedValueForSlot(deviceSnapshot_, 0, cutoffHz_, linkContext, compiledPlugin_.get());
     const float resonance =
@@ -217,11 +210,12 @@ void CompiledFilterCurveView::updateTargetValues() {
 }
 
 bool CompiledFilterCurveView::hasActiveCurveLinks() const {
-    if (!hasLinkContext_)
+    const auto resolved = linkContextProvider_ ? linkContextProvider_() : std::nullopt;
+    if (!resolved)
         return false;
 
     for (int slotIndex : {0, 1, 2}) {
-        auto slotContext = linkContext_;
+        auto slotContext = *resolved;
         slotContext.paramIndex = slotIndex;
         if (hasActiveLinks(slotContext))
             return true;
@@ -419,6 +413,10 @@ void CompiledFilterCurveView::paint(juce::Graphics& g) {
 }
 
 const CompiledPresentationSpec& getMagdaFilterPresentation() {
+    using Filter = magda::daw::audio::compiled::MagdaFilterCompiledPlugin;
+    // Cutoff and resonance are the faceplate's handle; mode and engine sit in the header.
+    static constexpr int kKnobSlots[] = {Filter::kDriveSlot, Filter::kLimitSlot};
+    static constexpr int kHeaderSlots[] = {Filter::kModeSlot, Filter::kEngineSlot};
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName,
         .layoutCellCount = 6,
@@ -426,6 +424,9 @@ const CompiledPresentationSpec& getMagdaFilterPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledFilterCurveView>(pluginId);
         },
+        .knobSlots = kKnobSlots,
+        .faceplateWidth = 640,
+        .headerSlots = kHeaderSlots,
     };
     return kSpec;
 }

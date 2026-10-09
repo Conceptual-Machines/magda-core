@@ -4,17 +4,17 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 
 #include "core/DeviceInfo.hpp"
+#include "params/ParamLinkResolver.hpp"
 
 namespace magda::daw::audio {
 class MagdaDevice;
 }
 
 namespace magda::daw::ui {
-
-struct ParamLinkContext;
 
 /**
  * @brief Adapter over a compiled-Faust device's inline curve view.
@@ -55,6 +55,11 @@ class CompiledDevicePanel {
     /// whenever its preferred layout changes (e.g. user toggles collapsed),
     /// which triggers a parent `resized()` pass to honour the new request.
     virtual void setOnLayoutChanged(std::function<void()>) {}
+
+    /// Resolves the device's mods and macros afresh on each call. A panel reads
+    /// them through this rather than keeping a context, whose pointers a chain
+    /// rebuild frees.
+    virtual void setLinkContextProvider(std::function<std::optional<ParamLinkContext>()>) {}
 };
 
 /**
@@ -91,6 +96,12 @@ struct CompiledPresentationSpec {
     /// Optional device-specific enablement for a parameter slot. This changes
     /// interaction/presentation only; the parameter remains automatable.
     bool (*isParameterEnabled)(const magda::DeviceInfo& device, int slotIndex) = nullptr;
+    /// The faceplate-first style: the faceplate stands left at this width and
+    /// only these slots remain as a row of knobs. Empty keeps every slot in the grid.
+    std::span<const int> knobSlots;
+    int faceplateWidth = 0;
+    /// Discrete slots the faceplate-first style shows in the header instead.
+    std::span<const int> headerSlots;
 };
 
 /// All presentation specs in stable iteration order. Each spec is defined

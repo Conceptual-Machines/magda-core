@@ -284,6 +284,9 @@ class DeviceSlotComponent : public NodeComponent,
     bool faceplateShown() const;
     bool paramsShown() const;
     void toggleDeviceView(bool faceplate);
+    /// The faceplate leads, at its spec's width, and only the spec's knobs remain.
+    bool faceplateFirst() const;
+    int faceplateWidth() const;
     std::unique_ptr<juce::TextButton> deltaButton_;
     std::unique_ptr<magda::SvgButton> exportClipButton_;  // Export pattern/chords as MIDI clip
     std::unique_ptr<magda::SvgButton> randomButton_;      // Step-sequencer pattern randomize
@@ -391,6 +394,8 @@ class DeviceSlotComponent : public NodeComponent,
     void bindFaustHeader();
     void refreshInlinePluginBindings();
     void setupCustomUILinking();
+    /// The device's mods and macros as they stand now, for its faceplate.
+    ParamLinkContext resolveCurveLinkContext() const;
     template <typename LinkTarget>
     void wireSharedModMacroLinkCallbacks(LinkTarget& target, bool expandMacroPanelOnDirectLink);
 

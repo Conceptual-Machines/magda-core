@@ -52,6 +52,10 @@ class CompiledFilterCurveView final : public juce::Component,
     }
     void bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) override;
     void setOnParameterChanged(std::function<void(int, float)>) override {}  // read-only view
+    void setLinkContextProvider(
+        std::function<std::optional<ParamLinkContext>()> provider) override {
+        linkContextProvider_ = std::move(provider);
+    }
     int preferredHeight() const override {
         return getPreferredHeight();
     }
@@ -77,8 +81,7 @@ class CompiledFilterCurveView final : public juce::Component,
     juce::Colour curveColour_;
     bool hasCurveColour_ = false;
     magda::DeviceInfo deviceSnapshot_;
-    ParamLinkContext linkContext_;
-    bool hasLinkContext_ = false;
+    std::function<std::optional<ParamLinkContext>()> linkContextProvider_;
     std::shared_ptr<magda::daw::audio::compiled::MagdaFilterCompiledPlugin> compiledPlugin_;
 
     FilterMode modeForIndex() const;

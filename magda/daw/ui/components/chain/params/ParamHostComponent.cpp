@@ -415,11 +415,15 @@ void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::
     constexpr int kPadding = 10;
     constexpr int kGap = 6;
     area = area.reduced(kPadding, kPadding - 2);
-    const int numRows = std::max((cellCount_ + cellsPerRow_ - 1) / cellsPerRow_, minRows_);
+    const int usedRows = (cellCount_ + cellsPerRow_ - 1) / cellsPerRow_;
+    const int numRows = std::max(usedRows, minRows_);
     const int cellWidth = (area.getWidth() - kGap * (cellsPerRow_ - 1)) / cellsPerRow_;
     const int cellHeight = rowHeight_ > 0 ? rowHeight_
                            : numRows > 0  ? (area.getHeight() - kGap * (numRows - 1)) / numRows
                                           : area.getHeight();
+    // A grid shorter than the rows it is sized for stands centred in the body.
+    if (rowHeight_ <= 0 && usedRows < numRows)
+        area.removeFromTop((area.getHeight() - usedRows * cellHeight - kGap * (usedRows - 1)) / 2);
 
     for (int i = 0; i < cellCount_; ++i) {
         const int row = i / cellsPerRow_;
@@ -460,7 +464,7 @@ void ParamHostComponent::applyControlStyle() {
     const int styleRows = style == ParamControlStyle::Knobs ? 3 : 4;
     const int previousCount = cellCount_;
     const int previousColumns = cellsPerRow_;
-    minRows_ = 0;
+    minRows_ = layout_->minRowsForStyle(styleRows);
     if (layout_->setShape(sliders ? 6 : 8, styleRows)) {
         cellCount_ = layout_->cellCount();
         cellsPerRow_ = layout_->cellsPerRow();
@@ -468,7 +472,6 @@ void ParamHostComponent::applyControlStyle() {
         constexpr int kMaxColumns = 2;
         const int rows = (cellCount_ + kMaxColumns - 1) / kMaxColumns;
         cellsPerRow_ = (cellCount_ + rows - 1) / rows;
-        minRows_ = styleRows;
     }
     const bool styleChanged = !lastAppliedStyle_.has_value() || *lastAppliedStyle_ != style;
     lastAppliedStyle_ = style;

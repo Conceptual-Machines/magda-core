@@ -754,6 +754,17 @@ bool DeviceSlotComponent::paramsShown() const {
     return !hasFaceplate() || device_.paramsShown || !device_.faceplateShown;
 }
 
+bool DeviceSlotComponent::faceplateFirst() const {
+    return traits_.compiledPresentation != nullptr &&
+           !traits_.compiledPresentation->knobSlots.empty();
+}
+
+int DeviceSlotComponent::faceplateWidth() const {
+    return faceplateFirst() && traits_.compiledPresentation->faceplateWidth > 0
+               ? traits_.compiledPresentation->faceplateWidth
+               : FACEPLATE_WIDTH;
+}
+
 void DeviceSlotComponent::toggleDeviceView(bool faceplate) {
     auto& shown = faceplate ? device_.faceplateShown : device_.paramsShown;
     const bool other = faceplate ? device_.paramsShown : device_.faceplateShown;
@@ -1078,7 +1089,7 @@ int DeviceSlotComponent::getPreferredWidth() const {
     int contentWidth = getDynamicSlotWidth();
     if (hasFaceplate())
         contentWidth =
-            (paramsShown() ? contentWidth : 0) + (faceplateShown() ? FACEPLATE_WIDTH : 0);
+            (paramsShown() ? contentWidth : 0) + (faceplateShown() ? faceplateWidth() : 0);
     return getTotalWidth(contentWidth) + meterExtra;
 }
 
@@ -1205,6 +1216,22 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     repaint();
 }
 
+ParamLinkContext DeviceSlotComponent::resolveCurveLinkContext() const {
+    const auto context = resolveDeviceSlotModulationContext(
+        nodePath_, getModsData(), getMacrosData(), selectedModIndex_, selectedMacroIndex_);
+    return {device_.id,
+            -1,
+            nodePath_,
+            context.deviceMods,
+            context.rackMods,
+            context.deviceMacros,
+            context.rackMacros,
+            context.trackMods,
+            context.trackMacros,
+            context.selectedModIndex,
+            context.selectedMacroIndex};
+}
+
 void DeviceSlotComponent::updateParamModulation() {
     const auto context = resolveDeviceSlotModulationContext(
         nodePath_, getModsData(), getMacrosData(), selectedModIndex_, selectedMacroIndex_);
@@ -1218,17 +1245,7 @@ void DeviceSlotComponent::updateParamModulation() {
     if (compiledPanel_) {
         if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine())
             compiledPanel_->bindDevice(audioEngine->renderedDevice(nodePath_));
-        ParamLinkContext curveLinkContext{device_.id,
-                                          -1,
-                                          nodePath_,
-                                          context.deviceMods,
-                                          context.rackMods,
-                                          context.deviceMacros,
-                                          context.rackMacros,
-                                          context.trackMods,
-                                          context.trackMacros,
-                                          context.selectedModIndex,
-                                          context.selectedMacroIndex};
+        const auto curveLinkContext = resolveCurveLinkContext();
         compiledPanel_->updateFromDevice(device_, &curveLinkContext);
     }
 
@@ -1431,7 +1448,8 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
                  ? FaustMeterPanel::kPreferredHeight
                  : 0,
          .compiledPanel = compiledBodyPanel,
-         .compiledPanelWidth = FACEPLATE_WIDTH,
+         .compiledPanelWidth = faceplateWidth(),
+         .compiledPanelFirst = faceplateFirst(),
          .compiledPanelShown = faceplateShown(),
          .paramGridShown = paramsShown(),
          .compiledPanelWantsFullBody = compiledPanel_ != nullptr && compiledPanel_->wantsFullBody(),
@@ -1941,6 +1959,10 @@ void DeviceSlotComponent::refreshInlinePluginBindings() {
 }
 
 void DeviceSlotComponent::setupCustomUILinking() {
+    if (compiledPanel_ != nullptr)
+        compiledPanel_->setLinkContextProvider(
+            [this]() { return std::optional{resolveCurveLinkContext()}; });
+
     auto sliders = customUI_.getLinkableSliders();
     if (sliders.empty())
         return;

@@ -1,5 +1,8 @@
 #pragma once
 
+#include <span>
+#include <vector>
+
 #include "layout/DeviceParamLayout.hpp"
 
 namespace magda::daw::ui {
@@ -25,11 +28,13 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
     using ParameterEnabledPredicate = bool (*)(const magda::DeviceInfo&, int slotIndex);
 
     CompiledFaustDeviceLayout(int cellCount, int cellsPerRow, bool columnMajor = false,
-                              ParameterEnabledPredicate isParameterEnabled = nullptr)
-        : cellCount_(cellCount),
-          cellsPerRow_(cellsPerRow),
+                              ParameterEnabledPredicate isParameterEnabled = nullptr,
+                              std::span<const int> knobSlots = {})
+        : cellCount_(knobSlots.empty() ? cellCount : static_cast<int>(knobSlots.size())),
+          cellsPerRow_(knobSlots.empty() ? cellsPerRow : static_cast<int>(knobSlots.size())),
           columnMajor_(columnMajor),
-          isParameterEnabled_(isParameterEnabled) {}
+          isParameterEnabled_(isParameterEnabled),
+          knobSlots_(knobSlots.begin(), knobSlots.end()) {}
 
     int cellCount() const override {
         return cellCount_;
@@ -38,7 +43,10 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
         return cellsPerRow_;
     }
     bool reflowsForControlStyle() const override {
-        return !columnMajor_;
+        return !columnMajor_ && knobSlots_.empty();
+    }
+    int minRowsForStyle(int styleRows) const override {
+        return columnMajor_ ? 0 : styleRows;
     }
     bool wantsPagination() const override {
         return false;
@@ -52,6 +60,7 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
     int cellsPerRow_;
     bool columnMajor_;
     ParameterEnabledPredicate isParameterEnabled_;
+    std::vector<int> knobSlots_;  // The faceplate-first style's knob row, in order.
 };
 
 }  // namespace magda::daw::ui
