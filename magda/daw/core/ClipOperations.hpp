@@ -138,6 +138,54 @@ class ClipOperations {
         return juce::jlimit(start, end, target);
     }
 
+    /**
+     * @brief The timeline beat that plays @p sourceSeconds of an audio clip's file.
+     *
+     * Unlooped, audio outside the clip maps to where it would play if the clip
+     * reached it. Looped, the pass @p nearTimelineBeat is in; nullopt for audio
+     * outside the loop region, which never plays.
+     */
+    static inline std::optional<double> timelineBeatForSourceSeconds(const ClipInfo& clip,
+                                                                     double sourceSeconds,
+                                                                     double nearTimelineBeat,
+                                                                     double bpm) {
+        const auto* event = clip.primaryEvent();
+        if (!clip.isAudio() || event == nullptr || !isValidBpm(bpm))
+            return std::nullopt;
+
+        const auto beatsAt = [&](double seconds) {
+            return event->sourceInstantToTimelineBeats(seconds, bpm);
+        };
+        const double start = clip.placement.startBeat + event->startBeat;
+        const double anchorBeats = beatsAt(event->anchorSeconds());
+        const double sampleRate = event->sourceSampleRate();
+        const auto loopSamples = event->resolvedLoopLengthSamples(sampleRate);
+        if (!clip.loopEnabled || loopSamples <= 0)
+            return start + beatsAt(sourceSeconds) - anchorBeats;
+
+        const double loopStart = event->loopStartSeconds();
+        const double loopEnd = loopStart + static_cast<double>(loopSamples) / sampleRate;
+        if (sourceSeconds < loopStart || sourceSeconds > loopEnd)
+            return std::nullopt;
+
+        const double loopStartBeats = beatsAt(loopStart);
+        const double loopLength = beatsAt(loopEnd) - loopStartBeats;
+        if (loopLength <= 0.0)
+            return std::nullopt;
+
+        // Cycles are passes through the loop region; take the one the playhead is in.
+        const double anchorPhase = anchorBeats - loopStartBeats;
+        const double clickedPhase = beatsAt(sourceSeconds) - loopStartBeats;
+        const double cycle = std::floor((nearTimelineBeat - start + anchorPhase) / loopLength);
+        const double end = clip.placement.endBeat();
+        double target = start + cycle * loopLength + clickedPhase - anchorPhase;
+        while (target < start)
+            target += loopLength;
+        while (target > end)
+            target -= loopLength;
+        return target >= start ? std::optional{target} : std::nullopt;
+    }
+
     static inline bool clipMidiNoteToVisibleRange(const ClipInfo& clip, MidiNote& note) {
         auto range = getMidiVisibleRange(clip);
         if (range.lengthBeats <= 0.0 || note.lengthBeats <= 0.0)
