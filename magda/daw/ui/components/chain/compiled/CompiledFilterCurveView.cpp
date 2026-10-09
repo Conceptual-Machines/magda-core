@@ -18,7 +18,7 @@ constexpr float kMaxFreq = 20000.0f;
 constexpr float kMinDb = -60.0f;
 constexpr float kBaseMaxDb = 18.0f;
 constexpr float kHardMaxDb = 72.0f;
-constexpr float kPlotPadX = 8.0f;
+constexpr float kPlotPadX = 0.0f;  // The curve runs the graph's full width.
 constexpr float kPlotPadY = 6.0f;
 constexpr float kCurveSmoothing = 0.24f;
 constexpr int kAnimationPollMs = 16;  // ~60 Hz when something's actually moving
@@ -377,6 +377,7 @@ void CompiledFilterCurveView::paint(juce::Graphics& g) {
     juce::Path curvePath;
 
     const float zeroY = plot.getY() + dbToY(0.0f, plot.getHeight(), maxDb);
+    bool curveBroken = true;
     for (int i = 0; i < samples; ++i) {
         const float t = static_cast<float>(i) / static_cast<float>(samples - 1);
         const float x = plot.getX() + t * plot.getWidth();
@@ -384,12 +385,19 @@ void CompiledFilterCurveView::paint(juce::Graphics& g) {
             plot.getY() + dbToY(responseDbs[static_cast<size_t>(i)], plot.getHeight(), maxDb);
 
         if (i == 0) {
-            curvePath.startNewSubPath(x, y);
             fillPath.startNewSubPath(x, zeroY);
             fillPath.lineTo(x, y);
         } else {
-            curvePath.lineTo(x, y);
             fillPath.lineTo(x, y);
+        }
+        // Below the floor the response is clamped to the bottom edge; the line breaks there.
+        if (responseDbs[static_cast<size_t>(i)] <= kMinDb) {
+            curveBroken = true;
+        } else if (curveBroken) {
+            curvePath.startNewSubPath(x, y);
+            curveBroken = false;
+        } else {
+            curvePath.lineTo(x, y);
         }
     }
     fillPath.lineTo(plot.getRight(), zeroY);
@@ -507,7 +515,7 @@ const CompiledPresentationSpec& getMagdaFilterPresentation() {
             return std::make_unique<CompiledFilterCurveView>(pluginId);
         },
         .knobSlots = kKnobSlots,
-        .faceplateWidth = 640,
+        .faceplateWidth = 560,
         .headerSlots = kHeaderSlots,
     };
     return kSpec;
