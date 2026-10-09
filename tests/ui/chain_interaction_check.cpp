@@ -1,4 +1,5 @@
 // Full component regression check. Run with run_chain_interaction_check.py.
+#include <array>
 #include <functional>
 #include <iostream>
 #include <map>
@@ -294,7 +295,7 @@ int main() {
                 {
                     // A device's own mix lives in the side strip, so its grid drops it.
                     ParamHostComponent grid(std::make_unique<CompiledFaustDeviceLayout>(
-                        6, 6, false, nullptr, std::span<const int>{}, 4));
+                        6, 6, false, nullptr, std::span<const int>{}, std::array{4}));
                     DeviceInfo model;
                     for (int index = 0; index < 6; ++index) {
                         ParameterInfo parameter;

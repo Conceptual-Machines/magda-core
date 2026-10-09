@@ -299,6 +299,9 @@ class DeviceSlotComponent : public NodeComponent,
         }
     };
     std::vector<FaceplateSlotControl> faceplateSlotControls_;
+    std::vector<int> faceplateStripSlots_;
+    /// The spec's strip slots, else every slot the grid would draw as a dropdown.
+    std::vector<int> resolveFaceplateStripSlots() const;
     void createFaceplateSlotControls();
     void refreshFaceplateSlotControls();
     void writeFaceplateSlot(int slot, int choiceIndex);

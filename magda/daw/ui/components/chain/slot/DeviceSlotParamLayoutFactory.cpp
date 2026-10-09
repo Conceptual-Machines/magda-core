@@ -7,7 +7,8 @@
 
 namespace magda::daw::ui {
 
-std::unique_ptr<DeviceParamLayout> createDeviceSlotParamLayout(const DeviceSlotTraits& traits) {
+std::unique_ptr<DeviceParamLayout> createDeviceSlotParamLayout(const DeviceSlotTraits& traits,
+                                                               std::span<const int> excludedSlots) {
     if (traits.isFaust || traits.isFaustInstrument) {
         return std::make_unique<FaustDeviceLayout>();
     }
@@ -18,7 +19,7 @@ std::unique_ptr<DeviceParamLayout> createDeviceSlotParamLayout(const DeviceSlotT
             traits.compiledPresentation->layoutCellsPerRow,
             traits.compiledPresentation->columnMajorGrid,
             traits.compiledPresentation->isParameterEnabled, traits.compiledPresentation->knobSlots,
-            traits.compiledPresentation->mixSlot);
+            excludedSlots);
     }
 
     return std::make_unique<StandardDeviceLayout>();

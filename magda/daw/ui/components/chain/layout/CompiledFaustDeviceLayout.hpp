@@ -29,15 +29,17 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
 
     CompiledFaustDeviceLayout(int cellCount, int cellsPerRow, bool columnMajor = false,
                               ParameterEnabledPredicate isParameterEnabled = nullptr,
-                              std::span<const int> knobSlots = {}, int excludedSlot = -1)
+                              std::span<const int> knobSlots = {},
+                              std::span<const int> excludedSlots = {})
         : columnMajor_(columnMajor),
           isParameterEnabled_(isParameterEnabled),
           knobSlots_(knobSlots.begin(), knobSlots.end()) {
-        // A slot the device shows elsewhere (its mix, in the side strip) leaves the grid.
-        if (knobSlots_.empty() && excludedSlot >= 0)
+        // Slots the device shows elsewhere (its mix, its faceplate strip) leave the grid.
+        if (knobSlots_.empty() && !excludedSlots.empty())
             for (int slot = 0; slot < cellCount; ++slot)
                 knobSlots_.push_back(slot);
-        std::erase(knobSlots_, excludedSlot);
+        for (const int excluded : excludedSlots)
+            std::erase(knobSlots_, excluded);
         cellCount_ = knobSlots_.empty() ? cellCount : static_cast<int>(knobSlots_.size());
         cellsPerRow_ = knobSlots_.empty() ? cellsPerRow : static_cast<int>(knobSlots_.size());
     }

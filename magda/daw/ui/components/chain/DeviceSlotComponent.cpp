@@ -547,7 +547,12 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     styleDeviceHeaderButtons();
 
     // Create parameter grid (owns slots + pagination).
-    paramGrid_ = std::make_unique<ParamHostComponent>(createDeviceSlotParamLayout(traits_));
+    faceplateStripSlots_ = resolveFaceplateStripSlots();
+    auto gridExcluded = faceplateStripSlots_;
+    if (const int mix = nativeMixSlot(); mix >= 0)
+        gridExcluded.push_back(mix);
+    paramGrid_ =
+        std::make_unique<ParamHostComponent>(createDeviceSlotParamLayout(traits_, gridExcluded));
     paramGrid_->setFooterPagination(true);
 
     footerPrevPage_ = makeNavArrowButton("Previous page", 0.5f);
@@ -797,11 +802,28 @@ bool DeviceSlotComponent::paramsShown() const {
     return !hasFaceplate() || device_.paramsShown || !device_.faceplateShown;
 }
 
+std::vector<int> DeviceSlotComponent::resolveFaceplateStripSlots() const {
+    const auto* spec = traits_.compiledPresentation;
+    if (spec == nullptr || spec->createPanel == nullptr || spec->columnMajorGrid)
+        return {};
+    if (!spec->faceplateSlots.empty())
+        return {spec->faceplateSlots.begin(), spec->faceplateSlots.end()};
+    // Otherwise every control the grid would draw as a dropdown stands on the faceplate.
+    std::vector<int> slots;
+    for (int slot = 0; slot < spec->layoutCellCount; ++slot) {
+        const auto* param = device_.findParameterByIndex(slot);
+        if (param != nullptr && !param->hidden && param->scale == magda::ParameterScale::Discrete &&
+            !param->choices.empty() && !wantsSegmentedChoices(*param))
+            slots.push_back(slot);
+    }
+    return slots;
+}
+
 void DeviceSlotComponent::createFaceplateSlotControls() {
     const auto* spec = traits_.compiledPresentation;
     if (spec == nullptr)
         return;
-    for (const int slot : spec->faceplateSlots) {
+    for (const int slot : faceplateStripSlots_) {
         const auto* param = device_.findParameterByIndex(slot);
         FaceplateSlotControl control;
         control.slot = slot;
