@@ -4,8 +4,8 @@
 
 namespace magda::daw::ui {
 
-/// The multiband dynamics' body: the graph over a row of band tabs on the left, the selected
-/// band's knobs beside it, and past a divider a column of whole-device knobs. The faceplate
+/// The multiband dynamics' body: the selected band's knobs on the left, the graph over a row of
+/// band tabs beside them, and past a divider a column of whole-device knobs. The faceplate
 /// and the grid both place from this over the same bounds.
 struct MultibandEditorGeometry {
     juce::Rectangle<int> plot;
@@ -25,8 +25,8 @@ struct MultibandEditorGeometry {
         auto area = bounds.reduced(14, 0).withTrimmedTop(10).withTrimmedBottom(14);
         geometry.globals = area.removeFromRight(kKnobWidth);
         area.removeFromRight(25);  // The divider and its margins.
-        geometry.editor = area.removeFromRight(kKnobColumns * kKnobWidth + 24);
-        area.removeFromRight(10);
+        geometry.editor = area.removeFromLeft(kKnobColumns * kKnobWidth + 24);
+        area.removeFromLeft(10);
         geometry.tabs = area.removeFromBottom(26);
         area.removeFromBottom(8);
         geometry.plot = area;
