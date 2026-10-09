@@ -10,6 +10,7 @@
 
 #include "audio/plugins/compiled/MagdaEqCompiledPlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
+#include "compiled/SpectrumOverlay.hpp"
 #include "core/DeviceInfo.hpp"
 
 namespace magda::daw::ui {
@@ -73,9 +74,6 @@ class CompiledEqCurveView final : public juce::Component,
 
     void timerCallback() override;
     void resampleFromDevice();
-    void rebuildSpectrumFft();
-    void updateSpectrumOverlay();
-    void drawSpectrumOverlay(juce::Graphics& g, juce::Rectangle<float> area);
 
     // -1 if the cursor isn't near any band. Used by hit-testing and the
     // hover highlight in paint().
@@ -110,20 +108,7 @@ class CompiledEqCurveView final : public juce::Component,
 
     juce::Rectangle<float> plotArea_;
 
-    static constexpr int kSpectrumFftOrder = 11;
-    static constexpr int kSpectrumFftSize = 1 << kSpectrumFftOrder;
-    static constexpr int kSpectrumNumBins = kSpectrumFftSize / 2;
-    static constexpr float kSpectrumMinDb = -90.0f;
-    static constexpr float kSpectrumMaxDb = 0.0f;
-
-    std::unique_ptr<juce::dsp::FFT> spectrumFft_;
-    std::unique_ptr<juce::dsp::WindowingFunction<float>> spectrumWindow_;
-    std::vector<float> spectrumReadBuf_;
-    std::vector<float> spectrumFftData_;
-    std::vector<float> preSpectrumDb_;
-    std::vector<float> postSpectrumDb_;
-    size_t lastPreSpectrumWritePosition_ = 0;
-    size_t lastPostSpectrumWritePosition_ = 0;
+    SpectrumOverlay spectrum_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CompiledEqCurveView)
 };

@@ -593,6 +593,7 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES dsp/test_faust_instrument_voice_modes.cpp)
     list(APPEND TEST_SOURCES dsp/test_faust_instrument_tempo.cpp)
     list(APPEND TEST_SOURCES dsp/test_faust_sidechain.cpp)
+    list(APPEND TEST_SOURCES dsp/test_filter_spectrum_taps.cpp)
     list(APPEND TEST_SOURCES devices/test_mutable_add_not_replace.cpp)
     list(APPEND TEST_SOURCES devices/test_sampler_relocate.cpp)
 

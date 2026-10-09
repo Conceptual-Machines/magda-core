@@ -224,15 +224,11 @@ Eq::BandSnapshot Eq::getBandSnapshot(int band) const {
 }
 
 void Eq::onPrepare(double, int maximumBlockSize) {
-    preTapScratch_.assign(static_cast<size_t>(std::max(0, maximumBlockSize)), 0.0f);
-    postTapScratch_.assign(static_cast<size_t>(std::max(0, maximumBlockSize)), 0.0f);
     for (auto& bandStates : biquadStates_)
         bandStates.clear();
 }
 
 void Eq::onRelease() {
-    preTapScratch_.clear();
-    postTapScratch_.clear();
     for (auto& bandStates : biquadStates_)
         bandStates.clear();
 }
@@ -249,11 +245,6 @@ void Eq::processAudio(sdk::ProcessContext& context) {
     const int hostChannels = context.audio.numChannels();
     if (hostChannels <= 0)
         return;
-
-    if (static_cast<int>(preTapScratch_.size()) < numSamples)
-        preTapScratch_.resize(static_cast<size_t>(numSamples));
-    if (static_cast<int>(postTapScratch_.size()) < numSamples)
-        postTapScratch_.resize(static_cast<size_t>(numSamples));
 
     for (auto& bandStates : biquadStates_)
         if (static_cast<int>(bandStates.size()) < hostChannels)
@@ -275,16 +266,7 @@ void Eq::processAudio(sdk::ProcessContext& context) {
     }
     const float outputGain = std::pow(10.0f, slotDisplayValue(kOutputSlot) / 20.0f);
 
-    std::fill_n(preTapScratch_.data(), numSamples, 0.0f);
-    for (int channel = 0; channel < hostChannels; ++channel) {
-        const float* in = context.audio.channel(channel);
-        for (int i = 0; i < numSamples; ++i)
-            preTapScratch_[static_cast<size_t>(i)] += in[i];
-    }
-    const float channelInverse = 1.0f / static_cast<float>(hostChannels);
-    for (int i = 0; i < numSamples; ++i)
-        preTapScratch_[static_cast<size_t>(i)] *= channelInverse;
-    preSpectrumTap_.write(preTapScratch_.data(), numSamples);
+    preSpectrumTap_.writeDownmix(context.audio);
 
     // A fast high-Q sweep can go non-finite, hence the sanitising pass. The enabled bands are
     // compacted once per block.
@@ -294,7 +276,6 @@ void Eq::processAudio(sdk::ProcessContext& context) {
         if (bandEnabled[static_cast<size_t>(band)])
             activeBands[static_cast<size_t>(activeBandCount++)] = band;
 
-    std::fill_n(postTapScratch_.data(), numSamples, 0.0f);
     for (int channel = 0; channel < hostChannels; ++channel) {
         float* out = context.audio.channel(channel);
         for (int i = 0; i < numSamples; ++i) {
@@ -306,12 +287,8 @@ void Eq::processAudio(sdk::ProcessContext& context) {
             }
             out[i] = sanitise(sample * outputGain);
         }
-        for (int i = 0; i < numSamples; ++i)
-            postTapScratch_[static_cast<size_t>(i)] += out[i];
     }
-    for (int i = 0; i < numSamples; ++i)
-        postTapScratch_[static_cast<size_t>(i)] *= channelInverse;
-    postSpectrumTap_.write(postTapScratch_.data(), numSamples);
+    postSpectrumTap_.writeDownmix(context.audio);
 }
 
 }  // namespace magda::devices::faust

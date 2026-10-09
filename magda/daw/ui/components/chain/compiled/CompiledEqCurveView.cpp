@@ -20,7 +20,6 @@ constexpr int kPathSamples = 200;
 constexpr float kFreqMinHz = 20.0f;
 constexpr float kFreqMaxHz = 20000.0f;
 constexpr float kGainAxisDb = 24.0f;  // ±24 dB display range
-constexpr float kSpectrumSmoothing = 0.45f;
 
 constexpr float kTwoPi = 6.28318530717958647692f;
 
@@ -249,7 +248,6 @@ bool bandGainAffectsCurve(magda::daw::audio::compiled::MagdaEqCompiledPlugin::Ba
 
 CompiledEqCurveView::CompiledEqCurveView(juce::String /*pluginId*/) {
     setInterceptsMouseClicks(true, false);
-    rebuildSpectrumFft();
     startTimer(kPollMs);
 }
 
@@ -259,10 +257,7 @@ void CompiledEqCurveView::setCompiledPlugin(
         return;
 
     compiledPlugin_ = std::move(plugin);
-    lastPreSpectrumWritePosition_ = 0;
-    lastPostSpectrumWritePosition_ = 0;
-    std::fill(preSpectrumDb_.begin(), preSpectrumDb_.end(), kSpectrumMinDb);
-    std::fill(postSpectrumDb_.begin(), postSpectrumDb_.end(), kSpectrumMinDb);
+    spectrum_.reset();
 }
 
 void CompiledEqCurveView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
@@ -309,7 +304,8 @@ void CompiledEqCurveView::timerCallback() {
         for (int band = 0; band < Plugin::kBandCount; ++band)
             bands_[band] = compiledPlugin_->getBandSnapshot(band);
         outputDb_ = compiledPlugin_->getOutputDb();
-        updateSpectrumOverlay();
+        spectrum_.update(compiledPlugin_->getPreSpectrumTapBuffer(),
+                         compiledPlugin_->getPostSpectrumTapBuffer());
     }
     repaint();
 }
@@ -348,7 +344,9 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
         g.drawLine(x, plotArea_.getY(), x, plotArea_.getBottom(), 1.0f);
     }
 
-    drawSpectrumOverlay(g, plotArea_);
+    if (compiledPlugin_ != nullptr)
+        spectrum_.draw(g, plotArea_, compiledPlugin_->getSampleRate(), kFreqMinHz, kFreqMaxHz,
+                       [this](float hz) { return logFreqToX(hz, plotArea_); });
 
     // Build the combined-response path by summing per-band log-magnitudes
     // (i.e. multiplying linear magnitudes) at each x sample.
@@ -687,93 +685,6 @@ void CompiledEqCurveView::mouseWheelMove(const juce::MouseEvent& e,
     bands_[band].q = newQ;
     writeBandParam(band, Plugin::kBandQOffset, newQ);
     repaint();
-}
-
-void CompiledEqCurveView::rebuildSpectrumFft() {
-    spectrumFft_ = std::make_unique<juce::dsp::FFT>(kSpectrumFftOrder);
-    spectrumWindow_ = std::make_unique<juce::dsp::WindowingFunction<float>>(
-        static_cast<size_t>(kSpectrumFftSize), juce::dsp::WindowingFunction<float>::hann);
-    spectrumReadBuf_.assign(static_cast<size_t>(kSpectrumFftSize), 0.0f);
-    spectrumFftData_.assign(static_cast<size_t>(kSpectrumFftSize) * 2, 0.0f);
-    preSpectrumDb_.assign(static_cast<size_t>(kSpectrumNumBins), kSpectrumMinDb);
-    postSpectrumDb_.assign(static_cast<size_t>(kSpectrumNumBins), kSpectrumMinDb);
-}
-
-void CompiledEqCurveView::updateSpectrumOverlay() {
-    if (compiledPlugin_ == nullptr || spectrumFft_ == nullptr || spectrumWindow_ == nullptr)
-        return;
-
-    auto updateTrace = [this](const magda::engine::SampleRing& tap, size_t& lastWritePosition,
-                              std::vector<float>& traceDb) {
-        const auto writePosition = tap.writePosition();
-        if (writePosition == lastWritePosition)
-            return;
-
-        lastWritePosition = tap.readLatest(spectrumReadBuf_.data(), kSpectrumFftSize);
-        if (lastWritePosition == 0)
-            return;
-
-        std::copy(spectrumReadBuf_.begin(), spectrumReadBuf_.end(), spectrumFftData_.begin());
-        std::fill(spectrumFftData_.begin() + kSpectrumFftSize, spectrumFftData_.end(), 0.0f);
-        spectrumWindow_->multiplyWithWindowingTable(spectrumFftData_.data(),
-                                                    static_cast<size_t>(kSpectrumFftSize));
-        spectrumFft_->performFrequencyOnlyForwardTransform(spectrumFftData_.data());
-
-        const float norm = 2.0f / static_cast<float>(kSpectrumFftSize);
-        for (int i = 0; i < kSpectrumNumBins; ++i) {
-            const float mag = spectrumFftData_[static_cast<size_t>(i)] * norm;
-            const float db = juce::jlimit(kSpectrumMinDb, kSpectrumMaxDb,
-                                          20.0f * std::log10(std::max(mag, 1.0e-6f)));
-            float& smoothed = traceDb[static_cast<size_t>(i)];
-            smoothed += kSpectrumSmoothing * (db - smoothed);
-        }
-    };
-
-    updateTrace(compiledPlugin_->getPreSpectrumTapBuffer(), lastPreSpectrumWritePosition_,
-                preSpectrumDb_);
-    updateTrace(compiledPlugin_->getPostSpectrumTapBuffer(), lastPostSpectrumWritePosition_,
-                postSpectrumDb_);
-}
-
-void CompiledEqCurveView::drawSpectrumOverlay(juce::Graphics& g, juce::Rectangle<float> area) {
-    if (compiledPlugin_ == nullptr || preSpectrumDb_.empty() || postSpectrumDb_.empty())
-        return;
-
-    const double sampleRate = compiledPlugin_->getSampleRate();
-    if (sampleRate <= 0.0)
-        return;
-
-    const auto binHz = static_cast<float>(sampleRate / static_cast<double>(kSpectrumFftSize));
-    auto dbToSpectrumY = [area](float db) {
-        const float t = (db - kSpectrumMinDb) / (kSpectrumMaxDb - kSpectrumMinDb);
-        return area.getBottom() - juce::jlimit(0.0f, 1.0f, t) * area.getHeight();
-    };
-
-    auto buildPath = [&](const std::vector<float>& traceDb) {
-        juce::Path path;
-        bool started = false;
-        for (int i = 1; i < kSpectrumNumBins; ++i) {
-            const float freq = static_cast<float>(i) * binHz;
-            if (freq < kFreqMinHz || freq > kFreqMaxHz)
-                continue;
-            const float x = logFreqToX(freq, area);
-            const float y = dbToSpectrumY(traceDb[static_cast<size_t>(i)]);
-            if (!started) {
-                path.startNewSubPath(x, y);
-                started = true;
-            } else {
-                path.lineTo(x, y);
-            }
-        }
-        return path;
-    };
-
-    const auto prePath = buildPath(preSpectrumDb_);
-    const auto postPath = buildPath(postSpectrumDb_);
-    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.16f));
-    g.strokePath(prePath, juce::PathStrokeType(1.0f));
-    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).withAlpha(0.32f));
-    g.strokePath(postPath, juce::PathStrokeType(1.1f));
 }
 
 void CompiledEqCurveView::showBandTypeMenu(int band) {

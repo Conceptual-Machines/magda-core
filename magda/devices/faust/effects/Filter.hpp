@@ -1,5 +1,6 @@
 #pragma once
 
+#include <magda/sdk/tap/SampleRing.hpp>
 #include <string>
 #include <vector>
 
@@ -40,6 +41,17 @@ class Filter : public CompiledEffect {
         return modeChoicesForEngine(activeEngine());
     }
 
+    /// The signal in and out, mixed to mono, for the faceplate's spectrum.
+    const engine::SampleRing& getPreSpectrumTapBuffer() const {
+        return preSpectrumTap_;
+    }
+    const engine::SampleRing& getPostSpectrumTapBuffer() const {
+        return postSpectrumTap_;
+    }
+    double getSampleRate() const {
+        return currentSampleRate();
+    }
+
     std::string devicePluginId() const override {
         return xmlTypeName;
     }
@@ -61,7 +73,12 @@ class Filter : public CompiledEffect {
     }
     int slotForDspIdx(int idx) const override;
     void writeExtraZones(int engineIndex) override;
+    void beforeCompute(sdk::ProcessContext& context, int engineIndex) override;
     void afterCompute(sdk::ProcessContext& context, int engineIndex) override;
+
+  private:
+    engine::SampleRing preSpectrumTap_{8192};
+    engine::SampleRing postSpectrumTap_{8192};
 };
 
 }  // namespace magda::devices::faust

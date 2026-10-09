@@ -6,6 +6,7 @@
 
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
+#include "compiled/SpectrumOverlay.hpp"
 #include "core/DeviceInfo.hpp"
 #include "params/ParamLinkResolver.hpp"
 
@@ -93,6 +94,7 @@ class CompiledFilterCurveView final : public juce::Component,
     magda::DeviceInfo deviceSnapshot_;
     std::function<std::optional<ParamLinkContext>()> linkContextProvider_;
     std::shared_ptr<magda::daw::audio::compiled::MagdaFilterCompiledPlugin> compiledPlugin_;
+    SpectrumOverlay spectrum_;
     std::function<void(int, float)> onParameterChanged_;
     juce::Rectangle<float> plotArea_;  // Where the last paint put the plot.
     bool dragging_ = false;

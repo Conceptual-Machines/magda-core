@@ -139,20 +139,24 @@ void Filter::writeExtraZones(int engineIndex) {
             clampSallenKeyCutoffHz(*cutoff, currentSampleRate(), slotInfo(kCutoffSlot).minValue);
 }
 
+void Filter::beforeCompute(sdk::ProcessContext& context, int) {
+    preSpectrumTap_.writeDownmix(context.audio);
+}
+
 void Filter::afterCompute(sdk::ProcessContext& context, int engineIndex) {
     // Resonance peaks are what it tames, so it runs after the filter and has no dsp zone.
     const float limitMix = std::clamp(parameterValue(kLimitSlot), 0.0f, 1.0f);
-    if (limitMix <= 0.0f)
-        return;
-
-    const int channels = std::min(context.audio.numChannels(), engineOutputCount(engineIndex));
-    for (int channel = 0; channel < channels; ++channel) {
-        float* out = context.audio.channel(channel);
-        for (int i = 0; i < context.numSamples(); ++i) {
-            const float sample = out[i];
-            out[i] = sanitise(sample + (std::tanh(sample) - sample) * limitMix);
+    if (limitMix > 0.0f) {
+        const int channels = std::min(context.audio.numChannels(), engineOutputCount(engineIndex));
+        for (int channel = 0; channel < channels; ++channel) {
+            float* out = context.audio.channel(channel);
+            for (int i = 0; i < context.numSamples(); ++i) {
+                const float sample = out[i];
+                out[i] = sanitise(sample + (std::tanh(sample) - sample) * limitMix);
+            }
         }
     }
+    postSpectrumTap_.writeDownmix(context.audio);
 }
 
 }  // namespace magda::devices::faust

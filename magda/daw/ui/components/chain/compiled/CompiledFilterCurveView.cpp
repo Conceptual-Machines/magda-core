@@ -23,6 +23,7 @@ constexpr float kPlotPadY = 6.0f;
 constexpr float kCurveSmoothing = 0.24f;
 constexpr int kAnimationPollMs = 16;  // ~60 Hz when something's actually moving
 constexpr int kIdlePollMs = 100;      // 10 Hz lazy poll to catch LFO retriggers
+constexpr int kSpectrumPollMs = 50;   // The EQ's rate, while a device feeds the spectrum
 
 float valueForSlot(const magda::DeviceInfo& device, int slotIndex, float fallback) {
     for (const auto& param : device.parameters) {
@@ -121,6 +122,7 @@ CompiledFilterCurveView::CompiledFilterCurveView(juce::String pluginId) {
 void CompiledFilterCurveView::setCompiledPlugin(
     std::shared_ptr<magda::daw::audio::compiled::MagdaFilterCompiledPlugin> plugin) {
     compiledPlugin_ = std::move(plugin);
+    spectrum_.reset();
 }
 
 void CompiledFilterCurveView::setRawState(int engine, int modeIndex, float cutoffHz,
@@ -227,6 +229,9 @@ bool CompiledFilterCurveView::hasActiveCurveLinks() const {
 void CompiledFilterCurveView::timerCallback() {
     if (compiledPlugin_ != nullptr || hasActiveCurveLinks())
         updateTargetValues();
+    if (compiledPlugin_ != nullptr)
+        spectrum_.update(compiledPlugin_->getPreSpectrumTapBuffer(),
+                         compiledPlugin_->getPostSpectrumTapBuffer());
 
     cutoffHz_ = nextSmoothedFrequency(cutoffHz_, targetCutoffHz_);
     resonance_ = nextSmoothedValue(resonance_, targetResonance_);
@@ -244,8 +249,8 @@ void CompiledFilterCurveView::timerCallback() {
         // macro change, automation movement) wakes us back up promptly, but we
         // don't keep redrawing at 60 Hz with nothing to show.
         if (compiledPlugin_ != nullptr) {
-            if (getTimerInterval() != kIdlePollMs)
-                startTimer(kIdlePollMs);
+            if (getTimerInterval() != kSpectrumPollMs)
+                startTimer(kSpectrumPollMs);
         } else if (!hasActiveCurveLinks()) {
             stopTimer();
         }
@@ -375,6 +380,12 @@ void CompiledFilterCurveView::paint(juce::Graphics& g) {
 
     juce::Path fillPath;
     juce::Path curvePath;
+
+    if (compiledPlugin_ != nullptr)
+        spectrum_.draw(g, plot, compiledPlugin_->getSampleRate(), minPlotFrequencyHz_, kMaxFreq,
+                       [&plot, this](float hz) {
+                           return plot.getX() + freqToX(hz, plot.getWidth(), minPlotFrequencyHz_);
+                       });
 
     const float zeroY = plot.getY() + dbToY(0.0f, plot.getHeight(), maxDb);
     bool curveBroken = true;
