@@ -13,6 +13,7 @@
 #include "core/TrackManager.hpp"
 #include "ui/components/chain/DeviceSlotComponent.hpp"
 #include "ui/components/chain/RackComponent.hpp"
+#include "ui/components/chain/compiled/CompiledEqBandLayout.hpp"
 #include "ui/components/chain/compiled/CompiledFilterCurveView.hpp"
 #include "ui/components/chain/layout/CompiledFaustDeviceLayout.hpp"
 #include "ui/components/chain/layout/FaceplateBelowGeometry.hpp"
@@ -260,6 +261,37 @@ int main() {
             wheel.deltaY = 0.5f;
             faceplate.mouseWheelMove(event(start, start), wheel);
             check(written[Filter::kDriveSlot] > 0.0f, "scrolling up did not raise drive");
+        }
+        {
+            // EQ: one band at a time; each page is a band, and its knobs sit in the editor.
+            using Eq = magda::daw::audio::compiled::MagdaEqCompiledPlugin;
+            const CompiledEqBandLayout layout;
+            DeviceInfo model;
+            for (int index = 0; index < Eq::kHostSlotCount; ++index) {
+                ParameterInfo parameter;
+                parameter.paramIndex = index;
+                model.parameters.push_back(parameter);
+            }
+            const auto slotOf = [&](int cell, int page) {
+                return model
+                    .parameters[static_cast<size_t>(
+                        layout.cellFor(model, cell, page).paramArrayIndex)]
+                    .paramIndex;
+            };
+            check(slotOf(0, 4) == Eq::bandSlot(4, Eq::kBandFreqOffset) &&
+                      slotOf(1, 4) == Eq::bandSlot(4, Eq::kBandGainOffset) &&
+                      slotOf(2, 4) == Eq::bandSlot(4, Eq::kBandQOffset) &&
+                      slotOf(3, 4) == Eq::kOutputSlot,
+                  "an EQ page does not show its band's freq, gain and Q, then Output");
+            const juce::Rectangle<int> body(0, 0, 900, 420);
+            const auto geometry = EqBandEditorGeometry::of(body);
+            for (int cell = 0; cell < 4; ++cell) {
+                const auto knob = layout.cellBounds(cell, body, true);
+                check(geometry.editor.contains(knob) && !knob.intersects(geometry.plot) &&
+                          !knob.intersects(geometry.chips) &&
+                          !knob.intersects(geometry.editorControls),
+                      "an EQ knob left the band editor");
+            }
         }
         {
             // Multiband: whole-device knobs in a left column, band knobs above the faceplate.

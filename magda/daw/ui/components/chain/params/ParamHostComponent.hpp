@@ -105,6 +105,10 @@ class ParamHostComponent : public juce::Component, private magda::ConfigListener
     /// first row of cells.
     int getChromeHeight() const;
 
+    bool placesOwnCells() const {
+        return layout_->placesOwnCells();
+    }
+
     /// Whether a faceplate-below layout's faceplate shows, which decides where its cells go.
     void setFaceplateBelowShown(bool shown) {
         faceplateBelowShown_ = shown;

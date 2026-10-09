@@ -271,6 +271,13 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
         }
 
         controls.compiledPanel->setVisible(controls.compiledPanelShown);
+        if (controls.compiledPanelUnderGrid && controls.paramGrid != nullptr) {
+            controls.compiledPanel->setVisible(true);
+            controls.compiledPanel->setBounds(contentArea);
+            layoutParamGrid(controls.paramGrid, contentArea);
+            controls.paramGrid->toFront(false);
+            return;
+        }
         if (controls.compiledPanelBandRows > 0 && controls.paramGridShown &&
             controls.paramGrid != nullptr) {
             controls.paramGrid->setFaceplateBelowShown(controls.compiledPanelShown);

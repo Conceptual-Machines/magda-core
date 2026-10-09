@@ -12,6 +12,8 @@
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "compiled/SpectrumOverlay.hpp"
 #include "core/DeviceInfo.hpp"
+#include "layout/EqBandEditorGeometry.hpp"
+#include "ui/components/common/SegmentedChoice.hpp"
 
 namespace magda::daw::ui {
 
@@ -48,6 +50,9 @@ class CompiledEqCurveView final : public juce::Component,
     void setOnLayoutChanged(std::function<void()> cb) override {
         onLayoutChanged_ = std::move(cb);
     }
+    void setOnPageRequested(std::function<void(int)> cb) override {
+        onPageRequested_ = std::move(cb);
+    }
     int preferredHeight() const override {
         return getPreferredHeight();
     }
@@ -58,6 +63,7 @@ class CompiledEqCurveView final : public juce::Component,
     std::function<void(int slotIndex, float displayValue)> onParameterChanged;
 
     void paint(juce::Graphics& g) override;
+    void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
@@ -83,6 +89,14 @@ class CompiledEqCurveView final : public juce::Component,
     void setBandType(int band, BandType type);
     void setBandEnabled(int band, bool enabled);
     void showBandTypeMenu(int band);
+    /// Show @p band in the editor and turn the knobs to it.
+    void selectBand(int band);
+    void syncTypeChoice();
+    void paintChips(juce::Graphics& g);
+    void paintEditor(juce::Graphics& g);
+    int chipAt(juce::Point<float> p) const;
+    juce::Rectangle<float> chipBounds(int band) const;
+    juce::Rectangle<float> enableSwitchBounds() const;
 
     // Cached per-band state used by paint(). Updated on the message thread
     // by the poll timer / device-snapshot path.
@@ -91,6 +105,11 @@ class CompiledEqCurveView final : public juce::Component,
 
     int hoveredBand_ = -1;
     int draggedBand_ = -1;
+    int selectedBand_ = 0;
+
+    EqBandEditorGeometry geometry_;
+    magda::SegmentedChoice typeChoice_;
+    std::function<void(int)> onPageRequested_;
 
     std::function<void()> onLayoutChanged_;
 

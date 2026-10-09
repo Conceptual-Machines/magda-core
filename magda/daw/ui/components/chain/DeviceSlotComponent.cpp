@@ -735,7 +735,7 @@ void DeviceSlotComponent::resizedShellFooter(juce::Rectangle<int> footer) {
 void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
     footerSeparator_ = footerInfoArea_ = midiLedArea_ = {};
     const bool paged = !footer.isEmpty() && paramGrid_ != nullptr && paramGrid_->paginates() &&
-                       !paramGrid_->showsOwnPagination() && paramsShown();
+                       !paramGrid_->showsOwnPagination() && paramsShown() && !faceplateUnderGrid();
     for (auto* arrow : {footerPrevPage_.get(), footerNextPage_.get()})
         if (arrow != nullptr)
             arrow->setVisible(paged);
@@ -786,7 +786,12 @@ void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
 }
 
 bool DeviceSlotComponent::hasFaceplate() const {
-    return compiledPanel_ != nullptr && !compiledPanel_->wantsFullBody();
+    return compiledPanel_ != nullptr && !compiledPanel_->wantsFullBody() && !faceplateUnderGrid();
+}
+
+bool DeviceSlotComponent::faceplateUnderGrid() const {
+    return traits_.compiledPresentation != nullptr &&
+           traits_.compiledPresentation->createLayout != nullptr;
 }
 
 bool DeviceSlotComponent::faceplateShown() const {
@@ -799,7 +804,8 @@ bool DeviceSlotComponent::paramsShown() const {
 
 std::vector<int> DeviceSlotComponent::resolveFaceplateStripSlots() const {
     const auto* spec = traits_.compiledPresentation;
-    if (spec == nullptr || spec->createPanel == nullptr || spec->columnMajorGrid)
+    if (spec == nullptr || spec->createPanel == nullptr || spec->columnMajorGrid ||
+        spec->createLayout != nullptr)
         return {};
     // The spec's list, else every control the grid would draw as a dropdown.
     std::vector<int> candidates(spec->faceplateSlots.begin(), spec->faceplateSlots.end());
@@ -1640,6 +1646,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
          .compiledPanelWidth = faceplateWidth(),
          .compiledPanelBandRows = faceplateBandRows(),
          .compiledPanelStackedFraction = faceplateStackedFraction(),
+         .compiledPanelUnderGrid = faceplateUnderGrid(),
          .compiledPanelShown = faceplateShown(),
          .paramGridShown = paramsShown(),
          .compiledPanelWantsFullBody = compiledPanel_ != nullptr && compiledPanel_->wantsFullBody(),
@@ -2152,9 +2159,14 @@ void DeviceSlotComponent::refreshInlinePluginBindings() {
 }
 
 void DeviceSlotComponent::setupCustomUILinking() {
-    if (compiledPanel_ != nullptr)
+    if (compiledPanel_ != nullptr) {
         compiledPanel_->setLinkContextProvider(
             [this]() { return std::optional{resolveCurveLinkContext()}; });
+        compiledPanel_->setOnPageRequested([this](int page) {
+            if (paramGrid_ != nullptr && paramGrid_->onPageSelected)
+                paramGrid_->onPageSelected(page);
+        });
+    }
 
     auto sliders = customUI_.getLinkableSliders();
     if (sliders.empty())

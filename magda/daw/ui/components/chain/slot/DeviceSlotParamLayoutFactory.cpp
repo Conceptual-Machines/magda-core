@@ -15,6 +15,9 @@ std::unique_ptr<DeviceParamLayout> createDeviceSlotParamLayout(const DeviceSlotT
         return std::make_unique<FaustDeviceLayout>();
     }
 
+    if (const auto* spec = traits.compiledPresentation; spec != nullptr && spec->createLayout)
+        return spec->createLayout();
+
     if (const auto* spec = traits.compiledPresentation; spec != nullptr) {
         // A faceplate-below device lists its column knobs, then its band knobs.
         std::vector<int> knobs(spec->knobSlots.begin(), spec->knobSlots.end());

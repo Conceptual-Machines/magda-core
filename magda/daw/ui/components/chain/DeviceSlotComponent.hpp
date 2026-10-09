@@ -291,6 +291,8 @@ class DeviceSlotComponent : public NodeComponent,
     int faceplateBandRows() const;
     /// Share of the height a stacked faceplate takes under the grid; 0 when it stands beside.
     float faceplateStackedFraction() const;
+    /// The faceplate spans the body with the device's own knob layout on top of it.
+    bool faceplateUnderGrid() const;
 
     /// A spec's faceplate-strip controls: segments for a short choice, else a dropdown.
     struct FaceplateSlotControl {

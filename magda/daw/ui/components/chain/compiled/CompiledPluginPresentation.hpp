@@ -16,6 +16,8 @@ class MagdaDevice;
 
 namespace magda::daw::ui {
 
+class DeviceParamLayout;
+
 /**
  * @brief Adapter over a compiled-Faust device's inline curve view.
  *
@@ -50,6 +52,9 @@ class CompiledDevicePanel {
     virtual bool wantsFullBody() const {
         return false;
     }
+
+    /// For a device whose faceplate turns its knobs' pages: called with the page to show.
+    virtual void setOnPageRequested(std::function<void(int page)>) {}
 
     /// Called by the host slot wiring once. The panel invokes the callback
     /// whenever its preferred layout changes (e.g. user toggles collapsed),
@@ -113,6 +118,9 @@ struct CompiledPresentationSpec {
     std::span<const int> bandSlots;
     /// The device's own dry/wet slot: the side strip's mix knob drives it, so the grid drops it.
     int mixSlot = -1;
+    /// Set, the device lays its knobs out itself and its faceplate spans the whole body under
+    /// them; the faceplate turns the knobs' pages.
+    std::unique_ptr<DeviceParamLayout> (*createLayout)() = nullptr;
 };
 
 /// All presentation specs in stable iteration order. Each spec is defined
