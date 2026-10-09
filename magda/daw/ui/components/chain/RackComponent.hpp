@@ -177,8 +177,8 @@ class RackComponent : public NodeComponent, public juce::Timer {
     std::unique_ptr<multiband::CrossoverDisplay> crossoverDisplay_;
     std::vector<std::unique_ptr<multiband::CrossoverDivider>> crossoverDividers_;
     juce::Rectangle<int> faceplateArea_;
-    /// The footer's FACEPLATE and BANDS toggles.
-    juce::Rectangle<int> faceplateToggleArea_, bandsToggleArea_;
+    /// The footer's bands and faceplate toggles.
+    std::unique_ptr<magda::SvgButton> bandsToggle_, faceplateToggle_;
     bool faceplateShown_ = true;
     bool bandsShown_ = true;
     void toggleMultibandView(bool faceplate);

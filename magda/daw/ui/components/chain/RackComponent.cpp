@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <functional>
 #include <ranges>
-#include <tuple>
 
 #include "ChainPanel.hpp"
 #include "ChainRowComponent.hpp"
@@ -151,6 +150,17 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     };
     addAndMakeVisible(*gainSlider_);
 
+    bandsToggle_ = std::make_unique<magda::SvgButton>("Bands", BinaryData::mbbands_svg,
+                                                      BinaryData::mbbands_svgSize);
+    bandsToggle_->setTooltip("Show the bands");
+    bandsToggle_->onClick = [this]() { toggleMultibandView(false); };
+    addChildComponent(*bandsToggle_);
+    faceplateToggle_ = std::make_unique<magda::SvgButton>("Faceplate", BinaryData::mbfaceplate_svg,
+                                                          BinaryData::mbfaceplate_svgSize);
+    faceplateToggle_->setTooltip("Show the faceplate");
+    faceplateToggle_->onClick = [this]() { toggleMultibandView(true); };
+    addChildComponent(*faceplateToggle_);
+
     addChainButton_.setTooltip("Add a chain to this rack");
     addChainButton_.onClick = [this]() { onAddChainClicked(); };
     chainRowsContainer_.addAndMakeVisible(addChainButton_);
@@ -231,9 +241,10 @@ void RackComponent::timerCallback() {
 void RackComponent::toggleMultibandView(bool faceplate) {
     auto& shown = faceplate ? faceplateShown_ : bandsShown_;
     const auto& other = faceplate ? bandsShown_ : faceplateShown_;
-    if (shown && !other)
-        return;  // One of the two always shows.
-    shown = !shown;
+    if (!(shown && !other))  // One of the two always shows.
+        shown = !shown;
+    bandsToggle_->setToggleState(bandsShown_, juce::dontSendNotification);
+    faceplateToggle_->setToggleState(faceplateShown_, juce::dontSendNotification);
     if (auto* rack = magda::TrackManager::getInstance().getRackByPath(rackPath_)) {
         rack->faceplateShown = faceplateShown_;
         rack->bandsShown = bandsShown_;
@@ -242,12 +253,6 @@ void RackComponent::toggleMultibandView(bool faceplate) {
 }
 
 void RackComponent::mouseDown(const juce::MouseEvent& e) {
-    if (!collapsed_ && multiband_) {
-        if (faceplateToggleArea_.contains(e.getPosition()))
-            return toggleMultibandView(true);
-        if (bandsToggleArea_.contains(e.getPosition()))
-            return toggleMultibandView(false);
-    }
     if (!collapsed_ && chainTabsArea_.contains(e.getPosition())) {
         for (int i = 0; i < kNumChainViews; ++i)
             if (const auto view = static_cast<ChainView>(i);
@@ -286,6 +291,11 @@ void RackComponent::styleShellControls() {
                                       ActiveTheme::ACCENT_MODULATION, height);
     node_header::applyDeviceIconStyle(*modButton_, DeviceIcon::Toggle, key,
                                       ActiveTheme::ACCENT_ATTENTION, height);
+    for (auto* toggle : {bandsToggle_.get(), faceplateToggle_.get()})
+        if (toggle != nullptr)
+            node_header::applyDeviceIconStyle(*toggle, DeviceIcon::Toggle, key,
+                                              ActiveTheme::DEVICE_BLUE,
+                                              static_cast<float>(getHeaderButtonSize().y));
     node_header::applyDeviceIconStyle(*presetButton_, DeviceIcon::Action, key,
                                       ActiveTheme::PRESET_INDIGO,
                                       static_cast<float>(getHeaderButtonSize().y));
@@ -346,24 +356,6 @@ void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> /*conte
         }
     }
 
-    for (const auto& [area, label, on] :
-         {std::tuple{bandsToggleArea_, "BANDS", bandsShown_},
-          std::tuple{faceplateToggleArea_, "FACEPLATE", faceplateShown_}}) {
-        if (area.isEmpty())
-            continue;
-        g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f));
-        g.setColour(
-            ActiveTheme::getColour(on ? ActiveTheme::DEVICE_VALUE_TEXT : ActiveTheme::DEVICE_DIM2));
-        g.drawText(label, area, juce::Justification::centredLeft, false);
-        if (on) {
-            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE));
-            g.fillRect(area.withTop(area.getBottom() - 5)
-                           .withHeight(2)
-                           .withWidth(juce::roundToInt(
-                               juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), label))));
-        }
-    }
-
     if (!selectorCaption_.isEmpty()) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
         g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f));
@@ -386,7 +378,8 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
     // NOTE: Side panels (macro/mods) visibility is managed by base class
     if (collapsed_) {
         shellRows_.footer = shellRows_.midiLed = selectorCaption_ = {};
-        faceplateToggleArea_ = bandsToggleArea_ = {};
+        bandsToggle_->setVisible(false);
+        faceplateToggle_->setVisible(false);
         if (crossoverDisplay_)
             crossoverDisplay_->setVisible(false);
         if (selector_)
@@ -500,15 +493,19 @@ void RackComponent::resizedShellFooter(juce::Rectangle<int> footer) {
 void RackComponent::layoutFooter(juce::Rectangle<int> footer) {
     auto area = footer.reduced(12, 0);
     shellRows_.midiLed = area.removeFromRight(7).withSizeKeepingCentre(7, 7);
-    selectorCaption_ = faceplateToggleArea_ = bandsToggleArea_ = {};
+    selectorCaption_ = {};
+    bandsToggle_->setVisible(multiband_);
+    faceplateToggle_->setVisible(multiband_);
     auto selector = area.withWidth(juce::jmin(area.getWidth(), CHAIN_LIST_WIDTH - 24));
     // Bands are chosen by frequency, never by the selector; the footer toggles the views instead.
     if (multiband_) {
         if (selector_)
             selector_->setVisible(false);
-        bandsToggleArea_ = area.removeFromLeft(48);
-        area.removeFromLeft(10);
-        faceplateToggleArea_ = area.removeFromLeft(72);
+        const auto size = getHeaderButtonSize();
+        for (auto* toggle : {bandsToggle_.get(), faceplateToggle_.get()}) {
+            toggle->setBounds(area.removeFromLeft(size.x).withSizeKeepingCentre(size.x, size.y));
+            area.removeFromLeft(getHeaderButtonGap());
+        }
         return;
     }
     selectorCaption_ = selector.removeFromLeft(88);
@@ -739,6 +736,8 @@ void RackComponent::syncMultiband(const magda::RackInfo& rack) {
     multiband_ = rack.isMultiband();
     faceplateShown_ = rack.faceplateShown;
     bandsShown_ = rack.bandsShown || !rack.faceplateShown;
+    bandsToggle_->setToggleState(bandsShown_, juce::dontSendNotification);
+    faceplateToggle_->setToggleState(faceplateShown_, juce::dontSendNotification);
     if (!multiband_) {
         crossoverDisplay_.reset();
         crossoverDividers_.clear();
