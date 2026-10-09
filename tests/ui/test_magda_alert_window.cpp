@@ -58,3 +58,14 @@ TEST_CASE("The unsaved-changes alert saves on Return and keeps Don't Save apart"
     CHECK(discard->getRight() < cancel->getX());
     CHECK(cancel->getRight() < save->getX());
 }
+
+TEST_CASE("A lone Cancel is primary but ignores Return", "[ui][alert]") {
+    juce::ScopedJuceInitialiser_GUI gui;
+    std::unique_ptr<juce::AlertWindow> alert(magda::createMagdaAlertWindow(
+        "Capturing", "", {}, {}, {}, juce::MessageBoxIconType::InfoIcon, 0, nullptr));
+    alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    auto* cancel = buttonNamed(*alert, "Cancel");
+    REQUIRE(cancel != nullptr);
+    CHECK_FALSE(takesReturn(*cancel));
+    CHECK(magda::MagdaAlertWindow::roleOf(*cancel) == Role::Primary);
+}

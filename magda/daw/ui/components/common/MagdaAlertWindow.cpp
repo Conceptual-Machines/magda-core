@@ -232,10 +232,10 @@ void MagdaAlertWindow::assignButtonRoles() {
                 withReturn = button;
                 break;
             }
-        if (withReturn == nullptr)
-            withReturn = cancel;
         if (withReturn != nullptr)
             withReturn->addShortcut(returnKey);
+        else
+            withReturn = cancel;  // Styled as primary; Return must not cancel a running task.
     }
     if (withReturn != nullptr && roleOf(*withReturn) == ButtonRole::Secondary)
         withReturn->getProperties().set(kRoleProperty, static_cast<int>(ButtonRole::Primary));
