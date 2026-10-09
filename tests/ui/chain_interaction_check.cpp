@@ -15,6 +15,7 @@
 #include "ui/components/chain/RackComponent.hpp"
 #include "ui/components/chain/compiled/CompiledEqBandLayout.hpp"
 #include "ui/components/chain/compiled/CompiledFilterCurveView.hpp"
+#include "ui/components/chain/compiled/CompiledMultibandBandLayout.hpp"
 #include "ui/components/chain/layout/CompiledFaustDeviceLayout.hpp"
 #include "ui/components/chain/layout/FaceplateBelowGeometry.hpp"
 #include "ui/components/chain/layout/StandardDeviceLayout.hpp"
@@ -261,6 +262,34 @@ int main() {
             wheel.deltaY = 0.5f;
             faceplate.mouseWheelMove(event(start, start), wheel);
             check(written[Filter::kDriveSlot] > 0.0f, "scrolling up did not raise drive");
+        }
+        {
+            // Multiband: one band's ten knobs a page, then the whole-device five.
+            using MB = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin;
+            const CompiledMultibandBandLayout layout;
+            DeviceInfo model;
+            for (int index = 0; index < 38; ++index) {
+                ParameterInfo parameter;
+                parameter.paramIndex = index;
+                model.parameters.push_back(parameter);
+            }
+            const auto slotOf = [&](int cell, int page) {
+                return model
+                    .parameters[static_cast<size_t>(
+                        layout.cellFor(model, cell, page).paramArrayIndex)]
+                    .paramIndex;
+            };
+            check(slotOf(0, 1) == MB::kMidUpperThresholdSlot && slotOf(9, 2) == MB::kHighGainSlot &&
+                      slotOf(10, 0) == MB::kAmountSlot && slotOf(14, 2) == MB::kOutputSlot,
+                  "a multiband page does not show its band's knobs, then the device's");
+            const juce::Rectangle<int> body(0, 0, 1040, 300);
+            const auto geometry = MultibandEditorGeometry::of(body);
+            for (int cell = 0; cell < layout.cellCount(); ++cell) {
+                const auto knob = layout.cellBounds(cell, body, true);
+                check((geometry.knobs.contains(knob) || geometry.globals.contains(knob)) &&
+                          !knob.intersects(geometry.plot) && !knob.intersects(geometry.tabs),
+                      "a multiband knob left the editor and the device column");
+            }
         }
         {
             // EQ: one band at a time; each page is a band, and its knobs sit in the editor.

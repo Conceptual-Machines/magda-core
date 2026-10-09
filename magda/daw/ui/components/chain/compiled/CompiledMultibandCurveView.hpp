@@ -8,6 +8,7 @@
 
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
+#include "layout/MultibandEditorGeometry.hpp"
 #include "plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
 
 namespace magda::daw::ui {
@@ -43,6 +44,10 @@ class CompiledMultibandCurveView final : public juce::Component,
     std::function<void(int slotIndex, float displayValue)> onParameterChanged;
 
     void paint(juce::Graphics& g) override;
+    void resized() override;
+    void setOnPageRequested(std::function<void(int)> cb) override {
+        onPageRequested_ = std::move(cb);
+    }
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
@@ -211,6 +216,17 @@ class CompiledMultibandCurveView final : public juce::Component,
     bool rangeScrollActive_ = false;
 
     std::function<void()> onLayoutChanged_;
+    std::function<void(int)> onPageRequested_;
+    MultibandEditorGeometry geometry_;
+    int selectedBand_ = 0;
+
+    void paintGraph(juce::Graphics& g);
+    void paintTabs(juce::Graphics& g);
+    void paintEditor(juce::Graphics& g);
+    /// Show @p band in the editor and turn the knobs to it.
+    void selectBand(int band);
+    juce::Rectangle<float> tabBounds(int band) const;
+    int tabAt(juce::Point<float> p) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CompiledMultibandCurveView)
 };

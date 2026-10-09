@@ -499,7 +499,7 @@ void CompiledEqCurveView::paintChips(juce::Graphics& g) {
             g.setColour(colour);
             g.drawRoundedRectangle(chip.reduced(0.75f), 4.0f, 1.5f);
         }
-        auto inner = chip.reduced(10.0f, 0.0f);
+        auto inner = chip.reduced(12.0f, 0.0f).withTrimmedRight(4.0f);
         const auto dot = juce::Rectangle<float>(8.0f, 8.0f)
                              .withCentre({inner.getX() + 4.0f, inner.getCentreY()});
         if (band.enabled) {
