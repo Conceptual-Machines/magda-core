@@ -515,7 +515,7 @@ const CompiledPresentationSpec& getMagdaFilterPresentation() {
             return std::make_unique<CompiledFilterCurveView>(pluginId);
         },
         .knobSlots = kKnobSlots,
-        .faceplateWidth = 560,
+        .faceplateWidth = 460,
         .headerSlots = kHeaderSlots,
     };
     return kSpec;
