@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "ui/themes/ActiveTheme.hpp"
 
@@ -77,22 +78,38 @@ void SpectrumOverlay::draw(juce::Graphics& g, juce::Rectangle<float> area, doubl
         const float t = (db - kMinDb) / (kMaxDb - kMinDb);
         return area.getBottom() - juce::jlimit(0.0f, 1.0f, t) * area.getHeight();
     };
+    // Many bins share a pixel column at the top of the range; each column draws its loudest.
     const auto buildPath = [&](const std::vector<float>& traceDb) {
         juce::Path path;
         bool started = false;
+        int column = std::numeric_limits<int>::min();
+        float columnDb = kMinDb;
+        const auto flush = [&] {
+            if (column == std::numeric_limits<int>::min())
+                return;
+            const auto x = static_cast<float>(column);
+            if (!started) {
+                path.startNewSubPath(x, dbToY(columnDb));
+                started = true;
+            } else {
+                path.lineTo(x, dbToY(columnDb));
+            }
+        };
         for (int i = 1; i < kNumBins; ++i) {
             const float hz = static_cast<float>(i) * binHz;
             if (hz < minHz || hz > maxHz)
                 continue;
-            const float x = frequencyToX(hz);
-            const float y = dbToY(traceDb[static_cast<size_t>(i)]);
-            if (!started) {
-                path.startNewSubPath(x, y);
-                started = true;
+            const int x = juce::roundToInt(frequencyToX(hz));
+            const float db = traceDb[static_cast<size_t>(i)];
+            if (x != column) {
+                flush();
+                column = x;
+                columnDb = db;
             } else {
-                path.lineTo(x, y);
+                columnDb = std::max(columnDb, db);
             }
         }
+        flush();
         return path;
     };
 

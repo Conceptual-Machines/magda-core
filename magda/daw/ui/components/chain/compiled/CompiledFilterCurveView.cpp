@@ -121,6 +121,9 @@ CompiledFilterCurveView::CompiledFilterCurveView(juce::String pluginId) {
 
 void CompiledFilterCurveView::setCompiledPlugin(
     std::shared_ptr<magda::daw::audio::compiled::MagdaFilterCompiledPlugin> plugin) {
+    // The slot rebinds on every modulation refresh; only a different device restarts the traces.
+    if (plugin == compiledPlugin_)
+        return;
     compiledPlugin_ = std::move(plugin);
     spectrum_.reset();
 }
