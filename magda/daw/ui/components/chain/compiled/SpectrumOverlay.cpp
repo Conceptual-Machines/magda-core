@@ -8,8 +8,17 @@
 namespace magda::daw::ui {
 
 namespace {
-constexpr float kSmoothing = 0.45f;
+// Peaks rise fast and fall slowly, as an analyser's do; per second, so the view's
+// poll rate does not change how the trace moves.
+constexpr double kAttackSeconds = 0.03;
+constexpr double kReleaseSeconds = 0.35;
+
+float follow(float current, float target, double elapsedSeconds) {
+    const double time = target > current ? kAttackSeconds : kReleaseSeconds;
+    const auto amount = static_cast<float>(1.0 - std::exp(-elapsedSeconds / time));
+    return current + amount * (target - current);
 }
+}  // namespace
 
 SpectrumOverlay::SpectrumOverlay()
     : readBuffer_(static_cast<size_t>(kFftSize), 0.0f),
@@ -19,18 +28,23 @@ SpectrumOverlay::SpectrumOverlay()
 
 void SpectrumOverlay::reset() {
     lastInputPosition_ = lastOutputPosition_ = 0;
+    lastUpdateSeconds_ = 0.0;
     std::fill(inputDb_.begin(), inputDb_.end(), kMinDb);
     std::fill(outputDb_.begin(), outputDb_.end(), kMinDb);
 }
 
 void SpectrumOverlay::update(const magda::engine::SampleRing& input,
                              const magda::engine::SampleRing& output) {
-    updateTrace(input, lastInputPosition_, inputDb_);
-    updateTrace(output, lastOutputPosition_, outputDb_);
+    const double now = juce::Time::getMillisecondCounterHiRes() / 1000.0;
+    const double elapsed =
+        lastUpdateSeconds_ > 0.0 ? juce::jlimit(0.0, 0.25, now - lastUpdateSeconds_) : 0.25;
+    lastUpdateSeconds_ = now;
+    updateTrace(input, lastInputPosition_, inputDb_, elapsed);
+    updateTrace(output, lastOutputPosition_, outputDb_, elapsed);
 }
 
 void SpectrumOverlay::updateTrace(const magda::engine::SampleRing& tap, size_t& lastPosition,
-                                  std::vector<float>& traceDb) {
+                                  std::vector<float>& traceDb, double elapsedSeconds) {
     if (tap.writePosition() == lastPosition)
         return;
     lastPosition = tap.readLatest(readBuffer_.data(), kFftSize);
@@ -48,7 +62,7 @@ void SpectrumOverlay::updateTrace(const magda::engine::SampleRing& tap, size_t& 
         const float db =
             juce::jlimit(kMinDb, kMaxDb, 20.0f * std::log10(std::max(magnitude, 1.0e-6f)));
         float& smoothed = traceDb[static_cast<size_t>(i)];
-        smoothed += kSmoothing * (db - smoothed);
+        smoothed = follow(smoothed, db, elapsedSeconds);
     }
 }
 

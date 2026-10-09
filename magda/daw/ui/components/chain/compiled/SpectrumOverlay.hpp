@@ -39,9 +39,10 @@ class SpectrumOverlay {
     std::vector<float> outputDb_;
     size_t lastInputPosition_ = 0;
     size_t lastOutputPosition_ = 0;
+    double lastUpdateSeconds_ = 0.0;  // For smoothing by elapsed time.
 
     void updateTrace(const magda::engine::SampleRing& tap, size_t& lastPosition,
-                     std::vector<float>& traceDb);
+                     std::vector<float>& traceDb, double elapsedSeconds);
 };
 
 }  // namespace magda::daw::ui
