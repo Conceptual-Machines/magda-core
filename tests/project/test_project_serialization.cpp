@@ -3201,6 +3201,40 @@ TEST_CASE("DeviceInfo panel UI state roundtrip", "[project][serialization][devic
     REQUIRE(loaded.aiPanelOutput.isEmpty());
 }
 
+TEST_CASE("A device's faceplate and parameter views survive a project roundtrip",
+          "[project][serialization][device]") {
+    const auto roundTrip = [](bool faceplateShown, bool paramsShown) {
+        ProjectTestFixture fixture;
+        auto& trackManager = TrackManager::getInstance();
+        const auto trackId = trackManager.createTrack("Faceplate", TrackType::Media);
+
+        DeviceInfo device;
+        device.id = 29;
+        device.name = "Faceplate Device";
+        device.pluginId = "internal.faceplate";
+        device.format = PluginFormat::Internal;
+        device.faceplateShown = faceplateShown;
+        device.paramsShown = paramsShown;
+        REQUIRE(trackManager.addDeviceToTrack(trackId, device) != INVALID_DEVICE_ID);
+
+        ProjectInfo info;
+        const auto json = ProjectSerializer::serializeProject(info);
+        ProjectInfo loadedInfo;
+        REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
+        const auto* track = trackManager.getTrack(trackId);
+        REQUIRE(track != nullptr);
+        REQUIRE(track->chain.fxChainElements.size() == 1);
+        const auto& loaded = getDevice(track->chain.fxChainElements[0]);
+        return std::pair{loaded.faceplateShown, loaded.paramsShown};
+    };
+
+    CHECK(roundTrip(true, true) == std::pair{true, true});
+    CHECK(roundTrip(true, false) == std::pair{true, false});
+    CHECK(roundTrip(false, true) == std::pair{false, true});
+    // One of the two always shows.
+    CHECK(roundTrip(false, false) == std::pair{false, true});
+}
+
 TEST_CASE("Device channel counts survive a project roundtrip", "[project][serialization][device]") {
     ProjectTestFixture fixture;
 

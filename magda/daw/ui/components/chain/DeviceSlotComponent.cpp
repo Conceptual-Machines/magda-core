@@ -492,6 +492,17 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     };
     addAndMakeVisible(*closeButton_);
     hideBaseDeleteButton();
+    paramsToggle_ = std::make_unique<magda::SvgButton>("Parameters", BinaryData::deviceparams_svg,
+                                                       BinaryData::deviceparams_svgSize);
+    paramsToggle_->setTooltip("Show the parameters");
+    paramsToggle_->onClick = [this]() { toggleDeviceView(false); };
+    addChildComponent(*paramsToggle_);
+    faceplateToggle_ = std::make_unique<magda::SvgButton>(
+        "Faceplate", BinaryData::devicefaceplate_svg, BinaryData::devicefaceplate_svgSize);
+    faceplateToggle_->setTooltip("Show the faceplate");
+    faceplateToggle_->onClick = [this]() { toggleDeviceView(true); };
+    addChildComponent(*faceplateToggle_);
+
     styleDeviceHeaderButtons();
 
     // Create parameter grid (owns slots + pagination).
@@ -672,13 +683,16 @@ void DeviceSlotComponent::resizedShellFooter(juce::Rectangle<int> footer) {
 void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
     footerSeparator_ = footerInfoArea_ = midiLedArea_ = {};
     const bool paged = !footer.isEmpty() && paramGrid_ != nullptr && paramGrid_->paginates() &&
-                       !paramGrid_->showsOwnPagination();
+                       !paramGrid_->showsOwnPagination() && paramsShown();
     for (auto* arrow : {footerPrevPage_.get(), footerNextPage_.get()})
         if (arrow != nullptr)
             arrow->setVisible(paged);
     footerPageLabel_.setVisible(paged);
-    if (footer.isEmpty())
+    if (footer.isEmpty()) {
+        paramsToggle_->setVisible(false);
+        faceplateToggle_->setVisible(false);
         return;
+    }
     // The header's button size, so a button styled for one fits the other.
     const auto size = getHeaderButtonSize();
     const int gap = getHeaderButtonGap();
@@ -691,6 +705,16 @@ void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
         else
             area.removeFromRight(gap);
     };
+
+    const bool faceplate = hasFaceplate();
+    paramsToggle_->setVisible(faceplate);
+    faceplateToggle_->setVisible(faceplate);
+    if (faceplate) {
+        paramsToggle_->setToggleState(paramsShown(), juce::dontSendNotification);
+        faceplateToggle_->setToggleState(faceplateShown(), juce::dontSendNotification);
+        place(*paramsToggle_, true);
+        place(*faceplateToggle_, true);
+    }
 
     const bool sidechain = scButton_ != nullptr && scButton_->isVisible();
     if (sidechain)
@@ -713,6 +737,32 @@ void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
         }
         footerInfoArea_ = area;
     }
+}
+
+bool DeviceSlotComponent::hasFaceplate() const {
+    return compiledPanel_ != nullptr && !compiledPanel_->wantsFullBody();
+}
+
+bool DeviceSlotComponent::faceplateShown() const {
+    return !hasFaceplate() || device_.faceplateShown;
+}
+
+bool DeviceSlotComponent::paramsShown() const {
+    return !hasFaceplate() || device_.paramsShown || !device_.faceplateShown;
+}
+
+void DeviceSlotComponent::toggleDeviceView(bool faceplate) {
+    auto& shown = faceplate ? device_.faceplateShown : device_.paramsShown;
+    const bool other = faceplate ? device_.paramsShown : device_.faceplateShown;
+    if (!(shown && !other))  // One of the two always shows.
+        shown = !shown;
+    if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
+        live->faceplateShown = device_.faceplateShown;
+        live->paramsShown = device_.paramsShown;
+    }
+    resized();
+    if (onDeviceLayoutChanged)
+        onDeviceLayoutChanged();
 }
 
 void DeviceSlotComponent::refreshFooterPageControls() {
@@ -753,6 +803,8 @@ void DeviceSlotComponent::styleDeviceHeaderButtons() {
     style(exportClipButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_POSITIVE);
     style(midiThruButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_POSITIVE);
     style(stepRecordButton_.get(), DeviceIcon::Action, ActiveTheme::STEP_RECORD);
+    style(paramsToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
+    style(faceplateToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     if (stepRecordButton_)
         stepRecordButton_->setNormalColor(ActiveTheme::STEP_RECORD);
     if (scButton_)
@@ -1020,7 +1072,11 @@ int DeviceSlotComponent::getPreferredWidth() const {
         drum_grid_slot::getPreferredContentWidth(traits_.isDrumGrid, customUI_.getDrumGridUI()));
     if (customWidth > 0)
         return getTotalWidth(customWidth) + meterExtra;
-    return getTotalWidth(getDynamicSlotWidth()) + meterExtra;
+    int contentWidth = getDynamicSlotWidth();
+    if (hasFaceplate())
+        contentWidth =
+            (paramsShown() ? contentWidth : 0) + (faceplateShown() ? FACEPLATE_WIDTH : 0);
+    return getTotalWidth(contentWidth) + meterExtra;
 }
 
 void DeviceSlotComponent::showPresetMenu() {
@@ -1372,16 +1428,9 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
                  ? FaustMeterPanel::kPreferredHeight
                  : 0,
          .compiledPanel = compiledBodyPanel,
-         // Device spec: the display is 250px in Text, 200px in Knobs and
-         // Sliders, plus the 14px under it.
-         .compiledPanelPreferredHeight =
-             compiledPanel_ != nullptr
-                 ? (resolveControlStyle(device_.controlStyle) == ParamControlStyle::Text ? 250
-                                                                                         : 200) +
-                       14
-                 : 0,
-         .compiledPanelMinFractionNumerator = 0,
-         .compiledPanelMinFractionDenominator = 1,
+         .compiledPanelWidth = FACEPLATE_WIDTH,
+         .compiledPanelShown = faceplateShown(),
+         .paramGridShown = paramsShown(),
          .compiledPanelWantsFullBody = compiledPanel_ != nullptr && compiledPanel_->wantsFullBody(),
          .drumGridUI = customUI_.getDrumGridUI(),
          .activeCustomUI = activeCustomUI,

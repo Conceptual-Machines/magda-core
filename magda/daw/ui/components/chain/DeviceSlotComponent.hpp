@@ -66,6 +66,8 @@ class DeviceSlotComponent : public NodeComponent,
     static constexpr int HEADER_BAR_HEIGHT = 28;
     static constexpr int SIDE_STRIP_WIDTH = 40;
     static constexpr int FOOTER_BAR_HEIGHT = 24;
+    /// A faceplate stands beside the parameters at the multiband rack's width.
+    static constexpr int FACEPLATE_WIDTH = 380;
     DeviceSlotComponent(const magda::DeviceInfo& device);
     ~DeviceSlotComponent() override;
 
@@ -275,6 +277,13 @@ class DeviceSlotComponent : public NodeComponent,
     void layoutSideStrip(juce::Rectangle<int> strip);
     void layoutFooter(juce::Rectangle<int> footer);
     void refreshFooterPageControls();
+
+    /// The footer's parameters and faceplate toggles, for a device with a faceplate.
+    std::unique_ptr<magda::SvgButton> paramsToggle_, faceplateToggle_;
+    bool hasFaceplate() const;
+    bool faceplateShown() const;
+    bool paramsShown() const;
+    void toggleDeviceView(bool faceplate);
     std::unique_ptr<juce::TextButton> deltaButton_;
     std::unique_ptr<magda::SvgButton> exportClipButton_;  // Export pattern/chords as MIDI clip
     std::unique_ptr<magda::SvgButton> randomButton_;      // Step-sequencer pattern randomize

@@ -1,5 +1,7 @@
 #include "slot/DeviceSlotContentLayout.hpp"
 
+#include <utility>
+
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
 #include "params/ParamHostComponent.hpp"
 #include "ui/debug/DebugSettings.hpp"
@@ -257,8 +259,6 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
     }
 
     if (controls.compiledPanel != nullptr) {
-        const int bodyHeight = juce::jmax(0, contentArea.getHeight());
-
         if (controls.compiledPanelWantsFullBody) {
             // Panel wants the entire body — hide the param grid and let the
             // panel paint the whole content area. The EQ's collapse toggle
@@ -269,16 +269,23 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
             return;
         }
 
-        const int visualHeight =
-            boundedBottomPanelHeight(controls.compiledPanelPreferredHeight, bodyHeight,
-                                     controls.compiledPanelMinFractionNumerator,
-                                     controls.compiledPanelMinFractionDenominator);
-        // Inset like the parameter grid: 14px at the sides and foot.
-        controls.compiledPanel->setBounds(
-            contentArea.removeFromBottom(visualHeight).reduced(14, 0).withTrimmedBottom(14));
-        controls.compiledPanel->setVisible(true);
+        controls.compiledPanel->setVisible(controls.compiledPanelShown);
+        if (controls.compiledPanelShown) {
+            // Inset like the parameter grid: 14px at the outer edges, top and foot.
+            const auto faceplate = controls.paramGridShown
+                                       ? contentArea.removeFromRight(controls.compiledPanelWidth)
+                                       : std::exchange(contentArea, {});
+            controls.compiledPanel->setBounds(
+                faceplate.withTrimmedTop(10)
+                    .withTrimmedRight(14)
+                    .withTrimmedBottom(14)
+                    .withTrimmedLeft(controls.paramGridShown ? 0 : 14));
+        }
 
-        layoutParamGrid(controls.paramGrid, contentArea);
+        if (controls.paramGridShown)
+            layoutParamGrid(controls.paramGrid, contentArea);
+        else
+            setVisibleIfPresent(controls.paramGrid, false);
         return;
     }
 
