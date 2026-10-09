@@ -272,16 +272,13 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
         controls.compiledPanel->setVisible(controls.compiledPanelShown);
         if (controls.compiledPanelShown) {
             // Inset like the parameter grid: 14px at the outer edges, top and foot.
-            const bool first = controls.compiledPanelFirst;
             const bool beside = controls.paramGridShown;
-            const auto faceplate = !beside ? std::exchange(contentArea, {})
-                                   : first
-                                       ? contentArea.removeFromLeft(controls.compiledPanelWidth)
-                                       : contentArea.removeFromRight(controls.compiledPanelWidth);
+            const auto faceplate = beside ? contentArea.removeFromRight(controls.compiledPanelWidth)
+                                          : std::exchange(contentArea, {});
             controls.compiledPanel->setBounds(faceplate.withTrimmedTop(10)
+                                                  .withTrimmedRight(14)
                                                   .withTrimmedBottom(14)
-                                                  .withTrimmedLeft(beside && !first ? 0 : 14)
-                                                  .withTrimmedRight(beside && first ? 0 : 14));
+                                                  .withTrimmedLeft(beside ? 0 : 14));
         }
 
         if (controls.paramGridShown)

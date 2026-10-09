@@ -285,12 +285,11 @@ class DeviceSlotComponent : public NodeComponent,
     bool faceplateShown() const;
     bool paramsShown() const;
     void toggleDeviceView(bool faceplate);
-    /// The faceplate leads, at its spec's width, and only the spec's knobs remain.
-    bool faceplateFirst() const;
+    /// The faceplate's width: its spec's, or the default.
     int faceplateWidth() const;
 
-    /// The faceplate-first style's header controls: segments for a short choice, else a dropdown.
-    struct HeaderSlotControl {
+    /// A spec's faceplate-strip controls: segments for a short choice, else a dropdown.
+    struct FaceplateSlotControl {
         int slot = -1;
         std::unique_ptr<magda::SegmentedChoice> segments;
         std::unique_ptr<juce::ComboBox> dropdown;
@@ -299,15 +298,14 @@ class DeviceSlotComponent : public NodeComponent,
                                        : dropdown.get();
         }
     };
-    std::vector<HeaderSlotControl> headerSlotControls_;
-    juce::Rectangle<int> headerTrailingSeparator_;
-    void createHeaderSlotControls();
-    void refreshHeaderSlotControls();
-    void writeHeaderSlot(int slot, int choiceIndex);
-    int headerSlotControlWidth(const HeaderSlotControl& control) const;
-    bool headerSlotShown(const HeaderSlotControl& control) const;
-    int getHeaderTrailingWidth() const override;
-    void resizedHeaderTrailing(juce::Rectangle<int> area) override;
+    std::vector<FaceplateSlotControl> faceplateSlotControls_;
+    void createFaceplateSlotControls();
+    void refreshFaceplateSlotControls();
+    void writeFaceplateSlot(int slot, int choiceIndex);
+    int faceplateSlotControlWidth(const FaceplateSlotControl& control) const;
+    bool faceplateSlotShown(const FaceplateSlotControl& control) const;
+    /// Carve the faceplate-strip controls off the top of the laid-out faceplate.
+    void layoutFaceplateSlotControls();
     std::unique_ptr<juce::TextButton> deltaButton_;
     std::unique_ptr<magda::SvgButton> exportClipButton_;  // Export pattern/chords as MIDI clip
     std::unique_ptr<magda::SvgButton> randomButton_;      // Step-sequencer pattern randomize

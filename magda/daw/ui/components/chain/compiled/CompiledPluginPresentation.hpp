@@ -96,12 +96,12 @@ struct CompiledPresentationSpec {
     /// Optional device-specific enablement for a parameter slot. This changes
     /// interaction/presentation only; the parameter remains automatable.
     bool (*isParameterEnabled)(const magda::DeviceInfo& device, int slotIndex) = nullptr;
-    /// The faceplate-first style: the faceplate stands left at this width and
-    /// only these slots remain as knobs. Empty keeps every slot in the grid.
+    /// The slots that remain as knobs; empty keeps every slot in the grid.
     std::span<const int> knobSlots;
+    /// The faceplate's width beside the knobs; 0 takes the default.
     int faceplateWidth = 0;
-    /// Discrete slots the faceplate-first style shows in the header instead.
-    std::span<const int> headerSlots;
+    /// Discrete slots shown in a strip across the top of the faceplate.
+    std::span<const int> faceplateSlots;
 };
 
 /// All presentation specs in stable iteration order. Each spec is defined

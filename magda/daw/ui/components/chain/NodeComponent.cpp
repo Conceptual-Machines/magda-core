@@ -824,17 +824,8 @@ void NodeComponent::layoutHeader(juce::Rectangle<int> headerStrip) {
                                   border + 2;
             nameLabel_.setBounds(
                 headerArea.removeFromLeft(juce::jmin(nameWidth, headerArea.getWidth() * 3 / 5)));
-            if (const int trailing = getHeaderTrailingWidth(); trailing > 0) {
-                const int subtitleWidth =
-                    juce::roundToInt(juce::GlyphArrangement::getStringWidth(
-                        headerSubtitle_.getFont(), headerSubtitle_.getText())) +
-                    headerSubtitle_.getBorderSize().getLeftAndRight() + 2;
-                headerSubtitle_.setBounds(headerArea.removeFromLeft(subtitleWidth));
-                resizedHeaderTrailing(headerArea.removeFromLeft(trailing));
-            } else {
-                headerSubtitle_.setBounds(headerArea);
-            }
-            headerSubtitle_.setVisible(!headerSubtitle_.getBounds().isEmpty());
+            headerSubtitle_.setBounds(headerArea);
+            headerSubtitle_.setVisible(!headerArea.isEmpty());
         } else {
             nameLabel_.setBounds(headerArea);
             headerSubtitle_.setVisible(false);

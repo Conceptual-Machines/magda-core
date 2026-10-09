@@ -522,10 +522,10 @@ void CompiledFilterCurveView::mouseWheelMove(const juce::MouseEvent& e,
 const CompiledPresentationSpec& getMagdaFilterPresentation() {
     using Filter = magda::daw::audio::compiled::MagdaFilterCompiledPlugin;
     // Cutoff and resonance keep knobs beside the handle, where modulation links them;
-    // mode and engine sit in the header.
+    // mode and engine sit on top of the faceplate.
     static constexpr int kKnobSlots[] = {Filter::kCutoffSlot, Filter::kResonanceSlot,
                                          Filter::kDriveSlot, Filter::kLimitSlot};
-    static constexpr int kHeaderSlots[] = {Filter::kModeSlot, Filter::kEngineSlot};
+    static constexpr int kFaceplateSlots[] = {Filter::kModeSlot, Filter::kEngineSlot};
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName,
         .layoutCellCount = 6,
@@ -535,7 +535,7 @@ const CompiledPresentationSpec& getMagdaFilterPresentation() {
         },
         .knobSlots = kKnobSlots,
         .faceplateWidth = 460,
-        .headerSlots = kHeaderSlots,
+        .faceplateSlots = kFaceplateSlots,
     };
     return kSpec;
 }

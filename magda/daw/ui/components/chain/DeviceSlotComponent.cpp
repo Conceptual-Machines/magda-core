@@ -584,7 +584,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Set initial mod/macro data for param slots
     updateParamModulation();
 
-    createHeaderSlotControls();
+    createFaceplateSlotControls();
 
     // Create custom UI for internal devices
     if (isInternalDevice()) {
@@ -623,10 +623,6 @@ void DeviceSlotComponent::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int>
                                  ? juce::String()
                                  : device_shell::audioInfoText(device_.audioOutputChannels),
                              midiLed_.isLit());
-    if (getHeaderTrailingWidth() > 0 && !collapsed_) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
-        g.fillRect(headerTrailingSeparator_);
-    }
 }
 
 int DeviceSlotComponent::sideStripWidth() const {
@@ -761,29 +757,32 @@ bool DeviceSlotComponent::paramsShown() const {
     return !hasFaceplate() || device_.paramsShown || !device_.faceplateShown;
 }
 
-void DeviceSlotComponent::createHeaderSlotControls() {
-    if (!faceplateFirst())
+void DeviceSlotComponent::createFaceplateSlotControls() {
+    const auto* spec = traits_.compiledPresentation;
+    if (spec == nullptr)
         return;
-    for (const int slot : traits_.compiledPresentation->headerSlots) {
+    for (const int slot : spec->faceplateSlots) {
         const auto* param = device_.findParameterByIndex(slot);
-        HeaderSlotControl control;
+        FaceplateSlotControl control;
         control.slot = slot;
         if (param != nullptr && static_cast<int>(param->choices.size()) <= kMaxSegmentedChoices) {
             control.segments = std::make_unique<magda::SegmentedChoice>();
-            control.segments->onChange = [this, slot](int index) { writeHeaderSlot(slot, index); };
+            control.segments->onChange = [this, slot](int index) {
+                writeFaceplateSlot(slot, index);
+            };
         } else {
             control.dropdown = std::make_unique<juce::ComboBox>();
         }
         addChildComponent(*control.component());
-        headerSlotControls_.push_back(std::move(control));
+        faceplateSlotControls_.push_back(std::move(control));
     }
-    refreshHeaderSlotControls();
+    refreshFaceplateSlotControls();
 }
 
-void DeviceSlotComponent::refreshHeaderSlotControls() {
-    for (auto& control : headerSlotControls_) {
+void DeviceSlotComponent::refreshFaceplateSlotControls() {
+    for (auto& control : faceplateSlotControls_) {
         const auto* param = device_.findParameterByIndex(control.slot);
-        if (!headerSlotShown(control))
+        if (!faceplateSlotShown(control))
             continue;
         if (control.segments != nullptr) {
             juce::StringArray options;
@@ -795,13 +794,13 @@ void DeviceSlotComponent::refreshHeaderSlotControls() {
         } else {
             const int slot = control.slot;
             configureDiscreteCombo(*control.dropdown, *param, [this, slot](double index) {
-                writeHeaderSlot(slot, static_cast<int>(index));
+                writeFaceplateSlot(slot, static_cast<int>(index));
             });
         }
     }
 }
 
-void DeviceSlotComponent::writeHeaderSlot(int slot, int choiceIndex) {
+void DeviceSlotComponent::writeFaceplateSlot(int slot, int choiceIndex) {
     const auto* param = device_.findParameterByIndex(slot);
     if (param == nullptr)
         return;
@@ -810,50 +809,44 @@ void DeviceSlotComponent::writeHeaderSlot(int slot, int choiceIndex) {
                                   {.reloadParameterSlots = [this]() { updateParameterSlots(); },
                                    .updateParamModulation = [this]() { updateParamModulation(); }},
                                   slot, model.value);
-    refreshHeaderSlotControls();
+    refreshFaceplateSlotControls();
     resized();
 }
 
-bool DeviceSlotComponent::headerSlotShown(const HeaderSlotControl& control) const {
+bool DeviceSlotComponent::faceplateSlotShown(const FaceplateSlotControl& control) const {
     // One choice is no choice: an engine that offers a single mode hides the control.
     const auto* param = device_.findParameterByIndex(control.slot);
     return param != nullptr && param->choices.size() > 1;
 }
 
-int DeviceSlotComponent::headerSlotControlWidth(const HeaderSlotControl& control) const {
+int DeviceSlotComponent::faceplateSlotControlWidth(const FaceplateSlotControl& control) const {
     return control.segments != nullptr ? control.segments->getPreferredWidth() : 72;
 }
 
-int DeviceSlotComponent::getHeaderTrailingWidth() const {
-    int width = 0;
-    for (const auto& control : headerSlotControls_)
-        if (headerSlotShown(control))
-            width += headerSlotControlWidth(control) + 8;
-    return width > 0 ? width + 13 : 0;  // The separator before them, with its margins.
-}
-
-void DeviceSlotComponent::resizedHeaderTrailing(juce::Rectangle<int> area) {
-    headerTrailingSeparator_ = area.removeFromLeft(13).withSizeKeepingCentre(1, 14);
-    for (const auto& control : headerSlotControls_) {
+void DeviceSlotComponent::layoutFaceplateSlotControls() {
+    constexpr int kStripHeight = 30;
+    const bool faceplateUp = compiledPanel_ != nullptr && !collapsed_ && faceplateShown() &&
+                             compiledPanel_->component().isVisible();
+    auto strip = juce::Rectangle<int>();
+    for (const auto& control : faceplateSlotControls_) {
         auto* component = control.component();
-        component->setVisible(headerSlotShown(control));
+        component->setVisible(faceplateUp && faceplateSlotShown(control));
         if (!component->isVisible())
             continue;
-        component->setBounds(area.removeFromLeft(headerSlotControlWidth(control))
-                                 .withSizeKeepingCentre(headerSlotControlWidth(control), 22));
-        area.removeFromLeft(8);
+        if (strip.isEmpty()) {
+            auto panel = compiledPanel_->component().getBounds();
+            strip = panel.removeFromTop(kStripHeight);
+            compiledPanel_->component().setBounds(panel.withTrimmedTop(4));
+        }
+        const int width = faceplateSlotControlWidth(control);
+        component->setBounds(strip.removeFromLeft(width).withSizeKeepingCentre(width, 24));
+        strip.removeFromLeft(8);
     }
 }
 
-bool DeviceSlotComponent::faceplateFirst() const {
-    return traits_.compiledPresentation != nullptr &&
-           !traits_.compiledPresentation->knobSlots.empty();
-}
-
 int DeviceSlotComponent::faceplateWidth() const {
-    return faceplateFirst() && traits_.compiledPresentation->faceplateWidth > 0
-               ? traits_.compiledPresentation->faceplateWidth
-               : FACEPLATE_WIDTH;
+    const auto* spec = traits_.compiledPresentation;
+    return spec != nullptr && spec->faceplateWidth > 0 ? spec->faceplateWidth : FACEPLATE_WIDTH;
 }
 
 void DeviceSlotComponent::toggleDeviceView(bool faceplate) {
@@ -1302,7 +1295,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
 
     // Update parameter slots with current parameter data for current page
     updateParameterSlots();
-    refreshHeaderSlotControls();
+    refreshFaceplateSlotControls();
 
     updateParamModulation();
     repaint();
@@ -1541,7 +1534,6 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
                  : 0,
          .compiledPanel = compiledBodyPanel,
          .compiledPanelWidth = faceplateWidth(),
-         .compiledPanelFirst = faceplateFirst(),
          .compiledPanelShown = faceplateShown(),
          .paramGridShown = paramsShown(),
          .compiledPanelWantsFullBody = compiledPanel_ != nullptr && compiledPanel_->wantsFullBody(),
@@ -1549,6 +1541,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
          .activeCustomUI = activeCustomUI,
          .paramGrid = paramGrid_.get()},
         faustHeaderHeight());
+    layoutFaceplateSlotControls();
 
     if (auto* drumGrid = customUI_.getDrumGridUI(); drumGrid != nullptr && !footerArea_.isEmpty()) {
         drumGrid->setBounds(contentArea.withBottom(footerArea_.getBottom()));
@@ -1591,9 +1584,8 @@ void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
-    for (const auto& control : headerSlotControls_)
+    for (const auto& control : faceplateSlotControls_)
         control.component()->setVisible(false);
-    headerTrailingSeparator_ = {};
     layoutCollapsedDeviceSlotControls(
         area, collapsedMeterArea_, traits_, device_, isInternalDevice(),
         {.levelMeter = stripsAnalysisChrome() ? nullptr : &levelMeter_,
