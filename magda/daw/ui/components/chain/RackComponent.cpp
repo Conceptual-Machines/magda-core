@@ -17,6 +17,7 @@
 #include "core/UndoManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "layout/NodeHeaderStyles.hpp"
+#include "ui/components/common/MagdaAlertWindow.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -1172,7 +1173,7 @@ void RackComponent::showSaveRackPresetDialog() {
     const juce::String defaultName =
         currentPresetName_.isNotEmpty() ? currentPresetName_ : (live ? live->name : "Rack");
 
-    auto* aw = new juce::AlertWindow(
+    auto* aw = new magda::MagdaAlertWindow(
         "Save MAGDA Rack Preset",
         R"(Enter a name for this rack preset (use "/" to nest, e.g. "Drums/808 Stack"):)",
         juce::MessageBoxIconType::NoIcon);

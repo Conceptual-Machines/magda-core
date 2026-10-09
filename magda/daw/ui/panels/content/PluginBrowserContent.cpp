@@ -32,6 +32,7 @@
 #include "core/TrackManager.hpp"
 #include "engine/PluginMetadataStore.hpp"
 #include "engine/PluginService.hpp"
+#include "ui/components/common/MagdaAlertWindow.hpp"
 
 namespace magda::daw::ui {
 
@@ -1085,9 +1086,9 @@ void PluginBrowserContent::loadAliases() {
 }
 
 void PluginBrowserContent::showEditAliasDialog(const PluginBrowserInfo& plugin) {
-    auto* alertWindow =
-        new juce::AlertWindow("Edit Plugin Alias", "Set a custom alias for " + plugin.name + ":",
-                              juce::MessageBoxIconType::NoIcon);
+    auto* alertWindow = new magda::MagdaAlertWindow("Edit Plugin Alias",
+                                                    "Set a custom alias for " + plugin.name + ":",
+                                                    juce::MessageBoxIconType::NoIcon);
     alertWindow->addTextEditor("alias", plugin.alias, "Alias:");
     alertWindow->addButton("OK", 1);
     alertWindow->addButton("Cancel", 0);
@@ -1198,8 +1199,8 @@ void PluginBrowserContent::showFolderContextMenu(const juce::String& folderName,
 }
 
 void PluginBrowserContent::showNewFolderDialog(const juce::String& pluginKeyToAssign) {
-    auto* alertWindow = new juce::AlertWindow("New Plugin Folder",
-                                              "Folder name:", juce::MessageBoxIconType::NoIcon);
+    auto* alertWindow = new magda::MagdaAlertWindow(
+        "New Plugin Folder", "Folder name:", juce::MessageBoxIconType::NoIcon);
     alertWindow->addTextEditor("name", "", "Name:");
     alertWindow->addButton("OK", 1);
     alertWindow->addButton("Cancel", 0);
@@ -1219,8 +1220,8 @@ void PluginBrowserContent::showNewFolderDialog(const juce::String& pluginKeyToAs
 }
 
 void PluginBrowserContent::showRenameFolderDialog(const juce::String& folderName) {
-    auto* alertWindow = new juce::AlertWindow("Rename Folder", "New name for " + folderName + ":",
-                                              juce::MessageBoxIconType::NoIcon);
+    auto* alertWindow = new magda::MagdaAlertWindow(
+        "Rename Folder", "New name for " + folderName + ":", juce::MessageBoxIconType::NoIcon);
     alertWindow->addTextEditor("name", folderName, "Name:");
     alertWindow->addButton("OK", 1);
     alertWindow->addButton("Cancel", 0);

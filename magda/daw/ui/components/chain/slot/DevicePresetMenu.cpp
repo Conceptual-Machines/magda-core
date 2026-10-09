@@ -5,6 +5,7 @@
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/PluginService.hpp"
+#include "ui/components/common/MagdaAlertWindow.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -203,7 +204,7 @@ void showSaveMagdaPresetDialog(const magda::DeviceInfo& device,
                                const juce::String& currentPresetName,
                                PresetSnapshotProvider snapshotProvider,
                                std::function<void(const juce::String& presetName)> onSaved) {
-    auto* alert = new juce::AlertWindow(
+    auto* alert = new magda::MagdaAlertWindow(
         "Save MAGDA Preset", "Enter a name and optional category for this device preset:",
         juce::MessageBoxIconType::NoIcon);
 
@@ -587,7 +588,7 @@ void showSavePluginPresetDialog(
         return;
     }
 
-    auto* alert = new juce::AlertWindow(
+    auto* alert = new magda::MagdaAlertWindow(
         "Save Plugin Preset", "Enter a name for this " + extension.substring(1) + " preset:",
         juce::MessageBoxIconType::NoIcon);
     alert->addTextEditor(

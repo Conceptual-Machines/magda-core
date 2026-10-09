@@ -1783,10 +1783,11 @@ bool ProjectManager::commitRecovery(const RecoveryEntry& entry, StagedProjectDat
 
 bool ProjectManager::showUnsavedChangesDialog() {
     // Modal dialog: returns 1 for "Save", 2 for "Don't Save", 0 for "Cancel"
+    const auto title = juce::String(juce::CharPointer_UTF8("Save changes to \xe2\x80\x9c")) +
+                       getProjectName() + juce::String(juce::CharPointer_UTF8("\xe2\x80\x9d?"));
     int result = juce::AlertWindow::showYesNoCancelBox(
-        juce::AlertWindow::QuestionIcon, "Unsaved Changes",
-        "You have unsaved changes. Do you want to save before continuing?", "Save", "Don't Save",
-        "Cancel");
+        juce::AlertWindow::QuestionIcon, title, "Your changes will be lost if you don't save them.",
+        "Save", "Don't Save", "Cancel");
 
     if (result == 0) {
         // Cancel — abort the operation. Empty lastError_ so callers can

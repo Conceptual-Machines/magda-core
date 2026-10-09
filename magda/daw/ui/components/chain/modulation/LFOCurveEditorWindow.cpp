@@ -1,6 +1,7 @@
 #include "modulation/LFOCurveEditorWindow.hpp"
 
 #include "core/PresetManager.hpp"
+#include "ui/components/common/MagdaAlertWindow.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -356,8 +357,9 @@ void LFOCurveEditorContent::showPresetError(const juce::String& title,
 }
 
 void LFOCurveEditorContent::showSaveCurvePresetDialog() {
-    auto* alert = new juce::AlertWindow("Save Curve Preset", "Enter a name for this curve preset:",
-                                        juce::MessageBoxIconType::NoIcon);
+    auto* alert = new magda::MagdaAlertWindow(
+        "Save Curve Preset",
+        "Enter a name for this curve preset:", juce::MessageBoxIconType::NoIcon);
 
     juce::String defaultName = currentUserCurvePreset_;
     juce::String defaultCategory;

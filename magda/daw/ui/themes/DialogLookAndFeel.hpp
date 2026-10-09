@@ -5,6 +5,7 @@
 #include "ActiveTheme.hpp"
 #include "FontManager.hpp"
 #include "LocalizedText.hpp"
+#include "ui/components/common/MagdaAlertWindow.hpp"
 
 namespace magda::daw::ui {
 
@@ -269,6 +270,23 @@ class DialogLookAndFeel : public juce::LookAndFeel_V4 {
     static DialogLookAndFeel& getInstance() {
         static DialogLookAndFeel instance;
         return instance;
+    }
+
+    juce::AlertWindow* createAlertWindow(const juce::String& title, const juce::String& message,
+                                         const juce::String& button1, const juce::String& button2,
+                                         const juce::String& button3,
+                                         juce::MessageBoxIconType iconType, int numButtons,
+                                         juce::Component* associatedComponent) override {
+        return createMagdaAlertWindow(title, message, button1, button2, button3, iconType,
+                                      numButtons, associatedComponent);
+    }
+
+    void drawAlertBox(juce::Graphics& g, juce::AlertWindow& alert,
+                      const juce::Rectangle<int>& textArea, juce::TextLayout& layout) override {
+        if (auto* magdaAlert = dynamic_cast<MagdaAlertWindow*>(&alert))
+            magdaAlert->paintShell(g);
+        else
+            juce::LookAndFeel_V4::drawAlertBox(g, alert, textArea, layout);
     }
 
   private:

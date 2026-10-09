@@ -17,6 +17,7 @@
 #include "engine/AudioEngine.hpp"
 #include "engine/PluginService.hpp"
 #include "ui/components/chain/params/ParamControlStyle.hpp"
+#include "ui/components/common/MagdaAlertWindow.hpp"
 
 namespace magda::daw::ui {
 
@@ -515,7 +516,7 @@ ParameterConfigDialog::ParameterConfigDialog(juce::String pluginName)
                            ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
     resetButton_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
     resetButton_.onClick = [this]() {
-        auto* alert = new juce::AlertWindow(
+        auto* alert = new magda::MagdaAlertWindow(
             "Reset parameter configuration?",
             "Discard all inferred units, ranges, AI parameter selections, and custom "
             "instructions for \"" +

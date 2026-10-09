@@ -23,6 +23,7 @@
 #include "../../themes/FileBrowserLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../themes/SmallComboBoxLookAndFeel.hpp"
+#include "ui/components/common/MagdaAlertWindow.hpp"
 #include "ui/windows/AppShortcuts.hpp"
 
 namespace magda::daw::ui {
@@ -1351,7 +1352,7 @@ void MediaDbBrowserContent::showEditRowDialog(std::int64_t fileId) {
         return;
     }
 
-    auto* alert = new juce::AlertWindow(
+    auto* alert = new magda::MagdaAlertWindow(
         "Edit Media Row", "Changes update the media database row, not the file on disk.",
         juce::MessageBoxIconType::NoIcon);
     alert->addTextEditor("display", row->displayName ? juce::String(*row->displayName) : "",
@@ -1438,7 +1439,7 @@ void MediaDbBrowserContent::showBulkEditRowsDialog(std::vector<std::int64_t> fil
         return;
     }
     const auto count = static_cast<int>(fileIds.size());
-    auto* alert = new juce::AlertWindow(
+    auto* alert = new magda::MagdaAlertWindow(
         "Edit Selected Rows",
         "Blank fields keep each row's current value. Enter \"-\" in Tags to clear tags.",
         juce::MessageBoxIconType::NoIcon);
@@ -2311,9 +2312,9 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
     // in, instead of being prompted twice (once for tags, once for the
     // warning).
     auto presentTagOptionsDialog = [this, dir, mode]() {
-        auto* alert = new juce::AlertWindow("Index Folder",
-                                            "Optional tags are written to each scanned media row.",
-                                            juce::MessageBoxIconType::NoIcon);
+        auto* alert = new magda::MagdaAlertWindow(
+            "Index Folder", "Optional tags are written to each scanned media row.",
+            juce::MessageBoxIconType::NoIcon);
         alert->addTextEditor("custom_tags", "", "Tags:");
         // AlertWindow::addCustomComponent does NOT take ownership (it holds a
         // plain Array<Component*>, not an OwnedArray), so this component must be
