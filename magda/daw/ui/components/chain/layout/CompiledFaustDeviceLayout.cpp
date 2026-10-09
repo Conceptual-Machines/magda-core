@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include "layout/FaceplateBelowGeometry.hpp"
+
 namespace magda::daw::ui {
 
 namespace {
@@ -26,6 +28,17 @@ bool gateEnabled(const magda::DeviceInfo& device, const magda::ParameterInfo& pa
 }
 
 }  // namespace
+
+juce::Rectangle<int> CompiledFaustDeviceLayout::cellBounds(int cell, juce::Rectangle<int> area,
+                                                           bool faceplateShown) const {
+    const int bandCells = cellCount_ - leadingColumnCells_;
+    const int bandRows = (bandCells + kBandColumns - 1) / kBandColumns;
+    const auto geometry = FaceplateBelowGeometry::of(area, faceplateShown, bandRows);
+    if (cell < leadingColumnCells_)
+        return FaceplateBelowGeometry::cell(geometry.globals, cell, 1, leadingColumnCells_);
+    return FaceplateBelowGeometry::cell(geometry.bands, cell - leadingColumnCells_, kBandColumns,
+                                        bandRows);
+}
 
 int CompiledFaustDeviceLayout::totalPages(const magda::DeviceInfo&) const {
     return 1;

@@ -32,6 +32,7 @@
 #include "engine/AudioEngine.hpp"
 #include "layout/DeviceShellPainter.hpp"
 #include "layout/DeviceSlotHeaderLayout.hpp"
+#include "layout/FaceplateBelowGeometry.hpp"
 #include "layout/NodeHeaderStyles.hpp"
 #include "modulation/DeviceLinkCallbacks.hpp"
 #include "modulation/MacroPanelComponent.hpp"
@@ -936,6 +937,12 @@ void DeviceSlotComponent::layoutFaceplateSlotControls() {
     }
 }
 
+int DeviceSlotComponent::faceplateBandRows() const {
+    const auto* spec = traits_.compiledPresentation;
+    const auto bands = spec != nullptr ? static_cast<int>(spec->bandSlots.size()) : 0;
+    return (bands + 2) / 3;
+}
+
 int DeviceSlotComponent::faceplateWidth() const {
     const auto* spec = traits_.compiledPresentation;
     return spec != nullptr && spec->faceplateWidth > 0 ? spec->faceplateWidth : FACEPLATE_WIDTH;
@@ -1263,7 +1270,11 @@ int DeviceSlotComponent::getPreferredWidth() const {
     if (customWidth > 0)
         return getTotalWidth(customWidth) + meterExtra;
     int contentWidth = getDynamicSlotWidth();
-    if (hasFaceplate())
+    if (hasFaceplate() && faceplateBandRows() > 0)
+        contentWidth = !paramsShown()     ? faceplateWidth()
+                       : faceplateShown() ? FaceplateBelowGeometry::kColumnWidth + faceplateWidth()
+                                          : FaceplateBelowGeometry::kColumnWidth * 4;
+    else if (hasFaceplate())
         contentWidth =
             (paramsShown() ? contentWidth : 0) + (faceplateShown() ? faceplateWidth() : 0);
     return getTotalWidth(contentWidth) + meterExtra;
@@ -1626,6 +1637,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
                  : 0,
          .compiledPanel = compiledBodyPanel,
          .compiledPanelWidth = faceplateWidth(),
+         .compiledPanelBandRows = faceplateBandRows(),
          .compiledPanelShown = faceplateShown(),
          .paramGridShown = paramsShown(),
          .compiledPanelWantsFullBody = compiledPanel_ != nullptr && compiledPanel_->wantsFullBody(),

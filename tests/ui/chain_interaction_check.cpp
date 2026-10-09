@@ -15,6 +15,7 @@
 #include "ui/components/chain/RackComponent.hpp"
 #include "ui/components/chain/compiled/CompiledFilterCurveView.hpp"
 #include "ui/components/chain/layout/CompiledFaustDeviceLayout.hpp"
+#include "ui/components/chain/layout/FaceplateBelowGeometry.hpp"
 #include "ui/components/chain/layout/StandardDeviceLayout.hpp"
 #include "ui/components/chain/slot/DeviceSlotSelectionHandling.hpp"
 #include "ui/components/common/SegmentedChoice.hpp"
@@ -259,6 +260,27 @@ int main() {
             wheel.deltaY = 0.5f;
             faceplate.mouseWheelMove(event(start, start), wheel);
             check(written[Filter::kDriveSlot] > 0.0f, "scrolling up did not raise drive");
+        }
+        {
+            // Multiband: whole-device knobs in a left column, band knobs above the faceplate.
+            static constexpr int knobs[] = {0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11};
+            const CompiledFaustDeviceLayout layout(12, 3, false, nullptr, knobs, {}, 0, 5);
+            const juce::Rectangle<int> content(0, 0, 504, 300);
+            const auto faceplate = FaceplateBelowGeometry::of(content, true, 2).faceplate;
+            for (int cell = 0; cell < 5; ++cell)
+                check(layout.cellBounds(cell, content, true).getRight() <=
+                          FaceplateBelowGeometry::kColumnWidth,
+                      "a whole-device knob left the left column");
+            for (int cell = 5; cell < 11; ++cell) {
+                const auto bounds = layout.cellBounds(cell, content, true);
+                check(bounds.getBottom() <= faceplate.getY() && !bounds.intersects(faceplate),
+                      "a band knob overlaps the faceplate");
+            }
+            check(layout.cellBounds(5, content, true).getX() <
+                          layout.cellBounds(6, content, true).getX() &&
+                      layout.cellBounds(6, content, true).getX() <
+                          layout.cellBounds(7, content, true).getX(),
+                  "the band knobs are not low, mid, high from left to right");
         }
         {
             // The Compressor's four choices fit across its faceplate, Autogain as one toggle.

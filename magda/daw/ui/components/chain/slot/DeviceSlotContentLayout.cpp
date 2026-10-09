@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
+#include "layout/FaceplateBelowGeometry.hpp"
 #include "params/ParamHostComponent.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -270,6 +271,16 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
         }
 
         controls.compiledPanel->setVisible(controls.compiledPanelShown);
+        if (controls.compiledPanelBandRows > 0 && controls.paramGridShown &&
+            controls.paramGrid != nullptr) {
+            controls.paramGrid->setFaceplateBelowShown(controls.compiledPanelShown);
+            if (controls.compiledPanelShown)
+                controls.compiledPanel->setBounds(
+                    FaceplateBelowGeometry::of(contentArea, true, controls.compiledPanelBandRows)
+                        .faceplate);
+            layoutParamGrid(controls.paramGrid, contentArea);
+            return;
+        }
         if (controls.compiledPanelShown) {
             // Inset like the parameter grid: 14px at the outer edges, top and foot.
             const bool beside = controls.paramGridShown;

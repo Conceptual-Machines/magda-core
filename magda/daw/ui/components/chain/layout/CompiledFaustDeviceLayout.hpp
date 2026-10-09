@@ -30,8 +30,10 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
     CompiledFaustDeviceLayout(int cellCount, int cellsPerRow, bool columnMajor = false,
                               ParameterEnabledPredicate isParameterEnabled = nullptr,
                               std::span<const int> knobSlots = {},
-                              std::span<const int> excludedSlots = {}, int maxColumns = 0)
+                              std::span<const int> excludedSlots = {}, int maxColumns = 0,
+                              int leadingColumnCells = 0)
         : maxColumns_(maxColumns > 0 ? maxColumns : 2),
+          leadingColumnCells_(leadingColumnCells),
           columnMajor_(columnMajor),
           isParameterEnabled_(isParameterEnabled),
           knobSlots_(knobSlots.begin(), knobSlots.end()) {
@@ -52,8 +54,15 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
         return cellsPerRow_;
     }
     bool reflowsForControlStyle() const override {
-        return !columnMajor_;
+        return !columnMajor_ && leadingColumnCells_ == 0;
     }
+    /// A faceplate-below device: its first cells in the left column, the rest over the faceplate.
+    bool placesOwnCells() const override {
+        return leadingColumnCells_ > 0;
+    }
+    juce::Rectangle<int> cellBounds(int cell, juce::Rectangle<int> area,
+                                    bool faceplateShown) const override;
+    static constexpr int kBandColumns = 3;
     int maxColumns() const override {
         return maxColumns_;
     }
@@ -71,6 +80,7 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
     int cellCount_ = 0;
     int cellsPerRow_ = 0;
     int maxColumns_ = 2;
+    int leadingColumnCells_ = 0;
     bool columnMajor_;
     ParameterEnabledPredicate isParameterEnabled_;
     std::vector<int> knobSlots_;  // The faceplate-first style's knobs, in order.

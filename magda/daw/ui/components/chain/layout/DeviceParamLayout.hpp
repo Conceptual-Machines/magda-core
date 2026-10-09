@@ -1,5 +1,7 @@
 #pragma once
 
+#include <juce_graphics/juce_graphics.h>
+
 #include "core/DeviceInfo.hpp"
 
 namespace magda::daw::ui {
@@ -67,6 +69,14 @@ class DeviceParamLayout {
         return false;
     }
     /// Curated native layouts keep their cells but take the style's column count.
+    /// Set, the layout places each cell itself instead of the host's even grid.
+    virtual bool placesOwnCells() const {
+        return false;
+    }
+    virtual juce::Rectangle<int> cellBounds(int /*cell*/, juce::Rectangle<int> /*area*/,
+                                            bool /*faceplateShown*/) const {
+        return {};
+    }
     /// Most columns a reflowing grid wraps at.
     virtual int maxColumns() const {
         return 2;

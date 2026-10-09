@@ -105,6 +105,11 @@ class ParamHostComponent : public juce::Component, private magda::ConfigListener
     /// first row of cells.
     int getChromeHeight() const;
 
+    /// Whether a faceplate-below layout's faceplate shows, which decides where its cells go.
+    void setFaceplateBelowShown(bool shown) {
+        faceplateBelowShown_ = shown;
+    }
+
     /// Pin the row height instead of dividing the bounds by getRowCount().
     /// Lets a caller hand the grid only the rows it uses while the cells keep
     /// the size they would have had with the whole body to themselves. 0
@@ -165,6 +170,7 @@ class ParamHostComponent : public juce::Component, private magda::ConfigListener
     int rowHeight_ = 0;
     // Rows a curated grid is sized for, so a short grid keeps the plug-in grid's row height.
     int minRows_ = 0;
+    bool faceplateBelowShown_ = true;
     bool footerPagination_ = false;
     int allocatedCells_ = 0;
     std::optional<ParamControlStyle> lastAppliedStyle_;

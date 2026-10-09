@@ -46,9 +46,11 @@ struct DeviceSlotContentBodyControls {
     // case the parameter grid keeps the whole body.
     juce::Component* faustMeterPanel = nullptr;
     int faustMeterPanelPreferredHeight = 0;
-    // The faceplate stands to the right of the parameters, at this width.
+    // The faceplate stands to the right of the parameters, at this width, or under band knobs
+    // in this many rows.
     juce::Component* compiledPanel = nullptr;
     int compiledPanelWidth = 0;
+    int compiledPanelBandRows = 0;
     bool compiledPanelShown = true;
     bool paramGridShown = true;
     // When true, hide the param grid entirely and give the compiled panel

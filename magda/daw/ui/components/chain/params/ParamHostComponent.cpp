@@ -393,6 +393,17 @@ void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::
         return;
     }
 
+    if (layout_->placesOwnCells()) {
+        // The grid spans the faceplate it leaves room for; clicks there pass through to it.
+        setInterceptsMouseClicks(false, true);
+        for (int i = 0; i < cellCount_; ++i) {
+            paramSlots_[i]->setFonts(labelFont, valueFont);
+            paramSlots_[i]->setBounds(layout_->cellBounds(i, area, faceplateBelowShown_));
+        }
+        setPaginationVisible(false);
+        return;
+    }
+
     area.removeFromTop(2);
     juce::Rectangle<int> paginationArea;
     if (showsOwnPagination()) {
