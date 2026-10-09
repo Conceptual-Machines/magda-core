@@ -102,6 +102,8 @@ struct CompiledPresentationSpec {
     int faceplateWidth = 0;
     /// Discrete slots shown in a strip across the top of the faceplate.
     std::span<const int> faceplateSlots;
+    /// The device's own dry/wet slot: the side strip's mix knob drives it, so the grid drops it.
+    int mixSlot = -1;
 };
 
 /// All presentation specs in stable iteration order. Each spec is defined

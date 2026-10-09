@@ -122,6 +122,7 @@ const CompiledPresentationSpec& getMagdaDimensionPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledDimensionView>(pluginId);
         },
+        .mixSlot = magda::daw::audio::compiled::MagdaDimensionCompiledPlugin::kMixSlot,
     };
     return kSpec;
 }

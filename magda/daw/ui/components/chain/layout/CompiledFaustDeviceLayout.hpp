@@ -29,12 +29,18 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
 
     CompiledFaustDeviceLayout(int cellCount, int cellsPerRow, bool columnMajor = false,
                               ParameterEnabledPredicate isParameterEnabled = nullptr,
-                              std::span<const int> knobSlots = {})
-        : cellCount_(knobSlots.empty() ? cellCount : static_cast<int>(knobSlots.size())),
-          cellsPerRow_(knobSlots.empty() ? cellsPerRow : static_cast<int>(knobSlots.size())),
-          columnMajor_(columnMajor),
+                              std::span<const int> knobSlots = {}, int excludedSlot = -1)
+        : columnMajor_(columnMajor),
           isParameterEnabled_(isParameterEnabled),
-          knobSlots_(knobSlots.begin(), knobSlots.end()) {}
+          knobSlots_(knobSlots.begin(), knobSlots.end()) {
+        // A slot the device shows elsewhere (its mix, in the side strip) leaves the grid.
+        if (knobSlots_.empty() && excludedSlot >= 0)
+            for (int slot = 0; slot < cellCount; ++slot)
+                knobSlots_.push_back(slot);
+        std::erase(knobSlots_, excludedSlot);
+        cellCount_ = knobSlots_.empty() ? cellCount : static_cast<int>(knobSlots_.size());
+        cellsPerRow_ = knobSlots_.empty() ? cellsPerRow : static_cast<int>(knobSlots_.size());
+    }
 
     int cellCount() const override {
         return cellCount_;
@@ -56,8 +62,8 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
                       int currentPage) const override;
 
   private:
-    int cellCount_;
-    int cellsPerRow_;
+    int cellCount_ = 0;
+    int cellsPerRow_ = 0;
     bool columnMajor_;
     ParameterEnabledPredicate isParameterEnabled_;
     std::vector<int> knobSlots_;  // The faceplate-first style's knobs, in order.

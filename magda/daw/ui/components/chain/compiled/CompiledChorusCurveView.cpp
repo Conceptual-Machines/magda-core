@@ -248,6 +248,7 @@ const CompiledPresentationSpec& getMagdaChorusPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledChorusCurveView>(pluginId);
         },
+        .mixSlot = magda::daw::audio::compiled::MagdaChorusCompiledPlugin::kMixSlot,
     };
     return kSpec;
 }

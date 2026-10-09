@@ -129,6 +129,38 @@ void DeviceSlotComponent::wireSharedModMacroLinkCallbacks(LinkTarget& target,
 void DeviceSlotComponent::setupGainMeterControls() {
     setupDeviceSlotGainMeterControls(*this, gainLabel_, levelMeter_, gainSlider_, mixKnob_, device_,
                                      [this]() { return nodePath_; });
+    if (nativeMixSlot() < 0)
+        return;
+    // A native effect's own mix slot, across its range, in place of the wrapper crossfade.
+    mixKnob_->setTooltip("Dry / Wet Mix");
+    mixKnob_->onValueChange = [this]() {
+        const int slot = nativeMixSlot();
+        const auto* param = device_.findParameterByIndex(slot);
+        if (param == nullptr)
+            return;
+        const double position = juce::jlimit(0.0, 1.0, mixKnob_->getValue());
+        applyDeviceSlotParameterValue(
+            device_, nodePath_, *paramGrid_, compiledPanel_.get(), traits_,
+            {.reloadParameterSlots = [this]() { updateParameterSlots(); },
+             .updateParamModulation = [this]() { updateParamModulation(); }},
+            slot, param->minValue + position * (param->maxValue - param->minValue));
+    };
+}
+
+int DeviceSlotComponent::nativeMixSlot() const {
+    const auto* spec = traits_.compiledPresentation;
+    return spec != nullptr && spec->mixSlot >= 0 && device_.findParameterByIndex(spec->mixSlot)
+               ? spec->mixSlot
+               : -1;
+}
+
+double DeviceSlotComponent::nativeMixPosition() const {
+    const auto* param = device_.findParameterByIndex(nativeMixSlot());
+    if (param == nullptr || param->maxValue <= param->minValue)
+        return 1.0;
+    return juce::jlimit(0.0, 1.0,
+                        static_cast<double>((param->currentValue - param->minValue) /
+                                            (param->maxValue - param->minValue)));
 }
 
 void DeviceSlotComponent::syncGainControlsFromDevice() {
@@ -143,6 +175,14 @@ DeviceSlotModMacroCommandCallbacks DeviceSlotComponent::modMacroCommandCallbacks
 }
 
 void DeviceSlotComponent::refreshMixKnobFromDevice(bool relayoutOnVisibilityChange) {
+    if (mixKnob_ != nullptr && nativeMixSlot() >= 0) {
+        const bool wasVisible = mixKnob_->isVisible();
+        mixKnob_->setVisible(true);
+        mixKnob_->setValue(nativeMixPosition(), juce::dontSendNotification);
+        if (relayoutOnVisibilityChange && !wasVisible)
+            resized();
+        return;
+    }
     refreshDeviceSlotMixKnobFromDevice(mixKnob_.get(), device_, relayoutOnVisibilityChange,
                                        [this]() { resized(); });
 }
@@ -646,8 +686,8 @@ void DeviceSlotComponent::layoutSideStrip(juce::Rectangle<int> strip) {
     auto area = strip.reduced(5, 6);
     const bool utility = isMidiUtilityDeviceSlot(traits_);
     // Dry/wet only means something on an audio effect.
-    const bool mix =
-        !utility && device_.deviceType == magda::DeviceType::Effect && hasWrapperMixPair();
+    const bool mix = !utility && device_.deviceType == magda::DeviceType::Effect &&
+                     (hasWrapperMixPair() || nativeMixSlot() >= 0);
     if (mixKnob_) {
         mixKnob_->setVisible(mix);
         if (mix) {
@@ -2134,7 +2174,10 @@ double DeviceSlotComponent::currentMixPosition() const {
 }
 
 void DeviceSlotComponent::syncMixKnobFromDevice() {
-    syncDeviceSlotMixKnobFromDevice(mixKnob_.get(), device_);
+    if (mixKnob_ != nullptr && nativeMixSlot() >= 0)
+        mixKnob_->setValue(nativeMixPosition(), juce::dontSendNotification);
+    else
+        syncDeviceSlotMixKnobFromDevice(mixKnob_.get(), device_);
 }
 
 }  // namespace magda::daw::ui

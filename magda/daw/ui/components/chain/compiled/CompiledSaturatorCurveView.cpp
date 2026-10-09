@@ -231,6 +231,7 @@ const CompiledPresentationSpec& getMagdaSaturatorPresentation() {
         },
         .knobSlots = kKnobSlots,
         .faceplateSlots = kFaceplateSlots,
+        .mixSlot = magda::daw::audio::compiled::MagdaSaturatorCompiledPlugin::kMixSlot,
     };
     return kSpec;
 }

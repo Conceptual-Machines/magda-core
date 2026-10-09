@@ -157,6 +157,7 @@ const CompiledPresentationSpec& getMagdaPitchPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledPitchEditorView>(pluginId);
         },
+        .mixSlot = magda::daw::audio::compiled::MagdaPitchCompiledPlugin::kMixSlot,
     };
     return kSpec;
 }

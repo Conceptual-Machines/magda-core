@@ -363,6 +363,7 @@ const CompiledPresentationSpec& getMagdaPhaserPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledPhaserCurveView>(pluginId);
         },
+        .mixSlot = magda::daw::audio::compiled::MagdaPhaserCompiledPlugin::kMixSlot,
     };
     return kSpec;
 }

@@ -363,6 +363,9 @@ class DeviceSlotComponent : public NodeComponent,
     void refreshMixKnobFromDevice(bool relayoutOnVisibilityChange);
     bool hasWrapperMixPair() const;
     double currentMixPosition() const;
+    /// The device's own mix slot from its spec, or -1; and where its value sits, 0..1.
+    int nativeMixSlot() const;
+    double nativeMixPosition() const;
     void syncMixKnobFromDevice();
     int lastMidiNote_ = -1;
     std::array<int, 32> lastChordNotes_{};

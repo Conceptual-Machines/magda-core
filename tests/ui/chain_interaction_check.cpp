@@ -291,6 +291,23 @@ int main() {
                     check(grid.getCellsPerRow() == 2 && grid.getSlotCount() == 4,
                           "four faceplate-first knobs are not a 2 x 2");
                 }
+                {
+                    // A device's own mix lives in the side strip, so its grid drops it.
+                    ParamHostComponent grid(std::make_unique<CompiledFaustDeviceLayout>(
+                        6, 6, false, nullptr, std::span<const int>{}, 4));
+                    DeviceInfo model;
+                    for (int index = 0; index < 6; ++index) {
+                        ParameterInfo parameter;
+                        parameter.paramIndex = index;
+                        parameter.name = "Control " + juce::String(index);
+                        model.parameters.push_back(parameter);
+                    }
+                    grid.updateParameterSlots(model, 0, {});
+                    check(grid.getSlotCount() == 5, "the mix slot stayed in the grid");
+                    for (int cell = 0; cell < grid.getSlotCount(); ++cell)
+                        check(grid.getSlot(cell)->getParamIndex() != 4,
+                              "the mix slot stayed in the grid");
+                }
             }
         }
         {

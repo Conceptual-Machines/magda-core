@@ -290,6 +290,7 @@ const CompiledPresentationSpec& getMagdaRingModPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledRingModCurveView>(pluginId);
         },
+        .mixSlot = magda::daw::audio::compiled::MagdaRingModCompiledPlugin::kMixSlot,
     };
     return kSpec;
 }

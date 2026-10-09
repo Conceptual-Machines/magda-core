@@ -932,6 +932,7 @@ const CompiledPresentationSpec& getMagdaMultibandPresentation() {
         },
         .visualMinFractionNumerator = 3,
         .visualMinFractionDenominator = 4,
+        .mixSlot = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin::kMixSlot,
     };
     return kSpec;
 }

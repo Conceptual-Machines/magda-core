@@ -267,6 +267,7 @@ const CompiledPresentationSpec& getMagdaGatePresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledGateCurveView>(pluginId);
         },
+        .mixSlot = magda::daw::audio::compiled::MagdaGateExpanderCompiledPlugin::kMixSlot,
     };
     return kSpec;
 }

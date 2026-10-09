@@ -230,6 +230,7 @@ const CompiledPresentationSpec& getMagdaDelayPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledDelayCurveView>(pluginId);
         },
+        .mixSlot = magda::daw::audio::compiled::MagdaDelayCompiledPlugin::kMixSlot,
     };
     return kSpec;
 }
