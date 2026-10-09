@@ -114,6 +114,7 @@ CompiledFilterCurveView::CompiledFilterCurveView(juce::String pluginId) {
     // the unified MagdaFilterCompiledPlugin holds all five engines and
     // exposes which one is active via slot kEngineSlot.
     family_ = FilterFamily::SVF;
+    // Read-only until a host hands it a parameter callback.
     setInterceptsMouseClicks(false, false);
 }
 

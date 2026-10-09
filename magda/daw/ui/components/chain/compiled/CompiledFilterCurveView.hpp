@@ -55,6 +55,7 @@ class CompiledFilterCurveView final : public juce::Component,
     /// up and down, scroll sets drive, double-click restores cutoff and resonance.
     void setOnParameterChanged(std::function<void(int, float)> callback) override {
         onParameterChanged_ = std::move(callback);
+        setInterceptsMouseClicks(onParameterChanged_ != nullptr, false);
     }
     void setLinkContextProvider(
         std::function<std::optional<ParamLinkContext>()> provider) override {

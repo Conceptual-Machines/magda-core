@@ -234,6 +234,10 @@ int main() {
             faceplate.setSize(600, 240);
             std::map<int, float> written;
             faceplate.setOnParameterChanged([&](int slot, float value) { written[slot] = value; });
+            bool takesClicks = false;
+            bool childrenTakeClicks = false;
+            faceplate.getInterceptsMouseClicks(takesClicks, childrenTakeClicks);
+            check(takesClicks, "an interactive faceplate ignores the mouse");
             const auto event = [&](juce::Point<float> at, juce::Point<float> downAt) {
                 return juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(), at, {},
                                         0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &faceplate, &faceplate,
