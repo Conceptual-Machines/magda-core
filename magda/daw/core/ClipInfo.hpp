@@ -300,6 +300,52 @@ struct AudioEvent {
         return below->warpTime + t * (above->warpTime - below->warpTime);
     }
 
+    /// The inverse of warpedSourceSeconds: the source instant a warp position reads.
+    double unwarpedSourceSeconds(double warpSeconds) const {
+        if (!warpEnabled || warpMarkers.empty())
+            return warpSeconds;
+
+        const WarpMarker* below = nullptr;
+        const WarpMarker* above = nullptr;
+        for (const auto& marker : warpMarkers) {
+            if (marker.warpTime <= warpSeconds &&
+                (below == nullptr || marker.warpTime > below->warpTime)) {
+                below = &marker;
+            }
+            if (marker.warpTime >= warpSeconds &&
+                (above == nullptr || marker.warpTime < above->warpTime)) {
+                above = &marker;
+            }
+        }
+
+        if (below == nullptr)
+            return warpSeconds + (above->sourceTime - above->warpTime);
+        if (above == nullptr)
+            return warpSeconds + (below->sourceTime - below->warpTime);
+
+        const double span = above->warpTime - below->warpTime;
+        if (span <= 0.0)
+            return below->sourceTime;
+
+        const double t = (warpSeconds - below->warpTime) / span;
+        return below->sourceTime + t * (above->sourceTime - below->sourceTime);
+    }
+
+    /// Warp seconds the event reads across a timeline span of @p beats lasting
+    /// @p timelineSeconds: through the interpretation in beat mode or warp,
+    /// through speedRatio otherwise.
+    double warpExtentSeconds(double beats, double timelineSeconds) const {
+        if ((autoTempo || warpEnabled) && hasInterpretedBpm())
+            return beats * 60.0 / interpBpm;
+        return timelineToSource(timelineSeconds);
+    }
+
+    /// Move the anchor @p warpSeconds further along the reading, so a clip
+    /// cut there resumes where the uncut one was (#3017).
+    void advanceAnchor(double warpSeconds) {
+        setAnchorSeconds(unwarpedSourceSeconds(warpedSourceSeconds(anchorSeconds()) + warpSeconds));
+    }
+
     /// A source-domain instant expressed in TIMELINE beats.
     ///
     /// Beat mode and warp both hand the engine source-beat processing, so in
@@ -658,17 +704,19 @@ struct AudioEvent {
     }
 
     /// Offset handed to the engine, in timeline seconds. Looped: the phase
-    /// within the loop region. Non-looped: the raw trim point in the source.
+    /// within the loop region. Non-looped: the trim point. Measured in warp
+    /// time, which is where the fork applies an offset to a warped clip.
     ///
     /// In beat mode speedRatio is pinned to 1 and the real stretch is
     /// projectBpm / interpBpm, so the source distance has to travel through the
     /// beat domain to come out as timeline seconds.
     double engineOffsetSeconds(bool looped, double projectBpm = 0.0) const {
-        if (autoTempo && isValidBpm(projectBpm)) {
-            const double beats = looped ? (anchorBeats() - loopStartBeats()) : anchorBeats();
-            return beats * 60.0 / projectBpm;
-        }
-        return sourceToTimeline(looped ? loopPhaseSeconds() : anchorSeconds());
+        const double anchorWarp = warpedSourceSeconds(anchorSeconds());
+        const double read =
+            looped ? anchorWarp - warpedSourceSeconds(loopStartSeconds()) : anchorWarp;
+        if (autoTempo && isValidBpm(projectBpm))
+            return hasInterpretedBpm() ? read * interpBpm / projectBpm : 0.0;
+        return sourceToTimeline(read);
     }
     double engineLoopStartSeconds() const {
         return sourceToTimeline(loopStartSeconds());

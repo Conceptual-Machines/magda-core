@@ -13,6 +13,7 @@
 #include "clip/EventPlacement.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
+#include "core/ClipOperations.hpp"
 #include "core/SourcePool.hpp"
 #include "core/TempoMap.hpp"
 #include "io/SourceReaders.hpp"
@@ -375,4 +376,126 @@ TEST_CASE("The native compiler resolves loop length in its authoritative unit",
     // At the corrected 60 BPM, source seconds and interpreted beats are equal.
     CHECK(static_cast<double>(musicalRead.loopLengthSamples) / kRate == Approx(4.0));
     CHECK(static_cast<double>(sourceRead.loopLengthSamples) / kRate == Approx(2.0));
+}
+
+namespace {
+
+constexpr double kWarpRate = 48000.0;
+
+/// A 16-beat clip warped through a non-identity map, at 100 bpm under a 120 bpm project.
+magda::ClipId makeWarpedClip(const juce::String& path, bool looped) {
+    auto& clips = ClipManager::getInstance();
+    auto& pool = SourcePool::getInstance();
+    pool.seedFactsForTesting(path, 8.0, kWarpRate);
+    pool.resolveFacts(pool.acquire(path));
+
+    const auto clipId = clips.createAudioClipBeats(kTrack, 0.0, 16.0, path);
+    clips.getClip(clipId)->primaryEvent()->interpBpm = 100.0;
+    clips.setClipWarpEnabled(clipId, true);
+    clips.getClip(clipId)->primaryEvent()->warpMarkers = {{0.0, 0.0}, {2.0, 2.5}, {8.0, 8.0}};
+    if (looped)
+        clips.setClipLoopEnabled(clipId, true, 120.0);
+    return clipId;
+}
+
+/// Where the native engine reads at @p beat, from whichever clip covers it.
+double readingAt(const juce::String& path, double beat) {
+    const auto map = makeTempoMap(120.0);
+    const auto arranged = ClipManager::getInstance().getArrangementClips();
+    const std::vector<ClipInfo> all(arranged.begin(), arranged.end());
+    const auto sourceId = SourcePool::getInstance().acquire(path);
+    const auto snapshot =
+        compile(all, map, {ClipSourceInfo{sourceId, path.toStdString(), kWarpRate, 8.0}});
+    const auto seconds = map.beatToTime(beat);
+    for (const auto& clip : snapshot.find(kTrack)->audio)
+        for (const auto& event : clip.events)
+            if (seconds >= event.span.seconds.start && seconds < event.span.seconds.end)
+                return magda::engine::readingPositionAt(clip, event, seconds, beat, kWarpRate);
+    return -1.0;
+}
+
+}  // namespace
+
+TEST_CASE("Splitting a warped clip resumes the right half where the whole clip read",
+          "[engine][clip][tempo][sequence][warp]") {
+    ModelFixture fixture;
+    const juce::String path = "/tmp/magda-fixtures/split-warp.wav";
+    const auto clipId = makeWarpedClip(path, false);
+    const auto whole = readingAt(path, 8.0);
+
+    const auto rightId = ClipManager::getInstance().splitClipAtBeat(clipId, 6.0, 120.0);
+    REQUIRE(rightId != magda::INVALID_CLIP_ID);
+
+    CHECK(readingAt(path, 8.0) == Approx(whole).margin(1.0));
+    // The fork applies the offset in warp time: six beats at 100 bpm.
+    const auto& right = *ClipManager::getInstance().getClip(rightId)->primaryEvent();
+    CHECK(right.engineOffsetSeconds(false, 120.0) == Approx(3.6).margin(1.0e-4));
+}
+
+TEST_CASE("Trimming a warped clip's start keeps what plays after the trim",
+          "[engine][clip][tempo][sequence][warp]") {
+    for (const bool looped : {false, true}) {
+        CAPTURE(looped);
+        ModelFixture fixture;
+        const juce::String path = "/tmp/magda-fixtures/trim-warp.wav";
+        const auto clipId = makeWarpedClip(path, looped);
+        const auto whole = readingAt(path, 8.0);
+
+        ClipManager::getInstance().resizeClipBeats(clipId, 10.0, true, 120.0);
+        REQUIRE(ClipManager::getInstance().getClip(clipId)->placement.startBeat == Approx(6.0));
+
+        CHECK(readingAt(path, 8.0) == Approx(whole).margin(1.0));
+    }
+}
+
+TEST_CASE("A ruler position maps to the beat that plays it in an unlooped clip",
+          "[engine][clip][tempo][sequence][ruler]") {
+    ModelFixture fixture;
+    const juce::String path = "/tmp/magda-fixtures/ruler-warp.wav";
+    const auto clipId = makeWarpedClip(path, false);
+    auto& clips = ClipManager::getInstance();
+    clips.resizeClipBeats(clipId, 12.0, true, 120.0);
+    const auto& clip = *clips.getClip(clipId);
+
+    for (const double sourceSeconds : {1.0, 3.0, 5.5}) {
+        CAPTURE(sourceSeconds);
+        const auto beat =
+            magda::ClipOperations::timelineBeatForSourceSeconds(clip, sourceSeconds, 0.0, 120.0);
+        REQUIRE(beat.has_value());
+        if (*beat < clip.placement.startBeat)
+            continue;  // Before the trimmed start: nothing plays it to compare against.
+        CHECK(readingAt(path, *beat) == Approx(sourceSeconds * kWarpRate).margin(1.0));
+    }
+}
+
+TEST_CASE("A ruler position in a looped clip lands in the cycle the playhead is in",
+          "[engine][clip][tempo][sequence][ruler]") {
+    ModelFixture fixture;
+    auto& clips = ClipManager::getInstance();
+    const juce::String path = "/tmp/magda-fixtures/ruler-loop.wav";
+    SourcePool::getInstance().seedFactsForTesting(path, 8.0, kWarpRate);
+    SourcePool::getInstance().resolveFacts(SourcePool::getInstance().acquire(path));
+
+    // 8 s at 100 bpm loops every 40/3 beats.
+    const auto clipId = clips.createAudioClipBeats(kTrack, 0.0, 40.0, path);
+    clips.getClip(clipId)->primaryEvent()->interpBpm = 100.0;
+    clips.setPlaybackIntent(clipId, magda::PlaybackIntent::Beat, 120.0);
+    // Entering beat mode fits the clip to one pass of the file; stretch it to three passes.
+    clips.resizeClipBeats(clipId, 40.0, false, 120.0);
+    clips.setAudioLoopLengthBeats(clipId, 40.0 / 3.0);
+    const auto& clip = *clips.getClip(clipId);
+    REQUIRE(clip.loopEnabled);
+    REQUIRE(clip.placement.lengthBeats == Approx(40.0));
+    REQUIRE(clip.primaryEvent()->resolvedLoopLengthSamples(kWarpRate) == 8 * 48000);
+    const double cycle = 40.0 / 3.0;
+    const double phase = 2.0 * 100.0 / 60.0;
+
+    for (const auto [playhead, expected] : {std::pair{1.0, phase}, std::pair{20.0, cycle + phase},
+                                            std::pair{39.0, 2.0 * cycle + phase}}) {
+        CAPTURE(playhead);
+        const auto beat =
+            magda::ClipOperations::timelineBeatForSourceSeconds(clip, 2.0, playhead, 120.0);
+        REQUIRE(beat.has_value());
+        CHECK(*beat == Approx(expected).margin(1.0e-6));
+    }
 }
