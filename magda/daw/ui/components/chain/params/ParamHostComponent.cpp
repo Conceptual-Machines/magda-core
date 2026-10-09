@@ -415,7 +415,7 @@ void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::
     constexpr int kPadding = 10;
     constexpr int kGap = 6;
     area = area.reduced(kPadding, kPadding - 2);
-    const int numRows = (cellCount_ + cellsPerRow_ - 1) / cellsPerRow_;
+    const int numRows = std::max((cellCount_ + cellsPerRow_ - 1) / cellsPerRow_, minRows_);
     const int cellWidth = (area.getWidth() - kGap * (cellsPerRow_ - 1)) / cellsPerRow_;
     const int cellHeight = rowHeight_ > 0 ? rowHeight_
                            : numRows > 0  ? (area.getHeight() - kGap * (numRows - 1)) / numRows
@@ -455,15 +455,20 @@ void ParamHostComponent::applyControlStyle() {
         paramSlots_[i]->setControlStyle(style);
 
     // Plug-ins: 8 columns in Text and Knobs (4 and 3 rows), 6 in Sliders.
-    // Curated native layouts keep their cells at 7 columns, 4 in Sliders.
+    // Curated native layouts: balanced rows of at most 4, sized as those rows.
     const bool sliders = style == ParamControlStyle::Sliders;
+    const int styleRows = style == ParamControlStyle::Knobs ? 3 : 4;
     const int previousCount = cellCount_;
     const int previousColumns = cellsPerRow_;
-    if (layout_->setShape(sliders ? 6 : 8, style == ParamControlStyle::Knobs ? 3 : 4)) {
+    minRows_ = 0;
+    if (layout_->setShape(sliders ? 6 : 8, styleRows)) {
         cellCount_ = layout_->cellCount();
         cellsPerRow_ = layout_->cellsPerRow();
     } else if (layout_->reflowsForControlStyle() && cellCount_ > 0) {
-        cellsPerRow_ = sliders ? 4 : 7;
+        constexpr int kMaxColumns = 4;
+        const int rows = (cellCount_ + kMaxColumns - 1) / kMaxColumns;
+        cellsPerRow_ = (cellCount_ + rows - 1) / rows;
+        minRows_ = styleRows;
     }
     const bool styleChanged = !lastAppliedStyle_.has_value() || *lastAppliedStyle_ != style;
     lastAppliedStyle_ = style;

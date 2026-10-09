@@ -536,6 +536,9 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         updateParameterPagination();
         updateParameterSlots();
         resized();
+        // A curated grid's columns set the slot's width.
+        if (onDeviceLayoutChanged)
+            onDeviceLayoutChanged();
     };
 
     // Wire up mod/macro linking callbacks on each slot
@@ -1982,9 +1985,13 @@ int DeviceSlotComponent::getDynamicSlotWidth() const {
     if (traits_.compiledPresentation != nullptr &&
         traits_.compiledPresentation->preferredSlotWidth > 0)
         return traits_.compiledPresentation->preferredSlotWidth;
-    // Eight 64px cells with the grid's 6px gaps and 10px padding.
+    // 64px cells with the grid's 6px gaps and 10px padding: eight, or a curated grid's own.
     constexpr int kCell = 64;
-    return kCell * PARAMS_PER_ROW + 6 * (PARAMS_PER_ROW - 1) + 2 * 10;
+    const int columns = traits_.compiledPresentation != nullptr && paramGrid_ != nullptr &&
+                                paramGrid_->getCellsPerRow() > 0
+                            ? paramGrid_->getCellsPerRow()
+                            : PARAMS_PER_ROW;
+    return kCell * columns + 6 * (columns - 1) + 2 * 10;
 }
 
 // =============================================================================

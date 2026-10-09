@@ -10,6 +10,7 @@
 #include "core/TrackManager.hpp"
 #include "ui/components/chain/DeviceSlotComponent.hpp"
 #include "ui/components/chain/RackComponent.hpp"
+#include "ui/components/chain/layout/CompiledFaustDeviceLayout.hpp"
 #include "ui/components/chain/layout/StandardDeviceLayout.hpp"
 #include "ui/components/chain/slot/DeviceSlotSelectionHandling.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -195,6 +196,25 @@ int main() {
             applyDeviceSlotParamSelectionChange(firstPath, {}, grid, {});
             for (int i = 0; i < grid.getSlotCount(); ++i)
                 check(!grid.getSlot(i)->isSelected(), "cleared selection left a cell highlighted");
+        }
+        {
+            // A curated device's controls stand in balanced rows of at most four.
+            for (const auto [cells, columns] :
+                 {std::pair{3, 3}, std::pair{6, 3}, std::pair{7, 4}, std::pair{15, 4}}) {
+                ParamHostComponent grid(std::make_unique<CompiledFaustDeviceLayout>(cells, cells));
+                DeviceInfo model;
+                for (int index = 0; index < cells; ++index) {
+                    ParameterInfo parameter;
+                    parameter.paramIndex = index;
+                    parameter.name = "Control " + juce::String(index);
+                    model.parameters.push_back(parameter);
+                }
+                grid.updateParameterSlots(model, 0, {});
+                const auto message = "a curated grid of " + std::to_string(cells) +
+                                     " controls has " + std::to_string(grid.getCellsPerRow()) +
+                                     " columns, not " + std::to_string(columns);
+                check(grid.getCellsPerRow() == columns, message.c_str());
+            }
         }
         {
             // A multiband rack: faceplate on top, bands high to low split by their crossovers.
