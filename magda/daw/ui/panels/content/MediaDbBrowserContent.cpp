@@ -424,6 +424,18 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
         return static_cast<int>(owner_.results_.size());
     }
 
+    juce::Drawable* magdaGlyph() {
+        const auto colour = ActiveTheme::getColour(ActiveTheme::ICON_BRAND);
+        if (magdaGlyph_ == nullptr || magdaGlyphColour_ != colour) {
+            magdaGlyph_ = juce::Drawable::createFromImageData(BinaryData::BoldMGlyph_svg,
+                                                              BinaryData::BoldMGlyph_svgSize);
+            if (magdaGlyph_ != nullptr)
+                magdaGlyph_->replaceColour(juce::Colour(0xFF0A0A0A), colour);
+            magdaGlyphColour_ = colour;
+        }
+        return magdaGlyph_.get();
+    }
+
     // Discard cached integrity entries. Call after results_ is replaced
     // (new query, new page) or after a re-index — both can leave stale
     // entries from previous file_ids or pre-change mtime/size values.
@@ -517,10 +529,22 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
         switch (columnId) {
             case kColName: {
                 g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+                // MAGDA's own presets carry the M in the gutter; the edited dot moves past it.
+                const bool magdaPreset = r.path.extension() == ".mps";
+                if (magdaPreset) {
+                    if (auto* glyph = magdaGlyph())
+                        glyph->drawWithin(
+                            g,
+                            juce::Rectangle<float>(5.0F, static_cast<float>(height) * 0.5F - 5.5F,
+                                                   10.0F, 11.0F),
+                            juce::RectanglePlacement::centred, 1.0F);
+                }
+                const int textIndent = magdaPreset ? (r.userEdited ? 30 : 20) : 18;
                 if (r.userEdited) {
                     const float dotR = 3.0F;
                     g.setColour(ActiveTheme::getAccentColour());
-                    g.fillEllipse(8.0F, static_cast<float>(height) * 0.5F - dotR, dotR * 2.0F,
+                    g.fillEllipse(magdaPreset ? 19.0F : 8.0F,
+                                  static_cast<float>(height) * 0.5F - dotR, dotR * 2.0F,
                                   dotR * 2.0F);
                 }
                 const bool rowMissing = integrityFor(r) == RowIntegrity::Missing;
@@ -534,7 +558,7 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                 } else {
                     g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 }
-                g.drawText(displayNameFor(r), cell.withTrimmedLeft(18).reduced(0, 2),
+                g.drawText(displayNameFor(r), cell.withTrimmedLeft(textIndent).reduced(0, 2),
                            juce::Justification::centredLeft, true);
                 break;
             }
@@ -838,6 +862,8 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
   private:
     MediaDbBrowserContent& owner_;
     std::unordered_map<std::int64_t, RowIntegrity> integrityCache_;
+    std::unique_ptr<juce::Drawable> magdaGlyph_;
+    juce::Colour magdaGlyphColour_;
 };
 
 // ===========================================================================
