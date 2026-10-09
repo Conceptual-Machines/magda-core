@@ -112,11 +112,16 @@ void MonitorControl::setGlyphStyle(bool glyphStyle) {
     refresh();
 }
 
+void MonitorControl::setFixedOnColours(bool fixed) {
+    fixedOnColours_ = fixed;
+    refresh();
+}
+
 void MonitorControl::updateVisual(InputMonitorMode mode) {
     // Off = off glyph; In/Auto = on glyph, green = always monitor, blue = monitor while armed.
     // The colour fills the chip, or in glyph style tints the glyph on the neutral chip.
-    if (mode == InputMonitorMode::Off) {
-        setActive(false);
+    if (mode == InputMonitorMode::Off || fixedOnColours_) {
+        setActive(mode != InputMonitorMode::Off);
         return;
     }
     const auto accent =

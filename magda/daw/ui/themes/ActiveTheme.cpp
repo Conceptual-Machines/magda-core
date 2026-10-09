@@ -242,6 +242,34 @@ constexpr ActiveTheme::Palette darkPalette{
     0xFF0D1218,  // MIDI_DRUM_ROW
     0xFF0F1217,  // MIDI_DRUM_LABEL
     0xFF0C0D11,  // MIDI_DRUM_GROUP
+    0xFF151A21,  // SESSION_SLOT
+    0xFF1F2630,  // SESSION_SLOT_BORDER
+    0xFF181E26,  // SESSION_SLOT_HOVER
+    0xFF3A424D,  // SESSION_SLOT_GLYPH
+    0xFF5A3A3A,  // SESSION_ARM_RING
+    0xFF3A1F22,  // SESSION_RECORD_FILL
+    0xFF7A3A3A,  // SESSION_RECORD_BORDER
+    0xFF12161C,  // SESSION_SCENE
+    0xFF1C242E,  // SESSION_SCENE_BORDER
+    0xFF2C4A36,  // SESSION_SCENE_PLAYING_BORDER
+    0xFF141C27,  // SESSION_SCENE_SELECTED
+    0xFF616870,  // SESSION_LABEL
+    0xFF12151A,  // SESSION_STOP_ROW
+    0xFF151B23,  // SESSION_CONTROL
+    0xFF242D38,  // SESSION_CONTROL_BORDER
+    0xFF7D858E,  // SESSION_STOP_IDLE
+    0xFFE9EDF0,  // SESSION_STOP_LIVE
+    0xFF2A333F,  // SESSION_GAIN_FILL
+    0xFF22303F,  // SESSION_TOGGLE_ON
+    0xFF37536F,  // SESSION_TOGGLE_ON_BORDER
+    0xFFCFE0F2,  // SESSION_TOGGLE_ON_ICON
+    0xFF3A2224,  // SESSION_ARM_ON
+    0xFFF0B4AE,  // SESSION_ARM_ON_ICON
+    0xFF2D3844,  // SESSION_HEADER_SELECTED
+    0xFF5BC07A,  // SESSION_PLAY
+    0xFFE0A53A,  // SESSION_STOPPING
+    0xFFE0564A,  // SESSION_RECORD
+    0xFF5F8CC2,  // SESSION_SELECTION
 };
 
 // A dropped entry shifts every role after it and leaves the array's tail
@@ -520,6 +548,34 @@ constexpr ActiveTheme::Palette lightPalette = [] {
     set(ColourRole::MIDI_DRUM_ROW, 0xFFEEF1F4);
     set(ColourRole::MIDI_DRUM_LABEL, 0xFFE6EAEE);
     set(ColourRole::MIDI_DRUM_GROUP, 0xFFDCE1E6);
+    set(ColourRole::SESSION_SLOT, 0xFFEEF1F4);
+    set(ColourRole::SESSION_SLOT_BORDER, 0xFFD3DAE0);
+    set(ColourRole::SESSION_SLOT_HOVER, 0xFFE6EAEE);
+    set(ColourRole::SESSION_SLOT_GLYPH, 0xFFAEB8C1);
+    set(ColourRole::SESSION_ARM_RING, 0xFFD9A8A3);
+    set(ColourRole::SESSION_RECORD_FILL, 0xFFF6DEDB);
+    set(ColourRole::SESSION_RECORD_BORDER, 0xFFD08A84);
+    set(ColourRole::SESSION_SCENE, 0xFFE8ECF0);
+    set(ColourRole::SESSION_SCENE_BORDER, 0xFFD3DAE0);
+    set(ColourRole::SESSION_SCENE_PLAYING_BORDER, 0xFF8CC9A0);
+    set(ColourRole::SESSION_SCENE_SELECTED, 0xFFE1EAF5);
+    set(ColourRole::SESSION_LABEL, 0xFF71808C);
+    set(ColourRole::SESSION_STOP_ROW, 0xFFE8ECF0);
+    set(ColourRole::SESSION_CONTROL, 0xFFEEF1F4);
+    set(ColourRole::SESSION_CONTROL_BORDER, 0xFFC8D0D7);
+    set(ColourRole::SESSION_STOP_IDLE, 0xFF8D959E);
+    set(ColourRole::SESSION_STOP_LIVE, 0xFF161C22);
+    set(ColourRole::SESSION_GAIN_FILL, 0xFFD3DAE0);
+    set(ColourRole::SESSION_TOGGLE_ON, 0xFFD6E3F1);
+    set(ColourRole::SESSION_TOGGLE_ON_BORDER, 0xFF8FAFD3);
+    set(ColourRole::SESSION_TOGGLE_ON_ICON, 0xFF2F5480);
+    set(ColourRole::SESSION_ARM_ON, 0xFFF6DEDB);
+    set(ColourRole::SESSION_ARM_ON_ICON, 0xFFB3362C);
+    set(ColourRole::SESSION_HEADER_SELECTED, 0xFFD3DAE0);
+    set(ColourRole::SESSION_PLAY, 0xFF2F9A55);
+    set(ColourRole::SESSION_STOPPING, 0xFFC98A1E);
+    set(ColourRole::SESSION_RECORD, 0xFFD0453A);
+    set(ColourRole::SESSION_SELECTION, 0xFF4A78B0);
 
     return palette;
 }();
@@ -778,6 +834,34 @@ constexpr ActiveTheme::Palette highContrastPalette = [] {
     palette[colourRoleIndex(ColourRole::MIDI_DRUM_ROW)] = 0xFF000000;
     palette[colourRoleIndex(ColourRole::MIDI_DRUM_LABEL)] = 0xFF050505;
     palette[colourRoleIndex(ColourRole::MIDI_DRUM_GROUP)] = 0xFF0A0A0A;
+    palette[colourRoleIndex(ColourRole::SESSION_SLOT)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::SESSION_SLOT_BORDER)] = 0xFF5A5A5A;
+    palette[colourRoleIndex(ColourRole::SESSION_SLOT_HOVER)] = 0xFF141414;
+    palette[colourRoleIndex(ColourRole::SESSION_SLOT_GLYPH)] = 0xFF8A8A8A;
+    palette[colourRoleIndex(ColourRole::SESSION_ARM_RING)] = 0xFFA05050;
+    palette[colourRoleIndex(ColourRole::SESSION_RECORD_FILL)] = 0xFF3A0E10;
+    palette[colourRoleIndex(ColourRole::SESSION_RECORD_BORDER)] = 0xFFFF6B6B;
+    palette[colourRoleIndex(ColourRole::SESSION_SCENE)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::SESSION_SCENE_BORDER)] = 0xFF5A5A5A;
+    palette[colourRoleIndex(ColourRole::SESSION_SCENE_PLAYING_BORDER)] = 0xFF54D68B;
+    palette[colourRoleIndex(ColourRole::SESSION_SCENE_SELECTED)] = 0xFF0A1A30;
+    palette[colourRoleIndex(ColourRole::SESSION_LABEL)] = 0xFFB0B0B0;
+    palette[colourRoleIndex(ColourRole::SESSION_STOP_ROW)] = 0xFF000000;
+    palette[colourRoleIndex(ColourRole::SESSION_CONTROL)] = 0xFF050505;
+    palette[colourRoleIndex(ColourRole::SESSION_CONTROL_BORDER)] = 0xFF5A5A5A;
+    palette[colourRoleIndex(ColourRole::SESSION_STOP_IDLE)] = 0xFFB0B0B0;
+    palette[colourRoleIndex(ColourRole::SESSION_STOP_LIVE)] = 0xFFFFFFFF;
+    palette[colourRoleIndex(ColourRole::SESSION_GAIN_FILL)] = 0xFF303030;
+    palette[colourRoleIndex(ColourRole::SESSION_TOGGLE_ON)] = 0xFF10233A;
+    palette[colourRoleIndex(ColourRole::SESSION_TOGGLE_ON_BORDER)] = 0xFF7AB8FF;
+    palette[colourRoleIndex(ColourRole::SESSION_TOGGLE_ON_ICON)] = 0xFFFFFFFF;
+    palette[colourRoleIndex(ColourRole::SESSION_ARM_ON)] = 0xFF3A0E10;
+    palette[colourRoleIndex(ColourRole::SESSION_ARM_ON_ICON)] = 0xFFFFB0A8;
+    palette[colourRoleIndex(ColourRole::SESSION_HEADER_SELECTED)] = 0xFF303030;
+    palette[colourRoleIndex(ColourRole::SESSION_PLAY)] = 0xFF54D68B;
+    palette[colourRoleIndex(ColourRole::SESSION_STOPPING)] = 0xFFFFC04D;
+    palette[colourRoleIndex(ColourRole::SESSION_RECORD)] = 0xFFFF5A4D;
+    palette[colourRoleIndex(ColourRole::SESSION_SELECTION)] = 0xFF7AB8FF;
 
     return palette;
 }();

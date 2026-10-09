@@ -197,7 +197,10 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
             // Bordered toggle (master / chord mute). Both icons carry a full
             // 24x24 frame, so fitting them into the (24x24) button is a true 1:1
             // - on and off render at the same size.
-            float radius = juce::jlimit(2.0f, 8.0f, juce::jmin(getWidth(), getHeight()) * 0.15f);
+            const float radius =
+                hasCornerRadius_
+                    ? cornerRadius
+                    : juce::jlimit(2.0f, 8.0f, juce::jmin(getWidth(), getHeight()) * 0.15f);
             {
                 juce::Graphics::ScopedSaveState clipState(g);
                 juce::Path clip;
@@ -215,7 +218,7 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
                 themedIcon->drawWithin(g, getLocalBounds().toFloat().reduced(iconPadding),
                                        juce::RectanglePlacement::centred, opacity);
             }
-            g.setColour(border);
+            g.setColour(drawOn && hasActiveBorderColor ? activeBorder : border);
             g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(borderThickness * 0.5f),
                                    radius, borderThickness);
             return;

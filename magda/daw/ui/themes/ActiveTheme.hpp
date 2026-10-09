@@ -285,6 +285,34 @@ enum class ColourRole : std::size_t {
     MIDI_DRUM_ROW,
     MIDI_DRUM_LABEL,
     MIDI_DRUM_GROUP,
+    SESSION_SLOT,
+    SESSION_SLOT_BORDER,
+    SESSION_SLOT_HOVER,
+    SESSION_SLOT_GLYPH,
+    SESSION_ARM_RING,
+    SESSION_RECORD_FILL,
+    SESSION_RECORD_BORDER,
+    SESSION_SCENE,
+    SESSION_SCENE_BORDER,
+    SESSION_SCENE_PLAYING_BORDER,
+    SESSION_SCENE_SELECTED,
+    SESSION_LABEL,
+    SESSION_STOP_ROW,
+    SESSION_CONTROL,
+    SESSION_CONTROL_BORDER,
+    SESSION_STOP_IDLE,
+    SESSION_STOP_LIVE,
+    SESSION_GAIN_FILL,
+    SESSION_TOGGLE_ON,
+    SESSION_TOGGLE_ON_BORDER,
+    SESSION_TOGGLE_ON_ICON,
+    SESSION_ARM_ON,
+    SESSION_ARM_ON_ICON,
+    SESSION_HEADER_SELECTED,
+    SESSION_PLAY,
+    SESSION_STOPPING,
+    SESSION_RECORD,
+    SESSION_SELECTION,
     count
 };
 
@@ -603,6 +631,34 @@ class ActiveTheme {
     static constexpr auto MIDI_DRUM_ROW = ColourRole::MIDI_DRUM_ROW;
     static constexpr auto MIDI_DRUM_LABEL = ColourRole::MIDI_DRUM_LABEL;
     static constexpr auto MIDI_DRUM_GROUP = ColourRole::MIDI_DRUM_GROUP;
+    static constexpr auto SESSION_SLOT = ColourRole::SESSION_SLOT;
+    static constexpr auto SESSION_SLOT_BORDER = ColourRole::SESSION_SLOT_BORDER;
+    static constexpr auto SESSION_SLOT_HOVER = ColourRole::SESSION_SLOT_HOVER;
+    static constexpr auto SESSION_SLOT_GLYPH = ColourRole::SESSION_SLOT_GLYPH;
+    static constexpr auto SESSION_ARM_RING = ColourRole::SESSION_ARM_RING;
+    static constexpr auto SESSION_RECORD_FILL = ColourRole::SESSION_RECORD_FILL;
+    static constexpr auto SESSION_RECORD_BORDER = ColourRole::SESSION_RECORD_BORDER;
+    static constexpr auto SESSION_SCENE = ColourRole::SESSION_SCENE;
+    static constexpr auto SESSION_SCENE_BORDER = ColourRole::SESSION_SCENE_BORDER;
+    static constexpr auto SESSION_SCENE_PLAYING_BORDER = ColourRole::SESSION_SCENE_PLAYING_BORDER;
+    static constexpr auto SESSION_SCENE_SELECTED = ColourRole::SESSION_SCENE_SELECTED;
+    static constexpr auto SESSION_LABEL = ColourRole::SESSION_LABEL;
+    static constexpr auto SESSION_STOP_ROW = ColourRole::SESSION_STOP_ROW;
+    static constexpr auto SESSION_CONTROL = ColourRole::SESSION_CONTROL;
+    static constexpr auto SESSION_CONTROL_BORDER = ColourRole::SESSION_CONTROL_BORDER;
+    static constexpr auto SESSION_STOP_IDLE = ColourRole::SESSION_STOP_IDLE;
+    static constexpr auto SESSION_STOP_LIVE = ColourRole::SESSION_STOP_LIVE;
+    static constexpr auto SESSION_GAIN_FILL = ColourRole::SESSION_GAIN_FILL;
+    static constexpr auto SESSION_TOGGLE_ON = ColourRole::SESSION_TOGGLE_ON;
+    static constexpr auto SESSION_TOGGLE_ON_BORDER = ColourRole::SESSION_TOGGLE_ON_BORDER;
+    static constexpr auto SESSION_TOGGLE_ON_ICON = ColourRole::SESSION_TOGGLE_ON_ICON;
+    static constexpr auto SESSION_ARM_ON = ColourRole::SESSION_ARM_ON;
+    static constexpr auto SESSION_ARM_ON_ICON = ColourRole::SESSION_ARM_ON_ICON;
+    static constexpr auto SESSION_HEADER_SELECTED = ColourRole::SESSION_HEADER_SELECTED;
+    static constexpr auto SESSION_PLAY = ColourRole::SESSION_PLAY;
+    static constexpr auto SESSION_STOPPING = ColourRole::SESSION_STOPPING;
+    static constexpr auto SESSION_RECORD = ColourRole::SESSION_RECORD;
+    static constexpr auto SESSION_SELECTION = ColourRole::SESSION_SELECTION;
 
     // Runtime palette API. Theme changes are expected to happen on JUCE's
     // message thread, alongside the LookAndFeel refresh they trigger.
@@ -701,6 +757,14 @@ inline juce::Colour deriveTrackSwatch(juce::Colour stored, float alpha) {
 inline juce::Colour deriveClipBody(juce::Colour stored) {
     const auto swatch = deriveTrackSwatch(stored);
     return ThemeManager::isLightTheme() ? swatch : swatch.darker(0.3f);
+}
+
+// The swatch's accent tone for borders, rims and progress lines; deeper on light surfaces.
+inline juce::Colour deriveTrackAccent(juce::Colour stored) {
+    if (stored.getSaturation() < 0.05f)
+        return stored.brighter(0.6f);
+    const bool light = ThemeManager::isLightTheme();
+    return oklchToColour(light ? 0.40f : 0.78f, light ? 0.12f : 0.10f, sRgbToOklchHue(stored));
 }
 
 // A window's background is a per-component colour override, handed over once

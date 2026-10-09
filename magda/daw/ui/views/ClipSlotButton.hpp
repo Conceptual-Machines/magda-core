@@ -10,11 +10,33 @@
 
 namespace magda {
 
-/// Custom clip slot button for SessionView grid.
-/// Handles clicks, double-clicks, play button area, drag-and-drop, and group slots.
+namespace session_paint {
+
+constexpr float kCornerRadius = 6.0f;
+constexpr float kGlyphX = 10.0f;  // left edge of a slot's or scene's launch glyph
+
+inline void fillTriangle(juce::Graphics& g, float x, float centreY, float size) {
+    juce::Path triangle;
+    triangle.addTriangle(x, centreY - size * 0.5f, x, centreY + size * 0.5f, x + size * 0.85f,
+                         centreY);
+    g.fillPath(triangle);
+}
+
+inline void fillSquare(juce::Graphics& g, juce::Point<float> centre, float size) {
+    g.fillRect(juce::Rectangle<float>(size, size).withCentre(centre));
+}
+
+/** @brief Mono caps with the v1 label tracking. */
+inline juce::Font labelFont(float size) {
+    return FontManager::getInstance().getMonoFont(size).withExtraKerningFactor(0.12f);
+}
+
+}  // namespace session_paint
+
+/** @brief A session grid cell: the launch glyph on the left, the clip name after it. */
 class ClipSlotButton : public juce::TextButton {
   public:
-    static constexpr int PLAY_BUTTON_WIDTH = 22;
+    static constexpr int PLAY_BUTTON_WIDTH = 28;
 
     std::function<void(const juce::MouseEvent&)> onSingleClick;
     std::function<void()> onDoubleClick;
@@ -35,12 +57,15 @@ class ClipSlotButton : public juce::TextButton {
     bool clipIsQueued = false;
     bool clipHasLaunchIntent = false;  // Remembered active slot, including while transport stopped
     bool transportIsPlaying = false;   // Visual state supplied by SessionView
-    bool stopIsQueued = false;  // Empty slot blinks its stop icon while a row-stop is pending
-    bool blinkOn = false;       // Toggled by SessionView timer for queued blink
+    bool stopIsQueued = false;         // The track has a quantised stop pending
+    bool blinkOn = false;              // Toggled by SessionView timer on the beat
     bool isSelected = false;
+    bool rowSelected = false;   // The slot's scene is selected
+    bool isDropTarget = false;  // A file or clip drag hovers this slot
     bool trackIsRecordArmed = false;
     bool slotRecordArmed = false;
     bool slotIsRecording = false;
+    juce::Colour clipColour;
     double clipLength = 0.0;           // Clip duration in seconds (for progress bar)
     double sessionPlayheadPos = -1.0;  // Looped playhead position in seconds
 
@@ -182,222 +207,201 @@ class ClipSlotButton : public juce::TextButton {
     }
 
     void paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted,
-                     bool shouldDrawButtonAsDown) override {
-        // Draw base button (background, border via LookAndFeel)
-        // Temporarily clear text so base class doesn't draw it centered
-        auto savedText = getButtonText();
-        if (hasClip || isGroupSlot)
-            setButtonText("");
-        juce::TextButton::paintButton(g, shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
-        if (hasClip || isGroupSlot)
-            setButtonText(savedText);
+                     bool /*shouldDrawButtonAsDown*/) override {
+        using namespace session_paint;
+        const auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+        const float centreY = bounds.getCentreY();
+        const auto slotFill = ActiveTheme::getColour(ActiveTheme::SESSION_SLOT);
+        const auto green = ActiveTheme::getColour(ActiveTheme::SESSION_PLAY);
+        const auto red = ActiveTheme::getColour(ActiveTheme::SESSION_RECORD);
 
-        // Filled clips: paint the strip area as a solid background — black when
-        // selected, mid-grey otherwise. The icon colour flips to keep contrast,
-        // replacing the old white selection rectangle so it can't fight overlay
-        // UI (e.g. controller scene-view rectangles). Top/bottom inset by 0.5px
-        // to match SmallButtonLookAndFeel's rounded bg so the strip doesn't
-        // poke past the slot's curved edges.
+        auto fill = shouldDrawButtonAsHighlighted && !hasClip
+                        ? ActiveTheme::getColour(ActiveTheme::SESSION_SLOT_HOVER)
+                        : slotFill;
+        auto border = ActiveTheme::getColour(ActiveTheme::SESSION_SLOT_BORDER);
+
+        const bool playing = hasClip && clipIsPlaying && transportIsPlaying;
+        const bool recording = !hasClip && slotIsRecording;
         if (hasClip) {
-            auto stripArea =
-                getLocalBounds().toFloat().reduced(0.0f, 0.5f).removeFromLeft(PLAY_BUTTON_WIDTH);
-            constexpr float kStripCorner = 6.0f;
-            juce::Path stripPath;
-            stripPath.addRoundedRectangle(stripArea.getX(), stripArea.getY(), stripArea.getWidth(),
-                                          stripArea.getHeight(), kStripCorner, kStripCorner,
-                                          /*curveTopLeft*/ true, /*curveTopRight*/ false,
-                                          /*curveBottomLeft*/ true, /*curveBottomRight*/ false);
-            g.setColour(isSelected ? juce::Colours::black : juce::Colour(0xFFA0A0A0));
-            g.fillPath(stripPath);
+            const auto swatch = deriveTrackSwatch(clipColour);
+            fill = slotFill.interpolatedWith(swatch, playing ? 0.52f : 0.34f);
+            border =
+                playing ? deriveTrackAccent(clipColour) : slotFill.interpolatedWith(swatch, 0.55f);
+            if (clipIsQueued && blinkOn)
+                border = green;
+        } else if (recording) {
+            fill = ActiveTheme::getColour(ActiveTheme::SESSION_RECORD_FILL);
+            border = ActiveTheme::getColour(ActiveTheme::SESSION_RECORD_BORDER);
         }
 
-        // Group slot: draw centered play/stop button when child clips exist
+        g.setColour(fill);
+        g.fillRoundedRectangle(bounds, kCornerRadius);
+        g.setColour(border);
+        g.drawRoundedRectangle(bounds, kCornerRadius, 1.0f);
+
         if (isGroupSlot) {
             if (hasChildClips) {
-                auto centre = getLocalBounds().getCentre().toFloat();
-                if (transportIsPlaying && childClipIsPlaying) {
-                    // Stop square
-                    float size = 5.0f;
-                    g.setColour(juce::Colours::white.withAlpha(0.9f));
-                    g.fillRect(juce::Rectangle<float>(centre.getX() - size, centre.getY() - size,
-                                                      size * 2.0f, size * 2.0f));
-                } else {
-                    // Play triangle
-                    juce::Path triangle;
-                    float size = 6.0f;
-                    triangle.addTriangle(centre.getX() - size * 0.7f, centre.getY() - size,
-                                         centre.getX() - size * 0.7f, centre.getY() + size,
-                                         centre.getX() + size, centre.getY());
-                    g.setColour(juce::Colours::white.withAlpha(0.7f));
-                    g.fillPath(triangle);
-                }
+                g.setColour(transportIsPlaying && childClipIsPlaying
+                                ? green
+                                : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+                fillTriangle(g, bounds.getCentreX() - 4.0f, centreY, 10.0f);
             }
+            paintSelection(g, bounds);
             return;
         }
 
+        const auto nameArea = bounds.withTrimmedLeft(static_cast<float>(PLAY_BUTTON_WIDTH) + 2.0f)
+                                  .withTrimmedRight(10.0f);
+        const juce::Point<float> glyphCentre{kGlyphX + 4.5f, centreY};
+
         if (hasClip) {
-            // Filled slots always render play. Stop is now the empty-slot
-            // affordance — the row's "stop whatever's playing here" button —
-            // so the strip stays a pure "trigger this clip" target regardless
-            // of state.
-            auto playArea = getLocalBounds().removeFromLeft(PLAY_BUTTON_WIDTH);
-            auto centre = playArea.getCentre().toFloat();
+            const bool stopping = playing && stopIsQueued;
+            auto glyph = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
+            if (stopping)
+                glyph = ActiveTheme::getColour(ActiveTheme::SESSION_STOPPING);
+            else if (playing || clipIsQueued)
+                glyph = green;
+            else if (clipHasLaunchIntent)
+                glyph = green.withAlpha(0.45f);
+            g.setColour(glyph);
+            fillTriangle(g, kGlyphX, centreY, 10.0f);
 
-            // Blue is live transport state. Selection and a remembered launch intent remain
-            // visible while stopped, but in neutral grey so they cannot read as sounding.
-            const bool running =
-                transportIsPlaying && (isSelected || clipIsPlaying || clipIsQueued);
-            const bool stoppedCue =
-                isSelected || clipHasLaunchIntent || clipIsPlaying || clipIsQueued;
-            const auto iconColour =
-                running      ? ActiveTheme::getColour(ActiveTheme::ACCENT_INFO)
-                : stoppedCue ? (isSelected ? juce::Colour(0xFFA0A0A0) : juce::Colour(0xFF505050))
-                             : juce::Colours::black;
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+            g.setFont(FontManager::getInstance().getUIFontMedium(12.0f));
+            g.drawText(getButtonText(), nameArea.toNearestInt(), juce::Justification::centredLeft,
+                       true);
 
-            juce::Path triangle;
-            float size = 6.0f;
-            triangle.addTriangle(centre.getX() - size * 0.7f, centre.getY() - size,
-                                 centre.getX() - size * 0.7f, centre.getY() + size,
-                                 centre.getX() + size, centre.getY());
-            auto playColour = iconColour;
-            if (transportIsPlaying && clipIsQueued && !blinkOn)
-                playColour = playColour.withAlpha(0.15f);
-            g.setColour(playColour);
-            g.fillPath(triangle);
+            if (playing && clipLength > 0.0 && sessionPlayheadPos >= 0.0)
+                paintProgress(g, bounds, static_cast<float>(sessionPlayheadPos / clipLength),
+                              deriveTrackAccent(clipColour));
 
-            // Content area (right of play button)
-            auto contentArea = getLocalBounds();
-            contentArea.removeFromLeft(PLAY_BUTTON_WIDTH);
-
-            // Draw progress bar for playing clips
-            if (clipIsPlaying && clipLength > 0.0 && sessionPlayheadPos >= 0.0) {
-                auto progress = static_cast<float>(sessionPlayheadPos / clipLength);
-                progress = juce::jlimit(0.0f, 1.0f, progress);
-
-                auto progressBar = contentArea.toFloat();
-                progressBar.setWidth(progressBar.getWidth() * progress);
-                g.setColour(juce::Colours::white.withAlpha(0.15f));
-                g.fillRect(progressBar);
-
-                // Draw playhead line at current position
-                float lineX = contentArea.getX() + contentArea.getWidth() * progress;
-                g.setColour(juce::Colours::white.withAlpha(0.6f));
-                g.drawVerticalLine(static_cast<int>(lineX), static_cast<float>(contentArea.getY()),
-                                   static_cast<float>(contentArea.getBottom()));
-            }
-
-            // Draw clip name in content area, left-justified.
-            // Left padding clears the strip separator; right padding mirrors it.
-            auto textArea = contentArea.reduced(6, 0);
-            g.setColour(findColour(juce::TextButton::textColourOffId));
-            g.setFont(FontManager::getInstance().getUIFont(9.0f));
-            g.drawText(getButtonText(), textArea, juce::Justification::centredLeft, true);
-        } else {
-            // Empty slot: show a record icon when the track is record-armed,
-            // otherwise a stop icon (acts as a row-stop affordance). Visual only —
-            // click handling is wired in a follow-up.
-            auto playArea = getLocalBounds().removeFromLeft(PLAY_BUTTON_WIDTH);
-            auto centre = playArea.getCentre().toFloat();
-
-            if (trackIsRecordArmed) {
-                float radius = 5.0f;
-                auto recordColour = ActiveTheme::getColour(ActiveTheme::STATUS_DANGER);
-
-                if (slotIsRecording) {
-                    auto contentArea = getLocalBounds().withTrimmedLeft(PLAY_BUTTON_WIDTH);
-                    g.setColour(recordColour.withAlpha(0.18f));
-                    g.fillRoundedRectangle(contentArea.reduced(3).toFloat(), 4.0f);
-                    g.setColour(recordColour.withAlpha(0.9f));
-                    g.fillRect(getLocalBounds().removeFromLeft(PLAY_BUTTON_WIDTH).reduced(6, 4));
-                    g.setColour(findColour(juce::TextButton::textColourOffId));
-                    g.setFont(FontManager::getInstance().getUIFont(9.0f));
-                    g.drawText("Recording", contentArea.reduced(6, 0),
-                               juce::Justification::centredLeft, true);
-                } else if (slotRecordArmed) {
-                    g.setColour(recordColour.withAlpha(0.25f));
-                    g.fillEllipse(centre.getX() - radius, centre.getY() - radius, radius * 2.0f,
-                                  radius * 2.0f);
-                    g.setColour(recordColour);
-                    g.drawEllipse(centre.getX() - radius - 2.0f, centre.getY() - radius - 2.0f,
-                                  (radius + 2.0f) * 2.0f, (radius + 2.0f) * 2.0f, 1.5f);
-                } else {
-                    g.setColour(recordColour.withAlpha(0.7f));
-                    g.fillEllipse(centre.getX() - radius, centre.getY() - radius, radius * 2.0f,
-                                  radius * 2.0f);
-                }
-            } else {
-                // Stop square. While a quantized row-stop is in flight,
-                // blink the icon on each beat — same affordance as the
-                // play triangle's "queued" blink, just inverted intent.
-                float size = 5.0f;
-                auto stopColour = juce::Colours::white.withAlpha(0.4f);
-                if (stopIsQueued && !blinkOn)
-                    stopColour = stopColour.withAlpha(0.1f);
-                g.setColour(stopColour);
-                g.fillRect(juce::Rectangle<float>(centre.getX() - size, centre.getY() - size,
-                                                  size * 2.0f, size * 2.0f));
-            }
-        }
-
-        // Disabled clip (#1736): dim the whole slot, mirroring the
-        // arrangement clip overlay.
-        if (hasClip && clipId != INVALID_CLIP_ID) {
-            const auto* clip = ClipManager::getInstance().getClip(clipId);
-            if (clip && !clip->enabled) {
+            if (const auto* clip = ClipManager::getInstance().getClip(clipId);
+                clip != nullptr && !clip->enabled) {
+                // Disabled clip (#1736): dim the whole slot, mirroring the arrangement overlay.
                 g.setColour(juce::Colours::black.withAlpha(0.55f));
-                g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(0.0f, 0.5f), 6.0f);
+                g.fillRoundedRectangle(bounds, kCornerRadius);
             }
+        } else if (recording) {
+            g.setColour(red);
+            g.fillEllipse(juce::Rectangle<float>(10.0f, 10.0f).withCentre(glyphCentre));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+            g.setFont(FontManager::getInstance().getUIFontMedium(12.0f));
+            g.drawText("Recording", nameArea.toNearestInt(), juce::Justification::centredLeft,
+                       true);
+        } else if (trackIsRecordArmed) {
+            // A queued recording lights the ring and blinks it on the beat.
+            const auto ring = slotRecordArmed
+                                  ? red.withAlpha(blinkOn ? 1.0f : 0.35f)
+                                  : ActiveTheme::getColour(ActiveTheme::SESSION_ARM_RING);
+            g.setColour(ring);
+            g.drawEllipse(juce::Rectangle<float>(10.0f, 10.0f).withCentre(glyphCentre), 1.2f);
+        } else if (shouldDrawButtonAsHighlighted) {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::SESSION_SLOT_GLYPH));
+            fillSquare(g, glyphCentre, 9.0f);
         }
+
+        paintSelection(g, bounds);
+        if (isDropTarget) {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.5f));
+            g.fillRoundedRectangle(bounds, kCornerRadius);
+        }
+    }
+
+  private:
+    void paintSelection(juce::Graphics& g, juce::Rectangle<float> bounds) const {
+        if (!isSelected && !rowSelected)
+            return;
+        const auto blue = ActiveTheme::getColour(ActiveTheme::SESSION_SELECTION);
+        g.setColour(blue.withAlpha(0.08f));
+        g.fillRoundedRectangle(bounds, session_paint::kCornerRadius);
+        g.setColour(blue);
+        g.drawRoundedRectangle(bounds, session_paint::kCornerRadius, 1.0f);
+    }
+
+    static void paintProgress(juce::Graphics& g, juce::Rectangle<float> bounds, float progress,
+                              juce::Colour colour) {
+        juce::Graphics::ScopedSaveState state(g);
+        juce::Path outline;
+        outline.addRoundedRectangle(bounds, session_paint::kCornerRadius);
+        g.reduceClipRegion(outline);
+        g.setColour(colour);
+        g.fillRect(bounds.withTop(bounds.getBottom() - 3.0f)
+                       .withWidth(bounds.getWidth() * juce::jlimit(0.0f, 1.0f, progress)));
     }
 };
 
-/// Scene-launch button (right column of the session view). Mirrors
-/// ClipSlotButton's left-strip styling so the master/scene column reads as
-/// part of the same row visually — strip on the left, larger icon, content
-/// area to the right.
+/** @brief Scene button in the scenes column: number, launch glyph, name. */
 class SceneButton : public juce::TextButton {
   public:
-    static constexpr int STRIP_WIDTH = ClipSlotButton::PLAY_BUTTON_WIDTH;
+    static constexpr int LAUNCH_ZONE_WIDTH = 40;  // number + triangle launch; the name selects
 
+    int sceneNumber = 0;
     bool hasAnyClip = true;      // false = row empty → render stop glyph
     bool hasAnyPlaying = false;  // true → row has at least one playing/queued clip
-    bool stopIsQueued = false;   // true → quantized row-stop in flight, blink the stop icon
-    bool blinkOn = false;        // toggled by SessionView timer for stop-queued blink
+    bool isSelected = false;
+    bool stopIsQueued = false;  // true → quantized row-stop in flight, blink the stop icon
+    bool blinkOn = false;       // toggled by SessionView timer for stop-queued blink
+
+    std::function<void()> onLaunch;
+    std::function<void()> onSelect;
+
+    void clicked() override {}
+
+    void mouseUp(const juce::MouseEvent& event) override {
+        juce::TextButton::mouseUp(event);
+        if (!event.mouseWasClicked() || event.mods.isPopupMenu())
+            return;
+        const auto& callback = event.x < LAUNCH_ZONE_WIDTH ? onLaunch : onSelect;
+        if (callback)
+            callback();
+    }
 
     void paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted,
-                     bool shouldDrawButtonAsDown) override {
-        // Render the button's rounded BG (via SmallButtonLookAndFeel) so the
-        // master column reads as a column of buttons, not floating glyphs.
-        juce::TextButton::paintButton(g, shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
+                     bool /*shouldDrawButtonAsDown*/) override {
+        using namespace session_paint;
+        const auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+        const float centreY = bounds.getCentreY();
 
-        // Icon on the left side. Cyan when something in the scene is
-        // playing/queued (matches the track play strip), white when idle
-        // but available to launch. Stop square for fully-empty rows.
-        auto leftArea = getLocalBounds().toFloat().removeFromLeft(STRIP_WIDTH);
-        auto centre = leftArea.getCentre();
+        auto fill = ActiveTheme::getColour(isSelected ? ActiveTheme::SESSION_SCENE_SELECTED
+                                                      : ActiveTheme::SESSION_SCENE);
+        if (shouldDrawButtonAsHighlighted)
+            fill = fill.brighter(0.08f);
+        g.setColour(fill);
+        g.fillRoundedRectangle(bounds, kCornerRadius);
+        g.setColour(ActiveTheme::getColour(isSelected ? ActiveTheme::SESSION_SELECTION
+                                           : hasAnyPlaying
+                                               ? ActiveTheme::SESSION_SCENE_PLAYING_BORDER
+                                               : ActiveTheme::SESSION_SCENE_BORDER));
+        g.drawRoundedRectangle(bounds, kCornerRadius, 1.0f);
 
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SESSION_LABEL));
+        g.setFont(FontManager::getInstance().getMonoFont(10.0f));
+        g.drawText(juce::String(sceneNumber),
+                   juce::Rectangle<float>(kGlyphX, 0.0f, 14.0f, bounds.getHeight()),
+                   juce::Justification::centredLeft, false);
+
+        constexpr float glyphX = 26.0f;
         if (hasAnyClip) {
-            juce::Path triangle;
-            float size = 6.0f;
-            triangle.addTriangle(centre.getX() - size * 0.7f, centre.getY() - size,
-                                 centre.getX() - size * 0.7f, centre.getY() + size,
-                                 centre.getX() + size, centre.getY());
-            g.setColour(hasAnyPlaying ? ActiveTheme::getColour(ActiveTheme::ACCENT_INFO)
-                                      : juce::Colours::white);
-            g.fillPath(triangle);
+            g.setColour(ActiveTheme::getColour(hasAnyPlaying ? ActiveTheme::SESSION_PLAY
+                                                             : ActiveTheme::TEXT_SECONDARY));
+            fillTriangle(g, glyphX, centreY, 10.0f);
         } else {
-            float size = 5.0f;
-            auto stopColour = juce::Colour(0xFFA0A0A0);
-            if (stopIsQueued && !blinkOn)
-                stopColour = stopColour.withAlpha(0.25f);
-            g.setColour(stopColour);
-            g.fillRect(juce::Rectangle<float>(centre.getX() - size, centre.getY() - size,
-                                              size * 2.0f, size * 2.0f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::SESSION_STOP_IDLE)
+                            .withAlpha(stopIsQueued && !blinkOn ? 0.25f : 1.0f));
+            fillSquare(g, {glyphX + 4.5f, centreY}, 9.0f);
         }
+
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        g.setFont(FontManager::getInstance().getUIFontMedium(12.0f));
+        g.drawText(getButtonText(),
+                   bounds.withTrimmedLeft(static_cast<float>(LAUNCH_ZONE_WIDTH) + 4.0f)
+                       .withTrimmedRight(8.0f)
+                       .toNearestInt(),
+                   juce::Justification::centredLeft, true);
     }
 };
 
-/// Track header button with right-click context menu and drag support for SessionView.
+/** @brief Track header button with right-click context menu and drag support for SessionView. */
 class TrackHeaderButton : public juce::TextButton {
   public:
     std::function<void()> onDeleteTrack;
@@ -452,9 +456,6 @@ class TrackHeaderButton : public juce::TextButton {
         juce::TextButton::mouseUp(event);
     }
 
-    // Track colour drawn as a thin strip along the top, matching the mixer
-    // channel strip. The session is column-oriented, so the accent sits on top
-    // rather than on a side edge.
     void setTrackColour(juce::Colour c) {
         if (trackColour_ != c) {
             trackColour_ = c;
@@ -462,66 +463,160 @@ class TrackHeaderButton : public juce::TextButton {
         }
     }
 
-    void paintOverChildren(juce::Graphics& g) override {
-        // Colour strip stays visible in every state, including when selected.
-        g.setColour(trackColour_);
-        g.fillRect(0, 0, getWidth(), kColourStripHeight);
+    /** @brief Follows the Track color preference: a full-bar fill, or a spine on the left. */
+    void setFullBar(bool fullBar) {
+        if (fullBar_ != fullBar) {
+            fullBar_ = fullBar;
+            repaint();
+        }
+    }
+
+    void setSelected(bool selected) {
+        if (selected_ != selected) {
+            selected_ = selected;
+            repaint();
+        }
+    }
+
+    void setMidiActivity(float level) {
+        level = juce::jlimit(0.0f, 1.0f, level);
+        if (std::abs(level - midiActivity_) > 0.01f) {
+            midiActivity_ = level;
+            repaint();
+        }
+    }
+
+    void paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted,
+                     bool /*shouldDrawButtonAsDown*/) override {
+        constexpr int kSpineWidth = 5;
+        const auto bounds = getLocalBounds().toFloat();
+        const bool coloured = trackColour_ != juce::Colour(0xFF444444);
+        const bool filled = fullBar_ && coloured;
+        const auto swatch = deriveTrackSwatch(trackColour_);
+
+        juce::Graphics::ScopedSaveState state(g);
+        juce::Path outline;
+        outline.addRoundedRectangle(bounds, session_paint::kCornerRadius);
+        g.reduceClipRegion(outline);
+
+        auto fill = filled      ? swatch
+                    : selected_ ? ActiveTheme::getColour(ActiveTheme::SESSION_HEADER_SELECTED)
+                                : ActiveTheme::getColour(ActiveTheme::SURFACE);
+        if (shouldDrawButtonAsHighlighted)
+            fill = fill.brighter(0.06f);
+        g.fillAll(fill);
+
+        auto content = getLocalBounds().reduced(14, 0);
+        if (filled && selected_) {
+            g.setColour(deriveTrackAccent(trackColour_));
+            g.fillRect(bounds.withTop(bounds.getBottom() - 2.0f));
+        } else if (!fullBar_ && coloured) {
+            g.setColour(swatch);
+            g.fillRect(bounds.withWidth(static_cast<float>(kSpineWidth)));
+            content.removeFromLeft(kSpineWidth);
+        }
+
+        constexpr float kDotSize = 9.0f;
+        const auto dot = juce::Rectangle<float>(kDotSize, kDotSize)
+                             .withCentre({static_cast<float>(content.getRight()) - kDotSize * 0.5f,
+                                          bounds.getCentreY()});
+        g.setColour(filled ? juce::Colours::white.withAlpha(0.4f)
+                           : ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withAlpha(0.6f));
+        g.fillEllipse(dot);
+        if (midiActivity_ > 0.01f) {
+            g.setColour(juce::Colour(0xFF00FFFF).withAlpha(midiActivity_));
+            g.fillEllipse(dot);
+        }
+        content.removeFromRight(static_cast<int>(kDotSize) + 8);
+
+        g.setColour(filled ? juce::Colours::white
+                           : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        g.setFont(FontManager::getInstance().getHeadingFont(14.0f));
+        g.drawText(getButtonText(), content, juce::Justification::centredLeft, true);
     }
 
   private:
-    static constexpr int kColourStripHeight = 4;
     juce::Colour trackColour_;
+    bool fullBar_ = false;
+    bool selected_ = false;
+    float midiActivity_ = 0.0f;
 };
 
-/// Compact dB scale labels for session view mini strips.
-/// Uses linear-in-dB mapping to match the TextSlider's range (-60..+6).
-class MiniDbScale : public juce::Component {
+/** @brief A track's cell in the stop row, or STOP ALL in the scenes column. */
+class SessionStopButton : public juce::Button {
   public:
-    MiniDbScale() {
-        setInterceptsMouseClicks(false, false);
+    explicit SessionStopButton(juce::String label = {})
+        : juce::Button("Stop"), label_(std::move(label)) {
+        setTooltip(label_.isEmpty() ? "Stop the track's clip" : "Stop all clips");
     }
 
-    void paint(juce::Graphics& g) override {
-        auto bounds = getLocalBounds();
-        if (bounds.isEmpty())
+    bool live = false;          // the track has a clip playing or queued
+    bool stopIsQueued = false;  // blink until the quantised stop lands
+    bool blinkOn = false;
+
+    void paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted,
+                     bool /*shouldDrawButtonAsDown*/) override {
+        using namespace session_paint;
+        const auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+        auto fill = ActiveTheme::getColour(ActiveTheme::SESSION_STOP_ROW);
+        if (shouldDrawButtonAsHighlighted)
+            fill = fill.brighter(0.08f);
+        g.setColour(fill);
+        g.fillRoundedRectangle(bounds, kCornerRadius);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SESSION_CONTROL_BORDER));
+        g.drawRoundedRectangle(bounds, kCornerRadius, 1.0f);
+
+        const auto square = ActiveTheme::getColour(live ? ActiveTheme::SESSION_STOP_LIVE
+                                                        : ActiveTheme::SESSION_STOP_IDLE)
+                                .withAlpha(stopIsQueued && !blinkOn ? 0.25f : 1.0f);
+        constexpr float kSquare = 9.0f;
+        if (label_.isEmpty()) {
+            g.setColour(square);
+            fillSquare(g, bounds.getCentre(), kSquare);
             return;
-
-        static constexpr float dbValues[] = {6.0f, 0.0f, -6.0f, -12.0f, -24.0f, -48.0f};
-        static constexpr float DB_MIN = -60.0f;
-        static constexpr float DB_MAX = 6.0f;
-        static constexpr float CURVE_EXPONENT = 2.0f;
-
-        static constexpr float PADDING = 4.0f;
-        float height = static_cast<float>(bounds.getHeight()) - 2.0f * PADDING;
-        auto width = static_cast<float>(bounds.getWidth());
-
-        if (height <= 0.0f)
-            return;
-
-        g.setFont(FontManager::getInstance().getUIFont(8.0f));
-
-        constexpr float labelH = 9.0f;
-        float lastDrawnY = -1000.0f;
-
-        for (float db : dbValues) {
-            float norm = std::pow((db - DB_MIN) / (DB_MAX - DB_MIN), CURVE_EXPONENT);
-            float y = PADDING + height * (1.0f - norm);
-
-            if (std::abs(y - lastDrawnY) < labelH + 1.0f)
-                continue;
-            lastDrawnY = y;
-
-            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-            g.fillRect(0.0f, y - 0.5f, 2.0f, 1.0f);
-            g.fillRect(width - 2.0f, y - 0.5f, 2.0f, 1.0f);
-
-            int dbInt = static_cast<int>(db);
-            juce::String text = juce::String(std::abs(dbInt));
-
-            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-            g.drawText(text, 0, static_cast<int>(y - labelH / 2.0f), static_cast<int>(width),
-                       static_cast<int>(labelH), juce::Justification::centred, false);
         }
+
+        const auto font = labelFont(9.5f);
+        const float textWidth = juce::GlyphArrangement::getStringWidth(font, label_);
+        const float left = bounds.getCentreX() - (kSquare + 8.0f + textWidth) * 0.5f;
+        g.setColour(square);
+        fillSquare(g, {left + kSquare * 0.5f, bounds.getCentreY()}, kSquare);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SESSION_STOP_IDLE));
+        g.setFont(font);
+        g.drawText(label_,
+                   juce::Rectangle<float>(left + kSquare + 8.0f, bounds.getY(), textWidth + 2.0f,
+                                          bounds.getHeight()),
+                   juce::Justification::centredLeft, false);
+    }
+
+  private:
+    juce::String label_;
+};
+
+/** @brief The dashed "+" cell below the last scene; adds a scene. */
+class AddSceneCell : public juce::Button {
+  public:
+    AddSceneCell() : juce::Button("Add Scene") {
+        setTooltip("Add scene");
+    }
+
+    void paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted,
+                     bool /*shouldDrawButtonAsDown*/) override {
+        const auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+        juce::Path outline;
+        outline.addRoundedRectangle(bounds, session_paint::kCornerRadius);
+        juce::Path dashed;
+        const float dashes[] = {3.0f, 3.0f};
+        juce::PathStrokeType(1.0f).createDashedStroke(dashed, outline, dashes, 2);
+        g.setColour(ActiveTheme::getColour(shouldDrawButtonAsHighlighted
+                                               ? ActiveTheme::SESSION_CONTROL_BORDER
+                                               : ActiveTheme::SESSION_SLOT_BORDER));
+        g.fillPath(dashed);
+
+        const auto centre = bounds.getCentre();
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SESSION_LABEL));
+        g.fillRect(juce::Rectangle<float>(10.0f, 1.0f).withCentre(centre));
+        g.fillRect(juce::Rectangle<float>(1.0f, 10.0f).withCentre(centre));
     }
 };
 

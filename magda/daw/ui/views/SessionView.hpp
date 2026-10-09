@@ -11,6 +11,7 @@
 #include "audio/MidiBridge.hpp"
 #include "audio/io/AudioIOControl.hpp"
 #include "core/ClipManager.hpp"
+#include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
@@ -25,14 +26,12 @@ class MainViewScrollContainer;
 /**
  * @brief Session view - Ableton-style clip launcher grid
  *
- * Shows:
- * - Grid of clip slots organized by track (columns) and scenes (rows)
- * - Track headers at the top
- * - Scene launch buttons on the right
- * - Real-time clip status indicators
- * - Mini mixer strip per track (fader, meter, M/S buttons)
+ * Track columns of header, clip slots, stop button and mixer strip, with the scenes
+ * column on the right.
  */
 class ClipSlotButton;
+class SessionStopButton;
+class AddSceneCell;
 
 class SessionView : public juce::Component,
                     public juce::FileDragAndDropTarget,
@@ -44,7 +43,8 @@ class SessionView : public juce::Component,
                     public SelectionManagerListener,
                     public ViewModeListener,
                     public MidiBridge::Listener,
-                    private HardwareChannels::Listener {
+                    private HardwareChannels::Listener,
+                    private ConfigListener {
   public:
     SessionView();
     ~SessionView() override;
@@ -122,20 +122,20 @@ class SessionView : public juce::Component,
 
     // Grid configuration
     static constexpr int DEFAULT_NUM_SCENES = 8;
-    static constexpr int TRACK_HEADER_HEIGHT = 40;
-    static constexpr int SCENE_BUTTON_WIDTH = 80;
-    static constexpr int DEFAULT_CLIP_SLOT_WIDTH = 80;
-    static constexpr int MIN_TRACK_WIDTH = 40;
+    static constexpr int GRID_PADDING = 8;
+    static constexpr int TRACK_HEADER_HEIGHT = 42;
+    static constexpr int SCENE_BUTTON_WIDTH = 120;
+    static constexpr int DEFAULT_CLIP_SLOT_WIDTH = 150;
+    static constexpr int MIN_TRACK_WIDTH = 60;
     static constexpr int MAX_TRACK_WIDTH = 300;
-    static constexpr int CLIP_SLOT_HEIGHT = 40;
-    static constexpr int CLIP_SLOT_MARGIN = 2;
-    static constexpr int TRACK_SEPARATOR_WIDTH = 3;
-    static constexpr int MIN_FADER_ROW_HEIGHT = 60;
-    static constexpr int MAX_FADER_ROW_HEIGHT = 200;
-    int faderRowHeight_ = 100;
-    int dragStartFaderHeight_ = 100;
-    int dragStartTrackWidth_ = 80;
-    static constexpr int ADD_SCENE_BUTTON_HEIGHT = 24;
+    static constexpr int CLIP_SLOT_HEIGHT = 44;
+    static constexpr int CLIP_SLOT_MARGIN = 4;
+    static constexpr int TRACK_SEPARATOR_WIDTH = 6;  // the gap between columns
+    static constexpr int ROW_GAP = 6;
+    static constexpr int STOP_ROW_HEIGHT = 28;
+    static constexpr int MIXER_STRIP_HEIGHT = 88;
+    int dragStartTrackWidth_ = DEFAULT_CLIP_SLOT_WIDTH;
+    static constexpr int ADD_SCENE_BUTTON_HEIGHT = 30;
 
     int numScenes_ = DEFAULT_NUM_SCENES;
 
@@ -154,17 +154,32 @@ class SessionView : public juce::Component,
     // Scene launch buttons
     std::vector<std::unique_ptr<juce::TextButton>> sceneButtons;
 
-    // Master header (top-right corner)
-    std::unique_ptr<juce::TextButton> masterLabel_;
+    // SCENES label (top-right corner)
+    class ScenesLabel;
+    std::unique_ptr<ScenesLabel> scenesLabel_;
+
+    // Stop row: one button per track, STOP ALL in the scenes column
+    class StopRowContainer;
+    std::unique_ptr<StopRowContainer> stopRowContainer_;
+    std::vector<std::unique_ptr<SessionStopButton>> trackStopButtons_;
+    std::unique_ptr<SessionStopButton> stopAllButton_;
+
+    // Dashed "+" row below the last scene
+    std::vector<std::unique_ptr<AddSceneCell>> addSceneCells_;
+    std::unique_ptr<AddSceneCell> sceneColumnAddCell_;
+
+    // Scene selected from its name; outlines the scene's row of slots
+    int selectedScene_ = -1;
+    void selectScene(int sceneIndex);
+    void clearSceneSelection();
 
     // Session-specific left-edge rail for mixer-row visibility. It intentionally
     // omits mixer-only analyzer / mini-chain controls.
     class SessionToggleRail;
     std::unique_ptr<SessionToggleRail> toggleRail_;
     void syncMixerVisibilityFromConfig();
-    static constexpr int MIXER_TOGGLES_HEIGHT = 26;
 
-    // Custom grid content component that draws track separators
+    // Grid content holding the clip slots
     class GridContent;
     class GridViewport;
     std::unique_ptr<GridViewport> gridViewport;
@@ -178,9 +193,7 @@ class SessionView : public juce::Component,
     std::unique_ptr<HeaderContainer> headerContainer;
     std::unique_ptr<SceneContainer> sceneContainer;
 
-    // Resize handle between stop buttons and fader row
     class ResizeHandle;
-    std::unique_ptr<ResizeHandle> faderResizeHandle_;
 
     // Per-track column resize handles (positioned at right edge of each header)
     std::vector<std::unique_ptr<ResizeHandle>> trackResizeHandles_;
@@ -209,25 +222,6 @@ class SessionView : public juce::Component,
     bool recordMonitorVisible_ = true;
     void showMixerContextMenu();
 
-    // Beat indicator band — sits in the otherwise-empty toggles band over
-    // the track area. Each track gets its own segment that pulses on the
-    // beat (or a per-track subdivision). Right-click a segment to change
-    // its rate. State is in-memory only, like the other view-mode toggles.
-    // Musical-time rate names: Whole = 1 (one bar in 4/4), Half = 1/2,
-    // Quarter = 1/4 (one beat), Eighth = 1/8 (half a beat).
-    enum class BeatRate { Whole, Half, Quarter, Eighth };
-    class BeatBandContainer;
-    class MasterBeatIndicator;
-    std::unique_ptr<BeatBandContainer> beatBandContainer_;
-    std::unique_ptr<MasterBeatIndicator> masterBeatIndicator_;
-    std::unordered_map<TrackId, BeatRate> trackBeatRates_;
-    std::unordered_set<TrackId> beatHiddenTracks_;
-    BeatRate getTrackBeatRate(TrackId trackId) const;
-    void setTrackBeatRate(TrackId trackId, BeatRate rate);
-    void showBeatRateMenuFor(TrackId trackId);
-    void toggleBeatHidden(TrackId trackId);
-    bool isBeatHidden(TrackId trackId) const;
-
     // Fader row at bottom of each track column - MiniChannelStrip per track
     class FaderContainer;
     std::unique_ptr<FaderContainer> faderContainer;
@@ -239,6 +233,10 @@ class SessionView : public juce::Component,
     std::unique_ptr<MiniMasterStrip> masterStrip_;
 
     void rebuildTracks();
+    /** @brief Places every per-track column component at the current horizontal scroll. */
+    void layoutTrackColumns();
+    void layoutSceneColumn();
+    void configChanged() override;
     void applyThemeColours();
     void setupSceneButtons();
     void syncScenesFromProject(const ProjectInfo& info);
@@ -333,6 +331,14 @@ class SessionView : public juce::Component,
     int controllerSceneOffset_ = -1;
     int controllerSceneCount_ = 0;
     std::uint64_t controllerSceneWindowRevision_ = 0;
+
+    struct MidiActivity {
+        std::uint32_t lastCounter = 0;
+        int holdFrames = 0;
+        float level = 0.0f;
+    };
+    std::unordered_map<TrackId, MidiActivity> headerMidiActivity_;
+    void updateHeaderMidiActivity();
 
     // Session playhead position (looped, seconds). -1.0 = inactive.
     std::unordered_map<ClipId, double> clipPlayheadPositions_;
