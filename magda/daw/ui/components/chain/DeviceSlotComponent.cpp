@@ -782,12 +782,6 @@ void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
         footerPrevPage_->setBounds(nav.removeFromLeft(16).withSizeKeepingCentre(12, 12));
         footerNextPage_->setBounds(nav.removeFromRight(16).withSizeKeepingCentre(12, 12));
         footerPageLabel_.setBounds(nav);
-    } else if (isInternalDevice() && !traits_.isDrumGrid) {
-        if (sidechain) {
-            area.setLeft(area.getX() - gap);
-            footerSeparator_ = area.removeFromLeft(13).withSizeKeepingCentre(1, 14);
-        }
-        footerInfoArea_ = area;
     }
 }
 
