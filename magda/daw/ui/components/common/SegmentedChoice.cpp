@@ -1,5 +1,6 @@
 #include "SegmentedChoice.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <optional>
 
@@ -75,8 +76,8 @@ std::optional<juce::Path> iconFor(const juce::String& option) {
     return path;
 }
 
-float optionWidth(const juce::String& option) {
-    return iconFor(option)
+float optionWidth(const juce::String& option, bool icons) {
+    return icons && iconFor(option)
                ? kIconSegmentWidth
                : juce::GlyphArrangement::getStringWidth(segmentFont(), option.toUpperCase()) +
                      2.0f * kSegmentPadding;
@@ -110,10 +111,18 @@ int SegmentedChoice::getPreferredWidth() const {
 }
 
 int SegmentedChoice::preferredWidthFor(const juce::StringArray& options) {
+    const bool icons = allHaveIcons(options);
     float width = 2.0f * kInset;
     for (const auto& option : options)
-        width += optionWidth(option);
+        width += optionWidth(option, icons);
     return juce::roundToInt(width);
+}
+
+bool SegmentedChoice::allHaveIcons(const juce::StringArray& options) {
+    // Icons only for a whole set: one picture among words reads as a different kind of option.
+    return !options.isEmpty() &&
+           std::all_of(options.begin(), options.end(),
+                       [](const juce::String& option) { return iconFor(option).has_value(); });
 }
 
 juce::Rectangle<float> SegmentedChoice::segmentBounds(int index) const {
@@ -121,7 +130,8 @@ juce::Rectangle<float> SegmentedChoice::segmentBounds(int index) const {
     const auto scale =
         area.getWidth() / juce::jmax(1.0f, static_cast<float>(getPreferredWidth()) - 2.0f * kInset);
     for (int i = 0; i < options_.size(); ++i) {
-        auto segment = area.removeFromLeft(optionWidth(options_[i]) * scale);
+        auto segment =
+            area.removeFromLeft(optionWidth(options_[i], allHaveIcons(options_)) * scale);
         if (i == index)
             return segment;
     }
@@ -145,7 +155,7 @@ void SegmentedChoice::paint(juce::Graphics& g) {
         }
         g.setColour(
             ActiveTheme::getColour(lit ? ActiveTheme::DEVICE_TEXT : ActiveTheme::DEVICE_DIM));
-        if (auto icon = iconFor(options_[i])) {
+        if (auto icon = allHaveIcons(options_) ? iconFor(options_[i]) : std::nullopt) {
             const auto box = segment.withSizeKeepingCentre(16.0f, 10.0f);
             icon->applyTransform(juce::AffineTransform::scale(box.getWidth(), box.getHeight())
                                      .translated(box.getX(), box.getY()));
@@ -178,7 +188,7 @@ void SegmentedChoice::mouseDown(const juce::MouseEvent& e) {
 juce::String SegmentedChoice::getTooltip() {
     const auto mouse = getMouseXYRelative().toFloat();
     for (int i = 0; i < options_.size(); ++i)
-        if (segmentBounds(i).contains(mouse) && iconFor(options_[i]))
+        if (segmentBounds(i).contains(mouse) && allHaveIcons(options_))
             return options_[i];
     return {};
 }

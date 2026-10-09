@@ -20,6 +20,8 @@ class SegmentedChoice : public juce::Component, public juce::TooltipClient {
     /// Width that fits every option.
     int getPreferredWidth() const;
     static int preferredWidthFor(const juce::StringArray& options);
+    /// Whether every option draws a picture; a set mixing pictures and words shows words.
+    static bool allHaveIcons(const juce::StringArray& options);
 
     std::function<void(int index)> onChange;
 

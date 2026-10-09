@@ -112,8 +112,8 @@ namespace {
 void applyFilled(ParamSlotComponent& slot, const magda::ParameterInfo& param, const ParamCell& cell,
                  const std::function<void(int paramIndex, double value)>& onValueChanged) {
     slot.setParamIndex(cell.targetParamIndex);
-    slot.setParamName(param.name);
     slot.setParameterInfo(param);
+    slot.setParamName(cell.label.isNotEmpty() ? cell.label : param.name);
     slot.setParamValue(param.currentValue);
     slot.setShowEmptyText(false);
     slot.setEnabled(cell.enabled);

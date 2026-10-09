@@ -35,6 +35,8 @@ class CompiledEqBandLayout final : public DeviceParamLayout {
                       int currentPage) const override {
         static constexpr int kOffsets[] = {Plugin::kBandFreqOffset, Plugin::kBandGainOffset,
                                            Plugin::kBandQOffset};
+        // The editor already names the band, so its knobs say only what they set.
+        static constexpr const char* kLabels[] = {"Freq", "Gain", "Q", "Output"};
         const int band = juce::jlimit(0, Plugin::kBandCount - 1, currentPage);
         const int slot =
             cellIndex < 3 ? Plugin::bandSlot(band, kOffsets[cellIndex]) : Plugin::kOutputSlot;
@@ -45,6 +47,7 @@ class CompiledEqBandLayout final : public DeviceParamLayout {
             cell.mode = ParamCell::Mode::Filled;
             cell.paramArrayIndex = k;
             cell.targetParamIndex = slot;
+            cell.label = kLabels[cellIndex];
             return cell;
         }
         cell.mode = ParamCell::Mode::Hidden;

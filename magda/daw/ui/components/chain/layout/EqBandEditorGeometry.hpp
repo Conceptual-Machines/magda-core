@@ -34,11 +34,13 @@ struct EqBandEditorGeometry {
         return geometry;
     }
 
-    /// Knob @p index: the band's three, then Output.
+    /// Knob @p index: the band's three, with the grid's gap between them, then Output.
     juce::Rectangle<int> knob(int index) const {
+        constexpr int kGap = 6;
         if (index >= 3)
             return output;
-        return knobs.withWidth(kKnobWidth).translated(index * kKnobWidth, 0);
+        const int width = (knobs.getWidth() - 2 * kGap) / 3;
+        return knobs.withWidth(width).translated(index * (width + kGap), 0);
     }
 };
 

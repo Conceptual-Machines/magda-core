@@ -31,6 +31,8 @@ struct ParamCell {
     /// `span - 1` Hidden cells, so the host can keep iterating cell by cell
     /// and simply draw nothing for the ones that were absorbed.
     int span = 1;
+    /// Shown in place of the parameter's own name, where context already says the rest.
+    juce::String label;
 };
 
 /**
