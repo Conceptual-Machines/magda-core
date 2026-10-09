@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <optional>
 
 #include "ui/themes/ActiveTheme.hpp"
@@ -32,17 +33,35 @@ std::optional<juce::Path> iconFor(const juce::String& option) {
                 path.lineTo(x, y(x));
         }
     };
-    if (name == "lp") {
+    if (name == "lp" || name == "hc") {
         path.startNewSubPath(0.0f, 0.35f);
         path.lineTo(0.45f, 0.35f);
         path.quadraticTo(0.7f, 0.35f, 1.0f, 0.95f);
-    } else if (name == "hp") {
+    } else if (name == "hp" || name == "lc") {
         path.startNewSubPath(0.0f, 0.95f);
         path.quadraticTo(0.3f, 0.35f, 0.55f, 0.35f);
         path.lineTo(1.0f, 0.35f);
     } else if (name == "bp") {
         path.startNewSubPath(0.0f, 0.95f);
         path.quadraticTo(0.5f, -0.25f, 1.0f, 0.95f);
+    } else if (name == "ls") {
+        path.startNewSubPath(0.0f, 0.25f);
+        path.lineTo(0.3f, 0.25f);
+        path.quadraticTo(0.5f, 0.25f, 0.55f, 0.5f);
+        path.quadraticTo(0.6f, 0.75f, 0.8f, 0.75f);
+        path.lineTo(1.0f, 0.75f);
+    } else if (name == "hs") {
+        path.startNewSubPath(0.0f, 0.75f);
+        path.lineTo(0.2f, 0.75f);
+        path.quadraticTo(0.4f, 0.75f, 0.45f, 0.5f);
+        path.quadraticTo(0.5f, 0.25f, 0.7f, 0.25f);
+        path.lineTo(1.0f, 0.25f);
+    } else if (name == "bell") {
+        path.startNewSubPath(0.0f, 0.8f);
+        path.lineTo(0.2f, 0.8f);
+        path.cubicTo(0.4f, 0.8f, 0.4f, 0.1f, 0.5f, 0.1f);
+        path.cubicTo(0.6f, 0.1f, 0.6f, 0.8f, 0.8f, 0.8f);
+        path.lineTo(1.0f, 0.8f);
     } else if (name == "notch") {
         path.startNewSubPath(0.0f, 0.3f);
         path.lineTo(0.35f, 0.3f);
@@ -186,10 +205,17 @@ void SegmentedChoice::mouseDown(const juce::MouseEvent& e) {
 }
 
 juce::String SegmentedChoice::getTooltip() {
+    static const std::map<juce::String, juce::String> kNames{
+        {"lp", "Low Pass"}, {"hp", "High Pass"},       {"bp", "Band Pass"},  {"lc", "Low Cut"},
+        {"hc", "High Cut"}, {"ls", "Low Shelf"},       {"hs", "High Shelf"}, {"bell", "Bell"},
+        {"notch", "Notch"}, {"s&h", "Sample and Hold"}};
     const auto mouse = getMouseXYRelative().toFloat();
-    for (int i = 0; i < options_.size(); ++i)
-        if (segmentBounds(i).contains(mouse) && allHaveIcons(options_))
-            return options_[i];
+    for (int i = 0; i < options_.size(); ++i) {
+        if (!segmentBounds(i).contains(mouse) || !allHaveIcons(options_))
+            continue;
+        const auto found = kNames.find(options_[i].toLowerCase());
+        return found != kNames.end() ? found->second : options_[i];
+    }
     return {};
 }
 
