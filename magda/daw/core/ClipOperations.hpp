@@ -138,6 +138,54 @@ class ClipOperations {
         return juce::jlimit(start, end, target);
     }
 
+    /**
+     * @brief The timeline beat that plays @p sourceSeconds of an audio clip's file.
+     *
+     * Unlooped, audio outside the clip maps to where it would play if the clip
+     * reached it. Looped, the pass @p nearTimelineBeat is in; nullopt for audio
+     * outside the loop region, which never plays.
+     */
+    static inline std::optional<double> timelineBeatForSourceSeconds(const ClipInfo& clip,
+                                                                     double sourceSeconds,
+                                                                     double nearTimelineBeat,
+                                                                     double bpm) {
+        const auto* event = clip.primaryEvent();
+        if (!clip.isAudio() || event == nullptr || !isValidBpm(bpm))
+            return std::nullopt;
+
+        const auto beatsAt = [&](double seconds) {
+            return event->sourceInstantToTimelineBeats(seconds, bpm);
+        };
+        const double start = clip.placement.startBeat + event->startBeat;
+        const double anchorBeats = beatsAt(event->anchorSeconds());
+        const double sampleRate = event->sourceSampleRate();
+        const auto loopSamples = event->resolvedLoopLengthSamples(sampleRate);
+        if (!clip.loopEnabled || loopSamples <= 0)
+            return start + beatsAt(sourceSeconds) - anchorBeats;
+
+        const double loopStart = event->loopStartSeconds();
+        const double loopEnd = loopStart + static_cast<double>(loopSamples) / sampleRate;
+        if (sourceSeconds < loopStart || sourceSeconds > loopEnd)
+            return std::nullopt;
+
+        const double loopStartBeats = beatsAt(loopStart);
+        const double loopLength = beatsAt(loopEnd) - loopStartBeats;
+        if (loopLength <= 0.0)
+            return std::nullopt;
+
+        // Cycles are passes through the loop region; take the one the playhead is in.
+        const double anchorPhase = anchorBeats - loopStartBeats;
+        const double clickedPhase = beatsAt(sourceSeconds) - loopStartBeats;
+        const double cycle = std::floor((nearTimelineBeat - start + anchorPhase) / loopLength);
+        const double end = clip.placement.endBeat();
+        double target = start + cycle * loopLength + clickedPhase - anchorPhase;
+        while (target < start)
+            target += loopLength;
+        while (target > end)
+            target -= loopLength;
+        return target >= start ? std::optional{target} : std::nullopt;
+    }
+
     static inline bool clipMidiNoteToVisibleRange(const ClipInfo& clip, MidiNote& note) {
         auto range = getMidiVisibleRange(clip);
         if (range.lengthBeats <= 0.0 || note.lengthBeats <= 0.0)
@@ -254,16 +302,13 @@ class ClipOperations {
                 audioEvent.startBeat -= deltaBeat;
             clip.audio().envelopeWindow->startBeat -= deltaBeat;
         } else if (event != nullptr && !event->sourceFilePath().isEmpty()) {
-            const bool isAutoTempo = event->autoTempo && event->interpBpm > 0.0 && isValidBpm(bpm);
-
-            // Beat mode and manual stretch differ only in how a timeline delta
-            // becomes a source delta: via project BPM, or via speedRatio.
-            const double sourceDelta = isAutoTempo
-                                           ? (actualDelta * bpm / 60.0) * 60.0 / event->interpBpm
-                                           : actualDelta * event->speedRatio;
+            const bool beatFace =
+                (event->autoTempo || event->warpEnabled) && event->interpBpm > 0.0;
+            const double warpDelta =
+                event->warpExtentSeconds(actualDelta * bpm / 60.0, actualDelta);
 
             if (!clip.loopEnabled) {
-                event->setAnchorSeconds(event->anchorSeconds() + sourceDelta);
+                event->advanceAnchor(warpDelta);
                 event->loopStartSamples = event->sourceAnchorSamples;
             } else {
                 // With no region set, beat mode has no period to wrap in:
@@ -271,14 +316,20 @@ class ClipOperations {
                 // speedRatio is pinned to 1, so using it as a source period
                 // would wrap by the wrong amount. Leave the phase alone, as
                 // the beat-domain path did before the event split.
-                const double sourceLength =
-                    event->loopLengthSamples > 0
-                        ? event->loopLengthSeconds()
-                        : (isAutoTempo ? 0.0 : clipLength * event->speedRatio);
+                const double sourceLength = event->loopLengthSamples > 0
+                                                ? event->loopLengthSeconds()
+                                                : (beatFace ? 0.0 : clipLength * event->speedRatio);
                 if (sourceLength > 0.0) {
-                    event->setAnchorSeconds(
-                        event->loopStartSeconds() +
-                        wrapPhase(event->loopPhaseSeconds() + sourceDelta, sourceLength));
+                    // Wrapped in warp time, where a warped loop folds.
+                    const double loopStartWarp =
+                        event->warpedSourceSeconds(event->loopStartSeconds());
+                    const double loopLengthWarp =
+                        event->warpedSourceSeconds(event->loopStartSeconds() + sourceLength) -
+                        loopStartWarp;
+                    const double phaseWarp =
+                        event->warpedSourceSeconds(event->anchorSeconds()) - loopStartWarp;
+                    event->setAnchorSeconds(event->unwarpedSourceSeconds(
+                        loopStartWarp + wrapPhase(phaseWarp + warpDelta, loopLengthWarp)));
                 }
             }
         } else if (clip.isMidi()) {

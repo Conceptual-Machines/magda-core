@@ -1515,17 +1515,10 @@ ClipId ClipManager::splitClipAtBeat(ClipId clipId, double splitBeat, double temp
     ClipOperations::setBeatPlacement(rightClip, clip->placement.startBeat + leftLengthBeats,
                                      rightLengthBeats, bpm);
 
-    // Advance the right half's read position: it starts leftLength further into
-    // the source. In beat/warp mode speedRatio is 1.0 and the real stretch is
-    // projectBPM / interpBpm, so the delta converts through the beat domain.
+    // The right half resumes where the left half's reading ends.
     auto* rightEvent = rightClip.primaryEvent();
-    if (rightEvent != nullptr) {
-        const bool useSourceBeatProcessing = rightEvent->autoTempo || rightEvent->warpEnabled;
-        const double sourceDelta = (useSourceBeatProcessing && rightEvent->interpBpm > 0.0)
-                                       ? leftLengthBeats * 60.0 / rightEvent->interpBpm
-                                       : leftLength * rightEvent->speedRatio;
-        rightEvent->setAnchorSeconds(rightEvent->anchorSeconds() + sourceDelta);
-    }
+    if (rightEvent != nullptr)
+        rightEvent->advanceAnchor(rightEvent->warpExtentSeconds(leftLengthBeats, leftLength));
 
     // Handle MIDI clip splitting
     if (rightClip.isMidi() && !rightClip.midiNotes.empty()) {
@@ -1695,7 +1688,6 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
 
         // When enabling loop on MIDI clips, capture current length as loop region
         if (enabled && clip->isMidi()) {
-            double bpm = isValidBpm(projectBPM) ? projectBPM : currentProjectTempoOrDefault();
             if (clip->loopLengthBeats <= 0.0)
                 clip->loopLengthBeats = clip->getLengthInBeats();
         }
@@ -3650,16 +3642,10 @@ void ClipManager::copyBeatRangeToClipboard(double startBeat, double endBeat,
         if (auto* trimmedEvent = trimmed.primaryEvent()) {
             // Advance the source read position by the trimmed-off beats.
             const double trimFromLeftBeats = overlapStartBeat - clipStartBeat;
-            if (trimmedEvent->interpBpm > 0.0) {
-                // Beat mode: the trim is a source-beat distance.
-                trimmedEvent->setAnchorBeats(trimmedEvent->anchorBeats() + trimFromLeftBeats);
-            } else if (isValidBpm(tempoBPM)) {
-                // Otherwise convert the beat trim to timeline seconds, then to
-                // source seconds via speedRatio.
-                const double trimFromLeftSeconds = trimFromLeftBeats * 60.0 / tempoBPM;
-                trimmedEvent->setAnchorSeconds(trimmedEvent->anchorSeconds() +
-                                               trimFromLeftSeconds * trimmedEvent->speedRatio);
-            }
+            const double trimFromLeftSeconds =
+                isValidBpm(tempoBPM) ? trimFromLeftBeats * 60.0 / tempoBPM : 0.0;
+            trimmedEvent->advanceAnchor(
+                trimmedEvent->warpExtentSeconds(trimFromLeftBeats, trimFromLeftSeconds));
             // Sync the source region for non-looped events
             if (!trimmed.loopEnabled) {
                 trimmedEvent->loopStartSamples = trimmedEvent->sourceAnchorSamples;

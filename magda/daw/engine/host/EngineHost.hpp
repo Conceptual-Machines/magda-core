@@ -81,6 +81,9 @@ class EngineHost {
     };
     using GrooveProvider = std::function<std::vector<GrooveEntry>()>;
 
+    /** @brief Transient positions in @p path, in source seconds. Safe off the message thread. */
+    static std::vector<double> detectSourceTransients(const juce::String& path, float sensitivity);
+
     EngineHost();
     ~EngineHost();
 

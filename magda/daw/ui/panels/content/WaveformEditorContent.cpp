@@ -11,15 +11,16 @@
 #include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "audio/CompService.hpp"
+#include "audio/TransientDetection.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
+#include "core/ClipOperations.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "core/WarpMarkerCommands.hpp"
-#include "engine/TracktionFork.hpp"
 
 namespace magda::daw::ui {
 
@@ -294,6 +295,24 @@ WaveformEditorContent::WaveformEditorContent() {
     // Double-click on loop strip → zoom to loop region
     timeRuler_->onZoomToLoopRequested = [this](double startTime, double endTime) {
         zoomToTimeRange(startTime, endTime);
+    };
+
+    // A click on the ruler's ticks moves the arrangement playhead to the audio clicked (#3018).
+    timeRuler_->onPlayheadPositionClicked = [this](double time, bool /*bypassSnap*/) {
+        auto* controller = magda::TimelineController::getCurrent();
+        const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+        if (controller == nullptr || clip == nullptr || clip->view != magda::ClipView::Arrangement)
+            return;
+
+        const auto& state = controller->getState();
+        const double bpm = isValidBpm(state.tempo.bpm) ? state.tempo.bpm : DEFAULT_BPM;
+        // A reversed clip is already drawn in playing order, so read the ruler unmirrored.
+        const auto& di = cachedDisplayInfo_;
+        const double sourceSeconds = di.sourceFileStart + di.timelineToSource(time);
+        const auto beat = magda::ClipOperations::timelineBeatForSourceSeconds(
+            *clip, sourceSeconds, state.playhead.getCurrentPositionBeats(), bpm);
+        if (beat)
+            controller->dispatch(magda::SetPlayheadPositionBeatsEvent{juce::jmax(0.0, *beat)});
     };
 
     auto commitLoopFromDisplay = [this](double displayStart, double displayEnd) {
@@ -1494,12 +1513,8 @@ void WaveformEditorContent::requestTransientDetection() {
     if (editingClipId_ == magda::INVALID_CLIP_ID)
         return;
 
-    // Detection is the fork's until transients have an engine-neutral home.
-    if (!magda::tracktion_fork::isRendering())
-        return;
-
     setTransientsUpdating(true);
-    if (magda::tracktion_fork::detectTransients(editingClipId_)) {
+    if (magda::transients::detect(editingClipId_)) {
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
         if (clip && !magda::audioEventRef(*clip).sourceFilePath().isEmpty()) {
             const auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(

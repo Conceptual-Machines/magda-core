@@ -517,6 +517,7 @@ target_sources(magda_daw PRIVATE
     # Phase 2: Independent features
     PluginWindowBridge.cpp
     WarpMarkerManager.cpp
+    TransientDetection.cpp
     # Compile-time pins between MAGDA's persisted enums and the engine's (#1887)
     EngineEnumPins.cpp
     # Phase 3: Core controllers

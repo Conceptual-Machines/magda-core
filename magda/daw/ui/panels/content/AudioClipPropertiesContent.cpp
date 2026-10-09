@@ -9,6 +9,7 @@
 #include "../themes/SmallButtonLookAndFeel.hpp"
 #include "BinaryData.h"
 #include "audio/AudioThumbnailManager.hpp"
+#include "audio/TransientDetection.hpp"
 #include "core/AudioClipSourceDisplay.hpp"
 #include "core/ClipManager.hpp"
 #include "core/ClipOperations.hpp"
@@ -16,7 +17,6 @@
 #include "core/TempoUtils.hpp"
 #include "core/TimeStretchModes.hpp"
 #include "core/UndoManager.hpp"
-#include "engine/TracktionFork.hpp"
 #include "project/ProjectManager.hpp"
 #include "state/TimelineController.hpp"
 
@@ -464,8 +464,8 @@ void AudioClipPropertiesContent::createControls() {
     transientSensValue_->onValueChange = [this]() {
         if (clipId_ == magda::INVALID_CLIP_ID)
             return;
-        magda::tracktion_fork::setTransientSensitivity(
-            clipId_, static_cast<float>(transientSensValue_->getValue()));
+        magda::transients::setSensitivity(clipId_,
+                                          static_cast<float>(transientSensValue_->getValue()));
     };
     addAndMakeVisible(*transientSensValue_);
 

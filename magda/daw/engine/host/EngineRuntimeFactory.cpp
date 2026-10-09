@@ -4,6 +4,8 @@
 
 #include "../../audio/plugins/InternalPluginRegistry.hpp"
 #include "../../audio/plugins/engine/EngineDeviceFactory.hpp"
+#include "EngineHost.hpp"
+#include "analysis/TransientDetector.hpp"
 #include "clip/ClipAudioSource.hpp"
 #include "clip/ClipMidiSource.hpp"
 
@@ -35,6 +37,15 @@ juce::String insertIdentityOf(const InsertConfig& insert) {
 }
 
 }  // namespace
+
+std::vector<double> EngineHost::detectSourceTransients(const juce::String& path,
+                                                       float sensitivity) {
+    EngineFileReaders files;
+    auto reader = files.open(path.toStdString());
+    if (reader == nullptr)
+        return {};
+    return engine::detectTransients(*reader, {.sensitivity = sensitivity});
+}
 
 EngineFileReaders::EngineFileReaders() {
     formats_.registerBasicFormats();
