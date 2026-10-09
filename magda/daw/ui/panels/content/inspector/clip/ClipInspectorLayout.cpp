@@ -27,15 +27,22 @@ void ClipInspector::resized() {
     // (doubles as the colour swatch), name, ghost badge, view|type indicator
     // chip (background painted in paint()), enable/disable switch.
     {
-        const int iconSize = 20;
+        const int iconSize = 16;
         const int gap = 6;
         auto headerRow = bounds.removeFromTop(24);
 
-        colourSwatch_->setBounds(headerRow.removeFromLeft(6));
-        headerRow.removeFromLeft(gap);
-
+        // As in the track inspector: a spine on the left, or a chip beside the power button
+        // when the name field already carries the colour.
+        if (!nameFilled_) {
+            colourSwatch_->setBounds(headerRow.removeFromLeft(6));
+            headerRow.removeFromLeft(gap);
+        }
         if (clipEnabledToggle_->isVisible()) {
             clipEnabledToggle_->setBounds(headerRow.removeFromRight(28));
+            headerRow.removeFromRight(gap);
+        }
+        if (nameFilled_) {
+            colourSwatch_->setBounds(headerRow.removeFromRight(24));
             headerRow.removeFromRight(gap);
         }
 
@@ -107,7 +114,8 @@ void ClipInspector::resized() {
         }
 
         auto valueRow = addRow(valueHeight);
-        clipPositionIcon_->setBounds(valueRow.removeFromLeft(iconSize));
+        clipPositionIcon_->setBounds(
+            valueRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
         valueRow.removeFromLeft(gap);
         clipStartValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
         valueRow.removeFromLeft(gap);

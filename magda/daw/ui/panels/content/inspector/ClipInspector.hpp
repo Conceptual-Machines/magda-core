@@ -11,6 +11,7 @@
 #include "clip/sections/ClipFadesSection.hpp"
 #include "clip/sections/ClipTakesSection.hpp"
 #include "core/ClipManager.hpp"
+#include "core/Config.hpp"
 
 namespace magda::daw::ui {
 
@@ -27,7 +28,9 @@ namespace magda::daw::ui {
  * - Playback (reverse, channels)
  * - Session launch settings (mode, quantize)
  */
-class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
+class ClipInspector : public BaseInspector,
+                      public magda::ClipManagerListener,
+                      private magda::ConfigListener {
   public:
     ClipInspector();
     ~ClipInspector() override;
@@ -89,7 +92,12 @@ class ClipInspector : public BaseInspector, public magda::ClipManagerListener {
     std::unique_ptr<magda::SvgButton> clipViewIcon_;
     std::unique_ptr<magda::SvgButton> clipGhostIcon_;      // link glyph, ghost clips only
     std::unique_ptr<magda::SvgButton> clipEnabledToggle_;  // enable/disable clip (#1736)
-    juce::Rectangle<int> viewTypeChipBounds_;              // segmented chip behind view|type icons
+    // The name field follows the track header style: filled with the clip colour in Full bar.
+    bool nameFilled_ = false;
+    juce::Colour nameFill_, nameOutline_;
+    void applyHeaderStyle();
+    void configChanged() override;
+    juce::Rectangle<int> viewTypeChipBounds_;  // segmented chip behind view|type icons
 
     // Position section
     juce::Label playbackColumnLabel_;

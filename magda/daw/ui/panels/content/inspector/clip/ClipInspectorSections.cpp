@@ -395,18 +395,16 @@ void ClipInspector::initClipPropertiesSection() {
     // Clip enable/disable toggle (#1736). Classic switch glyph in dual-icon
     // mode: knob left / outline = off, knob right / filled = on. Geometry
     // remains in the assets while both state colours resolve from code.
-    clipEnabledToggle_ = std::make_unique<magda::SvgButton>(
-        "ClipEnabled", BinaryData::toggle_off_svg, BinaryData::toggle_off_svgSize,
-        BinaryData::toggle_on_svg, BinaryData::toggle_on_svgSize);
-    // Chip-style bordered button, matching the view|type chip next to it.
+    clipEnabledToggle_ = std::make_unique<magda::SvgButton>("ClipEnabled", BinaryData::power_svg,
+                                                            BinaryData::power_svgSize);
+    // The track inspector's power chip: green while the clip plays.
     clipEnabledToggle_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    clipEnabledToggle_->setActiveBackgroundColor(ActiveTheme::SURFACE);
     clipEnabledToggle_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     clipEnabledToggle_->setStateColourReplacement(
-        juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL, ActiveTheme::ICON_NEUTRAL);
-    clipEnabledToggle_->setStateColourReplacement(
-        juce::Colour(0xFF1E1E1E), ActiveTheme::ICON_ON_ACCENT, ActiveTheme::ICON_ON_ACCENT);
+        juce::Colour(0xFFE6E6E6), ActiveTheme::ICON_NEUTRAL, ActiveTheme::DEVICE_GREEN);
     clipEnabledToggle_->setBorderThickness(1.0f);
-    clipEnabledToggle_->setIconPadding(2.0f);
+    clipEnabledToggle_->setIconPadding(6.5f);
     clipEnabledToggle_->setClickingTogglesState(false);
     clipEnabledToggle_->setTooltip("Enable/disable clip");
     clipEnabledToggle_->onClick = [this]() {
@@ -496,7 +494,7 @@ void ClipInspector::initClipPropertiesSection() {
                                                            BinaryData::position_svgSize);
     clipPositionIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     clipPositionIcon_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-    clipPositionIcon_->setIconPadding(1.0f);
+    clipPositionIcon_->setIconPadding(2.0f);
     clipPositionIcon_->setInterceptsMouseClicks(false, false);
     clipPropsContainer_.addChildComponent(*clipPositionIcon_);
 
