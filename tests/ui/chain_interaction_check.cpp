@@ -1,6 +1,7 @@
 // Full component regression check. Run with run_chain_interaction_check.py.
 #include <functional>
 #include <iostream>
+#include <map>
 #include <stdexcept>
 #include <typeinfo>
 
@@ -224,6 +225,34 @@ int main() {
             const int before = resolved;
             faceplate.updateFromDevice(filter);
             check(resolved > before, "the faceplate read its links without resolving them");
+        }
+        {
+            // The Filter faceplate is a handle: across sets cutoff, up sets resonance,
+            // scroll sets drive.
+            using Filter = magda::daw::audio::compiled::MagdaFilterCompiledPlugin;
+            CompiledFilterCurveView faceplate(Filter::xmlTypeName);
+            faceplate.setSize(600, 240);
+            std::map<int, float> written;
+            faceplate.setOnParameterChanged([&](int slot, float value) { written[slot] = value; });
+            const auto event = [&](juce::Point<float> at, juce::Point<float> downAt) {
+                return juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(), at, {},
+                                        0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &faceplate, &faceplate,
+                                        juce::Time::getCurrentTime(), downAt,
+                                        juce::Time::getCurrentTime(), 1, false);
+            };
+            const juce::Point<float> start{200.0f, 150.0f};
+            faceplate.mouseDown(event(start, start));
+            const float lowCutoff = written[Filter::kCutoffSlot];
+            const float startResonance = written[Filter::kResonanceSlot];
+            faceplate.mouseDrag(event({400.0f, 90.0f}, start));
+            faceplate.mouseUp(event({400.0f, 90.0f}, start));
+            check(written[Filter::kCutoffSlot] > lowCutoff, "dragging right did not raise cutoff");
+            check(written[Filter::kResonanceSlot] > startResonance,
+                  "dragging up did not raise resonance");
+            juce::MouseWheelDetails wheel{};
+            wheel.deltaY = 0.5f;
+            faceplate.mouseWheelMove(event(start, start), wheel);
+            check(written[Filter::kDriveSlot] > 0.0f, "scrolling up did not raise drive");
         }
         {
             // A curated device's controls stand in balanced rows of at most two.
