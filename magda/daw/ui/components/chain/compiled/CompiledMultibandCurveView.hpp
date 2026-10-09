@@ -36,7 +36,6 @@ class CompiledMultibandCurveView final : public juce::Component,
     void setOnLayoutChanged(std::function<void()> cb) override {
         onLayoutChanged_ = std::move(cb);
     }
-    bool wantsFullBody() const override;
     int preferredHeight() const override {
         return getPreferredHeight();
     }
@@ -207,8 +206,6 @@ class CompiledMultibandCurveView final : public juce::Component,
     std::array<juce::Rectangle<float>, 3> belowRatioAreas_{};
     std::array<juce::Rectangle<float>, 3> aboveRatioAreas_{};
 
-    juce::Rectangle<float> collapseButtonArea_;
-    bool collapseButtonHovered_ = false;
     int ratioScrollBand_ = -1;
     bool ratioScrollAbove_ = true;
     bool rangeScrollActive_ = false;

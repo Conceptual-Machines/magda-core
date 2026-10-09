@@ -2134,10 +2134,10 @@ int DeviceSlotComponent::getDynamicSlotWidth() const {
     if (traits_.compiledPresentation != nullptr &&
         traits_.compiledPresentation->preferredSlotWidth > 0)
         return traits_.compiledPresentation->preferredSlotWidth;
-    // 64px cells with the grid's 6px gaps and 10px padding: eight, or a curated grid's own.
+    // 64px cells with the grid's 6px gaps and 10px padding: a curated grid's own columns beside
+    // its faceplate, else eight; a faceplate that takes the whole body keeps the eight.
     constexpr int kCell = 64;
-    const int columns = traits_.compiledPresentation != nullptr && paramGrid_ != nullptr &&
-                                paramGrid_->getCellsPerRow() > 0
+    const int columns = hasFaceplate() && paramGrid_ != nullptr && paramGrid_->getCellsPerRow() > 0
                             ? paramGrid_->getCellsPerRow()
                             : PARAMS_PER_ROW;
     return kCell * columns + 6 * (columns - 1) + 2 * 10;

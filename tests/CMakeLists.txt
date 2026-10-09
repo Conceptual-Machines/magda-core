@@ -856,6 +856,7 @@ target_sources(magda_juce_tests PRIVATE
     ui/test_popout_window_shortcuts_juce.cpp
     ../magda/daw/ui/components/timeline/TimeRuler.cpp
     ../magda/daw/ui/components/chain/compiled/CompiledMultibandCurveView.cpp
+    ../magda/daw/ui/components/chain/layout/DeviceShellPainter.cpp
     ../magda/daw/ui/dialogs/ParameterConfigDialog.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorInit.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorSections.cpp
