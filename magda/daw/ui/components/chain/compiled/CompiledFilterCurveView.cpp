@@ -528,14 +528,15 @@ const CompiledPresentationSpec& getMagdaFilterPresentation() {
     static constexpr int kFaceplateSlots[] = {Filter::kModeSlot, Filter::kEngineSlot};
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName,
-        .layoutCellCount = 6,
-        .layoutCellsPerRow = 6,
+        .layoutCellCount = Filter::kHostSlotCount,
+        .layoutCellsPerRow = Filter::kHostSlotCount,
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledFilterCurveView>(pluginId);
         },
         .knobSlots = kKnobSlots,
         .faceplateWidth = 460,
         .faceplateSlots = kFaceplateSlots,
+        .mixSlot = Filter::kMixSlot,
     };
     return kSpec;
 }

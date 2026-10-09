@@ -91,6 +91,11 @@ std::vector<SlotInfo> Filter::slotInfos() const {
                          .minValue = 0.0f,
                          .maxValue = 1.0f,
                          .defaultValue = 0.0f};
+    infos[kMixSlot] = {.name = "Mix",
+                       .scale = sdk::ParameterScale::Linear,
+                       .minValue = 0.0f,
+                       .maxValue = 1.0f,
+                       .defaultValue = 1.0f};
 
     return infos;
 }
@@ -139,8 +144,18 @@ void Filter::writeExtraZones(int engineIndex) {
             clampSallenKeyCutoffHz(*cutoff, currentSampleRate(), slotInfo(kCutoffSlot).minValue);
 }
 
+void Filter::onPrepare(double, int maximumBlockSize) {
+    dryFrames_ = std::max(0, maximumBlockSize);
+    dry_.assign(static_cast<size_t>(dryFrames_) * kMaxDryChannels, 0.0f);
+}
+
 void Filter::beforeCompute(sdk::ProcessContext& context, int) {
     preSpectrumTap_.writeDownmix(context.audio);
+    const int frames = std::min(context.numSamples(), dryFrames_);
+    const int channels = std::min(context.audio.numChannels(), kMaxDryChannels);
+    for (int channel = 0; channel < channels; ++channel)
+        std::copy_n(context.audio.channel(channel), frames,
+                    dry_.begin() + static_cast<std::ptrdiff_t>(channel) * dryFrames_);
 }
 
 void Filter::afterCompute(sdk::ProcessContext& context, int engineIndex) {
@@ -154,6 +169,18 @@ void Filter::afterCompute(sdk::ProcessContext& context, int engineIndex) {
                 const float sample = out[i];
                 out[i] = sanitise(sample + (std::tanh(sample) - sample) * limitMix);
             }
+        }
+    }
+
+    const float mix = std::clamp(parameterValue(kMixSlot), 0.0f, 1.0f);
+    if (mix < 1.0f) {
+        const int frames = std::min(context.numSamples(), dryFrames_);
+        const int channels = std::min(context.audio.numChannels(), kMaxDryChannels);
+        for (int channel = 0; channel < channels; ++channel) {
+            float* out = context.audio.channel(channel);
+            const float* dry = dry_.data() + static_cast<std::ptrdiff_t>(channel) * dryFrames_;
+            for (int i = 0; i < frames; ++i)
+                out[i] = dry[i] + (out[i] - dry[i]) * mix;
         }
     }
     postSpectrumTap_.writeDownmix(context.audio);
