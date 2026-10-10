@@ -4,9 +4,11 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 
 #include "core/DeviceInfo.hpp"
+#include "params/ParamLinkResolver.hpp"
 
 namespace magda::daw::audio {
 class MagdaDevice;
@@ -14,7 +16,7 @@ class MagdaDevice;
 
 namespace magda::daw::ui {
 
-struct ParamLinkContext;
+class DeviceParamLayout;
 
 /**
  * @brief Adapter over a compiled-Faust device's inline curve view.
@@ -51,10 +53,18 @@ class CompiledDevicePanel {
         return false;
     }
 
+    /// For a device whose faceplate turns its knobs' pages: called with the page to show.
+    virtual void setOnPageRequested(std::function<void(int page)>) {}
+
     /// Called by the host slot wiring once. The panel invokes the callback
     /// whenever its preferred layout changes (e.g. user toggles collapsed),
     /// which triggers a parent `resized()` pass to honour the new request.
     virtual void setOnLayoutChanged(std::function<void()>) {}
+
+    /// Resolves the device's mods and macros afresh on each call. A panel reads
+    /// them through this rather than keeping a context, whose pointers a chain
+    /// rebuild frees.
+    virtual void setLinkContextProvider(std::function<std::optional<ParamLinkContext>()>) {}
 };
 
 /**
@@ -77,6 +87,9 @@ struct CompiledPresentationSpec {
     /// drop the numerator so the grid claims more of the body.
     int visualMinFractionNumerator = 3;
     int visualMinFractionDenominator = 4;
+    /// Set, the faceplate spans the device under its grid, taking the fraction above of
+    /// the height, instead of standing beside the knobs.
+    bool faceplateStacked = false;
     /// When > 0, overrides the default device slot width (in pixels).
     /// Lets plugins with denser surfaces (e.g. the 8-band EQ's column
     /// strips) opt out of the global `BASE_SLOT_WIDTH` and request a
@@ -91,6 +104,23 @@ struct CompiledPresentationSpec {
     /// Optional device-specific enablement for a parameter slot. This changes
     /// interaction/presentation only; the parameter remains automatable.
     bool (*isParameterEnabled)(const magda::DeviceInfo& device, int slotIndex) = nullptr;
+    /// The slots that remain as knobs, in order; -1 leaves a cell empty to group them.
+    /// Empty keeps every slot in the grid.
+    std::span<const int> knobSlots;
+    /// Most knob columns beside the faceplate; 0 takes the default of two.
+    int knobColumns = 0;
+    /// The faceplate's width beside the knobs; 0 takes the default.
+    int faceplateWidth = 0;
+    /// Discrete slots shown in a strip across the top of the faceplate.
+    std::span<const int> faceplateSlots;
+    /// Set, the faceplate sits under these band knobs, one row, each band's in its third, low
+    /// to high; knobSlots stand in a column on the left.
+    std::span<const int> bandSlots;
+    /// The device's own dry/wet slot: the side strip's mix knob drives it, so the grid drops it.
+    int mixSlot = -1;
+    /// Set, the device lays its knobs out itself and its faceplate spans the whole body under
+    /// them; the faceplate turns the knobs' pages.
+    std::unique_ptr<DeviceParamLayout> (*createLayout)() = nullptr;
 };
 
 /// All presentation specs in stable iteration order. Each spec is defined

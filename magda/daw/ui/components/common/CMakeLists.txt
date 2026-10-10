@@ -5,6 +5,8 @@ target_sources(magda_daw_app PRIVATE
     SvgButton.cpp
     EditTool.cpp
     EditToolbar.cpp
+    SegmentedChoice.cpp
+    MagdaAlertWindow.cpp
     ChordAuditionControl.cpp
     MonitorControl.cpp
     MidiActivityLed.cpp

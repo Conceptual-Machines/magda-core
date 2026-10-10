@@ -1,5 +1,7 @@
 #pragma once
 
+#include <juce_graphics/juce_graphics.h>
+
 #include "core/DeviceInfo.hpp"
 
 namespace magda::daw::ui {
@@ -29,6 +31,8 @@ struct ParamCell {
     /// `span - 1` Hidden cells, so the host can keep iterating cell by cell
     /// and simply draw nothing for the ones that were absorbed.
     int span = 1;
+    /// Shown in place of the parameter's own name, where context already says the rest.
+    juce::String label;
 };
 
 /**
@@ -67,6 +71,22 @@ class DeviceParamLayout {
         return false;
     }
     /// Curated native layouts keep their cells but take the style's column count.
+    /// Set, the layout places each cell itself instead of the host's even grid.
+    virtual bool placesOwnCells() const {
+        return false;
+    }
+    virtual juce::Rectangle<int> cellBounds(int /*cell*/, juce::Rectangle<int> /*area*/,
+                                            bool /*faceplateShown*/) const {
+        return {};
+    }
+    /// Most columns a reflowing grid wraps at.
+    virtual int maxColumns() const {
+        return 2;
+    }
+    /// Rows a short grid is sized and centred as, given the style's row count; 0 stretches.
+    virtual int minRowsForStyle(int /*styleRows*/) const {
+        return 0;
+    }
     virtual bool reflowsForControlStyle() const {
         return false;
     }

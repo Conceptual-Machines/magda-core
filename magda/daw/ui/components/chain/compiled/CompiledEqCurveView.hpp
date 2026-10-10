@@ -10,7 +10,10 @@
 
 #include "audio/plugins/compiled/MagdaEqCompiledPlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
+#include "compiled/SpectrumOverlay.hpp"
 #include "core/DeviceInfo.hpp"
+#include "layout/EqBandEditorGeometry.hpp"
+#include "ui/components/common/SegmentedChoice.hpp"
 
 namespace magda::daw::ui {
 
@@ -47,7 +50,9 @@ class CompiledEqCurveView final : public juce::Component,
     void setOnLayoutChanged(std::function<void()> cb) override {
         onLayoutChanged_ = std::move(cb);
     }
-    bool wantsFullBody() const override;
+    void setOnPageRequested(std::function<void(int)> cb) override {
+        onPageRequested_ = std::move(cb);
+    }
     int preferredHeight() const override {
         return getPreferredHeight();
     }
@@ -58,6 +63,7 @@ class CompiledEqCurveView final : public juce::Component,
     std::function<void(int slotIndex, float displayValue)> onParameterChanged;
 
     void paint(juce::Graphics& g) override;
+    void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
@@ -73,9 +79,6 @@ class CompiledEqCurveView final : public juce::Component,
 
     void timerCallback() override;
     void resampleFromDevice();
-    void rebuildSpectrumFft();
-    void updateSpectrumOverlay();
-    void drawSpectrumOverlay(juce::Graphics& g, juce::Rectangle<float> area);
 
     // -1 if the cursor isn't near any band. Used by hit-testing and the
     // hover highlight in paint().
@@ -86,6 +89,14 @@ class CompiledEqCurveView final : public juce::Component,
     void setBandType(int band, BandType type);
     void setBandEnabled(int band, bool enabled);
     void showBandTypeMenu(int band);
+    /// Show @p band in the editor and turn the knobs to it.
+    void selectBand(int band);
+    void syncTypeChoice();
+    void paintChips(juce::Graphics& g);
+    void paintEditor(juce::Graphics& g);
+    int chipAt(juce::Point<float> p) const;
+    juce::Rectangle<float> chipBounds(int band) const;
+    juce::Rectangle<float> enableSwitchBounds() const;
 
     // Cached per-band state used by paint(). Updated on the message thread
     // by the poll timer / device-snapshot path.
@@ -94,14 +105,11 @@ class CompiledEqCurveView final : public juce::Component,
 
     int hoveredBand_ = -1;
     int draggedBand_ = -1;
+    int selectedBand_ = 0;
 
-    // Small toggle in the curve's top-right corner that flips the slot
-    // between "curve fills body" (collapsed) and "curve + param grid"
-    // (expanded). The actual state lives on the plugin's ValueTree via
-    // `MagdaEqCompiledPlugin::curveCollapsed_` so it survives project
-    // reload; this rect is recomputed in paint() and consulted by mouseDown.
-    juce::Rectangle<float> collapseButtonArea_;
-    bool collapseButtonHovered_ = false;
+    EqBandEditorGeometry geometry_;
+    magda::SegmentedChoice typeChoice_;
+    std::function<void(int)> onPageRequested_;
 
     std::function<void()> onLayoutChanged_;
 
@@ -110,20 +118,7 @@ class CompiledEqCurveView final : public juce::Component,
 
     juce::Rectangle<float> plotArea_;
 
-    static constexpr int kSpectrumFftOrder = 11;
-    static constexpr int kSpectrumFftSize = 1 << kSpectrumFftOrder;
-    static constexpr int kSpectrumNumBins = kSpectrumFftSize / 2;
-    static constexpr float kSpectrumMinDb = -90.0f;
-    static constexpr float kSpectrumMaxDb = 0.0f;
-
-    std::unique_ptr<juce::dsp::FFT> spectrumFft_;
-    std::unique_ptr<juce::dsp::WindowingFunction<float>> spectrumWindow_;
-    std::vector<float> spectrumReadBuf_;
-    std::vector<float> spectrumFftData_;
-    std::vector<float> preSpectrumDb_;
-    std::vector<float> postSpectrumDb_;
-    size_t lastPreSpectrumWritePosition_ = 0;
-    size_t lastPostSpectrumWritePosition_ = 0;
+    SpectrumOverlay spectrum_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CompiledEqCurveView)
 };

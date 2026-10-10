@@ -46,15 +46,17 @@ struct DeviceSlotContentBodyControls {
     // case the parameter grid keeps the whole body.
     juce::Component* faustMeterPanel = nullptr;
     int faustMeterPanelPreferredHeight = 0;
+    // The faceplate stands to the right of the parameters, at this width, or under band knobs
+    // in this many rows.
     juce::Component* compiledPanel = nullptr;
-    int compiledPanelPreferredHeight = 0;
-    // Minimum fraction of the slot body the curve panel must occupy.
-    // Defaults to 3/4 so curve-heavy plugins (Reverb / Multiband / etc) keep
-    // their dominant visual. Plugins that pair a small curve with a deep
-    // param grid (the 8-band EQ) override these via CompiledPresentationSpec
-    // to let the grid claim the bottom area.
-    int compiledPanelMinFractionNumerator = 3;
-    int compiledPanelMinFractionDenominator = 4;
+    int compiledPanelWidth = 0;
+    int compiledPanelBandRows = 0;
+    // Set, the faceplate spans the width under the grid, at this share of the height.
+    float compiledPanelStackedFraction = 0.0f;
+    // Set, faceplate and grid share the whole body and the grid places its own knobs on top.
+    bool compiledPanelUnderGrid = false;
+    bool compiledPanelShown = true;
+    bool paramGridShown = true;
     // When true, hide the param grid entirely and give the compiled panel
     // the full slot body. Set per-frame from `CompiledDevicePanel::wantsFullBody()`,
     // which the EQ's "collapse knobs" toggle flips at runtime.

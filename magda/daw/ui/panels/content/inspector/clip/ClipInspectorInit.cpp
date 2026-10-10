@@ -19,6 +19,7 @@ ClipInspector::ClipInspector() {
     addChildComponent(clipCountLabel_);
 
     initClipPropertiesSection();
+    magda::Config::getInstance().addListener(this);
     initSessionLaunchSection();
     initPitchSection();
     initGrooveSection();
@@ -30,6 +31,7 @@ ClipInspector::ClipInspector() {
 }
 
 ClipInspector::~ClipInspector() {
+    magda::Config::getInstance().removeListener(this);
     magda::ClipManager::getInstance().removeListener(this);
     saveLibraryButton_.setLookAndFeel(nullptr);
 }

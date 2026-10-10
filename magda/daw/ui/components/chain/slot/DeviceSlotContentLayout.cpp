@@ -1,6 +1,9 @@
 #include "slot/DeviceSlotContentLayout.hpp"
 
+#include <utility>
+
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
+#include "layout/FaceplateBelowGeometry.hpp"
 #include "params/ParamHostComponent.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -257,8 +260,6 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
     }
 
     if (controls.compiledPanel != nullptr) {
-        const int bodyHeight = juce::jmax(0, contentArea.getHeight());
-
         if (controls.compiledPanelWantsFullBody) {
             // Panel wants the entire body — hide the param grid and let the
             // panel paint the whole content area. The EQ's collapse toggle
@@ -269,16 +270,49 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
             return;
         }
 
-        const int visualHeight =
-            boundedBottomPanelHeight(controls.compiledPanelPreferredHeight, bodyHeight,
-                                     controls.compiledPanelMinFractionNumerator,
-                                     controls.compiledPanelMinFractionDenominator);
-        // Inset like the parameter grid: 14px at the sides and foot.
-        controls.compiledPanel->setBounds(
-            contentArea.removeFromBottom(visualHeight).reduced(14, 0).withTrimmedBottom(14));
-        controls.compiledPanel->setVisible(true);
+        controls.compiledPanel->setVisible(controls.compiledPanelShown);
+        if (controls.compiledPanelUnderGrid && controls.paramGrid != nullptr) {
+            controls.compiledPanel->setVisible(true);
+            controls.compiledPanel->setBounds(contentArea);
+            layoutParamGrid(controls.paramGrid, contentArea);
+            controls.paramGrid->toFront(false);
+            return;
+        }
+        if (controls.compiledPanelBandRows > 0 && controls.paramGridShown &&
+            controls.paramGrid != nullptr) {
+            controls.paramGrid->setFaceplateBelowShown(controls.compiledPanelShown);
+            if (controls.compiledPanelShown)
+                controls.compiledPanel->setBounds(
+                    FaceplateBelowGeometry::of(contentArea, true, controls.compiledPanelBandRows)
+                        .faceplate);
+            layoutParamGrid(controls.paramGrid, contentArea);
+            return;
+        }
+        if (controls.compiledPanelStackedFraction > 0.0f && controls.paramGridShown) {
+            if (controls.compiledPanelShown) {
+                const int height = juce::roundToInt(static_cast<float>(contentArea.getHeight()) *
+                                                    controls.compiledPanelStackedFraction);
+                controls.compiledPanel->setBounds(
+                    contentArea.removeFromBottom(height).reduced(14, 0).withTrimmedBottom(14));
+            }
+            layoutParamGrid(controls.paramGrid, contentArea);
+            return;
+        }
+        if (controls.compiledPanelShown) {
+            // Inset like the parameter grid: 14px at the outer edges, top and foot.
+            const bool beside = controls.paramGridShown;
+            const auto faceplate = beside ? contentArea.removeFromRight(controls.compiledPanelWidth)
+                                          : std::exchange(contentArea, {});
+            controls.compiledPanel->setBounds(faceplate.withTrimmedTop(10)
+                                                  .withTrimmedRight(14)
+                                                  .withTrimmedBottom(14)
+                                                  .withTrimmedLeft(beside ? 0 : 14));
+        }
 
-        layoutParamGrid(controls.paramGrid, contentArea);
+        if (controls.paramGridShown)
+            layoutParamGrid(controls.paramGrid, contentArea);
+        else
+            setVisibleIfPresent(controls.paramGrid, false);
         return;
     }
 

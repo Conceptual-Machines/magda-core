@@ -32,12 +32,14 @@
 #include "engine/AudioEngine.hpp"
 #include "layout/DeviceShellPainter.hpp"
 #include "layout/DeviceSlotHeaderLayout.hpp"
+#include "layout/FaceplateBelowGeometry.hpp"
 #include "layout/NodeHeaderStyles.hpp"
 #include "modulation/DeviceLinkCallbacks.hpp"
 #include "modulation/MacroPanelComponent.hpp"
 #include "modulation/ModsPanelComponent.hpp"
 #include "params/ParamHostComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
+#include "params/ParamWidgetSetup.hpp"
 #include "slot/DevicePresetMenu.hpp"
 #include "slot/DeviceSlotAnalyzerContextActions.hpp"
 #include "slot/DeviceSlotAutomationControls.hpp"
@@ -128,6 +130,38 @@ void DeviceSlotComponent::wireSharedModMacroLinkCallbacks(LinkTarget& target,
 void DeviceSlotComponent::setupGainMeterControls() {
     setupDeviceSlotGainMeterControls(*this, gainLabel_, levelMeter_, gainSlider_, mixKnob_, device_,
                                      [this]() { return nodePath_; });
+    if (nativeMixSlot() < 0)
+        return;
+    // A native effect's own mix slot, across its range, in place of the wrapper crossfade.
+    mixKnob_->setTooltip("Dry / Wet Mix");
+    mixKnob_->onValueChange = [this]() {
+        const int slot = nativeMixSlot();
+        const auto* param = device_.findParameterByIndex(slot);
+        if (param == nullptr)
+            return;
+        const double position = juce::jlimit(0.0, 1.0, mixKnob_->getValue());
+        applyDeviceSlotParameterValue(
+            device_, nodePath_, *paramGrid_, compiledPanel_.get(), traits_,
+            {.reloadParameterSlots = [this]() { updateParameterSlots(); },
+             .updateParamModulation = [this]() { updateParamModulation(); }},
+            slot, param->minValue + position * (param->maxValue - param->minValue));
+    };
+}
+
+int DeviceSlotComponent::nativeMixSlot() const {
+    const auto* spec = traits_.compiledPresentation;
+    return spec != nullptr && spec->mixSlot >= 0 && device_.findParameterByIndex(spec->mixSlot)
+               ? spec->mixSlot
+               : -1;
+}
+
+double DeviceSlotComponent::nativeMixPosition() const {
+    const auto* param = device_.findParameterByIndex(nativeMixSlot());
+    if (param == nullptr || param->maxValue <= param->minValue)
+        return 1.0;
+    return juce::jlimit(0.0, 1.0,
+                        static_cast<double>((param->currentValue - param->minValue) /
+                                            (param->maxValue - param->minValue)));
 }
 
 void DeviceSlotComponent::syncGainControlsFromDevice() {
@@ -142,6 +176,14 @@ DeviceSlotModMacroCommandCallbacks DeviceSlotComponent::modMacroCommandCallbacks
 }
 
 void DeviceSlotComponent::refreshMixKnobFromDevice(bool relayoutOnVisibilityChange) {
+    if (mixKnob_ != nullptr && nativeMixSlot() >= 0) {
+        const bool wasVisible = mixKnob_->isVisible();
+        mixKnob_->setVisible(true);
+        mixKnob_->setValue(nativeMixPosition(), juce::dontSendNotification);
+        if (relayoutOnVisibilityChange && !wasVisible)
+            resized();
+        return;
+    }
     refreshDeviceSlotMixKnobFromDevice(mixKnob_.get(), device_, relayoutOnVisibilityChange,
                                        [this]() { resized(); });
 }
@@ -492,10 +534,26 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     };
     addAndMakeVisible(*closeButton_);
     hideBaseDeleteButton();
+    paramsToggle_ = std::make_unique<magda::SvgButton>("Parameters", BinaryData::deviceparams_svg,
+                                                       BinaryData::deviceparams_svgSize);
+    paramsToggle_->setTooltip("Show the parameters");
+    paramsToggle_->onClick = [this]() { toggleDeviceView(false); };
+    addChildComponent(*paramsToggle_);
+    faceplateToggle_ = std::make_unique<magda::SvgButton>(
+        "Faceplate", BinaryData::devicefaceplate_svg, BinaryData::devicefaceplate_svgSize);
+    faceplateToggle_->setTooltip("Show the faceplate");
+    faceplateToggle_->onClick = [this]() { toggleDeviceView(true); };
+    addChildComponent(*faceplateToggle_);
+
     styleDeviceHeaderButtons();
 
     // Create parameter grid (owns slots + pagination).
-    paramGrid_ = std::make_unique<ParamHostComponent>(createDeviceSlotParamLayout(traits_));
+    faceplateStripSlots_ = resolveFaceplateStripSlots();
+    auto gridExcluded = faceplateStripSlots_;
+    if (const int mix = nativeMixSlot(); mix >= 0)
+        gridExcluded.push_back(mix);
+    paramGrid_ =
+        std::make_unique<ParamHostComponent>(createDeviceSlotParamLayout(traits_, gridExcluded));
     paramGrid_->setFooterPagination(true);
 
     footerPrevPage_ = makeNavArrowButton("Previous page", 0.5f);
@@ -525,6 +583,9 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         updateParameterPagination();
         updateParameterSlots();
         resized();
+        // A curated grid's columns set the slot's width.
+        if (onDeviceLayoutChanged)
+            onDeviceLayoutChanged();
     };
 
     // Wire up mod/macro linking callbacks on each slot
@@ -568,6 +629,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
 
     // Set initial mod/macro data for param slots
     updateParamModulation();
+
+    createFaceplateSlotControls();
 
     // Create custom UI for internal devices
     if (isInternalDevice()) {
@@ -629,8 +692,8 @@ void DeviceSlotComponent::layoutSideStrip(juce::Rectangle<int> strip) {
     auto area = strip.reduced(5, 6);
     const bool utility = isMidiUtilityDeviceSlot(traits_);
     // Dry/wet only means something on an audio effect.
-    const bool mix =
-        !utility && device_.deviceType == magda::DeviceType::Effect && hasWrapperMixPair();
+    const bool mix = !utility && device_.deviceType == magda::DeviceType::Effect &&
+                     (hasWrapperMixPair() || nativeMixSlot() >= 0);
     if (mixKnob_) {
         mixKnob_->setVisible(mix);
         if (mix) {
@@ -672,13 +735,16 @@ void DeviceSlotComponent::resizedShellFooter(juce::Rectangle<int> footer) {
 void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
     footerSeparator_ = footerInfoArea_ = midiLedArea_ = {};
     const bool paged = !footer.isEmpty() && paramGrid_ != nullptr && paramGrid_->paginates() &&
-                       !paramGrid_->showsOwnPagination();
+                       !paramGrid_->showsOwnPagination() && paramsShown() && !faceplateUnderGrid();
     for (auto* arrow : {footerPrevPage_.get(), footerNextPage_.get()})
         if (arrow != nullptr)
             arrow->setVisible(paged);
     footerPageLabel_.setVisible(paged);
-    if (footer.isEmpty())
+    if (footer.isEmpty()) {
+        paramsToggle_->setVisible(false);
+        faceplateToggle_->setVisible(false);
         return;
+    }
     // The header's button size, so a button styled for one fits the other.
     const auto size = getHeaderButtonSize();
     const int gap = getHeaderButtonGap();
@@ -691,6 +757,16 @@ void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
         else
             area.removeFromRight(gap);
     };
+
+    const bool faceplate = hasFaceplate();
+    paramsToggle_->setVisible(faceplate);
+    faceplateToggle_->setVisible(faceplate);
+    if (faceplate) {
+        paramsToggle_->setToggleState(paramsShown(), juce::dontSendNotification);
+        faceplateToggle_->setToggleState(faceplateShown(), juce::dontSendNotification);
+        place(*paramsToggle_, true);
+        place(*faceplateToggle_, true);
+    }
 
     const bool sidechain = scButton_ != nullptr && scButton_->isVisible();
     if (sidechain)
@@ -706,13 +782,191 @@ void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
         footerPrevPage_->setBounds(nav.removeFromLeft(16).withSizeKeepingCentre(12, 12));
         footerNextPage_->setBounds(nav.removeFromRight(16).withSizeKeepingCentre(12, 12));
         footerPageLabel_.setBounds(nav);
-    } else if (isInternalDevice() && !traits_.isDrumGrid) {
-        if (sidechain) {
-            area.setLeft(area.getX() - gap);
-            footerSeparator_ = area.removeFromLeft(13).withSizeKeepingCentre(1, 14);
-        }
-        footerInfoArea_ = area;
     }
+}
+
+bool DeviceSlotComponent::hasFaceplate() const {
+    return compiledPanel_ != nullptr && !compiledPanel_->wantsFullBody() && !faceplateUnderGrid();
+}
+
+bool DeviceSlotComponent::faceplateUnderGrid() const {
+    return traits_.compiledPresentation != nullptr &&
+           traits_.compiledPresentation->createLayout != nullptr;
+}
+
+bool DeviceSlotComponent::faceplateShown() const {
+    return !hasFaceplate() || device_.faceplateShown;
+}
+
+bool DeviceSlotComponent::paramsShown() const {
+    return !hasFaceplate() || device_.paramsShown || !device_.faceplateShown;
+}
+
+std::vector<int> DeviceSlotComponent::resolveFaceplateStripSlots() const {
+    const auto* spec = traits_.compiledPresentation;
+    if (spec == nullptr || spec->createPanel == nullptr || spec->columnMajorGrid ||
+        spec->createLayout != nullptr)
+        return {};
+    // The spec's list, else every control the grid would draw as a dropdown.
+    std::vector<int> candidates(spec->faceplateSlots.begin(), spec->faceplateSlots.end());
+    if (candidates.empty())
+        for (int slot = 0; slot < spec->layoutCellCount; ++slot) {
+            const auto* param = device_.findParameterByIndex(slot);
+            if (param != nullptr && !param->hidden &&
+                param->scale == magda::ParameterScale::Discrete && !param->choices.empty() &&
+                !wantsSegmentedChoices(*param))
+                candidates.push_back(slot);
+        }
+
+    // As many as fit across the faceplate; the rest stay in the grid.
+    std::vector<int> slots;
+    int room = faceplateWidth() - 14;  // Beside the knobs only its right edge is inset.
+    for (const int slot : candidates) {
+        const auto* param = device_.findParameterByIndex(slot);
+        if (param == nullptr)
+            continue;
+        const int width = faceplateSlotWidthFor(*param);
+        if (width > room)
+            break;
+        room -= width + 8;
+        slots.push_back(slot);
+    }
+    return slots;
+}
+
+void DeviceSlotComponent::createFaceplateSlotControls() {
+    const auto* spec = traits_.compiledPresentation;
+    if (spec == nullptr)
+        return;
+    for (const int slot : faceplateStripSlots_) {
+        const auto* param = device_.findParameterByIndex(slot);
+        FaceplateSlotControl control;
+        control.slot = slot;
+        if (param != nullptr && static_cast<int>(param->choices.size()) <= kMaxSegmentedChoices) {
+            control.segments = std::make_unique<magda::SegmentedChoice>();
+            control.segments->onChange = [this, slot](int index) {
+                writeFaceplateSlot(slot, index);
+            };
+        } else {
+            control.dropdown = std::make_unique<juce::ComboBox>();
+        }
+        addChildComponent(*control.component());
+        faceplateSlotControls_.push_back(std::move(control));
+    }
+    refreshFaceplateSlotControls();
+}
+
+void DeviceSlotComponent::refreshFaceplateSlotControls() {
+    for (auto& control : faceplateSlotControls_) {
+        const auto* param = device_.findParameterByIndex(control.slot);
+        if (!faceplateSlotShown(control))
+            continue;
+        if (control.segments != nullptr && isOffOnChoice(*param)) {
+            // An Off / On choice is one toggle under its own name, not two nameless segments.
+            control.segments->setToggle(param->name);
+            control.segments->setSelectedIndex(magda::ParameterUtils::choiceIndexForModelValue(
+                magda::ParameterModelValue{param->currentValue}, *param));
+        } else if (control.segments != nullptr) {
+            juce::StringArray options;
+            for (const auto& choice : param->choices)
+                options.add(choice);
+            control.segments->setOptions(options);
+            control.segments->setSelectedIndex(magda::ParameterUtils::choiceIndexForModelValue(
+                magda::ParameterModelValue{param->currentValue}, *param));
+        } else {
+            const int slot = control.slot;
+            configureDiscreteCombo(*control.dropdown, *param, [this, slot](double index) {
+                writeFaceplateSlot(slot, static_cast<int>(index));
+            });
+        }
+    }
+}
+
+void DeviceSlotComponent::writeFaceplateSlot(int slot, int choiceIndex) {
+    const auto* param = device_.findParameterByIndex(slot);
+    if (param == nullptr)
+        return;
+    const auto model = magda::ParameterUtils::modelValueForChoiceIndex(choiceIndex, *param);
+    applyDeviceSlotParameterValue(device_, nodePath_, *paramGrid_, compiledPanel_.get(), traits_,
+                                  {.reloadParameterSlots = [this]() { updateParameterSlots(); },
+                                   .updateParamModulation = [this]() { updateParamModulation(); }},
+                                  slot, model.value);
+    refreshFaceplateSlotControls();
+    resized();
+}
+
+bool DeviceSlotComponent::faceplateSlotShown(const FaceplateSlotControl& control) const {
+    // One choice is no choice: an engine that offers a single mode hides the control.
+    const auto* param = device_.findParameterByIndex(control.slot);
+    return param != nullptr && param->choices.size() > 1;
+}
+
+int DeviceSlotComponent::faceplateSlotControlWidth(const FaceplateSlotControl& control) const {
+    return control.segments != nullptr ? control.segments->getPreferredWidth() : kDropdownWidth;
+}
+
+int DeviceSlotComponent::faceplateSlotWidthFor(const magda::ParameterInfo& param) {
+    if (isOffOnChoice(param))
+        return magda::SegmentedChoice::preferredWidthFor(juce::StringArray(param.name));
+    if (static_cast<int>(param.choices.size()) > kMaxSegmentedChoices)
+        return kDropdownWidth;
+    juce::StringArray options;
+    for (const auto& choice : param.choices)
+        options.add(choice);
+    return magda::SegmentedChoice::preferredWidthFor(options);
+}
+
+void DeviceSlotComponent::layoutFaceplateSlotControls() {
+    constexpr int kStripHeight = 30;
+    const bool faceplateUp = compiledPanel_ != nullptr && !collapsed_ && faceplateShown() &&
+                             compiledPanel_->component().isVisible();
+    auto strip = juce::Rectangle<int>();
+    for (const auto& control : faceplateSlotControls_) {
+        auto* component = control.component();
+        component->setVisible(faceplateUp && faceplateSlotShown(control));
+        if (!component->isVisible())
+            continue;
+        if (strip.isEmpty()) {
+            auto panel = compiledPanel_->component().getBounds();
+            strip = panel.removeFromTop(kStripHeight);
+            compiledPanel_->component().setBounds(panel.withTrimmedTop(4));
+        }
+        const int width = faceplateSlotControlWidth(control);
+        component->setBounds(strip.removeFromLeft(width).withSizeKeepingCentre(width, 24));
+        strip.removeFromLeft(8);
+    }
+}
+
+float DeviceSlotComponent::faceplateStackedFraction() const {
+    const auto* spec = traits_.compiledPresentation;
+    if (spec == nullptr || !spec->faceplateStacked || spec->visualMinFractionDenominator <= 0)
+        return 0.0f;
+    return static_cast<float>(spec->visualMinFractionNumerator) /
+           static_cast<float>(spec->visualMinFractionDenominator);
+}
+
+int DeviceSlotComponent::faceplateBandRows() const {
+    const auto* spec = traits_.compiledPresentation;
+    return spec != nullptr && !spec->bandSlots.empty() ? 1 : 0;
+}
+
+int DeviceSlotComponent::faceplateWidth() const {
+    const auto* spec = traits_.compiledPresentation;
+    return spec != nullptr && spec->faceplateWidth > 0 ? spec->faceplateWidth : FACEPLATE_WIDTH;
+}
+
+void DeviceSlotComponent::toggleDeviceView(bool faceplate) {
+    auto& shown = faceplate ? device_.faceplateShown : device_.paramsShown;
+    const bool other = faceplate ? device_.paramsShown : device_.faceplateShown;
+    if (!(shown && !other))  // One of the two always shows.
+        shown = !shown;
+    if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
+        live->faceplateShown = device_.faceplateShown;
+        live->paramsShown = device_.paramsShown;
+    }
+    resized();
+    if (onDeviceLayoutChanged)
+        onDeviceLayoutChanged();
 }
 
 void DeviceSlotComponent::refreshFooterPageControls() {
@@ -753,6 +1007,8 @@ void DeviceSlotComponent::styleDeviceHeaderButtons() {
     style(exportClipButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_POSITIVE);
     style(midiThruButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_POSITIVE);
     style(stepRecordButton_.get(), DeviceIcon::Action, ActiveTheme::STEP_RECORD);
+    style(paramsToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
+    style(faceplateToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     if (stepRecordButton_)
         stepRecordButton_->setNormalColor(ActiveTheme::STEP_RECORD);
     if (scButton_)
@@ -1020,7 +1276,15 @@ int DeviceSlotComponent::getPreferredWidth() const {
         drum_grid_slot::getPreferredContentWidth(traits_.isDrumGrid, customUI_.getDrumGridUI()));
     if (customWidth > 0)
         return getTotalWidth(customWidth) + meterExtra;
-    return getTotalWidth(getDynamicSlotWidth()) + meterExtra;
+    int contentWidth = getDynamicSlotWidth();
+    if (hasFaceplate() && faceplateBandRows() > 0)
+        contentWidth = !paramsShown()     ? faceplateWidth()
+                       : faceplateShown() ? FaceplateBelowGeometry::kColumnWidth + faceplateWidth()
+                                          : FaceplateBelowGeometry::kColumnWidth * 4;
+    else if (hasFaceplate() && faceplateStackedFraction() <= 0.0f)
+        contentWidth =
+            (paramsShown() ? contentWidth : 0) + (faceplateShown() ? faceplateWidth() : 0);
+    return getTotalWidth(contentWidth) + meterExtra;
 }
 
 void DeviceSlotComponent::showPresetMenu() {
@@ -1141,9 +1405,26 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
 
     // Update parameter slots with current parameter data for current page
     updateParameterSlots();
+    refreshFaceplateSlotControls();
 
     updateParamModulation();
     repaint();
+}
+
+ParamLinkContext DeviceSlotComponent::resolveCurveLinkContext() const {
+    const auto context = resolveDeviceSlotModulationContext(
+        nodePath_, getModsData(), getMacrosData(), selectedModIndex_, selectedMacroIndex_);
+    return {device_.id,
+            -1,
+            nodePath_,
+            context.deviceMods,
+            context.rackMods,
+            context.deviceMacros,
+            context.rackMacros,
+            context.trackMods,
+            context.trackMacros,
+            context.selectedModIndex,
+            context.selectedMacroIndex};
 }
 
 void DeviceSlotComponent::updateParamModulation() {
@@ -1159,17 +1440,7 @@ void DeviceSlotComponent::updateParamModulation() {
     if (compiledPanel_) {
         if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine())
             compiledPanel_->bindDevice(audioEngine->renderedDevice(nodePath_));
-        ParamLinkContext curveLinkContext{device_.id,
-                                          -1,
-                                          nodePath_,
-                                          context.deviceMods,
-                                          context.rackMods,
-                                          context.deviceMacros,
-                                          context.rackMacros,
-                                          context.trackMods,
-                                          context.trackMacros,
-                                          context.selectedModIndex,
-                                          context.selectedMacroIndex};
+        const auto curveLinkContext = resolveCurveLinkContext();
         compiledPanel_->updateFromDevice(device_, &curveLinkContext);
     }
 
@@ -1372,21 +1643,18 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
                  ? FaustMeterPanel::kPreferredHeight
                  : 0,
          .compiledPanel = compiledBodyPanel,
-         // Device spec: the display is 250px in Text, 200px in Knobs and
-         // Sliders, plus the 14px under it.
-         .compiledPanelPreferredHeight =
-             compiledPanel_ != nullptr
-                 ? (resolveControlStyle(device_.controlStyle) == ParamControlStyle::Text ? 250
-                                                                                         : 200) +
-                       14
-                 : 0,
-         .compiledPanelMinFractionNumerator = 0,
-         .compiledPanelMinFractionDenominator = 1,
+         .compiledPanelWidth = faceplateWidth(),
+         .compiledPanelBandRows = faceplateBandRows(),
+         .compiledPanelStackedFraction = faceplateStackedFraction(),
+         .compiledPanelUnderGrid = faceplateUnderGrid(),
+         .compiledPanelShown = faceplateShown(),
+         .paramGridShown = paramsShown(),
          .compiledPanelWantsFullBody = compiledPanel_ != nullptr && compiledPanel_->wantsFullBody(),
          .drumGridUI = customUI_.getDrumGridUI(),
          .activeCustomUI = activeCustomUI,
          .paramGrid = paramGrid_.get()},
         faustHeaderHeight());
+    layoutFaceplateSlotControls();
 
     if (auto* drumGrid = customUI_.getDrumGridUI(); drumGrid != nullptr && !footerArea_.isEmpty()) {
         drumGrid->setBounds(contentArea.withBottom(footerArea_.getBottom()));
@@ -1429,6 +1697,8 @@ void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
+    for (const auto& control : faceplateSlotControls_)
+        control.component()->setVisible(false);
     layoutCollapsedDeviceSlotControls(
         area, collapsedMeterArea_, traits_, device_, isInternalDevice(),
         {.levelMeter = stripsAnalysisChrome() ? nullptr : &levelMeter_,
@@ -1889,6 +2159,15 @@ void DeviceSlotComponent::refreshInlinePluginBindings() {
 }
 
 void DeviceSlotComponent::setupCustomUILinking() {
+    if (compiledPanel_ != nullptr) {
+        compiledPanel_->setLinkContextProvider(
+            [this]() { return std::optional{resolveCurveLinkContext()}; });
+        compiledPanel_->setOnPageRequested([this](int page) {
+            if (paramGrid_ != nullptr && paramGrid_->onPageSelected)
+                paramGrid_->onPageSelected(page);
+        });
+    }
+
     auto sliders = customUI_.getLinkableSliders();
     if (sliders.empty())
         return;
@@ -1933,9 +2212,13 @@ int DeviceSlotComponent::getDynamicSlotWidth() const {
     if (traits_.compiledPresentation != nullptr &&
         traits_.compiledPresentation->preferredSlotWidth > 0)
         return traits_.compiledPresentation->preferredSlotWidth;
-    // Eight 64px cells with the grid's 6px gaps and 10px padding.
+    // 64px cells with the grid's 6px gaps and 10px padding: a curated grid's own columns beside
+    // its faceplate, else eight; a faceplate that takes the whole body keeps the eight.
     constexpr int kCell = 64;
-    return kCell * PARAMS_PER_ROW + 6 * (PARAMS_PER_ROW - 1) + 2 * 10;
+    const int columns = hasFaceplate() && paramGrid_ != nullptr && paramGrid_->getCellsPerRow() > 0
+                            ? paramGrid_->getCellsPerRow()
+                            : PARAMS_PER_ROW;
+    return kCell * columns + 6 * (columns - 1) + 2 * 10;
 }
 
 // =============================================================================
@@ -1969,7 +2252,10 @@ double DeviceSlotComponent::currentMixPosition() const {
 }
 
 void DeviceSlotComponent::syncMixKnobFromDevice() {
-    syncDeviceSlotMixKnobFromDevice(mixKnob_.get(), device_);
+    if (mixKnob_ != nullptr && nativeMixSlot() >= 0)
+        mixKnob_->setValue(nativeMixPosition(), juce::dontSendNotification);
+    else
+        syncDeviceSlotMixKnobFromDevice(mixKnob_.get(), device_);
 }
 
 }  // namespace magda::daw::ui

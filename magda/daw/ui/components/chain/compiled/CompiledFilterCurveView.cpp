@@ -18,11 +18,12 @@ constexpr float kMaxFreq = 20000.0f;
 constexpr float kMinDb = -60.0f;
 constexpr float kBaseMaxDb = 18.0f;
 constexpr float kHardMaxDb = 72.0f;
-constexpr float kPlotPadX = 8.0f;
+constexpr float kPlotPadX = 0.0f;  // The curve runs the graph's full width.
 constexpr float kPlotPadY = 6.0f;
 constexpr float kCurveSmoothing = 0.24f;
 constexpr int kAnimationPollMs = 16;  // ~60 Hz when something's actually moving
 constexpr int kIdlePollMs = 100;      // 10 Hz lazy poll to catch LFO retriggers
+constexpr int kSpectrumPollMs = 50;   // The EQ's rate, while a device feeds the spectrum
 
 float valueForSlot(const magda::DeviceInfo& device, int slotIndex, float fallback) {
     for (const auto& param : device.parameters) {
@@ -114,12 +115,17 @@ CompiledFilterCurveView::CompiledFilterCurveView(juce::String pluginId) {
     // the unified MagdaFilterCompiledPlugin holds all five engines and
     // exposes which one is active via slot kEngineSlot.
     family_ = FilterFamily::SVF;
+    // Read-only until a host hands it a parameter callback.
     setInterceptsMouseClicks(false, false);
 }
 
 void CompiledFilterCurveView::setCompiledPlugin(
     std::shared_ptr<magda::daw::audio::compiled::MagdaFilterCompiledPlugin> plugin) {
+    // The slot rebinds on every modulation refresh; only a different device restarts the traces.
+    if (plugin == compiledPlugin_)
+        return;
     compiledPlugin_ = std::move(plugin);
+    spectrum_.reset();
 }
 
 void CompiledFilterCurveView::setRawState(int engine, int modeIndex, float cutoffHz,
@@ -158,15 +164,7 @@ void CompiledFilterCurveView::setRawState(int engine, int modeIndex, float cutof
 void CompiledFilterCurveView::updateFromDevice(const magda::DeviceInfo& device,
                                                const ParamLinkContext* linkContext) {
     deviceSnapshot_ = device;
-    // Hold onto the last non-null link context: the slider-drag callback
-    // calls updateFromDevice(device_) without one, but we still need the
-    // cached mods/macros to compute simulated modulation correctly. The
-    // full-refresh path (DeviceSlotComponent::updateParamModulation) keeps
-    // it current whenever mods/macros change.
-    if (linkContext != nullptr) {
-        hasLinkContext_ = true;
-        linkContext_ = *linkContext;
-    }
+    juce::ignoreUnused(linkContext);  // Read fresh through linkContextProvider_.
 
     updateTargetValues();
 
@@ -195,7 +193,8 @@ void CompiledFilterCurveView::updateFromDevice(const magda::DeviceInfo& device,
 
 void CompiledFilterCurveView::updateTargetValues() {
     using FilterFamily = CompiledFilterCurveView::FilterFamily;
-    const ParamLinkContext* linkContext = hasLinkContext_ ? &linkContext_ : nullptr;
+    const auto resolved = linkContextProvider_ ? linkContextProvider_() : std::nullopt;
+    const ParamLinkContext* linkContext = resolved ? &*resolved : nullptr;
     const float cutoff =
         modulatedValueForSlot(deviceSnapshot_, 0, cutoffHz_, linkContext, compiledPlugin_.get());
     const float resonance =
@@ -217,11 +216,12 @@ void CompiledFilterCurveView::updateTargetValues() {
 }
 
 bool CompiledFilterCurveView::hasActiveCurveLinks() const {
-    if (!hasLinkContext_)
+    const auto resolved = linkContextProvider_ ? linkContextProvider_() : std::nullopt;
+    if (!resolved)
         return false;
 
     for (int slotIndex : {0, 1, 2}) {
-        auto slotContext = linkContext_;
+        auto slotContext = *resolved;
         slotContext.paramIndex = slotIndex;
         if (hasActiveLinks(slotContext))
             return true;
@@ -232,6 +232,9 @@ bool CompiledFilterCurveView::hasActiveCurveLinks() const {
 void CompiledFilterCurveView::timerCallback() {
     if (compiledPlugin_ != nullptr || hasActiveCurveLinks())
         updateTargetValues();
+    if (compiledPlugin_ != nullptr)
+        spectrum_.update(compiledPlugin_->getPreSpectrumTapBuffer(),
+                         compiledPlugin_->getPostSpectrumTapBuffer());
 
     cutoffHz_ = nextSmoothedFrequency(cutoffHz_, targetCutoffHz_);
     resonance_ = nextSmoothedValue(resonance_, targetResonance_);
@@ -249,8 +252,8 @@ void CompiledFilterCurveView::timerCallback() {
         // macro change, automation movement) wakes us back up promptly, but we
         // don't keep redrawing at 60 Hz with nothing to show.
         if (compiledPlugin_ != nullptr) {
-            if (getTimerInterval() != kIdlePollMs)
-                startTimer(kIdlePollMs);
+            if (getTimerInterval() != kSpectrumPollMs)
+                startTimer(kSpectrumPollMs);
         } else if (!hasActiveCurveLinks()) {
             stopTimer();
         }
@@ -284,15 +287,20 @@ CompiledFilterCurveView::FilterMode CompiledFilterCurveView::modeForIndex() cons
 }
 
 float CompiledFilterCurveView::qValue() const {
+    // The engines' own exponential ranges (faust_dsp/compiled/filter).
+    const auto exponential = [this](float low, float high) {
+        return low * std::pow(high / low, resonance_);
+    };
     switch (family_) {
         case FilterFamily::SVF:
-            return 0.5f + resonance_ * 11.5f;
+            return exponential(0.5f, 40.0f);
         case FilterFamily::Ladder:
             return 0.6f + resonance_ * 9.4f;
-        case FilterFamily::Korg35:
         case FilterFamily::Oberheim:
+            return exponential(0.5f, 30.0f);
+        case FilterFamily::Korg35:
         case FilterFamily::SallenKey:
-            return 0.7f + resonance_ * 9.3f;
+            return exponential(0.7f, 10.0f);
     }
     return 1.0f;
 }
@@ -329,18 +337,16 @@ float CompiledFilterCurveView::responseDbAt(float frequencyHz) const {
 
 void CompiledFilterCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.06f));
-    g.fillRect(bounds);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG));
+    g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
 
-    auto plot = bounds.toFloat().reduced(kPlotPadX, kPlotPadY);
+    const auto plot = plotBounds();
+    plotArea_ = plot;
     if (plot.getWidth() < 8.0f || plot.getHeight() < 8.0f)
         return;
 
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.55f));
-    g.drawRect(plot, 1.0f);
-
-    auto font = FontManager::getInstance().getUIFont(7.0f);
-    g.setFont(font);
+    auto& fonts = FontManager::getInstance();
+    g.setFont(fonts.getMonoFont(9.0f));
 
     struct FreqLine {
         float freq;
@@ -351,14 +357,12 @@ void CompiledFilterCurveView::paint(juce::Graphics& g) {
 
     for (const auto& line : freqLines) {
         const float x = plot.getX() + freqToX(line.freq, plot.getWidth(), minPlotFrequencyHz_);
-        g.setColour(
-            ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(line.label ? 0.27f : 0.14f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_GRID));
         g.drawVerticalLine(static_cast<int>(std::round(x)), plot.getY(), plot.getBottom());
         if (line.label != nullptr) {
-            g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.45f));
-            g.drawText(line.label, static_cast<int>(x) - 14,
-                       static_cast<int>(plot.getBottom()) - 11, 28, 10,
-                       juce::Justification::centred);
+            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+            g.drawText(line.label, static_cast<int>(x) + 4, static_cast<int>(plot.getBottom()) - 14,
+                       40, 12, juce::Justification::centredLeft);
         }
     }
 
@@ -378,15 +382,21 @@ void CompiledFilterCurveView::paint(juce::Graphics& g) {
 
     for (float db : {-24.0f, -12.0f, 0.0f, 12.0f}) {
         const float y = plot.getY() + dbToY(db, plot.getHeight(), maxDb);
-        g.setColour(
-            ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(db == 0.0f ? 0.46f : 0.16f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_GRID));
         g.drawHorizontalLine(static_cast<int>(std::round(y)), plot.getX(), plot.getRight());
     }
 
     juce::Path fillPath;
     juce::Path curvePath;
 
+    if (compiledPlugin_ != nullptr)
+        spectrum_.draw(g, plot, compiledPlugin_->getSampleRate(), minPlotFrequencyHz_, kMaxFreq,
+                       [&plot, this](float hz) {
+                           return plot.getX() + freqToX(hz, plot.getWidth(), minPlotFrequencyHz_);
+                       });
+
     const float zeroY = plot.getY() + dbToY(0.0f, plot.getHeight(), maxDb);
+    bool curveBroken = true;
     for (int i = 0; i < samples; ++i) {
         const float t = static_cast<float>(i) / static_cast<float>(samples - 1);
         const float x = plot.getX() + t * plot.getWidth();
@@ -394,12 +404,19 @@ void CompiledFilterCurveView::paint(juce::Graphics& g) {
             plot.getY() + dbToY(responseDbs[static_cast<size_t>(i)], plot.getHeight(), maxDb);
 
         if (i == 0) {
-            curvePath.startNewSubPath(x, y);
             fillPath.startNewSubPath(x, zeroY);
             fillPath.lineTo(x, y);
         } else {
-            curvePath.lineTo(x, y);
             fillPath.lineTo(x, y);
+        }
+        // Below the floor the response is clamped to the bottom edge; the line breaks there.
+        if (responseDbs[static_cast<size_t>(i)] <= kMinDb) {
+            curveBroken = true;
+        } else if (curveBroken) {
+            curvePath.startNewSubPath(x, y);
+            curveBroken = false;
+        } else {
+            curvePath.lineTo(x, y);
         }
     }
     fillPath.lineTo(plot.getRight(), zeroY);
@@ -416,16 +433,110 @@ void CompiledFilterCurveView::paint(juce::Graphics& g) {
     const float cutoffX = plot.getX() + freqToX(cutoffHz_, plot.getWidth(), minPlotFrequencyHz_);
     g.setColour(accent.withAlpha(0.45f));
     g.drawVerticalLine(static_cast<int>(std::round(cutoffX)), plot.getY(), plot.getBottom());
+
+    if (onParameterChanged_ == nullptr)
+        return;
+
+    // The handle rides the curve at the cutoff.
+    const float handleY =
+        juce::jlimit(plot.getY(), plot.getBottom(),
+                     plot.getY() + dbToY(responseDbAt(cutoffHz_), plot.getHeight(), maxDb));
+    const auto handle = juce::Rectangle<float>(12.0f, 12.0f).withCentre({cutoffX, handleY});
+    g.setColour(dragging_ ? accent : ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG));
+    g.fillEllipse(handle);
+    g.setColour(accent);
+    g.drawEllipse(handle, 2.0f);
+
+    const auto cutoffText = cutoffHz_ >= 1000.0f
+                                ? juce::String(cutoffHz_ / 1000.0f, 1) + " kHz"
+                                : juce::String(juce::roundToInt(cutoffHz_)) + " Hz";
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+    g.setFont(fonts.getMonoFont(11.0f));
+    g.drawText("CUTOFF " + cutoffText + juce::String(juce::CharPointer_UTF8(" \xc2\xb7 RES ")) +
+                   juce::String(resonance_ * 100.0f, 1) + "%",
+               plot.withTrimmedTop(6.0f).withTrimmedRight(10.0f).withHeight(14.0f),
+               juce::Justification::centredRight, false);
+}
+
+juce::Rectangle<float> CompiledFilterCurveView::plotBounds() const {
+    return getLocalBounds().toFloat().reduced(kPlotPadX, kPlotPadY);
+}
+
+void CompiledFilterCurveView::setFromHandle(float x, float resonance) {
+    using Filter = magda::daw::audio::compiled::MagdaFilterCompiledPlugin;
+    const auto plot = plotBounds();
+    const float cutoff = juce::jlimit(kMinCutoffHz, kMaxFreq,
+                                      xToFreq(juce::jlimit(0.0f, plot.getWidth(), x - plot.getX()),
+                                              plot.getWidth(), minPlotFrequencyHz_));
+    resonance = juce::jlimit(0.0f, 1.0f, resonance);
+    cutoffHz_ = targetCutoffHz_ = cutoff;
+    resonance_ = targetResonance_ = resonance;
+    onParameterChanged_(Filter::kCutoffSlot, cutoff);
+    onParameterChanged_(Filter::kResonanceSlot, resonance);
+    repaint();
+}
+
+void CompiledFilterCurveView::mouseDown(const juce::MouseEvent& e) {
+    if (onParameterChanged_ == nullptr || !plotBounds().contains(e.position))
+        return;
+    dragging_ = true;
+    dragStartResonance_ = resonance_;
+    setFromHandle(e.position.x, resonance_);
+}
+
+void CompiledFilterCurveView::mouseDrag(const juce::MouseEvent& e) {
+    if (!dragging_)
+        return;
+    // Resonance follows the drag up and down, across the plot's height.
+    const float rise = -static_cast<float>(e.getDistanceFromDragStartY()) /
+                       juce::jmax(1.0f, plotBounds().getHeight());
+    setFromHandle(e.position.x, dragStartResonance_ + rise);
+}
+
+void CompiledFilterCurveView::mouseUp(const juce::MouseEvent&) {
+    dragging_ = false;
+    repaint();
+}
+
+void CompiledFilterCurveView::mouseDoubleClick(const juce::MouseEvent&) {
+    using Filter = magda::daw::audio::compiled::MagdaFilterCompiledPlugin;
+    if (onParameterChanged_ == nullptr)
+        return;
+    for (const int slot : {Filter::kCutoffSlot, Filter::kResonanceSlot})
+        if (const auto* param = deviceSnapshot_.findParameterByIndex(slot))
+            onParameterChanged_(slot, param->defaultValue);
+}
+
+void CompiledFilterCurveView::mouseWheelMove(const juce::MouseEvent& e,
+                                             const juce::MouseWheelDetails& wheel) {
+    using Filter = magda::daw::audio::compiled::MagdaFilterCompiledPlugin;
+    if (onParameterChanged_ == nullptr) {
+        juce::Component::mouseWheelMove(e, wheel);
+        return;
+    }
+    drive_ = targetDrive_ = juce::jlimit(0.0f, 1.0f, drive_ + wheel.deltaY * 0.25f);
+    onParameterChanged_(Filter::kDriveSlot, drive_);
+    repaint();
 }
 
 const CompiledPresentationSpec& getMagdaFilterPresentation() {
+    using Filter = magda::daw::audio::compiled::MagdaFilterCompiledPlugin;
+    // Cutoff and resonance keep knobs beside the handle, where modulation links them;
+    // mode and engine sit on top of the faceplate.
+    static constexpr int kKnobSlots[] = {Filter::kCutoffSlot, Filter::kResonanceSlot,
+                                         Filter::kDriveSlot, Filter::kLimitSlot};
+    static constexpr int kFaceplateSlots[] = {Filter::kModeSlot, Filter::kEngineSlot};
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName,
-        .layoutCellCount = 6,
-        .layoutCellsPerRow = 6,
+        .layoutCellCount = Filter::kHostSlotCount,
+        .layoutCellsPerRow = Filter::kHostSlotCount,
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledFilterCurveView>(pluginId);
         },
+        .knobSlots = kKnobSlots,
+        .faceplateWidth = 460,
+        .faceplateSlots = kFaceplateSlots,
+        .mixSlot = Filter::kMixSlot,
     };
     return kSpec;
 }

@@ -21,7 +21,7 @@ mode   = nentry("Mode [idx:3] [style:menu{'LP':0;'BP':1;'HP':2;'Notch':3}]",
 
 // `ve.oberheim*` take a log-normalised 0..1 control - invert to Hz.
 nf = log(cutoff / 20.0) / log(1000.0);
-q  = 0.5 + res * 9.5;  // Oberheim SEM Q ~0.5..10
+q  = 0.5 * pow(60.0, res);  // Oberheim SEM Q 0.5..30, exponential
 
 drivenIn(x) = (1.0 - drive) * x
             + drive * (ma.tanh(4.0 * x) / ma.tanh(4.0));

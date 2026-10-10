@@ -7,6 +7,7 @@
 #include "../../layout/LayoutConfig.hpp"
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "ui/components/common/MagdaAlertWindow.hpp"
 
 namespace magda {
 
@@ -297,7 +298,8 @@ void MarkerLaneComponent::showLaneMenu(juce::Point<int> screenPosition) {
 }
 
 void MarkerLaneComponent::showRenameMarkerDialog(int markerId, const TimelineMarker& marker) {
-    auto* alert = new juce::AlertWindow("Rename Marker", "", juce::MessageBoxIconType::NoIcon);
+    auto* alert =
+        new magda::MagdaAlertWindow("Rename Marker", "", juce::MessageBoxIconType::NoIcon);
     alert->addTextEditor("name", marker.name, "Name:");
     alert->addButton("Rename", 1, juce::KeyPress(juce::KeyPress::returnKey));
     alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
@@ -337,7 +339,7 @@ void MarkerLaneComponent::showEditPositionDialog(int markerId, const TimelineMar
         (marker.positionBeats - static_cast<double>(bar - 1) * beatsPerBar) / sigBeat + 1.0;
 
     auto* alert =
-        new juce::AlertWindow("Edit Marker Position", "", juce::MessageBoxIconType::NoIcon);
+        new magda::MagdaAlertWindow("Edit Marker Position", "", juce::MessageBoxIconType::NoIcon);
     alert->addTextEditor("bar", juce::String(bar), "Bar:");
     alert->addTextEditor("beat", juce::String(beatInBar, 3), "Beat:");
     alert->addButton("Set", 1, juce::KeyPress(juce::KeyPress::returnKey));

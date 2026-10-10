@@ -1,5 +1,6 @@
 #pragma once
 
+#include <magda/sdk/tap/SampleRing.hpp>
 #include <string>
 #include <vector>
 
@@ -26,7 +27,8 @@ class Filter : public CompiledEffect {
     static constexpr int kEngineSlot = 3;
     static constexpr int kModeSlot = 4;
     static constexpr int kLimitSlot = 5;
-    static constexpr int kHostSlotCount = 6;
+    static constexpr int kMixSlot = 6;
+    static constexpr int kHostSlotCount = 7;
     enum class FilterFamily { SVF, Ladder, Korg35, Oberheim, SallenKey, Diode };
     static constexpr int kEngineCount = 6;
 
@@ -38,6 +40,17 @@ class Filter : public CompiledEffect {
     }
     std::vector<std::string> engineModeChoices() const override {
         return modeChoicesForEngine(activeEngine());
+    }
+
+    /// The signal in and out, mixed to mono, for the faceplate's spectrum.
+    const engine::SampleRing& getPreSpectrumTapBuffer() const {
+        return preSpectrumTap_;
+    }
+    const engine::SampleRing& getPostSpectrumTapBuffer() const {
+        return postSpectrumTap_;
+    }
+    double getSampleRate() const {
+        return currentSampleRate();
     }
 
     std::string devicePluginId() const override {
@@ -61,7 +74,18 @@ class Filter : public CompiledEffect {
     }
     int slotForDspIdx(int idx) const override;
     void writeExtraZones(int engineIndex) override;
+    void beforeCompute(sdk::ProcessContext& context, int engineIndex) override;
     void afterCompute(sdk::ProcessContext& context, int engineIndex) override;
+    void onPrepare(double sampleRate, int maximumBlockSize) override;
+
+  private:
+    // The dry signal for Mix, one block per channel, sized at prepare so the audio thread
+    // never allocates; channels past the capacity stay wet.
+    static constexpr int kMaxDryChannels = 8;
+    std::vector<float> dry_;
+    int dryFrames_ = 0;
+    engine::SampleRing preSpectrumTap_{8192};
+    engine::SampleRing postSpectrumTap_{8192};
 };
 
 }  // namespace magda::devices::faust

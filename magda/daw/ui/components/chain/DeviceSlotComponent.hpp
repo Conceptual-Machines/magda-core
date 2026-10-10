@@ -20,6 +20,7 @@
 #include "slot/DeviceSlotHeaderControls.hpp"
 #include "slot/DeviceSlotTraits.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
+#include "ui/components/common/SegmentedChoice.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
 #include "ui/components/mixer/MidiNoteStrip.hpp"
@@ -66,6 +67,8 @@ class DeviceSlotComponent : public NodeComponent,
     static constexpr int HEADER_BAR_HEIGHT = 28;
     static constexpr int SIDE_STRIP_WIDTH = 40;
     static constexpr int FOOTER_BAR_HEIGHT = 24;
+    /// A faceplate stands beside the parameters at the multiband rack's width.
+    static constexpr int FACEPLATE_WIDTH = 380;
     DeviceSlotComponent(const magda::DeviceInfo& device);
     ~DeviceSlotComponent() override;
 
@@ -275,6 +278,45 @@ class DeviceSlotComponent : public NodeComponent,
     void layoutSideStrip(juce::Rectangle<int> strip);
     void layoutFooter(juce::Rectangle<int> footer);
     void refreshFooterPageControls();
+
+    /// The footer's parameters and faceplate toggles, for a device with a faceplate.
+    std::unique_ptr<magda::SvgButton> paramsToggle_, faceplateToggle_;
+    bool hasFaceplate() const;
+    bool faceplateShown() const;
+    bool paramsShown() const;
+    void toggleDeviceView(bool faceplate);
+    /// The faceplate's width: its spec's, or the default.
+    int faceplateWidth() const;
+    /// Rows of band knobs over a faceplate-below device's faceplate (one); 0 for any other.
+    int faceplateBandRows() const;
+    /// Share of the height a stacked faceplate takes under the grid; 0 when it stands beside.
+    float faceplateStackedFraction() const;
+    /// The faceplate spans the body with the device's own knob layout on top of it.
+    bool faceplateUnderGrid() const;
+
+    /// A spec's faceplate-strip controls: segments for a short choice, else a dropdown.
+    struct FaceplateSlotControl {
+        int slot = -1;
+        std::unique_ptr<magda::SegmentedChoice> segments;
+        std::unique_ptr<juce::ComboBox> dropdown;
+        juce::Component* component() const {
+            return segments != nullptr ? static_cast<juce::Component*>(segments.get())
+                                       : dropdown.get();
+        }
+    };
+    std::vector<FaceplateSlotControl> faceplateSlotControls_;
+    std::vector<int> faceplateStripSlots_;
+    /// The spec's strip slots, else every slot the grid would draw as a dropdown.
+    std::vector<int> resolveFaceplateStripSlots() const;
+    void createFaceplateSlotControls();
+    void refreshFaceplateSlotControls();
+    void writeFaceplateSlot(int slot, int choiceIndex);
+    int faceplateSlotControlWidth(const FaceplateSlotControl& control) const;
+    static int faceplateSlotWidthFor(const magda::ParameterInfo& param);
+    static constexpr int kDropdownWidth = 72;
+    bool faceplateSlotShown(const FaceplateSlotControl& control) const;
+    /// Carve the faceplate-strip controls off the top of the laid-out faceplate.
+    void layoutFaceplateSlotControls();
     std::unique_ptr<juce::TextButton> deltaButton_;
     std::unique_ptr<magda::SvgButton> exportClipButton_;  // Export pattern/chords as MIDI clip
     std::unique_ptr<magda::SvgButton> randomButton_;      // Step-sequencer pattern randomize
@@ -332,6 +374,9 @@ class DeviceSlotComponent : public NodeComponent,
     void refreshMixKnobFromDevice(bool relayoutOnVisibilityChange);
     bool hasWrapperMixPair() const;
     double currentMixPosition() const;
+    /// The device's own mix slot from its spec, or -1; and where its value sits, 0..1.
+    int nativeMixSlot() const;
+    double nativeMixPosition() const;
     void syncMixKnobFromDevice();
     int lastMidiNote_ = -1;
     std::array<int, 32> lastChordNotes_{};
@@ -382,6 +427,8 @@ class DeviceSlotComponent : public NodeComponent,
     void bindFaustHeader();
     void refreshInlinePluginBindings();
     void setupCustomUILinking();
+    /// The device's mods and macros as they stand now, for its faceplate.
+    ParamLinkContext resolveCurveLinkContext() const;
     template <typename LinkTarget>
     void wireSharedModMacroLinkCallbacks(LinkTarget& target, bool expandMacroPanelOnDirectLink);
 

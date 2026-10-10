@@ -17,10 +17,9 @@ drive  = hslider("Drive [idx:2]", 0.0, 0.0, 1.0, 0.001)
        : msm.smooth(ba.tau2pole(0.02));
 
 // ve.diodeLadder expects a 0..1 normalised cutoff and a Q value in the
-// example range 0.7..20. Keep the top below the demo max so resonance is
-// musical under modulation rather than constantly near runaway.
+// example range 0.7..20; exponential across it.
 normFreq = min(1.0, max(0.0, cutoff / (ma.SR * 0.5)));
-q = 0.7 + res * 15.3;
+q = 0.7 * pow(20.0 / 0.7, res);
 
 drivenIn(x) = (1.0 - drive) * x
             + drive * (ma.tanh(4.0 * x) / ma.tanh(4.0));

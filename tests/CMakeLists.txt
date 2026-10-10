@@ -105,6 +105,7 @@ set(TEST_SOURCES
     # directly - along with FontManager, which its themed button LookAndFeel pulls in.
     ../magda/daw/ui/components/chain/custom_ui/LevelsUI.cpp
     ../magda/daw/ui/themes/FontManager.cpp
+    ../magda/daw/ui/components/common/MagdaAlertWindow.cpp
     devices/test_chain_node_path_drag.cpp
     # ChainNodePathDrag builds into magda_daw_app, so magda_tests needs it directly.
     ../magda/daw/ui/components/chain/ChainNodePathDrag.cpp
@@ -593,6 +594,9 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES dsp/test_faust_instrument_voice_modes.cpp)
     list(APPEND TEST_SOURCES dsp/test_faust_instrument_tempo.cpp)
     list(APPEND TEST_SOURCES dsp/test_faust_sidechain.cpp)
+    list(APPEND TEST_SOURCES dsp/test_filter_spectrum_taps.cpp)
+    list(APPEND TEST_SOURCES dsp/test_multiband_upward.cpp)
+    list(APPEND TEST_SOURCES ui/test_magda_alert_window.cpp)
     list(APPEND TEST_SOURCES devices/test_mutable_add_not_replace.cpp)
     list(APPEND TEST_SOURCES devices/test_sampler_relocate.cpp)
 
@@ -855,6 +859,7 @@ target_sources(magda_juce_tests PRIVATE
     ui/test_popout_window_shortcuts_juce.cpp
     ../magda/daw/ui/components/timeline/TimeRuler.cpp
     ../magda/daw/ui/components/chain/compiled/CompiledMultibandCurveView.cpp
+    ../magda/daw/ui/components/chain/layout/DeviceShellPainter.cpp
     ../magda/daw/ui/dialogs/ParameterConfigDialog.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorInit.cpp
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorSections.cpp
@@ -890,6 +895,7 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/components/common/InternalFileDrag.cpp
     ../magda/daw/ui/themes/CursorManager.cpp
     ../magda/daw/ui/themes/FontManager.cpp
+    ../magda/daw/ui/components/common/MagdaAlertWindow.cpp
     ui/test_arrangement_row_alignment_juce.cpp
     ui/test_arrangement_vertical_scroll_juce.cpp
     agents/test_chord_progression_converter_juce.cpp

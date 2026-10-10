@@ -98,9 +98,21 @@ class ParamHostComponent : public juce::Component, private magda::ConfigListener
     int getUsedRowCount() const {
         return usedRows_;
     }
+    int getCellsPerRow() const {
+        return cellsPerRow_;
+    }
     /// Height layoutContent() spends on padding and pagination before the
     /// first row of cells.
     int getChromeHeight() const;
+
+    bool placesOwnCells() const {
+        return layout_->placesOwnCells();
+    }
+
+    /// Whether a faceplate-below layout's faceplate shows, which decides where its cells go.
+    void setFaceplateBelowShown(bool shown) {
+        faceplateBelowShown_ = shown;
+    }
 
     /// Pin the row height instead of dividing the bounds by getRowCount().
     /// Lets a caller hand the grid only the rows it uses while the cells keep
@@ -160,6 +172,9 @@ class ParamHostComponent : public juce::Component, private magda::ConfigListener
     // body without the cells shrinking to match.
     int usedRows_ = 0;
     int rowHeight_ = 0;
+    // Rows a curated grid is sized for, so a short grid keeps the plug-in grid's row height.
+    int minRows_ = 0;
+    bool faceplateBelowShown_ = true;
     bool footerPagination_ = false;
     int allocatedCells_ = 0;
     std::optional<ParamControlStyle> lastAppliedStyle_;

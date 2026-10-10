@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <memory>
 #include <ranges>
 #include <utility>
 
@@ -128,13 +129,16 @@ bool runInsertCapturePass(AudioEngine& engine, double startSec, double endSec,
     if (service == nullptr)
         return true;
 
-    juce::AlertWindow window("Capturing External Hardware",
-                             "Playing the bounce range in real time to record the "
-                             "external instrument/FX returns.",
-                             juce::MessageBoxIconType::InfoIcon);
+    // Built by the look-and-feel so it takes the app's alert style without linking UI code.
+    std::unique_ptr<juce::AlertWindow> alert(
+        juce::LookAndFeel::getDefaultLookAndFeel().createAlertWindow(
+            "Capturing External Hardware",
+            "Playing the bounce range in real time to record the external instrument/FX returns.",
+            {}, {}, {}, juce::MessageBoxIconType::InfoIcon, 0, nullptr));
+    auto& window = *alert;
     double progress = 0.0;
     window.addProgressBarComponent(progress);
-    window.addButton("Cancel", 0);
+    window.addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
 
     struct ProgressTimer : juce::Timer {
         InsertRenderCapture& service;

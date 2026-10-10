@@ -368,6 +368,14 @@ void CompiledCompressorCurveView::mouseWheelMove(const juce::MouseEvent& e,
 }
 
 const CompiledPresentationSpec& getMagdaCompressorPresentation() {
+    using Comp = magda::daw::audio::compiled::MagdaCompressorCompiledPlugin;
+    // One row per job: the curve, its timing, the level, then the detector.
+    static constexpr int kKnobSlots[] = {
+        Comp::kThresholdSlot, Comp::kRatioSlot,        Comp::kKneeSlot,  //
+        Comp::kAttackSlot,    Comp::kReleaseSlot,      -1,               //
+        Comp::kMakeupSlot,    Comp::kOutputSlot,       -1,               //
+        Comp::kLinkSlot,      Comp::kSidechainHpfSlot, Comp::kFbffSlot,
+    };
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaCompressorCompiledPlugin::xmlTypeName,
         .layoutCellCount = 15,
@@ -375,6 +383,10 @@ const CompiledPresentationSpec& getMagdaCompressorPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledCompressorCurveView>(pluginId);
         },
+        .knobSlots = kKnobSlots,
+        .knobColumns = 3,
+        .faceplateWidth = 420,  // Room for its four choices across the top.
+        .mixSlot = magda::daw::audio::compiled::MagdaCompressorCompiledPlugin::kMixSlot,
     };
     return kSpec;
 }

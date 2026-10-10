@@ -216,6 +216,12 @@ void CompiledSaturatorCurveView::paint(juce::Graphics& g) {
 }
 
 const CompiledPresentationSpec& getMagdaSaturatorPresentation() {
+    using Saturator = magda::daw::audio::compiled::MagdaSaturatorCompiledPlugin;
+    // Mode sits on the faceplate it reshapes; the rest stay as knobs.
+    static constexpr int kKnobSlots[] = {Saturator::kDriveSlot, Saturator::kBiasSlot,
+                                         Saturator::kToneSlot, Saturator::kMixSlot,
+                                         Saturator::kOutputSlot};
+    static constexpr int kFaceplateSlots[] = {Saturator::kModeSlot};
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaSaturatorCompiledPlugin::xmlTypeName,
         .layoutCellCount = 6,
@@ -223,6 +229,9 @@ const CompiledPresentationSpec& getMagdaSaturatorPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledSaturatorCurveView>(pluginId);
         },
+        .knobSlots = kKnobSlots,
+        .faceplateSlots = kFaceplateSlots,
+        .mixSlot = magda::daw::audio::compiled::MagdaSaturatorCompiledPlugin::kMixSlot,
     };
     return kSpec;
 }

@@ -31,7 +31,8 @@ magda::DeviceInfo makeMultibandDevice(float lowXoHz) {
 }
 
 void paintOnce(View& view) {
-    view.setSize(360, view.getPreferredHeight());
+    // Wide enough for the band editor and globals to leave the graph its room, as in a slot.
+    view.setSize(1100, view.getPreferredHeight());
     juce::Image image{juce::Image::ARGB, view.getWidth(), view.getHeight(), true};
     juce::Graphics graphics{image};
     view.paint(graphics);

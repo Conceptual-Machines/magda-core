@@ -283,6 +283,9 @@ void CompiledRingModCurveView::paint(juce::Graphics& g) {
 }
 
 const CompiledPresentationSpec& getMagdaRingModPresentation() {
+    using RingMod = magda::daw::audio::compiled::MagdaRingModCompiledPlugin;
+    // Shape and source change what the faceplate draws; sync and division join the rate knob.
+    static constexpr int kFaceplateSlots[] = {RingMod::kShapeSlot, RingMod::kSourceSlot};
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaRingModCompiledPlugin::xmlTypeName,
         .layoutCellCount = 7,
@@ -290,6 +293,8 @@ const CompiledPresentationSpec& getMagdaRingModPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledRingModCurveView>(pluginId);
         },
+        .faceplateSlots = kFaceplateSlots,
+        .mixSlot = magda::daw::audio::compiled::MagdaRingModCompiledPlugin::kMixSlot,
     };
     return kSpec;
 }

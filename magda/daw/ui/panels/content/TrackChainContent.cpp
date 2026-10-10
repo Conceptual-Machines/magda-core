@@ -41,6 +41,7 @@
 #include "ui/components/chain/modulation/MacroPanelComponent.hpp"
 #include "ui/components/chain/modulation/ModsPanelComponent.hpp"
 #include "ui/components/chain/modulation/ModulatorEditorPanel.hpp"
+#include "ui/components/common/MagdaAlertWindow.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
@@ -3249,7 +3250,7 @@ void TrackChainContent::showSaveTrackPresetDialog() {
     const juce::String defaultName =
         currentPresetName_.isNotEmpty() ? currentPresetName_ : (track ? track->name : "Track");
 
-    auto* aw = new juce::AlertWindow(
+    auto* aw = new magda::MagdaAlertWindow(
         "Save MAGDA Track Preset",
         R"(Enter a name for this track preset (use "/" to nest, e.g. "Bass/808 Stack"):)",
         juce::MessageBoxIconType::NoIcon);

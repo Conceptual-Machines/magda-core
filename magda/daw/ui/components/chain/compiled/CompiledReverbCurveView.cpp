@@ -217,6 +217,7 @@ const CompiledPresentationSpec& getMagdaReverbPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledReverbCurveView>(pluginId);
         },
+        .mixSlot = magda::daw::audio::compiled::MagdaReverbCompiledPlugin::kMixSlot,
     };
     return kSpec;
 }

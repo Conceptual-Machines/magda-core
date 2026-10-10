@@ -112,8 +112,8 @@ namespace {
 void applyFilled(ParamSlotComponent& slot, const magda::ParameterInfo& param, const ParamCell& cell,
                  const std::function<void(int paramIndex, double value)>& onValueChanged) {
     slot.setParamIndex(cell.targetParamIndex);
-    slot.setParamName(param.name);
     slot.setParameterInfo(param);
+    slot.setParamName(cell.label.isNotEmpty() ? cell.label : param.name);
     slot.setParamValue(param.currentValue);
     slot.setShowEmptyText(false);
     slot.setEnabled(cell.enabled);
@@ -393,6 +393,17 @@ void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::
         return;
     }
 
+    if (layout_->placesOwnCells()) {
+        // The grid spans the faceplate it leaves room for; clicks there pass through to it.
+        setInterceptsMouseClicks(false, true);
+        for (int i = 0; i < cellCount_; ++i) {
+            paramSlots_[i]->setFonts(labelFont, valueFont);
+            paramSlots_[i]->setBounds(layout_->cellBounds(i, area, faceplateBelowShown_));
+        }
+        setPaginationVisible(false);
+        return;
+    }
+
     area.removeFromTop(2);
     juce::Rectangle<int> paginationArea;
     if (showsOwnPagination()) {
@@ -415,11 +426,15 @@ void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::
     constexpr int kPadding = 10;
     constexpr int kGap = 6;
     area = area.reduced(kPadding, kPadding - 2);
-    const int numRows = (cellCount_ + cellsPerRow_ - 1) / cellsPerRow_;
+    const int usedRows = (cellCount_ + cellsPerRow_ - 1) / cellsPerRow_;
+    const int numRows = std::max(usedRows, minRows_);
     const int cellWidth = (area.getWidth() - kGap * (cellsPerRow_ - 1)) / cellsPerRow_;
     const int cellHeight = rowHeight_ > 0 ? rowHeight_
                            : numRows > 0  ? (area.getHeight() - kGap * (numRows - 1)) / numRows
                                           : area.getHeight();
+    // A grid shorter than the rows it is sized for stands centred in the body.
+    if (rowHeight_ <= 0 && usedRows < numRows)
+        area.removeFromTop((area.getHeight() - usedRows * cellHeight - kGap * (usedRows - 1)) / 2);
 
     for (int i = 0; i < cellCount_; ++i) {
         const int row = i / cellsPerRow_;
@@ -455,15 +470,19 @@ void ParamHostComponent::applyControlStyle() {
         paramSlots_[i]->setControlStyle(style);
 
     // Plug-ins: 8 columns in Text and Knobs (4 and 3 rows), 6 in Sliders.
-    // Curated native layouts keep their cells at 7 columns, 4 in Sliders.
+    // Curated native layouts: balanced rows of at most the layout's columns, sized as those rows.
     const bool sliders = style == ParamControlStyle::Sliders;
+    const int styleRows = style == ParamControlStyle::Knobs ? 3 : 4;
     const int previousCount = cellCount_;
     const int previousColumns = cellsPerRow_;
-    if (layout_->setShape(sliders ? 6 : 8, style == ParamControlStyle::Knobs ? 3 : 4)) {
+    minRows_ = layout_->minRowsForStyle(styleRows);
+    if (layout_->setShape(sliders ? 6 : 8, styleRows)) {
         cellCount_ = layout_->cellCount();
         cellsPerRow_ = layout_->cellsPerRow();
     } else if (layout_->reflowsForControlStyle() && cellCount_ > 0) {
-        cellsPerRow_ = sliders ? 4 : 7;
+        const int maxColumns = std::max(1, layout_->maxColumns());
+        const int rows = (cellCount_ + maxColumns - 1) / maxColumns;
+        cellsPerRow_ = (cellCount_ + rows - 1) / rows;
     }
     const bool styleChanged = !lastAppliedStyle_.has_value() || *lastAppliedStyle_ != style;
     lastAppliedStyle_ = style;

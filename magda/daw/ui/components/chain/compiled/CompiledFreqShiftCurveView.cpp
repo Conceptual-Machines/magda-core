@@ -214,6 +214,7 @@ const CompiledPresentationSpec& getMagdaFreqShiftPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledFreqShiftCurveView>(pluginId);
         },
+        .mixSlot = magda::daw::audio::compiled::MagdaFreqShiftCompiledPlugin::kMixSlot,
     };
     return kSpec;
 }

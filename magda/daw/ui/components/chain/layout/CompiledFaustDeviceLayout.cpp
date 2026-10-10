@@ -2,6 +2,8 @@
 
 #include <cmath>
 
+#include "layout/FaceplateBelowGeometry.hpp"
+
 namespace magda::daw::ui {
 
 namespace {
@@ -27,6 +29,18 @@ bool gateEnabled(const magda::DeviceInfo& device, const magda::ParameterInfo& pa
 
 }  // namespace
 
+juce::Rectangle<int> CompiledFaustDeviceLayout::cellBounds(int cell, juce::Rectangle<int> area,
+                                                           bool faceplateShown) const {
+    // One row: each band's knobs side by side within its third, low to high.
+    const int perBand = juce::jmax(1, (cellCount_ - leadingColumnCells_) / kBands);
+    const auto geometry = FaceplateBelowGeometry::of(area, faceplateShown, 1);
+    if (cell < leadingColumnCells_)
+        return FaceplateBelowGeometry::cell(geometry.globals, cell, 1, leadingColumnCells_);
+    const int index = cell - leadingColumnCells_;
+    const auto third = FaceplateBelowGeometry::cell(geometry.bands, index / perBand, kBands, 1);
+    return FaceplateBelowGeometry::cell(third.expanded(10, 8), index % perBand, perBand, 1);
+}
+
 int CompiledFaustDeviceLayout::totalPages(const magda::DeviceInfo&) const {
     return 1;
 }
@@ -46,7 +60,11 @@ ParamCell CompiledFaustDeviceLayout::cellFor(const magda::DeviceInfo& device, in
     // at paramIndex (col * numRows + row), so consecutive paramIndex values
     // run top-to-bottom instead of left-to-right. Used by the 8-band EQ so
     // each band's {Type, Freq, Gain, Q} forms a vertical strip.
-    int paramSlotIdx = cellIndex;
+    int paramSlotIdx = knobSlots_.empty() ? cellIndex : knobSlots_[static_cast<size_t>(cellIndex)];
+    if (paramSlotIdx < 0) {  // A gap that starts the next group on a row of its own.
+        cell.mode = ParamCell::Mode::Hidden;
+        return cell;
+    }
     if (columnMajor_ && cellsPerRow_ > 0) {
         const int numRows = (cellCount_ + cellsPerRow_ - 1) / cellsPerRow_;
         const int row = cellIndex / cellsPerRow_;

@@ -1,17 +1,26 @@
 // Full component regression check. Run with run_chain_interaction_check.py.
+#include <array>
 #include <functional>
 #include <iostream>
+#include <map>
 #include <stdexcept>
 #include <typeinfo>
 
 #include "audio/AudioThumbnailManager.hpp"
+#include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "core/ClipManager.hpp"
 #include "core/ModulatorEngine.hpp"
 #include "core/TrackManager.hpp"
 #include "ui/components/chain/DeviceSlotComponent.hpp"
 #include "ui/components/chain/RackComponent.hpp"
+#include "ui/components/chain/compiled/CompiledEqBandLayout.hpp"
+#include "ui/components/chain/compiled/CompiledFilterCurveView.hpp"
+#include "ui/components/chain/compiled/CompiledMultibandBandLayout.hpp"
+#include "ui/components/chain/layout/CompiledFaustDeviceLayout.hpp"
+#include "ui/components/chain/layout/FaceplateBelowGeometry.hpp"
 #include "ui/components/chain/layout/StandardDeviceLayout.hpp"
 #include "ui/components/chain/slot/DeviceSlotSelectionHandling.hpp"
+#include "ui/components/common/SegmentedChoice.hpp"
 #include "ui/themes/FontManager.hpp"
 
 using namespace magda;
@@ -195,6 +204,204 @@ int main() {
             applyDeviceSlotParamSelectionChange(firstPath, {}, grid, {});
             for (int i = 0; i < grid.getSlotCount(); ++i)
                 check(!grid.getSlot(i)->isSelected(), "cleared selection left a cell highlighted");
+        }
+        {
+            // A faceplate reads its links afresh: a chain rebuild frees the arrays a
+            // kept context named, and the drop that causes it updates the faceplate.
+            const auto filterPath = ChainNodePath::topLevelDevice(track, 1000);
+            DeviceInfo filter;
+            filter.id = 1000;
+            filter.pluginId = magda::daw::audio::compiled::MagdaFilterCompiledPlugin::xmlTypeName;
+            auto mods = std::make_unique<ModArray>(1);
+            (*mods)[0].links.push_back({ControlTarget::pluginParam(filterPath, 0), 0.5f});
+            int resolved = 0;
+            CompiledFilterCurveView faceplate(filter.pluginId);
+            faceplate.setLinkContextProvider([&]() {
+                ++resolved;
+                ParamLinkContext context;
+                context.deviceId = filter.id;
+                context.devicePath = filterPath;
+                context.deviceMods = mods.get();
+                return std::optional{context};
+            });
+            faceplate.updateFromDevice(filter);
+            faceplate.updateFromDevice(filter);
+            mods = std::make_unique<ModArray>(*mods);  // The rebuild: old storage freed.
+            const int before = resolved;
+            faceplate.updateFromDevice(filter);
+            check(resolved > before, "the faceplate read its links without resolving them");
+        }
+        {
+            // The Filter faceplate is a handle: across sets cutoff, up sets resonance,
+            // scroll sets drive.
+            using Filter = magda::daw::audio::compiled::MagdaFilterCompiledPlugin;
+            CompiledFilterCurveView faceplate(Filter::xmlTypeName);
+            faceplate.setSize(600, 240);
+            std::map<int, float> written;
+            faceplate.setOnParameterChanged([&](int slot, float value) { written[slot] = value; });
+            bool takesClicks = false;
+            bool childrenTakeClicks = false;
+            faceplate.getInterceptsMouseClicks(takesClicks, childrenTakeClicks);
+            check(takesClicks, "an interactive faceplate ignores the mouse");
+            const auto event = [&](juce::Point<float> at, juce::Point<float> downAt) {
+                return juce::MouseEvent(juce::Desktop::getInstance().getMainMouseSource(), at, {},
+                                        0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &faceplate, &faceplate,
+                                        juce::Time::getCurrentTime(), downAt,
+                                        juce::Time::getCurrentTime(), 1, false);
+            };
+            const juce::Point<float> start{200.0f, 150.0f};
+            faceplate.mouseDown(event(start, start));
+            const float lowCutoff = written[Filter::kCutoffSlot];
+            const float startResonance = written[Filter::kResonanceSlot];
+            faceplate.mouseDrag(event({400.0f, 90.0f}, start));
+            faceplate.mouseUp(event({400.0f, 90.0f}, start));
+            check(written[Filter::kCutoffSlot] > lowCutoff, "dragging right did not raise cutoff");
+            check(written[Filter::kResonanceSlot] > startResonance,
+                  "dragging up did not raise resonance");
+            juce::MouseWheelDetails wheel{};
+            wheel.deltaY = 0.5f;
+            faceplate.mouseWheelMove(event(start, start), wheel);
+            check(written[Filter::kDriveSlot] > 0.0f, "scrolling up did not raise drive");
+        }
+        {
+            // Multiband: one band's ten knobs a page, then the whole-device five.
+            using MB = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin;
+            const CompiledMultibandBandLayout layout;
+            DeviceInfo model;
+            for (int index = 0; index < 38; ++index) {
+                ParameterInfo parameter;
+                parameter.paramIndex = index;
+                model.parameters.push_back(parameter);
+            }
+            const auto slotOf = [&](int cell, int page) {
+                return model
+                    .parameters[static_cast<size_t>(
+                        layout.cellFor(model, cell, page).paramArrayIndex)]
+                    .paramIndex;
+            };
+            check(slotOf(0, 1) == MB::kMidUpperThresholdSlot && slotOf(9, 2) == MB::kHighGainSlot &&
+                      slotOf(10, 0) == MB::kAmountSlot && slotOf(14, 2) == MB::kOutputSlot,
+                  "a multiband page does not show its band's knobs, then the device's");
+            const juce::Rectangle<int> body(0, 0, 1040, 300);
+            const auto geometry = MultibandEditorGeometry::of(body);
+            for (int cell = 0; cell < layout.cellCount(); ++cell) {
+                const auto knob = layout.cellBounds(cell, body, true);
+                check((geometry.knobs.contains(knob) || geometry.globals.contains(knob)) &&
+                          !knob.intersects(geometry.plot) && !knob.intersects(geometry.tabs),
+                      "a multiband knob left the editor and the device column");
+            }
+        }
+        {
+            // EQ: one band at a time; each page is a band, and its knobs sit in the editor.
+            using Eq = magda::daw::audio::compiled::MagdaEqCompiledPlugin;
+            const CompiledEqBandLayout layout;
+            DeviceInfo model;
+            for (int index = 0; index < Eq::kHostSlotCount; ++index) {
+                ParameterInfo parameter;
+                parameter.paramIndex = index;
+                model.parameters.push_back(parameter);
+            }
+            const auto slotOf = [&](int cell, int page) {
+                return model
+                    .parameters[static_cast<size_t>(
+                        layout.cellFor(model, cell, page).paramArrayIndex)]
+                    .paramIndex;
+            };
+            check(slotOf(0, 4) == Eq::bandSlot(4, Eq::kBandFreqOffset) &&
+                      slotOf(1, 4) == Eq::bandSlot(4, Eq::kBandGainOffset) &&
+                      slotOf(2, 4) == Eq::bandSlot(4, Eq::kBandQOffset) &&
+                      slotOf(3, 4) == Eq::kOutputSlot,
+                  "an EQ page does not show its band's freq, gain and Q, then Output");
+            const juce::Rectangle<int> body(0, 0, 900, 420);
+            const auto geometry = EqBandEditorGeometry::of(body);
+            for (int cell = 0; cell < 4; ++cell) {
+                const auto knob = layout.cellBounds(cell, body, true);
+                check(geometry.editor.contains(knob) && !knob.intersects(geometry.plot) &&
+                          !knob.intersects(geometry.chips) &&
+                          !knob.intersects(geometry.editorControls),
+                      "an EQ knob left the band editor");
+            }
+        }
+        {
+            // Multiband: whole-device knobs in a left column, band knobs above the faceplate.
+            static constexpr int knobs[] = {0, 1, 2, 3, 4, 6, 9, 7, 10, 8, 11};
+            const CompiledFaustDeviceLayout layout(12, 3, false, nullptr, knobs, {}, 0, 5);
+            const juce::Rectangle<int> content(0, 0, 504, 300);
+            const auto faceplate = FaceplateBelowGeometry::of(content, true, 1).faceplate;
+            for (int cell = 0; cell < 5; ++cell)
+                check(layout.cellBounds(cell, content, true).getRight() <=
+                          FaceplateBelowGeometry::kColumnWidth,
+                      "a whole-device knob left the left column");
+            for (int cell = 5; cell < 11; ++cell) {
+                const auto bounds = layout.cellBounds(cell, content, true);
+                check(bounds.getBottom() <= faceplate.getY() && !bounds.intersects(faceplate),
+                      "a band knob overlaps the faceplate");
+            }
+            for (int cell = 5; cell < 10; ++cell)
+                check(layout.cellBounds(cell, content, true).getRight() <=
+                          layout.cellBounds(cell + 1, content, true).getX(),
+                      "the band knobs are not one row, low to high");
+        }
+        {
+            // The Compressor's four choices fit across its faceplate, Autogain as one toggle.
+            int strip = 0;
+            for (const auto& options :
+                 {juce::StringArray{"Clean", "Glue"}, juce::StringArray{"Peak", "RMS"},
+                  juce::StringArray{"Pre", "Post"}, juce::StringArray{"Autogain"}})
+                strip += SegmentedChoice::preferredWidthFor(options) + 8;
+            check(strip - 8 <= 420 - 14, "the Compressor's choices overrun its faceplate");
+        }
+        {
+            // A curated device's controls stand in balanced rows of at most two.
+            for (const auto [cells, columns] :
+                 {std::pair{3, 2}, std::pair{6, 2}, std::pair{7, 2}, std::pair{15, 2}}) {
+                ParamHostComponent grid(std::make_unique<CompiledFaustDeviceLayout>(cells, cells));
+                DeviceInfo model;
+                for (int index = 0; index < cells; ++index) {
+                    ParameterInfo parameter;
+                    parameter.paramIndex = index;
+                    parameter.name = "Control " + juce::String(index);
+                    model.parameters.push_back(parameter);
+                }
+                grid.updateParameterSlots(model, 0, {});
+                const auto message = "a curated grid of " + std::to_string(cells) +
+                                     " controls has " + std::to_string(grid.getCellsPerRow()) +
+                                     " columns, not " + std::to_string(columns);
+                check(grid.getCellsPerRow() == columns, message.c_str());
+                {
+                    // A faceplate-first device's knobs wrap the same way: four make a 2 x 2.
+                    static constexpr int knobs[] = {0, 1, 2, 5};
+                    ParamHostComponent grid(
+                        std::make_unique<CompiledFaustDeviceLayout>(6, 6, false, nullptr, knobs));
+                    DeviceInfo model;
+                    for (int index = 0; index < 6; ++index) {
+                        ParameterInfo parameter;
+                        parameter.paramIndex = index;
+                        parameter.name = "Control " + juce::String(index);
+                        model.parameters.push_back(parameter);
+                    }
+                    grid.updateParameterSlots(model, 0, {});
+                    check(grid.getCellsPerRow() == 2 && grid.getSlotCount() == 4,
+                          "four faceplate-first knobs are not a 2 x 2");
+                }
+                {
+                    // A device's own mix lives in the side strip, so its grid drops it.
+                    ParamHostComponent grid(std::make_unique<CompiledFaustDeviceLayout>(
+                        6, 6, false, nullptr, std::span<const int>{}, std::array{4}));
+                    DeviceInfo model;
+                    for (int index = 0; index < 6; ++index) {
+                        ParameterInfo parameter;
+                        parameter.paramIndex = index;
+                        parameter.name = "Control " + juce::String(index);
+                        model.parameters.push_back(parameter);
+                    }
+                    grid.updateParameterSlots(model, 0, {});
+                    check(grid.getSlotCount() == 5, "the mix slot stayed in the grid");
+                    for (int cell = 0; cell < grid.getSlotCount(); ++cell)
+                        check(grid.getSlot(cell)->getParamIndex() != 4,
+                              "the mix slot stayed in the grid");
+                }
+            }
         }
         {
             // A multiband rack: faceplate on top, bands high to low split by their crossovers.

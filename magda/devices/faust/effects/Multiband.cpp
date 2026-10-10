@@ -32,24 +32,16 @@ float ratioSlope(float ratio) {
 
 float dynamicsGainDb(float levelDb, float lowerThresholdDb, float upperThresholdDb,
                      float belowRatio, float aboveRatio, float rangeDb, float amount) {
-    const float lower = std::min(lowerThresholdDb, upperThresholdDb);
-    const float upper = std::max(lowerThresholdDb, upperThresholdDb);
-
-    float anchorDb = 0.0f;
-    float ratio = 1.0f;
-    if (levelDb < lower) {
-        anchorDb = lower;
-        ratio = belowRatio;
-    } else if (levelDb > upper) {
-        anchorDb = upper;
-        ratio = aboveRatio;
-    } else {
-        return 0.0f;
-    }
-
-    const float targetLevelDb = anchorDb + (levelDb - anchorDb) * ratioSlope(ratio);
-    const float unclampedGainDb = targetLevelDb - levelDb;
-    return std::clamp(unclampedGainDb, -rangeDb, rangeDb) * amount;
+    // The stages are independent: crossed thresholds put a level under both, as in OTT.
+    auto stageGainDb = [levelDb](float anchorDb, float ratio) {
+        return anchorDb + (levelDb - anchorDb) * ratioSlope(ratio) - levelDb;
+    };
+    float gainDb = 0.0f;
+    if (levelDb < lowerThresholdDb)
+        gainDb += stageGainDb(lowerThresholdDb, belowRatio);
+    if (levelDb > upperThresholdDb)
+        gainDb += stageGainDb(upperThresholdDb, aboveRatio);
+    return std::clamp(gainDb, -rangeDb, rangeDb) * amount;
 }
 
 }  // namespace
@@ -291,7 +283,7 @@ void Multiband::onReset() {
     for (auto& crossover : crossovers_)
         crossover.reset();
     for (auto& channel : envelopes_)
-        channel.fill(0.0f);
+        channel.fill(kMinLevelDb);
     for (auto& channel : gainDb_)
         channel.fill(0.0f);
 }
@@ -380,11 +372,14 @@ void Multiband::processAudio(sdk::ProcessContext& context) {
             for (int band = 0; band < 3; ++band) {
                 const auto idx = static_cast<size_t>(band);
                 const float drivenBand = bands[idx] * bandInputGains[idx];
-                const float detector = std::abs(drivenBand);
-                const float envCoeff = detector > env[idx] ? attackCoeffs[idx] : releaseCoeffs[idx];
-                env[idx] = envCoeff * env[idx] + (1.0f - envCoeff) * detector;
+                // Log-domain detector: release sets how fast the level falls in dB, so a quiet
+                // tail after a loud hit is lifted within the release, not several of them.
+                const float detectorDb = std::max(kMinLevelDb, gainToDb(std::abs(drivenBand)));
+                const float envCoeff =
+                    detectorDb > env[idx] ? attackCoeffs[idx] : releaseCoeffs[idx];
+                env[idx] = envCoeff * env[idx] + (1.0f - envCoeff) * detectorDb;
 
-                const float levelDb = std::max(kMinLevelDb, gainToDb(env[idx]));
+                const float levelDb = env[idx];
                 const float targetGainDb =
                     dynamicsGainDb(levelDb, lowerThresholds[idx], upperThresholds[idx],
                                    belowRatios[idx], aboveRatios[idx], ranges[idx], amount);

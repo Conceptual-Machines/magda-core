@@ -54,6 +54,8 @@ constexpr int kMaxSegmentedChoices = 4;
  * short enough to stay legible. Everything else falls back to the dropdown.
  */
 bool wantsSegmentedChoices(const magda::ParameterInfo& info);
+/// A two-way choice named Off and On, drawn as a switch rather than two choices.
+bool isOffOnChoice(const magda::ParameterInfo& info);
 
 /**
  * @brief Apply theme colours to one segment of a choice row.

@@ -23,40 +23,45 @@ void ClipInspector::resized() {
         bounds.removeFromTop(4);
     }
 
-    // Clip name header row (outside viewport): colour spine on the left
-    // (doubles as the colour swatch), name, ghost badge, view|type indicator
-    // chip (background painted in paint()), enable/disable switch.
+    // Header: colour spine or chip, name, ghost badge, enable/disable power. The view and
+    // type icons sit faintly in the name field's right end, as a watermark.
     {
-        const int iconSize = 20;
+        const int iconSize = 18;
         const int gap = 6;
         auto headerRow = bounds.removeFromTop(24);
 
-        colourSwatch_->setBounds(headerRow.removeFromLeft(6));
-        headerRow.removeFromLeft(gap);
-
+        // As in the track inspector: a spine on the left, or a chip beside the power button
+        // when the name field already carries the colour.
+        if (!nameFilled_) {
+            colourSwatch_->setBounds(headerRow.removeFromLeft(6));
+            headerRow.removeFromLeft(gap);
+        }
         if (clipEnabledToggle_->isVisible()) {
             clipEnabledToggle_->setBounds(headerRow.removeFromRight(28));
             headerRow.removeFromRight(gap);
         }
-
-        const int cellW = 24;
-        const bool hasViewIcon = clipViewIcon_->isVisible();
-        auto chip = headerRow.removeFromRight(cellW * (hasViewIcon ? 2 : 1));
-        viewTypeChipBounds_ = chip;
-        if (hasViewIcon) {
-            clipViewIcon_->setBounds(
-                chip.removeFromLeft(cellW).withSizeKeepingCentre(iconSize, iconSize));
+        if (nameFilled_) {
+            colourSwatch_->setBounds(headerRow.removeFromRight(24));
+            headerRow.removeFromRight(gap);
         }
-        clipTypeIcon_->setBounds(
-            chip.removeFromLeft(cellW).withSizeKeepingCentre(iconSize, iconSize));
-        headerRow.removeFromRight(gap);
-
         if (clipGhostIcon_->isVisible()) {
-            clipGhostIcon_->setBounds(
-                headerRow.removeFromRight(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+            clipGhostIcon_->setBounds(headerRow.removeFromRight(20).withSizeKeepingCentre(20, 20));
             headerRow.removeFromRight(4);
         }
         clipNameValue_.setBounds(headerRow);
+
+        auto watermark = headerRow.reduced(6, 0);
+        int watermarkWidth = 0;
+        for (auto* icon : {clipTypeIcon_.get(), clipViewIcon_.get()}) {
+            if (!icon->isVisible())
+                continue;
+            icon->setBounds(
+                watermark.removeFromRight(iconSize).withSizeKeepingCentre(iconSize, iconSize));
+            icon->setAlpha(0.35f);
+            watermark.removeFromRight(4);
+            watermarkWidth += iconSize + 4;
+        }
+        clipNameValue_.setBorderSize(juce::BorderSize<int>(1, 6, 1, 6 + watermarkWidth));
     }
     bounds.removeFromTop(8);
 
@@ -107,7 +112,8 @@ void ClipInspector::resized() {
         }
 
         auto valueRow = addRow(valueHeight);
-        clipPositionIcon_->setBounds(valueRow.removeFromLeft(iconSize));
+        clipPositionIcon_->setBounds(
+            valueRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
         valueRow.removeFromLeft(gap);
         clipStartValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
         valueRow.removeFromLeft(gap);

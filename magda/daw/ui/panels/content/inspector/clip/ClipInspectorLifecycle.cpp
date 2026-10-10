@@ -14,17 +14,14 @@ void ClipInspector::onDeactivated() {
 void ClipInspector::paint(juce::Graphics& g) {
     g.fillAll(ActiveTheme::getBackgroundColour());
 
-    // Segmented chip behind the view|type indicator icons in the name row.
-    if (clipTypeIcon_ && clipTypeIcon_->isVisible() && !viewTypeChipBounds_.isEmpty()) {
-        auto chip = viewTypeChipBounds_.toFloat();
-        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
-        g.fillRoundedRectangle(chip, 4.0f);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-        g.drawRoundedRectangle(chip.reduced(0.5f), 4.0f, 1.0f);
-        if (clipViewIcon_ && clipViewIcon_->isVisible()) {
-            g.drawLine(chip.getCentreX(), chip.getY() + 4.0f, chip.getCentreX(),
-                       chip.getBottom() - 4.0f, 1.0f);
-        }
+    // The name field, rounded like the chips beside it, as in the track inspector.
+    if (clipNameValue_.isVisible()) {
+        const auto field = clipNameValue_.getBounds().toFloat();
+        const float radius = juce::jlimit(2.0f, 8.0f, field.getHeight() * 0.15f);
+        g.setColour(nameFill_);
+        g.fillRoundedRectangle(field, radius);
+        g.setColour(nameOutline_);
+        g.drawRoundedRectangle(field.reduced(0.5f), radius, 1.0f);
     }
 }
 
@@ -35,13 +32,8 @@ void ClipInspector::lookAndFeelChanged() {
     const auto border = ActiveTheme::getColour(ActiveTheme::BORDER);
     const auto accent = ActiveTheme::getAccentColour();
 
-    clipNameValue_.setColour(juce::Label::textColourId, primary);
-    clipNameValue_.setColour(juce::Label::backgroundColourId, surface);
+    applyHeaderStyle();
 
-    if (clipTypeIcon_)
-        clipTypeIcon_->setNormalColor(secondary);
-    if (clipViewIcon_)
-        clipViewIcon_->setNormalColor(secondary);
     if (clipGhostIcon_) {
         clipGhostIcon_->setNormalColor(secondary);
         clipGhostIcon_->setNormalBackgroundColor(surface);
@@ -118,6 +110,34 @@ void ClipInspector::lookAndFeelChanged() {
     saveLibraryButton_.setColour(juce::TextButton::textColourOffId, primary);
 
     repaint();
+}
+
+void ClipInspector::applyHeaderStyle() {
+    const auto* clip = selectedClipIds_.size() == 1
+                           ? magda::ClipManager::getInstance().getClip(primaryClipId())
+                           : nullptr;
+    const bool fullBar = magda::Config::getInstance().getTrackColourStyle() == "full" &&
+                         clip != nullptr && clip->colour != juce::Colour(0xFF444444);
+    if (nameFilled_ != fullBar) {
+        nameFilled_ = fullBar;
+        resized();
+    }
+    nameFill_ = fullBar ? magda::deriveTrackSwatch(clip->colour)
+                        : ActiveTheme::getColour(ActiveTheme::SURFACE);
+    nameOutline_ = fullBar ? juce::Colours::transparentBlack : ActiveTheme::getBorderColour();
+    clipNameValue_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
+    clipNameValue_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
+    clipNameValue_.setColour(juce::Label::textColourId,
+                             fullBar ? juce::Colours::white : ActiveTheme::getTextColour());
+    // The watermark icons take the name text's colour, so they read on a filled field too.
+    for (auto* icon : {clipTypeIcon_.get(), clipViewIcon_.get()})
+        icon->setNormalColor(fullBar ? juce::Colours::white
+                                     : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    repaint();
+}
+
+void ClipInspector::configChanged() {
+    applyHeaderStyle();
 }
 
 }  // namespace magda::daw::ui

@@ -179,7 +179,6 @@ TEST_CASE("The Sidechain device keeps its curve", "[preset-envelope]") {
     daw::audio::applyDeviceDeclaration(device);
     REQUIRE(device.mods.size() == 1);
     REQUIRE_FALSE(device.mods[0].curvePoints.empty());
-    device.sidechainPort = monoAudioSidechain;
 
     requireSameFromBothFormats(scratch, device);
 
@@ -187,7 +186,8 @@ TEST_CASE("The Sidechain device keeps its curve", "[preset-envelope]") {
     REQUIRE(loaded.mods.size() == 1);
     CHECK(loaded.mods[0].curvePoints.size() == device.mods[0].curvePoints.size());
     CHECK(loaded.mods[0].invertOutput);
-    CHECK(loaded.sidechainPort.declared());
+    // Its trigger is MIDI from another track, so it declares no port, and a load keeps that.
+    CHECK(loaded.sidechainPort == device.sidechainPort);
 }
 
 TEST_CASE("A Sampler's file is an asset relative to the preset", "[preset-envelope]") {

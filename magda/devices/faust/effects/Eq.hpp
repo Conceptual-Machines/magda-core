@@ -116,8 +116,6 @@ class Eq : public CompiledEffect {
   private:
     bool curveCollapsed_ = true;
 
-    std::vector<float> preTapScratch_;
-    std::vector<float> postTapScratch_;
     engine::SampleRing preSpectrumTap_{8192};
     engine::SampleRing postSpectrumTap_{8192};
     std::array<std::vector<BiquadState>, kBandCount> biquadStates_;

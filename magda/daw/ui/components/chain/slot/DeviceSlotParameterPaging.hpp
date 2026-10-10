@@ -17,6 +17,14 @@ struct DeviceSlotParameterPagingCallbacks {
     std::function<void()> repaint;
 };
 
+/// Write one parameter as the grid does, from whichever control set it.
+void applyDeviceSlotParameterValue(magda::DeviceInfo& device, const magda::ChainNodePath& nodePath,
+                                   ParamHostComponent& paramGrid,
+                                   CompiledDevicePanel* compiledPanel,
+                                   const DeviceSlotTraits& traits,
+                                   const DeviceSlotParameterPagingCallbacks& callbacks,
+                                   int paramIndex, double value);
+
 void updateDeviceSlotParameterSlots(magda::DeviceInfo& device, const magda::ChainNodePath& nodePath,
                                     ParamHostComponent& paramGrid,
                                     CompiledDevicePanel* compiledPanel,

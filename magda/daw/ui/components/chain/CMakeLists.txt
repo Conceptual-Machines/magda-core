@@ -67,6 +67,7 @@ target_sources(magda_daw_app PRIVATE
     compiled/CompiledClipperCurveView.cpp
     compiled/CompiledReverbCurveView.cpp
     compiled/CompiledEqCurveView.cpp
+    compiled/SpectrumOverlay.cpp
     compiled/CompiledDimensionView.cpp
     compiled/CompiledPitchEditorView.cpp
     compiled/CompiledBitcrusherEditorView.cpp

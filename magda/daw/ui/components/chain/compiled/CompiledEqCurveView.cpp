@@ -5,8 +5,11 @@
 
 #include "../../../utils/CurveLabelLayout.hpp"
 #include "audio/plugins/compiled/MagdaEqCompiledPlugin.hpp"
+#include "compiled/CompiledEqBandLayout.hpp"
 #include "core/GestureRouter.hpp"
+#include "layout/DeviceShellPainter.hpp"
 #include "ui/themes/ActiveTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -20,7 +23,6 @@ constexpr int kPathSamples = 200;
 constexpr float kFreqMinHz = 20.0f;
 constexpr float kFreqMaxHz = 20000.0f;
 constexpr float kGainAxisDb = 24.0f;  // ±24 dB display range
-constexpr float kSpectrumSmoothing = 0.45f;
 
 constexpr float kTwoPi = 6.28318530717958647692f;
 
@@ -221,11 +223,6 @@ float yToLinearDb(float y, juce::Rectangle<float> area) {
 // so the "hot zone" is a vertical column rather than a point.
 constexpr float kHitRadiusPx = 12.0f;
 
-// Collapse-toggle chevron sits in the top-right of the curve plot. Square
-// hit area; the chevron path is drawn inside it.
-constexpr float kCollapseButtonSize = 18.0f;
-constexpr float kCollapseButtonMargin = 4.0f;
-
 // The active band's live readout owns a strip along the top of the plot. The
 // per-band number rides above its dot and must stay out of that strip, so both
 // are laid out from the same numbers.
@@ -247,9 +244,39 @@ bool bandGainAffectsCurve(magda::daw::audio::compiled::MagdaEqCompiledPlugin::Ba
 
 }  // namespace
 
+namespace {
+
+/// The six types in the order the editor offers them, low cut to high cut.
+constexpr std::array<magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType, 6> kTypeOrder{{
+    magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType::Highpass,
+    magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType::LowShelf,
+    magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType::Bell,
+    magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType::Notch,
+    magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType::HighShelf,
+    magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType::Lowpass,
+}};
+
+juce::String compactFrequency(float hz) {
+    if (hz >= 1000.0f) {
+        const float k = hz / 1000.0f;
+        return (k >= 10.0f || std::abs(k - std::round(k)) < 0.05f
+                    ? juce::String(juce::roundToInt(k))
+                    : juce::String(k, 1)) +
+               "k";
+    }
+    return juce::String(juce::roundToInt(hz));
+}
+
+}  // namespace
+
 CompiledEqCurveView::CompiledEqCurveView(juce::String /*pluginId*/) {
-    setInterceptsMouseClicks(true, false);
-    rebuildSpectrumFft();
+    setInterceptsMouseClicks(true, true);
+    typeChoice_.setOptions({"LC", "LS", "Bell", "Notch", "HS", "HC"});
+    typeChoice_.onChange = [this](int index) {
+        setBandType(selectedBand_, kTypeOrder[static_cast<size_t>(index)]);
+        repaint();
+    };
+    addAndMakeVisible(typeChoice_);
     startTimer(kPollMs);
 }
 
@@ -259,10 +286,7 @@ void CompiledEqCurveView::setCompiledPlugin(
         return;
 
     compiledPlugin_ = std::move(plugin);
-    lastPreSpectrumWritePosition_ = 0;
-    lastPostSpectrumWritePosition_ = 0;
-    std::fill(preSpectrumDb_.begin(), preSpectrumDb_.end(), kSpectrumMinDb);
-    std::fill(postSpectrumDb_.begin(), postSpectrumDb_.end(), kSpectrumMinDb);
+    spectrum_.reset();
 }
 
 void CompiledEqCurveView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
@@ -309,180 +333,219 @@ void CompiledEqCurveView::timerCallback() {
         for (int band = 0; band < Plugin::kBandCount; ++band)
             bands_[band] = compiledPlugin_->getBandSnapshot(band);
         outputDb_ = compiledPlugin_->getOutputDb();
-        updateSpectrumOverlay();
+        spectrum_.update(compiledPlugin_->getPreSpectrumTapBuffer(),
+                         compiledPlugin_->getPostSpectrumTapBuffer());
+        syncTypeChoice();
     }
     repaint();
 }
 
-bool CompiledEqCurveView::wantsFullBody() const {
-    // Curve fills the slot when the plugin's collapse toggle is on.
-    return compiledPlugin_ != nullptr && compiledPlugin_->isCurveCollapsed();
+void CompiledEqCurveView::resized() {
+    geometry_ = EqBandEditorGeometry::of(getLocalBounds());
+    plotArea_ = geometry_.plot.toFloat();
+    // The type segments sit at the right of the editor's controls.
+    const int width = typeChoice_.getPreferredWidth();
+    typeChoice_.setBounds(
+        geometry_.editorControls.removeFromRight(width).withSizeKeepingCentre(width, 30));
+}
+
+void CompiledEqCurveView::selectBand(int band) {
+    if (band < 0 || band >= Plugin::kBandCount)
+        return;
+    selectedBand_ = band;
+    syncTypeChoice();
+    if (onPageRequested_)
+        onPageRequested_(band);
+    repaint();
+}
+
+void CompiledEqCurveView::syncTypeChoice() {
+    const auto type = bands_[static_cast<size_t>(selectedBand_)].type;
+    for (int i = 0; i < static_cast<int>(kTypeOrder.size()); ++i)
+        if (kTypeOrder[static_cast<size_t>(i)] == type)
+            typeChoice_.setSelectedIndex(i);
+}
+
+juce::Rectangle<float> CompiledEqCurveView::chipBounds(int band) const {
+    constexpr float kGap = 6.0f;
+    const auto row = geometry_.chips.toFloat();
+    const float width = (row.getWidth() - kGap * (Plugin::kBandCount - 1)) / Plugin::kBandCount;
+    return {row.getX() + static_cast<float>(band) * (width + kGap), row.getY(), width,
+            row.getHeight()};
+}
+
+int CompiledEqCurveView::chipAt(juce::Point<float> p) const {
+    for (int band = 0; band < Plugin::kBandCount; ++band)
+        if (chipBounds(band).contains(p))
+            return band;
+    return -1;
+}
+
+juce::Rectangle<float> CompiledEqCurveView::enableSwitchBounds() const {
+    const auto controls = geometry_.editorControls.toFloat();
+    return juce::Rectangle<float>(36.0f, 20.0f)
+        .withCentre({controls.getX() + 18.0f, controls.getCentreY()});
 }
 
 void CompiledEqCurveView::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds().toFloat();
-    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    g.fillRoundedRectangle(bounds, 4.0f);
-
-    plotArea_ = bounds.reduced(kPlotPadX, kPlotPadY);
+    auto& fonts = FontManager::getInstance();
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG));
+    g.fillRoundedRectangle(plotArea_, 4.0f);
     if (plotArea_.getWidth() < 8.0f || plotArea_.getHeight() < 8.0f)
         return;
 
-    // Reserve the top-right corner for the collapse toggle.
-    collapseButtonArea_ = juce::Rectangle<float>(
-        plotArea_.getRight() - kCollapseButtonSize - kCollapseButtonMargin,
-        plotArea_.getY() + kCollapseButtonMargin, kCollapseButtonSize, kCollapseButtonSize);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_GRID));
+    for (float db : {-12.0f, -6.0f, 0.0f, 6.0f, 12.0f})
+        g.drawHorizontalLine(juce::roundToInt(dbToY(db, plotArea_)), plotArea_.getX(),
+                             plotArea_.getRight());
+    for (float hz : {50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f})
+        g.drawVerticalLine(juce::roundToInt(logFreqToX(hz, plotArea_)), plotArea_.getY(),
+                           plotArea_.getBottom());
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+    g.setFont(fonts.getMonoFont(9.0f));
+    for (float db : {12.0f, 6.0f, -6.0f})
+        g.drawText((db > 0.0f ? "+" : "") + juce::String(juce::roundToInt(db)),
+                   juce::Rectangle<float>(plotArea_.getRight() - 34.0f,
+                                          dbToY(db, plotArea_) - 13.0f, 28.0f, 12.0f),
+                   juce::Justification::centredRight, false);
 
-    // 0 dB centre line + ±12 dB guides.
-    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.18f));
-    g.drawLine(plotArea_.getX(), dbToY(0.0f, plotArea_), plotArea_.getRight(),
-               dbToY(0.0f, plotArea_), 1.0f);
-    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.08f));
-    for (float guideDb : {-12.0f, 12.0f})
-        g.drawLine(plotArea_.getX(), dbToY(guideDb, plotArea_), plotArea_.getRight(),
-                   dbToY(guideDb, plotArea_), 1.0f);
+    if (compiledPlugin_ != nullptr)
+        spectrum_.draw(g, plotArea_, compiledPlugin_->getSampleRate(), kFreqMinHz, kFreqMaxHz,
+                       [this](float hz) { return logFreqToX(hz, plotArea_); });
 
-    // Decade markers — 100, 1k, 10k.
-    for (float f : {100.0f, 1000.0f, 10000.0f}) {
-        const float x = logFreqToX(f, plotArea_);
-        g.drawLine(x, plotArea_.getY(), x, plotArea_.getBottom(), 1.0f);
-    }
-
-    drawSpectrumOverlay(g, plotArea_);
-
-    // Build the combined-response path by summing per-band log-magnitudes
-    // (i.e. multiplying linear magnitudes) at each x sample.
+    // The total response, and the selected band's own share of it, shaded in its colour.
     juce::Path curve;
-    bool first = true;
-
+    juce::Path selectedShare;
+    const float zeroY = dbToY(0.0f, plotArea_);
+    const auto& selected = bands_[static_cast<size_t>(selectedBand_)];
+    const auto selectedCoeffs =
+        makeBiquad(selected.type, selected.freq, selected.gainDb, selected.q, kVisualSampleRate);
     for (int i = 0; i <= kPathSamples; ++i) {
         const float u = static_cast<float>(i) / static_cast<float>(kPathSamples);
-        const float logMin = std::log10(kFreqMinHz);
-        const float logMax = std::log10(kFreqMaxHz);
-        const float freq = std::pow(10.0f, logMin + u * (logMax - logMin));
-
+        const float freq = kFreqMinHz * std::pow(kFreqMaxHz / kFreqMinHz, u);
         float totalDb = outputDb_;
         for (const auto& band : bands_) {
             if (!band.enabled)
                 continue;
             const auto coeffs =
                 makeBiquad(band.type, band.freq, band.gainDb, band.q, kVisualSampleRate);
-            const float mag2 = magnitudeSquaredAt(coeffs, freq, kVisualSampleRate);
-            totalDb += 10.0f * std::log10(std::max(1.0e-12f, mag2));
+            totalDb +=
+                10.0f *
+                std::log10(std::max(1.0e-12f, magnitudeSquaredAt(coeffs, freq, kVisualSampleRate)));
         }
-
+        const float ownDb =
+            10.0f * std::log10(std::max(
+                        1.0e-12f, magnitudeSquaredAt(selectedCoeffs, freq, kVisualSampleRate)));
         const float x = plotArea_.getX() + u * plotArea_.getWidth();
         const float y = dbToY(totalDb, plotArea_);
-        if (first) {
+        const float ownY = dbToY(ownDb, plotArea_);
+        if (i == 0) {
             curve.startNewSubPath(x, y);
-            first = false;
+            selectedShare.startNewSubPath(x, zeroY);
         } else {
             curve.lineTo(x, y);
         }
+        selectedShare.lineTo(x, ownY);
     }
+    selectedShare.lineTo(plotArea_.getRight(), zeroY);
+    selectedShare.closeSubPath();
+    const auto bandColour = [](int band) { return device_shell::chainColour(band); };
+    if (selected.enabled) {
+        g.setColour(bandColour(selectedBand_).withAlpha(0.18f));
+        g.fillPath(selectedShare);
+    }
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT).withAlpha(0.9f));
+    g.strokePath(curve, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved,
+                                             juce::PathStrokeType::rounded));
 
-    // Fill under the curve, then stroke the line on top.
-    juce::Path fill = curve;
-    fill.lineTo(plotArea_.getRight(), dbToY(0.0f, plotArea_));
-    fill.lineTo(plotArea_.getX(), dbToY(0.0f, plotArea_));
-    fill.closeSubPath();
-    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).withAlpha(0.18f));
-    g.fillPath(fill);
-    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO));
-    g.strokePath(curve, juce::PathStrokeType(1.5f));
-
-    // Per-band dot. Position uses band's centre freq and (for shelf/bell)
-    // the band's gain; HP/LP/Notch anchor to 0 dB on the gain axis.
+    // Nodes: numbered, in their band's colour; a band that is off is a grey ring.
+    g.setFont(fonts.getMonoFont(10.0f).boldened());
     for (int b = 0; b < Plugin::kBandCount; ++b) {
-        const auto& band = bands_[b];
-        float dotDb = 0.0f;
-        switch (band.type) {
-            case BandType::Bell:
-            case BandType::LowShelf:
-            case BandType::HighShelf:
-                dotDb = band.gainDb;
-                break;
-            case BandType::Highpass:
-            case BandType::Lowpass:
-            case BandType::Notch:
-            default:
-                dotDb = 0.0f;
-                break;
+        const auto& band = bands_[static_cast<size_t>(b)];
+        const float nodeDb = bandGainAffectsCurve(band.type) ? band.gainDb : 0.0f;
+        const auto centre =
+            juce::Point<float>(logFreqToX(band.freq, plotArea_), dbToY(nodeDb, plotArea_));
+        const auto node = juce::Rectangle<float>(18.0f, 18.0f).withCentre(centre);
+        if (b == selectedBand_ || b == draggedBand_ || b == hoveredBand_) {
+            g.setColour(bandColour(b).withAlpha(0.25f));
+            g.fillEllipse(node.expanded(5.0f));
         }
-        const float dotX = logFreqToX(band.freq, plotArea_);
-        const float dotY = dbToY(dotDb, plotArea_);
-        const bool isActive = (b == draggedBand_) || (b == hoveredBand_);
-        const bool bandEnabled = band.enabled;
-        // Halo on the active band so the user has a clear "I'm grabbing
-        // this one" cue while dragging.
-        if (isActive) {
-            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).withAlpha(0.25f));
-            g.fillEllipse(dotX - 9.0f, dotY - 9.0f, 18.0f, 18.0f);
-        }
-        const float dotRadius = isActive ? 4.5f : 3.5f;
-        const auto dotColour = ActiveTheme::getColour(ActiveTheme::ACCENT_INFO);
-        if (bandEnabled) {
-            g.setColour(dotColour.withAlpha(0.95f));
-            g.fillEllipse(dotX - dotRadius, dotY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f);
+        if (band.enabled) {
+            g.setColour(bandColour(b));
+            g.fillEllipse(node);
+            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_BG));
         } else {
-            g.setColour(dotColour.withAlpha(isActive ? 0.65f : 0.35f));
-            g.drawEllipse(dotX - dotRadius, dotY - dotRadius, dotRadius * 2.0f, dotRadius * 2.0f,
-                          isActive ? 1.4f : 1.0f);
+            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG));
+            g.fillEllipse(node);
+            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+            g.drawEllipse(node.reduced(0.75f), 1.5f);
         }
-        // Band number, above the dot. The readout strip is only spoken for
-        // while the band is active, so an inactive band's number may use it.
-        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.85f));
-        g.drawFittedText(juce::String(b + 1),
-                         CurveLabelLayout::aboveAnchor(plotArea_, dotX, dotY, kBandNumberWidth,
-                                                       kBandNumberHeight, kBandNumberGap,
-                                                       isActive ? readoutStripBottom(plotArea_)
-                                                                : plotArea_.getY())
-                             .toNearestInt(),
-                         juce::Justification::centred, 1);
-
-        // Live readout above the dot for the active band — freq + gain (or
-        // Q for the no-gain types). Keeps the user oriented while dragging.
-        if (isActive) {
-            const juce::String label =
-                bandGainAffectsCurve(band.type)
-                    ? (frequencyReadout(band.freq) + " / " + juce::String(band.gainDb, 1) + " dB")
-                    : (juce::String(bandTypeShortName(band.type)) + "  " +
-                       frequencyReadout(band.freq));
-            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.9f));
-            g.drawFittedText(label,
-                             CurveLabelLayout::centredIn(plotArea_, dotX,
-                                                         plotArea_.getY() + kReadoutTopInset,
-                                                         kReadoutWidth, kReadoutHeight)
-                                 .toNearestInt(),
-                             juce::Justification::centred, 1);
-        }
+        g.drawText(juce::String(b + 1), node, juce::Justification::centred, false);
     }
 
-    // Collapse toggle — chevron in the top-right corner. Points up when
-    // collapsed ("click to expand the grid"), down when expanded ("click to
-    // hide the grid"). Drawn last so it sits on top of curve/dots.
-    const bool collapsed = compiledPlugin_ != nullptr && compiledPlugin_->isCurveCollapsed();
-    const auto chevronColour = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY)
-                                   .withAlpha(collapseButtonHovered_ ? 0.95f : 0.55f);
-    if (collapseButtonHovered_) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.08f));
-        g.fillRoundedRectangle(collapseButtonArea_, 3.0f);
+    paintChips(g);
+    paintEditor(g);
+}
+
+void CompiledEqCurveView::paintChips(juce::Graphics& g) {
+    auto& fonts = FontManager::getInstance();
+    for (int b = 0; b < Plugin::kBandCount; ++b) {
+        const auto& band = bands_[static_cast<size_t>(b)];
+        const auto chip = chipBounds(b);
+        const auto colour = device_shell::chainColour(b);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));
+        g.fillRoundedRectangle(chip, 4.0f);
+        if (b == selectedBand_) {
+            g.setColour(colour);
+            g.drawRoundedRectangle(chip.reduced(0.75f), 4.0f, 1.5f);
+        }
+        auto inner = chip.reduced(12.0f, 0.0f).withTrimmedRight(4.0f);
+        const auto dot = juce::Rectangle<float>(8.0f, 8.0f)
+                             .withCentre({inner.getX() + 4.0f, inner.getCentreY()});
+        if (band.enabled) {
+            g.setColour(colour);
+            g.fillEllipse(dot);
+        } else {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+            g.drawEllipse(dot, 1.2f);
+        }
+        inner.removeFromLeft(16.0f);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
+        g.setFont(fonts.getMonoFont(11.0f).boldened());
+        g.drawText(juce::String(b + 1), inner, juce::Justification::centredLeft, false);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+        g.setFont(fonts.getMonoFont(10.0f));
+        g.drawText(compactFrequency(band.freq), inner, juce::Justification::centredRight, false);
     }
-    const auto centre = collapseButtonArea_.getCentre();
-    const float armLen = kCollapseButtonSize * 0.28f;
-    juce::Path chevron;
-    if (collapsed) {
-        chevron.startNewSubPath(centre.x - armLen, centre.y + armLen * 0.5f);
-        chevron.lineTo(centre.x, centre.y - armLen * 0.5f);
-        chevron.lineTo(centre.x + armLen, centre.y + armLen * 0.5f);
-    } else {
-        chevron.startNewSubPath(centre.x - armLen, centre.y - armLen * 0.5f);
-        chevron.lineTo(centre.x, centre.y + armLen * 0.5f);
-        chevron.lineTo(centre.x + armLen, centre.y - armLen * 0.5f);
-    }
-    g.setColour(chevronColour);
-    g.strokePath(chevron, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved,
-                                               juce::PathStrokeType::rounded));
+}
+
+void CompiledEqCurveView::paintEditor(juce::Graphics& g) {
+    const auto editor = geometry_.editor.toFloat();
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_WELL));
+    g.fillRoundedRectangle(editor, 4.0f);
+
+    // The band's switch, then its name.
+    const auto& band = bands_[static_cast<size_t>(selectedBand_)];
+    const auto colour = device_shell::chainColour(selectedBand_);
+    const auto track = enableSwitchBounds();
+    g.setColour(band.enabled ? colour : ActiveTheme::getColour(ActiveTheme::DEVICE_SWITCH_OFF));
+    g.fillRoundedRectangle(track, track.getHeight() / 2.0f);
+    const float knobX = band.enabled ? track.getRight() - track.getHeight() : track.getX();
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_BG));
+    g.fillEllipse(juce::Rectangle<float>(knobX, track.getY(), track.getHeight(), track.getHeight())
+                      .reduced(3.0f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
+    g.setFont(FontManager::getInstance().getHeadingFont(15.0f));
+    g.drawText(
+        "Band " + juce::String(selectedBand_ + 1),
+        juce::Rectangle<float>(track.getRight() + 12.0f, editor.getY(), 90.0f, editor.getHeight()),
+        juce::Justification::centredLeft, false);
+
+    // The divider before Output.
+    const auto output = geometry_.output.toFloat();
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
+    g.fillRect(juce::Rectangle<float>(output.getX() - 13.0f, editor.getY() + 16.0f, 1.0f,
+                                      editor.getHeight() - 32.0f));
 }
 
 // ============================================================================
@@ -539,22 +602,6 @@ void CompiledEqCurveView::setBandEnabled(int band, bool enabled) {
 void CompiledEqCurveView::mouseMove(const juce::MouseEvent& e) {
     if (draggedBand_ != -1)
         return;
-    const bool overChevron = collapseButtonArea_.contains(e.position);
-    if (overChevron != collapseButtonHovered_) {
-        collapseButtonHovered_ = overChevron;
-        setMouseCursor(overChevron ? juce::MouseCursor::PointingHandCursor
-                                   : juce::MouseCursor::NormalCursor);
-        repaint();
-    }
-    if (overChevron) {
-        // Hovering the chevron — clear any band hover so the halo doesn't
-        // fight with the toggle.
-        if (hoveredBand_ != -1) {
-            hoveredBand_ = -1;
-            repaint();
-        }
-        return;
-    }
     const int picked = findBandAt(e.position);
     if (picked != hoveredBand_) {
         hoveredBand_ = picked;
@@ -572,10 +619,6 @@ void CompiledEqCurveView::mouseExit(const juce::MouseEvent&) {
         hoveredBand_ = -1;
         needsRepaint = true;
     }
-    if (collapseButtonHovered_) {
-        collapseButtonHovered_ = false;
-        needsRepaint = true;
-    }
     if (needsRepaint) {
         setMouseCursor(juce::MouseCursor::NormalCursor);
         repaint();
@@ -583,20 +626,21 @@ void CompiledEqCurveView::mouseExit(const juce::MouseEvent&) {
 }
 
 void CompiledEqCurveView::mouseDown(const juce::MouseEvent& e) {
-    // Chevron takes precedence over band hit-testing.
-    if (collapseButtonArea_.contains(e.position)) {
-        if (compiledPlugin_ != nullptr) {
-            compiledPlugin_->setCurveCollapsed(!compiledPlugin_->isCurveCollapsed());
-            if (onLayoutChanged_)
-                onLayoutChanged_();
-            repaint();
-        }
+    if (const int chip = chipAt(e.position); chip >= 0) {
+        selectBand(chip);
+        return;
+    }
+    if (enableSwitchBounds().contains(e.position)) {
+        setBandEnabled(selectedBand_, !bands_[static_cast<size_t>(selectedBand_)].enabled);
+        repaint();
         return;
     }
 
     const int picked = findBandAt(e.position);
     if (picked == -1)
         return;
+    if (picked != selectedBand_)
+        selectBand(picked);
 
     if (e.mods.isRightButtonDown()) {
         showBandTypeMenu(picked);
@@ -689,93 +733,6 @@ void CompiledEqCurveView::mouseWheelMove(const juce::MouseEvent& e,
     repaint();
 }
 
-void CompiledEqCurveView::rebuildSpectrumFft() {
-    spectrumFft_ = std::make_unique<juce::dsp::FFT>(kSpectrumFftOrder);
-    spectrumWindow_ = std::make_unique<juce::dsp::WindowingFunction<float>>(
-        static_cast<size_t>(kSpectrumFftSize), juce::dsp::WindowingFunction<float>::hann);
-    spectrumReadBuf_.assign(static_cast<size_t>(kSpectrumFftSize), 0.0f);
-    spectrumFftData_.assign(static_cast<size_t>(kSpectrumFftSize) * 2, 0.0f);
-    preSpectrumDb_.assign(static_cast<size_t>(kSpectrumNumBins), kSpectrumMinDb);
-    postSpectrumDb_.assign(static_cast<size_t>(kSpectrumNumBins), kSpectrumMinDb);
-}
-
-void CompiledEqCurveView::updateSpectrumOverlay() {
-    if (compiledPlugin_ == nullptr || spectrumFft_ == nullptr || spectrumWindow_ == nullptr)
-        return;
-
-    auto updateTrace = [this](const magda::engine::SampleRing& tap, size_t& lastWritePosition,
-                              std::vector<float>& traceDb) {
-        const auto writePosition = tap.writePosition();
-        if (writePosition == lastWritePosition)
-            return;
-
-        lastWritePosition = tap.readLatest(spectrumReadBuf_.data(), kSpectrumFftSize);
-        if (lastWritePosition == 0)
-            return;
-
-        std::copy(spectrumReadBuf_.begin(), spectrumReadBuf_.end(), spectrumFftData_.begin());
-        std::fill(spectrumFftData_.begin() + kSpectrumFftSize, spectrumFftData_.end(), 0.0f);
-        spectrumWindow_->multiplyWithWindowingTable(spectrumFftData_.data(),
-                                                    static_cast<size_t>(kSpectrumFftSize));
-        spectrumFft_->performFrequencyOnlyForwardTransform(spectrumFftData_.data());
-
-        const float norm = 2.0f / static_cast<float>(kSpectrumFftSize);
-        for (int i = 0; i < kSpectrumNumBins; ++i) {
-            const float mag = spectrumFftData_[static_cast<size_t>(i)] * norm;
-            const float db = juce::jlimit(kSpectrumMinDb, kSpectrumMaxDb,
-                                          20.0f * std::log10(std::max(mag, 1.0e-6f)));
-            float& smoothed = traceDb[static_cast<size_t>(i)];
-            smoothed += kSpectrumSmoothing * (db - smoothed);
-        }
-    };
-
-    updateTrace(compiledPlugin_->getPreSpectrumTapBuffer(), lastPreSpectrumWritePosition_,
-                preSpectrumDb_);
-    updateTrace(compiledPlugin_->getPostSpectrumTapBuffer(), lastPostSpectrumWritePosition_,
-                postSpectrumDb_);
-}
-
-void CompiledEqCurveView::drawSpectrumOverlay(juce::Graphics& g, juce::Rectangle<float> area) {
-    if (compiledPlugin_ == nullptr || preSpectrumDb_.empty() || postSpectrumDb_.empty())
-        return;
-
-    const double sampleRate = compiledPlugin_->getSampleRate();
-    if (sampleRate <= 0.0)
-        return;
-
-    const auto binHz = static_cast<float>(sampleRate / static_cast<double>(kSpectrumFftSize));
-    auto dbToSpectrumY = [area](float db) {
-        const float t = (db - kSpectrumMinDb) / (kSpectrumMaxDb - kSpectrumMinDb);
-        return area.getBottom() - juce::jlimit(0.0f, 1.0f, t) * area.getHeight();
-    };
-
-    auto buildPath = [&](const std::vector<float>& traceDb) {
-        juce::Path path;
-        bool started = false;
-        for (int i = 1; i < kSpectrumNumBins; ++i) {
-            const float freq = static_cast<float>(i) * binHz;
-            if (freq < kFreqMinHz || freq > kFreqMaxHz)
-                continue;
-            const float x = logFreqToX(freq, area);
-            const float y = dbToSpectrumY(traceDb[static_cast<size_t>(i)]);
-            if (!started) {
-                path.startNewSubPath(x, y);
-                started = true;
-            } else {
-                path.lineTo(x, y);
-            }
-        }
-        return path;
-    };
-
-    const auto prePath = buildPath(preSpectrumDb_);
-    const auto postPath = buildPath(postSpectrumDb_);
-    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.16f));
-    g.strokePath(prePath, juce::PathStrokeType(1.0f));
-    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO).withAlpha(0.32f));
-    g.strokePath(postPath, juce::PathStrokeType(1.1f));
-}
-
 void CompiledEqCurveView::showBandTypeMenu(int band) {
     if (band < 0 || band >= Plugin::kBandCount)
         return;
@@ -819,19 +776,12 @@ const CompiledPresentationSpec& getMagdaEqPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledEqCurveView>(pluginId);
         },
-        // 50/50 split: the 8-band param grid is the dominant control
-        // surface, but the curve view earns equal real estate as a readout.
-        .visualMinFractionNumerator = 2,
-        .visualMinFractionDenominator = 4,
-        // 8 column strips at ~72 px each ≈ 576 px — about 30 % wider than
-        // the default 432 px slot. Gives each cell enough horizontal room
-        // for "100.0 Hz" / "0.0 dB" / "HighShelf" without truncation.
-        .preferredSlotWidth = 576,
-        // Lay out each band as a vertical strip (Enabled → Type → Freq →
-        // Gain → Q top to bottom). With layoutCellCount = 40 and
-        // cellsPerRow = 8, column-major gives 5 rows × 8 columns = one
-        // column per band.
+        // The curve, a chip per band, and one band's controls at a time.
+        .preferredSlotWidth = 900,
         .columnMajorGrid = true,
+        .createLayout = []() -> std::unique_ptr<DeviceParamLayout> {
+            return std::make_unique<CompiledEqBandLayout>();
+        },
     };
     return kSpec;
 }

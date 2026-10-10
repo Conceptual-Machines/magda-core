@@ -6,6 +6,7 @@
 
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
+#include "compiled/SpectrumOverlay.hpp"
 #include "core/DeviceInfo.hpp"
 #include "params/ParamLinkResolver.hpp"
 
@@ -51,12 +52,26 @@ class CompiledFilterCurveView final : public juce::Component,
         updateFromDevice(device, nullptr);
     }
     void bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) override;
-    void setOnParameterChanged(std::function<void(int, float)>) override {}  // read-only view
+    /// Set, the faceplate is interactive: drag sets cutoff across and resonance
+    /// up and down, scroll sets drive, double-click restores cutoff and resonance.
+    void setOnParameterChanged(std::function<void(int, float)> callback) override {
+        onParameterChanged_ = std::move(callback);
+        setInterceptsMouseClicks(onParameterChanged_ != nullptr, false);
+    }
+    void setLinkContextProvider(
+        std::function<std::optional<ParamLinkContext>()> provider) override {
+        linkContextProvider_ = std::move(provider);
+    }
     int preferredHeight() const override {
         return getPreferredHeight();
     }
 
     void paint(juce::Graphics& g) override;
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseDrag(const juce::MouseEvent& e) override;
+    void mouseUp(const juce::MouseEvent& e) override;
+    void mouseDoubleClick(const juce::MouseEvent& e) override;
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
   private:
     enum class FilterFamily { SVF, Ladder, Korg35, Oberheim, SallenKey };
@@ -77,9 +92,15 @@ class CompiledFilterCurveView final : public juce::Component,
     juce::Colour curveColour_;
     bool hasCurveColour_ = false;
     magda::DeviceInfo deviceSnapshot_;
-    ParamLinkContext linkContext_;
-    bool hasLinkContext_ = false;
+    std::function<std::optional<ParamLinkContext>()> linkContextProvider_;
     std::shared_ptr<magda::daw::audio::compiled::MagdaFilterCompiledPlugin> compiledPlugin_;
+    SpectrumOverlay spectrum_;
+    std::function<void(int, float)> onParameterChanged_;
+    juce::Rectangle<float> plotArea_;  // Where the last paint put the plot.
+    bool dragging_ = false;
+    float dragStartResonance_ = 0.0f;
+    juce::Rectangle<float> plotBounds() const;
+    void setFromHandle(float x, float resonance);
 
     FilterMode modeForIndex() const;
     float responseDbAt(float frequencyHz) const;

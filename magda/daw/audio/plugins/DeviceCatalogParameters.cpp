@@ -62,6 +62,11 @@ bool applyDeviceDeclaration(magda::DeviceInfo& device) {
     const bool forwardingChanged = device.forwardsMidiInput != forwards;
     device.forwardsMidiInput = forwards;
 
+    // The key the device declares, which decides whether its slot offers a sidechain source.
+    const auto sidechain = declared->properties().sidechain;
+    const bool sidechainChanged = !(device.sidechainPort == sidechain);
+    device.sidechainPort = sidechain;
+
     bool added = false;
     int slot = 0;
     for (auto info : declared->parameters()) {
@@ -87,7 +92,7 @@ bool applyDeviceDeclaration(magda::DeviceInfo& device) {
                              return a.paramIndex < b.paramIndex;
                          });
 
-    return added || forwardingChanged;
+    return added || forwardingChanged || sidechainChanged;
 }
 
 }  // namespace magda::daw::audio

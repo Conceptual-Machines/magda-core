@@ -277,6 +277,7 @@ const CompiledPresentationSpec& getMagdaFlangerPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledFlangerCurveView>(pluginId);
         },
+        .mixSlot = magda::daw::audio::compiled::MagdaFlangerCompiledPlugin::kMixSlot,
     };
     return kSpec;
 }

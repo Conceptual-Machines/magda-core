@@ -24,6 +24,7 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "music/NotationSettings.hpp"
+#include "ui/components/common/MagdaAlertWindow.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TimeBendPopup.hpp"
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
@@ -3306,7 +3307,7 @@ void DrumGridClipContent::promptSaveDrumkit() {
     if (!inst.valid() || inst.device->kitRows.empty())
         return;  // nothing to save
 
-    auto window = std::make_shared<juce::AlertWindow>(
+    auto window = std::make_shared<magda::MagdaAlertWindow>(
         "Save Drumkit", "Name for this drumkit:", juce::MessageBoxIconType::NoIcon);
     window->addTextEditor("name", "My Drumkit");
     window->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));

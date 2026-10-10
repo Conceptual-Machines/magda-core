@@ -23,10 +23,9 @@ drive  = hslider("Drive [idx:2]", 0.0, 0.0, 1.0, 0.001) : smoo;
 mode   = nentry("Mode [idx:3] [style:menu{'LP':0;'BP':1;'HP':2;'Notch':3}]",
                 0, 0, 3, 1);
 
-// SVF Q maps 0.5 (gentle) .. 12.0. The Faust SVF can become aggressive
-// close to Nyquist while sweeping; keep the top of the range musical rather
-// than near self-oscillation.
-q = 0.5 + res * 11.5;
+// SVF Q 0.5..40, exponential so each step of the knob multiplies Q; the TPT
+// core stays stable at any Q, and the top is near self-oscillation.
+q = 0.5 * pow(80.0, res);
 safeCutoff = min(cutoff, ma.SR * 0.45);
 
 // The two TPT coefficients, computed once per block and then smoothed at

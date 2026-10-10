@@ -6,6 +6,7 @@
 #include "BinaryData.h"
 #include "CCLaneComponent.hpp"
 #include "VelocityLaneComponent.hpp"
+#include "ui/components/common/MagdaAlertWindow.hpp"
 
 namespace magda {
 
@@ -519,8 +520,8 @@ void MidiDrawerComponent::showAddLaneMenu() {
                 break;
             case 100: {
                 // Show dialog for custom CC number
-                auto* alert = new juce::AlertWindow("Custom CC", "Enter CC number (0-127):",
-                                                    juce::MessageBoxIconType::QuestionIcon);
+                auto* alert = new magda::MagdaAlertWindow("Custom CC", "Enter CC number (0-127):",
+                                                          juce::MessageBoxIconType::QuestionIcon);
                 alert->addTextEditor("cc", "1", "CC Number:");
                 alert->addButton("OK", 1);
                 alert->addButton("Cancel", 0);

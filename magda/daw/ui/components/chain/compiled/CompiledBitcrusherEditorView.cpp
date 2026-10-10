@@ -135,6 +135,7 @@ const CompiledPresentationSpec& getMagdaBitcrusherPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledBitcrusherEditorView>(pluginId);
         },
+        .mixSlot = magda::daw::audio::compiled::MagdaBitcrusherCompiledPlugin::kMixSlot,
     };
     return kSpec;
 }

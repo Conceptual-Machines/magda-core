@@ -163,6 +163,7 @@ void ClipInspector::updateFromSelectedClip() {
             swatch->clearColour();
         else
             swatch->setColour(clip->colour);
+        applyHeaderStyle();
 
         // File path label: show source filename for library-backed audio/MIDI clips.
         // For loop-record takes/comps the raw render filename is meaningless, so

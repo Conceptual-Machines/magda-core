@@ -5,18 +5,17 @@
 
 #include "../../../utils/CurveLabelLayout.hpp"
 #include "audio/plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
+#include "compiled/CompiledMultibandBandLayout.hpp"
 #include "core/GestureRouter.hpp"
+#include "layout/DeviceShellPainter.hpp"
 #include "ui/themes/ActiveTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
 namespace {
 
-constexpr float kPlotPadX = 8.0f;
-constexpr float kPlotPadY = 8.0f;
 constexpr int kPollMs = 33;
-constexpr float kCollapseButtonSize = 18.0f;
-constexpr float kCollapseButtonMargin = 4.0f;
 constexpr float kMinFreq = 20.0f;
 constexpr float kMaxFreq = 20000.0f;
 constexpr float kHandlePickPx = 8.0f;
@@ -52,30 +51,12 @@ float invLogLerp(float v, float lo, float hi) {
     return std::log(juce::jlimit(lo, hi, v) / lo) / std::log(hi / lo);
 }
 
-juce::String ratioLabel(float ratio) {
-    ratio = juce::jlimit(kRatioMin, kRatioMax, ratio);
-    if (std::abs(ratio - 1.0f) < 0.02f)
-        return "1:1";
-    if (ratio >= 1.0f)
-        return juce::String(ratio, ratio < 10.0f ? 1 : 0) + ":1";
-    const float inverse = 1.0f / ratio;
-    return "1:" + juce::String(inverse, inverse < 10.0f ? 1 : 0);
-}
-
 float adjustRatio(float ratio, float octaves) {
     return juce::jlimit(kRatioMin, kRatioMax, ratio * std::pow(2.0f, octaves));
 }
 
 float adjustTimeMs(float value, float octaves, float minValue, float maxValue) {
     return juce::jlimit(minValue, maxValue, value * std::pow(2.0f, octaves));
-}
-
-juce::String timeLabel(float ms) {
-    if (ms < 10.0f)
-        return juce::String(ms, 1) + " ms";
-    if (ms < 100.0f)
-        return juce::String(ms, 0) + " ms";
-    return juce::String(static_cast<int>(std::round(ms))) + " ms";
 }
 
 }  // namespace
@@ -217,10 +198,6 @@ void CompiledMultibandCurveView::resampleFromPlugin() {
     limitDb_[0] = valueForSlot(deviceSnapshot_, Mb::kLowLimitSlot, limitDb_[0]);
     limitDb_[1] = valueForSlot(deviceSnapshot_, Mb::kMidLimitSlot, limitDb_[1]);
     limitDb_[2] = valueForSlot(deviceSnapshot_, Mb::kHighLimitSlot, limitDb_[2]);
-}
-
-bool CompiledMultibandCurveView::wantsFullBody() const {
-    return compiledPlugin_ != nullptr && compiledPlugin_->isCurveCollapsed();
 }
 
 float CompiledMultibandCurveView::xToFreq(float x) const {
@@ -446,17 +423,6 @@ void CompiledMultibandCurveView::mouseMove(const juce::MouseEvent& e) {
     if (draggedHandle_ != Handle::None)
         return;
 
-    const bool overChevron = collapseButtonArea_.contains(e.position);
-    if (overChevron != collapseButtonHovered_) {
-        collapseButtonHovered_ = overChevron;
-        repaint();
-    }
-    if (overChevron) {
-        setMouseCursor(juce::MouseCursor::PointingHandCursor);
-        hoveredHandle_ = Handle::None;
-        return;
-    }
-
     const auto picked = pickHandle(static_cast<float>(e.x), static_cast<float>(e.y));
     if (picked != hoveredHandle_) {
         hoveredHandle_ = picked;
@@ -470,7 +436,6 @@ void CompiledMultibandCurveView::mouseMove(const juce::MouseEvent& e) {
 
 void CompiledMultibandCurveView::mouseExit(const juce::MouseEvent&) {
     hoveredHandle_ = Handle::None;
-    collapseButtonHovered_ = false;
     ratioScrollBand_ = -1;
     rangeScrollActive_ = false;
     setMouseCursor(juce::MouseCursor::NormalCursor);
@@ -478,17 +443,16 @@ void CompiledMultibandCurveView::mouseExit(const juce::MouseEvent&) {
 }
 
 void CompiledMultibandCurveView::mouseDown(const juce::MouseEvent& e) {
-    if (collapseButtonArea_.contains(e.position)) {
-        if (compiledPlugin_ != nullptr) {
-            compiledPlugin_->setCurveCollapsed(!compiledPlugin_->isCurveCollapsed());
-            if (onLayoutChanged_)
-                onLayoutChanged_();
-            repaint();
-        }
+    if (const int tab = tabAt(e.position); tab >= 0) {
+        selectBand(tab);
         return;
     }
-
     draggedHandle_ = pickHandle(static_cast<float>(e.x), static_cast<float>(e.y));
+    // A press in a band's region, off its lines, selects that band.
+    if (draggedHandle_ == Handle::None && plotArea_.contains(e.position)) {
+        selectBand(bandAtX(e.position.x));
+        return;
+    }
     hoveredHandle_ = draggedHandle_;
     if (isTimingHandle(draggedHandle_)) {
         const int timingBand = bandForHandle(draggedHandle_);
@@ -582,13 +546,6 @@ void CompiledMultibandCurveView::mouseDrag(const juce::MouseEvent& e) {
     auto& target = isLimitHandle(draggedHandle_)            ? limitDb_[idx]
                    : isUpperThresholdHandle(draggedHandle_) ? upperThresholdDb_[idx]
                                                             : lowerThresholdDb_[idx];
-    if (!isLimitHandle(draggedHandle_)) {
-        constexpr float kMinThresholdGapDb = 1.0f;
-        if (isUpperThresholdHandle(draggedHandle_))
-            db = std::max(db, lowerThresholdDb_[idx] + kMinThresholdGapDb);
-        else
-            db = std::min(db, upperThresholdDb_[idx] - kMinThresholdGapDb);
-    }
     if (std::fabs(db - target) > 0.05f) {
         target = db;
         if (onParameterChanged)
@@ -687,51 +644,51 @@ void CompiledMultibandCurveView::mouseWheelMove(const juce::MouseEvent& e,
     }
 }
 
-void CompiledMultibandCurveView::paint(juce::Graphics& g) {
-    const auto bounds = getLocalBounds();
-    g.fillAll(ActiveTheme::getColour(ActiveTheme::TEXT_DARK));
-
-    auto plot = bounds.toFloat().reduced(kPlotPadX, kPlotPadY);
+void CompiledMultibandCurveView::paintGraph(juce::Graphics& g) {
+    // Drawn as the multiband rack's crossover display is: graph colours, chain colours, mono text.
+    const auto plot = geometry_.plot.toFloat();
     plotArea_ = plot;
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG));
+    g.fillRoundedRectangle(plot, 4.0f);
     if (plot.getWidth() < 8.0f || plot.getHeight() < 8.0f)
         return;
-
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.45f));
-    g.drawRect(plot, 1.0f);
 
     juce::Graphics::ScopedSaveState clipGuard(g);
     g.reduceClipRegion(plot.toNearestInt());
 
-    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.06f));
+    auto& fonts = FontManager::getInstance();
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_GRID));
     for (float decade : {100.0f, 1000.0f, 10000.0f})
         g.drawVerticalLine(static_cast<int>(std::round(freqToX(decade))), plot.getY(),
                            plot.getBottom());
     for (float db : {-60.0f, -36.0f, -12.0f, 0.0f})
         g.drawHorizontalLine(static_cast<int>(std::round(dbToY(db))), plot.getX(), plot.getRight());
 
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+    g.setFont(fonts.getMonoFont(9.0f));
+    for (float hz : {50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f}) {
+        const auto label = hz >= 1000.0f ? juce::String(juce::roundToInt(hz / 1000.0f)) + "k"
+                                         : juce::String(juce::roundToInt(hz));
+        g.drawText(
+            label,
+            juce::Rectangle<float>(freqToX(hz) - 15.0f, plot.getBottom() - 14.0f, 30.0f, 12.0f),
+            juce::Justification::centred, false);
+    }
+
     const float lowX = freqToX(lowXoHz_);
     const float highX = freqToX(highXoHz_);
     const std::array<float, 4> bandEdges{{plot.getX(), lowX, highX, plot.getRight()}};
     const std::array<juce::Colour, 3> bandColours{{
-        ActiveTheme::getColour(ActiveTheme::MULTIBAND_LOW),
-        ActiveTheme::getColour(ActiveTheme::MULTIBAND_MID),
-        ActiveTheme::getColour(ActiveTheme::MULTIBAND_HIGH),
+        device_shell::chainColour(0),
+        device_shell::chainColour(1),
+        device_shell::chainColour(2),
     }};
-    const std::array<juce::String, 3> bandNames{{"LOW", "MID", "HIGH"}};
     const std::array<Handle, 3> lowerThresholdHandles{
         {Handle::LowLowerThreshold, Handle::MidLowerThreshold, Handle::HighLowerThreshold}};
     const std::array<Handle, 3> upperThresholdHandles{
         {Handle::LowUpperThreshold, Handle::MidUpperThreshold, Handle::HighUpperThreshold}};
     const std::array<Handle, 3> limitHandles{
         {Handle::LowLimit, Handle::MidLimit, Handle::HighLimit}};
-    const std::array<Handle, 3> belowRatioHandles{
-        {Handle::LowBelowRatio, Handle::MidBelowRatio, Handle::HighBelowRatio}};
-    const std::array<Handle, 3> aboveRatioHandles{
-        {Handle::LowAboveRatio, Handle::MidAboveRatio, Handle::HighAboveRatio}};
-    const std::array<Handle, 3> attackHandles{
-        {Handle::LowAttack, Handle::MidAttack, Handle::HighAttack}};
-    const std::array<Handle, 3> releaseHandles{
-        {Handle::LowRelease, Handle::MidRelease, Handle::HighRelease}};
 
     for (int band = 0; band < 3; ++band) {
         const auto idx = static_cast<size_t>(band);
@@ -743,8 +700,6 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
         const auto colour = bandColours[idx];
         const float yLower = dbToY(lowerThresholdDb_[idx]);
         const float yUpper = dbToY(upperThresholdDb_[idx]);
-        const float yRangeTop = dbToY(upperThresholdDb_[idx] + rangeDb_[idx]);
-        const float yRangeBottom = dbToY(lowerThresholdDb_[idx] - rangeDb_[idx]);
         const float yLimit = dbToY(limitDb_[idx]);
         const bool lowerHot = hoveredHandle_ == lowerThresholdHandles[idx] ||
                               draggedHandle_ == lowerThresholdHandles[idx];
@@ -752,23 +707,18 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
                               draggedHandle_ == upperThresholdHandles[idx];
         const bool limitHot =
             hoveredHandle_ == limitHandles[idx] || draggedHandle_ == limitHandles[idx];
-        const bool aboveRatioHot =
-            hoveredHandle_ == aboveRatioHandles[idx] || draggedHandle_ == aboveRatioHandles[idx];
-        const bool belowRatioHot =
-            hoveredHandle_ == belowRatioHandles[idx] || draggedHandle_ == belowRatioHandles[idx];
-        const bool attackHot =
-            hoveredHandle_ == attackHandles[idx] || draggedHandle_ == attackHandles[idx];
-        const bool releaseHot =
-            hoveredHandle_ == releaseHandles[idx] || draggedHandle_ == releaseHandles[idx];
 
-        g.setColour(colour.withAlpha(0.08f));
+        // The selected band lit, the others faint; the active zones above and below the
+        // thresholds a shade deeper.
+        const bool selected = band == selectedBand_;
+        g.setColour(colour.withAlpha(selected ? 0.10f : 0.04f));
+        g.fillRect(
+            juce::Rectangle<float>(x0 + 1.0f, plot.getY(), x1 - x0 - 2.0f, plot.getHeight()));
+        g.setColour(colour.withAlpha(selected ? 0.10f : 0.05f));
         g.fillRect(juce::Rectangle<float>(x0 + 1.0f, plot.getY(), x1 - x0 - 2.0f,
                                           std::max(0.0f, yUpper - plot.getY())));
         g.fillRect(juce::Rectangle<float>(x0 + 1.0f, yLower, x1 - x0 - 2.0f,
                                           std::max(0.0f, plot.getBottom() - yLower)));
-        g.setColour(colour.withAlpha(0.05f));
-        g.fillRect(juce::Rectangle<float>(x0 + 1.0f, std::min(yRangeTop, yRangeBottom),
-                                          x1 - x0 - 2.0f, std::fabs(yRangeBottom - yRangeTop)));
 
         g.setColour(colour.withAlpha(0.85f));
         g.drawLine(x0 + 2.0f, yUpper, x1 - 2.0f, yUpper, upperHot ? 2.4f : 1.6f);
@@ -778,77 +728,8 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
                         .withAlpha(limitHot ? 0.95f : 0.55f));
         g.drawLine(x0 + 2.0f, yLimit, x1 - 2.0f, yLimit, limitHot ? 2.0f : 1.1f);
 
-        g.setFont(10.0f);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.34f));
-        g.drawText(
-            bandNames[idx],
-            juce::Rectangle<float>(x0 + 4.0f, plot.getY() + 3.0f, 38.0f, 12.0f).toNearestInt(),
-            juce::Justification::centredLeft);
-
-        const bool ratioActive = ratioScrollBand_ == band && !rangeScrollActive_;
-        const bool rangeActive = ratioScrollBand_ == band && rangeScrollActive_;
-        const bool ratioEngaged = ratioActive || aboveRatioHot || belowRatioHot;
-        const juce::String aboveRatioText = ratioLabel(aboveRatio_[idx]);
-        const juce::String belowRatioText = ratioLabel(belowRatio_[idx]);
-        const juce::String rangeText =
-            rangeActive ? "RNG " + juce::String(rangeDb_[idx], 0) : juce::String(rangeDb_[idx], 0);
-        const float cx = (x0 + x1) * 0.5f;
-        auto makeBandPillArea = [&](float y) {
-            constexpr float preferredWidth = 54.0f;
-            constexpr float height = 15.0f;
-            const float width = std::max(0.0f, std::min(preferredWidth, x1 - x0 - 6.0f));
-            const float minLeft = x0 + 3.0f;
-            const float maxLeft = std::max(minLeft, x1 - 3.0f - width);
-            const float left = juce::jlimit(minLeft, maxLeft, cx - width * 0.5f);
-            return juce::Rectangle<float>(left, y, width, height);
-        };
-        aboveRatioAreas_[idx] = makeBandPillArea(yUpper - 19.0f);
-        belowRatioAreas_[idx] = makeBandPillArea(yLower + 4.0f);
-        const float timingWidth = std::max(0.0f, std::min(70.0f, x1 - x0 - 8.0f));
-        const float timingX = x0 + 4.0f;
-        attackAreas_[idx] =
-            juce::Rectangle<float>(timingX, plot.getY() + 18.0f, timingWidth, 14.0f);
-        releaseAreas_[idx] = attackAreas_[idx].translated(0.0f, 15.0f);
-
-        auto drawRatioPill = [&](juce::Rectangle<float> area, const juce::String& text, bool active,
-                                 bool hot) {
-            if (hot || active) {
-                g.setColour(colour.withAlpha(hot ? 0.28f : 0.16f));
-                g.fillRoundedRectangle(area, 3.0f);
-                g.setColour(colour.withAlpha(0.85f));
-                g.drawRoundedRectangle(area, 3.0f, 1.0f);
-            }
-            g.setColour(colour.withAlpha((hot || active) ? 0.98f : 0.62f));
-            g.drawText(text, area.toNearestInt(), juce::Justification::centred);
-        };
-
-        drawRatioPill(aboveRatioAreas_[idx], "A " + aboveRatioText,
-                      ratioActive && ratioScrollAbove_, aboveRatioHot);
-        drawRatioPill(belowRatioAreas_[idx], "B " + belowRatioText,
-                      ratioActive && !ratioScrollAbove_, belowRatioHot);
-
-        auto drawTimingPill = [&](juce::Rectangle<float> area, const juce::String& text, bool hot) {
-            if (hot) {
-                g.setColour(colour.withAlpha(0.24f));
-                g.fillRoundedRectangle(area, 3.0f);
-                g.setColour(colour.withAlpha(0.85f));
-                g.drawRoundedRectangle(area, 3.0f, 1.0f);
-            }
-            g.setColour(colour.withAlpha(hot ? 0.98f : 0.62f));
-            g.drawText(text, area.toNearestInt(), juce::Justification::centred);
-        };
-        drawTimingPill(attackAreas_[idx], "A " + timeLabel(attackMs_[idx]), attackHot);
-        drawTimingPill(releaseAreas_[idx], "R " + timeLabel(releaseMs_[idx]), releaseHot);
-
-        g.setColour(colour.withAlpha(rangeActive ? 0.95f : 0.35f));
-        g.drawText(rangeText + " dB",
-                   CurveLabelLayout::centredIn(
-                       juce::Rectangle<float>(x0, plot.getY(), x1 - x0, plot.getHeight()), cx,
-                       ((yUpper + yLower) * 0.5f) - 6.0f, 56.0f, 12.0f)
-                       .toNearestInt(),
-                   juce::Justification::centred);
-
-        if ((lowerHot || upperHot || limitHot) && !ratioEngaged && !attackHot && !releaseHot) {
+        g.setFont(fonts.getMonoFont(10.0f));
+        if (lowerHot || upperHot || limitHot) {
             const float valueDb = upperHot   ? upperThresholdDb_[idx]
                                   : lowerHot ? lowerThresholdDb_[idx]
                                              : limitDb_[idx];
@@ -858,15 +739,8 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
                                juce::String(valueDb, 1) + " dB";
             float yLabel = valueDb > -34.0f ? dbToY(valueDb) + 3.0f : dbToY(valueDb) - 15.0f;
             auto labelArea = juce::Rectangle<float>(x0 + 4.0f, yLabel, x1 - x0 - 8.0f, 13.0f);
-            if (labelArea.intersects(aboveRatioAreas_[idx]) ||
-                labelArea.intersects(belowRatioAreas_[idx])) {
-                if (upperHot)
-                    yLabel = yUpper + 5.0f;
-                else if (lowerHot)
-                    yLabel = yLower - 18.0f;
-                labelArea.setY(
-                    juce::jlimit(plot.getY(), plot.getBottom() - labelArea.getHeight(), yLabel));
-            }
+            labelArea.setY(
+                juce::jlimit(plot.getY(), plot.getBottom() - labelArea.getHeight(), yLabel));
             g.setColour(((upperHot || lowerHot)
                              ? colour
                              : ActiveTheme::getColour(ActiveTheme::MULTIBAND_LIMIT))
@@ -875,63 +749,135 @@ void CompiledMultibandCurveView::paint(juce::Graphics& g) {
         }
     }
 
+    const auto amber = ActiveTheme::getColour(ActiveTheme::DEVICE_AMBER);
     auto drawXo = [&](float x, Handle h, float hz) {
         const bool active = hoveredHandle_ == h || draggedHandle_ == h;
-        g.setColour(
-            ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(active ? 0.95f : 0.5f));
+        g.setColour(amber.withAlpha(active ? 1.0f : 0.75f));
         g.fillRect(juce::Rectangle<float>(x - (active ? 1.0f : 0.5f), plot.getY(),
                                           active ? 2.0f : 1.0f, plot.getHeight()));
-        if (active) {
-            const auto text = hz >= 1000.0f
-                                  ? juce::String(hz / 1000.0f, 2) + " kHz"
-                                  : juce::String(static_cast<int>(std::round(hz))) + " Hz";
-            g.setFont(11.0f);
-            g.drawText(text,
-                       CurveLabelLayout::centredIn(plot, x, plot.getY() + 2.0f, 64.0f, 14.0f)
-                           .toNearestInt(),
-                       juce::Justification::centred);
-        }
+        const auto text = hz >= 1000.0f ? juce::String(hz / 1000.0f, 2) + " kHz"
+                                        : juce::String(juce::roundToInt(hz)) + " Hz";
+        g.setFont(fonts.getMonoFont(10.5f));
+        const float width =
+            juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), text) + 10.0f;
+        const auto label =
+            juce::Rectangle<float>(x - width / 2.0f, plot.getY() + 4.0f, width, 18.0f)
+                .constrainedWithin(plot);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));
+        g.fillRoundedRectangle(label, 3.0f);
+        g.setColour(amber);
+        g.drawText(text, label, juce::Justification::centred, false);
     };
     drawXo(lowX, Handle::LowXo, lowXoHz_);
     drawXo(highX, Handle::HighXo, highXoHz_);
+}
 
-    collapseButtonArea_ = juce::Rectangle<float>(
-        plot.getRight() - kCollapseButtonSize - kCollapseButtonMargin,
-        plot.getY() + kCollapseButtonMargin, kCollapseButtonSize, kCollapseButtonSize);
+void CompiledMultibandCurveView::resized() {
+    geometry_ = MultibandEditorGeometry::of(getLocalBounds());
+    plotArea_ = geometry_.plot.toFloat();
+}
 
-    const bool collapsed = compiledPlugin_ != nullptr && compiledPlugin_->isCurveCollapsed();
-    if (collapseButtonHovered_) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT).withAlpha(0.08f));
-        g.fillRoundedRectangle(collapseButtonArea_, 3.0f);
+void CompiledMultibandCurveView::paint(juce::Graphics& g) {
+    paintGraph(g);
+    paintTabs(g);
+    paintEditor(g);
+}
+
+void CompiledMultibandCurveView::selectBand(int band) {
+    if (band < 0 || band > 2)
+        return;
+    selectedBand_ = band;
+    if (onPageRequested_)
+        onPageRequested_(band);
+    repaint();
+}
+
+juce::Rectangle<float> CompiledMultibandCurveView::tabBounds(int band) const {
+    constexpr float kGap = 6.0f;
+    const auto row = geometry_.tabs.toFloat();
+    const float width = (row.getWidth() - 2.0f * kGap) / 3.0f;
+    return {row.getX() + static_cast<float>(band) * (width + kGap), row.getY(), width,
+            row.getHeight()};
+}
+
+int CompiledMultibandCurveView::tabAt(juce::Point<float> p) const {
+    for (int band = 0; band < 3; ++band)
+        if (tabBounds(band).contains(p))
+            return band;
+    return -1;
+}
+
+void CompiledMultibandCurveView::paintTabs(juce::Graphics& g) {
+    static constexpr const char* kNames[] = {"LOW", "MID", "HIGH"};
+    const auto hz = [](float value) {
+        return value >= 1000.0f ? juce::String(value / 1000.0f, value >= 10000.0f ? 0 : 1) + "k"
+                                : juce::String(juce::roundToInt(value));
+    };
+    const std::array<juce::String, 3> ranges{{"< " + hz(lowXoHz_) + " Hz",
+                                              hz(lowXoHz_) + "-" + hz(highXoHz_) + " Hz",
+                                              "> " + hz(highXoHz_) + " Hz"}};
+    auto& fonts = FontManager::getInstance();
+    for (int band = 0; band < 3; ++band) {
+        const auto tab = tabBounds(band);
+        const auto colour = device_shell::chainColour(band);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));
+        g.fillRoundedRectangle(tab, 4.0f);
+        if (band == selectedBand_) {
+            g.setColour(colour);
+            g.drawRoundedRectangle(tab.reduced(0.75f), 4.0f, 1.5f);
+        }
+        auto inner = tab.reduced(12.0f, 0.0f);
+        g.setColour(colour);
+        g.fillEllipse(juce::Rectangle<float>(8.0f, 8.0f)
+                          .withCentre({inner.getX() + 4.0f, inner.getCentreY()}));
+        inner.removeFromLeft(16.0f);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
+        g.setFont(fonts.getMonoFont(11.0f).boldened().withExtraKerningFactor(0.08f));
+        g.drawText(kNames[band], inner, juce::Justification::centredLeft, false);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+        g.setFont(fonts.getMonoFont(10.0f));
+        g.drawText(ranges[static_cast<size_t>(band)], inner, juce::Justification::centredRight,
+                   false);
     }
-    const auto centre = collapseButtonArea_.getCentre();
-    const float armLen = kCollapseButtonSize * 0.28f;
-    juce::Path chevron;
-    if (collapsed) {
-        chevron.startNewSubPath(centre.x - armLen, centre.y + armLen * 0.5f);
-        chevron.lineTo(centre.x, centre.y - armLen * 0.5f);
-        chevron.lineTo(centre.x + armLen, centre.y + armLen * 0.5f);
-    } else {
-        chevron.startNewSubPath(centre.x - armLen, centre.y - armLen * 0.5f);
-        chevron.lineTo(centre.x, centre.y + armLen * 0.5f);
-        chevron.lineTo(centre.x + armLen, centre.y - armLen * 0.5f);
-    }
-    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT)
-                    .withAlpha(collapseButtonHovered_ ? 0.95f : 0.5f));
-    g.strokePath(chevron, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved,
-                                               juce::PathStrokeType::rounded));
+}
+
+void CompiledMultibandCurveView::paintEditor(juce::Graphics& g) {
+    static constexpr const char* kNames[] = {"LOW BAND", "MID BAND", "HIGH BAND"};
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_WELL));
+    g.fillRoundedRectangle(geometry_.editor.toFloat(), 4.0f);
+
+    auto title = geometry_.editorTitle.toFloat();
+    g.setColour(device_shell::chainColour(selectedBand_));
+    g.fillEllipse(
+        juce::Rectangle<float>(8.0f, 8.0f).withCentre({title.getX() + 4.0f, title.getCentreY()}));
+    title.removeFromLeft(16.0f);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
+    g.setFont(
+        FontManager::getInstance().getMonoFont(11.0f).boldened().withExtraKerningFactor(0.08f));
+    g.drawText(kNames[selectedBand_], title, juce::Justification::centredLeft, false);
+
+    // The divider before the whole-device column.
+    const auto globals = geometry_.globals.toFloat();
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
+    g.fillRect(juce::Rectangle<float>(globals.getX() - 13.0f, globals.getY() + 8.0f, 1.0f,
+                                      globals.getHeight() - 16.0f));
 }
 
 const CompiledPresentationSpec& getMagdaMultibandPresentation() {
+    using MB = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin;
     static const CompiledPresentationSpec kSpec{
-        .pluginId = magda::daw::audio::compiled::MagdaMultibandCompiledPlugin::xmlTypeName,
+        .pluginId = MB::xmlTypeName,
         .layoutCellCount = 12,
         .layoutCellsPerRow = 3,
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledMultibandCurveView>(pluginId);
         },
-        .visualMinFractionNumerator = 3,
-        .visualMinFractionDenominator = 4,
+        // The graph, a band's ten knobs beside it, and the whole-device column.
+        .preferredSlotWidth = 1040,
+        .mixSlot = MB::kMixSlot,
+        .createLayout = []() -> std::unique_ptr<DeviceParamLayout> {
+            return std::make_unique<CompiledMultibandBandLayout>();
+        },
     };
     return kSpec;
 }
