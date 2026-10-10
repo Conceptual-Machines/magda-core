@@ -605,14 +605,9 @@ void MixerView::ChannelStrip::setupControls() {
     if (!isMaster_) {
         recordButton = std::make_unique<magda::SvgButton>("record", BinaryData::track_record_svg,
                                                           BinaryData::track_record_svgSize);
-        recordButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-        recordButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-        recordButton->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
-        recordButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                                ActiveTheme::ICON_ON_ACCENT);
+        configureRecordArmButton(*recordButton);
         recordButton->setIconPadding(5.0f);
         recordButton->setTooltip(tr("tracks.record.tooltip"));
-        recordButton->setClickingTogglesState(true);
         recordButton->onClick = [this]() {
             const bool armed = recordButton->getToggleState();
             for (auto tid : getMultiEditTargets(trackId_, isMaster_))

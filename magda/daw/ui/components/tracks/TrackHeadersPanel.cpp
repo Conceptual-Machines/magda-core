@@ -329,14 +329,9 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // Track record-arm: a dot, grey at rest and red when armed.
     recordButton = std::make_unique<magda::SvgButton>("record", BinaryData::track_record_svg,
                                                       BinaryData::track_record_svgSize);
-    recordButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-    recordButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    recordButton->setActiveBackgroundColor(ActiveTheme::SURFACE);
-    recordButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                            ActiveTheme::DEVICE_RED);
+    configureRecordArmButton(*recordButton);
     recordButton->setIconPadding(4.5f);
     recordButton->setTooltip(tr("tracks.record.tooltip"));
-    recordButton->setClickingTogglesState(true);
 
     // Monitor button (3-state: Off → In → Auto → Off). Matches the inspector
     // Input-monitor: 3-state control (Off / In / Auto). Off = grey glyph, In =
@@ -346,7 +341,6 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // Glyphs fit their own artwork, so paddings differ to land one visual size on 26x18
     // buttons: ring and dot 9px, speaker and automation about 10px wide, monitor 11px.
     monitorButton->setIconPadding(7.0f);
-    monitorButton->setGlyphStyle(true);
 
     // Automation button
     automationButton = std::make_unique<SvgButton>("Automation", BinaryData::automation_svg,

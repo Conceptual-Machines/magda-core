@@ -192,10 +192,11 @@ inline void applyDeviceIconStyle(magda::SvgButton& btn, DeviceIcon kind,
     btn.setPressedColor(ActiveTheme::DEVICE_ICON_HOVER);
     btn.setHoverBackgroundColor(ActiveTheme::DEVICE_ICON_HOVER_BG);
     btn.setActiveColor(kind == DeviceIcon::Power ? ActiveTheme::DEVICE_GREEN : activeRole);
-    // State shows in the glyph colour only; clear any fill an older style set.
     btn.setActiveBackgroundColor(juce::Colours::transparentBlack);
-    if (kind == DeviceIcon::Toggle || kind == DeviceIcon::Power)
+    if (kind == DeviceIcon::Toggle || kind == DeviceIcon::Power) {
+        btn.setStateTint(kind == DeviceIcon::Power ? ActiveTheme::DEVICE_GREEN : activeRole);
         btn.setClickingTogglesState(true);
+    }
 }
 
 /** @brief Chipless mute (track chain header, rack chain rows): the device icon style, with the

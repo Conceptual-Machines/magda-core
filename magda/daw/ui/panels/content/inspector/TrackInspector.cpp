@@ -152,13 +152,8 @@ TrackInspector::TrackInspector() {
     // Record button (arrange track-header style)
     recordButton_ = std::make_unique<SvgButton>("record", BinaryData::track_record_svg,
                                                 BinaryData::track_record_svgSize);
-    recordButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-    recordButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    recordButton_->setActiveBackgroundColor(ActiveTheme::SURFACE);
-    recordButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                             ActiveTheme::DEVICE_RED);
+    configureRecordArmButton(*recordButton_);
     recordButton_->setIconPadding(6.5f);
-    recordButton_->setClickingTogglesState(true);
     recordButton_->onClick = [this]() {
         DBG("TrackInspector::recordButton clicked - trackId="
             << selectedTrackId_ << " toggleState=" << (int)recordButton_->getToggleState());
@@ -174,7 +169,7 @@ TrackInspector::TrackInspector() {
     enableButton_ =
         std::make_unique<SvgButton>("enable", BinaryData::power_svg, BinaryData::power_svgSize);
     enableButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    enableButton_->setActiveBackgroundColor(ActiveTheme::SURFACE);
+    enableButton_->setStateTint(ActiveTheme::DEVICE_GREEN);
     enableButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     enableButton_->setStateColourReplacement(juce::Colour(0xFFE6E6E6), ActiveTheme::ICON_NEUTRAL,
                                              ActiveTheme::DEVICE_GREEN);
@@ -204,7 +199,6 @@ TrackInspector::TrackInspector() {
         return std::vector<magda::TrackId>{selectedTrackId_};
     };
     monitorButton_.setIconPadding(7.0f);  // wide glyph: width-limited, so not raised with the row
-    monitorButton_.setGlyphStyle(true);
     addAndMakeVisible(monitorButton_);
 
     // Automation indicator — mirrors the arrange track-header automation button.

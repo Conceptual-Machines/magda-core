@@ -946,35 +946,15 @@ std::unique_ptr<DraggableValueLabel> makeGainLabel() {
     return label;
 }
 
-/** @brief A strip toggle: SESSION_TOGGLE_ON colours when on, or the arm's red set. */
-void styleStripToggle(SvgButton& button, bool arm) {
+/** @brief A strip toggle: an unlit chip, tinted in @p tint while engaged, as every view's
+ *  mute, solo, arm, monitor and power are. */
+void styleStripToggle(SvgButton& button, ColourRole tint) {
     button.setBorderColor(ActiveTheme::SESSION_CONTROL_BORDER);
-    button.setActiveBorderColor(arm ? ActiveTheme::SESSION_RECORD_BORDER
-                                    : ActiveTheme::SESSION_TOGGLE_ON_BORDER);
     button.setNormalBackgroundColor(ActiveTheme::SESSION_CONTROL);
-    button.setActiveBackgroundColor(arm ? ActiveTheme::SESSION_ARM_ON
-                                        : ActiveTheme::SESSION_TOGGLE_ON);
-    const auto onIcon =
-        arm ? ActiveTheme::SESSION_ARM_ON_ICON : ActiveTheme::SESSION_TOGGLE_ON_ICON;
-    button.setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL, onIcon);
-    button.setStateColourReplacement(juce::Colour(0xFF1E1E1E), ActiveTheme::ICON_NEUTRAL, onIcon);
-    button.setCornerRadius(6.0f);
-}
-
-/** @brief Mute: an unlit chip while audible; while muted the glyph (or M), border and
- *  background take the app's mute colour. */
-void styleStripMute(SvgButton& button) {
-    // Muted tints the chip like the chain header's power button tints green.
-    const auto mute = ActiveTheme::getColour(ActiveTheme::STATUS_WARNING);
-    button.setBorderColor(ActiveTheme::SESSION_CONTROL_BORDER);
-    button.setActiveBorderColor(mute.withAlpha(0.45f));
-    button.setNormalBackgroundColor(ActiveTheme::SESSION_CONTROL);
-    button.setActiveBackgroundColor(mute.withAlpha(0.18f));
+    button.setStateTint(tint);
     for (auto source : {juce::Colour(0xFFB3B3B3), juce::Colour(0xFF1E1E1E)})
-        button.setStateColourReplacement(source, ActiveTheme::ICON_NEUTRAL,
-                                         ActiveTheme::STATUS_WARNING);
+        button.setStateColourReplacement(source, ActiveTheme::ICON_NEUTRAL, tint);
     button.setNormalColor(ActiveTheme::ICON_NEUTRAL);
-    button.setActiveColor(ActiveTheme::STATUS_WARNING);
     button.setCornerRadius(6.0f);
 }
 
@@ -1041,7 +1021,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
         speakerButton_ = std::make_unique<SvgButton>(
             "Speaker", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
             BinaryData::master_off_svg, BinaryData::master_off_svgSize);
-        styleStripMute(*speakerButton_);
+        styleStripToggle(*speakerButton_, ActiveTheme::STATUS_WARNING);
         speakerButton_->setLetterGlyph("M");
         speakerButton_->setClickingTogglesState(true);
         speakerButton_->setToggleState(track.muted, juce::dontSendNotification);
@@ -1056,7 +1036,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
 
         soloButton_ =
             std::make_unique<SvgButton>("Solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
-        styleStripToggle(*soloButton_, false);
+        styleStripToggle(*soloButton_, ActiveTheme::DEVICE_AMBER);
         soloButton_->setLetterGlyph("S");
         soloButton_->setClickingTogglesState(true);
         soloButton_->setToggleState(track.soloed, juce::dontSendNotification);
@@ -1071,7 +1051,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
 
         recordButton_ = std::make_unique<SvgButton>("record", BinaryData::track_record_svg,
                                                     BinaryData::track_record_svgSize);
-        styleStripToggle(*recordButton_, true);
+        styleStripToggle(*recordButton_, ActiveTheme::DEVICE_RED);
         recordButton_->setTooltip(tr("tracks.record.tooltip"));
         recordButton_->setClickingTogglesState(true);
         recordButton_->setToggleState(track.recordArmed, juce::dontSendNotification);
@@ -1083,10 +1063,9 @@ class SessionView::MiniChannelStrip : public juce::Component {
         addAndMakeVisible(*recordButton_);
 
         monitorButton_ = std::make_unique<MonitorControl>();
-        styleStripToggle(*monitorButton_, false);
+        styleStripToggle(*monitorButton_, ActiveTheme::ACCENT_POSITIVE);
         monitorButton_->getTrackId = [this]() { return trackId_; };
         monitorButton_->getTargets = [this]() { return getMultiEditTargets(trackId_); };
-        monitorButton_->setFixedOnColours(true);
         addAndMakeVisible(*monitorButton_);
 
         // The monitor keeps its own right-click menu.

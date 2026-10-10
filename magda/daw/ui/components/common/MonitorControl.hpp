@@ -35,21 +35,12 @@ class MonitorControl : public SvgButton {
     // Re-read the track's monitor mode and repaint the glyph/chip to match.
     void refresh();
 
-    // Keeps the neutral chip and shows In / Auto in the glyph colour instead.
-    void setGlyphStyle(bool glyphStyle);
-
-    // Keeps the caller's active colours, so In and Auto share one on look.
-    void setFixedOnColours(bool fixed);
-
     void mouseDown(const juce::MouseEvent& e) override;
 
   private:
     void applyMode(InputMonitorMode mode);
     void showModeMenu();
     void updateVisual(InputMonitorMode mode);
-
-    bool glyphStyle_ = false;
-    bool fixedOnColours_ = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MonitorControl)
 };

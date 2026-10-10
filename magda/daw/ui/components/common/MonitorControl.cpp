@@ -107,32 +107,18 @@ void MonitorControl::applyMode(InputMonitorMode mode) {
     updateVisual(mode);
 }
 
-void MonitorControl::setGlyphStyle(bool glyphStyle) {
-    glyphStyle_ = glyphStyle;
-    refresh();
-}
-
-void MonitorControl::setFixedOnColours(bool fixed) {
-    fixedOnColours_ = fixed;
-    refresh();
-}
-
 void MonitorControl::updateVisual(InputMonitorMode mode) {
     // Off = off glyph; In/Auto = on glyph, green = always monitor, blue = monitor while armed.
-    // The colour fills the chip, or in glyph style tints the glyph on the neutral chip.
-    if (mode == InputMonitorMode::Off || fixedOnColours_) {
-        setActive(mode != InputMonitorMode::Off);
+    // The colour tints the glyph, background and border of the chip.
+    if (mode == InputMonitorMode::Off) {
+        setActive(false);
         return;
     }
     const auto accent =
         mode == InputMonitorMode::In ? ActiveTheme::ACCENT_POSITIVE : ActiveTheme::ACCENT_PRIMARY;
-    if (glyphStyle_) {
-        setActiveBackgroundColor(ActiveTheme::SURFACE);
-        setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL, accent);
-        setStateColourReplacement(juce::Colour(0xFF1E1E1E), ActiveTheme::ICON_NEUTRAL, accent);
-    } else {
-        setActiveBackgroundColor(ActiveTheme::getColour(accent));
-    }
+    setStateTint(accent);
+    setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL, accent);
+    setStateColourReplacement(juce::Colour(0xFF1E1E1E), ActiveTheme::ICON_NEUTRAL, accent);
     setActive(true);
 }
 
