@@ -86,6 +86,7 @@ class TrackHeadersPanel : public juce::Component,
     void itemDropped(const SourceDetails& details) override;
 
     void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
     void lookAndFeelChanged() override;
     void refreshHeaderSideLayout();
