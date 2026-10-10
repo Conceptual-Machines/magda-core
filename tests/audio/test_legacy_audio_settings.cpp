@@ -125,3 +125,47 @@ TEST_CASE("The chosen interface round-trips through config.json", "[audio-io][27
     config.setAudioIO(std::nullopt);
     config.save();
 }
+
+TEST_CASE("Channel names round-trip per interface and direction", "[audio-io][2259][config]") {
+    auto& config = magda::Config::getInstance();
+    config.setChannelName("M4", true, 2, false, "Neumann");
+    config.setChannelName("M4", true, 2, true, "Drum OH");
+    config.setChannelName("M4", false, 0, true, "Monitors");
+    config.save();
+
+    config.setChannelName("M4", true, 2, false, "");
+    config.setChannelName("M4", true, 2, true, "");
+    config.setChannelName("M4", false, 0, true, "");
+    CHECK(config.getChannelNames("M4", true).empty());
+
+    config.load();
+    CHECK(config.getChannelNames("M4", true).nameOf(2, false) == "Neumann");
+    CHECK(config.getChannelNames("M4", true).nameOf(2, true) == "Drum OH");
+    CHECK(config.getChannelNames("M4", false).nameOf(0, true) == "Monitors");
+    CHECK(config.getChannelNames("M4", false).nameOf(0, false).empty());
+    CHECK(config.getChannelNames("Scarlett 18i20", true).empty());
+
+    config.setChannelName("M4", true, 2, false, "");
+    config.setChannelName("M4", true, 2, true, "");
+    config.setChannelName("M4", false, 0, true, "");
+    config.save();
+}
+
+TEST_CASE("Channels ticked singly round-trip apart from pairs", "[audio-io][config]") {
+    auto& config = magda::Config::getInstance();
+    const magda::AudioIOSettings chosen{.backend = "CoreAudio",
+                                        .inputInterface = "M4",
+                                        .outputInterface = "M4",
+                                        .inputChannels = {0, 1, 4, 5},
+                                        .outputChannels = {0, 1},
+                                        .inputMonoChannels = {0, 1}};
+
+    config.setAudioIO(chosen);
+    config.save();
+    config.setAudioIO(std::nullopt);
+    config.load();
+    CHECK(config.getAudioIO() == chosen);
+
+    config.setAudioIO(std::nullopt);
+    config.save();
+}

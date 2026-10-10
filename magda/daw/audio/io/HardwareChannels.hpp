@@ -9,6 +9,8 @@
 
 #include <map>
 
+#include "../../core/ChannelNames.hpp"
+
 namespace magda {
 
 /**
@@ -25,6 +27,10 @@ class HardwareChannels {
         juce::StringArray channelNames;
         /// The name saved routes give each open channel (#2747).
         std::map<int, juce::String> routeNames;
+        /// What the user calls this interface's channels (#2259).
+        ChannelNames userNames;
+        /// Open channels ticked singly in Audio Settings, which no stereo option takes.
+        juce::BigInteger mono;
     };
 
     /** @brief Told when channels open or close, on the message thread. */
@@ -32,6 +38,11 @@ class HardwareChannels {
       public:
         virtual ~Listener() = default;
         virtual void hardwareChannelsChanged() = 0;
+
+        /** @brief The user renamed a channel; nothing opened or closed. */
+        virtual void hardwareChannelNamesChanged() {
+            hardwareChannelsChanged();
+        }
     };
 
     virtual ~HardwareChannels() = default;
@@ -51,6 +62,9 @@ class HardwareChannels {
   protected:
     void notifyChanged() {
         listeners_.call([](Listener& listener) { listener.hardwareChannelsChanged(); });
+    }
+    void notifyNamesChanged() {
+        listeners_.call([](Listener& listener) { listener.hardwareChannelNamesChanged(); });
     }
 
   private:

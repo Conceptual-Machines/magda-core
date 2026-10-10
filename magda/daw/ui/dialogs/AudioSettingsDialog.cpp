@@ -22,6 +22,80 @@ namespace {
 
 constexpr int kToggleHeight = 24;
 constexpr int kRowSpacing = 4;
+/// The tick DialogLookAndFeel draws, and the gap it leaves before a toggle's text.
+constexpr int kTickWidth = 31;
+
+/// Debug builds only: a click-by-click trace has no place in a user's log.
+void log([[maybe_unused]] const juce::String& message) {
+#if JUCE_DEBUG
+    juce::Logger::writeToLog("[audio-settings] " + message);
+#endif
+}
+
+/// One-based, as the rows show them.
+juce::String channelList(const std::vector<int>& channels) {
+    juce::StringArray numbers;
+    for (const auto channel : channels)
+        numbers.add(juce::String(channel + 1));
+    return "[" + numbers.joinIntoString(",") + "]";
+}
+
+juce::String channelList(const juce::BigInteger& mask) {
+    std::vector<int> channels;
+    for (auto bit = mask.findNextSetBit(0); bit >= 0; bit = mask.findNextSetBit(bit + 1))
+        channels.push_back(bit);
+    return channelList(channels);
+}
+
+/// A channel's name, shown with its socket and edited as the user's name alone.
+class ChannelNameLabel final : public juce::Label {
+  public:
+    std::function<juce::String()> userName;
+    std::function<void(const juce::String&)> onRename;
+    std::function<void()> onClear;
+
+  protected:
+    void editorShown(juce::TextEditor* editor) override {
+        editor->setText(userName(), false);
+        editor->selectAll();
+    }
+
+    // Committed against the user's name, not the label shown, so typing the label itself
+    // still names the channel.
+    void editorAboutToBeHidden(juce::TextEditor* editor) override {
+        if (!cancelled_ && editor->getText().trim() != userName())
+            onRename(editor->getText());
+        editor->setText(getText(), false);
+    }
+
+    void textEditorEscapeKeyPressed(juce::TextEditor& editor) override {
+        cancelled_ = true;
+        juce::Label::textEditorEscapeKeyPressed(editor);
+        cancelled_ = false;
+    }
+
+    void mouseDown(const juce::MouseEvent& e) override {
+        if (!e.mods.isPopupMenu()) {
+            juce::Label::mouseDown(e);
+            return;
+        }
+        using Safe = juce::Component::SafePointer<ChannelNameLabel>;
+        juce::PopupMenu menu;
+        menu.addItem(tr("audio_settings.menu.rename_channel"), [safe = Safe(this)] {
+            if (safe != nullptr)
+                safe->showEditor();
+        });
+        menu.addItem(tr("audio_settings.menu.clear_channel_name"), userName().isNotEmpty(), false,
+                     [safe = Safe(this)] {
+                         if (safe != nullptr)
+                             safe->onClear();
+                     });
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this));
+    }
+
+  private:
+    bool cancelled_ = false;
+};
 
 }  // namespace
 
@@ -49,14 +123,17 @@ void CustomChannelSelector::refresh() {
     channelToggles_.clear();
 
     const auto chosen = audio_.chosen();
-    const juce::String interfaceName = isInput_ ? chosen.inputInterface : chosen.outputInterface;
-    const auto channelNames = audio_.channelNames(chosen.backend, interfaceName, isInput_);
+    interfaceName_ = isInput_ ? chosen.inputInterface : chosen.outputInterface;
+    driverNames_ = audio_.channelNames(chosen.backend, interfaceName_, isInput_);
 
     juce::BigInteger activeChannels;
     for (const auto channel : isInput_ ? chosen.inputChannels : chosen.outputChannels)
         activeChannels.setBit(channel);
+    juce::BigInteger monoChannels;
+    for (const auto channel : isInput_ ? chosen.inputMonoChannels : chosen.outputMonoChannels)
+        monoChannels.setBit(channel);
 
-    int numChannels = channelNames.size();
+    int numChannels = driverNames_.size();
 
     // Read current preview output channel from Config (only relevant for output)
     int previewOffset = magda::Config::getInstance().getPreviewOutputChannel();
@@ -65,18 +142,19 @@ void CustomChannelSelector::refresh() {
     for (int i = 0; i < numChannels; i += 2) {
         if (i + 1 < numChannels) {
             ChannelToggle toggle;
-            toggle.button =
-                std::make_unique<juce::ToggleButton>(ChannelLabels::pair(channelNames, i, i + 1));
-            toggle.button->setTooltip(toggle.button->getButtonText());
+            toggle.button = std::make_unique<juce::ToggleButton>();
+            toggle.name = makeNameLabel(i, true);
             toggle.startChannel = i;
             toggle.isStereo = true;
 
             // Check if both channels in pair are active
-            bool pairActive = activeChannels[i] && activeChannels[i + 1];
+            bool pairActive = activeChannels[i] && activeChannels[i + 1] && !monoChannels[i] &&
+                              !monoChannels[i + 1];
             toggle.button->setToggleState(pairActive, juce::dontSendNotification);
 
             toggle.button->onClick = [this, i]() { onChannelToggled(i, true); };
             list_.addAndMakeVisible(*toggle.button);
+            list_.addAndMakeVisible(*toggle.name);
 
             // For output channels, add a "Preview" toggle next to each stereo pair
             if (!isInput_) {
@@ -103,24 +181,21 @@ void CustomChannelSelector::refresh() {
     // Create individual mono channel toggles
     for (int i = 0; i < numChannels; ++i) {
         ChannelToggle toggle;
-        toggle.button = std::make_unique<juce::ToggleButton>(ChannelLabels::mono(channelNames, i));
-        toggle.button->setTooltip(toggle.button->getButtonText());
+        toggle.button = std::make_unique<juce::ToggleButton>();
+        toggle.name = makeNameLabel(i, false);
         toggle.startChannel = i;
         toggle.isStereo = false;
 
-        // Check if this individual channel is active (and its pair is not)
-        bool monoActive = activeChannels[i];
-        if (i % 2 == 0 && i + 1 < numChannels) {
-            // Even channel - check if pair is active
-            monoActive = monoActive && !activeChannels[i + 1];
-        } else if (i % 2 == 1) {
-            // Odd channel - check if pair is active
-            monoActive = monoActive && !activeChannels[i - 1];
-        }
+        // Open on its own, or its pair was ticked as two monos
+        const auto partner = i % 2 == 0 ? i + 1 : i - 1;
+        const auto hasPartner = partner < numChannels;
+        const bool monoActive = activeChannels[i] && (!hasPartner || !activeChannels[partner] ||
+                                                      monoChannels[i] || monoChannels[partner]);
 
         toggle.button->setToggleState(monoActive, juce::dontSendNotification);
         toggle.button->onClick = [this, i]() { onChannelToggled(i, false); };
         list_.addAndMakeVisible(*toggle.button);
+        list_.addAndMakeVisible(*toggle.name);
         channelToggles_.push_back(std::move(toggle));
     }
 
@@ -129,6 +204,12 @@ void CustomChannelSelector::refresh() {
 }
 
 void CustomChannelSelector::onChannelToggled(int channelIndex, bool isStereo) {
+    for (const auto& toggle : channelToggles_)
+        if (toggle.startChannel == channelIndex && toggle.isStereo == isStereo)
+            log(juce::String(isInput_ ? "input " : "output ") +
+                (isStereo ? juce::String(channelIndex + 1) + "-" + juce::String(channelIndex + 2)
+                          : juce::String(channelIndex + 1) + " mono") +
+                (toggle.button->getToggleState() ? " ticked" : " unticked"));
     if (isStereo) {
         // Stereo pair toggled - find corresponding mono channels and disable/uncheck them
         for (auto& toggle : channelToggles_) {
@@ -179,6 +260,49 @@ void CustomChannelSelector::onChannelToggled(int channelIndex, bool isStereo) {
     applyTicks();
 }
 
+juce::String CustomChannelSelector::rowLabel(int startChannel, bool isStereo) const {
+    const auto& user =
+        Config::getInstance().getChannelNames(interfaceName_.toStdString(), isInput_);
+    return isStereo ? ChannelLabels::pair(driverNames_, startChannel, startChannel + 1, user)
+                    : ChannelLabels::mono(driverNames_, startChannel, user);
+}
+
+std::unique_ptr<juce::Label> CustomChannelSelector::makeNameLabel(int startChannel, bool isStereo) {
+    auto label = std::make_unique<ChannelNameLabel>();
+    label->setText(rowLabel(startChannel, isStereo), juce::dontSendNotification);
+    label->setTooltip(label->getText() + "\n" + tr("audio_settings.tooltip.rename_channel"));
+    label->setFont(FontManager::getInstance().getUIFont(15.0f));
+    label->setBorderSize({});
+    label->setEditable(false, true);
+    label->setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
+    label->setColour(juce::Label::textWhenEditingColourId, ActiveTheme::getTextColour());
+    label->setColour(juce::Label::backgroundWhenEditingColourId,
+                     ActiveTheme::getColour(ActiveTheme::SURFACE));
+    label->setColour(juce::Label::outlineWhenEditingColourId,
+                     ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+    label->userName = [this, startChannel, isStereo] {
+        const auto& user =
+            Config::getInstance().getChannelNames(interfaceName_.toStdString(), isInput_);
+        return juce::String::fromUTF8(user.nameOf(startChannel, isStereo).c_str());
+    };
+    label->onRename = [this, startChannel, isStereo](const juce::String& name) {
+        rename(startChannel, isStereo, name);
+    };
+    label->onClear = [this, startChannel, isStereo] { rename(startChannel, isStereo, {}); };
+    return label;
+}
+
+void CustomChannelSelector::rename(int startChannel, bool isStereo, const juce::String& name) {
+    audio_.setChannelName(interfaceName_, isInput_, startChannel, isStereo, name);
+    for (auto& toggle : channelToggles_) {
+        if (toggle.startChannel != startChannel || toggle.isStereo != isStereo)
+            continue;
+        toggle.name->setText(rowLabel(startChannel, isStereo), juce::dontSendNotification);
+        toggle.name->setTooltip(toggle.name->getText() + "\n" +
+                                tr("audio_settings.tooltip.rename_channel"));
+    }
+}
+
 void CustomChannelSelector::refreshChannelStates() {
     // Enable/disable toggles based on mutual exclusion rules
     for (auto& toggle : channelToggles_) {
@@ -212,6 +336,13 @@ void CustomChannelSelector::refreshChannelStates() {
             toggle.button->setEnabled(!stereoConflict);
         }
     }
+    for (auto& toggle : channelToggles_) {
+        toggle.name->setColour(juce::Label::textColourId,
+                               toggle.button->getToggleState()
+                                   ? ActiveTheme::getTextColour()
+                                   : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        toggle.name->setAlpha(toggle.button->isEnabled() ? 1.0f : 0.5f);
+    }
 }
 
 void CustomChannelSelector::onPreviewToggled(int startChannel) {
@@ -223,16 +354,24 @@ void CustomChannelSelector::onPreviewToggled(int startChannel) {
 void CustomChannelSelector::applyTicks() {
     auto settings = audio_.chosen();
     auto& channels = isInput_ ? settings.inputChannels : settings.outputChannels;
+    auto& mono = isInput_ ? settings.inputMonoChannels : settings.outputMonoChannels;
     channels.clear();
+    mono.clear();
     for (const auto& toggle : channelToggles_) {
         if (!toggle.button->getToggleState())
             continue;
         channels.push_back(toggle.startChannel);
         if (toggle.isStereo)
             channels.push_back(toggle.startChannel + 1);
+        else
+            mono.push_back(toggle.startChannel);
     }
     std::ranges::sort(channels);
-    audio_.apply(settings);
+    const auto error = audio_.apply(settings);
+    const auto open = isInput_ ? audio_.inputs().open : audio_.outputs().open;
+    log(juce::String(isInput_ ? "inputs" : "outputs") + " asked " + channelList(channels) + " on " +
+        (isInput_ ? settings.inputInterface : settings.outputInterface) + ", open " +
+        channelList(open) + (error.isNotEmpty() ? ", error: " + error : juce::String()));
 }
 
 void CustomChannelSelector::paint(juce::Graphics& g) {
@@ -259,7 +398,8 @@ void CustomChannelSelector::layOutRows(int width) {
             toggle.previewButton->setBounds(row.removeFromRight(text + toggleHeight + 8));
             row.removeFromRight(4);
         }
-        toggle.button->setBounds(row);
+        toggle.button->setBounds(row.removeFromLeft(kTickWidth));
+        toggle.name->setBounds(row);
         top += toggleHeight + kRowSpacing;
     }
 }

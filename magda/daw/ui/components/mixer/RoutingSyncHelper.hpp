@@ -87,31 +87,36 @@ inline void populateAudioInputOptions(RoutingSelector* selector,
 
             const auto& channelNames = inputs->channelNames;
 
-            // Stereo pairs (ID 10+)
+            // Stereo pairs (ID 10+), from the channels not ticked as mono
+            juce::Array<int> pairable;
+            for (const int channel : activeIndices)
+                if (!inputs->mono[channel])
+                    pairable.add(channel);
+
             int id = 10;
-            for (int i = 0; i < activeIndices.size(); i += 2) {
-                if (i + 1 < activeIndices.size()) {
-                    options.push_back(
-                        {id,
-                         ChannelLabels::pair(channelNames, activeIndices[i], activeIndices[i + 1]),
-                         false,
-                         {activeIndices[i], activeIndices[i + 1]}});
-                    // The name a saved route stores
-                    if (outChannelMapping)
-                        (*outChannelMapping)[id] = "stereo:" + getDeviceName(activeIndices[i]);
-                    ++id;
-                }
+            for (int i = 0; i + 1 < pairable.size(); i += 2) {
+                options.push_back({id,
+                                   ChannelLabels::pair(channelNames, pairable[i], pairable[i + 1],
+                                                       inputs->userNames),
+                                   false,
+                                   {pairable[i], pairable[i + 1]}});
+                // The name a saved route stores
+                if (outChannelMapping)
+                    (*outChannelMapping)[id] = "stereo:" + getDeviceName(pairable[i]);
+                ++id;
             }
 
-            if (activeIndices.size() > 1) {
+            if (pairable.size() > 1)
                 options.push_back({0, "", true});  // separator
-            }
 
             // Mono channels (ID 100+)
             id = 100;
             for (int activeIndice : activeIndices) {
                 options.push_back(
-                    {id, ChannelLabels::mono(channelNames, activeIndice), false, {activeIndice}});
+                    {id,
+                     ChannelLabels::mono(channelNames, activeIndice, inputs->userNames),
+                     false,
+                     {activeIndice}});
                 if (outChannelMapping)
                     (*outChannelMapping)[id] = getDeviceName(activeIndice);
                 ++id;
@@ -305,8 +310,8 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
             for (const auto& g : groups) {
                 if (g.channels.size() != 2)
                     continue;
-                options.push_back(
-                    {id, ChannelLabels::pair(channelNames, g.channels[0], g.channels[1])});
+                options.push_back({id, ChannelLabels::pair(channelNames, g.channels[0],
+                                                           g.channels[1], outputs->userNames)});
                 if (outChannelMapping)
                     (*outChannelMapping)[id] = "stereo:" + g.name;
                 ++id;
@@ -320,7 +325,8 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
             for (const auto& g : groups) {
                 if (g.channels.size() != 1)
                     continue;
-                options.push_back({id, ChannelLabels::mono(channelNames, g.channels[0])});
+                options.push_back(
+                    {id, ChannelLabels::mono(channelNames, g.channels[0], outputs->userNames)});
                 if (outChannelMapping)
                     (*outChannelMapping)[id] = g.name;
                 ++id;
