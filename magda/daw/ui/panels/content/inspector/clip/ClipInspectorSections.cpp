@@ -298,51 +298,58 @@ void ClipInspector::initClipPropertiesSection() {
             menu.addItem(static_cast<int>(i + 3), palette[i].name, true, false, makeChip(colour));
         }
 
-        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(swatch), [this, swatch,
-                                                                                    palette](
-                                                                                       int result) {
-            if (result == 0)
-                return;
-            auto pid = primaryClipId();
-            if (pid == magda::INVALID_CLIP_ID)
-                return;
-            if (result == 1) {
-                // "None"
-                swatch->clearColour();
-                magda::ClipBatchEdit batch("Set Clip Colour", selectedClipIds_.size());
-                for (auto cid : selectedClipIds_) {
-                    batch.execute(std::make_unique<magda::SetClipColourCommand>(
-                        cid, juce::Colour(0xFF444444)));
-                }
-            } else if (result == 2) {
-                // Inherit from track
-                magda::ClipBatchEdit batch("Set Clip Colour", selectedClipIds_.size());
-                for (auto cid : selectedClipIds_) {
-                    const auto* clip = magda::ClipManager::getInstance().getClip(cid);
-                    if (clip) {
-                        const auto* track =
-                            magda::TrackManager::getInstance().getTrack(clip->trackId);
-                        if (track) {
-                            if (cid == pid)
-                                swatch->setColour(track->colour);
+        menu.showMenuAsync(
+            juce::PopupMenu::Options().withTargetComponent(&clipNameValue_),
+            [this, swatch, palette](int result) {
+                if (result == 0)
+                    return;
+                auto pid = primaryClipId();
+                if (pid == magda::INVALID_CLIP_ID)
+                    return;
+                if (result == 1) {
+                    // "None"
+                    swatch->clearColour();
+                    magda::ClipBatchEdit batch("Set Clip Colour", selectedClipIds_.size());
+                    for (auto cid : selectedClipIds_) {
+                        batch.execute(std::make_unique<magda::SetClipColourCommand>(
+                            cid, juce::Colour(0xFF444444)));
+                    }
+                } else if (result == 2) {
+                    // Inherit from track
+                    magda::ClipBatchEdit batch("Set Clip Colour", selectedClipIds_.size());
+                    for (auto cid : selectedClipIds_) {
+                        const auto* clip = magda::ClipManager::getInstance().getClip(cid);
+                        if (clip) {
+                            const auto* track =
+                                magda::TrackManager::getInstance().getTrack(clip->trackId);
+                            if (track) {
+                                if (cid == pid)
+                                    swatch->setColour(track->colour);
+                                batch.execute(std::make_unique<magda::SetClipColourCommand>(
+                                    cid, track->colour));
+                            }
+                        }
+                    }
+                } else {
+                    const auto idx = static_cast<size_t>(result - 3);
+                    if (idx < palette.size()) {
+                        const auto colour = juce::Colour(palette[idx].colour);
+                        swatch->setColour(colour);
+                        magda::ClipBatchEdit batch("Set Clip Colour", selectedClipIds_.size());
+                        for (auto cid : selectedClipIds_) {
                             batch.execute(
-                                std::make_unique<magda::SetClipColourCommand>(cid, track->colour));
+                                std::make_unique<magda::SetClipColourCommand>(cid, colour));
                         }
                     }
                 }
-            } else {
-                const auto idx = static_cast<size_t>(result - 3);
-                if (idx < palette.size()) {
-                    const auto colour = juce::Colour(palette[idx].colour);
-                    swatch->setColour(colour);
-                    magda::ClipBatchEdit batch("Set Clip Colour", selectedClipIds_.size());
-                    for (auto cid : selectedClipIds_) {
-                        batch.execute(std::make_unique<magda::SetClipColourCommand>(cid, colour));
-                    }
-                }
-            }
-        });
+            });
     };
+    // Right-clicking the name picks the colour, as in the track inspector.
+    namePopupListener_.onPopup = [swatch]() {
+        if (swatch->onColourClicked)
+            swatch->onColourClicked();
+    };
+    clipNameValue_.addMouseListener(&namePopupListener_, false);
     addChildComponent(*colourSwatch_);
 
     // Clip file path (read-only, inside viewport)

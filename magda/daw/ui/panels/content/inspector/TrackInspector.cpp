@@ -642,8 +642,8 @@ void TrackInspector::resized() {
         masterGlyph_->setBounds(nameRow.removeFromRight(22).withSizeKeepingCentre(22, 22));
         nameRow.removeFromRight(4);
     } else {
-        // The colour swatch is the colour picker: a spine on the left (Spine), or a chip
-        // beside the power button when the name field already carries the colour (Full bar).
+        // The colour shows as a spine on the left (Spine) or fills the name field (Full bar);
+        // right-clicking the name picks it.
         if (colourSwatch_->isVisible() && !nameFilled_) {
             colourSwatch_->setBounds(nameRow.removeFromLeft(6));
             nameRow.removeFromLeft(6);
@@ -654,10 +654,8 @@ void TrackInspector::resized() {
             enableButton_->setBounds(nameRow.removeFromRight(28));
             nameRow.removeFromRight(6);
         }
-        if (colourSwatch_->isVisible() && nameFilled_) {
-            colourSwatch_->setBounds(nameRow.removeFromRight(24));
-            nameRow.removeFromRight(6);
-        }
+        if (nameFilled_)
+            colourSwatch_->setBounds({});  // Full bar: the name field is the colour.
     }
     trackNameValue_.setBounds(nameRow);
     bounds.removeFromTop(separatorPadding);
