@@ -25,8 +25,11 @@ constexpr int kRowSpacing = 4;
 /// The tick DialogLookAndFeel draws, and the gap it leaves before a toggle's text.
 constexpr int kTickWidth = 31;
 
-void log(const juce::String& message) {
+/// Debug builds only: a click-by-click trace has no place in a user's log.
+void log([[maybe_unused]] const juce::String& message) {
+#if JUCE_DEBUG
     juce::Logger::writeToLog("[audio-settings] " + message);
+#endif
 }
 
 /// One-based, as the rows show them.
