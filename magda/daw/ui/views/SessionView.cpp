@@ -237,6 +237,8 @@ class SessionView::SessionToggleRail : public juce::Component {
         btn->setPressedColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         btn->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
         btn->setBorderThickness(1.0f);
+        btn->setNormalColor(ActiveTheme::TEXT_SECONDARY);
+        btn->setTintedChip(ActiveTheme::ACCENT_PRIMARY);
         btn->setTooltip(tooltip);
         btn->setWantsKeyboardFocus(false);
         applyToggleState(btn.get(), initialState);
@@ -257,8 +259,6 @@ class SessionView::SessionToggleRail : public juce::Component {
         if (btn == nullptr)
             return;
         btn->setActive(on);
-        const auto base = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
-        btn->setNormalColor(on ? base : base.withAlpha(0.3f));
         btn->repaint();
     }
 
@@ -954,7 +954,7 @@ std::unique_ptr<DraggableValueLabel> makeGainLabel() {
 void styleStripToggle(SvgButton& button, ColourRole tint) {
     button.setBorderColor(ActiveTheme::SESSION_CONTROL_BORDER);
     button.setNormalBackgroundColor(ActiveTheme::SESSION_CONTROL);
-    button.setStateTint(tint);
+    button.setTintedChip(tint);
     for (auto source : {juce::Colour(0xFFB3B3B3), juce::Colour(0xFF1E1E1E)})
         button.setStateColourReplacement(source, ActiveTheme::ICON_NEUTRAL, tint);
     button.setNormalColor(ActiveTheme::ICON_NEUTRAL);

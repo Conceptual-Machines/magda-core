@@ -97,8 +97,6 @@ PianoRollContent::PianoRollContent() {
                                                         BinaryData::memonitor_svgSize);
     previewToggle_->setTooltip("Monitor: hear notes as you click them");
     styleRailButton(*previewToggle_);
-    previewToggle_->setActiveBackgroundColor(juce::Colours::transparentBlack);
-    previewToggle_->setActiveBorderColor(juce::Colours::transparentBlack);
     syncNotePreviewToggle(*previewToggle_, isNotePreviewEnabled());
     previewToggle_->onClick = [this]() {
         setNotePreviewEnabled(!isNotePreviewEnabled());
@@ -126,10 +124,7 @@ PianoRollContent::PianoRollContent() {
                                                       BinaryData::mechordtrack_svgSize);
     chordToggle_->setTooltip("Chord track");
     styleRailButton(*chordToggle_);
-    const auto violet = ActiveTheme::getColour(ActiveTheme::MIDI_KEY_ON);
-    chordToggle_->setActiveColor(violet.brighter(0.7f));
-    chordToggle_->setActiveBackgroundColor(violet.withAlpha(0.28f));
-    chordToggle_->setActiveBorderColor(violet);
+    chordToggle_->setTintedChip(ActiveTheme::MIDI_KEY_ON);
     chordToggle_->setActive(showChordRow_);
     chordToggle_->onClick = [this]() {
         setChordRowVisible(!showChordRow_);

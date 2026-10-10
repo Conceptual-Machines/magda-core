@@ -116,7 +116,7 @@ void MonitorControl::updateVisual(InputMonitorMode mode) {
     }
     const auto accent =
         mode == InputMonitorMode::In ? ActiveTheme::ACCENT_POSITIVE : ActiveTheme::ACCENT_PRIMARY;
-    setStateTint(accent);
+    setTintedChip(accent);
     setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL, accent);
     setStateColourReplacement(juce::Colour(0xFF1E1E1E), ActiveTheme::ICON_NEUTRAL, accent);
     setActive(true);

@@ -406,7 +406,7 @@ void ClipInspector::initClipPropertiesSection() {
                                                             BinaryData::power_svgSize);
     // The track inspector's power chip: green while the clip plays.
     clipEnabledToggle_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    clipEnabledToggle_->setStateTint(ActiveTheme::DEVICE_GREEN);
+    clipEnabledToggle_->setTintedChip(ActiveTheme::DEVICE_GREEN);
     clipEnabledToggle_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     clipEnabledToggle_->setStateColourReplacement(
         juce::Colour(0xFFE6E6E6), ActiveTheme::ICON_NEUTRAL, ActiveTheme::DEVICE_GREEN);

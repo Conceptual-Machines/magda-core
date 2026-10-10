@@ -307,14 +307,14 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
 }
 
 juce::Colour SvgButton::onBackground() const {
-    if (stateTintRole_)
-        return ActiveTheme::getColour(*stateTintRole_).withAlpha(0.18f);
+    if (tintedChipRole_)
+        return ActiveTheme::getColour(*tintedChipRole_).withAlpha(0.18f);
     return resolveThemeColour(activeBackgroundColor, activeBackgroundColorRole_);
 }
 
 juce::Colour SvgButton::onBorder() const {
-    if (stateTintRole_)
-        return ActiveTheme::getColour(*stateTintRole_).withAlpha(0.45f);
+    if (tintedChipRole_)
+        return ActiveTheme::getColour(*tintedChipRole_).withAlpha(0.45f);
     return resolveThemeColour(activeBorderColor, activeBorderColorRole_);
 }
 

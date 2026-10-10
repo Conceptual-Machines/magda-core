@@ -194,7 +194,7 @@ inline void applyDeviceIconStyle(magda::SvgButton& btn, DeviceIcon kind,
     btn.setActiveColor(kind == DeviceIcon::Power ? ActiveTheme::DEVICE_GREEN : activeRole);
     btn.setActiveBackgroundColor(juce::Colours::transparentBlack);
     if (kind == DeviceIcon::Toggle || kind == DeviceIcon::Power) {
-        btn.setStateTint(kind == DeviceIcon::Power ? ActiveTheme::DEVICE_GREEN : activeRole);
+        btn.setTintedChip(kind == DeviceIcon::Power ? ActiveTheme::DEVICE_GREEN : activeRole);
         btn.setClickingTogglesState(true);
     }
 }

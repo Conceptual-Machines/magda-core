@@ -169,7 +169,7 @@ TrackInspector::TrackInspector() {
     enableButton_ =
         std::make_unique<SvgButton>("enable", BinaryData::power_svg, BinaryData::power_svgSize);
     enableButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    enableButton_->setStateTint(ActiveTheme::DEVICE_GREEN);
+    enableButton_->setTintedChip(ActiveTheme::DEVICE_GREEN);
     enableButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     enableButton_->setStateColourReplacement(juce::Colour(0xFFE6E6E6), ActiveTheme::ICON_NEUTRAL,
                                              ActiveTheme::DEVICE_GREEN);
