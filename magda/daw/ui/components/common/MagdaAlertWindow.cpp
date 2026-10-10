@@ -190,17 +190,11 @@ juce::String MagdaAlertWindow::keyHintFor(const juce::Button& button) {
     return {};
 }
 
-void MagdaAlertWindow::assignButtonRoles() {
+void MagdaAlertWindow::assignRoles(const juce::Array<juce::Button*>& buttons) {
     const juce::KeyPress returnKey(juce::KeyPress::returnKey);
     const juce::KeyPress escapeKey(juce::KeyPress::escapeKey);
     juce::Button* cancel = nullptr;
     juce::Button* withReturn = nullptr;
-    juce::Array<juce::Button*> buttons;
-    for (auto* child : getChildren())
-        if (isAlertButton(child))
-            buttons.insert(0,
-                           static_cast<juce::Button*>(child));  // Added at the back of the z-order.
-
     for (auto* button : buttons) {
         if (button->isRegisteredForShortcut(escapeKey) && cancel == nullptr)
             cancel = button;
@@ -222,8 +216,6 @@ void MagdaAlertWindow::assignButtonRoles() {
             }
             button->addShortcut(commandKey(juce::KeyPress::backspaceKey));
         }
-        if (&button->getLookAndFeel() != controlsLookAndFeel_.get())
-            button->setLookAndFeel(controlsLookAndFeel_.get());
     }
 
     if (withReturn == nullptr) {
@@ -239,6 +231,39 @@ void MagdaAlertWindow::assignButtonRoles() {
     }
     if (withReturn != nullptr && roleOf(*withReturn) == ButtonRole::Secondary)
         withReturn->getProperties().set(kRoleProperty, static_cast<int>(ButtonRole::Primary));
+}
+
+MagdaAlertWindow::FooterOrder MagdaAlertWindow::footerOrder(
+    const juce::Array<juce::Button*>& buttons) {
+    FooterOrder order;
+    for (auto* b : buttons) {
+        if (roleOf(*b) == ButtonRole::Discard)
+            order.left.add(b);
+        else if (roleOf(*b) == ButtonRole::Secondary)
+            order.right.add(b);
+    }
+    for (auto role : {ButtonRole::Primary, ButtonRole::Destructive})
+        for (auto* b : buttons)
+            if (roleOf(*b) == role)
+                order.right.add(b);
+    return order;
+}
+
+juce::Array<juce::Button*> MagdaAlertWindow::alertButtons() const {
+    juce::Array<juce::Button*> buttons;
+    for (auto* child : getChildren())
+        if (isAlertButton(child))
+            buttons.insert(0,
+                           static_cast<juce::Button*>(child));  // Added at the back of the z-order.
+    return buttons;
+}
+
+void MagdaAlertWindow::assignButtonRoles() {
+    const auto buttons = alertButtons();
+    assignRoles(buttons);
+    for (auto* button : buttons)
+        if (&button->getLookAndFeel() != controlsLookAndFeel_.get())
+            button->setLookAndFeel(controlsLookAndFeel_.get());
 }
 
 MagdaAlertWindow::Tone MagdaAlertWindow::tone() const {
@@ -348,17 +373,10 @@ void MagdaAlertWindow::layoutAlert() {
 
     // Discard sits far left; the rest right-aligned, primary then destructive last.
     auto row = footerArea_.reduced(14, (kFooterHeight - kButtonHeight) / 2);
-    juce::Array<juce::Button*> right;
-    for (auto* b : buttons) {
-        if (roleOf(*b) == ButtonRole::Discard)
-            b->setBounds(row.removeFromLeft(preferredButtonWidth(*b)));
-        else if (roleOf(*b) == ButtonRole::Secondary)
-            right.add(b);
-    }
-    for (auto role : {ButtonRole::Primary, ButtonRole::Destructive})
-        for (auto* b : buttons)
-            if (roleOf(*b) == role)
-                right.add(b);
+    const auto order = footerOrder(buttons);
+    for (auto* b : order.left)
+        b->setBounds(row.removeFromLeft(preferredButtonWidth(*b)));
+    const auto& right = order.right;
     for (int i = right.size(); --i >= 0;) {
         right[i]->setBounds(row.removeFromRight(preferredButtonWidth(*right[i])));
         row.removeFromRight(4);

@@ -30,6 +30,16 @@ class MagdaAlertWindow : public juce::AlertWindow {
     void visibilityChanged() override;
 
     static ButtonRole roleOf(const juce::Button& button);
+
+    /// Gives each button, in the order added, its role and keys: Return never on a
+    /// destructive button, Cmd+D on Don't Save, Cmd+Backspace on a destructive one.
+    static void assignRoles(const juce::Array<juce::Button*>& buttons);
+
+    struct FooterOrder {
+        juce::Array<juce::Button*> left, right;
+    };
+    /// Discard buttons on the left; the rest right-aligned, primary then destructive last.
+    static FooterOrder footerOrder(const juce::Array<juce::Button*>& buttons);
     static juce::String keyHintFor(const juce::Button& button);
 
   private:
@@ -37,6 +47,7 @@ class MagdaAlertWindow : public juce::AlertWindow {
 
     void layoutAlert();
     void assignButtonRoles();
+    juce::Array<juce::Button*> alertButtons() const;
     Tone tone() const;
     void showBackdrop(bool shown);
 
