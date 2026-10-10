@@ -25,6 +25,7 @@
 #include "../themes/MixerMetrics.hpp"
 #include "audio/MidiBridge.hpp"
 #include "audio/io/AudioIOControl.hpp"
+#include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
@@ -54,7 +55,8 @@ class MixerView : public juce::Component,
                   public SelectionManagerListener,
                   public ViewModeListener,
                   public MidiBridge::Listener,
-                  private HardwareChannels::Listener {
+                  private HardwareChannels::Listener,
+                  private ConfigListener {
   public:
     explicit MixerView(AudioEngine* audioEngine = nullptr);
     ~MixerView() override;
@@ -66,6 +68,7 @@ class MixerView : public juce::Component,
     void paint(juce::Graphics& g) override;
     void resized() final;
     void lookAndFeelChanged() override;
+    void configChanged() override;
     bool keyPressed(const juce::KeyPress& key) override;
     void mouseMove(const juce::MouseEvent& event) override;
     void mouseDown(const juce::MouseEvent& event) override;
@@ -139,6 +142,8 @@ class MixerView : public juce::Component,
         }
 
         void setSelected(bool shouldBeSelected);
+        // Name colour for the track colour style: white on a Full bar head, else primary.
+        void applyLabelColour();
         bool isSelected() const {
             return selected;
         }

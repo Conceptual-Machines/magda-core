@@ -364,8 +364,10 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncM
     bool colourChanged = trackColour_ != track.colour;
     trackColour_ = track.colour;
     trackName_ = track.name;
-    if (isChildTrack_ != wasChild || colourChanged)
+    if (isChildTrack_ != wasChild || colourChanged) {
+        applyLabelColour();
         repaint();
+    }
 
     if (trackLabel) {
         trackLabel->setText(isMaster_ ? magda::technicalText(magda::TechnicalTextToken::Master)
@@ -1184,34 +1186,40 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     // The group's own controls column (leftmost channelWidth when group has children)
     auto ownBounds = hasGroupChildren ? fullBounds.withWidth(preferredChannelWidth()) : fullBounds;
 
-    // Background
-    if (selected) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    } else {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
-    }
+    // Track colour as the arrangement draws it: a Full bar head, or a spine down the edge.
+    // Selection lifts the body, and the head as Spine does or with a light line on Full bar.
+    const bool fullBar = Config::getInstance().getTrackColourStyle() == "full";
+    const bool coloured = !isMaster_ && trackColour_ != juce::Colour(0xFF444444);
+    const auto swatch = deriveTrackSwatch(trackColour_);
+    g.setColour(ActiveTheme::getColour(selected ? ActiveTheme::DEVICE_ICON_HOVER_BG
+                                                : ActiveTheme::PANEL_BACKGROUND));
     g.fillRect(ownBounds);
 
     // Separator on right side of own column
     g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     g.fillRect(ownBounds.getRight() - 1, 0, 1, ownBounds.getHeight());
 
-    // Channel color indicator at top — skip for group parents with children (group header provides
-    // colouring)
+    // Group parents with children colour their banner instead (below).
     if (!hasGroupChildren) {
-        const int stripHeight = 4;
-        const int labelRowBottom = stripHeight + 26;
-        if (selected) {
-            // Selected: lifted label background behind the strip (shared
-            // selection fill with the arrange headers / session view).
-            g.setColour(ActiveTheme::getColour(ActiveTheme::TRACK_HEADER_SELECTED));
-            g.fillRect(0, 0, ownBounds.getWidth() - 1, labelRowBottom);
+        const auto head = juce::Rectangle<int>(0, 0, ownBounds.getWidth() - 1, 30);
+        if (fullBar && coloured) {
+            g.setColour(swatch);
+            g.fillRect(head);
+            if (selected) {
+                g.setColour(swatch.brighter(0.6f));
+                g.fillRect(head.withTop(head.getBottom() - 2));
+                g.drawRect(ownBounds.withTrimmedTop(head.getHeight()).withTrimmedRight(1), 1);
+            }
+        } else if (selected) {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
+            g.fillRect(head);
         }
-        // Thin colour bar always shown, including when selected.
-        g.setColour(trackColour_);
-        g.fillRect(0, 0, ownBounds.getWidth() - 1, stripHeight);
         g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
-        g.fillRect(0, labelRowBottom, ownBounds.getWidth() - 1, 1);
+        g.fillRect(0, head.getBottom(), head.getWidth(), 1);
+        if (!fullBar && coloured) {
+            g.setColour(swatch);
+            g.fillRect(0, 0, 5, ownBounds.getHeight());
+        }
     }
 
     // Divider at the bottom of the sends region
@@ -1226,18 +1234,22 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     if (hasGroupChildren) {
         const int groupHeaderHeight = 4 + 4 + 24 + MixerMetrics::getInstance().controlSpacing;
 
-        if (selected) {
-            // Selected: lifted header like regular channels
-            g.setColour(ActiveTheme::getColour(ActiveTheme::TRACK_HEADER_SELECTED));
-            g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
+        const auto banner = juce::Rectangle<int>(0, 0, fullBounds.getWidth(), groupHeaderHeight);
+        if (fullBar && coloured) {
+            g.setColour(swatch);
+            g.fillRect(banner);
+            if (selected) {
+                g.setColour(swatch.brighter(0.6f));
+                g.fillRect(banner.withTop(banner.getBottom() - 2));
+            }
         } else {
-            // Plain panel background, with just a thin colour bar on top (like a
-            // regular channel header) — not the full-width colour flood.
-            g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
-            g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
-
-            g.setColour(trackColour_);
-            g.fillRect(2, 2, fullBounds.getWidth() - 4, 4);
+            g.setColour(ActiveTheme::getColour(selected ? ActiveTheme::DEVICE_LINE2
+                                                        : ActiveTheme::PANEL_BACKGROUND));
+            g.fillRect(banner);
+            if (coloured) {
+                g.setColour(swatch);
+                g.fillRect(banner.withWidth(5));
+            }
         }
 
         // Horizontal separator below header (neutral, not the track colour)
@@ -1717,15 +1729,17 @@ void MixerView::lookAndFeelChanged() {
     mixerLookAndFeel_.refreshThemeColours();
 }
 
+void MixerView::configChanged() {
+    for (auto* strips : {&channelStrips, &auxChannelStrips})
+        for (auto& strip : *strips)
+            strip->applyLabelColour();
+    repaint();
+}
+
 void MixerView::ChannelStrip::lookAndFeelChanged() {
     // trackLabel and peakLabel cache a concrete text colour, so a repaint alone
-    // won't refresh them after a theme switch. trackLabel's colour is
-    // selection-dependent, so mirror the logic in setSelected().
-    if (trackLabel)
-        trackLabel->setColour(juce::Label::textColourId,
-                              ActiveTheme::getColour(selected
-                                                         ? ActiveTheme::TRACK_HEADER_SELECTED_TEXT
-                                                         : ActiveTheme::TEXT_PRIMARY));
+    // won't refresh them after a theme switch.
+    applyLabelColour();
     if (peakLabel)
         peakLabel->setColour(juce::Label::textColourId,
                              ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
@@ -1734,12 +1748,18 @@ void MixerView::ChannelStrip::lookAndFeelChanged() {
 void MixerView::ChannelStrip::setSelected(bool shouldBeSelected) {
     if (selected != shouldBeSelected) {
         selected = shouldBeSelected;
-        trackLabel->setColour(juce::Label::textColourId,
-                              ActiveTheme::getColour(selected
-                                                         ? ActiveTheme::TRACK_HEADER_SELECTED_TEXT
-                                                         : ActiveTheme::TEXT_PRIMARY));
         repaint();
     }
+}
+
+void MixerView::ChannelStrip::applyLabelColour() {
+    if (!trackLabel)
+        return;
+    const bool colouredHead = Config::getInstance().getTrackColourStyle() == "full" && !isMaster_ &&
+                              trackColour_ != juce::Colour(0xFF444444);
+    trackLabel->setColour(juce::Label::textColourId,
+                          colouredHead ? juce::Colours::white
+                                       : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
 }
 
 void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
@@ -1856,6 +1876,7 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
 
 // MixerView implementation
 MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
+    Config::getInstance().addListener(this);
     // Get current view mode
     currentViewMode_ = ViewModeController::getInstance().getViewMode();
 
@@ -1937,6 +1958,7 @@ void MixerView::hardwareChannelsChanged() {
 }
 
 MixerView::~MixerView() {
+    Config::getInstance().removeListener(this);
     MidiBridge::getInstance().removeMidiDeviceListListener(this);
     if (audioEngine_) {
         if (auto* hardware = audioEngine_->getAudioIO())
