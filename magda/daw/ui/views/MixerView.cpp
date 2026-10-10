@@ -34,6 +34,12 @@
 namespace magda {
 
 namespace {
+// I/O fields: two rows of the arrangement's field style, a touch shorter than its 24px.
+constexpr int kIoFieldHeight = 22;
+constexpr int kIoGap = 4;
+}  // namespace
+
+namespace {
 
 constexpr const char* kOscilloscopeId = "oscilloscope";
 constexpr const char* kSpectrumId = "spectrumanalyzer";
@@ -667,18 +673,19 @@ void MixerView::ChannelStrip::setupControls() {
         sendResizeHandle_->onResize = [this](int deltaY, const juce::ModifierKeys& mods) {
             auto& metrics = MixerMetrics::getInstance();
             // Max inset: clamp so the fader region keeps at least 120px.
-            int fixedHeight = 38                        // colour bar + label
-                              + metrics.controlSpacing  // spacing after label
-                              + 2                       // gap before handle
-                              + 6                       // resize handle
-                              + 120                     // minimum fader region
-                              + 24                      // pan + gaps
-                              + metrics.buttonSize      // M/S row
-                              +
-                              (Config::getInstance().getMixerShowMonitor() ? metrics.buttonSize + 2
-                                                                           : 0)         // R/Mon row
-                              + (Config::getInstance().getMixerShowRouting() ? 40 : 0)  // routing
-                              + metrics.channelPadding * 2;  // top+bottom padding
+            int fixedHeight =
+                38                        // colour bar + label
+                + metrics.controlSpacing  // spacing after label
+                + 2                       // gap before handle
+                + 6                       // resize handle
+                + 120                     // minimum fader region
+                + 24                      // pan + gaps
+                + metrics.buttonSize      // M/S row
+                + (Config::getInstance().getMixerShowMonitor() ? metrics.buttonSize + 2
+                                                               : 0)  // R/Mon row
+                +
+                (Config::getInstance().getMixerShowRouting() ? 2 * (kIoFieldHeight + kIoGap) : 0) +
+                metrics.channelPadding * 2;  // top+bottom padding
             // Sends viewport also eats vertical space when visible.
             int sendsHeight = 0;
             if (Config::getInstance().getMixerShowSends()) {
@@ -1494,10 +1501,10 @@ void MixerView::ChannelStrip::resized() {
             midiInSelector->setVisible(showMidi);
             midiOutSelector->setVisible(showMidi);
             if (showMidi) {
-                bounds.removeFromBottom(2);
-                midiOutSelector->setBounds(bounds.removeFromBottom(16));
-                bounds.removeFromBottom(2);
-                midiInSelector->setBounds(bounds.removeFromBottom(16));
+                bounds.removeFromBottom(kIoGap);
+                midiOutSelector->setBounds(bounds.removeFromBottom(kIoFieldHeight));
+                bounds.removeFromBottom(kIoGap);
+                midiInSelector->setBounds(bounds.removeFromBottom(kIoFieldHeight));
             }
         } else if (Config::getInstance().getMixerShowRouting()) {
             bool showInputs = !isMultiOut;
@@ -1508,10 +1515,10 @@ void MixerView::ChannelStrip::resized() {
             midiInSelector->setVisible(showMidi);
             midiOutSelector->setVisible(showMidi);
 
-            bounds.removeFromBottom(2);
+            bounds.removeFromBottom(kIoGap);
 
             // Output row: Omidi | Oaudio
-            auto outRow = bounds.removeFromBottom(16);
+            auto outRow = bounds.removeFromBottom(kIoFieldHeight);
             if (showMidi) {
                 int halfWidth = (outRow.getWidth() - 2) / 2;
                 midiOutSelector->setBounds(outRow.removeFromLeft(halfWidth));
@@ -1521,10 +1528,10 @@ void MixerView::ChannelStrip::resized() {
                 audioOutSelector->setBounds(outRow);
             }
 
-            bounds.removeFromBottom(2);
+            bounds.removeFromBottom(kIoGap);
 
             // Input row: Imidi | Iaudio
-            auto inRow = bounds.removeFromBottom(16);
+            auto inRow = bounds.removeFromBottom(kIoFieldHeight);
             if (showInputs && showMidi) {
                 int halfWidth = (inRow.getWidth() - 2) / 2;
                 midiInSelector->setBounds(inRow.removeFromLeft(halfWidth));

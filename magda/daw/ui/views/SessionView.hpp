@@ -204,7 +204,7 @@ class SessionView : public juce::Component,
     std::unique_ptr<IOContainer> ioContainer_;
     std::vector<std::unique_ptr<MiniIOStrip>> trackIOStrips_;
     bool ioRowVisible_ = false;
-    static constexpr int IO_ROW_HEIGHT = 32;
+    static constexpr int IO_ROW_HEIGHT = 48;  // Two 22px field rows and their gap.
 
     // Send section (between stop buttons and IO row, toggleable)
     class MiniSendStrip;

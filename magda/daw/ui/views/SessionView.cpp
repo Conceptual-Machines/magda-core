@@ -732,14 +732,17 @@ class SessionView::MiniIOStrip : public juce::Component {
 
     void resized() override {
         auto bounds = getLocalBounds();
-        int halfH = bounds.getHeight() / 2;
-        int halfW = bounds.getWidth() / 2;
+        constexpr int kGap = 4;
+        const int halfH = (bounds.getHeight() - kGap) / 2;
+        const int halfW = (bounds.getWidth() - kGap) / 2;
+        const int right = halfW + kGap;
+        const int lower = halfH + kGap;
 
         audioInSelector_->setBounds(0, 0, halfW, halfH);
-        audioOutSelector_->setBounds(halfW, 0, bounds.getWidth() - halfW, halfH);
-        midiInSelector_->setBounds(0, halfH, halfW, bounds.getHeight() - halfH);
-        midiOutSelector_->setBounds(halfW, halfH, bounds.getWidth() - halfW,
-                                    bounds.getHeight() - halfH);
+        audioOutSelector_->setBounds(right, 0, bounds.getWidth() - right, halfH);
+        midiInSelector_->setBounds(0, lower, halfW, bounds.getHeight() - lower);
+        midiOutSelector_->setBounds(right, lower, bounds.getWidth() - right,
+                                    bounds.getHeight() - lower);
     }
 
     void updateFromTrack() {
