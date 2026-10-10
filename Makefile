@@ -14,7 +14,9 @@ FETCHCONTENT_SOURCE_ARGS = -DFETCHCONTENT_SOURCE_DIR_LUA=$(CURDIR)/cmake-build-d
 	-DFETCHCONTENT_SOURCE_DIR_ONNXRUNTIME=$(CURDIR)/cmake-build-debug/_deps/onnxruntime-src \
 	-DFETCHCONTENT_SOURCE_DIR_CATCH2=$(CURDIR)/cmake-build-debug/_deps/catch2-src
 CACHE_ROOT = $(CURDIR)/.cache
-BUILD_ENV = CCACHE_DIR=$(CACHE_ROOT)/ccache TMPDIR=$(CACHE_ROOT)/tmp XDG_CACHE_HOME=$(CACHE_ROOT)/xdg
+# .cache/ccache may link to an external drive; while it is unplugged, build into a local cache.
+CCACHE_ROOT := $(shell d='$(CACHE_ROOT)/ccache'; if [ -L "$$d" ] && [ ! -d "$$d" ]; then echo '$(CACHE_ROOT)/ccache-local'; else echo "$$d"; fi)
+BUILD_ENV = CCACHE_DIR=$(CCACHE_ROOT) TMPDIR=$(CACHE_ROOT)/tmp XDG_CACHE_HOME=$(CACHE_ROOT)/xdg
 TEST_ENV = $(BUILD_ENV) HOME=$(CACHE_ROOT)/home CFFIXED_USER_HOME=$(CACHE_ROOT)/home
 LOG_DIR = logs
 CPU_RUN_LOG = $(LOG_DIR)/run-console-cpu.log
@@ -98,7 +100,7 @@ setup:
 .PHONY: debug
 debug:
 	@echo "🔨 Building MAGDA DAW (Debug)..."
-	@mkdir -p $(BUILD_DIR) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@mkdir -p $(BUILD_DIR) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR)/CMakeCache.txt ]; then \
 		echo "📝 Configuring project..."; \
 		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
@@ -108,7 +110,7 @@ debug:
 .PHONY: debug-cpu
 debug-cpu:
 	@echo "🔨 Building MAGDA DAW (Debug, analyzer CPU baseline)..."
-	@mkdir -p $(BUILD_DIR_DEBUG_CPU) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@mkdir -p $(BUILD_DIR_DEBUG_CPU) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	cd $(BUILD_DIR_DEBUG_CPU) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug \
 		-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=OFF \
 		$(FETCHCONTENT_SOURCE_ARGS) \
@@ -118,7 +120,7 @@ debug-cpu:
 .PHONY: debug-webgpu
 debug-webgpu:
 	@echo "🔨 Building MAGDA DAW (Debug, Dawn/WebGPU analyzer POC)..."
-	@mkdir -p $(BUILD_DIR_DEBUG_WEBGPU) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@mkdir -p $(BUILD_DIR_DEBUG_WEBGPU) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	cd $(BUILD_DIR_DEBUG_WEBGPU) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug \
 		-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=OFF \
 		$(FETCHCONTENT_SOURCE_ARGS) \
@@ -131,14 +133,14 @@ debug-webgpu:
 .PHONY: configure
 configure:
 	@echo "📝 Reconfiguring MAGDA DAW (Debug)..."
-	@mkdir -p $(BUILD_DIR) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@mkdir -p $(BUILD_DIR) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
 
 # Release build
 .PHONY: release
 release:
 	@echo "🚀 Building MAGDA DAW (Release)..."
-	@mkdir -p $(BUILD_DIR_RELEASE) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@mkdir -p $(BUILD_DIR_RELEASE) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	cd $(BUILD_DIR_RELEASE) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
 	cd $(BUILD_DIR_RELEASE) && $(BUILD_ENV) ninja
 
@@ -152,7 +154,7 @@ run-release: release
 .PHONY: asan
 asan:
 	@echo "🔬 Building MAGDA DAW (Debug + AddressSanitizer)..."
-	@mkdir -p $(BUILD_DIR_ASAN) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@mkdir -p $(BUILD_DIR_ASAN) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR_ASAN)/CMakeCache.txt ]; then \
 		echo "📝 Configuring project with ASAN..."; \
 		cd $(BUILD_DIR_ASAN) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug \
@@ -174,7 +176,7 @@ run-asan: asan
 .PHONY: tsan
 tsan:
 	@echo "🧵 Building MAGDA DAW (Debug + ThreadSanitizer)..."
-	@mkdir -p $(BUILD_DIR_TSAN) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@mkdir -p $(BUILD_DIR_TSAN) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR_TSAN)/CMakeCache.txt ]; then \
 		echo "📝 Configuring project with TSAN..."; \
 		cd $(BUILD_DIR_TSAN) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug \
@@ -216,7 +218,7 @@ run-trace: debug
 .PHONY: cli
 cli:
 	@echo "🔨 Building magda-cli (Debug)..."
-	@mkdir -p $(BUILD_DIR) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@mkdir -p $(BUILD_DIR) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR)/CMakeCache.txt ]; then \
 		echo "📝 Configuring project..."; \
 		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
@@ -277,7 +279,7 @@ run-profile: debug
 .PHONY: test-build
 test-build:
 	@echo "🔨 Building tests..."
-	@mkdir -p $(BUILD_DIR) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@mkdir -p $(BUILD_DIR) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR)/CMakeCache.txt ]; then \
 		echo "📝 Configuring project with tests enabled..."; \
 		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
@@ -287,7 +289,7 @@ test-build:
 # Write the base-pack parameter manifests (#2939) to $(BUILD_DIR)/device-manifests
 .PHONY: device-manifests
 device-manifests:
-	@mkdir -p $(BUILD_DIR) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@mkdir -p $(BUILD_DIR) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR)/CMakeCache.txt ]; then \
 		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
 	fi
@@ -325,7 +327,7 @@ device-parity: device-wasm
 .PHONY: test-juce-build
 test-juce-build:
 	@echo "🔨 Building JUCE tests..."
-	@mkdir -p $(BUILD_DIR) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@mkdir -p $(BUILD_DIR) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR)/CMakeCache.txt ]; then \
 		echo "📝 Configuring project with tests enabled..."; \
 		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
@@ -359,7 +361,7 @@ test: test-build
 .PHONY: test-tsan-build
 test-tsan-build:
 	@echo "🧵 Building tests (Debug + ThreadSanitizer)..."
-	@mkdir -p $(BUILD_DIR_TSAN) $(CACHE_ROOT)/ccache $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
+	@mkdir -p $(BUILD_DIR_TSAN) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR_TSAN)/CMakeCache.txt ]; then \
 		echo "📝 Configuring project with TSAN..."; \
 		cd $(BUILD_DIR_TSAN) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug \
