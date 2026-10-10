@@ -957,10 +957,10 @@ void styleStripToggle(SvgButton& button, bool arm) {
     button.setCornerRadius(6.0f);
 }
 
-/** @brief Pads a toggle so its glyph lands at 18px. */
+/** @brief Pads a toggle so its glyph lands at 14px. */
 void fitStripIcon(SvgButton& button) {
     const int side = juce::jmin(button.getWidth(), button.getHeight());
-    button.setIconPadding(juce::jmax(2.0f, (static_cast<float>(side) - 18.0f) * 0.5f));
+    button.setIconPadding(juce::jmax(2.0f, (static_cast<float>(side) - 14.0f) * 0.5f));
 }
 
 /** @brief The rounded card a strip control sits on. */
@@ -1607,9 +1607,14 @@ void SessionView::rebuildTracks() {
         handle->onResizeStart = [this, trackIdx]() {
             dragStartTrackWidth_ = trackColumnWidths_[trackIdx];
         };
+        // Alt sets every column to the dragged width, as Alt does on the mixer's channels.
         handle->onResize = [this, trackIdx](int delta) {
-            trackColumnWidths_[trackIdx] =
+            const int width =
                 juce::jlimit(MIN_TRACK_WIDTH, MAX_TRACK_WIDTH, dragStartTrackWidth_ + delta);
+            if (juce::ModifierKeys::getCurrentModifiers().isAltDown())
+                std::fill(trackColumnWidths_.begin(), trackColumnWidths_.end(), width);
+            else
+                trackColumnWidths_[trackIdx] = width;
             resized();
         };
         headerContainer->addAndMakeVisible(*handle);

@@ -125,7 +125,7 @@ class SessionView : public juce::Component,
     static constexpr int GRID_PADDING = 8;
     static constexpr int TRACK_HEADER_HEIGHT = 42;
     static constexpr int SCENE_BUTTON_WIDTH = 120;
-    static constexpr int DEFAULT_CLIP_SLOT_WIDTH = 150;
+    static constexpr int DEFAULT_CLIP_SLOT_WIDTH = 112;
     static constexpr int MIN_TRACK_WIDTH = 60;
     static constexpr int MAX_TRACK_WIDTH = 300;
     static constexpr int CLIP_SLOT_HEIGHT = 44;
