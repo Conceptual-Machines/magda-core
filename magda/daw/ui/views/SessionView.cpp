@@ -957,16 +957,17 @@ void styleStripToggle(SvgButton& button, bool arm) {
     button.setCornerRadius(6.0f);
 }
 
-/** @brief Mute: the lit chip while the track is audible, the mute colour while muted. */
+/** @brief Mute as the rest of the app draws it: an unlit chip whose glyph (or M) turns the
+ *  mute colour while muted. */
 void styleStripMute(SvgButton& button) {
-    button.setBorderColor(ActiveTheme::SESSION_TOGGLE_ON_BORDER);
-    button.setActiveBorderColor(ActiveTheme::STATUS_WARNING);
-    button.setNormalBackgroundColor(ActiveTheme::SESSION_TOGGLE_ON);
+    button.setBorderColor(ActiveTheme::SESSION_CONTROL_BORDER);
+    button.setActiveBorderColor(ActiveTheme::SESSION_CONTROL_BORDER);
+    button.setNormalBackgroundColor(ActiveTheme::SESSION_CONTROL);
     button.setActiveBackgroundColor(ActiveTheme::SESSION_CONTROL);
     for (auto source : {juce::Colour(0xFFB3B3B3), juce::Colour(0xFF1E1E1E)})
-        button.setStateColourReplacement(source, ActiveTheme::SESSION_TOGGLE_ON_ICON,
+        button.setStateColourReplacement(source, ActiveTheme::ICON_NEUTRAL,
                                          ActiveTheme::STATUS_WARNING);
-    button.setNormalColor(ActiveTheme::SESSION_TOGGLE_ON_ICON);
+    button.setNormalColor(ActiveTheme::ICON_NEUTRAL);
     button.setActiveColor(ActiveTheme::STATUS_WARNING);
     button.setCornerRadius(6.0f);
 }
@@ -1029,7 +1030,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
         }
         addAndMakeVisible(*panLabel_);
 
-        // Lit while the track is audible; a crossed speaker (or M under the Letters
+        // Unlit while the track is audible; a crossed speaker (or M under the Letters
         // preference) in the mute colour while muted.
         speakerButton_ = std::make_unique<SvgButton>(
             "Speaker", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
