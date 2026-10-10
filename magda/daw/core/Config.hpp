@@ -36,6 +36,9 @@ struct AudioIOSettings {
     int bufferSize = 0;       // 0 = the interface's default
     std::vector<int> inputChannels;
     std::vector<int> outputChannels;
+    /// Of those, the ones ticked singly rather than as a pair; what opens is the same.
+    std::vector<int> inputMonoChannels;
+    std::vector<int> outputMonoChannels;
 
     bool operator==(const AudioIOSettings&) const = default;
 };

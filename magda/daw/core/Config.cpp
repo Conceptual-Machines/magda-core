@@ -45,6 +45,8 @@ juce::var audioIOObject(const magda::AudioIOSettings& settings) {
     obj->setProperty("bufferSize", settings.bufferSize);
     obj->setProperty("inputChannels", channelList(settings.inputChannels));
     obj->setProperty("outputChannels", channelList(settings.outputChannels));
+    obj->setProperty("inputMonoChannels", channelList(settings.inputMonoChannels));
+    obj->setProperty("outputMonoChannels", channelList(settings.outputMonoChannels));
     return juce::var(obj);
 }
 
@@ -55,7 +57,9 @@ magda::AudioIOSettings audioIOFrom(const juce::DynamicObject& obj) {
             .sampleRate = static_cast<double>(obj.getProperty("sampleRate")),
             .bufferSize = static_cast<int>(obj.getProperty("bufferSize")),
             .inputChannels = channelsFrom(obj.getProperty("inputChannels")),
-            .outputChannels = channelsFrom(obj.getProperty("outputChannels"))};
+            .outputChannels = channelsFrom(obj.getProperty("outputChannels")),
+            .inputMonoChannels = channelsFrom(obj.getProperty("inputMonoChannels")),
+            .outputMonoChannels = channelsFrom(obj.getProperty("outputMonoChannels"))};
 }
 
 // Channels one-based, as the user sees them: "3" names a mono channel, "3-4" a pair.

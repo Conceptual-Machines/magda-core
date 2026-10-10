@@ -130,6 +130,9 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
     }
 
   private:
+    /** @brief Which of @p open the saved choice ticked singly, when it is for @p interfaceName. */
+    juce::BigInteger monoChannels(const juce::String& interfaceName, const juce::BigInteger& open,
+                                  bool inputs) const;
     juce::AudioIODeviceType* backendNamed(const juce::String& name);
     juce::AudioIODeviceType* defaultBackend();
 

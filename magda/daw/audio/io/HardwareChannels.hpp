@@ -29,6 +29,8 @@ class HardwareChannels {
         std::map<int, juce::String> routeNames;
         /// What the user calls this interface's channels (#2259).
         ChannelNames userNames;
+        /// Open channels ticked singly in Audio Settings, which no stereo option takes.
+        juce::BigInteger mono;
     };
 
     /** @brief Told when channels open or close, on the message thread. */
