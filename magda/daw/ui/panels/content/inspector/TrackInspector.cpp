@@ -152,13 +152,8 @@ TrackInspector::TrackInspector() {
     // Record button (arrange track-header style)
     recordButton_ = std::make_unique<SvgButton>("record", BinaryData::track_record_svg,
                                                 BinaryData::track_record_svgSize);
-    recordButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-    recordButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    recordButton_->setActiveBackgroundColor(ActiveTheme::SURFACE);
-    recordButton_->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                             ActiveTheme::DEVICE_RED);
+    configureRecordArmButton(*recordButton_);
     recordButton_->setIconPadding(6.5f);
-    recordButton_->setClickingTogglesState(true);
     recordButton_->onClick = [this]() {
         DBG("TrackInspector::recordButton clicked - trackId="
             << selectedTrackId_ << " toggleState=" << (int)recordButton_->getToggleState());
@@ -174,7 +169,7 @@ TrackInspector::TrackInspector() {
     enableButton_ =
         std::make_unique<SvgButton>("enable", BinaryData::power_svg, BinaryData::power_svgSize);
     enableButton_->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    enableButton_->setActiveBackgroundColor(ActiveTheme::SURFACE);
+    enableButton_->setTintedChip(ActiveTheme::DEVICE_GREEN);
     enableButton_->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     enableButton_->setStateColourReplacement(juce::Colour(0xFFE6E6E6), ActiveTheme::ICON_NEUTRAL,
                                              ActiveTheme::DEVICE_GREEN);
@@ -204,7 +199,6 @@ TrackInspector::TrackInspector() {
         return std::vector<magda::TrackId>{selectedTrackId_};
     };
     monitorButton_.setIconPadding(7.0f);  // wide glyph: width-limited, so not raised with the row
-    monitorButton_.setGlyphStyle(true);
     addAndMakeVisible(monitorButton_);
 
     // Automation indicator — mirrors the arrange track-header automation button.
@@ -648,8 +642,8 @@ void TrackInspector::resized() {
         masterGlyph_->setBounds(nameRow.removeFromRight(22).withSizeKeepingCentre(22, 22));
         nameRow.removeFromRight(4);
     } else {
-        // The colour swatch is the colour picker: a spine on the left (Spine), or a chip
-        // beside the power button when the name field already carries the colour (Full bar).
+        // The colour shows as a spine on the left (Spine) or fills the name field (Full bar);
+        // right-clicking the name picks it.
         if (colourSwatch_->isVisible() && !nameFilled_) {
             colourSwatch_->setBounds(nameRow.removeFromLeft(6));
             nameRow.removeFromLeft(6);
@@ -660,10 +654,8 @@ void TrackInspector::resized() {
             enableButton_->setBounds(nameRow.removeFromRight(28));
             nameRow.removeFromRight(6);
         }
-        if (colourSwatch_->isVisible() && nameFilled_) {
-            colourSwatch_->setBounds(nameRow.removeFromRight(24));
-            nameRow.removeFromRight(6);
-        }
+        if (nameFilled_)
+            colourSwatch_->setBounds({});  // Full bar: the name field is the colour.
     }
     trackNameValue_.setBounds(nameRow);
     bounds.removeFromTop(separatorPadding);

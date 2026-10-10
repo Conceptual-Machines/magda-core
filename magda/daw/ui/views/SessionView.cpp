@@ -237,6 +237,8 @@ class SessionView::SessionToggleRail : public juce::Component {
         btn->setPressedColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         btn->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
         btn->setBorderThickness(1.0f);
+        btn->setNormalColor(ActiveTheme::TEXT_SECONDARY);
+        btn->setTintedChip(ActiveTheme::ACCENT_PRIMARY);
         btn->setTooltip(tooltip);
         btn->setWantsKeyboardFocus(false);
         applyToggleState(btn.get(), initialState);
@@ -257,8 +259,6 @@ class SessionView::SessionToggleRail : public juce::Component {
         if (btn == nullptr)
             return;
         btn->setActive(on);
-        const auto base = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
-        btn->setNormalColor(on ? base : base.withAlpha(0.3f));
         btn->repaint();
     }
 
@@ -716,6 +716,10 @@ class SessionView::MiniIOStrip : public juce::Component {
         audioOutSelector_ = std::make_unique<RoutingSelector>(RoutingSelector::Type::AudioOut);
         midiInSelector_ = std::make_unique<RoutingSelector>(RoutingSelector::Type::MidiIn);
         midiOutSelector_ = std::make_unique<RoutingSelector>(RoutingSelector::Type::MidiOut);
+        // The arrangement's I/O field look.
+        for (auto* selector : {audioInSelector_.get(), audioOutSelector_.get(),
+                               midiInSelector_.get(), midiOutSelector_.get()})
+            selector->setFieldStyle(true);
 
         addAndMakeVisible(*audioInSelector_);
         addAndMakeVisible(*audioOutSelector_);
@@ -728,14 +732,17 @@ class SessionView::MiniIOStrip : public juce::Component {
 
     void resized() override {
         auto bounds = getLocalBounds();
-        int halfH = bounds.getHeight() / 2;
-        int halfW = bounds.getWidth() / 2;
+        constexpr int kGap = 4;
+        const int halfH = (bounds.getHeight() - kGap) / 2;
+        const int halfW = (bounds.getWidth() - kGap) / 2;
+        const int right = halfW + kGap;
+        const int lower = halfH + kGap;
 
         audioInSelector_->setBounds(0, 0, halfW, halfH);
-        audioOutSelector_->setBounds(halfW, 0, bounds.getWidth() - halfW, halfH);
-        midiInSelector_->setBounds(0, halfH, halfW, bounds.getHeight() - halfH);
-        midiOutSelector_->setBounds(halfW, halfH, bounds.getWidth() - halfW,
-                                    bounds.getHeight() - halfH);
+        audioOutSelector_->setBounds(right, 0, bounds.getWidth() - right, halfH);
+        midiInSelector_->setBounds(0, lower, halfW, bounds.getHeight() - lower);
+        midiOutSelector_->setBounds(right, lower, bounds.getWidth() - right,
+                                    bounds.getHeight() - lower);
     }
 
     void updateFromTrack() {
@@ -942,25 +949,22 @@ std::unique_ptr<DraggableValueLabel> makeGainLabel() {
     return label;
 }
 
-/** @brief A strip toggle: SESSION_TOGGLE_ON colours when on, or the arm's red set. */
-void styleStripToggle(SvgButton& button, bool arm) {
+/** @brief A strip toggle: an unlit chip, tinted in @p tint while engaged, as every view's
+ *  mute, solo, arm, monitor and power are. */
+void styleStripToggle(SvgButton& button, ColourRole tint) {
     button.setBorderColor(ActiveTheme::SESSION_CONTROL_BORDER);
-    button.setActiveBorderColor(arm ? ActiveTheme::SESSION_RECORD_BORDER
-                                    : ActiveTheme::SESSION_TOGGLE_ON_BORDER);
     button.setNormalBackgroundColor(ActiveTheme::SESSION_CONTROL);
-    button.setActiveBackgroundColor(arm ? ActiveTheme::SESSION_ARM_ON
-                                        : ActiveTheme::SESSION_TOGGLE_ON);
-    const auto onIcon =
-        arm ? ActiveTheme::SESSION_ARM_ON_ICON : ActiveTheme::SESSION_TOGGLE_ON_ICON;
-    button.setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL, onIcon);
-    button.setStateColourReplacement(juce::Colour(0xFF1E1E1E), ActiveTheme::ICON_NEUTRAL, onIcon);
+    button.setTintedChip(tint);
+    for (auto source : {juce::Colour(0xFFB3B3B3), juce::Colour(0xFF1E1E1E)})
+        button.setStateColourReplacement(source, ActiveTheme::ICON_NEUTRAL, tint);
+    button.setNormalColor(ActiveTheme::ICON_NEUTRAL);
     button.setCornerRadius(6.0f);
 }
 
-/** @brief Pads a toggle so its glyph lands at 18px. */
+/** @brief Pads a toggle so its glyph lands at 14px. */
 void fitStripIcon(SvgButton& button) {
     const int side = juce::jmin(button.getWidth(), button.getHeight());
-    button.setIconPadding(juce::jmax(2.0f, (static_cast<float>(side) - 18.0f) * 0.5f));
+    button.setIconPadding(juce::jmax(2.0f, (static_cast<float>(side) - 14.0f) * 0.5f));
 }
 
 /** @brief The rounded card a strip control sits on. */
@@ -1015,25 +1019,42 @@ class SessionView::MiniChannelStrip : public juce::Component {
         }
         addAndMakeVisible(*panLabel_);
 
-        // The speaker is lit while the track is audible; unlit and crossed when muted.
+        // Unlit while the track is audible; a crossed speaker (or M under the Letters
+        // preference) in the mute colour while muted.
         speakerButton_ = std::make_unique<SvgButton>(
-            "Speaker", BinaryData::master_off_svg, BinaryData::master_off_svgSize,
-            BinaryData::master_on_svg, BinaryData::master_on_svgSize);
-        styleStripToggle(*speakerButton_, false);
+            "Speaker", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
+            BinaryData::master_off_svg, BinaryData::master_off_svgSize);
+        styleStripToggle(*speakerButton_, ActiveTheme::STATUS_WARNING);
+        speakerButton_->setLetterGlyph("M");
         speakerButton_->setClickingTogglesState(true);
-        speakerButton_->setToggleState(!track.muted, juce::dontSendNotification);
+        speakerButton_->setToggleState(track.muted, juce::dontSendNotification);
         speakerButton_->setTooltip(tr("tracks.mute.tooltip"));
         speakerButton_->onClick = [this]() {
-            const bool muted = !speakerButton_->getToggleState();
+            const bool muted = speakerButton_->getToggleState();
             for (auto tid : getMultiEditTargets(trackId_))
                 UndoManager::getInstance().executeCommand(
                     std::make_unique<SetTrackMuteCommand>(tid, muted));
         };
         addAndMakeVisible(*speakerButton_);
 
+        soloButton_ =
+            std::make_unique<SvgButton>("Solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
+        styleStripToggle(*soloButton_, ActiveTheme::DEVICE_AMBER);
+        soloButton_->setLetterGlyph("S");
+        soloButton_->setClickingTogglesState(true);
+        soloButton_->setToggleState(track.soloed, juce::dontSendNotification);
+        soloButton_->setTooltip(tr("tracks.solo.tooltip"));
+        soloButton_->onClick = [this]() {
+            const bool soloed = soloButton_->getToggleState();
+            for (auto tid : getMultiEditTargets(trackId_))
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<SetTrackSoloCommand>(tid, soloed));
+        };
+        addAndMakeVisible(*soloButton_);
+
         recordButton_ = std::make_unique<SvgButton>("record", BinaryData::track_record_svg,
                                                     BinaryData::track_record_svgSize);
-        styleStripToggle(*recordButton_, true);
+        styleStripToggle(*recordButton_, ActiveTheme::DEVICE_RED);
         recordButton_->setTooltip(tr("tracks.record.tooltip"));
         recordButton_->setClickingTogglesState(true);
         recordButton_->setToggleState(track.recordArmed, juce::dontSendNotification);
@@ -1045,15 +1066,15 @@ class SessionView::MiniChannelStrip : public juce::Component {
         addAndMakeVisible(*recordButton_);
 
         monitorButton_ = std::make_unique<MonitorControl>();
-        styleStripToggle(*monitorButton_, false);
+        styleStripToggle(*monitorButton_, ActiveTheme::ACCENT_POSITIVE);
         monitorButton_->getTrackId = [this]() { return trackId_; };
         monitorButton_->getTargets = [this]() { return getMultiEditTargets(trackId_); };
-        monitorButton_->setFixedOnColours(true);
         addAndMakeVisible(*monitorButton_);
 
         // The monitor keeps its own right-click menu.
-        const std::array<juce::Component*, 4> menuSources{
-            gainLabel_.get(), panLabel_.get(), speakerButton_.get(), recordButton_.get()};
+        const std::array<juce::Component*, 5> menuSources{gainLabel_.get(), panLabel_.get(),
+                                                          speakerButton_.get(), soloButton_.get(),
+                                                          recordButton_.get()};
         for (auto* child : menuSources)
             child->addMouseListener(this, false);
     }
@@ -1067,9 +1088,16 @@ class SessionView::MiniChannelStrip : public juce::Component {
 
     void paint(juce::Graphics& g) override {
         const auto bounds = getLocalBounds().toFloat().reduced(0.5f);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::SESSION_STOP_ROW));
+        // A selected track lifts its strip as the arrangement lifts a selected track's body;
+        // Full bar adds the light swatch rim.
+        const bool selected = SelectionManager::getInstance().isTrackSelected(trackId_);
+        const bool coloured = trackColour_ != juce::Colour(0xFF444444);
+        g.setColour(ActiveTheme::getColour(selected ? ActiveTheme::DEVICE_ICON_HOVER_BG
+                                                    : ActiveTheme::SESSION_STOP_ROW));
         g.fillRoundedRectangle(bounds, 6.0f);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::SESSION_CONTROL_BORDER));
+        g.setColour(selected && fullBar() && coloured
+                        ? deriveTrackSwatch(trackColour_).brighter(0.6f)
+                        : ActiveTheme::getColour(ActiveTheme::SESSION_CONTROL_BORDER));
         g.drawRoundedRectangle(bounds, 6.0f, 1.0f);
 
         // Track colour as the header shows it: a top inset for Full bar, a left spine otherwise.
@@ -1104,7 +1132,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
 
         bounds.removeFromTop(kStripGap);
         auto toggleRow = bounds.removeFromTop(kStripRow);
-        std::vector<SvgButton*> toggles{speakerButton_.get()};
+        std::vector<SvgButton*> toggles{speakerButton_.get(), soloButton_.get()};
         if (recordButton_->isVisible()) {
             toggles.push_back(recordButton_.get());
             toggles.push_back(monitorButton_.get());
@@ -1122,7 +1150,8 @@ class SessionView::MiniChannelStrip : public juce::Component {
     void updateFromTrack(const TrackInfo& track) {
         gainLabel_->setValue(gainToDb(track.volume), juce::dontSendNotification);
         panLabel_->setValue(track.pan, juce::dontSendNotification);
-        speakerButton_->setToggleState(!track.muted, juce::dontSendNotification);
+        speakerButton_->setToggleState(track.muted, juce::dontSendNotification);
+        soloButton_->setToggleState(track.soloed, juce::dontSendNotification);
         recordButton_->setToggleState(track.recordArmed, juce::dontSendNotification);
         monitorButton_->refresh();
         trackColour_ = track.colour;
@@ -1191,6 +1220,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
     std::unique_ptr<DraggableValueLabel> gainLabel_;
     std::unique_ptr<DraggableValueLabel> panLabel_;
     std::unique_ptr<SvgButton> speakerButton_;
+    std::unique_ptr<SvgButton> soloButton_;
     std::unique_ptr<SvgButton> recordButton_;
     std::unique_ptr<MonitorControl> monitorButton_;
 
@@ -1590,9 +1620,14 @@ void SessionView::rebuildTracks() {
         handle->onResizeStart = [this, trackIdx]() {
             dragStartTrackWidth_ = trackColumnWidths_[trackIdx];
         };
+        // Alt sets every column to the dragged width, as Alt does on the mixer's channels.
         handle->onResize = [this, trackIdx](int delta) {
-            trackColumnWidths_[trackIdx] =
+            const int width =
                 juce::jlimit(MIN_TRACK_WIDTH, MAX_TRACK_WIDTH, dragStartTrackWidth_ + delta);
+            if (juce::ModifierKeys::getCurrentModifiers().isAltDown())
+                std::fill(trackColumnWidths_.begin(), trackColumnWidths_.end(), width);
+            else
+                trackColumnWidths_[trackIdx] = width;
             resized();
         };
         headerContainer->addAndMakeVisible(*handle);

@@ -2520,7 +2520,7 @@ void MainView::MasterHeaderPanel::setupControls() {
     automationButton->setActiveBackgroundColor(ActiveTheme::SURFACE);
     automationButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
                                                 ActiveTheme::ACCENT_MODULATION);
-    automationButton->setIconPadding(3.0f);
+    automationButton->setIconPadding(5.0f);  // The track headers' glyph size.
     automationButton->onClick = [this]() {
         // Alt/Option-click toggles global show/hide of all automation lanes.
         if (juce::ModifierKeys::getCurrentModifiers().isAltDown()) {

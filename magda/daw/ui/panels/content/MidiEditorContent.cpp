@@ -47,10 +47,9 @@ bool MidiEditorContent::notePreviewEnabled_ = false;
 std::vector<magda::TrackId> MidiEditorContent::overlayTrackIds_;
 
 void MidiEditorContent::syncNotePreviewToggle(magda::SvgButton& button, bool on) {
-    button.updateSvgData(on ? BinaryData::memonitoron_svg : BinaryData::memonitoroff_svg,
-                         on ? BinaryData::memonitoron_svgSize : BinaryData::memonitoroff_svgSize);
+    button.updateSvgData(BinaryData::memonitor_svg, BinaryData::memonitor_svgSize);
     button.setOriginalColor(juce::Colour(0xFFB3B3B3));
-    button.setActiveColor(ActiveTheme::MIDI_MONITOR);
+    button.setTintedChip(ActiveTheme::MIDI_MONITOR);
     button.setActive(on);
 }
 
@@ -58,9 +57,7 @@ void MidiEditorContent::styleRailButton(magda::SvgButton& button) {
     button.setOriginalColor(juce::Colour(0xFFB3B3B3));
     button.setNormalColor(ActiveTheme::TEXT_SECONDARY);
     button.setHoverColor(ActiveTheme::TEXT_PRIMARY);
-    button.setActiveColor(ActiveTheme::TEXT_PRIMARY);
-    button.setActiveBackgroundColor(ActiveTheme::MIDI_TOOL_ACTIVE);
-    button.setActiveBorderColor(ActiveTheme::MIDI_TOOL_ACTIVE_BORDER);
+    button.setTintedChip(ActiveTheme::ACCENT_PRIMARY);
     button.setBorderThickness(1.0f);
     button.setCornerRadius(6.0f);
     button.setIconPadding(7.0f);

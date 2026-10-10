@@ -158,10 +158,9 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
                                               : ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
     const auto normalBackground =
         resolveThemeColour(normalBackgroundColor, normalBackgroundColorRole_);
-    const auto activeBackground =
-        resolveThemeColour(activeBackgroundColor, activeBackgroundColorRole_);
+    const auto activeBackground = onBackground();
     const auto border = resolveThemeColour(borderColor, borderColorRole_);
-    const auto activeBorder = resolveThemeColour(activeBorderColor, activeBorderColorRole_);
+    const auto activeBorder = onBorder();
 
     if (letterGlyph_.isNotEmpty() && Config::getInstance().getMuteSoloStyle() == "letters") {
         const bool on = isEnabled() && (active || (getToggleState() && isToggleable()));
@@ -208,7 +207,7 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
                 g.reduceClipRegion(clip);
                 // Active state fills the chip background (e.g. orange when muted)
                 // so the glyph (drawn padded on top) reads as a solid tile.
-                if (drawOn && hasActiveBackgroundColor) {
+                if (drawOn && fillsWhenOn()) {
                     g.setColour(activeBackground);
                     g.fillRoundedRectangle(getLocalBounds().toFloat(), radius);
                 } else if (hasNormalBackgroundColor) {
@@ -218,7 +217,7 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
                 themedIcon->drawWithin(g, getLocalBounds().toFloat().reduced(iconPadding),
                                        juce::RectanglePlacement::centred, opacity);
             }
-            g.setColour(drawOn && hasActiveBorderColor ? activeBorder : border);
+            g.setColour(drawOn && bordersWhenOn() ? activeBorder : border);
             g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(borderThickness * 0.5f),
                                    radius, borderThickness);
             return;
@@ -271,7 +270,7 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
 
     // Draw background (reduced by 0.5f to match SmallButtonLookAndFeel sizing)
     auto bgBounds = getLocalBounds().toFloat().reduced(0.5f);
-    if (isActive && hasActiveBackgroundColor) {
+    if (isActive && fillsWhenOn()) {
         g.setColour(activeBackground);
         g.fillRoundedRectangle(bgBounds, radius);
     } else if (shouldDrawButtonAsDown) {
@@ -288,7 +287,7 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
 
     // Draw border if set (colored differently while active, if configured)
     if (hasBorder) {
-        g.setColour(isActive && hasActiveBorderColor ? activeBorder : border);
+        g.setColour(isActive && bordersWhenOn() ? activeBorder : border);
         g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(borderThickness * 0.5f), radius,
                                borderThickness);
     }
@@ -307,14 +306,26 @@ void SvgButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighte
         iconCopy->drawWithin(g, bounds, juce::RectanglePlacement::centred, opacity);
 }
 
+juce::Colour SvgButton::onBackground() const {
+    if (tintedChipRole_)
+        return ActiveTheme::getColour(*tintedChipRole_).withAlpha(0.18f);
+    return resolveThemeColour(activeBackgroundColor, activeBackgroundColorRole_);
+}
+
+juce::Colour SvgButton::onBorder() const {
+    if (tintedChipRole_)
+        return ActiveTheme::getColour(*tintedChipRole_).withAlpha(0.45f);
+    return resolveThemeColour(activeBorderColor, activeBorderColorRole_);
+}
+
 void SvgButton::paintGlyphText(juce::Graphics& g, bool drawOn, bool highlighted,
                                juce::Colour iconColour) {
     const auto bounds = getLocalBounds().toFloat();
     const float radius =
         hasCornerRadius_ ? cornerRadius
                          : juce::jlimit(2.0f, 8.0f, juce::jmin(getWidth(), getHeight()) * 0.15f);
-    if (drawOn && hasActiveBackgroundColor) {
-        g.setColour(resolveThemeColour(activeBackgroundColor, activeBackgroundColorRole_));
+    if (drawOn && fillsWhenOn()) {
+        g.setColour(onBackground());
         g.fillRoundedRectangle(bounds.reduced(0.5f), radius);
     } else if (hasNormalBackgroundColor) {
         g.setColour(resolveThemeColour(normalBackgroundColor, normalBackgroundColorRole_));
@@ -324,7 +335,8 @@ void SvgButton::paintGlyphText(juce::Graphics& g, bool drawOn, bool highlighted,
         g.fillRoundedRectangle(bounds.reduced(0.5f), radius);
     }
     if (hasBorder) {
-        g.setColour(resolveThemeColour(borderColor, borderColorRole_));
+        g.setColour(drawOn && bordersWhenOn() ? onBorder()
+                                              : resolveThemeColour(borderColor, borderColorRole_));
         g.drawRoundedRectangle(bounds.reduced(borderThickness * 0.5f), radius, borderThickness);
     }
 

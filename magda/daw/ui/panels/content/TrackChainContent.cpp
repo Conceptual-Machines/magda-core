@@ -1101,9 +1101,6 @@ void TrackChainContent::applyChainPowerStyle() {
     magda::daw::ui::node_header::applyDeviceIconStyle(
         *chainBypassButton_, magda::daw::ui::node_header::DeviceIcon::Power,
         juce::Colour(0xFFE6E6E6), ActiveTheme::DEVICE_GREEN, 24.0f);
-    // On: a solid green tint behind the green glyph, no border.
-    chainBypassButton_->setActiveBackgroundColor(
-        ActiveTheme::getColour(ActiveTheme::DEVICE_GREEN).withAlpha(0.18f));
 }
 
 void TrackChainContent::syncMuteButton(bool muted) {

@@ -499,8 +499,10 @@ class TrackHeaderButton : public juce::TextButton {
         outline.addRoundedRectangle(bounds, session_paint::kCornerRadius);
         g.reduceClipRegion(outline);
 
+        // Selection as the arrangement draws it: Spine lifts the head, Full bar keeps the
+        // colour and adds a light line under it.
         auto fill = filled      ? swatch
-                    : selected_ ? ActiveTheme::getColour(ActiveTheme::SESSION_HEADER_SELECTED)
+                    : selected_ ? ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2)
                                 : ActiveTheme::getColour(ActiveTheme::SURFACE);
         if (shouldDrawButtonAsHighlighted)
             fill = fill.brighter(0.06f);
@@ -508,7 +510,7 @@ class TrackHeaderButton : public juce::TextButton {
 
         auto content = getLocalBounds().reduced(14, 0);
         if (filled && selected_) {
-            g.setColour(deriveTrackAccent(trackColour_));
+            g.setColour(swatch.brighter(0.6f));
             g.fillRect(bounds.withTop(bounds.getBottom() - 2.0f));
         } else if (!fullBar_ && coloured) {
             g.setColour(swatch);

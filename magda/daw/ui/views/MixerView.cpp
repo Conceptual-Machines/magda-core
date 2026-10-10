@@ -34,6 +34,12 @@
 namespace magda {
 
 namespace {
+// I/O fields: two rows of the arrangement's field style, a touch shorter than its 24px.
+constexpr int kIoFieldHeight = 22;
+constexpr int kIoGap = 4;
+}  // namespace
+
+namespace {
 
 constexpr const char* kOscilloscopeId = "oscilloscope";
 constexpr const char* kSpectrumId = "spectrumanalyzer";
@@ -358,8 +364,10 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncM
     bool colourChanged = trackColour_ != track.colour;
     trackColour_ = track.colour;
     trackName_ = track.name;
-    if (isChildTrack_ != wasChild || colourChanged)
+    if (isChildTrack_ != wasChild || colourChanged) {
+        applyLabelColour();
         repaint();
+    }
 
     if (trackLabel) {
         trackLabel->setText(isMaster_ ? magda::technicalText(magda::TechnicalTextToken::Master)
@@ -605,14 +613,9 @@ void MixerView::ChannelStrip::setupControls() {
     if (!isMaster_) {
         recordButton = std::make_unique<magda::SvgButton>("record", BinaryData::track_record_svg,
                                                           BinaryData::track_record_svgSize);
-        recordButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-        recordButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-        recordButton->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
-        recordButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                                ActiveTheme::ICON_ON_ACCENT);
+        configureRecordArmButton(*recordButton);
         recordButton->setIconPadding(5.0f);
         recordButton->setTooltip(tr("tracks.record.tooltip"));
-        recordButton->setClickingTogglesState(true);
         recordButton->onClick = [this]() {
             const bool armed = recordButton->getToggleState();
             for (auto tid : getMultiEditTargets(trackId_, isMaster_))
@@ -672,18 +675,19 @@ void MixerView::ChannelStrip::setupControls() {
         sendResizeHandle_->onResize = [this](int deltaY, const juce::ModifierKeys& mods) {
             auto& metrics = MixerMetrics::getInstance();
             // Max inset: clamp so the fader region keeps at least 120px.
-            int fixedHeight = 38                        // colour bar + label
-                              + metrics.controlSpacing  // spacing after label
-                              + 2                       // gap before handle
-                              + 6                       // resize handle
-                              + 120                     // minimum fader region
-                              + 24                      // pan + gaps
-                              + metrics.buttonSize      // M/S row
-                              +
-                              (Config::getInstance().getMixerShowMonitor() ? metrics.buttonSize + 2
-                                                                           : 0)         // R/Mon row
-                              + (Config::getInstance().getMixerShowRouting() ? 40 : 0)  // routing
-                              + metrics.channelPadding * 2;  // top+bottom padding
+            int fixedHeight =
+                38                        // colour bar + label
+                + metrics.controlSpacing  // spacing after label
+                + 2                       // gap before handle
+                + 6                       // resize handle
+                + 120                     // minimum fader region
+                + 24                      // pan + gaps
+                + metrics.buttonSize      // M/S row
+                + (Config::getInstance().getMixerShowMonitor() ? metrics.buttonSize + 2
+                                                               : 0)  // R/Mon row
+                +
+                (Config::getInstance().getMixerShowRouting() ? 2 * (kIoFieldHeight + kIoGap) : 0) +
+                metrics.channelPadding * 2;  // top+bottom padding
             // Sends viewport also eats vertical space when visible.
             int sendsHeight = 0;
             if (Config::getInstance().getMixerShowSends()) {
@@ -786,6 +790,11 @@ void MixerView::ChannelStrip::setupControls() {
 
         midiOutSelector = std::make_unique<RoutingSelector>(RoutingSelector::Type::MidiOut);
         addAndMakeVisible(*midiOutSelector);
+
+        // The arrangement's I/O field look.
+        for (auto* selector : {audioInSelector.get(), audioOutSelector.get(), midiInSelector.get(),
+                               midiOutSelector.get()})
+            selector->setFieldStyle(true);
 
         // Populate routing options from real data and wire callbacks
         if (audioEngine_) {
@@ -1177,34 +1186,40 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     // The group's own controls column (leftmost channelWidth when group has children)
     auto ownBounds = hasGroupChildren ? fullBounds.withWidth(preferredChannelWidth()) : fullBounds;
 
-    // Background
-    if (selected) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    } else {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
-    }
+    // Track colour as the arrangement draws it: a Full bar head, or a spine down the edge.
+    // Selection lifts the body, and the head as Spine does or with a light line on Full bar.
+    const bool fullBar = Config::getInstance().getTrackColourStyle() == "full";
+    const bool coloured = !isMaster_ && trackColour_ != juce::Colour(0xFF444444);
+    const auto swatch = deriveTrackSwatch(trackColour_);
+    g.setColour(ActiveTheme::getColour(selected ? ActiveTheme::DEVICE_ICON_HOVER_BG
+                                                : ActiveTheme::PANEL_BACKGROUND));
     g.fillRect(ownBounds);
 
     // Separator on right side of own column
     g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     g.fillRect(ownBounds.getRight() - 1, 0, 1, ownBounds.getHeight());
 
-    // Channel color indicator at top — skip for group parents with children (group header provides
-    // colouring)
+    // Group parents with children colour their banner instead (below).
     if (!hasGroupChildren) {
-        const int stripHeight = 4;
-        const int labelRowBottom = stripHeight + 26;
-        if (selected) {
-            // Selected: lifted label background behind the strip (shared
-            // selection fill with the arrange headers / session view).
-            g.setColour(ActiveTheme::getColour(ActiveTheme::TRACK_HEADER_SELECTED));
-            g.fillRect(0, 0, ownBounds.getWidth() - 1, labelRowBottom);
+        const auto head = juce::Rectangle<int>(0, 0, ownBounds.getWidth() - 1, 30);
+        if (fullBar && coloured) {
+            g.setColour(swatch);
+            g.fillRect(head);
+            if (selected) {
+                g.setColour(swatch.brighter(0.6f));
+                g.fillRect(head.withTop(head.getBottom() - 2));
+                g.drawRect(ownBounds.withTrimmedTop(head.getHeight()).withTrimmedRight(1), 1);
+            }
+        } else if (selected) {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
+            g.fillRect(head);
         }
-        // Thin colour bar always shown, including when selected.
-        g.setColour(trackColour_);
-        g.fillRect(0, 0, ownBounds.getWidth() - 1, stripHeight);
         g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
-        g.fillRect(0, labelRowBottom, ownBounds.getWidth() - 1, 1);
+        g.fillRect(0, head.getBottom(), head.getWidth(), 1);
+        if (!fullBar && coloured) {
+            g.setColour(swatch);
+            g.fillRect(0, 0, 5, ownBounds.getHeight());
+        }
     }
 
     // Divider at the bottom of the sends region
@@ -1219,18 +1234,22 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     if (hasGroupChildren) {
         const int groupHeaderHeight = 4 + 4 + 24 + MixerMetrics::getInstance().controlSpacing;
 
-        if (selected) {
-            // Selected: lifted header like regular channels
-            g.setColour(ActiveTheme::getColour(ActiveTheme::TRACK_HEADER_SELECTED));
-            g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
+        const auto banner = juce::Rectangle<int>(0, 0, fullBounds.getWidth(), groupHeaderHeight);
+        if (fullBar && coloured) {
+            g.setColour(swatch);
+            g.fillRect(banner);
+            if (selected) {
+                g.setColour(swatch.brighter(0.6f));
+                g.fillRect(banner.withTop(banner.getBottom() - 2));
+            }
         } else {
-            // Plain panel background, with just a thin colour bar on top (like a
-            // regular channel header) — not the full-width colour flood.
-            g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
-            g.fillRect(0, 0, fullBounds.getWidth(), groupHeaderHeight);
-
-            g.setColour(trackColour_);
-            g.fillRect(2, 2, fullBounds.getWidth() - 4, 4);
+            g.setColour(ActiveTheme::getColour(selected ? ActiveTheme::DEVICE_LINE2
+                                                        : ActiveTheme::PANEL_BACKGROUND));
+            g.fillRect(banner);
+            if (coloured) {
+                g.setColour(swatch);
+                g.fillRect(banner.withWidth(5));
+            }
         }
 
         // Horizontal separator below header (neutral, not the track colour)
@@ -1494,10 +1513,10 @@ void MixerView::ChannelStrip::resized() {
             midiInSelector->setVisible(showMidi);
             midiOutSelector->setVisible(showMidi);
             if (showMidi) {
-                bounds.removeFromBottom(2);
-                midiOutSelector->setBounds(bounds.removeFromBottom(16));
-                bounds.removeFromBottom(2);
-                midiInSelector->setBounds(bounds.removeFromBottom(16));
+                bounds.removeFromBottom(kIoGap);
+                midiOutSelector->setBounds(bounds.removeFromBottom(kIoFieldHeight));
+                bounds.removeFromBottom(kIoGap);
+                midiInSelector->setBounds(bounds.removeFromBottom(kIoFieldHeight));
             }
         } else if (Config::getInstance().getMixerShowRouting()) {
             bool showInputs = !isMultiOut;
@@ -1508,10 +1527,10 @@ void MixerView::ChannelStrip::resized() {
             midiInSelector->setVisible(showMidi);
             midiOutSelector->setVisible(showMidi);
 
-            bounds.removeFromBottom(2);
+            bounds.removeFromBottom(kIoGap);
 
             // Output row: Omidi | Oaudio
-            auto outRow = bounds.removeFromBottom(16);
+            auto outRow = bounds.removeFromBottom(kIoFieldHeight);
             if (showMidi) {
                 int halfWidth = (outRow.getWidth() - 2) / 2;
                 midiOutSelector->setBounds(outRow.removeFromLeft(halfWidth));
@@ -1521,10 +1540,10 @@ void MixerView::ChannelStrip::resized() {
                 audioOutSelector->setBounds(outRow);
             }
 
-            bounds.removeFromBottom(2);
+            bounds.removeFromBottom(kIoGap);
 
             // Input row: Imidi | Iaudio
-            auto inRow = bounds.removeFromBottom(16);
+            auto inRow = bounds.removeFromBottom(kIoFieldHeight);
             if (showInputs && showMidi) {
                 int halfWidth = (inRow.getWidth() - 2) / 2;
                 midiInSelector->setBounds(inRow.removeFromLeft(halfWidth));
@@ -1710,15 +1729,17 @@ void MixerView::lookAndFeelChanged() {
     mixerLookAndFeel_.refreshThemeColours();
 }
 
+void MixerView::configChanged() {
+    for (auto* strips : {&channelStrips, &auxChannelStrips})
+        for (auto& strip : *strips)
+            strip->applyLabelColour();
+    repaint();
+}
+
 void MixerView::ChannelStrip::lookAndFeelChanged() {
     // trackLabel and peakLabel cache a concrete text colour, so a repaint alone
-    // won't refresh them after a theme switch. trackLabel's colour is
-    // selection-dependent, so mirror the logic in setSelected().
-    if (trackLabel)
-        trackLabel->setColour(juce::Label::textColourId,
-                              ActiveTheme::getColour(selected
-                                                         ? ActiveTheme::TRACK_HEADER_SELECTED_TEXT
-                                                         : ActiveTheme::TEXT_PRIMARY));
+    // won't refresh them after a theme switch.
+    applyLabelColour();
     if (peakLabel)
         peakLabel->setColour(juce::Label::textColourId,
                              ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
@@ -1727,12 +1748,18 @@ void MixerView::ChannelStrip::lookAndFeelChanged() {
 void MixerView::ChannelStrip::setSelected(bool shouldBeSelected) {
     if (selected != shouldBeSelected) {
         selected = shouldBeSelected;
-        trackLabel->setColour(juce::Label::textColourId,
-                              ActiveTheme::getColour(selected
-                                                         ? ActiveTheme::TRACK_HEADER_SELECTED_TEXT
-                                                         : ActiveTheme::TEXT_PRIMARY));
         repaint();
     }
+}
+
+void MixerView::ChannelStrip::applyLabelColour() {
+    if (!trackLabel)
+        return;
+    const bool colouredHead = Config::getInstance().getTrackColourStyle() == "full" && !isMaster_ &&
+                              trackColour_ != juce::Colour(0xFF444444);
+    trackLabel->setColour(juce::Label::textColourId,
+                          colouredHead ? juce::Colours::white
+                                       : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
 }
 
 void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
@@ -1849,6 +1876,7 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
 
 // MixerView implementation
 MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
+    Config::getInstance().addListener(this);
     // Get current view mode
     currentViewMode_ = ViewModeController::getInstance().getViewMode();
 
@@ -1930,6 +1958,7 @@ void MixerView::hardwareChannelsChanged() {
 }
 
 MixerView::~MixerView() {
+    Config::getInstance().removeListener(this);
     MidiBridge::getInstance().removeMidiDeviceListListener(this);
     if (audioEngine_) {
         if (auto* hardware = audioEngine_->getAudioIO())

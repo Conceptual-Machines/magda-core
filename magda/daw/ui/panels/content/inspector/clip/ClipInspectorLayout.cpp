@@ -30,8 +30,8 @@ void ClipInspector::resized() {
         const int gap = 6;
         auto headerRow = bounds.removeFromTop(24);
 
-        // As in the track inspector: a spine on the left, or a chip beside the power button
-        // when the name field already carries the colour.
+        // As in the track inspector: a spine on the left, or none when the name field carries
+        // the colour. Right-clicking the name picks it.
         if (!nameFilled_) {
             colourSwatch_->setBounds(headerRow.removeFromLeft(6));
             headerRow.removeFromLeft(gap);
@@ -40,10 +40,8 @@ void ClipInspector::resized() {
             clipEnabledToggle_->setBounds(headerRow.removeFromRight(28));
             headerRow.removeFromRight(gap);
         }
-        if (nameFilled_) {
-            colourSwatch_->setBounds(headerRow.removeFromRight(24));
-            headerRow.removeFromRight(gap);
-        }
+        if (nameFilled_)
+            colourSwatch_->setBounds({});  // Full bar: the name field is the colour.
         if (clipGhostIcon_->isVisible()) {
             clipGhostIcon_->setBounds(headerRow.removeFromRight(20).withSizeKeepingCentre(20, 20));
             headerRow.removeFromRight(4);

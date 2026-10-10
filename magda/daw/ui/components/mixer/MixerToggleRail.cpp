@@ -94,6 +94,8 @@ void MixerToggleRail::setupButton(std::unique_ptr<SvgButton>& btn, const juce::S
     btn->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     btn->setPressedColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     btn->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+    btn->setNormalColor(ActiveTheme::TEXT_SECONDARY);
+    btn->setTintedChip(ActiveTheme::ACCENT_PRIMARY);
     btn->setBorderThickness(1.0f);
     btn->setTooltip(tooltip);
     btn->setWantsKeyboardFocus(false);
@@ -115,8 +117,6 @@ void MixerToggleRail::applyToggleState(SvgButton* btn, bool on) {
     if (btn == nullptr)
         return;
     btn->setActive(on);
-    const auto base = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
-    btn->setNormalColor(on ? base : base.withAlpha(0.3f));
     btn->repaint();
 }
 

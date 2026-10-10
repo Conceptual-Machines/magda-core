@@ -11,7 +11,8 @@ namespace magda {
 
 // Mute and solo, shared by every view that shows them (track headers, inspector, mixer,
 // session strips, master headers). One recipe so they read the same everywhere: a neutral
-// chip whose glyph carries the state, and M / S letters when the preference asks for them.
+// chip whose glyph, background and border take the state colour when engaged (setTintedChip),
+// and M / S letters when the preference asks for them.
 
 /** @brief Mute: grey speaker (master_on) when audible, crossed speaker (master_off) in
  *  warning yellow when muted. Needs the dual-icon master_on / master_off button. */
@@ -19,7 +20,7 @@ inline void configureMasterSpeakerButton(SvgButton& button) {
     button.setClickingTogglesState(true);
     button.setBorderColor(ActiveTheme::BORDER);
     button.setNormalBackgroundColor(ActiveTheme::SURFACE);
-    button.setActiveBackgroundColor(ActiveTheme::SURFACE);
+    button.setTintedChip(ActiveTheme::STATUS_WARNING);
     button.setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
                                      ActiveTheme::STATUS_WARNING);
     button.setStateColourReplacement(juce::Colour(0xFF1E1E1E), ActiveTheme::ICON_NEUTRAL,
@@ -33,11 +34,22 @@ inline void configureSoloButton(SvgButton& button) {
     button.setClickingTogglesState(true);
     button.setBorderColor(ActiveTheme::BORDER);
     button.setNormalBackgroundColor(ActiveTheme::SURFACE);
-    button.setActiveBackgroundColor(ActiveTheme::SURFACE);
+    button.setTintedChip(ActiveTheme::DEVICE_AMBER);
     button.setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
                                      ActiveTheme::DEVICE_AMBER);
     button.setIconPadding(4.5f);
     button.setLetterGlyph("S");
+}
+
+/** @brief Record arm: a grey dot, red with the red tint when armed. Needs the
+ *  track_record_svg button. */
+inline void configureRecordArmButton(SvgButton& button) {
+    button.setClickingTogglesState(true);
+    button.setBorderColor(ActiveTheme::BORDER);
+    button.setNormalBackgroundColor(ActiveTheme::SURFACE);
+    button.setTintedChip(ActiveTheme::DEVICE_RED);
+    button.setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
+                                     ActiveTheme::DEVICE_RED);
 }
 
 inline std::unique_ptr<SvgButton> makeMasterSpeakerButton() {

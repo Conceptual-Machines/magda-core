@@ -77,6 +77,13 @@ class SvgButton : public juce::Button, private ConfigListener {
         activeColorRole_ = ActiveTheme::findPaletteRole(color);
         hasActiveColor_ = true;
     }
+    /** The tinted chip, the engaged look shared app-wide: the glyph takes @p role, the
+     *  chip's background and border take it at 18% and 45%. */
+    void setTintedChip(ColourRole role) {
+        tintedChipRole_ = role;
+        setActiveColor(role);
+    }
+
     void setActiveBackgroundColor(ColourRole role) {
         activeBackgroundColor = ActiveTheme::getColour(role);
         activeBackgroundColorRole_ = role;
@@ -228,6 +235,15 @@ class SvgButton : public juce::Button, private ConfigListener {
     juce::Colour activeBorderColor;  // Border colour when active (if set)
     std::optional<ColourRole> activeBorderColorRole_;
     bool hasActiveBorderColor = false;
+    std::optional<ColourRole> tintedChipRole_;
+    bool fillsWhenOn() const {
+        return hasActiveBackgroundColor || tintedChipRole_.has_value();
+    }
+    bool bordersWhenOn() const {
+        return hasActiveBorderColor || tintedChipRole_.has_value();
+    }
+    juce::Colour onBackground() const;
+    juce::Colour onBorder() const;
     float borderThickness = 1.0f;
     float cornerRadius = 2.0f;
     bool hasBorder = false;

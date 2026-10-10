@@ -329,14 +329,9 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // Track record-arm: a dot, grey at rest and red when armed.
     recordButton = std::make_unique<magda::SvgButton>("record", BinaryData::track_record_svg,
                                                       BinaryData::track_record_svgSize);
-    recordButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-    recordButton->setNormalBackgroundColor(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    recordButton->setActiveBackgroundColor(ActiveTheme::SURFACE);
-    recordButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
-                                            ActiveTheme::DEVICE_RED);
+    configureRecordArmButton(*recordButton);
     recordButton->setIconPadding(4.5f);
     recordButton->setTooltip(tr("tracks.record.tooltip"));
-    recordButton->setClickingTogglesState(true);
 
     // Monitor button (3-state: Off → In → Auto → Off). Matches the inspector
     // Input-monitor: 3-state control (Off / In / Auto). Off = grey glyph, In =
@@ -346,7 +341,6 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
     // Glyphs fit their own artwork, so paddings differ to land one visual size on 26x18
     // buttons: ring and dot 9px, speaker and automation about 10px wide, monitor 11px.
     monitorButton->setIconPadding(7.0f);
-    monitorButton->setGlyphStyle(true);
 
     // Automation button
     automationButton = std::make_unique<SvgButton>("Automation", BinaryData::automation_svg,
@@ -1141,6 +1135,28 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
         header.outputSelector.get(), header.midiOutputSelector.get(), audioEngine_->getAudioIO(),
         header.trackId, outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_,
         &inputChannelMapping_, &midiInputTrackMapping_, &outputChannelMapping_);
+}
+
+void TrackHeadersPanel::paintOverChildren(juce::Graphics& g) {
+    // Full bar selection: one light rim in the bar's tone round the whole header, drawn over the
+    // children so the meter on the outer edge sits inside it.
+    if (Config::getInstance().getTrackColourStyle() != "full")
+        return;
+    for (int index : selectedTrackIndices_) {
+        if (index < 0 || index >= static_cast<int>(trackHeaders.size()))
+            continue;
+        const auto& header = *trackHeaders[static_cast<size_t>(index)];
+        if (header.isMaster || header.trackColour == juce::Colour(0xFF444444))
+            continue;
+        auto area = getTrackHeaderArea(index);
+        if (!area.intersects(getLocalBounds()))
+            continue;
+        if (showIORouting_)
+            SideColumn(headersOnRight_).removeFrom(area, IO_COLUMN_WIDTH);
+        const auto bgArea = SideColumn(!headersOnRight_).trimmed(area, header.depth * INDENT_WIDTH);
+        g.setColour(deriveTrackSwatch(header.trackColour).brighter(0.6f));
+        g.drawRect(bgArea, 1);
+    }
 }
 
 void TrackHeadersPanel::paint(juce::Graphics& g) {
@@ -2029,7 +2045,6 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
     const bool fullBar = Config::getInstance().getTrackColourStyle() == "full";
     const bool coloured = !header.isMaster && header.trackColour != juce::Colour(0xFF444444);
     const auto swatch = deriveTrackSwatch(header.trackColour);
-    const auto swatchLight = swatch.brighter(0.6f);
 
     auto bgArea = outer.trimmed(area, indent);
     const auto bodyColour = isSelected ? ActiveTheme::getColour(ActiveTheme::DEVICE_ICON_HOVER_BG)
@@ -2047,12 +2062,7 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
         if (fullBar && coloured) {
             g.setColour(swatch);
             g.fillRect(nameBandArea);
-            // Selection keeps the bar's tone: a light rim round the body and a line under the bar.
-            if (isSelected) {
-                g.setColour(swatchLight);
-                g.fillRect(nameBandArea.withTop(nameBandArea.getBottom() - 2));
-                g.drawRect(bgArea.withTrimmedTop(nameBandHeight), 1);
-            }
+            // Selection's light rim and underline draw over the children (paintOverChildren).
         } else if (isSelected) {
             // Spine: selection lifts the whole track, the head a step above the body.
             g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));

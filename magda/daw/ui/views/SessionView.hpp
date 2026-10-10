@@ -125,7 +125,7 @@ class SessionView : public juce::Component,
     static constexpr int GRID_PADDING = 8;
     static constexpr int TRACK_HEADER_HEIGHT = 42;
     static constexpr int SCENE_BUTTON_WIDTH = 120;
-    static constexpr int DEFAULT_CLIP_SLOT_WIDTH = 150;
+    static constexpr int DEFAULT_CLIP_SLOT_WIDTH = 112;
     static constexpr int MIN_TRACK_WIDTH = 60;
     static constexpr int MAX_TRACK_WIDTH = 300;
     static constexpr int CLIP_SLOT_HEIGHT = 44;
@@ -204,7 +204,7 @@ class SessionView : public juce::Component,
     std::unique_ptr<IOContainer> ioContainer_;
     std::vector<std::unique_ptr<MiniIOStrip>> trackIOStrips_;
     bool ioRowVisible_ = false;
-    static constexpr int IO_ROW_HEIGHT = 32;
+    static constexpr int IO_ROW_HEIGHT = 48;  // Two 22px field rows and their gap.
 
     // Send section (between stop buttons and IO row, toggleable)
     class MiniSendStrip;

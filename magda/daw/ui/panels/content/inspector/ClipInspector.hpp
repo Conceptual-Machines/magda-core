@@ -93,6 +93,14 @@ class ClipInspector : public BaseInspector,
     std::unique_ptr<magda::SvgButton> clipGhostIcon_;      // link glyph, ghost clips only
     std::unique_ptr<magda::SvgButton> clipEnabledToggle_;  // enable/disable clip (#1736)
     // The name field follows the track header style: filled with the clip colour in Full bar.
+    struct NamePopupListener : juce::MouseListener {
+        std::function<void()> onPopup;
+        void mouseDown(const juce::MouseEvent& e) override {
+            if (e.mods.isPopupMenu() && onPopup)
+                onPopup();
+        }
+    };
+    NamePopupListener namePopupListener_;
     bool nameFilled_ = false;
     juce::Colour nameFill_, nameOutline_;
     void applyHeaderStyle();
