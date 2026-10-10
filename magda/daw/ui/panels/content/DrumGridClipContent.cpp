@@ -2174,8 +2174,8 @@ DrumGridClipContent::DrumGridClipContent() {
     addAndMakeVisible(chordToggle_.get());
 
     // Monitor: clicking or adding a hit auditions it through the track (#1705).
-    previewToggle_ = std::make_unique<magda::SvgButton>("NotePreview", BinaryData::memonitoroff_svg,
-                                                        BinaryData::memonitoroff_svgSize);
+    previewToggle_ = std::make_unique<magda::SvgButton>("NotePreview", BinaryData::headphones_svg,
+                                                        BinaryData::headphones_svgSize);
     previewToggle_->setTooltip("Monitor: hear hits as you click them");
     styleRailButton(*previewToggle_);
     previewToggle_->setActiveBackgroundColor(juce::Colours::transparentBlack);

@@ -113,8 +113,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/midi_editor/v1/me-layer-clips.svg
     ../../assets/icons/midi_editor/v1/me-loop.svg
     ../../assets/icons/midi_editor/v1/me-maximise.svg
-    ../../assets/icons/midi_editor/v1/me-monitor-off.svg
-    ../../assets/icons/midi_editor/v1/me-monitor-on.svg
     ../../assets/icons/midi_editor/v1/me-mpe.svg
     ../../assets/icons/midi_editor/v1/me-pencil.svg
     ../../assets/icons/midi_editor/v1/me-piano-roll.svg
