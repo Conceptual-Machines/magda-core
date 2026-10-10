@@ -47,7 +47,7 @@ bool MidiEditorContent::notePreviewEnabled_ = false;
 std::vector<magda::TrackId> MidiEditorContent::overlayTrackIds_;
 
 void MidiEditorContent::syncNotePreviewToggle(magda::SvgButton& button, bool on) {
-    button.updateSvgData(BinaryData::headphones_svg, BinaryData::headphones_svgSize);
+    button.updateSvgData(BinaryData::memonitor_svg, BinaryData::memonitor_svgSize);
     button.setOriginalColor(juce::Colour(0xFFB3B3B3));
     button.setActiveColor(ActiveTheme::MIDI_MONITOR);
     button.setActive(on);

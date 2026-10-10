@@ -93,8 +93,8 @@ PianoRollContent::PianoRollContent() {
     addAndMakeVisible(foldToggle_.get());
 
     // Monitor: clicking or drawing a note auditions it through the track (#1705).
-    previewToggle_ = std::make_unique<magda::SvgButton>("NotePreview", BinaryData::headphones_svg,
-                                                        BinaryData::headphones_svgSize);
+    previewToggle_ = std::make_unique<magda::SvgButton>("NotePreview", BinaryData::memonitor_svg,
+                                                        BinaryData::memonitor_svgSize);
     previewToggle_->setTooltip("Monitor: hear notes as you click them");
     styleRailButton(*previewToggle_);
     previewToggle_->setActiveBackgroundColor(juce::Colours::transparentBlack);
