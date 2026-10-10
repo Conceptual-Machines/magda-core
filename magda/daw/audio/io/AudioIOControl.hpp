@@ -34,6 +34,16 @@ class AudioIOControl : public HardwareChannels {
         done(apply(settings));
     }
 
+    /** @brief Name a channel or pair of @p interfaceName and save it; empty clears (#2259). */
+    void setChannelName(const juce::String& interfaceName, bool inputs, int firstChannel,
+                        bool stereo, const juce::String& name) {
+        auto& config = Config::getInstance();
+        config.setChannelName(interfaceName.toStdString(), inputs, firstChannel, stereo,
+                              name.trim().toStdString());
+        config.save();
+        notifyNamesChanged();
+    }
+
     /** @brief What @p interfaceName calls its channels, whether or not it is open. */
     virtual juce::StringArray channelNames(const juce::String& backend,
                                            const juce::String& interfaceName, bool inputs) = 0;

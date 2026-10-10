@@ -57,6 +57,44 @@ magda::AudioIOSettings audioIOFrom(const juce::DynamicObject& obj) {
             .inputChannels = channelsFrom(obj.getProperty("inputChannels")),
             .outputChannels = channelsFrom(obj.getProperty("outputChannels"))};
 }
+
+// Channels one-based, as the user sees them: "3" names a mono channel, "3-4" a pair.
+juce::var channelNamesObject(const std::map<std::string, magda::ChannelNames>& byInterface) {
+    auto* obj = new juce::DynamicObject();
+    for (const auto& [interfaceName, names] : byInterface) {
+        auto* channels = new juce::DynamicObject();
+        for (const auto& [channel, name] : names.mono)
+            channels->setProperty(juce::String(channel + 1), toJuceString(name));
+        for (const auto& [channel, name] : names.pairs)
+            channels->setProperty(juce::String(channel + 1) + "-" + juce::String(channel + 2),
+                                  toJuceString(name));
+        obj->setProperty(toJuceString(interfaceName), juce::var(channels));
+    }
+    return juce::var(obj);
+}
+
+std::map<std::string, magda::ChannelNames> channelNamesFrom(const juce::var& value) {
+    std::map<std::string, magda::ChannelNames> byInterface;
+    const auto* obj = value.getDynamicObject();
+    if (obj == nullptr)
+        return byInterface;
+    for (const auto& device : obj->getProperties()) {
+        const auto* channels = device.value.getDynamicObject();
+        if (channels == nullptr)
+            continue;
+        magda::ChannelNames names;
+        for (const auto& entry : channels->getProperties()) {
+            const auto key = entry.name.toString();
+            const auto first = key.upToFirstOccurrenceOf("-", false, false).getIntValue() - 1;
+            const auto name = entry.value.toString().toStdString();
+            if (first >= 0 && !name.empty())
+                names.setName(first, key.containsChar('-'), name);
+        }
+        if (!names.empty())
+            byInterface[device.name.toString().toStdString()] = std::move(names);
+    }
+    return byInterface;
+}
 }  // namespace
 
 namespace magda {
@@ -239,6 +277,12 @@ void Config::save() {
         for (const auto& name : inactiveMidiInputs)
             names.add(toJuceString(name));
         root->setProperty("inactiveMidiInputs", names);
+    }
+    if (!inputChannelNames.empty() || !outputChannelNames.empty()) {
+        auto* channelNames = new juce::DynamicObject();
+        channelNames->setProperty("inputs", channelNamesObject(inputChannelNames));
+        channelNames->setProperty("outputs", channelNamesObject(outputChannelNames));
+        root->setProperty("channelNames", juce::var(channelNames));
     }
 
     // AI — nested "ai" object with per-agent inference profiles.
@@ -645,6 +689,10 @@ void Config::load() {
     preferredOutputChannels = getInt("preferredOutputChannels", preferredOutputChannels);
     if (auto* audioIOObj = obj->getProperty("audioIO").getDynamicObject())
         audioIO = audioIOFrom(*audioIOObj);
+    if (auto* channelNamesObj = obj->getProperty("channelNames").getDynamicObject()) {
+        inputChannelNames = channelNamesFrom(channelNamesObj->getProperty("inputs"));
+        outputChannelNames = channelNamesFrom(channelNamesObj->getProperty("outputs"));
+    }
 
     // AI — load nested "ai" object, or migrate from legacy flat fields
     if (obj->hasProperty("ai")) {

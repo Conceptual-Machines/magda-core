@@ -185,6 +185,8 @@ class MagdaAudioEngine final : public AudioEngine,
     void reportUnwired(const char* method, const char* issue) const;
 
     void hardwareChannelsChanged() override;
+    /// A name is for the menus; nothing the engine routes through moved.
+    void hardwareChannelNamesChanged() override {}
     void midiDeviceListChanged() override;
 
     /// Hands the render-ahead preference to the host (#1898).

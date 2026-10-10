@@ -222,8 +222,9 @@ HardwareChannels::Direction AudioIOService::inputs() const {
     const auto active = getActiveConfiguration();
     return {.open = active.inputChannels,
             .channelNames = active.inputChannelNames,
-            .routeNames =
-                routeNamesByChannel(active.inputChannelNames, active.inputChannels, true)};
+            .routeNames = routeNamesByChannel(active.inputChannelNames, active.inputChannels, true),
+            .userNames =
+                Config::getInstance().getChannelNames(active.inputInterface.toStdString(), true)};
 }
 
 HardwareChannels::Direction AudioIOService::outputs() const {
@@ -231,7 +232,9 @@ HardwareChannels::Direction AudioIOService::outputs() const {
     return {.open = active.outputChannels,
             .channelNames = active.outputChannelNames,
             .routeNames =
-                routeNamesByChannel(active.outputChannelNames, active.outputChannels, false)};
+                routeNamesByChannel(active.outputChannelNames, active.outputChannels, false),
+            .userNames =
+                Config::getInstance().getChannelNames(active.outputInterface.toStdString(), false)};
 }
 
 juce::AudioIODeviceType* AudioIOService::backendNamed(const juce::String& name) {

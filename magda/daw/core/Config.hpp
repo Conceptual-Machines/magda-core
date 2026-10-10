@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "ChannelNames.hpp"
 #include "ClipTypes.hpp"
 #include "DefaultColourPalette.hpp"
 
@@ -447,6 +448,24 @@ class Config {
         inactiveMidiInputs = std::move(names);
     }
     bool isMidiInputActive(const juce::String& name) const;
+
+    /** @brief What the user calls @p interfaceName's channels one way; kept while it is absent. */
+    const ChannelNames& getChannelNames(const std::string& interfaceName, bool inputs) const {
+        static const ChannelNames none;
+        const auto& byInterface = inputs ? inputChannelNames : outputChannelNames;
+        const auto it = byInterface.find(interfaceName);
+        return it != byInterface.end() ? it->second : none;
+    }
+    void setChannelName(const std::string& interfaceName, bool inputs, int firstChannel,
+                        bool stereo, const std::string& name) {
+        if (interfaceName.empty())
+            return;
+        auto& byInterface = inputs ? inputChannelNames : outputChannelNames;
+        auto& names = byInterface[interfaceName];
+        names.setName(firstChannel, stereo, name);
+        if (names.empty())
+            byInterface.erase(interfaceName);
+    }
 
     // Custom Plugin Paths
     std::vector<std::string> getCustomPluginPaths() const {
@@ -1691,7 +1710,9 @@ class Config {
     int preferredInputChannels = 0;     // Preferred input channel count (0 = use device default)
     int preferredOutputChannels = 0;    // Preferred output channel count (0 = use device default)
     std::optional<AudioIOSettings> audioIO;
-    std::vector<std::string> inactiveMidiInputs;  // Names, so a new port starts active
+    std::vector<std::string> inactiveMidiInputs;            // Names, so a new port starts active
+    std::map<std::string, ChannelNames> inputChannelNames;  // By interface name (#2259)
+    std::map<std::string, ChannelNames> outputChannelNames;
 
     // Language
     std::string language = "en";  // Language code, matches lang/<code>.json

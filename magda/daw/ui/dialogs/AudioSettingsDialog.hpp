@@ -61,14 +61,22 @@ class CustomChannelSelector : public juce::Component {
     /** @brief Open exactly the ticked channels on the chosen interface. */
     void applyTicks();
 
+    /** @brief The row's label: the user's name for it, with the driver's after. */
+    juce::String rowLabel(int startChannel, bool isStereo) const;
+    std::unique_ptr<juce::Label> makeNameLabel(int startChannel, bool isStereo);
+    void rename(int startChannel, bool isStereo, const juce::String& name);
+
     AudioIOControl& audio_;
     bool isInput_;
+    juce::String interfaceName_;
+    juce::StringArray driverNames_;
 
     static void onPreviewToggled(int startChannel);
 
     struct ChannelToggle {
         std::unique_ptr<juce::ToggleButton> button;
         std::unique_ptr<juce::ToggleButton> previewButton;  // Only for output stereo pairs
+        std::unique_ptr<juce::Label> name;                  // Double-click renames (#2259)
         int startChannel;                                   // 0-indexed
         bool isStereo;  // true = pair (e.g., 0-1), false = mono (e.g., 0)
     };
@@ -112,6 +120,8 @@ class AudioSettingsDialog : public juce::Component, private HardwareChannels::Li
     // Re-list the device combos when the driver type or device changes (e.g. the
     // user picks a different driver in the AudioDeviceSelectorComponent).
     void hardwareChannelsChanged() override;
+    /// The row renamed already shows its new name.
+    void hardwareChannelNamesChanged() override {}
 
     // Static method to show as modal dialog
     static void showDialog(juce::Component* parent, AudioEngine* audioEngine);

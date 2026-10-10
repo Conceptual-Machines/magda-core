@@ -125,3 +125,28 @@ TEST_CASE("The chosen interface round-trips through config.json", "[audio-io][27
     config.setAudioIO(std::nullopt);
     config.save();
 }
+
+TEST_CASE("Channel names round-trip per interface and direction", "[audio-io][2259][config]") {
+    auto& config = magda::Config::getInstance();
+    config.setChannelName("M4", true, 2, false, "Neumann");
+    config.setChannelName("M4", true, 2, true, "Drum OH");
+    config.setChannelName("M4", false, 0, true, "Monitors");
+    config.save();
+
+    config.setChannelName("M4", true, 2, false, "");
+    config.setChannelName("M4", true, 2, true, "");
+    config.setChannelName("M4", false, 0, true, "");
+    CHECK(config.getChannelNames("M4", true).empty());
+
+    config.load();
+    CHECK(config.getChannelNames("M4", true).nameOf(2, false) == "Neumann");
+    CHECK(config.getChannelNames("M4", true).nameOf(2, true) == "Drum OH");
+    CHECK(config.getChannelNames("M4", false).nameOf(0, true) == "Monitors");
+    CHECK(config.getChannelNames("M4", false).nameOf(0, false).empty());
+    CHECK(config.getChannelNames("Scarlett 18i20", true).empty());
+
+    config.setChannelName("M4", true, 2, false, "");
+    config.setChannelName("M4", true, 2, true, "");
+    config.setChannelName("M4", false, 0, true, "");
+    config.save();
+}

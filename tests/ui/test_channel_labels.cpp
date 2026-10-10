@@ -39,3 +39,40 @@ TEST_CASE("A channel past the names falls back to its number", "[ui][channels][2
     CHECK(labels::mono({}, 3) == "4 (mono)");
     CHECK(labels::pair({}, 0, 1) == "1-2");
 }
+
+TEST_CASE("A user's name leads and the socket still shows", "[ui][channels][2259]") {
+    magda::ChannelNames user;
+    user.setName(2, false, "Neumann");
+    user.setName(4, true, "Drum OH");
+
+    CHECK(labels::mono(kM4Inputs, 2, user) == "Neumann (In 3, mono)");
+    CHECK(labels::pair(kM4Inputs, 4, 5, user) == "Drum OH (Loopback 1 + Loopback 2)");
+    CHECK(labels::mono({}, 2, user) == "Neumann (3, mono)");
+    CHECK(labels::pair({}, 4, 5, user) == "Drum OH (5-6)");
+}
+
+TEST_CASE("Mono and pair names are separate", "[ui][channels][2259]") {
+    magda::ChannelNames user;
+    user.setName(4, false, "Mic 1");
+
+    CHECK(labels::mono({}, 4, user) == "Mic 1 (5, mono)");
+    CHECK(labels::pair({}, 4, 5, user) == "5-6");
+    CHECK(labels::mono({}, 5, user) == "6 (mono)");
+}
+
+TEST_CASE("Only an adjacent pair carries a pair name", "[ui][channels][2259]") {
+    magda::ChannelNames user;
+    user.setName(0, true, "Mains");
+
+    CHECK(labels::pair({}, 0, 1, user) == "Mains (1-2)");
+    CHECK(labels::pair({}, 0, 3, user) == "1-4");
+}
+
+TEST_CASE("Clearing a name brings the number back", "[ui][channels][2259]") {
+    magda::ChannelNames user;
+    user.setName(2, false, "Neumann");
+    user.setName(2, false, "");
+
+    CHECK(user.empty());
+    CHECK(labels::mono({}, 2, user) == "3 (mono)");
+}
