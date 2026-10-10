@@ -596,7 +596,6 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES dsp/test_faust_sidechain.cpp)
     list(APPEND TEST_SOURCES dsp/test_filter_spectrum_taps.cpp)
     list(APPEND TEST_SOURCES dsp/test_multiband_upward.cpp)
-    list(APPEND TEST_SOURCES ui/test_magda_alert_window.cpp)
     list(APPEND TEST_SOURCES devices/test_mutable_add_not_replace.cpp)
     list(APPEND TEST_SOURCES devices/test_sampler_relocate.cpp)
 
@@ -812,6 +811,7 @@ target_sources(magda_juce_tests PRIVATE
     # Files dropped straight onto a Drum Grid track (#2172)
     ui/test_drum_grid_file_drop_juce.cpp
     ui/test_multiband_curve_view_juce.cpp
+    ui/test_magda_alert_window_juce.cpp
     # The transport layout against the widths the shipped fonts really produce
     # (#2071). Needs a graphics context, so it lives here rather than in
     # magda_tests, which asserts the same layout as pure arithmetic.
