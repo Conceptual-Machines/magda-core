@@ -1138,8 +1138,8 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
 }
 
 void TrackHeadersPanel::paintOverChildren(juce::Graphics& g) {
-    // Full bar selection keeps the bar's tone: a light line under the bar and a light rim round
-    // the body below it. Drawn over the children so the meter on the outer edge sits inside it.
+    // Full bar selection: one light rim in the bar's tone round the whole header, drawn over the
+    // children so the meter on the outer edge sits inside it.
     if (Config::getInstance().getTrackColourStyle() != "full")
         return;
     for (int index : selectedTrackIndices_) {
@@ -1155,9 +1155,7 @@ void TrackHeadersPanel::paintOverChildren(juce::Graphics& g) {
             SideColumn(headersOnRight_).removeFrom(area, IO_COLUMN_WIDTH);
         const auto bgArea = SideColumn(!headersOnRight_).trimmed(area, header.depth * INDENT_WIDTH);
         g.setColour(deriveTrackSwatch(header.trackColour).brighter(0.6f));
-        const auto band = bgArea.withHeight(TH_NAME_STRIP_H);
-        g.fillRect(band.withTop(band.getBottom() - 2));
-        g.drawRect(bgArea.withTrimmedTop(band.getHeight()), 1);
+        g.drawRect(bgArea, 1);
     }
 }
 
