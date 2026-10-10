@@ -787,6 +787,11 @@ void MixerView::ChannelStrip::setupControls() {
         midiOutSelector = std::make_unique<RoutingSelector>(RoutingSelector::Type::MidiOut);
         addAndMakeVisible(*midiOutSelector);
 
+        // The arrangement's I/O field look.
+        for (auto* selector : {audioInSelector.get(), audioOutSelector.get(), midiInSelector.get(),
+                               midiOutSelector.get()})
+            selector->setFieldStyle(true);
+
         // Populate routing options from real data and wire callbacks
         if (audioEngine_) {
             const auto* hardware = audioEngine_->getAudioIO();

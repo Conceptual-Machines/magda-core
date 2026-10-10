@@ -716,6 +716,10 @@ class SessionView::MiniIOStrip : public juce::Component {
         audioOutSelector_ = std::make_unique<RoutingSelector>(RoutingSelector::Type::AudioOut);
         midiInSelector_ = std::make_unique<RoutingSelector>(RoutingSelector::Type::MidiIn);
         midiOutSelector_ = std::make_unique<RoutingSelector>(RoutingSelector::Type::MidiOut);
+        // The arrangement's I/O field look.
+        for (auto* selector : {audioInSelector_.get(), audioOutSelector_.get(),
+                               midiInSelector_.get(), midiOutSelector_.get()})
+            selector->setFieldStyle(true);
 
         addAndMakeVisible(*audioInSelector_);
         addAndMakeVisible(*audioOutSelector_);
