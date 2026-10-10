@@ -957,13 +957,15 @@ void styleStripToggle(SvgButton& button, bool arm) {
     button.setCornerRadius(6.0f);
 }
 
-/** @brief Mute as the rest of the app draws it: an unlit chip whose glyph (or M) turns the
- *  mute colour while muted. */
+/** @brief Mute: an unlit chip while audible; while muted the glyph (or M), border and
+ *  background take the app's mute colour. */
 void styleStripMute(SvgButton& button) {
+    // Muted tints the chip like the chain header's power button tints green.
+    const auto mute = ActiveTheme::getColour(ActiveTheme::STATUS_WARNING);
     button.setBorderColor(ActiveTheme::SESSION_CONTROL_BORDER);
-    button.setActiveBorderColor(ActiveTheme::SESSION_CONTROL_BORDER);
+    button.setActiveBorderColor(mute.withAlpha(0.45f));
     button.setNormalBackgroundColor(ActiveTheme::SESSION_CONTROL);
-    button.setActiveBackgroundColor(ActiveTheme::SESSION_CONTROL);
+    button.setActiveBackgroundColor(mute.withAlpha(0.18f));
     for (auto source : {juce::Colour(0xFFB3B3B3), juce::Colour(0xFF1E1E1E)})
         button.setStateColourReplacement(source, ActiveTheme::ICON_NEUTRAL,
                                          ActiveTheme::STATUS_WARNING);
