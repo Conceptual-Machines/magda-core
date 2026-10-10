@@ -1031,6 +1031,20 @@ class SessionView::MiniChannelStrip : public juce::Component {
         };
         addAndMakeVisible(*speakerButton_);
 
+        soloButton_ =
+            std::make_unique<SvgButton>("Solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
+        styleStripToggle(*soloButton_, false);
+        soloButton_->setClickingTogglesState(true);
+        soloButton_->setToggleState(track.soloed, juce::dontSendNotification);
+        soloButton_->setTooltip(tr("tracks.solo.tooltip"));
+        soloButton_->onClick = [this]() {
+            const bool soloed = soloButton_->getToggleState();
+            for (auto tid : getMultiEditTargets(trackId_))
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<SetTrackSoloCommand>(tid, soloed));
+        };
+        addAndMakeVisible(*soloButton_);
+
         recordButton_ = std::make_unique<SvgButton>("record", BinaryData::track_record_svg,
                                                     BinaryData::track_record_svgSize);
         styleStripToggle(*recordButton_, true);
@@ -1052,8 +1066,9 @@ class SessionView::MiniChannelStrip : public juce::Component {
         addAndMakeVisible(*monitorButton_);
 
         // The monitor keeps its own right-click menu.
-        const std::array<juce::Component*, 4> menuSources{
-            gainLabel_.get(), panLabel_.get(), speakerButton_.get(), recordButton_.get()};
+        const std::array<juce::Component*, 5> menuSources{gainLabel_.get(), panLabel_.get(),
+                                                          speakerButton_.get(), soloButton_.get(),
+                                                          recordButton_.get()};
         for (auto* child : menuSources)
             child->addMouseListener(this, false);
     }
@@ -1104,7 +1119,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
 
         bounds.removeFromTop(kStripGap);
         auto toggleRow = bounds.removeFromTop(kStripRow);
-        std::vector<SvgButton*> toggles{speakerButton_.get()};
+        std::vector<SvgButton*> toggles{speakerButton_.get(), soloButton_.get()};
         if (recordButton_->isVisible()) {
             toggles.push_back(recordButton_.get());
             toggles.push_back(monitorButton_.get());
@@ -1123,6 +1138,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
         gainLabel_->setValue(gainToDb(track.volume), juce::dontSendNotification);
         panLabel_->setValue(track.pan, juce::dontSendNotification);
         speakerButton_->setToggleState(!track.muted, juce::dontSendNotification);
+        soloButton_->setToggleState(track.soloed, juce::dontSendNotification);
         recordButton_->setToggleState(track.recordArmed, juce::dontSendNotification);
         monitorButton_->refresh();
         trackColour_ = track.colour;
@@ -1191,6 +1207,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
     std::unique_ptr<DraggableValueLabel> gainLabel_;
     std::unique_ptr<DraggableValueLabel> panLabel_;
     std::unique_ptr<SvgButton> speakerButton_;
+    std::unique_ptr<SvgButton> soloButton_;
     std::unique_ptr<SvgButton> recordButton_;
     std::unique_ptr<MonitorControl> monitorButton_;
 
