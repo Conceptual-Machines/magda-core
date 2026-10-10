@@ -1088,9 +1088,16 @@ class SessionView::MiniChannelStrip : public juce::Component {
 
     void paint(juce::Graphics& g) override {
         const auto bounds = getLocalBounds().toFloat().reduced(0.5f);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::SESSION_STOP_ROW));
+        // A selected track lifts its strip as the arrangement lifts a selected track's body;
+        // Full bar adds the light swatch rim.
+        const bool selected = SelectionManager::getInstance().isTrackSelected(trackId_);
+        const bool coloured = trackColour_ != juce::Colour(0xFF444444);
+        g.setColour(ActiveTheme::getColour(selected ? ActiveTheme::DEVICE_ICON_HOVER_BG
+                                                    : ActiveTheme::SESSION_STOP_ROW));
         g.fillRoundedRectangle(bounds, 6.0f);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::SESSION_CONTROL_BORDER));
+        g.setColour(selected && fullBar() && coloured
+                        ? deriveTrackSwatch(trackColour_).brighter(0.6f)
+                        : ActiveTheme::getColour(ActiveTheme::SESSION_CONTROL_BORDER));
         g.drawRoundedRectangle(bounds, 6.0f, 1.0f);
 
         // Track colour as the header shows it: a top inset for Full bar, a left spine otherwise.
