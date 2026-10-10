@@ -1015,16 +1015,18 @@ class SessionView::MiniChannelStrip : public juce::Component {
         }
         addAndMakeVisible(*panLabel_);
 
-        // The speaker is lit while the track is audible; unlit and crossed when muted.
+        // Mute engages like the other toggles: a crossed speaker on a lit chip while muted,
+        // or M under the Letters mute/solo preference.
         speakerButton_ = std::make_unique<SvgButton>(
-            "Speaker", BinaryData::master_off_svg, BinaryData::master_off_svgSize,
-            BinaryData::master_on_svg, BinaryData::master_on_svgSize);
+            "Speaker", BinaryData::master_on_svg, BinaryData::master_on_svgSize,
+            BinaryData::master_off_svg, BinaryData::master_off_svgSize);
         styleStripToggle(*speakerButton_, false);
+        speakerButton_->setLetterGlyph("M");
         speakerButton_->setClickingTogglesState(true);
-        speakerButton_->setToggleState(!track.muted, juce::dontSendNotification);
+        speakerButton_->setToggleState(track.muted, juce::dontSendNotification);
         speakerButton_->setTooltip(tr("tracks.mute.tooltip"));
         speakerButton_->onClick = [this]() {
-            const bool muted = !speakerButton_->getToggleState();
+            const bool muted = speakerButton_->getToggleState();
             for (auto tid : getMultiEditTargets(trackId_))
                 UndoManager::getInstance().executeCommand(
                     std::make_unique<SetTrackMuteCommand>(tid, muted));
@@ -1034,6 +1036,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
         soloButton_ =
             std::make_unique<SvgButton>("Solo", BinaryData::solo_svg, BinaryData::solo_svgSize);
         styleStripToggle(*soloButton_, false);
+        soloButton_->setLetterGlyph("S");
         soloButton_->setClickingTogglesState(true);
         soloButton_->setToggleState(track.soloed, juce::dontSendNotification);
         soloButton_->setTooltip(tr("tracks.solo.tooltip"));
@@ -1137,7 +1140,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
     void updateFromTrack(const TrackInfo& track) {
         gainLabel_->setValue(gainToDb(track.volume), juce::dontSendNotification);
         panLabel_->setValue(track.pan, juce::dontSendNotification);
-        speakerButton_->setToggleState(!track.muted, juce::dontSendNotification);
+        speakerButton_->setToggleState(track.muted, juce::dontSendNotification);
         soloButton_->setToggleState(track.soloed, juce::dontSendNotification);
         recordButton_->setToggleState(track.recordArmed, juce::dontSendNotification);
         monitorButton_->refresh();
