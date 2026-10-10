@@ -38,8 +38,18 @@ class ChannelNameLabel final : public juce::Label {
         editor->selectAll();
     }
 
-    void textWasEdited() override {
-        onRename(getText());
+    // Committed against the user's name, not the label shown, so typing the label itself
+    // still names the channel.
+    void editorAboutToBeHidden(juce::TextEditor* editor) override {
+        if (!cancelled_ && editor->getText().trim() != userName())
+            onRename(editor->getText());
+        editor->setText(getText(), false);
+    }
+
+    void textEditorEscapeKeyPressed(juce::TextEditor& editor) override {
+        cancelled_ = true;
+        juce::Label::textEditorEscapeKeyPressed(editor);
+        cancelled_ = false;
     }
 
     void mouseDown(const juce::MouseEvent& e) override {
@@ -60,6 +70,9 @@ class ChannelNameLabel final : public juce::Label {
                      });
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this));
     }
+
+  private:
+    bool cancelled_ = false;
 };
 
 }  // namespace
@@ -234,6 +247,11 @@ std::unique_ptr<juce::Label> CustomChannelSelector::makeNameLabel(int startChann
     label->setBorderSize({});
     label->setEditable(false, true);
     label->setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
+    label->setColour(juce::Label::textWhenEditingColourId, ActiveTheme::getTextColour());
+    label->setColour(juce::Label::backgroundWhenEditingColourId,
+                     ActiveTheme::getColour(ActiveTheme::SURFACE));
+    label->setColour(juce::Label::outlineWhenEditingColourId,
+                     ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     label->userName = [this, startChannel, isStereo] {
         const auto& user =
             Config::getInstance().getChannelNames(interfaceName_.toStdString(), isInput_);
