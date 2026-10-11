@@ -290,3 +290,33 @@ string(SUBSTRING "${wav_header_hex}" 16 8 wave)
 if(NOT riff STREQUAL "52494646" OR NOT wave STREQUAL "57415645")
     message(FATAL_ERROR "Rendered output does not have a RIFF/WAVE header")
 endif()
+
+# Opus (#2955): an Ogg page whose first packet is the OpusHead header.
+set(opus_file "${MAGDA_CLI_WORK_DIR}/render.opus")
+execute_process(
+    COMMAND "${MAGDA_CLI}" render "${mutated_file}" --opus "${opus_file}" --bitrate 128
+            --from 0 --to 1bar
+    RESULT_VARIABLE opus_result
+    OUTPUT_VARIABLE opus_stdout
+    ERROR_VARIABLE opus_stderr
+)
+if(NOT opus_result EQUAL 0)
+    message(FATAL_ERROR "magda-cli render --opus failed: ${opus_stderr}\n${opus_stdout}")
+endif()
+file(READ "${opus_file}" opus_header_hex HEX LIMIT 36)
+string(SUBSTRING "${opus_header_hex}" 0 8 oggs)
+string(SUBSTRING "${opus_header_hex}" 56 16 opus_head)
+if(NOT oggs STREQUAL "4f676753" OR NOT opus_head STREQUAL "4f70757348656164")
+    message(FATAL_ERROR "Rendered Opus does not start with an OggS page holding OpusHead")
+endif()
+
+execute_process(
+    COMMAND "${MAGDA_CLI}" render "${mutated_file}" --opus "${MAGDA_CLI_WORK_DIR}/odd.opus"
+            --bitrate 100 --from 0 --to 1bar
+    RESULT_VARIABLE odd_bitrate_result
+    OUTPUT_QUIET
+    ERROR_QUIET
+)
+if(odd_bitrate_result EQUAL 0)
+    message(FATAL_ERROR "magda-cli render accepted an Opus bitrate the encoder does not offer")
+endif()

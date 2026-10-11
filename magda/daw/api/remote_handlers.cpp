@@ -759,8 +759,24 @@ HandlerResult jobsCancel(MagdaApi&, const juce::var& input, const RequestContext
 namespace {
 
 OfflineRenderFormat renderFormat(const juce::var& input) {
-    return input["format"].toString() == "flac" ? OfflineRenderFormat::Flac
-                                                : OfflineRenderFormat::Wav;
+    const auto value = input["format"].toString();
+    if (value == "flac")
+        return OfflineRenderFormat::Flac;
+    if (value == "opus")
+        return OfflineRenderFormat::Opus;
+    return OfflineRenderFormat::Wav;
+}
+
+const char* formatName(OfflineRenderFormat format) {
+    switch (format) {
+        case OfflineRenderFormat::Flac:
+            return "flac";
+        case OfflineRenderFormat::Opus:
+            return "opus";
+        case OfflineRenderFormat::Wav:
+            break;
+    }
+    return "wav";
 }
 
 OfflineRenderDither renderDither(const juce::var& input) {
@@ -773,13 +789,21 @@ OfflineRenderDither renderDither(const juce::var& input) {
 }
 
 juce::String mediaType(OfflineRenderFormat format) {
-    return format == OfflineRenderFormat::Flac ? "audio/flac" : "audio/wav";
+    switch (format) {
+        case OfflineRenderFormat::Flac:
+            return "audio/flac";
+        case OfflineRenderFormat::Opus:
+            return "audio/ogg";  // RFC 7845: Ogg Opus files are audio/ogg
+        case OfflineRenderFormat::Wav:
+            break;
+    }
+    return "audio/wav";
 }
 
 juce::var engineArtifactResult(const char* kind, OfflineRenderFormat format) {
     auto* result = new juce::DynamicObject();
     result->setProperty("kind", kind);
-    result->setProperty("format", format == OfflineRenderFormat::Flac ? "flac" : "wav");
+    result->setProperty("format", formatName(format));
     return result;
 }
 
@@ -799,8 +823,7 @@ Error engineStartError(EngineJobStartStatus status) {
 }
 
 bool destinationMatches(OfflineRenderFormat format, const juce::File& destination) {
-    return format == OfflineRenderFormat::Flac ? destination.hasFileExtension(".flac")
-                                               : destination.hasFileExtension(".wav");
+    return destination.hasFileExtension(formatName(format));
 }
 
 std::optional<juce::File> resolveAudioDestination(const juce::var& input,
@@ -887,6 +910,7 @@ HandlerResult engineRenderRange(MagdaApi& api, const juce::var& input,
     request.format = format;
     request.bitDepth = static_cast<int>(input["bitDepth"]);
     request.dither = renderDither(input);
+    request.bitrateKbps = static_cast<int>(input.getProperty("bitrateKbps", 0));
     request.sampleRate = static_cast<double>(input["sampleRate"]);
     request.shouldNormalise = static_cast<bool>(input["normalise"]);
     request.normaliseToLevelDb = static_cast<float>(static_cast<double>(input["normaliseToDb"]));
