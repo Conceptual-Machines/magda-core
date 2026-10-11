@@ -246,6 +246,7 @@ class EngineOfflineRenderTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testHardwareOutputJoinsFile(); });
         magda::test::runWithCleanJuceState([this] { testDitherOnTheFile(); });
         magda::test::runWithCleanJuceState([this] { testNormaliseAndLeadIn(); });
+        magda::test::runWithCleanJuceState([this] { testNormalisedOpusRender(); });
         magda::test::runWithCleanJuceState([this] { testBorrowedDeviceStartsClean(); });
         magda::test::runWithCleanJuceState([this] { testDeclaredTail(); });
         magda::test::runWithCleanJuceState([this] { testFreezeRendersUpToTheFader(); });
@@ -435,6 +436,30 @@ class EngineOfflineRenderTest final : public juce::UnitTest {
         expectWithinAbsoluteError(stored.getMagnitude(0, leadIn, kRangeSamples),
                                   juce::Decibels::decibelsToGain(-1.0f), 1.0e-3f,
                                   "The render peaks at -1 dB");
+    }
+
+    void testNormalisedOpusRender() {
+        beginTest("A normalised Opus render is the range at 48 kHz, peaking where asked (#2955)");
+
+        trackPlaying(writeSource("opus", sine(0.25f, 441.0)));
+
+        const auto file = scratchDirectory().getChildFile("normalised.opus");
+        auto request = requestFor(file, 24, magda::OfflineRenderDither::Tpdf);
+        request.format = magda::OfflineRenderFormat::Opus;
+        request.bitrateKbps = 192;
+        request.shouldNormalise = true;
+        request.normaliseToLevelDb = -1.0f;
+
+        const auto result = render(request);
+        expect(result.success, "The render succeeds: " + result.error);
+
+        const auto stored = readBack(file);
+        const auto expectedSamples = juce::roundToInt(kRangeSamples * 48000.0 / kSampleRate);
+        expect(std::abs(stored.getNumSamples() - expectedSamples) <= 1,
+               "The file is the range, resampled: " + juce::String(stored.getNumSamples()));
+        expectWithinAbsoluteError(stored.getMagnitude(0, 0, stored.getNumSamples()),
+                                  juce::Decibels::decibelsToGain(-1.0f), 0.05f,
+                                  "The render peaks near -1 dB");
     }
 
     void testBorrowedDeviceStartsClean() {

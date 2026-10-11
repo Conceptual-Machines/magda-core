@@ -6,6 +6,7 @@
     #include <csignal>
 #endif
 
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
 #include <memory>
@@ -165,6 +166,70 @@ TEST_CASE("A float file holds the render's own samples", "[engine][io][render][2
         source);
 
     requireSame(readBack(file), source);
+}
+
+/// Signal-to-error ratio of @p stored against @p expected, in dB.
+double signalToErrorDb(const juce::AudioBuffer<float>& stored,
+                       const juce::AudioBuffer<float>& expected) {
+    double signal = 0.0;
+    double error = 0.0;
+    for (auto channel = 0; channel < expected.getNumChannels(); ++channel)
+        for (auto at = 0; at < expected.getNumSamples(); ++at) {
+            const double want = expected.getSample(channel, at);
+            const double diff = stored.getSample(channel, at) - want;
+            signal += want * want;
+            error += diff * diff;
+        }
+    return 10.0 * std::log10(signal / std::max(error, 1.0e-20));
+}
+
+TEST_CASE("An Opus file holds the render, within what the codec loses", "[engine][io][2955]") {
+    constexpr double rate = 48000.0;
+    constexpr int samples = 48000;
+    const auto source = material(2, samples);
+    const auto file = destination("render.opus");
+
+    auto sink = AudioFileSink::create(file, {.format = AudioFileFormat::opus},
+                                      RenderContext{rate, samples, 2});
+    REQUIRE(sink != nullptr);
+    sink->write(source, samples);
+    REQUIRE(sink->close());
+
+    // Same length as the render: the encoder's pre-skip is in the header, so
+    // the reader drops it rather than the file starting late.
+    const auto stored = readBack(file);
+    REQUIRE(stored.getNumChannels() == 2);
+    REQUIRE(stored.getNumSamples() == samples);
+    CHECK(signalToErrorDb(stored, source) > 20.0);
+}
+
+TEST_CASE("An Opus render at 44.1 kHz is stored at 48 kHz", "[engine][io][2955]") {
+    // Opus has one rate. The render keeps the project's and the encoder
+    // resamples, so nothing upstream has to know.
+    const auto file =
+        writeThrough("resampled.opus", {.format = AudioFileFormat::opus}, material(2, 44100));
+
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    const std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
+    REQUIRE(reader != nullptr);
+    CHECK(reader->sampleRate == 48000.0);
+    CHECK(std::abs(reader->lengthInSamples - 48000) <= 1);
+}
+
+TEST_CASE("An Opus bitrate is one the encoder offers", "[engine][io][2955]") {
+    const auto source = material(2, 44100);
+
+    // A lossy spec has no depth, so one nothing writes is not a refusal.
+    const auto low = writeThrough(
+        "low.opus", {.format = AudioFileFormat::opus, .bitDepth = 20, .bitrateKbps = 64}, source);
+    const auto high =
+        writeThrough("high.opus", {.format = AudioFileFormat::opus, .bitrateKbps = 256}, source);
+    CHECK(high.getSize() > low.getSize());
+
+    CHECK(AudioFileSink::create(destination("odd.opus"),
+                                {.format = AudioFileFormat::opus, .bitrateKbps = 100},
+                                RenderContext{kSampleRate, 512, 2}) == nullptr);
 }
 
 TEST_CASE("A rendered WAV reports its musical facts on re-import", "[engine][io][2771]") {
@@ -419,6 +484,9 @@ TEST_CASE("A refused render leaves the file that was already there", "[engine][i
     CHECK(AudioFileSink::create(file, {.format = AudioFileFormat::wav, .bitDepth = 20}, stereo) ==
           nullptr);
 
+    // Opus maps at most eight channels.
+    CHECK(AudioFileSink::create(file, {.format = AudioFileFormat::opus}, nine) == nullptr);
+
     // Yesterday's export, still there. A render that never ran has no business
     // costing anyone the last one that did.
     requireSame(readBack(file), before);
@@ -433,12 +501,11 @@ TEST_CASE("A render the disk did not take is not a successful render",
 #if JUCE_WINDOWS
     SUCCEED("The file size limit this needs is POSIX");
 #else
-    for (const auto format : {AudioFileFormat::wav, AudioFileFormat::flac}) {
+    for (const auto format : {AudioFileFormat::wav, AudioFileFormat::flac, AudioFileFormat::opus}) {
         INFO("format " << static_cast<int>(format));
 
         const auto directory = emptyDirectory("full_disk");
-        const auto file =
-            directory.getChildFile(format == AudioFileFormat::flac ? "export.flac" : "export.wav");
+        const auto file = directory.getChildFile("export" + magda::engine::extensionFor(format));
 
         const auto source = material(2);
         writeInto(file, {.format = format, .bitDepth = 16}, source);

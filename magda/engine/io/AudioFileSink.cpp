@@ -27,9 +27,24 @@ struct StreamReport {
 namespace {
 
 std::unique_ptr<juce::AudioFormat> formatFor(AudioFileFormat format) {
-    if (format == AudioFileFormat::flac)
-        return std::make_unique<juce::FlacAudioFormat>();
+    switch (format) {
+        case AudioFileFormat::flac:
+            return std::make_unique<juce::FlacAudioFormat>();
+        case AudioFileFormat::opus:
+            return std::make_unique<juce::OpusAudioFormat>();
+        case AudioFileFormat::wav:
+            break;
+    }
     return std::make_unique<juce::WavAudioFormat>();
+}
+
+/// The writer's quality option for @p bitrateKbps: 0 is the format's first
+/// option (the encoder's own choice), and a rate it does not list is unset.
+std::optional<int> qualityOptionFor(juce::AudioFormat& format, int bitrateKbps) {
+    if (bitrateKbps == 0)
+        return 0;
+    const auto index = format.getQualityOptions().indexOf(juce::String(bitrateKbps) + " kbps");
+    return index > 0 ? std::optional<int>(index) : std::nullopt;
 }
 
 class ReportingStream final : public juce::OutputStream {
@@ -83,8 +98,20 @@ DitherMode defaultDitherFor(int bitDepth) {
     return bitDepth >= 32 ? DitherMode::none : DitherMode::tpdf;
 }
 
+bool isLossy(AudioFileFormat format) {
+    return format == AudioFileFormat::opus;
+}
+
 juce::String extensionFor(AudioFileFormat format) {
-    return format == AudioFileFormat::flac ? ".flac" : ".wav";
+    switch (format) {
+        case AudioFileFormat::flac:
+            return ".flac";
+        case AudioFileFormat::opus:
+            return ".opus";
+        case AudioFileFormat::wav:
+            break;
+    }
+    return ".wav";
 }
 
 std::unique_ptr<AudioFileSink> AudioFileSink::create(const juce::File& destination,
@@ -94,10 +121,17 @@ std::unique_ptr<AudioFileSink> AudioFileSink::create(const juce::File& destinati
 
     // 32 bits means float. A 32-bit integer file is not a thing anything asks
     // for, and FLAC refuses the depth itself, so this is the only place the two
-    // ways of spending 32 bits have to be told apart.
-    const auto floating = spec.bitDepth >= 32;
+    // ways of spending 32 bits have to be told apart. A lossy encoder has no
+    // grid to quantise to, so it takes the render as float.
+    const auto lossy = isLossy(spec.format);
+    const auto floating = lossy || spec.bitDepth >= 32;
+    const auto bitDepth = lossy ? 32 : spec.bitDepth;
 
     auto format = formatFor(spec.format);
+
+    const auto qualityOption = qualityOptionFor(*format, lossy ? spec.bitrateKbps : 0);
+    if (!qualityOption)
+        return nullptr;
 
     // Beside the destination, never over it. Everything below can still refuse
     // -- a format that will not take the channel count, a disk that will not
@@ -118,7 +152,8 @@ std::unique_ptr<AudioFileSink> AudioFileSink::create(const juce::File& destinati
         juce::AudioFormatWriterOptions()
             .withSampleRate(context.sampleRate)
             .withNumChannels(channels)
-            .withBitsPerSample(spec.bitDepth)
+            .withBitsPerSample(bitDepth)
+            .withQualityOptionIndex(*qualityOption)
             .withSampleFormat(floating ? juce::AudioFormatWriterOptions::SampleFormat::floatingPoint
                                        : juce::AudioFormatWriterOptions::SampleFormat::integral);
     if (spec.format == AudioFileFormat::wav)
