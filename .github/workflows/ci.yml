@@ -564,8 +564,8 @@ jobs:
           fi
 
           # The Mac runners are registered on the org, not the repo.
-          runners=$(gh api "orgs/${{ github.repository_owner }}/actions/runners" 2>/dev/null) \
-            || hosted "Could not read org runner status; falling back to macos-15"
+          runners=$(gh api "orgs/${{ github.repository_owner }}/actions/runners" 2>&1) \
+            || hosted "Could not read org runner status ($runners); falling back to macos-15"
 
           primary=$(printf '%s' "$runners" | jq -r '
             .runners[]
