@@ -85,6 +85,8 @@ enum {
     cycleViewForward = 0x4004,
     cycleViewBackward = 0x4005,
     togglePianoRollFullscreen = 0x4006,  // Cmd/Ctrl+Shift+P
+    zoomIn = 0x4007,                     // H: zoom the arrangement in
+    zoomOut = 0x4008,                    // G: zoom the arrangement out
 
     // Help menu
     showHelp = 0x5000,

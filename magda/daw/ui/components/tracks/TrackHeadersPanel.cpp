@@ -2626,6 +2626,7 @@ void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
         resizingTrackIndex = trackIndex;
         resizeStartY = localEvent.y;
         resizeStartHeight = trackHeaders[trackIndex]->height;
+        resizeAllTracks_ = localEvent.mods.isAltDown();
         setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
     } else {
         // Find which track was clicked
@@ -2734,10 +2735,16 @@ void TrackHeadersPanel::mouseDrag(const juce::MouseEvent& event) {
 
     // Handle vertical track height resizing
     if (isResizing && resizingTrackIndex >= 0) {
-        int deltaY = event.y - resizeStartY;
-        int newHeight =
+        // Heights are stored unzoomed, so un-scale the drag to keep the edge under the mouse.
+        const int deltaY = juce::roundToInt((event.y - resizeStartY) / verticalZoom);
+        const int newHeight =
             juce::jlimit(MIN_TRACK_HEIGHT, MAX_TRACK_HEIGHT, resizeStartHeight + deltaY);
-        setTrackHeight(resizingTrackIndex, newHeight);
+        if (resizeAllTracks_) {
+            for (int i = 0; i < getNumTracks(); ++i)
+                setTrackHeight(i, newHeight);
+        } else {
+            setTrackHeight(resizingTrackIndex, newHeight);
+        }
         return;
     }
 
@@ -2799,6 +2806,7 @@ void TrackHeadersPanel::mouseUp(const juce::MouseEvent& /*event*/) {
     // Handle vertical track height resizing cleanup
     if (isResizing) {
         isResizing = false;
+        resizeAllTracks_ = false;
         resizingTrackIndex = -1;
         setMouseCursor(juce::MouseCursor::NormalCursor);
         return;

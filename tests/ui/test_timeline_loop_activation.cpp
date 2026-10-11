@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
 
 #include "magda/daw/api/transport_api_live.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
@@ -383,6 +384,65 @@ TEST_CASE("Anchored beat zoom preserves the selected beat's screen position",
 
     REQUIRE(state.zoom.horizontalZoom == Catch::Approx(pixelsPerBeat));
     REQUIRE(anchorContentX - state.zoom.scrollX == anchorScreenX);
+}
+
+namespace {
+
+int beatScreenX(const magda::TimelineState& state, double beats) {
+    return static_cast<int>(std::round(beats * state.zoom.horizontalZoom)) +
+           magda::LayoutConfig::TIMELINE_LEFT_PADDING - state.zoom.scrollX;
+}
+
+// 512 beats at 20 px/beat in a 1000 px viewport scrolled to beat ~100.
+void setUpZoomStep(magda::TimelineController& controller) {
+    controller.dispatch(magda::SetTimelineLengthBeatsEvent{512.0});
+    controller.dispatch(magda::ViewportResizedEvent{1000, 600});
+    controller.dispatch(magda::SetZoomEvent{20.0});
+    controller.dispatch(magda::SetScrollPositionEvent{2000, 0});
+}
+
+}  // namespace
+
+TEST_CASE("Zoom step keeps a visible playhead where it is on screen", "[timeline][zoom][beats]") {
+    magda::TimelineController controller;
+    setUpZoomStep(controller);
+    controller.dispatch(magda::SetEditPositionBeatsEvent{110.0});
+
+    const auto& state = controller.getState();
+    const int before = beatScreenX(state, 110.0);
+    controller.dispatch(magda::ZoomStepEvent{1.5});
+
+    REQUIRE(state.zoom.horizontalZoom == Catch::Approx(30.0));
+    REQUIRE(std::abs(beatScreenX(state, 110.0) - before) <= 1);
+}
+
+TEST_CASE("Zoom step falls back to the edit cursor when the playhead is off screen",
+          "[timeline][zoom][beats]") {
+    magda::TimelineController controller;
+    setUpZoomStep(controller);
+    controller.dispatch(magda::SetEditPositionBeatsEvent{0.0});
+    controller.dispatch(magda::SetEditCursorEvent{130.0});
+
+    const auto& state = controller.getState();
+    const int before = beatScreenX(state, 130.0);
+    controller.dispatch(magda::ZoomStepEvent{1.0 / 1.5});
+
+    REQUIRE(state.zoom.horizontalZoom == Catch::Approx(20.0 / 1.5));
+    REQUIRE(std::abs(beatScreenX(state, 130.0) - before) <= 1);
+}
+
+TEST_CASE("Zoom step anchors on the view centre with nothing else on screen",
+          "[timeline][zoom][beats]") {
+    magda::TimelineController controller;
+    setUpZoomStep(controller);
+    controller.dispatch(magda::SetEditPositionBeatsEvent{0.0});
+
+    const auto& state = controller.getState();
+    const double centreBeats =
+        (state.zoom.scrollX + 500 - magda::LayoutConfig::TIMELINE_LEFT_PADDING) / 20.0;
+    controller.dispatch(magda::ZoomStepEvent{1.5});
+
+    REQUIRE(std::abs(beatScreenX(state, centreBeats) - 500) <= 1);
 }
 
 TEST_CASE("Zoom-to-fit beat range is independent of tempo", "[timeline][zoom][beats][tempo]") {
