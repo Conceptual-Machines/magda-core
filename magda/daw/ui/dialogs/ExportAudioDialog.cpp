@@ -5,6 +5,7 @@
 #include "../themes/ActiveTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
+#include "ExportFormats.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
 
@@ -23,11 +24,17 @@ ExportAudioDialog::ExportAudioDialog() {
     formatComboBox_.addItem("WAV 24-bit", 2);
     formatComboBox_.addItem("WAV 32-bit Float", 3);
     formatComboBox_.addItem("FLAC", 4);
-    // Initialise format from the project's render bit depth
+    formatComboBox_.addItem("Opus", 5);
+    // The last container exported to; a WAV's depth comes from the project.
     const auto& projectInfo = ProjectManager::getInstance().getCurrentProjectInfo();
+    const juce::String lastFormat(Config::getInstance().getExportFormat());
     int bd = projectInfo.renderBitDepth;
     int formatId = 2;  // Default WAV 24-bit
-    if (bd >= 32)
+    if (lastFormat == "FLAC")
+        formatId = 4;
+    else if (lastFormat == "OPUS")
+        formatId = 5;
+    else if (bd >= 32)
         formatId = 3;
     else if (bd >= 24)
         formatId = 2;
@@ -75,6 +82,19 @@ ExportAudioDialog::ExportAudioDialog() {
     ditherComboBox_.addItem(tr("export_audio.dither.shaped"), 3);
     ditherComboBox_.setSelectedId(2, juce::dontSendNotification);
     addAndMakeVisible(ditherComboBox_);
+
+    bitrateLabel_.setText(tr("export_audio.label.bitrate"), juce::dontSendNotification);
+    bitrateLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
+    addChildComponent(bitrateLabel_);
+
+    // Item ids are the bitrates themselves.
+    for (const auto kbps : kExportBitratesKbps)
+        bitrateComboBox_.addItem(juce::String(kbps) + " kbps", kbps);
+    bitrateComboBox_.setSelectedId(Config::getInstance().getExportBitrateKbps(),
+                                   juce::dontSendNotification);
+    if (bitrateComboBox_.getSelectedId() == 0)
+        bitrateComboBox_.setSelectedId(kDefaultExportBitrateKbps, juce::dontSendNotification);
+    addChildComponent(bitrateComboBox_);
 
     updateBitDepthOptions();  // Set label based on restored format
 
@@ -127,12 +147,11 @@ ExportAudioDialog::ExportAudioDialog() {
             auto settings = getSettings();
             // Persist render preferences
             auto& cfg = Config::getInstance();
-            int bitDepth = 24;
-            if (settings.format == "WAV16")
-                bitDepth = 16;
-            else if (settings.format == "WAV32")
-                bitDepth = 32;
-            cfg.setRenderBitDepth(bitDepth);
+            cfg.setExportFormat(settings.format.toStdString());
+            if (isLossyExportFormat(settings.format))
+                cfg.setExportBitrateKbps(settings.bitrateKbps);
+            else
+                cfg.setRenderBitDepth(exportBitDepthFor(settings.format));
             cfg.setRenderSampleRate(settings.sampleRate);
             cfg.save();
             onExport(settings);
@@ -185,18 +204,27 @@ void ExportAudioDialog::resized() {
     sampleRateComboBox_.setBounds(sampleRateArea);
     bounds.removeFromTop(10);
 
-    // Bit depth display
-    auto bitDepthArea = bounds.removeFromTop(28);
-    bitDepthLabel_.setBounds(bitDepthArea.removeFromLeft(120));
-    bitDepthArea.removeFromLeft(10);
-    bitDepthValueLabel_.setBounds(bitDepthArea);
-    bounds.removeFromTop(10);
+    // A lossy format's bitrate row takes the place of bit depth and dither, so
+    // the rows below keep their positions.
+    if (isLossySelected()) {
+        auto bitrateArea = bounds.removeFromTop(28);
+        bitrateLabel_.setBounds(bitrateArea.removeFromLeft(120));
+        bitrateArea.removeFromLeft(10);
+        bitrateComboBox_.setBounds(bitrateArea);
+        bounds.removeFromTop(10 + 28 + 15);
+    } else {
+        auto bitDepthArea = bounds.removeFromTop(28);
+        bitDepthLabel_.setBounds(bitDepthArea.removeFromLeft(120));
+        bitDepthArea.removeFromLeft(10);
+        bitDepthValueLabel_.setBounds(bitDepthArea);
+        bounds.removeFromTop(10);
 
-    auto ditherArea = bounds.removeFromTop(28);
-    ditherLabel_.setBounds(ditherArea.removeFromLeft(120));
-    ditherArea.removeFromLeft(10);
-    ditherComboBox_.setBounds(ditherArea);
-    bounds.removeFromTop(15);
+        auto ditherArea = bounds.removeFromTop(28);
+        ditherLabel_.setBounds(ditherArea.removeFromLeft(120));
+        ditherArea.removeFromLeft(10);
+        ditherComboBox_.setBounds(ditherArea);
+        bounds.removeFromTop(15);
+    }
 
     // Normalization checkbox
     normalizeCheckbox_.setBounds(bounds.removeFromTop(24));
@@ -254,10 +282,16 @@ ExportAudioDialog::Settings ExportAudioDialog::getSettings() const {
         case 4:
             settings.format = "FLAC";
             break;
+        case 5:
+            settings.format = "OPUS";
+            break;
         default:
             settings.format = "WAV24";
             break;
     }
+
+    if (isLossySelected())
+        settings.bitrateKbps = bitrateComboBox_.getSelectedId();
 
     // Get sample rate
     int sampleRateId = sampleRateComboBox_.getSelectedId();
@@ -279,7 +313,7 @@ ExportAudioDialog::Settings ExportAudioDialog::getSettings() const {
             break;
     }
 
-    if (formatId == 3) {
+    if (formatId == 3 || isLossySelected()) {
         settings.dither = OfflineRenderDither::None;
     } else {
         switch (ditherComboBox_.getSelectedId()) {
@@ -359,6 +393,18 @@ void ExportAudioDialog::updateBitDepthOptions() {
 
     // A float file has no grid to dither onto.
     ditherComboBox_.setEnabled(formatId != 3);
+
+    const auto lossy = isLossySelected();
+    for (auto* row : std::initializer_list<juce::Component*>{&bitDepthLabel_, &bitDepthValueLabel_,
+                                                             &ditherLabel_, &ditherComboBox_})
+        row->setVisible(!lossy);
+    bitrateLabel_.setVisible(lossy);
+    bitrateComboBox_.setVisible(lossy);
+    resized();
+}
+
+bool ExportAudioDialog::isLossySelected() const {
+    return formatComboBox_.getSelectedId() == 5;
 }
 
 void ExportAudioDialog::showDialog(juce::Component* parent,

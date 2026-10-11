@@ -872,6 +872,13 @@ class Config {
         exportFormat = format;
     }
 
+    int getExportBitrateKbps() const {
+        return exportBitrateKbps;
+    }
+    void setExportBitrateKbps(int kbps) {
+        exportBitrateKbps = kbps;
+    }
+
     double getExportSampleRate() const {
         return exportSampleRate;
     }
@@ -1713,7 +1720,8 @@ class Config {
     int oscFeedbackPort = 9001;
 
     // Export audio settings
-    std::string exportFormat = "WAV24";  // WAV16, WAV24, WAV32, FLAC
+    std::string exportFormat = "WAV24";  // WAV16, WAV24, WAV32, FLAC, OPUS
+    int exportBitrateKbps = 160;         // Lossy formats only
     double exportSampleRate = 48000.0;   // 44100, 48000, 96000, 192000
 
     // Configurable user-data path overrides (resolved by magda::paths).

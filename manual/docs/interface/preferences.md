@@ -130,7 +130,7 @@ The location and maintenance of the sample-indexing database live here too. See 
 
 ## Rendering
 
-Where rendered files go and what they are called. Audio export format is chosen in the export dialog: WAV 16-bit, WAV 24-bit, WAV 32-bit float, or FLAC.
+Where rendered files go and what they are called. Audio export format is chosen in the export dialog: WAV 16-bit, WAV 24-bit, WAV 32-bit float, FLAC, or Opus.
 
 ## Defaults
 
