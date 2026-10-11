@@ -330,8 +330,10 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
             menu.addItem(ToggleScrollbarPosition, tr("menu.view.headers_right"), true,
                          headersOnRight);
             menu.addSeparator();
-            menu.addItem(ZoomIn, tr("menu.view.zoom_in"), true, false);
-            menu.addItem(ZoomOut, tr("menu.view.zoom_out"), true, false);
+            menu.addItem(ZoomIn, tr("menu.view.zoom_in") + keyHint(CommandIDs::zoomIn), true,
+                         false);
+            menu.addItem(ZoomOut, tr("menu.view.zoom_out") + keyHint(CommandIDs::zoomOut), true,
+                         false);
             menu.addItem(ZoomToFit, tr("menu.view.zoom_to_fit"), true, false);
             menu.addItem(ZoomLoopToFit, tr("menu.view.zoom_loop"), true, false);
             menu.addItem(ZoomSelectionToFit, tr("menu.view.zoom_selection"), true, false);

@@ -203,6 +203,7 @@ class TimelineController {
     ChangeFlags handleEvent(const ZoomToFitBeatsEvent& e);
     ChangeFlags handleEvent(const ZoomToFitEvent& e);
     ChangeFlags handleEvent(const ResetZoomEvent& e);
+    ChangeFlags handleEvent(const ZoomStepEvent& e);
 
     ChangeFlags handleEvent(const SetScrollPositionEvent& e);
     ChangeFlags handleEvent(const ScrollByDeltaEvent& e);

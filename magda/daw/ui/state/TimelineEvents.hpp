@@ -78,6 +78,14 @@ struct ZoomToFitEvent {
  */
 struct ResetZoomEvent {};
 
+/**
+ * @brief Multiply horizontal zoom by a factor, anchored on the playhead, else the
+ * edit cursor, else the view centre (whichever is on screen first)
+ */
+struct ZoomStepEvent {
+    double factor;
+};
+
 // ===== Scroll Events =====
 
 /**
@@ -591,7 +599,7 @@ struct SetTimelineLengthEvent {
 using TimelineEvent = std::variant<
     // Zoom events
     SetZoomEvent, SetZoomCenteredBeatsEvent, SetZoomCenteredEvent, SetZoomAnchoredBeatsEvent,
-    SetZoomAnchoredEvent, ZoomToFitBeatsEvent, ZoomToFitEvent, ResetZoomEvent,
+    SetZoomAnchoredEvent, ZoomToFitBeatsEvent, ZoomToFitEvent, ResetZoomEvent, ZoomStepEvent,
     // Scroll events
     SetScrollPositionEvent, ScrollByDeltaEvent, ScrollToBeatEvent, ScrollToTimeEvent,
     // Playhead events

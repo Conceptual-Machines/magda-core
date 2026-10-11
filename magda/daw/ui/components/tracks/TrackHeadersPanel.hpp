@@ -279,6 +279,7 @@ class TrackHeadersPanel : public juce::Component,
     int resizingTrackIndex = -1;
     int resizeStartY = 0;
     int resizeStartHeight = 0;
+    bool resizeAllTracks_ = false;  // Alt held at mouse-down: every track follows (#2066)
 
     // Dedup for double-delivered mouse events (self mouse listener); see
     // TrackHeadersPanel::mouseDown

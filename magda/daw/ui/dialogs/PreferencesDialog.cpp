@@ -221,6 +221,13 @@ class GeneralPage : public juce::Component {
         setupToggle(*this, headersOnRightToggle, tr("preferences.toggle.headers_on_right"));
         setupToggle(*this, autoHideScrollbarsToggle,
                     tr("preferences.toggle.autohide_arrangement_scrollbars"));
+        // Range matches TrackHeadersPanel's MIN / MAX_TRACK_HEIGHT.
+        setupTextSlider(*this, compactTrackHeightSlider, compactTrackHeightLabel,
+                        tr("preferences.slider.compact_track_height"), 56.0, 220.0, 1.0);
+        setupTextSlider(*this, mediumTrackHeightSlider, mediumTrackHeightLabel,
+                        tr("preferences.slider.medium_track_height"), 56.0, 220.0, 1.0);
+        setupTextSlider(*this, largeTrackHeightSlider, largeTrackHeightLabel,
+                        tr("preferences.slider.large_track_height"), 56.0, 220.0, 1.0);
 
         setupSectionHeader(*this, behaviorHeader, tr("preferences.section.behavior"));
         setupToggle(*this, confirmTrackDeleteToggle, tr("preferences.toggle.confirm_track_delete"));
@@ -318,6 +325,10 @@ class GeneralPage : public juce::Component {
         renderAheadTimeSlider.setValue(config.getRenderAheadMs(), juce::dontSendNotification);
         headersOnRightToggle.setToggleState(config.getScrollbarOnLeft(),
                                             juce::dontSendNotification);
+        compactTrackHeightSlider.setValue(config.getCompactTrackHeight(),
+                                          juce::dontSendNotification);
+        mediumTrackHeightSlider.setValue(config.getMediumTrackHeight(), juce::dontSendNotification);
+        largeTrackHeightSlider.setValue(config.getLargeTrackHeight(), juce::dontSendNotification);
         autoHideScrollbarsToggle.setToggleState(config.getMainViewScrollbarsAutoHide(),
                                                 juce::dontSendNotification);
         confirmTrackDeleteToggle.setToggleState(config.getConfirmTrackDelete(),
@@ -380,6 +391,9 @@ class GeneralPage : public juce::Component {
         config.setRenderAheadMs(static_cast<int>(renderAheadTimeSlider.getValue()));
         config.setScrollbarOnLeft(headersOnRightToggle.getToggleState());
         config.setMainViewScrollbarsAutoHide(autoHideScrollbarsToggle.getToggleState());
+        config.setCompactTrackHeight(static_cast<int>(compactTrackHeightSlider.getValue()));
+        config.setMediumTrackHeight(static_cast<int>(mediumTrackHeightSlider.getValue()));
+        config.setLargeTrackHeight(static_cast<int>(largeTrackHeightSlider.getValue()));
         config.setConfirmTrackDelete(confirmTrackDeleteToggle.getToggleState());
         config.setAutoMonitorSelectedTrack(autoMonitorToggle.getToggleState());
         config.setDuplicateLoopGrows(duplicateLoopGrowsToggle.getToggleState());
@@ -426,7 +440,8 @@ class GeneralPage : public juce::Component {
         return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
                secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
                headerH + 4 + rowH + 4 + rowH + secGap + headerH + 4 + rowH + secGap + headerH + 4 +
-               (rowH * 9) + 32 + secGap + headerH + 4 + rowH + 18 + 4 + rowH + padding;
+               (rowH * 9) + 32 + secGap + headerH + 4 + rowH + 18 + 4 + rowH + padding +
+               3 * (4 + rowH);  // Layout's track-height rows
     }
 
     static int getLeftColumnPreferredHeight() {
@@ -451,6 +466,7 @@ class GeneralPage : public juce::Component {
         constexpr int secGap = 12;
 
         return padding + headerH + 4 + rowH + 4 + rowH   // Layout
+               + 3 * (4 + rowH)                          // Layout: track-height presets
                + secGap + headerH + 4 + (rowH * 9) + 32  // Behaviour: 9 toggles, 4px apart
                + padding;
     }
@@ -503,6 +519,13 @@ class GeneralPage : public juce::Component {
         headersOnRightToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
         autoHideScrollbarsToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, compactTrackHeightLabel, compactTrackHeightSlider, rowH,
+                            sliderH);
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, mediumTrackHeightLabel, mediumTrackHeightSlider, rowH, sliderH);
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, largeTrackHeightLabel, largeTrackHeightSlider, rowH, sliderH);
         bounds.removeFromTop(secGap);
 
         // Behaviour
@@ -600,6 +623,13 @@ class GeneralPage : public juce::Component {
         headersOnRightToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(4);
         autoHideScrollbarsToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(4);
+        layoutTextSliderRow(right, compactTrackHeightLabel, compactTrackHeightSlider, rowH,
+                            sliderH);
+        right.removeFromTop(4);
+        layoutTextSliderRow(right, mediumTrackHeightLabel, mediumTrackHeightSlider, rowH, sliderH);
+        right.removeFromTop(4);
+        layoutTextSliderRow(right, largeTrackHeightLabel, largeTrackHeightSlider, rowH, sliderH);
         right.removeFromTop(secGap);
 
         // Behaviour
@@ -641,6 +671,9 @@ class GeneralPage : public juce::Component {
     magda::daw::ui::TextSlider renderAheadTimeSlider;
     juce::ToggleButton headersOnRightToggle;
     juce::ToggleButton autoHideScrollbarsToggle;
+    juce::Label compactTrackHeightLabel, mediumTrackHeightLabel, largeTrackHeightLabel;
+    magda::daw::ui::TextSlider compactTrackHeightSlider, mediumTrackHeightSlider,
+        largeTrackHeightSlider;
     juce::ToggleButton confirmTrackDeleteToggle, autoMonitorToggle;
     juce::ToggleButton duplicateLoopGrowsToggle;
     juce::ToggleButton showTooltipsToggle;

@@ -203,6 +203,9 @@ void Config::save() {
     root->setProperty("language", toJuceString(language));
 
     // UI / behaviour
+    root->setProperty("compactTrackHeight", compactTrackHeight);
+    root->setProperty("mediumTrackHeight", mediumTrackHeight);
+    root->setProperty("largeTrackHeight", largeTrackHeight);
     root->setProperty("scrollbarOnLeft", scrollbarOnLeft);
     root->setProperty("arrangementScrollbarsAutoHide", arrangementScrollbarsAutoHide);
     root->setProperty("uiScale", uiScale);
@@ -628,6 +631,9 @@ void Config::load() {
     }
 
     language = getString("language", language);
+    compactTrackHeight = getInt("compactTrackHeight", compactTrackHeight);
+    mediumTrackHeight = getInt("mediumTrackHeight", mediumTrackHeight);
+    largeTrackHeight = getInt("largeTrackHeight", largeTrackHeight);
     scrollbarOnLeft = getBool("scrollbarOnLeft", scrollbarOnLeft);
     arrangementScrollbarsAutoHide =
         getBool("arrangementScrollbarsAutoHide", arrangementScrollbarsAutoHide);

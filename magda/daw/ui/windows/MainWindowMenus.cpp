@@ -1097,19 +1097,11 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     callbacks.onZoomIn = [this]() {
-        if (mainComponent && mainComponent->mainView) {
-            auto& tc = mainComponent->mainView->getTimelineController();
-            double currentZoom = mainComponent->mainView->getHorizontalZoom();
-            tc.dispatch(SetZoomEvent{currentZoom * 1.25});
-        }
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::zoomIn, false);
     };
 
     callbacks.onZoomOut = [this]() {
-        if (mainComponent && mainComponent->mainView) {
-            auto& tc = mainComponent->mainView->getTimelineController();
-            double currentZoom = mainComponent->mainView->getHorizontalZoom();
-            tc.dispatch(SetZoomEvent{currentZoom / 1.25});
-        }
+        mainComponent->getCommandManager().invokeDirectly(CommandIDs::zoomOut, false);
     };
 
     callbacks.onZoomToFit = [this]() {

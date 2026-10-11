@@ -267,6 +267,28 @@ class Config {
         bottomPanelTabs = std::move(tabs);
     }
 
+    // Track-height presets behind the arranger's S / M / L buttons (#2066)
+    int getCompactTrackHeight() const {
+        return compactTrackHeight;
+    }
+    void setCompactTrackHeight(int height) {
+        compactTrackHeight = height;
+    }
+
+    int getMediumTrackHeight() const {
+        return mediumTrackHeight;
+    }
+    void setMediumTrackHeight(int height) {
+        mediumTrackHeight = height;
+    }
+
+    int getLargeTrackHeight() const {
+        return largeTrackHeight;
+    }
+    void setLargeTrackHeight(int height) {
+        largeTrackHeight = height;
+    }
+
     // Layout Configuration
     bool getScrollbarOnLeft() const {
         return scrollbarOnLeft;
@@ -1557,6 +1579,9 @@ class Config {
     std::vector<TrackColourEntry> trackColourPalette;
 
     // Layout settings
+    int compactTrackHeight = 61;
+    int mediumTrackHeight = 83;  // TrackHeadersPanel::DEFAULT_TRACK_HEIGHT
+    int largeTrackHeight = 126;
     bool scrollbarOnLeft = false;               // Scrollbar on right by default
     bool arrangementScrollbarsAutoHide = true;  // Hover-reveal scrollbars by default
 

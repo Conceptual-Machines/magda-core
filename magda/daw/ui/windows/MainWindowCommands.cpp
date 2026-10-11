@@ -31,6 +31,8 @@ namespace magda {
 
 namespace {
 
+constexpr double kZoomStepFactor = 1.5;
+
 // Route through the position-aware tempo facade when wired (message thread);
 // bpm fallback only before injection.
 double timelineStartSeconds(const ClipInfo& clip, double bpm) {
@@ -135,7 +137,7 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         duplicateTrackContentOnly, toggleMuteSelectedTracks, toggleSoloSelectedTracks,
         // View
         toggleArrangeSession, cycleViewForward, cycleViewBackward, uiScaleUp, uiScaleDown,
-        togglePianoRollFullscreen,
+        togglePianoRollFullscreen, zoomIn, zoomOut,
         // Help
         about};
 
@@ -530,6 +532,15 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
                            0);
             result.addDefaultKeypress('p', juce::ModifierKeys::commandModifier |
                                                juce::ModifierKeys::shiftModifier);
+            break;
+        // H / G, as in Cubase (#2265).
+        case zoomIn:
+            result.setInfo("Zoom In", "Zoom the arrangement in", "View", 0);
+            result.addDefaultKeypress('h', 0);
+            break;
+        case zoomOut:
+            result.setInfo("Zoom Out", "Zoom the arrangement out", "View", 0);
+            result.addDefaultKeypress('g', 0);
             break;
 
         // Help
@@ -1980,6 +1991,14 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
         case togglePianoRollFullscreen:
             toggleEditorFullscreen();
+            return true;
+
+        case zoomIn:
+        case zoomOut:
+            if (mainView == nullptr)
+                return false;
+            mainView->getTimelineController().dispatch(
+                ZoomStepEvent{info.commandID == zoomIn ? kZoomStepFactor : 1.0 / kZoomStepFactor});
             return true;
 
         default:

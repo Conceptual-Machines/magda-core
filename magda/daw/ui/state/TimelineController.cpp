@@ -1,6 +1,7 @@
 #include "TimelineController.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <ranges>
 
 #include "../../core/ClipManager.hpp"
@@ -167,6 +168,33 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const ResetZoomE
     state.zoom.scrollX = 0;
 
     return ChangeFlags::Zoom | ChangeFlags::Scroll;
+}
+
+TimelineController::ChangeFlags TimelineController::handleEvent(const ZoomStepEvent& e) {
+    const double currentZoom = state.zoom.horizontalZoom;
+    if (currentZoom <= 0.0)
+        return ChangeFlags::None;
+
+    const auto screenX = [&](double beats) {
+        return static_cast<int>(std::round(beats * currentZoom)) +
+               LayoutConfig::TIMELINE_LEFT_PADDING - state.zoom.scrollX;
+    };
+    const auto isOnScreen = [&](double beats) {
+        const int x = screenX(beats);
+        return beats >= 0.0 && x >= 0 && x <= state.zoom.viewportWidth;
+    };
+
+    double anchorBeats = state.playhead.getCurrentPositionBeats();
+    if (!isOnScreen(anchorBeats))
+        anchorBeats = state.editCursorBeats;
+    if (!isOnScreen(anchorBeats)) {
+        const int centreContentX = state.zoom.scrollX + state.zoom.viewportWidth / 2;
+        anchorBeats =
+            juce::jmax(0.0, (centreContentX - LayoutConfig::TIMELINE_LEFT_PADDING) / currentZoom);
+    }
+
+    return handleEvent(
+        SetZoomAnchoredBeatsEvent{currentZoom * e.factor, anchorBeats, screenX(anchorBeats)});
 }
 
 // ===== Scroll Event Handlers =====
