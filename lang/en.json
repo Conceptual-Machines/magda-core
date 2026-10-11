@@ -240,6 +240,7 @@
     "label.sample_rate": "Sample Rate:",
     "label.bit_depth": "Bit Depth:",
     "label.dither": "Dither:",
+    "label.bitrate": "Bitrate:",
     "label.lead_in_silence": "Lead-in Silence:",
     "label.export_range": "Export Range:",
     "option.entire_song": "Entire Song",

@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "../dialogs/ExportAudioDialog.hpp"
+#include "../dialogs/ExportFormats.hpp"
 #include "../dialogs/ExportMidiDialog.hpp"
 #include "MainWindow.hpp"
 #include "audio/insert_capture/InsertRenderCapture.hpp"
@@ -197,7 +198,7 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings, Audi
 void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
                                    AudioEngine* engine) {
     // Determine file extension
-    juce::String extension = getFileExtensionForFormat(settings.format);
+    juce::String extension = exportExtensionFor(settings.format);
 
     // Build default output path from render preferences
     auto& config = Config::getInstance();
@@ -285,9 +286,9 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
                                  resumePlaybackAfterRender]() {
                 OfflineRenderRequest request;
                 request.destination = file;
-                request.format = settings.format == "FLAC" ? OfflineRenderFormat::Flac
-                                                           : OfflineRenderFormat::Wav;
-                request.bitDepth = getBitDepthForFormat(settings.format);
+                request.format = exportRenderFormatFor(settings.format);
+                request.bitDepth = exportBitDepthFor(settings.format);
+                request.bitrateKbps = settings.bitrateKbps;
                 request.dither = settings.dither;
                 request.sampleRate = settings.sampleRate;
                 request.shouldNormalise = settings.normalize;
@@ -378,26 +379,6 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
 
             fileChooser_.reset();
         });
-}
-
-juce::String MainWindow::getFileExtensionForFormat(const juce::String& format) {
-    if (format.startsWith("WAV"))
-        return ".wav";
-    else if (format == "FLAC")
-        return ".flac";
-    return ".wav";  // Default
-}
-
-int MainWindow::getBitDepthForFormat(const juce::String& format) {
-    if (format == "WAV16")
-        return 16;
-    if (format == "WAV24")
-        return 24;
-    if (format == "WAV32")
-        return 32;
-    if (format == "FLAC")
-        return 24;  // FLAC default
-    return 16;      // Default
 }
 
 // ============================================================================

@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "../../magda/daw/ui/dialogs/ExportAudioDialog.hpp"
+#include "../../magda/daw/ui/dialogs/ExportFormats.hpp"
 
 using namespace magda;
 
@@ -53,61 +54,48 @@ TEST_CASE("ExportAudioDialog::Settings - Custom values", "[export][dialog]") {
 }
 
 // ============================================================================
-// Format Tests (via mock MainWindow methods)
+// Format Tests
 // ============================================================================
 
-// Helper class to test MainWindow methods without creating actual window
-class ExportTestHelper {
-  public:
-    static juce::String getFileExtensionForFormat(const juce::String& format) {
-        if (format.startsWith("WAV"))
-            return ".wav";
-        else if (format == "FLAC")
-            return ".flac";
-        return ".wav";  // Default
-    }
-
-    static int getBitDepthForFormat(const juce::String& format) {
-        if (format == "WAV16")
-            return 16;
-        if (format == "WAV24")
-            return 24;
-        if (format == "WAV32")
-            return 32;
-        if (format == "FLAC")
-            return 24;  // FLAC default
-        return 16;      // Default
-    }
-};
-
 TEST_CASE("File extension mapping - WAV formats", "[export][format]") {
-    REQUIRE(ExportTestHelper::getFileExtensionForFormat("WAV16") == ".wav");
-    REQUIRE(ExportTestHelper::getFileExtensionForFormat("WAV24") == ".wav");
-    REQUIRE(ExportTestHelper::getFileExtensionForFormat("WAV32") == ".wav");
+    REQUIRE(exportExtensionFor("WAV16") == ".wav");
+    REQUIRE(exportExtensionFor("WAV24") == ".wav");
+    REQUIRE(exportExtensionFor("WAV32") == ".wav");
 }
 
-TEST_CASE("File extension mapping - FLAC format", "[export][format]") {
-    REQUIRE(ExportTestHelper::getFileExtensionForFormat("FLAC") == ".flac");
+TEST_CASE("File extension mapping - FLAC and Opus", "[export][format]") {
+    REQUIRE(exportExtensionFor("FLAC") == ".flac");
+    REQUIRE(exportExtensionFor("OPUS") == ".opus");
 }
 
 TEST_CASE("File extension mapping - Default fallback", "[export][format]") {
-    REQUIRE(ExportTestHelper::getFileExtensionForFormat("Unknown") == ".wav");
-    REQUIRE(ExportTestHelper::getFileExtensionForFormat("") == ".wav");
+    REQUIRE(exportExtensionFor("Unknown") == ".wav");
+    REQUIRE(exportExtensionFor("") == ".wav");
 }
 
 TEST_CASE("Bit depth mapping - WAV formats", "[export][format]") {
-    REQUIRE(ExportTestHelper::getBitDepthForFormat("WAV16") == 16);
-    REQUIRE(ExportTestHelper::getBitDepthForFormat("WAV24") == 24);
-    REQUIRE(ExportTestHelper::getBitDepthForFormat("WAV32") == 32);
+    REQUIRE(exportBitDepthFor("WAV16") == 16);
+    REQUIRE(exportBitDepthFor("WAV24") == 24);
+    REQUIRE(exportBitDepthFor("WAV32") == 32);
 }
 
 TEST_CASE("Bit depth mapping - FLAC format", "[export][format]") {
-    REQUIRE(ExportTestHelper::getBitDepthForFormat("FLAC") == 24);
+    REQUIRE(exportBitDepthFor("FLAC") == 24);
 }
 
 TEST_CASE("Bit depth mapping - Default fallback", "[export][format]") {
-    REQUIRE(ExportTestHelper::getBitDepthForFormat("Unknown") == 16);
-    REQUIRE(ExportTestHelper::getBitDepthForFormat("") == 16);
+    REQUIRE(exportBitDepthFor("Unknown") == 16);
+    REQUIRE(exportBitDepthFor("") == 16);
+}
+
+TEST_CASE("Render format mapping", "[export][format][2955]") {
+    REQUIRE(exportRenderFormatFor("WAV24") == OfflineRenderFormat::Wav);
+    REQUIRE(exportRenderFormatFor("FLAC") == OfflineRenderFormat::Flac);
+    REQUIRE(exportRenderFormatFor("OPUS") == OfflineRenderFormat::Opus);
+    REQUIRE(exportRenderFormatFor("Unknown") == OfflineRenderFormat::Wav);
+
+    REQUIRE(isLossyExportFormat("OPUS"));
+    REQUIRE_FALSE(isLossyExportFormat("FLAC"));
 }
 
 // ============================================================================
@@ -177,24 +165,24 @@ TEST_CASE("Valid format/sample rate combinations", "[export][integration]") {
     // WAV16 @ 44.1kHz
     settings.format = "WAV16";
     settings.sampleRate = 44100.0;
-    REQUIRE(ExportTestHelper::getBitDepthForFormat(settings.format) == 16);
-    REQUIRE(ExportTestHelper::getFileExtensionForFormat(settings.format) == ".wav");
+    REQUIRE(exportBitDepthFor(settings.format) == 16);
+    REQUIRE(exportExtensionFor(settings.format) == ".wav");
 
     // WAV24 @ 48kHz
     settings.format = "WAV24";
     settings.sampleRate = 48000.0;
-    REQUIRE(ExportTestHelper::getBitDepthForFormat(settings.format) == 24);
+    REQUIRE(exportBitDepthFor(settings.format) == 24);
 
     // WAV32 @ 96kHz
     settings.format = "WAV32";
     settings.sampleRate = 96000.0;
-    REQUIRE(ExportTestHelper::getBitDepthForFormat(settings.format) == 32);
+    REQUIRE(exportBitDepthFor(settings.format) == 32);
 
     // FLAC @ 192kHz
     settings.format = "FLAC";
     settings.sampleRate = 192000.0;
-    REQUIRE(ExportTestHelper::getBitDepthForFormat(settings.format) == 24);
-    REQUIRE(ExportTestHelper::getFileExtensionForFormat(settings.format) == ".flac");
+    REQUIRE(exportBitDepthFor(settings.format) == 24);
+    REQUIRE(exportExtensionFor(settings.format) == ".flac");
 }
 
 // ============================================================================

@@ -12,9 +12,10 @@ namespace magda {
  * @brief Dialog for exporting/bouncing audio to a file
  *
  * Provides options for:
- * - Audio format (WAV 16/24/32-bit, FLAC)
+ * - Audio format (WAV 16/24/32-bit, FLAC, Opus)
  * - Sample rate (44.1kHz, 48kHz, 96kHz, 192kHz)
  * - Dither (off, TPDF, noise shaped) for fixed-point formats
+ * - Bitrate for lossy formats
  * - Normalization (peak to 0dB)
  * - Time range (entire arrangement or selection)
  */
@@ -24,7 +25,8 @@ class ExportAudioDialog : public juce::Component {
 
     struct Settings {
         juce::File outputFile;
-        juce::String format;  // "WAV16", "WAV24", "WAV32", "FLAC"
+        juce::String format;  // "WAV16", "WAV24", "WAV32", "FLAC", "OPUS"
+        int bitrateKbps = 0;  // Lossy formats only
         double sampleRate = 48000.0;
         OfflineRenderDither dither = OfflineRenderDither::Tpdf;
         bool normalize = false;
@@ -61,6 +63,7 @@ class ExportAudioDialog : public juce::Component {
   private:
     void onFormatChanged();
     void updateBitDepthOptions();
+    bool isLossySelected() const;
 
     // Format selection
     juce::Label formatLabel_;
@@ -77,6 +80,10 @@ class ExportAudioDialog : public juce::Component {
     // Dither, for the formats that round to a fixed-point grid
     juce::Label ditherLabel_;
     juce::ComboBox ditherComboBox_;
+
+    // Bitrate, shown in place of bit depth and dither for a lossy format
+    juce::Label bitrateLabel_;
+    juce::ComboBox bitrateComboBox_;
 
     // Normalization option
     juce::ToggleButton normalizeCheckbox_;
