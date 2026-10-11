@@ -52,6 +52,7 @@ class UndoableCommand;
 enum class OfflineRenderFormat {
     Wav,
     Flac,
+    Opus,
 };
 
 /** @brief What a fixed-point render is dithered with before it is rounded. */
@@ -69,7 +70,12 @@ inline OfflineRenderDither defaultOfflineRenderDither(int bitDepth) {
 struct OfflineRenderRequest {
     juce::File destination;
     OfflineRenderFormat format = OfflineRenderFormat::Wav;
+
+    /// Ignored by a lossy format, which takes bitrateKbps instead.
     int bitDepth = 24;
+
+    /// Lossy formats only; 0 lets the encoder choose.
+    int bitrateKbps = 0;
 
     /// Unset lets the bit depth decide (defaultOfflineRenderDither).
     std::optional<OfflineRenderDither> dither;

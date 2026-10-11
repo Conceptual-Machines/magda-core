@@ -72,11 +72,23 @@ std::optional<engine::DitherMode> ditherModeFor(std::optional<OfflineRenderDithe
     return std::nullopt;
 }
 
+engine::AudioFileFormat fileFormatFor(OfflineRenderFormat format) {
+    switch (format) {
+        case OfflineRenderFormat::Flac:
+            return engine::AudioFileFormat::flac;
+        case OfflineRenderFormat::Opus:
+            return engine::AudioFileFormat::opus;
+        case OfflineRenderFormat::Wav:
+            break;
+    }
+    return engine::AudioFileFormat::wav;
+}
+
 engine::AudioFileSpec fileSpecFor(const OfflineRenderRequest& request,
                                   engine::AudioFileMetadata metadata) {
-    return {.format = request.format == OfflineRenderFormat::Flac ? engine::AudioFileFormat::flac
-                                                                  : engine::AudioFileFormat::wav,
+    return {.format = fileFormatFor(request.format),
             .bitDepth = request.bitDepth,
+            .bitrateKbps = request.bitrateKbps,
             .dither = ditherModeFor(request.dither),
             .metadata = std::move(metadata)};
 }

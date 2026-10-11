@@ -4153,7 +4153,8 @@ MasterCaptureStartStatus EngineHost::startMasterCapture(const MasterCaptureReque
     const auto sampleRate = impl_->rate_.load(std::memory_order_acquire);
     if (!impl_->audioRunning_.load(std::memory_order_acquire) || sampleRate <= 0.0)
         return MasterCaptureStartStatus::Unavailable;
-    if (request.destination == juce::File() ||
+    // MasterCaptureWriter writes WAV and FLAC only; lossy capture is #3031's to decide.
+    if (request.destination == juce::File() || request.format == OfflineRenderFormat::Opus ||
         (request.format == OfflineRenderFormat::Flac && request.bitDepth == 32))
         return MasterCaptureStartStatus::Failed;
 

@@ -37,22 +37,31 @@ namespace magda::engine {
 /// .cpp: nothing outside this unit has a use for it.
 struct StreamReport;
 
-/// The containers a render can be stored in, which is what the export dialog
-/// already offers.
+/// The containers a render can be stored in.
 enum class AudioFileFormat : std::uint8_t {
     wav,
     flac,
+    opus,
 };
+
+/// Whether @p format is lossy: no bit depth, a bitrate instead (#2955).
+bool isLossy(AudioFileFormat format);
 
 /** The file's format, which is not the render's. */
 struct AudioFileSpec {
     AudioFileFormat format = AudioFileFormat::wav;
 
     /// 16 or 24 for fixed point, 32 for float. FLAC holds the first two.
+    /// Ignored by a lossy format, which is handed float and clips at full scale.
     int bitDepth = 24;
 
+    /// Lossy formats only. 0 lets the encoder choose; anything else must be one
+    /// of the format's own quality options, or the spec is refused.
+    int bitrateKbps = 0;
+
     /// Unset lets the depth decide, which is what a caller with no opinion
-    /// wants: TPDF wherever the target quantises, nothing at 32-bit float.
+    /// wants: TPDF wherever the target quantises, nothing at 32-bit float or
+    /// in a lossy format.
     std::optional<DitherMode> dither;
 
     /// Used by WAV. JUCE's FLAC writer does not store caller metadata.
@@ -71,9 +80,10 @@ class AudioFileSink final : public OfflineRenderSink {
      * @brief A sink writing @p destination, or null.
      *
      * Null for a spec no format holds (FLAC above 24 bits, a depth nothing
-     * writes), a format that will not take the render's shape, and a file that
-     * could not be opened. Refused here rather than at the first block, so a
-     * render nothing can store is never run.
+     * writes, a bitrate the encoder does not offer), a format that will not
+     * take the render's shape, and a file that could not be opened. Refused
+     * here rather than at the first block, so a render nothing can store is
+     * never run.
      *
      * Nothing is written to @p destination itself until close(). The render
      * goes to a file beside it, so a refusal here and a failure later both
