@@ -879,6 +879,14 @@ class Config {
         exportBitrateKbps = kbps;
     }
 
+    /// The MP3 bitrate-combo item last exported with (ExportFormats.hpp).
+    int getExportMp3QualityId() const {
+        return exportMp3QualityId;
+    }
+    void setExportMp3QualityId(int itemId) {
+        exportMp3QualityId = itemId;
+    }
+
     double getExportSampleRate() const {
         return exportSampleRate;
     }
@@ -1720,9 +1728,10 @@ class Config {
     int oscFeedbackPort = 9001;
 
     // Export audio settings
-    std::string exportFormat = "WAV24";  // WAV16, WAV24, WAV32, FLAC, OPUS
-    int exportBitrateKbps = 160;         // Lossy formats only
-    double exportSampleRate = 48000.0;   // 44100, 48000, 96000, 192000
+    std::string exportFormat = "WAV";   // WAV, FLAC, OPUS, MP3
+    int exportBitrateKbps = 160;        // Opus
+    int exportMp3QualityId = 1002;      // MP3: VBR V2
+    double exportSampleRate = 48000.0;  // 44100, 48000, 96000, 192000
 
     // Configurable user-data path overrides (resolved by magda::paths).
     // Empty = OS default. Persisted in config.json.

@@ -2963,9 +2963,10 @@ OperationRegistry::OperationRegistry() {
                     "start":{"type":"number","minimum":0,"maximum":1000000},
                     "end":{"type":"number","exclusiveMinimum":0,"maximum":1000000}
                 },"required":["unit","start","end"],"additionalProperties":false},
-                "format":{"type":"string","enum":["wav","flac","opus"]},
+                "format":{"type":"string","enum":["wav","flac","opus","mp3"]},
                 "bitrateKbps":{"type":"integer",
-                               "enum":[64,80,96,112,128,160,192,224,256,320,510]},
+                               "enum":[32,40,48,56,64,80,96,112,128,160,192,224,256,320,510]},
+                "vbrQuality":{"type":"integer","minimum":0,"maximum":9},
                 "sampleRate":{"type":"integer","enum":[44100,48000,88200,96000,176400,192000]},
                 "bitDepth":{"type":"integer","enum":[16,24,32]},
                 "dither":{"type":"string","enum":["none","tpdf","shaped"]},

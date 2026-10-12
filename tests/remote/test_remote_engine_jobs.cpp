@@ -268,6 +268,62 @@ TEST_CASE("Render-range refuses an Opus request it cannot honour", "[remote][eng
               .has_value());
 }
 
+TEST_CASE("Render-range writes MP3 at a VBR level or a bitrate", "[remote][engine-jobs][3034]") {
+    Fixture fixture;
+    const auto output = destination(".mp3");
+    auto input = renderInput(Fixture::path(output));
+    input.getDynamicObject()->setProperty("format", "mp3");
+    input.getDynamicObject()->setProperty("vbrQuality", 0);
+
+    const auto response = run(fixture.service, "engine.renderRange", input);
+    REQUIRE(response.ok);
+    CHECK(fixture.engineJobs->lastRender.format == magda::OfflineRenderFormat::Mp3);
+    CHECK(fixture.engineJobs->lastRender.vbrQuality == 0);
+    CHECK(fixture.engineJobs->lastRender.bitrateKbps == 0);
+    CHECK(response.result["result"]["format"].toString() == "mp3");
+    REQUIRE(response.result["artifacts"].size() == 1);
+    CHECK(response.result["artifacts"][0]["mediaType"].toString() == "audio/mpeg");
+    output.deleteFile();
+
+    auto cbr = renderInput(Fixture::path(output));
+    cbr.getDynamicObject()->setProperty("format", "mp3");
+    cbr.getDynamicObject()->setProperty("bitrateKbps", 32);
+    REQUIRE(run(fixture.service, "engine.renderRange", cbr).ok);
+    CHECK(fixture.engineJobs->lastRender.bitrateKbps == 32);
+    CHECK_FALSE(fixture.engineJobs->lastRender.vbrQuality.has_value());
+    output.deleteFile();
+}
+
+TEST_CASE("Render-range refuses a lossy quality the format does not offer",
+          "[remote][engine-jobs][3034]") {
+    Fixture fixture;
+    const auto refused = [&](const juce::String& format, const juce::String& field, int value,
+                             const juce::String& extraField = {}, int extraValue = 0) {
+        const auto output = destination("." + format);
+        auto input = renderInput(Fixture::path(output));
+        input.getDynamicObject()->setProperty("format", format);
+        input.getDynamicObject()->setProperty(juce::Identifier(field), value);
+        if (extraField.isNotEmpty())
+            input.getDynamicObject()->setProperty(juce::Identifier(extraField), extraValue);
+        const auto response = run(fixture.service, "engine.renderRange", input);
+        return !response.ok && response.error.code == ErrorCode::ValidationFailed;
+    };
+
+    CHECK(refused("mp3", "bitrateKbps", 510));
+    CHECK(refused("opus", "bitrateKbps", 32));
+    CHECK(refused("opus", "vbrQuality", 2));
+    CHECK(refused("wav", "vbrQuality", 2));
+    CHECK(refused("mp3", "vbrQuality", 2, "bitrateKbps", 128));
+    CHECK(fixture.engineJobs->renderCalls == 0);
+
+    // Out of LAME's range is the schema's to refuse.
+    auto level = renderInput("/tmp/output.mp3");
+    level.getDynamicObject()->setProperty("format", "mp3");
+    level.getDynamicObject()->setProperty("vbrQuality", 10);
+    CHECK(validateOperationInput(*OperationRegistry::instance().find("engine.renderRange"), level)
+              .has_value());
+}
+
 TEST_CASE("Render-range creates a missing destination folder", "[remote][engine-jobs][2886]") {
     Fixture fixture;
     const auto root = destination("-render-parent");

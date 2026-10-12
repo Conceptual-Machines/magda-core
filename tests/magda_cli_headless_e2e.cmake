@@ -320,3 +320,40 @@ execute_process(
 if(odd_bitrate_result EQUAL 0)
     message(FATAL_ERROR "magda-cli render accepted an Opus bitrate the encoder does not offer")
 endif()
+
+# MP3 (#3034): a frame sync at the front, and the LAME tag inside that first
+# frame, "Info" for CBR and "Xing" for VBR.
+foreach(mp3_case "cbr;--bitrate;192;496e666f" "vbr;--vbr;2;58696e67")
+    list(GET mp3_case 0 mp3_name)
+    list(GET mp3_case 1 mp3_flag)
+    list(GET mp3_case 2 mp3_value)
+    list(GET mp3_case 3 mp3_tag)
+    set(mp3_file "${MAGDA_CLI_WORK_DIR}/render-${mp3_name}.mp3")
+    execute_process(
+        COMMAND "${MAGDA_CLI}" render "${mutated_file}" --mp3 "${mp3_file}" ${mp3_flag}
+                ${mp3_value} --from 0 --to 1bar
+        RESULT_VARIABLE mp3_result
+        OUTPUT_VARIABLE mp3_stdout
+        ERROR_VARIABLE mp3_stderr
+    )
+    if(NOT mp3_result EQUAL 0)
+        message(FATAL_ERROR "magda-cli render --mp3 ${mp3_flag} failed: ${mp3_stderr}\n${mp3_stdout}")
+    endif()
+    file(READ "${mp3_file}" mp3_header_hex HEX LIMIT 64)
+    string(SUBSTRING "${mp3_header_hex}" 0 3 mp3_sync)
+    string(FIND "${mp3_header_hex}" "${mp3_tag}" mp3_tag_at)
+    if(NOT mp3_sync STREQUAL "fff" OR mp3_tag_at EQUAL -1)
+        message(FATAL_ERROR "Rendered MP3 (${mp3_name}) has no frame sync or LAME tag at the front")
+    endif()
+endforeach()
+
+execute_process(
+    COMMAND "${MAGDA_CLI}" render "${mutated_file}" --opus "${MAGDA_CLI_WORK_DIR}/vbr.opus"
+            --vbr 2 --from 0 --to 1bar
+    RESULT_VARIABLE opus_vbr_result
+    OUTPUT_QUIET
+    ERROR_QUIET
+)
+if(opus_vbr_result EQUAL 0)
+    message(FATAL_ERROR "magda-cli render accepted a VBR level for Opus")
+endif()

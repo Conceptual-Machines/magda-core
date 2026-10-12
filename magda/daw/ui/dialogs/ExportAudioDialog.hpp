@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <optional>
 
 #include "../../engine/AudioEngine.hpp"
 
@@ -12,7 +13,7 @@ namespace magda {
  * @brief Dialog for exporting/bouncing audio to a file
  *
  * Provides options for:
- * - Audio format (WAV 16/24/32-bit, FLAC, Opus)
+ * - Audio format (WAV 16/24/32-bit, FLAC, Opus, MP3)
  * - Sample rate (44.1kHz, 48kHz, 96kHz, 192kHz)
  * - Dither (off, TPDF, noise shaped) for fixed-point formats
  * - Bitrate for lossy formats
@@ -25,8 +26,10 @@ class ExportAudioDialog : public juce::Component {
 
     struct Settings {
         juce::File outputFile;
-        juce::String format;  // "WAV16", "WAV24", "WAV32", "FLAC", "OPUS"
-        int bitrateKbps = 0;  // Lossy formats only
+        juce::String format;            // "WAV", "FLAC", "OPUS", "MP3"
+        int bitDepth = 24;              // WAV and FLAC; 32 is float
+        int bitrateKbps = 0;            // Lossy formats only
+        std::optional<int> vbrQuality;  // MP3 only: a LAME VBR level in place of a bitrate
         double sampleRate = 48000.0;
         OfflineRenderDither dither = OfflineRenderDither::Tpdf;
         bool normalize = false;
@@ -62,8 +65,17 @@ class ExportAudioDialog : public juce::Component {
 
   private:
     void onFormatChanged();
-    void updateBitDepthOptions();
+    void updateFormatRows();
     bool isLossySelected() const;
+    bool isMp3Selected() const;
+    juce::String selectedFormat() const;
+
+    /// Fills the bit depth combo with the selected format's depths, keeping the
+    /// current one where the format offers it.
+    void populateBitDepthOptions();
+
+    /// Fills the bitrate combo with the selected lossy format's choices.
+    void populateBitrateOptions();
 
     // Format selection
     juce::Label formatLabel_;
@@ -73,9 +85,9 @@ class ExportAudioDialog : public juce::Component {
     juce::Label sampleRateLabel_;
     juce::ComboBox sampleRateComboBox_;
 
-    // Bit depth (auto-populated based on format)
+    // Bit depth, for the formats that have one; item ids are the depths
     juce::Label bitDepthLabel_;
-    juce::Label bitDepthValueLabel_;
+    juce::ComboBox bitDepthComboBox_;
 
     // Dither, for the formats that round to a fixed-point grid
     juce::Label ditherLabel_;

@@ -363,7 +363,7 @@ operations require `edit`.
 | `jobs.list` | `read` | List asynchronous jobs owned by this connection. |
 | `jobs.get` | `read` | Inspect one owned job. |
 | `jobs.cancel` | producing operation's scope | Cancel one owned job. |
-| `engine.renderRange` | `edit` | Render a beat/second range to an absolute WAV, FLAC or Opus path (`bitrateKbps` sets the Opus bitrate). |
+| `engine.renderRange` | `edit` | Render a beat/second range to an absolute WAV, FLAC, Opus or MP3 path (`bitrateKbps` sets a lossy bitrate; `vbrQuality`, 0 to 9, encodes MP3 at a LAME VBR level instead). |
 | `engine.masterCapture.start` | `edit` | Start capturing the true master callback output. |
 | `engine.masterCapture.stop` | `edit` | Stop and finalize an owned master capture. |
 | `engine.masterCapture.status` | `read` | Read capture capability and current activity. |

@@ -247,6 +247,7 @@ void Config::save() {
     root->setProperty("exportFormat", toJuceString(exportFormat));
     root->setProperty("exportSampleRate", exportSampleRate);
     root->setProperty("exportBitrateKbps", exportBitrateKbps);
+    root->setProperty("exportMp3QualityId", exportMp3QualityId);
 
     // Configurable user-data paths (empty string = OS default; resolved by
     // magda::paths::resolve()). Render folder uses the same field as before.
@@ -678,6 +679,7 @@ void Config::load() {
     exportFormat = getString("exportFormat", exportFormat);
     exportSampleRate = getDouble("exportSampleRate", exportSampleRate);
     exportBitrateKbps = getInt("exportBitrateKbps", exportBitrateKbps);
+    exportMp3QualityId = getInt("exportMp3QualityId", exportMp3QualityId);
 
     dataDir = getString("dataDir", dataDir);
     presetsDir = getString("presetsDir", presetsDir);

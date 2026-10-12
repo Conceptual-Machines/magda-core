@@ -287,8 +287,9 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
                 OfflineRenderRequest request;
                 request.destination = file;
                 request.format = exportRenderFormatFor(settings.format);
-                request.bitDepth = exportBitDepthFor(settings.format);
+                request.bitDepth = settings.bitDepth;
                 request.bitrateKbps = settings.bitrateKbps;
+                request.vbrQuality = settings.vbrQuality;
                 request.dither = settings.dither;
                 request.sampleRate = settings.sampleRate;
                 request.shouldNormalise = settings.normalize;
