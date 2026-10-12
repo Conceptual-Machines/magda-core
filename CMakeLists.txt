@@ -288,6 +288,18 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(sqlite3)
 add_subdirectory(third_party/sqlite)
 
+# LAME 3.100 — MP3 encoder for export (#2955, #3032). No CMake upstream, so the
+# static library is built by third_party/lame/CMakeLists.txt. SourceForge is the
+# project's own host; Debian's pool carries the same tarball, as for Lua above.
+FetchContent_Declare(
+    lame
+    URL https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz
+        http://deb.debian.org/debian/pool/main/l/lame/lame_3.100.orig.tar.gz
+    URL_HASH SHA256=ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e
+)
+FetchContent_MakeAvailable(lame)
+add_subdirectory(third_party/lame)
+
 # ONNX Runtime 1.26.0 — CLAP inference engine for the media DB (issue #768).
 # Microsoft ships prebuilt binaries per (OS, arch); we pin one per platform.
 # Skipped on Intel macOS (MAGDA_HAVE_CLAP=OFF) since upstream dropped
