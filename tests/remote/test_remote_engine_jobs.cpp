@@ -223,6 +223,51 @@ TEST_CASE("Render-range jobs use absolute audio destination paths", "[remote][en
     output.deleteFile();
 }
 
+TEST_CASE("Render-range writes Opus at the requested bitrate", "[remote][engine-jobs][2955]") {
+    Fixture fixture;
+    const auto output = destination(".opus");
+    auto input = renderInput(Fixture::path(output));
+    input.getDynamicObject()->setProperty("format", "opus");
+    input.getDynamicObject()->setProperty("bitrateKbps", 192);
+
+    const auto response = run(fixture.service, "engine.renderRange", input);
+    REQUIRE(response.ok);
+    CHECK(response.result["state"].toString() == "completed");
+    CHECK(fixture.engineJobs->lastRender.format == magda::OfflineRenderFormat::Opus);
+    CHECK(fixture.engineJobs->lastRender.bitrateKbps == 192);
+    CHECK(response.result["result"]["format"].toString() == "opus");
+    REQUIRE(response.result["artifacts"].size() == 1);
+    CHECK(response.result["artifacts"][0]["mediaType"].toString() == "audio/ogg");
+    output.deleteFile();
+}
+
+TEST_CASE("Render-range refuses an Opus request it cannot honour", "[remote][engine-jobs][2955]") {
+    Fixture fixture;
+    const auto& renderRange = *OperationRegistry::instance().find("engine.renderRange");
+
+    // A bitrate the encoder does not offer is refused by the schema.
+    auto oddBitrate = renderInput("/tmp/output.opus");
+    oddBitrate.getDynamicObject()->setProperty("format", "opus");
+    oddBitrate.getDynamicObject()->setProperty("bitrateKbps", 100);
+    CHECK(validateOperationInput(renderRange, oddBitrate).has_value());
+
+    // The extension names the format.
+    const auto wavPath = destination(".wav");
+    auto mismatched = renderInput(Fixture::path(wavPath));
+    mismatched.getDynamicObject()->setProperty("format", "opus");
+    const auto refused = run(fixture.service, "engine.renderRange", mismatched);
+    CHECK_FALSE(refused.ok);
+    CHECK(refused.error.code == ErrorCode::ValidationFailed);
+    CHECK(fixture.engineJobs->renderCalls == 0);
+
+    // Master capture writes WAV and FLAC only.
+    auto capture = captureInput("/tmp/capture.opus");
+    capture.getDynamicObject()->setProperty("format", "opus");
+    CHECK(validateOperationInput(*OperationRegistry::instance().find("engine.masterCapture.start"),
+                                 capture)
+              .has_value());
+}
+
 TEST_CASE("Render-range creates a missing destination folder", "[remote][engine-jobs][2886]") {
     Fixture fixture;
     const auto root = destination("-render-parent");
