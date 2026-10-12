@@ -773,6 +773,8 @@ const char* formatName(OfflineRenderFormat format) {
             return "flac";
         case OfflineRenderFormat::Opus:
             return "opus";
+        case OfflineRenderFormat::Mp3:
+            return "mp3";
         case OfflineRenderFormat::Wav:
             break;
     }
@@ -794,6 +796,8 @@ juce::String mediaType(OfflineRenderFormat format) {
             return "audio/flac";
         case OfflineRenderFormat::Opus:
             return "audio/ogg";  // RFC 7845: Ogg Opus files are audio/ogg
+        case OfflineRenderFormat::Mp3:
+            return "audio/mpeg";
         case OfflineRenderFormat::Wav:
             break;
     }

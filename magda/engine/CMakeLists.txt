@@ -136,6 +136,8 @@ add_library(magda_engine STATIC
     io/AudioFileMetadata.hpp
     io/AudioFileSink.cpp
     io/AudioFileSink.hpp
+    io/Mp3AudioFormat.cpp
+    io/Mp3AudioFormat.hpp
     io/LiveInput.cpp
     io/LiveInput.hpp
     io/LiveInsert.cpp
@@ -202,6 +204,10 @@ target_include_directories(magda_engine PUBLIC ${CMAKE_SOURCE_DIR}/third_party/r
 target_include_directories(magda_engine SYSTEM PRIVATE
     ${CMAKE_SOURCE_DIR}/third_party/signalsmith-stretch)
 target_link_libraries(magda_engine PRIVATE soundtouch)
+
+# libmp3lame (LGPL-2.0-or-later), behind io/Mp3AudioFormat (#3033). Its own static
+# target for the same reason as SoundTouch (third_party/lame/SOURCES.md).
+target_link_libraries(magda_engine PRIVATE magda::mp3lame)
 
 # Borrow JUCE's headers and defines without linking the modules: the model
 # headers name juce::String and juce::Colour, the executor renders into

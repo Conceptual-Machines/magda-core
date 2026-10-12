@@ -78,6 +78,8 @@ engine::AudioFileFormat fileFormatFor(OfflineRenderFormat format) {
             return engine::AudioFileFormat::flac;
         case OfflineRenderFormat::Opus:
             return engine::AudioFileFormat::opus;
+        case OfflineRenderFormat::Mp3:
+            return engine::AudioFileFormat::mp3;
         case OfflineRenderFormat::Wav:
             break;
     }
@@ -89,6 +91,7 @@ engine::AudioFileSpec fileSpecFor(const OfflineRenderRequest& request,
     return {.format = fileFormatFor(request.format),
             .bitDepth = request.bitDepth,
             .bitrateKbps = request.bitrateKbps,
+            .vbrQuality = request.vbrQuality,
             .dither = ditherModeFor(request.dither),
             .metadata = std::move(metadata)};
 }
