@@ -28,9 +28,9 @@ MAGDA supports the following audio formats:
 | FLAC | Yes | Yes |
 | OGG | Yes | No |
 | Opus | No | Yes |
-| MP3 | Yes, where a platform decoder is available | No |
+| MP3 | Yes, where a platform decoder is available | Yes |
 
-Audio export offers WAV 16-bit, WAV 24-bit, WAV 32-bit float, FLAC, and Opus. An Opus file is always stored at 48 kHz and is encoded at the bitrate chosen in the export dialog (64 to 320 kbps). MP3 is import-only and MAGDA does not encode MP3 files.
+Audio export offers WAV (16-bit, 24-bit or 32-bit float), FLAC (16-bit or 24-bit), Opus, and MP3; the bit depth is its own choice in the export dialog, shown for WAV and FLAC. An Opus file is always stored at 48 kHz and is encoded at the bitrate chosen in the export dialog (64 to 320 kbps). An MP3 is encoded with LAME, either at a variable bitrate (VBR V0, V2 or V4; V2 is the default) or at a constant 128 to 320 kbps. MP3 holds at most 48 kHz, so an export at 96 or 192 kHz is stored at 48 kHz.
 
 ## MIDI
 

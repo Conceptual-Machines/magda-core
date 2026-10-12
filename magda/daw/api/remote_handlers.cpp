@@ -764,6 +764,8 @@ OfflineRenderFormat renderFormat(const juce::var& input) {
         return OfflineRenderFormat::Flac;
     if (value == "opus")
         return OfflineRenderFormat::Opus;
+    if (value == "mp3")
+        return OfflineRenderFormat::Mp3;
     return OfflineRenderFormat::Wav;
 }
 
@@ -859,6 +861,24 @@ juce::var currentJob(RemoteJobManager& jobs, const juce::String& jobId,
     return job ? toJson(*job) : juce::var();
 }
 
+/// The schema lists every lossy bitrate; which ones a format offers, and that a
+/// VBR level is MP3's alone, is checked here.
+std::optional<HandlerResult> refuseLossyQuality(const juce::var& input,
+                                                OfflineRenderFormat format) {
+    const auto hasBitrate = input.hasProperty("bitrateKbps");
+    const auto kbps = static_cast<int>(input.getProperty("bitrateKbps", 0));
+    if (input.hasProperty("vbrQuality") && (format != OfflineRenderFormat::Mp3 || hasBitrate))
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "vbrQuality is for MP3 only, in place of bitrateKbps");
+    if (format == OfflineRenderFormat::Mp3 && hasBitrate && kbps == 510)
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "MP3 bitrates run from 32 to 320 kbps");
+    if (format == OfflineRenderFormat::Opus && hasBitrate && kbps < 64)
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "Opus bitrates run from 64 to 510 kbps");
+    return std::nullopt;
+}
+
 }  // namespace
 
 HandlerResult engineRenderRange(MagdaApi& api, const juce::var& input,
@@ -873,6 +893,8 @@ HandlerResult engineRenderRange(MagdaApi& api, const juce::var& input,
     if (format == OfflineRenderFormat::Flac && static_cast<int>(input["bitDepth"]) == 32)
         return HandlerResult::fail(ErrorCode::ValidationFailed,
                                    "FLAC output does not support 32-bit samples");
+    if (auto refusal = refuseLossyQuality(input, format))
+        return std::move(*refusal);
     Error error;
     const auto destination = resolveAudioDestination(input, format, error);
     if (!destination)
@@ -915,6 +937,8 @@ HandlerResult engineRenderRange(MagdaApi& api, const juce::var& input,
     request.bitDepth = static_cast<int>(input["bitDepth"]);
     request.dither = renderDither(input);
     request.bitrateKbps = static_cast<int>(input.getProperty("bitrateKbps", 0));
+    if (input.hasProperty("vbrQuality"))
+        request.vbrQuality = static_cast<int>(input["vbrQuality"]);
     request.sampleRate = static_cast<double>(input["sampleRate"]);
     request.shouldNormalise = static_cast<bool>(input["normalise"]);
     request.normaliseToLevelDb = static_cast<float>(static_cast<double>(input["normaliseToDb"]));

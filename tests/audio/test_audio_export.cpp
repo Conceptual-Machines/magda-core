@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <vector>
 
 #include "../../magda/daw/ui/dialogs/ExportAudioDialog.hpp"
 #include "../../magda/daw/ui/dialogs/ExportFormats.hpp"
@@ -38,7 +39,8 @@ TEST_CASE("ExportAudioDialog::Settings - Default construction", "[export][dialog
 
 TEST_CASE("ExportAudioDialog::Settings - Custom values", "[export][dialog]") {
     ExportAudioDialog::Settings settings;
-    settings.format = "WAV24";
+    settings.format = "WAV";
+    settings.bitDepth = 16;
     settings.sampleRate = 48000.0;
     settings.normalize = true;
     settings.exportRange = ExportAudioDialog::ExportRange::LoopRegion;
@@ -46,7 +48,8 @@ TEST_CASE("ExportAudioDialog::Settings - Custom values", "[export][dialog]") {
     auto testFile = tempDir.getChildFile("test.wav");
     settings.outputFile = testFile;
 
-    REQUIRE(settings.format == "WAV24");
+    REQUIRE(settings.format == "WAV");
+    REQUIRE(settings.bitDepth == 16);
     REQUIRE(settings.sampleRate == Catch::Approx(48000.0));
     REQUIRE(settings.normalize == true);
     REQUIRE(settings.exportRange == ExportAudioDialog::ExportRange::LoopRegion);
@@ -57,15 +60,14 @@ TEST_CASE("ExportAudioDialog::Settings - Custom values", "[export][dialog]") {
 // Format Tests
 // ============================================================================
 
-TEST_CASE("File extension mapping - WAV formats", "[export][format]") {
-    REQUIRE(exportExtensionFor("WAV16") == ".wav");
-    REQUIRE(exportExtensionFor("WAV24") == ".wav");
-    REQUIRE(exportExtensionFor("WAV32") == ".wav");
+TEST_CASE("File extension mapping - WAV", "[export][format]") {
+    REQUIRE(exportExtensionFor("WAV") == ".wav");
 }
 
-TEST_CASE("File extension mapping - FLAC and Opus", "[export][format]") {
+TEST_CASE("File extension mapping - FLAC, Opus and MP3", "[export][format]") {
     REQUIRE(exportExtensionFor("FLAC") == ".flac");
     REQUIRE(exportExtensionFor("OPUS") == ".opus");
+    REQUIRE(exportExtensionFor("MP3") == ".mp3");
 }
 
 TEST_CASE("File extension mapping - Default fallback", "[export][format]") {
@@ -73,29 +75,49 @@ TEST_CASE("File extension mapping - Default fallback", "[export][format]") {
     REQUIRE(exportExtensionFor("") == ".wav");
 }
 
-TEST_CASE("Bit depth mapping - WAV formats", "[export][format]") {
-    REQUIRE(exportBitDepthFor("WAV16") == 16);
-    REQUIRE(exportBitDepthFor("WAV24") == 24);
-    REQUIRE(exportBitDepthFor("WAV32") == 32);
+TEST_CASE("Bit depths each format offers", "[export][format][3034]") {
+    REQUIRE(exportBitDepthsFor("WAV") == std::vector<int>{16, 24, 32});
+    REQUIRE(exportBitDepthsFor("FLAC") == std::vector<int>{16, 24});
+    REQUIRE(exportBitDepthsFor("OPUS").empty());
+    REQUIRE(exportBitDepthsFor("MP3").empty());
 }
 
-TEST_CASE("Bit depth mapping - FLAC format", "[export][format]") {
-    REQUIRE(exportBitDepthFor("FLAC") == 24);
-}
-
-TEST_CASE("Bit depth mapping - Default fallback", "[export][format]") {
-    REQUIRE(exportBitDepthFor("Unknown") == 16);
-    REQUIRE(exportBitDepthFor("") == 16);
+TEST_CASE("Saved format names from before the depth had its own field", "[export][format][3034]") {
+    REQUIRE(normaliseExportFormat("WAV16") == "WAV");
+    REQUIRE(normaliseExportFormat("WAV24") == "WAV");
+    REQUIRE(normaliseExportFormat("WAV32") == "WAV");
+    REQUIRE(normaliseExportFormat("FLAC") == "FLAC");
+    REQUIRE(normaliseExportFormat("OPUS") == "OPUS");
+    REQUIRE(normaliseExportFormat("MP3") == "MP3");
+    REQUIRE(normaliseExportFormat("") == "WAV");
 }
 
 TEST_CASE("Render format mapping", "[export][format][2955]") {
-    REQUIRE(exportRenderFormatFor("WAV24") == OfflineRenderFormat::Wav);
+    REQUIRE(exportRenderFormatFor("WAV") == OfflineRenderFormat::Wav);
     REQUIRE(exportRenderFormatFor("FLAC") == OfflineRenderFormat::Flac);
     REQUIRE(exportRenderFormatFor("OPUS") == OfflineRenderFormat::Opus);
     REQUIRE(exportRenderFormatFor("Unknown") == OfflineRenderFormat::Wav);
 
+    REQUIRE(exportRenderFormatFor("MP3") == OfflineRenderFormat::Mp3);
+
     REQUIRE(isLossyExportFormat("OPUS"));
+    REQUIRE(isLossyExportFormat("MP3"));
     REQUIRE_FALSE(isLossyExportFormat("FLAC"));
+}
+
+TEST_CASE("MP3 bitrate choices", "[export][format][3034]") {
+    // A CBR item is its bitrate; a VBR item is the level, with no bitrate.
+    const auto cbr = mp3QualityForItemId(192);
+    CHECK(cbr.bitrateKbps == 192);
+    CHECK_FALSE(cbr.vbrQuality.has_value());
+
+    const auto vbr = mp3QualityForItemId(kDefaultMp3ItemId);
+    CHECK(vbr.bitrateKbps == 0);
+    CHECK(vbr.vbrQuality == 2);
+
+    // Every CBR choice is below the VBR ids, so the two never collide.
+    for (const auto kbps : kMp3CbrBitratesKbps)
+        CHECK(kbps < kMp3VbrItemIdBase);
 }
 
 // ============================================================================
@@ -162,27 +184,15 @@ TEST_CASE("Export range - LoopRegion", "[export][range]") {
 TEST_CASE("Valid format/sample rate combinations", "[export][integration]") {
     ExportAudioDialog::Settings settings;
 
-    // WAV16 @ 44.1kHz
-    settings.format = "WAV16";
-    settings.sampleRate = 44100.0;
-    REQUIRE(exportBitDepthFor(settings.format) == 16);
-    REQUIRE(exportExtensionFor(settings.format) == ".wav");
-
-    // WAV24 @ 48kHz
-    settings.format = "WAV24";
-    settings.sampleRate = 48000.0;
-    REQUIRE(exportBitDepthFor(settings.format) == 24);
-
-    // WAV32 @ 96kHz
-    settings.format = "WAV32";
+    settings.format = "WAV";
     settings.sampleRate = 96000.0;
-    REQUIRE(exportBitDepthFor(settings.format) == 32);
+    REQUIRE(exportExtensionFor(settings.format) == ".wav");
+    REQUIRE(exportRenderFormatFor(settings.format) == OfflineRenderFormat::Wav);
 
-    // FLAC @ 192kHz
     settings.format = "FLAC";
     settings.sampleRate = 192000.0;
-    REQUIRE(exportBitDepthFor(settings.format) == 24);
     REQUIRE(exportExtensionFor(settings.format) == ".flac");
+    REQUIRE(exportRenderFormatFor(settings.format) == OfflineRenderFormat::Flac);
 }
 
 // ============================================================================

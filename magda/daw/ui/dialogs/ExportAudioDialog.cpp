@@ -1,5 +1,7 @@
 #include "ExportAudioDialog.hpp"
 
+#include <iterator>
+
 #include "../../core/Config.hpp"
 #include "../../project/ProjectManager.hpp"
 #include "../themes/ActiveTheme.hpp"
@@ -7,9 +9,20 @@
 #include "../themes/FontManager.hpp"
 #include "ExportFormats.hpp"
 #include "core/StringTable.hpp"
-#include "core/TechnicalText.hpp"
 
 namespace magda {
+
+namespace {
+
+struct ExportFormatChoice {
+    const char* name;   // What Settings::format and the config hold
+    const char* label;  // What the combo shows
+};
+
+constexpr ExportFormatChoice kFormats[] = {
+    {"WAV", "WAV"}, {"FLAC", "FLAC"}, {"OPUS", "Opus"}, {"MP3", "MP3"}};
+
+}  // namespace
 
 ExportAudioDialog::ExportAudioDialog() {
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
@@ -19,28 +32,15 @@ ExportAudioDialog::ExportAudioDialog() {
     formatLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(formatLabel_);
 
-    // File-format designators — do not translate.
-    formatComboBox_.addItem("WAV 16-bit", 1);
-    formatComboBox_.addItem("WAV 24-bit", 2);
-    formatComboBox_.addItem("WAV 32-bit Float", 3);
-    formatComboBox_.addItem("FLAC", 4);
-    formatComboBox_.addItem("Opus", 5);
-    // The last container exported to; a WAV's depth comes from the project.
+    // File-format designators — do not translate. Item ids index kFormats.
+    for (auto index = 0; index < static_cast<int>(std::size(kFormats)); ++index)
+        formatComboBox_.addItem(kFormats[index].label, index + 1);
+    // The last container exported to; the depth comes from the project.
     const auto& projectInfo = ProjectManager::getInstance().getCurrentProjectInfo();
-    const juce::String lastFormat(Config::getInstance().getExportFormat());
-    int bd = projectInfo.renderBitDepth;
-    int formatId = 2;  // Default WAV 24-bit
-    if (lastFormat == "FLAC")
-        formatId = 4;
-    else if (lastFormat == "OPUS")
-        formatId = 5;
-    else if (bd >= 32)
-        formatId = 3;
-    else if (bd >= 24)
-        formatId = 2;
-    else
-        formatId = 1;
-    formatComboBox_.setSelectedId(formatId, juce::dontSendNotification);
+    const auto lastFormat = normaliseExportFormat(Config::getInstance().getExportFormat());
+    for (auto index = 0; index < static_cast<int>(std::size(kFormats)); ++index)
+        if (lastFormat == kFormats[index].name)
+            formatComboBox_.setSelectedId(index + 1, juce::dontSendNotification);
     formatComboBox_.onChange = [this]() { onFormatChanged(); };
     addAndMakeVisible(formatComboBox_);
 
@@ -65,13 +65,12 @@ ExportAudioDialog::ExportAudioDialog() {
     sampleRateComboBox_.setSelectedId(rateId, juce::dontSendNotification);
     addAndMakeVisible(sampleRateComboBox_);
 
-    // Bit depth (read-only, updates based on format)
     bitDepthLabel_.setText(tr("export_audio.label.bit_depth"), juce::dontSendNotification);
     bitDepthLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(bitDepthLabel_);
 
-    bitDepthValueLabel_.setFont(FontManager::getInstance().getUIFont(14.0f));
-    addAndMakeVisible(bitDepthValueLabel_);
+    bitDepthComboBox_.onChange = [this]() { updateFormatRows(); };
+    addAndMakeVisible(bitDepthComboBox_);
 
     ditherLabel_.setText(tr("export_audio.label.dither"), juce::dontSendNotification);
     ditherLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
@@ -87,16 +86,14 @@ ExportAudioDialog::ExportAudioDialog() {
     bitrateLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addChildComponent(bitrateLabel_);
 
-    // Item ids are the bitrates themselves.
-    for (const auto kbps : kExportBitratesKbps)
-        bitrateComboBox_.addItem(juce::String(kbps) + " kbps", kbps);
-    bitrateComboBox_.setSelectedId(Config::getInstance().getExportBitrateKbps(),
-                                   juce::dontSendNotification);
-    if (bitrateComboBox_.getSelectedId() == 0)
-        bitrateComboBox_.setSelectedId(kDefaultExportBitrateKbps, juce::dontSendNotification);
     addChildComponent(bitrateComboBox_);
 
-    updateBitDepthOptions();  // Set label based on restored format
+    populateBitDepthOptions();
+    bitDepthComboBox_.setSelectedId(projectInfo.renderBitDepth, juce::dontSendNotification);
+    if (bitDepthComboBox_.getSelectedId() == 0 && bitDepthComboBox_.getNumItems() > 0)
+        bitDepthComboBox_.setSelectedId(24, juce::dontSendNotification);
+    populateBitrateOptions();
+    updateFormatRows();
 
     // Normalization option
     normalizeCheckbox_.setButtonText(tr("export_audio.toggle.normalize"));
@@ -148,10 +145,12 @@ ExportAudioDialog::ExportAudioDialog() {
             // Persist render preferences
             auto& cfg = Config::getInstance();
             cfg.setExportFormat(settings.format.toStdString());
-            if (isLossyExportFormat(settings.format))
+            if (isMp3Selected())
+                cfg.setExportMp3QualityId(bitrateComboBox_.getSelectedId());
+            else if (isLossyExportFormat(settings.format))
                 cfg.setExportBitrateKbps(settings.bitrateKbps);
             else
-                cfg.setRenderBitDepth(exportBitDepthFor(settings.format));
+                cfg.setRenderBitDepth(settings.bitDepth);
             cfg.setRenderSampleRate(settings.sampleRate);
             cfg.save();
             onExport(settings);
@@ -216,7 +215,7 @@ void ExportAudioDialog::resized() {
         auto bitDepthArea = bounds.removeFromTop(28);
         bitDepthLabel_.setBounds(bitDepthArea.removeFromLeft(120));
         bitDepthArea.removeFromLeft(10);
-        bitDepthValueLabel_.setBounds(bitDepthArea);
+        bitDepthComboBox_.setBounds(bitDepthArea);
         bounds.removeFromTop(10);
 
         auto ditherArea = bounds.removeFromTop(28);
@@ -267,31 +266,17 @@ void ExportAudioDialog::resized() {
 ExportAudioDialog::Settings ExportAudioDialog::getSettings() const {
     Settings settings;
 
-    // Get format
-    int formatId = formatComboBox_.getSelectedId();
-    switch (formatId) {
-        case 1:
-            settings.format = "WAV16";
-            break;
-        case 2:
-            settings.format = "WAV24";
-            break;
-        case 3:
-            settings.format = "WAV32";
-            break;
-        case 4:
-            settings.format = "FLAC";
-            break;
-        case 5:
-            settings.format = "OPUS";
-            break;
-        default:
-            settings.format = "WAV24";
-            break;
-    }
+    settings.format = selectedFormat();
+    if (!isLossySelected())
+        settings.bitDepth = bitDepthComboBox_.getSelectedId();
 
-    if (isLossySelected())
+    if (isMp3Selected()) {
+        const auto quality = mp3QualityForItemId(bitrateComboBox_.getSelectedId());
+        settings.bitrateKbps = quality.bitrateKbps;
+        settings.vbrQuality = quality.vbrQuality;
+    } else if (isLossySelected()) {
         settings.bitrateKbps = bitrateComboBox_.getSelectedId();
+    }
 
     // Get sample rate
     int sampleRateId = sampleRateComboBox_.getSelectedId();
@@ -313,7 +298,7 @@ ExportAudioDialog::Settings ExportAudioDialog::getSettings() const {
             break;
     }
 
-    if (formatId == 3 || isLossySelected()) {
+    if (settings.bitDepth >= 32 || isLossySelected()) {
         settings.dither = OfflineRenderDither::None;
     } else {
         switch (ditherComboBox_.getSelectedId()) {
@@ -361,50 +346,80 @@ void ExportAudioDialog::setLoopRegionAvailable(bool available) {
 }
 
 void ExportAudioDialog::onFormatChanged() {
-    updateBitDepthOptions();
+    populateBitDepthOptions();
+    populateBitrateOptions();
+    updateFormatRows();
 }
 
-void ExportAudioDialog::updateBitDepthOptions() {
-    int formatId = formatComboBox_.getSelectedId();
-    juce::String bitDepthText;
+void ExportAudioDialog::populateBitDepthOptions() {
+    // FLAC has no float, so a 32-bit WAV becomes a 24-bit FLAC.
+    const auto current = bitDepthComboBox_.getSelectedId();
+    bitDepthComboBox_.clear(juce::dontSendNotification);
+    for (const auto depth : exportBitDepthsFor(selectedFormat()))
+        bitDepthComboBox_.addItem(depth >= 32 ? tr("export_audio.bit_depth.32_float")
+                                              : tr("export_audio.bit_depth." + juce::String(depth)),
+                                  depth);
+    bitDepthComboBox_.setSelectedId(current, juce::dontSendNotification);
+    if (bitDepthComboBox_.getSelectedId() == 0 && bitDepthComboBox_.getNumItems() > 0)
+        bitDepthComboBox_.setSelectedId(24, juce::dontSendNotification);
+}
 
-    switch (formatId) {
-        case 1:  // WAV 16-bit
-            bitDepthText = tr("export_audio.bit_depth.16");
-            break;
-        case 2:  // WAV 24-bit
-            bitDepthText = tr("export_audio.bit_depth.24");
-            break;
-        case 3:  // WAV 32-bit Float
-            bitDepthText = tr("export_audio.bit_depth.32_float");
-            break;
-        case 4:  // FLAC — "24-bit (FLAC)"; the format suffix is a fixed technical
-                 // token, so compose from the translatable 24-bit label rather
-                 // than a separate (untranslatable) string.
-            bitDepthText = tr("export_audio.bit_depth.24") + " (" +
-                           magda::technicalText(magda::TechnicalTextToken::Flac) + ")";
-            break;
-        default:
-            bitDepthText = tr("export_audio.bit_depth.24");
-            break;
+void ExportAudioDialog::populateBitrateOptions() {
+    // Item ids are the bitrates themselves, and for an MP3 VBR level
+    // kMp3VbrItemIdBase plus the level. Labels are technical, not translated.
+    const auto& config = Config::getInstance();
+    bitrateComboBox_.clear(juce::dontSendNotification);
+
+    if (isMp3Selected()) {
+        for (const auto level : kMp3VbrLevels)
+            bitrateComboBox_.addItem("VBR V" + juce::String(level), kMp3VbrItemIdBase + level);
+        for (const auto kbps : kMp3CbrBitratesKbps)
+            bitrateComboBox_.addItem("CBR " + juce::String(kbps) + " kbps", kbps);
+        bitrateComboBox_.setSelectedId(config.getExportMp3QualityId(), juce::dontSendNotification);
+        if (bitrateComboBox_.getSelectedId() == 0)
+            bitrateComboBox_.setSelectedId(kDefaultMp3ItemId, juce::dontSendNotification);
+        return;
     }
 
-    bitDepthValueLabel_.setText(bitDepthText, juce::dontSendNotification);
+    for (const auto kbps : kExportBitratesKbps)
+        bitrateComboBox_.addItem(juce::String(kbps) + " kbps", kbps);
+    bitrateComboBox_.setSelectedId(config.getExportBitrateKbps(), juce::dontSendNotification);
+    if (bitrateComboBox_.getSelectedId() == 0)
+        bitrateComboBox_.setSelectedId(kDefaultExportBitrateKbps, juce::dontSendNotification);
+}
 
+void ExportAudioDialog::updateFormatRows() {
     // A float file has no grid to dither onto.
-    ditherComboBox_.setEnabled(formatId != 3);
+    ditherComboBox_.setEnabled(bitDepthComboBox_.getSelectedId() < 32);
 
     const auto lossy = isLossySelected();
-    for (auto* row : std::initializer_list<juce::Component*>{&bitDepthLabel_, &bitDepthValueLabel_,
+    for (auto* row : std::initializer_list<juce::Component*>{&bitDepthLabel_, &bitDepthComboBox_,
                                                              &ditherLabel_, &ditherComboBox_})
         row->setVisible(!lossy);
     bitrateLabel_.setVisible(lossy);
     bitrateComboBox_.setVisible(lossy);
+
+    // MP3 stops at 48 kHz; the engine would resample a higher render down anyway.
+    const auto mp3 = isMp3Selected();
+    sampleRateComboBox_.setItemEnabled(3, !mp3);
+    sampleRateComboBox_.setItemEnabled(4, !mp3);
+    if (mp3 && sampleRateComboBox_.getSelectedId() > 2)
+        sampleRateComboBox_.setSelectedId(2, juce::dontSendNotification);
     resized();
 }
 
+juce::String ExportAudioDialog::selectedFormat() const {
+    const auto index = formatComboBox_.getSelectedId() - 1;
+    return index >= 0 && index < static_cast<int>(std::size(kFormats)) ? kFormats[index].name
+                                                                       : "WAV";
+}
+
 bool ExportAudioDialog::isLossySelected() const {
-    return formatComboBox_.getSelectedId() == 5;
+    return isLossyExportFormat(selectedFormat());
+}
+
+bool ExportAudioDialog::isMp3Selected() const {
+    return selectedFormat() == "MP3";
 }
 
 void ExportAudioDialog::showDialog(juce::Component* parent,

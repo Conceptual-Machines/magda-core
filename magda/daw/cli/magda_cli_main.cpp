@@ -600,9 +600,9 @@ void printUsage(std::ostream& out) {
         << "  magda-cli run <project.mgd> --cmds <cmds.txt> [--out <out.mgd>] [--dump-json]\n"
         << "  magda-cli exec <project.mgd> <commands...> [--out <out.mgd>] [--dump-json]\n"
         << "  magda-cli render <project.mgd> (--wav <out.wav> | --flac <out.flac> |\n"
-        << "                   --opus <out.opus>) [--from <time>] [--to <time>]\n"
-        << "                   [--sample-rate <hz>] [--bit-depth <bits>]\n"
-        << "                   [--dither off|tpdf|shaped] [--bitrate <kbps>]\n"
+        << "                   --opus <out.opus> | --mp3 <out.mp3>) [--from <time>]\n"
+        << "                   [--to <time>] [--sample-rate <hz>] [--bit-depth <bits>]\n"
+        << "                   [--dither off|tpdf|shaped] [--bitrate <kbps> | --vbr <0-9>]\n"
         << "\n"
         << "Commands:\n";
 
@@ -630,6 +630,7 @@ struct RenderOptions {
     std::optional<int> bitDepth;
     std::optional<magda::OfflineRenderDither> dither;
     int bitrateKbps = 0;
+    std::optional<int> vbrQuality;
 };
 
 bool loadProjectForCli(const juce::File& input, HeadlessEngineSession& session) {
@@ -729,6 +730,7 @@ bool renderProjectAudio(magda::AudioEngine& engine, const RenderOptions& options
     request.bitDepth = options.bitDepth.value_or(projectInfo.renderBitDepth);
     request.dither = options.dither;
     request.bitrateKbps = options.bitrateKbps;
+    request.vbrQuality = options.vbrQuality;
     request.sampleRate = options.sampleRate.value_or(projectInfo.sampleRate);
     request.range = {{startBeat}, {endBeat}};
     if (!options.fromBeat && !options.toBeat)
@@ -893,9 +895,11 @@ int renderProject(const juce::StringArray& args) {
     juce::String fromToken;
     juce::String toToken;
     for (int i = 2; i < args.size(); ++i) {
-        if (args[i] == "--wav" || args[i] == "--flac" || args[i] == "--opus") {
+        if (args[i] == "--wav" || args[i] == "--flac" || args[i] == "--opus" ||
+            args[i] == "--mp3") {
             options.format = args[i] == "--flac"   ? magda::OfflineRenderFormat::Flac
                              : args[i] == "--opus" ? magda::OfflineRenderFormat::Opus
+                             : args[i] == "--mp3"  ? magda::OfflineRenderFormat::Mp3
                                                    : magda::OfflineRenderFormat::Wav;
             if (++i >= args.size()) {
                 printUsage(std::cerr);
@@ -955,6 +959,19 @@ int renderProject(const juce::StringArray& args) {
                 return 2;
             }
             options.bitrateKbps = *kbps;
+        } else if (args[i] == "--vbr") {
+            if (++i >= args.size()) {
+                printUsage(std::cerr);
+                return 2;
+            }
+            const auto level = args[i].containsOnly("0123456789") && args[i].isNotEmpty()
+                                   ? std::optional<int>(args[i].getIntValue())
+                                   : std::nullopt;
+            if (!level || *level > 9) {
+                std::cerr << "--vbr requires a LAME VBR level from 0 (best) to 9\n";
+                return 2;
+            }
+            options.vbrQuality = level;
         } else {
             printUsage(std::cerr);
             return 2;
@@ -962,7 +979,13 @@ int renderProject(const juce::StringArray& args) {
     }
 
     if (options.output.getFullPathName().isEmpty()) {
-        std::cerr << "render requires --wav <out.wav>, --flac <out.flac> or --opus <out.opus>\n";
+        std::cerr << "render requires --wav <out.wav>, --flac <out.flac>, --opus <out.opus> or "
+                     "--mp3 <out.mp3>\n";
+        return 2;
+    }
+    if (options.vbrQuality &&
+        (options.format != magda::OfflineRenderFormat::Mp3 || options.bitrateKbps != 0)) {
+        std::cerr << "--vbr is for --mp3 only, in place of --bitrate\n";
         return 2;
     }
 
