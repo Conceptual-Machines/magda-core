@@ -24,6 +24,55 @@ int outputBoundFor(int numSamples) {
 
 using Encoder = std::unique_ptr<lame_global_flags, decltype(&lame_close)>;
 
+/// @p text as LAME's UTF-16 setters take it: byte-order mark first, then null-terminated.
+std::vector<unsigned short> utf16For(const juce::String& text) {
+    std::vector<unsigned short> result{0xFEFF};
+    for (auto unit = text.toUTF16(); !unit.isEmpty(); ++unit) {
+        const auto codePoint = *unit;
+        if (codePoint < 0x10000) {
+            result.push_back(static_cast<unsigned short>(codePoint));
+        } else {
+            const auto offset = codePoint - 0x10000;
+            result.push_back(static_cast<unsigned short>(0xD800 + (offset >> 10)));
+            result.push_back(static_cast<unsigned short>(0xDC00 + (offset & 0x3FF)));
+        }
+    }
+    result.push_back(0);
+    return result;
+}
+
+/// The credits in @p options as ID3v2 frames, UTF-16 throughout so a name
+/// outside Latin-1 survives. Nothing is set, and no tag written, without them.
+void setTags(lame_global_flags* flags, const juce::AudioFormatWriterOptions& options) {
+    const auto metadata = options.getMetadataValues();
+    const std::pair<const char*, const char*> frames[] = {
+        {juce::OpusAudioFormat::id3title, "TIT2"},
+        {juce::OpusAudioFormat::id3artist, "TPE1"},
+        {juce::OpusAudioFormat::id3album, "TALB"},
+        {juce::OpusAudioFormat::id3date, "TYER"},
+        {juce::OpusAudioFormat::id3genre, "TCON"}};
+
+    auto initialised = false;
+    const auto init = [&] {
+        if (std::exchange(initialised, true))
+            return;
+        id3tag_init(flags);
+        id3tag_v2_only(flags);
+    };
+
+    for (const auto& [key, frame] : frames)
+        if (const auto it = metadata.find(key); it != metadata.end() && it->second.isNotEmpty()) {
+            init();
+            id3tag_set_textinfo_utf16(flags, frame, utf16For(it->second).data());
+        }
+
+    if (const auto it = metadata.find(juce::OpusAudioFormat::id3comment);
+        it != metadata.end() && it->second.isNotEmpty()) {
+        init();
+        id3tag_set_comment_utf16(flags, "eng", utf16For({}).data(), utf16For(it->second).data());
+    }
+}
+
 /// The encoder for @p options, or null if LAME refuses them. Quality indices
 /// follow Mp3AudioFormat::getQualityOptions.
 Encoder createEncoder(const juce::AudioFormatWriterOptions& options) {
@@ -36,8 +85,10 @@ Encoder createEncoder(const juce::AudioFormatWriterOptions& options) {
     lame_set_out_samplerate(flags, mp3FileRateFor(options.getSampleRate()));
     lame_set_num_channels(flags, options.getNumChannels());
 
-    // Tags are written by MAGDA from the project's credits (#3035), not by LAME.
+    // The ID3v2 tag is fetched and written by the writer, so it knows where the
+    // first frame, and so the LAME tag, starts.
     lame_set_write_id3tag_automatic(flags, 0);
+    setTags(flags, options);
 
     const auto index = options.getQualityOptionIndex();
     if (index <= kVbrLevels) {
@@ -63,6 +114,16 @@ class Mp3Writer final : public juce::AudioFormatWriter {
                                   static_cast<unsigned int>(numChannels), 32),
           encoder_(std::move(encoder)) {
         usesFloatingPointData = true;
+
+        // Zero when no tags were set. A failed write here surfaces where every
+        // other one does, in the sink's stream report.
+        const auto tagSize = lame_get_id3v2_tag(encoder_.get(), nullptr, 0);
+        if (tagSize > 0) {
+            std::vector<unsigned char> tag(tagSize);
+            if (lame_get_id3v2_tag(encoder_.get(), tag.data(), tag.size()) == tagSize &&
+                output->write(tag.data(), tagSize))
+                firstFrame_ = static_cast<juce::int64>(tagSize);
+        }
     }
 
     ~Mp3Writer() override {
@@ -77,7 +138,7 @@ class Mp3Writer final : public juce::AudioFormatWriter {
         // duration of a VBR file and lets gapless decoders trim the padding.
         std::array<unsigned char, 2880> tag{};
         const auto tagSize = lame_get_lametag_frame(encoder_.get(), tag.data(), tag.size());
-        if (tagSize > 0 && tagSize <= tag.size() && output->setPosition(0))
+        if (tagSize > 0 && tagSize <= tag.size() && output->setPosition(firstFrame_))
             output->write(tag.data(), tagSize);
 
         output->flush();
@@ -110,6 +171,9 @@ class Mp3Writer final : public juce::AudioFormatWriter {
   private:
     Encoder encoder_;
     std::vector<unsigned char> encoded_;
+
+    /// Where the audio starts: after the ID3v2 tag, where the LAME tag goes.
+    juce::int64 firstFrame_ = 0;
 };
 
 }  // namespace

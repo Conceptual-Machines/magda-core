@@ -29,6 +29,14 @@ inline engine::AudioFileMetadata renderFileMetadata(const ProjectInfo& project,
     facts.oneShot = oneShot;
     facts.description = std::move(description);
     facts.originator = juce::String("MAGDA ") + MAGDA_VERSION;
+
+    const auto& credits = project.metadata;
+    facts.title = credits.title;
+    facts.artist = credits.artist;
+    facts.album = credits.album;
+    facts.date = credits.year;
+    facts.genre = credits.genre;
+    facts.comment = credits.comment;
     return facts;
 }
 

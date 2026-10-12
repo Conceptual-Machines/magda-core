@@ -69,7 +69,8 @@ struct AudioFileSpec {
     /// in a lossy format.
     std::optional<DitherMode> dither;
 
-    /// Used by WAV. JUCE's FLAC writer does not store caller metadata.
+    /// WAV stores the musical facts and BWF text, Opus and MP3 the credits.
+    /// JUCE's FLAC writer does not store caller metadata.
     AudioFileMetadata metadata;
 };
 

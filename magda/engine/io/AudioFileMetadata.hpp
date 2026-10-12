@@ -7,10 +7,12 @@
 #include <limits>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 
 namespace magda::engine {
 
-/// Musical facts about the audio actually stored in a WAV file.
+/// Musical facts about the audio actually stored in a WAV file, and the
+/// project's credits for the formats that carry tags (#3035).
 struct AudioFileMetadata {
     std::optional<double> tempo;
     std::optional<double> beats;
@@ -21,7 +23,33 @@ struct AudioFileMetadata {
     std::optional<bool> oneShot;
     juce::String description;
     juce::String originator;
+
+    /// Opus and MP3 only: JUCE's FLAC writer takes no caller metadata, and WAV
+    /// keeps its BWF text above.
+    juce::String title;
+    juce::String artist;
+    juce::String album;
+    juce::String date;
+    juce::String genre;
+    juce::String comment;
 };
+
+/// The tags a lossy writer stores, under JUCE's OpusAudioFormat::id3* keys.
+/// Mp3AudioFormat reads the same keys, so one map serves both.
+inline std::unordered_map<juce::String, juce::String> lossyTagsFor(const AudioFileMetadata& facts) {
+    std::unordered_map<juce::String, juce::String> result;
+    const std::pair<const char*, const juce::String*> tags[] = {
+        {juce::OpusAudioFormat::id3title, &facts.title},
+        {juce::OpusAudioFormat::id3artist, &facts.artist},
+        {juce::OpusAudioFormat::id3album, &facts.album},
+        {juce::OpusAudioFormat::id3date, &facts.date},
+        {juce::OpusAudioFormat::id3genre, &facts.genre},
+        {juce::OpusAudioFormat::id3comment, &facts.comment}};
+    for (const auto& [key, value] : tags)
+        if (value->isNotEmpty())
+            result[key] = *value;
+    return result;
+}
 
 constexpr std::size_t kBwavDescriptionBytes = 256;
 constexpr std::size_t kBwavOriginatorBytes = 32;

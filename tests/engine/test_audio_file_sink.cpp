@@ -10,9 +10,12 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <numbers>
 #include <optional>
+#include <string>
+#include <string_view>
 
 #include "exec/RenderContext.hpp"
 #include "io/AudioFileSink.hpp"
@@ -259,15 +262,26 @@ struct Mp3Tag {
 /// The tag at the front of @p file. Read here rather than through a decoder:
 /// Core Audio trims by it, JUCE's own reader (Linux) does not, so a decoder's
 /// length says which platform ran the test, not what the file holds.
+/// The bytes an ID3v2 tag at the front of @p data takes, header included, or 0.
+std::size_t id3v2Size(const unsigned char* data, std::size_t size) {
+    if (size < 10 || std::memcmp(data, "ID3", 3) != 0)
+        return 0;
+    // Synchsafe: seven bits a byte.
+    return 10 + ((std::size_t{data[6]} << 21) | (std::size_t{data[7]} << 14) |
+                 (std::size_t{data[8]} << 7) | data[9]);
+}
+
 Mp3Tag mp3Tag(const juce::File& file) {
     juce::MemoryBlock bytes;
     REQUIRE(file.loadFileAsData(bytes));
     const auto* data = static_cast<const unsigned char*>(bytes.getData());
     const auto size = bytes.getSize();
 
-    // "Xing" (VBR) or "Info" (CBR), flags, frame count; LAME's own extension is
-    // 120 bytes on, with delay and padding as two 12-bit fields at +21.
-    for (std::size_t at = 0; at + 4 <= std::min<std::size_t>(size, 64); ++at) {
+    // In the first frame, which follows any ID3v2 tag: "Xing" (VBR) or "Info"
+    // (CBR), flags, frame count; LAME's own extension is 120 bytes on, with
+    // delay and padding as two 12-bit fields at +21.
+    const auto first = id3v2Size(data, size);
+    for (auto at = first; at + 4 <= std::min<std::size_t>(size, first + 64); ++at) {
         if (std::memcmp(data + at, "Xing", 4) != 0 && std::memcmp(data + at, "Info", 4) != 0)
             continue;
         REQUIRE(at + 144 <= size);
@@ -374,6 +388,132 @@ TEST_CASE("An MP3 rate or level is one the encoder offers", "[engine][io][3033]"
     // A VBR level is LAME's alone.
     CHECK(refused({.format = AudioFileFormat::opus, .vbrQuality = 2}));
     CHECK(refused({.format = AudioFileFormat::wav, .vbrQuality = 2}));
+}
+
+/// The text of each ID3v2.3 text frame and the comment in @p file, by frame id.
+std::map<juce::String, juce::String> id3v2Frames(const juce::File& file) {
+    juce::MemoryBlock bytes;
+    REQUIRE(file.loadFileAsData(bytes));
+    const auto* data = static_cast<const unsigned char*>(bytes.getData());
+    const auto end = id3v2Size(data, bytes.getSize());
+    REQUIRE(end > 0);
+
+    // Text is Latin-1 (encoding 0) or UTF-16 behind a byte-order mark (1).
+    const auto decode = [](const unsigned char* text, std::size_t length, unsigned char encoding) {
+        if (encoding == 0)
+            return juce::String(juce::CharPointer_UTF8(reinterpret_cast<const char*>(text)), length)
+                .trimCharactersAtEnd(juce::String::charToString(0));
+        juce::String result;
+        const auto bigEndian = length >= 2 && text[0] == 0xFE;
+        for (std::size_t at = 2; at + 1 < length; at += 2) {
+            const auto unit =
+                bigEndian ? (text[at] << 8) | text[at + 1] : (text[at + 1] << 8) | text[at];
+            if (unit == 0)
+                break;
+            result += juce::String::charToString(static_cast<juce::juce_wchar>(unit));
+        }
+        return result;
+    };
+
+    std::map<juce::String, juce::String> frames;
+    for (std::size_t at = 10; at + 10 <= end && data[at] != 0;) {
+        const juce::String id(reinterpret_cast<const char*>(data + at), 4);
+        const auto length = (std::size_t{data[at + 4]} << 24) | (std::size_t{data[at + 5]} << 16) |
+                            (std::size_t{data[at + 6]} << 8) | data[at + 7];
+        const auto* body = data + at + 10;
+        if (id == "COMM") {
+            // Encoding, language, a descriptor ending in a null, then the text.
+            const auto unitBytes = body[0] == 1 ? 2U : 1U;
+            std::size_t text = 4;
+            while (text + unitBytes <= length &&
+                   (body[text] != 0 || (unitBytes == 2 && body[text + 1] != 0)))
+                text += unitBytes;
+            text += unitBytes;
+            frames[id] = decode(body + text, length - text, body[0]);
+        } else if (id.startsWithChar('T')) {
+            frames[id] = decode(body + 1, length - 1, body[0]);
+        }
+        at += 10 + length;
+    }
+    return frames;
+}
+
+/// Credits with a name outside Latin-1, which is what UTF-16 tags are for.
+magda::engine::AudioFileMetadata credits() {
+    magda::engine::AudioFileMetadata metadata;
+    metadata.title = juce::String::fromUTF8("Nuit d\xc3\xa9toil\xc3\xa9"
+                                            "e \xe2\x80\x94 \xe6\x98\x9f");
+    metadata.artist = "Nomad Monad";
+    metadata.album = "Slices";
+    metadata.date = "2026";
+    metadata.genre = "Ambient";
+    metadata.comment = "Rendered for #3035";
+    return metadata;
+}
+
+/// Whether @p file holds the Vorbis comment @p key=@p value, length prefix and all.
+bool hasVorbisComment(const juce::File& file, const juce::String& key, const juce::String& value) {
+    juce::MemoryBlock bytes;
+    REQUIRE(file.loadFileAsData(bytes));
+    const auto comment = (key + "=" + value).toStdString();
+    const std::string_view data(static_cast<const char*>(bytes.getData()), bytes.getSize());
+    const auto at = data.find(comment);
+    if (at == std::string_view::npos || at < 4)
+        return false;
+    const auto* length = reinterpret_cast<const unsigned char*>(data.data() + at - 4);
+    return (std::size_t{length[0]} | (std::size_t{length[1]} << 8) |
+            (std::size_t{length[2]} << 16) | (std::size_t{length[3]} << 24)) == comment.size();
+}
+
+TEST_CASE("An Opus file carries the project's credits", "[engine][io][3035]") {
+    const auto expected = credits();
+    const auto file =
+        writeThrough("credits.opus", {.format = AudioFileFormat::opus, .metadata = expected},
+                     material(2, 48000));
+
+    // Read from the bytes rather than through JUCE's reader, which builds its
+    // strings as Latin-1 and so cannot give back a UTF-8 title it was handed.
+    CHECK(hasVorbisComment(file, "TITLE", expected.title));
+    CHECK(hasVorbisComment(file, "ARTIST", expected.artist));
+    CHECK(hasVorbisComment(file, "ALBUM", expected.album));
+    CHECK(hasVorbisComment(file, "DATE", expected.date));
+    CHECK(hasVorbisComment(file, "GENRE", expected.genre));
+    CHECK(hasVorbisComment(file, "COMMENT", expected.comment));
+}
+
+TEST_CASE("An MP3 file carries the project's credits as ID3v2", "[engine][io][3035]") {
+    constexpr int samples = 44100;
+    const auto expected = credits();
+    for (const auto& spec :
+         {AudioFileSpec{.format = AudioFileFormat::mp3, .metadata = expected},
+          AudioFileSpec{
+              .format = AudioFileFormat::mp3, .bitrateKbps = 192, .metadata = expected}}) {
+        INFO("bitrate " << spec.bitrateKbps);
+        const auto file = writeThrough("credits.mp3", spec, material(2, samples));
+
+        const auto frames = id3v2Frames(file);
+        CHECK(frames.at("TIT2") == expected.title);
+        CHECK(frames.at("TPE1") == expected.artist);
+        CHECK(frames.at("TALB") == expected.album);
+        CHECK(frames.at("TYER") == expected.date);
+        CHECK(frames.at("TCON") == expected.genre);
+        CHECK(frames.at("COMM") == expected.comment);
+
+        // The LAME tag is rewritten in the first frame, after the ID3 tag
+        // rather than over it.
+        CHECK(mp3Tag(file).samples() == samples);
+        const auto reader = readerFor(file);
+        REQUIRE(reader != nullptr);
+        CHECK(reader->sampleRate == 44100.0);
+    }
+}
+
+TEST_CASE("An MP3 without credits has no ID3 tag", "[engine][io][3035]") {
+    const auto file =
+        writeThrough("bare.mp3", {.format = AudioFileFormat::mp3}, material(2, 44100));
+    juce::MemoryBlock bytes;
+    REQUIRE(file.loadFileAsData(bytes));
+    CHECK(static_cast<const unsigned char*>(bytes.getData())[0] == 0xFF);
 }
 
 TEST_CASE("A rendered WAV reports its musical facts on re-import", "[engine][io][2771]") {
