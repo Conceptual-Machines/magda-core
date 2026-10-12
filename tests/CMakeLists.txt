@@ -505,6 +505,8 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES engine/test_offline_render.cpp)
     list(APPEND TEST_SOURCES engine/test_pcm_quantiser.cpp)
     list(APPEND TEST_SOURCES engine/test_audio_file_sink.cpp)
+    # The vendored MP3 encoder builds and writes frames (#3032).
+    list(APPEND TEST_SOURCES engine/test_lame_encoder.cpp)
     list(APPEND TEST_SOURCES engine/test_offline_render_model.cpp)
     list(APPEND TEST_SOURCES engine/test_track_freeze.cpp)
     list(APPEND TEST_SOURCES engine/test_insert_capture_session.cpp)
@@ -683,6 +685,9 @@ target_link_libraries(magda_tests
 
     target_link_libraries(magda_tests PRIVATE magda_engine magda_engine_devices
                           magda_engine_host)
+
+# libmp3lame on its own, until the engine's MP3 writer links it (#3033).
+target_link_libraries(magda_tests PRIVATE magda::mp3lame)
 
 # Include directories
 target_include_directories(magda_tests
