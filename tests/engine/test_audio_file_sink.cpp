@@ -241,25 +241,48 @@ std::unique_ptr<juce::AudioFormatReader> readerFor(const juce::File& file) {
     return std::unique_ptr<juce::AudioFormatReader>(formats.createReaderFor(file));
 }
 
-/// The frame count in an MP3's LAME/Xing tag, or 0 if there is none.
-std::int64_t mp3TagFrames(const juce::File& file) {
+constexpr int kMp3Frame = 1152;
+
+/// What an MP3's LAME tag says about its length: the frames in the file, and
+/// the encoder's delay at the front and padding at the end, in samples.
+struct Mp3Tag {
+    std::int64_t frames = 0;
+    int delay = 0;
+    int padding = 0;
+
+    /// The render's own length, which is what a gapless player plays.
+    std::int64_t samples() const {
+        return (frames * kMp3Frame) - delay - padding;
+    }
+};
+
+/// The tag at the front of @p file. Read here rather than through a decoder:
+/// Core Audio trims by it, JUCE's own reader (Linux) does not, so a decoder's
+/// length says which platform ran the test, not what the file holds.
+Mp3Tag mp3Tag(const juce::File& file) {
     juce::MemoryBlock bytes;
     REQUIRE(file.loadFileAsData(bytes));
     const auto* data = static_cast<const unsigned char*>(bytes.getData());
+    const auto size = bytes.getSize();
 
-    for (std::size_t at = 0; at + 12 <= std::min<std::size_t>(bytes.getSize(), 64); ++at) {
-        const auto isTag =
-            std::memcmp(data + at, "Xing", 4) == 0 || std::memcmp(data + at, "Info", 4) == 0;
-        if (isTag && (data[at + 7] & 0x01) != 0)
-            return (std::int64_t{data[at + 8]} << 24) | (data[at + 9] << 16) |
-                   (data[at + 10] << 8) | data[at + 11];
+    // "Xing" (VBR) or "Info" (CBR), flags, frame count; LAME's own extension is
+    // 120 bytes on, with delay and padding as two 12-bit fields at +21.
+    for (std::size_t at = 0; at + 4 <= std::min<std::size_t>(size, 64); ++at) {
+        if (std::memcmp(data + at, "Xing", 4) != 0 && std::memcmp(data + at, "Info", 4) != 0)
+            continue;
+        REQUIRE(at + 144 <= size);
+        REQUIRE((data[at + 7] & 0x01) != 0);
+        REQUIRE(std::memcmp(data + at + 120, "LAME", 4) == 0);
+
+        const auto* lame = data + at + 120;
+        return {.frames = (std::int64_t{data[at + 8]} << 24) | (data[at + 9] << 16) |
+                          (data[at + 10] << 8) | data[at + 11],
+                .delay = (lame[21] << 4) | (lame[22] >> 4),
+                .padding = ((lame[22] & 0x0F) << 8) | lame[23]};
     }
-    return 0;
+    FAIL("no LAME tag");
+    return {};
 }
-
-// An MP3 decoder's output starts late by the encoder's delay and runs past the
-// end by its padding, a frame or two at most (LAME's tag records both).
-constexpr int kMp3Frame = 1152;
 
 TEST_CASE("An MP3 file holds the render, within what the codec loses", "[engine][io][3033]") {
     constexpr int samples = 44100;
@@ -267,18 +290,18 @@ TEST_CASE("An MP3 file holds the render, within what the codec loses", "[engine]
     const auto file =
         writeThrough("render.mp3", {.format = AudioFileFormat::mp3, .bitrateKbps = 320}, source);
 
+    CHECK(mp3Tag(file).samples() == samples);
+
+    // A decoder that ignores the tag starts late by the encoder's and its own
+    // delay, so the comparison is lined up first.
     const auto stored = readBack(file);
     REQUIRE(stored.getNumChannels() == 2);
-    // A CBR file's tag says "Info", which JUCE's reader does not parse: it
-    // counts frames from the file size and keeps the encoder's delay and padding.
     REQUIRE(stored.getNumSamples() >= samples);
-    REQUIRE(stored.getNumSamples() <= samples + (2 * kMp3Frame));
 
-    // Lined up against the decoder's delay before comparing, which the reader
-    // does not trim.
     auto best = -1000.0;
     for (auto delay = 0; delay <= 2 * kMp3Frame; ++delay) {
         juce::AudioBuffer<float> aligned(2, samples);
+        aligned.clear();
         for (auto channel = 0; channel < 2; ++channel)
             aligned.copyFrom(channel, 0, stored, channel, delay,
                              std::min(samples, stored.getNumSamples() - delay));
@@ -309,7 +332,7 @@ TEST_CASE("An MP3 render above 48 kHz is stored at its family's base rate", "[en
         const auto reader = readerFor(file);
         REQUIRE(reader != nullptr);
         CHECK(reader->sampleRate == fileRate);
-        CHECK(std::abs(reader->lengthInSamples - static_cast<juce::int64>(fileRate)) <= 1);
+        CHECK(std::abs(mp3Tag(file).samples() - static_cast<std::int64_t>(fileRate)) <= 1);
     }
 }
 
@@ -320,15 +343,9 @@ TEST_CASE("A VBR MP3 says how long it is", "[engine][io][3033]") {
     const auto file = writeThrough("vbr.mp3", {.format = AudioFileFormat::mp3, .vbrQuality = 0},
                                    material(2, samples));
 
-    const auto frames = mp3TagFrames(file);
-    CHECK(frames * kMp3Frame >= samples);
-    CHECK(frames * kMp3Frame <= samples + (3 * kMp3Frame));
-
-    // JUCE's reader takes the encoder's delay and padding from the same tag,
-    // which is what gives back the render's own length.
-    const auto reader = readerFor(file);
-    REQUIRE(reader != nullptr);
-    CHECK(reader->lengthInSamples == samples);
+    const auto tag = mp3Tag(file);
+    CHECK(tag.frames > 0);
+    CHECK(tag.samples() == samples);
 }
 
 TEST_CASE("An MP3 rate or level is one the encoder offers", "[engine][io][3033]") {
