@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <utility>
 
+#include "io/Mp3AudioFormat.hpp"
+
 namespace magda::engine {
 
 /**
@@ -32,18 +34,31 @@ std::unique_ptr<juce::AudioFormat> formatFor(AudioFileFormat format) {
             return std::make_unique<juce::FlacAudioFormat>();
         case AudioFileFormat::opus:
             return std::make_unique<juce::OpusAudioFormat>();
+        case AudioFileFormat::mp3:
+            return std::make_unique<Mp3AudioFormat>();
         case AudioFileFormat::wav:
             break;
     }
     return std::make_unique<juce::WavAudioFormat>();
 }
 
-/// The writer's quality option for @p bitrateKbps: 0 is the format's first
-/// option (the encoder's own choice), and a rate it does not list is unset.
-std::optional<int> qualityOptionFor(juce::AudioFormat& format, int bitrateKbps) {
-    if (bitrateKbps == 0)
+/// The writer's quality option for @p spec: no bitrate is the format's first
+/// option (the encoder's own choice), and a rate or level it does not list is unset.
+std::optional<int> qualityOptionFor(juce::AudioFormat& format, const AudioFileSpec& spec) {
+    if (!isLossy(spec.format))
+        return spec.vbrQuality ? std::nullopt : std::optional<int>(0);
+    if (spec.vbrQuality && spec.bitrateKbps != 0)
+        return std::nullopt;
+
+    juce::String option;
+    if (spec.vbrQuality)
+        option = "V" + juce::String(*spec.vbrQuality);
+    else if (spec.bitrateKbps != 0)
+        option = juce::String(spec.bitrateKbps) + " kbps";
+    else
         return 0;
-    const auto index = format.getQualityOptions().indexOf(juce::String(bitrateKbps) + " kbps");
+
+    const auto index = format.getQualityOptions().indexOf(option);
     return index > 0 ? std::optional<int>(index) : std::nullopt;
 }
 
@@ -99,7 +114,7 @@ DitherMode defaultDitherFor(int bitDepth) {
 }
 
 bool isLossy(AudioFileFormat format) {
-    return format == AudioFileFormat::opus;
+    return format == AudioFileFormat::opus || format == AudioFileFormat::mp3;
 }
 
 juce::String extensionFor(AudioFileFormat format) {
@@ -108,6 +123,8 @@ juce::String extensionFor(AudioFileFormat format) {
             return ".flac";
         case AudioFileFormat::opus:
             return ".opus";
+        case AudioFileFormat::mp3:
+            return ".mp3";
         case AudioFileFormat::wav:
             break;
     }
@@ -129,7 +146,7 @@ std::unique_ptr<AudioFileSink> AudioFileSink::create(const juce::File& destinati
 
     auto format = formatFor(spec.format);
 
-    const auto qualityOption = qualityOptionFor(*format, lossy ? spec.bitrateKbps : 0);
+    const auto qualityOption = qualityOptionFor(*format, spec);
     if (!qualityOption)
         return nullptr;
 

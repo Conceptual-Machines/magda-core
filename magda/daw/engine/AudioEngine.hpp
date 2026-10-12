@@ -53,6 +53,7 @@ enum class OfflineRenderFormat {
     Wav,
     Flac,
     Opus,
+    Mp3,
 };
 
 /** @brief What a fixed-point render is dithered with before it is rounded. */
@@ -76,6 +77,9 @@ struct OfflineRenderRequest {
 
     /// Lossy formats only; 0 lets the encoder choose.
     int bitrateKbps = 0;
+
+    /// MP3 only: a LAME VBR level, 0 (best) to 9, in place of bitrateKbps.
+    std::optional<int> vbrQuality;
 
     /// Unset lets the bit depth decide (defaultOfflineRenderDither).
     std::optional<OfflineRenderDither> dither;

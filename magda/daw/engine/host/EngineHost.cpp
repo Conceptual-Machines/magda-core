@@ -4155,6 +4155,7 @@ MasterCaptureStartStatus EngineHost::startMasterCapture(const MasterCaptureReque
         return MasterCaptureStartStatus::Unavailable;
     // MasterCaptureWriter writes WAV and FLAC only; lossy capture is #3031's to decide.
     if (request.destination == juce::File() || request.format == OfflineRenderFormat::Opus ||
+        request.format == OfflineRenderFormat::Mp3 ||
         (request.format == OfflineRenderFormat::Flac && request.bitDepth == 32))
         return MasterCaptureStartStatus::Failed;
 

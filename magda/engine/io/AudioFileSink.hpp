@@ -42,6 +42,7 @@ enum class AudioFileFormat : std::uint8_t {
     wav,
     flac,
     opus,
+    mp3,
 };
 
 /// Whether @p format is lossy: no bit depth, a bitrate instead (#2955).
@@ -58,6 +59,10 @@ struct AudioFileSpec {
     /// Lossy formats only. 0 lets the encoder choose; anything else must be one
     /// of the format's own quality options, or the spec is refused.
     int bitrateKbps = 0;
+
+    /// MP3 only: a LAME VBR level, 0 (best) to 9, in place of bitrateKbps.
+    /// Set on any other format, the spec is refused.
+    std::optional<int> vbrQuality;
 
     /// Unset lets the depth decide, which is what a caller with no opinion
     /// wants: TPDF wherever the target quantises, nothing at 32-bit float or

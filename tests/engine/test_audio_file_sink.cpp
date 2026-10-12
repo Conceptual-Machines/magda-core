@@ -9,12 +9,14 @@
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
+#include <cstring>
 #include <memory>
 #include <numbers>
 #include <optional>
 
 #include "exec/RenderContext.hpp"
 #include "io/AudioFileSink.hpp"
+#include "io/Mp3AudioFormat.hpp"
 #include "io/PcmQuantiser.hpp"
 #include "io/SourceLoopInfo.hpp"
 
@@ -230,6 +232,131 @@ TEST_CASE("An Opus bitrate is one the encoder offers", "[engine][io][2955]") {
     CHECK(AudioFileSink::create(destination("odd.opus"),
                                 {.format = AudioFileFormat::opus, .bitrateKbps = 100},
                                 RenderContext{kSampleRate, 512, 2}) == nullptr);
+}
+
+/// What a reader makes of @p file's header: rate, channels, length.
+std::unique_ptr<juce::AudioFormatReader> readerFor(const juce::File& file) {
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    return std::unique_ptr<juce::AudioFormatReader>(formats.createReaderFor(file));
+}
+
+/// The frame count in an MP3's LAME/Xing tag, or 0 if there is none.
+std::int64_t mp3TagFrames(const juce::File& file) {
+    juce::MemoryBlock bytes;
+    REQUIRE(file.loadFileAsData(bytes));
+    const auto* data = static_cast<const unsigned char*>(bytes.getData());
+
+    for (std::size_t at = 0; at + 12 <= std::min<std::size_t>(bytes.getSize(), 64); ++at) {
+        const auto isTag =
+            std::memcmp(data + at, "Xing", 4) == 0 || std::memcmp(data + at, "Info", 4) == 0;
+        if (isTag && (data[at + 7] & 0x01) != 0)
+            return (std::int64_t{data[at + 8]} << 24) | (data[at + 9] << 16) |
+                   (data[at + 10] << 8) | data[at + 11];
+    }
+    return 0;
+}
+
+// An MP3 decoder's output starts late by the encoder's delay and runs past the
+// end by its padding, a frame or two at most (LAME's tag records both).
+constexpr int kMp3Frame = 1152;
+
+TEST_CASE("An MP3 file holds the render, within what the codec loses", "[engine][io][3033]") {
+    constexpr int samples = 44100;
+    const auto source = material(2, samples);
+    const auto file =
+        writeThrough("render.mp3", {.format = AudioFileFormat::mp3, .bitrateKbps = 320}, source);
+
+    const auto stored = readBack(file);
+    REQUIRE(stored.getNumChannels() == 2);
+    // A CBR file's tag says "Info", which JUCE's reader does not parse: it
+    // counts frames from the file size and keeps the encoder's delay and padding.
+    REQUIRE(stored.getNumSamples() >= samples);
+    REQUIRE(stored.getNumSamples() <= samples + (2 * kMp3Frame));
+
+    // Lined up against the decoder's delay before comparing, which the reader
+    // does not trim.
+    auto best = -1000.0;
+    for (auto delay = 0; delay <= 2 * kMp3Frame; ++delay) {
+        juce::AudioBuffer<float> aligned(2, samples);
+        for (auto channel = 0; channel < 2; ++channel)
+            aligned.copyFrom(channel, 0, stored, channel, delay,
+                             std::min(samples, stored.getNumSamples() - delay));
+        best = std::max(best, signalToErrorDb(aligned, source));
+    }
+    CHECK(best > 20.0);
+}
+
+TEST_CASE("An MP3 render above 48 kHz is stored at its family's base rate", "[engine][io][3033]") {
+    CHECK(magda::engine::mp3FileRateFor(44100.0) == 44100);
+    CHECK(magda::engine::mp3FileRateFor(48000.0) == 48000);
+    CHECK(magda::engine::mp3FileRateFor(88200.0) == 44100);
+    CHECK(magda::engine::mp3FileRateFor(96000.0) == 48000);
+    CHECK(magda::engine::mp3FileRateFor(192000.0) == 48000);
+
+    for (const auto [renderRate, fileRate] :
+         {std::pair{96000.0, 48000.0}, std::pair{88200.0, 44100.0}}) {
+        INFO("render rate " << renderRate);
+        const auto samples = static_cast<int>(renderRate);
+        const auto file = destination("resampled.mp3");
+
+        auto sink = AudioFileSink::create(file, {.format = AudioFileFormat::mp3},
+                                          RenderContext{renderRate, samples, 2});
+        REQUIRE(sink != nullptr);
+        sink->write(material(2, samples), samples);
+        REQUIRE(sink->close());
+
+        const auto reader = readerFor(file);
+        REQUIRE(reader != nullptr);
+        CHECK(reader->sampleRate == fileRate);
+        CHECK(std::abs(reader->lengthInSamples - static_cast<juce::int64>(fileRate)) <= 1);
+    }
+}
+
+TEST_CASE("A VBR MP3 says how long it is", "[engine][io][3033]") {
+    // Frames vary in size, so only the tag at the front can say how many there
+    // are; without it a player guesses from the file size.
+    constexpr int samples = 44100;
+    const auto file = writeThrough("vbr.mp3", {.format = AudioFileFormat::mp3, .vbrQuality = 0},
+                                   material(2, samples));
+
+    const auto frames = mp3TagFrames(file);
+    CHECK(frames * kMp3Frame >= samples);
+    CHECK(frames * kMp3Frame <= samples + (3 * kMp3Frame));
+
+    // JUCE's reader takes the encoder's delay and padding from the same tag,
+    // which is what gives back the render's own length.
+    const auto reader = readerFor(file);
+    REQUIRE(reader != nullptr);
+    CHECK(reader->lengthInSamples == samples);
+}
+
+TEST_CASE("An MP3 rate or level is one the encoder offers", "[engine][io][3033]") {
+    const auto source = material(2, 44100);
+
+    const auto low =
+        writeThrough("low.mp3", {.format = AudioFileFormat::mp3, .bitrateKbps = 64}, source);
+    const auto high =
+        writeThrough("high.mp3", {.format = AudioFileFormat::mp3, .bitrateKbps = 320}, source);
+    CHECK(high.getSize() > low.getSize() * 3);
+
+    const auto best =
+        writeThrough("v0.mp3", {.format = AudioFileFormat::mp3, .vbrQuality = 0}, source);
+    const auto worst =
+        writeThrough("v9.mp3", {.format = AudioFileFormat::mp3, .vbrQuality = 9}, source);
+    CHECK(best.getSize() > worst.getSize());
+
+    const RenderContext stereo{kSampleRate, 512, 2};
+    const auto refused = [&](const AudioFileSpec& spec) {
+        return AudioFileSink::create(destination("refused.mp3"), spec, stereo) == nullptr;
+    };
+    CHECK(refused({.format = AudioFileFormat::mp3, .bitrateKbps = 100}));
+    CHECK(refused({.format = AudioFileFormat::mp3, .vbrQuality = 10}));
+    CHECK(refused({.format = AudioFileFormat::mp3, .bitrateKbps = 128, .vbrQuality = 2}));
+
+    // A VBR level is LAME's alone.
+    CHECK(refused({.format = AudioFileFormat::opus, .vbrQuality = 2}));
+    CHECK(refused({.format = AudioFileFormat::wav, .vbrQuality = 2}));
 }
 
 TEST_CASE("A rendered WAV reports its musical facts on re-import", "[engine][io][2771]") {
@@ -484,8 +611,10 @@ TEST_CASE("A refused render leaves the file that was already there", "[engine][i
     CHECK(AudioFileSink::create(file, {.format = AudioFileFormat::wav, .bitDepth = 20}, stereo) ==
           nullptr);
 
-    // Opus maps at most eight channels.
+    // Opus maps at most eight channels, and MP3 two.
     CHECK(AudioFileSink::create(file, {.format = AudioFileFormat::opus}, nine) == nullptr);
+    CHECK(AudioFileSink::create(file, {.format = AudioFileFormat::mp3},
+                                RenderContext{kSampleRate, 512, 3}) == nullptr);
 
     // Yesterday's export, still there. A render that never ran has no business
     // costing anyone the last one that did.
@@ -501,7 +630,8 @@ TEST_CASE("A render the disk did not take is not a successful render",
 #if JUCE_WINDOWS
     SUCCEED("The file size limit this needs is POSIX");
 #else
-    for (const auto format : {AudioFileFormat::wav, AudioFileFormat::flac, AudioFileFormat::opus}) {
+    for (const auto format : {AudioFileFormat::wav, AudioFileFormat::flac, AudioFileFormat::opus,
+                              AudioFileFormat::mp3}) {
         INFO("format " << static_cast<int>(format));
 
         const auto directory = emptyDirectory("full_disk");

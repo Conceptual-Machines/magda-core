@@ -686,7 +686,7 @@ target_link_libraries(magda_tests
     target_link_libraries(magda_tests PRIVATE magda_engine magda_engine_devices
                           magda_engine_host)
 
-# libmp3lame on its own, until the engine's MP3 writer links it (#3033).
+# libmp3lame's own API, which test_lame_encoder.cpp calls directly (#3032).
 target_link_libraries(magda_tests PRIVATE magda::mp3lame)
 
 # Include directories
