@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/MpeWire.hpp"
 #include "exec/RenderContext.hpp"
 #include "io/LiveInput.hpp"
 #include "io/MidiTakeRecorder.hpp"
@@ -805,6 +806,129 @@ TEST_CASE("CC and pitch bend survive with their positions", "[engine][io][record
     REQUIRE(take.active.pitchBend.size() == 1);
     CHECK(take.active.pitchBend[0].value == 10000);
     CHECK(take.active.pitchBend[0].beatPosition == Catch::Approx(1.5));
+}
+
+namespace {
+
+/// A member channel's wheel at @p semitones, the way an MPE controller sends it.
+Played glideTo(std::int64_t arrival, double semitones, int channel) {
+    return pitchBend(arrival, magda::mpe::wheelForSemitones(semitones), channel);
+}
+
+}  // namespace
+
+TEST_CASE("An MPE take keeps each member channel's bend on the note played there",
+          "[engine][io][record][midi][1571]") {
+    Rig rig(takeOf());
+    rig.schedule({
+        noteOn(kBeatSamples, 60, 100, 2),
+        noteOn(kBeatSamples, 64, 100, 3),
+        glideTo(kBeatSamples + 1000, 2.0, 2),
+        glideTo(kBeatSamples + 2000, -1.0, 3),
+        noteOff(kBeatSamples * 2, 60, 2),
+        noteOff(kBeatSamples * 2, 64, 3),
+    });
+    rig.play();
+    rig.run(kBeatSamples * 3);
+
+    const auto take = rig.finish();
+    CHECK(take.active.pitchBend.empty());
+
+    REQUIRE(take.active.notes.size() == 2);
+    const auto& low =
+        take.active.notes[0].noteNumber == 60 ? take.active.notes[0] : take.active.notes[1];
+    const auto& high =
+        take.active.notes[0].noteNumber == 60 ? take.active.notes[1] : take.active.notes[0];
+
+    REQUIRE(low.pitchExpression.size() == 1);
+    CHECK(low.pitchExpression[0].beat == Catch::Approx(0.25));
+    CHECK(low.pitchExpression[0].semitones == Catch::Approx(2.0).margin(0.01));
+
+    REQUIRE(high.pitchExpression.size() == 1);
+    CHECK(high.pitchExpression[0].beat == Catch::Approx(0.5));
+    CHECK(high.pitchExpression[0].semitones == Catch::Approx(-1.0).margin(0.01));
+}
+
+TEST_CASE("A bend sent ahead of an MPE note is where the note starts",
+          "[engine][io][record][midi][1571]") {
+    Rig rig(takeOf());
+    rig.schedule({
+        glideTo(kBeatSamples - 10, 3.0, 2),
+        noteOn(kBeatSamples, 60, 100, 2),
+        noteOff(kBeatSamples * 2, 60, 2),
+        noteOn(kBeatSamples * 2, 62, 100, 3),
+        noteOff(kBeatSamples * 3, 62, 3),
+    });
+    rig.play();
+    rig.run(kBeatSamples * 4);
+
+    const auto take = rig.finish();
+    REQUIRE(take.active.notes.size() == 2);
+    REQUIRE(take.active.notes[0].pitchExpression.size() == 1);
+    CHECK(take.active.notes[0].pitchExpression[0].beat == 0.0);
+    CHECK(take.active.notes[0].pitchExpression[0].semitones == Catch::Approx(3.0).margin(0.01));
+
+    // A channel that never left rest leaves its note plain.
+    CHECK(take.active.notes[1].pitchExpression.empty());
+}
+
+TEST_CASE("A bend that never leaves rest is no glide", "[engine][io][record][midi][1571]") {
+    Rig rig(takeOf());
+    rig.schedule({
+        noteOn(kBeatSamples, 60, 100, 2),
+        noteOn(kBeatSamples, 64, 100, 3),
+        pitchBend(kBeatSamples + 1000, magda::mpe::kPitchWheelRest, 2),
+        noteOff(kBeatSamples * 2, 60, 2),
+        noteOff(kBeatSamples * 2, 64, 3),
+    });
+    rig.play();
+    rig.run(kBeatSamples * 3);
+
+    const auto take = rig.finish();
+    REQUIRE(take.active.notes.size() == 2);
+    CHECK(take.active.notes[0].pitchExpression.empty());
+    CHECK(take.active.notes[1].pitchExpression.empty());
+}
+
+TEST_CASE("An MPE take's master channel bend stays on the clip",
+          "[engine][io][record][midi][1571]") {
+    Rig rig(takeOf());
+    rig.schedule({
+        noteOn(kBeatSamples, 60, 100, 2),
+        noteOn(kBeatSamples, 64, 100, 3),
+        pitchBend(kBeatSamples + 1000, 10000, 1),
+        noteOff(kBeatSamples * 2, 60, 2),
+        noteOff(kBeatSamples * 2, 64, 3),
+    });
+    rig.play();
+    rig.run(kBeatSamples * 3);
+
+    const auto take = rig.finish();
+    REQUIRE(take.active.pitchBend.size() == 1);
+    CHECK(take.active.pitchBend[0].value == 10000);
+    CHECK(take.active.notes[0].pitchExpression.empty());
+    CHECK(take.active.notes[1].pitchExpression.empty());
+}
+
+TEST_CASE("A keyboard on one channel other than the first keeps its bend on the clip",
+          "[engine][io][record][midi][1571]") {
+    Rig rig(takeOf());
+    rig.schedule({
+        noteOn(kBeatSamples, 60, 100, 5),
+        noteOn(kBeatSamples, 64, 100, 5),
+        pitchBend(kBeatSamples + 1000, 10000, 5),
+        noteOff(kBeatSamples * 2, 60, 5),
+        noteOff(kBeatSamples * 2, 64, 5),
+    });
+    rig.play();
+    rig.run(kBeatSamples * 3);
+
+    const auto take = rig.finish();
+    REQUIRE(take.active.pitchBend.size() == 1);
+    CHECK(take.active.pitchBend[0].value == 10000);
+    REQUIRE(take.active.notes.size() == 2);
+    CHECK(take.active.notes[0].pitchExpression.empty());
+    CHECK(take.active.notes[1].pitchExpression.empty());
 }
 
 TEST_CASE("Pressure is recorded and unsupported messages are dropped where it can be said",
