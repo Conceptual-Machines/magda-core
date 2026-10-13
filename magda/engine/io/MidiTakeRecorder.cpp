@@ -1,12 +1,15 @@
 #include "io/MidiTakeRecorder.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <functional>
 #include <span>
 #include <utility>
+#include <vector>
 
+#include "core/MpeWire.hpp"
 #include "exec/EngineDevice.hpp"
 
 namespace magda::engine {
@@ -20,6 +23,16 @@ constexpr unsigned kDataMask = 0x7fU;
 std::uint32_t entryOf(const RecordedMidiEvent& event) {
     return HeldNotes::entryFor(static_cast<int>(static_cast<unsigned>(event.status) & kChannelMask),
                                static_cast<int>(static_cast<unsigned>(event.data1) & kDataMask));
+}
+
+/// The 1-based channel an event was sent on.
+int channelOf(const RecordedMidiEvent& event) {
+    return static_cast<int>(static_cast<unsigned>(event.status) & kChannelMask) + 1;
+}
+
+/// The 1-based channel a held-note entry names.
+int channelOf(std::uint32_t entry) {
+    return static_cast<int>(entry / HeldNotes::kNotesPerChannel) + 1;
 }
 
 /// The 14 bits a pitch wheel splits across its two data bytes.
@@ -46,7 +59,31 @@ LiveMidiInput inputFor(const LiveInputFeed& feed, const MidiTakeRecorderSettings
 struct HeldNote {
     std::int64_t start = -1;
     int velocity = 0;
+    std::vector<MidiPitchExpressionPoint> glide;
 };
+
+/**
+ * @brief Whether a take was played on an MPE controller (#1571).
+ *
+ * Notes on two or more member channels. A keyboard sending on one channel,
+ * whichever, is not one: its wheel is the clip's bend lane.
+ */
+bool isMpeTake(std::span<const RecordedMidiEvent> events) {
+    std::array<bool, HeldNotes::kChannels + 1> used{};
+    auto members = 0;
+
+    for (const auto& event : events) {
+        const auto channel = channelOf(event);
+        if (kindOf(event) != MidiKind::noteOn || !mpe::isMemberChannel(channel) || used[channel])
+            continue;
+
+        used[channel] = true;
+        if (++members == 2)
+            return true;
+    }
+
+    return false;
+}
 
 /**
  * @brief A take's events, split into the passes an edge list names, in beats.
@@ -58,13 +95,16 @@ class PassWalk {
   public:
     /// @p beatOf gives the take-relative beat of a take position. An event up
     /// to @p leadIn samples before the take opens is placed on its first beat.
+    /// An @p mpe take keeps a member channel's wheel on the notes held there.
     PassWalk(std::span<const std::int64_t> edges, std::function<double(std::int64_t)> beatOf,
-             std::int64_t leadIn)
+             std::int64_t leadIn, bool mpe)
         : edges_(edges),
           beatOf_(std::move(beatOf)),
           leadIn_(leadIn),
+          mpe_(mpe),
           takes_(edges.size() - 1),
           pending_(HeldNotes::kEntries) {
+        wheel_.fill(mpe::kPitchWheelRest);
         passStart_.reserve(takes_.size());
 
         for (std::size_t pass = 0; pass < takes_.size(); ++pass)
@@ -88,10 +128,12 @@ class PassWalk {
 
     void closeNote(std::size_t pass, std::uint32_t entry, std::int64_t endSample);
     void closePass(std::size_t pass);
+    void glide(int channel, std::int64_t sample);
 
     std::span<const std::int64_t> edges_;
     std::function<double(std::int64_t)> beatOf_;
     std::int64_t leadIn_ = 0;
+    bool mpe_ = false;
     std::vector<double> passStart_;
     std::vector<MidiTake> takes_;
 
@@ -99,6 +141,9 @@ class PassWalk {
     /// preview (io/TakeNotes.hpp). What each of them is stays here.
     HeldNotes down_;
     std::vector<HeldNote> pending_;
+
+    /// Each channel's last wheel value, 1-based.
+    std::array<int, HeldNotes::kChannels + 1> wheel_{};
 
     std::size_t pass_ = 0;
     std::int64_t dropped_ = 0;
@@ -120,7 +165,36 @@ void PassWalk::closeNote(std::size_t pass, std::uint32_t entry, std::int64_t end
     played.velocity = note.velocity;
     played.startBeat = from;
     played.lengthBeats = to - from;
+
+    // A glide that never left the note's pitch is no glide: any expression at
+    // all puts the whole clip on member channels at playback.
+    const auto bent =
+        std::ranges::any_of(note.glide, [](const auto& point) { return point.semitones != 0.0; });
+    if (bent)
+        for (const auto& point : note.glide)
+            if (point.beat <= played.lengthBeats)
+                played.pitchExpression.push_back(point);
+
     takes_[pass].notes.push_back(played);
+}
+
+// The wheel as it stands, on every note held on the channel. MPE gives a note a
+// channel of its own, so that is one note unless the controller ran out.
+void PassWalk::glide(int channel, std::int64_t sample) {
+    const auto semitones = mpe::semitonesForWheel(wheel_[static_cast<std::size_t>(channel)]);
+
+    for (const auto entry : down_.down()) {
+        if (channelOf(entry) != channel)
+            continue;
+
+        auto& note = pending_[entry];
+        const auto beat = std::max(0.0, beatIn(pass_, sample) - beatIn(pass_, note.start));
+
+        if (!note.glide.empty() && note.glide.back().beat >= beat)
+            note.glide.back().semitones = semitones;
+        else
+            note.glide.push_back({.beat = beat, .semitones = semitones});
+    }
 }
 
 // A note held across a wrap belongs to the pass it started in, once.
@@ -151,7 +225,14 @@ void PassWalk::add(const RecordedMidiEvent& played) {
             // close two of one pitch (io/TakeNotes.hpp).
             const auto entry = entryOf(event);
             down_.hold(entry);
-            pending_[entry] = {.start = event.sample, .velocity = event.data2};
+            pending_[entry] = {.start = event.sample, .velocity = event.data2, .glide = {}};
+
+            // The wheel the channel already stands at is where the note sounds:
+            // a controller sends the bend ahead of the note it belongs to.
+            const auto channel = channelOf(event);
+            if (mpe_ && mpe::isMemberChannel(channel) &&
+                wheel_[static_cast<std::size_t>(channel)] != mpe::kPitchWheelRest)
+                glide(channel, event.sample);
             break;
         }
 
@@ -172,6 +253,12 @@ void PassWalk::add(const RecordedMidiEvent& played) {
         }
 
         case MidiKind::pitchBend: {
+            if (const auto channel = channelOf(event); mpe_ && mpe::isMemberChannel(channel)) {
+                wheel_[static_cast<std::size_t>(channel)] = pitchBendValue(event);
+                glide(channel, event.sample);
+                break;
+            }
+
             MidiPitchBendData bend;
             bend.value = pitchBendValue(event);
             bend.beatPosition = beatIn(pass_, event.sample);
@@ -587,7 +674,8 @@ double MidiTakeRecorder::beatAt(const TempoMap& tempo, double moment) const {
 std::vector<MidiTake> MidiTakeRecorder::passesFrom(const TempoMap& tempo,
                                                    std::span<const std::int64_t> edges) {
     PassWalk walk(
-        edges, [&](std::int64_t sample) { return beatAt(tempo, timeAt(sample)); }, leadInSamples_);
+        edges, [&](std::int64_t sample) { return beatAt(tempo, timeAt(sample)); }, leadInSamples_,
+        isMpeTake(sink_.events()));
 
     for (const auto& event : sink_.events())
         walk.add(event);

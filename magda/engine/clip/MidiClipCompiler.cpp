@@ -7,6 +7,7 @@
 #include <map>
 #include <tuple>
 
+#include "core/MpeWire.hpp"
 #include "core/PitchExpressionCurve.hpp"
 
 namespace magda::engine {
@@ -30,14 +31,10 @@ constexpr std::uint8_t kMpePressureRest = 0;
 /// whole: a stream of no-op wheel messages is pointless and deadlocks fragile
 /// synths (#1193). A curve that returns to rest still has a non-rest event in it
 /// and is kept.
-constexpr int kPitchWheelRest = 8192;
+constexpr int kPitchWheelRest = mpe::kPitchWheelRest;
 
-/// The fixed MPE conversion range, which is what the model's semitones mean.
-constexpr double kMpeSemitoneRange = 48.0;
-
-/// Lower zone: master on channel 1, members on 2 to 16.
-constexpr int kMpeFirstMemberChannel = 2;
-constexpr int kMpeLastMemberChannel = 16;
+constexpr int kMpeFirstMemberChannel = mpe::kFirstMemberChannel;
+constexpr int kMpeLastMemberChannel = mpe::kLastMemberChannel;
 
 /// Ordering at equal beats. Controllers before notes because a bank or program
 /// change has to land before the note it configures; offs before ons because two
@@ -221,14 +218,6 @@ int assignMpeChannel(
     return best + kMpeFirstMemberChannel;
 }
 
-/// The model's semitones as a 14-bit wheel value.
-int wheelForSemitones(double semitones) {
-    const auto clamped = std::clamp(semitones, -kMpeSemitoneRange, kMpeSemitoneRange);
-    return std::clamp(
-        static_cast<int>(std::lround(kPitchWheelRest + clamped / kMpeSemitoneRange * 8191.0)), 0,
-        16383);
-}
-
 }  // namespace
 
 MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
@@ -368,7 +357,7 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
             auto lastBeat = -std::numeric_limits<double>::max();
 
             const auto put = [&](double relativeBeat, bool authored) {
-                const auto value = wheelForSemitones(valueAt(relativeBeat));
+                const auto value = mpe::wheelForSemitones(valueAt(relativeBeat));
                 if (value == lastValue)
                     return;
                 if (!authored && relativeBeat - lastBeat < curveFloorBeats)
