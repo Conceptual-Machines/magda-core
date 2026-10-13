@@ -10,6 +10,37 @@
 
 namespace magda {
 
+namespace {
+
+/// A note's expression lane cut at @p offset: the head keeps what is before it,
+/// the tail what is from it on, moved to its own start.
+template <typename Point>
+void splitLane(const std::vector<Point>& lane, double offset, std::vector<Point>& head,
+               std::vector<Point>& tail) {
+    head.clear();
+    tail.clear();
+    for (auto point : lane) {
+        if (point.beat < offset) {
+            head.push_back(point);
+        } else {
+            point.beat -= offset;
+            tail.push_back(point);
+        }
+    }
+}
+
+/// @p follower's lane, @p offset beats in, merged into @p lane.
+template <typename Point>
+void joinLane(std::vector<Point>& lane, const std::vector<Point>& follower, double offset) {
+    for (auto point : follower) {
+        point.beat += offset;
+        lane.push_back(point);
+    }
+    std::ranges::sort(lane, {}, &Point::beat);
+}
+
+}  // namespace
+
 SetMidiEventStateCommand::SetMidiEventStateCommand(ClipId clipId, MidiEventState before,
                                                    MidiEventState after, juce::String description)
     : clipId_(clipId),
@@ -44,16 +75,9 @@ std::optional<MidiEventState> splitMidiNoteAt(const MidiEventState& state, size_
     tail.startBeat = splitBeat;
     tail.lengthBeats = note.lengthBeats - offset;
     tail.id = INVALID_EVENT_ID;
-    head.pitchExpression.clear();
-    tail.pitchExpression.clear();
-    for (auto point : note.pitchExpression) {
-        if (point.beat < offset) {
-            head.pitchExpression.push_back(point);
-        } else {
-            point.beat -= offset;
-            tail.pitchExpression.push_back(point);
-        }
-    }
+    splitLane(note.pitchExpression, offset, head.pitchExpression, tail.pitchExpression);
+    splitLane(note.timbreExpression, offset, head.timbreExpression, tail.timbreExpression);
+    splitLane(note.pressureExpression, offset, head.pressureExpression, tail.pressureExpression);
 
     auto after = state;
     tail.id = after.nextEventId++;
@@ -84,11 +108,9 @@ std::optional<MidiEventState> glueMidiNoteToNext(const MidiEventState& state, si
     auto& joined = after.notes[noteIndex];
     const double offset = follower.startBeat - note.startBeat;
     joined.lengthBeats = std::max(note.lengthBeats, offset + follower.lengthBeats);
-    for (auto point : follower.pitchExpression) {
-        point.beat += offset;
-        joined.pitchExpression.push_back(point);
-    }
-    std::ranges::sort(joined.pitchExpression, {}, &MidiPitchExpressionPoint::beat);
+    joinLane(joined.pitchExpression, follower.pitchExpression, offset);
+    joinLane(joined.timbreExpression, follower.timbreExpression, offset);
+    joinLane(joined.pressureExpression, follower.pressureExpression, offset);
     after.notes.erase(after.notes.begin() + static_cast<std::ptrdiff_t>(*next));
     return after;
 }

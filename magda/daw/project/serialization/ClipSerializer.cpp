@@ -1106,6 +1106,48 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     return true;
 }
 
+namespace {
+
+/// A timbre or pressure lane as written, or nothing when the lane is empty.
+void writeNoteExpression(juce::DynamicObject& note, const juce::Identifier& key,
+                         const std::vector<MidiNoteExpressionPoint>& lane) {
+    if (lane.empty())
+        return;
+
+    juce::Array<juce::var> points;
+    for (const auto& p : lane) {
+        auto* pObj = new juce::DynamicObject();
+        pObj->setProperty("beat", p.beat);
+        pObj->setProperty("value", p.value);
+        if (p.tension != 0.0)
+            pObj->setProperty("tension", p.tension);
+        points.add(juce::var(pObj));
+    }
+    note.setProperty(key, juce::var(points));
+}
+
+std::vector<MidiNoteExpressionPoint> readNoteExpression(const juce::DynamicObject& note,
+                                                        const juce::Identifier& key) {
+    std::vector<MidiNoteExpressionPoint> lane;
+    const auto points = note.getProperty(key);
+    if (!points.isArray())
+        return lane;
+
+    for (const auto& pVar : *points.getArray()) {
+        if (auto* pObj = pVar.getDynamicObject()) {
+            MidiNoteExpressionPoint p;
+            p.beat = pObj->getProperty("beat");
+            p.value = pObj->getProperty("value");
+            if (pObj->hasProperty("tension"))
+                p.tension = pObj->getProperty("tension");
+            lane.push_back(p);
+        }
+    }
+    return lane;
+}
+
+}  // namespace
+
 juce::var ProjectSerializer::serializeMidiNote(const MidiNote& data) {
     auto* obj = new juce::DynamicObject();
     SER(noteNumber);
@@ -1128,6 +1170,8 @@ juce::var ProjectSerializer::serializeMidiNote(const MidiNote& data) {
         }
         obj->setProperty("pitchExpression", juce::var(points));
     }
+    writeNoteExpression(*obj, "timbreExpression", data.timbreExpression);
+    writeNoteExpression(*obj, "pressureExpression", data.pressureExpression);
     if (data.keyswitch)
         obj->setProperty("keyswitch", true);
     if (data.id != INVALID_EVENT_ID)
@@ -1166,6 +1210,8 @@ bool ProjectSerializer::deserializeMidiNote(const juce::var& json, MidiNote& dat
             }
         }
     }
+    data.timbreExpression = readNoteExpression(*obj, "timbreExpression");
+    data.pressureExpression = readNoteExpression(*obj, "pressureExpression");
     return true;
 }
 

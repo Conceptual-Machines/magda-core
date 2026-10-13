@@ -42,4 +42,19 @@ inline double semitonesForWheel(int wheel) {
                       -kSemitoneRange, kSemitoneRange);
 }
 
+/// The timbre dimension's controller, and where timbre and pressure rest.
+constexpr int kTimbreController = 74;
+constexpr int kTimbreRest = 64;
+constexpr int kPressureRest = 0;
+
+/// A timbre or pressure value, 0..1, as its 7-bit wire value.
+inline int wireForValue(double value) {
+    return std::clamp(static_cast<int>(std::lround(value * 127.0)), 0, 127);
+}
+
+/// A 7-bit timbre or pressure wire value as the model's 0..1.
+constexpr double valueForWire(int wire) {
+    return std::clamp(wire, 0, 127) / 127.0;
+}
+
 }  // namespace magda::mpe

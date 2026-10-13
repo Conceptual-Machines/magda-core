@@ -21,11 +21,7 @@ constexpr std::uint8_t kControlChange = 0xb0;
 constexpr std::uint8_t kChannelPressure = 0xd0;
 constexpr std::uint8_t kPitchWheel = 0xe0;
 
-/// The MPE timbre dimension, and the two values a note opens with. Timbre rests
-/// at the centre of its range and pressure at the bottom of its.
-constexpr std::uint8_t kMpeTimbreController = 74;
-constexpr std::uint8_t kMpeTimbreRest = 64;
-constexpr std::uint8_t kMpePressureRest = 0;
+constexpr auto kMpeTimbreController = static_cast<std::uint8_t>(mpe::kTimbreController);
 
 /// The wheel at rest. A clip whose every pitch-bend event sits here is skipped
 /// whole: a stream of no-op wheel messages is pointless and deadlocks fragile
@@ -218,6 +214,57 @@ int assignMpeChannel(
     return best + kMpeFirstMemberChannel;
 }
 
+/**
+ * @brief A per-note curve as wire values, from the note's start to its end.
+ *
+ * Densified like any other curve rather than on a coarse grid: expression is
+ * heard most directly. @p emit gets each change of value; @p lastWire is the
+ * value the channel already carries, so a start that matches it is not resent.
+ */
+template <typename Point, typename WireAt, typename Emit>
+void walkNoteCurve(std::vector<Point> points, double lengthBeats, double curveFloorBeats,
+                   int lastWire, WireAt wireAt, Emit emit) {
+    std::ranges::stable_sort(points, {}, &Point::beat);
+
+    auto lastBeat = -std::numeric_limits<double>::max();
+
+    const auto put = [&](double relativeBeat, bool authored) {
+        const auto value = wireAt(points, relativeBeat);
+        if (value == lastWire)
+            return;
+        if (!authored && relativeBeat - lastBeat < curveFloorBeats)
+            return;
+
+        emit(relativeBeat, value);
+        lastWire = value;
+        lastBeat = relativeBeat;
+    };
+
+    // The value at the note's own start, so playback begins on the curve
+    // rather than at rest and glides onto it.
+    put(0.0, true);
+
+    for (std::size_t p = 0; p + 1 < points.size(); ++p) {
+        const auto from = std::max(0.0, points[p].beat);
+        const auto to = std::min(lengthBeats, points[p + 1].beat);
+        if (to <= from)
+            continue;
+
+        const auto byFloor = curveFloorBeats > 0.0
+                                 ? static_cast<int>(std::ceil((to - from) / curveFloorBeats))
+                                 : kMaxCurveStepsPerSegment;
+        const auto steps = std::clamp(byFloor, 1, kMaxCurveStepsPerSegment);
+
+        for (auto k = 0; k <= steps; ++k)
+            put(from + (to - from) * k / steps, k == 0);
+    }
+}
+
+/// A timbre or pressure curve's wire value at a beat into its note.
+int expressionWireAt(const std::vector<MidiNoteExpressionPoint>& points, double relativeBeat) {
+    return mpe::wireForValue(evaluateNoteExpressionCurve(points, relativeBeat));
+}
+
 }  // namespace
 
 MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
@@ -230,8 +277,8 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
     auto notes = clip.midiNotes;
     std::ranges::stable_sort(notes, {}, &MidiNote::startBeat);
 
-    const auto hasPitchExpression = [](const MidiNote& note) { return note.hasPitchExpression(); };
-    list.mpe = std::ranges::any_of(notes, hasPitchExpression);
+    const auto hasExpression = [](const MidiNote& note) { return note.hasExpression(); };
+    list.mpe = std::ranges::any_of(notes, hasExpression);
 
     std::array<MpeChannel, kMpeLastMemberChannel - kMpeFirstMemberChannel + 1> mpeChannels{};
     std::vector<int> channelOf(notes.size(), 1);
@@ -307,21 +354,25 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
         // set, which under a round-robin is another note's expression: the
         // channel is reused, so the state is inherited rather than fresh.
         //
-        // At their resting values, because the model carries neither dimension:
-        // per-note expression here is pitch, and nothing in the clip can move
-        // timbre or pressure. Sending them at rest makes the channel mean the
-        // same thing to a synth on every note.
+        // A note with no curve for a dimension opens it at rest, so the channel
+        // means the same thing to a synth on every note.
         //
         // Ordered before the note-on by the same rule as everything else at one
         // instant: controllers, then pitch bend, then offs, then ons.
+        const auto timbreAtStart = note.timbreExpression.empty()
+                                       ? mpe::kTimbreRest
+                                       : expressionWireAt(note.timbreExpression, 0.0);
+        const auto pressureAtStart = note.pressureExpression.empty()
+                                         ? mpe::kPressureRest
+                                         : expressionWireAt(note.pressureExpression, 0.0);
         if (list.mpe) {
-            pending.push_back(
-                PendingEvent{MidiClipEvent{note.startBeat, statusFor(kControlChange, channel),
-                                           kMpeTimbreController, kMpeTimbreRest, 0.0},
-                             pairId});
+            pending.push_back(PendingEvent{
+                MidiClipEvent{note.startBeat, statusFor(kControlChange, channel),
+                              kMpeTimbreController, static_cast<std::uint8_t>(timbreAtStart), 0.0},
+                pairId});
             pending.push_back(
                 PendingEvent{MidiClipEvent{note.startBeat, statusFor(kChannelPressure, channel),
-                                           kMpePressureRest, 0, 0.0},
+                                           static_cast<std::uint8_t>(pressureAtStart), 0, 0.0},
                              pairId});
         }
 
@@ -337,63 +388,51 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
 
         list.longestNoteBeats = std::max(list.longestNoteBeats, note.lengthBeats);
 
-        // ---- Per-note pitch expression -------------------------------------
+        // ---- Per-note expression -------------------------------------------
         //
-        // Densified like any other curve rather than on a coarse
-        // grid: expression is pitch, which is where a coarse grid is heard most directly.
-        if (list.mpe && note.hasPitchExpression()) {
-            auto points = note.pitchExpression;
-            const auto beatOf = [](const auto& point) { return point.beat; };
-            std::ranges::stable_sort(points, {}, beatOf);
+        // Pitch shaped by core, so what compiles is what the piano roll drew
+        // (#2198); timbre and pressure the same way (#1571).
+        if (!list.mpe)
+            continue;
 
-            // Shape from core, so what compiles is what the piano roll drew
-            // (#2198). The densification below is unchanged: it already walks
-            // each segment finely enough for a bend to survive it.
-            const auto valueAt = [&points](double beat) {
-                return evaluatePitchExpressionCurve(points, beat);
-            };
+        auto& channelState =
+            mpeChannels[static_cast<std::size_t>(channel - kMpeFirstMemberChannel)];
 
-            auto lastValue = std::numeric_limits<int>::min();
-            auto lastBeat = -std::numeric_limits<double>::max();
+        if (note.hasPitchExpression())
+            walkNoteCurve(
+                note.pitchExpression, note.lengthBeats, curveFloorBeats,
+                std::numeric_limits<int>::min(),
+                [](const auto& points, double beat) {
+                    return mpe::wheelForSemitones(evaluatePitchExpressionCurve(points, beat));
+                },
+                [&](double beat, int value) {
+                    pending.push_back(PendingEvent{
+                        MidiClipEvent{note.startBeat + beat, statusFor(kPitchWheel, channel),
+                                      static_cast<std::uint8_t>(value & 0x7f),
+                                      static_cast<std::uint8_t>((value >> 7) & 0x7f), 0.0},
+                        -1});
+                    channelState.lastWheel = value;
+                });
 
-            const auto put = [&](double relativeBeat, bool authored) {
-                const auto value = mpe::wheelForSemitones(valueAt(relativeBeat));
-                if (value == lastValue)
-                    return;
-                if (!authored && relativeBeat - lastBeat < curveFloorBeats)
-                    return;
+        if (!note.timbreExpression.empty())
+            walkNoteCurve(
+                note.timbreExpression, note.lengthBeats, curveFloorBeats, timbreAtStart,
+                expressionWireAt, [&](double beat, int value) {
+                    pending.push_back(PendingEvent{
+                        MidiClipEvent{note.startBeat + beat, statusFor(kControlChange, channel),
+                                      kMpeTimbreController, static_cast<std::uint8_t>(value), 0.0},
+                        -1});
+                });
 
-                pending.push_back(PendingEvent{
-                    MidiClipEvent{note.startBeat + relativeBeat, statusFor(kPitchWheel, channel),
-                                  static_cast<std::uint8_t>(value & 0x7f),
-                                  static_cast<std::uint8_t>((value >> 7) & 0x7f), 0.0},
-                    -1});
-                lastValue = value;
-                lastBeat = relativeBeat;
-                mpeChannels[static_cast<std::size_t>(channel - kMpeFirstMemberChannel)].lastWheel =
-                    value;
-            };
-
-            // The value at the note's own start, so playback begins on the
-            // curve rather than at rest and glides onto it.
-            put(0.0, true);
-
-            for (std::size_t p = 0; p + 1 < points.size(); ++p) {
-                const auto from = std::max(0.0, points[p].beat);
-                const auto to = std::min(note.lengthBeats, points[p + 1].beat);
-                if (to <= from)
-                    continue;
-
-                const auto byFloor =
-                    curveFloorBeats > 0.0
-                        ? static_cast<int>(std::ceil((to - from) / curveFloorBeats))
-                        : kMaxCurveStepsPerSegment;
-                const auto steps = std::clamp(byFloor, 1, kMaxCurveStepsPerSegment);
-
-                for (auto k = 0; k <= steps; ++k)
-                    put(from + (to - from) * k / steps, k == 0);
-            }
-        }
+        if (!note.pressureExpression.empty())
+            walkNoteCurve(
+                note.pressureExpression, note.lengthBeats, curveFloorBeats, pressureAtStart,
+                expressionWireAt, [&](double beat, int value) {
+                    pending.push_back(PendingEvent{
+                        MidiClipEvent{note.startBeat + beat, statusFor(kChannelPressure, channel),
+                                      static_cast<std::uint8_t>(value), 0, 0.0},
+                        -1});
+                });
     }
 
     // ---- Controllers -------------------------------------------------------

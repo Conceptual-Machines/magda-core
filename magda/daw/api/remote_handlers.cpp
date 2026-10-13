@@ -1610,7 +1610,7 @@ bool sameProgression(const ClipInfo& clip, const std::vector<ProgressionChord>& 
             if (actual.noteNumber != note.noteNumber || actual.velocity != note.velocity ||
                 actual.startBeat != note.startBeat || actual.lengthBeats != note.lengthBeats ||
                 actual.chordGroup != static_cast<int>(i + 1) || actual.keyswitch ||
-                !actual.pitchExpression.empty())
+                actual.hasExpression())
                 return false;
         }
     }

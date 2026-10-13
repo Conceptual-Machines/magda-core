@@ -34,6 +34,7 @@ using magda::MidiCCData;
 using magda::MidiChannelPressureData;
 using magda::MidiCurveType;
 using magda::MidiNote;
+using magda::MidiNoteExpressionPoint;
 using magda::MidiPitchBendData;
 using magda::MidiPitchExpressionPoint;
 using magda::MidiPolyAftertouchData;
@@ -477,8 +478,7 @@ TEST_CASE("An MPE note opens with the dimensions the specification asks for",
     CHECK(*timbre < *noteOn);
     CHECK(*pressure < *noteOn);
 
-    // At rest, because the model carries neither dimension: expression here is
-    // pitch, and nothing in a clip can move timbre or pressure.
+    // At rest, because this note has a glide and no timbre or pressure.
     CHECK(static_cast<int>(list.events[*timbre].data2) == 64);
     CHECK(static_cast<int>(list.events[*pressure].data1) == 0);
 
@@ -488,6 +488,54 @@ TEST_CASE("An MPE note opens with the dimensions the specification asks for",
     CHECK(list.events[*timbre].channel() == memberChannel);
     CHECK(list.events[*pressure].channel() == memberChannel);
     CHECK(memberChannel >= 2);
+}
+
+TEST_CASE("A note's timbre and pressure ride its member channel from where they start",
+          "[engine][clip][midi][1571]") {
+    auto clip = makeMidiClip(1, 0.0, 4.0);
+
+    auto expressive = note(60, 1.0, 2.0);
+    expressive.timbreExpression = {MidiNoteExpressionPoint{0.0, 0.25},
+                                   MidiNoteExpressionPoint{2.0, 1.0}};
+    expressive.pressureExpression = {MidiNoteExpressionPoint{1.0, 0.5}};
+    clip.midiNotes.push_back(expressive);
+
+    const auto list = compileMidiEvents(clip, 0.01);
+    REQUIRE(list.mpe);
+
+    int memberChannel = 0;
+    std::vector<int> timbres;
+    std::vector<int> pressures;
+    for (const auto& event : list.events) {
+        if (event.isNoteOn())
+            memberChannel = event.channel();
+        if (event.kind() == 0xb0u && event.data1 == 74)
+            timbres.push_back(event.data2);
+        if (event.kind() == 0xd0u)
+            pressures.push_back(event.data1);
+    }
+
+    CHECK(memberChannel >= 2);
+    for (const auto& event : list.events)
+        if (event.kind() == 0xb0u || event.kind() == 0xd0u)
+            CHECK(event.channel() == memberChannel);
+
+    // Timbre opens on its curve and rises along it; pressure, one point, holds.
+    REQUIRE(timbres.size() > 2);
+    CHECK(timbres.front() == 32);
+    CHECK(timbres.back() == 127);
+    CHECK(std::ranges::is_sorted(timbres));
+    CHECK(pressures == std::vector<int>{64});
+}
+
+TEST_CASE("Timbre alone makes a clip MPE", "[engine][clip][midi][1571]") {
+    auto clip = makeMidiClip(1, 0.0, 4.0);
+    auto bright = note(60, 0.0, 1.0);
+    bright.timbreExpression = {MidiNoteExpressionPoint{0.0, 1.0}};
+    clip.midiNotes.push_back(bright);
+
+    const auto list = compileMidiEvents(clip, 0.0);
+    CHECK(list.mpe);
 }
 
 TEST_CASE("A clip with no expression opens no MPE dimensions", "[engine][clip][midi]") {

@@ -13,7 +13,8 @@ Manual setup, once:
     python3 scripts/mpe_record_check.py --port "IAC Driver Bus 1"
 
 The API does not return a note's pitch expression, so the glides are checked by eye in the
-piano roll. What it can check is that the bends left the clip's bend lane for the notes.
+piano roll. What it can check is that the bends, CC74 and pressure left the clip's lanes for
+the notes.
 """
 
 import argparse
@@ -23,6 +24,9 @@ import time
 from build_synthstack_session import Magda
 
 PITCH_WHEEL = 0xE0
+CONTROL_CHANGE = 0xB0
+CHANNEL_PRESSURE = 0xD0
+TIMBRE = 74
 NOTE_ON = 0x90
 NOTE_OFF = 0x80
 REST = 8192
@@ -53,6 +57,17 @@ def glide(magda, port, channel, to, seconds, steps=24):
         time.sleep(seconds / steps)
 
 
+def sweep(magda, port, status, channel, frm, to, seconds, steps=24):
+    """A 7-bit dimension, timbre or pressure, moved from one value to another."""
+    for step in range(steps + 1):
+        value = round(frm + (to - frm) * step / steps)
+        if status == CONTROL_CHANGE:
+            send(magda, port, status | (channel - 1), TIMBRE, value)
+        else:
+            send(magda, port, status | (channel - 1), value)
+        time.sleep(seconds / steps)
+
+
 def perform(magda, port):
     """Three notes on three member channels, the way an MPE controller sends them."""
     bend(magda, port, 2, 0.0)
@@ -72,9 +87,22 @@ def perform(magda, port):
     note(magda, port, 4, 67, True)
     time.sleep(0.8)
     note(magda, port, 4, 67, False)
+    time.sleep(0.3)
+
+    # Slide and pressure: timbre opens dark and brightens, pressure swells and fades.
+    send(magda, port, CONTROL_CHANGE | 4, TIMBRE, 20)
+    note(magda, port, 5, 72, True)
+    sweep(magda, port, CONTROL_CHANGE, 5, 20, 120, 0.8)
+    note(magda, port, 6, 76, True)
+    sweep(magda, port, CHANNEL_PRESSURE, 6, 0, 127, 0.4)
+    sweep(magda, port, CHANNEL_PRESSURE, 6, 127, 30, 0.4)
+    note(magda, port, 5, 72, False)
+    note(magda, port, 6, 76, False)
 
     for channel in (2, 3, 4):
         bend(magda, port, channel, 0.0)
+    send(magda, port, CONTROL_CHANGE | 4, TIMBRE, 64)
+    send(magda, port, CHANNEL_PRESSURE | 5, 0)
 
 
 def items(result):
@@ -132,13 +160,16 @@ def main():
     events = items(magda.call("clips.listMidiEvents", {"clipId": clips[-1]["id"]}))
     notes = [e for e in events if e["type"] == "note"]
     bends = [e for e in events if e["type"] == "pitchBend"]
+    timbres = [e for e in events if e["type"] == "controlChange" and e["controller"] == TIMBRE]
+    pressures = [e for e in events if e["type"] == "channelPressure"]
 
-    print(f"track {track}, clip {clips[-1]['id']}: {len(notes)} notes, "
-          f"{len(bends)} clip-lane bends")
-    ok = len(notes) == 3 and not bends
-    print("PASS" if ok else "FAIL: expected 3 notes and an empty bend lane")
+    print(f"track {track}, clip {clips[-1]['id']}: {len(notes)} notes; clip lanes hold "
+          f"{len(bends)} bends, {len(timbres)} timbre, {len(pressures)} pressure")
+    ok = len(notes) == 5 and not bends and not timbres and not pressures
+    print("PASS" if ok else "FAIL: expected 5 notes and empty bend, CC74 and pressure lanes")
     print("Now open the clip, switch the piano roll to pitch expression, and look for:\n"
-          "  C4  rising 2 semitones, E4  falling 1, G4  starting 3 up and flat.")
+          "  C4  rising 2 semitones, E4  falling 1, G4  starting 3 up and flat.\n"
+          "C5 and E5 carry slide and pressure, which the piano roll does not draw yet.")
     return 0 if ok else 1
 
 

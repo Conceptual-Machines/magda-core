@@ -20,6 +20,8 @@ TEST_CASE("Split a note at a beat", "[midi][split]") {
     MidiEventState state;
     state.notes = {makeNote(60, 1.0, 2.0, 1)};
     state.notes[0].pitchExpression = {{0.5, 1.0}, {1.5, -1.0}};
+    state.notes[0].timbreExpression = {{0.5, 0.2}, {1.5, 0.8}};
+    state.notes[0].pressureExpression = {{0.25, 0.6}};
     state.nextEventId = 2;
 
     SECTION("inside the note gives a head and a tail") {
@@ -35,6 +37,11 @@ TEST_CASE("Split a note at a beat", "[midi][split]") {
         REQUIRE(after->notes[0].pitchExpression.size() == 1);
         REQUIRE(after->notes[1].pitchExpression.size() == 1);
         CHECK(after->notes[1].pitchExpression[0].beat == Approx(0.5));
+        REQUIRE(after->notes[0].timbreExpression.size() == 1);
+        REQUIRE(after->notes[1].timbreExpression.size() == 1);
+        CHECK(after->notes[1].timbreExpression[0].beat == Approx(0.5));
+        CHECK(after->notes[0].pressureExpression.size() == 1);
+        CHECK(after->notes[1].pressureExpression.empty());
     }
 
     SECTION("on an edge or outside does nothing") {

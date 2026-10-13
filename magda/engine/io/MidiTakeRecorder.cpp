@@ -55,12 +55,36 @@ LiveMidiInput inputFor(const LiveInputFeed& feed, const MidiTakeRecorderSettings
     return LiveMidiInput(feed, settings.source, settings.latencySamples);
 }
 
-/// A note that has sounded and not yet stopped.
+/// A note that has sounded and not yet stopped, and its MPE dimensions so far.
 struct HeldNote {
     std::int64_t start = -1;
     int velocity = 0;
     std::vector<MidiPitchExpressionPoint> glide;
+    std::vector<MidiNoteExpressionPoint> timbre;
+    std::vector<MidiNoteExpressionPoint> pressure;
 };
+
+/// Where a member channel's three dimensions stand.
+struct MemberChannel {
+    int wheel = mpe::kPitchWheelRest;
+    int timbre = mpe::kTimbreRest;
+    int pressure = mpe::kPressureRest;
+};
+
+/// The points of @p lane inside a note @p length long, or none when every one
+/// of them is @p rest: any expression puts the whole clip on member channels.
+template <typename Point, typename ValueOf>
+std::vector<Point> keptLane(const std::vector<Point>& lane, double length, double rest,
+                            ValueOf valueOf) {
+    std::vector<Point> kept;
+    if (std::ranges::none_of(lane, [&](const auto& point) { return valueOf(point) != rest; }))
+        return kept;
+
+    for (const auto& point : lane)
+        if (point.beat <= length)
+            kept.push_back(point);
+    return kept;
+}
 
 /**
  * @brief Whether a take was played on an MPE controller (#1571).
@@ -104,7 +128,6 @@ class PassWalk {
           mpe_(mpe),
           takes_(edges.size() - 1),
           pending_(HeldNotes::kEntries) {
-        wheel_.fill(mpe::kPitchWheelRest);
         passStart_.reserve(takes_.size());
 
         for (std::size_t pass = 0; pass < takes_.size(); ++pass)
@@ -128,7 +151,10 @@ class PassWalk {
 
     void closeNote(std::size_t pass, std::uint32_t entry, std::int64_t endSample);
     void closePass(std::size_t pass);
-    void glide(int channel, std::int64_t sample);
+    void dimension(int channel, std::int64_t sample);
+
+    template <typename Point>
+    void mark(int channel, std::int64_t sample, std::vector<Point> HeldNote::*lane, Point point);
 
     std::span<const std::int64_t> edges_;
     std::function<double(std::int64_t)> beatOf_;
@@ -142,8 +168,8 @@ class PassWalk {
     HeldNotes down_;
     std::vector<HeldNote> pending_;
 
-    /// Each channel's last wheel value, 1-based.
-    std::array<int, HeldNotes::kChannels + 1> wheel_{};
+    /// 1-based, so a channel is its own index.
+    std::array<MemberChannel, HeldNotes::kChannels + 1> channels_{};
 
     std::size_t pass_ = 0;
     std::int64_t dropped_ = 0;
@@ -166,35 +192,51 @@ void PassWalk::closeNote(std::size_t pass, std::uint32_t entry, std::int64_t end
     played.startBeat = from;
     played.lengthBeats = to - from;
 
-    // A glide that never left the note's pitch is no glide: any expression at
-    // all puts the whole clip on member channels at playback.
-    const auto bent =
-        std::ranges::any_of(note.glide, [](const auto& point) { return point.semitones != 0.0; });
-    if (bent)
-        for (const auto& point : note.glide)
-            if (point.beat <= played.lengthBeats)
-                played.pitchExpression.push_back(point);
+    const auto value = [](const auto& point) { return point.value; };
+    played.pitchExpression = keptLane(note.glide, played.lengthBeats, 0.0,
+                                      [](const auto& point) { return point.semitones; });
+    played.timbreExpression =
+        keptLane(note.timbre, played.lengthBeats, mpe::valueForWire(mpe::kTimbreRest), value);
+    played.pressureExpression =
+        keptLane(note.pressure, played.lengthBeats, mpe::valueForWire(mpe::kPressureRest), value);
 
     takes_[pass].notes.push_back(played);
 }
 
-// The wheel as it stands, on every note held on the channel. MPE gives a note a
-// channel of its own, so that is one note unless the controller ran out.
-void PassWalk::glide(int channel, std::int64_t sample) {
-    const auto semitones = mpe::semitonesForWheel(wheel_[static_cast<std::size_t>(channel)]);
-
+// The dimension as it stands, on every note held on the channel. MPE gives a
+// note a channel of its own, so that is one note unless the controller ran out.
+template <typename Point>
+void PassWalk::mark(int channel, std::int64_t sample, std::vector<Point> HeldNote::*lane,
+                    Point point) {
     for (const auto entry : down_.down()) {
         if (channelOf(entry) != channel)
             continue;
 
         auto& note = pending_[entry];
-        const auto beat = std::max(0.0, beatIn(pass_, sample) - beatIn(pass_, note.start));
+        auto& points = note.*lane;
+        point.beat = std::max(0.0, beatIn(pass_, sample) - beatIn(pass_, note.start));
 
-        if (!note.glide.empty() && note.glide.back().beat >= beat)
-            note.glide.back().semitones = semitones;
+        if (!points.empty() && points.back().beat >= point.beat)
+            points.back() = point;
         else
-            note.glide.push_back({.beat = beat, .semitones = semitones});
+            points.push_back(point);
     }
+}
+
+// Where the channel already stands is where a new note starts: a controller
+// sends a note's dimensions ahead of it.
+void PassWalk::dimension(int channel, std::int64_t sample) {
+    const auto& state = channels_[static_cast<std::size_t>(channel)];
+
+    if (state.wheel != mpe::kPitchWheelRest)
+        mark(channel, sample, &HeldNote::glide,
+             MidiPitchExpressionPoint{.semitones = mpe::semitonesForWheel(state.wheel)});
+    if (state.timbre != mpe::kTimbreRest)
+        mark(channel, sample, &HeldNote::timbre,
+             MidiNoteExpressionPoint{.value = mpe::valueForWire(state.timbre)});
+    if (state.pressure != mpe::kPressureRest)
+        mark(channel, sample, &HeldNote::pressure,
+             MidiNoteExpressionPoint{.value = mpe::valueForWire(state.pressure)});
 }
 
 // A note held across a wrap belongs to the pass it started in, once.
@@ -225,14 +267,10 @@ void PassWalk::add(const RecordedMidiEvent& played) {
             // close two of one pitch (io/TakeNotes.hpp).
             const auto entry = entryOf(event);
             down_.hold(entry);
-            pending_[entry] = {.start = event.sample, .velocity = event.data2, .glide = {}};
+            pending_[entry] = {.start = event.sample, .velocity = event.data2};
 
-            // The wheel the channel already stands at is where the note sounds:
-            // a controller sends the bend ahead of the note it belongs to.
-            const auto channel = channelOf(event);
-            if (mpe_ && mpe::isMemberChannel(channel) &&
-                wheel_[static_cast<std::size_t>(channel)] != mpe::kPitchWheelRest)
-                glide(channel, event.sample);
+            if (const auto channel = channelOf(event); mpe_ && mpe::isMemberChannel(channel))
+                dimension(channel, event.sample);
             break;
         }
 
@@ -243,6 +281,14 @@ void PassWalk::add(const RecordedMidiEvent& played) {
         }
 
         case MidiKind::controller: {
+            if (const auto channel = channelOf(event);
+                mpe_ && mpe::isMemberChannel(channel) && event.data1 == mpe::kTimbreController) {
+                channels_[static_cast<std::size_t>(channel)].timbre = event.data2;
+                mark(channel, event.sample, &HeldNote::timbre,
+                     MidiNoteExpressionPoint{.value = mpe::valueForWire(event.data2)});
+                break;
+            }
+
             MidiCCData cc;
             cc.controller = event.data1;
             cc.value = event.data2;
@@ -254,8 +300,10 @@ void PassWalk::add(const RecordedMidiEvent& played) {
 
         case MidiKind::pitchBend: {
             if (const auto channel = channelOf(event); mpe_ && mpe::isMemberChannel(channel)) {
-                wheel_[static_cast<std::size_t>(channel)] = pitchBendValue(event);
-                glide(channel, event.sample);
+                const auto wheel = pitchBendValue(event);
+                channels_[static_cast<std::size_t>(channel)].wheel = wheel;
+                mark(channel, event.sample, &HeldNote::glide,
+                     MidiPitchExpressionPoint{.semitones = mpe::semitonesForWheel(wheel)});
                 break;
             }
 
@@ -268,6 +316,13 @@ void PassWalk::add(const RecordedMidiEvent& played) {
         }
 
         case MidiKind::channelPressure: {
+            if (const auto channel = channelOf(event); mpe_ && mpe::isMemberChannel(channel)) {
+                channels_[static_cast<std::size_t>(channel)].pressure = event.data1;
+                mark(channel, event.sample, &HeldNote::pressure,
+                     MidiNoteExpressionPoint{.value = mpe::valueForWire(event.data1)});
+                break;
+            }
+
             MidiChannelPressureData pressure;
             pressure.value = event.data1;
             pressure.beatPosition = beatIn(pass_, event.sample);

@@ -1815,6 +1815,40 @@ TEST_CASE("A bent pitch glide roundtrips, and a straight one writes nothing extr
     CHECK(points[1].semitones == Approx(5.0));
 }
 
+TEST_CASE("A note's timbre and pressure survive a save and load",
+          "[project][serialization][midi][1571]") {
+    ProjectTestFixture fixture;
+
+    auto trackId = TrackManager::getInstance().createTrack("MIDI", TrackType::Media);
+
+    ClipInfo clip;
+    clip.id = 94;
+    clip.trackId = trackId;
+    clip.setMidiContent();
+    clip.view = ClipView::Arrangement;
+    clip.setPlacementBeats(0.0, 4.0);
+
+    MidiNote note;
+    note.lengthBeats = 4.0;
+    note.timbreExpression = {MidiNoteExpressionPoint{0.0, 0.25, 1.5},
+                             MidiNoteExpressionPoint{2.0, 0.75, 0.0}};
+    note.pressureExpression = {MidiNoteExpressionPoint{1.0, 0.5, 0.0}};
+    clip.midiNotes.push_back(note);
+    ClipManager::getInstance().restoreClip(clip);
+
+    ProjectInfo info;
+    auto json = ProjectSerializer::serializeProject(info);
+
+    ProjectInfo loaded;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
+    const auto* restored = ClipManager::getInstance().getClip(clip.id);
+    REQUIRE(restored != nullptr);
+    REQUIRE(restored->midiNotes.size() == 1);
+    CHECK(restored->midiNotes.front().timbreExpression == note.timbreExpression);
+    CHECK(restored->midiNotes.front().pressureExpression == note.pressureExpression);
+    CHECK(restored->midiNotes.front().pitchExpression.empty());
+}
+
 TEST_CASE("Saving a MIDI clip to the media library writes and indexes a generated source file",
           "[project][serialization][midi][media_db]") {
     ProjectTestFixture fixture;

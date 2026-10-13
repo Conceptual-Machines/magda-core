@@ -26,21 +26,17 @@
 
 namespace magda {
 
-/**
- * @brief Value of @p points at @p relBeat, in semitones.
- *
- * @p points must be sorted by beat. Outside the authored range the curve holds
- * its end values rather than extrapolating: a glide is a shape drawn on a note,
- * and a note that begins before its first point sounds at that point's pitch.
- */
-inline double evaluatePitchExpressionCurve(const std::vector<MidiPitchExpressionPoint>& points,
-                                           double relBeat) {
+namespace detail {
+
+/// A per-note expression curve's value at @p relBeat, read through @p valueOf.
+template <typename Point, typename ValueOf>
+double evaluateExpressionCurve(const std::vector<Point>& points, double relBeat, ValueOf valueOf) {
     if (points.empty())
         return 0.0;
     if (relBeat <= points.front().beat)
-        return points.front().semitones;
+        return valueOf(points.front());
     if (relBeat >= points.back().beat)
-        return points.back().semitones;
+        return valueOf(points.back());
 
     for (std::size_t i = 0; i + 1 < points.size(); ++i) {
         const auto& a = points[i];
@@ -50,21 +46,43 @@ inline double evaluatePitchExpressionCurve(const std::vector<MidiPitchExpression
 
         const double span = b.beat - a.beat;
         if (span <= 0.0)
-            return b.semitones;
+            return valueOf(b);
 
         const double t = (relBeat - a.beat) / span;
         if (std::abs(a.tension) < 0.001)
-            return a.semitones + t * (b.semitones - a.semitones);
+            return valueOf(a) + t * (valueOf(b) - valueOf(a));
 
         // No stored shaper: a glide bends by the tension scalar alone, the way
         // the tempo lane does. Handles would be a second way to say the same
         // thing and a second thing to serialise.
         return static_cast<double>(sdk::curvemath::evalSegment(
-            static_cast<float>(a.semitones), static_cast<float>(b.semitones), 0.0f,
+            static_cast<float>(valueOf(a)), static_cast<float>(valueOf(b)), 0.0f,
             static_cast<float>(a.tension), false, static_cast<float>(t)));
     }
 
-    return points.back().semitones;
+    return valueOf(points.back());
+}
+
+}  // namespace detail
+
+/**
+ * @brief Value of @p points at @p relBeat, in semitones.
+ *
+ * @p points must be sorted by beat. Outside the authored range the curve holds
+ * its end values rather than extrapolating: a glide is a shape drawn on a note,
+ * and a note that begins before its first point sounds at that point's pitch.
+ */
+inline double evaluatePitchExpressionCurve(const std::vector<MidiPitchExpressionPoint>& points,
+                                           double relBeat) {
+    return detail::evaluateExpressionCurve(points, relBeat,
+                                           [](const auto& point) { return point.semitones; });
+}
+
+/// Value of a timbre or pressure curve at @p relBeat, 0..1, read as the pitch curve is.
+inline double evaluateNoteExpressionCurve(const std::vector<MidiNoteExpressionPoint>& points,
+                                          double relBeat) {
+    return detail::evaluateExpressionCurve(points, relBeat,
+                                           [](const auto& point) { return point.value; });
 }
 
 /**

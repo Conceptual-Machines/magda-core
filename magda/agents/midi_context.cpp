@@ -137,6 +137,12 @@ juce::String buildMidiContext(MagdaApi& api, const std::vector<ClipId>& clipIds,
                 out << " chord_group=" << note.chordGroup;
             if (!note.pitchExpression.empty())
                 out << " pitch_expression_points=" << static_cast<int>(note.pitchExpression.size());
+            if (!note.timbreExpression.empty())
+                out << " timbre_expression_points="
+                    << static_cast<int>(note.timbreExpression.size());
+            if (!note.pressureExpression.empty())
+                out << " pressure_expression_points="
+                    << static_cast<int>(note.pressureExpression.size());
             out << "\n";
         }
         totalNotesWritten += notesToWrite;
