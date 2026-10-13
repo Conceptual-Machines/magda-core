@@ -175,6 +175,8 @@ std::unique_ptr<AudioFileSink> AudioFileSink::create(const juce::File& destinati
                                        : juce::AudioFormatWriterOptions::SampleFormat::integral);
     if (spec.format == AudioFileFormat::wav)
         options = options.withMetadataValues(wavMetadataFor(spec.metadata));
+    else if (lossy)
+        options = options.withMetadataValues(lossyTagsFor(spec.metadata));
 
     auto* handedOver = stream.get();
     auto writer = format->createWriterFor(stream, options);
