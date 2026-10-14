@@ -247,9 +247,18 @@ class InsertFactory final : public engine::RuntimeStateFactory {
     std::set<DeviceKey> devicesToRebuild() override {
         return std::exchange(rebuild, {});
     }
+    std::unique_ptr<EngineInsert> createTrackMidiOut(TrackId trackId) override {
+        askedMidiOut.push_back(trackId);
+        return std::make_unique<CountingInsert>();
+    }
+    std::set<TrackId> trackMidiOutsToRebuild() override {
+        return std::exchange(rebuildMidiOut, {});
+    }
 
     std::vector<DeviceKey> asked;
     std::set<DeviceKey> rebuild;
+    std::vector<TrackId> askedMidiOut;
+    std::set<TrackId> rebuildMidiOut;
 };
 
 TrackInfo trackWithInsert() {
@@ -418,4 +427,76 @@ TEST_CASE("A port is opened again after a device change, as the same object",
     const std::scoped_lock held(lock);
     REQUIRE(reached.size() == 1);
     CHECK(reached[0] == "endpoint-2");
+}
+
+TEST_CASE("A track's MIDI Out is kept while the plan sends to it", "[engine][exec][insert][3048]") {
+    InsertFactory factory;
+    engine::RuntimeStateStore store(factory);
+    const RenderContext context{44100.0, 64, 2};
+
+    TrackInfo track;
+    track.id = 1;
+    track.type = TrackType::Media;
+    track.audioOutputDevice = "master";
+    track.midiOutputDevice = "Synth";
+
+    std::vector<TrackInfo> tracks{track};
+    const auto plan = engine::compileRenderPlan(tracks, master());
+
+    auto bindings = store.realise(plan, context);
+    REQUIRE(factory.askedMidiOut == std::vector<TrackId>{1});
+    REQUIRE(bindings.trackMidiOuts.contains(1));
+    const auto* first = bindings.trackMidiOuts[1];
+
+    bindings = store.realise(plan, context);
+    CHECK(factory.askedMidiOut.size() == 1);
+    CHECK(bindings.trackMidiOuts[1] == first);
+
+    factory.rebuildMidiOut = {1};
+    store.realise(plan, context);
+    CHECK(factory.askedMidiOut.size() == 2);
+
+    // Cleared while the track stays: the port is let go, which ends its notes.
+    tracks[0].midiOutputDevice.clear();
+    const auto cleared = engine::compileRenderPlan(tracks, master());
+    const auto before = store.size();
+    CHECK(store.releaseDeleted(cleared, engine::collectRuntimeStateIds(tracks, master()), nullptr) >
+          0);
+    CHECK(store.size() < before);
+}
+
+TEST_CASE("A track's MIDI Out is opened again when it names another port",
+          "[engine][host][insert][3048]") {
+    magda::daw::engine_host::EngineRuntimeFactory factory;
+    engine::ClipSnapshotFeed clips;
+    engine::ClipStreamFeed streams;
+    engine::LaunchHandleFeed handles;
+    LiveInputFeed inputs;
+    LiveOutputFeed outputs;
+    factory.attach(clips, streams, handles, inputs, outputs);
+
+    RecordingMidiOutput port;
+    factory.routeInsertsWith([&port](const InsertConfig& insert) -> std::optional<LiveInsertRoute> {
+        if (insert.sendType != InsertConfig::Endpoint::MIDI || insert.sendDevice != "Synth")
+            return std::nullopt;
+        return LiveInsertRoute{.midi = &port};
+    });
+
+    TrackInfo track;
+    track.id = 1;
+    track.type = TrackType::Media;
+    track.midiOutputDevice = "Unplugged";
+
+    factory.setModel({track}, master());
+    CHECK(factory.createTrackMidiOut(1) == nullptr);
+    CHECK(factory.createTrackMidiOut(2) == nullptr);
+    CHECK_FALSE(factory.insertsMoved({track}, master()));
+
+    track.midiOutputDevice = "Synth";
+    CHECK(factory.insertsMoved({track}, master()));
+
+    factory.setModel({track}, master());
+    CHECK(factory.trackMidiOutsToRebuild().contains(1));
+    CHECK(factory.createTrackMidiOut(1) != nullptr);
+    CHECK(factory.trackMidiOutsToRebuild().empty());
 }

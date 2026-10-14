@@ -215,6 +215,7 @@ enum class OpRole : std::uint8_t {
     HardwareOutput,       ///< one track or master hardware output
     InsertSend,           ///< one insert's send
     InsertReturn,         ///< one insert's return
+    TrackMidiOut,         ///< a track's MIDI to its hardware MIDI Out, an InsertSend (#3048)
 
     // Both halves of a cut input route, keyed to the track that reads it, with
     // OpKey::index naming the track it reads from. The source is in the

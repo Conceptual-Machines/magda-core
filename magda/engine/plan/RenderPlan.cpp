@@ -178,6 +178,8 @@ const char* toString(OpRole role) {
             return "insertSend";
         case OpRole::InsertReturn:
             return "insertReturn";
+        case OpRole::TrackMidiOut:
+            return "trackMidiOut";
         case OpRole::FeedbackSend:
             return "feedbackSend";
         case OpRole::FeedbackReturn:

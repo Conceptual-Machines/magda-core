@@ -165,7 +165,7 @@ class Compiler {
     /// @p op, live when @p track plays session clips or an instrument (CompileOptions).
     OpId playedLive(const TrackInfo& track, OpId op) {
         if (options_.sessionTracks.contains(track.id) ||
-            (options_.aheadAudioOnly && chainConsumesMidi(track))) {
+            (options_.aheadAudioOnly && (chainConsumesMidi(track) || sendsMidiOut(track)))) {
             auto& planOp = plan_.ops[static_cast<std::size_t>(op)];
             planOp.liveness = LivenessDomain::Live;
             planOp.liveByPlayback = true;
@@ -1811,7 +1811,8 @@ void Compiler::emitTrack(const TrackInfo& track) {
 
     std::vector<PortRef> midiSources;
     const auto readsMidi =
-        carriesClips(track) && (chainConsumesMidi(track) || midiSourceTracks_.contains(track.id));
+        carriesClips(track) &&
+        (chainConsumesMidi(track) || sendsMidiOut(track) || midiSourceTracks_.contains(track.id));
     if (readsMidi) {
         const OpKey key{track.id,          INVALID_RACK_ID,  INVALID_CHAIN_ID,
                         INVALID_DEVICE_ID, OpRole::ClipMidi, 0};
@@ -1873,6 +1874,14 @@ void Compiler::emitTrack(const TrackInfo& track) {
     // own bypass flags. Post-FX and mixer analysis sit outside it.
     if (track.chain.enabled)
         signal = emitElements(track.chain.fxChainElements, fxSite, signal);
+
+    // What the chain made of the track's MIDI leaves for its hardware MIDI Out (#3048).
+    if (sendsMidiOut(track) && signal.midi.valid()) {
+        const OpKey key{track.id,          INVALID_RACK_ID,      INVALID_CHAIN_ID,
+                        INVALID_DEVICE_ID, OpRole::TrackMidiOut, 0};
+        addOp(OpKind::InsertSend, key,
+              alignInputs(key, OpKind::InsertSend, {noInput(), signal.midi}), {});
+    }
 
     // The post-FX stage and the mixer-analysis rail sit on whichever side of the
     // fader the chain says (#2087). Emitted through one lambda called from one
@@ -2166,6 +2175,10 @@ RenderPlan Compiler::run() {
 RenderPlan compileRenderPlan(const std::vector<TrackInfo>& tracks, const TrackInfo& master,
                              const CompileOptions& options) {
     return Compiler(tracks, master, options).run();
+}
+
+bool sendsMidiOut(const TrackInfo& track) {
+    return track.midiOutputDevice.isNotEmpty() && !track.midiOutputDevice.startsWith("track:");
 }
 
 bool chainConsumesMidi(const TrackInfo& track) {

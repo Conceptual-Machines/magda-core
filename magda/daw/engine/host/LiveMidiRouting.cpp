@@ -4,6 +4,9 @@
 #include <set>
 #include <utility>
 
+#include "../../audio/midi/MidiDeviceMatch.hpp"
+#include "plan/PlanCompiler.hpp"
+
 namespace magda::daw::engine_host {
 
 std::shared_ptr<const engine::LiveRouting> LiveMidiRouting::resolve(
@@ -59,6 +62,12 @@ juce::String externalInstrumentPort(const TrackInfo& track) {
                 device.isInstrument && !device.bypassed &&
                 device.insert.sendType == InsertConfig::Endpoint::MIDI)
                 return device.insert.sendDevice;
+
+    // The track's own MIDI Out is stored by identifier; the guard matches names (#3048).
+    if (engine::sendsMidiOut(track))
+        if (const auto port =
+                midi::resolve(juce::MidiOutput::getAvailableDevices(), track.midiOutputDevice))
+            return port->name;
     return {};
 }
 

@@ -128,6 +128,16 @@ TEST_CASE("Hardware outputs join the offline master while internal routes stay i
     CHECK(narrowed.master.audioOutputDevice.isEmpty());
 }
 
+TEST_CASE("A render sends nothing to a track's hardware MIDI Out", "[engine][offline][3048]") {
+    auto model = project();
+    model.tracks[1].midiOutputDevice = "Synth";
+
+    const auto narrowed = narrowForRender(std::move(model), {});
+    const auto* bus = find(narrowed, 2);
+    REQUIRE(bus != nullptr);
+    CHECK(bus->midiOutputDevice.isEmpty());
+}
+
 TEST_CASE("A render plays the arrangement and none of the session", "[engine][offline][2555]") {
     const auto narrowed = narrowForRender(project(), {});
 

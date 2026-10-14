@@ -554,3 +554,78 @@ TEST_CASE("A silent insert return is still asked, and passes on silence",
     CHECK(insert.receives == 1);
     CHECK(output.getMagnitude(0, kBlockSize) == 0.0f);
 }
+
+TEST_CASE("A track's hardware MIDI Out is a MIDI send at the end of its chain",
+          "[engine][plan][insert][3048]") {
+    auto track = makeTrack(1);
+    auto master = makeMaster();
+
+    // Without one, a track with no instrument reads no MIDI at all.
+    {
+        std::vector<TrackInfo> tracks{track};
+        const auto plan = magda::engine::compileRenderPlan(tracks, master);
+        CHECK(opsWithRole(plan, OpRole::TrackMidiOut).empty());
+        CHECK(opsWithRole(plan, OpRole::ClipMidi).empty());
+    }
+
+    // MIDI to another track is the other track's input, not a port.
+    track.midiOutputDevice = "track:2";
+    {
+        std::vector<TrackInfo> tracks{track};
+        CHECK(opsWithRole(magda::engine::compileRenderPlan(tracks, master), OpRole::TrackMidiOut)
+                  .empty());
+    }
+
+    track.midiOutputDevice = "MIDI Out 1";
+    std::vector<TrackInfo> tracks{track};
+    const auto plan = magda::engine::compileRenderPlan(tracks, master);
+    INFO(magda::engine::dumpPlan(plan));
+
+    const auto sends = opsWithRole(plan, OpRole::TrackMidiOut);
+    REQUIRE(sends.size() == 1);
+    const auto& send = plan.ops[static_cast<std::size_t>(sends[0])];
+    CHECK(send.kind == OpKind::InsertSend);
+    CHECK_FALSE(send.inputs[0].valid());
+    CHECK(send.inputs[1].valid());
+    CHECK_FALSE(opsWithRole(plan, OpRole::ClipMidi).empty());
+}
+
+TEST_CASE("A track's MIDI Out sends each block, and a muted one ends its notes instead",
+          "[engine][exec][insert][3048]") {
+    auto track = makeTrack(1);
+    track.midiOutputDevice = "MIDI Out 1";
+
+    auto master = makeMaster();
+    const RenderContext context{44100.0, kBlockSize, 2};
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    BlockInfo block;
+    block.numSamples = kBlockSize;
+    block.playing = true;
+    block.continuous = true;
+
+    const auto run = [&](const std::vector<TrackInfo>& tracks, StubInsert& out) {
+        const auto plan = magda::engine::compileRenderPlan(tracks, master);
+        PlanBindings bindings;
+        bindings.trackMidiOuts[1] = &out;
+
+        PlanValues values;
+        magda::engine::resolvePlanValues(plan, tracks, master, values);
+
+        PlanExecutor executor;
+        const auto messages = executor.prepare(plan, bindings, context);
+        CHECK_FALSE(mentions(messages, "insert"));
+        REQUIRE(executor.isPrepared());
+        executor.process(values, block, output);
+    };
+
+    StubInsert playing;
+    run({track}, playing);
+    CHECK(playing.sends == 1);
+    CHECK(playing.releases == 0);
+
+    track.muted = true;
+    StubInsert muted;
+    run({track}, muted);
+    CHECK(muted.sends == 0);
+    CHECK(muted.releases == 1);
+}

@@ -380,6 +380,12 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
             break;
         }
 
+        // A muted track's hardware MIDI Out sends nothing, and ends what it started.
+        case OpRole::TrackMidiOut:
+            if (!isAudible(*track))
+                value.silent = true;
+            break;
+
         case OpRole::SendTap: {
             const auto slot = static_cast<std::size_t>(key.index);
             if (slot >= track->sends.size()) {

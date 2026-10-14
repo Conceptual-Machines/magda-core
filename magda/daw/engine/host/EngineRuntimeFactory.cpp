@@ -9,6 +9,7 @@
 #include "analysis/TransientDetector.hpp"
 #include "clip/ClipAudioSource.hpp"
 #include "clip/ClipMidiSource.hpp"
+#include "plan/PlanCompiler.hpp"
 
 namespace magda::daw::engine_host {
 
@@ -75,10 +76,18 @@ void EngineRuntimeFactory::attach(engine::ClipSnapshotFeed& clips, engine::ClipS
 void EngineRuntimeFactory::rerouteInserts() {
     for (const auto& [key, identity] : insertsBuilt_)
         rebuild_.insert(key);
+    for (const auto& [trackId, port] : midiOutsBuilt_)
+        rebuildMidiOuts_.insert(trackId);
 }
 
 bool EngineRuntimeFactory::insertsMoved(const std::vector<TrackInfo>& tracks,
                                         const TrackInfo& master) const {
+    for (const auto& track : tracks)
+        if (const auto built = midiOutsBuilt_.find(track.id);
+            built != midiOutsBuilt_.end() && engine::sendsMidiOut(track) &&
+            built->second != track.midiOutputDevice)
+            return true;
+
     if (insertsBuilt_.empty())
         return false;
 
@@ -110,9 +119,42 @@ std::unique_ptr<engine::EngineInsert> EngineRuntimeFactory::createInsert(engine:
     return wrapInsert_ ? wrapInsert_(key, std::move(insert)) : std::move(insert);
 }
 
+std::unique_ptr<engine::EngineInsert> EngineRuntimeFactory::createTrackMidiOut(TrackId trackId) {
+    const auto found = midiOuts_.find(trackId);
+    if (found == midiOuts_.end() || liveInputs_ == nullptr || liveOutputs_ == nullptr ||
+        !routeInsert_)
+        return nullptr;
+
+    // The send half of an external instrument, so it leaves at the same time one would.
+    midiOutsBuilt_[trackId] = found->second;
+    InsertConfig config;
+    config.sendType = InsertConfig::Endpoint::MIDI;
+    config.sendDevice = found->second;
+
+    auto route = routeInsert_(config);
+    if (!route.has_value())
+        return nullptr;
+    return std::make_unique<engine::LiveInsert>(*liveInputs_, *liveOutputs_, std::move(*route));
+}
+
+std::set<TrackId> EngineRuntimeFactory::trackMidiOutsToRebuild() {
+    for (const auto trackId : rebuildMidiOuts_)
+        midiOutsBuilt_.erase(trackId);
+    return std::exchange(rebuildMidiOuts_, {});
+}
+
 void EngineRuntimeFactory::setModel(const std::vector<TrackInfo>& tracks, const TrackInfo& master) {
     devices_.clear();
     unbuilt_.clear();
+
+    midiOuts_.clear();
+    for (const auto& track : tracks)
+        if (engine::sendsMidiOut(track))
+            midiOuts_.emplace(track.id, track.midiOutputDevice);
+    for (const auto& [trackId, port] : midiOutsBuilt_)
+        if (const auto found = midiOuts_.find(trackId);
+            found != midiOuts_.end() && found->second != port)
+            rebuildMidiOuts_.insert(trackId);
 
     for (const auto& [key, device] : adapter::devicesIn(tracks, master))
         devices_.emplace(key, *device);
@@ -161,6 +203,7 @@ void EngineRuntimeFactory::forgetBuiltDevices() {
 
     built_.clear();
     insertsBuilt_.clear();
+    midiOutsBuilt_.clear();
 
     if (externals_ != nullptr)
         externals_->forgetSlots();
