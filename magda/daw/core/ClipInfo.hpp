@@ -63,6 +63,19 @@ struct MidiPitchExpressionPoint {
 };
 
 /**
+ * @brief One point of a note's MPE timbre or pressure (#1571).
+ *
+ * Beat is relative to the note's start; value is the 7-bit wire value over 127.
+ */
+struct MidiNoteExpressionPoint {
+    double beat = 0.0;
+    double value = 0.0;
+    double tension = 0.0;  // The segment to the next point, as MidiPitchExpressionPoint::tension.
+
+    bool operator==(const MidiNoteExpressionPoint&) const = default;
+};
+
+/**
  * @brief MIDI note data for MIDI clips
  */
 struct MidiNote {
@@ -75,6 +88,10 @@ struct MidiNote {
     // Per-note pitch glide (MPE). Sorted by beat. Empty = no expression.
     std::vector<MidiPitchExpressionPoint> pitchExpression;
 
+    // Per-note MPE timbre (CC74) and pressure, each sorted by beat. Empty = at rest.
+    std::vector<MidiNoteExpressionPoint> timbreExpression;
+    std::vector<MidiNoteExpressionPoint> pressureExpression;
+
     // A keyswitch is still an ordinary MIDI note on the wire. Keeping its
     // authored role lets remote clients and editors distinguish articulation
     // triggers from musical notes without changing playback semantics.
@@ -83,6 +100,11 @@ struct MidiNote {
 
     bool hasPitchExpression() const {
         return !pitchExpression.empty();
+    }
+
+    /// Any per-note MPE dimension, which puts the whole clip on member channels.
+    bool hasExpression() const {
+        return hasPitchExpression() || !timbreExpression.empty() || !pressureExpression.empty();
     }
 
     bool operator==(const MidiNote&) const = default;

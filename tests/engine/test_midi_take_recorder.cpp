@@ -872,6 +872,93 @@ TEST_CASE("A bend sent ahead of an MPE note is where the note starts",
     CHECK(take.active.notes[1].pitchExpression.empty());
 }
 
+Played pressure(std::int64_t arrival, int value, int channel) {
+    return {arrival, juce::MidiMessage::channelPressureChange(channel, value)};
+}
+
+TEST_CASE("An MPE take keeps each member channel's timbre and pressure on the note played there",
+          "[engine][io][record][midi][1571]") {
+    Rig rig(takeOf());
+    rig.schedule({
+        noteOn(kBeatSamples, 60, 100, 2),
+        noteOn(kBeatSamples, 64, 100, 3),
+        controller(kBeatSamples + 1000, 74, 100, 2),
+        controller(kBeatSamples + 1000, 1, 90, 2),
+        pressure(kBeatSamples + 2000, 90, 3),
+        noteOff(kBeatSamples * 2, 60, 2),
+        noteOff(kBeatSamples * 2, 64, 3),
+    });
+    rig.play();
+    rig.run(kBeatSamples * 3);
+
+    const auto take = rig.finish();
+    CHECK(take.active.channelPressure.empty());
+
+    // Only timbre is an MPE dimension: any other controller stays on the clip.
+    REQUIRE(take.active.cc.size() == 1);
+    CHECK(take.active.cc[0].controller == 1);
+
+    REQUIRE(take.active.notes.size() == 2);
+    const auto& low =
+        take.active.notes[0].noteNumber == 60 ? take.active.notes[0] : take.active.notes[1];
+    const auto& high =
+        take.active.notes[0].noteNumber == 60 ? take.active.notes[1] : take.active.notes[0];
+
+    REQUIRE(low.timbreExpression.size() == 1);
+    CHECK(low.timbreExpression[0].beat == Catch::Approx(0.25));
+    CHECK(low.timbreExpression[0].value == Catch::Approx(100.0 / 127.0));
+    CHECK(low.pressureExpression.empty());
+
+    REQUIRE(high.pressureExpression.size() == 1);
+    CHECK(high.pressureExpression[0].beat == Catch::Approx(0.5));
+    CHECK(high.pressureExpression[0].value == Catch::Approx(90.0 / 127.0));
+    CHECK(high.timbreExpression.empty());
+}
+
+TEST_CASE("Timbre sent ahead of an MPE note is where the note starts",
+          "[engine][io][record][midi][1571]") {
+    Rig rig(takeOf());
+    rig.schedule({
+        controller(kBeatSamples - 10, 74, 30, 2),
+        noteOn(kBeatSamples, 60, 100, 2),
+        noteOn(kBeatSamples, 64, 100, 3),
+        noteOff(kBeatSamples * 2, 60, 2),
+        noteOff(kBeatSamples * 2, 64, 3),
+    });
+    rig.play();
+    rig.run(kBeatSamples * 3);
+
+    const auto take = rig.finish();
+    REQUIRE(take.active.notes.size() == 2);
+    const auto& low =
+        take.active.notes[0].noteNumber == 60 ? take.active.notes[0] : take.active.notes[1];
+    REQUIRE(low.timbreExpression.size() == 1);
+    CHECK(low.timbreExpression[0].beat == 0.0);
+    CHECK(low.timbreExpression[0].value == Catch::Approx(30.0 / 127.0));
+}
+
+TEST_CASE("Timbre and pressure that stay at rest are no expression",
+          "[engine][io][record][midi][1571]") {
+    Rig rig(takeOf());
+    rig.schedule({
+        noteOn(kBeatSamples, 60, 100, 2),
+        noteOn(kBeatSamples, 64, 100, 3),
+        controller(kBeatSamples + 1000, 74, 64, 2),
+        pressure(kBeatSamples + 1000, 0, 3),
+        noteOff(kBeatSamples * 2, 60, 2),
+        noteOff(kBeatSamples * 2, 64, 3),
+    });
+    rig.play();
+    rig.run(kBeatSamples * 3);
+
+    const auto take = rig.finish();
+    REQUIRE(take.active.notes.size() == 2);
+    for (const auto& played : take.active.notes) {
+        CHECK(played.timbreExpression.empty());
+        CHECK(played.pressureExpression.empty());
+    }
+}
+
 TEST_CASE("A bend that never leaves rest is no glide", "[engine][io][record][midi][1571]") {
     Rig rig(takeOf());
     rig.schedule({
