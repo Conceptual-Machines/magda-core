@@ -123,8 +123,8 @@ class TrackInspector : public BaseInspector,
     std::unique_ptr<magda::RoutingSelector> midiOutputSelector_;    // MIDI output
     magda::track_controls::IOColumnLabel audioColumnLabel_{false};  // "AUDIO" column header
     magda::track_controls::IOColumnLabel midiColumnLabel_{true};    // "MIDI" column header
-    std::unique_ptr<juce::Component> inputIcon_;                    // Non-interactive Input icon
-    std::unique_ptr<juce::Component> outputIcon_;                   // Non-interactive Output icon
+    std::unique_ptr<juce::Component> inputIcon_;   // Opens the MIDI input channel menu
+    std::unique_ptr<juce::Component> outputIcon_;  // Opens the MIDI Out channel menu
 
     // Send/Receive section
     juce::Label sendReceiveSectionLabel_;
@@ -165,6 +165,8 @@ class TrackInspector : public BaseInspector,
     juce::Colour nameFill_, nameOutline_;  // the rounded name field, painted behind the label
     void configChanged() override;
     void rebuildRoutingIcons();
+    /// The channel menu behind the input (@p input) or output icon (#2209).
+    void showMidiChannelMenu(bool input);
     void updateFromSelectedTrack();
     void updateFromMultiTrackSelection();
     void updateAutomatedParametersSummary();

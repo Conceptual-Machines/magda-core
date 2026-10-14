@@ -216,6 +216,8 @@ enum class OpRole : std::uint8_t {
     InsertSend,           ///< one insert's send
     InsertReturn,         ///< one insert's return
     TrackMidiOut,         ///< a track's MIDI to its hardware MIDI Out, an InsertSend (#3048)
+    MidiOutChannel,       ///< the channel a track's hardware MIDI Out sends on (#2209)
+    MidiOutRoute,         ///< a track's MIDI Out to another track, keyed to the sender (#2209)
 
     // Both halves of a cut input route, keyed to the track that reads it, with
     // OpKey::index naming the track it reads from. The source is in the
@@ -485,6 +487,9 @@ struct PlanOp {
     std::uint8_t noteGateLow = 0;
     std::uint8_t noteGateHigh = 127;
     std::int8_t noteGateTranspose = 0;
+
+    /// The channel a MidiNoteGate rewrites what it passes to, 1-16, or 0 to leave it (#2209).
+    std::uint8_t noteGateChannel = 0;
 
     /// A MidiZoneSplit's zones, one per output port and in port order, at most
     /// kMaxZoneRoutes. Topology for the same reason a note gate's range is.

@@ -209,40 +209,83 @@ TEST_CASE("Track audio and MIDI inputs are mutually exclusive", "[routing][input
 }
 
 // ============================================================================
-// "MIDI To track" — mirror view of internal MIDI routing (source side)
+// "MIDI To track": the source's own MIDI Out (#2209)
 // ============================================================================
 
-TEST_CASE("routeMidiOutputToTrack routes source MIDI into the destination's input",
-          "[routing][midi-out]") {
+TEST_CASE("routeMidiOutputToTrack makes the destination the source's MIDI Out",
+          "[routing][midi-out][2209]") {
     InternalRoutingFixture fixture;
 
     auto trackA = fixture.createTrack("A");
     auto trackB = fixture.createTrack("B");
 
-    // Source has a hardware MIDI output selected — routing to a track clears it
+    // One choice: a track replaces a hardware port, and the destination's own
+    // input is left alone.
     fixture.tm().setTrackMidiOutput(trackA, "hw-midi-out");
-    REQUIRE(fixture.tm().getTrack(trackA)->midiOutputDevice == "hw-midi-out");
+    const auto bInputBefore = fixture.tm().getTrack(trackB)->midiInputDevice;
 
     fixture.tm().routeMidiOutputToTrack(trackA, trackB);
 
-    REQUIRE(fixture.tm().getTrack(trackB)->midiInputDevice == fixture.trackInput(trackA));
-    REQUIRE(fixture.tm().getTrack(trackA)->midiOutputDevice.isEmpty());
+    REQUIRE(fixture.tm().getTrack(trackA)->midiOutputDevice == fixture.trackInput(trackB));
+    REQUIRE(fixture.tm().getTrack(trackB)->midiInputDevice == bInputBefore);
 }
 
-TEST_CASE("routeMidiOutputToTrack is single-destination", "[routing][midi-out]") {
+TEST_CASE("Several tracks send their MIDI to one, each to one destination",
+          "[routing][midi-out][2209]") {
+    InternalRoutingFixture fixture;
+
+    auto trackA = fixture.createTrack("A");
+    auto trackB = fixture.createTrack("B");
+    auto plugin = fixture.createTrack("Plugin");
+    auto other = fixture.createTrack("Other");
+
+    fixture.tm().routeMidiOutputToTrack(trackA, plugin);
+    fixture.tm().routeMidiOutputToTrack(trackB, plugin);
+    REQUIRE(fixture.tm().getTrack(trackA)->midiOutputDevice == fixture.trackInput(plugin));
+    REQUIRE(fixture.tm().getTrack(trackB)->midiOutputDevice == fixture.trackInput(plugin));
+
+    // Re-pointing one sender moves only that one.
+    fixture.tm().routeMidiOutputToTrack(trackA, other);
+    REQUIRE(fixture.tm().getTrack(trackA)->midiOutputDevice == fixture.trackInput(other));
+    REQUIRE(fixture.tm().getTrack(trackB)->midiOutputDevice == fixture.trackInput(plugin));
+
+    // Deleting the destination clears the senders that named it.
+    fixture.tm().deleteTrack(plugin);
+    REQUIRE(fixture.tm().getTrack(trackB)->midiOutputDevice.isEmpty());
+    REQUIRE(fixture.tm().getTrack(trackA)->midiOutputDevice == fixture.trackInput(other));
+}
+
+TEST_CASE("A MIDI Out to a track is an edge the cycle check sees", "[routing][cycle][2209]") {
     InternalRoutingFixture fixture;
 
     auto trackA = fixture.createTrack("A");
     auto trackB = fixture.createTrack("B");
     auto trackC = fixture.createTrack("C");
 
+    // A -> B by A's MIDI Out, B -> C by C pulling B's MIDI.
     fixture.tm().routeMidiOutputToTrack(trackA, trackB);
-    REQUIRE(fixture.tm().getTrack(trackB)->midiInputDevice == fixture.trackInput(trackA));
+    fixture.tm().setTrackMidiInput(trackC, fixture.trackInput(trackB));
 
-    fixture.tm().routeMidiOutputToTrack(trackA, trackC);
+    CHECK(fixture.tm().wouldCreateInputRoutingCycle(trackA, trackC));
+    fixture.tm().routeMidiOutputToTrack(trackC, trackA);
+    CHECK(fixture.tm().getTrack(trackC)->midiOutputDevice.isEmpty());
 
-    REQUIRE(fixture.tm().getTrack(trackC)->midiInputDevice == fixture.trackInput(trackA));
-    REQUIRE(fixture.tm().getTrack(trackB)->midiInputDevice.isEmpty());
+    fixture.tm().setTrackMidiInput(trackA, fixture.trackInput(trackC));
+    CHECK(fixture.tm().getTrack(trackA)->midiInputDevice != fixture.trackInput(trackC));
+}
+
+TEST_CASE("A track's MIDI channels are clamped and saved with its routing",
+          "[routing][midi-channel][2209]") {
+    InternalRoutingFixture fixture;
+    auto track = fixture.createTrack("A");
+
+    fixture.tm().setTrackMidiInputChannel(track, 3);
+    fixture.tm().setTrackMidiOutputChannel(track, 40);
+    const auto* info = fixture.tm().getTrack(track);
+    CHECK(info->midiInputChannel == 3);
+    CHECK(info->midiOutputChannel == 16);
+    CHECK(info->routingState().midiInputChannel == 3);
+    CHECK(info->routingState().midiOutputChannel == 16);
 }
 
 TEST_CASE("Selecting a hardware MIDI output clears the source's track listeners",
@@ -281,35 +324,25 @@ TEST_CASE("Rejected routeMidiOutputToTrack changes nothing", "[routing][midi-out
     auto trackB = fixture.createTrack("B");
 
     SECTION("self-routing is rejected") {
-        // With an existing listener, a rejected route must not clear it
         fixture.tm().routeMidiOutputToTrack(trackA, trackB);
-        REQUIRE(fixture.tm().getTrack(trackB)->midiInputDevice == fixture.trackInput(trackA));
-
         fixture.tm().routeMidiOutputToTrack(trackA, trackA);
-
-        REQUIRE(fixture.tm().getTrack(trackA)->midiInputDevice != fixture.trackInput(trackA));
-        REQUIRE(fixture.tm().getTrack(trackB)->midiInputDevice == fixture.trackInput(trackA));
+        REQUIRE(fixture.tm().getTrack(trackA)->midiOutputDevice == fixture.trackInput(trackB));
     }
 
     SECTION("unknown destination is rejected") {
         fixture.tm().setTrackMidiOutput(trackA, "hw-midi-out");
         fixture.tm().routeMidiOutputToTrack(trackA, 99999);
-
-        // Nothing changed — no listener created, hardware output untouched
-        REQUIRE(fixture.tm().getTrack(trackB)->midiInputDevice != fixture.trackInput(trackA));
         REQUIRE(fixture.tm().getTrack(trackA)->midiOutputDevice == "hw-midi-out");
     }
 
     SECTION("cycle-closing route is rejected") {
-        // B already listens to A (edge B ← A). Routing B's output into A would
-        // make A listen to B, closing the loop A → B → A.
+        // B already listens to A (edge B <- A). Routing B's output into A would
+        // close the loop A -> B -> A.
         fixture.tm().setTrackMidiInput(trackB, fixture.trackInput(trackA));
-        const auto aMidiInBefore = fixture.tm().getTrack(trackA)->midiInputDevice;
 
         fixture.tm().routeMidiOutputToTrack(trackB, trackA);
 
-        REQUIRE(fixture.tm().getTrack(trackA)->midiInputDevice == aMidiInBefore);
-        // The existing edge is untouched
+        REQUIRE(fixture.tm().getTrack(trackB)->midiOutputDevice.isEmpty());
         REQUIRE(fixture.tm().getTrack(trackB)->midiInputDevice == fixture.trackInput(trackA));
     }
 }

@@ -960,3 +960,50 @@ TEST_CASE("A feed with no room for a callback reads silence and counts it",
         CHECK(feed.preparedBlockSize() == 512);
     }
 }
+
+TEST_CASE("A track's input channel passes its devices' channel and the preview whole",
+          "[engine][live-input][2209]") {
+    juce::MidiBuffer keyboard;
+    keyboard.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+    keyboard.addEvent(juce::MidiMessage::noteOn(2, 62, 1.0f), 1);
+    keyboard.addEvent(juce::MidiMessage::midiClock(), 2);
+    juce::MidiBuffer preview;
+    preview.addEvent(juce::MidiMessage::noteOn(5, 72, 1.0f), 3);
+
+    const std::array<LiveMidiStream, 2> streams{LiveMidiStream{1, &keyboard},
+                                                LiveMidiStream{9, &preview}};
+
+    LiveInputFeed feed;
+    feed.prepare(2, kBlockSize);
+    auto snapshot = std::make_shared<LiveRouting>();
+    snapshot->tracks.push_back({.trackId = 1, .audition = 9, .sources = {1}, .channel = 2});
+    feed.publishRouting(snapshot);
+
+    const auto notesOf = [](const juce::MidiBuffer& buffer) {
+        std::vector<int> notes;
+        for (const auto metadata : buffer)
+            notes.push_back(metadata.getMessage().isNoteOn() ? metadata.getMessage().getNoteNumber()
+                                                             : -1);
+        return notes;
+    };
+
+    feed.beginCallback({{}, streams}, kBlockSize);
+    feed.beginSegment(0, kBlockSize);
+
+    // Monitoring: channel 2 and the clock from the keyboard, the preview untouched.
+    TrackLiveMidiInput input(feed, 1);
+    juce::MidiBuffer monitored;
+    input.render(blockInfo(kBlockSize), monitored);
+    auto notes = notesOf(monitored);
+    std::ranges::sort(notes);
+    CHECK(notes == std::vector<int>{-1, 62, 72});
+
+    // Recording reads the same filter.
+    const std::array<LiveMidiSourceId, 1> sources{1};
+    LiveMidiInput take(feed, sources, 0, 2);
+    juce::MidiBuffer recorded;
+    take.render(blockInfo(kBlockSize), recorded);
+    CHECK(notesOf(recorded) == std::vector<int>{62, -1});
+
+    feed.endCallback();
+}

@@ -4223,3 +4223,29 @@ TEST_CASE("Legacy unassigned Session clips migrate into deterministic durable sl
     REQUIRE(ClipManager::getInstance().getClip(first)->sceneIndex == 0);
     REQUIRE(ClipManager::getInstance().getClip(second)->sceneIndex == 1);
 }
+
+TEST_CASE("A track's MIDI channels and MIDI Out to a track survive a save",
+          "[project][tracks][2209]") {
+    TrackInfo track;
+    track.id = 4;
+    track.type = TrackType::Media;
+    track.midiOutputDevice = "track:9";
+    track.midiInputChannel = 2;
+    track.midiOutputChannel = 10;
+
+    TrackInfo loaded;
+    REQUIRE(ProjectSerializer::deserializeTrackInfo(ProjectSerializer::serializeTrackInfo(track),
+                                                    loaded));
+    CHECK(loaded.midiOutputDevice == "track:9");
+    CHECK(loaded.midiInputChannel == 2);
+    CHECK(loaded.midiOutputChannel == 10);
+
+    // An older project has neither key: any channel in, as it is out.
+    TrackInfo plain;
+    plain.type = TrackType::Media;
+    TrackInfo plainLoaded;
+    REQUIRE(ProjectSerializer::deserializeTrackInfo(ProjectSerializer::serializeTrackInfo(plain),
+                                                    plainLoaded));
+    CHECK(plainLoaded.midiInputChannel == 0);
+    CHECK(plainLoaded.midiOutputChannel == 0);
+}

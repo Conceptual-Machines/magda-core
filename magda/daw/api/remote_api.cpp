@@ -310,11 +310,14 @@ const juce::var& trackRoutingSchema() {
             "midiInputEndpointId":{"type":"string"},
             "audioOutputEndpointId":{"type":"string"},
             "midiOutputEndpointId":{"type":"string"},
+            "midiInputChannel":{"type":"integer","minimum":0,"maximum":16},
+            "midiOutputChannel":{"type":"integer","minimum":0,"maximum":16},
             "recordArmed":{"type":"boolean"},
             "inputMonitor":{"type":"string","enum":["off","in","auto"]}
         },
         "required":["trackId","audioInputEndpointId","midiInputEndpointId",
-                    "audioOutputEndpointId","midiOutputEndpointId","recordArmed","inputMonitor"],
+                    "audioOutputEndpointId","midiOutputEndpointId","midiInputChannel",
+                    "midiOutputChannel","recordArmed","inputMonitor"],
         "additionalProperties":false
     })json");
     return value;
@@ -1883,6 +1886,8 @@ juce::var toJson(const TrackRoutingDto& dto) {
     object->setProperty("midiInputEndpointId", dto.midiInputEndpointId);
     object->setProperty("audioOutputEndpointId", dto.audioOutputEndpointId);
     object->setProperty("midiOutputEndpointId", dto.midiOutputEndpointId);
+    object->setProperty("midiInputChannel", dto.midiInputChannel);
+    object->setProperty("midiOutputChannel", dto.midiOutputChannel);
     object->setProperty("recordArmed", dto.recordArmed);
     object->setProperty("inputMonitor", dto.inputMonitor);
     return object;
@@ -2464,6 +2469,8 @@ std::optional<TrackRoutingDto> trackRoutingFromJson(const juce::var& json, Error
     dto.midiInputEndpointId = json["midiInputEndpointId"].toString();
     dto.audioOutputEndpointId = json["audioOutputEndpointId"].toString();
     dto.midiOutputEndpointId = json["midiOutputEndpointId"].toString();
+    dto.midiInputChannel = readInt(json, "midiInputChannel");
+    dto.midiOutputChannel = readInt(json, "midiOutputChannel");
     dto.recordArmed = static_cast<bool>(json["recordArmed"]);
     dto.inputMonitor = json["inputMonitor"].toString();
     return dto;
@@ -3284,15 +3291,19 @@ OperationRegistry::OperationRegistry() {
             "required":["trackId"],"additionalProperties":false
         })json"),
         trackRoutingSchema());
-    add("routing.set", "Atomically set track audio and MIDI routes", OperationAccess::Write,
-        &handlers::routingSet, operationInputSchema(R"json({
+    add("routing.set",
+        "Atomically set track audio and MIDI routes and MIDI channels. Any number of tracks "
+        "may send their MIDI Out to one track; a channel of 0 is any in, as it is out",
+        OperationAccess::Write, &handlers::routingSet, operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "trackId":{"type":"integer","minimum":0},
                 "audioInputEndpointId":{"type":"string","minLength":1},
                 "midiInputEndpointId":{"type":"string","minLength":1},
                 "audioOutputEndpointId":{"type":"string","minLength":1},
-                "midiOutputEndpointId":{"type":"string","minLength":1}
+                "midiOutputEndpointId":{"type":"string","minLength":1},
+                "midiInputChannel":{"type":"integer","minimum":0,"maximum":16},
+                "midiOutputChannel":{"type":"integer","minimum":0,"maximum":16}
             },
             "required":["trackId"],"additionalProperties":false
         })json"),

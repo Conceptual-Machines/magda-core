@@ -140,36 +140,57 @@ TEST_CASE("Routing preflight rejects feedback without mutation", "[routing][api]
     CHECK_FALSE(fixture.undo.undo());
 }
 
-TEST_CASE("MIDI output routing projects its destination and reports invalidations",
-          "[routing][api][2832]") {
+TEST_CASE("A MIDI Out to a track is the sender's, and several may name one track",
+          "[routing][api][2832][2209]") {
     RoutingApiFixture fixture;
-    const auto source = fixture.add("Source");
+    const auto first = fixture.add("First");
+    const auto second = fixture.add("Second");
     const auto destination = fixture.add("Destination");
     fixture.tracks.setTrackAudioInput(destination, "default");
     fixture.undo.clearHistory();
 
     TrackRoutingPatch patch;
     patch.midiOutputEndpointId = "track:" + juce::String(destination);
-    const auto result = fixture.api.setRouting(source, patch);
+    patch.midiOutputChannel = 2;
+    REQUIRE(fixture.api.setRouting(first, patch).status == SetTrackRoutingStatus::Applied);
+    patch.midiOutputChannel = 3;
+    const auto result = fixture.api.setRouting(second, patch);
     REQUIRE(result.status == SetTrackRoutingStatus::Applied);
-    REQUIRE(result.droppedConnections.size() == 1);
-    CHECK(result.droppedConnections.front().trackId == destination);
-    CHECK(result.droppedConnections.front().field == "audioInputEndpointId");
-    CHECK(fixture.tracks.getTrack(destination)->audioInputDevice.isEmpty());
-    CHECK(fixture.tracks.getTrack(destination)->midiInputDevice == "track:" + juce::String(source));
 
-    const auto projected = fixture.api.getRouting(source);
+    // The destination keeps its own input.
+    CHECK(result.droppedConnections.empty());
+    CHECK(fixture.tracks.getTrack(destination)->audioInputDevice == "default");
+    CHECK(fixture.tracks.getTrack(first)->midiOutputDevice == "track:" + juce::String(destination));
+    CHECK(fixture.tracks.getTrack(second)->midiOutputChannel == 3);
+
+    const auto projected = fixture.api.getRouting(first);
     REQUIRE(projected.has_value());
     CHECK(projected->midiOutputEndpointId == "track:" + juce::String(destination));
+    CHECK(projected->midiOutputChannel == 2);
+
+    // One undo step per edit, channel and route together.
+    REQUIRE(fixture.undo.undo());
+    CHECK(fixture.tracks.getTrack(second)->midiOutputDevice.isEmpty());
+    CHECK(fixture.tracks.getTrack(second)->midiOutputChannel == 0);
+    CHECK(fixture.tracks.getTrack(first)->midiOutputChannel == 2);
 
     TrackRoutingPatch clear;
     clear.midiOutputEndpointId = noneId(RoutingMedia::Midi, RoutingDirection::Output);
-    const auto cleared = fixture.api.setRouting(source, clear);
-    REQUIRE(cleared.status == SetTrackRoutingStatus::Applied);
-    REQUIRE(cleared.droppedConnections.size() == 1);
-    CHECK(cleared.droppedConnections.front().trackId == destination);
-    CHECK(cleared.droppedConnections.front().field == "midiInputEndpointId");
-    CHECK(fixture.tracks.getTrack(destination)->midiInputDevice.isEmpty());
+    REQUIRE(fixture.api.setRouting(first, clear).status == SetTrackRoutingStatus::Applied);
+    CHECK(fixture.tracks.getTrack(first)->midiOutputDevice.isEmpty());
+}
+
+TEST_CASE("A MIDI channel outside 0-16 is refused", "[routing][api][2209]") {
+    RoutingApiFixture fixture;
+    const auto track = fixture.add("Track");
+
+    TrackRoutingPatch patch;
+    patch.midiInputChannel = 17;
+    CHECK(fixture.api.setRouting(track, patch).status == SetTrackRoutingStatus::Incompatible);
+
+    patch.midiInputChannel = 10;
+    REQUIRE(fixture.api.setRouting(track, patch).status == SetTrackRoutingStatus::Applied);
+    CHECK(fixture.tracks.getTrack(track)->midiInputChannel == 10);
 }
 
 TEST_CASE("Routing rejects unavailable and input-incompatible endpoints", "[routing][api][2832]") {

@@ -94,6 +94,7 @@ void MidiBridge::stopAllInputs() {
         inputsToDestroy = std::move(activeMidiInputs_);
         activeMidiInputs_.clear();
         trackMidiInputs_.clear();
+        trackMidiChannels_.clear();
         monitoredTracks_.clear();
     }
 
@@ -375,6 +376,14 @@ void MidiBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDevi
     }
 }
 
+void MidiBridge::setTrackMidiInputChannel(TrackId trackId, int channel) {
+    juce::ScopedLock lock(routingLock_);
+    if (channel == 0)
+        trackMidiChannels_.erase(trackId);
+    else
+        trackMidiChannels_[trackId] = channel;
+}
+
 juce::String MidiBridge::getTrackMidiInput(TrackId trackId) const {
     juce::ScopedLock lock(routingLock_);
 
@@ -397,6 +406,7 @@ void MidiBridge::resetTestState() {
 
     juce::ScopedLock lock(routingLock_);
     trackMidiInputs_.clear();
+    trackMidiChannels_.clear();
     monitoredTracks_.clear();
     globalEventQueue_.clear();
     recordingQueue_.store(nullptr, std::memory_order_release);
@@ -480,6 +490,9 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
     for (const auto& [trackId, deviceId] : trackMidiInputs_) {
         // Check if this track is routing this device (or "all" inputs)
         bool matches = (deviceId == sourceDeviceId || deviceId == "all");
+        if (const auto channel = trackMidiChannels_.find(trackId);
+            matches && channel != trackMidiChannels_.end() && message.getChannel() != 0)
+            matches = message.getChannel() == channel->second;
 
         if (matches) {
             // The engine routes MIDI to devices; this only feeds UI activity meters.

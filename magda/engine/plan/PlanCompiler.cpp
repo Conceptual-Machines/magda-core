@@ -210,6 +210,8 @@ class Compiler {
      */
     TrackRoute audioInputRoute(const TrackInfo& track) const;
     TrackRoute midiInputRoute(const TrackInfo& track) const;
+    /// The track @p track's MIDI Out sends to, if it names one (#2209).
+    TrackRoute midiOutputRoute(const TrackInfo& track) const;
 
     /**
      * @brief The op the live audio input reaches @p trackId's chain through.
@@ -366,6 +368,11 @@ class Compiler {
     /// is found and left unconnected: see the ordering pass for why.
     std::set<TrackId> refusedMidiRoutes_;
 
+    /// The tracks whose MIDI Out names each track, by destination (#2209). Any
+    /// number may send to one, so a loop is refused per sender.
+    std::map<TrackId, std::vector<TrackId>> midiOutSenders_;
+    std::set<std::pair<TrackId, TrackId>> refusedMidiOutRoutes_;
+
     /// Settle one input route that lies on a cycle: carry it when it is audio,
     /// refuse it when it is MIDI.
     void resolveCyclicRoute(std::size_t destination, std::size_t source, int signal);
@@ -456,6 +463,12 @@ TrackRoute Compiler::midiInputRoute(const TrackInfo& track) const {
     return parseTrackRoute(track.midiInputDevice);
 }
 
+TrackRoute Compiler::midiOutputRoute(const TrackInfo& track) const {
+    if (!carriesClips(track) || !track.midiOutputDevice.startsWith("track:"))
+        return {RouteKind::None, INVALID_TRACK_ID};
+    return parseTrackRoute(track.midiOutputDevice);
+}
+
 TrackId Compiler::resolveAudioDestination(const TrackInfo& track) {
     const auto route = parseTrackRoute(track.audioOutputDevice);
     if (route.namesTrack())
@@ -491,6 +504,15 @@ void Compiler::resolveCyclicRoute(std::size_t destination, std::size_t source, i
         return;
     }
 
+    if (signal == 2) {
+        refusedMidiOutRoutes_.insert({destId, sourceId});
+        diagnose("track " + std::to_string(sourceId) + ": MIDI Out to track " +
+                 std::to_string(destId) +
+                 (destination == source ? " is the track itself" : " is upstream of it") +
+                 ", and a MIDI loop repeats every note it carries, so it is not connected");
+        return;
+    }
+
     refusedMidiRoutes_.insert(destId);
     diagnose("track " + std::to_string(destId) + ": MIDI input track " + std::to_string(sourceId) +
              (destination == source ? " is the track itself" : " is downstream of it") +
@@ -515,7 +537,7 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
     struct Edge {
         std::size_t from = 0;  ///< compiles first
         std::size_t to = 0;
-        int routeSignal = -1;  ///< -1 not an input route, else 0 audio, 1 MIDI
+        int routeSignal = -1;  ///< -1 not a route, 0 audio, 1 MIDI input, 2 MIDI Out
         bool active = true;
     };
     std::vector<Edge> edges;
@@ -579,6 +601,9 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
         };
         addRouteEdge(audioInputRoute(track), 0);
         addRouteEdge(midiInputRoute(track), 1);
+        if (const auto senders = midiOutSenders_.find(track.id); senders != midiOutSenders_.end())
+            for (const auto sender : senders->second)
+                addRouteEdge({RouteKind::Track, sender}, 2);
 
         // Deliberately not the modulation sources. A modifier listening to
         // another track needs that track's tap to exist, and it does: the taps
@@ -690,7 +715,7 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
 
             if (edge.routeSignal == 0 && audio == nullptr)
                 audio = &edge;
-            else if (edge.routeSignal == 1 && midi == nullptr)
+            else if (edge.routeSignal >= 1 && midi == nullptr)
                 midi = &edge;
             if (any == nullptr)
                 any = &edge;
@@ -703,7 +728,7 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
         }
         if (midi != nullptr) {
             midi->active = false;
-            resolveCyclicRoute(midi->to, midi->from, 1);
+            resolveCyclicRoute(midi->to, midi->from, midi->routeSignal);
             continue;
         }
         if (any == nullptr)
@@ -1842,7 +1867,11 @@ void Compiler::emitTrack(const TrackInfo& track) {
                 // Reported where the loop was found.
             } else if (const auto source = trackMidiInput_.find(route.trackId);
                        source != trackMidiInput_.end()) {
-                midiSources.push_back(emitInputRouteGate(track.id, 1, source->second));
+                const auto gate = emitInputRouteGate(track.id, 1, source->second);
+                if (const auto* sender = findTrack(route.trackId))
+                    plan_.ops[static_cast<std::size_t>(gate.op)].noteGateChannel =
+                        static_cast<std::uint8_t>(sender->midiOutputChannel);
+                midiSources.push_back(gate);
             } else {
                 diagnose("track " + std::to_string(track.id) + ": MIDI input track " +
                          std::to_string(route.trackId) + " produces no MIDI, input not connected");
@@ -1858,6 +1887,30 @@ void Compiler::emitTrack(const TrackInfo& track) {
         case RouteKind::None:
             break;
     }
+
+    // Every track whose MIDI Out names this one, on its own channel. Keyed to the
+    // sender, which has one MIDI Out, and silent while the sender is muted (#2209).
+    if (const auto senders = midiOutSenders_.find(track.id); senders != midiOutSenders_.end()) {
+        for (const auto senderId : senders->second) {
+            if (refusedMidiOutRoutes_.contains({track.id, senderId}))
+                continue;
+            const auto source = trackMidiInput_.find(senderId);
+            const auto* sender = findTrack(senderId);
+            if (source == trackMidiInput_.end() || sender == nullptr) {
+                diagnose("track " + std::to_string(senderId) + ": MIDI Out to track " +
+                         std::to_string(track.id) + " produces no MIDI, not connected");
+                continue;
+            }
+            const OpKey key{senderId,          INVALID_RACK_ID,      INVALID_CHAIN_ID,
+                            INVALID_DEVICE_ID, OpRole::MidiOutRoute, 0};
+            const auto gate =
+                addOp(OpKind::MidiNoteGate, key, {source->second}, {SignalKind::Midi});
+            plan_.ops[static_cast<std::size_t>(gate)].noteGateChannel =
+                static_cast<std::uint8_t>(sender->midiOutputChannel);
+            midiSources.push_back(PortRef{gate, 0});
+        }
+    }
+
     if (!midiSources.empty()) {
         const OpKey key{track.id,          INVALID_RACK_ID,        INVALID_CHAIN_ID,
                         INVALID_DEVICE_ID, OpRole::TrackMidiInput, 0};
@@ -1877,10 +1930,18 @@ void Compiler::emitTrack(const TrackInfo& track) {
 
     // What the chain made of the track's MIDI leaves for its hardware MIDI Out (#3048).
     if (sendsMidiOut(track) && signal.midi.valid()) {
+        auto midi = signal.midi;
+        if (track.midiOutputChannel != 0) {
+            const OpKey channelKey{track.id,          INVALID_RACK_ID,        INVALID_CHAIN_ID,
+                                   INVALID_DEVICE_ID, OpRole::MidiOutChannel, 0};
+            const auto gate = addOp(OpKind::MidiNoteGate, channelKey, {midi}, {SignalKind::Midi});
+            plan_.ops[static_cast<std::size_t>(gate)].noteGateChannel =
+                static_cast<std::uint8_t>(track.midiOutputChannel);
+            midi = PortRef{gate, 0};
+        }
         const OpKey key{track.id,          INVALID_RACK_ID,      INVALID_CHAIN_ID,
                         INVALID_DEVICE_ID, OpRole::TrackMidiOut, 0};
-        addOp(OpKind::InsertSend, key,
-              alignInputs(key, OpKind::InsertSend, {noInput(), signal.midi}), {});
+        addOp(OpKind::InsertSend, key, alignInputs(key, OpKind::InsertSend, {noInput(), midi}), {});
     }
 
     // The post-FX stage and the mixer-analysis rail sit on whichever side of the
@@ -2084,6 +2145,11 @@ RenderPlan Compiler::run() {
         // A MIDI sidechain and a note-triggered modifier already work this way.
         if (const auto route = midiInputRoute(track); route.namesTrack())
             midiSourceTracks_.insert(route.trackId);
+        // A track whose MIDI Out names another sends MIDI whatever its chain holds.
+        if (const auto route = midiOutputRoute(track); route.namesTrack()) {
+            midiSourceTracks_.insert(track.id);
+            midiOutSenders_[route.trackId].push_back(track.id);
+        }
     }
     collectSidechainSources(master_, SidechainConfig::Type::MIDI, midiSourceTracks_);
 

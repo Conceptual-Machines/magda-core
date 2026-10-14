@@ -132,8 +132,8 @@ void LiveInputFeed::publishRouting(std::shared_ptr<const LiveRouting> routing) {
     published_.nonRealtimeReplace(std::move(routing));
 }
 
-int LiveInputFeed::appendEvents(LiveMidiSourceId source, juce::MidiBuffer& out,
-                                int maxBytes) const {
+int LiveInputFeed::appendEvents(LiveMidiSourceId source, juce::MidiBuffer& out, int maxBytes,
+                                int channel) const {
     if (segmentSamples_ <= 0)
         return 0;
 
@@ -148,6 +148,10 @@ int LiveInputFeed::appendEvents(LiveMidiSourceId source, juce::MidiBuffer& out,
 
         for (const auto metadata : *stream.events) {
             if (metadata.samplePosition < segmentStart_ || metadata.samplePosition >= end)
+                continue;
+            // System messages carry no channel and pass whatever the filter says.
+            if (channel != 0 && metadata.numBytes > 0 && metadata.data[0] < 0xf0 &&
+                (metadata.data[0] & 0x0f) + 1 != channel)
                 continue;
 
             if (static_cast<int>(out.data.size()) + kEventOverheadBytes + metadata.numBytes >
@@ -183,15 +187,17 @@ void TrackLiveAudioInput::render(const BlockInfo& /*block*/, juce::dsp::AudioBlo
         missingChannels_.fetch_add(1, std::memory_order_relaxed);
 }
 
-LiveMidiInput::LiveMidiInput(const LiveInputFeed& feed, LiveMidiSourceId source, int latencySamples)
-    : feed_(feed), source_(source), latencySamples_(latencySamples) {}
+LiveMidiInput::LiveMidiInput(const LiveInputFeed& feed, LiveMidiSourceId source, int latencySamples,
+                             int channel)
+    : feed_(feed), source_(source), latencySamples_(latencySamples), channel_(channel) {}
 
 LiveMidiInput::LiveMidiInput(const LiveInputFeed& feed, std::span<const LiveMidiSourceId> sources,
-                             int latencySamples)
+                             int latencySamples, int channel)
     : feed_(feed),
       sources_(sources.begin(), sources.end()),
       explicitSources_(true),
-      latencySamples_(latencySamples) {
+      latencySamples_(latencySamples),
+      channel_(channel) {
     std::ranges::sort(sources_);
     sources_.erase(std::unique(sources_.begin(), sources_.end()), sources_.end());
 }
@@ -199,10 +205,10 @@ LiveMidiInput::LiveMidiInput(const LiveInputFeed& feed, std::span<const LiveMidi
 void LiveMidiInput::render(const BlockInfo& /*block*/, juce::MidiBuffer& out) {
     auto dropped = 0;
     if (!explicitSources_)
-        dropped = feed_.appendEvents(source_, out, kMaxMidiBytesPerPort);
+        dropped = feed_.appendEvents(source_, out, kMaxMidiBytesPerPort, channel_);
     else
         for (const auto source : sources_)
-            dropped += feed_.appendEvents(source, out, kMaxMidiBytesPerPort);
+            dropped += feed_.appendEvents(source, out, kMaxMidiBytesPerPort, channel_);
 
     if (dropped > 0)
         dropped_.fetch_add(static_cast<std::uint32_t>(dropped), std::memory_order_relaxed);
@@ -216,8 +222,9 @@ void TrackLiveMidiInput::render(const BlockInfo& /*block*/, juce::MidiBuffer& ou
     }
 
     auto dropped = feed_.appendEvents(routing->audition, out, kMaxMidiBytesPerPort);
+    // The piano-roll preview is the track's own, so the input channel leaves it alone.
     for (const auto source : routing->sources)
-        dropped += feed_.appendEvents(source, out, kMaxMidiBytesPerPort);
+        dropped += feed_.appendEvents(source, out, kMaxMidiBytesPerPort, routing->channel);
 
     if (dropped > 0)
         dropped_.fetch_add(static_cast<std::uint32_t>(dropped), std::memory_order_relaxed);

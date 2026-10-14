@@ -53,7 +53,16 @@ When an instrument plugin has more than two output channels (e.g. Kontakt, Batte
 
 A track can take another track's output as its own input. Every other track appears in the audio-input and MIDI-input selectors, listed after a separator alongside the hardware inputs, in the [Inspector](panels/inspector.md), the track headers, the [Mixer](mixer-view.md), and [Session View](session-view.md).
 
-From the source side, **MIDI To** routes a track's MIDI output to a single destination track.
+From the source side, **MIDI Out** can name another track instead of a hardware port. Each track has one MIDI Out, but any number of tracks can send to the same track, which still takes its own MIDI input as well.
+
+### MIDI channels
+
+In the Inspector's routing section, the input and output icons beside the selectors open each track's MIDI channel menu. Once a channel is set, the icon lights up and shows its number.
+
+- **Input** passes only one channel (1–16) of what the track hears from its MIDI devices, for both monitoring and recording. *Any* passes them all.
+- **Output** moves everything the track's MIDI Out sends, to a port or to another track, onto one channel. *As is* leaves channels alone. A chosen channel puts all of an MPE clip's notes on that one channel.
+
+Together these drive a multitimbral instrument: give each part its own track, set each track's MIDI Out to the instrument's track and its output channel to the part's channel. A hardware synth works the same way, with each track's MIDI Out on the synth's port.
 
 Self-routing and feedback loops are detected and blocked. Routings are saved with the project, and input monitoring works normally for an internally-routed track.
 

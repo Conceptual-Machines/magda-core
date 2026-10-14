@@ -343,16 +343,18 @@ class CommandDispatcher {
         auto& trackManager = magda::TrackManager::getInstance();
         trackManager.routeMidiOutputToTrack(*sourceId, *destId);
 
-        const auto* dest = trackManager.getTrack(*destId);
-        if (dest == nullptr)
+        if (trackManager.getTrack(*destId) == nullptr)
             return fail("route-midi-to: unknown track " + juce::String(*destId));
+        const auto* source = trackManager.getTrack(*sourceId);
+        if (source == nullptr)
+            return fail("route-midi-to: unknown track " + juce::String(*sourceId));
 
         // The model rejects self / unknown / cycle silently, so verify the
-        // routing actually landed (mirrors the set-track-input convention).
-        const auto expected = "track:" + juce::String(*sourceId);
-        if (dest->midiInputDevice != expected)
-            return fail("route-midi-to rejected: track " + juce::String(*destId) +
-                        " midi input is \"" + dest->midiInputDevice + "\"");
+        // routing actually landed: the route is the source's MIDI Out (#2209).
+        const auto expected = "track:" + juce::String(*destId);
+        if (source->midiOutputDevice != expected)
+            return fail("route-midi-to rejected: track " + juce::String(*sourceId) +
+                        " midi output is \"" + source->midiOutputDevice + "\"");
 
         std::cout << "midi-to " << *sourceId << " " << *destId << "\n";
         return {};

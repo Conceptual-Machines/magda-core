@@ -36,13 +36,15 @@ struct SendInfo {
     bool operator==(const SendInfo&) const = default;
 };
 
-/** The four routing selectors owned by one track. */
+/** The routing selectors owned by one track, and its MIDI channels (#2209). */
 struct TrackRoutingState {
     TrackId trackId = INVALID_TRACK_ID;
     juce::String audioInput;
     juce::String midiInput;
     juce::String audioOutput;
     juce::String midiOutput;
+    int midiInputChannel = 0;
+    int midiOutputChannel = 0;
 
     bool operator==(const TrackRoutingState&) const = default;
 };
@@ -90,12 +92,20 @@ struct TrackInfo {
 
     // Routing
     juce::String midiInputDevice;    // MIDI input device ID ("all", device ID, or empty for none)
-    juce::String midiOutputDevice;   // MIDI output device ID (device ID or empty for none)
+    juce::String midiOutputDevice;   // MIDI output device ID, "track:<id>", or empty for none
     juce::String audioInputDevice;   // Audio input device/channel (device ID or empty for none)
     juce::String audioOutputDevice;  // Audio output routing (default: "master")
+    int midiInputChannel = 0;        // Channel the MIDI input passes, 1-16, or 0 for any (#2209)
+    int midiOutputChannel = 0;       // Channel the MIDI Out rewrites to, 1-16, or 0 to leave as is
 
     TrackRoutingState routingState() const {
-        return {id, audioInputDevice, midiInputDevice, audioOutputDevice, midiOutputDevice};
+        return {id,
+                audioInputDevice,
+                midiInputDevice,
+                audioOutputDevice,
+                midiOutputDevice,
+                midiInputChannel,
+                midiOutputChannel};
     }
 
     // Sends (to aux tracks)
@@ -160,6 +170,8 @@ struct TrackInfo {
             midiOutputDevice = other.midiOutputDevice;
             audioInputDevice = other.audioInputDevice;
             audioOutputDevice = other.audioOutputDevice;
+            midiInputChannel = other.midiInputChannel;
+            midiOutputChannel = other.midiOutputChannel;
             sends = other.sends;
             auxBusIndex = other.auxBusIndex;
             multiOutLink = other.multiOutLink;
@@ -257,6 +269,7 @@ struct TrackInfo {
             recordArmed = false;
             inputMonitor = InputMonitorMode::Off;
             midiInputDevice = "";
+            midiInputChannel = 0;
             audioInputDevice = "";
         }
     }

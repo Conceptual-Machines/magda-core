@@ -50,9 +50,9 @@ RecordStreamSettings queueFor(const MidiTakeRecorderSettings& settings) {
 
 LiveMidiInput inputFor(const LiveInputFeed& feed, const MidiTakeRecorderSettings& settings) {
     if (settings.sources)
-        return LiveMidiInput(feed, *settings.sources, settings.latencySamples);
+        return LiveMidiInput(feed, *settings.sources, settings.latencySamples, settings.channel);
 
-    return LiveMidiInput(feed, settings.source, settings.latencySamples);
+    return LiveMidiInput(feed, settings.source, settings.latencySamples, settings.channel);
 }
 
 /// A note that has sounded and not yet stopped, and its MPE dimensions so far.

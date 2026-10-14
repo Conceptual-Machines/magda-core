@@ -629,3 +629,93 @@ TEST_CASE("A track's MIDI Out sends each block, and a muted one ends its notes i
     CHECK(muted.sends == 0);
     CHECK(muted.releases == 1);
 }
+
+namespace {
+
+/// A note on channel 1 every block.
+class NoteEveryBlock final : public magda::engine::EngineMidiSource {
+  public:
+    void render(const BlockInfo&, juce::MidiBuffer& out) override {
+        out.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+    }
+};
+
+/// The channels of the notes a MIDI send was handed.
+class ChannelProbe final : public EngineInsert {
+  public:
+    void send(const BlockInfo&, juce::dsp::AudioBlock<const float>,
+              const juce::MidiBuffer& midi) override {
+        for (const auto metadata : midi)
+            if (metadata.getMessage().isNoteOn())
+                channels.push_back(metadata.getMessage().getChannel());
+    }
+    void receive(const BlockInfo&, juce::dsp::AudioBlock<float>, juce::MidiBuffer&) override {}
+    void releaseNotes(const BlockInfo&) override {}
+
+    std::vector<int> channels;
+};
+
+/// Track 1 plays a note; track 2 sends what reaches it to a port, through @p probe.
+std::vector<int> channelsReaching(std::vector<TrackInfo> tracks) {
+    auto master = makeMaster();
+    const auto plan = magda::engine::compileRenderPlan(tracks, master);
+    INFO(magda::engine::dumpPlan(plan));
+
+    NoteEveryBlock note;
+    ChannelProbe probe;
+    PlanBindings bindings;
+    bindings.midiInputs[1] = &note;
+    bindings.trackMidiOuts[2] = &probe;
+
+    PlanValues values;
+    magda::engine::resolvePlanValues(plan, tracks, master, values);
+
+    const RenderContext context{44100.0, kBlockSize, 2};
+    PlanExecutor executor;
+    executor.prepare(plan, bindings, context);
+    REQUIRE(executor.isPrepared());
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    BlockInfo block;
+    block.numSamples = kBlockSize;
+    block.playing = true;
+    block.continuous = true;
+    executor.process(values, block, output);
+    return probe.channels;
+}
+
+}  // namespace
+
+TEST_CASE("A track's MIDI Out sends on its channel, to a track and to a port",
+          "[engine][exec][insert][2209]") {
+    auto sender = makeTrack(1);
+    sender.midiInputDevice = "all";
+    auto receiver = makeTrack(2);
+    receiver.midiOutputDevice = "MIDI Out 1";
+
+    SECTION("a sender's channel is what the receiving track hears") {
+        sender.midiOutputDevice = "track:2";
+        sender.midiOutputChannel = 3;
+        CHECK(channelsReaching({receiver, sender}) == std::vector<int>{3});
+    }
+
+    SECTION("a port's channel is the last word") {
+        sender.midiOutputDevice = "track:2";
+        sender.midiOutputChannel = 3;
+        receiver.midiOutputChannel = 7;
+        CHECK(channelsReaching({receiver, sender}) == std::vector<int>{7});
+    }
+
+    SECTION("a muted sender sends the track nothing") {
+        sender.midiOutputDevice = "track:2";
+        sender.muted = true;
+        CHECK(channelsReaching({receiver, sender}).empty());
+    }
+
+    SECTION("a track pulling the sender's MIDI hears it on the sender's channel") {
+        sender.midiOutputChannel = 4;
+        receiver.midiInputDevice = "track:1";
+        receiver.inputMonitor = InputMonitorMode::In;
+        CHECK(channelsReaching({receiver, sender}) == std::vector<int>{4});
+    }
+}

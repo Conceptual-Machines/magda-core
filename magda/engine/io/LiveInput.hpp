@@ -138,9 +138,11 @@ class LiveInputFeed {
      * offsets the host stamped, which is what makes a live note recordable at
      * the position it was played rather than at a block boundary.
      *
-     * Stops at @p maxBytes of encoded MIDI and counts what would not fit.
+     * Stops at @p maxBytes of encoded MIDI and counts what would not fit. A
+     * @p channel of 1-16 drops channel messages on any other (#2209).
      */
-    int appendEvents(LiveMidiSourceId source, juce::MidiBuffer& out, int maxBytes) const;
+    int appendEvents(LiveMidiSourceId source, juce::MidiBuffer& out, int maxBytes,
+                     int channel = 0) const;
 
     /// Callbacks whose input did not fit the room prepare() took, in channels
     /// or in samples. Read from any thread; what did not fit reads silence.
@@ -263,9 +265,9 @@ class TrackLiveAudioInput final : public EngineAudioSource {
 class LiveMidiInput final : public EngineMidiSource {
   public:
     explicit LiveMidiInput(const LiveInputFeed& feed, LiveMidiSourceId source = kAnyLiveMidiSource,
-                           int latencySamples = 0);
+                           int latencySamples = 0, int channel = 0);
     LiveMidiInput(const LiveInputFeed& feed, std::span<const LiveMidiSourceId> sources,
-                  int latencySamples = 0);
+                  int latencySamples = 0, int channel = 0);
 
     void render(const BlockInfo& /*block*/, juce::MidiBuffer& out) override;
 
@@ -286,6 +288,7 @@ class LiveMidiInput final : public EngineMidiSource {
     std::vector<LiveMidiSourceId> sources_;
     bool explicitSources_ = false;
     int latencySamples_ = 0;
+    int channel_ = 0;
     std::atomic<std::uint32_t> dropped_{0};
 };
 

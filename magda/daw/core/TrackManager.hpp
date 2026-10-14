@@ -196,6 +196,7 @@ struct ExternalTrackRouting {
         std::vector<SendInfo> sends;
         juce::String audioInputDevice;
         juce::String midiInputDevice;
+        juce::String midiOutputDevice;
     };
 
     /// One device or rack that was sidechained to a deleted track.
@@ -360,11 +361,9 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     std::vector<TrackId> getChildTracks(TrackId groupId) const;
     std::vector<TrackId> getTopLevelTracks() const;
     std::vector<TrackId> getAllDescendants(TrackId trackId) const;
-    // True if routing sourceTrackId's output into destTrackId's input would
-    // create a cycle: sourceTrackId == destTrackId, or walking the "track:"
-    // input chain from sourceTrackId reaches destTrackId. Each track has at
-    // most one track input (audio and MIDI are mutually exclusive), so this
-    // is a simple chain walk.
+    // True if routing sourceTrackId's output into destTrackId would create a
+    // cycle: the two are one track, or destTrackId is already upstream of
+    // sourceTrackId through a track input or a MIDI Out to a track.
     bool wouldCreateInputRoutingCycle(TrackId destTrackId, TrackId sourceTrackId) const;
 
     /**
@@ -470,14 +469,15 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
 
     // Track routing setters (notify listeners and forward to bridges)
     void setTrackMidiInput(TrackId trackId, const juce::String& deviceId);
+    // A hardware port, "track:<id>" to send to another track, or empty. One choice
+    // per track, but any number of tracks may send to one (#2209). Rejects an
+    // unknown or aux destination and a cycle without changing anything.
     void setTrackMidiOutput(TrackId trackId, const juce::String& deviceId);
-    // "MIDI To track": route sourceTrackId's MIDI output into destTrackId's
-    // input — the mirror view of setTrackMidiInput(dest, "track:<source>").
-    // Single destination: any other track listening to the source is cleared
-    // first, and the source's hardware MIDI output is cleared (the MIDI out
-    // selector is one exclusive choice). Rejects self / unknown / aux
-    // destination / cycle without changing anything.
+    // "MIDI To track": setTrackMidiOutput(source, "track:<dest>").
     void routeMidiOutputToTrack(TrackId sourceTrackId, TrackId destTrackId);
+    // 1-16, or 0: any channel in, the channel as it was out (#2209).
+    void setTrackMidiInputChannel(TrackId trackId, int channel);
+    void setTrackMidiOutputChannel(TrackId trackId, int channel);
     // Clear midiInputDevice on every track listening to sourceTrackId
     // (optionally keeping excludeTrackId's routing intact).
     void clearMidiTrackListeners(TrackId sourceTrackId, TrackId excludeTrackId = INVALID_TRACK_ID);

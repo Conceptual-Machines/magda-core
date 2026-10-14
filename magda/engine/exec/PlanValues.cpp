@@ -382,6 +382,8 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
 
         // A muted track's hardware MIDI Out sends nothing, and ends what it started.
         case OpRole::TrackMidiOut:
+        // And its MIDI Out to another track, keyed to the sender (#2209).
+        case OpRole::MidiOutRoute:
             if (!isAudible(*track))
                 value.silent = true;
             break;
@@ -577,6 +579,7 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         // still ducks the compressor keying off it.
         case OpRole::ModulationTap:
         case OpRole::HardwareOutput:
+        case OpRole::MidiOutChannel:
         // Delay and crossfade roles never reach here: they return above.
         case OpRole::MixInputDelay:
         case OpRole::MergeInputDelay:

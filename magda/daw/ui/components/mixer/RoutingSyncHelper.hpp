@@ -669,12 +669,13 @@ inline void syncSelectorsFromTrack(const TrackInfo& track, RoutingSelector* audi
         // Always re-populate with the current track context (see audio note above).
         populateMidiOutputOptions(midiOutSelector, midiOutputTrackMapping, currentTrackId);
 
-        // Mirror view of internal MIDI routing: if another track listens to
-        // this track ("track:<id>" MIDI input), show that destination on the
-        // out selector. With destination-side fan-out only the first listener
-        // is shown — acceptable.
+        // The track this one's MIDI Out names (#2209), or else the first track
+        // pulling this one's MIDI through its own input.
         TrackId listenerId = INVALID_TRACK_ID;
-        if (currentTrackId != INVALID_TRACK_ID) {
+        if (track.midiOutputDevice.startsWith("track:")) {
+            listenerId =
+                track.midiOutputDevice.fromFirstOccurrenceOf("track:", false, false).getIntValue();
+        } else if (currentTrackId != INVALID_TRACK_ID) {
             const juce::String trackInputId = "track:" + juce::String(currentTrackId);
             for (const auto& t : TrackManager::getInstance().getTracks()) {
                 if (t.id != currentTrackId && t.midiInputDevice == trackInputId) {
@@ -695,7 +696,7 @@ inline void syncSelectorsFromTrack(const TrackInfo& track, RoutingSelector* audi
             }
             midiOutSelector->setSelectedId(selectedId);
             midiOutSelector->setEnabled(selectedId != 1);
-        } else if (currentMidiOutput.isEmpty()) {
+        } else if (currentMidiOutput.isEmpty() || currentMidiOutput.startsWith("track:")) {
             midiOutSelector->setSelectedId(1);  // "None"
         } else {
             auto midiOutputs = MidiBridge::getAvailableMidiOutputs();

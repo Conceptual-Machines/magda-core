@@ -54,8 +54,8 @@ execute_process(
             # Group output routing: GroupMember(5) into Bus(4) sets its
             # audioOutputDevice to track:4.
             group-track 5 4
-            # MIDI To track: MidiSrc(6) -> MidiDstB(7) sets 7's
-            # midiInputDevice to track:6.
+            # MIDI To track: MidiSrc(6) -> MidiDstB(7) sets 6's
+            # midiOutputDevice to track:7 (#2209).
             route-midi-to 6 7
             dump --json
             --out "${mutated_request}"
@@ -96,22 +96,22 @@ if(group_out_pos EQUAL -1 OR group_parent_pos EQUAL -1)
         "group-track 5 4 did not route GroupMember's output to the Bus group; see ${json_file}")
 endif()
 
-# MIDI To track: route-midi-to 6 7 must make MidiDstB (7) listen to MidiSrc
-# (6). Bind the assertion to track 7's JSON object by slicing the dump
-# between the two dest track names (tracks appear in id order).
+# MIDI To track: route-midi-to 6 7 must make MidiDstB (7) MidiSrc's (6) MIDI
+# Out (#2209). Bind the assertion to track 6's JSON object by slicing the dump
+# between MidiSrc and the next track (tracks appear in id order).
+string(FIND "${exec_stdout}" "\"name\": \"MidiSrc\"" src_pos)
 string(FIND "${exec_stdout}" "\"name\": \"MidiDstB\"" dstb_pos)
-string(FIND "${exec_stdout}" "\"name\": \"MidiDstC\"" dstc_pos)
-if(dstb_pos EQUAL -1 OR dstc_pos EQUAL -1)
+if(src_pos EQUAL -1 OR dstb_pos EQUAL -1)
     file(WRITE "${json_file}" "${exec_stdout}")
-    message(FATAL_ERROR "MidiDstB/MidiDstC tracks missing from dump; see ${json_file}")
+    message(FATAL_ERROR "MidiSrc/MidiDstB tracks missing from dump; see ${json_file}")
 endif()
-math(EXPR dstb_len "${dstc_pos} - ${dstb_pos}")
-string(SUBSTRING "${exec_stdout}" ${dstb_pos} ${dstb_len} dstb_json)
-string(FIND "${dstb_json}" "\"midiInputDevice\": \"track:6\"" dstb_midi_pos)
-if(dstb_midi_pos EQUAL -1)
+math(EXPR src_len "${dstb_pos} - ${src_pos}")
+string(SUBSTRING "${exec_stdout}" ${src_pos} ${src_len} src_json)
+string(FIND "${src_json}" "\"midiOutputDevice\": \"track:7\"" src_midi_pos)
+if(src_midi_pos EQUAL -1)
     file(WRITE "${json_file}" "${exec_stdout}")
     message(FATAL_ERROR
-        "route-midi-to 6 7 did not set MidiDstB's midi input to track:6; see ${json_file}")
+        "route-midi-to 6 7 did not set MidiSrc's midi output to track:7; see ${json_file}")
 endif()
 
 # Reload the saved project and confirm internal track-to-track routing
@@ -142,7 +142,7 @@ endif()
 # routing (6 -> 7) is still in place.
 string(FIND "${reload_stdout}" "\"audioOutputDevice\": \"track:4\"" reload_group_out_pos)
 string(FIND "${reload_stdout}" "\"parentId\": 4" reload_group_parent_pos)
-string(FIND "${reload_stdout}" "\"midiInputDevice\": \"track:6\"" reload_midi_to_pos)
+string(FIND "${reload_stdout}" "\"midiOutputDevice\": \"track:7\"" reload_midi_to_pos)
 if(reload_group_out_pos EQUAL -1 OR reload_group_parent_pos EQUAL -1
    OR reload_midi_to_pos EQUAL -1)
     message(FATAL_ERROR
@@ -215,9 +215,8 @@ if(member_master_pos EQUAL -1)
         "ungroup-track 5 did not revert GroupMember's output to master; see ${json_file}")
 endif()
 
-# MIDI To is single-destination: re-routing MidiSrc (6) to MidiDstC (8) must
-# make 8 the listener and clear MidiDstB (7). MidiDstC is the last track, so
-# its JSON slice runs to the end of the dump.
+# A track has one MIDI Out: re-routing MidiSrc (6) to MidiDstC (8) replaces
+# its route to MidiDstB (7).
 execute_process(
     COMMAND "${MAGDA_CLI}" exec "${mutated_file}"
             route-midi-to 6 8
@@ -230,26 +229,19 @@ execute_process(
 if(NOT rewire_result EQUAL 0)
     message(FATAL_ERROR "magda-cli route-midi-to rewire failed: ${rewire_stderr}\n${rewire_stdout}")
 endif()
+string(FIND "${rewire_stdout}" "\"name\": \"MidiSrc\"" rewire_src_pos)
 string(FIND "${rewire_stdout}" "\"name\": \"MidiDstB\"" rewire_dstb_pos)
-string(FIND "${rewire_stdout}" "\"name\": \"MidiDstC\"" rewire_dstc_pos)
-if(rewire_dstb_pos EQUAL -1 OR rewire_dstc_pos EQUAL -1)
+if(rewire_src_pos EQUAL -1 OR rewire_dstb_pos EQUAL -1)
     file(WRITE "${json_file}" "${rewire_stdout}")
-    message(FATAL_ERROR "MidiDstB/MidiDstC tracks missing from rewire dump; see ${json_file}")
+    message(FATAL_ERROR "MidiSrc/MidiDstB tracks missing from rewire dump; see ${json_file}")
 endif()
-string(SUBSTRING "${rewire_stdout}" ${rewire_dstc_pos} -1 rewire_dstc_json)
-string(FIND "${rewire_dstc_json}" "\"midiInputDevice\": \"track:6\"" rewire_dstc_midi_pos)
-if(rewire_dstc_midi_pos EQUAL -1)
+math(EXPR rewire_src_len "${rewire_dstb_pos} - ${rewire_src_pos}")
+string(SUBSTRING "${rewire_stdout}" ${rewire_src_pos} ${rewire_src_len} rewire_src_json)
+string(FIND "${rewire_src_json}" "\"midiOutputDevice\": \"track:8\"" rewire_src_midi_pos)
+if(rewire_src_midi_pos EQUAL -1)
     file(WRITE "${json_file}" "${rewire_stdout}")
     message(FATAL_ERROR
-        "route-midi-to 6 8 did not set MidiDstC's midi input to track:6; see ${json_file}")
-endif()
-math(EXPR rewire_dstb_len "${rewire_dstc_pos} - ${rewire_dstb_pos}")
-string(SUBSTRING "${rewire_stdout}" ${rewire_dstb_pos} ${rewire_dstb_len} rewire_dstb_json)
-string(FIND "${rewire_dstb_json}" "\"midiInputDevice\": \"track:6\"" rewire_dstb_midi_pos)
-if(NOT rewire_dstb_midi_pos EQUAL -1)
-    file(WRITE "${json_file}" "${rewire_stdout}")
-    message(FATAL_ERROR
-        "route-midi-to 6 8 left MidiDstB still listening to track:6; see ${json_file}")
+        "route-midi-to 6 8 did not set MidiSrc's midi output to track:8; see ${json_file}")
 endif()
 
 # MIDI To self-routing rejection: a track may not feed its own MIDI input.

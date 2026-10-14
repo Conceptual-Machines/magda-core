@@ -2230,6 +2230,10 @@ HandlerResult routingSet(MagdaApi& api, const juce::var& input, const RequestCon
         patch.audioOutputEndpointId = input["audioOutputEndpointId"].toString();
     if (has(input, "midiOutputEndpointId"))
         patch.midiOutputEndpointId = input["midiOutputEndpointId"].toString();
+    if (has(input, "midiInputChannel"))
+        patch.midiInputChannel = static_cast<int>(input["midiInputChannel"]);
+    if (has(input, "midiOutputChannel"))
+        patch.midiOutputChannel = static_cast<int>(input["midiOutputChannel"]);
 
     auto result = api.tracks().setRouting(trackId, patch);
     switch (result.status) {

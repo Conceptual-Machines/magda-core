@@ -50,6 +50,8 @@ struct TrackRoutingPatch {
     std::optional<juce::String> midiInputEndpointId;
     std::optional<juce::String> audioOutputEndpointId;
     std::optional<juce::String> midiOutputEndpointId;
+    std::optional<int> midiInputChannel;   ///< 1-16, or 0 for any (#2209)
+    std::optional<int> midiOutputChannel;  ///< 1-16, or 0 to leave it as it is
 };
 
 struct DroppedRoutingConnection {
@@ -80,6 +82,8 @@ struct TrackRoutingView {
     juce::String midiInputEndpointId;
     juce::String audioOutputEndpointId;
     juce::String midiOutputEndpointId;
+    int midiInputChannel = 0;
+    int midiOutputChannel = 0;
     bool recordArmed = false;
     InputMonitorMode inputMonitor = InputMonitorMode::Off;
 };
