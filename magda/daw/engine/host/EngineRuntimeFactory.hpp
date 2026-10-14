@@ -98,7 +98,7 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
     void rerouteInserts();
 
     bool holdsInserts() const {
-        return !insertsBuilt_.empty();
+        return !insertsBuilt_.empty() || !midiOutsBuilt_.empty();
     }
 
     /// Whether an insert the store holds was built from a config the model has since
@@ -171,6 +171,8 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
     std::unique_ptr<engine::EngineMidiSource> createMidiInput(TrackId trackId) override;
 
     std::unique_ptr<engine::EngineInsert> createInsert(engine::DeviceKey key) override;
+    std::unique_ptr<engine::EngineInsert> createTrackMidiOut(TrackId trackId) override;
+    std::set<TrackId> trackMidiOutsToRebuild() override;
 
   private:
     std::unique_ptr<engine::EngineDevice> handOver(engine::DeviceKey key, const DeviceInfo& model,
@@ -203,6 +205,12 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
 
     /// What the next publish must rebuild.
     std::set<engine::DeviceKey> rebuild_;
+
+    /// Each track's hardware MIDI Out port in the model, the port each live one was
+    /// built or last tried from, and those the next publish must rebuild (#3048).
+    std::map<TrackId, juce::String> midiOuts_;
+    std::map<TrackId, juce::String> midiOutsBuilt_;
+    std::set<TrackId> rebuildMidiOuts_;
 
     std::vector<juce::String> unbuilt_;
     EngineTrace* trace_ = nullptr;

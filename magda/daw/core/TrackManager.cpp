@@ -1724,7 +1724,7 @@ void TrackManager::setTrackMidiOutput(TrackId trackId, const juce::String& devic
     // Update track state
     track->midiOutputDevice = deviceId;
 
-    // Notify listeners (AudioBridge forwards to TrackController for routing)
+    // The engine recompiles on the notification and sends to the port (#3048).
     notifyTrackPropertyChanged(trackId);
 }
 

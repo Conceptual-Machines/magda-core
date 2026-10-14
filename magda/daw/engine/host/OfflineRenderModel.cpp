@@ -115,6 +115,8 @@ OfflineRenderModel narrowForRender(OfflineRenderModel model, const OfflineRender
     for (auto& track : model.tracks) {
         detachFromDropped(track, kept, original);
         routeHardwareOutputToOfflineMaster(track);
+        // A render plays nothing to the outside world (#3048).
+        track.midiOutputDevice.clear();
 
         // Live input is monitoring, and a render has nobody to monitor.
         track.inputMonitor = InputMonitorMode::Off;

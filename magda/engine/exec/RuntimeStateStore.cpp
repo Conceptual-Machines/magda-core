@@ -116,6 +116,12 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
             inserts_.erase(found);
         }
     }
+    for (const auto trackId : factory_.trackMidiOutsToRebuild()) {
+        if (const auto found = trackMidiOuts_.find(trackId); found != trackMidiOuts_.end()) {
+            retiredInserts_.push_back(std::move(found->second));
+            trackMidiOuts_.erase(found);
+        }
+    }
 
     // A context that has changed is the one case where something already
     // playing is touched, and it is only reachable with the audio device
@@ -129,6 +135,7 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
         prepareAll(audioInputs_, context);
         prepareAll(midiInputs_, context);
         prepareAll(inserts_, context);
+        prepareAll(trackMidiOuts_, context);
     }
     context_ = context;
     hasContext_ = true;
@@ -193,6 +200,14 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
 
             case OpKind::InsertSend:
             case OpKind::InsertReturn:
+                if (op.key.role == OpRole::TrackMidiOut) {
+                    if (auto* out =
+                            realiseOne(trackMidiOuts_, trackId, context, [this](TrackId id) {
+                                return factory_.createTrackMidiOut(id);
+                            }))
+                        bindings.trackMidiOuts[trackId] = out;
+                    break;
+                }
                 if (auto* insert =
                         realiseOne(inserts_, op.key.deviceKey(), context,
                                    [this](DeviceKey key) { return factory_.createInsert(key); }))
@@ -317,6 +332,16 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
         else if (op.kind == OpKind::MergeMidi || op.kind == OpKind::MidiNoteGate)
             liveMidiOps.insert(op.key);
     }
+
+    // Like a meter, kept by the op: a track whose MIDI Out was cleared lets its
+    // port go, and the insert ends the notes it was holding.
+    std::set<TrackId> liveMidiOuts;
+    for (const auto& op : livePlan.ops)
+        if (op.key.role == OpRole::TrackMidiOut)
+            liveMidiOuts.insert(op.key.trackId);
+    removed += std::erase_if(trackMidiOuts_, [&liveMidiOuts](const auto& entry) {
+        return !liveMidiOuts.contains(entry.first);
+    });
 
     removed += std::erase_if(
         meters_, [&liveMeters](const auto& entry) { return !liveMeters.contains(entry.first); });
@@ -567,7 +592,8 @@ std::size_t RuntimeStateStore::size() const {
     return devices_.size() + retired_.size() + clipAudio_.size() + clipMidi_.size() +
            sessionAudio_.size() + sessionMidi_.size() + handles_.size() + audioInputs_.size() +
            midiInputs_.size() + meters_.size() + noteOnTaps_.size() + valueTaps_.size() +
-           takes_.size() + takeTaps_.size() + inserts_.size() + retiredInserts_.size();
+           takes_.size() + takeTaps_.size() + inserts_.size() + retiredInserts_.size() +
+           trackMidiOuts_.size();
 }
 
 }  // namespace magda::engine

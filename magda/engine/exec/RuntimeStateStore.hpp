@@ -102,6 +102,16 @@ class RuntimeStateFactory {
         return {};
     }
 
+    /// A track's hardware MIDI Out (#3048), or null: the send half of an insert.
+    virtual std::unique_ptr<EngineInsert> createTrackMidiOut(TrackId) {
+        return nullptr;
+    }
+
+    /// Tracks whose MIDI Out names another port than the one the store holds.
+    virtual std::set<TrackId> trackMidiOutsToRebuild() {
+        return {};
+    }
+
     /**
      * @brief The level tap behind one Meter op, or nullptr for one nobody reads.
      *
@@ -473,6 +483,9 @@ class RuntimeStateStore {
     /// Hardware inserts by their device's key, kept and rebuilt like devices_ (#2279).
     std::unordered_map<DeviceKey, std::unique_ptr<EngineInsert>, DeviceKeyHash> inserts_;
     std::vector<std::unique_ptr<EngineInsert>> retiredInserts_;
+
+    /// Each track's hardware MIDI Out (#3048), kept while the live plan sends to it.
+    std::unordered_map<TrackId, std::unique_ptr<EngineInsert>> trackMidiOuts_;
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> clipAudio_;
     std::unordered_map<TrackId, std::unique_ptr<EngineMidiSource>> clipMidi_;
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> sessionAudio_;

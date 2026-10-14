@@ -98,4 +98,8 @@ RenderPlan compileRenderPlan(const std::vector<TrackInfo>& tracks, const TrackIn
  */
 bool chainConsumesMidi(const TrackInfo& track);
 
+/// Whether @p track's MIDI Out names a hardware port (#3048). MIDI to another
+/// track is stored on that track's input instead.
+bool sendsMidiOut(const TrackInfo& track);
+
 }  // namespace magda::engine

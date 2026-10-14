@@ -769,6 +769,14 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 // one thing: an implementation handed a separately bound sink
                 // and source would be rebuilding the pairing the plan already
                 // did (#2245).
+                if (op.key.role == OpRole::TrackMidiOut) {
+                    // A port that is not there now is the user's to plug in: the track
+                    // plays on, and a render never compiles one.
+                    if (const auto out = bindings.trackMidiOuts.find(op.key.trackId);
+                        out != bindings.trackMidiOuts.end())
+                        insertForOp_[i] = out->second;
+                    break;
+                }
                 const auto found = bindings.inserts.find(op.key.deviceKey());
                 if (found == bindings.inserts.end() || found->second == nullptr) {
                     // Reported, unlike a device that failed to load, which

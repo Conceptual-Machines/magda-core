@@ -80,6 +80,9 @@ struct PlanBindings {
     /// its send op and return op are two halves of one binding.
     std::unordered_map<DeviceKey, EngineInsert*, DeviceKeyHash> inserts;
 
+    /// Each track's hardware MIDI Out (InsertSend ops of role TrackMidiOut, #3048).
+    std::unordered_map<TrackId, EngineInsert*> trackMidiOuts;
+
     /**
      * @brief Where each Meter op publishes its level.
      *
