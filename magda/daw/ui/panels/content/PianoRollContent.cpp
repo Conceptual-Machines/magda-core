@@ -681,6 +681,7 @@ void PianoRollContent::setupGridCallbacks() {
             magda::SelectionManager::getInstance().clearNoteSelection();
             if (midiDrawer_ && midiDrawer_->getVelocityLane()) {
                 midiDrawer_->getVelocityLane()->setSelectedNoteIndices({});
+                midiDrawer_->setSelectedNoteIndices({});
             } else if (velocityLane_) {
                 velocityLane_->setSelectedNoteIndices({});
             }

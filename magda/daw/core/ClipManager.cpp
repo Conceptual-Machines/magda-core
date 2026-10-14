@@ -3044,6 +3044,16 @@ void ClipManager::setMidiNotePitchExpression(ClipId clipId, size_t noteIndex,
     }
 }
 
+void ClipManager::setMidiNoteExpression(ClipId clipId, size_t noteIndex, NoteExpression dimension,
+                                        std::vector<MidiNoteExpressionPoint> points) {
+    if (auto* clip = getClip(clipId)) {
+        if (clip->isMidi() && noteIndex < clip->midiNotes.size()) {
+            expressionLane(clip->midiNotes[noteIndex], dimension) = std::move(points);
+            notifyClipPropertyChanged(clipId);
+        }
+    }
+}
+
 void ClipManager::removeMidiNote(ClipId clipId, int noteIndex) {
     if (auto* clip = getClip(clipId)) {
         if (clip->isMidi() && noteIndex >= 0 &&

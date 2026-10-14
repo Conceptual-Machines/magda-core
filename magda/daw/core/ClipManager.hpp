@@ -707,6 +707,8 @@ class ClipManager {
     // Replace a note's pitch glide points (sorted by beat, clamped by caller)
     void setMidiNotePitchExpression(ClipId clipId, size_t noteIndex,
                                     std::vector<MidiPitchExpressionPoint> points);
+    void setMidiNoteExpression(ClipId clipId, size_t noteIndex, NoteExpression dimension,
+                               std::vector<MidiNoteExpressionPoint> points);
 
     // Chord annotations
     void addChordAnnotation(ClipId clipId, const ClipInfo::ChordAnnotation& annotation);

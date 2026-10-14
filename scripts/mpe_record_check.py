@@ -169,7 +169,7 @@ def main():
     print("PASS" if ok else "FAIL: expected 5 notes and empty bend, CC74 and pressure lanes")
     print("Now open the clip, switch the piano roll to pitch expression, and look for:\n"
           "  C4  rising 2 semitones, E4  falling 1, G4  starting 3 up and flat.\n"
-          "C5 and E5 carry slide and pressure, which the piano roll does not draw yet.")
+          "In the drawer's MPE mode, select C5 for its slide and E5 for its pressure.")
     return 0 if ok else 1
 
 

@@ -13,6 +13,7 @@ namespace magda {
 
 class VelocityLaneComponent;
 class CCLaneComponent;
+class NoteExpressionLaneComponent;
 class SvgButton;
 
 /**
@@ -20,7 +21,8 @@ class SvgButton;
  *
  * The picker at the top of the left column chooses what the lane shows. CC mode stacks the
  * added CC/pitchbend lanes, each named in the left column with a close button, and "+"
- * adds one. Forwards clip/zoom/scroll to all lanes.
+ * adds one. MPE mode stacks the selected note's slide and pressure. Forwards
+ * clip/zoom/scroll to all lanes.
  */
 class MidiDrawerComponent : public juce::Component {
   public:
@@ -54,6 +56,9 @@ class MidiDrawerComponent : public juce::Component {
     VelocityLaneComponent* getVelocityLane() const {
         return velocityLane_.get();
     }
+
+    /// The notes selected in the grid: the MPE lanes edit one of them.
+    void setSelectedNoteIndices(const std::vector<size_t>& indices);
 
     // Left margin (for keyboard/sidebar column that's part of our bounds)
     void setLeftMargin(int margin) {
@@ -126,6 +131,9 @@ class MidiDrawerComponent : public juce::Component {
     std::unique_ptr<VelocityLaneComponent> velocityLane_;
     std::vector<TabInfo> ccTabs_;  // Additional CC/PB lanes
 
+    /// Slide, then pressure: MPE mode's two rows.
+    std::array<std::unique_ptr<NoteExpressionLaneComponent>, 2> expressionLanes_;
+
     // Lane header column (left margin: control name, close button, "+" button)
     void paintLaneHeaders(juce::Graphics& g);
     void mouseDown(const juce::MouseEvent& e) override;
@@ -139,10 +147,12 @@ class MidiDrawerComponent : public juce::Component {
     // Header rows of the left column: the picker, then lane names below it.
     static constexpr int PICKER_HEIGHT = 34;
 
-    // Stacked lane rows (full component coords): the CC lanes in CC mode, else the one
-    // velocity row.
+    // Stacked lane rows (full component coords): the CC lanes in CC mode, the two
+    // expression lanes in MPE mode, else the one velocity row.
     int getLaneCount() const {
-        return showsCcLanes() ? static_cast<int>(ccTabs_.size()) : 1;
+        if (showsCcLanes())
+            return static_cast<int>(ccTabs_.size());
+        return laneMode_ == LaneMode::MPE ? static_cast<int>(expressionLanes_.size()) : 1;
     }
     juce::Rectangle<int> getLaneRowBounds(int laneIndex) const;
 

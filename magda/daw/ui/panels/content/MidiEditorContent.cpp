@@ -1068,6 +1068,8 @@ void MidiEditorContent::setVelocityLaneSelectedNotes(const std::vector<size_t>& 
     if (midiDrawer_ && midiDrawer_->getVelocityLane()) {
         midiDrawer_->getVelocityLane()->setSelectedNoteIndices(indices);
     }
+    if (midiDrawer_)
+        midiDrawer_->setSelectedNoteIndices(indices);
 }
 
 // ============================================================================
