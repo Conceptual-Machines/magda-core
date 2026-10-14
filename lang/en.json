@@ -431,6 +431,8 @@
     "slider.default_view": "New Project View",
     "slider.interval": "Interval",
     "slider.render_ahead_time": "Look-Ahead",
+    "slider.capture_buffer": "Capture Buffer",
+    "slider.capture_length": "Capture Length",
     "toggle.enable_autosave": "Enable auto-save",
     "toggle.stop_updates_playhead": "Stop updates playhead",
     "toggle.follow_playhead": "Follow playhead during playback",

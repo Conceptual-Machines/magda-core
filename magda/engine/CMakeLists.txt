@@ -150,6 +150,7 @@ add_library(magda_engine STATIC
     io/SourceLoopInfo.hpp
     io/PrefetchStream.cpp
     io/PrefetchThread.cpp
+    io/CaptureRing.cpp
     io/MidiTakeRecorder.cpp
     io/RecordStream.cpp
     io/RecordThread.cpp
@@ -162,6 +163,7 @@ add_library(magda_engine STATIC
     io/ClipPlacement.hpp
     io/PrefetchStream.hpp
     io/PrefetchThread.hpp
+    io/CaptureRing.hpp
     io/MidiTakeRecorder.hpp
     io/RecordStream.hpp
     io/RecordThread.hpp

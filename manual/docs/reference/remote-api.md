@@ -367,6 +367,7 @@ operations require `edit`.
 | `engine.masterCapture.start` | `edit` | Start capturing the true master callback output. |
 | `engine.masterCapture.stop` | `edit` | Stop and finalize an owned master capture. |
 | `engine.masterCapture.status` | `read` | Read capture capability and current activity. |
+| `capture.recentMaster` | `edit` | Put the master's last bars on a new track where they were heard. |
 
 ### Project and chord track
 

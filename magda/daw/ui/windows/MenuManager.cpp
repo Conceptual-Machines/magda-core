@@ -359,6 +359,10 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                          "Previous Marker" + keyHint(CommandIDs::goToPreviousMarker), true, false);
             menu.addItem(GoToNextMarker, "Next Marker" + keyHint(CommandIDs::goToNextMarker), true,
                          false);
+            menu.addSeparator();
+            menu.addItem(CaptureRecentAudio,
+                         "Capture Recent Audio" + keyHint(CommandIDs::captureRecentAudio), true,
+                         false);
             break;
         }
 
@@ -700,6 +704,10 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case AddMarker:
             if (callbacks_.onAddMarker)
                 callbacks_.onAddMarker();
+            break;
+        case CaptureRecentAudio:
+            if (callbacks_.onCaptureRecentAudio)
+                callbacks_.onCaptureRecentAudio();
             break;
         case GoToPreviousMarker:
             if (callbacks_.onGoToPreviousMarker)

@@ -3015,6 +3015,24 @@ OperationRegistry::OperationRegistry() {
     add("engine.masterCapture.stop", "Stop and finalise one owned master capture",
         OperationAccess::Control, &handlers::engineMasterCaptureStop, jobIdInput,
         remoteJobSchema());
+    add("capture.recentMaster",
+        "Put the last bars the master played on a new track where they were heard: the latest "
+        "pass only, back to a stop or loop wrap. bars defaults to the Capture Length setting",
+        OperationAccess::Write, &handlers::captureRecentMaster, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{"bars":{"type":"integer","minimum":1,"maximum":64}},
+            "additionalProperties":false
+        })json"),
+        parseSchema(R"json({
+            "type":"object","properties":{
+                "trackId":{"type":"integer"},
+                "clipId":{"type":"integer"},
+                "startBeat":{"type":"number"},
+                "lengthBeats":{"type":"number"},
+                "filePath":{"type":"string"}
+            },"required":["trackId","clipId","startBeat","lengthBeats","filePath"],
+            "additionalProperties":false
+        })json"));
     add("engine.masterCapture.status", "Read master-capture capability and activity",
         OperationAccess::Read, &handlers::engineMasterCaptureStatus, emptyObjectSchema(),
         parseSchema(R"json({
@@ -4563,6 +4581,7 @@ OperationRegistry::OperationRegistry() {
         {"tracks.unfreeze", Scope::Edit},
         {"engine.masterCapture.start", Scope::Edit},
         {"engine.masterCapture.stop", Scope::Edit},
+        {"capture.recentMaster", Scope::Edit},
         {"chordTrack.ensure", Scope::Edit},
         {"chordTrack.replaceProgression", Scope::Edit},
         {"chordTrack.extract", Scope::Edit},

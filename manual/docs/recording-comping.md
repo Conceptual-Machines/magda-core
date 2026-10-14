@@ -12,6 +12,14 @@ Each pass around the loop is captured as its own take. Nothing is lost between p
 
 A live **Recording...** preview is drawn over the timeline as you record, showing the incoming waveform (audio) or notes (MIDI) growing under the playhead so you can see what was captured before recording stops.
 
+## Capturing what you just heard
+
+MAGDA keeps the last minute of the master output, whether or not you were recording. **Transport > Capture Recent Audio** (++cmd+shift+c++) puts the last bars that played on a new **Capture** track, at the bars where you heard them, as one undoable step.
+
+- It takes the most recent pass only: a stop or a loop wrap ends it, so a capture never splices two passes together.
+- It takes up to **Capture Length** bars (8 by default), counting the bar the transport stopped in. The click is not included.
+- How long the master is kept is **Capture Buffer** (60 seconds by default). Both are in **Preferences > Engine**.
+
 ## Selecting a take
 
 Select the recorded clip and open the **Inspector**. The **Takes** section lists the captured passes:

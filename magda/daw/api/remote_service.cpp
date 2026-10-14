@@ -33,6 +33,8 @@ std::vector<Topic> topicsFor(const juce::String& operationName) {
         return {Topic::Tracks, Topic::Clips, Topic::Devices, Topic::Session};
     if (operationName == "chordTrack.replaceProgression" || operationName == "chordTrack.extract")
         return {Topic::Tracks, Topic::Clips, Topic::Devices, Topic::Session};
+    if (operationName == "capture.recentMaster")
+        return {Topic::Tracks, Topic::Clips};
     if (operationName == "chordTrack.sendToTrack")
         return {Topic::Clips, Topic::Session};
     if (operationName == "tracks.applyPreset")

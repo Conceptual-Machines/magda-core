@@ -216,6 +216,12 @@ class GeneralPage : public juce::Component {
         setupTextSlider(*this, renderAheadTimeSlider, renderAheadTimeLabel,
                         tr("preferences.slider.render_ahead_time"), 5.0, 200.0, 5.0,
                         magda::TechnicalTextToken::Milliseconds, 0, true);
+        setupTextSlider(*this, captureSecondsSlider, captureSecondsLabel,
+                        tr("preferences.slider.capture_buffer"), 10.0, 600.0, 10.0,
+                        magda::TechnicalTextToken::Seconds, 0, true);
+        setupTextSlider(*this, captureBarsSlider, captureBarsLabel,
+                        tr("preferences.slider.capture_length"), 1.0, 64.0, 1.0,
+                        magda::TechnicalTextToken::Bars, 0, true);
 
         setupSectionHeader(*this, layoutHeader, tr("preferences.section.layout"));
         setupToggle(*this, headersOnRightToggle, tr("preferences.toggle.headers_on_right"));
@@ -323,6 +329,8 @@ class GeneralPage : public juce::Component {
         renderAheadToggle.setToggleState(config.getRenderAheadEnabled(),
                                          juce::dontSendNotification);
         renderAheadTimeSlider.setValue(config.getRenderAheadMs(), juce::dontSendNotification);
+        captureSecondsSlider.setValue(config.getCaptureSeconds(), juce::dontSendNotification);
+        captureBarsSlider.setValue(config.getCaptureBars(), juce::dontSendNotification);
         headersOnRightToggle.setToggleState(config.getScrollbarOnLeft(),
                                             juce::dontSendNotification);
         compactTrackHeightSlider.setValue(config.getCompactTrackHeight(),
@@ -389,6 +397,8 @@ class GeneralPage : public juce::Component {
         config.setAutoSaveIntervalSeconds(static_cast<int>(autoSaveIntervalSlider.getValue()));
         config.setRenderAheadEnabled(renderAheadToggle.getToggleState());
         config.setRenderAheadMs(static_cast<int>(renderAheadTimeSlider.getValue()));
+        config.setCaptureSeconds(static_cast<int>(captureSecondsSlider.getValue()));
+        config.setCaptureBars(static_cast<int>(captureBarsSlider.getValue()));
         config.setScrollbarOnLeft(headersOnRightToggle.getToggleState());
         config.setMainViewScrollbarsAutoHide(autoHideScrollbarsToggle.getToggleState());
         config.setCompactTrackHeight(static_cast<int>(compactTrackHeightSlider.getValue()));
@@ -441,7 +451,8 @@ class GeneralPage : public juce::Component {
                secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
                headerH + 4 + rowH + 4 + rowH + secGap + headerH + 4 + rowH + secGap + headerH + 4 +
                (rowH * 9) + 32 + secGap + headerH + 4 + rowH + 18 + 4 + rowH + padding +
-               3 * (4 + rowH);  // Layout's track-height rows
+               3 * (4 + rowH)     // Layout's track-height rows
+               + 2 * (4 + rowH);  // Engine's capture rows
     }
 
     static int getLeftColumnPreferredHeight() {
@@ -455,6 +466,7 @@ class GeneralPage : public juce::Component {
                + secGap + headerH + 4 + rowH + 4 + rowH       // Transport
                + secGap + headerH + 4 + rowH + 4 + rowH       // Auto-Save
                + secGap + headerH + 4 + rowH + 4 + rowH       // Engine
+               + 2 * (4 + rowH)                               // Engine: capture
                + secGap + headerH + 4 + rowH + 18 + 4 + rowH  // Language + Localized Font Size
                + padding;
     }
@@ -511,6 +523,10 @@ class GeneralPage : public juce::Component {
         renderAheadToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
         layoutTextSliderRow(bounds, renderAheadTimeLabel, renderAheadTimeSlider, rowH, sliderH);
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, captureSecondsLabel, captureSecondsSlider, rowH, sliderH);
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, captureBarsLabel, captureBarsSlider, rowH, sliderH);
         bounds.removeFromTop(secGap);
 
         // Layout
@@ -607,6 +623,10 @@ class GeneralPage : public juce::Component {
         renderAheadToggle.setBounds(left.removeFromTop(rowH).reduced(0, 4));
         left.removeFromTop(4);
         layoutTextSliderRow(left, renderAheadTimeLabel, renderAheadTimeSlider, rowH, sliderH);
+        left.removeFromTop(4);
+        layoutTextSliderRow(left, captureSecondsLabel, captureSecondsSlider, rowH, sliderH);
+        left.removeFromTop(4);
+        layoutTextSliderRow(left, captureBarsLabel, captureBarsSlider, rowH, sliderH);
         left.removeFromTop(secGap);
 
         // Language
@@ -666,9 +686,9 @@ class GeneralPage : public juce::Component {
     magda::daw::ui::TextSlider autoSaveIntervalSlider;
     juce::Label autoSaveIntervalLabel;
     juce::Label layoutHeader, behaviorHeader, languageHeader;
-    juce::Label engineHeader, renderAheadTimeLabel;
+    juce::Label engineHeader, renderAheadTimeLabel, captureSecondsLabel, captureBarsLabel;
     juce::ToggleButton renderAheadToggle;
-    magda::daw::ui::TextSlider renderAheadTimeSlider;
+    magda::daw::ui::TextSlider renderAheadTimeSlider, captureSecondsSlider, captureBarsSlider;
     juce::ToggleButton headersOnRightToggle;
     juce::ToggleButton autoHideScrollbarsToggle;
     juce::Label compactTrackHeightLabel, mediumTrackHeightLabel, largeTrackHeightLabel;

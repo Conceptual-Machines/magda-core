@@ -35,6 +35,7 @@ struct PluginPrograms;
 struct OfflineRenderRequest;
 struct MasterCaptureRequest;
 struct MasterCaptureResult;
+struct RecentCaptureResult;
 struct MasterCaptureState;
 enum class MasterCaptureStartStatus;
 }  // namespace magda
@@ -123,6 +124,10 @@ class EngineHost {
     /// blocks (#1898), or nothing ahead for zero. A change remakes the session once nothing
     /// plays or records.
     void setRenderAhead(int milliseconds);
+
+    /// How much of the master the capture ring keeps (#2311). A change remakes the
+    /// session once nothing plays or records, like render-ahead.
+    void setCaptureSeconds(int seconds);
 
     /// Recompile the clips after the groove library changes: a groove already on a
     /// playing clip keeps the one it was compiled with until this asks again.
@@ -403,6 +408,7 @@ class EngineHost {
 
     MasterCaptureStartStatus startMasterCapture(const MasterCaptureRequest& request);
     MasterCaptureResult stopMasterCapture();
+    RecentCaptureResult captureRecentMaster(int bars);
     void cancelMasterCapture();
     MasterCaptureState masterCaptureState() const;
 

@@ -20,6 +20,7 @@
 #include "../core/ClipManager.hpp"
 #include "../core/ClipPlacementPolicy.hpp"
 #include "../core/ClipPropertyCommands.hpp"
+#include "../core/Config.hpp"
 #include "../core/ControlTarget.hpp"
 #include "../core/DeviceInfo.hpp"
 #include "../core/DrumGridPads.hpp"
@@ -1137,6 +1138,25 @@ HandlerResult engineMasterCaptureStart(MagdaApi& api, const juce::var& input,
     }
     const auto job = currentJob(*context.jobs, jobId, context, error);
     return !job.isVoid() ? HandlerResult::unchanged(job) : HandlerResult::fail(std::move(error));
+}
+
+HandlerResult captureRecentMaster(MagdaApi&, const juce::var& input,
+                                  const RequestContext& context) {
+    if (context.engineJobs == nullptr)
+        return HandlerResult::fail(ErrorCode::InternalError, "the audio engine is unavailable");
+    const auto bars = has(input, "bars") ? static_cast<int>(input["bars"])
+                                         : Config::getInstance().getCaptureBars();
+    const auto captured = context.engineJobs->captureRecentMaster(bars);
+    if (!captured.success)
+        return HandlerResult::fail(ErrorCode::Conflict, captured.error);
+
+    auto* object = new juce::DynamicObject();
+    object->setProperty("trackId", captured.trackId);
+    object->setProperty("clipId", captured.clipId);
+    object->setProperty("startBeat", captured.startBeat);
+    object->setProperty("lengthBeats", captured.lengthBeats);
+    object->setProperty("filePath", captured.filePath);
+    return HandlerResult::ok(juce::var(object));
 }
 
 HandlerResult engineMasterCaptureStop(MagdaApi&, const juce::var& input,

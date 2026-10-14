@@ -1203,6 +1203,12 @@ void MainWindow::setupMenuCallbacks() {
             mainComponent->getCommandManager().invokeDirectly(CommandIDs::addMarker, false);
     };
 
+    callbacks.onCaptureRecentAudio = [this]() {
+        if (mainComponent)
+            mainComponent->getCommandManager().invokeDirectly(CommandIDs::captureRecentAudio,
+                                                              false);
+    };
+
     callbacks.onGoToPreviousMarker = [this]() {
         if (mainComponent)
             mainComponent->getCommandManager().invokeDirectly(CommandIDs::goToPreviousMarker,

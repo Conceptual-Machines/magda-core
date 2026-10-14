@@ -134,6 +134,17 @@ struct MasterCaptureResult {
     juce::String error;
 };
 
+/** @brief What capturing the master's recent audio left on the timeline (#2311). */
+struct RecentCaptureResult {
+    bool success = false;
+    juce::String error;
+    TrackId trackId = INVALID_TRACK_ID;
+    ClipId clipId = INVALID_CLIP_ID;
+    double startBeat = 0.0;
+    double lengthBeats = 0.0;
+    juce::String filePath;
+};
+
 struct MasterCaptureState {
     bool supported = false;
     bool active = false;
@@ -436,6 +447,11 @@ class AudioEngine : public AudioEngineListener {
         return {false, "Master capture is unsupported"};
     }
     virtual void cancelMasterCapture() {}
+
+    /// The last @p bars bars the master played, on a new track where they were heard (#2311).
+    virtual RecentCaptureResult captureRecentMaster(int /*bars*/) {
+        return {false, "Capturing recent audio is unsupported"};
+    }
     virtual MasterCaptureState masterCaptureState() const {
         return {};
     }

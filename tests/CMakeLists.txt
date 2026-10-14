@@ -511,6 +511,8 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES engine/test_track_freeze.cpp)
     list(APPEND TEST_SOURCES engine/test_insert_capture_session.cpp)
     list(APPEND TEST_SOURCES engine/test_live_insert.cpp)
+    # The master's recent audio, taken back by bars (#2311).
+    list(APPEND TEST_SOURCES engine/test_capture_ring.cpp)
     # What an armed or monitoring track hears (#2459): the callback's own
     # samples, its own piece of a split callback, and nothing between callbacks.
     list(APPEND TEST_SOURCES engine/test_live_input.cpp)

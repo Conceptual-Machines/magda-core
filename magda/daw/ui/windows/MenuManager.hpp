@@ -91,6 +91,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         std::function<void()> onAddMarker;
         std::function<void()> onGoToPreviousMarker;
         std::function<void()> onGoToNextMarker;
+        std::function<void()> onCaptureRecentAudio;
 
         // Track menu
         std::function<void()> onAddTrack;
@@ -246,6 +247,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         AddMarker,
         GoToPreviousMarker,
         GoToNextMarker,
+        CaptureRecentAudio,
 
         // Track menu (500-599)
         AddTrack = 500,
