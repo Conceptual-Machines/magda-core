@@ -82,6 +82,7 @@ bool routingHasCycle(const std::vector<TrackRoutingState>& states) {
         if (const auto source = trackIdFromRoute(state.midiInput))
             edges[*source].push_back(state.trackId);
         add(state.trackId, state.audioOutput);
+        add(state.trackId, state.midiOutput);
     }
 
     std::unordered_map<TrackId, int> colour;
@@ -587,12 +588,15 @@ std::optional<TrackRoutingView> TrackApiLive::getRouting(TrackId trackId) const 
     if (track == nullptr)
         return std::nullopt;
 
+    // Its own MIDI Out, or else the first track pulling its MIDI through an input.
     juce::String midiOutput = track->midiOutputDevice;
     const auto source = "track:" + juce::String(trackId);
-    for (const auto& candidate : tracks.getTracks()) {
-        if (candidate.midiInputDevice == source) {
-            midiOutput = "track:" + juce::String(candidate.id);
-            break;
+    if (!midiOutput.startsWith("track:")) {
+        for (const auto& candidate : tracks.getTracks()) {
+            if (candidate.midiInputDevice == source) {
+                midiOutput = "track:" + juce::String(candidate.id);
+                break;
+            }
         }
     }
     return TrackRoutingView{
@@ -601,6 +605,8 @@ std::optional<TrackRoutingView> TrackApiLive::getRouting(TrackId trackId) const 
         publicRouteId(RoutingMedia::Midi, RoutingDirection::Input, track->midiInputDevice),
         publicRouteId(RoutingMedia::Audio, RoutingDirection::Output, track->audioOutputDevice),
         publicRouteId(RoutingMedia::Midi, RoutingDirection::Output, midiOutput),
+        track->midiInputChannel,
+        track->midiOutputChannel,
         track->recordArmed,
         track->inputMonitor};
 }
@@ -611,10 +617,14 @@ SetTrackRoutingResult TrackApiLive::setRouting(TrackId trackId, const TrackRouti
     if (target == nullptr)
         return {SetTrackRoutingStatus::TrackNotFound, {}};
     if (!patch.audioInputEndpointId && !patch.midiInputEndpointId && !patch.audioOutputEndpointId &&
-        !patch.midiOutputEndpointId)
+        !patch.midiOutputEndpointId && !patch.midiInputChannel && !patch.midiOutputChannel)
         return {SetTrackRoutingStatus::Unchanged, {}};
-    if ((patch.audioInputEndpointId || patch.midiInputEndpointId) && !target->takesExternalInput())
+    if ((patch.audioInputEndpointId || patch.midiInputEndpointId || patch.midiInputChannel) &&
+        !target->takesExternalInput())
         return {SetTrackRoutingStatus::Incompatible, {}};
+    for (const auto& channel : {patch.midiInputChannel, patch.midiOutputChannel})
+        if (channel && (*channel < 0 || *channel > 16))
+            return {SetTrackRoutingStatus::Incompatible, {}};
 
     const auto endpoints = getRoutingEndpoints();
     const auto resolve = [&](const std::optional<juce::String>& requested, RoutingMedia media,
@@ -675,6 +685,10 @@ SetTrackRoutingResult TrackApiLive::setRouting(TrackId trackId, const TrackRouti
     }
     if (audioOutput)
         edited->audioOutput = *audioOutput;
+    if (patch.midiInputChannel)
+        edited->midiInputChannel = *patch.midiInputChannel;
+    if (patch.midiOutputChannel)
+        edited->midiOutputChannel = *patch.midiOutputChannel;
 
     // Ungrouped multi-output children follow their source track's audio
     // destination. Include that engine-owned cascade in the same preflighted
@@ -689,8 +703,9 @@ SetTrackRoutingResult TrackApiLive::setRouting(TrackId trackId, const TrackRouti
         }
     }
 
-    // A track-to-track MIDI route is stored on the destination's input. Keep
-    // that single edge coherent whichever side of it the caller edits.
+    // A track pulling another's MIDI through its input is that source's one route:
+    // the source's MIDI Out and other pullers give way. Sent from the source, a
+    // route is the source's own and any number may name one destination (#2209).
     if (midiInput) {
         if (const auto sourceId = trackIdFromRoute(*midiInput)) {
             for (auto& state : after)
@@ -705,16 +720,10 @@ SetTrackRoutingResult TrackApiLive::setRouting(TrackId trackId, const TrackRouti
         for (auto& state : after)
             if (state.midiInput == sourceRoute)
                 state.midiInput.clear();
-        if (const auto destinationId = trackIdFromRoute(*midiOutput)) {
-            auto* destination = stateFor(after, *destinationId);
-            if (destination == nullptr)
-                return {SetTrackRoutingStatus::EndpointNotFound, {}};
-            destination->audioInput.clear();
-            destination->midiInput = sourceRoute;
-            edited->midiOutput.clear();
-        } else {
-            edited->midiOutput = *midiOutput;
-        }
+        if (const auto destinationId = trackIdFromRoute(*midiOutput);
+            destinationId && stateFor(after, *destinationId) == nullptr)
+            return {SetTrackRoutingStatus::EndpointNotFound, {}};
+        edited->midiOutput = *midiOutput;
     }
 
     if (routingHasCycle(after))

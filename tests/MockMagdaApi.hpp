@@ -403,11 +403,12 @@ class MockTrackApi : public TrackApi {
             return std::nullopt;
         juce::String midiOutput = track->midiOutputDevice;
         const auto source = "track:" + juce::String(id);
-        for (const auto& candidate : tracks)
-            if (candidate.midiInputDevice == source) {
-                midiOutput = "track:" + juce::String(candidate.id);
-                break;
-            }
+        if (!midiOutput.startsWith("track:"))
+            for (const auto& candidate : tracks)
+                if (candidate.midiInputDevice == source) {
+                    midiOutput = "track:" + juce::String(candidate.id);
+                    break;
+                }
         const auto publicId = [](RoutingMedia media, RoutingDirection direction,
                                  const juce::String& internalId) {
             if (internalId.isNotEmpty())
@@ -421,6 +422,8 @@ class MockTrackApi : public TrackApi {
             publicId(RoutingMedia::Midi, RoutingDirection::Input, track->midiInputDevice),
             publicId(RoutingMedia::Audio, RoutingDirection::Output, track->audioOutputDevice),
             publicId(RoutingMedia::Midi, RoutingDirection::Output, midiOutput),
+            track->midiInputChannel,
+            track->midiOutputChannel,
             track->recordArmed,
             track->inputMonitor};
     }

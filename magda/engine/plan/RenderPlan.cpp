@@ -180,6 +180,10 @@ const char* toString(OpRole role) {
             return "insertReturn";
         case OpRole::TrackMidiOut:
             return "trackMidiOut";
+        case OpRole::MidiOutChannel:
+            return "midiOutChannel";
+        case OpRole::MidiOutRoute:
+            return "midiOutRoute";
         case OpRole::FeedbackSend:
             return "feedbackSend";
         case OpRole::FeedbackReturn:
@@ -380,6 +384,10 @@ std::uint64_t planFingerprint(const RenderPlan& plan) {
             mix(static_cast<std::uint64_t>(output.channels));
         }
         mix(static_cast<std::uint64_t>(op.audioInputChannels));
+        mix(static_cast<std::uint64_t>(op.noteGateLow));
+        mix(static_cast<std::uint64_t>(op.noteGateHigh));
+        mix(static_cast<std::uint64_t>(static_cast<std::uint8_t>(op.noteGateTranspose)));
+        mix(static_cast<std::uint64_t>(op.noteGateChannel));
         mix(static_cast<std::uint64_t>(op.hardwareOutput.leftChannel));
         mix(static_cast<std::uint64_t>(op.hardwareOutput.rightChannel));
     }

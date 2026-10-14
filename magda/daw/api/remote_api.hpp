@@ -193,6 +193,8 @@ struct TrackRoutingDto {
     juce::String midiInputEndpointId;
     juce::String audioOutputEndpointId;
     juce::String midiOutputEndpointId;
+    int midiInputChannel = 0;
+    int midiOutputChannel = 0;
     bool recordArmed = false;
     juce::String inputMonitor = "off";
 

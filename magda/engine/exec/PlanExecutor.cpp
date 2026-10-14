@@ -2117,9 +2117,12 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             const int low = op.noteGateLow;
             const int high = op.noteGateHigh;
             const int transpose = op.noteGateTranspose;
+            const int channel = op.noteGateChannel;
 
             for (const auto metadata : midiIn(op.inputs[0])) {
                 auto message = metadata.getMessage();
+                if (channel != 0)
+                    message.setChannel(channel);
 
                 // Everything that is not a note carries no pitch to gate on and
                 // is the chain's business as much as any pad's: a sustain pedal
@@ -2145,7 +2148,7 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
 
             for (const auto& entry : fractionsIn(op.inputs[0]).entries())
                 if (entry.note >= low && entry.note <= high)
-                    fractions.add(entry.sample, entry.channel,
+                    fractions.add(entry.sample, channel != 0 ? channel : entry.channel,
                                   std::clamp(entry.note + transpose, 0, 127), entry.fraction);
 
             if (auto* tap = midiTapForOp_[i]; tap != nullptr)

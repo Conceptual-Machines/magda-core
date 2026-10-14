@@ -149,6 +149,10 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
     obj->setProperty("midiOutputDevice", track.midiOutputDevice);
     obj->setProperty("audioInputDevice", track.audioInputDevice);
     obj->setProperty("audioOutputDevice", track.audioOutputDevice);
+    if (track.midiInputChannel != 0)
+        obj->setProperty("midiInputChannel", track.midiInputChannel);
+    if (track.midiOutputChannel != 0)
+        obj->setProperty("midiOutputChannel", track.midiOutputChannel);
 
     // Aux bus index (for aux tracks)
     obj->setProperty("auxBusIndex", track.auxBusIndex);
@@ -304,6 +308,10 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
     outTrack.midiOutputDevice = obj->getProperty("midiOutputDevice").toString();
     outTrack.audioInputDevice = obj->getProperty("audioInputDevice").toString();
     outTrack.audioOutputDevice = obj->getProperty("audioOutputDevice").toString();
+    outTrack.midiInputChannel =
+        juce::jlimit(0, 16, static_cast<int>(obj->getProperty("midiInputChannel")));
+    outTrack.midiOutputChannel =
+        juce::jlimit(0, 16, static_cast<int>(obj->getProperty("midiOutputChannel")));
 
     // Aux bus index (defaults to -1 if not present in older project files)
     if (obj->hasProperty("auxBusIndex")) {

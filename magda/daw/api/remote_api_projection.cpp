@@ -412,6 +412,8 @@ TrackRoutingDto makeTrackRoutingDto(const TrackRoutingView& routing) {
             routing.midiInputEndpointId,
             routing.audioOutputEndpointId,
             routing.midiOutputEndpointId,
+            routing.midiInputChannel,
+            routing.midiOutputChannel,
             routing.recordArmed,
             inputMonitorModeName(routing.inputMonitor)};
 }

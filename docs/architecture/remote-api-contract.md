@@ -316,13 +316,17 @@ Track audio and MIDI I/O use three shared-registry operations:
   facade. The four contextual None choices are explicit IDs such as
   `none:audio:input`; `track:N`, `master`, `default`, and `all` remain logical
   IDs.
-- `routing.get` projects the four endpoint IDs for one track together with the
-  existing `recordArmed` and `inputMonitor` state. Those two fields are
+- `routing.get` projects the four endpoint IDs and the two MIDI channels
+  (`midiInputChannel`, `midiOutputChannel`: 1-16, or 0 for any in and as is
+  out) for one track together with the existing `recordArmed` and
+  `inputMonitor` state. Those two fields are
   informative: their write path remains `tracks.update`, so routing does not
   create parallel arm or monitor controls.
 - `routing.set` is an `edit`-scoped patch over any combination of the four
-  route fields. It accepts only available IDs from discovery in the matching
-  media and direction.
+  route fields and the two MIDI channels. It accepts only available IDs from
+  discovery in the matching media and direction. A `track:N` MIDI output is
+  the sending track's own route: any number of tracks may name one
+  destination, which keeps its own inputs (#2209).
 
 The complete requested graph is preflighted before mutation. Unsupported track
 or engine combinations, unavailable endpoints, mutually exclusive audio/MIDI

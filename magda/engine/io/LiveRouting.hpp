@@ -44,6 +44,9 @@ struct TrackLiveMidi {
     /// which releases the notes the departed source held (#2418).
     std::uint32_t sourcesLost = 0;
 
+    /// The one channel the sources are heard on, 1-16, or 0 for all (#2209).
+    int channel = 0;
+
     bool operator==(const TrackLiveMidi&) const = default;
 };
 

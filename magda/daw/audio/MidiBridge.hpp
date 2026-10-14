@@ -246,6 +246,9 @@ class MidiBridge : public juce::MidiInputCallback {
      */
     void setTrackMidiInput(TrackId trackId, const juce::String& midiDeviceId);
 
+    /// The one channel the track's meters and note triggers react to, 1-16, or 0 (#2209).
+    void setTrackMidiInputChannel(TrackId trackId, int channel);
+
     /**
      * @brief Get current MIDI input source for a track
      * @return Device ID, or empty string if no input
@@ -380,6 +383,7 @@ class MidiBridge : public juce::MidiInputCallback {
 
     // Track MIDI input routing (trackId → MIDI device ID)
     std::unordered_map<TrackId, juce::String> trackMidiInputs_;
+    std::unordered_map<TrackId, int> trackMidiChannels_;
 
     // Tracks being monitored for MIDI activity
     std::unordered_set<TrackId> monitoredTracks_;

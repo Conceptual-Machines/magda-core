@@ -31,6 +31,62 @@
 
 namespace magda::daw::ui {
 namespace {
+
+/// A routing icon that opens the MIDI channel menu, badged with the channel once one is set
+/// (#2209). Dim at rest, like the icons beside it.
+class MidiChannelIcon final : public juce::DrawableButton {
+  public:
+    explicit MidiChannelIcon(const juce::String& name)
+        : juce::DrawableButton(name, juce::DrawableButton::ImageFitted) {
+        setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    }
+
+    /// Also after the icon image is rebuilt, which dims it.
+    void setChannel(int channel) {
+        channel_ = channel;
+        updateAlpha();
+        repaint();
+    }
+
+    void mouseEnter(const juce::MouseEvent& e) override {
+        juce::DrawableButton::mouseEnter(e);
+        updateAlpha();
+    }
+
+    void mouseExit(const juce::MouseEvent& e) override {
+        juce::DrawableButton::mouseExit(e);
+        updateAlpha();
+    }
+
+    int channel() const {
+        return channel_;
+    }
+
+    void paintOverChildren(juce::Graphics& g) override {
+        if (channel_ == 0)
+            return;
+        const auto text = juce::String(channel_);
+        const auto font = FontManager::getInstance().getUIFontBold(8.0f);
+        const auto width =
+            std::max(10.0f, juce::GlyphArrangement::getStringWidth(font, text) + 4.0f);
+        const auto badge = juce::Rectangle<float>(width, 10.0f)
+                               .withPosition(static_cast<float>(getWidth()) - width,
+                                             static_cast<float>(getHeight()) - 10.0f);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        g.fillRoundedRectangle(badge, 3.0f);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+        g.setFont(font);
+        g.drawText(text, badge, juce::Justification::centred, false);
+    }
+
+  private:
+    // Brighter under the mouse, so the icon reads as a control.
+    void updateAlpha() {
+        setAlpha(channel_ != 0 ? 1.0f : (isMouseOver() ? 0.75f : 0.38f));
+    }
+
+    int channel_ = 0;
+};
 void useLocalizedLabelPainter(juce::Label& label) {
     label.setLookAndFeel(&DialogLookAndFeel::getInstance());
 }
@@ -333,15 +389,16 @@ TrackInspector::TrackInspector() {
 
     // I/O routing icons (non-interactive visual indicators). The tint is baked
     // into the drawables, so applyThemeColours rebuilds them on theme change.
-    auto inputDrawable =
-        std::make_unique<juce::DrawableButton>("inputIcon", juce::DrawableButton::ImageFitted);
-    inputDrawable->setInterceptsMouseClicks(false, false);
+    // On a track with MIDI, each icon opens its MIDI channel menu (#2209).
+    auto inputDrawable = std::make_unique<MidiChannelIcon>("inputIcon");
+    inputDrawable->setTooltip("MIDI input channel");
+    inputDrawable->onClick = [this] { showMidiChannelMenu(true); };
     inputIcon_ = std::move(inputDrawable);
     addAndMakeVisible(*inputIcon_);
 
-    auto outputDrawable =
-        std::make_unique<juce::DrawableButton>("outputIcon", juce::DrawableButton::ImageFitted);
-    outputDrawable->setInterceptsMouseClicks(false, false);
+    auto outputDrawable = std::make_unique<MidiChannelIcon>("outputIcon");
+    outputDrawable->setTooltip("MIDI Out channel");
+    outputDrawable->onClick = [this] { showMidiChannelMenu(false); };
     outputIcon_ = std::move(outputDrawable);
     addAndMakeVisible(*outputIcon_);
 
@@ -532,11 +589,46 @@ void TrackInspector::applyThemeColours() {
     rebuildRoutingIcons();
 }
 
+void TrackInspector::showMidiChannelMenu(bool input) {
+    const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+    if (track == nullptr)
+        return;
+
+    // Item ids are the channel plus one.
+    const auto current = input ? track->midiInputChannel : track->midiOutputChannel;
+    juce::PopupMenu menu;
+    menu.addSectionHeader(input ? "MIDI input channel" : "MIDI Out channel");
+    menu.addItem(1, input ? "Any" : "As is", true, current == 0);
+    menu.addSeparator();
+    for (int channel = 1; channel <= 16; ++channel)
+        menu.addItem(channel + 1, juce::String(channel), true, current == channel);
+
+    auto* target = input ? inputIcon_.get() : outputIcon_.get();
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(target),
+                       [input, trackId = selectedTrackId_,
+                        icon = juce::Component::SafePointer(target)](int result) {
+                           // The menu took the mouse without the icon hearing it leave.
+                           if (auto* channelIcon =
+                                   dynamic_cast<MidiChannelIcon*>(icon.getComponent()))
+                               channelIcon->setChannel(channelIcon->channel());
+                           if (result == 0)
+                               return;
+                           auto& tracks = magda::TrackManager::getInstance();
+                           if (input)
+                               tracks.setTrackMidiInputChannel(trackId, result - 1);
+                           else
+                               tracks.setTrackMidiOutputChannel(trackId, result - 1);
+                       });
+}
+
 void TrackInspector::rebuildRoutingIcons() {
     magda::track_controls::applyRoutingIconImage(inputIcon_.get(), BinaryData::Input_svg,
                                                  BinaryData::Input_svgSize);
     magda::track_controls::applyRoutingIconImage(outputIcon_.get(), BinaryData::Output_svg,
                                                  BinaryData::Output_svgSize);
+    for (auto* component : {inputIcon_.get(), outputIcon_.get()})
+        if (auto* icon = dynamic_cast<MidiChannelIcon*>(component))
+            icon->setChannel(icon->channel());
 }
 
 void TrackInspector::lookAndFeelChanged() {
@@ -1426,6 +1518,8 @@ void TrackInspector::showTrackControls(bool show) {
     outputSelector_->setVisible(p.audioOut);
     midiOutputSelector_->setVisible(p.midiOut);
     outputIcon_->setVisible(p.anyOutput());
+    inputIcon_->setInterceptsMouseClicks(p.midiIn, false);
+    outputIcon_->setInterceptsMouseClicks(p.midiOut, false);
 
     // An External Instrument insert owns the track's MIDI send + audio return.
     // The track-level MIDI-out and audio-in stay visible but go read-only and
@@ -1939,6 +2033,11 @@ void TrackInspector::updateRoutingSelectorsFromTrack() {
 
     // Always re-populate audio input options so track-as-input entries are current
     populateAudioInputOptions();
+
+    if (auto* icon = dynamic_cast<MidiChannelIcon*>(inputIcon_.get()))
+        icon->setChannel(track->midiInputChannel);
+    if (auto* icon = dynamic_cast<MidiChannelIcon*>(outputIcon_.get()))
+        icon->setChannel(track->midiOutputChannel);
 
     magda::RoutingSyncHelper::syncSelectorsFromTrack(
         *track, audioInputSelector_.get(), inputSelector_.get(), outputSelector_.get(),

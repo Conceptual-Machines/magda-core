@@ -404,7 +404,7 @@ operations require `edit`.
 | `tracks.move` | `edit` | Move a track to a one-based list position. |
 | `routing.endpoints.list` | `read` | List safe logical audio and MIDI endpoints. |
 | `routing.get` | `read` | Read one track's audio and MIDI routes. |
-| `routing.set` | `edit` | Atomically set a track's routes. |
+| `routing.set` | `edit` | Atomically set a track's routes and MIDI channels. |
 | `sends.list` | `read` | List one track's sends. |
 | `sends.create` | `edit` | Create a send. |
 | `sends.update` | `edit` | Update a send. |

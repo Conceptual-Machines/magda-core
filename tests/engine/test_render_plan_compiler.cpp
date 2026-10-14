@@ -3120,3 +3120,88 @@ TEST_CASE("A rack chain's fader plays at its selector zone's level", "[engine][p
     CHECK(faded.gainLeft == Catch::Approx(open.gainLeft));
     CHECK(open.zoneGain == 1.0f);
 }
+
+TEST_CASE("Several tracks send their MIDI to one, each through its own gate",
+          "[engine][plan][compiler][2209]") {
+    // Declared before its senders, so only the routes can order them.
+    std::vector<TrackInfo> tracks{makeTrack(3), makeTrack(1), makeTrack(2)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(9)));
+    tracks[1].midiOutputDevice = "track:3";
+    tracks[1].midiOutputChannel = 1;
+    tracks[2].midiOutputDevice = "track:3";
+    tracks[2].midiOutputChannel = 2;
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+    CHECK(plan.diagnostics.empty());
+
+    // One gate per sender, keyed to it, carrying its channel, merged into the
+    // receiving track's input. Senders with no instrument still compile MIDI.
+    const auto gates = opsWithRole(plan, OpRole::MidiOutRoute);
+    REQUIRE(gates.size() == 2);
+    std::set<int> channels;
+    for (const auto gate : gates) {
+        const auto& op = plan.ops[static_cast<std::size_t>(gate)];
+        CHECK(op.kind == OpKind::MidiNoteGate);
+        channels.insert(op.noteGateChannel);
+    }
+    CHECK(channels == std::set<int>{1, 2});
+    CHECK(countRole(plan, OpRole::ClipMidi) == 3);
+
+    magda::engine::OpId destMidi = magda::engine::INVALID_OP_ID;
+    for (const auto op : opsWithRole(plan, OpRole::TrackMidiInput))
+        if (plan.ops[static_cast<std::size_t>(op)].key.trackId == 3)
+            destMidi = op;
+    REQUIRE(destMidi != magda::engine::INVALID_OP_ID);
+    std::set<magda::engine::OpId> merged;
+    for (std::size_t slot = 0; slot < plan.ops[static_cast<std::size_t>(destMidi)].inputs.size();
+         ++slot)
+        merged.insert(inputOp(plan, destMidi, slot));
+    for (const auto gate : gates)
+        CHECK(merged.contains(gate));
+
+    // A muted sender's gate is silent; the other's is not.
+    tracks[1].muted = true;
+    magda::engine::PlanValues values;
+    magda::engine::resolvePlanValues(plan, tracks, makeMaster(), values);
+    for (const auto gate : gates) {
+        const auto sender = plan.ops[static_cast<std::size_t>(gate)].key.trackId;
+        CHECK(values.ops[static_cast<std::size_t>(gate)].silent == (sender == 1));
+    }
+}
+
+TEST_CASE("A MIDI Out loop is refused for the one sender that closes it",
+          "[engine][plan][compiler][2209]") {
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2), makeTrack(3)};
+    tracks[0].midiOutputDevice = "track:2";
+    tracks[1].midiOutputDevice = "track:1";
+    tracks[2].midiOutputDevice = "track:1";
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    CHECK(countRole(plan, OpRole::MidiOutRoute) == 2);
+    const auto refused = std::ranges::count_if(plan.diagnostics, [](const std::string& message) {
+        return message.find("MIDI loop") != std::string::npos;
+    });
+    CHECK(refused == 1);
+}
+
+TEST_CASE("A MIDI Out channel moves the plan's fingerprint", "[engine][plan][compiler][2209]") {
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    tracks[0].midiOutputDevice = "track:2";
+    const auto before =
+        magda::engine::planFingerprint(magda::engine::compileRenderPlan(tracks, makeMaster()));
+
+    tracks[0].midiOutputChannel = 5;
+    CHECK(magda::engine::planFingerprint(magda::engine::compileRenderPlan(tracks, makeMaster())) !=
+          before);
+
+    // The hardware MIDI Out gets its channel stage only once one is set.
+    tracks[0].midiOutputDevice = "MIDI Out 1";
+    CHECK(countRole(magda::engine::compileRenderPlan(tracks, makeMaster()),
+                    OpRole::MidiOutChannel) == 1);
+    tracks[0].midiOutputChannel = 0;
+    CHECK(countRole(magda::engine::compileRenderPlan(tracks, makeMaster()),
+                    OpRole::MidiOutChannel) == 0);
+}

@@ -994,6 +994,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         juce::String input;
         std::vector<engine::LiveMidiSourceId> sources;
         std::optional<int> sessionScene;
+        int channel = 0;
 
         bool operator==(const ActiveMidiRoute&) const = default;
     };
@@ -1111,8 +1112,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return;
 
         const auto adjustment = midiRecordingAdjustmentSamples();
-        recordingRoutes_[track.id] = ActiveMidiRoute{
-            .input = track.midiInputDevice, .sources = sources, .sessionScene = sessionScene};
+        recordingRoutes_[track.id] = ActiveMidiRoute{.input = track.midiInputDevice,
+                                                     .sources = sources,
+                                                     .sessionScene = sessionScene,
+                                                     .channel = track.midiInputChannel};
         const engine::TakeKey key{track.id, engine::RecordMaterial::midi};
         erasePreview(key);
         session_->startTake(
@@ -1121,10 +1124,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                  sessionScene ? engine::RecordTarget::slot : engine::RecordTarget::arrangement,
              .scene = sessionScene.value_or(-1),
              .maxNotes = kRecordingPreviewNotes},
-            [this, sources = std::move(sources), adjustment, sessionScene,
-             trackId = track.id](engine::RecordTap& tap) mutable {
+            [this, sources = std::move(sources), adjustment, sessionScene, trackId = track.id,
+             channel = track.midiInputChannel](engine::RecordTap& tap) mutable {
                 engine::MidiTakeRecorderSettings settings;
                 settings.sources = std::move(sources);
+                settings.channel = channel;
                 settings.latencySamples = adjustment;
                 if (sessionScene)
                     settings.slot = session_->slotRunTarget({trackId, *sessionScene});
@@ -1756,8 +1760,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                 continue;
             }
             const auto active = recordingRoutes_.find(trackId);
-            const ActiveMidiRoute wanted{
-                .input = track->midiInputDevice, .sources = *sources, .sessionScene = target.scene};
+            const ActiveMidiRoute wanted{.input = track->midiInputDevice,
+                                         .sources = *sources,
+                                         .sessionScene = target.scene,
+                                         .channel = track->midiInputChannel};
             if (active == recordingRoutes_.end() || active->second != wanted)
                 endedSessionTargets.push_back(trackId);
         }
@@ -1783,8 +1789,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             const auto active = recordingRoutes_.find(track.id);
             if (sessionSlotTargets_.contains(track.id))
                 continue;
-            const ActiveMidiRoute wanted{
-                .input = track.midiInputDevice, .sources = *sources, .sessionScene = {}};
+            const ActiveMidiRoute wanted{.input = track.midiInputDevice,
+                                         .sources = *sources,
+                                         .sessionScene = {},
+                                         .channel = track.midiInputChannel};
             if (active != recordingRoutes_.end() && active->second == wanted)
                 continue;
 

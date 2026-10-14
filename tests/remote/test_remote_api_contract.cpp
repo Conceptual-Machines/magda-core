@@ -321,7 +321,7 @@ TEST_CASE("Routing endpoint and track routing DTOs round-trip without backend id
     const auto endpointJson = toJson(endpointDto);
     CHECK_FALSE(endpointJson.getDynamicObject()->hasProperty("internalId"));
 
-    const TrackRoutingDto routing{3, "track:2", "", "master", "track:4", true, "auto"};
+    const TrackRoutingDto routing{3, "track:2", "", "master", "track:4", 2, 5, true, "auto"};
     requireRoundTrip(routing, trackRoutingFromJson);
     auto routingJson = toJson(routing);
     routingJson.getDynamicObject()->setProperty("backendHandle", "secret");

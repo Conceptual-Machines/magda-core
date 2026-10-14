@@ -26,7 +26,8 @@ std::shared_ptr<const engine::LiveRouting> LiveMidiRouting::resolve(
         engine::TrackLiveMidi entry{.trackId = track.id,
                                     .audition = sources_.auditionSourceFor(track.id),
                                     .sources = devicesFor(track),
-                                    .sourcesLost = 0};
+                                    .sourcesLost = 0,
+                                    .channel = track.midiInputChannel};
 
         const auto* before = previous_ != nullptr ? previous_->find(track.id) : nullptr;
         if (before != nullptr) {

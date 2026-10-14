@@ -8,6 +8,7 @@ Manual setup, once:
   - macOS: Audio MIDI Setup > MIDI Studio > IAC Driver > "Device is online".
   - MAGDA running with MCP on, the edit and transport scopes granted to claude-code, and the
     loopback enabled as an input in Settings > MIDI.
+  - A project where no other track sends to the loopback: anything else on it is recorded too.
 
     python3 scripts/midi_out_loopback_check.py              # the first port named IAC
     python3 scripts/midi_out_loopback_check.py --port "IAC Driver Bus 1"
