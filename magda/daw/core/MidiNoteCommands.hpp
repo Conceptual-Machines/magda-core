@@ -249,6 +249,27 @@ class SetNotePitchExpressionCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+/** @brief Command for replacing a note's MPE timbre or pressure points (#1571). */
+class SetNoteExpressionCommand : public UndoableCommand {
+  public:
+    SetNoteExpressionCommand(ClipId clipId, size_t noteIndex, NoteExpression dimension,
+                             std::vector<MidiNoteExpressionPoint> newPoints);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return dimension_ == NoteExpression::Timbre ? "Edit Slide" : "Edit Pressure";
+    }
+
+  private:
+    ClipId clipId_;
+    size_t noteIndex_;
+    NoteExpression dimension_;
+    std::vector<MidiNoteExpressionPoint> newPoints_;
+    std::vector<MidiNoteExpressionPoint> oldPoints_;  // captured on first execute
+    bool executed_ = false;
+};
+
 /**
  * @brief Command for setting velocities of multiple MIDI notes at once
  */

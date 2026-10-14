@@ -110,6 +110,19 @@ struct MidiNote {
     bool operator==(const MidiNote&) const = default;
 };
 
+/// A note's MPE dimensions that are values rather than pitch (#1571).
+enum class NoteExpression { Timbre, Pressure };
+
+inline std::vector<MidiNoteExpressionPoint>& expressionLane(MidiNote& note,
+                                                            NoteExpression dimension) {
+    return dimension == NoteExpression::Timbre ? note.timbreExpression : note.pressureExpression;
+}
+
+inline const std::vector<MidiNoteExpressionPoint>& expressionLane(const MidiNote& note,
+                                                                  NoteExpression dimension) {
+    return dimension == NoteExpression::Timbre ? note.timbreExpression : note.pressureExpression;
+}
+
 /**
  * @brief Curve interpolation type for CC/PitchBend events
  */

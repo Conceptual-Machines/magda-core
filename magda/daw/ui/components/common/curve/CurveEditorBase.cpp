@@ -1128,6 +1128,7 @@ void CurveEditorBase::onStepStamped(double gridStart, double gridEnd, double y,
     // AutomationCurveEditor) should override to also flip prevPointId's
     // curveType to Step so the cell's left edge is a cliff instead of a
     // linear fade.
+    CompoundOperationScope scope("Stamp Step");
     onPointAdded(gridStart, y, CurveType::Step);
     if (prevPointId != INVALID_CURVE_POINT_ID && gridEnd > gridStart)
         onPointAdded(gridEnd, prevValue, CurveType::Linear);
@@ -1164,6 +1165,8 @@ void CurveEditorBase::createPointsFromDrawingPath() {
     CurveType curveType =
         (drawMode_ == CurveDrawMode::Curve) ? CurveType::Bezier : CurveType::Linear;
 
+    // One stroke, one undo step.
+    CompoundOperationScope scope("Draw Curve");
     for (const auto& pixelPoint : simplifiedPath) {
         double x = pixelToX(pixelPoint.x);
         double y = pixelToY(pixelPoint.y);

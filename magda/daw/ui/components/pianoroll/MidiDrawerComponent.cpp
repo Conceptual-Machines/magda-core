@@ -5,6 +5,7 @@
 #include "../common/SvgButton.hpp"
 #include "BinaryData.h"
 #include "CCLaneComponent.hpp"
+#include "NoteExpressionLaneComponent.hpp"
 #include "VelocityLaneComponent.hpp"
 #include "ui/components/common/MagdaAlertWindow.hpp"
 
@@ -17,6 +18,13 @@ MidiDrawerComponent::MidiDrawerComponent() {
     velocityLane_ = std::make_unique<VelocityLaneComponent>();
     velocityLane_->setLeftPadding(leftPadding_);
     addAndMakeVisible(velocityLane_.get());
+
+    expressionLanes_[0] = std::make_unique<NoteExpressionLaneComponent>(NoteExpression::Timbre);
+    expressionLanes_[1] = std::make_unique<NoteExpressionLaneComponent>(NoteExpression::Pressure);
+    for (auto& lane : expressionLanes_) {
+        lane->setLeftPadding(leftPadding_);
+        addChildComponent(lane.get());
+    }
 
     // Pitch bend range editor (hidden by default)
     pbRangeLabel_ = std::make_unique<juce::Label>("pbRange", "2");
@@ -51,7 +59,8 @@ MidiDrawerComponent::MidiDrawerComponent() {
     const std::array<std::tuple<const char*, int, const char*>, 3> pickers{{
         {BinaryData::mevelocity_svg, BinaryData::mevelocity_svgSize, "Velocity"},
         {BinaryData::mecc_svg, BinaryData::mecc_svgSize, "CC and pitchbend lanes"},
-        {BinaryData::mempe_svg, BinaryData::mempe_svgSize, "MPE: per-note pitch glide"},
+        {BinaryData::mempe_svg, BinaryData::mempe_svgSize,
+         "MPE: pitch glide on the notes, slide and pressure below"},
     }};
     for (size_t i = 0; i < laneButtons_.size(); ++i) {
         const auto& [svg, size, tip] = pickers[i];
@@ -99,10 +108,17 @@ void MidiDrawerComponent::setVelocityCaption(juce::String caption) {
 void MidiDrawerComponent::setClip(ClipId clipId) {
     clipId_ = clipId;
     velocityLane_->setClip(clipId);
+    for (auto& lane : expressionLanes_)
+        lane->setClip(clipId);
     for (auto& tab : ccTabs_) {
         if (tab.ccLane)
             tab.ccLane->setClip(clipId);
     }
+}
+
+void MidiDrawerComponent::setSelectedNoteIndices(const std::vector<size_t>& indices) {
+    for (auto& lane : expressionLanes_)
+        lane->setSelectedNoteIndices(indices);
 }
 
 void MidiDrawerComponent::setClipIds(const std::vector<ClipId>& clipIds) {
@@ -113,6 +129,8 @@ void MidiDrawerComponent::setClipIds(const std::vector<ClipId>& clipIds) {
 void MidiDrawerComponent::setPixelsPerBeat(double ppb) {
     pixelsPerBeat_ = ppb;
     velocityLane_->setPixelsPerBeat(ppb);
+    for (auto& lane : expressionLanes_)
+        lane->setPixelsPerBeat(ppb);
     for (auto& tab : ccTabs_) {
         if (tab.ccLane)
             tab.ccLane->setPixelsPerBeat(ppb);
@@ -122,6 +140,8 @@ void MidiDrawerComponent::setPixelsPerBeat(double ppb) {
 void MidiDrawerComponent::setScrollOffset(int offsetX) {
     scrollOffsetX_ = offsetX;
     velocityLane_->setScrollOffset(offsetX);
+    for (auto& lane : expressionLanes_)
+        lane->setScrollOffset(offsetX);
     for (auto& tab : ccTabs_) {
         if (tab.ccLane)
             tab.ccLane->setScrollOffset(offsetX);
@@ -131,6 +151,8 @@ void MidiDrawerComponent::setScrollOffset(int offsetX) {
 void MidiDrawerComponent::setLeftPadding(int padding) {
     leftPadding_ = padding;
     velocityLane_->setLeftPadding(padding);
+    for (auto& lane : expressionLanes_)
+        lane->setLeftPadding(padding);
     for (auto& tab : ccTabs_) {
         if (tab.ccLane)
             tab.ccLane->setLeftPadding(padding);
@@ -140,6 +162,8 @@ void MidiDrawerComponent::setLeftPadding(int padding) {
 void MidiDrawerComponent::setRelativeMode(bool relative) {
     relativeMode_ = relative;
     velocityLane_->setRelativeMode(relative);
+    for (auto& lane : expressionLanes_)
+        lane->setRelativeMode(relative);
     for (auto& tab : ccTabs_) {
         if (tab.ccLane)
             tab.ccLane->setRelativeMode(relative);
@@ -149,6 +173,8 @@ void MidiDrawerComponent::setRelativeMode(bool relative) {
 void MidiDrawerComponent::setClipStartBeats(double startBeats) {
     clipStartBeats_ = startBeats;
     velocityLane_->setClipStartBeats(startBeats);
+    for (auto& lane : expressionLanes_)
+        lane->setClipStartBeats(startBeats);
     for (auto& tab : ccTabs_) {
         if (tab.ccLane)
             tab.ccLane->setClipStartBeats(startBeats);
@@ -177,6 +203,8 @@ void MidiDrawerComponent::setLoopRegion(double offsetBeats, double lengthBeats, 
 
 void MidiDrawerComponent::refreshAll() {
     velocityLane_->refreshNotes();
+    for (auto& lane : expressionLanes_)
+        lane->refreshNotes();
     for (auto& tab : ccTabs_) {
         if (tab.ccLane)
             tab.ccLane->refreshEvents();
@@ -208,9 +236,17 @@ void MidiDrawerComponent::resized() {
         laneButtons_[i]->setBounds(6 + static_cast<int>(i) * 28, RESIZE_HANDLE_HEIGHT + 4, 26, 26);
     }
 
-    velocityLane_->setVisible(!showsCcLanes());
-    if (!showsCcLanes())
+    const auto showsVelocity = laneMode_ == LaneMode::Velocity;
+    velocityLane_->setVisible(showsVelocity);
+    if (showsVelocity)
         velocityLane_->setBounds(getLaneRowBounds(0).withTrimmedLeft(leftMargin_));
+
+    for (size_t i = 0; i < expressionLanes_.size(); ++i) {
+        expressionLanes_[i]->setVisible(laneMode_ == LaneMode::MPE);
+        if (laneMode_ == LaneMode::MPE)
+            expressionLanes_[i]->setBounds(
+                getLaneRowBounds(static_cast<int>(i)).withTrimmedLeft(leftMargin_));
+    }
 
     for (size_t i = 0; i < ccTabs_.size(); ++i) {
         if (!ccTabs_[i].ccLane)
@@ -274,6 +310,19 @@ void MidiDrawerComponent::paintOverChildren(juce::Graphics& g) {
 void MidiDrawerComponent::paintLaneHeaders(juce::Graphics& g) {
     const auto textColour = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
     const auto& fonts = FontManager::getInstance();
+
+    if (laneMode_ == LaneMode::MPE) {
+        for (size_t lane = 0; lane < expressionLanes_.size(); ++lane) {
+            auto row = getLaneRowBounds(static_cast<int>(lane));
+            if (row.isEmpty())
+                continue;
+            const int top = juce::jmax(row.getY() + 4, RESIZE_HANDLE_HEIGHT + PICKER_HEIGHT);
+            g.setFont(fonts.getUIFont(10.0f));
+            g.setColour(textColour);
+            g.drawText(expressionLanes_[lane]->getLaneName(), 6, top, leftMargin_ - 12, 14,
+                       juce::Justification::centredLeft, true);
+        }
+    }
 
     if (!showsCcLanes()) {
         const auto caption =

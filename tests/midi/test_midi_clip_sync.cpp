@@ -266,6 +266,31 @@ TEST_CASE("MidiNoteCommands - Observer pattern", "[midi][commands][observer]") {
     }
 }
 
+TEST_CASE("Editing a note's slide or pressure is one undo step", "[midi][commands][1571]") {
+    using namespace magda;
+
+    ClipManager::getInstance().shutdown();
+    const auto clipId = ClipManager::getInstance().createMidiClipBeats(1, 0.0, 16.0);
+    UndoManager::getInstance().executeCommand(
+        std::make_unique<AddMidiNoteCommand>(clipId, 0.0, 60, 2.0, 100));
+
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    const auto& note = clip->midiNotes.front();
+
+    const std::vector<MidiNoteExpressionPoint> swell{{0.0, 0.0}, {1.0, 0.8, 1.5}};
+    UndoManager::getInstance().executeCommand(
+        std::make_unique<SetNoteExpressionCommand>(clipId, 0, NoteExpression::Pressure, swell));
+    CHECK(note.pressureExpression == swell);
+    CHECK(note.timbreExpression.empty());
+
+    UndoManager::getInstance().undo();
+    CHECK(note.pressureExpression.empty());
+
+    UndoManager::getInstance().redo();
+    CHECK(note.pressureExpression == swell);
+}
+
 TEST_CASE("MidiClip - Real-world scenario", "[midi][clip][integration]") {
     using namespace magda;
 

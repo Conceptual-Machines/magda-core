@@ -642,6 +642,38 @@ void SetNotePitchExpressionCommand::undo() {
 }
 
 // ============================================================================
+// SetNoteExpressionCommand
+// ============================================================================
+
+SetNoteExpressionCommand::SetNoteExpressionCommand(ClipId clipId, size_t noteIndex,
+                                                   NoteExpression dimension,
+                                                   std::vector<MidiNoteExpressionPoint> newPoints)
+    : clipId_(clipId),
+      noteIndex_(noteIndex),
+      dimension_(dimension),
+      newPoints_(std::move(newPoints)) {}
+
+void SetNoteExpressionCommand::execute() {
+    auto& clipManager = ClipManager::getInstance();
+    auto* clip = clipManager.getClip(clipId_);
+    if (!clip || !clip->isMidi() || noteIndex_ >= clip->midiNotes.size())
+        return;
+
+    if (!executed_)
+        oldPoints_ = expressionLane(clip->midiNotes[noteIndex_], dimension_);
+
+    clipManager.setMidiNoteExpression(clipId_, noteIndex_, dimension_, newPoints_);
+    executed_ = true;
+}
+
+void SetNoteExpressionCommand::undo() {
+    if (!executed_)
+        return;
+
+    ClipManager::getInstance().setMidiNoteExpression(clipId_, noteIndex_, dimension_, oldPoints_);
+}
+
+// ============================================================================
 // SetMultipleNoteVelocitiesCommand
 // ============================================================================
 
