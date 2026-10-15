@@ -138,11 +138,45 @@ struct MasterCaptureResult {
 struct RecentCaptureResult {
     bool success = false;
     juce::String error;
-    TrackId trackId = INVALID_TRACK_ID;
+    TrackId trackId = INVALID_TRACK_ID;  ///< the audio, when there is any
     ClipId clipId = INVALID_CLIP_ID;
+    TrackId midiTrackId = INVALID_TRACK_ID;  ///< the notes, when there are any
+    ClipId midiClipId = INVALID_CLIP_ID;
     double startBeat = 0.0;
     double lengthBeats = 0.0;
     juce::String filePath;
+
+    static RecentCaptureResult failed(juce::String why) {
+        RecentCaptureResult result;
+        result.error = std::move(why);
+        return result;
+    }
+};
+
+/** @brief The recent-audio buffer as the transport's memory meter shows it (#2311). */
+struct RecentCaptureMeter {
+    bool enabled = false;          ///< the buffer is on
+    double sampleRate = 0.0;       ///< what its frames are counted in
+    bool available = false;        ///< a played pass is there to keep
+    double recordedSeconds = 0.0;  ///< since the buffer started: it moves while it records
+    double keepSeconds = 0.0;      ///< how much KEEP would take now
+    double capacitySeconds = 0.0;
+    float passFrom = 0.0f;  ///< what KEEP would take, as fractions of the buffer
+    float passTo = 0.0f;
+    std::vector<float> peaks;  ///< oldest first
+
+    /// The window the fractions are of: frames up to this one, this many of them.
+    std::int64_t windowEndFrame = 0;
+    std::int64_t windowFrames = 0;
+
+    /// Notes played on MIDI devices, as fractions of the window; asked for separately.
+    struct Note {
+        float from = 0.0f;
+        float to = 0.0f;
+        int note = 0;
+        float velocity = 0.0f;
+    };
+    std::vector<Note> notes;
 };
 
 struct MasterCaptureState {
@@ -450,7 +484,26 @@ class AudioEngine : public AudioEngineListener {
 
     /// The last @p bars bars the master played, on a new track where they were heard (#2311).
     virtual RecentCaptureResult captureRecentMaster(int /*bars*/) {
-        return {false, "Capturing recent audio is unsupported"};
+        return RecentCaptureResult::failed("Capturing recent audio is unsupported");
+    }
+    virtual RecentCaptureMeter recentCaptureMeter(int /*slices*/, int /*bars*/,
+                                                  bool /*withNotes*/ = false) const {
+        return {};
+    }
+    /// Frames @p first to @p end of the buffer in @p slices peaks, for a zoomed view (#3053).
+    virtual std::vector<float> recentPeaks(std::int64_t /*first*/, std::int64_t /*end*/,
+                                           int /*slices*/) const {
+        return {};
+    }
+    /// The buffer's audio from @p first, for previewing it; false when it has gone.
+    virtual bool readRecent(std::int64_t /*first*/, std::int64_t /*frames*/,
+                            juce::AudioBuffer<float>& /*out*/) const {
+        return false;
+    }
+    /// Frames @p first to @p end of the buffer onto the timeline: audio, notes or both (#3053).
+    virtual RecentCaptureResult importRecent(std::int64_t /*first*/, std::int64_t /*end*/,
+                                             bool /*audio*/, bool /*midi*/) {
+        return RecentCaptureResult::failed("Capturing recent audio is unsupported");
     }
     virtual MasterCaptureState masterCaptureState() const {
         return {};

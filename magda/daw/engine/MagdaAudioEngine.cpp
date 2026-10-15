@@ -225,7 +225,7 @@ void MagdaAudioEngine::configChanged() {
     if (host_ != nullptr)
         host_->setRenderAhead(config.getRenderAheadEnabled() ? config.getRenderAheadMs() : 0);
     if (host_ != nullptr)
-        host_->setCaptureSeconds(config.getCaptureSeconds());
+        host_->setCaptureSeconds(config.getCaptureEnabled() ? config.getCaptureSeconds() : 0);
 }
 
 void MagdaAudioEngine::shutdown() {
@@ -522,6 +522,23 @@ MasterCaptureResult MagdaAudioEngine::stopMasterCapture() {
 }
 RecentCaptureResult MagdaAudioEngine::captureRecentMaster(int bars) {
     return host_->captureRecentMaster(bars);
+}
+RecentCaptureMeter MagdaAudioEngine::recentCaptureMeter(int slices, int bars,
+                                                        bool withNotes) const {
+    return host_ != nullptr ? host_->recentCaptureMeter(slices, bars, withNotes)
+                            : RecentCaptureMeter{};
+}
+std::vector<float> MagdaAudioEngine::recentPeaks(std::int64_t first, std::int64_t end,
+                                                 int slices) const {
+    return host_ != nullptr ? host_->recentPeaks(first, end, slices) : std::vector<float>{};
+}
+bool MagdaAudioEngine::readRecent(std::int64_t first, std::int64_t frames,
+                                  juce::AudioBuffer<float>& out) const {
+    return host_ != nullptr && host_->readRecent(first, frames, out);
+}
+RecentCaptureResult MagdaAudioEngine::importRecent(std::int64_t first, std::int64_t end, bool audio,
+                                                   bool midi) {
+    return host_->importRecent(first, end, audio, midi);
 }
 void MagdaAudioEngine::cancelMasterCapture() {
     host_->cancelMasterCapture();

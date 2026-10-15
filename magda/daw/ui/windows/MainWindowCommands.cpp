@@ -432,9 +432,7 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             result.addDefaultKeypress('m', juce::ModifierKeys::commandModifier);
             break;
         case captureRecentAudio:
-            result.setInfo("Capture Recent Audio",
-                           "Put the last bars the master played on a new track, where they were "
-                           "heard",
+            result.setInfo("Recent Capture", "Show what you just played, to choose what to keep",
                            "Transport", 0);
             result.addDefaultKeypress('c', juce::ModifierKeys::commandModifier |
                                                juce::ModifierKeys::shiftModifier);
@@ -1836,13 +1834,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             return true;
 
         case captureRecentAudio:
-            if (auto* engine = getAudioEngine()) {
-                const auto captured =
-                    engine->captureRecentMaster(Config::getInstance().getCaptureBars());
-                if (!captured.success)
-                    juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
-                                                           "Capture Recent Audio", captured.error);
-            }
+            toggleCapturePanel();
             return true;
 
         case goToPreviousMarker:

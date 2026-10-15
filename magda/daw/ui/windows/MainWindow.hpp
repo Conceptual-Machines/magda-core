@@ -23,6 +23,7 @@
 namespace magda {
 
 class TransportPanel;
+class CapturePanel;
 class ThemeFileWatcher;
 
 class LeftPanel;
@@ -199,6 +200,8 @@ class MainWindow::MainComponent : public juce::Component,
     bool bottomPanelCollapsed = false;
 
     std::unique_ptr<TransportPanel> transportPanel;
+    std::unique_ptr<CapturePanel> capturePanel;  // under the transport, opened from capture
+    void toggleCapturePanel();
     std::unique_ptr<MainView> mainView;
     std::unique_ptr<SessionView> sessionView;
     std::unique_ptr<MixerView> mixerView;

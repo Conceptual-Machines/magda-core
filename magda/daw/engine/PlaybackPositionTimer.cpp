@@ -5,6 +5,7 @@
 #include "../audio/io/AudioIOControl.hpp"
 #include "AudioEngine.hpp"
 #include "core/ClipManager.hpp"
+#include "core/Config.hpp"
 #include "ui/state/TimelineController.hpp"
 #include "ui/state/TimelineEvents.hpp"
 
@@ -90,6 +91,12 @@ void PlaybackPositionTimer::timerCallback() {
 
         if (!clipPositions.empty() && onSessionPlayheadUpdate)
             onSessionPlayheadUpdate(clipPositions);
+    }
+
+    if (onMemoryUpdate && ++memoryUpdateCounter_ >= MEMORY_UPDATE_TICKS) {
+        memoryUpdateCounter_ = 0;
+        onMemoryUpdate(
+            engine_.recentCaptureMeter(MEMORY_SLICES, Config::getInstance().getCaptureBars()));
     }
 
     // CPU usage + xrun update (throttled)

@@ -3016,8 +3016,10 @@ OperationRegistry::OperationRegistry() {
         OperationAccess::Control, &handlers::engineMasterCaptureStop, jobIdInput,
         remoteJobSchema());
     add("capture.recentMaster",
-        "Put the last bars the master played on a new track where they were heard: the latest "
-        "pass only, back to a stop or loop wrap. bars defaults to the Capture Length setting",
+        "KEEP: what was just played, as notes on the track that heard them when a MIDI device "
+        "was played, else as master audio on a new track. A transport pass lands where it was "
+        "heard, a phrase played while stopped at the playhead; at most bars bars (default: the "
+        "Capture Length setting). Fails when the capture buffer is off",
         OperationAccess::Write, &handlers::captureRecentMaster, operationInputSchema(R"json({
             "type":"object",
             "properties":{"bars":{"type":"integer","minimum":1,"maximum":64}},
@@ -3029,7 +3031,9 @@ OperationRegistry::OperationRegistry() {
                 "clipId":{"type":"integer"},
                 "startBeat":{"type":"number"},
                 "lengthBeats":{"type":"number"},
-                "filePath":{"type":"string"}
+                "filePath":{"type":"string"},
+                "midiTrackId":{"type":"integer"},
+                "midiClipId":{"type":"integer"}
             },"required":["trackId","clipId","startBeat","lengthBeats","filePath"],
             "additionalProperties":false
         })json"));

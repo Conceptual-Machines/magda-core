@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "../../core/AutomationTypes.hpp"
+#include "../../engine/AudioEngine.hpp"
 #include "../components/common/BarsBeatsTicksLabel.hpp"
 #include "../components/common/DraggableValueLabel.hpp"
 #include "../components/common/GridDivisionMenu.hpp"
@@ -22,6 +23,7 @@ class QwertyMidiKeyboard;
 // Greys out / re-enables the transport when an offline mix-analysis render owns
 // the edit (#886) -- playback is blocked then, so the controls shouldn't look live.
 class TransportPanel : public juce::Component,
+                       public juce::TooltipClient,
                        public MixAnalysisService::Listener,
                        private ConfigListener,
                        private ProjectManagerListener {
@@ -122,6 +124,15 @@ class TransportPanel : public juce::Component,
     void setXrunCount(int count);
     void setAudioDeviceInfo(const juce::String& deviceName, double sampleRate, int bufferSize);
 
+    // The rolling master buffer behind MEM and KEEP (#2311).
+    void setMemoryMeter(const RecentCaptureMeter& meter);
+    /// The capture button: opens the panel of what was just played (#3053).
+    std::function<void()> onCapture;
+    void setCapturePanelOpen(bool open);
+    /// MEM is the capture buffer's on/off switch.
+    void mouseMove(const juce::MouseEvent& e) override;
+    juce::String getTooltip() override;
+
   private:
     // ConfigListener: the transport style lives in the Appearance preferences.
     void configChanged() override;
@@ -218,8 +229,10 @@ class TransportPanel : public juce::Component,
     bool showLoopRange_ = false;
     void updateRangeVisibility();
 
-    // Placeholder until the rolling master buffer exists.
-    std::unique_ptr<juce::TextButton> keepButton;
+    // Keeps the latest pass of the rolling master buffer.
+    std::unique_ptr<SvgButton> captureButton;
+    RecentCaptureMeter memory_;
+    bool memoryRecording_ = false;
 
     static void styleToggle(juce::TextButton& button, juce::Colour offFill, juce::Colour offText,
                             juce::Colour onFill, juce::Colour onText);

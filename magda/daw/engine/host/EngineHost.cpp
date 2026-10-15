@@ -20,6 +20,7 @@
 
 #include "../../audio/DeviceParameterDisplayTextProvider.hpp"
 #include "../../audio/DeviceParameterList.hpp"
+#include "../../audio/MidiBridge.hpp"
 #include "../../audio/midi/RecordingNoteQueue.hpp"
 #include "../../audio/plugin_manager/ExternalPluginState.hpp"
 #include "../../audio/plugins/DeviceStateDocument.hpp"
@@ -34,6 +35,7 @@
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/DrumGridPads.hpp"
+#include "../../core/MidiNoteCommands.hpp"
 #include "../../core/OpenProjectAddressing.hpp"
 #include "../../core/TempoMap.hpp"
 #include "../../core/TrackCommands.hpp"
@@ -1177,66 +1179,225 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             });
     }
 
-    /// The latest pass's last @p bars bars, written to the recordings folder and placed on
-    /// a new track where they were heard: one undo step (#2311).
-    RecentCaptureResult captureRecentMaster(int bars) {
-        if (captureRing_ == nullptr || captureRingRate_ <= 0.0)
-            return {false, "Nothing has been heard yet"};
+    /// A stretch of the ring, by frame.
+    struct KeepRange {
+        std::int64_t first = 0;
+        std::int64_t end = 0;
+    };
 
-        const auto stamps = captureRing_->stamps();
-        const auto pass = engine::latestPass(stamps);
-        if (!pass)
-            return {false, "Nothing has played since the capture buffer started"};
+    /// What KEEP takes (#2311): the most recent of the latest transport pass's last
+    /// @p bars bars, and the latest phrase heard while stopped with a tail, at most
+    /// @p bars bars at the tempo under the playhead.
+    std::optional<KeepRange> planKeep(const engine::CaptureMeter& ring, int bars) const {
+        const auto rate = captureRingRate_;
+        if (rate <= 0.0)
+            return std::nullopt;
+        const auto toFrames = [rate](double seconds) {
+            return static_cast<std::int64_t>(std::llround(seconds * rate));
+        };
 
-        const auto startBeat =
-            std::max(pass->beats.start, engine::barsBefore(map_, pass->beats.end, bars));
-        const auto firstFrame = engine::frameAt(stamps, *pass, startBeat);
-        const auto frames = engine::frameAt(stamps, *pass, pass->beats.end) - firstFrame;
-        juce::AudioBuffer<float> audio;
-        if (frames <= 0 || !captureRing_->read(firstFrame, frames, audio))
-            return {false, "That audio has already left the capture buffer"};
-
-        auto folder = ProjectManager::getInstance().getRecordingsDirectory();
-        folder.createDirectory();
-        const auto file = folder.getNonexistentChildFile("Capture", ".wav");
-        {
-            std::unique_ptr<juce::OutputStream> stream = file.createOutputStream();
-            juce::WavAudioFormat wav;
-            auto writer =
-                stream != nullptr
-                    ? wav.createWriterFor(stream, juce::AudioFormatWriterOptions()
-                                                      .withSampleRate(captureRingRate_)
-                                                      .withNumChannels(audio.getNumChannels())
-                                                      .withBitsPerSample(24))
-                    : nullptr;
-            if (writer == nullptr ||
-                !writer->writeFromAudioSampleBuffer(audio, 0, audio.getNumSamples()))
-                return {false, "The capture could not be written to " + file.getFullPathName()};
+        if (!ring.phrase.empty() && ring.phrase.end > ring.pass.end) {
+            constexpr double kTailSeconds = 1.0;
+            const auto end = std::min(ring.writtenFrames, ring.phrase.end + toFrames(kTailSeconds));
+            const auto at = playheadBeat();
+            const auto where = map_.barsAndBeatsAt(at);
+            const auto longest = std::max(1, bars) * where.numerator * 4.0 / where.denominator *
+                                 60.0 / map_.bpmAt(at);
+            const auto first =
+                std::max({ring.phrase.start, end - toFrames(longest), ring.oldestReadable});
+            return end > first ? std::optional(KeepRange{first, end}) : std::nullopt;
         }
 
-        const auto lengthBeats = pass->beats.end - startBeat;
-        RecentCaptureResult result{.success = true,
-                                   .startBeat = startBeat,
-                                   .lengthBeats = lengthBeats,
-                                   .filePath = file.getFullPathName()};
-        CompoundOperationScope scope("Capture Recent Audio");
-        auto createTrack = std::make_unique<CreateTrackCommand>(TrackType::Media, "Capture");
-        auto* created = createTrack.get();
-        UndoManager::getInstance().executeCommand(std::move(createTrack));
-        result.trackId = created->getCreatedTrackId();
-        if (result.trackId == INVALID_TRACK_ID)
-            return {false, "The capture track could not be created"};
+        if (ring.pass.empty())
+            return std::nullopt;
+        const auto startBeat =
+            std::max(ring.passBeats.start, engine::barsBefore(map_, ring.passBeats.end, bars));
+        const auto first =
+            std::max(ring.pass.start, ring.pass.end - toFrames(map_.beatToTime(ring.passBeats.end) -
+                                                               map_.beatToTime(startBeat)));
+        return ring.pass.end > first ? std::optional(KeepRange{first, ring.pass.end})
+                                     : std::nullopt;
+    }
 
-        landTake(result.trackId, ClipView::Arrangement, [&] {
-            result.clipId = ClipManager::getInstance().createRecordedAudioClip(
-                result.trackId, RecordedAudioClipData{.startBeat = startBeat,
-                                                      .lengthBeats = lengthBeats,
-                                                      .filePath = file.getFullPathName()});
-            return result.clipId;
-        });
-        if (result.clipId == INVALID_CLIP_ID)
-            return {false, "The captured clip could not be placed"};
+    double playheadBeat() const {
+        return session_ != nullptr ? session_->positionBeats() : 0.0;
+    }
+
+    /// The beat @p frame lands on: where it was heard when the latest pass holds all of
+    /// @p range, and otherwise from the playhead on.
+    std::function<double(std::int64_t)> placement(const engine::CaptureMeter& ring,
+                                                  KeepRange range) const {
+        const auto heard =
+            !ring.pass.empty() && range.first >= ring.pass.start && range.end <= ring.pass.end;
+        const auto anchorFrame = heard ? ring.pass.end : range.first;
+        const auto anchorTime = map_.beatToTime(heard ? ring.passBeats.end : playheadBeat());
+        return [this, anchorFrame, anchorTime, rate = captureRingRate_](std::int64_t frame) {
+            return map_.timeToBeat(anchorTime + static_cast<double>(frame - anchorFrame) / rate);
+        };
+    }
+
+    /// The device notes the ring heard inside @p range, by source, in frames.
+    struct HeardNote {
+        engine::LiveMidiSourceId source = engine::kAnyLiveMidiSource;
+        std::int64_t start = 0;
+        std::int64_t end = 0;
+        int note = 0;
+        int velocity = 0;
+    };
+    std::vector<HeardNote> heardNotes(KeepRange range) const {
+        if (captureRing_ == nullptr)
+            return {};
+        const auto devices = sources_.deviceSources();
+        std::map<std::tuple<int, int, int>, HeardNote> held;
+        std::vector<HeardNote> notes;
+        for (const auto& event : captureRing_->midiFrom(range.first)) {
+            if (event.frame >= range.end || event.size < 3 ||
+                std::ranges::find(devices, event.source) == devices.end())
+                continue;
+            const auto status = event.bytes[0] & 0xf0;
+            const auto key = std::tuple{event.source, event.bytes[0] & 0x0f, event.bytes[1] & 0x7f};
+            if (status == 0x90 && event.bytes[2] > 0) {
+                held[key] = {event.source, event.frame, range.end, event.bytes[1] & 0x7f,
+                             event.bytes[2]};
+            } else if (status == 0x80 || status == 0x90) {
+                if (const auto on = held.find(key); on != held.end()) {
+                    notes.push_back(on->second);
+                    notes.back().end = event.frame;
+                    held.erase(on);
+                }
+            }
+        }
+        // Still held when the range ends: they end with it.
+        for (const auto& [key, note] : held)
+            notes.push_back(note);
+        std::ranges::sort(notes, {}, &HeardNote::start);
+        return notes;
+    }
+
+    /// @p range of the ring onto the timeline as one undo step (#3053): its audio on a new
+    /// Capture track, its notes on a new track for each input that played them.
+    RecentCaptureResult importRecent(std::int64_t first, std::int64_t end, bool audio, bool midi) {
+        if (captureRing_ == nullptr)
+            return RecentCaptureResult::failed("The capture buffer is off");
+        const auto ring = captureRing_->meter(1);
+        const KeepRange range{std::max(first, ring.oldestReadable),
+                              std::min(end, ring.writtenFrames)};
+        if (range.end <= range.first)
+            return RecentCaptureResult::failed("That stretch has already left the capture buffer");
+
+        const auto beatAt = placement(ring, range);
+        const auto startBeat = beatAt(range.first);
+        const auto lengthBeats = beatAt(range.end) - startBeat;
+        const auto notes = midi ? heardNotes(range) : std::vector<HeardNote>{};
+        if (!audio && notes.empty())
+            return RecentCaptureResult::failed("No notes were played in that stretch");
+
+        RecentCaptureResult result{
+            .success = true, .startBeat = startBeat, .lengthBeats = lengthBeats};
+        CompoundOperationScope scope("Keep Recent");
+
+        if (audio) {
+            juce::AudioBuffer<float> buffer;
+            if (!captureRing_->read(range.first, range.end - range.first, buffer))
+                return RecentCaptureResult::failed(
+                    "That audio has already left the capture buffer");
+            auto folder = ProjectManager::getInstance().getRecordingsDirectory();
+            folder.createDirectory();
+            const auto file = folder.getNonexistentChildFile("Capture", ".wav");
+            {
+                std::unique_ptr<juce::OutputStream> stream = file.createOutputStream();
+                juce::WavAudioFormat wav;
+                auto writer =
+                    stream != nullptr
+                        ? wav.createWriterFor(stream, juce::AudioFormatWriterOptions()
+                                                          .withSampleRate(captureRingRate_)
+                                                          .withNumChannels(buffer.getNumChannels())
+                                                          .withBitsPerSample(24))
+                        : nullptr;
+                if (writer == nullptr ||
+                    !writer->writeFromAudioSampleBuffer(buffer, 0, buffer.getNumSamples()))
+                    return RecentCaptureResult::failed("The capture could not be written to " +
+                                                       file.getFullPathName());
+            }
+            result.filePath = file.getFullPathName();
+
+            auto createTrack =
+                std::make_unique<CreateTrackCommand>(TrackType::Media, "Capture Audio");
+            auto* created = createTrack.get();
+            UndoManager::getInstance().executeCommand(std::move(createTrack));
+            result.trackId = created->getCreatedTrackId();
+            if (result.trackId == INVALID_TRACK_ID)
+                return RecentCaptureResult::failed("The capture track could not be created");
+            landTake(result.trackId, ClipView::Arrangement, [&] {
+                result.clipId = ClipManager::getInstance().createRecordedAudioClip(
+                    result.trackId, RecordedAudioClipData{.startBeat = startBeat,
+                                                          .lengthBeats = lengthBeats,
+                                                          .filePath = result.filePath});
+                return result.clipId;
+            });
+            if (result.clipId == INVALID_CLIP_ID)
+                return RecentCaptureResult::failed("The captured clip could not be placed");
+        }
+
+        // Notes keep the input they came from: each input gets a new track of its own,
+        // named after its device, so two instruments played at once stay apart.
+        std::map<engine::LiveMidiSourceId, std::vector<MidiNote>> byInput;
+        for (const auto& note : notes) {
+            const auto noteStart = beatAt(note.start);
+            byInput[note.source].push_back(
+                {.noteNumber = note.note,
+                 .velocity = note.velocity,
+                 .startBeat = noteStart - startBeat,
+                 .lengthBeats = std::max(1.0 / 64.0, beatAt(note.end) - noteStart)});
+        }
+        // "Capture MIDI", and the device's own name beside it when several played.
+        const auto devices = MidiBridge::getInstance().getAvailableMidiInputs();
+        const auto nameFor = [&](engine::LiveMidiSourceId source) {
+            if (byInput.size() == 1)
+                return juce::String("Capture MIDI");
+            const auto id = sources_.deviceIdOf(source);
+            const auto device = std::ranges::find(devices, id, &MidiDeviceInfo::id);
+            return "Capture MIDI - " + (device != devices.end() ? device->name : id);
+        };
+        for (auto& [source, clipNotes] : byInput) {
+            auto createTrack =
+                std::make_unique<CreateTrackCommand>(TrackType::Media, nameFor(source));
+            auto* created = createTrack.get();
+            UndoManager::getInstance().executeCommand(std::move(createTrack));
+            const auto trackId = created->getCreatedTrackId();
+            if (trackId == INVALID_TRACK_ID)
+                return RecentCaptureResult::failed(
+                    "The captured MIDI's track could not be created");
+
+            auto createClip = std::make_unique<CreateClipCommand>(
+                ClipType::MIDI, trackId, BeatPosition{startBeat}, BeatDuration{lengthBeats},
+                juce::String{}, ClipView::Arrangement);
+            auto* clip = createClip.get();
+            UndoManager::getInstance().executeCommand(std::move(createClip));
+            if (clip->getCreatedClipId() == INVALID_CLIP_ID)
+                return RecentCaptureResult::failed("The captured MIDI could not be placed");
+            UndoManager::getInstance().executeCommand(std::make_unique<AddMultipleMidiNotesCommand>(
+                clip->getCreatedClipId(), std::move(clipNotes), "Keep Recent MIDI"));
+
+            if (result.midiTrackId == INVALID_TRACK_ID) {
+                result.midiTrackId = trackId;
+                result.midiClipId = clip->getCreatedClipId();
+            }
+        }
         return result;
+    }
+
+    /// KEEP (#2311): what planKeep finds, as notes when a device was played in it and as
+    /// audio otherwise.
+    RecentCaptureResult captureRecentMaster(int bars) {
+        if (captureRing_ == nullptr)
+            return RecentCaptureResult::failed("The capture buffer is off");
+        const auto plan = planKeep(captureRing_->meter(1), bars);
+        if (!plan)
+            return RecentCaptureResult::failed(
+                "Nothing has been heard since the capture buffer started");
+        const auto played = !heardNotes(*plan).empty();
+        return importRecent(plan->first, plan->end, !played, played);
     }
 
     /// Create a take's clip through @p create and make it one undo step (#2951).
@@ -2770,9 +2931,14 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // Kept across rebuilds: what was heard is still where it was heard.
         const auto captureFrames = static_cast<std::int64_t>(
             captureSeconds_.load(std::memory_order_relaxed) * context.sampleRate);
-        if (captureRing_ == nullptr || captureRingRate_ != context.sampleRate ||
-            captureRing_->capacityFrames() != captureFrames) {
-            captureRing_ = std::make_unique<engine::CaptureRing>(kChannels, captureFrames);
+        // No length is the buffer switched off: nothing allocated, nothing written.
+        if (captureFrames <= 0) {
+            captureRing_.reset();
+            captureRingRate_ = 0.0;
+        } else if (captureRing_ == nullptr || captureRingRate_ != context.sampleRate ||
+                   captureRing_->capacityFrames() != captureFrames) {
+            captureRing_ =
+                std::make_unique<engine::CaptureRing>(kChannels, captureFrames, context.sampleRate);
             captureRingRate_ = context.sampleRate;
         }
         session_->setCaptureRing(captureRing_.get());
@@ -3872,7 +4038,7 @@ void EngineHost::setGrooveProvider(GrooveProvider provider) {
 }
 
 void EngineHost::setCaptureSeconds(int seconds) {
-    seconds = std::max(seconds, 1);
+    seconds = std::max(seconds, 0);
     if (impl_->captureSeconds_.exchange(seconds) != seconds) {
         impl_->captureMoved_.store(true, std::memory_order_relaxed);
         impl_->wantRebuild();
@@ -4271,6 +4437,55 @@ MasterCaptureStartStatus EngineHost::startMasterCapture(const MasterCaptureReque
 
 RecentCaptureResult EngineHost::captureRecentMaster(int bars) {
     return impl_->captureRecentMaster(bars);
+}
+
+RecentCaptureMeter EngineHost::recentCaptureMeter(int slices, int bars, bool withNotes) const {
+    // Message thread, like the ring's only replacement in rebuild().
+    const auto* ring = impl_->captureRing_.get();
+    const auto rate = impl_->captureRingRate_;
+    if (ring == nullptr || rate <= 0.0)
+        return {};
+    auto meter = ring->meter(slices);
+    const auto capacity = static_cast<double>(meter.capacityFrames);
+    const auto windowStart = meter.writtenFrames - meter.capacityFrames;
+    const auto fraction = [&](std::int64_t frame) {
+        return static_cast<float>(static_cast<double>(frame - windowStart) / capacity);
+    };
+    RecentCaptureMeter out{.enabled = true,
+                           .sampleRate = rate,
+                           .recordedSeconds = static_cast<double>(meter.writtenFrames) / rate,
+                           .capacitySeconds = capacity / rate,
+                           .peaks = std::move(meter.peaks),
+                           .windowEndFrame = meter.writtenFrames,
+                           .windowFrames = meter.capacityFrames};
+    if (const auto plan = impl_->planKeep(meter, bars)) {
+        out.available = true;
+        out.keepSeconds = static_cast<double>(plan->end - plan->first) / rate;
+        out.passFrom = fraction(plan->first);
+        out.passTo = fraction(plan->end);
+    }
+    if (withNotes)
+        for (const auto& note :
+             impl_->heardNotes({std::max<std::int64_t>(0, windowStart), meter.writtenFrames}))
+            out.notes.push_back({fraction(note.start), fraction(note.end), note.note,
+                                 static_cast<float>(note.velocity) / 127.0f});
+    return out;
+}
+
+std::vector<float> EngineHost::recentPeaks(std::int64_t first, std::int64_t end, int slices) const {
+    const auto* ring = impl_->captureRing_.get();
+    return ring != nullptr ? ring->peaks(first, end, slices) : std::vector<float>{};
+}
+
+bool EngineHost::readRecent(std::int64_t first, std::int64_t frames,
+                            juce::AudioBuffer<float>& out) const {
+    const auto* ring = impl_->captureRing_.get();
+    return ring != nullptr && ring->read(first, frames, out);
+}
+
+RecentCaptureResult EngineHost::importRecent(std::int64_t first, std::int64_t end, bool audio,
+                                             bool midi) {
+    return impl_->importRecent(first, end, audio, midi);
 }
 
 MasterCaptureResult EngineHost::stopMasterCapture() {

@@ -126,6 +126,13 @@ class MagdaAudioEngine final : public AudioEngine,
     MasterCaptureStartStatus startMasterCapture(const MasterCaptureRequest& request) override;
     MasterCaptureResult stopMasterCapture() override;
     RecentCaptureResult captureRecentMaster(int bars) override;
+    RecentCaptureMeter recentCaptureMeter(int slices, int bars,
+                                          bool withNotes = false) const override;
+    RecentCaptureResult importRecent(std::int64_t first, std::int64_t end, bool audio,
+                                     bool midi) override;
+    std::vector<float> recentPeaks(std::int64_t first, std::int64_t end, int slices) const override;
+    bool readRecent(std::int64_t first, std::int64_t frames,
+                    juce::AudioBuffer<float>& out) const override;
     void cancelMasterCapture() override;
     MasterCaptureState masterCaptureState() const override;
     void setTrackFrozen(TrackId trackId, bool frozen) override;

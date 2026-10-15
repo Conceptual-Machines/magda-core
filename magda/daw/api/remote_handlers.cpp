@@ -1156,6 +1156,8 @@ HandlerResult captureRecentMaster(MagdaApi&, const juce::var& input,
     object->setProperty("startBeat", captured.startBeat);
     object->setProperty("lengthBeats", captured.lengthBeats);
     object->setProperty("filePath", captured.filePath);
+    object->setProperty("midiTrackId", captured.midiTrackId);
+    object->setProperty("midiClipId", captured.midiClipId);
     return HandlerResult::ok(juce::var(object));
 }
 

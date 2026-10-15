@@ -225,6 +225,7 @@ void Config::save() {
     root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     root->setProperty("renderAheadEnabled", renderAheadEnabled);
     root->setProperty("renderAheadMs", renderAheadMs);
+    root->setProperty("captureBuffer", captureEnabled);
     root->setProperty("captureSeconds", captureSeconds);
     root->setProperty("captureBars", captureBars);
 
@@ -662,6 +663,7 @@ void Config::load() {
     autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     renderAheadEnabled = getBool("renderAheadEnabled", renderAheadEnabled);
     setRenderAheadMs(getInt("renderAheadMs", renderAheadMs));
+    setCaptureEnabled(getBool("captureBuffer", captureEnabled));
     setCaptureSeconds(getInt("captureSeconds", captureSeconds));
     setCaptureBars(getInt("captureBars", captureBars));
 

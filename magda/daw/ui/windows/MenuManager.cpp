@@ -361,8 +361,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                          false);
             menu.addSeparator();
             menu.addItem(CaptureRecentAudio,
-                         "Capture Recent Audio" + keyHint(CommandIDs::captureRecentAudio), true,
-                         false);
+                         "Recent Capture" + keyHint(CommandIDs::captureRecentAudio), true, false);
             break;
         }
 
