@@ -84,10 +84,21 @@ TransportPanel::TransportPanel() {
         updateRangeVisibility();
     };
 
-    keepButton = std::make_unique<juce::TextButton>(transport::kKeepCaption);
-    keepButton->setEnabled(false);
-    keepButton->setTooltip("Rolling master buffer (not available yet)");
-    for (auto* button : {selChipButton.get(), loopChipButton.get(), keepButton.get()})
+    captureButton = std::make_unique<SvgButton>("Capture", BinaryData::capture_svg,
+                                                BinaryData::capture_svgSize);
+    styleTransportButton(*captureButton, ActiveTheme::TRANSPORT_MEMORY);
+    captureButton->setTooltip(
+        "What you just played: choose what to keep (" +
+        juce::KeyPress('c', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier,
+                       0)
+            .getTextDescriptionWithIcons() +
+        ")");
+    captureButton->onClick = [this]() {
+        if (onCapture)
+            onCapture();
+    };
+    addAndMakeVisible(*captureButton);
+    for (auto* button : {selChipButton.get(), loopChipButton.get()})
         addAndMakeVisible(*button);
     applyToggleColours();
 
@@ -134,8 +145,8 @@ TransportPanel::~TransportPanel() {
     MixAnalysisService::getInstance().removeListener(this);
     Config::getInstance().removeListener(this);
     ProjectManager::getInstance().removeListener(this);
-    for (auto* button : {autoGridButton.get(), snapButton.get(), selChipButton.get(),
-                         loopChipButton.get(), keepButton.get()})
+    for (auto* button :
+         {autoGridButton.get(), snapButton.get(), selChipButton.get(), loopChipButton.get()})
         button->setLookAndFeel(nullptr);
 }
 
@@ -218,10 +229,6 @@ void TransportPanel::applyToggleColours() {
 
     styleToggle(*selChipButton, none, dim, chip, colour(ActiveTheme::ACCENT_PRIMARY));
     styleToggle(*loopChipButton, none, dim, chip, colour(ActiveTheme::ACCENT_POSITIVE));
-    styleToggle(*keepButton, chip, colour(ActiveTheme::TEXT_PRIMARY), chip,
-                colour(ActiveTheme::TEXT_PRIMARY));
-    keepButton->setColour(juce::ComboBox::outlineColourId,
-                          colour(ActiveTheme::TRANSPORT_WELL_BORDER));
     for (auto* button : {autoGridButton.get(), snapButton.get()})
         styleToggle(*button, chip, colour(ActiveTheme::TEXT_SECONDARY),
                     colour(ActiveTheme::TRANSPORT_TOGGLE_ON), juce::Colours::white);
@@ -289,14 +296,23 @@ void TransportPanel::paintFrame(juce::Graphics& g, juce::Rectangle<int> area) co
     g.drawRoundedRectangle(bounds.reduced(0.5f), 4.0f, 1.0f);
 }
 
-// The master buffer is not built yet: the frame, dot, meter floor and length
-// are drawn idle so the slot reads as what it will become.
+void TransportPanel::setMemoryMeter(const RecentCaptureMeter& meter) {
+    // Recording is the buffer having moved since the last look.
+    memoryRecording_ = meter.recordedSeconds > memory_.recordedSeconds;
+    memory_ = meter;
+    if (layout_.rightClusterVisible)
+        repaint(layout_.memoryFrame);
+}
+
+// The rolling master buffer: lit while there is a pass to keep, its level
+// history oldest to newest, and how much of it KEEP would take.
 void TransportPanel::paintMemory(juce::Graphics& g) const {
     const auto& l = layout_;
     if (!l.rightClusterVisible)
         return;
     const auto dim = ActiveTheme::getColour(ActiveTheme::TRANSPORT_TEXT_DIM);
-    g.setColour(ActiveTheme::getColour(ActiveTheme::TRANSPORT_MEMORY));
+    const auto amber = ActiveTheme::getColour(ActiveTheme::TRANSPORT_MEMORY);
+    g.setColour(memoryRecording_ ? amber : amber.withAlpha(0.35f));
     g.fillEllipse(l.memoryDot.toFloat());
 
     if (!l.memoryMeterVisible)
@@ -306,16 +322,58 @@ void TransportPanel::paintMemory(juce::Graphics& g) const {
     g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     g.drawText(transport::kMemoryCaption, l.memoryCaption, juce::Justification::centredLeft, false);
 
+    // One bar per pitch, over -48..0 dB; the pass KEEP would take is drawn bright.
     constexpr int kBarPitch = 3;
     const auto meter = l.memoryMeter.toFloat();
     const float floorY = meter.getCentreY() + 4.0f;
-    g.setColour(ActiveTheme::getColour(ActiveTheme::TRANSPORT_METER_FLOOR));
-    for (float x = meter.getX(); x + 1.0f <= meter.getRight(); x += kBarPitch)
-        g.fillRect(x, floorY, 1.5f, 1.5f);
+    const auto barCount = std::max(1, static_cast<int>(meter.getWidth()) / kBarPitch);
 
-    // Held length bright, capacity dim.
+    // Ticks every 30 seconds of the buffer, scrolling left as it records, so it
+    // visibly runs through silence too.
+    if (memory_.capacitySeconds > 0.0) {
+        const auto windowStart = memory_.recordedSeconds - memory_.capacitySeconds;
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TRANSPORT_METER_FLOOR));
+        for (auto tick = std::ceil(windowStart / 30.0) * 30.0; tick < memory_.recordedSeconds;
+             tick += 30.0) {
+            const auto x =
+                meter.getX() + static_cast<float>((tick - windowStart) / memory_.capacitySeconds) *
+                                   meter.getWidth();
+            g.fillRect(x, floorY - 3.0f, 1.0f, 4.5f);
+        }
+    }
+    const auto& peaks = memory_.peaks;
+    for (int bar = 0; bar < barCount; ++bar) {
+        const auto x = meter.getX() + static_cast<float>(bar * kBarPitch);
+        const auto from = static_cast<float>(bar) / static_cast<float>(barCount);
+        const auto to = static_cast<float>(bar + 1) / static_cast<float>(barCount);
+        auto peak = 0.0f;
+        if (!peaks.empty())
+            for (auto i = static_cast<std::size_t>(from * peaks.size());
+                 i < std::min(peaks.size(), static_cast<std::size_t>(std::ceil(to * peaks.size())));
+                 ++i)
+                peak = std::max(peak, peaks[i]);
+        const auto level =
+            std::clamp((juce::Decibels::gainToDecibels(peak, -48.0f) + 48.0f) / 48.0f, 0.0f, 1.0f);
+        if (level <= 0.0f) {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TRANSPORT_METER_FLOOR));
+            g.fillRect(x, floorY, 1.5f, 1.5f);
+            continue;
+        }
+        const auto inPass = memory_.available && to > memory_.passFrom && from < memory_.passTo;
+        const auto height = std::max(1.5f, level * (floorY + 1.5f - meter.getY()));
+        g.setColour(inPass ? amber : amber.withAlpha(0.3f));
+        g.fillRect(x, floorY + 1.5f - height, 1.5f, height);
+    }
+
+    // What KEEP would take bright, how full the buffer is dim.
+    const auto clock = [](double seconds) {
+        if (seconds <= 0.0)
+            return juce::String("--:--");
+        const auto whole = static_cast<int>(seconds);
+        return juce::String(whole / 60) + ":" + juce::String(whole % 60).paddedLeft('0', 2);
+    };
     const auto timeFont = fonts.getUIFont(transport::kMemoryTimeFontSize);
-    const juce::String held = "--:--";
+    const auto held = memory_.enabled ? clock(memory_.keepSeconds) : juce::String("off");
     auto timeArea = l.memoryTime;
     g.setFont(timeFont);
     g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
@@ -323,7 +381,16 @@ void TransportPanel::paintMemory(juce::Graphics& g) const {
                timeArea.removeFromLeft(juce::GlyphArrangement::getStringWidthInt(timeFont, held)),
                juce::Justification::centredLeft, false);
     g.setColour(dim);
-    g.drawText(" / --:--", timeArea, juce::Justification::centredLeft, false);
+    // How full the buffer is: climbs to 100% and stays there while it records.
+    const auto filled =
+        !memory_.enabled ? juce::String()
+        : memory_.capacitySeconds > 0.0
+            ? juce::String(juce::roundToInt(
+                  100.0 * std::min(1.0, memory_.recordedSeconds / memory_.capacitySeconds))) +
+                  "%"
+            : juce::String("--");
+    if (filled.isNotEmpty())
+        g.drawText(" / " + filled, timeArea, juce::Justification::centredLeft, false);
 }
 
 void TransportPanel::paintStackCaptions(juce::Graphics& g) const {
@@ -477,7 +544,7 @@ void TransportPanel::resized() {
     cpuTitleLabel->setVisible(l.rightClusterVisible);
     cpuValueLabel->setVisible(l.rightClusterVisible);
     qwertyKeyboardButton->setVisible(l.rightClusterVisible);
-    keepButton->setVisible(l.rightClusterVisible);
+    captureButton->setVisible(l.rightClusterVisible);
     overflowButton->setVisible(l.overflowVisible);
     updateRangeVisibility();
     updateAutomationWriteLabelVisibility();
@@ -537,7 +604,8 @@ void TransportPanel::resized() {
     gridSlashLabel->setBounds(0, 0, 0, 0);
     gridSlashLabel->setVisible(false);
 
-    keepButton->setBounds(l.keep);
+    // The icon is square, on the left of the slot KEEP's text was measured for.
+    captureButton->setBounds(l.keep.withWidth(std::min(l.keep.getWidth(), l.keep.getHeight())));
     qwertyKeyboardButton->setBounds(l.qwerty);
     overflowButton->setBounds(l.overflow);
     automationWriteLabel->setBounds(l.automationWriteLabel);
@@ -580,11 +648,13 @@ void TransportPanel::showOverflowMenu() {
         IdHome,
         IdPrev,
         IdNext,
+        IdCapture,
     };
 
     // Always offered while overflow button is visible — right cluster always
     // collapses first so QWERTY and CPU are in the menu whenever it exists.
     menu.addItem(IdQwerty, "Virtual MIDI Keyboard", true, qwertyKeyboardButton->isActive());
+    menu.addItem(IdCapture, "Recent Capture", true, captureButton->isActive());
     const juce::String cpuText =
         "CPU " + juce::String(juce::roundToInt(currentCpuUsage * 100.0f)) + "%";
     menu.addItem(99, cpuText, false, false);
@@ -627,6 +697,9 @@ void TransportPanel::showOverflowMenu() {
                            switch (result) {
                                case IdQwerty:
                                    fire(qwertyKeyboardButton.get());
+                                   break;
+                               case IdCapture:
+                                   fire(captureButton.get());
                                    break;
                                case IdLoop:
                                    fire(loopButton.get());
@@ -1649,8 +1722,30 @@ void TransportPanel::updateCpuTooltip() {
         cpuValueLabel->setTooltip(tip);
 }
 
+void TransportPanel::setCapturePanelOpen(bool open) {
+    captureButton->setActive(open);
+}
+
+void TransportPanel::mouseMove(const juce::MouseEvent& e) {
+    setMouseCursor(layout_.memoryFrame.contains(e.getPosition())
+                       ? juce::MouseCursor::PointingHandCursor
+                       : juce::MouseCursor::NormalCursor);
+}
+
+juce::String TransportPanel::getTooltip() {
+    const auto mouse = getMouseXYRelative();
+    if (!layout_.memoryFrame.contains(mouse))
+        return {};
+    return memory_.enabled ? "Capturing what you play: click to turn off"
+                           : "Capture is off: click to turn on";
+}
+
 void TransportPanel::mouseDown(const juce::MouseEvent& e) {
-    if (e.originalComponent == automationWriteButton.get() && e.mods.isRightButtonDown()) {
+    if (e.originalComponent == this && layout_.memoryFrame.contains(e.getPosition())) {
+        auto& config = Config::getInstance();
+        config.setCaptureEnabled(!config.getCaptureEnabled());
+        config.save();
+    } else if (e.originalComponent == automationWriteButton.get() && e.mods.isRightButtonDown()) {
         showAutomationModeMenu();
     } else if (e.originalComponent == qwertyKeyboardButton.get() && e.mods.isRightButtonDown() &&
                qwertyKeyboard_ != nullptr) {

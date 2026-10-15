@@ -444,6 +444,7 @@
     "toggle.confirm_track_delete": "Confirm before deleting tracks",
     "toggle.auto_monitor": "Auto-monitor selected track",
     "toggle.render_ahead": "Render playback ahead of the audio device",
+    "toggle.capture": "Keep what you play, so it can be captured afterwards",
     "toggle.open_macros_on_select": "Open macros when selecting devices or racks",
     "toggle.duplicate_loop_grows": "Duplicate Loop Range grows the loop (off: advances it)",
     "toggle.open_plugin_window_on_drop": "Open plugin window when added to a chain",

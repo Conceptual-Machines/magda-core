@@ -216,9 +216,24 @@ class GeneralPage : public juce::Component {
         setupTextSlider(*this, renderAheadTimeSlider, renderAheadTimeLabel,
                         tr("preferences.slider.render_ahead_time"), 5.0, 200.0, 5.0,
                         magda::TechnicalTextToken::Milliseconds, 0, true);
+        setupToggle(*this, captureToggle, tr("preferences.toggle.capture"));
         setupTextSlider(*this, captureSecondsSlider, captureSecondsLabel,
-                        tr("preferences.slider.capture_buffer"), 10.0, 600.0, 10.0,
+                        tr("preferences.slider.capture_buffer"), 10.0, 1800.0, 10.0,
                         magda::TechnicalTextToken::Seconds, 0, true);
+        // Its length and what that costs: stereo floats at 48 kHz, about 23 MB a minute.
+        captureSecondsSlider.setValueFormatter([](double seconds) {
+            const auto whole = static_cast<int>(seconds);
+            const auto megabytes = juce::roundToInt(seconds * 48000.0 * 2.0 * 4.0 / 1.0e6);
+            return juce::String(whole / 60) + ":" + juce::String(whole % 60).paddedLeft('0', 2) +
+                   " (" + juce::String(megabytes) + " MB)";
+        });
+        captureSecondsSlider.setValueParser([](const juce::String& text) {
+            const auto clock = text.upToFirstOccurrenceOf(" ", false, false);
+            if (clock.containsChar(':'))
+                return clock.upToFirstOccurrenceOf(":", false, false).getDoubleValue() * 60.0 +
+                       clock.fromFirstOccurrenceOf(":", false, false).getDoubleValue();
+            return clock.getDoubleValue();
+        });
         setupTextSlider(*this, captureBarsSlider, captureBarsLabel,
                         tr("preferences.slider.capture_length"), 1.0, 64.0, 1.0,
                         magda::TechnicalTextToken::Bars, 0, true);
@@ -329,6 +344,7 @@ class GeneralPage : public juce::Component {
         renderAheadToggle.setToggleState(config.getRenderAheadEnabled(),
                                          juce::dontSendNotification);
         renderAheadTimeSlider.setValue(config.getRenderAheadMs(), juce::dontSendNotification);
+        captureToggle.setToggleState(config.getCaptureEnabled(), juce::dontSendNotification);
         captureSecondsSlider.setValue(config.getCaptureSeconds(), juce::dontSendNotification);
         captureBarsSlider.setValue(config.getCaptureBars(), juce::dontSendNotification);
         headersOnRightToggle.setToggleState(config.getScrollbarOnLeft(),
@@ -397,6 +413,7 @@ class GeneralPage : public juce::Component {
         config.setAutoSaveIntervalSeconds(static_cast<int>(autoSaveIntervalSlider.getValue()));
         config.setRenderAheadEnabled(renderAheadToggle.getToggleState());
         config.setRenderAheadMs(static_cast<int>(renderAheadTimeSlider.getValue()));
+        config.setCaptureEnabled(captureToggle.getToggleState());
         config.setCaptureSeconds(static_cast<int>(captureSecondsSlider.getValue()));
         config.setCaptureBars(static_cast<int>(captureBarsSlider.getValue()));
         config.setScrollbarOnLeft(headersOnRightToggle.getToggleState());
@@ -452,7 +469,7 @@ class GeneralPage : public juce::Component {
                headerH + 4 + rowH + 4 + rowH + secGap + headerH + 4 + rowH + secGap + headerH + 4 +
                (rowH * 9) + 32 + secGap + headerH + 4 + rowH + 18 + 4 + rowH + padding +
                3 * (4 + rowH)     // Layout's track-height rows
-               + 2 * (4 + rowH);  // Engine's capture rows
+               + 3 * (4 + rowH);  // Engine's capture rows
     }
 
     static int getLeftColumnPreferredHeight() {
@@ -466,7 +483,7 @@ class GeneralPage : public juce::Component {
                + secGap + headerH + 4 + rowH + 4 + rowH       // Transport
                + secGap + headerH + 4 + rowH + 4 + rowH       // Auto-Save
                + secGap + headerH + 4 + rowH + 4 + rowH       // Engine
-               + 2 * (4 + rowH)                               // Engine: capture
+               + 3 * (4 + rowH)                               // Engine: capture
                + secGap + headerH + 4 + rowH + 18 + 4 + rowH  // Language + Localized Font Size
                + padding;
     }
@@ -523,6 +540,8 @@ class GeneralPage : public juce::Component {
         renderAheadToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
         layoutTextSliderRow(bounds, renderAheadTimeLabel, renderAheadTimeSlider, rowH, sliderH);
+        bounds.removeFromTop(4);
+        captureToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
         layoutTextSliderRow(bounds, captureSecondsLabel, captureSecondsSlider, rowH, sliderH);
         bounds.removeFromTop(4);
@@ -624,6 +643,8 @@ class GeneralPage : public juce::Component {
         left.removeFromTop(4);
         layoutTextSliderRow(left, renderAheadTimeLabel, renderAheadTimeSlider, rowH, sliderH);
         left.removeFromTop(4);
+        captureToggle.setBounds(left.removeFromTop(rowH).reduced(0, 4));
+        left.removeFromTop(4);
         layoutTextSliderRow(left, captureSecondsLabel, captureSecondsSlider, rowH, sliderH);
         left.removeFromTop(4);
         layoutTextSliderRow(left, captureBarsLabel, captureBarsSlider, rowH, sliderH);
@@ -688,6 +709,7 @@ class GeneralPage : public juce::Component {
     juce::Label layoutHeader, behaviorHeader, languageHeader;
     juce::Label engineHeader, renderAheadTimeLabel, captureSecondsLabel, captureBarsLabel;
     juce::ToggleButton renderAheadToggle;
+    juce::ToggleButton captureToggle;
     magda::daw::ui::TextSlider renderAheadTimeSlider, captureSecondsSlider, captureBarsSlider;
     juce::ToggleButton headersOnRightToggle;
     juce::ToggleButton autoHideScrollbarsToggle;

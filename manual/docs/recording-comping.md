@@ -14,11 +14,18 @@ A live **Recording...** preview is drawn over the timeline as you record, showin
 
 ## Capturing what you just heard
 
-MAGDA keeps the last minute of the master output, whether or not you were recording. **Transport > Capture Recent Audio** (++cmd+shift+c++) puts the last bars that played on a new **Capture** track, at the bars where you heard them, as one undoable step.
+MAGDA can keep the last few minutes of what you play, so an idea you played without recording is not lost. Click the **MEM** meter in the transport bar to turn it on; it stays on until you click it again. While it is on, it keeps the master output and the notes you play on MIDI devices, whether or not the transport is running.
 
-- It takes the most recent pass only: a stop or a loop wrap ends it, so a capture never splices two passes together.
-- It takes up to **Capture Length** bars (8 by default), counting the bar the transport stopped in. The click is not included.
-- How long the master is kept is **Capture Buffer** (60 seconds by default). Both are in **Preferences > Engine**.
+The **MEM** meter in the transport bar shows it: the level of what is held, with what you just played drawn bright, how long that is, and how full the buffer is.
+
+Click the capture button beside it (++cmd+shift+c++, or **Transport > Recent Capture**) to open the capture panel under the transport. It shows the audio and the notes over the whole buffer, oldest at the left, with what you just played already selected:
+
+- **With the transport stopped**, that is your last phrase, back to a pause of a few seconds, with a second of tail for the release.
+- **Along with the transport**, it is the last bars of that pass. A stop or a loop wrap ends a pass.
+
+Drag across the lanes to select something else (double-click goes back), then press **Import Audio** to put the master audio on a new **Capture Audio** track, or **Import MIDI** to put the notes on a new **Capture MIDI** track. Notes from several MIDI devices go on a track each, named after the device. A stretch the transport played lands at the bars where you heard it; anything else lands at the playhead. The click is never included.
+
+The **MEM** dot is lit while it is capturing. **Preferences > Engine** has the same switch, and **Capture Buffer** sets how much is kept: 5 minutes by default, up to 30, with what each length costs in memory. **Capture Length** caps what is selected for you, 8 bars by default.
 
 ## Selecting a take
 

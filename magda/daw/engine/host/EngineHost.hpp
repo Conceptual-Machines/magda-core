@@ -1,5 +1,6 @@
 #pragma once
 
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
 
 #include <cstdint>
@@ -36,6 +37,7 @@ struct OfflineRenderRequest;
 struct MasterCaptureRequest;
 struct MasterCaptureResult;
 struct RecentCaptureResult;
+struct RecentCaptureMeter;
 struct MasterCaptureState;
 enum class MasterCaptureStartStatus;
 }  // namespace magda
@@ -125,8 +127,8 @@ class EngineHost {
     /// plays or records.
     void setRenderAhead(int milliseconds);
 
-    /// How much of the master the capture ring keeps (#2311). A change remakes the
-    /// session once nothing plays or records, like render-ahead.
+    /// How much of the master the capture ring keeps (#2311), or none to switch it off. A
+    /// change remakes the session once nothing plays or records, like render-ahead.
     void setCaptureSeconds(int seconds);
 
     /// Recompile the clips after the groove library changes: a groove already on a
@@ -409,6 +411,11 @@ class EngineHost {
     MasterCaptureStartStatus startMasterCapture(const MasterCaptureRequest& request);
     MasterCaptureResult stopMasterCapture();
     RecentCaptureResult captureRecentMaster(int bars);
+    /// The buffer in @p slices peaks, and what capturing @p bars bars would take now.
+    RecentCaptureMeter recentCaptureMeter(int slices, int bars, bool withNotes = false) const;
+    RecentCaptureResult importRecent(std::int64_t first, std::int64_t end, bool audio, bool midi);
+    std::vector<float> recentPeaks(std::int64_t first, std::int64_t end, int slices) const;
+    bool readRecent(std::int64_t first, std::int64_t frames, juce::AudioBuffer<float>& out) const;
     void cancelMasterCapture();
     MasterCaptureState masterCaptureState() const;
 

@@ -103,6 +103,9 @@ class LiveMidiSources {
     /// has been unplugged since.
     std::vector<int> deviceSources() const;
 
+    /// The identifier of the device @p source reads, or empty (#3053).
+    juce::String deviceIdOf(int source) const;
+
     /// As @ref deviceSources, less the ports of the hardware named @p excluded: where an
     /// external instrument's own MIDI would come back from (#2279).
     std::vector<int> deviceSourcesExcept(const juce::String& excluded) const;

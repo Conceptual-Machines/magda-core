@@ -22,6 +22,7 @@
 #include "../dialogs/TrackManagerDialog.hpp"
 #include "../layout/LayoutConfig.hpp"
 #include "../panels/BottomPanel.hpp"
+#include "../panels/CapturePanel.hpp"
 #include "../panels/FooterBar.hpp"
 #include "../panels/LeftPanel.hpp"
 #include "../panels/RightPanel.hpp"
@@ -1184,6 +1185,10 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
             transportPanel->setAudioDeviceInfo(deviceName, sampleRate, bufferSize);
         }
     };
+    positionTimer_->onMemoryUpdate = [this](const RecentCaptureMeter& meter) {
+        if (transportPanel)
+            transportPanel->setMemoryMeter(meter);
+    };
     positionTimer_->start();  // Start once and keep running
 
     // Route Lua-script transport calls through the same TimelineController
@@ -1222,6 +1227,12 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     }
 
     // Wire transport callbacks - just dispatch events, TimelineController notifies audio engine
+    if (capturePanel == nullptr) {
+        capturePanel = std::make_unique<CapturePanel>(*engine);
+        addChildComponent(*capturePanel);
+    }
+    transportPanel->onCapture = [this]() { toggleCapturePanel(); };
+
     transportPanel->onPlay = [this]() {
         mainView->getTimelineController().dispatch(StartPlaybackEvent{});
     };
@@ -1428,6 +1439,7 @@ MainWindow::MainComponent::~MainComponent() {
     mixerView.reset();
 
     DBG("    [5m] Destroying panels...");
+    capturePanel.reset();
     transportPanel.reset();
     leftPanel.reset();
     rightPanel.reset();
@@ -1504,10 +1516,20 @@ void MainWindow::MainComponent::resized() {
     layoutContentArea(bounds);
 }
 
+void MainWindow::MainComponent::toggleCapturePanel() {
+    if (capturePanel == nullptr)
+        return;
+    capturePanel->setVisible(!capturePanel->isVisible());
+    transportPanel->setCapturePanelOpen(capturePanel->isVisible());
+    resized();
+}
+
 void MainWindow::MainComponent::layoutTransportArea(juce::Rectangle<int>& bounds) {
     auto& layout = LayoutConfig::getInstance();
 
     transportPanel->setBounds(bounds.removeFromTop(layout.transportHeight));
+    if (capturePanel != nullptr && capturePanel->isVisible())
+        capturePanel->setBounds(bounds.removeFromTop(CapturePanel::kHeight));
     bounds.removeFromTop(layout.panelPadding);  // Spacing below transport
 }
 

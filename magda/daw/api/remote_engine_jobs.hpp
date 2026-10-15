@@ -50,7 +50,7 @@ class EngineJobSource {
     virtual MasterCaptureSnapshot masterCaptureStatus() const = 0;
     /// The master's last @p bars bars on a new track, where they were heard (#2311).
     virtual RecentCaptureResult captureRecentMaster(int /*bars*/) {
-        return {false, "Capturing recent audio is unsupported"};
+        return RecentCaptureResult::failed("Capturing recent audio is unsupported");
     }
     virtual void shutdown() = 0;
 };

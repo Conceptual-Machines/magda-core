@@ -166,6 +166,14 @@ std::vector<int> LiveMidiSources::deviceSourcesExcept(const juce::String& exclud
     return sources;
 }
 
+juce::String LiveMidiSources::deviceIdOf(int source) const {
+    const juce::ScopedLock held(lock_);
+    for (const auto& [identifier, id] : devices_)
+        if (id == source)
+            return identifier;
+    return {};
+}
+
 std::vector<int> LiveMidiSources::deviceSources() const {
     const juce::ScopedLock held(lock_);
 

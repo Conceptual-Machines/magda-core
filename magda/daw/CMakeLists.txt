@@ -156,6 +156,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/transport/punchout.svg
     ../../assets/icons/transport/automation_write.svg
     ../../assets/icons/transport/midi_qwerty.svg
+    ../../assets/icons/transport/capture.svg
     # Inspector icons
     ../../assets/icons/inspector/position.svg
     ../../assets/icons/inspector/fade_linear.svg

@@ -5,6 +5,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 
 #include "../../../engine/AudioEngine.hpp"
+#include "../../components/common/PreviewOutputCallback.hpp"
 #include "../../components/common/SvgButton.hpp"
 #include "PanelContent.hpp"
 #include "SearchTextEditor.hpp"
@@ -184,9 +185,7 @@ class MediaExplorerContent : public PanelContent,
     std::unique_ptr<juce::AudioFormatReaderSource> readerSource_;
 
     // Preview output channel routing wrapper
-    class PreviewAudioCallback;
-    friend class PreviewAudioCallback;
-    std::unique_ptr<PreviewAudioCallback> previewCallback_;
+    std::unique_ptr<magda::PreviewOutputCallback> previewCallback_;
 
     juce::File currentPreviewFile_;
     bool isPlaying_ = false;

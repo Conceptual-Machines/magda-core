@@ -1254,12 +1254,20 @@ class Config {
         renderAheadMs = std::clamp(milliseconds, 5, 200);
     }
 
+    /// Whether the master and live MIDI are kept for capture: off until switched on at MEM.
+    bool getCaptureEnabled() const {
+        return captureEnabled;
+    }
+    void setCaptureEnabled(bool enabled) {
+        captureEnabled = enabled;
+    }
+
     /// How much of the master the capture ring keeps, in seconds (#2311).
     int getCaptureSeconds() const {
         return captureSeconds;
     }
     void setCaptureSeconds(int seconds) {
-        captureSeconds = std::clamp(seconds, 10, 600);
+        captureSeconds = std::clamp(seconds, 10, 1800);
     }
     /// How many bars Capture Recent Audio takes, at most.
     int getCaptureBars() const {
@@ -1576,7 +1584,8 @@ class Config {
 
     bool renderAheadEnabled = false;
     int renderAheadMs = 20;
-    int captureSeconds = 60;
+    bool captureEnabled = false;
+    int captureSeconds = 300;
     int captureBars = 8;
 
     // Device chain behaviour
