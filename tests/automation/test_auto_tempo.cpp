@@ -161,10 +161,10 @@ TEST_CASE("setAutoTempo - preserves real detected BPM", "[clip][auto-tempo]") {
         REQUIRE(magda::test::audioEvent(clip).speedRatio == 1.0);
     }
 
-    SECTION("looping gets enabled if not already") {
+    SECTION("looping is left as it was") {
         REQUIRE_FALSE(clip.loopEnabled);
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
-        REQUIRE(clip.loopEnabled);
+        REQUIRE_FALSE(clip.loopEnabled);
     }
 }
 
@@ -257,9 +257,9 @@ TEST_CASE("setAutoTempo - with offset preserves loop start", "[clip][auto-tempo]
     auto clip = makeAmenClip();
     magda::test::audioEvent(clip).setAnchorSeconds(0.5);
 
-    SECTION("loopStart set to offset when loop was not enabled") {
+    SECTION("the read position is kept") {
         ClipOperations::setAutoTempo(clip, true, PROJECT_BPM);
-        REQUIRE(magda::test::audioEvent(clip).loopStartSeconds() == Approx(0.5));
+        REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Approx(0.5));
     }
 
     SECTION("Clamping shifts start when loop exceeds file with offset") {
@@ -448,10 +448,10 @@ TEST_CASE("setAutoTempo - transitions a clip a detection already granted", "[cli
 
     ClipOperations::setAutoTempo(clip, true, 120.0);
 
-    SECTION("Loop, stretch engine and speed follow the grant") {
+    SECTION("Stretch engine and speed follow the grant") {
         REQUIRE(event.autoTempo);
         REQUIRE(event.playbackIntent == PlaybackIntent::Beat);
-        REQUIRE(clip.loopEnabled);
+        REQUIRE_FALSE(clip.loopEnabled);
         REQUIRE(event.loopLengthSamples > 0);
         REQUIRE(event.timeStretchMode != time_stretch_mode::kDisabled);
         REQUIRE(event.speedRatio == 1.0);
@@ -467,7 +467,7 @@ TEST_CASE("setAutoTempo - transitions a clip a detection already granted", "[cli
 
         ClipOperations::setAutoTempo(clip, true, 120.0);
 
-        REQUIRE(clip.loopEnabled);
+        REQUIRE_FALSE(clip.loopEnabled);
         REQUIRE(event.loopStartSamples == loopStart);
         REQUIRE(event.loopLengthSamples == loopLength);
         REQUIRE(event.loopExtent == extent);

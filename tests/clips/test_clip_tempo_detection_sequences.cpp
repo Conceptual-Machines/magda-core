@@ -208,7 +208,7 @@ TEST_CASE("A typed tempo completes a BEAT request made without one",
 
     clips.setSourceTempo(clipId, 120.0);
     REQUIRE(event->autoTempo);
-    REQUIRE(clips.getClip(clipId)->loopEnabled);
+    REQUIRE(!clips.getClip(clipId)->loopEnabled);
     REQUIRE(!event->analogPitch);
     REQUIRE(event->speedRatio == Approx(1.0));
     REQUIRE(event->timeStretchMode != time_stretch_mode::kDisabled);

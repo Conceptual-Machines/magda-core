@@ -247,6 +247,17 @@ class ClipOperations {
         setBeatPlacement(clip, newStartTime * bpm / 60.0, newLength * bpm / 60.0, bpm);
     }
 
+    /// A clip that does not loop ends where its source does, whether it plays
+    /// at its own rate or follows the tempo in beat mode.
+    static inline void clampToRemainingSource(ClipInfo& clip, const AudioEvent& event,
+                                              double fileDuration, double bpm) {
+        if (clip.loopEnabled || fileDuration <= 0.0 || !isValidBpm(bpm))
+            return;
+        const double maxBeats = event.beatsRemainingInSource(fileDuration, bpm);
+        if (clip.placement.lengthBeats > maxBeats)
+            setBeatPlacement(clip, clip.placement.startBeat, maxBeats, bpm);
+    }
+
     static inline void setStartBeat(ClipInfo& clip, double newStartBeat, double bpm) {
         setBeatPlacement(clip, newStartBeat, clip.placement.lengthBeats, bpm);
     }
@@ -395,15 +406,7 @@ class ClipOperations {
         event->clampLoopRegionToSource(fileDuration);
         event->setAnchorSeconds(juce::jlimit(0.0, fileDuration, event->anchorSeconds()));
 
-        if (!clip.loopEnabled && !event->autoTempo) {
-            const double speed = event->speedRatio > 0.0 ? event->speedRatio : 1.0;
-            const double maxLength = (fileDuration - event->anchorSeconds()) / speed;
-            const double currentLength = clip.getTimelineLength(bpm);
-            if (currentLength > maxLength) {
-                setTimelinePlacement(clip, clip.getTimelineStart(bpm),
-                                     juce::jmax(ClipInfo::MIN_CLIP_LENGTH, maxLength), bpm);
-            }
-        }
+        clampToRemainingSource(clip, *event, fileDuration, bpm);
     }
 
     static inline void setAudioOffsetPreservingSourceRegion(ClipInfo& clip, double newOffset,
@@ -417,15 +420,7 @@ class ClipOperations {
             newOffset = juce::jmin(newOffset, fileDuration);
         event->setAnchorSeconds(juce::jmax(0.0, newOffset));
 
-        if (!clip.loopEnabled && !event->autoTempo && fileDuration > 0.0) {
-            const double speed = event->speedRatio > 0.0 ? event->speedRatio : 1.0;
-            const double currentLength = clip.getTimelineLength(bpm);
-            const double maxLength = (fileDuration - event->anchorSeconds()) / speed;
-            if (currentLength > maxLength) {
-                setTimelinePlacement(clip, clip.getTimelineStart(bpm),
-                                     juce::jmax(MIN_CLIP_LENGTH, maxLength), bpm);
-            }
-        }
+        clampToRemainingSource(clip, *event, fileDuration, bpm);
     }
 
     static inline void setAudioLoopPhaseClamped(ClipInfo& clip, double phase) {
@@ -859,16 +854,6 @@ class ClipOperations {
             // Preserve current timeline position in beat-domain placement.
             clip.setPlacementBeats(clip.getStartBeats(bpm), clip.placement.lengthBeats);
 
-            // Beat mode loops. A whole-source region stays one; a range keeps
-            // the clip's span.
-            if (!clip.loopEnabled) {
-                clip.loopEnabled = true;
-                event->loopStartSamples = event->sourceAnchorSamples;
-                if (event->loopExtent != RegionExtent::WholeSource)
-                    event->setLoopLengthSeconds(
-                        event->timelineToSource(clip.getTimelineLength(bpm)));
-            }
-
             // Issue #1157: a full, untrimmed source becomes its beat count on
             // entering beat mode; a trimmed clip keeps its span. Once only: the
             // span is read through the pre-reset speedRatio, so a repeat would
@@ -976,14 +961,7 @@ class ClipOperations {
             if (event->loopLengthSeconds() > avail)
                 event->setLoopLengthSeconds(juce::jmax(0.0, avail));
         }
-        if (!clip.loopEnabled && !event->autoTempo && fileDuration > 0.0) {
-            const double speed = event->speedRatio > 0.0 ? event->speedRatio : 1.0;
-            const double maxLength = (fileDuration - event->anchorSeconds()) / speed;
-            if (clip.getTimelineLength(bpm) > maxLength) {
-                setTimelinePlacement(clip, clip.getTimelineStart(bpm),
-                                     juce::jmax(MIN_CLIP_LENGTH, maxLength), bpm);
-            }
-        }
+        clampToRemainingSource(clip, *event, fileDuration, bpm);
     }
 
     /**

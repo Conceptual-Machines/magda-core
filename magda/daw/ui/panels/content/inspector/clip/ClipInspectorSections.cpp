@@ -630,11 +630,6 @@ void ClipInspector::initClipPropertiesSection() {
         if (!clip)
             return;
 
-        // Beat mode owns looping. Keep the button visually active, but don't let a click
-        // make the model appear to toggle out from under auto-tempo playback.
-        if (magda::audioEventRef(*clip).autoTempo)
-            return;
-
         bool newState = !clipLoopToggle_->isActive();
         clipLoopToggle_->setActive(newState);
         double bpm = 120.0;

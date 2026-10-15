@@ -702,8 +702,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     auto bounds = getLocalBounds();
     bool isLooped = displayInfo_.isLooped();
     const auto* clip = getClip();
-    const bool canResizeClipEnd =
-        clip && !clip->loopEnabled && !magda::audioEventRef(*clip).autoTempo;
+    const bool canResizeClipEnd = clip && !clip->loopEnabled;
 
     double baseTime = getDisplayStartTime();
     const double sampleStart = getSampleStartPositionSeconds();
@@ -1308,7 +1307,7 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
         dragMode_ = DragMode::PhaseMarker;
     } else if (nearLeftEdge) {
         dragMode_ = shiftHeld ? DragMode::StretchLeft : DragMode::ResizeLeft;
-    } else if (nearRightEdge && !clip->loopEnabled && !magda::audioEventRef(*clip).autoTempo) {
+    } else if (nearRightEdge && !clip->loopEnabled) {
         dragMode_ = DragMode::ResizeRight;
     } else if (nearRightEdge && shiftHeld) {
         dragMode_ = DragMode::StretchRight;
@@ -1455,7 +1454,7 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
     // Calculate absolute values from original drag start values
     switch (dragMode_) {
         case DragMode::ResizeLeft: {
-            double fileDelta = deltaSeconds * dragStartSpeedRatio_;
+            double fileDelta = displayInfo_.timelineToSource(deltaSeconds);
             double newOffset = dragStartAudioOffset_ + fileDelta;
             if (dragStartFileDuration_ > 0.0)
                 newOffset = juce::jmin(newOffset, dragStartFileDuration_);
@@ -1713,7 +1712,7 @@ void WaveformGridComponent::mouseMove(const juce::MouseEvent& event) {
             setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
         }
     } else if (isNearRightEdge(x, *clip)) {
-        if (!clip->loopEnabled && !magda::audioEventRef(*clip).autoTempo)
+        if (!clip->loopEnabled)
             setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
         else if (event.mods.isShiftDown())
             setMouseCursor(juce::MouseCursor::UpDownLeftRightResizeCursor);
@@ -1738,7 +1737,7 @@ bool WaveformGridComponent::isNearLeftEdge(int x, const magda::ClipInfo& clip) c
 
 bool WaveformGridComponent::isNearRightEdge(int x, const magda::ClipInfo& clip) const {
     double rightEdgePosition = displayInfo_.fileExtentTimeline();
-    if (!clip.loopEnabled && !audioEventRef(clip).autoTempo) {
+    if (!clip.loopEnabled) {
         const double activeClipEnd = displayInfo_.offsetPositionSeconds + clipLength_;
         if (activeClipEnd > displayInfo_.offsetPositionSeconds)
             rightEdgePosition = activeClipEnd;
@@ -1749,8 +1748,7 @@ bool WaveformGridComponent::isNearRightEdge(int x, const magda::ClipInfo& clip) 
 }
 
 bool WaveformGridComponent::isNearPhaseMarker(int x, const magda::ClipInfo& clip) const {
-    const bool loopActive = clip.loopEnabled || audioEventRef(clip).autoTempo;
-    if (!loopActive || displayInfo_.loopLengthSeconds <= 0.0)
+    if (!clip.loopEnabled || displayInfo_.loopLengthSeconds <= 0.0)
         return false;
     int phaseX = timeToPixel(getDisplayStartTime() + displayInfo_.loopPhasePositionSeconds);
     return std::abs(x - phaseX) <= EDGE_GRAB_DISTANCE;

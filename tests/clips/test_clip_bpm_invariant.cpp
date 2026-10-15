@@ -435,7 +435,7 @@ TEST_CASE("beat-mode phase edits do not mutate loop length", "[clip][bpm][phase]
     ClipManager::getInstance().shutdown();
 
     auto seed = makeSessionAutoTempoClip();
-    seed.loopEnabled = false;  // BEAT mode owns the active source loop.
+    seed.loopEnabled = true;
     magda::test::audioEvent(seed).setLoopStartSeconds(0.0);
     magda::test::audioEvent(seed).setLoopStartBeats(0.0);
     magda::test::audioEvent(seed).setAnchorSeconds(0.0);

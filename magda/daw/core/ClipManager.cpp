@@ -1668,22 +1668,7 @@ void ClipManager::setClipEnabled(ClipId clipId, bool enabled) {
 
 void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double projectBPM) {
     if (auto* clip = getClip(clipId)) {
-        // Invariant: autoTempo (beat mode) requires loopEnabled. The
-        // autoTempo beat range only operates over a loop region, and
-        // ClipOperations' resize / offset math for autoTempo clips assumes
-        // loopLengthBeats / loopStartBeats are live. Allowing loop-off while
-        // beat mode is on lands the clip in a state nothing models, so
-        // resize gestures fall through inconsistent branches and the user
-        // sees the clip resize to an unrelated length. Reject the disable
-        // here rather than corrupt state — the user must exit beat mode
-        // first to turn looping off. Emit a property-changed notification
-        // anyway so callers that flipped their local toggle optimistically
-        // re-read the (unchanged) model and revert.
         auto* event = clip->primaryEvent();
-        if (!enabled && event != nullptr && event->autoTempo) {
-            notifyClipPropertyChanged(clipId);
-            return;
-        }
         clip->loopEnabled = enabled;
 
         // When enabling loop on MIDI clips, capture current length as loop region
@@ -1702,7 +1687,8 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
             if (event->loopLengthSamples <= 0) {
                 const double bpm =
                     isValidBpm(projectBPM) ? projectBPM : currentProjectTempoOrDefault();
-                event->setLoopLengthSeconds(event->timelineToSource(clip->getTimelineLength(bpm)));
+                event->setLoopLengthSeconds(event->warpExtentSeconds(clip->placement.lengthBeats,
+                                                                     clip->getTimelineLength(bpm)));
             }
 
             sanitizeAudioClip(*clip);
@@ -1714,17 +1700,8 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
             clip->midiOffset = 0.0;
         }
 
-        // When disabling loop on audio clips, snap the clip's timeline length
-        // to the audible source content so the user doesn't end up with empty
-        // space after the audio. Two reasons the previous behaviour wasn't
-        // enough: the old clamp path only edited clip->length (the seconds
-        // cache) without touching placement.lengthBeats, so the next
-        // beats→seconds derive would resurrect the old length; and a clamp
-        // (cap-if-longer) leaves the clip oversized whenever the file is
-        // longer than the timeline span, which still reads as empty space
-        // after a short loop region. Set the length explicitly to "file
-        // content from offset on", routed through setPlacementBeats so the
-        // beat domain stays authoritative.
+        // Loop off: the clip becomes exactly the audio left from its read
+        // position, in beat mode or not, so no empty space follows it.
         if (!enabled && event != nullptr && event->sourceFilePath().isNotEmpty()) {
             event->loopStartSamples = event->sourceAnchorSamples;
 
@@ -1736,15 +1713,12 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
             if (fileDuration <= 0.0)
                 fileDuration = event->sourceDurationSeconds();
 
-            const double speed = event->speedRatio > 0.0 ? event->speedRatio : 1.0;
             if (fileDuration > 0.0) {
-                const double availableSource =
-                    juce::jmax(0.0, fileDuration - event->anchorSeconds());
-                const double newTimelineLength =
-                    juce::jmax(ClipInfo::MIN_CLIP_LENGTH, availableSource / speed);
                 const double bpm =
                     isValidBpm(projectBPM) ? projectBPM : currentProjectTempoOrDefault();
-                clip->setPlacementBeats(clip->placement.startBeat, newTimelineLength * bpm / 60.0);
+                ClipOperations::setBeatPlacement(*clip, clip->placement.startBeat,
+                                                 event->beatsRemainingInSource(fileDuration, bpm),
+                                                 bpm);
 
                 // The new timeline length can exceed the previous loop region,
                 // which on the arrangement view can push the clip into a
@@ -1885,7 +1859,7 @@ void ClipManager::setOffset(ClipId clipId, double offset) {
 void ClipManager::setLoopPhase(ClipId clipId, double phase) {
     if (auto* clip = getClip(clipId)) {
         auto* event = clip->primaryEvent();
-        if (event != nullptr && (clip->loopEnabled || event->autoTempo)) {
+        if (event != nullptr && clip->loopEnabled) {
             // phase is in source seconds, measured from the loop start
             event->setAnchorSeconds(event->loopStartSeconds() + phase);
             sanitizeAudioClip(*clip);
@@ -3578,17 +3552,8 @@ void ClipManager::sanitizeAudioClip(ClipInfo& clip) {
         event.clampLoopRegionToSource(fileDuration);
         event.setAnchorSeconds(juce::jlimit(0.0, fileDuration, event.anchorSeconds()));
 
-        if (!clip.loopEnabled && !event.autoTempo) {
-            const double bpm = currentProjectTempoOrDefault();
-            const double currentLength = clip.getTimelineLength(bpm);
-            const double available = fileDuration - event.anchorSeconds();
-            const double maxLength = available / event.speedRatio;
-            if (currentLength > maxLength) {
-                ClipOperations::setTimelinePlacement(
-                    clip, clip.getTimelineStart(bpm),
-                    juce::jmax(ClipInfo::MIN_CLIP_LENGTH, maxLength), bpm);
-            }
-        }
+        ClipOperations::clampToRemainingSource(clip, event, fileDuration,
+                                               currentProjectTempoOrDefault());
     }
 }
 

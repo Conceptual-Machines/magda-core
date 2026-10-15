@@ -484,8 +484,8 @@ class ClipManager {
     void adoptAnalysis(ClipId clipId, const juce::String& sourcePath, double bpm);
 
     /** @brief What the user asks of beat mode; whether it is active follows
-     *         from the interpretation. Entering beat mode loops the clip, pins
-     *         speed to 1 and picks a stretch engine. */
+     *         from the interpretation. Entering beat mode pins speed to 1 and
+     *         picks a stretch engine; it leaves looping alone. */
     void setPlaybackIntent(ClipId clipId, PlaybackIntent intent, double projectBPM);
 
     /** @brief Persist a user-asserted BPM for the clip's source file back

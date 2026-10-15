@@ -1428,7 +1428,7 @@ TEST_CASE("SetSourceBeatCountCommand - two edits merge and a single undo restore
 }
 
 TEST_CASE(
-    "SetPlaybackIntentCommand - Beat turns loop and autoTempo on, undo restores both and speed",
+    "SetPlaybackIntentCommand - Beat turns autoTempo on and leaves loop off, undo restores speed",
     "[clip][command][beatmode][undo]") {
     resetState();
     TrackId track = createTrack("Audio", TrackType::Media);
@@ -1453,7 +1453,7 @@ TEST_CASE(
     clip = cm.getClip(clipId);
     ev = primaryEventOf(clip);
     REQUIRE(clip != nullptr);
-    REQUIRE(clip->loopEnabled);
+    REQUIRE_FALSE(clip->loopEnabled);
     REQUIRE(ev->autoTempo);
     REQUIRE(ev->playbackIntent == PlaybackIntent::Beat);
 
