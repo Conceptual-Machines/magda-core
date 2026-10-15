@@ -175,8 +175,8 @@ class SetSourceBeatCountCommand : public UndoableCommand {
 /**
  * @brief Command for setting a clip's playback intent (beat mode).
  *
- * Entering or leaving beat mode changes loop, stretch engine, speed and
- * placement together, so undo restores the whole clip. Not mergeable: this
+ * Entering or leaving beat mode changes stretch engine, speed and placement
+ * together, so undo restores the whole clip. Not mergeable: this
  * is a discrete mode switch, not a value drag.
  */
 class SetPlaybackIntentCommand : public UndoableCommand {

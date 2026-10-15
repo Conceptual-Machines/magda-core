@@ -480,6 +480,7 @@ TEST_CASE("A ruler position in a looped clip lands in the cycle the playhead is 
     const auto clipId = clips.createAudioClipBeats(kTrack, 0.0, 40.0, path);
     clips.getClip(clipId)->primaryEvent()->interpBpm = 100.0;
     clips.setPlaybackIntent(clipId, magda::PlaybackIntent::Beat, 120.0);
+    clips.setClipLoopEnabled(clipId, true, 120.0);
     // Entering beat mode fits the clip to one pass of the file; stretch it to three passes.
     clips.resizeClipBeats(clipId, 40.0, false, 120.0);
     clips.setAudioLoopLengthBeats(clipId, 40.0 / 3.0);

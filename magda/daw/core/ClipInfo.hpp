@@ -396,6 +396,13 @@ struct AudioEvent {
         return isValidBpm(projectBpm) ? sourceToTimeline(warped) * projectBpm / 60.0 : 0.0;
     }
 
+    /// Timeline beats from the anchor to the end of a @p fileDurationSeconds
+    /// source: as long as the event can play without looping.
+    double beatsRemainingInSource(double fileDurationSeconds, double projectBpm) const {
+        return sourceInstantToTimelineBeats(fileDurationSeconds, projectBpm) -
+               sourceInstantToTimelineBeats(anchorSeconds(), projectBpm);
+    }
+
     /// Re-express the source-domain positions at a different sample rate.
     ///
     /// They are counts at the source's own rate, so whenever that rate changes

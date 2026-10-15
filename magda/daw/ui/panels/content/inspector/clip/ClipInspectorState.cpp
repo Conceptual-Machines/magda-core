@@ -112,8 +112,7 @@ void ClipInspector::updateLoopValueDisplays(const magda::ClipInfo& clip, double 
     clipLoopEndValue_->setValue(loopStartBeats + loopLengthDisplayBeats,
                                 juce::dontSendNotification);
 
-    const bool loopOn =
-        clip.view == magda::ClipView::Session || clip.loopEnabled || audioEventRef(clip).autoTempo;
+    const bool loopOn = clip.view == magda::ClipView::Session || clip.loopEnabled;
     clipLoopPhaseLabel_.setText(loopOn ? "phase" : "offset", juce::dontSendNotification);
 
     if (clip.isMidi()) {
@@ -378,13 +377,11 @@ void ClipInspector::updateFromSelectedClip() {
             clipLengthValue_->setValue(clip->getLengthInBeats(), juce::dontSendNotification);
         }
 
-        clipLoopToggle_->setActive(clip->loopEnabled || magda::audioEventRef(*clip).autoTempo);
-        // Beat mode forces loop on, but the button should still read as active rather than
-        // disabled. Click handling ignores attempts to toggle it while auto-tempo owns looping.
+        clipLoopToggle_->setActive(clip->loopEnabled);
         clipLoopToggle_->setEnabled(true);
 
         // Loop state determines source-row labels/interactivity.
-        bool loopOn = isSessionClip || clip->loopEnabled || magda::audioEventRef(*clip).autoTempo;
+        bool loopOn = isSessionClip || clip->loopEnabled;
         updateLoopValueDisplays(*clip, bpm, numerator, denominator);
 
         if (loopOn) {
