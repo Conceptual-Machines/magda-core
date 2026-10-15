@@ -1192,7 +1192,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         const auto rate = captureRingRate_;
         if (rate <= 0.0)
             return std::nullopt;
-        const auto toFrames = [rate](double seconds) { return std::llround(seconds * rate); };
+        const auto toFrames = [rate](double seconds) {
+            return static_cast<std::int64_t>(std::llround(seconds * rate));
+        };
 
         if (!ring.phrase.empty() && ring.phrase.end > ring.pass.end) {
             constexpr double kTailSeconds = 1.0;
@@ -4453,9 +4455,9 @@ RecentCaptureMeter EngineHost::recentCaptureMeter(int slices, int bars, bool wit
                            .sampleRate = rate,
                            .recordedSeconds = static_cast<double>(meter.writtenFrames) / rate,
                            .capacitySeconds = capacity / rate,
+                           .peaks = std::move(meter.peaks),
                            .windowEndFrame = meter.writtenFrames,
-                           .windowFrames = meter.capacityFrames,
-                           .peaks = std::move(meter.peaks)};
+                           .windowFrames = meter.capacityFrames};
     if (const auto plan = impl_->planKeep(meter, bars)) {
         out.available = true;
         out.keepSeconds = static_cast<double>(plan->end - plan->first) / rate;
