@@ -125,6 +125,7 @@ class MagdaAudioEngine final : public AudioEngine,
         bool resumePlaybackWhenFinished) override;
     MasterCaptureStartStatus startMasterCapture(const MasterCaptureRequest& request) override;
     MasterCaptureResult stopMasterCapture() override;
+    RecentCaptureResult captureRecentMaster(int bars) override;
     void cancelMasterCapture() override;
     MasterCaptureState masterCaptureState() const override;
     void setTrackFrozen(TrackId trackId, bool frozen) override;

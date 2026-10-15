@@ -233,6 +233,10 @@ class LiveEngineJobSource final : public EngineJobSource,
         capture_ = {.supported = engine_.masterCaptureState().supported};
     }
 
+    RecentCaptureResult captureRecentMaster(int bars) override {
+        return engine_.captureRecentMaster(bars);
+    }
+
     MasterCaptureSnapshot masterCaptureStatus() const override {
         const std::scoped_lock lock(mutex_);
         auto result = capture_;

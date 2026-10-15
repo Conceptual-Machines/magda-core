@@ -604,6 +604,9 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
         else
             (*render)->executor.process(table, segment.block, piece);
 
+        if (captureRing_ != nullptr)
+            captureRing_->write(piece, segment.block.beats, segment.block.playing);
+
         // After the plan and outside it. The metronome is not in the graph: it
         // is never recorded, never routed, and not the master fader's to
         // attenuate.

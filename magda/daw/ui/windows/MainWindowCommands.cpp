@@ -131,7 +131,7 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         projectSettings, collectFiles, exportMidi, importDawProject, exportDawProject,
         // Transport
         play, stop, record, goToStart, goToEnd, addMarker, goToPreviousMarker, goToNextMarker,
-        goToLoopStart, goToLoopEnd, goToSelectionStart, goToSelectionEnd,
+        goToLoopStart, goToLoopEnd, goToSelectionStart, goToSelectionEnd, captureRecentAudio,
         // Track
         newAudioTrack, newMidiTrack, deleteTrack, duplicateTrackNoContent,
         duplicateTrackContentOnly, toggleMuteSelectedTracks, toggleSoloSelectedTracks,
@@ -430,6 +430,14 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             result.setInfo("Add Marker", "Add a marker at the current playhead position",
                            "Transport", 0);
             result.addDefaultKeypress('m', juce::ModifierKeys::commandModifier);
+            break;
+        case captureRecentAudio:
+            result.setInfo("Capture Recent Audio",
+                           "Put the last bars the master played on a new track, where they were "
+                           "heard",
+                           "Transport", 0);
+            result.addDefaultKeypress('c', juce::ModifierKeys::commandModifier |
+                                               juce::ModifierKeys::shiftModifier);
             break;
         case goToPreviousMarker:
             result.setInfo("Previous Marker", "Jump to the previous timeline marker", "Transport",
@@ -1824,6 +1832,16 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 const auto& state = timelineController.getState();
                 timelineController.dispatch(
                     AddMarkerBeatsEvent{state.playhead.getCurrentPositionBeats()});
+            }
+            return true;
+
+        case captureRecentAudio:
+            if (auto* engine = getAudioEngine()) {
+                const auto captured =
+                    engine->captureRecentMaster(Config::getInstance().getCaptureBars());
+                if (!captured.success)
+                    juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
+                                                           "Capture Recent Audio", captured.error);
             }
             return true;
 

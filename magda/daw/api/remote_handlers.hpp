@@ -38,6 +38,7 @@ HandlerResult tracksFreeze(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult tracksUnfreeze(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult engineMasterCaptureStart(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult engineMasterCaptureStop(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult captureRecentMaster(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult engineMasterCaptureStatus(MagdaApi&, const juce::var&, const RequestContext&);
 
 // Project

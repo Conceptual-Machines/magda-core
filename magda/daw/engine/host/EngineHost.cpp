@@ -36,6 +36,7 @@
 #include "../../core/DrumGridPads.hpp"
 #include "../../core/OpenProjectAddressing.hpp"
 #include "../../core/TempoMap.hpp"
+#include "../../core/TrackCommands.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../core/UndoManager.hpp"
 #include "../../core/controllers/BindingRegistry.hpp"
@@ -468,7 +469,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// The meters, and the audio thread's side of the trace.
     void timerCallback() override {
         // A render-ahead change held back while playing or recording (handleAsyncUpdate).
-        if (renderAheadMoved_.load(std::memory_order_relaxed) && !request_.playing && !recording_)
+        if ((renderAheadMoved_.load(std::memory_order_relaxed) ||
+             captureMoved_.load(std::memory_order_relaxed)) &&
+            !request_.playing && !recording_)
             triggerAsyncUpdate();
 
         reconcileFinishedSessionTakes();
@@ -1172,6 +1175,68 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                 recordThread_.add(recorder->stream());
                 return recorder;
             });
+    }
+
+    /// The latest pass's last @p bars bars, written to the recordings folder and placed on
+    /// a new track where they were heard: one undo step (#2311).
+    RecentCaptureResult captureRecentMaster(int bars) {
+        if (captureRing_ == nullptr || captureRingRate_ <= 0.0)
+            return {false, "Nothing has been heard yet"};
+
+        const auto stamps = captureRing_->stamps();
+        const auto pass = engine::latestPass(stamps);
+        if (!pass)
+            return {false, "Nothing has played since the capture buffer started"};
+
+        const auto startBeat =
+            std::max(pass->beats.start, engine::barsBefore(map_, pass->beats.end, bars));
+        const auto firstFrame = engine::frameAt(stamps, *pass, startBeat);
+        const auto frames = engine::frameAt(stamps, *pass, pass->beats.end) - firstFrame;
+        juce::AudioBuffer<float> audio;
+        if (frames <= 0 || !captureRing_->read(firstFrame, frames, audio))
+            return {false, "That audio has already left the capture buffer"};
+
+        auto folder = ProjectManager::getInstance().getRecordingsDirectory();
+        folder.createDirectory();
+        const auto file = folder.getNonexistentChildFile("Capture", ".wav");
+        {
+            std::unique_ptr<juce::OutputStream> stream = file.createOutputStream();
+            juce::WavAudioFormat wav;
+            auto writer =
+                stream != nullptr
+                    ? wav.createWriterFor(stream, juce::AudioFormatWriterOptions()
+                                                      .withSampleRate(captureRingRate_)
+                                                      .withNumChannels(audio.getNumChannels())
+                                                      .withBitsPerSample(24))
+                    : nullptr;
+            if (writer == nullptr ||
+                !writer->writeFromAudioSampleBuffer(audio, 0, audio.getNumSamples()))
+                return {false, "The capture could not be written to " + file.getFullPathName()};
+        }
+
+        const auto lengthBeats = pass->beats.end - startBeat;
+        RecentCaptureResult result{.success = true,
+                                   .startBeat = startBeat,
+                                   .lengthBeats = lengthBeats,
+                                   .filePath = file.getFullPathName()};
+        CompoundOperationScope scope("Capture Recent Audio");
+        auto createTrack = std::make_unique<CreateTrackCommand>(TrackType::Media, "Capture");
+        auto* created = createTrack.get();
+        UndoManager::getInstance().executeCommand(std::move(createTrack));
+        result.trackId = created->getCreatedTrackId();
+        if (result.trackId == INVALID_TRACK_ID)
+            return {false, "The capture track could not be created"};
+
+        landTake(result.trackId, ClipView::Arrangement, [&] {
+            result.clipId = ClipManager::getInstance().createRecordedAudioClip(
+                result.trackId, RecordedAudioClipData{.startBeat = startBeat,
+                                                      .lengthBeats = lengthBeats,
+                                                      .filePath = file.getFullPathName()});
+            return result.clipId;
+        });
+        if (result.clipId == INVALID_CLIP_ID)
+            return {false, "The captured clip could not be placed"};
+        return result;
     }
 
     /// Create a take's clip through @p create and make it one undo step (#2951).
@@ -2510,8 +2575,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // The feed only grows while no callback runs, so more inputs is a rebuild. A session
         // renders ahead or not from when it is made, so a change waits for the transport to
         // stop and nothing to record: a rebuild restarts the clock and ends slot takes.
-        const auto renderAheadMoved = !request_.playing && !recording_ &&
-                                      renderAheadMoved_.exchange(false, std::memory_order_relaxed);
+        const auto renderAheadMoved =
+            !request_.playing && !recording_ &&
+            (renderAheadMoved_.exchange(false, std::memory_order_relaxed) |
+             captureMoved_.exchange(false, std::memory_order_relaxed));
         if (session_ == nullptr || wanted != context_ || renderAheadMoved ||
             scratch_.getNumChannels() != hardwareOutputChannels_ ||
             session_->liveInputs().preparedChannels() <
@@ -2700,6 +2767,15 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         voiceThread_ = std::make_unique<engine::ClipVoiceThread>(*voices_);
 
         session_ = std::make_unique<engine::EngineSession>(factory_, &renderPool_, voices_.get());
+        // Kept across rebuilds: what was heard is still where it was heard.
+        const auto captureFrames = static_cast<std::int64_t>(
+            captureSeconds_.load(std::memory_order_relaxed) * context.sampleRate);
+        if (captureRing_ == nullptr || captureRingRate_ != context.sampleRate ||
+            captureRing_->capacityFrames() != captureFrames) {
+            captureRing_ = std::make_unique<engine::CaptureRing>(kChannels, captureFrames);
+            captureRingRate_ = context.sampleRate;
+        }
+        session_->setCaptureRing(captureRing_.get());
         sessionRendersAhead_ = renderAheadBlocks(context) > 0;
         session_->setRenderAhead(renderAheadBlocks(context));
         sessionCapture_.attach(*session_);
@@ -3639,6 +3715,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     engine::RenderThreadPool renderPool_{engine::RenderThreadPool::workersForThisMachine()};
     std::unique_ptr<engine::ClipVoicePool> voices_;
     std::unique_ptr<engine::ClipVoiceThread> voiceThread_;
+    /// The master's recent audio (#2311). Before the session, so it outlives it; only
+    /// replaced in rebuild(), with no callback running.
+    std::unique_ptr<engine::CaptureRing> captureRing_;
+    double captureRingRate_ = 0.0;
+    std::atomic<int> captureSeconds_{60};
+    std::atomic<bool> captureMoved_{false};
+
     std::unique_ptr<engine::EngineSession> session_;
     SessionArrangementCapture sessionCapture_;
 
@@ -3786,6 +3869,14 @@ engine::GrooveTemplateSet grooveSetFrom(std::vector<EngineHost::GrooveEntry> ent
 
 void EngineHost::setGrooveProvider(GrooveProvider provider) {
     impl_->grooveProvider_ = std::move(provider);
+}
+
+void EngineHost::setCaptureSeconds(int seconds) {
+    seconds = std::max(seconds, 1);
+    if (impl_->captureSeconds_.exchange(seconds) != seconds) {
+        impl_->captureMoved_.store(true, std::memory_order_relaxed);
+        impl_->wantRebuild();
+    }
 }
 
 void EngineHost::setRenderAhead(int milliseconds) {
@@ -4176,6 +4267,10 @@ MasterCaptureStartStatus EngineHost::startMasterCapture(const MasterCaptureReque
                                                       std::memory_order_acquire))
         return MasterCaptureStartStatus::Busy;
     return MasterCaptureStartStatus::Started;
+}
+
+RecentCaptureResult EngineHost::captureRecentMaster(int bars) {
+    return impl_->captureRecentMaster(bars);
 }
 
 MasterCaptureResult EngineHost::stopMasterCapture() {

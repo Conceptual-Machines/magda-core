@@ -67,6 +67,7 @@ enum {
     goToLoopEnd = 0x2009,
     goToSelectionStart = 0x200A,
     goToSelectionEnd = 0x200B,
+    captureRecentAudio = 0x200C,  // The master's last bars onto a new track (#2311)
 
     // Track menu
     newAudioTrack = 0x3000,

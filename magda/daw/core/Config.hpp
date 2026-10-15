@@ -1254,6 +1254,21 @@ class Config {
         renderAheadMs = std::clamp(milliseconds, 5, 200);
     }
 
+    /// How much of the master the capture ring keeps, in seconds (#2311).
+    int getCaptureSeconds() const {
+        return captureSeconds;
+    }
+    void setCaptureSeconds(int seconds) {
+        captureSeconds = std::clamp(seconds, 10, 600);
+    }
+    /// How many bars Capture Recent Audio takes, at most.
+    int getCaptureBars() const {
+        return captureBars;
+    }
+    void setCaptureBars(int bars) {
+        captureBars = std::clamp(bars, 1, 64);
+    }
+
     // Auto-monitor selected track
     bool getAutoMonitorSelectedTrack() const {
         return autoMonitorSelectedTrack;
@@ -1561,6 +1576,8 @@ class Config {
 
     bool renderAheadEnabled = false;
     int renderAheadMs = 20;
+    int captureSeconds = 60;
+    int captureBars = 8;
 
     // Device chain behaviour
 

@@ -48,6 +48,10 @@ class EngineJobSource {
     virtual MasterCaptureResult stopMasterCapture(const juce::String& jobId) = 0;
     virtual void cancelMasterCapture(const juce::String& jobId) = 0;
     virtual MasterCaptureSnapshot masterCaptureStatus() const = 0;
+    /// The master's last @p bars bars on a new track, where they were heard (#2311).
+    virtual RecentCaptureResult captureRecentMaster(int /*bars*/) {
+        return {false, "Capturing recent audio is unsupported"};
+    }
     virtual void shutdown() = 0;
 };
 

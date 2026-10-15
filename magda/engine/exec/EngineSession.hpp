@@ -15,6 +15,7 @@
 #include "exec/RenderAhead.hpp"
 #include "exec/RenderThreadPool.hpp"
 #include "exec/RuntimeStateStore.hpp"
+#include "io/CaptureRing.hpp"
 #include "io/LiveInput.hpp"
 #include "io/LiveOutput.hpp"
 #include "io/RecordingFeed.hpp"
@@ -93,6 +94,12 @@ class EngineSession {
      * rendering to @ref renderAheadOnce, for tests.
      */
     void setRenderAhead(int depth, bool inBackground = true);
+
+    /// Where each block's output goes after the plan, before the click (#2311). The
+    /// host's, set while no callback runs; null keeps none.
+    void setCaptureRing(CaptureRing* ring) {
+        captureRing_ = ring;
+    }
 
     /// One round of the ahead thread's work, where it does not run in the background.
     int renderAheadOnce();
@@ -672,6 +679,7 @@ class EngineSession {
     /// The ahead side's thread and how far ahead it renders, or null with everything at the
     /// callback.
     std::unique_ptr<RenderAhead> renderAhead_;
+    CaptureRing* captureRing_ = nullptr;
     int renderAheadDepth_ = 0;
 
     /// The callback's count of the blocks it has rendered, which numbers each block's

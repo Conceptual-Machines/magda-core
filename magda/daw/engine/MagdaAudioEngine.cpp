@@ -224,6 +224,8 @@ void MagdaAudioEngine::configChanged() {
     const auto& config = Config::getInstance();
     if (host_ != nullptr)
         host_->setRenderAhead(config.getRenderAheadEnabled() ? config.getRenderAheadMs() : 0);
+    if (host_ != nullptr)
+        host_->setCaptureSeconds(config.getCaptureSeconds());
 }
 
 void MagdaAudioEngine::shutdown() {
@@ -517,6 +519,9 @@ MasterCaptureStartStatus MagdaAudioEngine::startMasterCapture(const MasterCaptur
 }
 MasterCaptureResult MagdaAudioEngine::stopMasterCapture() {
     return host_->stopMasterCapture();
+}
+RecentCaptureResult MagdaAudioEngine::captureRecentMaster(int bars) {
+    return host_->captureRecentMaster(bars);
 }
 void MagdaAudioEngine::cancelMasterCapture() {
     host_->cancelMasterCapture();
