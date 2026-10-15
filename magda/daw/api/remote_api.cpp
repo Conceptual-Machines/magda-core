@@ -480,11 +480,25 @@ const juce::var& clipSchema() {
                 "followActionDelayBeats":{"type":"number","minimum":0,"maximum":1000000},
                 "followActionLoopCount":{"type":"integer","minimum":1,"maximum":100000},
                 "notes":{"type":"array","maxItems":100000},
-                "midiEvents":{"type":"array","maxItems":100000}
+                "midiEvents":{"type":"array","maxItems":100000},
+                "audio":{
+                    "type":["object","null"],
+                    "properties":{
+                        "playback":{"type":"string","enum":["free","beat"]},
+                        "looping":{"type":"boolean"},
+                        "tempo":{"type":"number","minimum":0},
+                        "tempoFrom":{"type":"string",
+                            "enum":["none","fileMetadata","analysis","user","project"]},
+                        "speedRatio":{"type":"number","minimum":0}
+                    },
+                    "required":["playback","looping","tempo","tempoFrom","speedRatio"],
+                    "additionalProperties":false
+                }
             },
             "required":["id","trackId","type","view","name","colourArgb","startBeat","lengthBeats",
                         "enabled","sceneIndex","launchMode","launchQuantize","followAction",
-                        "followActionDelayBeats","followActionLoopCount","notes","midiEvents"],
+                        "followActionDelayBeats","followActionLoopCount","notes","midiEvents",
+                        "audio"],
             "additionalProperties":false
         })json");
         schema.getDynamicObject()
@@ -1966,6 +1980,17 @@ juce::var toJson(const ClipDto& dto) {
     for (const auto& event : dto.midiEvents)
         midiEvents.add(toJson(event));
     object->setProperty("midiEvents", midiEvents);
+    if (dto.audio) {
+        auto* audio = new juce::DynamicObject();
+        audio->setProperty("playback", dto.audio->playback);
+        audio->setProperty("looping", dto.audio->looping);
+        audio->setProperty("tempo", dto.audio->tempo);
+        audio->setProperty("tempoFrom", dto.audio->tempoFrom);
+        audio->setProperty("speedRatio", dto.audio->speedRatio);
+        object->setProperty("audio", juce::var(audio));
+    } else {
+        object->setProperty("audio", juce::var());
+    }
     return object;
 }
 
@@ -2523,6 +2548,11 @@ std::optional<ClipDto> clipFromJson(const juce::var& json, Error& error) {
                 return std::nullopt;
             dto.midiEvents.push_back(*decoded);
         }
+    }
+    if (const auto& audio = json["audio"]; audio.isObject()) {
+        dto.audio = ClipAudioDto{audio["playback"].toString(), static_cast<bool>(audio["looping"]),
+                                 static_cast<double>(audio["tempo"]), audio["tempoFrom"].toString(),
+                                 static_cast<double>(audio["speedRatio"])};
     }
     return dto;
 }
@@ -3578,12 +3608,13 @@ OperationRegistry::OperationRegistry() {
         })json"),
         clipSchema());
     add("clips.updateAudio",
-        "Update an audio clip's playback mode, source tempo, stretch, reverse, and fades",
+        "Update an audio clip's playback mode, looping, source tempo, stretch, reverse, and fades",
         OperationAccess::Write, &handlers::clipsUpdateAudio, operationInputSchema(R"json({
             "type":"object",
             "properties":{
                 "clipId":{"type":"integer","minimum":0},
                 "playback":{"type":"string","enum":["free","beat"]},
+                "looping":{"type":"boolean"},
                 "sourceBpm":{"type":"number","minimum":20,"maximum":999},
                 "stretch":{"type":"string","enum":["off","signalsmith","soundtouch","soundtouch_hq"]},
                 "reversed":{"type":"boolean"},

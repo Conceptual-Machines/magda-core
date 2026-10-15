@@ -247,6 +247,17 @@ struct ChordTrackDto {
     bool operator==(const ChordTrackDto&) const = default;
 };
 
+/** How an audio clip plays: its tempo and where that tempo came from (#3060). */
+struct ClipAudioDto {
+    juce::String playback;  // "free" | "beat"
+    bool looping = false;
+    double tempo = 0.0;      // 0 when the clip has none
+    juce::String tempoFrom;  // "none" | "fileMetadata" | "analysis" | "user" | "project"
+    double speedRatio = 1.0;
+
+    bool operator==(const ClipAudioDto&) const = default;
+};
+
 struct ClipDto {
     ClipId id = INVALID_CLIP_ID;
     TrackId trackId = INVALID_TRACK_ID;
@@ -265,6 +276,7 @@ struct ClipDto {
     int followActionLoopCount = 1;
     std::vector<MidiNoteDto> notes;
     std::vector<MidiEventDto> midiEvents;
+    std::optional<ClipAudioDto> audio;  // null for MIDI
 
     bool operator==(const ClipDto&) const = default;
 };

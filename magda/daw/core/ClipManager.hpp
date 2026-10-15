@@ -506,9 +506,10 @@ class ClipManager {
     /** @brief The BEAT toggle: setPlaybackIntent with Beat or Free. */
     void setAutoTempo(ClipId clipId, bool enabled, double bpm);
     /** @brief Detect a tempo for every clip in @p clipIds that has no
-     *  interpreted tempo, then call @p onReady on the message thread. Each
-     *  answer lands on its clip through adoptAnalysis. onReady may fire before
-     *  this returns when nothing needs detecting. */
+     *  interpreted tempo, or only one assumed from the project, then call
+     *  @p onReady on the message thread. Each answer lands on its clip through
+     *  adoptAnalysis. onReady may fire before this returns when nothing needs
+     *  detecting. */
     void detectMissingTempo(const std::vector<ClipId>& clipIds, double projectBPM,
                             std::function<void()> onReady);
     /** @brief Set the playback speed ratio (1.0 = original, 2.0 = double speed) */
@@ -1138,6 +1139,10 @@ class ClipManager {
 
     // Clamp audio clip properties (offset, loopStart, loopLength) to file bounds
     static void sanitizeAudioClip(ClipInfo& clip);
+
+    /// Put an audio clip that loops into beat mode (#3060), then ask for the
+    /// real tempo when the project's had to be assumed.
+    void wrapLoopAndDetect(ClipId clipId, double bpm);
 
     // Helper to generate unique clip name
     juce::String generateClipName(ClipType type) const;

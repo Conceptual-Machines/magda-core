@@ -12,7 +12,7 @@ set(TEST_SOURCES
     clips/test_clip_event_model.cpp
     clips/test_clip_tempo_sequences.cpp
     clips/test_clip_tempo_detection_sequences.cpp
-    clips/test_beat_mode_without_loop.cpp
+    clips/test_beat_mode_and_loop.cpp
     clips/test_clip_schema_migration.cpp
     audio/test_audio_source_length.cpp
     audio/test_audio_export.cpp

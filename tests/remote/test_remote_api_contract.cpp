@@ -1203,6 +1203,12 @@ TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto
                        {}};
     requireRoundTrip(clip, clipFromJson);
 
+    auto audioClip = clip;
+    audioClip.type = "audio";
+    audioClip.notes.clear();
+    audioClip.audio = ClipAudioDto{"beat", true, 120.0, "project", 1.0};
+    requireRoundTrip(audioClip, clipFromJson);
+
     requireRoundTrip(MidiEventDto{1, "note", 36, 110, 0, 0, 0.0, 0.25, true}, midiEventFromJson);
     requireRoundTrip(MidiEventDto{2, "controlChange", 0, 0, 74, 96, 0.5}, midiEventFromJson);
     requireRoundTrip(MidiEventDto{3, "pitchBend", 0, 0, 0, 9000, 1.0}, midiEventFromJson);

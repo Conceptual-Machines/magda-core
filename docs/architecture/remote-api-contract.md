@@ -455,11 +455,21 @@ file, laid over the tempo map from its start beat. A path that is not readable
 audio is refused before anything is created.
 
 `clips.updateAudio` patches an audio clip: `playback` (`free` plays the file as
-tape, `beat` follows the project tempo), `sourceBpm` (refused unless the clip
+tape, `beat` follows the project tempo), `looping`, `sourceBpm` (refused unless the clip
 ends up in beat playback), `stretch` (`off`, `signalsmith`, `soundtouch`,
 `soundtouch_hq`), `reversed`, and each fade's seconds and curve. The patch is
 validated whole before anything changes, runs as one undo step, and a patch
 that restates current values does not advance the revision.
+
+Only beat playback loops (#3060). `looping: true` on a free clip puts it in beat
+playback first, as the LOOP button does: a file with no tempo takes the one it
+is heard at, reported as `tempoFrom: "project"`. Leaving beat playback ends the
+loop, `playback: "free"` with `looping: true` is refused, and a session clip,
+which always loops, refuses either way out.
+
+Every clip reports `audio`, null for MIDI: `playback`, `looping`, `tempo` (the
+tempo the file is interpreted at, 0 when it has none), `tempoFrom` (`none`,
+`fileMetadata`, `analysis`, `user`, `project`), and `speedRatio`.
 
 `clips.resize` takes `lengthBeats` and an `edge` of `start` or `end`. All three
 operations are edit-scoped and commit as one undo action. A move that restates

@@ -423,13 +423,18 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
         }
     }
 
+    // A slot loops, and only beat mode loops (#3060): a free drop is wrapped.
+    if (view == ClipView::Session)
+        wrapLoopAndDetect(clip.id, currentProjectTempoOrDefault());
+
     addToSessionSlotIndex(clips_[clip.id]);
     if (view == ClipView::Arrangement && overlapPolicy == ClipOverlapPolicy::ResolveOverlaps)
         resolveOverlaps(clip.id);
     notifyClipsChanged();
 
     // A drop does nothing else. Detection runs when BEAT is pressed on a clip
-    // with no tempo, and the library is written only by Save to library.
+    // with no tempo, or a slot had to assume one, and the library is written
+    // only by Save to library.
     return clip.id;
 }
 
@@ -1175,6 +1180,8 @@ ClipId ClipManager::duplicateClip(ClipId clipId) {
     clips_[newClip.id] = newClip;
     addToSessionSlotIndex(clips_[newClip.id]);
     indexClipGroup(newClip.id, newClip.linkGroupId);
+    if (newClip.view == ClipView::Session)
+        wrapLoopAndDetect(newClip.id, currentProjectTempoOrDefault());
 
     if (newClip.view == ClipView::Arrangement)
         resolveOverlaps(newClip.id);
@@ -1213,6 +1220,8 @@ ClipId ClipManager::duplicateClipAtBeats(ClipId clipId, double startBeat, TrackI
     }
     addToSessionSlotIndex(clips_[newClip.id]);
     indexClipGroup(newClip.id, newClip.linkGroupId);
+    if (newClip.view == ClipView::Session)
+        wrapLoopAndDetect(newClip.id, currentProjectTempoOrDefault());
 
     if (newClip.view == ClipView::Arrangement)
         resolveOverlaps(newClip.id);
@@ -1666,6 +1675,20 @@ void ClipManager::setClipEnabled(ClipId clipId, bool enabled) {
     }
 }
 
+void ClipManager::wrapLoopAndDetect(ClipId clipId, double bpm) {
+    auto* clip = getClip(clipId);
+    if (clip == nullptr || !clip->isAudio())
+        return;
+    if (!ClipOperations::wrapInBeatMode(*clip, bpm)) {
+        // A slot loops regardless; an arrangement clip that cannot does not.
+        if (clip->view != ClipView::Session)
+            clip->loopEnabled = false;
+        return;
+    }
+    if (clip->primaryEvent()->bpmFrom == Provenance::Project)
+        detectMissingTempo({clipId}, bpm, nullptr);
+}
+
 void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double projectBPM) {
     if (auto* clip = getClip(clipId)) {
         auto* event = clip->primaryEvent();
@@ -1692,6 +1715,11 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
             }
 
             sanitizeAudioClip(*clip);
+
+            // Only a beat-mode clip loops (#3060). The region above is sized
+            // first, while the clip still reads at its own rate.
+            const double bpm = isValidBpm(projectBPM) ? projectBPM : currentProjectTempoOrDefault();
+            wrapLoopAndDetect(clipId, bpm);
         }
 
         // When disabling loop on MIDI clips, reset midiOffset — the looped
@@ -1794,6 +1822,12 @@ void ClipManager::setPlaybackIntent(ClipId clipId, PlaybackIntent intent, double
     if (clip == nullptr || !clip->isAudio())
         return;
 
+    // A slot always loops, and only beat mode loops (#3060), so it stays in beat mode.
+    if (intent == PlaybackIntent::Free && clip->view == ClipView::Session) {
+        notifyClipPropertyChanged(clipId);
+        return;
+    }
+
     ClipOperations::setPlaybackIntent(*clip, intent, projectBPM);
 
     auto* event = clip->primaryEvent();
@@ -1803,6 +1837,12 @@ void ClipManager::setPlaybackIntent(ClipId clipId, PlaybackIntent intent, double
     // Beat mode plays through a stretcher; keep an engine the user chose.
     if (event->autoTempo && event->timeStretchMode == time_stretch_mode::kDisabled)
         event->timeStretchMode = time_stretch_mode::kSignalsmith;
+
+    // Leaving beat mode ends the loop; this notifies.
+    if (!event->autoTempo && clip->loopEnabled) {
+        setClipLoopEnabled(clipId, false, projectBPM);
+        return;
+    }
 
     notifyClipPropertyChanged(clipId);
 }
@@ -1816,7 +1856,8 @@ void ClipManager::detectMissingTempo(const std::vector<ClipId>& clipIds, double 
     std::vector<std::pair<ClipId, juce::String>> pending;
     for (auto id : clipIds) {
         const auto* event = primaryEventOf(getClip(id));
-        if (event == nullptr || event->hasInterpretedBpm())
+        if (event == nullptr ||
+            (event->hasInterpretedBpm() && event->bpmFrom != Provenance::Project))
             continue;
         if (auto path = event->sourceFilePath(); path.isNotEmpty())
             pending.emplace_back(id, path);
@@ -3864,6 +3905,11 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
                         }
                     }
                 }
+
+                // The paste may have copied a free interpretation onto a slot,
+                // and only beat mode loops (#3060).
+                if (newClip->view == ClipView::Session && newClip->isAudio())
+                    wrapLoopAndDetect(newClip->id, currentProjectTempoOrDefault());
 
                 // The slot loops (set just above), so a whole-source region
                 // follows the interpretation the paste adopted.

@@ -235,12 +235,12 @@ TEST_CASE("A detection answering for a file the clip no longer plays lands nowhe
           "[clip][tempo][sequence][detection]") {
     DetectionFixture fx;
     const auto clipId = fx.createSessionClip();
-    REQUIRE(eventOf(clipId)->interpBpm == 0.0);
+    const double before = eventOf(clipId)->interpBpm;
 
     const auto other = fx.dir.getChildFile("some_other_loop.wav").getFullPathName();
     ClipManager::getInstance().adoptAnalysis(clipId, other, 100.0);
 
-    REQUIRE(eventOf(clipId)->interpBpm == 0.0);
+    REQUIRE(eventOf(clipId)->interpBpm == before);
 }
 
 // =============================================================================
@@ -274,7 +274,8 @@ TEST_CASE("Beat mode asked for without a tempo waits for the detection",
           "[clip][tempo][sequence][detection]") {
     DetectionFixture fx;
     auto& clips = ClipManager::getInstance();
-    const auto clipId = fx.createSessionClip();
+    // An arrangement clip: a slot is in beat mode from the drop (#3060).
+    const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, fx.path, ClipView::Arrangement);
 
     // What BEAT does on a clip with no tempo yet: ask, then set the intent.
     clips.detectMissingTempo({clipId}, kProjectBpm, nullptr);
@@ -286,7 +287,6 @@ TEST_CASE("Beat mode asked for without a tempo waits for the detection",
 
     REQUIRE(eventOf(clipId)->autoTempo);
     REQUIRE(eventOf(clipId)->loopExtent == RegionExtent::Interpretation);
-    REQUIRE(clips.getClip(clipId)->loopEnabled);
 }
 
 // =============================================================================
