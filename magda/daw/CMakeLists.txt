@@ -116,6 +116,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/midi_editor/v1/me-maximise.svg
     ../../assets/icons/midi_editor/v1/me-mpe.svg
     ../../assets/icons/midi_editor/v1/me-pencil.svg
+    ../../assets/icons/midi_editor/v1/me-flat.svg
+    ../../assets/icons/midi_editor/v1/me-marker.svg
     ../../assets/icons/midi_editor/v1/me-piano-roll.svg
     ../../assets/icons/midi_editor/v1/me-pointer.svg
     ../../assets/icons/midi_editor/v1/me-slice.svg
@@ -173,6 +175,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/automation/automation.svg
     ../../assets/icons/automation/automation_master_header.svg
     # Waveform icons
+    ../../assets/icons/waveform/envelope.svg
     ../../assets/icons/waveform/sine-wave.svg
     ../../assets/icons/waveform/time_bend.svg
     ../../assets/icons/waveform/note_slice.svg
@@ -302,6 +305,7 @@ add_library(magda_types STATIC
     # the engine links a leaf instead of the whole DAW.
     core/ClipOcclusion.cpp
     core/ClipFades.cpp
+    core/ClipGainEnvelope.cpp
     # Which of a device's parameters something addresses (#2630). Model-only,
     # so the table compiler and the save path ask the same question.
     core/AddressedParameters.cpp
@@ -311,6 +315,7 @@ add_library(magda_types STATIC
     core/ClipInfo.hpp
     core/ClipOcclusion.hpp
     core/ClipFades.hpp
+    core/ClipGainEnvelope.hpp
     core/TechnicalText.hpp
     core/AddressedParameters.hpp
     core/ChainNodePath.hpp

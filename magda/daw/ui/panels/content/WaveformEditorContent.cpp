@@ -794,6 +794,7 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
                 magda::clearWarpMarkers(editingClipId_);
             refreshWarpMarkers();
         }
+        syncGainEnvelope();
 
         // Check if cached transients were invalidated (e.g. sensitivity changed)
         if (clip->isAudio() && !magda::audioEventRef(*clip).sourceFilePath().isEmpty()) {
@@ -1013,6 +1014,7 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
 
             refreshWarpMarkers();
         }
+        syncGainEnvelope();
 
         // Check for cached transients or request async detection.
         if (clip && clip->isAudio() && !magda::audioEventRef(*clip).sourceFilePath().isEmpty()) {
@@ -1079,6 +1081,15 @@ void WaveformEditorContent::setSnapEnabledFromUI(bool enabled) {
 bool WaveformEditorContent::editingClipHasMultipleTakes() const {
     const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
     return clip && clip->isAudio() && clip->audio().takes.size() > 1;
+}
+
+void WaveformEditorContent::syncGainEnvelope() {
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    const auto editable = clip && clip->isAudio();
+    const auto takeLanes = editable && clip->audio().takes.size() > 1 && clip->takesExpanded;
+    const auto shown = editable && clip->gainEnvelopeShown && !takeLanes;
+
+    gridComponent_->setGainEnvelopeShown(shown);
 }
 
 bool WaveformEditorContent::areTakesExpanded() const {

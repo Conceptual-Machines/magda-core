@@ -87,6 +87,8 @@ void dumpEvent(std::ostringstream& out, const AudioEventPlayback& event) {
             << (event.rightChannelActive ? "R" : "-");
     if (event.gainDb != 0.0f)
         out << " gain=" << fixed(event.gainDb, 1);
+    if (!event.gainEnvelope.empty())
+        out << " gainEnvelope=" << event.gainEnvelope.points.size();
 
     // The event's own fades, printed only when it has any: for the one event
     // that spans its clip these repeat what the clip line already showed, and

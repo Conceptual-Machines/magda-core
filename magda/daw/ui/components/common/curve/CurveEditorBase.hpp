@@ -117,6 +117,12 @@ class CurveEditorBase : public juce::Component {
         return true;
     }
 
+    // What an unmodified press does. Select by default; an editor with its own tool picker
+    // returns Pencil while the pen is chosen.
+    virtual CurveDrawMode plainPressMode() const {
+        return CurveDrawMode::Select;
+    }
+
     // Format a value label for a given normalized Y (0-1). Override in subclasses.
     virtual juce::String formatValueLabel(double y) const {
         return juce::String(juce::roundToInt(y * 100)) + "%";
@@ -198,7 +204,7 @@ class CurveEditorBase : public juce::Component {
     // Cursor — keep in sync with real modifier state from both keyboard
     // events and mouse moves (modifierKeysChanged alone is unreliable once
     // keyboard focus moves to another component).
-    void updateCursorForModifiers(const juce::ModifierKeys& modifiers);
+    virtual void updateCursorForModifiers(const juce::ModifierKeys& modifiers);
 
     // Rebuild components from data
     virtual void rebuildPointComponents();
@@ -301,6 +307,10 @@ class CurveEditorBase : public juce::Component {
 
     // Pencil drawing
     void createPointsFromDrawingPath();
+
+    // A finished freehand stroke, in x order. The default adds each point, as one undo step.
+    virtual void onStrokeDrawn(const std::vector<std::pair<double, double>>& points,
+                               CurveType curveType);
 
     // Sync selection state — re-apply selectedPointIds_ to point components after rebuild
     virtual void syncSelectionState();

@@ -104,25 +104,45 @@ Row& Row::closeWell() {
 
 }  // namespace edit_toolbar
 
+namespace {
+
+std::vector<std::pair<EditTool, const char*>> allTools(const std::array<const char*, 5>& tooltips) {
+    return {{EditTool::Pointer, tooltips[0]},
+            {EditTool::Pencil, tooltips[1]},
+            {EditTool::Slice, tooltips[2]},
+            {EditTool::Glue, tooltips[3]},
+            {EditTool::Erase, tooltips[4]}};
+}
+
+}  // namespace
+
 EditToolButtons::EditToolButtons(EditToolState& state, const std::array<const char*, 5>& tooltips)
+    : EditToolButtons(state, allTools(tooltips)) {}
+
+EditToolButtons::EditToolButtons(EditToolState& state,
+                                 const std::vector<std::pair<EditTool, const char*>>& tools)
     : state_(state) {
-    static constexpr std::array<const char*, 5> kNames{"Pointer", "Pencil", "Slice", "Glue",
-                                                       "Erase"};
-    const std::array<std::pair<const char*, int>, 5> icons{{
+    static constexpr std::array<const char*, 8> kNames{"Pointer", "Pencil", "Slice", "Glue",
+                                                       "Erase",   "Line",   "Flat",  "Marker"};
+    const std::array<std::pair<const char*, int>, 8> icons{{
         {BinaryData::mepointer_svg, BinaryData::mepointer_svgSize},
         {BinaryData::mepencil_svg, BinaryData::mepencil_svgSize},
         {BinaryData::meslice_svg, BinaryData::meslice_svgSize},
         {BinaryData::meglue_svg, BinaryData::meglue_svgSize},
         {BinaryData::meerase_svg, BinaryData::meerase_svgSize},
+        {BinaryData::mepointer_svg, BinaryData::mepointer_svgSize},  // Line: the arrow
+        {BinaryData::meflat_svg, BinaryData::meflat_svgSize},
+        {BinaryData::memarker_svg, BinaryData::memarker_svgSize},
     }};
-    for (size_t i = 0; i < buttons_.size(); ++i) {
+    for (const auto& [tool, tooltip] : tools) {
+        const auto i = static_cast<size_t>(tool);
         auto button = std::make_unique<SvgButton>(kNames[i], icons[i].first,
                                                   static_cast<size_t>(icons[i].second));
-        button->setTooltip(tooltips[i]);
+        button->setTooltip(tooltip);
         edit_toolbar::styleButton(*button);
-        button->onClick = [this, i]() { state_.setTool(static_cast<EditTool>(i)); };
+        button->onClick = [this, tool]() { state_.setTool(tool); };
         addAndMakeVisible(button.get());
-        buttons_[i] = std::move(button);
+        buttons_.emplace_back(tool, std::move(button));
     }
     state_.addChangeListener(this);
     syncButtons();
@@ -138,10 +158,16 @@ void EditToolButtons::paint(juce::Graphics& g) {
 
 void EditToolButtons::resized() {
     int x = edit_toolbar::kWellPad;
-    for (auto& button : buttons_) {
+    for (auto& [tool, button] : buttons_) {
         button->setBounds(x, edit_toolbar::kWellPad, edit_toolbar::kButton, edit_toolbar::kButton);
         x += edit_toolbar::kButton + edit_toolbar::kGap;
     }
+}
+
+void EditToolButtons::setToolEnabled(EditTool tool, bool enabled) {
+    for (auto& [each, button] : buttons_)
+        if (each == tool)
+            button->setEnabled(enabled);
 }
 
 void EditToolButtons::changeListenerCallback(juce::ChangeBroadcaster*) {
@@ -149,9 +175,8 @@ void EditToolButtons::changeListenerCallback(juce::ChangeBroadcaster*) {
 }
 
 void EditToolButtons::syncButtons() {
-    const auto tool = state_.getTool();
-    for (size_t i = 0; i < buttons_.size(); ++i)
-        buttons_[i]->setActive(static_cast<size_t>(tool) == i);
+    for (auto& [tool, button] : buttons_)
+        button->setActive(state_.getTool() == tool);
 }
 
 }  // namespace magda

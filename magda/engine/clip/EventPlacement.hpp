@@ -97,6 +97,14 @@ double readingPositionAt(const AudioClipPlayback& clip, const AudioEventPlayback
                          double seconds, double beat, double deviceSampleRate);
 
 /**
+ * @brief The forward-file seconds a reading position plays, under @p how (#3064).
+ *
+ * The inverse of what the reading does to the file: loops folded, reverse unmirrored. A gain
+ * envelope tied to the source looks up its value here.
+ */
+double sourceSecondsOfReading(const SourceRead& how, double readingSample);
+
+/**
  * @brief The beat face of a moment inside @p event's span, without a tempo map.
  *
  * Linear between the span's two resolved faces, exact at its ends. What a cue

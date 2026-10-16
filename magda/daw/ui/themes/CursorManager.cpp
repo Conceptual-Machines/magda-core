@@ -19,6 +19,9 @@ CursorManager::CursorManager() {
         createIconCursor(BinaryData::meerase_svg, BinaryData::meerase_svgSize, {8.0f, 38.0f});
     glueCursor =
         createIconCursor(BinaryData::meglue_svg, BinaryData::meglue_svgSize, {5.0f, 43.0f});
+    // Hotspot: the top of the raised step, the level a cell is stamped at.
+    flatCursor =
+        createIconCursor(BinaryData::meflat_svg, BinaryData::meflat_svgSize, {24.0f, 14.0f});
     noteRepeatCursor = createNoteRepeatCursor();
     bladeCursor =
         createIconCursor(BinaryData::meslice_svg, BinaryData::meslice_svgSize, {24.0f, 24.0f});

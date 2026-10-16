@@ -2,6 +2,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <memory>
+#include <utility>
 #include <vector>
 
 #include "core/ClipDisplayInfo.hpp"
@@ -13,6 +15,8 @@ class TimeRuler;  // Forward declaration
 }
 
 namespace magda::daw::ui {
+
+class GainEnvelopeEditor;
 
 /** Beat grid resolution for waveform overlay */
 enum class GridResolution { Off, Bar, Beat, Eighth, Sixteenth, ThirtySecond };
@@ -43,6 +47,7 @@ class WaveformGridComponent : public juce::Component, public juce::ChangeListene
     void mouseUp(const juce::MouseEvent& event) override;
     void mouseMove(const juce::MouseEvent& event) override;
     void mouseDoubleClick(const juce::MouseEvent& event) override;
+    void mouseExit(const juce::MouseEvent& event) override;
 
     // ========================================================================
     // Configuration
@@ -139,6 +144,9 @@ class WaveformGridComponent : public juce::Component, public juce::ChangeListene
     /** Snap a source-file time to the nearest grid line */
     double snapTimeToGrid(double time) const;
 
+    /** One grid division in display seconds; 0 with the grid off */
+    double getGridSpacingSeconds() const;
+
     /** Enable/disable snap-to-grid for drag operations */
     void setSnapEnabled(bool enabled);
 
@@ -176,6 +184,24 @@ class WaveformGridComponent : public juce::Component, public juce::ChangeListene
      * @return Time in seconds (absolute timeline or clip-relative depending on mode)
      */
     double pixelToTime(int x) const;
+    double timeToPixelF(double time) const;
+
+    double getHorizontalZoom() const {
+        return horizontalZoom_;
+    }
+
+    // ========================================================================
+    // Gain envelope (#3064)
+    // ========================================================================
+
+    void setGainEnvelopeShown(bool shown);
+
+    /// Forward source seconds to the grid's display time and back, through warp and reverse.
+    double sourceToDisplayTime(double sourceSeconds) const;
+    double displayTimeToSource(double displayTime) const;
+
+    /// The source file's extent, in display time.
+    std::pair<double, double> sourceDisplayRange() const;
 
     // ========================================================================
     // Callbacks
@@ -216,6 +242,16 @@ class WaveformGridComponent : public juce::Component, public juce::ChangeListene
 
   private:
     magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
+
+    std::unique_ptr<GainEnvelopeEditor> gainEnvelopeEditor_;
+    void layoutGainEnvelope();
+
+    /// The Marker tool is chosen and the clip warps, so a click places a marker.
+    bool placesMarkers() const;
+    /// Where a click would place one, while the Marker tool hovers the waveform; -1 otherwise.
+    int markerGuideX_ = -1;
+    void setMarkerGuide(int x);
+    void paintMarkerGuide(juce::Graphics& g);
 
     // Timeline mode
     bool relativeMode_ = false;
@@ -263,6 +299,7 @@ class WaveformGridComponent : public juce::Component, public juce::ChangeListene
     double dragStartSpeedRatio_ = 1.0;
     double dragStartFileDuration_ = 0.0;
     double dragStartClipLength_ = 0.0;  // Original clip.length at drag start (for stretch)
+    double dragStartLengthBeats_ = 0.0;
 
     // Throttled update for live preview
     static constexpr int DRAG_UPDATE_INTERVAL_MS = 50;  // Update arrangement view every 50ms

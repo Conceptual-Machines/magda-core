@@ -367,6 +367,7 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
                         std::to_string(event.fadeOutType) + " is not a curve, it fades linearly");
                 playback.fadeInBehaviour = event.fadeInBehaviour;
                 playback.fadeOutBehaviour = event.fadeOutBehaviour;
+                playback.gainEnvelope = event.gainEnvelope;
 
                 audio.events.push_back(std::move(playback));
             }

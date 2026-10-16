@@ -270,6 +270,47 @@ void ClipVoice::applyFade(juce::dsp::AudioBlock<float> region, EdgeSample region
     }
 }
 
+void ClipVoice::applyGainEnvelope(const AudioClipPlayback& clip, const AudioEventPlayback& event,
+                                  juce::dsp::AudioBlock<float> region, EdgeSample regionFirstSample,
+                                  const BlockInfo& block) const {
+    const auto& envelope = event.gainEnvelope;
+    const auto count = static_cast<int>(region.getNumSamples());
+    const auto blockSeconds = block.seconds.end - block.seconds.start;
+    if (envelope.empty() || count <= 0 || block.numSamples <= 0 || !(blockSeconds > 0.0))
+        return;
+
+    const auto how = sourceReadFor(event, sampleRate_);
+    const auto secondsPerSample = blockSeconds / block.numSamples;
+    const auto readingAt = [&](int sample) {
+        const auto seconds = block.seconds.start + (sample * secondsPerSample);
+        return readingPositionAt(clip, event, seconds, block.beatAtTime(seconds), sampleRate_);
+    };
+
+    // The reading is evaluated at chunk ends and run straight between them. It climbs through
+    // loop wraps, so folding each sample afterwards keeps a wrap exact.
+    constexpr int kChunkSamples = 256;
+    std::array<float, kChunkSamples> gains{};
+    auto chunkOpens = readingAt(regionFirstSample.value);
+
+    for (int done = 0; done < count; done += kChunkSamples) {
+        const auto chunk = std::min(kChunkSamples, count - done);
+        const auto chunkCloses = readingAt(regionFirstSample.value + done + chunk);
+        const auto step = (chunkCloses - chunkOpens) / chunk;
+
+        for (int i = 0; i < chunk; ++i) {
+            const auto source = sourceSecondsOfReading(how, chunkOpens + (step * i));
+            gains[static_cast<std::size_t>(i)] =
+                static_cast<float>(gain_envelope::gainAt(envelope, source));
+        }
+
+        for (std::size_t channel = 0; channel < region.getNumChannels(); ++channel)
+            juce::FloatVectorOperations::multiply(region.getChannelPointer(channel) + done,
+                                                  gains.data(), chunk);
+
+        chunkOpens = chunkCloses;
+    }
+}
+
 bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& event,
                        const BlockInfo& block, PrefetchStream& stream, ClipStretcher* stretcher,
                        int preRoll, juce::dsp::AudioBlock<float> scratch,
@@ -414,6 +455,8 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     if (clip.fadeOutBehaviour == 0)
         applyFade(region, first, block, envelope.seconds.end - clip.fadeOutSeconds,
                   envelope.seconds.end, clip.fadeOutCurve, false);
+
+    applyGainEnvelope(clip, event, region, first, block);
 
     // Volume and gain summed, panned linear: hotter on one side rather than
     // quieter on the other. Not a law with a centre correction, because a

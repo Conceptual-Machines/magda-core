@@ -409,9 +409,12 @@ class ClipOperations {
         clampToRemainingSource(clip, *event, fileDuration, bpm);
     }
 
+    /// @p lengthBeats, when given, is the length to clamp from: a drag passes the length it
+    /// started with, so moving the offset back restores what moving it forward cut.
     static inline void setAudioOffsetPreservingSourceRegion(ClipInfo& clip, double newOffset,
                                                             double fileDuration = 0.0,
-                                                            double bpm = DEFAULT_BPM) {
+                                                            double bpm = DEFAULT_BPM,
+                                                            double lengthBeats = -1.0) {
         auto* event = clip.primaryEvent();
         if (event == nullptr)
             return;
@@ -419,6 +422,9 @@ class ClipOperations {
         if (fileDuration > 0.0)
             newOffset = juce::jmin(newOffset, fileDuration);
         event->setAnchorSeconds(juce::jmax(0.0, newOffset));
+
+        if (lengthBeats > 0.0 && !clip.loopEnabled && isValidBpm(bpm))
+            setBeatPlacement(clip, clip.placement.startBeat, lengthBeats, bpm);
 
         clampToRemainingSource(clip, *event, fileDuration, bpm);
     }

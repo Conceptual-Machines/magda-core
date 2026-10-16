@@ -11,7 +11,9 @@
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../common/EditTool.hpp"
 #include "../timeline/TimeRuler.hpp"
+#include "GainEnvelopeEditor.hpp"
 #include "WarpedWaveformRenderer.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/ClipOperations.hpp"
@@ -39,11 +41,32 @@ double facadeTimelineLength(const magda::ClipInfo& c, double bpm) {
 }
 }  // namespace
 
+namespace {
+
+const juce::Colour kMarkerColour{0xFFF2C14E};
+
+/// A warp marker's handle: a small flag at the top of its line, pointing down at it.
+void paintMarkerFlag(juce::Graphics& g, float x, float top, juce::Colour colour) {
+    juce::Path flag;
+    flag.startNewSubPath(x - 5.0f, top);
+    flag.lineTo(x + 5.0f, top);
+    flag.lineTo(x + 5.0f, top + 7.0f);
+    flag.lineTo(x, top + 11.0f);
+    flag.lineTo(x - 5.0f, top + 7.0f);
+    flag.closeSubPath();
+    g.setColour(colour);
+    g.fillPath(flag);
+}
+
+}  // namespace
+
 WaveformGridComponent::WaveformGridComponent() {
     setName("WaveformGrid");
+    magda::EditToolState::sampleEditor().addChangeListener(this);
 }
 
 WaveformGridComponent::~WaveformGridComponent() {
+    magda::EditToolState::sampleEditor().removeChangeListener(this);
     if (waveformListenerPath_.isNotEmpty())
         magda::AudioThumbnailManager::getInstance().removeThumbnailChangeListener(
             waveformListenerPath_, this);
@@ -64,7 +87,12 @@ void WaveformGridComponent::updateWaveformLoadListener(const juce::String& audio
             t->addChangeListener(this);
 }
 
-void WaveformGridComponent::changeListenerCallback(juce::ChangeBroadcaster*) {
+void WaveformGridComponent::changeListenerCallback(juce::ChangeBroadcaster* source) {
+    if (source == &magda::EditToolState::sampleEditor()) {
+        setMarkerGuide(-1);
+        return;
+    }
+
     const auto* clip = getClip();
     updateWaveformLoadListener(clip != nullptr ? magda::audioEventRef(*clip).sourceFilePath()
                                                : juce::String());
@@ -104,7 +132,9 @@ void WaveformGridComponent::paint(juce::Graphics& g) {
         const auto* clip = getClip();
         if (clip && clip->isAudio()) {
             paintWaveform(g, *clip);
-            paintClipBoundaries(g);
+            // Envelope mode leaves the sample's own markers to the sample view.
+            if (!gainEnvelopeEditor_)
+                paintClipBoundaries(g);
         } else {
             paintNoClipMessage(g);
         }
@@ -216,6 +246,9 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
     auto* thumbnail = thumbnailManager.getThumbnail(audioEventRef(clip).sourceFilePath());
     double fileDuration = thumbnail ? thumbnail->getTotalLength() : 0.0;
     auto waveColour = ActiveTheme::getColour(ActiveTheme::MIDI_NOTE);
+    // A backdrop while the gain envelope is edited over it.
+    if (gainEnvelopeEditor_)
+        waveColour = waveColour.withAlpha(0.3f);
     float gainLinear = juce::Decibels::decibelsToGain(clip.volumeDB + clip.gainDB);
     auto vertZoom = static_cast<float>(verticalZoom_) * gainLinear;
 
@@ -489,13 +522,14 @@ void WaveformGridComponent::paintWaveformOverlays(juce::Graphics& g, const magda
     // Draw transient markers whenever detection data is present. Warp markers
     // are an editing overlay, but they must not hide transient sensitivity
     // feedback from the waveform editor.
-    if (!transientTimes_.isEmpty()) {
+    if (!transientTimes_.isEmpty() && !gainEnvelopeEditor_) {
         paintTransientMarkers(g, clip);
     }
 
-    if (warpMode_ && !warpMarkers_.empty()) {
+    if (warpMode_ && !warpMarkers_.empty() && !gainEnvelopeEditor_) {
         paintWarpMarkers(g, clip);
     }
+    paintMarkerGuide(g);
 
     // Center line — clipped to visible rect
     g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
@@ -528,12 +562,15 @@ void WaveformGridComponent::paintWaveformOverlays(juce::Graphics& g, const magda
     if (layout.rect.getRight() <= visibleRect.getRight())
         g.fillRect(layout.rect.getRight() - 1, visibleRect.getY(), 1, visibleRect.getHeight());
 
+    if (gainEnvelopeEditor_)
+        return;
+
     // Trim handles (only if edges are visible)
-    g.setColour(clip.colour.brighter(0.4f));
-    if (layout.rect.getX() >= visibleRect.getX() - 3)
-        g.fillRect(layout.rect.getX(), visibleRect.getY(), 3, visibleRect.getHeight());
-    if (layout.rect.getRight() <= visibleRect.getRight() + 3)
-        g.fillRect(layout.rect.getRight() - 3, visibleRect.getY(), 3, visibleRect.getHeight());
+    g.setColour(clip.colour.withAlpha(0.8f));
+    if (layout.rect.getX() >= visibleRect.getX() - 2)
+        g.fillRect(layout.rect.getX(), visibleRect.getY(), 2, visibleRect.getHeight());
+    if (layout.rect.getRight() <= visibleRect.getRight() + 2)
+        g.fillRect(layout.rect.getRight() - 2, visibleRect.getY(), 2, visibleRect.getHeight());
 }
 
 void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipInfo& clip) {
@@ -786,40 +823,15 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         }
     }
 
-    // Clip boundary markers — drawn AFTER ghost overlays so they're visible on top
-    if (!isLooped) {
-        auto markerColour = juce::Colour(0xFFAAAAAA);
-
-        int clipStartX = timeToPixel(baseTime + sampleStart);
-        {
-            g.setColour(markerColour);
-            g.fillRect(clipStartX - 2, 0, 3, bounds.getHeight());
-            juce::ColourGradient grad(markerColour.withAlpha(0.5f), clipStartX - 2.0f, 0.0f,
-                                      markerColour.withAlpha(0.0f), clipStartX - 10.0f, 0.0f,
-                                      false);
-            g.setGradientFill(grad);
-            g.fillRect(clipStartX - 10, 0, 8, bounds.getHeight());
-        }
-
-        int clipEndX = timeToPixel(baseTime + displayInfo_.fileExtentTimeline());
-        {
-            g.setColour(markerColour);
-            g.fillRect(clipEndX, 0, 3, bounds.getHeight());
-            juce::ColourGradient grad(markerColour.withAlpha(0.5f), clipEndX + 3.0f, 0.0f,
-                                      markerColour.withAlpha(0.0f), clipEndX + 11.0f, 0.0f, false);
-            g.setGradientFill(grad);
-            g.fillRect(clipEndX + 3, 0, 8, bounds.getHeight());
-        }
-
-        if (canResizeClipEnd) {
-            const double activeClipEnd = offsetPosition + clipLength_;
-            if (activeClipEnd > offsetPosition &&
-                activeClipEnd < displayInfo_.fileExtentTimeline() - 0.0001) {
-                int activeClipEndX = timeToPixel(baseTime + activeClipEnd);
-                auto activeEndColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
-                g.setColour(activeEndColour.withAlpha(0.9f));
-                g.fillRect(activeClipEndX - 1, 0, 2, bounds.getHeight());
-            }
+    // The active end, drawn after the ghosts. The file's own edges are the waveform border.
+    if (!isLooped && canResizeClipEnd) {
+        const double activeClipEnd = offsetPosition + clipLength_;
+        if (activeClipEnd > offsetPosition &&
+            activeClipEnd < displayInfo_.fileExtentTimeline() - 0.0001) {
+            int activeClipEndX = timeToPixel(baseTime + activeClipEnd);
+            auto activeEndColour = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
+            g.setColour(activeEndColour.withAlpha(0.9f));
+            g.fillRect(activeClipEndX - 1, 0, 2, bounds.getHeight());
         }
     }
 }
@@ -908,7 +920,8 @@ void WaveformGridComponent::paintNoClipMessage(juce::Graphics& g) {
 }
 
 void WaveformGridComponent::resized() {
-    // Grid size is managed by updateGridSize()
+    // Grid size is managed by updateGridSize(); the envelope follows whoever sets it.
+    layoutGainEnvelope();
 }
 
 // ============================================================================
@@ -918,6 +931,8 @@ void WaveformGridComponent::resized() {
 void WaveformGridComponent::setClip(magda::ClipId clipId) {
     editingClipId_ = clipId;
     transientTimes_.clear();
+    if (clipId == magda::INVALID_CLIP_ID)
+        setGainEnvelopeShown(false);
 
     // Always update clip info (even if same clip, properties may have changed)
     const auto* clip = getClip();
@@ -1043,6 +1058,11 @@ double WaveformGridComponent::snapTimeToGrid(double time) const {
     return snapped;
 }
 
+double WaveformGridComponent::getGridSpacingSeconds() const {
+    const double bpm = timeRuler_ ? timeRuler_->getTempo() : 0.0;
+    return bpm > 0.0 ? getGridResolutionBeats() * 60.0 / bpm : 0.0;
+}
+
 void WaveformGridComponent::setSnapEnabled(bool enabled) {
     snapEnabled_ = enabled;
 }
@@ -1059,12 +1079,14 @@ void WaveformGridComponent::setWarpMode(bool enabled) {
         if (!enabled) {
             warpMarkers_.clear();
         }
+        layoutGainEnvelope();
         repaint();
     }
 }
 
 void WaveformGridComponent::setWarpMarkers(const std::vector<magda::WarpMarker>& markers) {
     warpMarkers_ = markers;
+    layoutGainEnvelope();
     repaint();
 }
 
@@ -1074,6 +1096,7 @@ void WaveformGridComponent::setScrollOffset(int x, int y) {
         scrollOffsetY_ = y;
         interactionActive_ = true;
         lastInteractionTime_ = juce::Time::currentTimeMillis();
+        layoutGainEnvelope();
         repaint();
     }
 }
@@ -1108,6 +1131,7 @@ void WaveformGridComponent::updateGridSize() {
 
     // Component is always viewport-sized — scrolling is virtual
     setSize(parentWidth_, minimumHeight_);
+    layoutGainEnvelope();
 }
 
 juce::int64 WaveformGridComponent::getVirtualContentWidth() const {
@@ -1131,6 +1155,61 @@ int WaveformGridComponent::timeToPixel(double time) const {
 
 double WaveformGridComponent::pixelToTime(int x) const {
     return (x + scrollOffsetX_ - LEFT_PADDING) / horizontalZoom_;
+}
+
+double WaveformGridComponent::timeToPixelF(double time) const {
+    return (time * horizontalZoom_) + LEFT_PADDING - scrollOffsetX_;
+}
+
+// ============================================================================
+// Gain envelope (#3064)
+// ============================================================================
+
+void WaveformGridComponent::setGainEnvelopeShown(bool shown) {
+    if (shown == (gainEnvelopeEditor_ != nullptr))
+        return;
+
+    if (shown) {
+        gainEnvelopeEditor_ = std::make_unique<GainEnvelopeEditor>(*this);
+        addAndMakeVisible(*gainEnvelopeEditor_);
+        layoutGainEnvelope();
+    } else {
+        gainEnvelopeEditor_.reset();
+    }
+    repaint();
+    if (auto* parent = getParentComponent())
+        parent->repaint();
+}
+
+void WaveformGridComponent::layoutGainEnvelope() {
+    if (!gainEnvelopeEditor_)
+        return;
+
+    // Its content area lines up with the waveform's (computeWaveformLayout).
+    const auto inset = gainEnvelopeEditor_->getPadding();
+    gainEnvelopeEditor_->setBounds(0, TOP_PADDING - inset, getWidth(),
+                                   getHeight() - (2 * TOP_PADDING) + (2 * inset));
+    gainEnvelopeEditor_->setClip(editingClipId_);
+}
+
+double WaveformGridComponent::sourceToDisplayTime(double sourceSeconds) const {
+    auto ruler = sourceSeconds;
+    if (const auto* clip = getClip(); clip && warpMode_ && !warpMarkers_.empty())
+        ruler = magda::audioEventRef(*clip).warpedSourceSeconds(sourceSeconds);
+    return getDisplayStartTime() + displayInfo_.sourceTimeToDisplayPosition(ruler);
+}
+
+double WaveformGridComponent::displayTimeToSource(double displayTime) const {
+    const auto ruler =
+        displayInfo_.displayPositionToSourceTime(displayTime - getDisplayStartTime());
+    if (const auto* clip = getClip(); clip && warpMode_ && !warpMarkers_.empty())
+        return magda::audioEventRef(*clip).unwarpedSourceSeconds(ruler);
+    return ruler;
+}
+
+std::pair<double, double> WaveformGridComponent::sourceDisplayRange() const {
+    const auto start = getDisplayStartTime();
+    return {start, start + displayInfo_.fileExtentTimeline()};
 }
 
 double WaveformGridComponent::getSampleStartPositionSeconds() const {
@@ -1230,10 +1309,9 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
             return;
         }
 
-        // Click on waveform in warp mode: add new marker
-        // Markers are placed exactly where clicked (at transient positions).
-        // Grid snapping only applies when MOVING markers, not when placing them.
-        if (isInsideWaveform(x, *clip)) {
+        // The Marker tool places one exactly where clicked; grid snapping only applies when
+        // moving. The pointer falls through to the trim interaction below.
+        if (placesMarkers() && isInsideWaveform(x, *clip)) {
             double clickTime = pixelToTime(x);
             // Convert from display time to file-relative time
             double fileRelativeTime = clickTime - getDisplayStartTime();
@@ -1274,11 +1352,11 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
             if (onWarpMarkerAdd) {
                 onWarpMarkerAdd(sourceTime, warpTime);
             }
+            return;
         }
-        return;
     }
 
-    // Non-warp mode: standard trim/stretch interaction.
+    // Standard trim/stretch interaction, also the pointer's in warp mode.
     // Phase marker takes priority over edge resize so a click on the "P" marker doesn't
     // fall through to the source-extent right-edge hit-test (which used to silently shorten
     // the loop when the phase landed near the file end).
@@ -1330,6 +1408,7 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
     dragStartStartTime_ = facadeTimelineStart(*clip, projectBpm);
     dragStartSpeedRatio_ = magda::audioEventRef(*clip).speedRatio;
     dragStartClipLength_ = facadeTimelineLength(*clip, projectBpm);
+    dragStartLengthBeats_ = clip->placement.lengthBeats;
 
     if (dragMode_ == DragMode::PhaseMarker) {
         double phase = magda::audioEventRef(*clip).anchorSeconds() -
@@ -1475,7 +1554,7 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
                 // this handle. Clip length is clamped to the remaining source so
                 // arrangement clips don't extend past the waveform.
                 magda::ClipOperations::setAudioOffsetPreservingSourceRegion(
-                    *clip, newOffset, dragStartFileDuration_, bpm);
+                    *clip, newOffset, dragStartFileDuration_, bpm, dragStartLengthBeats_);
             }
             break;
         }
@@ -1687,18 +1766,27 @@ void WaveformGridComponent::mouseMove(const juce::MouseEvent& event) {
             repaint();
         }
 
+        const auto guiding = newHovered < 0 && placesMarkers() && !event.mods.isShiftDown() &&
+                             isInsideWaveform(x, *clip);
+        setMarkerGuide(guiding ? x : -1);
+
         if (newHovered >= 0 && event.mods.isAltDown()) {
             setMouseCursor(juce::MouseCursor::DraggingHandCursor);
-        } else if (newHovered >= 0) {
-            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-        } else if (event.mods.isShiftDown() && isInsideWaveform(x, *clip)) {
-            setMouseCursor(magda::CursorManager::getInstance().getZoomCursor());
-        } else if (isInsideWaveform(x, *clip)) {
-            setMouseCursor(juce::MouseCursor::CrosshairCursor);
-        } else {
-            setMouseCursor(juce::MouseCursor::NormalCursor);
+            return;
         }
-        return;
+        if (newHovered >= 0) {
+            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+            return;
+        }
+        if (event.mods.isShiftDown() && isInsideWaveform(x, *clip)) {
+            setMouseCursor(magda::CursorManager::getInstance().getZoomCursor());
+            return;
+        }
+        if (guiding) {
+            setMouseCursor(juce::MouseCursor::NormalCursor);
+            return;
+        }
+        // The pointer away from a marker hovers like the sample view's own edges.
     }
 
     if (isNearPhaseMarker(x, *clip)) {
@@ -1808,29 +1896,18 @@ void WaveformGridComponent::paintWarpMarkers(juce::Graphics& g, const magda::Cli
         if (px < waveformRect.getX() || px > waveformRect.getRight())
             continue;
 
-        // Determine colour: hovered marker is brighter
-        bool isHovered = (i == hoveredMarkerIndex_);
-        bool isDragging = (i == draggingMarkerIndex_);
-        auto markerColour = juce::Colours::yellow;
+        // A hairline with a flag handle; hover and drag bring it forward.
+        const bool isHovered = (i == hoveredMarkerIndex_);
+        const bool isDragging = (i == draggingMarkerIndex_);
+        const auto lineAlpha = isDragging ? 1.0f : isHovered ? 0.85f : 0.45f;
+        const auto fx = static_cast<float>(px);
 
-        if (isDragging) {
-            markerColour = markerColour.brighter(0.3f);
-        } else if (isHovered) {
-            markerColour = markerColour.brighter(0.15f);
-        } else {
-            markerColour = markerColour.withAlpha(0.7f);
-        }
-
-        // Draw vertical line (2px wide)
-        g.setColour(markerColour);
-        g.fillRect(px - 1, waveformRect.getY(), 2, waveformRect.getHeight());
-
-        // Draw small triangle handle at top
-        juce::Path triangle;
-        auto fx = static_cast<float>(px);
-        auto fy = static_cast<float>(waveformRect.getY());
-        triangle.addTriangle(fx - 4.0f, fy, fx + 4.0f, fy, fx, fy + 6.0f);
-        g.fillPath(triangle);
+        g.setColour(kMarkerColour.withAlpha(lineAlpha));
+        g.fillRect(juce::Rectangle<float>(
+            fx - (isDragging ? 1.0f : 0.5f), static_cast<float>(waveformRect.getY()),
+            isDragging ? 2.0f : 1.0f, static_cast<float>(waveformRect.getHeight())));
+        paintMarkerFlag(g, fx, static_cast<float>(waveformRect.getY()),
+                        isDragging || isHovered ? kMarkerColour.brighter(0.2f) : kMarkerColour);
     }
 }
 
@@ -1951,6 +2028,35 @@ void WaveformGridComponent::showContextMenu(const juce::MouseEvent& event) {
             }
         }
     });
+}
+
+void WaveformGridComponent::mouseExit(const juce::MouseEvent&) {
+    setMarkerGuide(-1);
+}
+
+bool WaveformGridComponent::placesMarkers() const {
+    return warpMode_ && !gainEnvelopeEditor_ &&
+           magda::EditToolState::sampleEditor().getTool() == magda::EditTool::Marker;
+}
+
+void WaveformGridComponent::setMarkerGuide(int x) {
+    if (markerGuideX_ == x)
+        return;
+    markerGuideX_ = x;
+    repaint();
+}
+
+void WaveformGridComponent::paintMarkerGuide(juce::Graphics& g) {
+    if (markerGuideX_ < 0)
+        return;
+    const auto bounds = getLocalBounds().reduced(LEFT_PADDING, TOP_PADDING);
+    const auto x = static_cast<float>(markerGuideX_);
+    const float dashes[] = {3.0f, 3.0f};
+    g.setColour(kMarkerColour.withAlpha(0.7f));
+    g.drawDashedLine(
+        {x, static_cast<float>(bounds.getY()), x, static_cast<float>(bounds.getBottom())}, dashes,
+        2, 1.0f);
+    paintMarkerFlag(g, x, static_cast<float>(bounds.getY()), kMarkerColour.withAlpha(0.5f));
 }
 
 void WaveformGridComponent::mouseDoubleClick(const juce::MouseEvent& event) {
