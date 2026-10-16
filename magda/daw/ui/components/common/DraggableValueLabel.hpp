@@ -161,6 +161,11 @@ class DraggableValueLabel : public juce::Component,
         valueControl_.setDrawBorder(draw);
     }
 
+    /** @brief A unit drawn dim after the value, which then sits right-aligned. */
+    void setUnit(const juce::String& unit) {
+        valueControl_.setUnitText(unit);
+    }
+
     /** Marks the fill's leading edge with a brighter 2px line. */
     void setShowFillMarker(bool show) {
         valueControl_.setShowFillMarker(show);
@@ -309,6 +314,8 @@ class DraggableValueLabel : public juce::Component,
     bool isEditing() const {
         return valueControl_.isEditing();
     }
+    /** @brief Open the text editor, as a double-click does. */
+    void startEditing();
 
     // Mark this label as being edited indirectly because another label in a
     // multi-selection group is being dragged. Paints the same drag-active
@@ -341,7 +348,6 @@ class DraggableValueLabel : public juce::Component,
     juce::String formatValue(double val) const;
     double parseValue(const juce::String& text) const;
     void syncValueControl();
-    void startEditing();
     void finishEditing(const juce::String& text);
     void cancelEditing();
 

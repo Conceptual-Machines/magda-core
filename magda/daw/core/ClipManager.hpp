@@ -487,6 +487,13 @@ class ClipManager {
      *         from the interpretation. Entering beat mode pins speed to 1 and
      *         picks a stretch engine; it leaves looping alone. */
     void setPlaybackIntent(ClipId clipId, PlaybackIntent intent, double projectBPM);
+    /**
+     * @brief Beat mode at the tempo the clip is heard at, for a file no detection could name.
+     *
+     * The tempo is an assumption (Provenance::Project), as LOOP's wrap makes (#3060), so a later
+     * detection or a typed tempo replaces it. False when the clip has no audio event.
+     */
+    bool assumeTempoForBeatMode(ClipId clipId, double projectBPM);
 
     /** @brief Persist a user-asserted BPM for the clip's source file back
      *         to the media DB. Prefer saveClipToLibrary for UI entry points

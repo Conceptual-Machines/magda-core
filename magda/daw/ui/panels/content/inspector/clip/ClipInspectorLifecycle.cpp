@@ -1,5 +1,6 @@
 #include "../../../../themes/ActiveTheme.hpp"
 #include "../ClipInspector.hpp"
+#include "ClipInspectorStyle.hpp"
 
 namespace magda::daw::ui {
 
@@ -14,100 +15,55 @@ void ClipInspector::onDeactivated() {
 void ClipInspector::paint(juce::Graphics& g) {
     g.fillAll(ActiveTheme::getBackgroundColour());
 
-    // The name field, rounded like the chips beside it, as in the track inspector.
-    if (clipNameValue_.isVisible()) {
-        const auto field = clipNameValue_.getBounds().toFloat();
-        const float radius = juce::jlimit(2.0f, 8.0f, field.getHeight() * 0.15f);
+    if (!clipNameValue_.isVisible())
+        return;
+
+    // Full bar fills the name block with the clip colour, as the track inspector does.
+    if (nameFilled_) {
         g.setColour(nameFill_);
-        g.fillRoundedRectangle(field, radius);
-        g.setColour(nameOutline_);
-        g.drawRoundedRectangle(field.reduced(0.5f), radius, 1.0f);
+        g.fillRoundedRectangle(nameArea_.toFloat().expanded(6.0f, 3.0f), 4.0f);
     }
+
+    // Hairline under the header, where the scrolling sections begin.
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
+    g.fillRect(0, clipPropsViewport_.getY() - 1, getWidth(), 1);
 }
 
 void ClipInspector::lookAndFeelChanged() {
-    const auto primary = ActiveTheme::getTextColour();
-    const auto secondary = ActiveTheme::getSecondaryTextColour();
-    const auto surface = ActiveTheme::getColour(ActiveTheme::SURFACE);
-    const auto border = ActiveTheme::getColour(ActiveTheme::BORDER);
-    const auto accent = ActiveTheme::getAccentColour();
-
     applyHeaderStyle();
 
-    if (clipGhostIcon_) {
-        clipGhostIcon_->setNormalColor(secondary);
-        clipGhostIcon_->setNormalBackgroundColor(surface);
-        clipGhostIcon_->setBorderColor(border);
-    }
-    if (clipEnabledToggle_) {
-        clipEnabledToggle_->setNormalBackgroundColor(surface);
-        clipEnabledToggle_->setBorderColor(border);
-    }
+    for (auto* label :
+         {&startColumnLabel_, &endColumnLabel_, &lengthColumnLabel_, &clipLoopPhaseLabel_})
+        label->setColour(juce::Label::textColourId, ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+    for (auto* label : {&clipRowLabel_, &loopRowLabel_, &volumeLabel_, &panLabel_, &gainLabel_,
+                        &transientSensitivityLabel_, &tempoLabel_, &sourceLengthLabel_,
+                        &speedLabel_, &pitchLabel_, &clipKeyLabel_, &midiTransposeLabel_,
+                        &grooveStrengthLabel_, &launchQuantizeLabel_, &followActionLabel_,
+                        &followActionDelayLabel_, &followActionLoopCountLabel_})
+        label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
+    midiTransposeHint_.setColour(juce::Label::textColourId,
+                                 ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
 
-    clipCountLabel_.setColour(juce::Label::textColourId, primary);
-    for (auto* label : {&clipFilePathLabel_,
-                        &playbackColumnLabel_,
-                        &loopColumnLabel_,
-                        &clipStartLabel_,
-                        &clipEndLabel_,
-                        &clipLengthLabel_,
-                        &clipLoopStartLabel_,
-                        &clipLoopEndLabel_,
-                        &clipLoopPhaseLabel_,
-                        &audioPropsLabel_,
-                        &clipBpmValue_,
-                        &clipBpmUnitLabel_,
-                        &clipBeatsUnitLabel_,
-                        &clipKeyLabel_,
-                        &pitchSectionLabel_,
-                        &midiTransposeLabel_,
-                        &beatDetectionSectionLabel_,
-                        &transientSectionLabel_,
-                        &transientSensitivityLabel_,
-                        &grooveSectionLabel_,
-                        &grooveStrengthLabel_,
-                        &clipMixSectionLabel_,
-                        &channelsSectionLabel_,
-                        &launchModeLabel_,
-                        &launchQuantizeLabel_,
-                        &followActionLabel_,
-                        &followActionDelayLabel_,
-                        &followActionLoopCountLabel_})
-        label->setColour(juce::Label::textColourId, secondary);
-    clipBpmValue_.setColour(juce::Label::outlineColourId, border);
+    // The tempo field is a Label drawn as a field, with its unit dimmed inside the right edge.
+    clipBpmValue_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
+    clipBpmValue_.setColour(juce::Label::backgroundColourId,
+                            ActiveTheme::getColour(ActiveTheme::SURFACE));
+    clipBpmValue_.setColour(juce::Label::outlineColourId,
+                            ActiveTheme::getColour(ActiveTheme::BORDER));
+    clipBpmUnitLabel_.setColour(juce::Label::textColourId,
+                                ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
 
-    for (auto* combo : {&stretchModeCombo_, &clipKeyRootCombo_, &autoPitchModeCombo_,
-                        &launchModeCombo_, &launchQuantizeCombo_, &followActionCombo_}) {
-        combo->setColour(juce::ComboBox::backgroundColourId, surface);
-        combo->setColour(juce::ComboBox::textColourId, primary);
-        combo->setColour(juce::ComboBox::outlineColourId, border);
-    }
-
-    const auto styleToggle = [surface, secondary, accent](juce::TextButton& button) {
-        button.setColour(juce::TextButton::buttonColourId, surface);
-        button.setColour(juce::TextButton::buttonOnColourId, accent.withAlpha(0.3f));
-        button.setColour(juce::TextButton::textColourOffId, secondary);
-        button.setColour(juce::TextButton::textColourOnId, accent);
-    };
-    for (auto* button : {&clipWarpToggle_, &clipAutoTempoToggle_, &autoPitchToggle_,
-                         &analogPitchToggle_, &reverseToggle_, &gainEnvelopeToggle_,
-                         &autoDetectBeatsToggle_, &leftChannelToggle_, &rightChannelToggle_})
-        styleToggle(*button);
-
-    audioPropsCollapseToggle_.setColour(juce::TextButton::buttonColourId,
-                                        juce::Colours::transparentBlack);
-    audioPropsCollapseToggle_.setColour(juce::TextButton::buttonOnColourId,
-                                        juce::Colours::transparentBlack);
-    audioPropsCollapseToggle_.setColour(juce::TextButton::textColourOffId, secondary);
-    audioPropsCollapseToggle_.setColour(juce::TextButton::textColourOnId, secondary);
-
-    for (auto* button : {&midiTransposeDownBtn_, &midiTransposeUpBtn_, &grooveTemplateButton_}) {
-        button->setColour(juce::TextButton::buttonColourId, surface);
-        button->setColour(juce::TextButton::textColourOffId, primary);
-    }
-    saveLibraryButton_.setColour(juce::TextButton::buttonColourId,
-                                 ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
-    saveLibraryButton_.setColour(juce::TextButton::textColourOffId, primary);
+    for (auto* combo :
+         {&stretchModeCombo_, &clipKeyRootCombo_, &launchQuantizeCombo_, &followActionCombo_})
+        clip_style::combo(*combo);
+    for (auto* button : {&analogPitchToggle_, &reverseToggle_, &gainEnvelopeToggle_})
+        clip_style::toggle(*button);
+    for (auto* button : {&halveTempoButton_, &doubleTempoButton_, &grooveTemplateButton_})
+        clip_style::action(*button);
+    for (auto& button : midiTransposeButtons_)
+        clip_style::action(button);
+    grooveTemplateButton_.setColour(juce::TextButton::textColourOffId,
+                                    ActiveTheme::getTextColour());
 
     repaint();
 }
@@ -122,17 +78,14 @@ void ClipInspector::applyHeaderStyle() {
         nameFilled_ = fullBar;
         resized();
     }
-    nameFill_ = fullBar ? magda::deriveTrackSwatch(clip->colour)
-                        : ActiveTheme::getColour(ActiveTheme::SURFACE);
-    nameOutline_ = fullBar ? juce::Colours::transparentBlack : ActiveTheme::getBorderColour();
+    nameFill_ = fullBar ? magda::deriveTrackSwatch(clip->colour) : juce::Colours::transparentBlack;
     clipNameValue_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     clipNameValue_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
     clipNameValue_.setColour(juce::Label::textColourId,
                              fullBar ? juce::Colours::white : ActiveTheme::getTextColour());
-    // The watermark icons take the name text's colour, so they read on a filled field too.
-    for (auto* icon : {clipTypeIcon_.get(), clipViewIcon_.get()})
-        icon->setNormalColor(fullBar ? juce::Colours::white
-                                     : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    clipSubline_.setColour(juce::Label::textColourId,
+                           fullBar ? juce::Colours::white.withAlpha(0.7f)
+                                   : ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
     repaint();
 }
 

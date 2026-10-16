@@ -913,9 +913,10 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
         juce::Colour baseColour = juce::Colour(projectDefaults.colourForIndex(
             static_cast<int>(ClipManager::getInstance().getArrangementClips().size())));
 
-        // Background fill
-        g.setColour(baseColour.darker(0.3f));
+        // Background fill, in the tint and ink the finished clip will have
+        g.setColour(deriveClipTint(baseColour));
         g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
+        const auto ink = deriveTrackAccent(baseColour);
 
         // Note area (below header)
         auto noteArea = bounds.reduced(2, HEADER_HEIGHT + 2);
@@ -923,7 +924,7 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
         if (preview.isAudioRecording && !preview.audioPeaks.empty() && noteArea.getHeight() > 5) {
             // One lane per channel, each symmetric around its centre, as the clip the
             // take becomes draws them.
-            g.setColour(baseColour.brighter(0.3f));
+            g.setColour(ink);
 
             const int lanes = juce::jlimit(1, 2, preview.numChannels);
             const float laneHeight = static_cast<float>(noteArea.getHeight()) / lanes;
@@ -947,7 +948,7 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
             }
         } else if (!preview.notes.empty() && preview.currentLengthBeats > 0.0 &&
                    noteArea.getHeight() > 5) {
-            g.setColour(baseColour.brighter(0.3f));
+            g.setColour(ink);
 
             double clipLengthInBeats = preview.currentLengthBeats;
             // The preview's width already represents its captured duration,
@@ -988,18 +989,18 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
         }
 
         // Border
-        g.setColour(baseColour);
+        g.setColour(deriveTrackSwatch(baseColour, 0.9f));
         g.drawRoundedRectangle(bounds.toFloat(), CORNER_RADIUS, 1.0f);
 
         // Header with "Recording..." label
         auto headerArea = bounds.withHeight(HEADER_HEIGHT);
-        g.setColour(baseColour);
+        g.setColour(deriveTrackSwatch(baseColour));
         g.fillRoundedRectangle(
             headerArea.toFloat().withBottom(static_cast<float>(headerArea.getBottom() + 2)),
             CORNER_RADIUS);
 
         if (bounds.getWidth() > 40) {
-            g.setColour(juce::Colours::black);
+            g.setColour(juce::Colours::white.withAlpha(0.92f));
             g.setFont(10.0f);
             g.drawText("Recording...", headerArea.reduced(4, 0), juce::Justification::centredLeft,
                        true);

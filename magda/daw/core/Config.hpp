@@ -569,6 +569,15 @@ class Config {
         chordPreviewOnByDefault = enabled;
     }
 
+    // BEAT on a clip with no detectable tempo assumes the project tempo instead of waiting
+    // for one to be typed. The assumption stays replaceable, as LOOP's is (#3060).
+    bool getAssumeProjectTempo() const {
+        return assumeProjectTempo;
+    }
+    void setAssumeProjectTempo(bool enabled) {
+        assumeProjectTempo = enabled;
+    }
+
     // Seed for a newly created project's AUTO-XFADE default (#1499).
     bool getAutoCrossfadeByDefault() const {
         return autoCrossfadeByDefault;
@@ -1620,8 +1629,8 @@ class Config {
     std::vector<TrackColourEntry> trackColourPalette;
 
     // Layout settings
-    int compactTrackHeight = 61;
-    int mediumTrackHeight = 83;  // TrackHeadersPanel::DEFAULT_TRACK_HEIGHT
+    int compactTrackHeight = 34;  // under TrackHeadersPanel::COMPACT_TRACK_HEIGHT
+    int mediumTrackHeight = 83;   // TrackHeadersPanel::DEFAULT_TRACK_HEIGHT
     int largeTrackHeight = 126;
     bool scrollbarOnLeft = false;               // Scrollbar on right by default
     bool arrangementScrollbarsAutoHide = true;  // Hover-reveal scrollbars by default
@@ -1683,6 +1692,7 @@ class Config {
 
     // New audio clips get AUTO-XFADE enabled (see #1499).
     bool autoCrossfadeByDefault = true;
+    bool assumeProjectTempo = true;
 
     // New clips play through their overlaps instead of the clip on top owning
     // the span it covers (see #2003).

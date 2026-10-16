@@ -2476,10 +2476,12 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
 
         if (!headerArea.isEmpty()) {
             const int trackHeight = headerArea.getHeight();
+            // A compact track is its name row alone.
+            const bool compact = trackHeight < COMPACT_TRACK_HEIGHT && !header.isMaster;
 
             // Compact name strip on top, controls fill the rest.
             const int nameRowHeight = TH_NAME_STRIP_H;
-            header.nameRowBottomY = headerArea.getY() + nameRowHeight;
+            header.nameRowBottomY = headerArea.getY() + (compact ? 0 : nameRowHeight);
 
             // Carve the meter from the un-inset header so it sits flush with
             // the outer edge and spans the full height; the remaining
@@ -2495,10 +2497,11 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
             auto tcpArea = inner.trimmed(workArea, indent);
 
             // Name label in the top (coloured) area
-            auto topArea = tcpArea.removeFromTop(nameRowHeight - 4);  // -4 for reduced() padding
+            auto topArea = compact ? tcpArea : tcpArea.removeFromTop(nameRowHeight - 4);
             {
                 const int nameRowH = 18;
-                auto nameRow = topArea.removeFromTop(nameRowH);
+                auto nameRow = compact ? topArea.withSizeKeepingCentre(topArea.getWidth(), nameRowH)
+                                       : topArea.removeFromTop(nameRowH);
                 // Header bar (right side): MIDI activity dot, with the back-to-
                 // arrangement button just to its left. The session button is always
                 // positioned but only paints when the track is in session mode.
@@ -2546,8 +2549,12 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
             }
 
             // Controls in the bottom area (below 0dB line)
-            tcpArea.removeFromTop(6);
-            layoutControlArea(header, tcpArea, inner, trackHeight);
+            if (compact) {
+                hideControlAreaComponents(header);
+            } else {
+                tcpArea.removeFromTop(6);
+                layoutControlArea(header, tcpArea, inner, trackHeight);
+            }
             // After the control area, which starts by hiding every selector.
             if (showIORouting_)
                 layoutIOColumn(header, ioArea);

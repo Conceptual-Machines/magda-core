@@ -11,6 +11,7 @@
 #include "inspector/clip/sections/ClipFadesSection.hpp"
 #include "inspector/clip/sections/ClipTakesSection.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
+#include "ui/components/common/GlyphChip.hpp"
 #include "ui/components/common/SectionHeader.hpp"
 #include "ui/components/common/SvgButton.hpp"
 
@@ -87,7 +88,7 @@ class AudioClipPropertiesContent : public PanelContent, public magda::ClipManage
     // to the clip only until the user explicitly saves to the library.
     std::unique_ptr<juce::Label> keyLabel_;
     std::unique_ptr<juce::ComboBox> keyRootCombo_;
-    std::unique_ptr<juce::TextButton> saveLibraryButton_;
+    std::unique_ptr<GlyphChip> saveLibraryButton_;
 
     // Pitch section
     std::unique_ptr<juce::Label> pitchLabel_;

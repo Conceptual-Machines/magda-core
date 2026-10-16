@@ -244,7 +244,8 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
     updateWaveformLoadListener(audioEventRef(clip).sourceFilePath());
     auto* thumbnail = thumbnailManager.getThumbnail(audioEventRef(clip).sourceFilePath());
     double fileDuration = thumbnail ? thumbnail->getTotalLength() : 0.0;
-    auto waveColour = ActiveTheme::getColour(ActiveTheme::MIDI_NOTE);
+    // The clip's ink, as on its arrangement clip.
+    auto waveColour = deriveClipInk(clip.colour);
     // A backdrop while the gain envelope is edited over it.
     if (gainEnvelopeEditor_)
         waveColour = waveColour.withAlpha(0.3f);
@@ -433,7 +434,8 @@ void WaveformGridComponent::paintTakeLanes(juce::Graphics& g, const magda::ClipI
 
         // Lane background + active emphasis (the active-take accent only applies
         // when not comping; with a comp there is no single active take).
-        g.setColour(clip.colour.darker(active ? 0.4f : 0.72f));
+        const auto tint = deriveClipTint(clip.colour);
+        g.setColour(active ? tint.brighter(0.3f) : tint);
         g.fillRect(laneRect.getIntersection(localBounds));
         if (active) {
             g.setColour(clip.colour.brighter(0.3f));
@@ -452,8 +454,8 @@ void WaveformGridComponent::paintTakeLanes(juce::Graphics& g, const magda::ClipI
                 if (!drawRect.isEmpty()) {
                     const double tStart = (visX0 - clipStartX) / horizontalZoom_;
                     const double tEnd = (visX1 - clipStartX) / horizontalZoom_;
-                    const auto waveColour =
-                        active ? juce::Colours::black : juce::Colours::black.withAlpha(0.45f);
+                    const auto ink = deriveTrackAccent(clip.colour);
+                    const auto waveColour = active ? ink : ink.withAlpha(0.45f);
                     thumbnailManager.drawWaveform(
                         g, drawRect, takes[i].filePath, juce::jlimit(0.0, dur, tStart),
                         juce::jlimit(0.0, dur, tEnd), waveColour, vertZoom, useHighRes);
@@ -747,11 +749,11 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
 
     const bool hasVisibleLoopPhase = isLooped && displayInfo_.loopLengthSeconds > 0.0;
 
-    // Offset marker (orange) — only meaningful in non-loop mode. In loop mode
+    // Offset marker — only meaningful in non-loop mode. In loop mode
     // offset is represented by the phase marker inside the loop region.
     if (!isLooped) {
         int offsetX = timeToPixel(baseTime + offsetPosition);
-        auto offsetColour = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
+        auto offsetColour = ActiveTheme::getColour(ActiveTheme::OFFSET_MARKER);
         float offsetAlpha = 0.8f;
         g.setColour(offsetColour.withAlpha(offsetAlpha));
         g.fillRect(offsetX - 1, 0, 2, bounds.getHeight());
@@ -759,10 +761,10 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         g.drawText("O", offsetX + 3, 2, 12, 12, juce::Justification::centredLeft, false);
     }
 
-    // Loop phase marker (orange) — only visible when looped, shows phase within loop region
+    // Loop phase marker — only visible when looped, shows phase within loop region
     if (hasVisibleLoopPhase) {
         int phaseX = timeToPixel(baseTime + displayInfo_.loopPhasePositionSeconds);
-        auto phaseColour = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
+        auto phaseColour = ActiveTheme::getColour(ActiveTheme::OFFSET_MARKER);
         g.setColour(phaseColour.withAlpha(0.8f));
         g.fillRect(phaseX - 1, 0, 2, bounds.getHeight());
         g.setFont(FontManager::getInstance().getUIFont(10.0f));

@@ -2620,22 +2620,13 @@ juce::Colour PianoRollGridComponent::getColourForClip(ClipId clipId) const {
         return ActiveTheme::getColour(ActiveTheme::PIANO_ROLL_FALLBACK_CLIP);
     }
 
+    // Notes are the clip's ink, as on its arrangement clip, so several clips stay distinct.
     // Chord clips follow the chord track's colour live (rather than the colour
     // snapshotted onto clip->colour at creation), so their notes match the
     // chord-lane blocks even after the track colour changes.
-    // Render the normalized track/clip swatch (deriveTrackSwatch), the same as
-    // the arrangement clip and the colour swatch, so notes match the clip rather
-    // than showing the raw picked colour (#1706).
-    juce::Colour base = deriveTrackSwatch(clip->colour);
     const auto* track = TrackManager::getInstance().getTrack(clip->trackId);
     const bool chordTrack = track != nullptr && track->type == TrackType::Chord;
-    if (chordTrack)
-        base = deriveTrackSwatch(track->colour);
-
-    // One clip edits in the v1 note blue; several keep their swatches so they stay distinct.
-    if (clipIds_.size() <= 1)
-        return chordTrack ? base : ActiveTheme::getColour(ActiveTheme::MIDI_NOTE);
-    return base.withSaturation(0.7f);
+    return deriveClipInk(chordTrack ? track->colour : clip->colour);
 }
 
 bool PianoRollGridComponent::isClipSelected(ClipId clipId) const {

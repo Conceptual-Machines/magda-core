@@ -102,7 +102,7 @@ constexpr ActiveTheme::Palette darkPalette{
     0x335588AA,  // TIME_SELECTION
     0x08FFFFFF,  // LOOP_REGION
     0xFF44AA66,  // LOOP_MARKER
-    0xFFCCAA44,  // OFFSET_MARKER
+    0xFFD6D6D6,  // OFFSET_MARKER: neutral, so no clip colour shares its hue
 
     // Shared UI and automation editor
     0xFFFFFFFF,  // TEXT_BRIGHT
@@ -410,7 +410,7 @@ constexpr ActiveTheme::Palette lightPalette = [] {
     set(ColourRole::TIME_SELECTION, 0x4D2E668C);
     set(ColourRole::LOOP_REGION, 0x10000000);
     set(ColourRole::LOOP_MARKER, 0xFF287441);
-    set(ColourRole::OFFSET_MARKER, 0xFF8D681C);
+    set(ColourRole::OFFSET_MARKER, 0xFF39434C);
     set(ColourRole::TEXT_BRIGHT, 0xFFFFFFFF);
     set(ColourRole::INPUT_BACKGROUND, 0xFFFFFFFF);
     set(ColourRole::TOOLTIP_BACKGROUND, 0xEE26313A);
@@ -764,7 +764,7 @@ constexpr ActiveTheme::Palette highContrastPalette = [] {
     palette[colourRoleIndex(ColourRole::TIME_SELECTION)] = 0x554DA3FF;
     palette[colourRoleIndex(ColourRole::LOOP_REGION)] = 0x14FFFFFF;
     palette[colourRoleIndex(ColourRole::LOOP_MARKER)] = 0xFF54D68B;
-    palette[colourRoleIndex(ColourRole::OFFSET_MARKER)] = 0xFFFFD166;
+    palette[colourRoleIndex(ColourRole::OFFSET_MARKER)] = 0xFFFFFFFF;
     palette[colourRoleIndex(ColourRole::TRANSPORT_WELL)] = 0xFF000000;
     palette[colourRoleIndex(ColourRole::TRANSPORT_WELL_BORDER)] = 0xFF8A8A8A;
     palette[colourRoleIndex(ColourRole::TRANSPORT_TILE)] = 0xFF000000;

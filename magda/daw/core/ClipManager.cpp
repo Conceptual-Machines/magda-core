@@ -1847,6 +1847,19 @@ void ClipManager::setPlaybackIntent(ClipId clipId, PlaybackIntent intent, double
     notifyClipPropertyChanged(clipId);
 }
 
+bool ClipManager::assumeTempoForBeatMode(ClipId clipId, double projectBPM) {
+    auto* clip = getClip(clipId);
+    if (clip == nullptr || !clip->isAudio() || !ClipOperations::wrapInBeatMode(*clip, projectBPM))
+        return false;
+
+    // Beat mode plays through a stretcher, as setPlaybackIntent arranges.
+    auto* event = clip->primaryEvent();
+    if (event->timeStretchMode == time_stretch_mode::kDisabled)
+        event->timeStretchMode = time_stretch_mode::kSignalsmith;
+    notifyClipPropertyChanged(clipId);
+    return true;
+}
+
 void ClipManager::setAutoTempo(ClipId clipId, bool enabled, double bpm) {
     setPlaybackIntent(clipId, enabled ? PlaybackIntent::Beat : PlaybackIntent::Free, bpm);
 }

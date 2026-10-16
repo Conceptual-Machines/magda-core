@@ -14,9 +14,11 @@
 #include "core/ClipManager.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/ClipPropertyCommands.hpp"
+#include "core/Config.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/TimeStretchModes.hpp"
 #include "core/UndoManager.hpp"
+#include "inspector/clip/ClipInspectorStyle.hpp"
 #include "project/ProjectManager.hpp"
 #include "state/TimelineController.hpp"
 
@@ -83,8 +85,6 @@ AudioClipPropertiesContent::~AudioClipPropertiesContent() {
         stretchModeCombo_->setLookAndFeel(nullptr);
     if (keyRootCombo_)
         keyRootCombo_->setLookAndFeel(nullptr);
-    if (saveLibraryButton_)
-        saveLibraryButton_->setLookAndFeel(nullptr);
 }
 
 void AudioClipPropertiesContent::onActivated() {
@@ -202,26 +202,36 @@ void AudioClipPropertiesContent::createControls() {
         // Beat mode needs a tempo the file may not have said yet, so ask for it
         // first, then toggle (#2674).
         autoTempoToggle_->setEnabled(false);
-        juce::Component::SafePointer<juce::TextButton> button(autoTempoToggle_.get());
+        juce::Component::SafePointer<AudioClipPropertiesContent> safeThis(this);
         const auto clipId = clipId_;
         magda::ClipManager::getInstance().detectMissingTempo(
-            {clipId}, bpm, [button, clipId, bpm]() {
-                if (button == nullptr)
+            {clipId}, bpm, [safeThis, clipId, bpm]() {
+                if (safeThis == nullptr)
                     return;
-                button->setEnabled(true);
+                safeThis->autoTempoToggle_->setEnabled(true);
                 if (magda::ClipManager::getInstance().getClip(clipId) == nullptr)
                     return;
 
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetPlaybackIntentCommand>(
-                        clipId, magda::PlaybackIntent::Beat, bpm));
+                        clipId, magda::PlaybackIntent::Beat, bpm,
+                        magda::Config::getInstance().getAssumeProjectTempo()));
 
                 const auto* after = magda::ClipManager::getInstance().getClip(clipId);
-                if (after && after->isAudio() && !magda::audioEventRef(*after).autoTempo) {
+                if (after == nullptr || !after->isAudio())
+                    return;
+                const auto& event = magda::audioEventRef(*after);
+                const auto fileName = juce::File(event.sourceFilePath()).getFileName();
+                if (event.autoTempo && event.bpmFrom == magda::Provenance::Project) {
                     magda::daw::ui::Toast::showGlobal(
-                        "No tempo found for " +
-                        juce::File(magda::audioEventRef(*after).sourceFilePath()).getFileName() +
-                        ". Set the source BPM to use beat mode.");
+                        "No tempo found for " + fileName + ": assumed " +
+                        juce::String(event.interpBpm, 2) + " BPM. Edit it in the BPM field.");
+                } else if (!event.autoTempo) {
+                    magda::daw::ui::Toast::showGlobal("No tempo found for " + fileName +
+                                                      ". Type its BPM to use beat mode.");
+                    // The request stays pending, so the field is live: open it for the tempo.
+                    if (safeThis->bpmValue_->isEnabled())
+                        safeThis->bpmValue_->startEditing();
                 }
             });
     };
@@ -246,11 +256,7 @@ void AudioClipPropertiesContent::createControls() {
     stretchValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
     stretchValue_->setRange(0.25, 4.0, 1.0);
     stretchValue_->setDecimalPlaces(3);
-    stretchValue_->setSuffix("x");
-    stretchValue_->setDrawBackground(false);
-    stretchValue_->setDrawBorder(true);
-    stretchValue_->setShowFillIndicator(false);
-    stretchValue_->setFontSize(11.0f);
+    clip_style::field(*stretchValue_, "x");
     stretchValue_->setDoubleClickResetsValue(false);
     stretchValue_->onValueChange = [this]() {
         if (clipId_ == magda::INVALID_CLIP_ID)
@@ -287,10 +293,7 @@ void AudioClipPropertiesContent::createControls() {
     bpmValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
     bpmValue_->setRange(20.0, 300.0, 120.0);
     bpmValue_->setDecimalPlaces(1);
-    bpmValue_->setDrawBackground(false);
-    bpmValue_->setDrawBorder(true);
-    bpmValue_->setShowFillIndicator(false);
-    bpmValue_->setFontSize(11.0f);
+    clip_style::field(*bpmValue_, "BPM");
     bpmValue_->setDoubleClickResetsValue(false);
     bpmValue_->onValueChange = [this]() {
         if (clipId_ == magda::INVALID_CLIP_ID)
@@ -309,12 +312,8 @@ void AudioClipPropertiesContent::createControls() {
     beatsValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
     beatsValue_->setRange(0.25, 4096.0, 4.0);
     beatsValue_->setDecimalPlaces(2);
-    beatsValue_->setSuffix("");
     beatsValue_->setSnapToInteger(true);
-    beatsValue_->setDrawBackground(false);
-    beatsValue_->setDrawBorder(true);
-    beatsValue_->setShowFillIndicator(false);
-    beatsValue_->setFontSize(11.0f);
+    clip_style::field(*beatsValue_, "beats");
     beatsValue_->setDoubleClickResetsValue(false);
     beatsValue_->onValueChange = [this]() {
         if (clipId_ == magda::INVALID_CLIP_ID)
@@ -364,8 +363,7 @@ void AudioClipPropertiesContent::createControls() {
     };
     addAndMakeVisible(*keyRootCombo_);
 
-    saveLibraryButton_ = std::make_unique<juce::TextButton>("Save to library");
-    saveLibraryButton_->setLookAndFeel(&smallLF);
+    saveLibraryButton_ = std::make_unique<GlyphChip>("Save to library", GlyphChip::Glyph::Bookmark);
     saveLibraryButton_->setTooltip(
         "Save current clip BPM, beats, BEAT mode, key, and warp markers to the media library");
     saveLibraryButton_->onClick = [this]() {
@@ -391,13 +389,7 @@ void AudioClipPropertiesContent::createControls() {
         const bool saved =
             magda::ClipManager::getInstance().saveClipToLibrary(clipId_, std::move(markers));
         updateFromClip();
-        saveLibraryButton_->setButtonText(saved ? "Saved" : "Save failed");
-        juce::Timer::callAfterDelay(
-            1200, [safeThis = juce::Component::SafePointer<AudioClipPropertiesContent>(this)] {
-                if (safeThis != nullptr && safeThis->saveLibraryButton_) {
-                    safeThis->saveLibraryButton_->setButtonText("Save to library");
-                }
-            });
+        Toast::showGlobal(saved ? "Saved to library" : "Save to library failed");
     };
     addAndMakeVisible(*saveLibraryButton_);
 
@@ -408,11 +400,7 @@ void AudioClipPropertiesContent::createControls() {
     pitchValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
     pitchValue_->setRange(-48.0, 48.0, 0.0);
     pitchValue_->setDecimalPlaces(2);
-    pitchValue_->setSuffix("st");
-    pitchValue_->setDrawBackground(false);
-    pitchValue_->setDrawBorder(true);
-    pitchValue_->setShowFillIndicator(false);
-    pitchValue_->setFontSize(11.0f);
+    clip_style::field(*pitchValue_, "st");
     pitchValue_->setDoubleClickResetsValue(false);
     pitchValue_->onValueChange = [this]() {
         if (clipId_ == magda::INVALID_CLIP_ID)
@@ -452,10 +440,7 @@ void AudioClipPropertiesContent::createControls() {
     transientSensValue_->setRange(0.0, 1.0, 0.01);
     transientSensValue_->setValue(0.5, juce::dontSendNotification);
     transientSensValue_->setDoubleClickResetsValue(true);
-    transientSensValue_->setDrawBackground(false);
-    transientSensValue_->setDrawBorder(true);
-    transientSensValue_->setShowFillIndicator(false);
-    transientSensValue_->setFontSize(11.0f);
+    clip_style::field(*transientSensValue_);
     transientSensValue_->onValueChange = [this]() {
         if (clipId_ == magda::INVALID_CLIP_ID)
             return;
@@ -470,10 +455,7 @@ void AudioClipPropertiesContent::createControls() {
     volLabel_ = makeLabel("Vol");
     volumeValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
     volumeValue_->setRange(-100.0, 0.0, 0.0);
-    volumeValue_->setDrawBackground(false);
-    volumeValue_->setDrawBorder(true);
-    volumeValue_->setShowFillIndicator(false);
-    volumeValue_->setFontSize(11.0f);
+    clip_style::field(*volumeValue_, "dB");
     volumeValue_->setDoubleClickResetsValue(false);
     volumeValue_->onValueChange = [this]() {
         if (clipId_ == magda::INVALID_CLIP_ID)
@@ -488,11 +470,7 @@ void AudioClipPropertiesContent::createControls() {
     gainValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Raw);
     gainValue_->setRange(0.0, 24.0, 0.0);
     gainValue_->setDecimalPlaces(1);
-    gainValue_->setSuffix(" dB");
-    gainValue_->setDrawBackground(false);
-    gainValue_->setDrawBorder(true);
-    gainValue_->setShowFillIndicator(false);
-    gainValue_->setFontSize(11.0f);
+    clip_style::field(*gainValue_, "dB");
     gainValue_->setDoubleClickResetsValue(false);
     gainValue_->onValueChange = [this]() {
         if (clipId_ == magda::INVALID_CLIP_ID)
@@ -506,10 +484,7 @@ void AudioClipPropertiesContent::createControls() {
     panLabel_ = makeLabel("Pan");
     panValue_ = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Pan);
     panValue_->setRange(-1.0, 1.0, 0.0);
-    panValue_->setDrawBackground(false);
-    panValue_->setDrawBorder(true);
-    panValue_->setShowFillIndicator(false);
-    panValue_->setFontSize(11.0f);
+    clip_style::field(*panValue_);
     panValue_->setDoubleClickResetsValue(false);
     panValue_->onValueChange = [this]() {
         if (clipId_ == magda::INVALID_CLIP_ID)
@@ -539,12 +514,24 @@ void AudioClipPropertiesContent::updateFromClip() {
                                              1,
                                          juce::dontSendNotification);
         const auto sourceDisplay = resolveSourceDisplay(*clip);
-        if (!bpmValue_->isEditing())
+        // With no tempo the fields say so rather than show a default that reads as one.
+        const auto dash = juce::String::fromUTF8("\xe2\x80\x94");
+        if (!bpmValue_->isEditing()) {
             bpmValue_->setValue(sourceDisplay.bpm > 0.0 ? sourceDisplay.bpm : magda::DEFAULT_BPM,
                                 juce::dontSendNotification);
-        if (!beatsValue_->isEditing())
+            if (sourceDisplay.bpm > 0.0)
+                bpmValue_->clearTextOverride();
+            else
+                bpmValue_->setTextOverride(dash);
+        }
+        if (!beatsValue_->isEditing()) {
             beatsValue_->setValue(sourceDisplay.totalBeats > 0.0 ? sourceDisplay.totalBeats : 4.0,
                                   juce::dontSendNotification);
+            if (sourceDisplay.totalBeats > 0.0)
+                beatsValue_->clearTextOverride();
+            else
+                beatsValue_->setTextOverride(dash);
+        }
         // Mirror the clip's source key root into the combo (-- when unknown).
         {
             const auto& root = magda::audioEventRef(*clip).keyRoot;
@@ -670,6 +657,7 @@ void AudioClipPropertiesContent::resized() {
         autoTempoToggle_->setBounds(row.removeFromLeft(toggleW));
         row.removeFromLeft(gap);
         reverseToggle_->setBounds(row.removeFromLeft(toggleW));
+        saveLibraryButton_->setBounds(row.removeFromRight(ROW_HEIGHT));
     }
 
     // Takes section (shared component; only renders for multi-take audio clips).
@@ -689,7 +677,6 @@ void AudioClipPropertiesContent::resized() {
     layoutLabelValue(addRow(leftCol, ROW_HEIGHT), *beatsLabel_, *beatsValue_, labelW);
     layoutLabelValue(addRow(leftCol, ROW_HEIGHT), *bpmLabel_, *bpmValue_, labelW);
     layoutLabelValue(addRow(leftCol, ROW_HEIGHT), *keyLabel_, *keyRootCombo_, labelW);
-    saveLibraryButton_->setBounds(addRow(leftCol, ROW_HEIGHT));
 
     addSeparator(leftCol);
 

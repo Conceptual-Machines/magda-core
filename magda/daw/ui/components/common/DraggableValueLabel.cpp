@@ -442,12 +442,21 @@ void DraggableValueLabel::startEditing() {
     }
 
     beginAutomationGesture(value_);
-    valueControl_.showEditor(formatValue(value_));
+    // Over a placeholder ("—", "-") the field starts empty rather than at the hidden value.
+    valueControl_.showEditor(textOverride_.isNotEmpty() ? juce::String() : formatValue(value_));
 }
 
 void DraggableValueLabel::finishEditing(const juce::String& text) {
-    double newValue = parseValue(text);
-    setValue(newValue);
+    if (text.trim().isEmpty()) {
+        endAutomationGesture();
+        return;
+    }
+    // A value typed over a placeholder is stated even when it equals the hidden value.
+    const bool overPlaceholder = textOverride_.isNotEmpty();
+    const double before = value_;
+    setValue(parseValue(text));
+    if (overPlaceholder && std::abs(value_ - before) <= 0.0001 && onValueChange)
+        onValueChange();
     endAutomationGesture();
 }
 

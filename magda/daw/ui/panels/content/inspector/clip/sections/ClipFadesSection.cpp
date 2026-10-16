@@ -3,6 +3,7 @@
 #include "../../../../../themes/ActiveTheme.hpp"
 #include "../../../../../themes/FontManager.hpp"
 #include "../../../../../themes/SmallButtonLookAndFeel.hpp"
+#include "../ClipInspectorStyle.hpp"
 #include "BinaryData.h"
 #include "core/ClipBatchEdit.hpp"
 #include "core/ClipCommands.hpp"
@@ -12,8 +13,9 @@
 namespace magda::daw::ui {
 
 namespace {
-constexpr int SECTION_H = 14;
-constexpr int ROW_H = 22;
+constexpr int SECTION_H = CollapsibleSectionHeader::kHeight;
+constexpr int CAPTION_H = clip_style::kCaptionHeight;
+constexpr int ROW_H = clip_style::kFieldHeight;
 constexpr int BTN_H = 24;
 constexpr int GAP = 4;
 
@@ -34,22 +36,28 @@ ClipFadesSection::ClipFadesSection() {
 ClipFadesSection::~ClipFadesSection() = default;
 
 void ClipFadesSection::initControls() {
-    // Section label
-    sectionLabel_.setText("Fades", juce::dontSendNotification);
-    sectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    sectionLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    addChildComponent(sectionLabel_);
+    header_.setAccessory(&autoCrossfadeSwitch_, ToggleSwitch::kWidth);
+    header_.onCollapsedChanged = [this]() {
+        update();
+        if (onCollapsedChanged)
+            onCollapsedChanged();
+    };
+    addAndMakeVisible(header_);
+
+    clip_style::caption(inLabel_, "In");
+    clip_style::caption(outLabel_, "Out");
+    clip_style::caption(xfadeInLabel_, "Crossfade in");
+    clip_style::caption(xfadeOutLabel_, "Crossfade out");
+    for (auto* label : {&inLabel_, &outLabel_, &xfadeInLabel_, &xfadeOutLabel_})
+        addChildComponent(*label);
 
     // ── Arrangement-only controls ──
 
     fadeInValue_ =
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Raw);
     fadeInValue_->setRange(0.0, 30.0, 0.0);
-    fadeInValue_->setSuffix(" s");
     fadeInValue_->setDecimalPlaces(3);
-    fadeInValue_->setDrawBackground(false);
-    fadeInValue_->setDrawBorder(true);
-    fadeInValue_->setShowFillIndicator(false);
+    clip_style::field(*fadeInValue_, "s");
     fadeInValue_->setTooltip("Fade In");
     fadeInValue_->onValueChange = [this]() {
         double current = fadeInValue_->getValue();
@@ -69,11 +77,8 @@ void ClipFadesSection::initControls() {
     fadeOutValue_ =
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Raw);
     fadeOutValue_->setRange(0.0, 30.0, 0.0);
-    fadeOutValue_->setSuffix(" s");
     fadeOutValue_->setDecimalPlaces(3);
-    fadeOutValue_->setDrawBackground(false);
-    fadeOutValue_->setDrawBorder(true);
-    fadeOutValue_->setShowFillIndicator(false);
+    clip_style::field(*fadeOutValue_, "s");
     fadeOutValue_->setTooltip("Fade Out");
     fadeOutValue_->onValueChange = [this]() {
         double current = fadeOutValue_->getValue();
@@ -109,8 +114,11 @@ void ClipFadesSection::initControls() {
         btn->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         btn->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         btn->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        btn->setNormalBackgroundColor(ActiveTheme::SURFACE);
+        btn->setActiveBackgroundColor(ActiveTheme::getAccentColour().withAlpha(0.22f));
         btn->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
         btn->setBorderThickness(1.0f);
+        btn->setCornerRadius(0.0f);
         btn->setTooltip(icon.tooltip);
         btn->setClickingTogglesState(false);
         addChildComponent(*btn);
@@ -154,14 +162,23 @@ void ClipFadesSection::initControls() {
         btn->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         btn->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         btn->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        btn->setNormalBackgroundColor(ActiveTheme::SURFACE);
+        btn->setActiveBackgroundColor(ActiveTheme::getAccentColour().withAlpha(0.22f));
         btn->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
         btn->setBorderThickness(1.0f);
+        btn->setCornerRadius(0.0f);
         btn->setTooltip(icon.tooltip);
         btn->setClickingTogglesState(false);
         addChildComponent(*btn);
     };
     for (int i = 0; i < 2; ++i) {
         setupBehaviourBtn(fadeInBehaviourButtons_[i], fadeBehaviourIcons[i]);
+        setupBehaviourBtn(fadeOutBehaviourButtons_[i], fadeBehaviourIcons[i]);
+        // The ramp's wave spans its whole viewBox, so it reads larger than the other glyphs.
+        if (i == 1) {
+            fadeInBehaviourButtons_[i]->setIconPadding(6.5f);
+            fadeOutBehaviourButtons_[i]->setIconPadding(6.5f);
+        }
         fadeInBehaviourButtons_[i]->onClick = [this, i]() {
             magda::ClipBatchEdit batch("Set Clip Fade In Behaviour", selectedClipIds_.size());
             for (auto cid : selectedClipIds_)
@@ -169,7 +186,6 @@ void ClipFadesSection::initControls() {
             for (int j = 0; j < 2; ++j)
                 fadeInBehaviourButtons_[j]->setActive(j == i);
         };
-        setupBehaviourBtn(fadeOutBehaviourButtons_[i], fadeBehaviourIcons[i]);
         fadeOutBehaviourButtons_[i]->onClick = [this, i]() {
             magda::ClipBatchEdit batch("Set Clip Fade Out Behaviour", selectedClipIds_.size());
             for (auto cid : selectedClipIds_)
@@ -187,11 +203,8 @@ void ClipFadesSection::initControls() {
         value =
             std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Raw);
         value->setRange(0.0, 64.0, 0.0);
-        value->setSuffix(" b");
         value->setDecimalPlaces(2);
-        value->setDrawBackground(false);
-        value->setDrawBorder(true);
-        value->setShowFillIndicator(false);
+        clip_style::field(*value, "beats");
         value->setTooltip(tooltip);
         value->onValueChange = [this, atStart]() {
             const ClipId leftId = atStart ? xfadeInLeftId_ : xfadeOutLeftId_;
@@ -215,17 +228,8 @@ void ClipFadesSection::initControls() {
     setupXfadeValue(xfadeInValue_, "Crossfade with previous clip (beats)", true);
     setupXfadeValue(xfadeOutValue_, "Crossfade with next clip (beats)", false);
 
-    autoCrossfadeToggle_.setButtonText("AUTO-XFADE");
-    autoCrossfadeToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    autoCrossfadeToggle_.setColour(juce::TextButton::buttonColourId,
-                                   ActiveTheme::getColour(ActiveTheme::SURFACE));
-    autoCrossfadeToggle_.setColour(juce::TextButton::buttonOnColourId,
-                                   ActiveTheme::getAccentColour().withAlpha(0.3f));
-    autoCrossfadeToggle_.setColour(juce::TextButton::textColourOffId,
-                                   ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-    autoCrossfadeToggle_.setColour(juce::TextButton::textColourOnId,
-                                   ActiveTheme::getAccentColour());
-    autoCrossfadeToggle_.onClick = [this]() {
+    autoCrossfadeSwitch_.setTooltip("Crossfade automatically where clips overlap");
+    autoCrossfadeSwitch_.onClick = [this]() {
         auto pid = primaryClipId();
         if (pid == magda::INVALID_CLIP_ID)
             return;
@@ -240,24 +244,18 @@ void ClipFadesSection::initControls() {
                     manager.setAutoCrossfade(id, newState);
                 }));
     };
-    addChildComponent(autoCrossfadeToggle_);
 
     // ── Session-only controls ──
 
-    launchFadeLabel_.setText("Launch", juce::dontSendNotification);
-    launchFadeLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    launchFadeLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
+    clip_style::caption(launchFadeLabel_, "Launch");
     launchFadeLabel_.setTooltip("Launch fade smoothing (0 = preserve transient)");
     addChildComponent(launchFadeLabel_);
 
     launchFadeValue_ =
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Raw);
     launchFadeValue_->setRange(0.0, 50.0, 0.0);  // 0–50ms
-    launchFadeValue_->setSuffix(" ms");
     launchFadeValue_->setDecimalPlaces(1);
-    launchFadeValue_->setDrawBackground(false);
-    launchFadeValue_->setDrawBorder(true);
-    launchFadeValue_->setShowFillIndicator(false);
+    clip_style::field(*launchFadeValue_, "ms");
     launchFadeValue_->setTooltip("Launch fade smoothing (0 = preserve transient)");
     launchFadeValue_->onValueChange = [this]() {
         int samples = msToSamples(launchFadeValue_->getValue());
@@ -308,21 +306,24 @@ void ClipFadesSection::update() {
     }
 
     bool isSession = (clip->view == magda::ClipView::Session);
+    const bool open = !header_.isCollapsed();
+    const bool showFades = open && !isSession;
 
-    sectionLabel_.setVisible(true);
+    header_.setCaption(isSession ? juce::String() : juce::String("auto-xfade"));
+    autoCrossfadeSwitch_.setVisible(!isSession);
 
-    // Arrangement controls
-    fadeInValue_->setVisible(!isSession);
-    fadeOutValue_->setVisible(!isSession);
+    inLabel_.setVisible(showFades);
+    outLabel_.setVisible(showFades);
+    fadeInValue_->setVisible(showFades);
+    fadeOutValue_->setVisible(showFades);
     for (int i = 0; i < 4; ++i) {
-        fadeInTypeButtons_[i]->setVisible(!isSession);
-        fadeOutTypeButtons_[i]->setVisible(!isSession);
+        fadeInTypeButtons_[i]->setVisible(showFades);
+        fadeOutTypeButtons_[i]->setVisible(showFades);
     }
     for (int i = 0; i < 2; ++i) {
-        fadeInBehaviourButtons_[i]->setVisible(!isSession);
-        fadeOutBehaviourButtons_[i]->setVisible(!isSession);
+        fadeInBehaviourButtons_[i]->setVisible(showFades);
+        fadeOutBehaviourButtons_[i]->setVisible(showFades);
     }
-    autoCrossfadeToggle_.setVisible(!isSession);
 
     // Crossfade rows: single arrangement clip whose edge has a crossfade OR a
     // crossfade-capable joint (abutting audio neighbour, value 0). Keying the
@@ -363,12 +364,16 @@ void ClipFadesSection::update() {
         if (hasXfadeOut_ && !xfadeOutValue_->isDragging())
             xfadeOutValue_->setValue(xfadeOutBeats, juce::dontSendNotification);
     }
+    hasXfadeIn_ = hasXfadeIn_ && open;
+    hasXfadeOut_ = hasXfadeOut_ && open;
     xfadeInValue_->setVisible(hasXfadeIn_);
     xfadeOutValue_->setVisible(hasXfadeOut_);
+    xfadeInLabel_.setVisible(hasXfadeIn_);
+    xfadeOutLabel_.setVisible(hasXfadeOut_);
 
     // Session controls
-    launchFadeLabel_.setVisible(isSession);
-    launchFadeValue_->setVisible(isSession);
+    launchFadeLabel_.setVisible(isSession && open);
+    launchFadeValue_->setVisible(isSession && open);
 
     // Update values
     if (isSession) {
@@ -409,7 +414,7 @@ void ClipFadesSection::update() {
                 fadeOutValue_->clearTextOverride();
             // The toggle acts on (and flips against) the primary clip's state,
             // so reflect that state — otherwise multi-select clicks look inert.
-            autoCrossfadeToggle_.setToggleState(clip->autoCrossfade, juce::dontSendNotification);
+            autoCrossfadeSwitch_.setOn(clip->autoCrossfade);
         } else {
             fadeInValue_->setValue(magda::audioEventRef(*clip).fadeInSeconds,
                                    juce::dontSendNotification);
@@ -429,7 +434,7 @@ void ClipFadesSection::update() {
                 fadeOutBehaviourButtons_[i]->setActive(
                     i == magda::audioEventRef(*clip).fadeOutBehaviour);
             }
-            autoCrossfadeToggle_.setToggleState(clip->autoCrossfade, juce::dontSendNotification);
+            autoCrossfadeSwitch_.setOn(clip->autoCrossfade);
         }
     }
 
@@ -456,20 +461,16 @@ int ClipFadesSection::getPreferredHeight() const {
     const auto* clip = magda::ClipManager::getInstance().getClip(pid);
     if (!clip || !clip->isAudio())
         return 0;
+    if (header_.isCollapsed())
+        return SECTION_H;
 
-    bool isSession = (clip->view == magda::ClipView::Session);
+    if (clip->view == magda::ClipView::Session)
+        return SECTION_H + ROW_H + GAP;
 
-    if (isSession) {
-        // Section label + gap + launch row
-        return SECTION_H + GAP + ROW_H;
-    } else {
-        // Section label + gap + fadeIn|fadeOut row + gap + type btns + gap + behaviour btns + gap +
-        // AUTO-XFADE (+ crossfade row when a crossfaded edge exists)
-        int h = SECTION_H + GAP + ROW_H + GAP + BTN_H + GAP + BTN_H + GAP + ROW_H;
-        if (hasXfadeIn_ || hasXfadeOut_)
-            h += GAP + ROW_H;
-        return h;
-    }
+    int h = SECTION_H + CAPTION_H + ROW_H + GAP + BTN_H + GAP + BTN_H + GAP;
+    if (hasXfadeIn_ || hasXfadeOut_)
+        h += CAPTION_H + ROW_H + GAP;
+    return h;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -479,91 +480,74 @@ void ClipFadesSection::resized() {
     if (b.getWidth() < 1 || b.getHeight() < 1)
         return;
 
-    // Section label
-    sectionLabel_.setBounds(b.removeFromTop(SECTION_H));
-    b.removeFromTop(GAP);
+    header_.setBounds(b.removeFromTop(SECTION_H));
+    if (header_.isCollapsed())
+        return;
 
     auto pid = primaryClipId();
     const auto* clip = magda::ClipManager::getInstance().getClip(pid);
     if (!clip)
         return;
 
-    bool isSession = (clip->view == magda::ClipView::Session);
-
-    if (isSession) {
-        // Launch row: label (42px) + gap (4px) + value
+    if (clip->view == magda::ClipView::Session) {
         auto row = b.removeFromTop(ROW_H);
-        launchFadeLabel_.setBounds(row.removeFromLeft(42));
-        row.removeFromLeft(GAP);
+        launchFadeLabel_.setBounds(row.removeFromLeft(56));
         if (launchFadeValue_)
             launchFadeValue_->setBounds(row);
-    } else {
-        const int colGap = 8;
-        int halfW = juce::jmax(1, (b.getWidth() - colGap) / 2);
-        const int btnSize = 24;
-        const int btnGap = 2;
+        return;
+    }
 
-        // fadeIn | fadeOut row (2 columns)
+    const int colGap = 8;
+    const int halfW = juce::jmax(1, (b.getWidth() - colGap) / 2);
+    auto columns = [&](int height) {
+        auto row = b.removeFromTop(height);
+        auto left = row.removeFromLeft(halfW);
+        row.removeFromLeft(colGap);
+        return std::pair{left, row};
+    };
+    // Buttons share the column edge to edge, so their borders join into one strip.
+    auto strip = [](juce::Rectangle<int> area, std::unique_ptr<magda::SvgButton>* buttons,
+                    int count) {
+        const int w = area.getWidth() / count;
+        for (int i = 0; i < count; ++i) {
+            auto cell = i == count - 1 ? area : area.removeFromLeft(w);
+            buttons[i]->setBounds(i == 0 ? cell : cell.withTrimmedLeft(-1));
+        }
+    };
+
+    {
+        auto [left, right] = columns(CAPTION_H);
+        inLabel_.setBounds(left);
+        outLabel_.setBounds(right);
+    }
+    {
+        auto [left, right] = columns(ROW_H);
+        fadeInValue_->setBounds(left);
+        fadeOutValue_->setBounds(right);
+    }
+    b.removeFromTop(GAP);
+    {
+        auto [left, right] = columns(BTN_H);
+        strip(left, fadeInTypeButtons_, 4);
+        strip(right, fadeOutTypeButtons_, 4);
+    }
+    b.removeFromTop(GAP);
+    {
+        auto [left, right] = columns(BTN_H);
+        strip(left, fadeInBehaviourButtons_, 2);
+        strip(right, fadeOutBehaviourButtons_, 2);
+    }
+    b.removeFromTop(GAP);
+
+    if (hasXfadeIn_ || hasXfadeOut_) {
         {
-            auto row = b.removeFromTop(ROW_H);
-            fadeInValue_->setBounds(row.removeFromLeft(halfW));
-            row.removeFromLeft(colGap);
-            fadeOutValue_->setBounds(row);
+            auto [left, right] = columns(CAPTION_H);
+            xfadeInLabel_.setBounds(left);
+            xfadeOutLabel_.setBounds(right);
         }
-        b.removeFromTop(GAP);
-
-        // Fade type buttons row
-        {
-            auto row = b.removeFromTop(BTN_H);
-            auto left = row.removeFromLeft(halfW);
-            row.removeFromLeft(colGap);
-            auto right = row;
-            for (int i = 0; i < 4; ++i) {
-                if (fadeInTypeButtons_[i])
-                    fadeInTypeButtons_[i]->setBounds(left.removeFromLeft(btnSize));
-                if (i < 3)
-                    left.removeFromLeft(btnGap);
-                if (fadeOutTypeButtons_[i])
-                    fadeOutTypeButtons_[i]->setBounds(right.removeFromLeft(btnSize));
-                if (i < 3)
-                    right.removeFromLeft(btnGap);
-            }
-        }
-        b.removeFromTop(GAP);
-
-        // Fade behaviour buttons row
-        {
-            auto row = b.removeFromTop(BTN_H);
-            auto left = row.removeFromLeft(halfW);
-            row.removeFromLeft(colGap);
-            auto right = row;
-            for (int i = 0; i < 2; ++i) {
-                if (fadeInBehaviourButtons_[i])
-                    fadeInBehaviourButtons_[i]->setBounds(left.removeFromLeft(btnSize));
-                if (i < 1)
-                    left.removeFromLeft(btnGap);
-                if (fadeOutBehaviourButtons_[i])
-                    fadeOutBehaviourButtons_[i]->setBounds(right.removeFromLeft(btnSize));
-                if (i < 1)
-                    right.removeFromLeft(btnGap);
-            }
-        }
-        b.removeFromTop(GAP);
-
-        // AUTO-XFADE full width
-        autoCrossfadeToggle_.setBounds(b.removeFromTop(ROW_H).reduced(0, 1));
-
-        // Crossfade row: two columns mirroring fadeIn | fadeOut
-        if (hasXfadeIn_ || hasXfadeOut_) {
-            b.removeFromTop(GAP);
-            auto row = b.removeFromTop(ROW_H);
-            auto left = row.removeFromLeft(halfW);
-            row.removeFromLeft(colGap);
-            if (xfadeInValue_)
-                xfadeInValue_->setBounds(left);
-            if (xfadeOutValue_)
-                xfadeOutValue_->setBounds(row);
-        }
+        auto [left, right] = columns(ROW_H);
+        xfadeInValue_->setBounds(left);
+        xfadeOutValue_->setBounds(right);
     }
 }
 

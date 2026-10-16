@@ -227,6 +227,44 @@ TEST_CASE("A tempo the user typed survives the BEAT toggle", "[clip][tempo][sequ
     REQUIRE(event->interpBpm == Approx(kProjectBpm));
 }
 
+TEST_CASE("BEAT with no tempo can assume the project tempo, and a typed one replaces it",
+          "[clip][tempo][sequence]") {
+    TempoSequenceFixture fixture;
+    auto& clips = ClipManager::getInstance();
+    auto& undo = UndoManager::getInstance();
+    LoopFile file;
+
+    const auto clipId =
+        clips.createAudioClipBeats(1, 0.0, 16.0, file.path(), ClipView::Arrangement);
+    REQUIRE(!clips.getClip(clipId)->primaryEvent()->hasInterpretedBpm());
+
+    // Without the assumption the request waits for a tempo.
+    undo.executeCommand(
+        std::make_unique<SetPlaybackIntentCommand>(clipId, PlaybackIntent::Beat, kProjectBpm));
+    REQUIRE(!clips.getClip(clipId)->primaryEvent()->autoTempo);
+    undo.undo();
+
+    // With it, the clip is in beat mode at the tempo it is heard at, marked as assumed.
+    undo.executeCommand(std::make_unique<SetPlaybackIntentCommand>(clipId, PlaybackIntent::Beat,
+                                                                   kProjectBpm, true));
+    const auto* event = clips.getClip(clipId)->primaryEvent();
+    REQUIRE(event->autoTempo);
+    REQUIRE(event->interpBpm == Approx(kProjectBpm));
+    REQUIRE(event->bpmFrom == Provenance::Project);
+
+    clips.setSourceTempo(clipId, kFileBpm);
+    event = clips.getClip(clipId)->primaryEvent();
+    REQUIRE(event->autoTempo);
+    REQUIRE(event->interpBpm == Approx(kFileBpm));
+    REQUIRE(event->bpmFrom == Provenance::User);
+
+    // The press and its assumption are one undo step (the typed tempo was not a command).
+    undo.undo();
+    event = clips.getClip(clipId)->primaryEvent();
+    REQUIRE(!event->autoTempo);
+    REQUIRE(!event->hasInterpretedBpm());
+}
+
 // The #1157 contract, scoped to a region the user drew by hand.
 TEST_CASE("Correcting the tempo on an explicit region moves its beat view, not its samples",
           "[clip][tempo][sequence]") {

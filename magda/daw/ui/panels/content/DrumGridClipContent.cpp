@@ -1457,7 +1457,7 @@ class DrumGridClipGrid : public juce::Component,
         if (!clip || !clip->isMidi() || !padRows_)
             return;
 
-        const auto noteColour = ActiveTheme::getColour(ActiveTheme::MIDI_NOTE);
+        const auto noteColour = deriveClipInk(clip->colour);
 
         for (size_t i = 0; i < clip->midiNotes.size(); i++) {
             auto visibleNote = clip->midiNotes[i];
@@ -1711,7 +1711,7 @@ class DrumGridClipGrid : public juce::Component,
         if (!clip || !padRows_)
             return;
 
-        const auto noteColour = ActiveTheme::getColour(ActiveTheme::MIDI_NOTE);
+        const auto noteColour = deriveClipInk(clip->colour);
 
         for (auto& noteComp : noteComponents_) {
             size_t noteIndex = noteComp->getNoteIndex();

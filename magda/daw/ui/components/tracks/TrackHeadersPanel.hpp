@@ -44,7 +44,10 @@ class TrackHeadersPanel : public juce::Component,
   public:
     static constexpr int TRACK_HEADER_WIDTH = 200;
     static constexpr int DEFAULT_TRACK_HEIGHT = 83;
-    static constexpr int MIN_TRACK_HEIGHT = 56;
+    static constexpr int MIN_TRACK_HEIGHT = 32;
+    /// Below this a track header shows its name only, and its clips drop their header
+    /// (ClipMetrics::COMPACT_CLIP_HEIGHT plus the clip's 2px insets).
+    static constexpr int COMPACT_TRACK_HEIGHT = 48;
     static constexpr int MAX_TRACK_HEIGHT = 220;
 
     TrackHeadersPanel(AudioEngine* audioEngine = nullptr);

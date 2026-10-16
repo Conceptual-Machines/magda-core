@@ -759,12 +759,28 @@ inline juce::Colour deriveClipBody(juce::Colour stored) {
     return ThemeManager::isLightTheme() ? swatch : swatch.darker(0.3f);
 }
 
+// An arrangement clip's body: a deep tint of the swatch on dark surfaces, a pale one on light,
+// so content drawn in the accent tone reads on it.
+inline juce::Colour deriveClipTint(juce::Colour stored) {
+    const bool light = ThemeManager::isLightTheme();
+    const float chroma = stored.getSaturation() < 0.05f ? 0.0f : 0.035f;
+    return oklchToColour(light ? 0.93f : 0.27f, chroma, sRgbToOklchHue(stored));
+}
+
 // The swatch's accent tone for borders, rims and progress lines; deeper on light surfaces.
 inline juce::Colour deriveTrackAccent(juce::Colour stored) {
-    if (stored.getSaturation() < 0.05f)
-        return stored.brighter(0.6f);
     const bool light = ThemeManager::isLightTheme();
-    return oklchToColour(light ? 0.40f : 0.78f, light ? 0.12f : 0.10f, sRgbToOklchHue(stored));
+    // Greys take the same lightness as hues, so a near-black grey still reads on the lane.
+    const float chroma = stored.getSaturation() < 0.05f ? 0.0f : (light ? 0.12f : 0.10f);
+    return oklchToColour(light ? 0.40f : 0.78f, chroma, sRgbToOklchHue(stored));
+}
+
+// A clip's content (notes, waveform) in its editors: the accent tone, as on the arrangement
+// clip. A clip with no colour set keeps the theme's note colour.
+inline juce::Colour deriveClipInk(juce::Colour stored) {
+    if (stored == juce::Colour(0xFF444444))
+        return ActiveTheme::getColour(ActiveTheme::MIDI_NOTE);
+    return deriveTrackAccent(stored);
 }
 
 // A window's background is a per-component colour override, handed over once

@@ -341,9 +341,7 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
             clipOffsetBeats = timelineStartBeats(*clip, tempo) - clipStartBeats_;
         }
 
-        const juce::Colour clipColour = clipsToRender.size() == 1
-                                            ? ActiveTheme::getColour(ActiveTheme::MIDI_NOTE)
-                                            : clip->colour;
+        const juce::Colour clipColour = deriveClipInk(clip->colour);
         const auto key = MidiEditorKeyState::getInstance().activeScale();
         bool isPrimaryClip = (renderClipId == clipId_);
 
