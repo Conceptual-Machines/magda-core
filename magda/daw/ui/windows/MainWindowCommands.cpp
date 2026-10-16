@@ -125,7 +125,7 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         toggleClipEnabled, escapeAction, insertTime, duplicateTimeRange, duplicateLoopRange,
         splitAllTracksAtCursor, copyTimeRange, cutTimeRange, deleteTimeRange, copyLoopRange,
         cutLoopRange, deleteLoopRange, pasteRipple, nudgeClipsEarlier, nudgeClipsLater,
-        nudgeClipsUp, nudgeClipsDown,
+        nudgeClipsUp, nudgeClipsDown, toggleClipGainEnvelope,
         // File menu
         newProject, openProject, saveProject, saveProjectAs, exportAudio, closeProject,
         projectSettings, collectFiles, exportMidi, importDawProject, exportDawProject,
@@ -331,6 +331,12 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         case toggleClipEnabled:
             result.setInfo("Enable/Disable Clip", "Enable or disable selected clips", "Edit", 0);
             result.addDefaultKeypress('0', 0);
+            break;
+
+        case toggleClipGainEnvelope:
+            result.setInfo("Show/Hide Gain Envelope",
+                           "Show or hide the gain envelope on selected audio clips", "Edit", 0);
+            result.addDefaultKeypress('e', 0);
             break;
 
         case escapeAction:
@@ -1768,6 +1774,20 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     }
                 }
                 UndoManager::getInstance().endCompoundOperation();
+            }
+            return true;
+        }
+
+        case toggleClipGainEnvelope: {
+            // A view flag, so not an undo step; the first audio clip decides, as for enable.
+            std::vector<ClipId> audioClips;
+            for (auto clipId : selectionManager.getSelectedClips())
+                if (const auto* clip = clipManager.getClip(clipId); clip && clip->isAudio())
+                    audioClips.push_back(clipId);
+            if (!audioClips.empty()) {
+                const auto shown = !clipManager.getClip(audioClips.front())->gainEnvelopeShown;
+                for (auto clipId : audioClips)
+                    clipManager.setGainEnvelopeShown(clipId, shown);
             }
             return true;
         }

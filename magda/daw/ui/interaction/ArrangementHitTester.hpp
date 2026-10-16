@@ -191,6 +191,7 @@ struct ClipSnapshot {
     double fadeOutSeconds = 0.0;
     double clipLengthSeconds = 0.0;
     float volumeGainLinear = 1.0f;  // jlimit(0,1, decibelsToGain(volumeDB))
+    bool volumeLineShown = true;    // false under a shown gain envelope (#3064)
 };
 
 /** Zone + hover flags for a clip-local point. Priority: fade handles >

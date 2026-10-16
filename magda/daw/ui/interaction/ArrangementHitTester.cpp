@@ -174,7 +174,7 @@ bool onFadeHandle(int x, int y, const ClipSnapshot& s, bool fadeIn) {
 
 // ClipComponent::isOnVolumeHandle — near the volume line.
 bool onVolumeLine(int y, const ClipSnapshot& s) {
-    if (!s.isAudio)
+    if (!s.isAudio || !s.volumeLineShown)
         return false;
 
     const auto area = waveformArea(s);

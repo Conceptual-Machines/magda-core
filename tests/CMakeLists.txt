@@ -538,6 +538,7 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES AllocationWatch.cpp)
     list(APPEND TEST_SOURCES engine/test_take_across_swap.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_snapshot.cpp)
+    list(APPEND TEST_SOURCES engine/test_clip_source_map.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_tempo_engine_sequences.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_voice.cpp)
     # The two edges of a voice (#2302): the step a start subtracts and the
@@ -880,6 +881,7 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/panels/content/inspector/clip/sections/ClipFadesSection.cpp
     ../magda/daw/ui/panels/content/inspector/clip/sections/ClipTakesSection.cpp
     ../magda/daw/ui/components/clips/ClipComponent.cpp
+    ../magda/daw/ui/components/clips/ClipEnvelopeOverlay.cpp
     ../magda/daw/ui/components/tracks/TrackContentPanel.cpp
     ../magda/daw/ui/components/tracks/TrackContentPanelClipDrag.cpp
     ../magda/daw/ui/components/automation/AutomationLaneComponent.cpp

@@ -13,7 +13,6 @@
 #include "../../themes/FontManager.hpp"
 #include "../common/EditTool.hpp"
 #include "../timeline/TimeRuler.hpp"
-#include "GainEnvelopeEditor.hpp"
 #include "WarpedWaveformRenderer.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/ClipOperations.hpp"
@@ -1170,7 +1169,8 @@ void WaveformGridComponent::setGainEnvelopeShown(bool shown) {
         return;
 
     if (shown) {
-        gainEnvelopeEditor_ = std::make_unique<GainEnvelopeEditor>(*this);
+        gainEnvelopeEditor_ =
+            std::make_unique<GainEnvelopeEditor>(static_cast<GainEnvelopeHost&>(*this));
         addAndMakeVisible(*gainEnvelopeEditor_);
         layoutGainEnvelope();
     } else {
@@ -1190,6 +1190,42 @@ void WaveformGridComponent::layoutGainEnvelope() {
     gainEnvelopeEditor_->setBounds(0, TOP_PADDING - inset, getWidth(),
                                    getHeight() - (2 * TOP_PADDING) + (2 * inset));
     gainEnvelopeEditor_->setClip(editingClipId_);
+}
+
+double WaveformGridComponent::pixelsPerX() const {
+    return horizontalZoom_;
+}
+
+double WaveformGridComponent::xToPixel(double x) const {
+    return timeToPixelF(x);
+}
+
+double WaveformGridComponent::pixelToX(double px) const {
+    return (px + scrollOffsetX_ - LEFT_PADDING) / horizontalZoom_;
+}
+
+double WaveformGridComponent::sourceAt(double x) const {
+    return displayTimeToSource(x);
+}
+
+std::vector<double> WaveformGridComponent::xsOf(double sourceSeconds) const {
+    return {sourceToDisplayTime(sourceSeconds)};
+}
+
+std::pair<double, double> WaveformGridComponent::xRange() const {
+    return sourceDisplayRange();
+}
+
+bool WaveformGridComponent::snapsToGrid() const {
+    return snapEnabled_;
+}
+
+double WaveformGridComponent::snapToGrid(double x) const {
+    return snapTimeToGrid(x);
+}
+
+double WaveformGridComponent::gridSpacing() const {
+    return getGridSpacingSeconds();
 }
 
 double WaveformGridComponent::sourceToDisplayTime(double sourceSeconds) const {

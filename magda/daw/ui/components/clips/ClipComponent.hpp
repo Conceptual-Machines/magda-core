@@ -13,6 +13,10 @@
 #include "utils/DragThrottle.hpp"
 
 namespace magda {
+class ClipEnvelopeOverlay;
+}
+
+namespace magda {
 
 // Forward declarations
 class TrackContentPanel;
@@ -137,6 +141,9 @@ class ClipComponent : public juce::Component,
         onClipDragPreview;  // clipId, previewStartTime, previewLength
 
   private:
+    /// The gain envelope over the body while the clip shows it (#3064).
+    std::unique_ptr<ClipEnvelopeOverlay> gainEnvelope_;
+    void syncGainEnvelope();
     ClipId clipId_;
     TrackContentPanel* parentPanel_;
     bool isSelected_ = false;

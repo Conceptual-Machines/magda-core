@@ -135,6 +135,56 @@ class ClipPaintTests : public juce::UnitTest {
                    "a looped MIDI clip must render differently from an unlooped one");
         }
 
+        beginTest("A clip showing its gain envelope draws it on the body (#3064)");
+        {
+            PaintFixture fixture;
+            auto& cm = ClipManager::getInstance();
+            const auto plainId = createAudioClip(0.0, 8.0);
+            magda::test::setSourceDuration(*cm.getClip(plainId), 8.0);
+            const auto plain = renderClip(plainId, fixture.panel);
+
+            const auto shownId = createAudioClip(16.0, 8.0);
+            magda::test::setSourceDuration(*cm.getClip(shownId), 8.0);
+            cm.getClip(shownId)->colour = cm.getClip(plainId)->colour;
+            ClipGainEnvelope envelope;
+            envelope.points.push_back({.id = 1, .beatPosition = 0.5, .value = 0.2});
+            envelope.points.push_back({.id = 2, .beatPosition = 3.0, .value = 0.9});
+            cm.setGainEnvelope(shownId, envelope);
+            cm.setGainEnvelopeShown(shownId, true);
+            const auto shown = renderClip(shownId, fixture.panel);
+
+            const auto out = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                 .getChildFile("arrangement-envelope-paint.png");
+            out.deleteFile();
+            juce::FileOutputStream stream(out);
+            juce::PNGImageFormat().writeImageToStream(shown, stream);
+
+            expect(pixelsDiffering(plain, shown) > 0,
+                   "a clip showing its envelope must render differently from one that does not");
+        }
+
+        beginTest("Showing the gain envelope on a built clip draws it (#3064)");
+        {
+            PaintFixture fixture;
+            auto& cm = ClipManager::getInstance();
+            const auto clipId = createAudioClip(0.0, 8.0);
+            magda::test::setSourceDuration(*cm.getClip(clipId), 8.0);
+
+            ClipComponent component(clipId, &fixture.panel);
+            component.setBounds(0, 0, 400, 80);
+            auto render = [&component] {
+                juce::Image image(juce::Image::ARGB, 400, 80, true);
+                juce::Graphics g(image);
+                component.paintEntireComponent(g, false);
+                return image;
+            };
+            const auto before = render();
+            cm.setGainEnvelopeShown(clipId, true);
+            const auto after = render();
+            expect(pixelsDiffering(before, after) > 0,
+                   "switching the envelope on an existing clip must show it");
+        }
+
         beginTest("A looped audio clip draws loop boundary cuts");
         {
             PaintFixture fixture;

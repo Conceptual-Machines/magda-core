@@ -1686,6 +1686,20 @@ void ClipInspector::initPlaybackSection() {
     };
     clipPropsContainer_.addChildComponent(reverseToggle_);
 
+    // A view flag, so not an undo step; the primary clip decides, as for reverse.
+    gainEnvelopeToggle_.setButtonText("GAIN ENV");
+    gainEnvelopeToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    gainEnvelopeToggle_.onClick = [this]() {
+        auto& clipManager = magda::ClipManager::getInstance();
+        const auto* clip = clipManager.getClip(primaryClipId());
+        if (clip == nullptr)
+            return;
+        const auto shown = !clip->gainEnvelopeShown;
+        for (auto cid : selectedClipIds_)
+            clipManager.setGainEnvelopeShown(cid, shown);
+    };
+    clipPropsContainer_.addChildComponent(gainEnvelopeToggle_);
+
     autoDetectBeatsToggle_.setButtonText("AUTO-DETECT");
     autoDetectBeatsToggle_.setColour(juce::TextButton::buttonColourId,
                                      ActiveTheme::getColour(ActiveTheme::SURFACE));

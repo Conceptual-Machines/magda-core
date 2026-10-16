@@ -2,10 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <set>
 #include <tuple>
 
 #include "../../themes/FontManager.hpp"
-#include "WaveformGridComponent.hpp"
 #include "core/ClipManager.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
@@ -43,9 +43,17 @@ sdk::CurveInterpolation toInterpolation(magda::CurveType type) {
     return sdk::CurveInterpolation::Linear;
 }
 
+/// A curve point's id: the model point's in the high bits, which of its places in the low.
+constexpr int kOccurrenceBits = 12;
+constexpr uint32_t kMaxOccurrences = 1u << kOccurrenceBits;
+
+int modelIdOf(uint32_t curveId) {
+    return static_cast<int>(curveId >> kOccurrenceBits);
+}
+
 }  // namespace
 
-GainEnvelopeEditor::GainEnvelopeEditor(WaveformGridComponent& grid) : grid_(grid) {
+GainEnvelopeEditor::GainEnvelopeEditor(GainEnvelopeHost& host) : host_(host) {
     setName("GainEnvelopeEditor");
     setWantsKeyboardFocus(true);
     setDrawMode(magda::CurveDrawMode::Select);
@@ -54,10 +62,10 @@ GainEnvelopeEditor::GainEnvelopeEditor(WaveformGridComponent& grid) : grid_(grid
 
     // The Flat tool always stamps a grid cell; everything else snaps with SNAP.
     snapXToGrid = [this](double x) {
-        const auto snaps = grid_.isSnapEnabled() || tool() == magda::EditTool::Flat;
-        return snaps ? grid_.snapTimeToGrid(x) : x;
+        const auto snaps = host_.snapsToGrid() || tool() == magda::EditTool::Flat;
+        return snaps ? host_.snapToGrid(x) : x;
     };
-    getGridSpacingX = [this] { return grid_.getGridSpacingSeconds(); };
+    getGridSpacingX = [this] { return host_.gridSpacing(); };
 
     magda::EditToolState::audioEditor().addChangeListener(this);
     updateCursorForModifiers(juce::ModifierKeys::currentModifiers);
@@ -65,6 +73,10 @@ GainEnvelopeEditor::GainEnvelopeEditor(WaveformGridComponent& grid) : grid_(grid
 
 GainEnvelopeEditor::~GainEnvelopeEditor() {
     magda::EditToolState::audioEditor().removeChangeListener(this);
+}
+
+bool GainEnvelopeEditor::hitTest(int x, int y) {
+    return !host_.keepsPress(x, y) && CurveEditorBase::hitTest(x, y);
 }
 
 void GainEnvelopeEditor::changeListenerCallback(juce::ChangeBroadcaster*) {
@@ -108,6 +120,9 @@ bool GainEnvelopeEditor::drawsLine(const juce::MouseEvent& e) const {
 }
 
 void GainEnvelopeEditor::mouseDown(const juce::MouseEvent& e) {
+    host_.envelopePressed();
+    if (e.mods.isPopupMenu() && host_.showContextMenu())
+        return;
     if (!drawsLine(e)) {
         CurveEditorBase::mouseDown(e);
         return;
@@ -192,19 +207,19 @@ void GainEnvelopeEditor::rebuildPointComponents() {
 // ============================================================================
 
 double GainEnvelopeEditor::getPixelsPerX() const {
-    return grid_.getHorizontalZoom();
+    return host_.pixelsPerX();
 }
 
 double GainEnvelopeEditor::pixelToX(int px) const {
-    return grid_.pixelToTime(px + getX());
+    return host_.pixelToX(static_cast<double>(px));
 }
 
 int GainEnvelopeEditor::xToPixel(double x) const {
-    return grid_.timeToPixel(x) - getX();
+    return static_cast<int>(std::floor(host_.xToPixel(x)));
 }
 
 double GainEnvelopeEditor::xToPixelF(double x) const {
-    return grid_.timeToPixelF(x) - getX();
+    return host_.xToPixel(x);
 }
 
 juce::String GainEnvelopeEditor::formatValueLabel(double y) const {
@@ -214,8 +229,8 @@ juce::String GainEnvelopeEditor::formatValueLabel(double y) const {
     return juce::String(db, 1) + " dB";
 }
 
-double GainEnvelopeEditor::sourceAt(double displayTime) const {
-    return grid_.displayTimeToSource(displayTime);
+double GainEnvelopeEditor::sourceAt(double x) const {
+    return host_.sourceAt(x);
 }
 
 sdk::BezierHandle GainEnvelopeEditor::toSource(double displayX,
@@ -234,9 +249,18 @@ std::vector<sdk::AutomationPoint> GainEnvelopeEditor::modelPoints() const {
 }
 
 sdk::AutomationPoint* GainEnvelopeEditor::find(std::vector<sdk::AutomationPoint>& points,
-                                               uint32_t id) const {
-    const auto it = std::ranges::find(points, static_cast<int>(id), &sdk::AutomationPoint::id);
+                                               uint32_t curveId) const {
+    if (curveId == magda::INVALID_CURVE_POINT_ID)
+        return nullptr;
+    const auto it = std::ranges::find(points, modelIdOf(curveId), &sdk::AutomationPoint::id);
     return it == points.end() ? nullptr : &*it;
+}
+
+double GainEnvelopeEditor::placeOf(uint32_t curveId) const {
+    for (const auto& cp : getPoints())
+        if (cp.id == curveId)
+            return cp.x;
+    return 0.0;
 }
 
 const std::vector<magda::CurvePoint>& GainEnvelopeEditor::getPoints() const {
@@ -247,25 +271,30 @@ const std::vector<magda::CurvePoint>& GainEnvelopeEditor::getPoints() const {
     pointsCacheDirty_ = false;
 
     for (const auto& point : modelPoints()) {
-        const auto x = grid_.sourceToDisplayTime(point.beatPosition);
-        const auto displayOffset = [&](double sourceOffset) {
-            return grid_.sourceToDisplayTime(point.beatPosition + sourceOffset) - x;
-        };
+        const auto places = host_.xsOf(point.beatPosition);
+        for (uint32_t place = 0; place < places.size() && place < kMaxOccurrences; ++place) {
+            const auto x = places[place];
+            // Handle offsets through the local slope of x against source.
+            const auto slope = sourceAt(x + 1e-3) - sourceAt(x);
+            const auto toX = [&](double sourceOffset) {
+                return std::abs(slope) > 1e-12 ? sourceOffset * 1e-3 / slope : 0.0;
+            };
 
-        magda::CurvePoint cp;
-        cp.id = static_cast<uint32_t>(point.id);
-        cp.x = x;
-        cp.y = point.value;
-        cp.curveType = toCurveType(point.curveType);
-        cp.tension = point.tension;
-        cp.inHandle = {displayOffset(point.inHandle.beatOffset), point.inHandle.value,
-                       point.inHandle.linked};
-        cp.outHandle = {displayOffset(point.outHandle.beatOffset), point.outHandle.value,
-                        point.outHandle.linked};
-        cachedPoints_.push_back(cp);
+            magda::CurvePoint cp;
+            cp.id = (static_cast<uint32_t>(point.id) << kOccurrenceBits) | place;
+            cp.x = x;
+            cp.y = point.value;
+            cp.curveType = toCurveType(point.curveType);
+            cp.tension = point.tension;
+            cp.inHandle = {toX(point.inHandle.beatOffset), point.inHandle.value,
+                           point.inHandle.linked};
+            cp.outHandle = {toX(point.outHandle.beatOffset), point.outHandle.value,
+                            point.outHandle.linked};
+            cachedPoints_.push_back(cp);
+        }
     }
 
-    // Reversed material puts source order right to left.
+    // Reversed material puts source order right to left; loop passes repeat it.
     std::ranges::sort(cachedPoints_, {}, &magda::CurvePoint::x);
     return cachedPoints_;
 }
@@ -298,37 +327,36 @@ void GainEnvelopeEditor::paint(juce::Graphics& g) {
 void GainEnvelopeEditor::paintGrid(juce::Graphics& /*g*/) {}
 
 void GainEnvelopeEditor::paintCurve(juce::Graphics& g) {
-    const auto [displayStart, displayEnd] = grid_.sourceDisplayRange();
+    const auto [displayStart, displayEnd] = host_.xRange();
     const auto left = std::max(0, xToPixel(displayStart));
     const auto right = std::min(getWidth(), xToPixel(displayEnd));
     if (right <= left)
         return;
 
-    // The model's points with any drag preview applied, back in source seconds.
+    // The model's points with any drag preview applied, back in source seconds. Only a place
+    // that moved says so: its other loop passes still sit where they were.
     auto points = modelPoints();
     for (const auto& cp : getPoints()) {
+        const auto [x, y] = getEffectivePosition(cp);
+        if (x == cp.x && y == cp.y)
+            continue;
         if (auto* point = find(points, cp.id)) {
-            const auto [x, y] = getEffectivePosition(cp);
             point->beatPosition = sourceAt(x);
             point->value = y;
         }
     }
     std::sort(points.begin(), points.end());
 
-    paintLevelGuides(g, left, right);
+    if (host_.showsLevelGuides())
+        paintLevelGuides(g, left, right);
 
+    // No points plays at unity, drawn as a flat curve so the envelope reads as shown.
     const auto colour = getCurveColour();
-    if (points.empty()) {
-        const auto y = static_cast<float>(yToPixelF(gain_envelope::unityPosition()));
-        g.setColour(colour.brighter(0.8f));
-        const float dashes[] = {4.0f, 3.0f};
-        g.drawDashedLine({static_cast<float>(left), y, static_cast<float>(right), y}, dashes, 2);
-        return;
-    }
-
     juce::Path curve;
     for (auto px = left; px <= right; ++px) {
-        const auto value = sdk::automation::valueAtBeat(points, sourceAt(pixelToX(px)));
+        const auto value = points.empty()
+                               ? gain_envelope::unityPosition()
+                               : sdk::automation::valueAtBeat(points, sourceAt(pixelToX(px)));
         const auto y = static_cast<float>(yToPixelF(value));
         if (px == left)
             curve.startNewSubPath(static_cast<float>(px), y);
@@ -380,13 +408,13 @@ void GainEnvelopeEditor::commit(std::vector<sdk::AutomationPoint> points) {
 }
 
 void GainEnvelopeEditor::constrainPointPosition(uint32_t /*pointId*/, double& x, double& y) {
-    const auto [displayStart, displayEnd] = grid_.sourceDisplayRange();
+    const auto [displayStart, displayEnd] = host_.xRange();
     x = std::clamp(x, displayStart, displayEnd);
     y = std::clamp(y, 0.0, 1.0);
 }
 
 void GainEnvelopeEditor::onPointAdded(double x, double y, magda::CurveType curveType) {
-    const auto [displayStart, displayEnd] = grid_.sourceDisplayRange();
+    const auto [displayStart, displayEnd] = host_.xRange();
     if (event() == nullptr || x < displayStart || x > displayEnd)
         return;
 
@@ -424,10 +452,13 @@ void GainEnvelopeEditor::onDeleteSelectedPoints(const std::set<uint32_t>& pointI
     if (pointIds.empty())
         return;
 
+    std::set<int> doomed;
+    for (const auto curveId : pointIds)
+        doomed.insert(modelIdOf(curveId));
+
     auto points = modelPoints();
-    std::erase_if(points, [&](const sdk::AutomationPoint& point) {
-        return pointIds.contains(static_cast<uint32_t>(point.id));
-    });
+    std::erase_if(points,
+                  [&](const sdk::AutomationPoint& point) { return doomed.contains(point.id); });
     clearSelection();
     commit(std::move(points));
 }
@@ -454,7 +485,7 @@ void GainEnvelopeEditor::onHandlesChanged(uint32_t pointId, const magda::CurveHa
                                           const magda::CurveHandleData& outHandle) {
     auto points = modelPoints();
     if (auto* point = find(points, pointId)) {
-        const auto x = grid_.sourceToDisplayTime(point->beatPosition);
+        const auto x = placeOf(pointId);
         point->inHandle = toSource(x, inHandle);
         point->outHandle = toSource(x, outHandle);
         commit(std::move(points));
@@ -476,7 +507,7 @@ void GainEnvelopeEditor::onSegmentShaperChanged(uint32_t leftPointId,
     for (const auto& [id, in, out] : {std::tuple{leftPointId, leftInHandle, leftOutHandle},
                                       std::tuple{rightPointId, rightInHandle, rightOutHandle}}) {
         if (auto* point = find(points, id)) {
-            const auto x = grid_.sourceToDisplayTime(point->beatPosition);
+            const auto x = placeOf(id);
             point->inHandle = toSource(x, in);
             point->outHandle = toSource(x, out);
         }
