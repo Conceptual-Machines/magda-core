@@ -163,6 +163,13 @@ class Config {
         openPluginWindowOnDrop = open;
     }
 
+    bool getAudioEditorSpectrogram() const {
+        return audioEditorSpectrogram;
+    }
+    void setAudioEditorSpectrogram(bool shown) {
+        audioEditorSpectrogram = shown;
+    }
+
     bool getTransportDefaultBarsBeats() const {
         return transportDefaultBarsBeats;
     }
@@ -1547,6 +1554,8 @@ class Config {
 
     // Open a device's editor window automatically when it is dropped into a chain
     bool openPluginWindowOnDrop = false;
+    // The audio editor draws a spectrogram instead of the waveform (#3065)
+    bool audioEditorSpectrogram = false;
     bool skipFourOscConversionPrompt = false;
     bool transportDefaultBarsBeats = true;  // Default to bars/beats (false = seconds)
 

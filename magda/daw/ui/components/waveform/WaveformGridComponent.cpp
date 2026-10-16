@@ -62,10 +62,12 @@ void paintMarkerFlag(juce::Graphics& g, float x, float top, juce::Colour colour)
 WaveformGridComponent::WaveformGridComponent() {
     setName("WaveformGrid");
     magda::EditToolState::sampleEditor().addChangeListener(this);
+    magda::SpectrogramCache::getInstance().addListener(this);
 }
 
 WaveformGridComponent::~WaveformGridComponent() {
     magda::EditToolState::sampleEditor().removeChangeListener(this);
+    magda::SpectrogramCache::getInstance().removeListener(this);
     if (waveformListenerPath_.isNotEmpty())
         magda::AudioThumbnailManager::getInstance().removeThumbnailChangeListener(
             waveformListenerPath_, this);
@@ -294,8 +296,8 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
                     tEnd = juce::jlimit(displayStart, displayEnd, tEnd);
                     // The editor ruler always describes the original source
                     // file, so draw the full file forward first.
-                    thumbnailManager.drawWaveform(g, drawRect, audioEventRef(clip).sourceFilePath(),
-                                                  tStart, tEnd, waveColour, vertZoom, useHighRes);
+                    drawSourceRange(g, drawRect, audioEventRef(clip).sourceFilePath(), tStart, tEnd,
+                                    waveColour, vertZoom, useHighRes);
 
                     // Reverse is a clip-region operation, not a whole-file
                     // display transform. Redraw only the selected span in
@@ -335,10 +337,9 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
                             g.addTransform(juce::AffineTransform::scale(
                                 -1.0f, 1.0f, activeDrawRect.getCentreX(),
                                 activeDrawRect.getCentreY()));
-                            thumbnailManager.drawWaveform(g, activeDrawRect,
-                                                          audioEventRef(clip).sourceFilePath(),
-                                                          sourceRange.first, sourceRange.second,
-                                                          waveColour, vertZoom, useHighRes);
+                            drawSourceRange(g, activeDrawRect, audioEventRef(clip).sourceFilePath(),
+                                            sourceRange.first, sourceRange.second, waveColour,
+                                            vertZoom, useHighRes);
                             g.restoreState();
                         }
                     }
@@ -389,9 +390,8 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
                 visFileEnd = juce::jmin(visFileEnd, fileDuration);
             // Draw dimmer to indicate it's outside the loop
             auto dimColour = waveColour.withAlpha(0.4f);
-            thumbnailManager.drawWaveform(g, drawRect, audioEventRef(clip).sourceFilePath(),
-                                          visFileStart, visFileEnd, dimColour, vertZoom,
-                                          useHighRes);
+            drawSourceRange(g, drawRect, audioEventRef(clip).sourceFilePath(), visFileStart,
+                            visFileEnd, dimColour, vertZoom, useHighRes);
         }
     }
 }
@@ -703,6 +703,12 @@ void WaveformGridComponent::paintWarpedWaveform(juce::Graphics& g, const magda::
     spec.verticalScale = vertZoom;
     spec.useHighRes = true;
     spec.looped = false;  // source-domain view: one pass, arrangement handles tiling
+    spec.drawRange = [this, &clip, waveColour, vertZoom](juce::Graphics& rangeG,
+                                                         juce::Rectangle<int> area, double start,
+                                                         double end) {
+        drawSourceRange(rangeG, area, audioEventRef(clip).sourceFilePath(), start, end, waveColour,
+                        vertZoom, true);
+    };
     drawWarpedWaveform(g, thumbnailManager, audioEventRef(clip).sourceFilePath(), warpMarkers_,
                        spec);
 
@@ -1179,6 +1185,37 @@ void WaveformGridComponent::setGainEnvelopeShown(bool shown) {
     repaint();
     if (auto* parent = getParentComponent())
         parent->repaint();
+}
+
+void WaveformGridComponent::setSpectrogramShown(bool shown) {
+    if (shown == spectrogramShown_)
+        return;
+    spectrogramShown_ = shown;
+    repaint();
+}
+
+void WaveformGridComponent::spectrogramChanged(const juce::String& filePath) {
+    if (const auto* clip = getClip();
+        spectrogramShown_ && clip != nullptr && audioEventRef(*clip).sourceFilePath() == filePath)
+        repaint();
+}
+
+void WaveformGridComponent::drawSourceRange(juce::Graphics& g, juce::Rectangle<int> area,
+                                            const juce::String& file, double start, double end,
+                                            juce::Colour colour, float vertZoom, bool useHighRes) {
+    // The waveform stands in until the spectrogram knows the file.
+    if (!spectrogramShown_ ||
+        !magda::SpectrogramCache::getInstance().draw(g, area, file, start, end)) {
+        magda::AudioThumbnailManager::getInstance().drawWaveform(g, area, file, start, end, colour,
+                                                                 vertZoom, useHighRes);
+        return;
+    }
+    // A faded colour marks a backdrop or the tail past the loop; fade the image as much.
+    if (colour.getFloatAlpha() < 1.0f) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_LANE)
+                        .withAlpha(1.0f - colour.getFloatAlpha()));
+        g.fillRect(area);
+    }
 }
 
 void WaveformGridComponent::layoutGainEnvelope() {

@@ -143,6 +143,7 @@ class WaveformEditorContent : public PanelContent,
     std::unique_ptr<magda::TimeRuler> timeRuler_;
     std::unique_ptr<magda::ZoomScrollBar> horizontalScrollBar_;
     std::unique_ptr<magda::SvgButton> propertiesToggle_;
+    std::unique_ptr<magda::SvgButton> spectrogramToggle_;
     magda::EditorRail rail_;
 
     /// The grid's envelope overlay, from the clip's flag (#3064).

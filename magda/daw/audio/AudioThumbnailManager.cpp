@@ -1,5 +1,6 @@
 #include "AudioThumbnailManager.hpp"
 
+#include "SpectrogramCache.hpp"
 #include "WarpMarkerManager.hpp"
 #include "WaveformPeakCache.hpp"
 #include "core/BlockMath.hpp"
@@ -527,6 +528,7 @@ void AudioThumbnailManager::invalidateFile(const juce::String& audioFilePath) {
     }
 
     peakCaches_.erase(audioFilePath);
+    SpectrogramCache::getInstance().invalidateFile(audioFilePath);
     pendingPeakComputes_.erase(audioFilePath);
 }
 
@@ -574,6 +576,7 @@ void AudioThumbnailManager::requestPeakCacheLoad(const juce::String& audioFilePa
 
 void AudioThumbnailManager::stopBackgroundWork() {
     WarpMarkerManager::getInstance().stopBackgroundWork();
+    SpectrogramCache::getInstance().stopBackgroundWork();
     // Stop any in-flight peak-compute jobs before tearing down state.
     if (backgroundThreadPool_) {
         // Drain UNBOUNDED (timeout < 0). A finite timeout that a peak-compute

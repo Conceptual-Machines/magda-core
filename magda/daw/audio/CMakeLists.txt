@@ -422,6 +422,7 @@ target_sources(magda_daw PRIVATE
     io/LegacyAudioSettings.cpp
     io/LegacyAudioSettings.hpp
     AudioThumbnailManager.cpp
+    SpectrogramCache.cpp
     WaveformPeakCache.cpp
     analysis/MixAnalysisInput.cpp
     analysis/OfflineMixAnalysis.cpp
