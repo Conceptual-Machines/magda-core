@@ -126,18 +126,13 @@ void AudioClipPropertiesContent::clipsChanged() {
 
 void AudioClipPropertiesContent::createControls() {
     auto& smallLF = SmallButtonLookAndFeel::getInstance();
-    auto sectionFont = FontManager::getInstance().getUIFont(11.0f);
     auto labelFont = FontManager::getInstance().getUIFont(11.0f);
 
     // --- Section label factory ---
     auto makeSectionLabel = [&](const juce::String& text) {
-        auto label = std::make_unique<juce::Label>("", text);
-        label->setFont(sectionFont);
-        label->setColour(juce::Label::textColourId,
-                         ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-        label->setJustificationType(juce::Justification::centredLeft);
-        addAndMakeVisible(*label);
-        return label;
+        auto header = std::make_unique<SectionHeader>(text);
+        addAndMakeVisible(*header);
+        return header;
     };
 
     // --- Row label factory ---
@@ -449,7 +444,7 @@ void AudioClipPropertiesContent::createControls() {
     addAndMakeVisible(*fadesSection_);
 
     // ===================== TRANSIENT DETECTION SECTION =====================
-    transientSectionLabel_ = makeSectionLabel("Transient Detection");
+    transientSectionLabel_ = makeSectionLabel("Transients");
 
     transientSensLabel_ = makeLabel("Sens");
     transientSensValue_ =

@@ -37,6 +37,7 @@
 #include "ui/components/pianoroll/PianoRollGridComponent.hpp"
 #include "ui/components/pianoroll/PianoRollKeyboard.hpp"
 #include "ui/components/pianoroll/VelocityLaneComponent.hpp"
+#include "ui/components/timeline/PlayheadStyle.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
 
 namespace magda::daw::ui {
@@ -83,33 +84,33 @@ PianoRollContent::PianoRollContent() {
     foldToggle_ = std::make_unique<magda::SvgButton>("FoldToggle", BinaryData::mefold_svg,
                                                      BinaryData::mefold_svgSize);
     foldToggle_->setTooltip("Fold to used notes (and the key's notes while the key is lit)");
-    styleRailButton(*foldToggle_);
+    magda::EditorRail::styleButton(*foldToggle_);
     foldToggle_->setActive(foldEnabled_);
     foldToggle_->onClick = [this]() {
         foldEnabled_ = !foldEnabled_;
         foldToggle_->setActive(foldEnabled_);
         applyFold();
     };
-    addAndMakeVisible(foldToggle_.get());
+    foldToggle_->setVisible(true);
 
     // Monitor: clicking or drawing a note auditions it through the track (#1705).
     previewToggle_ = std::make_unique<magda::SvgButton>("NotePreview", BinaryData::memonitor_svg,
                                                         BinaryData::memonitor_svgSize);
     previewToggle_->setTooltip("Monitor: hear notes as you click them");
-    styleRailButton(*previewToggle_);
-    syncNotePreviewToggle(*previewToggle_, isNotePreviewEnabled());
+    magda::EditorRail::styleButton(*previewToggle_);
+    magda::EditorRail::syncMonitorToggle(*previewToggle_, isNotePreviewEnabled());
     previewToggle_->onClick = [this]() {
         setNotePreviewEnabled(!isNotePreviewEnabled());
-        syncNotePreviewToggle(*previewToggle_, isNotePreviewEnabled());
+        magda::EditorRail::syncMonitorToggle(*previewToggle_, isNotePreviewEnabled());
     };
-    addAndMakeVisible(previewToggle_.get());
+    previewToggle_->setVisible(true);
 
     // Create take-lanes toggle button (show/hide the comp take-lanes strip).
     // Only relevant for a MIDI clip with takes; shown contextually.
     takeLanesToggle_ = std::make_unique<magda::SvgButton>("TakeLanesToggle", BinaryData::lanes_svg,
                                                           BinaryData::lanes_svgSize);
     takeLanesToggle_->setTooltip("Show take lanes");
-    styleRailButton(*takeLanesToggle_);
+    magda::EditorRail::styleButton(*takeLanesToggle_);
     takeLanesToggle_->onClick = [this]() {
         auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
         if (clip == nullptr)
@@ -117,13 +118,12 @@ PianoRollContent::PianoRollContent() {
         clip->takesExpanded = !clip->takesExpanded;
         magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(editingClipId_);
     };
-    addChildComponent(takeLanesToggle_.get());
 
     // Create chord toggle button
     chordToggle_ = std::make_unique<magda::SvgButton>("ChordToggle", BinaryData::mechordtrack_svg,
                                                       BinaryData::mechordtrack_svgSize);
     chordToggle_->setTooltip("Chord track");
-    styleRailButton(*chordToggle_);
+    magda::EditorRail::styleButton(*chordToggle_);
     chordToggle_->setTintedChip(ActiveTheme::MIDI_KEY_ON);
     chordToggle_->setActive(showChordRow_);
     chordToggle_->onClick = [this]() {
@@ -133,7 +133,11 @@ PianoRollContent::PianoRollContent() {
             magda::ClipManager::getInstance().setClipChordLaneVisible(editingClipId_,
                                                                       showChordRow_);
     };
-    addAndMakeVisible(chordToggle_.get());
+    chordToggle_->setVisible(true);
+
+    rail_.setButtons(
+        {{chordToggle_.get(), previewToggle_.get(), foldToggle_.get()}, {takeLanesToggle_.get()}});
+    addAndMakeVisible(rail_);
 
     // Create chord detect button (appears in chord row's keyboard column)
     chordDetectBtn_ = std::make_unique<magda::SvgButton>("ChordDetect", BinaryData::refresh_svg,
@@ -933,12 +937,6 @@ void PianoRollContent::paint(juce::Graphics& g) {
     if (getWidth() <= 0 || getHeight() <= 0)
         return;
 
-    // Draw sidebar on the left (chord-focus mode drops it entirely)
-    if (sidebarWidth() > 0) {
-        auto sidebarArea = getLocalBounds().removeFromLeft(sidebarWidth());
-        drawSidebar(g, sidebarArea);
-    }
-
     // Left columns beside the ruler and chord lane
     const int leftColumns = ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH;
     g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_LANE));
@@ -986,8 +984,9 @@ void PianoRollContent::paintOverChildren(juce::Graphics& g) {
         if (gridComponent_->getPlayheadDisplayX(gridX)) {
             const int contentX = viewport_->getX() + gridX - viewport_->getViewPositionX();
             if (contentX >= chordLaneLeftX() && contentX <= getWidth()) {
-                g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_PLAYHEAD));
-                g.fillRect(contentX - 1, chordRowTop(), 2, chordRowHeight());
+                paintPlayheadLine(g, static_cast<float>(contentX),
+                                  static_cast<float>(chordRowTop()),
+                                  static_cast<float>(chordRowTop() + chordRowHeight()));
             }
         }
     }
@@ -996,28 +995,19 @@ void PianoRollContent::paintOverChildren(juce::Graphics& g) {
 void PianoRollContent::resized() {
     auto bounds = getLocalBounds();
 
-    // Skip sidebar (painted in paint())
-    bounds.removeFromLeft(sidebarWidth());
-
     // Rail, top to bottom: chord track, monitor, fold, then take lanes when the clip has takes.
     // Chord-focus mode drops the rail.
     const bool hasSidebar = sidebarWidth() > 0;
-    const int railX = (sidebarWidth() - RAIL_BUTTON) / 2;
-    int railY = railX;
-    for (auto* button : {chordToggle_.get(), previewToggle_.get(), foldToggle_.get()}) {
-        button->setVisible(hasSidebar);
-        button->setBounds(railX, railY, RAIL_BUTTON, RAIL_BUTTON);
-        railY += RAIL_BUTTON + 4;
-    }
+    rail_.setVisible(hasSidebar);
+    rail_.setBounds(bounds.removeFromLeft(sidebarWidth()));
     {
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
         const bool hasTakes =
             hasSidebar && clip != nullptr && clip->isMidi() && clip->midi().takes.size() >= 2;
         takeLanesToggle_->setVisible(hasTakes);
-        if (hasTakes) {
+        if (hasTakes)
             takeLanesToggle_->setActive(clip->takesExpanded);
-            takeLanesToggle_->setBounds(railX, railY + 8, RAIL_BUTTON, RAIL_BUTTON);
-        }
+        rail_.resized();
     }
 
     const int leftColumns = ZOOM_STRIP_WIDTH + OCTAVE_LABEL_WIDTH + KEYBOARD_WIDTH;
@@ -1801,14 +1791,6 @@ void PianoRollContent::setClip(magda::ClipId clipId) {
 // ============================================================================
 // Drawing helpers
 // ============================================================================
-
-void PianoRollContent::drawSidebar(juce::Graphics& g, juce::Rectangle<int> area) {
-    g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_RAIL));
-    g.fillRect(area);
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-    g.drawVerticalLine(area.getRight() - 1, static_cast<float>(area.getY()),
-                       static_cast<float>(area.getBottom()));
-}
 
 void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area) {
     g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_LANE));

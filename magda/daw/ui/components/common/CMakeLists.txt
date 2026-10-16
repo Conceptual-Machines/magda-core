@@ -5,6 +5,7 @@ target_sources(magda_daw_app PRIVATE
     SvgButton.cpp
     EditTool.cpp
     EditToolbar.cpp
+    EditorRail.cpp
     SegmentedChoice.cpp
     MagdaAlertWindow.cpp
     ChordAuditionControl.cpp
@@ -28,6 +29,7 @@ target_sources(magda_daw_app PRIVATE
     SvgButton.hpp
     EditTool.hpp
     EditToolbar.hpp
+    EditorRail.hpp
     MidiActivityLed.hpp
     IconSelector.hpp
     ZoomControls.hpp

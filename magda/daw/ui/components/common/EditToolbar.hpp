@@ -3,7 +3,9 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <array>
+#include <functional>
 #include <memory>
+#include <vector>
 
 #include "EditTool.hpp"
 
@@ -23,6 +25,51 @@ void styleButton(SvgButton& button);
 void paintWell(juce::Graphics& g, juce::Rectangle<int> well);
 /** @brief A vertical divider between toolbar groups. */
 void paintDivider(juce::Graphics& g, int x, int toolbarHeight);
+
+/** @brief The wells and dividers a toolbar layout produced, for its paint(). */
+struct Decor {
+    std::vector<juce::Rectangle<int>> wells;
+    std::vector<int> dividers;
+
+    void clear();
+    void paint(juce::Graphics& g, int toolbarHeight) const;
+};
+
+/**
+ * @brief Places toolbar items in a row from one edge, vertically centred, recording wells and
+ * dividers into a Decor.
+ */
+class Row {
+  public:
+    enum class From { Left, Right };
+
+    Row(Decor& decor, juce::Rectangle<int> bounds, int startX, From from);
+
+    /** Centres @p build's items in @p bounds; @p build runs twice, to measure then place. */
+    static void centred(Decor& decor, juce::Rectangle<int> bounds,
+                        const std::function<void(Row&)>& build);
+
+    Row& button(juce::Component& component);
+    Row& item(juce::Component& component, int width, int height);
+    Row& space(int px);
+    Row& divider();
+    Row& openWell();
+    Row& closeWell();
+
+    int position() const {
+        return x_;
+    }
+
+  private:
+    juce::Rectangle<int> take(int width, int height);
+
+    Decor* decor_;
+    juce::Rectangle<int> bounds_;
+    int x_;
+    From from_;
+    int wellStart_ = -1;
+    bool wellHasItem_ = false;
+};
 }  // namespace edit_toolbar
 
 /** @brief The five tool buttons in their well, bound to one surface's EditToolState. */

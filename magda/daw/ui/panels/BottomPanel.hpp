@@ -145,9 +145,13 @@ class BottomPanel : public daw::ui::TabbedPanel,
     class KeyChip;
     std::unique_ptr<EditToolButtons> toolButtons_;
     std::unique_ptr<KeyChip> keyChip_;
+    class ClipNameChip;
+    std::unique_ptr<ClipNameChip> clipNameChip_;
     bool usesV1Toolbar() const;
     int headerHeight() const;
     void layoutV1Toolbar(juce::Rectangle<int> headerBounds);
+    void layoutV1AudioToolbar(juce::Rectangle<int> headerBounds);
+    void setPropsPanelCollapsed(bool collapsed);
     void showKeyChipMenu();
     void refreshKeyDisplay();
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
@@ -223,7 +227,6 @@ class BottomPanel : public daw::ui::TabbedPanel,
     // Resize handle and collapse button for properties panel
     class PropsResizeHandle;
     std::unique_ptr<PropsResizeHandle> propsResizer_;
-    std::unique_ptr<magda::SvgButton> propsCollapseButton_;
 
     // Chord analysis side panel (right side, for MIDI device tracks). The engine
     // it reads is held here, declared first so it outlives the panel.

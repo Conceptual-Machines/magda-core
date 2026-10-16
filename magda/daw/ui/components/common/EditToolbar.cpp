@@ -31,6 +31,77 @@ void paintDivider(juce::Graphics& g, int x, int toolbarHeight) {
     g.fillRect(x, 10, 1, toolbarHeight - 20);
 }
 
+void Decor::clear() {
+    wells.clear();
+    dividers.clear();
+}
+
+void Decor::paint(juce::Graphics& g, int toolbarHeight) const {
+    for (const auto& well : wells)
+        paintWell(g, well);
+    for (int x : dividers)
+        paintDivider(g, x, toolbarHeight);
+}
+
+Row::Row(Decor& decor, juce::Rectangle<int> bounds, int startX, From from)
+    : decor_(&decor), bounds_(bounds), x_(startX), from_(from) {}
+
+void Row::centred(Decor& decor, juce::Rectangle<int> bounds,
+                  const std::function<void(Row&)>& build) {
+    Decor scratch;
+    Row probe(scratch, bounds, 0, From::Left);
+    build(probe);
+    Row row(decor, bounds, bounds.getCentreX() - probe.position() / 2, From::Left);
+    build(row);
+}
+
+juce::Rectangle<int> Row::take(int width, int height) {
+    if (wellStart_ >= 0 && wellHasItem_)
+        space(kGap);
+    wellHasItem_ = true;
+    if (from_ == From::Right)
+        x_ -= width;
+    const juce::Rectangle<int> area{x_, bounds_.getCentreY() - height / 2, width, height};
+    if (from_ == From::Left)
+        x_ += width;
+    return area;
+}
+
+Row& Row::button(juce::Component& component) {
+    return item(component, kButton, kButton);
+}
+
+Row& Row::item(juce::Component& component, int width, int height) {
+    component.setBounds(take(width, height));
+    return *this;
+}
+
+Row& Row::space(int px) {
+    x_ += from_ == From::Left ? px : -px;
+    return *this;
+}
+
+Row& Row::divider() {
+    space(8);
+    decor_->dividers.push_back(x_);
+    return space(8);
+}
+
+Row& Row::openWell() {
+    wellStart_ = x_;
+    wellHasItem_ = false;
+    return space(kWellPad);
+}
+
+Row& Row::closeWell() {
+    space(kWellPad);
+    const int height = kButton + kWellPad * 2;
+    decor_->wells.emplace_back(juce::jmin(wellStart_, x_), bounds_.getCentreY() - height / 2,
+                               std::abs(x_ - wellStart_), height);
+    wellStart_ = -1;
+    return *this;
+}
+
 }  // namespace edit_toolbar
 
 EditToolButtons::EditToolButtons(EditToolState& state, const std::array<const char*, 5>& tooltips)

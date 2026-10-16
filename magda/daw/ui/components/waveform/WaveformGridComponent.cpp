@@ -98,7 +98,7 @@ void WaveformGridComponent::paint(juce::Graphics& g) {
     }
 
     // Background
-    g.fillAll(ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::MIDI_RAIL));
 
     if (editingClipId_ != magda::INVALID_CLIP_ID) {
         const auto* clip = getClip();
@@ -171,7 +171,7 @@ void WaveformGridComponent::paintWaveformBackground(juce::Graphics& g, const mag
     int clipStartPixel = timeToPixel(getDisplayStartTime());
     int clipEndPixel = layout.clipEndPixel;
 
-    auto outOfBoundsColour = clip.colour.darker(0.7f);
+    auto outOfBoundsColour = ActiveTheme::getColour(ActiveTheme::MIDI_RAIL);
 
     // Left out-of-bounds region (before clip start)
     if (drawRect.getX() < clipStartPixel) {
@@ -188,7 +188,7 @@ void WaveformGridComponent::paintWaveformBackground(juce::Graphics& g, const mag
     int inBoundsRight = juce::jmin(drawRect.getRight(), clipEndPixel);
     if (inBoundsLeft < inBoundsRight) {
         auto inBoundsRect = drawRect.withLeft(inBoundsLeft).withRight(inBoundsRight);
-        g.setColour(clip.colour.darker(0.4f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_LANE));
         g.fillRect(inBoundsRect);
     }
 
@@ -197,7 +197,7 @@ void WaveformGridComponent::paintWaveformBackground(juce::Graphics& g, const mag
         int oobLeft = juce::jmax(drawRect.getX(), clipEndPixel);
         auto rightOutOfBounds = drawRect.withLeft(oobLeft);
         if (!rightOutOfBounds.isEmpty()) {
-            g.setColour(clip.colour.darker(0.85f));
+            g.setColour(outOfBoundsColour);
             g.fillRect(rightOutOfBounds);
         }
     }
@@ -215,9 +215,7 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
     updateWaveformLoadListener(audioEventRef(clip).sourceFilePath());
     auto* thumbnail = thumbnailManager.getThumbnail(audioEventRef(clip).sourceFilePath());
     double fileDuration = thumbnail ? thumbnail->getTotalLength() : 0.0;
-    // The waveform editor only ever shows the focused clip, so the waveform is
-    // always rendered as if "selected" — black, to match arrangement-view styling.
-    auto waveColour = juce::Colours::black;
+    auto waveColour = ActiveTheme::getColour(ActiveTheme::MIDI_NOTE);
     float gainLinear = juce::Decibels::decibelsToGain(clip.volumeDB + clip.gainDB);
     auto vertZoom = static_cast<float>(verticalZoom_) * gainLinear;
 
@@ -740,7 +738,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
     {
         float leftGhostAlpha = showPreLoop_ ? 0.7f : 1.0f;
         float rightGhostAlpha = showPostLoop_ ? 0.7f : 1.0f;
-        auto bgColour = ActiveTheme::getColour(ActiveTheme::TRACK_BACKGROUND);
+        auto bgColour = ActiveTheme::getColour(ActiveTheme::MIDI_LANE);
         int clipStartX = timeToPixel(baseTime + sampleStart);
 
         // In loop mode, the right boundary is the loop end.

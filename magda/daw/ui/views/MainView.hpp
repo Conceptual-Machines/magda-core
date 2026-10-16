@@ -347,7 +347,6 @@ class MainView : public juce::Component,
     std::unique_ptr<SvgButton> ioToggleButton;
     std::unique_ptr<SvgButton> addTrackButton;
     std::unique_ptr<SvgButton> showMasterButton;
-    std::unique_ptr<SvgButton> vAxisIcon;
 
     // Separator line positions in the corner toolbar (set during resized())
     juce::Rectangle<int> markerLaneSeparatorLine;

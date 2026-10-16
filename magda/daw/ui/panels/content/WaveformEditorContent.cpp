@@ -8,7 +8,7 @@
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/FontManager.hpp"
-#include "../../themes/SmallButtonLookAndFeel.hpp"
+#include "BinaryData.h"
 #include "audio/AudioThumbnailManager.hpp"
 #include "audio/CompService.hpp"
 #include "audio/WarpMarkerManager.hpp"
@@ -21,6 +21,7 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "core/WarpMarkerCommands.hpp"
+#include "ui/components/timeline/PlayheadStyle.hpp"
 
 namespace magda::daw::ui {
 
@@ -72,54 +73,6 @@ class WaveformEditorContent::ScrollNotifyingViewport : public juce::Viewport {
 };
 
 // ============================================================================
-// ButtonLookAndFeel - Custom look and feel for mode toggle button
-// ============================================================================
-
-class WaveformEditorContent::ButtonLookAndFeel : public juce::LookAndFeel_V4 {
-  public:
-    ButtonLookAndFeel() {
-        setColour(juce::TextButton::buttonColourId, ActiveTheme::getColour(ActiveTheme::SURFACE));
-        setColour(juce::TextButton::buttonOnColourId,
-                  ActiveTheme::getAccentColour().withAlpha(0.3f));
-        setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
-        setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
-    }
-
-    juce::Font getTextButtonFont(juce::TextButton&, int /*buttonHeight*/) override {
-        return magda::FontManager::getInstance().getButtonFont(11.0f);
-    }
-
-    void drawButtonBackground(juce::Graphics& g, juce::Button& button,
-                              const juce::Colour& backgroundColour,
-                              bool shouldDrawButtonAsHighlighted,
-                              bool shouldDrawButtonAsDown) override {
-        auto bounds = button.getLocalBounds().toFloat();
-        auto baseColour = backgroundColour;
-
-        if (shouldDrawButtonAsDown || button.getToggleState()) {
-            baseColour = button.findColour(juce::TextButton::buttonOnColourId);
-        } else if (shouldDrawButtonAsHighlighted) {
-            baseColour = baseColour.brighter(0.1f);
-        }
-
-        g.setColour(baseColour);
-        g.fillRoundedRectangle(bounds, 3.0f);
-
-        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-        g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
-    }
-
-    void drawButtonText(juce::Graphics& g, juce::TextButton& button, bool /*isMouseOver*/,
-                        bool /*isButtonDown*/) override {
-        auto font = magda::FontManager::getInstance().getButtonFont(11.0f);
-        g.setFont(font);
-        g.setColour(button.findColour(button.getToggleState() ? juce::TextButton::textColourOnId
-                                                              : juce::TextButton::textColourOffId));
-        g.drawText(button.getButtonText(), button.getLocalBounds(), juce::Justification::centred);
-    }
-};
-
-// ============================================================================
 // PlayheadOverlay - Renders playhead over the waveform viewport
 // ============================================================================
 
@@ -130,123 +83,91 @@ class WaveformEditorContent::PlayheadOverlay : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        if (getWidth() <= 0 || getHeight() <= 0)
+        const auto playhead = owner_.playheadDisplayPositions().playback;
+        if (!playhead)
             return;
-        if (owner_.editingClipId_ == magda::INVALID_CLIP_ID)
-            return;
-
-        const auto* clip = magda::ClipManager::getInstance().getClip(owner_.editingClipId_);
-        if (!clip)
-            return;
-
-        int scrollX = owner_.virtualScrollX_;
-
-        const auto& di = owner_.cachedDisplayInfo_;
-        const double projectBpm = owner_.timeRuler_ ? owner_.timeRuler_->getTempo() : 120.0;
-        const double clipStart = facadeTimelineStart(*clip, projectBpm);
-        const double clipEnd = facadeTimelineEnd(*clip, projectBpm);
-
-        // The editor shows source file content — convert arrangement time
-        // to source-file position. Only show cursors when the arrangement
-        // playhead falls within this clip's time range.
-        auto timelineDeltaToSourceDelta = [&](double timelineDelta) {
-            double sourceDuration = magda::audioEventRef(*clip).sourceDurationSeconds();
-            if (magda::audioEventRef(*clip).autoTempo &&
-                magda::audioEventRef(*clip).interpTotalBeats > 0.0 && sourceDuration > 0.0 &&
-                projectBpm > 0.0) {
-                double projectBeats = timelineDelta * projectBpm / 60.0;
-                return projectBeats * sourceDuration / magda::audioEventRef(*clip).interpTotalBeats;
-            }
-            return di.timelineToSource(timelineDelta);
-        };
-
-        auto sourcePositionToX = [&](double sourcePos) -> int {
-            double displayPos = di.sourceToTimeline(sourcePos);
-            return static_cast<int>(displayPos * owner_.horizontalZoom_) + GRID_LEFT_PADDING -
-                   scrollX;
-        };
-
-        auto displayPositionToX = [&](double displayPos) -> int {
-            return static_cast<int>(displayPos * owner_.horizontalZoom_) + GRID_LEFT_PADDING -
-                   scrollX;
-        };
-
-        auto arrangementToSourceX = [&](double arrangementTime) -> int {
-            double relTime = arrangementTime - clipStart;
-            double sourcePos =
-                magda::audioEventRef(*clip).anchorSeconds() + timelineDeltaToSourceDelta(relTime);
-            return sourcePositionToX(sourcePos);
-        };
-
-        // Draw edit cursor (triangle at top) — only when inside clip range
-        double editPos = owner_.cachedEditPosition_;
-        if (editPos >= clipStart && editPos <= clipEnd) {
-            int editX = arrangementToSourceX(editPos);
-            if (editX >= 0 && editX < getWidth()) {
-                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-                juce::Path triangle;
-                triangle.addTriangle(static_cast<float>(editX - 5), 0.0f,
-                                     static_cast<float>(editX + 5), 0.0f, static_cast<float>(editX),
-                                     10.0f);
-                g.fillPath(triangle);
-            }
-        }
-
-        // Draw playback cursor (vertical line) — only during playback
-        if (owner_.cachedIsPlaying_) {
-            // Session mode: each clip owns its playhead via ClipInfo::sessionPlayheadPos
-            double sessionPos = clip->sessionPlayheadPos;
-
-            if (sessionPos >= 0.0) {
-                const int playX =
-                    displayPositionToX(di.sessionPlayheadToDisplayPosition(sessionPos));
-
-                if (playX >= 0 && playX < getWidth()) {
-                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-                    g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
-                               static_cast<float>(getHeight()), 1.5f);
-                }
-                // Either way, don't fall through to arrangement mode
-                return;
-            }
-
-            // Arrangement mode: use the arrangement transport position
-            double playPos = owner_.cachedPlaybackPosition_;
-
-            // Only show when playhead is within clip's arrangement range
-            if (playPos < clipStart || playPos > clipEnd)
-                return;
-
-            // Wrap playhead inside loop region when looping is enabled
-            if (di.isLooped() && di.loopLengthSeconds > 0.0) {
-                double relPos = playPos - clipStart;
-                double sourceDelta = timelineDeltaToSourceDelta(relPos);
-                double wrapped = std::fmod(di.loopOffset + sourceDelta, di.loopRegionLengthSource);
-                if (wrapped < 0.0)
-                    wrapped += di.loopRegionLengthSource;
-                double sourcePos = di.loopRegionStartSource + wrapped;
-                int playX = sourcePositionToX(sourcePos);
-                if (playX >= 0 && playX < getWidth()) {
-                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-                    g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
-                               static_cast<float>(getHeight()), 1.5f);
-                }
-                return;
-            }
-
-            int playX = arrangementToSourceX(playPos);
-            if (playX >= 0 && playX < getWidth()) {
-                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-                g.drawLine(static_cast<float>(playX), 0.0f, static_cast<float>(playX),
-                           static_cast<float>(getHeight()), 1.5f);
-            }
-        }
+        const int x = owner_.displayPositionToX(*playhead);
+        if (x >= 0 && x < getWidth())
+            paintPlayheadLine(g, static_cast<float>(x), 0.0f, static_cast<float>(getHeight()));
     }
 
   private:
     WaveformEditorContent& owner_;
-    static constexpr int GRID_LEFT_PADDING = 10;
 };
+
+int WaveformEditorContent::displayPositionToX(double displayPosition) const {
+    return static_cast<int>(displayPosition * horizontalZoom_) + GRID_LEFT_PADDING -
+           virtualScrollX_;
+}
+
+WaveformEditorContent::PlayheadPositions WaveformEditorContent::playheadDisplayPositions() const {
+    PlayheadPositions positions;
+    const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
+    if (clip == nullptr)
+        return positions;
+
+    const auto& di = cachedDisplayInfo_;
+    const double projectBpm = timeRuler_ ? timeRuler_->getTempo() : 120.0;
+    const double clipStart = facadeTimelineStart(*clip, projectBpm);
+    const double clipEnd = facadeTimelineEnd(*clip, projectBpm);
+
+    // The editor shows source file content, so arrangement time maps to a source position and
+    // cursors show only while the arrangement playhead is inside this clip.
+    auto timelineDeltaToSourceDelta = [&](double timelineDelta) {
+        double sourceDuration = magda::audioEventRef(*clip).sourceDurationSeconds();
+        if (magda::audioEventRef(*clip).autoTempo &&
+            magda::audioEventRef(*clip).interpTotalBeats > 0.0 && sourceDuration > 0.0 &&
+            projectBpm > 0.0) {
+            double projectBeats = timelineDelta * projectBpm / 60.0;
+            return projectBeats * sourceDuration / magda::audioEventRef(*clip).interpTotalBeats;
+        }
+        return di.timelineToSource(timelineDelta);
+    };
+    auto arrangementToDisplay = [&](double arrangementTime) {
+        double sourcePos = magda::audioEventRef(*clip).anchorSeconds() +
+                           timelineDeltaToSourceDelta(arrangementTime - clipStart);
+        return di.sourceToTimeline(sourcePos);
+    };
+
+    if (cachedEditPosition_ >= clipStart && cachedEditPosition_ <= clipEnd)
+        positions.edit = arrangementToDisplay(cachedEditPosition_);
+
+    if (!cachedIsPlaying_)
+        return positions;
+
+    // Session mode: each clip owns its playhead via ClipInfo::sessionPlayheadPos
+    if (clip->sessionPlayheadPos >= 0.0) {
+        positions.playback = di.sessionPlayheadToDisplayPosition(clip->sessionPlayheadPos);
+        return positions;
+    }
+
+    const double playPos = cachedPlaybackPosition_;
+    if (playPos < clipStart || playPos > clipEnd)
+        return positions;
+
+    // Wrap the playhead inside the loop region when looping is enabled
+    if (di.isLooped() && di.loopLengthSeconds > 0.0) {
+        double wrapped = std::fmod(di.loopOffset + timelineDeltaToSourceDelta(playPos - clipStart),
+                                   di.loopRegionLengthSource);
+        if (wrapped < 0.0)
+            wrapped += di.loopRegionLengthSource;
+        positions.playback = di.sourceToTimeline(di.loopRegionStartSource + wrapped);
+        return positions;
+    }
+
+    positions.playback = arrangementToDisplay(playPos);
+    return positions;
+}
+
+void WaveformEditorContent::refreshPlayhead() {
+    const auto positions = playheadDisplayPositions();
+    if (timeRuler_) {
+        timeRuler_->setPlayheadPosition(positions.playback.value_or(-1.0));
+        timeRuler_->setPlayheadHandlePosition(positions.edit.value_or(-1.0));
+    }
+    if (playheadOverlay_)
+        playheadOverlay_->repaint();
+}
 
 // ============================================================================
 // Constructor / Destructor
@@ -270,6 +191,7 @@ WaveformEditorContent::WaveformEditorContent() {
     timeRuler_->setGestureContext(magda::GestureContext::Waveform);
     timeRuler_->setRelativeMode(relativeTimeMode_);
     timeRuler_->setLeftPadding(GRID_LEFT_PADDING);
+    timeRuler_->setCompact(true);
 
     // Wire up ruler zoom callback — ruler works in ppb, we work in pps
     timeRuler_->onZoomChanged = [this](double newRulerZoom, double /*anchorTime*/,
@@ -372,126 +294,17 @@ WaveformEditorContent::WaveformEditorContent() {
 
     addAndMakeVisible(timeRuler_.get());
 
-    // Create look and feel for buttons
-    buttonLookAndFeel_ = std::make_unique<ButtonLookAndFeel>();
-
-    // Legacy local mode button. The bottom panel owns visible editor controls,
-    // and waveform editing is now always source-relative.
-    timeModeButton_ = std::make_unique<juce::TextButton>("REL");
-    timeModeButton_->setTooltip("Source-relative audio editor");
-    timeModeButton_->setClickingTogglesState(true);
-    timeModeButton_->setToggleState(relativeTimeMode_, juce::dontSendNotification);
-    timeModeButton_->setLookAndFeel(buttonLookAndFeel_.get());
-    timeModeButton_->onClick = [this]() { setRelativeTimeMode(timeModeButton_->getToggleState()); };
-    addAndMakeVisible(timeModeButton_.get());
-
-    // Grid resolution num/den controls (like transport header)
-    auto applyGridBeats = [this]() {
-        if (!gridVisible_ || gridNumerator_ <= 0) {
-            gridComponent_->setGridResolutionBeats(0.0);
-            timeRuler_->setGridResolution(0.0);
-        } else {
-            double beats = static_cast<double>(gridNumerator_) * (4.0 / gridDenominator_);
-            gridComponent_->setGridResolutionBeats(beats);
-            timeRuler_->setGridResolution(beats);
-        }
+    propertiesToggle_ = std::make_unique<magda::SvgButton>(
+        "PropertiesToggle", BinaryData::right_close_svg, BinaryData::right_close_svgSize);
+    propertiesToggle_->setTooltip("Toggle properties panel");
+    magda::EditorRail::styleButton(*propertiesToggle_);
+    propertiesToggle_->setVisible(true);
+    propertiesToggle_->onClick = [this]() {
+        if (onTogglePropertiesPanel)
+            onTogglePropertiesPanel();
     };
-
-    gridNumeratorLabel_ =
-        std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Integer);
-    gridNumeratorLabel_->setRange(1.0, 128.0, 1.0);
-    gridNumeratorLabel_->setValue(static_cast<double>(gridNumerator_), juce::dontSendNotification);
-    gridNumeratorLabel_->setTextColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
-    gridNumeratorLabel_->setShowFillIndicator(false);
-    gridNumeratorLabel_->setFontSize(12.0f);
-    gridNumeratorLabel_->setDoubleClickResetsValue(true);
-    gridNumeratorLabel_->onValueChange = [this, applyGridBeats]() {
-        gridNumerator_ = static_cast<int>(gridNumeratorLabel_->getValue());
-        applyGridBeats();
-    };
-    addAndMakeVisible(gridNumeratorLabel_.get());
-
-    gridSlashLabel_ = std::make_unique<juce::Label>("gridSlash", "/");
-    gridSlashLabel_->setFont(magda::FontManager::getInstance().getUIFont(11.0f));
-    gridSlashLabel_->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    gridSlashLabel_->setJustificationType(juce::Justification::centred);
-    addAndMakeVisible(gridSlashLabel_.get());
-
-    gridDenominatorLabel_ =
-        std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Integer);
-    gridDenominatorLabel_->setRange(2.0, 32.0, 4.0);
-    gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
-                                    juce::dontSendNotification);
-    gridDenominatorLabel_->setTextColour(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
-    gridDenominatorLabel_->setShowFillIndicator(false);
-    gridDenominatorLabel_->setFontSize(12.0f);
-    gridDenominatorLabel_->setDoubleClickResetsValue(true);
-    gridDenominatorLabel_->onValueChange = [this, applyGridBeats]() {
-        // Constrain to nearest allowed value (multiples of 2 and 3)
-        static constexpr int allowed[] = {2, 3, 4, 6, 8, 12, 16, 24, 32};
-        static constexpr int numAllowed = 9;
-        int raw = static_cast<int>(std::round(gridDenominatorLabel_->getValue()));
-        int best = allowed[0];
-        int bestDist = std::abs(raw - best);
-        for (int i = 1; i < numAllowed; ++i) {
-            int dist = std::abs(raw - allowed[i]);
-            if (dist < bestDist) {
-                bestDist = dist;
-                best = allowed[i];
-            }
-        }
-        gridDenominator_ = best;
-        gridDenominatorLabel_->setValue(static_cast<double>(gridDenominator_),
-                                        juce::dontSendNotification);
-        applyGridBeats();
-    };
-    addAndMakeVisible(gridDenominatorLabel_.get());
-
-    // Snap toggle button
-    snapButton_ = std::make_unique<juce::TextButton>("SNAP");
-    snapButton_->setClickingTogglesState(true);
-    snapButton_->setToggleState(false, juce::dontSendNotification);
-    snapButton_->setColour(juce::TextButton::buttonColourId,
-                           ActiveTheme::getColour(ActiveTheme::SURFACE).darker(0.2f));
-    snapButton_->setColour(juce::TextButton::buttonOnColourId,
-                           ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).darker(0.3f));
-    snapButton_->setColour(juce::TextButton::textColourOffId,
-                           ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-    snapButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    snapButton_->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-                                   juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-    snapButton_->setWantsKeyboardFocus(false);
-    snapButton_->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
-    snapButton_->onClick = [this]() { setSnapEnabledFromUI(snapButton_->getToggleState()); };
-    addAndMakeVisible(snapButton_.get());
-
-    // Grid visibility toggle button
-    gridButton_ = std::make_unique<juce::TextButton>("GRID");
-    gridButton_->setClickingTogglesState(true);
-    gridButton_->setToggleState(gridVisible_, juce::dontSendNotification);
-    gridButton_->setColour(juce::TextButton::buttonColourId,
-                           ActiveTheme::getColour(ActiveTheme::SURFACE).darker(0.2f));
-    gridButton_->setColour(juce::TextButton::buttonOnColourId,
-                           ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION).darker(0.3f));
-    gridButton_->setColour(juce::TextButton::textColourOffId,
-                           ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-    gridButton_->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    gridButton_->setConnectedEdges(juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-                                   juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-    gridButton_->setWantsKeyboardFocus(false);
-    gridButton_->setLookAndFeel(&daw::ui::SmallButtonLookAndFeel::getInstance());
-    gridButton_->onClick = [this]() {
-        gridVisible_ = gridButton_->getToggleState();
-        if (gridVisible_ && gridNumerator_ > 0) {
-            double beats = static_cast<double>(gridNumerator_) * (4.0 / gridDenominator_);
-            gridComponent_->setGridResolutionBeats(beats);
-            timeRuler_->setGridResolution(beats);
-        } else {
-            gridComponent_->setGridResolutionBeats(0.0);
-            timeRuler_->setGridResolution(0.0);
-        }
-    };
-    addAndMakeVisible(gridButton_.get());
+    rail_.setButtons({}, {propertiesToggle_.get()});
+    addAndMakeVisible(rail_);
 
     // Create waveform grid component
     gridComponent_ = std::make_unique<WaveformGridComponent>();
@@ -709,12 +522,6 @@ WaveformEditorContent::~WaveformEditorContent() {
     magda::AudioThumbnailManager::getInstance().removeTransientCacheListener(this);
 
     // Clear look and feel before destruction
-    if (timeModeButton_)
-        timeModeButton_->setLookAndFeel(nullptr);
-    if (snapButton_)
-        snapButton_->setLookAndFeel(nullptr);
-    if (gridButton_)
-        gridButton_->setLookAndFeel(nullptr);
 }
 
 // ============================================================================
@@ -724,7 +531,7 @@ WaveformEditorContent::~WaveformEditorContent() {
 void WaveformEditorContent::paint(juce::Graphics& g) {
     if (getWidth() <= 0 || getHeight() <= 0)
         return;
-    g.fillAll(ActiveTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::MIDI_LANE));
 }
 
 void WaveformEditorContent::paintOverChildren(juce::Graphics& g) {
@@ -797,15 +604,8 @@ void WaveformEditorContent::resized() {
         return;
     }
 
-    // Toolbar controls are managed by BottomPanel header — hide them here
-    timeModeButton_->setVisible(false);
-    gridNumeratorLabel_->setVisible(false);
-    gridSlashLabel_->setVisible(false);
-    gridDenominatorLabel_->setVisible(false);
-    snapButton_->setVisible(false);
-    gridButton_->setVisible(false);
+    rail_.setBounds(bounds.removeFromLeft(magda::EditorRail::kWidth));
 
-    // Time ruler at top
     auto rulerArea = bounds.removeFromTop(TIME_RULER_HEIGHT);
     timeRuler_->setBounds(rulerArea);
 
@@ -863,7 +663,7 @@ void WaveformEditorContent::onDeactivated() {
 // ============================================================================
 
 void WaveformEditorContent::mouseDown(const juce::MouseEvent& event) {
-    bool overHeader = event.y < (TOOLBAR_HEIGHT + TIME_RULER_HEIGHT);
+    bool overHeader = event.y < TIME_RULER_HEIGHT;
     if (overHeader) {
         headerDragActive_ = true;
         headerDragStartX_ = event.x;
@@ -906,7 +706,7 @@ void WaveformEditorContent::mouseUp(const juce::MouseEvent& /*event*/) {
 }
 
 void WaveformEditorContent::mouseMove(const juce::MouseEvent& event) {
-    bool overHeader = event.y < (TOOLBAR_HEIGHT + TIME_RULER_HEIGHT);
+    bool overHeader = event.y < TIME_RULER_HEIGHT;
     if (overHeader) {
         setMouseCursor(magda::CursorManager::getInstance().getZoomCursor());
     } else {
@@ -1087,10 +887,7 @@ void WaveformEditorContent::timelineStateChanged(const TimelineState& state, Cha
         cachedPlaybackPosition_ = state.playhead.playbackPosition;
         // Session playhead is now per-clip (ClipInfo::sessionPlayheadPos)
         cachedIsPlaying_ = state.playhead.isPlaying;
-
-        if (playheadOverlay_) {
-            playheadOverlay_->repaint();
-        }
+        refreshPlayhead();
     }
 
     // Tempo changes - BPM zoom scaling + ruler sync
@@ -1181,8 +978,6 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
         const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
         if (clip) {
             setRelativeTimeMode(true);
-            timeModeButton_->setEnabled(false);
-            timeModeButton_->setVisible(false);
 
             // Get tempo from TimelineController
             double bpm = 120.0;
@@ -1248,9 +1043,6 @@ void WaveformEditorContent::setRelativeTimeMode(bool relative) {
     const bool changed = !relativeTimeMode_;
     relativeTimeMode_ = true;
 
-    timeModeButton_->setButtonText("REL");
-    timeModeButton_->setToggleState(true, juce::dontSendNotification);
-
     gridComponent_->setRelativeMode(true);
     timeRuler_->setRelativeMode(true);
 
@@ -1270,10 +1062,14 @@ void WaveformEditorContent::setRelativeTimeMode(bool relative) {
     }
 }
 
+void WaveformEditorContent::setPropertiesPanelOpen(bool open) {
+    propertiesToggle_->updateSvgData(
+        open ? BinaryData::right_close_svg : BinaryData::right_open_svg,
+        open ? BinaryData::right_close_svgSize : BinaryData::right_open_svgSize);
+}
+
 void WaveformEditorContent::setSnapEnabledFromUI(bool enabled) {
     snapEnabled_ = enabled;
-    if (snapButton_)
-        snapButton_->setToggleState(enabled, juce::dontSendNotification);
     if (gridComponent_)
         gridComponent_->setSnapEnabled(enabled);
     if (timeRuler_)
@@ -1322,8 +1118,7 @@ void WaveformEditorContent::setVirtualScrollX(int x) {
         gridComponent_->setScrollOffset(x, 0);
     if (timeRuler_)
         timeRuler_->setScrollOffset(x);
-    if (playheadOverlay_)
-        playheadOverlay_->repaint();
+    refreshPlayhead();
     if (!isUpdatingFromScrollBar_)
         updateHorizontalScrollBar();
 }
