@@ -16,6 +16,7 @@
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/ClipPropertyCommands.hpp"
+#include "core/Config.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/TrackManager.hpp"
@@ -303,11 +304,28 @@ WaveformEditorContent::WaveformEditorContent() {
         if (onTogglePropertiesPanel)
             onTogglePropertiesPanel();
     };
-    rail_.setButtons({}, {propertiesToggle_.get()});
+    // Waveform or spectrogram, one choice for every clip (#3065).
+    spectrogramToggle_ = std::make_unique<magda::SvgButton>(
+        "SpectrogramToggle", BinaryData::spectrogram_svg, BinaryData::spectrogram_svgSize);
+    spectrogramToggle_->setTooltip("Show the spectrogram instead of the waveform");
+    magda::EditorRail::styleButton(*spectrogramToggle_);
+    spectrogramToggle_->setActive(magda::Config::getInstance().getAudioEditorSpectrogram());
+    spectrogramToggle_->onClick = [this]() {
+        auto& config = magda::Config::getInstance();
+        const bool shown = !config.getAudioEditorSpectrogram();
+        config.setAudioEditorSpectrogram(shown);
+        config.save();
+        spectrogramToggle_->setActive(shown);
+        gridComponent_->setSpectrogramShown(shown);
+    };
+    spectrogramToggle_->setVisible(true);
+
+    rail_.setButtons({{spectrogramToggle_.get()}}, {propertiesToggle_.get()});
     addAndMakeVisible(rail_);
 
     // Create waveform grid component
     gridComponent_ = std::make_unique<WaveformGridComponent>();
+    gridComponent_->setSpectrogramShown(magda::Config::getInstance().getAudioEditorSpectrogram());
     gridComponent_->setRelativeMode(relativeTimeMode_);
     gridComponent_->setHorizontalZoom(horizontalZoom_);
     gridComponent_->setTimeRuler(timeRuler_.get());

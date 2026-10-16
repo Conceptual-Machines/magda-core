@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "GainEnvelopeEditor.hpp"
+#include "audio/SpectrogramCache.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
@@ -29,6 +30,7 @@ enum class GridResolution { Off, Bar, Beat, Eighth, Sixteenth, ThirtySecond };
  */
 class WaveformGridComponent : public juce::Component,
                               public juce::ChangeListener,
+                              private magda::SpectrogramListener,
                               private GainEnvelopeHost {
   public:
     WaveformGridComponent();
@@ -196,6 +198,9 @@ class WaveformGridComponent : public juce::Component,
     // ========================================================================
 
     void setGainEnvelopeShown(bool shown);
+
+    /// Draw the source audio as a spectrogram instead of a waveform (#3065).
+    void setSpectrogramShown(bool shown);
 
     /// Forward source seconds to the grid's display time and back, through warp and reverse.
     double sourceToDisplayTime(double sourceSeconds) const;
@@ -372,6 +377,10 @@ class WaveformGridComponent : public juce::Component,
     void paintWaveformOverlays(juce::Graphics& g, const magda::ClipInfo& clip,
                                const WaveformLayout& layout);
     void paintBeatGrid(juce::Graphics& g, const magda::ClipInfo& clip);
+    /** @brief Source seconds [@p start, @p end) as a waveform or a spectrogram, per the mode. */
+    void drawSourceRange(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& file,
+                         double start, double end, juce::Colour colour, float vertZoom,
+                         bool useHighRes);
     void paintWarpedWaveform(juce::Graphics& g, const magda::ClipInfo& clip,
                              juce::Rectangle<int> waveformRect, juce::Colour waveColour,
                              float vertZoom);
@@ -405,6 +414,9 @@ class WaveformGridComponent : public juce::Component,
     // waveform repaints as data streams in; drop the listener once fully loaded.
     void updateWaveformLoadListener(const juce::String& audioFilePath);
     juce::String waveformListenerPath_;  // thumbnail path we are listening to (or empty)
+
+    bool spectrogramShown_ = false;
+    void spectrogramChanged(const juce::String& filePath) override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaveformGridComponent)
 };

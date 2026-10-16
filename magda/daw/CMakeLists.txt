@@ -180,6 +180,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/waveform/time_bend.svg
     ../../assets/icons/waveform/note_slice.svg
     ../../assets/icons/waveform/curve.svg
+    ../../assets/icons/waveform/spectrogram.svg
     # Analysis device icons
     ../../assets/icons/analysis/postfx.svg
     ../../assets/icons/analysis/analysis2.svg

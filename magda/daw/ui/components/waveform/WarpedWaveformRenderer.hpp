@@ -35,6 +35,8 @@ struct WarpedWaveformSpec {
     float verticalScale = 1.0f;  // passed to drawWaveform (editor: vZoom, arrangement: gain)
     bool useHighRes = true;
     bool thick = false;
+    /// Draws source seconds [start, end) into a rect in place of the waveform, e.g. a spectrogram.
+    std::function<void(juce::Graphics&, juce::Rectangle<int>, double, double)> drawRange;
 
     // Loop tiling. When looped, the marker set repeats every cycleWarp (warp
     // seconds) until clipArea is filled. cycleWarp <= 0 falls back to one pass.
@@ -99,8 +101,11 @@ inline void drawWarpedWaveform(juce::Graphics& g, magda::AudioThumbnailManager& 
                 g.addTransform(juce::AffineTransform::scale(-1.0f, 1.0f, drawRect.getCentreX(),
                                                             drawRect.getCentreY()));
             }
-            thumbs.drawWaveform(g, drawRect, file, cs, ce, spec.colour, spec.verticalScale,
-                                spec.useHighRes, spec.thick);
+            if (spec.drawRange)
+                spec.drawRange(g, drawRect, cs, ce);
+            else
+                thumbs.drawWaveform(g, drawRect, file, cs, ce, spec.colour, spec.verticalScale,
+                                    spec.useHighRes, spec.thick);
             if (descending)
                 g.restoreState();
         }
