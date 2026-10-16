@@ -360,6 +360,13 @@ TEST_CASE("A v2 audio clip round-trips its events", "[clip][serialization]") {
     event.gainDB = -2.5f;
     event.fadeInSeconds = 0.1;
     event.fadeOutType = 4;
+    event.gainEnvelope.points.push_back({.id = 3, .beatPosition = 0.25, .value = 0.4});
+    event.gainEnvelope.points.push_back({.id = 7,
+                                         .beatPosition = 1.5,
+                                         .value = 0.9,
+                                         .curveType = sdk::CurveInterpolation::Bezier,
+                                         .outHandle = {0.1, -0.2, false},
+                                         .tension = 0.3});
     original.loopEnabled = true;
     event.setLoopStartSeconds(0.5);
     event.setLoopLengthSeconds(1.5);
@@ -416,6 +423,22 @@ TEST_CASE("A v2 audio clip round-trips its events", "[clip][serialization]") {
         REQUIRE(restoredEvent.warpMarkers[0].sourceTime == Approx(0.5));
         REQUIRE(restoredEvent.warpMarkers[0].warpTime == Approx(0.75));
     }
+
+    SECTION("The gain envelope keeps its points and their shape") {
+        REQUIRE(restoredEvent.gainEnvelope == event.gainEnvelope);
+    }
+}
+
+TEST_CASE("An audio event with no gain envelope writes none", "[clip][serialization]") {
+    MigrationFixture fixture;
+
+    ClipInfo original;
+    magda::test::giveAudioEvent(original, "/tmp/flat.wav", 4.0, kSourceRate);
+    original.setPlacementBeats(0.0, 8.0);
+
+    auto json = ProjectSerializer::serializeClipInfo(original);
+    REQUIRE_FALSE(firstEventOf(json).hasProperty("gainEnvelope"));
+    REQUIRE(load(json).primaryEvent()->gainEnvelope.empty());
 }
 
 TEST_CASE("A musical audio loop round-trips its authoritative beat length",

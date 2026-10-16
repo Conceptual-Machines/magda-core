@@ -546,6 +546,10 @@ class ClipManager {
     void setFadeOutBehaviour(ClipId clipId, int behaviour);
     void setAutoCrossfade(ClipId clipId, bool enabled);
 
+    /// The primary event's gain envelope (#3064), sorted, clamped and with every point given an id.
+    void setGainEnvelope(ClipId clipId, ClipGainEnvelope envelope);
+    void setGainEnvelopeShown(ClipId clipId, bool shown);
+
     /// Let this clip play through its overlaps instead of the stack silencing
     /// one side (#2003). Audio and MIDI alike, unlike autoCrossfade.
     void setOverlapPlaysBoth(ClipId clipId, bool playsBoth);

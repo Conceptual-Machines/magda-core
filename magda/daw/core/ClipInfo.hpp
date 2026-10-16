@@ -13,6 +13,7 @@
 #include <variant>
 #include <vector>
 
+#include "ClipGainEnvelope.hpp"
 #include "ClipTypes.hpp"
 #include "SourcePool.hpp"
 #include "TempoMap.hpp"
@@ -470,6 +471,9 @@ struct AudioEvent {
     int fadeOutType = 1;
     int fadeInBehaviour = 0;  // 0=gainFade, 1=speedRamp
     int fadeOutBehaviour = 0;
+
+    /// Amplitude over the source (#3064). Empty is unity, so older projects play as before.
+    ClipGainEnvelope gainEnvelope;
 
     bool operator==(const AudioEvent&) const = default;
 
@@ -1173,6 +1177,9 @@ struct ClipInfo {
     // BETWEEN events inside one clip are an event-level concern.
     bool autoCrossfade = false;
 
+    /// Whether the editors show and edit the gain envelope (#3064). A view flag, per instance.
+    bool gainEnvelopeShown = false;
+
     // launchFadeSamples: ramp on the stopped→playing transition. Default 256;
     // 0 preserves the leading transient.
     int launchFadeSamples = 256;
@@ -1339,8 +1346,9 @@ struct ClipInfo {
     }
 
     /// Event fields a ghost sibling mirrors: what the source IS and how it is
-    /// interpreted. The placement-coupled fields (anchor, loop region,
-    /// speedRatio, fades, channels, gain, and the event's own geometry) stay
+    /// interpreted, plus the gain envelope, which belongs to the sound. The
+    /// placement-coupled fields (anchor, loop region, speedRatio, fades,
+    /// channels, gain, and the event's own geometry) stay
     /// per-instance, so one ghost's resize or trim cannot corrupt its siblings.
     /// Kept in lockstep with sharedEventFieldsEqual below.
     static void copySharedEventFieldsFrom(AudioEvent& dst, const AudioEvent& src) {
@@ -1364,6 +1372,7 @@ struct ClipInfo {
         dst.reversed = src.reversed;
         dst.autoDetectBeats = src.autoDetectBeats;
         dst.beatSensitivity = src.beatSensitivity;
+        dst.gainEnvelope = src.gainEnvelope;
         // The region stays per-instance, but one sized by the interpretation
         // has to follow the interpretation it just received.
         dst.afterInterpretationChange();
@@ -1379,7 +1388,7 @@ struct ClipInfo {
                a.analogPitch == b.analogPitch && a.autoPitchMode == b.autoPitchMode &&
                a.pitchChange == b.pitchChange && a.transpose == b.transpose &&
                a.reversed == b.reversed && a.autoDetectBeats == b.autoDetectBeats &&
-               a.beatSensitivity == b.beatSensitivity;
+               a.beatSensitivity == b.beatSensitivity && a.gainEnvelope == b.gainEnvelope;
     }
 
     /// Copy the content-defining fields from a link-group sibling (ghost-clip

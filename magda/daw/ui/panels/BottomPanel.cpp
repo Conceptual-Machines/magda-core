@@ -341,6 +341,21 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
                                      });
     headerBar_->addChildComponent(toolButtons_.get());
 
+    envelopeToolButtons_ = std::make_unique<EditToolButtons>(
+        EditToolState::audioEditor(),
+        std::vector<std::pair<EditTool, const char*>>{
+            {EditTool::Line, "Line: drag a straight ramp"},
+            {EditTool::Pencil, "Pen: draw the envelope freehand"},
+            {EditTool::Flat, "Flat: click a grid cell to hold it at one level"}});
+    headerBar_->addChildComponent(envelopeToolButtons_.get());
+
+    sampleToolButtons_ = std::make_unique<EditToolButtons>(
+        EditToolState::sampleEditor(),
+        std::vector<std::pair<EditTool, const char*>>{
+            {EditTool::Pointer, "Pointer: move and remove warp markers"},
+            {EditTool::Marker, "Marker: click to place a warp marker (needs WARP)"}});
+    headerBar_->addChildComponent(sampleToolButtons_.get());
+
     keyChip_ = std::make_unique<KeyChip>();
     keyChip_->setTooltip("Song key: scale highlight and fold-to-key while lit");
     keyChip_->onClick = [this]() { showKeyChipMenu(); };
@@ -422,6 +437,8 @@ BottomPanel::~BottomPanel() {
     overlayTracksButton_.reset();
     fullscreenToggle_.reset();
     toolButtons_.reset();
+    envelopeToolButtons_.reset();
+    sampleToolButtons_.reset();
     keyChip_.reset();
     propsResizer_.reset();
     audioPropsPanel_.reset();
@@ -640,6 +657,21 @@ void BottomPanel::setupHeaderControls() {
             }));
     };
     headerBar_->addChildComponent(loopButton_.get());
+
+    gainEnvelopeButton_ = std::make_unique<SvgButton>("GainEnvelope", BinaryData::envelope_svg,
+                                                      BinaryData::envelope_svgSize);
+    gainEnvelopeButton_->setTooltip("Show or hide the gain envelope");
+    styleButton(*gainEnvelopeButton_);
+    gainEnvelopeButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    gainEnvelopeButton_->setTintedChip(ActiveTheme::ACCENT_PRIMARY);
+    gainEnvelopeButton_->setIconPadding(kChipIconPadding);
+    gainEnvelopeButton_->onClick = [this]() {
+        auto& cm = ClipManager::getInstance();
+        const auto clipId = getActiveEditingClipId();
+        if (const auto* clip = cm.getClip(clipId); clip && clip->isAudio())
+            cm.setGainEnvelopeShown(clipId, !clip->gainEnvelopeShown);
+    };
+    headerBar_->addChildComponent(gainEnvelopeButton_.get());
 
     // Clip enable/disable toggle (#1736), in the device power style: a green chip while on.
     // Mirrors the Clip Inspector toggle; disabled clips do not play.
@@ -1334,6 +1366,10 @@ void BottomPanel::onContentWillSwitch(daw::ui::PanelContent* outgoing,
         addMidiControlsToHeader();  // Grid controls are shared between MIDI and audio
     else if (isAutomationEditor)
         addGridControlsToHeader();  // Grid controls only — loop lives in the inspector
+    if (isWaveformEditor) {
+        gainEnvelopeButton_->setVisible(true);
+        syncGainEnvelopeButtonState();
+    }
 
     // Fullscreen toggle: enabled for any clip editor (piano roll, drum grid,
     // waveform). Hidden for track chain and empty content (issue #1282).
@@ -1406,11 +1442,17 @@ void BottomPanel::hideMidiHeaderControls() {
         loopButton_->setVisible(false);
     if (clipEnabledButton_)
         clipEnabledButton_->setVisible(false);
+    if (gainEnvelopeButton_)
+        gainEnvelopeButton_->setVisible(false);
     pianoRollTab_->setVisible(false);
     drumGridTab_->setVisible(false);
     bendButton_->setVisible(false);
     if (toolButtons_)
         toolButtons_->setVisible(false);
+    if (envelopeToolButtons_)
+        envelopeToolButtons_->setVisible(false);
+    if (sampleToolButtons_)
+        sampleToolButtons_->setVisible(false);
     if (keyChip_)
         keyChip_->setVisible(false);
     if (overlayTracksButton_)
@@ -1440,6 +1482,7 @@ ClipId BottomPanel::getActiveEditingClipId() const {
 void BottomPanel::syncLoopButtonState() {
     if (clipNameChip_)
         clipNameChip_->repaint();
+    syncGainEnvelopeButtonState();
     if (!loopButton_)
         return;
     if (auto* autoEditor =
@@ -1452,6 +1495,30 @@ void BottomPanel::syncLoopButtonState() {
     const auto* clip =
         (clipId != INVALID_CLIP_ID) ? ClipManager::getInstance().getClip(clipId) : nullptr;
     loopButton_->setActive(clip != nullptr && clip->loopEnabled);
+}
+
+void BottomPanel::syncGainEnvelopeButtonState() {
+    if (!gainEnvelopeButton_)
+        return;
+    const auto* clip = ClipManager::getInstance().getClip(getActiveEditingClipId());
+    const auto shown = clip != nullptr && clip->isAudio() && clip->gainEnvelopeShown;
+    gainEnvelopeButton_->setActive(shown);
+
+    // One toolbox at a time: the envelope's while it is shown, the sample view's otherwise.
+    const auto audioEditor = gainEnvelopeButton_->isVisible();
+    const auto envelopeTools = audioEditor && shown;
+    const auto sampleTools = audioEditor && !shown;
+    if (!envelopeToolButtons_ || !sampleToolButtons_)
+        return;
+
+    sampleToolButtons_->setToolEnabled(EditTool::Marker, clip != nullptr && clip->isAudio() &&
+                                                             audioEventRef(*clip).warpEnabled);
+    if (envelopeToolButtons_->isVisible() != envelopeTools ||
+        sampleToolButtons_->isVisible() != sampleTools) {
+        envelopeToolButtons_->setVisible(envelopeTools);
+        sampleToolButtons_->setVisible(sampleTools);
+        resized();
+    }
 }
 
 void BottomPanel::syncClipEnabledButtonState() {
@@ -1561,6 +1628,8 @@ void BottomPanel::layoutV1Toolbar(juce::Rectangle<int> headerBounds) {
         .closeWell()
         .divider()
         .button(*loopButton_);
+    if (gainEnvelopeButton_->isVisible())
+        right.divider().button(*gainEnvelopeButton_);
 }
 
 void BottomPanel::layoutV1AudioToolbar(juce::Rectangle<int> headerBounds) {
@@ -1572,6 +1641,13 @@ void BottomPanel::layoutV1AudioToolbar(juce::Rectangle<int> headerBounds) {
         juce::jmin(clipNameChip_->getPreferredWidth(), headerBounds.getWidth() / 3);
     Row(decor, headerBounds, headerBounds.getX() + 8, Row::From::Left)
         .item(*clipNameChip_, nameWidth, kV1Button);
+
+    for (auto* tools : {envelopeToolButtons_.get(), sampleToolButtons_.get()})
+        if (tools->isVisible())
+            Row::centred(decor, headerBounds, [&](Row& row) {
+                row.item(*tools, EditToolButtons::widthFor(tools->getNumTools()),
+                         EditToolButtons::kHeight);
+            });
 
     Row right(decor, headerBounds, headerBounds.getRight() - 8, Row::From::Right);
     if (fullscreenToggle_->isVisible())
@@ -1585,6 +1661,8 @@ void BottomPanel::layoutV1AudioToolbar(juce::Rectangle<int> headerBounds) {
         .closeWell()
         .divider()
         .button(*loopButton_);
+    if (gainEnvelopeButton_->isVisible())
+        right.divider().button(*gainEnvelopeButton_);
 }
 
 void BottomPanel::setPropsPanelCollapsed(bool collapsed) {

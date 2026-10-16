@@ -167,6 +167,12 @@ class ClipVoice {
                           const BlockInfo& block, double startSeconds, double endSeconds,
                           FadeCurve curve, bool rising);
 
+    /// Multiply @p region by @p event's gain envelope at the source position each sample plays
+    /// (#3064), so the curve stays on the sound through stretch, warp, loop and reverse.
+    void applyGainEnvelope(const AudioClipPlayback& clip, const AudioEventPlayback& event,
+                           juce::dsp::AudioBlock<float> region, EdgeSample regionFirstSample,
+                           const BlockInfo& block) const;
+
     /// How much timeline one cell covers. Small enough that a curved rate is
     /// still nearly straight across one, and that is the only thing it has to
     /// be. It lives beside the stretcher because everything sized against one

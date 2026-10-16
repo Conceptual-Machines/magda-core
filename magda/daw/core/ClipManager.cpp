@@ -2636,6 +2636,34 @@ void ClipManager::setFadeOutBehaviour(ClipId clipId, int behaviour) {
     }
 }
 
+void ClipManager::setGainEnvelope(ClipId clipId, ClipGainEnvelope envelope) {
+    auto* clip = getClip(clipId);
+    auto* event = clip ? clip->primaryEvent() : nullptr;
+    if (event == nullptr)
+        return;
+
+    auto& points = envelope.points;
+    int nextId = 0;
+    for (const auto& point : points)
+        nextId = std::max(nextId, point.id + 1);
+    for (auto& point : points) {
+        point.value = std::clamp(point.value, 0.0, 1.0);
+        if (point.id == sdk::kInvalidAutomationPointId)
+            point.id = nextId++;
+    }
+    std::sort(points.begin(), points.end());
+
+    event->gainEnvelope = std::move(envelope);
+    notifyClipPropertyChanged(clipId);
+}
+
+void ClipManager::setGainEnvelopeShown(ClipId clipId, bool shown) {
+    if (auto* clip = getClip(clipId); clip && clip->isAudio() && clip->gainEnvelopeShown != shown) {
+        clip->gainEnvelopeShown = shown;
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
 void ClipManager::setAutoCrossfade(ClipId clipId, bool enabled) {
     if (auto* clip = getClip(clipId)) {
         if (clip->isAudio()) {

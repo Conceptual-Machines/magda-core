@@ -335,6 +335,27 @@ TEST_CASE("ClipOperations - non-loop offset drag preserves sample start and clam
     REQUIRE(clip.lengthBeats == Catch::Approx(14.5));
 }
 
+TEST_CASE("Dragging the offset forward and back again restores the clip's end",
+          "[clip][audio][offset][regression]") {
+    ClipInfo clip;
+    clip.setAudioContent();
+    magda::test::giveAudioEvent(clip, "/tmp/magda_offset_round_trip.wav");
+    clip.loopEnabled = false;
+    magda::test::audioEvent(clip).autoTempo = false;
+    clip.setPlacementBeats(0.0, 16.0);
+    magda::test::audioEvent(clip).speedRatio = 1.0;
+    magda::test::audioEvent(clip).setAnchorSeconds(0.0);
+    const auto startLength = clip.placement.lengthBeats;
+
+    // One drag: every tick is applied against the length the drag started with.
+    ClipOperations::setAudioOffsetPreservingSourceRegion(clip, 3.0, 8.0, 120.0, startLength);
+    REQUIRE(clip.getTimelineLength(120.0) == Catch::Approx(5.0));
+    ClipOperations::setAudioOffsetPreservingSourceRegion(clip, 0.0, 8.0, 120.0, startLength);
+
+    REQUIRE(magda::test::audioEvent(clip).anchorSeconds() == Catch::Approx(0.0));
+    REQUIRE(clip.placement.lengthBeats == Catch::Approx(startLength));
+}
+
 TEST_CASE("ClipDisplayInfo - non-loop source end stays fixed when offset clamps clip length",
           "[clip][audio][offset][display][regression]") {
     ClipInfo clip;

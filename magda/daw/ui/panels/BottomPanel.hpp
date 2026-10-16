@@ -144,6 +144,8 @@ class BottomPanel : public daw::ui::TabbedPanel,
     // v1 MIDI editor toolbar: edit tools and the song-key chip (piano roll and drum grid only)
     class KeyChip;
     std::unique_ptr<EditToolButtons> toolButtons_;
+    std::unique_ptr<EditToolButtons> envelopeToolButtons_;  // audio editor, envelope mode
+    std::unique_ptr<EditToolButtons> sampleToolButtons_;    // audio editor, sample view
     std::unique_ptr<KeyChip> keyChip_;
     class ClipNameChip;
     std::unique_ptr<ClipNameChip> clipNameChip_;
@@ -167,6 +169,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
     ClipId getActiveEditingClipId() const;
     // Reflect the active clip's source-loop state on the header loop toggle.
     void syncLoopButtonState();
+    void syncGainEnvelopeButtonState();
     void setGridDivisionFromPicker(int numerator, int denominator);
     void updateGridDivisionFace();
     void syncClipEnabledButtonState();
@@ -195,8 +198,9 @@ class BottomPanel : public daw::ui::TabbedPanel,
     std::unique_ptr<daw::ui::GridDivisionButton> gridDivisionButton_;
     std::unique_ptr<juce::TextButton> autoGridButton_;
     std::unique_ptr<juce::TextButton> snapButton_;
-    std::unique_ptr<SvgButton> loopButton_;         // toggles the clip's source loop
-    std::unique_ptr<SvgButton> clipEnabledButton_;  // enable/disable the edited clip (#1736)
+    std::unique_ptr<SvgButton> loopButton_;          // toggles the clip's source loop
+    std::unique_ptr<SvgButton> clipEnabledButton_;   // enable/disable the edited clip (#1736)
+    std::unique_ptr<SvgButton> gainEnvelopeButton_;  // shows the audio clip's gain envelope (#3064)
     std::unique_ptr<SvgButton> bendButton_;
 
     // Header control state

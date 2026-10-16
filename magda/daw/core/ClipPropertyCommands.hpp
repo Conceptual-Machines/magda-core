@@ -919,6 +919,35 @@ class SetClipReversedCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Replaces a clip's gain envelope in one undo step (#3064).
+ *
+ * Not merged: each gesture that ends is its own step.
+ */
+class SetClipGainEnvelopeCommand : public UndoableCommand {
+  public:
+    SetClipGainEnvelopeCommand(ClipId clipId, ClipGainEnvelope newEnvelope)
+        : clipId_(clipId), newEnvelope_(std::move(newEnvelope)) {
+        if (auto* clip = ClipManager::getInstance().getClip(clipId))
+            if (const auto* ev = clip->primaryEvent())
+                oldEnvelope_ = ev->gainEnvelope;
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setGainEnvelope(clipId_, newEnvelope_);
+    }
+    void undo() override {
+        ClipManager::getInstance().setGainEnvelope(clipId_, oldEnvelope_);
+    }
+    juce::String getDescription() const override {
+        return "Edit Clip Gain Envelope";
+    }
+
+  private:
+    ClipId clipId_;
+    ClipGainEnvelope oldEnvelope_, newEnvelope_;
+};
+
+/**
  * @brief Command for setting clip fade in duration (supports merging)
  */
 class SetClipFadeInCommand : public UndoableCommand {

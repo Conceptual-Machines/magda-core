@@ -260,6 +260,22 @@ bool startsInsideSourceMaterial(const AudioEventPlayback& event, double deviceSa
     return start > 0 && start < length;
 }
 
+double sourceSecondsOfReading(const SourceRead& how, double readingSample) {
+    const auto sourceRate = how.sourceSampleRate > 0.0 ? how.sourceSampleRate : 1.0;
+    auto sample = how.deviceSampleRate > 0.0 ? readingSample * sourceRate / how.deviceSampleRate
+                                             : readingSample;
+
+    if (how.loopLengthSamples > 0)
+        sample = static_cast<double>(how.loopStartSamples) +
+                 floorMod(sample - static_cast<double>(how.loopStartSamples),
+                          static_cast<double>(how.loopLengthSamples));
+
+    if (how.reversed)
+        sample = static_cast<double>(how.lengthInSamples) - 1.0 - sample;
+
+    return sample / sourceRate;
+}
+
 double beatAlongSpan(const AudioEventPlayback& event, double seconds) {
     const auto span = event.span.seconds.length();
     if (!(span > 0.0))

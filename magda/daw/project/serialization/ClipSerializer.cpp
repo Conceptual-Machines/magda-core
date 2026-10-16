@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 
 #include "ProjectSerializer.hpp"
@@ -209,6 +210,13 @@ juce::var serializeAudioEvent(const AudioEvent& event) {
     obj->setProperty("fadeInBehaviour", event.fadeInBehaviour);
     obj->setProperty("fadeOutBehaviour", event.fadeOutBehaviour);
 
+    if (!event.gainEnvelope.empty()) {
+        juce::Array<juce::var> points;
+        for (const auto& point : event.gainEnvelope.points)
+            points.add(ProjectSerializer::serializeAutomationPoint(point));
+        obj->setProperty("gainEnvelope", points);
+    }
+
     return {obj};
 }
 
@@ -300,6 +308,15 @@ void deserializeAudioEvent(const juce::var& json, AudioEvent& event) {
         event.fadeOutType = obj->getProperty("fadeOutType");
     event.fadeInBehaviour = obj->getProperty("fadeInBehaviour");
     event.fadeOutBehaviour = obj->getProperty("fadeOutBehaviour");
+
+    if (const auto* points = obj->getProperty("gainEnvelope").getArray()) {
+        for (const auto& pointVar : *points) {
+            AutomationPoint point;
+            if (ProjectSerializer::deserializeAutomationPoint(pointVar, point))
+                event.gainEnvelope.points.push_back(point);
+        }
+        std::sort(event.gainEnvelope.points.begin(), event.gainEnvelope.points.end());
+    }
 }
 
 /// Audio interpretation that schema v1 stored on the CLIP rather than on an
@@ -525,6 +542,8 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
 
     // Crossfade with the neighbouring clip; per-event fades live on the event.
     obj->setProperty("autoCrossfade", clip.autoCrossfade);
+    if (clip.gainEnvelopeShown)
+        obj->setProperty("gainEnvelopeShown", true);
     obj->setProperty("launchFadeSamples", clip.launchFadeSamples);
 
     // MIDI offset
@@ -815,6 +834,7 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
     outClip.pan = static_cast<float>(static_cast<double>(obj->getProperty("pan")));
 
     outClip.autoCrossfade = static_cast<bool>(obj->getProperty("autoCrossfade"));
+    outClip.gainEnvelopeShown = static_cast<bool>(obj->getProperty("gainEnvelopeShown"));
     outClip.launchFadeSamples = obj->getProperty("launchFadeSamples");
 
     // Schema v1 wrote the audio interpretation as clip-level fields. They are

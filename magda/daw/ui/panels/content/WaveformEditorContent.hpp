@@ -145,6 +145,9 @@ class WaveformEditorContent : public PanelContent,
     std::unique_ptr<magda::SvgButton> propertiesToggle_;
     magda::EditorRail rail_;
 
+    /// The grid's envelope overlay, from the clip's flag (#3064).
+    void syncGainEnvelope();
+
     bool snapEnabled_ = false;
     int gridNumerator_ = 1;
     int gridDenominator_ = 4;

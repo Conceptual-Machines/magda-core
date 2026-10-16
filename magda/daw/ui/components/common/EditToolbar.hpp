@@ -81,7 +81,22 @@ class EditToolButtons : public juce::Component, private juce::ChangeListener {
 
     /** @p tooltips are in tool order, Pointer to Erase. */
     EditToolButtons(EditToolState& state, const std::array<const char*, 5>& tooltips);
+    /** Only @p tools, in that order, each with its tooltip. */
+    EditToolButtons(EditToolState& state,
+                    const std::vector<std::pair<EditTool, const char*>>& tools);
     ~EditToolButtons() override;
+
+    /** Greys out @p tool's button; it stays where it is. */
+    void setToolEnabled(EditTool tool, bool enabled);
+
+    int getNumTools() const {
+        return static_cast<int>(buttons_.size());
+    }
+
+    static constexpr int widthFor(int count) {
+        return edit_toolbar::kButton * count + edit_toolbar::kGap * (count - 1) +
+               edit_toolbar::kWellPad * 2;
+    }
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -91,7 +106,7 @@ class EditToolButtons : public juce::Component, private juce::ChangeListener {
     void syncButtons();
 
     EditToolState& state_;
-    std::array<std::unique_ptr<SvgButton>, 5> buttons_;
+    std::vector<std::pair<EditTool, std::unique_ptr<SvgButton>>> buttons_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EditToolButtons)
 };

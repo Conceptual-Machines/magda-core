@@ -14,6 +14,19 @@ EditToolState& EditToolState::arrangement() {
     return instance;
 }
 
+EditToolState& EditToolState::audioEditor() {
+    // The envelope has no pointer tool; the line is where it starts.
+    static EditToolState instance;
+    static const bool started = (instance.tool_ = EditTool::Line, true);
+    juce::ignoreUnused(started);
+    return instance;
+}
+
+EditToolState& EditToolState::sampleEditor() {
+    static EditToolState instance;
+    return instance;
+}
+
 void EditToolState::setTool(EditTool tool) {
     if (tool == tool_)
         return;
@@ -65,7 +78,11 @@ std::optional<juce::MouseCursor> cursorForEditTool(EditTool tool) {
             return cursors.getGlueCursor();
         case EditTool::Erase:
             return cursors.getEraseCursor();
+        case EditTool::Flat:
+            return cursors.getFlatCursor();
         case EditTool::Pointer:
+        case EditTool::Line:
+        case EditTool::Marker:
             break;
     }
     return std::nullopt;

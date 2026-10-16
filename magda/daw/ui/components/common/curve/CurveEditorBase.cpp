@@ -10,6 +10,7 @@
 
 #include "CurveRenderOrder.hpp"
 #include "core/UndoManager.hpp"
+#include "magda/daw/ui/themes/CursorManager.hpp"
 #include "magda/daw/ui/themes/FontManager.hpp"
 
 namespace magda {
@@ -341,7 +342,7 @@ void CurveEditorBase::mouseDown(const juce::MouseEvent& e) {
         } else if (e.mods.isShiftDown()) {
             activeDrawMode_ = CurveDrawMode::Line;
         } else {
-            activeDrawMode_ = CurveDrawMode::Select;
+            activeDrawMode_ = plainPressMode();
         }
 
         switch (activeDrawMode_) {
@@ -373,8 +374,13 @@ void CurveEditorBase::mouseDown(const juce::MouseEvent& e) {
                 double gridStart = x;
                 double gridEnd = x;
                 if (snapXToGrid && getGridSpacingX) {
+                    // The cell under the cursor: snapping rounds, so past a cell's middle it
+                    // lands on the next line and steps back one.
+                    const double spacing = getGridSpacingX();
                     gridStart = snapXToGrid(x);
-                    gridEnd = gridStart + getGridSpacingX();
+                    if (spacing > 0.0 && gridStart > x)
+                        gridStart -= spacing;
+                    gridEnd = gridStart + spacing;
                 }
 
                 // Find the nearest point strictly before gridStart so the
@@ -550,8 +556,8 @@ void CurveEditorBase::mouseEnter(const juce::MouseEvent& e) {
 void CurveEditorBase::updateCursorForModifiers(const juce::ModifierKeys& modifiers) {
     if (modifiers.isShiftDown()) {
         setMouseCursor(juce::MouseCursor::PointingHandCursor);
-    } else if (modifiers.isCommandDown()) {
-        setMouseCursor(juce::MouseCursor::CopyingCursor);
+    } else if (modifiers.isCommandDown() || plainPressMode() == CurveDrawMode::Pencil) {
+        setMouseCursor(CursorManager::getInstance().getNoteDrawCursor());
     } else {
         setMouseCursor(juce::MouseCursor::NormalCursor);
     }
@@ -1134,8 +1140,17 @@ void CurveEditorBase::onStepStamped(double gridStart, double gridEnd, double y,
         onPointAdded(gridEnd, prevValue, CurveType::Linear);
 }
 
+void CurveEditorBase::onStrokeDrawn(const std::vector<std::pair<double, double>>& points,
+                                    CurveType curveType) {
+    // One stroke, one undo step.
+    CompoundOperationScope scope("Draw Curve");
+    for (const auto& [x, y] : points)
+        onPointAdded(x, y, curveType);
+}
+
 void CurveEditorBase::createPointsFromDrawingPath() {
-    if (drawingPath_.size() < 2)
+    // A press with no drag still leaves one point.
+    if (drawingPath_.empty())
         return;
 
     // Simplify path - don't create a point for every pixel
@@ -1165,8 +1180,7 @@ void CurveEditorBase::createPointsFromDrawingPath() {
     CurveType curveType =
         (drawMode_ == CurveDrawMode::Curve) ? CurveType::Bezier : CurveType::Linear;
 
-    // One stroke, one undo step.
-    CompoundOperationScope scope("Draw Curve");
+    std::vector<std::pair<double, double>> stroke;
     for (const auto& pixelPoint : simplifiedPath) {
         double x = pixelToX(pixelPoint.x);
         double y = pixelToY(pixelPoint.y);
@@ -1178,8 +1192,10 @@ void CurveEditorBase::createPointsFromDrawingPath() {
             y = snapYToGrid(y);
         }
 
-        onPointAdded(x, y, curveType);
+        stroke.emplace_back(x, y);
     }
+    std::ranges::sort(stroke, {}, &std::pair<double, double>::first);
+    onStrokeDrawn(stroke, curveType);
 }
 
 }  // namespace magda

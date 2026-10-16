@@ -172,6 +172,9 @@ struct AudioEventPlayback {
     /// 0 = gain fade, 1 = speed ramp, as on the clip.
     int fadeInBehaviour = 0;
     int fadeOutBehaviour = 0;
+
+    /// Amplitude over the source, in forward source seconds (#3064). Empty is unity.
+    ClipGainEnvelope gainEnvelope;
 };
 
 /**

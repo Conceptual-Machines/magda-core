@@ -40,6 +40,9 @@ class CursorManager {
     const juce::MouseCursor& getGlueCursor() const {
         return glueCursor;
     }
+    const juce::MouseCursor& getFlatCursor() const {
+        return flatCursor;
+    }
     const juce::MouseCursor& getGhostCopyCursor() const {
         return ghostCopyCursor;
     }
@@ -67,6 +70,7 @@ class CursorManager {
     juce::MouseCursor zoomOutCursor;
     juce::MouseCursor noteDrawCursor;
     juce::MouseCursor eraseCursor;
+    juce::MouseCursor flatCursor;
     juce::MouseCursor noteRepeatCursor;
     juce::MouseCursor bladeCursor;
     juce::MouseCursor glueCursor;

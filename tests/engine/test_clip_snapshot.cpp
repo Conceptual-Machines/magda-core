@@ -382,6 +382,18 @@ TEST_CASE("A captured audio window compiles its source envelope", "[engine][clip
           std::string::npos);
 }
 
+TEST_CASE("An event's gain envelope reaches the engine as it was drawn", "[engine][clip]") {
+    auto clip = makeAudioClip(1, 0.0, 8.0);
+    eventOf(clip).gainEnvelope.points.push_back({.id = 1, .beatPosition = 0.5, .value = 0.2});
+    eventOf(clip).gainEnvelope.points.push_back({.id = 2, .beatPosition = 2.0, .value = 0.8});
+
+    const auto snapshot = compile({clip}, makeTempoMap());
+    const auto* compiled = audioClip(snapshot, 1);
+    REQUIRE(compiled != nullptr);
+    CHECK(compiled->events.front().gainEnvelope == eventOf(clip).gainEnvelope);
+    CHECK(dumpClipSnapshot(snapshot).find("gainEnvelope=2") != std::string::npos);
+}
+
 TEST_CASE("Clip volume and gain reach the engine summed, as earlier versions applied them",
           "[engine][clip]") {
     auto clip = makeAudioClip(1, 0.0, 8.0);

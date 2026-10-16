@@ -116,6 +116,7 @@ set(TEST_SOURCES
     clips/test_clip_batch_edit.cpp
     clips/test_clip_commands.cpp
     clips/test_warp_marker_commands.cpp
+    clips/test_clip_gain_envelope.cpp
     clips/test_clip_crossfades.cpp
     clips/test_clip_occlusion.cpp
     # Ghost clips / link groups (issue #12)
@@ -905,6 +906,9 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/themes/FontManager.cpp
     ../magda/daw/ui/components/common/MagdaAlertWindow.cpp
     ui/test_arrangement_row_alignment_juce.cpp
+    ui/test_gain_envelope_editor_juce.cpp
+    ../magda/daw/ui/components/waveform/WaveformGridComponent.cpp
+    ../magda/daw/ui/components/waveform/GainEnvelopeEditor.cpp
     ui/test_arrangement_vertical_scroll_juce.cpp
     agents/test_chord_progression_converter_juce.cpp
     ui/test_audio_driver_type_selection_juce.cpp

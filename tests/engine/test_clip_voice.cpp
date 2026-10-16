@@ -520,6 +520,111 @@ TEST_CASE("The resolved fades shape the edges of the audible span", "[engine][cl
     }
 }
 
+namespace {
+
+/// A rising gain curve over the first ten seconds of source, so each file sample has its own gain.
+magda::ClipGainEnvelope risingEnvelope() {
+    magda::ClipGainEnvelope envelope;
+    envelope.points.push_back({.id = 1, .beatPosition = 0.0, .value = 0.1});
+    envelope.points.push_back({.id = 2, .beatPosition = 10.0, .value = 1.0});
+    return envelope;
+}
+
+/// Channel 0 of @p blockCount blocks from @p firstBlock, through a counting reader.
+std::vector<float> renderCounted(const AudioClipPlayback& clip, int firstBlock, int blockCount) {
+    Rig rig;
+    rig.lane.audio.push_back(clip);
+    rig.give(1, 1, std::make_unique<CountingReader>());
+    rig.publish();
+    rig.start(firstBlock, 40);
+
+    std::vector<float> samples;
+    for (auto block = 0; block < blockCount; ++block) {
+        if (block > 0)
+            rig.advance();
+        for (auto sample = 0; sample < kBlockSize; ++sample)
+            samples.push_back(rig.at(sample));
+    }
+    return samples;
+}
+
+/// Each output sample is scaled by the envelope's gain at the file sample it plays.
+void requireEnvelopeFollowsSource(AudioClipPlayback clip, int firstBlock, int blockCount) {
+    const auto plain = renderCounted(clip, firstBlock, blockCount);
+    clip.events[0].gainEnvelope = risingEnvelope();
+    const auto shaped = renderCounted(clip, firstBlock, blockCount);
+
+    REQUIRE(plain.size() == shaped.size());
+    for (std::size_t sample = 0; sample < plain.size(); ++sample) {
+        if (plain[sample] == 0.0f)
+            continue;
+        INFO("sample " << sample << " plays file sample " << plain[sample]);
+        const auto gain =
+            magda::gain_envelope::gainAt(clip.events[0].gainEnvelope, plain[sample] / kSampleRate);
+        REQUIRE(shaped[sample] == Catch::Approx(plain[sample] * gain).epsilon(1e-4));
+    }
+}
+
+}  // namespace
+
+TEST_CASE("The gain envelope follows the source, not the timeline", "[engine][clip][voice]") {
+    SECTION("an empty envelope is unity") {
+        const auto clip = clipOver(1, blocks(100, 200), 10000);
+        REQUIRE(renderCounted(clip, 100, 4) == renderCounted(clip, 100, 4));
+        REQUIRE(magda::gain_envelope::gainAt({}, 3.0) == 1.0);
+    }
+
+    SECTION("a slipped clip carries the curve with its content") {
+        requireEnvelopeFollowsSource(clipOver(1, blocks(100, 200), 10000), 120, 8);
+        requireEnvelopeFollowsSource(clipOver(1, blocks(100, 200), 90000), 120, 8);
+    }
+
+    SECTION("a reversed clip plays the curve backwards with its material") {
+        auto clip = clipOver(1, blocks(100, 200), 10000);
+        clip.events[0].sourceDurationSeconds = 10.0;
+        clip.events[0].reversed = true;
+        requireEnvelopeFollowsSource(clip, 100, 8);
+    }
+
+    SECTION("each loop pass repeats the curve") {
+        auto clip = clipOver(1, blocks(100, 300), 20000);
+        clip.events[0].sourceDurationSeconds = 10.0;
+        clip.events[0].loopEnabled = true;
+        clip.events[0].loopStartSamples = 20000;
+        clip.events[0].loopLengthSamples = 10 * kBlockSize + 17;
+        requireEnvelopeFollowsSource(clip, 100, 40);
+    }
+
+    SECTION("a reversed loop as well") {
+        auto clip = clipOver(1, blocks(100, 300), 20050);
+        clip.events[0].sourceDurationSeconds = 10.0;
+        clip.events[0].reversed = true;
+        clip.events[0].loopEnabled = true;
+        clip.events[0].loopStartSamples = 20000;
+        clip.events[0].loopLengthSamples = 10 * kBlockSize + 17;
+        requireEnvelopeFollowsSource(clip, 100, 40);
+    }
+}
+
+TEST_CASE("The gain envelope multiplies with the fades and the clip gain",
+          "[engine][clip][voice]") {
+    Rig rig;
+
+    auto clip = clipOver(1, blocks(100, 2100));
+    clip.fadeInSeconds = blockTime(400);
+    clip.gainDb = -6.0f;
+    clip.events[0].gainEnvelope.points.push_back(
+        {.id = 1, .beatPosition = 0.0, .value = magda::gain_envelope::dbToPosition(-12.0)});
+    rig.lane.audio.push_back(clip);
+
+    rig.give(1, 1, std::make_unique<ConstantReader>(1.0f));
+    rig.publish();
+    rig.start(300, 300);
+
+    const auto expected = 0.5f * juce::Decibels::decibelsToGain(-18.0f);
+    REQUIRE(rig.at(0) == Catch::Approx(expected).epsilon(1e-3));
+}
+
 TEST_CASE("A captured window resumes the source envelope", "[engine][clip][voice]") {
     const auto sourceSpan = blocks(100, 2100);
 
