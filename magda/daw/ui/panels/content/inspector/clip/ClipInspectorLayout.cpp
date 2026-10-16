@@ -393,10 +393,13 @@ void ClipInspector::resized() {
             clipGainValue_->setBounds(row);
         }
         addSpace(4);
-        // Row 2: [REVERSE full width]
+        // Row 2: [REVERSE] | [GAIN ENV]
         {
             auto row = addRow(22);
-            reverseToggle_.setBounds(row.reduced(0, 1));
+            const int halfWidth = (containerWidth - colGap) / 2;
+            reverseToggle_.setBounds(row.removeFromLeft(halfWidth).reduced(0, 1));
+            row.removeFromLeft(colGap);
+            gainEnvelopeToggle_.setBounds(row.reduced(0, 1));
         }
     }
 

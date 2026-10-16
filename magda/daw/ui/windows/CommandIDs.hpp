@@ -53,6 +53,7 @@ enum {
     nudgeClipsLater = 0x1020,         // Shift+Right: move selected clips one grid step later
     nudgeClipsUp = 0x1021,            // Shift+Up: move selected clips to the track above
     nudgeClipsDown = 0x1022,          // Shift+Down: move selected clips to the track below
+    toggleClipGainEnvelope = 0x1023,  // E: show/hide the gain envelope on selected audio clips
 
     // Transport menu
     play = 0x2000,  // Space: toggles play/stop (perform() already toggles)

@@ -89,9 +89,9 @@ void ClipInspector::lookAndFeelChanged() {
         button.setColour(juce::TextButton::textColourOffId, secondary);
         button.setColour(juce::TextButton::textColourOnId, accent);
     };
-    for (auto* button :
-         {&clipWarpToggle_, &clipAutoTempoToggle_, &autoPitchToggle_, &analogPitchToggle_,
-          &reverseToggle_, &autoDetectBeatsToggle_, &leftChannelToggle_, &rightChannelToggle_})
+    for (auto* button : {&clipWarpToggle_, &clipAutoTempoToggle_, &autoPitchToggle_,
+                         &analogPitchToggle_, &reverseToggle_, &gainEnvelopeToggle_,
+                         &autoDetectBeatsToggle_, &leftChannelToggle_, &rightChannelToggle_})
         styleToggle(*button);
 
     audioPropsCollapseToggle_.setColour(juce::TextButton::buttonColourId,

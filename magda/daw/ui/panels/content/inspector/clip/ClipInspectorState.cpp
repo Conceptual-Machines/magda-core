@@ -560,6 +560,7 @@ void ClipInspector::updateFromSelectedClip() {
         clipPanValue_->setVisible(showAudioProps);
         clipGainValue_->setVisible(showAudioProps);
         reverseToggle_.setVisible(showAudioProps);
+        gainEnvelopeToggle_.setVisible(showAudioProps);
         leftChannelToggle_.setVisible(false);
         rightChannelToggle_.setVisible(false);
         if (isAudioClip) {
@@ -568,6 +569,7 @@ void ClipInspector::updateFromSelectedClip() {
             clipGainValue_->setValue(clip->gainDB, juce::dontSendNotification);
             reverseToggle_.setToggleState(magda::audioEventRef(*clip).reversed,
                                           juce::dontSendNotification);
+            gainEnvelopeToggle_.setToggleState(clip->gainEnvelopeShown, juce::dontSendNotification);
         }
 
         // Playback / Beat Detection section — hidden (all controls moved or unused)
@@ -703,6 +705,7 @@ void ClipInspector::showClipControls(bool show) {
         clipGainValue_->setVisible(false);
         beatDetectionSectionLabel_.setVisible(false);
         reverseToggle_.setVisible(false);
+        gainEnvelopeToggle_.setVisible(false);
         autoDetectBeatsToggle_.setVisible(false);
         beatSensitivityValue_->setVisible(false);
         transientSectionLabel_.setVisible(false);

@@ -10,19 +10,56 @@
 
 namespace magda::daw::ui {
 
-class WaveformGridComponent;
+/**
+ * @brief What a gain envelope editor sits over: its x axis and how that axis meets the source.
+ *
+ * Pixels are the editor's own. x is linear in them; the source behind it need not be.
+ */
+class GainEnvelopeHost {
+  public:
+    virtual ~GainEnvelopeHost() = default;
+
+    virtual double pixelsPerX() const = 0;
+    virtual double xToPixel(double x) const = 0;
+    virtual double pixelToX(double px) const = 0;
+
+    virtual double sourceAt(double x) const = 0;
+    /// Every x @p sourceSeconds plays at: one, or one per loop pass.
+    virtual std::vector<double> xsOf(double sourceSeconds) const = 0;
+    virtual std::pair<double, double> xRange() const = 0;
+
+    virtual bool snapsToGrid() const = 0;
+    virtual double snapToGrid(double x) const = 0;
+    virtual double gridSpacing() const = 0;
+
+    /// A press the host keeps for itself, such as a trim edge.
+    virtual bool keepsPress(int /*x*/, int /*y*/) const {
+        return false;
+    }
+    /// Any press on the envelope, before it edits.
+    virtual void envelopePressed() {}
+    /// Right-click: true when the host shows its own menu instead.
+    virtual bool showContextMenu() {
+        return false;
+    }
+    virtual bool showsLevelGuides() const {
+        return true;
+    }
+};
 
 /**
- * @brief The clip's gain envelope, drawn and edited over the audio editor's waveform (#3064).
+ * @brief A clip's gain envelope, drawn and edited over its waveform (#3064).
  *
- * Its x axis is the grid's display time, which is linear in pixels. Points are stored in source
- * seconds and converted at the edges, and the curve is drawn by sampling each pixel's source
- * position, so what is drawn is what plays through reverse and warp.
+ * Points are stored in source seconds and converted at the edges through the host, and the curve
+ * is drawn by sampling each pixel's source position, so what is drawn is what plays through
+ * reverse, loops and warp.
  */
 class GainEnvelopeEditor : public magda::CurveEditorBase, private juce::ChangeListener {
   public:
-    explicit GainEnvelopeEditor(WaveformGridComponent& grid);
+    explicit GainEnvelopeEditor(GainEnvelopeHost& host);
     ~GainEnvelopeEditor() override;
+
+    bool hitTest(int x, int y) override;
 
     void setClip(magda::ClipId clipId);
 
@@ -76,8 +113,10 @@ class GainEnvelopeEditor : public magda::CurveEditorBase, private juce::ChangeLi
 
     const magda::AudioEvent* event() const;
     std::vector<sdk::AutomationPoint> modelPoints() const;
-    sdk::AutomationPoint* find(std::vector<sdk::AutomationPoint>& points, uint32_t id) const;
-    double sourceAt(double displayTime) const;
+    /// The model point a curve point shows; one point may show once per loop pass.
+    sdk::AutomationPoint* find(std::vector<sdk::AutomationPoint>& points, uint32_t curveId) const;
+    double sourceAt(double x) const;
+    double placeOf(uint32_t curveId) const;
     sdk::BezierHandle toSource(double displayX, const magda::CurveHandleData& handle) const;
 
     /// One undo step.
@@ -87,7 +126,7 @@ class GainEnvelopeEditor : public magda::CurveEditorBase, private juce::ChangeLi
     bool drawsLine(const juce::MouseEvent& e) const;
     void commitLine(juce::Point<int> from, juce::Point<int> to);
 
-    WaveformGridComponent& grid_;
+    GainEnvelopeHost& host_;
 
     /// The Line tool's drag, in this component's pixels.
     std::optional<std::pair<juce::Point<int>, juce::Point<int>>> line_;

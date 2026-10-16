@@ -178,6 +178,7 @@ class ClipInspector : public BaseInspector,
 
     // Playback
     juce::TextButton reverseToggle_;
+    juce::TextButton gainEnvelopeToggle_;  // shows the clip's gain envelope (#3064)
 
     // Per-clip mix section
     juce::Label clipMixSectionLabel_;

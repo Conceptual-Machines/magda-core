@@ -306,6 +306,7 @@ add_library(magda_types STATIC
     core/ClipOcclusion.cpp
     core/ClipFades.cpp
     core/ClipGainEnvelope.cpp
+    core/ClipSourceMap.cpp
     # Which of a device's parameters something addresses (#2630). Model-only,
     # so the table compiler and the save path ask the same question.
     core/AddressedParameters.cpp
@@ -316,6 +317,7 @@ add_library(magda_types STATIC
     core/ClipOcclusion.hpp
     core/ClipFades.hpp
     core/ClipGainEnvelope.hpp
+    core/ClipSourceMap.hpp
     core/TechnicalText.hpp
     core/AddressedParameters.hpp
     core/ChainNodePath.hpp

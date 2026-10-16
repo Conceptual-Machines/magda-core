@@ -22,6 +22,7 @@
 #include "../tracks/TrackContentPanel.hpp"
 #include "../waveform/ClipWaveformPainter.hpp"
 #include "../waveform/WarpedWaveformRenderer.hpp"
+#include "ClipEnvelopeOverlay.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/ChordAnnotationCommands.hpp"
 #include "core/ChordProgressionConverter.hpp"
@@ -335,9 +336,11 @@ ClipComponent::ClipComponent(ClipId clipId, TrackContentPanel* parent)
 
     // Check if this clip is currently selected
     isSelected_ = ClipManager::getInstance().getSelectedClip() == clipId_;
+    syncGainEnvelope();
 }
 
 ClipComponent::~ClipComponent() {
+    gainEnvelope_.reset();
     stopTimer();
     if (waveformListenerPath_.isNotEmpty())
         AudioThumbnailManager::getInstance().removeThumbnailChangeListener(waveformListenerPath_,
@@ -524,9 +527,11 @@ void ClipComponent::paint(juce::Graphics& g) {
         paintFadeHandles(g, *clip, getLocalBounds());
     }
 
-    // Draw volume line (audio clips with non-zero volume, or when hovering/dragging)
-    if (clip->isAudio() && (std::abs(clip->volumeDB) > 0.01f || hoverVolumeHandle_ ||
-                            dragMode_ == DragMode::VolumeDrag)) {
+    // Draw volume line (audio clips with non-zero volume, or when hovering/dragging); a shown gain
+    // envelope takes its place (#3064).
+    if (clip->isAudio() && !clip->gainEnvelopeShown &&
+        (std::abs(clip->volumeDB) > 0.01f || hoverVolumeHandle_ ||
+         dragMode_ == DragMode::VolumeDrag)) {
         auto wfArea = bounds.reduced(2, 0).withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
         paintVolumeLine(g, *clip, wfArea);
     }
@@ -651,9 +656,14 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
         bgColour = bgColour.withAlpha(0.55f);
     paintClipBody(g, bounds, bgColour, showThrough);
 
+    // A shown gain envelope dims the waveform under it, as the audio editor does (#3064).
+    auto waveColour = juce::Colour();
+    if (clip.gainEnvelopeShown)
+        waveColour = juce::Colours::black.withAlpha(0.3f);
+    else if (ghosted)
+        waveColour = juce::Colours::black.withAlpha(0.65f);
     if (audioEventRef(clip).sourceFilePath().isNotEmpty())
-        paintAudioClipDirect(g, clip, waveformArea, clipDisplayLength,
-                             ghosted ? juce::Colours::black.withAlpha(0.65f) : juce::Colour());
+        paintAudioClipDirect(g, clip, waveformArea, clipDisplayLength, waveColour);
 
     g.setColour(deriveTrackSwatch(clip.colour, 0.45f));
     g.drawRoundedRectangle(bounds.toFloat(), CORNER_RADIUS, 1.0f);
@@ -1321,7 +1331,37 @@ void ClipComponent::paintVolumeLine(juce::Graphics& g, const ClipInfo& clip,
 }
 
 void ClipComponent::resized() {
-    // Nothing to do - clip bounds are set by parent
+    // Clip bounds are set by parent; the envelope follows them.
+    syncGainEnvelope();
+}
+
+void ClipComponent::syncGainEnvelope() {
+    const auto* clip = getClipInfo();
+    const auto shown = clip != nullptr && clip->isAudio() && clip->gainEnvelopeShown;
+    if (!shown) {
+        gainEnvelope_.reset();
+        return;
+    }
+
+    if (!gainEnvelope_) {
+        ClipEnvelopeOverlay::Hooks hooks;
+        // Trims and fade handles stay the clip's.
+        hooks.clipKeepsPress = [this](juce::Point<int> p) {
+            return isOnLeftEdge(p.x) || isOnRightEdge(p.x) ||
+                   (isSelected_ && (isOnFadeInHandle(p.x, p.y) || isOnFadeOutHandle(p.x, p.y)));
+        };
+        hooks.pressed = [this] {
+            if (!SelectionManager::getInstance().isClipSelected(clipId_))
+                SelectionManager::getInstance().selectClip(clipId_);
+        };
+        hooks.showContextMenu = [this] { showContextMenu(); };
+        gainEnvelope_ =
+            std::make_unique<ClipEnvelopeOverlay>(clipId_, *this, parentPanel_, std::move(hooks));
+    }
+
+    // The waveform's own area (paintAudioClip).
+    gainEnvelope_->layout(
+        getLocalBounds().reduced(2, 0).withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2));
 }
 
 bool ClipComponent::hitTest(int x, int y) {
@@ -3030,6 +3070,7 @@ void ClipComponent::clipPropertyChanged(ClipId clipId) {
     }
 
     if (clipId == clipId_) {
+        syncGainEnvelope();
         repaint();
         return;
     }
@@ -3172,6 +3213,7 @@ interaction::ClipSnapshot ClipComponent::makeHitSnapshot() const {
         s.fadeInSeconds = fades.fadeInSeconds;
         s.fadeOutSeconds = fades.fadeOutSeconds;
         s.volumeGainLinear = juce::Decibels::decibelsToGain(clip->volumeDB);
+        s.volumeLineShown = !clip->gainEnvelopeShown;
     }
     return s;
 }
@@ -3471,6 +3513,11 @@ void ClipComponent::showContextMenu() {
 
     if (!isMultiSelection && canEdit && overlapsAnotherClip) {
         menu.addItem(53, "Play Through Overlap", true, clipForMenu->overlapPlaysBoth);
+        menu.addSeparator();
+    }
+
+    if (!isMultiSelection && clipForMenu && clipForMenu->isAudio()) {
+        menu.addItem(54, "Show Gain Envelope", true, clipForMenu->gainEnvelopeShown);
         menu.addSeparator();
     }
 
@@ -3837,6 +3884,12 @@ void ClipComponent::showContextMenu() {
                 }
                 if (compound)
                     undoManager.endCompoundOperation();
+                break;
+            }
+
+            case 54: {  // Gain envelope (#3064)
+                if (const auto* clip = clipManager.getClip(clipId_))
+                    clipManager.setGainEnvelopeShown(clipId_, !clip->gainEnvelopeShown);
                 break;
             }
 

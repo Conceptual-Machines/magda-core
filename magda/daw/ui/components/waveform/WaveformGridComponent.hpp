@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include "GainEnvelopeEditor.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
@@ -15,8 +16,6 @@ class TimeRuler;  // Forward declaration
 }
 
 namespace magda::daw::ui {
-
-class GainEnvelopeEditor;
 
 /** Beat grid resolution for waveform overlay */
 enum class GridResolution { Off, Bar, Beat, Eighth, Sixteenth, ThirtySecond };
@@ -28,7 +27,9 @@ enum class GridResolution { Off, Bar, Beat, Eighth, Sixteenth, ThirtySecond };
  * Designed to be placed inside a Viewport for scrolling.
  * Similar to PianoRollGridComponent architecture.
  */
-class WaveformGridComponent : public juce::Component, public juce::ChangeListener {
+class WaveformGridComponent : public juce::Component,
+                              public juce::ChangeListener,
+                              private GainEnvelopeHost {
   public:
     WaveformGridComponent();
     ~WaveformGridComponent() override;
@@ -245,6 +246,17 @@ class WaveformGridComponent : public juce::Component, public juce::ChangeListene
 
     std::unique_ptr<GainEnvelopeEditor> gainEnvelopeEditor_;
     void layoutGainEnvelope();
+
+    // GainEnvelopeHost: x is display time, and the editor sits at the grid's left edge.
+    double pixelsPerX() const override;
+    double xToPixel(double x) const override;
+    double pixelToX(double px) const override;
+    double sourceAt(double x) const override;
+    std::vector<double> xsOf(double sourceSeconds) const override;
+    std::pair<double, double> xRange() const override;
+    bool snapsToGrid() const override;
+    double snapToGrid(double x) const override;
+    double gridSpacing() const override;
 
     /// The Marker tool is chosen and the clip warps, so a click places a marker.
     bool placesMarkers() const;
