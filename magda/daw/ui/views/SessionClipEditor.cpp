@@ -10,6 +10,7 @@
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
+#include "ui/components/common/ToggleChips.hpp"
 
 namespace magda {
 
@@ -183,16 +184,9 @@ void SessionClipEditor::setupHeader() {
     clipNameLabel_->setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(*clipNameLabel_);
 
-    // Loop toggle (single-icon mode with programmatic bg/border)
     loopToggle_ = std::make_unique<SvgButton>("Loop", BinaryData::loop_icon_svg,
                                               BinaryData::loop_icon_svgSize);
-    loopToggle_->setOriginalColor(juce::Colour(0xffBCBCBC));
-    loopToggle_->setNormalColor(juce::Colour(0xff999999));
-    loopToggle_->setActiveColor(juce::Colour(0xffCCCCCC));
-    loopToggle_->setActiveBackgroundColor(juce::Colour(0xff5588AA));
-    loopToggle_->setNormalBackgroundColor(juce::Colour(0xff2A2A2A));
-    loopToggle_->setBorderColor(juce::Colour(0xff555555));
-    loopToggle_->setBorderThickness(1.0f);
+    daw::ui::applyLoopChip(*loopToggle_, juce::Colour(0xFFBCBCBC));
     loopToggle_->setCornerRadius(4.0f);
     loopToggle_->onClick = [this]() {
         bool newState = !loopToggle_->isActive();

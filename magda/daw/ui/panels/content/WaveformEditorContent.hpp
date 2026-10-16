@@ -1,6 +1,8 @@
 #pragma once
 
+#include <functional>
 #include <memory>
+#include <optional>
 #include <unordered_set>
 
 #include "PanelContent.hpp"
@@ -8,7 +10,8 @@
 #include "core/ClipDisplayInfo.hpp"
 #include "core/ClipManager.hpp"
 #include "core/UndoManager.hpp"
-#include "ui/components/common/DraggableValueLabel.hpp"
+#include "ui/components/common/EditorRail.hpp"
+#include "ui/components/common/SvgButton.hpp"
 #include "ui/components/timeline/TimeRuler.hpp"
 #include "ui/components/timeline/ZoomScrollBar.hpp"
 #include "ui/components/waveform/WaveformGridComponent.hpp"
@@ -102,6 +105,10 @@ class WaveformEditorContent : public PanelContent,
         return snapEnabled_;
     }
 
+    /// Fired by the rail's panel toggle; the owner shows or hides the properties panel.
+    std::function<void()> onTogglePropertiesPanel;
+    void setPropertiesPanelOpen(bool open);
+
     // Loop-record take lanes (header TAKES toggle).
     bool editingClipHasMultipleTakes() const;
     bool areTakesExpanded() const;
@@ -125,8 +132,7 @@ class WaveformEditorContent : public PanelContent,
     static constexpr double MAX_VERTICAL_ZOOM = 4.0;
 
     // Layout constants
-    static constexpr int TIME_RULER_HEIGHT = 48;
-    static constexpr int TOOLBAR_HEIGHT = 30;
+    static constexpr int TIME_RULER_HEIGHT = 22;
     static constexpr int GRID_LEFT_PADDING = 10;
     static constexpr int H_SCROLLBAR_HEIGHT = 12;
 
@@ -136,14 +142,9 @@ class WaveformEditorContent : public PanelContent,
     std::unique_ptr<WaveformGridComponent> gridComponent_;
     std::unique_ptr<magda::TimeRuler> timeRuler_;
     std::unique_ptr<magda::ZoomScrollBar> horizontalScrollBar_;
-    std::unique_ptr<juce::TextButton> timeModeButton_;
+    std::unique_ptr<magda::SvgButton> propertiesToggle_;
+    magda::EditorRail rail_;
 
-    std::unique_ptr<DraggableValueLabel> gridNumeratorLabel_;
-    std::unique_ptr<DraggableValueLabel> gridDenominatorLabel_;
-    std::unique_ptr<juce::Label> gridSlashLabel_;
-    std::unique_ptr<juce::TextButton> snapButton_;
-    std::unique_ptr<juce::TextButton> gridButton_;
-    bool gridVisible_ = true;
     bool snapEnabled_ = false;
     int gridNumerator_ = 1;
     int gridDenominator_ = 4;
@@ -156,9 +157,15 @@ class WaveformEditorContent : public PanelContent,
     bool cachedIsPlaying_ = false;
     magda::ClipDisplayInfo cachedDisplayInfo_{};  // Cached for playhead overlay positioning
 
-    // Look and feel
-    class ButtonLookAndFeel;
-    std::unique_ptr<ButtonLookAndFeel> buttonLookAndFeel_;
+    /// Edit cursor and playback positions on the ruler's display axis, when inside the clip.
+    struct PlayheadPositions {
+        std::optional<double> edit;
+        std::optional<double> playback;
+    };
+    PlayheadPositions playheadDisplayPositions() const;
+    int displayPositionToX(double displayPosition) const;
+    /// Moves the ruler's playhead head and edit handle, and redraws the playhead line.
+    void refreshPlayhead();
 
     // Virtual scroll position (replaces viewport-based horizontal scrolling)
     int virtualScrollX_ = 0;

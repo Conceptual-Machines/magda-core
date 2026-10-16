@@ -191,6 +191,11 @@ juce::String MagdaAlertWindow::keyHintFor(const juce::Button& button) {
 }
 
 void MagdaAlertWindow::assignRoles(const juce::Array<juce::Button*>& buttons) {
+    // Runs on every layout pass, so a key already registered is left alone.
+    const auto addShortcutOnce = [](juce::Button& button, const juce::KeyPress& key) {
+        if (!button.isRegisteredForShortcut(key))
+            button.addShortcut(key);
+    };
     const juce::KeyPress returnKey(juce::KeyPress::returnKey);
     const juce::KeyPress escapeKey(juce::KeyPress::escapeKey);
     juce::Button* cancel = nullptr;
@@ -206,15 +211,15 @@ void MagdaAlertWindow::assignRoles(const juce::Array<juce::Button*>& buttons) {
         const auto role = roleForLabel(button->getButtonText());
         button->getProperties().set(kRoleProperty, static_cast<int>(role));
         if (role == ButtonRole::Discard) {
-            button->addShortcut(commandKey('d'));
+            addShortcutOnce(*button, commandKey('d'));
         } else if (role == ButtonRole::Destructive) {
             // A stray Return must not destroy: it moves to the safe button.
             if (button == withReturn && cancel != nullptr && cancel != button) {
                 button->clearShortcuts();
-                cancel->addShortcut(returnKey);
+                addShortcutOnce(*cancel, returnKey);
                 withReturn = cancel;
             }
-            button->addShortcut(commandKey(juce::KeyPress::backspaceKey));
+            addShortcutOnce(*button, commandKey(juce::KeyPress::backspaceKey));
         }
     }
 
@@ -225,7 +230,7 @@ void MagdaAlertWindow::assignRoles(const juce::Array<juce::Button*>& buttons) {
                 break;
             }
         if (withReturn != nullptr)
-            withReturn->addShortcut(returnKey);
+            addShortcutOnce(*withReturn, returnKey);
         else
             withReturn = cancel;  // Styled as primary; Return must not cancel a running task.
     }

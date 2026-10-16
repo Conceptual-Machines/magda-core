@@ -6,6 +6,7 @@
 #include "core/AutomationCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "project/ProjectManager.hpp"
+#include "ui/components/common/ToggleChips.hpp"
 
 namespace magda::daw::ui {
 
@@ -172,17 +173,12 @@ AutomationClipInspector::AutomationClipInspector() {
     };
     addChildComponent(*lengthValue_);
 
-    // Loop toggle: same chrome as the clip inspector's loop button. Off =
-    // grey glyph; engaged = solid blue chip with a white glyph.
+    // Loop toggle: the loop chip, as on the clip inspector.
     styleLabel(loopLabel_, "Loop");
     addChildComponent(loopLabel_);
     loopToggle_ = std::make_unique<magda::SvgButton>("Loop", BinaryData::loop_icon_svg,
                                                      BinaryData::loop_icon_svgSize);
-    loopToggle_->setOriginalColor(juce::Colour(0xFFBCBCBC));
-    loopToggle_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-    loopToggle_->setActiveColor(juce::Colours::white);
-    loopToggle_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-    loopToggle_->setClickingTogglesState(false);
+    applyLoopChip(*loopToggle_, juce::Colour(0xFFBCBCBC));
     loopToggle_->onClick = [this]() {
         if (const auto* clip = getClip())
             magda::AutomationManager::getInstance().setClipLooping(clip->id, !clip->looping);

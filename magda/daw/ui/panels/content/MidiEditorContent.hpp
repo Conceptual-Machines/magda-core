@@ -164,12 +164,6 @@ class MidiEditorContent : public PanelContent,
     static void setNotePreviewEnabled(bool enabled) {
         notePreviewEnabled_ = enabled;
     }
-    // Rail monitor toggle: crossed speaker in grey when off, sounding speaker in green when
-    // on. Shared by the piano roll and drum grid so both read identically (#1705).
-    static void syncNotePreviewToggle(magda::SvgButton& button, bool on);
-    // v1 rail button: 28px, radius 6, a filled chip with a hairline when engaged.
-    static void styleRailButton(magda::SvgButton& button);
-    static constexpr int RAIL_BUTTON = 28;
 
     /// The song key or the key chip changed: refold and repaint the scale shading.
     void songKeyChanged();

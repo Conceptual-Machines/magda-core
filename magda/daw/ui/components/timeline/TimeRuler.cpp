@@ -851,24 +851,14 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         }
     }
 
-    // Draw playhead line if playing; the owner has already placed it on this ruler's axis
-    if (playheadPosition >= 0.0) {
+    // Playhead tick if playing; the owner has already placed it on this ruler's axis. Editor
+    // rulers leave it to the editor's playback line, as the arrangement does.
+    if (playheadPosition >= 0.0 && !compact_) {
         int playheadX = timeToPixel(playheadPosition);
         if (playheadX >= 0 && playheadX <= width) {
             int tickAreaTop = height - tickHeightMajor();
-            if (compact_) {
-                // Editor rulers mark the playhead with an orange head pointing into the grid.
-                const auto x = static_cast<float>(playheadX);
-                juce::Path head;
-                head.addTriangle(x - 5.0f, static_cast<float>(height - 9), x + 5.0f,
-                                 static_cast<float>(height - 9), x, static_cast<float>(height));
-                g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_PLAYHEAD));
-                g.fillPath(head);
-                g.fillRect(playheadX, 0, 1, height);
-            } else {
-                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-                g.fillRect(playheadX - 1, tickAreaTop, 2, tickHeightMajor());
-            }
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+            g.fillRect(playheadX - 1, tickAreaTop, 2, tickHeightMajor());
         }
     }
 }

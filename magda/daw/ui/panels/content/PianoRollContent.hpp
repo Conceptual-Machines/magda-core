@@ -7,6 +7,7 @@
 
 #include "MidiEditorContent.hpp"
 #include "core/SelectionManager.hpp"
+#include "ui/components/common/EditorRail.hpp"
 #include "ui/components/pianoroll/PianoRollShownContent.hpp"
 #include "ui/components/pianoroll/PitchFoldMap.hpp"
 
@@ -181,7 +182,7 @@ class PianoRollContent : public MidiEditorContent,
     void onVelocityEdited() override;
 
     // Layout constants (PianoRoll-specific)
-    static constexpr int SIDEBAR_WIDTH = 36;
+    static constexpr int SIDEBAR_WIDTH = magda::EditorRail::kWidth;
     static constexpr int ZOOM_STRIP_WIDTH = 16;
     static constexpr int OCTAVE_LABEL_WIDTH = 32;
     static constexpr int KEYBOARD_WIDTH = 60;
@@ -235,6 +236,7 @@ class PianoRollContent : public MidiEditorContent,
     std::unique_ptr<magda::SvgButton> previewToggle_;  // #1705 audition notes on click
     std::unique_ptr<magda::SvgButton> takeLanesToggle_;
     std::unique_ptr<magda::SvgButton> chordToggle_;
+    magda::EditorRail rail_;
     std::unique_ptr<magda::SvgButton> chordDetectBtn_;
     std::unique_ptr<magda::SvgButton> progressionOverlayToggle_;  // #1504 ghost overlay
     std::unique_ptr<magda::SvgButton> gridToggleBtn_;             // chord mode: show/hide grid
@@ -250,7 +252,6 @@ class PianoRollContent : public MidiEditorContent,
 
     // Grid component management
     void setupGridCallbacks();
-    void drawSidebar(juce::Graphics& g, juce::Rectangle<int> area);
     void drawChordRow(juce::Graphics& g, juce::Rectangle<int> area);
     static void drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area);
     void detectChordsFromNotes();

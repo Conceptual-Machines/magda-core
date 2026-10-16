@@ -28,6 +28,7 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
+#include "ui/components/timeline/PlayheadStyle.hpp"
 #include "ui/utils/AudioFileTypes.hpp"
 
 namespace magda {
@@ -303,8 +304,8 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     {
         int playheadX = 0;
         if (getPlayheadDisplayX(playheadX) && playheadX >= 0 && playheadX <= bounds.getRight()) {
-            g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_PLAYHEAD));
-            g.fillRect(playheadX, 0, 1, bounds.getHeight());
+            daw::ui::paintPlayheadLine(g, static_cast<float>(playheadX), 0.0f,
+                                       static_cast<float>(bounds.getHeight()));
         }
     }
 

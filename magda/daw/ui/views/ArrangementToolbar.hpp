@@ -5,9 +5,10 @@
 #include <memory>
 #include <vector>
 
+#include "../components/common/EditToolbar.hpp"
+
 namespace magda {
 
-class EditToolButtons;
 class SvgButton;
 
 /**
@@ -29,8 +30,7 @@ class ArrangementToolbar : public juce::Component {
   private:
     std::unique_ptr<EditToolButtons> tools_;
     std::vector<std::vector<SvgButton*>> viewGroups_;
-    std::vector<juce::Rectangle<int>> wells_;
-    std::vector<int> dividers_;
+    edit_toolbar::Decor decor_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ArrangementToolbar)
 };

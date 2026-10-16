@@ -42,6 +42,7 @@
 #include "core/controllers/ControllerRegistry.hpp"
 #include "core/controllers/MidiLearnCoordinator.hpp"
 #include "project/ProjectManager.hpp"
+#include "ui/components/timeline/PlayheadStyle.hpp"
 
 namespace magda {
 
@@ -517,13 +518,6 @@ void MainView::setupComponents() {
     toolbar_->setViewGroups({{zoomFitButton.get(), zoomSelButton.get(), zoomLoopButton.get()},
                              {markerLaneToggleButton.get(), secondsRulerToggleButton.get()}});
     addAndMakeVisible(*toolbar_);
-
-    // Axis label icon (non-interactive)
-    setupCornerButton(vAxisIcon, "VAxis", BinaryData::vertical_svg, BinaryData::vertical_svgSize);
-    vAxisIcon->setInterceptsMouseClicks(false, false);
-    vAxisIcon->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.28f));
-    vAxisIcon->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.28f));
-    vAxisIcon->setBorderThickness(0.0f);
 
     // Set up scroll synchronization
     trackContentViewport->getHorizontalScrollBar().addListener(this);
@@ -1182,7 +1176,7 @@ void MainView::resized() {
             repaint(cornerBottomBorderLine.expanded(1));
         cornerBottomBorderLine = juce::Rectangle<int>(lineX, cornerArea.getBottom() - 1, lineW, 1);
 
-        // Track-height row: action buttons on inner side, axis label on outer side.
+        // Track-height row: action buttons on the inner side.
         SideColumn btnSide(!arrangementLayout.swapped);
         SideColumn axisSide(arrangementLayout.swapped);
         trackSmallButton->setBounds(btnSide.removeFrom(botRow, btnSize));
@@ -1194,8 +1188,6 @@ void MainView::resized() {
         ioToggleButton->setBounds(btnSide.removeFrom(botRow, btnSize));
         btnSide.removeSpacing(botRow, gap);
         addTrackButton->setBounds(btnSide.removeFrom(botRow, btnSize));
-        axisSide.removeSpacing(botRow, gap);
-        vAxisIcon->setBounds(axisSide.removeFrom(botRow, btnSize));
 
         // AUDIO / MIDI labels over the I/O column, in the lower row.
         repaint(ioLabelsStrip);
@@ -1781,10 +1773,9 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
         playX < getWidth()) {
         // Draw thin vertical line extending the full track area, starting at the
         // top of the track content (just below the playhead/triangle row).
-        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.85f));
         const auto lineTop = static_cast<float>(LayoutConfig::getInstance().playheadRowHeight);
-        g.drawLine(static_cast<float>(playX), lineTop, static_cast<float>(playX),
-                   static_cast<float>(getHeight()), 1.5f);
+        daw::ui::paintPlayheadLine(g, static_cast<float>(playX), lineTop,
+                                   static_cast<float>(getHeight()));
     }
 }
 

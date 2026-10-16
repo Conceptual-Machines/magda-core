@@ -877,7 +877,7 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
     const auto& projectDefaults = ProjectManager::getInstance().getCurrentProjectInfo().defaults;
 
     constexpr int HEADER_HEIGHT = 16;
-    constexpr float CORNER_RADIUS = 4.0f;
+    constexpr float CORNER_RADIUS = 0.0f;  // square, like the clips
     constexpr int MIDI_MAX = 127;
     constexpr int MIDI_RANGE = 127;
 

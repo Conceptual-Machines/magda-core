@@ -11,6 +11,7 @@
 #include "inspector/clip/sections/ClipFadesSection.hpp"
 #include "inspector/clip/sections/ClipTakesSection.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
+#include "ui/components/common/SectionHeader.hpp"
 #include "ui/components/common/SvgButton.hpp"
 
 namespace magda::daw::ui {
@@ -60,10 +61,10 @@ class AudioClipPropertiesContent : public PanelContent, public magda::ClipManage
     std::unordered_set<magda::ClipId> multiClipIds_;  // >1 entries = multi mode
 
     // Section labels
-    std::unique_ptr<juce::Label> clipSectionLabel_;
-    std::unique_ptr<juce::Label> stretchSectionLabel_;
-    std::unique_ptr<juce::Label> pitchSectionLabel_;
-    std::unique_ptr<juce::Label> mixSectionLabel_;
+    std::unique_ptr<SectionHeader> clipSectionLabel_;
+    std::unique_ptr<SectionHeader> stretchSectionLabel_;
+    std::unique_ptr<SectionHeader> pitchSectionLabel_;
+    std::unique_ptr<SectionHeader> mixSectionLabel_;
 
     // Separator Y positions for painting
     std::vector<int> separatorYPositions_;
@@ -98,7 +99,7 @@ class AudioClipPropertiesContent : public PanelContent, public magda::ClipManage
     std::unique_ptr<ClipTakesSection> takesSection_;
 
     // Transient Detection section
-    std::unique_ptr<juce::Label> transientSectionLabel_;
+    std::unique_ptr<SectionHeader> transientSectionLabel_;
     std::unique_ptr<juce::Label> transientSensLabel_;
     std::unique_ptr<DraggableValueLabel> transientSensValue_;
 

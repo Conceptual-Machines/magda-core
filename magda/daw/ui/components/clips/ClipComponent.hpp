@@ -236,7 +236,7 @@ class ClipComponent : public juce::Component,
     // Visual constants (hit-relevant ones are canonical in the shared hit
     // tester so zone math can never drift from the paint metrics, #1719)
     static constexpr int RESIZE_HANDLE_WIDTH = interaction::ClipMetrics::RESIZE_HANDLE_WIDTH;
-    static constexpr int CORNER_RADIUS = 4;
+    static constexpr int CORNER_RADIUS = 0;  // clips are square-cornered
     static constexpr int HEADER_HEIGHT = interaction::ClipMetrics::HEADER_HEIGHT;
     static constexpr int MIN_WIDTH_FOR_NAME = 40;
     static constexpr int FADE_HANDLE_SIZE = 8;

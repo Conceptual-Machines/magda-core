@@ -29,6 +29,7 @@
 #include "engine/AudioEngine.hpp"
 #include "music/GrooveLibrary.hpp"
 #include "project/ProjectManager.hpp"
+#include "ui/components/common/ToggleChips.hpp"
 
 namespace magda::daw::ui {
 namespace {
@@ -496,11 +497,12 @@ void ClipInspector::initClipPropertiesSection() {
     clipBeatsUnitLabel_.setJustificationType(juce::Justification::centredLeft);
     clipPropsContainer_.addChildComponent(clipBeatsUnitLabel_);
 
-    // Position icon (static, non-interactive)
+    // Position icon: a faint watermark beside the timing fields, not a control.
     clipPositionIcon_ = std::make_unique<magda::SvgButton>("Position", BinaryData::position_svg,
                                                            BinaryData::position_svgSize);
     clipPositionIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    clipPositionIcon_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    clipPositionIcon_->setNormalColor(ActiveTheme::TEXT_DIM);
+    clipPositionIcon_->setAlpha(0.45f);
     clipPositionIcon_->setIconPadding(2.0f);
     clipPositionIcon_->setInterceptsMouseClicks(false, false);
     clipPropsContainer_.addChildComponent(*clipPositionIcon_);
@@ -613,16 +615,10 @@ void ClipInspector::initClipPropertiesSection() {
     };
     clipPropsContainer_.addChildComponent(*clipLengthValue_);
 
-    // Loop toggle: borderless single icon, recoloured by state. Off = grey
-    // glyph, no fill; engaged = solid blue chip with a white glyph. Matches the
-    // clip-editor header loop toggle (both drive the same clip loop).
+    // Loop toggle: the loop chip, matching the clip-editor toolbar (both drive the same loop).
     clipLoopToggle_ = std::make_unique<magda::SvgButton>("Loop", BinaryData::loop_icon_svg,
                                                          BinaryData::loop_icon_svgSize);
-    clipLoopToggle_->setOriginalColor(juce::Colour(0xFFBCBCBC));
-    clipLoopToggle_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-    clipLoopToggle_->setActiveColor(juce::Colours::white);
-    clipLoopToggle_->setActiveBackgroundColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-    clipLoopToggle_->setClickingTogglesState(false);
+    applyLoopChip(*clipLoopToggle_, juce::Colour(0xFFBCBCBC));
     clipLoopToggle_->onClick = [this]() {
         if (selectedClipIds_.empty())
             return;

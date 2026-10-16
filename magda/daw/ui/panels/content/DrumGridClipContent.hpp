@@ -6,6 +6,7 @@
 
 #include "MidiEditorContent.hpp"
 #include "audio/plugins/DrumGridTemplates.hpp"
+#include "ui/components/common/EditorRail.hpp"
 
 namespace magda {
 class SvgButton;
@@ -106,7 +107,7 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     bool hasPadDevice_ = false;
 
     // Layout constants (DrumGrid-specific)
-    static constexpr int SIDEBAR_WIDTH = 36;
+    static constexpr int SIDEBAR_WIDTH = magda::EditorRail::kWidth;
     static constexpr int CHORD_LANE_HEIGHT = 26;
     static constexpr int ZOOM_STRIP_WIDTH = 16;
     static constexpr int DEFAULT_LABEL_WIDTH = 200;
@@ -131,6 +132,7 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     std::unique_ptr<magda::SvgButton> foldToggle_;
     std::unique_ptr<magda::SvgButton> previewToggle_;  // #1705 audition notes on click
     std::unique_ptr<magda::SvgButton> chordToggle_;
+    magda::EditorRail rail_;
     std::unique_ptr<DrumGridRowLabels> rowLabels_;
     std::unique_ptr<DrumGridLabelDivider> labelDivider_;
     std::unique_ptr<VerticalZoomStrip> verticalZoomStrip_;
@@ -164,7 +166,6 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     void applyDrumkitToClip(const juce::String& drumkitName);
     void promptSaveDrumkit();
     void centerOnNotes();
-    void drawSidebar(juce::Graphics& g, juce::Rectangle<int> area);
     juce::String resolvePadName(int padIndex) const;
     void setRowHeight(int height, bool persist);
     void setRowHeightAnchored(int height, int anchorRow, int anchorScreenY, bool persist);

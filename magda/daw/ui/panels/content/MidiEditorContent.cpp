@@ -46,23 +46,6 @@ bool MidiEditorContent::foldEnabled_ = false;
 bool MidiEditorContent::notePreviewEnabled_ = false;
 std::vector<magda::TrackId> MidiEditorContent::overlayTrackIds_;
 
-void MidiEditorContent::syncNotePreviewToggle(magda::SvgButton& button, bool on) {
-    button.updateSvgData(BinaryData::memonitor_svg, BinaryData::memonitor_svgSize);
-    button.setOriginalColor(juce::Colour(0xFFB3B3B3));
-    button.setTintedChip(ActiveTheme::MIDI_MONITOR);
-    button.setActive(on);
-}
-
-void MidiEditorContent::styleRailButton(magda::SvgButton& button) {
-    button.setOriginalColor(juce::Colour(0xFFB3B3B3));
-    button.setNormalColor(ActiveTheme::TEXT_SECONDARY);
-    button.setHoverColor(ActiveTheme::TEXT_PRIMARY);
-    button.setTintedChip(ActiveTheme::ACCENT_PRIMARY);
-    button.setBorderThickness(1.0f);
-    button.setCornerRadius(6.0f);
-    button.setIconPadding(7.0f);
-}
-
 std::vector<int> MidiEditorContent::collectUsedPitches() const {
     std::set<int> used;
     if (editingClipId_ != magda::INVALID_CLIP_ID) {
