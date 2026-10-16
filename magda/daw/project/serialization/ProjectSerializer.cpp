@@ -12,6 +12,7 @@
 #include "../../core/AddressedParameters.hpp"
 #include "../../core/AutomationManager.hpp"
 #include "../../core/ClipManager.hpp"
+#include "../../core/ClipOperations.hpp"
 #include "../../core/DeviceParamMigrations.hpp"
 #include "../../core/DrumGridPads.hpp"
 #include "../../core/LegacyDeviceAliases.hpp"
@@ -654,6 +655,7 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
 void ProjectSerializer::commitStaged(StagedProjectData& data) {
     // Before the clips, which reference these by id.
     installStagedSources(data.sources, data.legacySources, data.clips);
+    ClipOperations::wrapFreeLoops(data.clips, data.info.tempo);
 
     commitStagedData(data.tracks, data.clips, data.automationLanes, data.automationClips);
 
@@ -1031,6 +1033,7 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
 
     // Stage 2: All components validated successfully - now commit to managers atomically
     installStagedSources(stagedSources, stagedLegacySources, stagedClips);
+    ClipOperations::wrapFreeLoops(stagedClips, outInfo.tempo);
     commitStagedData(stagedTracks, stagedClips, stagedAutomation, stagedAutomationClips);
     resolveStagedSources(stagedSources);
 

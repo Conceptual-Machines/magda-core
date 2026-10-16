@@ -458,6 +458,26 @@ ChordTrackDto makeChordTrackDto(const TrackInfo* track, ClipApi& clips) {
     return dto;
 }
 
+namespace {
+
+juce::String tempoFromName(Provenance from) {
+    switch (from) {
+        case Provenance::FileMetadata:
+            return "fileMetadata";
+        case Provenance::Analysis:
+            return "analysis";
+        case Provenance::User:
+            return "user";
+        case Provenance::Project:
+            return "project";
+        case Provenance::None:
+            break;
+    }
+    return "none";
+}
+
+}  // namespace
+
 ClipDto makeClipDto(const ClipInfo& clip) {
     ClipDto dto;
     dto.id = clip.id;
@@ -480,6 +500,10 @@ ClipDto makeClipDto(const ClipInfo& clip) {
     for (const auto& note : clip.midiNotes)
         dto.notes.push_back({note.noteNumber, note.velocity, note.startBeat, note.lengthBeats});
     dto.midiEvents = makeMidiEventDtos(clip);
+    if (const auto* event = clip.primaryEvent())
+        dto.audio =
+            ClipAudioDto{event->autoTempo ? "beat" : "free", clip.loopEnabled, event->interpBpm,
+                         tempoFromName(event->bpmFrom), event->speedRatio};
     return dto;
 }
 

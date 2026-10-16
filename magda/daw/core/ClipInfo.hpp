@@ -236,7 +236,8 @@ struct WarpMarker {
 
 /// Who last wrote an interpretation value (#2674). A value the user set is
 /// replaced only by the user; anything else gives way to a newer answer.
-enum class Provenance { None, FileMetadata, Analysis, User };
+/// Project is the tempo LOOP assumed for a free clip (#3060), a guess.
+enum class Provenance { None, FileMetadata, Analysis, User, Project };
 
 /// What the loop region covers. WholeSource and Interpretation are derived
 /// from the file and the interpretation; only Explicit is a range of its own.

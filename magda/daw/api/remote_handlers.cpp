@@ -5087,13 +5087,22 @@ HandlerResult clipsUpdateAudio(MagdaApi& api, const juce::var& input, const Requ
     if (!stretch || !fadeInCurve || !fadeOutCurve)
         return HandlerResult::fail(ErrorCode::ValidationFailed, "unknown stretch or fade curve");
     const auto* tempo = api.project().tempoMap();
-    if (has(input, "playback") && tempo == nullptr)
+    if ((has(input, "playback") || has(input, "looping")) && tempo == nullptr)
         return HandlerResult::fail(ErrorCode::Conflict, "the project tempo map is unavailable");
     const auto intent = !has(input, "playback")                  ? event->playbackIntent
                         : input["playback"].toString() == "beat" ? PlaybackIntent::Beat
                                                                  : PlaybackIntent::Free;
+    // Only beat playback loops, and looping a free clip puts it there (#3060).
+    const bool loops = has(input, "looping") && readBool(input, "looping");
+    if (loops && has(input, "playback") && intent == PlaybackIntent::Free)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "looping needs beat playback");
+    if (current->view == ClipView::Session &&
+        ((has(input, "playback") && intent == PlaybackIntent::Free) ||
+         (has(input, "looping") && !loops)))
+        return HandlerResult::fail(ErrorCode::Conflict,
+                                   "a session clip always loops, in beat playback");
     // A free clip plays its file as tape, with no tempo to state.
-    if (has(input, "sourceBpm") && intent != PlaybackIntent::Beat)
+    if (has(input, "sourceBpm") && intent != PlaybackIntent::Beat && !loops)
         return HandlerResult::fail(ErrorCode::ValidationFailed,
                                    "sourceBpm needs the clip in beat playback");
 
@@ -5108,6 +5117,14 @@ HandlerResult clipsUpdateAudio(MagdaApi& api, const juce::var& input, const Requ
         run([&] {
             runCommand<SetPlaybackIntentCommand>(api, clipId, intent,
                                                  tempo->bpmAt(current->placement.startBeat));
+        });
+    if (has(input, "looping") && api.clips().getClip(clipId)->loopEnabled != loops)
+        run([&] {
+            const double bpm = tempo->bpmAt(current->placement.startBeat);
+            runCommand<SetClipPropertyCommand>(api, clipId, juce::String("Set Clip Loop"),
+                                               [loops, bpm](auto& manager, ClipId id) {
+                                                   manager.setClipLoopEnabled(id, loops, bpm);
+                                               });
         });
     if (has(input, "sourceBpm") && now()->interpBpm != readDouble(input, "sourceBpm"))
         run([&] {

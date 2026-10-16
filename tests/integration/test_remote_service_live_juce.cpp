@@ -1185,6 +1185,50 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             dir.deleteRecursively();
         }
 
+        beginTest("Looping a free audio clip puts it in beat playback, as LOOP does (#3060)");
+        {
+            Fixture fixture;
+            FlatTempoMap tempo(120.0);
+            fixture.api.setProjectTempoMap([&tempo] { return &tempo; });
+            const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                 .getChildFile("magda-loop-beat-test");
+            dir.createDirectory();
+            const auto sample = writeSample(dir.getChildFile("loop.wav"), 2.0);
+            const auto trackId = static_cast<int>(
+                fixture.run("tracks.create", object({{"name", "Loop"}, {"type", "audio"}}))
+                    .result["id"]);
+            const auto clipId = static_cast<int>(
+                fixture
+                    .run("clips.loadSample",
+                         object({{"samplePath", sample.getFullPathName()},
+                                 {"placement", arrangementDestination(trackId, 0.0)}}))
+                    .result["id"]);
+            const auto free = fixture.run("clips.get", object({{"clipId", clipId}}));
+            expect(free.ok);
+            expect(free.result["audio"]["playback"].toString() == "free");
+            expect(!static_cast<bool>(free.result["audio"]["looping"]));
+
+            const auto looped =
+                fixture.run("clips.updateAudio", object({{"clipId", clipId}, {"looping", true}}));
+            expect(looped.ok);
+            const auto& audio = looped.result["audio"];
+            expect(audio["playback"].toString() == "beat");
+            expect(static_cast<bool>(audio["looping"]));
+            expectWithinAbsoluteError(static_cast<double>(audio["tempo"]), 120.0, 1e-9);
+            expect(audio["tempoFrom"].toString() == "project");
+
+            const auto unlooped = fixture.run("clips.updateAudio",
+                                              object({{"clipId", clipId}, {"playback", "free"}}));
+            expect(unlooped.ok);
+            expect(!static_cast<bool>(unlooped.result["audio"]["looping"]));
+
+            const auto contradictory =
+                fixture.run("clips.updateAudio",
+                            object({{"clipId", clipId}, {"playback", "free"}, {"looping", true}}));
+            expect(!contradictory.ok && contradictory.error.code == ErrorCode::ValidationFailed);
+            dir.deleteRecursively();
+        }
+
         beginTest("Arrangement clips move, resize, and duplicate through undoable operations");
         {
             Fixture fixture;

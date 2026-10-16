@@ -2092,6 +2092,8 @@ TEST_CASE("Clip serialization validates type and audio schema", "[project][seria
         warpMarkers.add(juce::var(warpObj));
         sourceObj->setProperty("warpMarkers", warpMarkers);
         clipObj->setProperty("audioSource", juce::var(sourceObj));
+        // Not looping, so the free-loop migration (#3060) leaves the fields as read.
+        clipObj->setProperty("loopEnabled", false);
 
         ClipManager::getInstance().clearAllClips();
 
@@ -2142,6 +2144,8 @@ TEST_CASE("Clip serialization validates type and audio schema", "[project][seria
         clipObj->setProperty("speedRatio", 1.5);
         clipObj->setProperty("sourceNumBeats", 12.0);
         clipObj->setProperty("sourceBPM", 120.0);
+        // Not looping, so the free-loop migration (#3060) leaves the fields as read.
+        clipObj->setProperty("loopEnabled", false);
 
         ClipManager::getInstance().clearAllClips();
 

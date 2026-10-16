@@ -42,6 +42,8 @@ const char* toString(Provenance from) {
             return "analysis";
         case Provenance::User:
             return "user";
+        case Provenance::Project:
+            return "project";
         case Provenance::None:
             break;
     }
@@ -83,6 +85,8 @@ Provenance provenanceFromString(const juce::String& text, Provenance fallback) {
         return Provenance::Analysis;
     if (text == "user")
         return Provenance::User;
+    if (text == "project")
+        return Provenance::Project;
     return fallback;
 }
 

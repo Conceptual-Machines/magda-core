@@ -899,6 +899,55 @@ class ClipOperations {
     }
 
     /**
+     * @brief Put a free clip in beat mode so it may loop (#3060).
+     *
+     * A file with no tempo of its own takes the one it is heard at now, so the
+     * switch changes nothing audible; a tempo it already carries is kept, or
+     * with @p keepSound replaced unless the user named it. False when beat
+     * mode cannot be granted, with the clip left free.
+     */
+    static inline bool wrapInBeatMode(ClipInfo& clip, double bpm, bool keepSound = false) {
+        auto* event = clip.primaryEvent();
+        if (event == nullptr || !isValidBpm(bpm))
+            return false;
+        if (event->autoTempo)
+            return true;
+
+        // Beat mode reads at projectBpm / interpBpm, so this keeps the speed.
+        const double heardAt = bpm / (event->speedRatio > 0.0 ? event->speedRatio : 1.0);
+        const double fileSeconds = event->sourceDurationSeconds();
+        if (!event->hasInterpretedBpm()) {
+            event->adoptBpm(heardAt, Provenance::Project);
+        } else if (keepSound && !event->warpEnabled && event->bpmFrom != Provenance::User &&
+                   std::abs(event->interpBpm - heardAt) > 1.0e-6) {
+            // Only an assumption keeps the sound when the file names another
+            // tempo. A warped clip already plays at its own, so it keeps it.
+            event->interpBpm = heardAt;
+            event->bpmFrom = Provenance::Project;
+            if (event->beatsFrom != Provenance::User) {
+                event->interpTotalBeats = fileSeconds > 0.0 ? fileSeconds * heardAt / 60.0 : 0.0;
+                event->beatsFrom = Provenance::Project;
+            }
+            event->afterInterpretationChange();
+        }
+        if (event->interpTotalBeats <= 0.0 && fileSeconds > 0.0 && event->hasInterpretedBpm())
+            event->adoptTotalBeats(fileSeconds * event->interpBpm / 60.0, event->bpmFrom);
+
+        // Told it was on already, so the clip keeps its length: fitting it to
+        // one pass of the file is what BEAT does, not LOOP.
+        setPlaybackIntent(clip, PlaybackIntent::Beat, bpm, true);
+        return event->autoTempo;
+    }
+
+    /// A project saved before #3060 can hold free clips that loop. Each goes
+    /// into beat mode sounding as it did, unless the user named its tempo.
+    static inline void wrapFreeLoops(std::vector<ClipInfo>& clips, double bpm) {
+        for (auto& clip : clips)
+            if (clip.isAudio() && clip.loopEnabled)
+                wrapInBeatMode(clip, bpm, true);
+    }
+
+    /**
      * @brief Resize clip from right edge in musical mode (beat-based)
      * @param clip Clip to resize
      * @param newLengthBeats New length in beats

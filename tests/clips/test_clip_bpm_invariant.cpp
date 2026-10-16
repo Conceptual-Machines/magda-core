@@ -542,8 +542,7 @@ TEST_CASE("The BEAT toggle asks for a detection and takes it",
     AudioThumbnailManager::getInstance().clearCache();
 }
 
-TEST_CASE("A session drop takes nothing; BEAT takes the cached detection",
-          "[clip][bpm][session][issue-1157]") {
+TEST_CASE("A session drop takes the cached detection at once", "[clip][bpm][session][issue-1157]") {
     ClipManager::getInstance().shutdown();
     AudioThumbnailManager::getInstance().clearCache();
 
@@ -563,14 +562,9 @@ TEST_CASE("A session drop takes nothing; BEAT takes the cached detection",
     const auto* c = ClipManager::getInstance().getClip(clipId);
     REQUIRE(c != nullptr);
     REQUIRE(c->view == ClipView::Session);
-    REQUIRE_FALSE(primaryEventOf(c)->hasInterpretedBpm());
-    REQUIRE_FALSE(primaryEventOf(c)->autoTempo);
 
-    // BEAT asks for a detection; the cache answers at once.
-    ClipManager::getInstance().detectMissingTempo({clipId}, PROJECT_BPM, nullptr);
-    ClipManager::getInstance().setAutoTempo(clipId, true, PROJECT_BPM);
-
-    c = ClipManager::getInstance().getClip(clipId);
+    // The slot assumes the project tempo and asks for the real one; the cache
+    // answers at once (#3060).
     REQUIRE(primaryEventOf(c)->autoTempo);
     REQUIRE(c->loopEnabled);
     REQUIRE(primaryEventOf(c)->interpBpm == Approx(cachedDetectorBPM));
