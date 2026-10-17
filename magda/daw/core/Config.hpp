@@ -170,6 +170,13 @@ class Config {
         audioEditorSpectrogram = shown;
     }
 
+    bool getAudioEditorTransients() const {
+        return audioEditorTransients;
+    }
+    void setAudioEditorTransients(bool shown) {
+        audioEditorTransients = shown;
+    }
+
     bool getTransportDefaultBarsBeats() const {
         return transportDefaultBarsBeats;
     }
@@ -1575,6 +1582,7 @@ class Config {
     bool openPluginWindowOnDrop = false;
     // The audio editor draws a spectrogram instead of the waveform (#3065)
     bool audioEditorSpectrogram = false;
+    bool audioEditorTransients = true;
     bool skipFourOscConversionPrompt = false;
     bool transportDefaultBarsBeats = true;  // Default to bars/beats (false = seconds)
 

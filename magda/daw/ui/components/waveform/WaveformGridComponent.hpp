@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -201,6 +202,7 @@ class WaveformGridComponent : public juce::Component,
 
     /// Draw the source audio as a spectrogram instead of a waveform (#3065).
     void setSpectrogramShown(bool shown);
+    void setTransientsShown(bool shown);
 
     /// Forward source seconds to the grid's display time and back, through warp and reverse.
     double sourceToDisplayTime(double sourceSeconds) const;
@@ -245,6 +247,10 @@ class WaveformGridComponent : public juce::Component,
 
     // Fired from a take lane's context menu to delete that take.
     std::function<void(int takeIndex)> onTakeDelete;
+
+    /// A label gesture finished (#2316): the clip's whole new list, and the undo step's name.
+    std::function<void(std::vector<magda::LabelRegion> labels, const juce::String& description)>
+        onLabelsEdited;
 
   private:
     magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
@@ -302,7 +308,11 @@ class WaveformGridComponent : public juce::Component,
         MoveWarpMarker,
         RepositionWarpMarker,
         PhaseMarker,
-        Zoom
+        Zoom,
+        DrawLabel,
+        MoveLabel,
+        ResizeLabelStart,
+        ResizeLabelEnd
     };
     DragMode dragMode_ = DragMode::None;
     double dragStartAudioOffset_ = 0.0;
@@ -332,6 +342,37 @@ class WaveformGridComponent : public juce::Component,
     int draggingMarkerIndex_ = -1;
     double dragStartWarpTime_ = 0.0;
     double dragStartSourceTime_ = 0.0;
+
+    // Label regions (#2316): tabs along the waveform's top edge, where warp flags sit.
+    enum class LabelPart { None, Body, Start, End };
+    struct LabelHit {
+        int index = -1;
+        LabelPart part = LabelPart::None;
+    };
+    static constexpr int LABEL_TAB_HEIGHT = 14;
+    std::optional<std::vector<magda::LabelRegion>> labelPreview_;
+    magda::LabelRegion labelDragOriginal_;
+    double labelDragStartSource_ = 0.0;
+    int labelDragIndex_ = -1;
+    int hoveredLabelIndex_ = -1;
+
+    /// The Label tool is chosen, so a click places a label.
+    bool placesLabels() const;
+    const std::vector<magda::LabelRegion>& shownLabels(const magda::ClipInfo& clip) const;
+    std::pair<float, float> labelSpan(const magda::LabelRegion& label) const;
+    double labelSourceAt(int x, bool snap) const;
+    juce::Rectangle<int> labelTabBand() const;
+    LabelHit findLabelAt(juce::Point<int> point) const;
+    void paintLabels(juce::Graphics& g, const magda::ClipInfo& clip);
+    static void paintLabelFlag(juce::Graphics& g, float x, float top, juce::Colour colour);
+    bool labelMouseDown(const juce::MouseEvent& event, const magda::ClipInfo& clip);
+    bool labelMouseDrag(const juce::MouseEvent& event);
+    bool labelMouseUp();
+    bool labelMouseMove(const juce::MouseEvent& event);
+    void commitLabels(std::vector<magda::LabelRegion> labels, const juce::String& description);
+    magda::LabelRegion makeLabel(const magda::ClipInfo& clip, double start, double end) const;
+    void showLabelMenu(int index, juce::Point<int> screenPosition);
+    void showRenameLabelDialog(int index);
 
     // Take-lane swipe (comping). A click selects the active take; a drag assigns
     // that range of the comp to the swiped take.
@@ -416,6 +457,7 @@ class WaveformGridComponent : public juce::Component,
     juce::String waveformListenerPath_;  // thumbnail path we are listening to (or empty)
 
     bool spectrogramShown_ = false;
+    bool transientsShown_ = true;
     void spectrogramChanged(const juce::String& filePath) override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(WaveformGridComponent)

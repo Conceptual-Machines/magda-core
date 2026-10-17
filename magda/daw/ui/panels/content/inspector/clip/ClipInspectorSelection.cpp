@@ -27,7 +27,7 @@ void ClipInspector::clipPropertyChanged(magda::ClipId clipId) {
         return;
     // A refresh rewrites the BPM label, and a juce::Label closes its editor
     // when its text is set: a tempo landing mid-keystroke ate the entry.
-    if (clipBpmValue_.isBeingEdited())
+    if (clipBpmValue_.isBeingEdited() || labelsSection_->isEditing())
         return;
 
     // When a draggable control triggers a value change, the round-trip is:

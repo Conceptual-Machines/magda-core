@@ -7,8 +7,8 @@
 namespace magda {
 
 /// Keys 1-5 pick the first five; Line and Flat are the gain envelope's (#3064), Marker places
-/// the audio editor's warp markers.
-enum class EditTool { Pointer, Pencil, Slice, Glue, Erase, Line, Flat, Marker };
+/// the audio editor's warp markers and Label its label regions (#2316).
+enum class EditTool { Pointer, Pencil, Slice, Glue, Erase, Line, Flat, Marker, Label };
 
 /**
  * @brief One surface's active edit tool: the MIDI editor and the arrangement each own one.
@@ -22,7 +22,7 @@ class EditToolState : public juce::ChangeBroadcaster {
     static EditToolState& arrangement();
     /** The audio editor's envelope tools (#3064). */
     static EditToolState& audioEditor();
-    /** The audio editor's sample view: the pointer and the warp-marker tool. */
+    /** The audio editor's sample view: the pointer, the warp-marker and the label tools. */
     static EditToolState& sampleEditor();
 
     EditTool getTool() const {

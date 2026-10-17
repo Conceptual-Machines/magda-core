@@ -958,6 +958,33 @@ class SetClipGainEnvelopeCommand : public UndoableCommand {
     ClipGainEnvelope oldEnvelope_, newEnvelope_;
 };
 
+/// Replaces a clip's label regions (#2316) in one undo step.
+class SetClipLabelRegionsCommand : public UndoableCommand {
+  public:
+    SetClipLabelRegionsCommand(ClipId clipId, std::vector<LabelRegion> newLabels,
+                               juce::String description = "Edit Labels")
+        : clipId_(clipId), newLabels_(std::move(newLabels)), description_(std::move(description)) {
+        if (auto* clip = ClipManager::getInstance().getClip(clipId))
+            if (const auto* ev = clip->primaryEvent())
+                oldLabels_ = ev->labelRegions;
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setLabelRegions(clipId_, newLabels_);
+    }
+    void undo() override {
+        ClipManager::getInstance().setLabelRegions(clipId_, oldLabels_);
+    }
+    juce::String getDescription() const override {
+        return description_;
+    }
+
+  private:
+    ClipId clipId_;
+    std::vector<LabelRegion> oldLabels_, newLabels_;
+    juce::String description_;
+};
+
 /**
  * @brief Command for setting clip fade in duration (supports merging)
  */

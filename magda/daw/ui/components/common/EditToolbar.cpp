@@ -122,9 +122,9 @@ EditToolButtons::EditToolButtons(EditToolState& state, const std::array<const ch
 EditToolButtons::EditToolButtons(EditToolState& state,
                                  const std::vector<std::pair<EditTool, const char*>>& tools)
     : state_(state) {
-    static constexpr std::array<const char*, 8> kNames{"Pointer", "Pencil", "Slice", "Glue",
-                                                       "Erase",   "Line",   "Flat",  "Marker"};
-    const std::array<std::pair<const char*, int>, 8> icons{{
+    static constexpr std::array<const char*, 9> kNames{
+        "Pointer", "Pencil", "Slice", "Glue", "Erase", "Line", "Flat", "Marker", "Label"};
+    const std::array<std::pair<const char*, int>, 9> icons{{
         {BinaryData::mepointer_svg, BinaryData::mepointer_svgSize},
         {BinaryData::mepencil_svg, BinaryData::mepencil_svgSize},
         {BinaryData::meslice_svg, BinaryData::meslice_svgSize},
@@ -133,6 +133,7 @@ EditToolButtons::EditToolButtons(EditToolState& state,
         {BinaryData::mepointer_svg, BinaryData::mepointer_svgSize},  // Line: the arrow
         {BinaryData::meflat_svg, BinaryData::meflat_svgSize},
         {BinaryData::memarker_svg, BinaryData::memarker_svgSize},
+        {BinaryData::melabel_svg, BinaryData::melabel_svgSize},
     }};
     for (const auto& [tool, tooltip] : tools) {
         const auto i = static_cast<size_t>(tool);

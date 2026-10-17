@@ -70,6 +70,43 @@ std::optional<std::vector<WarpMarkerMetadata>> decodeWarpMarkers(const std::stri
     return markers;
 }
 
+std::string encodeLabels(const std::vector<LabelMetadata>& labels) {
+    juce::Array<juce::var> arr;
+    arr.ensureStorageAllocated(static_cast<int>(labels.size()));
+    for (const auto& label : labels) {
+        auto* obj = new juce::DynamicObject();
+        obj->setProperty("name", juce::String(label.name));
+        obj->setProperty("argb", juce::String::toHexString(static_cast<juce::int64>(label.argb)));
+        obj->setProperty("start_sec", label.startSec);
+        obj->setProperty("end_sec", label.endSec);
+        arr.add(juce::var(obj));
+    }
+    return juce::JSON::toString(juce::var(arr), true).toStdString();
+}
+
+std::optional<std::vector<LabelMetadata>> decodeLabels(const std::string& json) {
+    auto parsed = juce::JSON::parse(juce::String(json));
+    auto* arr = parsed.getArray();
+    if (arr == nullptr) {
+        return std::nullopt;
+    }
+
+    std::vector<LabelMetadata> labels;
+    labels.reserve(static_cast<size_t>(arr->size()));
+    for (const auto& item : *arr) {
+        auto* obj = item.getDynamicObject();
+        if (obj == nullptr) {
+            return std::nullopt;
+        }
+        labels.push_back(
+            {obj->getProperty("name").toString().toStdString(),
+             static_cast<std::uint32_t>(obj->getProperty("argb").toString().getHexValue64()),
+             static_cast<double>(obj->getProperty("start_sec")),
+             static_cast<double>(obj->getProperty("end_sec"))});
+    }
+    return labels;
+}
+
 struct FilePathDedupeRow {
     std::int64_t fileId = -1;
     std::filesystem::path path;
@@ -338,6 +375,47 @@ void setUserWarpMarkers(MediaDatabase& db, const std::filesystem::path& path,
     sqlite3_finalize(stmt);
 }
 
+std::optional<std::vector<LabelMetadata>> getUserLabels(MediaDatabase& db,
+                                                        const std::filesystem::path& path) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db.handle(), "SELECT labels_json FROM media_file WHERE path = ?", -1,
+                           &stmt, nullptr) != SQLITE_OK) {
+        return std::nullopt;
+    }
+    const std::string p = libraryPath(path).string();
+    sqlite3_bind_text(stmt, 1, p.c_str(), -1, SQLITE_TRANSIENT);
+
+    std::optional<std::vector<LabelMetadata>> result;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        if (auto json = optString(stmt, 0)) {
+            result = decodeLabels(*json);
+        }
+    }
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+bool setUserLabels(MediaDatabase& db, const std::filesystem::path& path,
+                   std::optional<std::vector<LabelMetadata>> labels) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db.handle(), "UPDATE media_file SET labels_json = ? WHERE path = ?", -1,
+                           &stmt, nullptr) != SQLITE_OK) {
+        return false;
+    }
+    std::string json;
+    if (labels) {
+        json = encodeLabels(*labels);
+        sqlite3_bind_text(stmt, 1, json.c_str(), -1, SQLITE_TRANSIENT);
+    } else {
+        sqlite3_bind_null(stmt, 1);
+    }
+    const std::string p = libraryPath(path).string();
+    sqlite3_bind_text(stmt, 2, p.c_str(), -1, SQLITE_TRANSIENT);
+    const bool ok = sqlite3_step(stmt) == SQLITE_DONE && sqlite3_changes(db.handle()) > 0;
+    sqlite3_finalize(stmt);
+    return ok;
+}
+
 bool saveUserMetadata(MediaDatabase& db, const std::filesystem::path& path,
                       std::optional<double> bpm, std::optional<std::string> keyRoot,
                       std::optional<double> totalBeats, std::optional<bool> beatMode,
@@ -446,6 +524,27 @@ std::optional<std::vector<WarpMarkerMetadata>> getUserWarpMarkersForFile(
         return std::nullopt;
     }
     return getUserWarpMarkers(ctx.db(), path);
+}
+
+std::optional<std::vector<LabelMetadata>> getUserLabelsForFile(const std::filesystem::path& path) {
+    auto& ctx = MediaDbContext::getInstance();
+    if (!ctx.ensureInitialized()) {
+        return std::nullopt;
+    }
+    return getUserLabels(ctx.db(), path);
+}
+
+bool setUserLabelsForFile(const std::filesystem::path& path,
+                          std::optional<std::vector<LabelMetadata>> labels) {
+    auto& ctx = MediaDbContext::getInstance();
+    if (!ctx.ensureInitialized()) {
+        return false;
+    }
+    const bool ok = setUserLabels(ctx.db(), path, std::move(labels));
+    if (ok) {
+        ctx.bumpMediaRevision();
+    }
+    return ok;
 }
 
 bool saveUserMetadataForFile(const std::filesystem::path& path, std::optional<double> bpm,
@@ -844,7 +943,7 @@ int clearMediaRowMetadata(MediaDatabase& db, const std::vector<std::int64_t>& fi
                                  "bpm = NULL, key_root = NULL, key_scale = NULL, "
                                  "bpm_user = NULL, key_root_user = NULL, key_scale_user = NULL, "
                                  "total_beats_user = NULL, beat_mode_user = NULL, "
-                                 "warp_markers_json = NULL "
+                                 "warp_markers_json = NULL, labels_json = NULL "
                                  "WHERE id = ?",
                                  -1, &stmt, nullptr) == SQLITE_OK;
     int updatedRows = 0;
@@ -881,7 +980,7 @@ int resetMediaRowsToDetected(MediaDatabase& db, const std::vector<std::int64_t>&
                                  "key_scale_user = NULL, "
                                  "total_beats_user = NULL, "
                                  "beat_mode_user = NULL, "
-                                 "warp_markers_json = NULL "
+                                 "warp_markers_json = NULL, labels_json = NULL "
                                  "WHERE id = ?",
                                  -1, &stmt, nullptr) == SQLITE_OK;
     int updatedRows = 0;
@@ -1141,6 +1240,7 @@ std::optional<std::vector<FilePathDedupeRow>> readDedupeRows(sqlite3* handle) {
             "(bpm_user IS NOT NULL OR key_root_user IS NOT NULL OR "
             " key_scale_user IS NOT NULL OR total_beats_user IS NOT NULL OR "
             " beat_mode_user IS NOT NULL OR warp_markers_json IS NOT NULL OR "
+            " labels_json IS NOT NULL OR "
             " display_name IS NOT NULL OR EXISTS (SELECT 1 FROM media_tag "
             " WHERE file_id = media_file.id AND source_model = 'user')) AS user_edited, "
             "EXISTS (SELECT 1 FROM media_embedding WHERE file_id = media_file.id) AS analyzed "

@@ -262,6 +262,13 @@ void ClipInspector::resized() {
         endSection(h > CollapsibleSectionHeader::kHeight);
     }
 
+    if (const int h = labelsSection_->getPreferredHeight(); h > 0) {
+        beginSection(*labelsSection_);
+        labelsSection_->setBounds(labelsSection_->getBounds().withHeight(h));
+        y += h - CollapsibleSectionHeader::kHeight;
+        endSection(h > CollapsibleSectionHeader::kHeight);
+    }
+
     // Launch: quantize | follow action, then delay | loops when there is an action.
     if (launchHeader_.isVisible()) {
         beginSection(launchHeader_);

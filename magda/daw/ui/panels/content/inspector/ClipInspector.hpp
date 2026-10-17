@@ -10,6 +10,7 @@
 #include "BaseInspector.hpp"
 #include "clip/sections/ChordProgressionSection.hpp"
 #include "clip/sections/ClipFadesSection.hpp"
+#include "clip/sections/ClipLabelsSection.hpp"
 #include "clip/sections/ClipTakesSection.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
@@ -175,6 +176,10 @@ class ClipInspector : public BaseInspector,
 
     // ---- Fades (audio) ---------------------------------------------------
     std::unique_ptr<ClipFadesSection> fadesSection_;
+
+    // ---- Labels (audio, #2316) -------------------------------------------
+    std::unique_ptr<ClipLabelsSection> labelsSection_;
+    void initLabelsSection();
 
     // ---- Launch (session) ------------------------------------------------
     CollapsibleSectionHeader launchHeader_{"Launch", "clipInspector.launch"};

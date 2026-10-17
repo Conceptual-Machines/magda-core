@@ -83,6 +83,7 @@ std::optional<juce::MouseCursor> cursorForEditTool(EditTool tool) {
         case EditTool::Pointer:
         case EditTool::Line:
         case EditTool::Marker:
+        case EditTool::Label:
             break;
     }
     return std::nullopt;

@@ -523,13 +523,14 @@ void WaveformGridComponent::paintWaveformOverlays(juce::Graphics& g, const magda
     // Draw transient markers whenever detection data is present. Warp markers
     // are an editing overlay, but they must not hide transient sensitivity
     // feedback from the waveform editor.
-    if (!transientTimes_.isEmpty() && !gainEnvelopeEditor_) {
+    if (transientsShown_ && !transientTimes_.isEmpty() && !gainEnvelopeEditor_) {
         paintTransientMarkers(g, clip);
     }
 
     if (warpMode_ && !warpMarkers_.empty() && !gainEnvelopeEditor_) {
         paintWarpMarkers(g, clip);
     }
+    paintLabels(g, clip);
     paintMarkerGuide(g);
 
     // Center line — clipped to visible rect
@@ -1196,6 +1197,13 @@ void WaveformGridComponent::setSpectrogramShown(bool shown) {
     repaint();
 }
 
+void WaveformGridComponent::setTransientsShown(bool shown) {
+    if (shown == transientsShown_)
+        return;
+    transientsShown_ = shown;
+    repaint();
+}
+
 void WaveformGridComponent::spectrogramChanged(const juce::String& filePath) {
     if (const auto* clip = getClip();
         spectrogramShown_ && clip != nullptr && audioEventRef(*clip).sourceFilePath() == filePath)
@@ -1327,6 +1335,9 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
 
     int x = event.x;
     bool shiftHeld = event.mods.isShiftDown();
+
+    if (!shiftHeld && labelMouseDown(event, *clip))
+        return;
 
     // Right-click context menu (all modes)
     if (event.mods.isPopupMenu()) {
@@ -1525,7 +1536,7 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
         return;
     }
 
-    if (dragMode_ == DragMode::None) {
+    if (dragMode_ == DragMode::None || labelMouseDrag(event)) {
         return;
     }
     if (editingClipId_ == magda::INVALID_CLIP_ID) {
@@ -1752,6 +1763,9 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
 }
 
 void WaveformGridComponent::mouseUp(const juce::MouseEvent& event) {
+    if (labelMouseUp())
+        return;
+
     // Resolve a take-lane gesture: a swipe assigns a comp section, a plain click
     // selects the active take.
     if (takeSwipeLane_ >= 0) {
@@ -1832,6 +1846,9 @@ void WaveformGridComponent::mouseMove(const juce::MouseEvent& event) {
     }
 
     int x = event.x;
+
+    if (labelMouseMove(event))
+        return;
 
     // Warp mode: update hover state
     if (warpMode_) {
@@ -2127,14 +2144,28 @@ void WaveformGridComponent::paintMarkerGuide(juce::Graphics& g) {
     const auto bounds = getLocalBounds().reduced(LEFT_PADDING, TOP_PADDING);
     const auto x = static_cast<float>(markerGuideX_);
     const float dashes[] = {3.0f, 3.0f};
-    g.setColour(kMarkerColour.withAlpha(0.7f));
+    const auto colour =
+        placesLabels() ? ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY) : kMarkerColour;
+    g.setColour(colour.withAlpha(0.7f));
     g.drawDashedLine(
         {x, static_cast<float>(bounds.getY()), x, static_cast<float>(bounds.getBottom())}, dashes,
         2, 1.0f);
-    paintMarkerFlag(g, x, static_cast<float>(bounds.getY()), kMarkerColour.withAlpha(0.5f));
+    if (placesLabels())
+        paintLabelFlag(g, x, static_cast<float>(bounds.getY()), colour.withAlpha(0.5f));
+    else
+        paintMarkerFlag(g, x, static_cast<float>(bounds.getY()), kMarkerColour.withAlpha(0.5f));
 }
 
 void WaveformGridComponent::mouseDoubleClick(const juce::MouseEvent& event) {
+    if (const auto hit = findLabelAt(event.getPosition()); hit.index >= 0) {
+        if (const auto* clip = getClip()) {
+            auto edited = magda::audioEventRef(*clip).labelRegions;
+            edited.erase(edited.begin() + hit.index);
+            hoveredLabelIndex_ = -1;
+            commitLabels(std::move(edited), "Delete Label");
+        }
+        return;
+    }
     if (!warpMode_ || editingClipId_ == magda::INVALID_CLIP_ID)
         return;
 

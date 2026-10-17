@@ -225,6 +225,11 @@ void migrate(sqlite3* db, int fromVersion) {
     if (fromVersion < 10) {
         canonicalizeLibraryPaths(db);
     }
+    // v11: after the v9 rebuild, whose frozen column list predates it.
+    if (fromVersion < 11 && !columnExists(db, "media_file", "labels_json")) {
+        execOrThrow(db, "ALTER TABLE media_file ADD COLUMN labels_json TEXT",
+                    "migrate v11 labels_json");
+    }
 }
 
 }  // namespace

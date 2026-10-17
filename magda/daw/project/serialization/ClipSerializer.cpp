@@ -187,6 +187,18 @@ juce::var serializeAudioEvent(const AudioEvent& event) {
         }
         obj->setProperty("warpMarkers", warpArray);
     }
+    if (!event.labelRegions.empty()) {
+        juce::Array<juce::var> labelArray;
+        for (const auto& label : event.labelRegions) {
+            auto* labelObj = new juce::DynamicObject();
+            labelObj->setProperty("name", juce::String(label.name));
+            labelObj->setProperty("colour", label.colour.toDisplayString(true));
+            labelObj->setProperty("sourceStart", label.sourceStart);
+            labelObj->setProperty("sourceEnd", label.sourceEnd);
+            labelArray.add(juce::var(labelObj));
+        }
+        obj->setProperty("labelRegions", labelArray);
+    }
 
     obj->setProperty("autoPitch", event.autoPitch);
     if (event.analogPitch)
@@ -277,6 +289,18 @@ void deserializeAudioEvent(const juce::var& json, AudioEvent& event) {
             if (auto* wmObj = entry.getDynamicObject()) {
                 event.warpMarkers.push_back(
                     {wmObj->getProperty("sourceTime"), wmObj->getProperty("warpTime")});
+            }
+        }
+    }
+    if (auto labelVar = obj->getProperty("labelRegions"); labelVar.isArray()) {
+        for (const auto& entry : *labelVar.getArray()) {
+            if (auto* labelObj = entry.getDynamicObject()) {
+                LabelRegion label;
+                label.name = labelObj->getProperty("name").toString().toStdString();
+                label.colour = juce::Colour::fromString(labelObj->getProperty("colour").toString());
+                label.sourceStart = labelObj->getProperty("sourceStart");
+                label.sourceEnd = labelObj->getProperty("sourceEnd");
+                event.labelRegions.push_back(std::move(label));
             }
         }
     }

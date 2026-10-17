@@ -320,12 +320,29 @@ WaveformEditorContent::WaveformEditorContent() {
     };
     spectrogramToggle_->setVisible(true);
 
-    rail_.setButtons({{spectrogramToggle_.get()}}, {propertiesToggle_.get()});
+    transientsToggle_ = std::make_unique<magda::SvgButton>(
+        "TransientsToggle", BinaryData::transients_svg, BinaryData::transients_svgSize);
+    transientsToggle_->setTooltip("Show transient markers");
+    magda::EditorRail::styleButton(*transientsToggle_);
+    transientsToggle_->setActive(magda::Config::getInstance().getAudioEditorTransients());
+    transientsToggle_->onClick = [this]() {
+        auto& config = magda::Config::getInstance();
+        const bool shown = !config.getAudioEditorTransients();
+        config.setAudioEditorTransients(shown);
+        config.save();
+        transientsToggle_->setActive(shown);
+        gridComponent_->setTransientsShown(shown);
+    };
+    transientsToggle_->setVisible(true);
+
+    rail_.setButtons({{spectrogramToggle_.get(), transientsToggle_.get()}},
+                     {propertiesToggle_.get()});
     addAndMakeVisible(rail_);
 
     // Create waveform grid component
     gridComponent_ = std::make_unique<WaveformGridComponent>();
     gridComponent_->setSpectrogramShown(magda::Config::getInstance().getAudioEditorSpectrogram());
+    gridComponent_->setTransientsShown(magda::Config::getInstance().getAudioEditorTransients());
     gridComponent_->setRelativeMode(relativeTimeMode_);
     gridComponent_->setHorizontalZoom(horizontalZoom_);
     gridComponent_->setTimeRuler(timeRuler_.get());
@@ -412,6 +429,13 @@ WaveformEditorContent::WaveformEditorContent() {
     // Callback when waveform is edited
     gridComponent_->onWaveformChanged = []() {
         // Could add logic here if needed
+    };
+
+    gridComponent_->onLabelsEdited = [this](std::vector<magda::LabelRegion> labels,
+                                            const juce::String& description) {
+        if (editingClipId_ != magda::INVALID_CLIP_ID)
+            UndoManager::getInstance().executeCommand(std::make_unique<SetClipLabelRegionsCommand>(
+                editingClipId_, std::move(labels), description));
     };
 
     // Warp marker callbacks — route through UndoManager for undo support

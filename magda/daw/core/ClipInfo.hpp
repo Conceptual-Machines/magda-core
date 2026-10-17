@@ -235,6 +235,24 @@ struct WarpMarker {
     bool operator==(const WarpMarker&) const = default;
 };
 
+/**
+ * @brief A named, coloured range of the source (#2316). Annotation only: playback never reads it.
+ *
+ * Source seconds, the domain of WarpMarker::sourceTime. sourceEnd == sourceStart is a point label.
+ */
+struct LabelRegion {
+    std::string name;
+    juce::Colour colour;
+    double sourceStart = 0.0;
+    double sourceEnd = 0.0;
+
+    bool isPoint() const {
+        return sourceEnd <= sourceStart;
+    }
+
+    bool operator==(const LabelRegion&) const = default;
+};
+
 /// Who last wrote an interpretation value (#2674). A value the user set is
 /// replaced only by the user; anything else gives way to a newer answer.
 /// Project is the tempo LOOP assumed for a free clip (#3060), a guess.
@@ -443,6 +461,7 @@ struct AudioEvent {
     int timeStretchMode = 0;
     bool warpEnabled = false;
     std::vector<WarpMarker> warpMarkers;
+    std::vector<LabelRegion> labelRegions;
 
     bool autoPitch = false;
     bool analogPitch = false;
@@ -1364,6 +1383,7 @@ struct ClipInfo {
         dst.timeStretchMode = src.timeStretchMode;
         dst.warpEnabled = src.warpEnabled;
         dst.warpMarkers = src.warpMarkers;
+        dst.labelRegions = src.labelRegions;
         dst.autoPitch = src.autoPitch;
         dst.analogPitch = src.analogPitch;
         dst.autoPitchMode = src.autoPitchMode;
@@ -1384,11 +1404,12 @@ struct ClipInfo {
                a.keyRoot == b.keyRoot && a.keyScale == b.keyScale &&
                a.playbackIntent == b.playbackIntent && a.autoTempo == b.autoTempo &&
                a.timeStretchMode == b.timeStretchMode && a.warpEnabled == b.warpEnabled &&
-               a.warpMarkers == b.warpMarkers && a.autoPitch == b.autoPitch &&
-               a.analogPitch == b.analogPitch && a.autoPitchMode == b.autoPitchMode &&
-               a.pitchChange == b.pitchChange && a.transpose == b.transpose &&
-               a.reversed == b.reversed && a.autoDetectBeats == b.autoDetectBeats &&
-               a.beatSensitivity == b.beatSensitivity && a.gainEnvelope == b.gainEnvelope;
+               a.warpMarkers == b.warpMarkers && a.labelRegions == b.labelRegions &&
+               a.autoPitch == b.autoPitch && a.analogPitch == b.analogPitch &&
+               a.autoPitchMode == b.autoPitchMode && a.pitchChange == b.pitchChange &&
+               a.transpose == b.transpose && a.reversed == b.reversed &&
+               a.autoDetectBeats == b.autoDetectBeats && a.beatSensitivity == b.beatSensitivity &&
+               a.gainEnvelope == b.gainEnvelope;
     }
 
     /// Copy the content-defining fields from a link-group sibling (ghost-clip

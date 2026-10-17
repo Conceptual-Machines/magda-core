@@ -395,6 +395,13 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
             }
             newEvent.warpEnabled = true;
         }
+        if (const auto savedLabels = magda::media::getUserLabelsForFile(
+                std::filesystem::path(audioFilePath.toStdString()))) {
+            for (const auto& label : *savedLabels) {
+                newEvent.labelRegions.push_back(
+                    {label.name, juce::Colour(label.argb), label.startSec, label.endSec});
+            }
+        }
     }
 
     if (view == ClipView::Session)
@@ -2252,6 +2259,17 @@ bool ClipManager::saveClipToLibrary(ClipId clipId,
         mediaMarkers = std::move(converted);
     }
 
+    std::optional<std::vector<magda::media::LabelMetadata>> mediaLabels;
+    if (!event->labelRegions.empty()) {
+        auto& converted = mediaLabels.emplace();
+        for (const auto& label : event->labelRegions) {
+            converted.push_back(
+                {label.name, label.colour.getARGB(), label.sourceStart, label.sourceEnd});
+        }
+    }
+    if (!magda::media::setUserLabelsForFile(path, std::move(mediaLabels)))
+        return false;
+
     return magda::media::saveUserMetadataForFile(path, bpm, std::move(keyRoot), totalBeats,
                                                  beatMode, std::move(mediaMarkers));
 }
@@ -2667,6 +2685,26 @@ void ClipManager::setGainEnvelope(ClipId clipId, ClipGainEnvelope envelope) {
     std::sort(points.begin(), points.end());
 
     event->gainEnvelope = std::move(envelope);
+    notifyClipPropertyChanged(clipId);
+}
+
+void ClipManager::setLabelRegions(ClipId clipId, std::vector<LabelRegion> labels) {
+    auto* clip = getClip(clipId);
+    auto* event = clip ? clip->primaryEvent() : nullptr;
+    if (event == nullptr)
+        return;
+
+    for (auto& label : labels) {
+        if (label.sourceEnd < label.sourceStart)
+            std::swap(label.sourceStart, label.sourceEnd);
+        label.sourceStart = std::max(0.0, label.sourceStart);
+        label.sourceEnd = std::max(label.sourceStart, label.sourceEnd);
+    }
+    std::ranges::stable_sort(labels, {}, &LabelRegion::sourceStart);
+    if (event->labelRegions == labels)
+        return;
+
+    event->labelRegions = std::move(labels);
     notifyClipPropertyChanged(clipId);
 }
 
@@ -3854,6 +3892,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
                             newEvent->timeStretchMode = srcEvent->timeStretchMode;
                         }
                         newEvent->warpMarkers = srcEvent->warpMarkers;
+                        newEvent->labelRegions = srcEvent->labelRegions;
                         newEvent->adoptInterpretationFrom(*srcEvent);
                         newEvent->setPlaybackIntent(srcEvent->playbackIntent);
                         newEvent->autoPitch = srcEvent->autoPitch;

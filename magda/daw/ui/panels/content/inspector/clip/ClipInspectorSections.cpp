@@ -1371,6 +1371,12 @@ void ClipInspector::initFadesSection() {
     clipPropsContainer_.addChildComponent(*fadesSection_);
 }
 
+void ClipInspector::initLabelsSection() {
+    labelsSection_ = std::make_unique<ClipLabelsSection>();
+    labelsSection_->onCollapsedChanged = [this]() { updateFromSelectedClip(); };
+    clipPropsContainer_.addChildComponent(*labelsSection_);
+}
+
 void ClipInspector::showGroovePicker() {
     using Category = GroovePickerPopup::Category;
 
