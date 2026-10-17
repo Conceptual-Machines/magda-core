@@ -354,30 +354,18 @@ void TimeRuler::mouseUp(const juce::MouseEvent& event) {
 }
 
 void TimeRuler::mouseDoubleClick(const juce::MouseEvent& event) {
-    // Double-click on loop strip → zoom to loop region
-    if (loopEnabled && loopLength > 0.0 && onZoomToLoopRequested) {
-        double loopStartTime = relativeMode ? loopOffset : (timeOffset + loopOffset);
-        double loopEndTime = loopStartTime + loopLength;
-
-        int loopStartX = timeToPixel(loopStartTime);
-        int loopEndX = timeToPixel(loopEndTime);
-
-        // Hit-test: click is within the loop strip area only (both X and Y)
-        const int height = getHeight();
-        juce::ignoreUnused(height);
-        const int loopStripTop = this->loopStripTop();
-        const int loopStripBottom = loopStripTop + loopStripHeight();
-
-        if (event.x >= loopStartX && event.x <= loopEndX && event.y >= loopStripTop &&
-            event.y <= loopStripBottom) {
-            onZoomToLoopRequested(loopStartTime, loopEndTime);
-            return;
-        }
+    // Above the ticks, a double-click fits the view to the loop, or to the clip when it
+    // does not loop.
+    if (event.y < getHeight() - tickHeightMajor()) {
+        const double origin = relativeMode ? 0.0 : timeOffset;
+        if (onZoomToLoopRequested && loopEnabled && loopLength > 0.0)
+            onZoomToLoopRequested(origin + loopOffset, origin + loopOffset + loopLength);
+        else if (onZoomToLoopRequested && clipLength > 0.0)
+            onZoomToLoopRequested(origin, origin + clipLength);
+        return;
     }
 
-    // A double-click on the time ticks places the edit cursor; the lens area above only zooms.
-    if (event.y < getHeight() - tickHeightMajor())
-        return;
+    // A double-click on the time ticks places the edit cursor.
     double time = pixelToTime(event.x);
     if (time >= 0.0 && time <= timelineLength) {
         const bool bypassSnap = event.mods.isAltDown();
