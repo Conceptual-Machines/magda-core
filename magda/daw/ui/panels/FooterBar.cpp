@@ -381,6 +381,8 @@ void FooterBar::updateExitModeButton(ViewMode currentMode) {
         auto button = std::make_unique<SvgButton>(text, svg.data(), svg.size());
         button->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         button->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        // A secondary action beside the mode icons, so its glyph is drawn smaller.
+        button->setIconPadding(9.0f);
         exitModeButton_ = std::move(button);
     } else {
         exitModeButton_ = std::make_unique<juce::TextButton>(text);
