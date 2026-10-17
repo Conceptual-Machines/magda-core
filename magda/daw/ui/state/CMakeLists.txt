@@ -8,4 +8,6 @@ target_sources(magda_daw PRIVATE
     TimelineController.hpp
     KeyMappingStore.cpp
     KeyMappingStore.hpp
+    ModeContent.cpp
+    ModeContent.hpp
 )

@@ -26,7 +26,8 @@ class FooterBar : public juce::Component,
                   public ViewModeListener,
                   private BindingRegistryListener,
                   private ControllerRegistryListener,
-                  private juce::Timer {
+                  private juce::Timer,
+                  private juce::ChangeListener {
   public:
     FooterBar();
     ~FooterBar() override;
@@ -55,6 +56,13 @@ class FooterBar : public juce::Component,
     static constexpr int BUTTON_SPACING = 16;
 
     std::array<magda::ManagedChild<SvgButton>, NUM_MODES> modeButtons;
+    // Modes registered with ModeContentRegistry, and the way out of an exclusive one (#3077).
+    std::vector<std::pair<ViewMode, std::unique_ptr<SvgButton>>> registeredModeButtons_;
+    std::unique_ptr<juce::Button> exitModeButton_;
+    int registeredModesDividerX_ = -1;
+    void refreshRegisteredModes();
+    void updateExitModeButton(ViewMode currentMode);
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
     std::unique_ptr<SvgButton> bottomCollapseButton_;
     bool bottomCollapsed_ = false;
 

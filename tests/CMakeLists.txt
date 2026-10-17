@@ -35,6 +35,7 @@ set(TEST_SOURCES
     clips/test_pianoroll_note_position.cpp
     clips/test_pianoroll_shown_content.cpp
     devices/test_nested_racks.cpp
+    extensions/test_exclusive_view_modes.cpp
     extensions/test_extensions.cpp
     devices/test_rack_audio.cpp
     automation/test_modulation.cpp
