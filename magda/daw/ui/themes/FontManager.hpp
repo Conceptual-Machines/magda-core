@@ -57,6 +57,9 @@ class FontManager {
     // Get JetBrains Mono font (for console/code displays)
     juce::Font getMonoFont(float size = 13.0f) const;
 
+    /** @brief Geist, for track names; Inter when it failed to load. */
+    juce::Font getTrackNameFont(float size = 12.0f, Weight weight = Weight::Medium) const;
+
     // Check if Inter fonts are loaded
     bool isInitialized() const {
         return initialized;
@@ -73,6 +76,8 @@ class FontManager {
     juce::Typeface::Ptr interMedium;
     juce::Typeface::Ptr interSemiBold;
     juce::Typeface::Ptr interBold;
+    juce::Typeface::Ptr geistRegular;
+    juce::Typeface::Ptr geistMedium;
     juce::Typeface::Ptr microgrammaBold;
     juce::Typeface::Ptr jetBrainsMonoRegular;
 

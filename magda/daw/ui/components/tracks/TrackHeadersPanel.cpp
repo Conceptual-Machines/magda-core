@@ -301,7 +301,7 @@ TrackHeadersPanel::TrackHeader::TrackHeader(const juce::String& trackName) : nam
                          ActiveTheme::getColour(ActiveTheme::SURFACE));
     nameLabel->setColour(juce::Label::outlineWhenEditingColourId,
                          ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-    nameLabel->setFont(FontManager::getInstance().getUIFontBold(12.0f));
+    nameLabel->setFont(FontManager::getInstance().getTrackNameFont(12.0f));
 
     // Track mute: grey speaker while audible, crossed speaker (master_off) in yellow when muted.
     muteButton = std::make_unique<magda::SvgButton>(
