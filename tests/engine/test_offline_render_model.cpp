@@ -198,6 +198,16 @@ TEST_CASE("Rendering without plugins empties the chains and the faders with them
     CHECK(narrowed.automation.empty());
 }
 
+TEST_CASE("Rendering without the master's plugins ignores the master's mute",
+          "[engine][offline][3081]") {
+    OfflineRenderRequest request;
+    request.useMasterPlugins = false;
+
+    auto model = project();
+    model.master.muted = true;
+    CHECK_FALSE(narrowForRender(std::move(model), request).master.muted);
+}
+
 TEST_CASE("A render hears no live input", "[engine][offline][2555]") {
     auto model = project();
     model.tracks[0].recordArmed = true;
