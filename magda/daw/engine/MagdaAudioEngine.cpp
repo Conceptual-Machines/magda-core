@@ -224,8 +224,12 @@ void MagdaAudioEngine::configChanged() {
     const auto& config = Config::getInstance();
     if (host_ != nullptr)
         host_->setRenderAhead(config.getRenderAheadEnabled() ? config.getRenderAheadMs() : 0);
-    if (host_ != nullptr)
+    if (host_ != nullptr) {
+        const juce::String folder(config.getCaptureDir());
+        host_->setCaptureFolder(juce::File::isAbsolutePath(folder) ? juce::File(folder)
+                                                                   : juce::File());
         host_->setCaptureSeconds(config.getCaptureEnabled() ? config.getCaptureSeconds() : 0);
+    }
 }
 
 void MagdaAudioEngine::shutdown() {

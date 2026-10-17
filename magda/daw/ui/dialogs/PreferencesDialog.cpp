@@ -218,21 +218,29 @@ class GeneralPage : public juce::Component {
                         magda::TechnicalTextToken::Milliseconds, 0, true);
         setupToggle(*this, captureToggle, tr("preferences.toggle.capture"));
         setupTextSlider(*this, captureSecondsSlider, captureSecondsLabel,
-                        tr("preferences.slider.capture_buffer"), 10.0, 1800.0, 10.0,
+                        tr("preferences.slider.capture_buffer"), 10.0,
+                        static_cast<double>(Config::kMaxCaptureSeconds), 10.0,
                         magda::TechnicalTextToken::Seconds, 0, true);
-        // Its length and what that costs: stereo floats at 48 kHz, about 23 MB a minute.
+        // Its length and what that costs: stereo floats at 48 kHz, about 23 MB a minute,
+        // in memory up to a minute and on disk past it (#3052).
         captureSecondsSlider.setValueFormatter([](double seconds) {
             const auto whole = static_cast<int>(seconds);
-            const auto megabytes = juce::roundToInt(seconds * 48000.0 * 2.0 * 4.0 / 1.0e6);
-            return juce::String(whole / 60) + ":" + juce::String(whole % 60).paddedLeft('0', 2) +
-                   " (" + juce::String(megabytes) + " MB)";
+            const auto megabytes = seconds * 48000.0 * 2.0 * 4.0 / 1.0e6;
+            const auto clock = (whole >= 3600 ? juce::String(whole / 3600) + ":" +
+                                                    juce::String(whole / 60 % 60).paddedLeft('0', 2)
+                                              : juce::String(whole / 60)) +
+                               ":" + juce::String(whole % 60).paddedLeft('0', 2);
+            const auto size = megabytes >= 1000.0
+                                  ? juce::String(megabytes / 1000.0, 1) + " GB"
+                                  : juce::String(juce::roundToInt(megabytes)) + " MB";
+            return clock + " (" + size + (whole > 60 ? " on disk)" : ")");
         });
         captureSecondsSlider.setValueParser([](const juce::String& text) {
-            const auto clock = text.upToFirstOccurrenceOf(" ", false, false);
-            if (clock.containsChar(':'))
-                return clock.upToFirstOccurrenceOf(":", false, false).getDoubleValue() * 60.0 +
-                       clock.fromFirstOccurrenceOf(":", false, false).getDoubleValue();
-            return clock.getDoubleValue();
+            auto seconds = 0.0;
+            for (const auto& part : juce::StringArray::fromTokens(
+                     text.upToFirstOccurrenceOf(" ", false, false), ":", {}))
+                seconds = seconds * 60.0 + part.getDoubleValue();
+            return seconds;
         });
         setupTextSlider(*this, captureBarsSlider, captureBarsLabel,
                         tr("preferences.slider.capture_length"), 1.0, 64.0, 1.0,
@@ -2074,6 +2082,24 @@ class PathsPage : public juce::Component {
         indexPresetsButton_.setButtonText("Index presets");
         indexPresetsButton_.onClick = [this]() { runPresetIndex(); };
         addAndMakeVisible(indexPresetsButton_);
+
+        // The capture buffer's history past its first minute (#3052): about 1.4 GB an hour.
+        setupSectionHeader(*this, captureHeader_, "Capture History");
+        setupPathRowLabel(*this, captureLocationCaption_, "Folder");
+        setupPathTextEditor(*this, captureLocationField_);
+
+        captureBrowse_.setButtonText("Browse...");
+        captureBrowse_.onClick = [this]() { browseForCaptureLocation(); };
+        addAndMakeVisible(captureBrowse_);
+
+        captureReset_.setButtonText("Reset");
+        captureReset_.onClick = [this]() {
+            magda::Config::getInstance().setCaptureDir(std::string{});
+            magda::Config::getInstance().save();
+            refreshCaptureFolder();
+        };
+        addAndMakeVisible(captureReset_);
+        refreshCaptureFolder();
     }
 
     static int getPreferredHeight(int) {
@@ -2084,7 +2110,8 @@ class PathsPage : public juce::Component {
 
         return padding + rowH + gap + rowH + gap + rowH + gap + rowH + sectionGap + rowH + gap +
                rowH + gap + rowH + gap + rowH + sectionGap + rowH + gap + rowH + sectionGap + rowH +
-               gap + rowH + gap + rowH + gap + rowH + sectionGap + rowH + padding;
+               gap + rowH + gap + rowH + gap + rowH + sectionGap + rowH + gap + rowH + sectionGap +
+               rowH + padding;
     }
 
     void resized() override {
@@ -2166,6 +2193,18 @@ class PathsPage : public juce::Component {
         wipeButton_.setBounds(dbActionRow.removeFromLeft(180));
         dbActionRow.removeFromLeft(gap);
         indexPresetsButton_.setBounds(dbActionRow.removeFromLeft(160));
+
+        bounds.removeFromTop(sectionGap);
+
+        captureHeader_.setBounds(bounds.removeFromTop(rowH));
+        bounds.removeFromTop(gap);
+        auto captureRow = bounds.removeFromTop(rowH);
+        captureLocationCaption_.setBounds(captureRow.removeFromLeft(labelW));
+        captureReset_.setBounds(captureRow.removeFromRight(70).reduced(0, 1));
+        captureRow.removeFromRight(4);
+        captureBrowse_.setBounds(captureRow.removeFromRight(90).reduced(0, 1));
+        captureRow.removeFromRight(4);
+        captureLocationField_.setBounds(captureRow.reduced(0, 1));
 
         bounds.removeFromTop(sectionGap);
 
@@ -2380,6 +2419,37 @@ class PathsPage : public juce::Component {
         wipeButton_.setEnabled(files > 0);
     }
 
+    void refreshCaptureFolder() {
+        const juce::String folder(magda::Config::getInstance().getCaptureDir());
+        captureLocationField_.setText(folder.isEmpty() ? juce::String("System temp folder")
+                                                       : folder,
+                                      juce::dontSendNotification);
+    }
+
+    void browseForCaptureLocation() {
+        const juce::File current(
+            juce::File::isAbsolutePath(magda::Config::getInstance().getCaptureDir())
+                ? juce::String(magda::Config::getInstance().getCaptureDir())
+                : juce::String());
+        fileChooser_ = std::make_unique<juce::FileChooser>(
+            "Choose a folder for the capture history",
+            current.isDirectory() ? current
+                                  : juce::File::getSpecialLocation(juce::File::userHomeDirectory));
+
+        juce::Component::SafePointer<PathsPage> self(this);
+        fileChooser_->launchAsync(
+            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+            [self](const juce::FileChooser& fc) {
+                const auto picked = fc.getResult();
+                if (!picked.isDirectory())
+                    return;
+                magda::Config::getInstance().setCaptureDir(picked.getFullPathName().toStdString());
+                magda::Config::getInstance().save();
+                if (auto* page = self.getComponent())
+                    page->refreshCaptureFolder();
+            });
+    }
+
     void browseForDbLocation() {
         const auto currentDir = juce::File(juce::String(
             magda::media::MediaDbContext::getInstance().dbPath().parent_path().string()));
@@ -2523,6 +2593,12 @@ class PathsPage : public juce::Component {
     juce::Label dbStats_;
     juce::TextButton wipeButton_;
     juce::TextButton indexPresetsButton_;
+
+    juce::Label captureHeader_;
+    juce::Label captureLocationCaption_;
+    juce::TextEditor captureLocationField_;
+    juce::TextButton captureBrowse_;
+    juce::TextButton captureReset_;
 
     std::unique_ptr<juce::FileChooser> fileChooser_;
 };

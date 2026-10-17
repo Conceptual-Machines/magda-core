@@ -1278,19 +1278,29 @@ class Config {
         captureEnabled = enabled;
     }
 
-    /// How much of the master the capture ring keeps, in seconds (#2311).
+    /// How much of the master the capture buffer keeps, in seconds (#2311); past a minute
+    /// the rest is on disk (#3052).
     int getCaptureSeconds() const {
         return captureSeconds;
     }
     void setCaptureSeconds(int seconds) {
-        captureSeconds = std::clamp(seconds, 10, 1800);
+        captureSeconds = std::clamp(seconds, 10, kMaxCaptureSeconds);
     }
+    static constexpr int kMaxCaptureSeconds = 4 * 60 * 60;
     /// How many bars Capture Recent Audio takes, at most.
     int getCaptureBars() const {
         return captureBars;
     }
     void setCaptureBars(int bars) {
         captureBars = std::clamp(bars, 1, 64);
+    }
+    /// Where the capture history's file goes (#3052), such as an external drive; empty is
+    /// the system's temp folder.
+    std::string getCaptureDir() const {
+        return captureDir;
+    }
+    void setCaptureDir(const std::string& dir) {
+        captureDir = dir;
     }
 
     // Auto-monitor selected track
@@ -1605,6 +1615,7 @@ class Config {
     bool captureEnabled = false;
     int captureSeconds = 300;
     int captureBars = 8;
+    std::string captureDir;
 
     // Device chain behaviour
 
