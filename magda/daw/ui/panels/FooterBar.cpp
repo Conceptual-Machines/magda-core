@@ -14,6 +14,7 @@
 #include "core/controllers/ControllerActivation.hpp"
 #include "media_db/MediaDbContext.hpp"
 #include "media_db/MediaModelDownloader.hpp"
+#include "ui/state/ModeContent.hpp"
 
 namespace magda {
 
@@ -34,6 +35,8 @@ FooterBar::FooterBar() {
     setupLocalModelButtons();
     setupBottomCollapseButton();
     ViewModeController::getInstance().addListener(this);
+    ModeContentRegistry::getInstance().addChangeListener(this);
+    refreshRegisteredModes();
     BindingRegistry::getInstance().addListener(this);
     ControllerRegistry::getInstance().addListener(this);
     refreshLiveInputs();
@@ -48,6 +51,7 @@ FooterBar::~FooterBar() {
     ControllerRegistry::getInstance().removeListener(this);
     BindingRegistry::getInstance().removeListener(this);
     ViewModeController::getInstance().removeListener(this);
+    ModeContentRegistry::getInstance().removeChangeListener(this);
     // RAII cleanup handled automatically by ManagedChild
 }
 
@@ -145,6 +149,11 @@ void FooterBar::paint(juce::Graphics& g) {
     g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawLine(0.0f, 0.0f, static_cast<float>(getWidth()), 0.0f, 1.0f);
 
+    if (registeredModesDividerX_ >= 0) {
+        const auto top = static_cast<float>((getHeight() - BUTTON_SIZE) / 2 + 6);
+        g.drawVerticalLine(registeredModesDividerX_, top, top + BUTTON_SIZE - 12);
+    }
+
     // Enabled-controller badges on the left.
     auto font = FontManager::getInstance().getUIFont(11.0f);
     g.setFont(font);
@@ -205,7 +214,7 @@ void FooterBar::paint(juce::Graphics& g) {
 void FooterBar::resized() {
     auto bounds = getLocalBounds();
 
-    // Center the view mode buttons horizontally
+    // Center the view mode buttons horizontally; registered modes sit apart, to their right
     int totalButtonsWidth = NUM_MODES * BUTTON_SIZE + (NUM_MODES - 1) * BUTTON_SPACING;
     int startX = (bounds.getWidth() - totalButtonsWidth) / 2;
 
@@ -214,6 +223,23 @@ void FooterBar::resized() {
     for (int i = 0; i < NUM_MODES; ++i) {
         int buttonX = startX + i * (BUTTON_SIZE + BUTTON_SPACING);
         modeButtons[static_cast<size_t>(i)]->setBounds(buttonX, buttonY, BUTTON_SIZE, BUTTON_SIZE);
+    }
+
+    int buttonX = startX + totalButtonsWidth + BUTTON_SPACING;
+    registeredModesDividerX_ = registeredModeButtons_.empty() ? -1 : buttonX;
+    buttonX += BUTTON_SPACING;
+    for (auto& [mode, button] : registeredModeButtons_) {
+        button->setBounds(buttonX, buttonY, BUTTON_SIZE, BUTTON_SIZE);
+        buttonX += BUTTON_SIZE + BUTTON_SPACING;
+    }
+
+    if (exitModeButton_ != nullptr && dynamic_cast<SvgButton*>(exitModeButton_.get()) != nullptr) {
+        exitModeButton_->setBounds(buttonX, buttonY, BUTTON_SIZE, BUTTON_SIZE);
+    } else if (exitModeButton_ != nullptr) {
+        constexpr int kExitButtonWidth = 96;
+        constexpr int kExitButtonHeight = 22;
+        exitModeButton_->setBounds(buttonX, (bounds.getHeight() - kExitButtonHeight) / 2,
+                                   kExitButtonWidth, kExitButtonHeight);
     }
 
     // Bottom panel collapse button on the right side
@@ -320,8 +346,58 @@ void FooterBar::setupButtons() {
     }
 }
 
+void FooterBar::refreshRegisteredModes() {
+    registeredModeButtons_.clear();
+    for (const auto& [mode, content] : ModeContentRegistry::getInstance().all()) {
+        if (content.iconSvg.isEmpty())
+            continue;
+        const auto svg = content.iconSvg.toStdString();
+        auto button = std::make_unique<SvgButton>(content.label, svg.data(), svg.size());
+        button->setTooltip(content.label);
+        button->setClickingTogglesState(false);
+        button->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        button->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        button->setActiveColor(content.accent);
+        button->setActiveBackgroundColor(content.accent.withAlpha(0.2f));
+        button->onClick = [mode = mode]() { ViewModeController::getInstance().setViewMode(mode); };
+        addAndMakeVisible(*button);
+        registeredModeButtons_.emplace_back(mode, std::move(button));
+    }
+    updateButtonStates();
+    resized();
+}
+
+void FooterBar::updateExitModeButton(ViewMode currentMode) {
+    const auto* content = ModeContentRegistry::getInstance().find(currentMode);
+    if (content == nullptr || !ViewModeController::getInstance().isExclusive(currentMode)) {
+        if (exitModeButton_)
+            exitModeButton_->setVisible(false);
+        return;
+    }
+
+    const auto text = "Exit " + content->label;
+    if (content->exitIconSvg.isNotEmpty()) {
+        const auto svg = content->exitIconSvg.toStdString();
+        auto button = std::make_unique<SvgButton>(text, svg.data(), svg.size());
+        button->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        button->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        exitModeButton_ = std::move(button);
+    } else {
+        exitModeButton_ = std::make_unique<juce::TextButton>(text);
+    }
+    exitModeButton_->setTooltip(text);
+    exitModeButton_->onClick = []() { ViewModeController::getInstance().exitExclusiveMode(); };
+    addAndMakeVisible(*exitModeButton_);
+    resized();
+}
+
+void FooterBar::changeListenerCallback(juce::ChangeBroadcaster*) {
+    refreshRegisteredModes();
+}
+
 void FooterBar::updateButtonStates() {
-    auto currentMode = ViewModeController::getInstance().getViewMode();
+    auto& controller = ViewModeController::getInstance();
+    auto currentMode = controller.getViewMode();
 
     const std::array<ViewMode, NUM_MODES> modes = {ViewMode::Live, ViewMode::Arrange,
                                                    ViewMode::Mix};
@@ -329,7 +405,14 @@ void FooterBar::updateButtonStates() {
     for (size_t i = 0; i < NUM_MODES; ++i) {
         bool isActive = (modes[i] == currentMode);
         modeButtons[i]->setActive(isActive);
+        modeButtons[i]->setEnabled(controller.canSwitchTo(modes[i]));
     }
+
+    for (auto& [mode, button] : registeredModeButtons_) {
+        button->setActive(mode == currentMode);
+        button->setEnabled(controller.canSwitchTo(mode));
+    }
+    updateExitModeButton(currentMode);
 
     repaint();
 }

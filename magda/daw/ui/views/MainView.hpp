@@ -13,6 +13,7 @@
 #include "../components/tracks/TrackContentPanel.hpp"
 #include "../components/tracks/TrackHeadersPanel.hpp"
 #include "../layout/LayoutConfig.hpp"
+#include "../state/ModeContent.hpp"
 #include "../state/TimelineController.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/GestureRouter.hpp"
@@ -182,6 +183,11 @@ class MainView : public juce::Component,
     std::unique_ptr<MasterHeaderPanel> masterHeaderPanel;
     // Song navigator / minimap occupying the master content strip (issue #1474).
     std::unique_ptr<SongNavigatorPanel> masterContentPanel;
+
+    // A registered mode's content in place of the track area (ModeContent.hpp, #3077).
+    std::unique_ptr<ModeContentComponent> modeContent_;
+    ViewMode modeContentMode_ = ViewMode::Arrange;
+    void updateModeContent();
     int masterStripHeight = 84;
 
     // Master automation band: a pinned strip directly above the master strip
@@ -271,6 +277,7 @@ class MainView : public juce::Component,
         juce::Rectangle<int> auxContentArea;
     };
     ArrangementLayout computeArrangementLayout() const;
+    juce::Rectangle<int> trackAreaBounds(const ArrangementLayout& layout) const;
 
     // Resize handle state (horizontal - track header width)
     bool isResizingHeaders = false;

@@ -897,8 +897,8 @@ void MainView::masterChannelChanged() {
 
     if (newVisible != masterVisible_) {
         masterVisible_ = newVisible;
-        masterHeaderPanel->setVisible(masterVisible_);
-        masterContentPanel->setVisible(masterVisible_);
+        masterHeaderPanel->setVisible(masterVisible_ && !modeContent_);
+        masterContentPanel->setVisible(masterVisible_ && !modeContent_);
         resized();
         repaint();  // clear the vacated master-strip area (stale-paint fix)
     }
@@ -921,9 +921,51 @@ void MainView::viewModeChanged(ViewMode mode, const AudioEngineProfile& /*profil
 
     // Update aux visibility for new view mode
     tracksChanged();
+    updateModeContent();
 
     resized();
     repaint();  // clear stale pixels from the previous view (song map / grid)
+}
+
+void MainView::updateModeContent() {
+    const auto* content = ModeContentRegistry::getInstance().find(currentViewMode_);
+    if (modeContent_ && (content == nullptr || modeContentMode_ != currentViewMode_)) {
+        removeChildComponent(modeContent_.get());
+        modeContent_.reset();
+    }
+    if (content != nullptr && !modeContent_) {
+        ModeContentContext context{*timelineController};
+        modeContent_ = content->create(context);
+        modeContentMode_ = currentViewMode_;
+        // Under the grid, so bar lines draw over it as they do over the lanes.
+        if (modeContent_)
+            addChildComponent(*modeContent_, getIndexOfChildComponent(gridOverlay.get()));
+    }
+
+    const bool replaced = modeContent_ != nullptr;
+    if (replaced)
+        modeContent_->setVisible(true);
+    trackHeadersViewport->setVisible(!replaced);
+    trackContentViewport->setVisible(!replaced);
+    selectionOverlay->setVisible(!replaced);
+    masterHeaderPanel->setVisible(!replaced && masterVisible_);
+    masterContentPanel->setVisible(!replaced && masterVisible_);
+    if (replaced) {
+        auxHeadersPanel->setVisible(false);
+        auxContentPanel->setVisible(false);
+        masterAutomationHeaderPanel->setVisible(false);
+        masterAutomationViewport->setVisible(false);
+    }
+}
+
+juce::Rectangle<int> MainView::trackAreaBounds(const ArrangementLayout& layout) const {
+    auto area = layout.trackHeadersArea.getUnion(layout.trackContentArea);
+    for (const auto& part :
+         {layout.masterHeaderArea, layout.masterContentArea, layout.masterAutomationHeaderArea,
+          layout.masterAutomationContentArea, layout.auxHeadersArea, layout.auxContentArea})
+        if (!part.isEmpty())
+            area = area.getUnion(part);
+    return area;
 }
 
 void MainView::paint(juce::Graphics& g) {
@@ -1100,7 +1142,7 @@ void MainView::resized() {
     }
     // Always-present footer toggle: hide icon when the master is visible, show
     // icon when it's hidden.
-    showMasterButton->setVisible(true);
+    showMasterButton->setVisible(!modeContent_);
     showMasterButton->updateSvgData(
         masterVisible_ ? BinaryData::bottom_close_svg : BinaryData::bottom_open_svg,
         masterVisible_ ? BinaryData::bottom_close_svgSize : BinaryData::bottom_open_svgSize);
@@ -1115,7 +1157,7 @@ void MainView::resized() {
         showMasterButton->toFront(false);
     }
 
-    const bool bandVisible = masterVisible_ && masterAutomationHeight > 0;
+    const bool bandVisible = masterVisible_ && masterAutomationHeight > 0 && !modeContent_;
     masterAutomationHeaderPanel->setVisible(bandVisible);
     masterAutomationViewport->setVisible(bandVisible);
     if (bandVisible) {
@@ -1206,6 +1248,14 @@ void MainView::resized() {
     trackHeadersViewport->setBounds(arrangementLayout.trackHeadersArea);
     trackHeadersPanel->refreshHeaderSideLayout();
     trackContentViewport->setBounds(arrangementLayout.trackContentArea);
+    if (modeContent_) {
+        const auto area = trackAreaBounds(arrangementLayout);
+        modeContent_->setBounds(area);
+        modeContent_->setTrackAreaLayout(
+            arrangementLayout.trackHeadersArea.translated(-area.getX(), -area.getY()),
+            arrangementLayout.trackContentArea.withBottom(area.getBottom())
+                .translated(-area.getX(), -area.getY()));
+    }
 
     // Grid overlay (bottom layer - draws vertical time grid lines)
     // Extend the time grid down through the master automation band so its lanes
@@ -2739,8 +2789,8 @@ void MainView::tracksChanged() {
     bool newAuxVisible = auxCount > 0;
 
     auxVisible_ = newAuxVisible;
-    auxHeadersPanel->setVisible(auxVisible_);
-    auxContentPanel->setVisible(auxVisible_);
+    auxHeadersPanel->setVisible(auxVisible_ && !modeContent_);
+    auxContentPanel->setVisible(auxVisible_ && !modeContent_);
     auxContentPanel->setAuxTrackCount(auxCount);
     resized();
 }

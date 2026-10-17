@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <vector>
 
 #include "ViewModeEvents.hpp"
@@ -77,6 +78,17 @@ class ViewModeController {
      */
     void setViewMode(ViewMode mode);
 
+    /** @brief Marks @p mode as entered and left explicitly: while it is current, no other mode is
+     * set. */
+    void setExclusive(ViewMode mode, bool exclusive);
+    bool isExclusive(ViewMode mode) const;
+
+    /** @brief Whether setViewMode(@p mode) would take effect now. */
+    bool canSwitchTo(ViewMode mode) const;
+
+    /** @brief Leaves an exclusive mode for the mode it was entered from. */
+    void exitExclusiveMode();
+
     // ===== Listener Management =====
 
     /**
@@ -94,6 +106,8 @@ class ViewModeController {
     ~ViewModeController() = default;
 
     ViewMode currentMode = ViewMode::Arrange;  // Default to Arrange mode
+    ViewMode modeBeforeExclusive_ = ViewMode::Arrange;
+    std::array<bool, 4> exclusive_{};
     std::vector<ViewModeListener*> listeners;
 
     void notifyListeners();
