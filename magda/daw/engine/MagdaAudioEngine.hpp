@@ -137,6 +137,9 @@ class MagdaAudioEngine final : public AudioEngine,
     MasterCaptureState masterCaptureState() const override;
     void setTrackFrozen(TrackId trackId, bool frozen) override;
     TrackFreezePlan planTrackFreeze(TrackId trackId) override;
+    bool setMasterInputSource(const juce::File& file) override;
+    void clearMasterInputSource() override;
+    bool hasMasterInputSource() const override;
     void adoptTrackFreeze(TrackId trackId, const OfflineRenderRequest& request) override;
     void previewNoteOnTrack(const std::string& track_id, int noteNumber, int velocity,
                             bool isNoteOn) override;

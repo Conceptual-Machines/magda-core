@@ -518,6 +518,7 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES engine/test_lame_encoder.cpp)
     list(APPEND TEST_SOURCES engine/test_offline_render_model.cpp)
     list(APPEND TEST_SOURCES engine/test_track_freeze.cpp)
+    list(APPEND TEST_SOURCES engine/test_master_input_source.cpp)
     list(APPEND TEST_SOURCES engine/test_insert_capture_session.cpp)
     list(APPEND TEST_SOURCES engine/test_live_insert.cpp)
     # The master's recent audio, taken back by bars (#2311).
