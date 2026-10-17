@@ -232,6 +232,7 @@ class SessionView::SessionToggleRail : public juce::Component {
                      size_t svgSize, const juce::String& tooltip, bool initialState,
                      std::function<void(bool)> setter) {
         btn = std::make_unique<SvgButton>(name, svgData, svgSize);
+        btn->setIconPadding(7.0f);  // a 14px glyph, the size of the arrangement corner's
         btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
         btn->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         btn->setPressedColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));

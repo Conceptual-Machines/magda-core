@@ -112,6 +112,8 @@ magda::track_controls::Metrics inspectorControlMetrics() {
 }  // namespace
 
 TrackInspector::TrackInspector() {
+    addChildComponent(masterView_);
+
     // Track name
     trackNameLabel_.setText(tr("inspector.name"), juce::dontSendNotification);
     trackNameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
@@ -721,6 +723,7 @@ void TrackInspector::paint(juce::Graphics& g) {
 }
 
 void TrackInspector::resized() {
+    masterView_.setBounds(getLocalBounds());
     auto bounds = getLocalBounds().reduced(8);
     sectionSeparatorYs_.clear();
     const int separatorPadding = 6;
@@ -1033,6 +1036,7 @@ void TrackInspector::setSelectedTracks(const std::unordered_set<magda::TrackId>&
     isMultiTrackMode_ = true;
     selectedTrackIds_ = trackIds;
     selectedTrackId_ = magda::INVALID_TRACK_ID;
+    syncMasterView();
     // Multi-track selection has no single target to mirror, so clear any
     // binding left from single-track mode.
     gainLabel_->clearAutomationTarget();
@@ -1066,6 +1070,8 @@ void TrackInspector::trackPropertyChanged(int trackId) {
 }
 
 void TrackInspector::trackDevicesChanged(magda::TrackId trackId) {
+    if (trackId == selectedTrackId_ && masterView_.isVisible())
+        masterView_.refresh();
     if (trackId == selectedTrackId_) {
         rebuildSendsUI();
 
@@ -1192,7 +1198,18 @@ void TrackInspector::updateAutomatedParametersSummary() {
     automatedParamsLabel_.setVisible(true);
 }
 
+void TrackInspector::syncMasterView() {
+    const bool master = !isMultiTrackMode_ && selectedTrackId_ == magda::MASTER_TRACK_ID;
+    masterView_.setVisible(master);
+    if (master) {
+        masterView_.setAudioEngine(audioEngine_);
+        masterView_.refresh();
+        masterView_.toFront(false);
+    }
+}
+
 void TrackInspector::updateFromSelectedTrack() {
+    syncMasterView();
     if (selectedTrackId_ == magda::INVALID_TRACK_ID) {
         showTrackControls(false);
         updateAutomatedParametersSummary();

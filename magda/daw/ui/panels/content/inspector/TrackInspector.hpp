@@ -12,6 +12,7 @@
 #include "../../mixer/InputTypeSelector.hpp"
 #include "../../mixer/RoutingSelector.hpp"
 #include "BaseInspector.hpp"
+#include "MasterInspectorView.hpp"
 #include "audio/MidiBridge.hpp"
 #include "audio/io/AudioIOControl.hpp"
 #include "core/AutomationManager.hpp"
@@ -141,6 +142,10 @@ class TrackInspector : public BaseInspector,
     // Latency display
     juce::Label latencyLabel_;
     juce::Label latencyValue_;
+
+    /// The master's own layout, shown over everything above while it is selected.
+    MasterInspectorView masterView_;
+    void syncMasterView();
 
     // Section separator Y positions (computed in resized, drawn in paint)
     std::vector<int> sectionSeparatorYs_;
