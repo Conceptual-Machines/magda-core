@@ -65,18 +65,17 @@ configure fails if a source includes or names Tracktion. MAGDA's base pack is
 validated this way in full. The `magda_base_devices` archive contains only
 neutral device implementations.
 
-## Optional private pack
+## Packs built outside this repository
 
-Configure with:
+A pack outside the tree is built by an app extension (`magda/daw/extensions/Extension.hpp`).
+The extension's directory is named at configure time:
 
 ```sh
-cmake -S . -B build \
-  -DMAGDA_PRO_DEVICES=ON \
-  -DMAGDA_PRO_DEVICES_DIR=/path/to/private/device-pack
+cmake -S . -B build -DMAGDA_EXTENSION_DIRS=/path/to/extension
 ```
 
-The directory must provide a CMake target named `magda_pro_devices`, link it
-privately to `magda::device_sdk`, and register its devices through
-`registerDevicePack()`. The in-tree `device_packs/pro_stub` directory is the
-default proof pack and can be used to validate the integration without the
-private repository.
+Its CMakeLists defines the pack target, linked privately to `magda::device_sdk` and validated
+with `magda_validate_device_pack_sources()`, and hands it to the app with
+`magda_add_extension(<target>)`. The pack's frozen parameter order goes in its own file,
+named with `magda_add_extension_param_schema()`. The in-tree `extensions/stub` directory is
+the proof extension CI builds.

@@ -86,11 +86,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # JUCE options
 option(JUCE_BUILD_EXTRAS "Build JUCE Examples" OFF)
 option(JUCE_BUILD_EXAMPLES "Build JUCE Extras" OFF)
-option(MAGDA_PRO_DEVICES "Build a private static device pack" OFF)
-set(MAGDA_PRO_DEVICES_DIR
-    "${CMAKE_CURRENT_SOURCE_DIR}/magda/daw/device_packs/pro_stub"
-    CACHE PATH
-    "Directory containing the optional pro-device pack CMake project")
+set(MAGDA_EXTENSION_DIRS "" CACHE STRING
+    "Extension directories to build into the app, ;-separated, relative to the source root")
+include(cmake/MagdaExtensions.cmake)
 
 # Build type
 if(NOT CMAKE_BUILD_TYPE)
@@ -384,6 +382,8 @@ add_subdirectory(magda/agents)
 # Native audio engine — isolated from magda/daw on purpose, so it is added
 # after the model layer it compiles and links nothing else from it.
 add_subdirectory(magda/engine)
+
+magda_add_extension_dirs()
 
 # Examples
 if(MAGDA_BUILD_EXAMPLES)

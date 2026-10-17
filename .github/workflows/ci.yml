@@ -309,7 +309,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Debug \
           -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
           -DMAGDA_BUILD_TESTS=ON \
-          -DMAGDA_PRO_DEVICES=ON \
+          -DMAGDA_EXTENSION_DIRS=magda/daw/extensions/stub \
           "-DCMAKE_C_COMPILER_LAUNCHER=${{ steps.sccache.outcome == 'success' && 'sccache' || '' }}" \
           "-DCMAKE_CXX_COMPILER_LAUNCHER=${{ steps.sccache.outcome == 'success' && 'sccache' || '' }}" \
           ${{ (steps.dsp-r2.outputs.faust_hit == 'true' || steps.faust-cache.outputs.cache-hit == 'true') && format('-DMAGDA_FAUST_PREBUILT_DIR={0}/third_party/faust/build', github.workspace) || '' }} \

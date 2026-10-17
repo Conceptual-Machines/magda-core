@@ -465,6 +465,7 @@ juce_add_console_app(magda_cli
 add_subdirectory(cli)
 add_subdirectory(core)
 add_subdirectory(engine)
+add_subdirectory(extensions)
 add_subdirectory(project)
 add_subdirectory(music)
 add_subdirectory(audio)
@@ -502,7 +503,11 @@ foreach(_magda_daw_source IN LISTS _magda_daw_sources)
         # Core may query the opaque string-keyed registry seam, but it must
         # never depend on a concrete device implementation. Device packs own
         # those includes and contribute their specs through registerDevices().
-        if(_magda_daw_source_path MATCHES "/core/")
+        # Relative to this directory: the checkout itself may sit under a directory named
+        # core (a submodule), which an absolute match would read as this tree's core/.
+        file(RELATIVE_PATH _magda_daw_source_rel "${CMAKE_CURRENT_SOURCE_DIR}"
+             "${_magda_daw_source_path}")
+        if(_magda_daw_source_rel MATCHES "^core/")
             string(REGEX MATCHALL
                 "#[ \t]*include[ \t]*[<\"][^>\"]*audio/plugins/[^>\"]*Plugin\\.hpp"
                 _core_plugin_includes "${_magda_daw_source_text}")
@@ -663,27 +668,6 @@ target_link_libraries(magda_base_devices
 # contains, so FaustBackend.hpp resolves to the backend that is really linked.
 target_link_libraries(magda_devices PRIVATE magda_faust_backend)
 target_link_libraries(magda_base_devices PRIVATE magda_faust_backend)
-
-if(MAGDA_PRO_DEVICES)
-    if(NOT EXISTS "${MAGDA_PRO_DEVICES_DIR}/CMakeLists.txt")
-        message(FATAL_ERROR
-            "MAGDA_PRO_DEVICES=ON but no device pack was found at "
-            "${MAGDA_PRO_DEVICES_DIR}")
-    endif()
-
-    add_subdirectory(
-        "${MAGDA_PRO_DEVICES_DIR}"
-        "${CMAKE_BINARY_DIR}/magda_pro_devices"
-    )
-    if(NOT TARGET magda_pro_devices)
-        message(FATAL_ERROR
-            "The pro-device pack must define a magda_pro_devices target")
-    endif()
-
-    target_link_libraries(magda_daw
-        PUBLIC "$<LINK_LIBRARY:WHOLE_ARCHIVE,magda_pro_devices>")
-    target_compile_definitions(magda_daw PUBLIC MAGDA_PRO_DEVICES_ENABLED=1)
-endif()
 
 # Re-export JUCE compile usage (include dirs + defines, NO sources) so
 # dependents can still #include JUCE headers. magda_daw's own resolved

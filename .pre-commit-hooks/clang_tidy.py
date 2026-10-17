@@ -81,9 +81,9 @@ CHECKS = ",".join([
 # Sources in the tree but in no compile command, so an absent database entry is
 # expected rather than a stale build. Anything else missing is an error.
 UNBUILT_OK = {
-    # Built only when MAGDA_PRO_DEVICES is OFF, where the real pack replaces them.
-    Path("magda/daw/device_packs/pro_stub/ProDevicePack.cpp"),
-    Path("magda/daw/device_packs/pro_stub/ProStubPlugin.cpp"),
+    # Built only when MAGDA_EXTENSION_DIRS names the stub, as CI does.
+    Path("magda/daw/extensions/stub/StubDevicePack.cpp"),
+    Path("magda/daw/extensions/stub/StubExtension.cpp"),
     # In no CMake target and referenced only by each other.
     Path("magda/daw/ui/components/automation/AutomationPointComponent.cpp"),
     Path("magda/daw/ui/components/automation/BezierHandleComponent.cpp"),
