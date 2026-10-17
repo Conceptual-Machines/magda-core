@@ -441,6 +441,7 @@ void Config::save() {
     root->setProperty("followPlayhead", followPlayhead);
     root->setProperty("chordPreviewOnByDefault", chordPreviewOnByDefault);
     root->setProperty("autoCrossfadeByDefault", autoCrossfadeByDefault);
+    root->setProperty("assumeProjectTempo", assumeProjectTempo);
     root->setProperty("clipOverlapPlaysBoth", clipOverlapPlaysBoth);
     root->setProperty("postFxPostFaderByDefault", postFxPostFaderByDefault);
 
@@ -639,6 +640,9 @@ void Config::load() {
 
     language = getString("language", language);
     compactTrackHeight = getInt("compactTrackHeight", compactTrackHeight);
+    // 61 was the old default, from before lanes could be compact; it reads as the new one.
+    if (compactTrackHeight == 61)
+        compactTrackHeight = 34;
     mediumTrackHeight = getInt("mediumTrackHeight", mediumTrackHeight);
     largeTrackHeight = getInt("largeTrackHeight", largeTrackHeight);
     scrollbarOnLeft = getBool("scrollbarOnLeft", scrollbarOnLeft);
@@ -972,6 +976,7 @@ void Config::load() {
     followPlayhead = getBool("followPlayhead", followPlayhead);
     chordPreviewOnByDefault = getBool("chordPreviewOnByDefault", chordPreviewOnByDefault);
     autoCrossfadeByDefault = getBool("autoCrossfadeByDefault", autoCrossfadeByDefault);
+    assumeProjectTempo = getBool("assumeProjectTempo", assumeProjectTempo);
     clipOverlapPlaysBoth = getBool("clipOverlapPlaysBoth", clipOverlapPlaysBoth);
     postFxPostFaderByDefault = getBool("postFxPostFaderByDefault", postFxPostFaderByDefault);
 

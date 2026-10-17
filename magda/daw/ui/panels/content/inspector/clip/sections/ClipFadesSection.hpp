@@ -5,8 +5,10 @@
 #include <unordered_set>
 
 #include "core/ClipManager.hpp"
+#include "ui/components/common/CollapsibleSectionHeader.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
+#include "ui/components/common/ToggleSwitch.hpp"
 
 namespace magda::daw::ui {
 
@@ -38,6 +40,9 @@ class ClipFadesSection : public juce::Component {
 
     void resized() override;
 
+    /// Fires when the header folds or unfolds, so the host can relayout.
+    std::function<void()> onCollapsedChanged;
+
   private:
     std::unordered_set<magda::ClipId> selectedClipIds_;
 
@@ -45,8 +50,9 @@ class ClipFadesSection : public juce::Component {
         return selectedClipIds_.empty() ? magda::INVALID_CLIP_ID : *selectedClipIds_.begin();
     }
 
-    // Section label
-    juce::Label sectionLabel_;
+    CollapsibleSectionHeader header_{"Fades", "clipFades"};
+    ToggleSwitch autoCrossfadeSwitch_;
+    juce::Label inLabel_, outLabel_, xfadeInLabel_, xfadeOutLabel_;
 
     // Arrangement-only controls
     std::unique_ptr<magda::DraggableValueLabel> fadeInValue_;
@@ -55,7 +61,6 @@ class ClipFadesSection : public juce::Component {
     std::unique_ptr<magda::SvgButton> fadeOutTypeButtons_[4];
     std::unique_ptr<magda::SvgButton> fadeInBehaviourButtons_[2];
     std::unique_ptr<magda::SvgButton> fadeOutBehaviourButtons_[2];
-    juce::TextButton autoCrossfadeToggle_;
 
     // Crossfade durations (#1499), in beats — shown only when the clip's edge
     // is crossfaded with a neighbour (single selection). Editing resizes the

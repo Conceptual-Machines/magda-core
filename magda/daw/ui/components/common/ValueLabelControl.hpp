@@ -56,6 +56,8 @@ class ValueLabelControl : public juce::Component {
     void setTintState(TintState state);
     void setVertical(bool vertical);
     void setShowText(bool show);
+    /// Drawn dim after the value, which then sits right-aligned beside it.
+    void setUnitText(juce::String unit);
     void setEditorBoundsProvider(std::function<juce::Rectangle<int>()> provider);
     void setEditorBoundsOverride(std::optional<juce::Rectangle<int>> bounds);
 
@@ -89,6 +91,7 @@ class ValueLabelControl : public juce::Component {
     double maxValue_ = 1.0;
     juce::String displayText_;
     juce::String textOverride_;
+    juce::String unitText_;
     FillMode fillMode_ = FillMode::LeftToRight;
     double fillExponent_ = 1.0;
     std::function<double(double)> fillProportionMapper_;

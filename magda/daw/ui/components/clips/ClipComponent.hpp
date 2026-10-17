@@ -246,6 +246,10 @@ class ClipComponent : public juce::Component,
     static constexpr int CORNER_RADIUS = 0;  // clips are square-cornered
     static constexpr int HEADER_HEIGHT = interaction::ClipMetrics::HEADER_HEIGHT;
     static constexpr int MIN_WIDTH_FOR_NAME = 40;
+    /// HEADER_HEIGHT, or 0 on a compact lane.
+    int headerHeight() const {
+        return interaction::ClipMetrics::headerHeightFor(getHeight());
+    }
     static constexpr int FADE_HANDLE_SIZE = 8;
     static constexpr int FADE_HANDLE_HIT_WIDTH = interaction::ClipMetrics::FADE_HANDLE_HIT_WIDTH;
 
@@ -289,6 +293,12 @@ class ClipComponent : public juce::Component,
     void paintChordClip(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
     static bool isChordClip(const ClipInfo& clip);
     void paintClipHeader(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
+    /** @brief The clip's colour as drawn: grey while it is disabled. */
+    juce::Colour displayColour(const ClipInfo& clip) const;
+    /** @brief The tinted body: brighter while selected, translucent for ghosts. */
+    juce::Colour bodyColour(const ClipInfo& clip) const;
+    bool isShownSelected() const;
+    static void paintSelectionOutline(juce::Graphics& g, juce::Rectangle<int> bounds);
     void paintResizeHandles(juce::Graphics& g, juce::Rectangle<int> bounds);
     static void paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
                                   const EffectiveFades& fades, juce::Rectangle<int> waveformArea,

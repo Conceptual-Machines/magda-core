@@ -75,6 +75,12 @@ bool FontManager::initialize() {
         success = false;
     }
 
+    // Geist for track names; a miss falls back to Inter.
+    geistRegular = juce::Typeface::createSystemTypefaceFor(BinaryData::GeistRegular_ttf,
+                                                           BinaryData::GeistRegular_ttfSize);
+    geistMedium = juce::Typeface::createSystemTypefaceFor(BinaryData::GeistMedium_ttf,
+                                                          BinaryData::GeistMedium_ttfSize);
+
     // Load Noto Sans CJK SC Regular — fallback for CJK glyphs that Inter doesn't cover.
     // Missing here is non-fatal; Chinese/Japanese/Korean text will fall back to OS
     // fonts instead (or render as tofu on systems without any CJK font installed).
@@ -104,6 +110,8 @@ void FontManager::shutdown() {
     interMedium = nullptr;
     interSemiBold = nullptr;
     interBold = nullptr;
+    geistRegular = nullptr;
+    geistMedium = nullptr;
     microgrammaBold = nullptr;
     jetBrainsMonoRegular = nullptr;
     notoSansCJK = nullptr;
@@ -219,6 +227,13 @@ juce::Font FontManager::getMonoFont(float size) const {
 
     return withScriptFallbacks(
         juce::Font(juce::Font::getDefaultMonospacedFontName(), size, juce::Font::plain));
+}
+
+juce::Font FontManager::getTrackNameFont(float size, Weight weight) const {
+    const auto& face = weight == Weight::Regular ? geistRegular : geistMedium;
+    if (face == nullptr || !Config::getInstance().getUIFontFamily().empty())
+        return getInterFont(size, weight);
+    return withScriptFallbacks(juce::Font(face).withHeight(scaledFontSize(size)));
 }
 
 }  // namespace magda

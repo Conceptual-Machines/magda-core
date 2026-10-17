@@ -801,7 +801,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         double phaseTime = relativeMode ? loopPhasePosition : (timeOffset + loopPhasePosition);
         int phaseX = timeToPixel(phaseTime);
         if (phaseX >= 0 && phaseX <= width) {
-            auto col = juce::Colour(0xFFCCAA44);  // OFFSET_MARKER yellow
+            auto col = ActiveTheme::getColour(ActiveTheme::OFFSET_MARKER);
             float alpha = loopPhaseVisible ? 1.0f : 0.4f;
             int tickAreaTop = height - tickHeightMajor();
             g.setColour(col.withAlpha(alpha));

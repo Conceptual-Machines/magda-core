@@ -341,11 +341,24 @@ void ValueLabelControl::paint(juce::Graphics& g) {
             drawLocalizedText(g, text, rotBounds.reduced(2.0f, 1.0f), justification_, textColour,
                               false);
             g.restoreState();
+        } else if (unitText_.isNotEmpty() && textOverride_.isEmpty()) {
+            auto area = bounds.reduced(6.0f, 0.0f);
+            const float unitW = juce::GlyphArrangement::getStringWidth(font_, unitText_);
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withMultipliedAlpha(alpha));
+            g.drawText(unitText_, area.removeFromRight(unitW + 1.0f),
+                       juce::Justification::centredRight, false);
+            area.removeFromRight(4.0f);
+            drawLocalizedText(g, text, area, juce::Justification::centredRight, textColour, false);
         } else {
             drawLocalizedText(g, text, bounds.reduced(2.0f, 0.0f), justification_, textColour,
                               false);
         }
     }
+}
+
+void ValueLabelControl::setUnitText(juce::String unit) {
+    unitText_ = std::move(unit);
+    repaint();
 }
 
 void ValueLabelControl::resized() {

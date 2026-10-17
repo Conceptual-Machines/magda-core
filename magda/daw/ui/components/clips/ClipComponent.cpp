@@ -458,22 +458,21 @@ void ClipComponent::paint(juce::Graphics& g) {
                      juce::roundToInt(start * zoom);
             }
 
-            // The line starts below the header fill, which runs 2px past HEADER_HEIGHT.
-            // A bright core with a soft glow fading out to either side
+            // A dashed divider through the body with a notch hanging from its top, in the
+            // clip's ink. The body starts where the header fill (2px past the header) ends.
             const auto lineX = static_cast<float>(clipBounds.getX() + bx);
-            const auto lineTop = static_cast<float>(clipBounds.getY() + HEADER_HEIGHT + 2);
-            const auto lineHeight = static_cast<float>(clipBounds.getBottom()) - lineTop;
-            constexpr float glow = 6.0f;
-            const auto glowColour = juce::Colours::white.withAlpha(0.13f);
-            const auto clear = juce::Colours::white.withAlpha(0.0f);
-            g.setGradientFill(
-                juce::ColourGradient(clear, lineX - glow, 0.0f, glowColour, lineX, 0.0f, false));
-            g.fillRect(lineX - glow, lineTop, glow, lineHeight);
-            g.setGradientFill(juce::ColourGradient(glowColour, lineX + 1.0f, 0.0f, clear,
-                                                   lineX + 1.0f + glow, 0.0f, false));
-            g.fillRect(lineX + 1.0f, lineTop, glow, lineHeight);
-            g.setColour(juce::Colours::white.withAlpha(0.4f));
-            g.fillRect(lineX, lineTop, 1.0f, lineHeight);
+            const auto lineTop = static_cast<float>(clipBounds.getY() + headerHeight() +
+                                                    (headerHeight() > 0 ? 2 : 0));
+            const auto lineBottom = static_cast<float>(clipBounds.getBottom());
+            const auto ink = deriveClipInk(displayColour(*clip));
+            g.setColour(ink.withAlpha(0.45f));
+            for (float dy = lineTop + 5.0f; dy < lineBottom; dy += 6.0f)
+                g.fillRect(lineX, dy, 1.0f, juce::jmin(3.0f, lineBottom - dy));
+            juce::Path notch;
+            notch.addTriangle(lineX - 3.5f, lineTop, lineX + 4.5f, lineTop, lineX + 0.5f,
+                              lineTop + 4.0f);
+            g.setColour(ink.withAlpha(0.85f));
+            g.fillPath(notch);
         }
     }
 
@@ -484,7 +483,7 @@ void ClipComponent::paint(juce::Graphics& g) {
     // the header too turned the clip into a black striped block that read as
     // broken rather than as stacked.
     if (!overlaps.bothPlay.empty() && parentPanel_ != nullptr) {
-        const auto body = bounds.withTrimmedTop(HEADER_HEIGHT);
+        const auto body = bounds.withTrimmedTop(headerHeight());
 
         for (const auto& range : overlaps.bothPlay) {
             const auto region = coveringRangeBounds(range, body);
@@ -532,7 +531,7 @@ void ClipComponent::paint(juce::Graphics& g) {
     if (clip->isAudio() && !clip->gainEnvelopeShown &&
         (std::abs(clip->volumeDB) > 0.01f || hoverVolumeHandle_ ||
          dragMode_ == DragMode::VolumeDrag)) {
-        auto wfArea = bounds.reduced(2, 0).withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
+        auto wfArea = bounds.reduced(2, 0).withTrimmedTop(headerHeight() + 2).withTrimmedBottom(2);
         paintVolumeLine(g, *clip, wfArea);
     }
 
@@ -542,13 +541,23 @@ void ClipComponent::paint(juce::Graphics& g) {
         g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
     }
 
-    // Disabled overlay (#1736) — heavier than the ghost treatment and the
-    // frozen/session dims, and it covers the header too, so a disabled clip
-    // reads as "off" at a glance (ghosts keep a full-colour header).
+    // Disabled (#1736): the clip is already drawn in grey; a hatch over the body says "off".
     if (!clip->enabled) {
-        g.setColour(juce::Colours::black.withAlpha(0.55f));
-        g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
+        const auto body = bounds.withTrimmedTop(headerHeight());
+        juce::Graphics::ScopedSaveState clipped(g);
+        g.reduceClipRegion(body);
+        g.setColour(juce::Colours::black.withAlpha(0.25f));
+        g.fillRect(body);
+        g.setColour(juce::Colours::white.withAlpha(0.07f));
+        const auto h = static_cast<float>(body.getHeight());
+        for (float x = static_cast<float>(body.getX()) - h; x < static_cast<float>(body.getRight());
+             x += 6.0f)
+            g.drawLine(x, static_cast<float>(body.getBottom()), x + h,
+                       static_cast<float>(body.getY()), 1.0f);
     }
+
+    if (isShownSelected())
+        paintSelectionOutline(g, bounds);
 
     // Frozen overlay — dim clip on frozen tracks
     auto* trackInfo = TrackManager::getInstance().getTrack(clip->trackId);
@@ -627,7 +636,8 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     if (!bounds.intersects(g.getClipBounds()))
         return;
 
-    auto waveformArea = bounds.reduced(2, 0).withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
+    auto waveformArea =
+        bounds.reduced(2, 0).withTrimmedTop(headerHeight() + 2).withTrimmedBottom(2);
 
     double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
     double clipDisplayLength = clip.getTimelineLength(tempo);
@@ -651,22 +661,36 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     // Ghost clips paint a translucent body + dimmed waveform so link-group
     // members read as mirrors of shared content.
     const bool ghosted = ClipManager::getInstance().isGhostClip(clipId_);
-    auto bgColour = deriveClipBody(clip.colour);
-    if (ghosted)
-        bgColour = bgColour.withAlpha(0.55f);
-    paintClipBody(g, bounds, bgColour, showThrough);
+    const auto colour = displayColour(clip);
+    paintClipBody(g, bounds, bodyColour(clip), showThrough);
 
     // A shown gain envelope dims the waveform under it, as the audio editor does (#3064).
-    auto waveColour = juce::Colour();
+    auto waveColour = deriveClipInk(colour);
     if (clip.gainEnvelopeShown)
-        waveColour = juce::Colours::black.withAlpha(0.3f);
+        waveColour = waveColour.withAlpha(0.35f);
     else if (ghosted)
-        waveColour = juce::Colours::black.withAlpha(0.65f);
-    if (audioEventRef(clip).sourceFilePath().isNotEmpty())
-        paintAudioClipDirect(g, clip, waveformArea, clipDisplayLength, waveColour);
+        waveColour = waveColour.withAlpha(0.5f);
+    if (const auto path = audioEventRef(clip).sourceFilePath(); path.isNotEmpty()) {
+        // A centre line per channel lane, under the peaks.
+        const auto* thumbnail = AudioThumbnailManager::getInstance().getThumbnail(path);
+        const int lanes =
+            thumbnail != nullptr ? juce::jlimit(1, 2, thumbnail->getNumChannels()) : 1;
+        const float laneH =
+            static_cast<float>(waveformArea.getHeight()) / static_cast<float>(lanes);
+        g.setColour(waveColour.withMultipliedAlpha(0.3f));
+        for (int lane = 0; lane < lanes; ++lane)
+            g.fillRect(static_cast<float>(waveformArea.getX()),
+                       static_cast<float>(waveformArea.getY()) +
+                           laneH * (static_cast<float>(lane) + 0.5f),
+                       static_cast<float>(waveformArea.getWidth()), 1.0f);
 
-    g.setColour(deriveTrackSwatch(clip.colour, 0.45f));
-    g.drawRoundedRectangle(bounds.toFloat(), CORNER_RADIUS, 1.0f);
+        // Headroom: peaks stop short of the lane edges.
+        const auto peaks = waveformArea.reduced(0, juce::jmax(1, waveformArea.getHeight() / 14));
+        paintAudioClipDirect(g, clip, peaks, clipDisplayLength, waveColour);
+    }
+
+    g.setColour(deriveTrackSwatch(colour, 0.9f));
+    g.drawRect(bounds, 1);
 
     // Fade overlays (crossfaded edges show the overlap-derived fade, #1499)
     const auto fades = computeEffectiveFades(clip);
@@ -780,26 +804,21 @@ void ClipComponent::paintMidiClip(juce::Graphics& g, const ClipInfo& clip,
 
     // Ghost clips paint a translucent body + dimmed notes (see paintAudioClip).
     const bool ghosted = ClipManager::getInstance().isGhostClip(clipId_);
-    auto bgColour = deriveClipBody(clip.colour);
-    if (ghosted)
-        bgColour = bgColour.withAlpha(0.55f);
+    const auto colour = displayColour(clip);
+    paintClipBody(g, bounds, bodyColour(clip), showThrough);
 
-    paintClipBody(g, bounds, bgColour, showThrough);
+    auto noteArea = bounds.withTrimmedTop(headerHeight() + 3).withTrimmedBottom(3).reduced(1, 0);
+    const auto ink = deriveClipInk(colour);
+    paintMidiNotes(g, clip, noteArea, ghosted ? ink.withAlpha(0.5f) : ink);
 
-    auto noteArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
-    paintMidiNotes(g, clip, noteArea,
-                   ghosted ? juce::Colours::black.withAlpha(0.65f) : juce::Colours::black);
-
-    g.setColour(deriveTrackSwatch(clip.colour, 0.45f));
-    g.drawRoundedRectangle(bounds.toFloat(), CORNER_RADIUS, 1.0f);
+    g.setColour(deriveTrackSwatch(colour, 0.9f));
+    g.drawRect(bounds, 1);
 }
 
 void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
                                    juce::Rectangle<int> noteArea, juce::Colour noteColour) {
     if (clip.midiNotes.empty() || noteArea.getHeight() <= 5)
         return;
-
-    g.setColour(noteColour);
 
     double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
     double beatsPerSecond = tempo / 60.0;
@@ -846,10 +865,19 @@ void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
     if (!hasVisibleNote)
         return;
 
-    constexpr int minNote = MIDI_PREVIEW_MIN_NOTE;
-    constexpr int maxNote = MIDI_PREVIEW_MAX_NOTE;
-    int noteRange = juce::jmax(12, maxNote - minNote);
+    // The clip's own pitch span, at least an octave, so a few notes still spread out.
+    const auto [lowest, highest] = std::ranges::minmax(
+        clip.midiNotes | std::views::transform([](const MidiNote& n) { return n.noteNumber; }));
+    const int span = juce::jmax(12, highest - lowest);
+    const int minNote = lowest - (span - (highest - lowest)) / 2;
+    const int maxNote = minNote + span;
+    const int noteRange = span;
     double beatRange = juce::jmax(1.0, clipLengthInBeats);
+    // Brightness follows velocity.
+    auto setNoteColour = [&g, noteColour](const MidiNote& note) {
+        const float v = static_cast<float>(juce::jlimit(1, 127, note.velocity)) / 127.0f;
+        g.setColour(noteColour.withMultipliedAlpha(0.35f + 0.65f * v));
+    };
 
     if (clip.loopEnabled && loopLengthBeats > 0.0) {
         int numRepetitions = static_cast<int>(std::ceil(clipLengthInBeats / loopLengthBeats));
@@ -890,6 +918,7 @@ void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
                 float noteWidth = juce::jmax(2.0f, static_cast<float>(visibleLength / beatRange) *
                                                        noteArea.getWidth());
 
+                setNoteColour(note);
                 g.fillRoundedRectangle(noteX, noteY, noteWidth, noteHeight, 1.0f);
             }
         }
@@ -914,6 +943,7 @@ void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
             float noteWidth = juce::jmax(2.0f, static_cast<float>(visibleLength / beatRange) *
                                                    noteArea.getWidth());
 
+            setNoteColour(note);
             g.fillRoundedRectangle(noteX, noteY, noteWidth, noteHeight, 1.0f);
         }
     }
@@ -938,7 +968,7 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
     g.setColour(bgColour);
     g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
 
-    auto blockArea = bounds.withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2).reduced(2, 0);
+    auto blockArea = bounds.withTrimmedTop(headerHeight() + 2).withTrimmedBottom(2).reduced(2, 0);
     if (!clip.chordAnnotations.empty() && blockArea.getHeight() > 5 && blockArea.getWidth() > 2) {
         const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
         const double beatsPerSecond = tempo / 60.0;
@@ -1015,26 +1045,94 @@ void ClipComponent::paintChordClip(juce::Graphics& g, const ClipInfo& clip,
     g.drawRoundedRectangle(bounds.toFloat(), CORNER_RADIUS, 1.0f);
 }
 
+juce::Colour ClipComponent::displayColour(const ClipInfo& clip) const {
+    // A disabled clip (#1736) loses its colour, header and all.
+    return clip.enabled ? clip.colour : juce::Colour(0xFF707070);
+}
+
+bool ClipComponent::isShownSelected() const {
+    return isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_);
+}
+
+juce::Colour ClipComponent::bodyColour(const ClipInfo& clip) const {
+    auto colour = deriveClipTint(displayColour(clip));
+    if (isShownSelected())
+        colour = colour.brighter(0.3f);
+    if (ClipManager::getInstance().isGhostClip(clipId_))
+        colour = colour.withAlpha(0.55f);
+    return colour;
+}
+
+void ClipComponent::paintSelectionOutline(juce::Graphics& g, juce::Rectangle<int> bounds) {
+    g.setColour(ActiveTheme::getTextColour());
+    g.drawRect(bounds.toFloat().reduced(0.75f), 1.5f);
+}
+
+namespace {
+
+enum class StatusGlyph { BeatMode, Loop, Warp, Reverse };
+
+/** @brief A header status mark (beat mode, loop, warp, reverse), drawn into @p box. */
+void paintStatusGlyph(juce::Graphics& g, juce::Rectangle<float> box, StatusGlyph glyph) {
+    const auto b = box.withSizeKeepingCentre(9.0f, 9.0f);
+    const juce::PathStrokeType stroke(1.2f, juce::PathStrokeType::curved,
+                                      juce::PathStrokeType::rounded);
+    juce::Path p;
+    switch (glyph) {
+        case StatusGlyph::BeatMode:
+            g.setFont(FontManager::getInstance().getUIFont(12.0f));
+            g.drawText(juce::CharPointer_UTF8("\xe2\x99\xa9"), box, juce::Justification::centred,
+                       false);
+            return;
+        case StatusGlyph::Loop: {
+            const auto c = b.getCentre();
+            const float r = b.getWidth() * 0.45f;
+            p.addCentredArc(c.x, c.y, r, r, 0.0f, 0.5f, juce::MathConstants<float>::twoPi - 0.3f,
+                            true);
+            g.strokePath(p, stroke);
+            // Arrowhead at the arc's open end, pointing along it.
+            juce::Path head;
+            head.addTriangle(c.x + 0.5f, b.getY() - 1.5f, c.x + 0.5f, b.getY() + 2.5f, c.x + 3.5f,
+                             b.getY() + 0.5f);
+            g.fillPath(head);
+            return;
+        }
+        case StatusGlyph::Warp:
+            p.startNewSubPath(b.getX(), b.getBottom());
+            p.lineTo(b.getX() + b.getWidth() * 0.4f, b.getY());
+            p.lineTo(b.getX() + b.getWidth() * 0.6f, b.getBottom());
+            p.lineTo(b.getRight(), b.getY());
+            g.strokePath(p, stroke);
+            return;
+        case StatusGlyph::Reverse:
+            p.startNewSubPath(b.getRight(), b.getCentreY());
+            p.lineTo(b.getX(), b.getCentreY());
+            p.startNewSubPath(b.getX() + 3.5f, b.getCentreY() - 3.5f);
+            p.lineTo(b.getX(), b.getCentreY());
+            p.lineTo(b.getX() + 3.5f, b.getCentreY() + 3.5f);
+            g.strokePath(p, stroke);
+            return;
+    }
+}
+
+}  // namespace
+
 void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
                                     juce::Rectangle<int> bounds) {
+    // Compact lanes have no header bar: the name and marks sit on the body.
+    const bool compact = headerHeight() == 0;
     auto headerArea = bounds.removeFromTop(HEADER_HEIGHT);
-
-    // Selected clips paint a black header in place of the clip-coloured one.
-    // This replaces the old white selection rectangle so it can't fight overlay
-    // UI (e.g. controller scene-view rectangles).
-    const bool selected = isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_);
-    const auto headerColour = selected ? juce::Colours::black : deriveTrackSwatch(clip.colour);
-    const auto headerForeground =
-        selected ? juce::Colours::white : ActiveTheme::getColour(ActiveTheme::BACKGROUND);
-
-    // Extended 2px past its bottom so the lower corners get cut off by the body
-    // and only the top pair reads as rounded.
-    const auto headerFill = headerArea.withBottom(headerArea.getBottom() + 2);
-    if (!headerFill.intersects(g.getClipBounds()))
+    if (!headerArea.withBottom(headerArea.getBottom() + 2).intersects(g.getClipBounds()))
         return;
 
-    g.setColour(headerColour);
-    g.fillRoundedRectangle(headerFill.toFloat(), CORNER_RADIUS);
+    const auto colour = displayColour(clip);
+    if (!compact) {
+        // 2px past its bottom, where the body's content area starts.
+        g.setColour(deriveTrackSwatch(colour));
+        g.fillRect(headerArea.withBottom(headerArea.getBottom() + 2));
+    }
+    const auto headerForeground =
+        compact ? ActiveTheme::getTextColour() : juce::Colours::white.withAlpha(0.92f);
 
     // Ghost clips (link-group members) show a link glyph at the left of the
     // header and an italicised name.
@@ -1070,13 +1168,30 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
         }
     }
 
+    // Status marks at the right, outermost first: reverse, warp, loop, beat mode.
+    std::vector<StatusGlyph> marks;
+    if (clip.isAudio() && audioEventRef(clip).reversed)
+        marks.push_back(StatusGlyph::Reverse);
+    if (clip.isAudio() && audioEventRef(clip).warpEnabled)
+        marks.push_back(StatusGlyph::Warp);
+    if (clip.loopEnabled)
+        marks.push_back(StatusGlyph::Loop);
+    if (clip.isAudio() && audioEventRef(clip).autoTempo)
+        marks.push_back(StatusGlyph::BeatMode);
+    constexpr int markW = 13;
+    if (headerArea.getWidth() > MIN_WIDTH_FOR_NAME + markW * static_cast<int>(marks.size())) {
+        g.setColour(headerForeground.withMultipliedAlpha(0.85f));
+        headerArea.removeFromRight(3);
+        for (auto mark : marks)
+            paintStatusGlyph(g, headerArea.removeFromRight(markW).toFloat(), mark);
+    }
+
     // Clip name (italic for ghost clips, with the instance index appended —
     // group members share their name, the #index tells them apart)
     if (bounds.getWidth() > MIN_WIDTH_FOR_NAME) {
         auto nameArea = headerArea.withWidth(juce::jmin(headerArea.getWidth(), 300)).reduced(4, 0);
         if (nameArea.intersects(g.getClipBounds())) {
-            g.setColour(headerForeground);
-            auto nameFont = FontManager::getInstance().getUIFont(10.0f);
+            auto nameFont = FontManager::getInstance().getUIFont(10.5f);
             g.setFont(ghosted ? nameFont.italicised() : nameFont);
             auto displayName = clip.name;
             if (ghosted) {
@@ -1084,17 +1199,15 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
                 if (groupIndex > 0)
                     displayName += " #" + juce::String(groupIndex);
             }
+            if (compact) {
+                // A shadow keeps the name readable over the waveform.
+                g.setColour(deriveClipTint(colour).withAlpha(0.9f));
+                g.drawText(displayName, nameArea.translated(1, 1), juce::Justification::centredLeft,
+                           true);
+            }
+            g.setColour(headerForeground);
             g.drawText(displayName, nameArea, juce::Justification::centredLeft, true);
         }
-    }
-
-    // Musical mode indicator (auto-tempo)
-    if (audioEventRef(clip).autoTempo && clip.isAudio() && headerArea.getWidth() > 16) {
-        auto musicalArea = headerArea.removeFromRight(14).reduced(2);
-        g.setColour(headerForeground);
-        g.setFont(FontManager::getInstance().getUIFont(12.0f));
-        g.drawText(juce::CharPointer_UTF8("\xe2\x99\xa9"), musicalArea,
-                   juce::Justification::centred, false);
     }
 }
 
@@ -1258,7 +1371,8 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
 
 void ClipComponent::paintFadeHandles(juce::Graphics& g, const ClipInfo& clip,
                                      juce::Rectangle<int> bounds) {
-    auto waveformArea = bounds.reduced(2, 0).withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2);
+    auto waveformArea =
+        bounds.reduced(2, 0).withTrimmedTop(headerHeight() + 2).withTrimmedBottom(2);
     if (waveformArea.getWidth() <= 0 || waveformArea.getHeight() <= 0)
         return;
 
@@ -1361,7 +1475,7 @@ void ClipComponent::syncGainEnvelope() {
 
     // The waveform's own area (paintAudioClip).
     gainEnvelope_->layout(
-        getLocalBounds().reduced(2, 0).withTrimmedTop(HEADER_HEIGHT + 2).withTrimmedBottom(2));
+        getLocalBounds().reduced(2, 0).withTrimmedTop(headerHeight() + 2).withTrimmedBottom(2));
 }
 
 bool ClipComponent::hitTest(int x, int y) {
@@ -2247,7 +2361,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
         }
 
         case DragMode::FadeIn: {
-            auto wfArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+            auto wfArea = getLocalBounds().reduced(2, headerHeight() + 2);
             double pps = (dragStartLength_ > 0.0)
                              ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
                              : 0.0;
@@ -2279,7 +2393,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
         }
 
         case DragMode::FadeOut: {
-            auto wfArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+            auto wfArea = getLocalBounds().reduced(2, headerHeight() + 2);
             double pps = (dragStartLength_ > 0.0)
                              ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
                              : 0.0;
@@ -2313,7 +2427,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
         case DragMode::CrossfadeIn: {
             // This clip's geometry is fixed; the handle moves the previous
             // clip's end (the overlap end). Overlap start = our start.
-            auto wfArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+            auto wfArea = getLocalBounds().reduced(2, headerHeight() + 2);
             double pps = (dragStartLength_ > 0.0)
                              ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
                              : 0.0;
@@ -2331,7 +2445,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
         case DragMode::CrossfadeOut: {
             // The handle moves the next clip's start (the overlap start).
             // Overlap end = our end.
-            auto wfArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+            auto wfArea = getLocalBounds().reduced(2, headerHeight() + 2);
             double pps = (dragStartLength_ > 0.0)
                              ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
                              : 0.0;
@@ -2664,7 +2778,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 // Capture final fade value before restoring
                 double finalFadeIn = 0.0;
                 {
-                    auto wfArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+                    auto wfArea = getLocalBounds().reduced(2, headerHeight() + 2);
                     double pps = (dragStartLength_ > 0.0)
                                      ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
                                      : 0.0;
@@ -2724,7 +2838,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 // Capture final fade value before restoring
                 double finalFadeOut = 0.0;
                 {
-                    auto wfArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+                    auto wfArea = getLocalBounds().reduced(2, headerHeight() + 2);
                     double pps = (dragStartLength_ > 0.0)
                                      ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
                                      : 0.0;
@@ -2786,7 +2900,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                 // Capture the final overlap region from the mouse position
                 double finalStart = crossfadeDragPair_.startBeat;
                 double finalEnd = crossfadeDragPair_.endBeat;
-                auto wfArea = getLocalBounds().reduced(2, HEADER_HEIGHT + 2);
+                auto wfArea = getLocalBounds().reduced(2, headerHeight() + 2);
                 double pps = (dragStartLength_ > 0.0)
                                  ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
                                  : 0.0;

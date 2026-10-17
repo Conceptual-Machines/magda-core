@@ -117,7 +117,7 @@ TrackInspector::TrackInspector() {
     trackNameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
     addAndMakeVisible(trackNameLabel_);
 
-    trackNameValue_.setFont(FontManager::getInstance().getUIFontBold(13.0f));
+    trackNameValue_.setFont(FontManager::getInstance().getTrackNameFont(13.0f));
     trackNameValue_.setEditable(true);
     trackNameValue_.onTextChange = [this]() {
         // The master track cannot be renamed; its name is fixed.

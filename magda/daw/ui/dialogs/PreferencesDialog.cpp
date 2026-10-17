@@ -244,11 +244,11 @@ class GeneralPage : public juce::Component {
                     tr("preferences.toggle.autohide_arrangement_scrollbars"));
         // Range matches TrackHeadersPanel's MIN / MAX_TRACK_HEIGHT.
         setupTextSlider(*this, compactTrackHeightSlider, compactTrackHeightLabel,
-                        tr("preferences.slider.compact_track_height"), 56.0, 220.0, 1.0);
+                        tr("preferences.slider.compact_track_height"), 32.0, 220.0, 1.0);
         setupTextSlider(*this, mediumTrackHeightSlider, mediumTrackHeightLabel,
-                        tr("preferences.slider.medium_track_height"), 56.0, 220.0, 1.0);
+                        tr("preferences.slider.medium_track_height"), 32.0, 220.0, 1.0);
         setupTextSlider(*this, largeTrackHeightSlider, largeTrackHeightLabel,
-                        tr("preferences.slider.large_track_height"), 56.0, 220.0, 1.0);
+                        tr("preferences.slider.large_track_height"), 32.0, 220.0, 1.0);
 
         setupSectionHeader(*this, behaviorHeader, tr("preferences.section.behavior"));
         setupToggle(*this, confirmTrackDeleteToggle, tr("preferences.toggle.confirm_track_delete"));
@@ -261,6 +261,7 @@ class GeneralPage : public juce::Component {
                     tr("preferences.toggle.chord_preview_default"));
         setupToggle(*this, autoCrossfadeDefaultToggle,
                     tr("preferences.toggle.auto_crossfade_default"));
+        setupToggle(*this, assumeProjectTempoToggle, tr("preferences.toggle.assume_project_tempo"));
         setupToggle(*this, clipOverlapPlaysBothToggle,
                     tr("preferences.toggle.clip_overlap_plays_both"));
         setupToggle(*this, postFxPostFaderDefaultToggle,
@@ -368,6 +369,8 @@ class GeneralPage : public juce::Component {
                                                  juce::dontSendNotification);
         clipOverlapPlaysBothToggle.setToggleState(config.getClipOverlapPlaysBoth(),
                                                   juce::dontSendNotification);
+        assumeProjectTempoToggle.setToggleState(config.getAssumeProjectTempo(),
+                                                juce::dontSendNotification);
         autoCrossfadeDefaultToggle.setToggleState(config.getAutoCrossfadeByDefault(),
                                                   juce::dontSendNotification);
         postFxPostFaderDefaultToggle.setToggleState(config.getPostFxPostFaderByDefault(),
@@ -428,6 +431,7 @@ class GeneralPage : public juce::Component {
         config.setOpenPluginWindowOnDrop(openPluginWindowOnDropToggle.getToggleState());
         config.setChordPreviewOnByDefault(chordPreviewDefaultToggle.getToggleState());
         config.setAutoCrossfadeByDefault(autoCrossfadeDefaultToggle.getToggleState());
+        config.setAssumeProjectTempo(assumeProjectTempoToggle.getToggleState());
 
         // Playing through an overlap is a per-clip switch (#2003), so this is
         // the value new clips start with — the same shape as AUTO-XFADE's
@@ -463,11 +467,11 @@ class GeneralPage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int secGap = 12;
 
-        // The Behaviour block is 10 toggles with a 4px gap between them.
+        // The Behaviour block is 11 toggles with a 4px gap between them.
         return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
                secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
                headerH + 4 + rowH + 4 + rowH + secGap + headerH + 4 + rowH + secGap + headerH + 4 +
-               (rowH * 9) + 32 + secGap + headerH + 4 + rowH + 18 + 4 + rowH + padding +
+               (rowH * 10) + 36 + secGap + headerH + 4 + rowH + 18 + 4 + rowH + padding +
                3 * (4 + rowH)     // Layout's track-height rows
                + 3 * (4 + rowH);  // Engine's capture rows
     }
@@ -494,9 +498,9 @@ class GeneralPage : public juce::Component {
         constexpr int headerH = 28;
         constexpr int secGap = 12;
 
-        return padding + headerH + 4 + rowH + 4 + rowH   // Layout
-               + 3 * (4 + rowH)                          // Layout: track-height presets
-               + secGap + headerH + 4 + (rowH * 9) + 32  // Behaviour: 9 toggles, 4px apart
+        return padding + headerH + 4 + rowH + 4 + rowH    // Layout
+               + 3 * (4 + rowH)                           // Layout: track-height presets
+               + secGap + headerH + 4 + (rowH * 10) + 36  // Behaviour: 10 toggles, 4px apart
                + padding;
     }
 
@@ -579,6 +583,8 @@ class GeneralPage : public juce::Component {
         chordPreviewDefaultToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
         autoCrossfadeDefaultToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        assumeProjectTempoToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
         clipOverlapPlaysBothToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
@@ -690,6 +696,8 @@ class GeneralPage : public juce::Component {
         right.removeFromTop(4);
         autoCrossfadeDefaultToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(4);
+        assumeProjectTempoToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(4);
         clipOverlapPlaysBothToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(4);
         postFxPostFaderDefaultToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
@@ -722,6 +730,7 @@ class GeneralPage : public juce::Component {
     juce::ToggleButton openPluginWindowOnDropToggle;
     juce::ToggleButton chordPreviewDefaultToggle;
     juce::ToggleButton autoCrossfadeDefaultToggle;
+    juce::ToggleButton assumeProjectTempoToggle;
     juce::ToggleButton clipOverlapPlaysBothToggle;
     juce::ToggleButton postFxPostFaderDefaultToggle;
     juce::Label languageLabel;

@@ -1,479 +1,302 @@
 #include "../../../../themes/ActiveTheme.hpp"
 #include "../ClipInspector.hpp"
+#include "ClipInspectorStyle.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+
+constexpr int kHeaderHeight = 40;
+constexpr int kChipSize = 26;
+constexpr int kColumnGap = 8;
+constexpr int kHeadingHeight = 14;
+constexpr int kSectionPad = 8;
+
+/** @brief Splits @p row into a left and right half with the column gap between. */
+std::pair<juce::Rectangle<int>, juce::Rectangle<int>> halves(juce::Rectangle<int> row) {
+    auto left = row.removeFromLeft((row.getWidth() - kColumnGap) / 2);
+    row.removeFromLeft(kColumnGap);
+    return {left, row};
+}
+
+}  // namespace
 
 void ClipInspector::resized() {
     if (getWidth() < 1 || getHeight() < 1)
         return;
 
-    auto bounds = getLocalBounds().reduced(10);
+    auto bounds = getLocalBounds().reduced(10, 8);
     if (bounds.getWidth() < 1 || bounds.getHeight() < 1)
         return;
 
-    // Preserve the scroll position across relayout. The container is
-    // re-anchored at the origin below (setBounds(cb) with cb at 0,0), which
-    // would otherwise snap the view back to the top on every property-driven
-    // update — resized() runs on each one.
+    // Preserve the scroll position across relayout: the container is re-anchored at the origin
+    // below, and resized() runs on every property-driven update.
     const auto savedViewPos = clipPropsViewport_.getViewPosition();
 
-    // Multi-clip count label (above header when multiple clips selected)
-    if (clipCountLabel_.isVisible()) {
-        clipCountLabel_.setBounds(bounds.removeFromTop(20));
-        bounds.removeFromTop(4);
-    }
-
-    // Header: colour spine or chip, name, ghost badge, enable/disable power. The view and
-    // type icons sit faintly in the name field's right end, as a watermark.
+    // ---- Header: spine | name over summary | ghost, save, power ------
     {
-        const int iconSize = 18;
-        const int gap = 6;
-        auto headerRow = bounds.removeFromTop(24);
+        auto row = bounds.removeFromTop(kHeaderHeight);
+        if (nameFilled_) {
+            colourSwatch_->setBounds({});
+        } else {
+            colourSwatch_->setBounds(row.removeFromLeft(4).reduced(0, 3));
+            row.removeFromLeft(10);
+        }
 
-        // As in the track inspector: a spine on the left, or none when the name field carries
-        // the colour. Right-clicking the name picks it.
-        if (!nameFilled_) {
-            colourSwatch_->setBounds(headerRow.removeFromLeft(6));
-            headerRow.removeFromLeft(gap);
-        }
-        if (clipEnabledToggle_->isVisible()) {
-            clipEnabledToggle_->setBounds(headerRow.removeFromRight(28));
-            headerRow.removeFromRight(gap);
-        }
-        if (nameFilled_)
-            colourSwatch_->setBounds({});  // Full bar: the name field is the colour.
-        if (clipGhostIcon_->isVisible()) {
-            clipGhostIcon_->setBounds(headerRow.removeFromRight(20).withSizeKeepingCentre(20, 20));
-            headerRow.removeFromRight(4);
-        }
-        clipNameValue_.setBounds(headerRow);
+        auto chip = [&row](juce::Component& c) {
+            c.setBounds(row.removeFromRight(kChipSize).withSizeKeepingCentre(kChipSize, kChipSize));
+            row.removeFromRight(4);
+        };
+        chip(*clipEnabledToggle_);
+        if (saveLibraryButton_.isVisible())
+            chip(saveLibraryButton_);
+        if (clipGhostIcon_->isVisible())
+            chip(*clipGhostIcon_);
+        row.removeFromRight(4);
 
-        auto watermark = headerRow.reduced(6, 0);
-        int watermarkWidth = 0;
-        for (auto* icon : {clipTypeIcon_.get(), clipViewIcon_.get()}) {
-            if (!icon->isVisible())
-                continue;
-            icon->setBounds(
-                watermark.removeFromRight(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-            icon->setAlpha(0.35f);
-            watermark.removeFromRight(4);
-            watermarkWidth += iconSize + 4;
-        }
-        clipNameValue_.setBorderSize(juce::BorderSize<int>(1, 6, 1, 6 + watermarkWidth));
+        nameArea_ = row.reduced(nameFilled_ ? 6 : 0, 2);
+        auto text = nameArea_;
+        clipNameValue_.setBounds(text.removeFromTop(20));
+        clipSubline_.setBounds(text.removeFromTop(14));
     }
-    bounds.removeFromTop(8);
-
-    // Viewport takes remaining space for scrollable clip properties
+    bounds.removeFromTop(6);
     clipPropsViewport_.setBounds(bounds);
 
-    // Layout all clip properties inside the container
-    const int containerWidth = juce::jmax(1, bounds.getWidth() - 12);  // Account for scrollbar
-    auto cb = juce::Rectangle<int>(0, 0, containerWidth, 0);
-    auto addRow = [&](int height) -> juce::Rectangle<int> {
-        auto row = juce::Rectangle<int>(0, cb.getHeight(), containerWidth, juce::jmax(1, height));
-        cb.setHeight(cb.getHeight() + row.getHeight());
+    // ---- Sections -------------------------------------------------------
+    const int width = juce::jmax(1, bounds.getWidth() - 8);  // room for the scrollbar
+    int y = 0;
+    auto addRow = [&](int height) {
+        juce::Rectangle<int> row(0, y, width, juce::jmax(1, height));
+        y += row.getHeight();
         return row;
     };
-    auto addSpace = [&](int height) { cb.setHeight(cb.getHeight() + height); };
+    auto addSpace = [&](int height) { y += height; };
 
-    // Clear separator positions for this layout pass
-    clipPropsContainer_.separatorYPositions.clear();
-    auto addSeparator = [&]() {
-        addSpace(4);
-        clipPropsContainer_.separatorYPositions.push_back(cb.getHeight());
-        addSpace(5);
+    auto& separators = clipPropsContainer_.separatorYPositions;
+    separators.clear();
+    bool firstSection = true;
+    auto beginSection = [&](juce::Component& header) {
+        if (!firstSection) {
+            separators.push_back(y);
+            addSpace(1);
+        }
+        firstSection = false;
+        header.setBounds(addRow(CollapsibleSectionHeader::kHeight));
     };
+    auto endSection = [&](bool open) { addSpace(open ? kSectionPad + 2 : 2); };
 
-    const int iconSize = 20;
-    const int gap = 3;
-    const int labelHeight = 14;
-    const int valueHeight = 22;
-    const bool hideSecondaryTimingFields = containerWidth < 270;
-    const bool hideAudioUnitLabels = containerWidth < 240;
-    const int timingFieldCount = hideSecondaryTimingFields ? 2 : 3;
-    int fieldWidth =
-        juce::jmax(1, (containerWidth - iconSize - gap * timingFieldCount) / timingFieldCount);
+    const int fieldH = clip_style::kFieldHeight;
+    const int captionH = clip_style::kCaptionHeight;
+    const int gap = clip_style::kGap;
 
-    // Position row: position icon — start, end, len (arrangement clips only)
-    if (clipPositionIcon_->isVisible()) {
-        clipLengthLabel_.setVisible(!hideSecondaryTimingFields);
-        clipLengthValue_->setVisible(!hideSecondaryTimingFields);
+    // Clip: column headings, the Clip row, the Loop row with PHASE under its third field.
+    beginSection(clipHeader_);
+    if (!clipHeader_.isCollapsed()) {
+        const int rowLabelW = 62;
+        const bool threeColumns = width >= 270;
+        const int columns = threeColumns ? 3 : 2;
+        const int fieldW = (width - rowLabelW - 4 * columns) / columns;
 
-        auto labelRow = addRow(labelHeight);
-        labelRow.removeFromLeft(iconSize + gap);
-        clipStartLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
-        labelRow.removeFromLeft(gap);
-        clipEndLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
-        if (!hideSecondaryTimingFields) {
-            labelRow.removeFromLeft(gap);
-            clipLengthLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
+        auto fieldCells = [&](juce::Rectangle<int> row) {
+            row.removeFromLeft(rowLabelW);
+            std::array<juce::Rectangle<int>, 3> cells{};  // the third stays empty when narrow
+            for (int i = 0; i < columns; ++i) {
+                row.removeFromLeft(4);
+                cells[static_cast<size_t>(i)] = row.removeFromLeft(fieldW);
+            }
+            return cells;
+        };
+
+        auto headings = fieldCells(addRow(kHeadingHeight));
+        startColumnLabel_.setBounds(headings[0]);
+        endColumnLabel_.setBounds(headings[1]);
+        lengthColumnLabel_.setBounds(headings[2]);
+        addSpace(2);
+
+        if (clipStartValue_->isVisible()) {
+            auto row = addRow(fieldH);
+            clipRowLabel_.setBounds(row.withWidth(rowLabelW));
+            auto cells = fieldCells(row);
+            clipStartValue_->setBounds(cells[0]);
+            clipEndValue_->setBounds(cells[1]);
+            clipLengthValue_->setBounds(cells[2]);
+            addSpace(gap);
         }
 
-        auto valueRow = addRow(valueHeight);
-        clipPositionIcon_->setBounds(
-            valueRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-        valueRow.removeFromLeft(gap);
-        clipStartValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
-        valueRow.removeFromLeft(gap);
-        clipEndValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
-        if (!hideSecondaryTimingFields) {
-            valueRow.removeFromLeft(gap);
-            clipLengthValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
-        }
+        auto row = addRow(fieldH);
+        auto label = row.withWidth(rowLabelW);
+        clipLoopSwitch_.setBounds(label.removeFromLeft(ToggleSwitch::kWidth));
+        label.removeFromLeft(6);
+        loopRowLabel_.setBounds(label);
+        auto cells = fieldCells(row);
+        clipLoopStartValue_->setBounds(cells[0]);
+        clipLoopEndValue_->setBounds(cells[1]);
+        clipLoopPhaseValue_->setBounds(cells[2]);
+        clipLoopPhaseLabel_.setBounds(fieldCells(addRow(kHeadingHeight + 2))[2].withTrimmedTop(2));
 
-        addSeparator();
-    }
-
-    // Source name label. For audio clips it lives inside the Audio Properties
-    // section (below); here it only covers non-audio (MIDI) clips, which have no
-    // Audio Properties header.
-    if (!audioPropsCollapseToggle_.isVisible() && clipFilePathLabel_.getText().isNotEmpty()) {
-        clipFilePathLabel_.setBounds(addRow(16));
-        addSeparator();
-    }
-
-    // Loop row: loop toggle + start | end | offset/phase (start/end greyed when loop is off)
-    if (clipLoopToggle_->isVisible()) {
-        clipLoopPhaseLabel_.setVisible(!hideSecondaryTimingFields);
-        clipLoopPhaseValue_->setVisible(!hideSecondaryTimingFields);
-
-        auto labelRow = addRow(labelHeight);
-        labelRow.removeFromLeft(iconSize + gap);
-        clipLoopStartLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
-        labelRow.removeFromLeft(gap);
-        clipLoopEndLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
-        if (!hideSecondaryTimingFields) {
-            labelRow.removeFromLeft(gap);
-            clipLoopPhaseLabel_.setBounds(labelRow.removeFromLeft(fieldWidth));
-        }
-
-        auto valueRow = addRow(valueHeight);
-        clipLoopToggle_->setBounds(
-            valueRow.removeFromLeft(iconSize).withSizeKeepingCentre(iconSize, iconSize));
-        valueRow.removeFromLeft(gap);
-        clipLoopStartValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
-        valueRow.removeFromLeft(gap);
-        clipLoopEndValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
-        if (!hideSecondaryTimingFields) {
-            valueRow.removeFromLeft(gap);
-            clipLoopPhaseValue_->setBounds(valueRow.removeFromLeft(fieldWidth));
-        }
-    }
-    addSeparator();
-
-    // Audio properties collapse toggle header
-    if (audioPropsCollapseToggle_.isVisible()) {
-        auto headerRow = addRow(16);
-        audioPropsCollapseToggle_.setBounds(headerRow.removeFromLeft(16));
-        audioPropsLabel_.setBounds(headerRow);
-        addSpace(4);
-
-        // Audio source name (e.g. "Comp", "Take 3 / 6", or the filename), shown
-        // inside the Audio Properties section when expanded.
-        if (!audioPropsCollapsed_ && clipFilePathLabel_.getText().isNotEmpty()) {
-            clipFilePathLabel_.setBounds(addRow(16));
-            addSpace(4);
-        }
-
-        // Takes section (shared component; multi-take audio clips only).
-        if (takesSection_) {
-            int ph = takesSection_->getPreferredHeight();
-            if (ph > 0) {
-                takesSection_->setBounds(addRow(ph));
-                addSpace(4);
+        for (juce::Component* section : std::initializer_list<juce::Component*>{
+                 takesSection_.get(), chordProgressionSection_.get()}) {
+            const int h = section == takesSection_.get()
+                              ? takesSection_->getPreferredHeight()
+                              : chordProgressionSection_->getPreferredHeight();
+            if (section->isVisible() && h > 0) {
+                addSpace(gap);
+                section->setBounds(addRow(h));
             }
         }
     }
+    endSection(!clipHeader_.isCollapsed());
 
-    // MIDI clips have no Audio Properties section, so their takes section is
-    // laid out here at top level (visibility is set in ClipInspectorState).
-    if (!audioPropsCollapseToggle_.isVisible() && takesSection_) {
-        int ph = takesSection_->getPreferredHeight();
-        if (ph > 0) {
-            takesSection_->setBounds(addRow(ph));
-            addSpace(4);
+    // Mix: Volume | Pan | Gain, then Reverse | Gain envelope.
+    if (mixHeader_.isVisible()) {
+        beginSection(mixHeader_);
+        if (!mixHeader_.isCollapsed()) {
+            const int thirdW = (width - 2 * 6) / 3;
+            auto thirds = [&](juce::Rectangle<int> row, juce::Component& a, juce::Component& b,
+                              juce::Component& c) {
+                a.setBounds(row.removeFromLeft(thirdW));
+                row.removeFromLeft(6);
+                b.setBounds(row.removeFromLeft(thirdW));
+                row.removeFromLeft(6);
+                c.setBounds(row);
+            };
+            thirds(addRow(captionH), volumeLabel_, panLabel_, gainLabel_);
+            thirds(addRow(fieldH), *clipVolumeValue_, *clipPanValue_, *clipGainValue_);
+            addSpace(gap);
+            auto [left, right] = halves(addRow(fieldH));
+            reverseToggle_.setBounds(left);
+            gainEnvelopeToggle_.setBounds(right);
         }
+        endSection(!mixHeader_.isCollapsed());
     }
 
-    // Chord-track-clip progression list (0 height for any other clip).
-    if (chordProgressionSection_) {
-        int ph = chordProgressionSection_->getPreferredHeight();
-        if (ph > 0) {
-            chordProgressionSection_->setBounds(addRow(ph));
-            addSpace(4);
-        }
-    }
-
-    // 2-column grid: warp toggles | combo  /  BPM | speed/beats
-    {
-        const int colGap = 8;
-        int halfWidth = (containerWidth - colGap) / 2;
-
-        // Row 1: [WARP] [BEAT] centered | [stretch combo]
-        if (clipWarpToggle_.isVisible() || clipAutoTempoToggle_.isVisible()) {
-            auto row1 = addRow(24);
-            auto left = row1.removeFromLeft(halfWidth);
-            row1.removeFromLeft(colGap);
-            auto right = row1;
-
-            const int btnWidth = 46;
-            const int btnGap = 4;
-            int numBtns =
-                (clipWarpToggle_.isVisible() ? 1 : 0) + (clipAutoTempoToggle_.isVisible() ? 1 : 0);
-            int totalBtnsWidth = numBtns * btnWidth + (numBtns > 1 ? btnGap : 0);
-            int btnOffset = (left.getWidth() - totalBtnsWidth) / 2;
-            left.removeFromLeft(btnOffset);
-
-            if (clipWarpToggle_.isVisible()) {
-                clipWarpToggle_.setBounds(left.removeFromLeft(btnWidth).reduced(0, 1));
-                left.removeFromLeft(btnGap);
+    // Warp & pitch: mode and engine, transients, tempo and length, speed, pitch and key.
+    if (warpHeader_.isVisible()) {
+        beginSection(warpHeader_);
+        if (!warpHeader_.isCollapsed()) {
+            {
+                auto [left, right] = halves(addRow(fieldH));
+                playbackModeStrip_.setBounds(left);
+                stretchModeCombo_.setBounds(right);
             }
-            if (clipAutoTempoToggle_.isVisible()) {
-                clipAutoTempoToggle_.setBounds(left.removeFromLeft(btnWidth).reduced(0, 1));
+            if (transientSensitivityValue_->isVisible()) {
+                addSpace(gap);
+                transientSensitivityLabel_.setBounds(addRow(captionH));
+                transientSensitivityValue_->setBounds(addRow(fieldH));
             }
-            if (stretchModeCombo_.isVisible()) {
-                stretchModeCombo_.setBounds(right.reduced(0, 1));
-            }
-        }
-
-        // Row 2: [BPM value + label] centered | [speed OR beats value + label]
-        if (clipBpmValue_.isVisible() || (clipStretchValue_ && clipStretchValue_->isVisible()) ||
-            clipBeatsLengthValue_->isVisible()) {
-            addSpace(4);
-            auto row2 = addRow(22);
-            auto left = row2.removeFromLeft(halfWidth);
-            row2.removeFromLeft(colGap);
-            auto right = row2;
-
             if (clipBpmValue_.isVisible()) {
-                int bpmWidth = 96;  // matches WARP(46) + gap(4) + BEAT(46)
-                int bpmOffset = (left.getWidth() - bpmWidth) / 2;
-                auto bpmArea = left.withX(left.getX() + bpmOffset).withWidth(bpmWidth);
-                if (hideAudioUnitLabels) {
-                    clipBpmUnitLabel_.setVisible(false);
-                    clipBpmValue_.setBounds(bpmArea.reduced(0, 1));
-                } else {
-                    clipBpmUnitLabel_.setVisible(true);
-                    clipBpmValue_.setBounds(bpmArea.removeFromLeft(62).reduced(0, 1));
-                    clipBpmUnitLabel_.setBounds(bpmArea.reduced(4, 1));
-                }
+                addSpace(gap);
+                auto [tempoCaption, lengthCaption] = halves(addRow(captionH + 2));
+                doubleTempoButton_.setBounds(tempoCaption.removeFromRight(26).withTrimmedBottom(2));
+                tempoCaption.removeFromRight(3);
+                halveTempoButton_.setBounds(tempoCaption.removeFromRight(26).withTrimmedBottom(2));
+                tempoLabel_.setBounds(tempoCaption);
+                sourceLengthLabel_.setBounds(lengthCaption);
+                addSpace(2);
+                auto [tempo, length] = halves(addRow(fieldH));
+                clipBpmValue_.setBounds(tempo);
+                clipBpmUnitLabel_.setBounds(tempo.withTrimmedRight(6).removeFromRight(30));
+                clipBeatsLengthValue_->setBounds(length);
             }
-            if (clipStretchValue_ && clipStretchValue_->isVisible()) {
-                clipStretchValue_->setBounds(right.reduced(0, 1));
-                // The beats field shows in time mode too (#2676); it takes the
-                // next row rather than the stretch field's cell.
-                if (clipBeatsLengthValue_->isVisible()) {
-                    addSpace(4);
-                    auto row3 = addRow(22);
-                    row3.removeFromLeft(halfWidth + colGap);
-                    right = row3;
-                }
+            if (clipStretchValue_->isVisible()) {
+                addSpace(gap);
+                speedLabel_.setBounds(addRow(captionH));
+                auto [speed, analog] = halves(addRow(fieldH));
+                clipStretchValue_->setBounds(speed);
+                analogPitchToggle_.setBounds(analog);
             }
-            if (clipBeatsLengthValue_->isVisible()) {
-                auto beatsArea = right.reduced(0, 1);
-                if (hideAudioUnitLabels) {
-                    clipBeatsUnitLabel_.setVisible(false);
-                    clipBeatsLengthValue_->setBounds(beatsArea);
-                } else {
-                    clipBeatsUnitLabel_.setVisible(true);
-                    clipBeatsLengthValue_->setBounds(
-                        beatsArea.removeFromLeft(juce::jmax(46, beatsArea.getWidth() - 42)));
-                    clipBeatsUnitLabel_.setBounds(beatsArea.reduced(4, 0));
-                }
+            addSpace(gap);
+            {
+                auto [pitchCaption, keyCaption] = halves(addRow(captionH));
+                pitchLabel_.setBounds(pitchCaption);
+                clipKeyLabel_.setBounds(keyCaption);
+                auto [pitch, key] = halves(addRow(fieldH));
+                pitchSemitonesValue_->setBounds(pitch.removeFromLeft((pitch.getWidth() - 4) / 2));
+                pitch.removeFromLeft(4);
+                pitchCentsValue_->setBounds(pitch);
+                clipKeyRootCombo_.setBounds(key);
             }
         }
+        endSection(!warpHeader_.isCollapsed());
+    }
 
-        // Row 3: [KEY label + root combo] | (right column empty)
-        if (clipKeyRootCombo_.isVisible()) {
-            addSpace(4);
-            auto row3 = addRow(22);
-            auto left = row3.removeFromLeft(halfWidth);
-            const int labelW = 28;
-            clipKeyLabel_.setBounds(left.removeFromLeft(labelW));
-            left.removeFromLeft(4);
-            clipKeyRootCombo_.setBounds(left.reduced(0, 1));
+    // MIDI pitch: -12 -1 [notes] +1 +12.
+    if (midiPitchHeader_.isVisible()) {
+        beginSection(midiPitchHeader_);
+        if (!midiPitchHeader_.isCollapsed()) {
+            midiTransposeLabel_.setBounds(addRow(captionH));
+            auto row = addRow(fieldH);
+            const int buttonW = 34;
+            midiTransposeButtons_[0].setBounds(row.removeFromLeft(buttonW));
+            row.removeFromLeft(4);
+            midiTransposeButtons_[1].setBounds(row.removeFromLeft(buttonW));
+            row.removeFromLeft(4);
+            midiTransposeButtons_[3].setBounds(row.removeFromRight(buttonW));
+            row.removeFromRight(4);
+            midiTransposeButtons_[2].setBounds(row.removeFromRight(buttonW));
+            row.removeFromRight(4);
+            midiTransposeHint_.setBounds(row);
         }
+        endSection(!midiPitchHeader_.isCollapsed());
+    }
 
-        if (saveLibraryButton_.isVisible()) {
-            addSpace(4);
-            saveLibraryButton_.setBounds(addRow(22).reduced(0, 1));
+    // Groove: template, then strength once one is chosen.
+    if (grooveHeader_.isVisible()) {
+        beginSection(grooveHeader_);
+        if (!grooveHeader_.isCollapsed()) {
+            grooveTemplateButton_.setBounds(addRow(fieldH));
+            if (grooveStrengthValue_->isVisible()) {
+                addSpace(gap);
+                grooveStrengthLabel_.setBounds(addRow(captionH));
+                grooveStrengthValue_->setBounds(addRow(fieldH));
+            }
         }
+        endSection(!grooveHeader_.isCollapsed());
     }
 
-    // Transient sensitivity section (audio clips only)
-    if (transientSectionLabel_.isVisible()) {
-        addSeparator();
-        transientSectionLabel_.setBounds(addRow(16));
-        {
-            auto labelRow = addRow(labelHeight);
-            transientSensitivityLabel_.setBounds(labelRow);
+    // Fades lays itself out under its own header.
+    if (const int h = fadesSection_->getPreferredHeight(); h > 0) {
+        beginSection(*fadesSection_);
+        fadesSection_->setBounds(fadesSection_->getBounds().withHeight(h));
+        y += h - CollapsibleSectionHeader::kHeight;
+        endSection(h > CollapsibleSectionHeader::kHeight);
+    }
+
+    // Launch: quantize | follow action, then delay | loops when there is an action.
+    if (launchHeader_.isVisible()) {
+        beginSection(launchHeader_);
+        if (!launchHeader_.isCollapsed()) {
+            {
+                auto [left, right] = halves(addRow(captionH));
+                launchQuantizeLabel_.setBounds(left);
+                followActionLabel_.setBounds(right);
+                auto [quantize, follow] = halves(addRow(fieldH));
+                launchQuantizeCombo_.setBounds(quantize);
+                followActionCombo_.setBounds(follow);
+            }
+            if (followActionDelaySlider_.isVisible()) {
+                addSpace(gap);
+                auto [left, right] = halves(addRow(captionH));
+                followActionDelayLabel_.setBounds(left);
+                followActionLoopCountLabel_.setBounds(right);
+                auto [delay, loops] = halves(addRow(fieldH));
+                followActionDelaySlider_.setBounds(delay);
+                followActionLoopCountSlider_.setBounds(loops);
+            }
         }
-        {
-            auto row = addRow(valueHeight);
-            transientSensitivityValue_->setBounds(row);
-        }
+        endSection(!launchHeader_.isCollapsed());
     }
 
-    // MIDI transpose row (label + up/down buttons)
-    if (midiTransposeLabel_.isVisible()) {
-        addSeparator();
-        auto row = addRow(22);
-        midiTransposeLabel_.setBounds(row.removeFromLeft(70));
-        const int btnW = 32;
-        const int btnGap = 4;
-        midiTransposeDownBtn_.setBounds(row.removeFromLeft(btnW).reduced(0, 1));
-        row.removeFromLeft(btnGap);
-        midiTransposeUpBtn_.setBounds(row.removeFromLeft(btnW).reduced(0, 1));
-    }
-
-    // Separator: after position/warp rows, before Pitch
-    if (pitchSectionLabel_.isVisible())
-        addSeparator();
-
-    // Pitch section (audio clips only)
-    if (pitchSectionLabel_.isVisible()) {
-        pitchSectionLabel_.setBounds(addRow(16));
-        if (analogPitchToggle_.isVisible()) {
-            addSpace(4);
-            auto row = addRow(22);
-            analogPitchToggle_.setBounds(row.removeFromLeft(60).reduced(0, 1));
-        }
-        if (autoPitchToggle_.isVisible()) {
-            addSpace(4);
-            auto row = addRow(22);
-            int halfWidth = (containerWidth - 8) / 2;
-            autoPitchToggle_.setBounds(row.removeFromLeft(halfWidth).reduced(0, 1));
-            row.removeFromLeft(8);
-            autoPitchModeCombo_.setBounds(row.removeFromLeft(halfWidth).reduced(0, 1));
-        }
-        addSpace(4);
-        {
-            auto row = addRow(22);
-            pitchChangeValue_->setBounds(row);
-        }
-    }
-
-    // Separator: between Pitch/Groove and Mix
-    if (grooveSectionLabel_.isVisible())
-        addSeparator();
-
-    // Groove section (MIDI clips only)
-    if (grooveSectionLabel_.isVisible()) {
-        grooveSectionLabel_.setBounds(addRow(16));
-        addSpace(4);
-        {
-            auto row = addRow(22);
-            grooveTemplateButton_.setBounds(row);
-        }
-        addSpace(4);
-        {
-            auto row = addRow(22);
-            grooveStrengthLabel_.setBounds(row.removeFromLeft(55));
-            grooveStrengthValue_->setBounds(row);
-        }
-    }
-
-    if (!grooveSectionLabel_.isVisible() && clipMixSectionLabel_.isVisible())
-        addSeparator();
-
-    // Mix section (audio clips only) — 3-column: volume/pan/gain, reverse
-    if (clipMixSectionLabel_.isVisible()) {
-        clipMixSectionLabel_.setBounds(addRow(16));
-        addSpace(4);
-        const int colGap = 4;
-        int thirdWidth = (containerWidth - colGap * 2) / 3;
-
-        // Row 1: [Volume] | [Pan] | [Gain]
-        {
-            auto row = addRow(22);
-            clipVolumeValue_->setBounds(row.removeFromLeft(thirdWidth));
-            row.removeFromLeft(colGap);
-            clipPanValue_->setBounds(row.removeFromLeft(thirdWidth));
-            row.removeFromLeft(colGap);
-            clipGainValue_->setBounds(row);
-        }
-        addSpace(4);
-        // Row 2: [REVERSE] | [GAIN ENV]
-        {
-            auto row = addRow(22);
-            const int halfWidth = (containerWidth - colGap) / 2;
-            reverseToggle_.setBounds(row.removeFromLeft(halfWidth).reduced(0, 1));
-            row.removeFromLeft(colGap);
-            gainEnvelopeToggle_.setBounds(row.reduced(0, 1));
-        }
-    }
-
-    // Fades section — delegated to ClipFadesSection
-    {
-        int ph = fadesSection_ ? fadesSection_->getPreferredHeight() : 0;
-        if (ph > 0) {
-            addSeparator();
-            fadesSection_->setBounds(addRow(ph));
-        }
-    }
-
-    // Separator: between Fades and Channels
-    if (channelsSectionLabel_.isVisible())
-        addSeparator();
-
-    // Channels section (hidden for now, controls moved to Mix section)
-    if (channelsSectionLabel_.isVisible()) {
-        channelsSectionLabel_.setBounds(addRow(16));
-        addSpace(4);
-        const int btnWidth = 46;
-        const int btnGap = 8;
-        auto row = addRow(22);
-        leftChannelToggle_.setBounds(row.removeFromLeft(btnWidth).reduced(0, 1));
-        row.removeFromLeft(btnGap);
-        rightChannelToggle_.setBounds(row.removeFromLeft(btnWidth).reduced(0, 1));
-    }
-
-    // Separator: after last visible section, before launch controls
-    if (launchQuantizeLabel_.isVisible() || followActionLabel_.isVisible())
-        addSeparator();
-
-    // Session clip launch properties
-    if (launchModeLabel_.isVisible()) {
-        launchModeLabel_.setBounds(addRow(16));
-        addSpace(4);
-        launchModeCombo_.setBounds(addRow(22).reduced(0, 1));
-    }
-    if (launchQuantizeLabel_.isVisible()) {
-        launchQuantizeLabel_.setBounds(addRow(16));
-        addSpace(4);
-        launchQuantizeCombo_.setBounds(addRow(22).reduced(0, 1));
-    }
-    if (followActionLabel_.isVisible()) {
-        addSpace(8);
-        followActionLabel_.setBounds(addRow(16));
-        addSpace(4);
-        followActionCombo_.setBounds(addRow(22).reduced(0, 1));
-    }
-    if (followActionDelayLabel_.isVisible()) {
-        addSpace(8);
-        followActionDelayLabel_.setBounds(addRow(16));
-        addSpace(4);
-        followActionDelaySlider_.setBounds(addRow(24).reduced(0, 1));
-    }
-    if (followActionLoopCountLabel_.isVisible()) {
-        addSpace(8);
-        followActionLoopCountLabel_.setBounds(addRow(16));
-        addSpace(4);
-        followActionLoopCountSlider_.setBounds(addRow(24).reduced(0, 1));
-    }
-
-    // Set container bounds to accommodate all content, then restore the
-    // scroll position (the viewport clamps it if the content shrank).
-    clipPropsContainer_.setBounds(cb);
+    // Set container bounds to hold the content, then restore the scroll position
+    // (the viewport clamps it if the content shrank).
+    clipPropsContainer_.setBounds(0, 0, width, y);
     clipPropsViewport_.setViewPosition(savedViewPos);
 }
 
 void ClipInspector::ClipPropsContainer::paint(juce::Graphics& g) {
-    // Draw separator lines between sections
     g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
-    for (int y : separatorYPositions) {
-        g.drawHorizontalLine(y, 0.0f, static_cast<float>(getWidth()));
-    }
+    for (int y : separatorYPositions)
+        g.fillRect(0, y, getWidth(), 1);
 }
 
 }  // namespace magda::daw::ui

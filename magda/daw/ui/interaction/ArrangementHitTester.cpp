@@ -141,9 +141,10 @@ CursorKind panelCursor(PanelZone zone) {
 
 namespace {
 
-// ClipComponent's waveform area: getLocalBounds().reduced(2, HEADER_HEIGHT + 2).
+// ClipComponent's waveform area: getLocalBounds().reduced(2, headerHeight() + 2).
 juce::Rectangle<int> waveformArea(const ClipSnapshot& s) {
-    return juce::Rectangle<int>(0, 0, s.width, s.height).reduced(2, ClipMetrics::HEADER_HEIGHT + 2);
+    return juce::Rectangle<int>(0, 0, s.width, s.height)
+        .reduced(2, ClipMetrics::headerHeightFor(s.height) + 2);
 }
 
 // ClipComponent::isOnFadeInHandle / isOnFadeOutHandle.

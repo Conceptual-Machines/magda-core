@@ -42,12 +42,12 @@ void ClipInspector::clipPropertyChanged(magda::ClipId clipId) {
                        (clipLoopPhaseValue_ && clipLoopPhaseValue_->isDragging()) ||
                        (clipStretchValue_ && clipStretchValue_->isDragging()) ||
                        (clipBeatsLengthValue_ && clipBeatsLengthValue_->isDragging()) ||
-                       (pitchChangeValue_ && pitchChangeValue_->isDragging()) ||
+                       (pitchSemitonesValue_ && pitchSemitonesValue_->isDragging()) ||
+                       (pitchCentsValue_ && pitchCentsValue_->isDragging()) ||
                        (clipVolumeValue_ && clipVolumeValue_->isDragging()) ||
                        (clipPanValue_ && clipPanValue_->isDragging()) ||
                        (clipGainValue_ && clipGainValue_->isDragging()) ||
                        (fadesSection_ && fadesSection_->isAnyValueDragging()) ||
-                       (beatSensitivityValue_ && beatSensitivityValue_->isDragging()) ||
                        (transientSensitivityValue_ && transientSensitivityValue_->isDragging());
     if (anyDragging) {
         // Still update dependent readouts during drag without relayout. Source Beats/BPM edits can
@@ -56,12 +56,11 @@ void ClipInspector::clipPropertyChanged(magda::ClipId clipId) {
         const auto* clip = magda::ClipManager::getInstance().getClip(pid);
         if (clip && clip->isAudio()) {
             updateAudioSourceValueDisplays(*clip);
-            double projectBPM = 120.0;
+            double projectBPM = projectBpm();
             int numerator = magda::DEFAULT_TIME_SIGNATURE_NUMERATOR;
             int denominator = magda::DEFAULT_TIME_SIGNATURE_DENOMINATOR;
             if (timelineController_) {
                 const auto& state = timelineController_->getState();
-                projectBPM = state.tempo.bpm;
                 numerator = state.tempo.timeSignatureNumerator;
                 denominator = state.tempo.timeSignatureDenominator;
             }

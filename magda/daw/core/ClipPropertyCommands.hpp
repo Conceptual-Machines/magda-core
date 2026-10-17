@@ -181,8 +181,13 @@ class SetSourceBeatCountCommand : public UndoableCommand {
  */
 class SetPlaybackIntentCommand : public UndoableCommand {
   public:
-    SetPlaybackIntentCommand(ClipId clipId, PlaybackIntent newIntent, double projectBpm)
-        : clipId_(clipId), newIntent_(newIntent), projectBpm_(projectBpm) {
+    /// @p assumeTempo: a Beat request no tempo can grant assumes the project tempo instead.
+    SetPlaybackIntentCommand(ClipId clipId, PlaybackIntent newIntent, double projectBpm,
+                             bool assumeTempo = false)
+        : clipId_(clipId),
+          newIntent_(newIntent),
+          projectBpm_(projectBpm),
+          assumeTempo_(assumeTempo) {
         if (auto* clip = ClipManager::getInstance().getClip(clipId)) {
             oldClip_ = *clip;
             hasOldClip_ = true;
@@ -190,7 +195,12 @@ class SetPlaybackIntentCommand : public UndoableCommand {
     }
 
     void execute() override {
-        ClipManager::getInstance().setPlaybackIntent(clipId_, newIntent_, projectBpm_);
+        auto& clips = ClipManager::getInstance();
+        clips.setPlaybackIntent(clipId_, newIntent_, projectBpm_);
+        const auto* clip = clips.getClip(clipId_);
+        if (assumeTempo_ && newIntent_ == PlaybackIntent::Beat && clip != nullptr &&
+            clip->isAudio() && !audioEventRef(*clip).autoTempo)
+            clips.assumeTempoForBeatMode(clipId_, projectBpm_);
     }
     void undo() override {
         if (!hasOldClip_)
@@ -208,6 +218,7 @@ class SetPlaybackIntentCommand : public UndoableCommand {
     ClipId clipId_;
     PlaybackIntent newIntent_;
     double projectBpm_;
+    bool assumeTempo_ = false;
     ClipInfo oldClip_;
     bool hasOldClip_ = false;
 };

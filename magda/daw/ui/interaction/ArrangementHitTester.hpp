@@ -152,6 +152,11 @@ CursorKind panelCursor(PanelZone zone);
 namespace ClipMetrics {
 constexpr int RESIZE_HANDLE_WIDTH = 6;
 constexpr int HEADER_HEIGHT = 16;
+/// Clips shorter than this drop the header and overlay the name on the body.
+constexpr int COMPACT_CLIP_HEIGHT = 44;
+constexpr int headerHeightFor(int clipHeight) {
+    return clipHeight < COMPACT_CLIP_HEIGHT ? 0 : HEADER_HEIGHT;
+}
 constexpr int FADE_HANDLE_HIT_WIDTH = 14;
 constexpr float VOLUME_LINE_HIT_DISTANCE = 6.0f;
 }  // namespace ClipMetrics
