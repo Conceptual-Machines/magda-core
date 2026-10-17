@@ -503,7 +503,11 @@ foreach(_magda_daw_source IN LISTS _magda_daw_sources)
         # Core may query the opaque string-keyed registry seam, but it must
         # never depend on a concrete device implementation. Device packs own
         # those includes and contribute their specs through registerDevices().
-        if(_magda_daw_source_path MATCHES "/core/")
+        # Relative to this directory: the checkout itself may sit under a directory named
+        # core (a submodule), which an absolute match would read as this tree's core/.
+        file(RELATIVE_PATH _magda_daw_source_rel "${CMAKE_CURRENT_SOURCE_DIR}"
+             "${_magda_daw_source_path}")
+        if(_magda_daw_source_rel MATCHES "^core/")
             string(REGEX MATCHALL
                 "#[ \t]*include[ \t]*[<\"][^>\"]*audio/plugins/[^>\"]*Plugin\\.hpp"
                 _core_plugin_includes "${_magda_daw_source_text}")
