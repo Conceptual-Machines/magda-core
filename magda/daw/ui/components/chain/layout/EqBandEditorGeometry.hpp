@@ -4,43 +4,82 @@
 
 namespace magda::daw::ui {
 
-/// The EQ's one-band-at-a-time body: the curve, a row of band chips, and an editor for the
-/// selected band whose knobs sit at its right. The faceplate and the grid both place from
-/// this, over the same bounds, so the knobs land in the editor the faceplate draws.
+/**
+ * @brief The EQ's one-band-at-a-time body: the curve, a row of band chips, and an editor for
+ * the selected band.
+ *
+ * One spacing unit sets the gutter, the gaps between rows and cells, and the editor's padding.
+ * The faceplate and the param grid both place from this, over the same bounds.
+ */
 struct EqBandEditorGeometry {
     juce::Rectangle<int> plot;
     juce::Rectangle<int> chips;
     juce::Rectangle<int> editor;
-    juce::Rectangle<int> editorControls;  // The editor's left: switch, name, type.
-    juce::Rectangle<int> knobs;           // The selected band's three knobs.
-    juce::Rectangle<int> output;          // Output, past a divider.
+    juce::Rectangle<int> enableSwitch;
+    juce::Rectangle<int> name;
+    juce::Rectangle<int> types;
+    juce::Rectangle<int> slope;  ///< 12 / 24 dB/oct, after the types.
+    juce::Rectangle<int> note;   ///< The note tile, before Freq.
+    juce::Rectangle<int> noteLabel;
+    juce::Rectangle<int> noteValue;
+    juce::Rectangle<int> knobs;    ///< Freq, Gain and Q.
+    juce::Rectangle<int> divider;  ///< The 1px rule before Output.
+    juce::Rectangle<int> output;
 
-    static constexpr int kKnobWidth = 76;
+    static constexpr int kSpace = 8;
+    static constexpr int kChipHeight = 26;
+    static constexpr int kCellWidth = 76;
+    static constexpr int kCellHeight = 48;  ///< ParamSlotComponent's text tile at its minimum.
+    static constexpr int kEditorHeight = kCellHeight + 2 * kSpace;
+    static constexpr int kSwitchWidth = 36;
+    static constexpr int kSwitchHeight = 20;
+    static constexpr int kNameWidth = 60;
+    static constexpr int kTypesHeight = 28;
 
-    static EqBandEditorGeometry of(juce::Rectangle<int> bounds) {
-        EqBandEditorGeometry geometry;
-        auto area = bounds.reduced(14, 0).withTrimmedTop(10).withTrimmedBottom(14);
-        geometry.editor = area.removeFromBottom(96);
-        area.removeFromBottom(8);
-        geometry.chips = area.removeFromBottom(26);
-        area.removeFromBottom(8);
-        geometry.plot = area;
+    /** @brief Lays out @p bounds, with the type and slope strips at their preferred widths. */
+    static EqBandEditorGeometry of(juce::Rectangle<int> bounds, int typesWidth = 0,
+                                   int slopeWidth = 0) {
+        EqBandEditorGeometry g;
+        auto area = bounds.reduced(kSpace);
+        g.editor = area.removeFromBottom(kEditorHeight);
+        area.removeFromBottom(kSpace);
+        g.chips = area.removeFromBottom(kChipHeight);
+        area.removeFromBottom(kSpace);
+        g.plot = area;
 
-        auto editor = geometry.editor.reduced(12, 6);
-        geometry.output = editor.removeFromRight(kKnobWidth);
-        editor.removeFromRight(25);  // The divider and its margins.
-        geometry.knobs = editor.removeFromRight(3 * kKnobWidth);
-        geometry.editorControls = editor;
-        return geometry;
+        auto row = g.editor.reduced(kSpace);
+        const auto cell = [&row] { return row.removeFromRight(kCellWidth); };
+        g.output = cell();
+        g.divider = row.removeFromRight(2 * kSpace + 1).withSizeKeepingCentre(1, kCellHeight);
+        g.knobs = row.removeFromRight(3 * kCellWidth + 2 * kSpace);
+        row.removeFromRight(kSpace);
+        g.note = cell();
+        // As ParamSlotComponent's text tile: label on top, value, then its mod row.
+        auto tile = g.note.reduced(8, 5);
+        tile.removeFromBottom(7 + 2);
+        g.noteLabel = tile.removeFromTop(13);
+        g.noteValue = tile;
+
+        g.enableSwitch =
+            row.removeFromLeft(kSwitchWidth).withSizeKeepingCentre(kSwitchWidth, kSwitchHeight);
+        row.removeFromLeft(kSpace);
+        g.name = row.removeFromLeft(kNameWidth);
+        row.removeFromLeft(kSpace);
+        const auto strip = [&row](int width) {
+            width = juce::jmin(width, row.getWidth());
+            return row.removeFromLeft(width).withSizeKeepingCentre(width, kTypesHeight);
+        };
+        g.types = strip(typesWidth);
+        row.removeFromLeft(kSpace);
+        g.slope = strip(slopeWidth);
+        return g;
     }
 
-    /// Knob @p index: the band's three, with the grid's gap between them, then Output.
+    /** @brief Knob @p index: Freq, Gain and Q, then Output. */
     juce::Rectangle<int> knob(int index) const {
-        constexpr int kGap = 6;
         if (index >= 3)
             return output;
-        const int width = (knobs.getWidth() - 2 * kGap) / 3;
-        return knobs.withWidth(width).translated(index * (width + kGap), 0);
+        return knobs.withWidth(kCellWidth).translated(index * (kCellWidth + kSpace), 0);
     }
 };
 

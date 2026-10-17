@@ -94,6 +94,8 @@ class CompiledEqCurveView final : public juce::Component,
     void syncTypeChoice();
     void paintChips(juce::Graphics& g);
     void paintEditor(juce::Graphics& g);
+    /** @brief The selected band's frequency as a note and cents. */
+    void paintNoteTile(juce::Graphics& g, float freqHz);
     int chipAt(juce::Point<float> p) const;
     juce::Rectangle<float> chipBounds(int band) const;
     juce::Rectangle<float> enableSwitchBounds() const;
@@ -109,6 +111,8 @@ class CompiledEqCurveView final : public juce::Component,
 
     EqBandEditorGeometry geometry_;
     magda::SegmentedChoice typeChoice_;
+    magda::SegmentedChoice slopeChoice_;  ///< 12 or 24 dB/oct, shown for the cuts.
+    juce::Label noteInput_;
     std::function<void(int)> onPageRequested_;
 
     std::function<void()> onLayoutChanged_;

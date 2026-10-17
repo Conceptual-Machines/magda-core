@@ -60,7 +60,7 @@ const CompiledPluginSpec& getMagdaEqSpec() {
                        "biquads, and double-clicking a band's dot on the curve toggles it; "
                        "Type selects "
                        "<b>HP</b>, <b>LowShelf</b>, <b>Bell</b>, <b>HighShelf</b>, "
-                       "<b>LP</b>, or <b>Notch</b>. "
+                       "<b>LP</b>, <b>Notch</b>, or 24 dB/oct <b>HP 24</b> / <b>LP 24</b>. "
                        "MAGDA-owned RBJ biquads drive audio and share coefficient math with "
                        "the curve view. "
                        "Each band exposes Freq, Gain, Q; Output trims the final sum.",

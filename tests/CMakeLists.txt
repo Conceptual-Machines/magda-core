@@ -604,6 +604,7 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES dsp/test_faust_sidechain.cpp)
     list(APPEND TEST_SOURCES dsp/test_filter_spectrum_taps.cpp)
     list(APPEND TEST_SOURCES dsp/test_multiband_upward.cpp)
+    list(APPEND TEST_SOURCES dsp/test_eq_slopes.cpp)
     list(APPEND TEST_SOURCES ui/test_magda_alert_window.cpp)
     list(APPEND TEST_SOURCES devices/test_mutable_add_not_replace.cpp)
     list(APPEND TEST_SOURCES devices/test_sampler_relocate.cpp)

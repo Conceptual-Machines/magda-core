@@ -25,13 +25,7 @@ constexpr BandDefaults kBandDefaults[Eq::kBandCount] = {
 
 constexpr float kTwoPi = 6.28318530717958647692f;
 
-struct RbjCoeffs {
-    float b0 = 1.0f;
-    float b1 = 0.0f;
-    float b2 = 0.0f;
-    float a1 = 0.0f;
-    float a2 = 0.0f;
-};
+using RbjCoeffs = Eq::Coeffs;
 
 RbjCoeffs makeRbj(Eq::BandType type, float f0, float gainDb, float q, float sampleRate) {
     RbjCoeffs out;
@@ -54,10 +48,12 @@ RbjCoeffs makeRbj(Eq::BandType type, float f0, float gainDb, float q, float samp
     using BandType = Eq::BandType;
     switch (type) {
         case BandType::Highpass:
+        case BandType::Highpass24:
             normalise((1.0f + cw) * 0.5f, -(1.0f + cw), (1.0f + cw) * 0.5f, 1.0f + alpha,
                       -2.0f * cw, 1.0f - alpha);
             break;
         case BandType::Lowpass:
+        case BandType::Lowpass24:
             normalise((1.0f - cw) * 0.5f, 1.0f - cw, (1.0f - cw) * 0.5f, 1.0f + alpha, -2.0f * cw,
                       1.0f - alpha);
             break;
@@ -96,6 +92,12 @@ RbjCoeffs makeRbj(Eq::BandType type, float f0, float gainDb, float q, float samp
     return out;
 }
 
+// Butterworth stage Qs for a 4-pole cascade; the band's Q scales the resonant stage so
+// Q 0.707 is flat Butterworth.
+constexpr float kButterworth4Q1 = 0.5412f;
+constexpr float kButterworth4Q2 = 1.3066f;
+constexpr float kButterworth2Q = 0.70711f;
+
 float processRbj(float x, const RbjCoeffs& c, Eq::BiquadState& s) {
     const float y = c.b0 * x + c.b1 * s.x1 + c.b2 * s.x2 - c.a1 * s.y1 - c.a2 * s.y2;
     s.x2 = s.x1;
@@ -116,6 +118,19 @@ std::string bandDisplayPrefix(int band) {
 
 }  // namespace
 
+Eq::Stages Eq::designBand(BandType type, float freq, float gainDb, float q, float sampleRate) {
+    Stages stages;
+    if (type == BandType::Highpass24 || type == BandType::Lowpass24) {
+        stages.count = 2;
+        stages.coeffs[0] = makeRbj(type, freq, gainDb, kButterworth4Q1, sampleRate);
+        stages.coeffs[1] =
+            makeRbj(type, freq, gainDb, q * (kButterworth4Q2 / kButterworth2Q), sampleRate);
+        return stages;
+    }
+    stages.coeffs[0] = makeRbj(type, freq, gainDb, q, sampleRate);
+    return stages;
+}
+
 Eq::Eq() {
     initEffect();
 }
@@ -135,12 +150,13 @@ std::vector<SlotInfo> Eq::slotInfos() const {
                               .defaultValue = defaults.enabled};
 
         const int typeSlot = bandSlot(band, kBandTypeOffset);
-        infos[typeSlot] = {.name = prefix + " Type",
-                           .scale = sdk::ParameterScale::Discrete,
-                           .minValue = 0.0f,
-                           .maxValue = static_cast<float>(kBandTypeCount - 1),
-                           .defaultValue = defaults.type,
-                           .choices = {"HP", "LowShelf", "Bell", "HighShelf", "LP", "Notch"}};
+        infos[typeSlot] = {
+            .name = prefix + " Type",
+            .scale = sdk::ParameterScale::Discrete,
+            .minValue = 0.0f,
+            .maxValue = static_cast<float>(kBandTypeCount - 1),
+            .defaultValue = defaults.type,
+            .choices = {"HP", "LowShelf", "Bell", "HighShelf", "LP", "Notch", "HP 24", "LP 24"}};
 
         const int freqSlot = bandSlot(band, kBandFreqOffset);
         infos[freqSlot] = {.name = prefix + " Freq",
@@ -247,12 +263,12 @@ void Eq::processAudio(sdk::ProcessContext& context) {
         return;
 
     for (auto& bandStates : biquadStates_)
-        if (static_cast<int>(bandStates.size()) < hostChannels)
-            bandStates.resize(static_cast<size_t>(hostChannels));
+        if (static_cast<int>(bandStates.size()) < hostChannels * 2)
+            bandStates.resize(static_cast<size_t>(hostChannels * 2));
 
     const auto sampleRate = static_cast<float>(currentSampleRate());
     std::array<bool, kBandCount> bandEnabled{};
-    std::array<RbjCoeffs, kBandCount> coeffs{};
+    std::array<Stages, kBandCount> stages{};
     for (int band = 0; band < kBandCount; ++band) {
         const auto snapshot = getBandSnapshot(band);
         bandEnabled[static_cast<size_t>(band)] = snapshot.enabled;
@@ -261,8 +277,14 @@ void Eq::processAudio(sdk::ProcessContext& context) {
             std::fill(states.begin(), states.end(), BiquadState{});
             continue;
         }
-        coeffs[static_cast<size_t>(band)] =
-            makeRbj(snapshot.type, snapshot.freq, snapshot.gainDb, snapshot.q, sampleRate);
+        stages[static_cast<size_t>(band)] =
+            designBand(snapshot.type, snapshot.freq, snapshot.gainDb, snapshot.q, sampleRate);
+        // A band dropping to one stage clears the other, so a later 24 dB/oct starts clean.
+        if (stages[static_cast<size_t>(band)].count == 1) {
+            auto& states = biquadStates_[static_cast<size_t>(band)];
+            for (size_t i = 1; i < states.size(); i += 2)
+                states[i] = {};
+        }
     }
     const float outputGain = std::pow(10.0f, slotDisplayValue(kOutputSlot) / 20.0f);
 
@@ -282,8 +304,11 @@ void Eq::processAudio(sdk::ProcessContext& context) {
             float sample = out[i];
             for (int active = 0; active < activeBandCount; ++active) {
                 const auto band = static_cast<size_t>(activeBands[static_cast<size_t>(active)]);
-                sample = processRbj(sample, coeffs[band],
-                                    biquadStates_[band][static_cast<size_t>(channel)]);
+                const auto& cascade = stages[band];
+                for (int stage = 0; stage < cascade.count; ++stage)
+                    sample =
+                        processRbj(sample, cascade.coeffs[static_cast<size_t>(stage)],
+                                   biquadStates_[band][static_cast<size_t>(channel * 2 + stage)]);
             }
             out[i] = sanitise(sample * outputGain);
         }

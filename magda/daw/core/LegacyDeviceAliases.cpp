@@ -243,7 +243,7 @@ struct RetiredDevice {
 // switchable and default to off, so each mapped band is explicitly enabled and
 // given its filter type. Bands 5-8 stay off, as does the output trim.
 // Slot layout: 5 slots per band (enabled, type, freq, gain, q), output at 40.
-// Band type ordinals: 0 HP, 1 LowShelf, 2 Bell, 3 HighShelf, 4 LP, 5 Notch.
+// Band type ordinals: 0 HP, 1 LowShelf, 2 Bell, 3 HighShelf, 4 LP, 5 Notch, 6 HP 24, 7 LP 24.
 constexpr const char* kEqTypes[] = {"4bandEq", "eq", "equaliser"};
 constexpr const char* kEqNames[] = {"Equaliser", "EQ"};
 constexpr SlotMapping kEqSlots[] = {
