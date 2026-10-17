@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
 #include "../../../utils/CurveLabelLayout.hpp"
 #include "audio/plugins/compiled/MagdaEqCompiledPlugin.hpp"
@@ -37,109 +38,9 @@ float valueForSlot(const magda::DeviceInfo& device, int slotIndex, float fallbac
     return fallback;
 }
 
-struct BiquadCoeffs {
-    float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f;
-    float a1 = 0.0f, a2 = 0.0f;  // a0 normalised to 1
-};
-
-// Audio EQ Cookbook coefficients, matching the webaudio.lib biquads the
-// audio thread is running. Shelf filters use the WebAudio convention
-// (S = 1 → α = sin(ω0)/√2, no exposed Q).
-BiquadCoeffs makeBiquad(magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType type, float f0,
-                        float gainDb, float q, float sampleRate) {
-    using BandType = magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType;
-
-    BiquadCoeffs out;
-    const float safeQ = std::max(0.05f, q);
-    const float fc = juce::jlimit(1.0f, sampleRate * 0.49f, f0);
-    const float w0 = kTwoPi * fc / sampleRate;
-    const float cw = std::cos(w0);
-    const float sw = std::sin(w0);
-    const float alpha = sw / (2.0f * safeQ);
-
-    auto normalise = [&](float b0, float b1, float b2, float a0, float a1, float a2) {
-        const float inv = 1.0f / a0;
-        out.b0 = b0 * inv;
-        out.b1 = b1 * inv;
-        out.b2 = b2 * inv;
-        out.a1 = a1 * inv;
-        out.a2 = a2 * inv;
-    };
-
-    switch (type) {
-        case BandType::Highpass: {
-            const float b0 = (1.0f + cw) * 0.5f;
-            const float b1 = -(1.0f + cw);
-            const float b2 = (1.0f + cw) * 0.5f;
-            const float a0 = 1.0f + alpha;
-            const float a1 = -2.0f * cw;
-            const float a2 = 1.0f - alpha;
-            normalise(b0, b1, b2, a0, a1, a2);
-            break;
-        }
-        case BandType::Lowpass: {
-            const float b0 = (1.0f - cw) * 0.5f;
-            const float b1 = 1.0f - cw;
-            const float b2 = (1.0f - cw) * 0.5f;
-            const float a0 = 1.0f + alpha;
-            const float a1 = -2.0f * cw;
-            const float a2 = 1.0f - alpha;
-            normalise(b0, b1, b2, a0, a1, a2);
-            break;
-        }
-        case BandType::Bell: {
-            const float A = std::pow(10.0f, gainDb / 40.0f);
-            const float b0 = 1.0f + alpha * A;
-            const float b1 = -2.0f * cw;
-            const float b2 = 1.0f - alpha * A;
-            const float a0 = 1.0f + alpha / A;
-            const float a1 = -2.0f * cw;
-            const float a2 = 1.0f - alpha / A;
-            normalise(b0, b1, b2, a0, a1, a2);
-            break;
-        }
-        case BandType::LowShelf: {
-            const float A = std::pow(10.0f, gainDb / 40.0f);
-            const float shelfAlpha = sw / 1.41421356f;  // S = 1
-            const float sqA2 = 2.0f * std::sqrt(A) * shelfAlpha;
-            const float b0 = A * ((A + 1.0f) - (A - 1.0f) * cw + sqA2);
-            const float b1 = 2.0f * A * ((A - 1.0f) - (A + 1.0f) * cw);
-            const float b2 = A * ((A + 1.0f) - (A - 1.0f) * cw - sqA2);
-            const float a0 = (A + 1.0f) + (A - 1.0f) * cw + sqA2;
-            const float a1 = -2.0f * ((A - 1.0f) + (A + 1.0f) * cw);
-            const float a2 = (A + 1.0f) + (A - 1.0f) * cw - sqA2;
-            normalise(b0, b1, b2, a0, a1, a2);
-            break;
-        }
-        case BandType::HighShelf: {
-            const float A = std::pow(10.0f, gainDb / 40.0f);
-            const float shelfAlpha = sw / 1.41421356f;
-            const float sqA2 = 2.0f * std::sqrt(A) * shelfAlpha;
-            const float b0 = A * ((A + 1.0f) + (A - 1.0f) * cw + sqA2);
-            const float b1 = -2.0f * A * ((A - 1.0f) + (A + 1.0f) * cw);
-            const float b2 = A * ((A + 1.0f) + (A - 1.0f) * cw - sqA2);
-            const float a0 = (A + 1.0f) - (A - 1.0f) * cw + sqA2;
-            const float a1 = 2.0f * ((A - 1.0f) - (A + 1.0f) * cw);
-            const float a2 = (A + 1.0f) - (A - 1.0f) * cw - sqA2;
-            normalise(b0, b1, b2, a0, a1, a2);
-            break;
-        }
-        case BandType::Notch: {
-            const float b0 = 1.0f;
-            const float b1 = -2.0f * cw;
-            const float b2 = 1.0f;
-            const float a0 = 1.0f + alpha;
-            const float a1 = -2.0f * cw;
-            const float a2 = 1.0f - alpha;
-            normalise(b0, b1, b2, a0, a1, a2);
-            break;
-        }
-    }
-    return out;
-}
-
 // Magnitude squared of H(e^{jω}) for a normalised biquad (a0 = 1).
-float magnitudeSquaredAt(const BiquadCoeffs& c, float freqHz, float sampleRate) {
+float magnitudeSquaredAt(const magda::devices::faust::Eq::Coeffs& c, float freqHz,
+                         float sampleRate) {
     const float w = kTwoPi * freqHz / sampleRate;
     const float cw = std::cos(w);
     const float c2w = std::cos(2.0f * w);
@@ -158,23 +59,14 @@ float magnitudeSquaredAt(const BiquadCoeffs& c, float freqHz, float sampleRate) 
     return num / den;
 }
 
-const char* bandTypeShortName(magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType t) {
-    using BandType = magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType;
-    switch (t) {
-        case BandType::Highpass:
-            return "HP";
-        case BandType::LowShelf:
-            return "LS";
-        case BandType::Bell:
-            return "Bell";
-        case BandType::HighShelf:
-            return "HS";
-        case BandType::Lowpass:
-            return "LP";
-        case BandType::Notch:
-            return "Notch";
-    }
-    return "?";
+/// A band's cascade at @p freqHz, in dB.
+float stagesDb(const magda::devices::faust::Eq::Stages& stages, float freqHz) {
+    float db = 0.0f;
+    for (int stage = 0; stage < stages.count; ++stage)
+        db += 10.0f * std::log10(std::max(
+                          1.0e-12f, magnitudeSquaredAt(stages.coeffs[static_cast<size_t>(stage)],
+                                                       freqHz, kVisualSampleRate)));
+    return db;
 }
 
 juce::String noteNameForFrequency(float freqHz) {
@@ -246,15 +138,67 @@ bool bandGainAffectsCurve(magda::daw::audio::compiled::MagdaEqCompiledPlugin::Ba
 
 namespace {
 
-/// The six types in the order the editor offers them, low cut to high cut.
-constexpr std::array<magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType, 6> kTypeOrder{{
-    magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType::Highpass,
-    magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType::LowShelf,
-    magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType::Bell,
-    magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType::Notch,
-    magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType::HighShelf,
-    magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType::Lowpass,
+using EqBandType = magda::daw::audio::compiled::MagdaEqCompiledPlugin::BandType;
+
+/// The six shapes in the order the editor offers them, low cut to high cut.
+constexpr std::array<EqBandType, 6> kShapeOrder{{
+    EqBandType::Highpass,
+    EqBandType::LowShelf,
+    EqBandType::Bell,
+    EqBandType::Notch,
+    EqBandType::HighShelf,
+    EqBandType::Lowpass,
 }};
+
+bool isSteep(EqBandType type) {
+    return type == EqBandType::Highpass24 || type == EqBandType::Lowpass24;
+}
+
+bool isCut(EqBandType type) {
+    return type == EqBandType::Highpass || type == EqBandType::Lowpass || isSteep(type);
+}
+
+/// The 12 dB/oct shape a type is drawn as in the type strip.
+EqBandType shapeOf(EqBandType type) {
+    if (type == EqBandType::Highpass24)
+        return EqBandType::Highpass;
+    if (type == EqBandType::Lowpass24)
+        return EqBandType::Lowpass;
+    return type;
+}
+
+/// @p shape at 24 dB/oct when @p steep and it is a cut; any other shape as it is.
+EqBandType withSlope(EqBandType shape, bool steep) {
+    if (!steep)
+        return shape;
+    if (shape == EqBandType::Highpass)
+        return EqBandType::Highpass24;
+    if (shape == EqBandType::Lowpass)
+        return EqBandType::Lowpass24;
+    return shape;
+}
+
+/// A typed note such as "C3", "F#1" or "Bb-1" as Hz; nothing when it does not parse.
+std::optional<float> frequencyForNoteName(juce::String text) {
+    text = text.removeCharacters(" ").toUpperCase();
+    if (text.isEmpty())
+        return std::nullopt;
+    static constexpr int kPitchClass[] = {9, 11, 0, 2, 4, 5, 7};  // A..G
+    const auto letter = text[0];
+    if (letter < 'A' || letter > 'G')
+        return std::nullopt;
+    int pitch = kPitchClass[letter - 'A'];
+    int at = 1;
+    if (at < text.length() && (text[at] == '#' || text[at] == 'B')) {
+        pitch += text[at] == '#' ? 1 : -1;
+        ++at;
+    }
+    const auto octave = text.substring(at);
+    if (!octave.containsOnly("-0123456789") || !octave.containsAnyOf("0123456789"))
+        return std::nullopt;
+    const int midi = (octave.getIntValue() + 1) * 12 + pitch;
+    return 440.0f * std::pow(2.0f, static_cast<float>(midi - 69) / 12.0f);
+}
 
 juce::String compactFrequency(float hz) {
     if (hz >= 1000.0f) {
@@ -273,10 +217,51 @@ CompiledEqCurveView::CompiledEqCurveView(juce::String /*pluginId*/) {
     setInterceptsMouseClicks(true, true);
     typeChoice_.setOptions({"LC", "LS", "Bell", "Notch", "HS", "HC"});
     typeChoice_.onChange = [this](int index) {
-        setBandType(selectedBand_, kTypeOrder[static_cast<size_t>(index)]);
+        const auto current = bands_[static_cast<size_t>(selectedBand_)].type;
+        setBandType(selectedBand_,
+                    withSlope(kShapeOrder[static_cast<size_t>(index)], isSteep(current)));
+        syncTypeChoice();
         repaint();
     };
     addAndMakeVisible(typeChoice_);
+
+    slopeChoice_.setOptions({"12", "24"});
+    slopeChoice_.onChange = [this](int index) {
+        const auto current = bands_[static_cast<size_t>(selectedBand_)].type;
+        setBandType(selectedBand_, withSlope(shapeOf(current), index == 1));
+        repaint();
+    };
+    addChildComponent(slopeChoice_);
+
+    // The Note tile's value takes a typed note; the tile paints the value itself.
+    noteInput_.setEditable(true, true, false);
+    noteInput_.setTooltip("Type a note, e.g. C3 or F#1");
+    noteInput_.setColour(juce::Label::textColourId, juce::Colours::transparentBlack);
+    noteInput_.setFont(FontManager::getInstance().getUIFontMedium(13.5f));
+    noteInput_.setBorderSize({});
+    noteInput_.setColour(juce::Label::backgroundWhenEditingColourId,
+                         ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));
+    noteInput_.setColour(juce::Label::textWhenEditingColourId,
+                         ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
+    noteInput_.setColour(juce::Label::outlineWhenEditingColourId, juce::Colours::transparentBlack);
+    noteInput_.onEditorShow = [this] {
+        if (auto* editor = noteInput_.getCurrentTextEditor()) {
+            editor->setText(noteNameForFrequency(bands_[static_cast<size_t>(selectedBand_)].freq),
+                            false);
+            editor->selectAll();
+        }
+    };
+    noteInput_.onTextChange = [this] {
+        const auto hz = frequencyForNoteName(noteInput_.getText());
+        noteInput_.setText({}, juce::dontSendNotification);
+        if (!hz)
+            return;
+        const float freq = juce::jlimit(kFreqMinHz, kFreqMaxHz, *hz);
+        bands_[static_cast<size_t>(selectedBand_)].freq = freq;
+        writeBandParam(selectedBand_, Plugin::kBandFreqOffset, freq);
+        repaint();
+    };
+    addAndMakeVisible(noteInput_);
     startTimer(kPollMs);
 }
 
@@ -341,12 +326,12 @@ void CompiledEqCurveView::timerCallback() {
 }
 
 void CompiledEqCurveView::resized() {
-    geometry_ = EqBandEditorGeometry::of(getLocalBounds());
+    geometry_ = EqBandEditorGeometry::of(getLocalBounds(), typeChoice_.getPreferredWidth(),
+                                         slopeChoice_.getPreferredWidth());
     plotArea_ = geometry_.plot.toFloat();
-    // The type segments sit at the right of the editor's controls.
-    const int width = typeChoice_.getPreferredWidth();
-    typeChoice_.setBounds(
-        geometry_.editorControls.removeFromRight(width).withSizeKeepingCentre(width, 30));
+    typeChoice_.setBounds(geometry_.types);
+    slopeChoice_.setBounds(geometry_.slope);
+    noteInput_.setBounds(geometry_.noteValue);
 }
 
 void CompiledEqCurveView::selectBand(int band) {
@@ -361,13 +346,15 @@ void CompiledEqCurveView::selectBand(int band) {
 
 void CompiledEqCurveView::syncTypeChoice() {
     const auto type = bands_[static_cast<size_t>(selectedBand_)].type;
-    for (int i = 0; i < static_cast<int>(kTypeOrder.size()); ++i)
-        if (kTypeOrder[static_cast<size_t>(i)] == type)
+    for (int i = 0; i < static_cast<int>(kShapeOrder.size()); ++i)
+        if (kShapeOrder[static_cast<size_t>(i)] == shapeOf(type))
             typeChoice_.setSelectedIndex(i);
+    slopeChoice_.setVisible(isCut(type));
+    slopeChoice_.setSelectedIndex(isSteep(type) ? 1 : 0);
 }
 
 juce::Rectangle<float> CompiledEqCurveView::chipBounds(int band) const {
-    constexpr float kGap = 6.0f;
+    constexpr auto kGap = static_cast<float>(EqBandEditorGeometry::kSpace);
     const auto row = geometry_.chips.toFloat();
     const float width = (row.getWidth() - kGap * (Plugin::kBandCount - 1)) / Plugin::kBandCount;
     return {row.getX() + static_cast<float>(band) * (width + kGap), row.getY(), width,
@@ -381,10 +368,9 @@ int CompiledEqCurveView::chipAt(juce::Point<float> p) const {
     return -1;
 }
 
-juce::Rectangle<float> CompiledEqCurveView::enableSwitchBounds() const {
-    const auto controls = geometry_.editorControls.toFloat();
-    return juce::Rectangle<float>(36.0f, 20.0f)
-        .withCentre({controls.getX() + 18.0f, controls.getCentreY()});
+juce::Rectangle<float> CompiledEqCurveView::chipDotBounds(int band) const {
+    const auto inner = chipBounds(band).reduced(12.0f, 0.0f);
+    return juce::Rectangle<float>(8.0f, 8.0f).withCentre({inner.getX() + 4.0f, inner.getCentreY()});
 }
 
 void CompiledEqCurveView::paint(juce::Graphics& g) {
@@ -418,27 +404,27 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
     juce::Path selectedShare;
     const float zeroY = dbToY(0.0f, plotArea_);
     const auto& selected = bands_[static_cast<size_t>(selectedBand_)];
-    const auto selectedCoeffs =
-        makeBiquad(selected.type, selected.freq, selected.gainDb, selected.q, kVisualSampleRate);
+    std::array<Plugin::Stages, Plugin::kBandCount> designs{};
+    for (size_t b = 0; b < designs.size(); ++b)
+        designs[b] = Plugin::designBand(bands_[b].type, bands_[b].freq, bands_[b].gainDb,
+                                        bands_[b].q, kVisualSampleRate);
     for (int i = 0; i <= kPathSamples; ++i) {
         const float u = static_cast<float>(i) / static_cast<float>(kPathSamples);
         const float freq = kFreqMinHz * std::pow(kFreqMaxHz / kFreqMinHz, u);
         float totalDb = outputDb_;
-        for (const auto& band : bands_) {
-            if (!band.enabled)
-                continue;
-            const auto coeffs =
-                makeBiquad(band.type, band.freq, band.gainDb, band.q, kVisualSampleRate);
-            totalDb +=
-                10.0f *
-                std::log10(std::max(1.0e-12f, magnitudeSquaredAt(coeffs, freq, kVisualSampleRate)));
-        }
-        const float ownDb =
-            10.0f * std::log10(std::max(
-                        1.0e-12f, magnitudeSquaredAt(selectedCoeffs, freq, kVisualSampleRate)));
+        for (size_t b = 0; b < designs.size(); ++b)
+            if (bands_[b].enabled)
+                totalDb += stagesDb(designs[b], freq);
+        const float ownDb = stagesDb(designs[static_cast<size_t>(selectedBand_)], freq);
         const float x = plotArea_.getX() + u * plotArea_.getWidth();
-        const float y = dbToY(totalDb, plotArea_);
-        const float ownY = dbToY(ownDb, plotArea_);
+        // Unclamped and clipped below, so a cut leaves the plot instead of riding its floor.
+        const auto belowFloor = [this](float db) {
+            const float u =
+                0.5f - juce::jlimit(-4.0f * kGainAxisDb, kGainAxisDb, db) / (2.0f * kGainAxisDb);
+            return plotArea_.getY() + u * plotArea_.getHeight();
+        };
+        const float y = belowFloor(totalDb);
+        const float ownY = belowFloor(ownDb);
         if (i == 0) {
             curve.startNewSubPath(x, y);
             selectedShare.startNewSubPath(x, zeroY);
@@ -450,13 +436,17 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
     selectedShare.lineTo(plotArea_.getRight(), zeroY);
     selectedShare.closeSubPath();
     const auto bandColour = [](int band) { return device_shell::chainColour(band); };
-    if (selected.enabled) {
-        g.setColour(bandColour(selectedBand_).withAlpha(0.18f));
-        g.fillPath(selectedShare);
+    {
+        juce::Graphics::ScopedSaveState clip(g);
+        g.reduceClipRegion(plotArea_.toNearestInt());
+        if (selected.enabled) {
+            g.setColour(bandColour(selectedBand_).withAlpha(0.18f));
+            g.fillPath(selectedShare);
+        }
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT).withAlpha(0.9f));
+        g.strokePath(curve, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved,
+                                                 juce::PathStrokeType::rounded));
     }
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT).withAlpha(0.9f));
-    g.strokePath(curve, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved,
-                                             juce::PathStrokeType::rounded));
 
     // Nodes: numbered, in their band's colour; a band that is off is a grey ring.
     g.setFont(fonts.getMonoFont(10.0f).boldened());
@@ -500,8 +490,7 @@ void CompiledEqCurveView::paintChips(juce::Graphics& g) {
             g.drawRoundedRectangle(chip.reduced(0.75f), 4.0f, 1.5f);
         }
         auto inner = chip.reduced(12.0f, 0.0f).withTrimmedRight(4.0f);
-        const auto dot = juce::Rectangle<float>(8.0f, 8.0f)
-                             .withCentre({inner.getX() + 4.0f, inner.getCentreY()});
+        const auto dot = chipDotBounds(b);
         if (band.enabled) {
             g.setColour(colour);
             g.fillEllipse(dot);
@@ -524,28 +513,44 @@ void CompiledEqCurveView::paintEditor(juce::Graphics& g) {
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_WELL));
     g.fillRoundedRectangle(editor, 4.0f);
 
-    // The band's switch, then its name.
-    const auto& band = bands_[static_cast<size_t>(selectedBand_)];
-    const auto colour = device_shell::chainColour(selectedBand_);
-    const auto track = enableSwitchBounds();
-    g.setColour(band.enabled ? colour : ActiveTheme::getColour(ActiveTheme::DEVICE_SWITCH_OFF));
-    g.fillRoundedRectangle(track, track.getHeight() / 2.0f);
-    const float knobX = band.enabled ? track.getRight() - track.getHeight() : track.getX();
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_BG));
-    g.fillEllipse(juce::Rectangle<float>(knobX, track.getY(), track.getHeight(), track.getHeight())
-                      .reduced(3.0f));
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
-    g.setFont(FontManager::getInstance().getHeadingFont(15.0f));
-    g.drawText(
-        "Band " + juce::String(selectedBand_ + 1),
-        juce::Rectangle<float>(track.getRight() + 12.0f, editor.getY(), 90.0f, editor.getHeight()),
-        juce::Justification::centredLeft, false);
+    paintNoteTile(g, bands_[static_cast<size_t>(selectedBand_)].freq);
 
-    // The divider before Output.
-    const auto output = geometry_.output.toFloat();
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
-    g.fillRect(juce::Rectangle<float>(output.getX() - 13.0f, editor.getY() + 16.0f, 1.0f,
-                                      editor.getHeight() - 32.0f));
+    g.fillRect(geometry_.controlsDivider);
+    g.fillRect(geometry_.divider);
+}
+
+void CompiledEqCurveView::paintNoteTile(juce::Graphics& g, float freqHz) {
+    // Drawn as ParamSlotComponent's text tile, so it reads as one of the knobs beside it.
+    auto& fonts = FontManager::getInstance();
+    const auto tile = geometry_.note.toFloat();
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));
+    g.fillRoundedRectangle(tile, 5.0f);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
+    g.drawRoundedRectangle(tile.reduced(0.5f), 5.0f, 1.0f);
+
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+    g.setFont(fonts.getUIFont(10.5f));
+    g.drawText("Note", geometry_.noteLabel, juce::Justification::centredLeft, false);
+    if (noteInput_.isBeingEdited())
+        return;
+    const auto inner = geometry_.noteValue;
+
+    const auto note = noteNameForFrequency(freqHz);
+    if (note.isEmpty())
+        return;
+    const float midi = 69.0f + 12.0f * std::log2(freqHz / 440.0f);
+    const int cents = juce::roundToInt((midi - std::round(midi)) * 100.0f);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
+    g.setFont(fonts.getUIFontMedium(13.5f));
+    g.drawText(note, inner, juce::Justification::centredLeft, false);
+    if (cents != 0) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+        g.setFont(fonts.getMonoFont(10.0f));
+        g.drawText((cents > 0 ? "+" : "") + juce::String(cents) +
+                       juce::String::fromUTF8("\xc2\xa2"),
+                   inner, juce::Justification::centredRight, false);
+    }
 }
 
 // ============================================================================
@@ -628,11 +633,11 @@ void CompiledEqCurveView::mouseExit(const juce::MouseEvent&) {
 void CompiledEqCurveView::mouseDown(const juce::MouseEvent& e) {
     if (const int chip = chipAt(e.position); chip >= 0) {
         selectBand(chip);
-        return;
-    }
-    if (enableSwitchBounds().contains(e.position)) {
-        setBandEnabled(selectedBand_, !bands_[static_cast<size_t>(selectedBand_)].enabled);
-        repaint();
+        // The chip's dot is the band's on/off switch.
+        if (chipDotBounds(chip).expanded(6.0f).contains(e.position)) {
+            setBandEnabled(chip, !bands_[static_cast<size_t>(chip)].enabled);
+            repaint();
+        }
         return;
     }
 
@@ -746,6 +751,8 @@ void CompiledEqCurveView::showBandTypeMenu(int band) {
         {BandType::HighShelf, "High Shelf"},
         {BandType::Lowpass, "Lowpass"},
         {BandType::Notch, "Notch"},
+        {BandType::Highpass24, "Highpass 24 dB"},
+        {BandType::Lowpass24, "Lowpass 24 dB"},
     }};
     const BandType currentType = bands_[band].type;
     for (size_t i = 0; i < kEntries.size(); ++i) {
@@ -777,7 +784,7 @@ const CompiledPresentationSpec& getMagdaEqPresentation() {
             return std::make_unique<CompiledEqCurveView>(pluginId);
         },
         // The curve, a chip per band, and one band's controls at a time.
-        .preferredSlotWidth = 900,
+        .preferredSlotWidth = 724,
         .columnMajorGrid = true,
         .createLayout = []() -> std::unique_ptr<DeviceParamLayout> {
             return std::make_unique<CompiledEqBandLayout>();

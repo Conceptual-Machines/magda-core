@@ -13,12 +13,12 @@ namespace magda::devices::faust {
  * @brief Built-in 8-band parametric EQ.
  *
  * Each band carries Enabled plus its own filter Type (HP / LowShelf / Bell /
- * HighShelf / LP / Notch), Freq / Gain / Q. Audio runs through MAGDA-owned RBJ
- * biquads so the audible response and curve view share coefficient math.
+ * HighShelf / LP / Notch, and 24 dB/oct HP / LP), Freq / Gain / Q. Audio runs through MAGDA-owned
+ * RBJ biquads so the audible response and curve view share coefficient math.
  *
  * Slot layout (41 slots):
  *   5*band + 0 → Enabled (boolean)
- *   5*band + 1 → Type    (discrete menu, 0..5)
+ *   5*band + 1 → Type    (discrete menu, 0..7)
  *   5*band + 2 → Freq    (Hz, log)
  *   5*band + 3 → Gain    (dB, ±24)
  *   5*band + 4 → Q       (0.1..10)
@@ -40,9 +40,11 @@ class Eq : public CompiledEffect {
         Bell = 2,
         HighShelf = 3,
         Lowpass = 4,
-        Notch = 5
+        Notch = 5,
+        Highpass24 = 6,  ///< Appended, so saved ordinals keep their meaning.
+        Lowpass24 = 7
     };
-    static constexpr int kBandTypeCount = 6;
+    static constexpr int kBandTypeCount = 8;
     static constexpr int kBandEnabledOffset = 0;
     static constexpr int kBandTypeOffset = 1;
     static constexpr int kBandFreqOffset = 2;
@@ -84,6 +86,21 @@ class Eq : public CompiledEffect {
 
     static constexpr const char* kCurveCollapsedKey = "curveCollapsed";
 
+    /** @brief One RBJ biquad, normalised so a0 is 1. */
+    struct Coeffs {
+        float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f;
+        float a1 = 0.0f, a2 = 0.0f;
+    };
+
+    /** @brief The cascade a band runs: one biquad, or two for the 24 dB/oct types. */
+    struct Stages {
+        std::array<Coeffs, 2> coeffs{};
+        int count = 1;
+    };
+
+    /// The audio path and the curve view both design from this.
+    static Stages designBand(BandType type, float freq, float gainDb, float q, float sampleRate);
+
     struct BiquadState {
         float x1 = 0.0f;
         float x2 = 0.0f;
@@ -118,6 +135,7 @@ class Eq : public CompiledEffect {
 
     engine::SampleRing preSpectrumTap_{8192};
     engine::SampleRing postSpectrumTap_{8192};
+    /// Per band, two stages per channel: channel * 2 + stage.
     std::array<std::vector<BiquadState>, kBandCount> biquadStates_;
 };
 

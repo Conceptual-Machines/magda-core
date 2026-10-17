@@ -88,6 +88,11 @@ void SpectrumOverlay::draw(juce::Graphics& g, juce::Rectangle<float> area, doubl
             if (column == std::numeric_limits<int>::min())
                 return;
             const auto x = static_cast<float>(column);
+            // Silence draws nothing, rather than a line along the floor.
+            if (columnDb <= kMinDb + 0.5f) {
+                started = false;
+                return;
+            }
             if (!started) {
                 path.startNewSubPath(x, dbToY(columnDb));
                 started = true;
