@@ -112,6 +112,9 @@ set(TEST_SOURCES
     devices/test_chain_node_path_drag.cpp
     # ChainNodePathDrag builds into magda_daw_app, so magda_tests needs it directly.
     ../magda/daw/ui/components/chain/ChainNodePathDrag.cpp
+    ui/test_preview_stretch_source.cpp
+    # PreviewStretchSource builds into magda_daw_app, so magda_tests needs it directly.
+    ../magda/daw/ui/components/common/PreviewStretchSource.cpp
     ui/test_momentary_param_button.cpp
     ui/test_clip_slot_button.cpp
     clips/test_waveform_editor_absolute_mode.cpp
@@ -710,6 +713,8 @@ target_include_directories(magda_tests
     # The SDK's curve corpus and golden hashes (support/Curve*.hpp).
     ${CMAKE_SOURCE_DIR}/third_party/magda-sdk/tests
 )
+target_include_directories(magda_tests SYSTEM PRIVATE
+    ${CMAKE_SOURCE_DIR}/third_party/signalsmith-stretch)
 
 # Paths for the exploratory mix-analysis harness (hidden [.] tests): the repo
 # root (to load .env) and the gitignored audio fixtures dir.

@@ -297,3 +297,47 @@ TEST_CASE("query: similarTo scores embedding blobs without requiring encoder",
     REQUIRE(results[1].fileId == farther);
     REQUIRE(results[1].score == Catch::Approx(0.5F).epsilon(0.0001F));
 }
+
+TEST_CASE("query: countMatching agrees with filter-only browse", "[media_db][query]") {
+    TempDir dir;
+    MediaDatabase db(":memory:");
+    populateCorpus(dir.path(), db);
+    MediaDbQuery q(db, nullptr, nullptr);
+
+    REQUIRE(q.countMatching({}) == 5);
+
+    QueryFilters drums;
+    drums.family = "drum";
+    REQUIRE(q.countMatching(drums) == static_cast<int>(q.search(std::nullopt, drums).size()));
+
+    QueryFilters range;
+    range.bpmMin = 100.0;
+    range.bpmMax = 145.0;
+    REQUIRE(q.countMatching(range) == 1);
+}
+
+TEST_CASE("query: tagsWithPrefix ranks by use and escapes LIKE wildcards", "[media_db][query]") {
+    MediaDatabase db(":memory:");
+    const auto a = insertAudioRow(db, "a.wav", 3);
+    const auto b = insertAudioRow(db, "b.wav", 2);
+    const auto c = insertAudioRow(db, "c.wav", 1);
+    const auto tag = [&](std::int64_t id, const char* t) {
+        const std::string sql = "INSERT INTO media_tag (file_id, tag, confidence, source_model) "
+                                "VALUES (" +
+                                std::to_string(id) + ", '" + t + "', 1.0, 'user')";
+        REQUIRE(sqlite3_exec(db.handle(), sql.c_str(), nullptr, nullptr, nullptr) == SQLITE_OK);
+    };
+    tag(a, "drum");
+    tag(b, "drum");
+    tag(c, "drone");
+    tag(c, "dr_x");
+    tag(a, "bass");
+
+    MediaDbQuery q(db, nullptr, nullptr);
+    const auto dr = q.tagsWithPrefix("dr");
+    REQUIRE(dr.size() == 3);
+    REQUIRE(dr.front() == "drum");
+    REQUIRE(q.tagsWithPrefix("dr_") == std::vector<std::string>{"dr_x"});
+    REQUIRE(q.tagsWithPrefix("dr", 1).size() == 1);
+    REQUIRE(q.tagsWithPrefix("zz").empty());
+}

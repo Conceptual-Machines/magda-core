@@ -495,9 +495,8 @@ void MainView::setupComponents() {
     ioToggleButton->setActive(trackHeadersPanel->isIORoutingVisible());
 
     setupCornerButton(addTrackButton, "AddTrack", BinaryData::add_svg, BinaryData::add_svgSize);
-    addTrackButton->onClick = []() {
-        UndoManager::getInstance().executeCommand(
-            std::make_unique<CreateTrackCommand>(TrackType::Media));
+    addTrackButton->onClick = [this]() {
+        TrackHeadersPanel::showAddTrackMenu(addTrackButton->getScreenBounds());
     };
     addTrackButton->setTooltip("Add track");
 
@@ -1185,9 +1184,9 @@ void MainView::resized() {
         btnSide.removeSpacing(botRow, gap);
         trackLargeButton->setBounds(btnSide.removeFrom(botRow, btnSize));
         btnSide.removeSpacing(botRow, gap);
-        ioToggleButton->setBounds(btnSide.removeFrom(botRow, btnSize));
-        btnSide.removeSpacing(botRow, gap);
         addTrackButton->setBounds(btnSide.removeFrom(botRow, btnSize));
+        // The I/O toggle sits at the outer edge, over the I/O column it shows.
+        ioToggleButton->setBounds(axisSide.removeFrom(botRow, btnSize));
 
         // AUDIO / MIDI labels over the I/O column, in the lower row.
         repaint(ioLabelsStrip);

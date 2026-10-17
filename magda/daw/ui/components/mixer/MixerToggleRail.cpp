@@ -8,6 +8,11 @@
 
 namespace magda {
 
+namespace {
+/// A 14px glyph in a 28px button: the size of the arrangement corner's.
+constexpr float kIconPadding = 7.0f;
+}  // namespace
+
 MixerToggleRail::MixerToggleRail() {
     auto& cfg = Config::getInstance();
 
@@ -90,6 +95,7 @@ void MixerToggleRail::setupButton(std::unique_ptr<SvgButton>& btn, const juce::S
                                   const char* svgData, size_t svgSize, const juce::String& tooltip,
                                   bool initialState, std::function<void(bool)> setter) {
     btn = std::make_unique<SvgButton>(name, svgData, svgSize);
+    btn->setIconPadding(kIconPadding);
     btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
     btn->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     btn->setPressedColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
@@ -131,6 +137,7 @@ MixerToggleRail::~MixerToggleRail() {
 void MixerToggleRail::setupAnalyzeButton() {
     analyzeButton_ = std::make_unique<SvgButton>("MixAnalyze", BinaryData::iconcheckmixboldm_svg,
                                                  BinaryData::iconcheckmixboldm_svgSize);
+    analyzeButton_->setIconPadding(kIconPadding);
     analyzeButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     analyzeButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     analyzeButton_->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));

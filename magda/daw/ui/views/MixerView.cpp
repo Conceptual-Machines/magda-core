@@ -1186,7 +1186,7 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     // The group's own controls column (leftmost channelWidth when group has children)
     auto ownBounds = hasGroupChildren ? fullBounds.withWidth(preferredChannelWidth()) : fullBounds;
 
-    // Track colour as the arrangement draws it: a Full bar head, or a spine down the edge.
+    // Track colour: a Full bar head, or for Spine a line across the top of the strip.
     // Selection lifts the body, and the head as Spine does or with a light line on Full bar.
     const bool fullBar = Config::getInstance().getTrackColourStyle() == "full";
     const bool coloured = !isMaster_ && trackColour_ != juce::Colour(0xFF444444);
@@ -1218,7 +1218,7 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
         g.fillRect(0, head.getBottom(), head.getWidth(), 1);
         if (!fullBar && coloured) {
             g.setColour(swatch);
-            g.fillRect(0, 0, 5, ownBounds.getHeight());
+            g.fillRect(0, 0, head.getWidth(), 4);
         }
     }
 
@@ -1248,7 +1248,7 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
             g.fillRect(banner);
             if (coloured) {
                 g.setColour(swatch);
-                g.fillRect(banner.withWidth(5));
+                g.fillRect(banner.withHeight(4));
             }
         }
 

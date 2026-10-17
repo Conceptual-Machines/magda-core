@@ -208,6 +208,10 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/sidebar/plug.svg
     # Browser icons
     ../../assets/icons/browser/browser.svg
+    ../../assets/icons/browser/sidebar_project.svg
+    ../../assets/icons/browser/sidebar_disk.svg
+    ../../assets/icons/browser/sidebar_library.svg
+    ../../assets/icons/browser/sidebar_favorite.svg
     ../../assets/midi.svg
     ../../assets/icons/browser/icon-audio-boldm.svg
     ../../assets/icons/browser/icon-midi-boldm.svg
@@ -790,6 +794,11 @@ target_include_directories(magda_daw_app
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/components/common/curve
     ${CMAKE_SOURCE_DIR}
 )
+
+# The media browser's tempo-synced preview stretches with Signalsmith (header-only, MIT),
+# the engine's default stretcher.
+target_include_directories(magda_daw_app SYSTEM PRIVATE
+    ${CMAKE_SOURCE_DIR}/third_party/signalsmith-stretch)
 
 target_link_libraries(magda_plugin_scanner
     PRIVATE

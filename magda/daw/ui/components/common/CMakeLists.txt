@@ -23,6 +23,7 @@ target_sources(magda_daw_app PRIVATE
     DraggableValueLabel.cpp
     BarsBeatsTicksLabel.cpp
     InternalFileDrag.cpp
+    PreviewStretchSource.cpp
     NoteSlicePopup.hpp
     InternalFileDrag.hpp
     MasterSpeakerButton.hpp

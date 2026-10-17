@@ -686,7 +686,6 @@ void AIChatConsoleContent::RequestThread::run() {
             }
             streamAnchor->store(text.length());
             safeThis->chatHistory_.setText(text);
-            safeThis->chatHistory_.moveCaretToEnd();
         });
     };
 
@@ -724,7 +723,6 @@ void AIChatConsoleContent::RequestThread::run() {
                 return;
             auto text = safeThis->chatHistory_.getText();
             safeThis->chatHistory_.setText(text + chunk);
-            safeThis->chatHistory_.moveCaretToEnd();
         });
     };
 
@@ -890,17 +888,10 @@ void AIChatConsoleContent::RequestThread::run() {
             // main response. Inserted after setText so it does not enter the plain
             // text that gets stored in conversation history (display-only).
             if (!mixAnalysis.empty() && !hadError) {
-                safeThis->chatHistory_.moveCaretToEnd();
-                safeThis->chatHistory_.setColour(
-                    juce::TextEditor::textColourId,
-                    ActiveTheme::getSecondaryTextColour().withAlpha(0.5f));
-                safeThis->chatHistory_.insertTextAtCaret(
+                safeThis->chatHistory_.appendDim(
                     juce::String(magda::MixAnalysisAgent::getUserCaveat()) + "\n\n");
-                safeThis->chatHistory_.setColour(juce::TextEditor::textColourId,
-                                                 ActiveTheme::getSecondaryTextColour());
             }
 
-            safeThis->chatHistory_.moveCaretToEnd();
             safeThis->inputBox_->setEnabled(true);
             safeThis->processing_ = false;
             safeThis->restoreSendIcon();
@@ -916,22 +907,9 @@ void AIChatConsoleContent::RequestThread::run() {
 AIChatConsoleContent::AIChatConsoleContent() {
     setName("AI Chat");
 
-    // Chat history area
     auto monoFont = FontManager::getInstance().getMonoFont(13.0f);
-    chatHistory_.setMultiLine(true);
-    chatHistory_.setReadOnly(true);
-    chatHistory_.setFont(monoFont);
-    chatHistory_.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
-    chatHistory_.setColour(juce::TextEditor::textColourId, ActiveTheme::getSecondaryTextColour());
-    chatHistory_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
-    chatHistory_.setColour(juce::TextEditor::focusedOutlineColourId,
-                           juce::Colours::transparentBlack);
-    // Selection colours must be set explicitly: JUCE defaults
-    // highlightedTextColourId to BLACK, which is invisible on a dark
-    // background, so dragging over the transcript made the text vanish.
-    chatHistory_.setColour(juce::TextEditor::highlightColourId,
-                           ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
-    chatHistory_.setColour(juce::TextEditor::highlightedTextColourId, ActiveTheme::getTextColour());
+    chatHistory_.setEmptyHint("Describe what you want to hear. MAGDA writes clips, edits "
+                              "selections and arranges on the target track.");
     chatHistory_.setText(juce::String::charToString(0x25C6) + " MAGDA\n\n");
     addAndMakeVisible(chatHistory_);
 
@@ -949,7 +927,7 @@ AIChatConsoleContent::AIChatConsoleContent() {
     // paint-behind-opaque-child (JUCE's TextEditor, by contrast, never
     // opts into opaque and composites fine with a transparent fill). Paint
     // the same solid colour as the panel drawn behind it in paint() instead
-    // of relying on transparency — matches dslEditor_'s approach below.
+    // of relying on transparency.
     inputBox_->setColour(juce::CodeEditorComponent::backgroundColourId,
                          ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
     inputBox_->setColour(juce::CodeEditorComponent::defaultTextColourId,
@@ -994,26 +972,18 @@ AIChatConsoleContent::AIChatConsoleContent() {
     contextLabel_.setTooltip("Choose MIDI clips to include as agent context");
     addAndMakeVisible(contextLabel_);
 
-    outputModeButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    outputModeButton_.setColour(juce::TextButton::buttonColourId,
-                                ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
-    outputModeButton_.setColour(juce::TextButton::buttonOnColourId,
-                                ActiveTheme::getAccentColour().withAlpha(0.28f));
-    outputModeButton_.setColour(juce::TextButton::textColourOffId,
-                                ActiveTheme::getSecondaryTextColour());
-    outputModeButton_.setColour(juce::TextButton::textColourOnId, ActiveTheme::getAccentColour());
-    outputModeButton_.setMouseCursor(juce::MouseCursor::PointingHandCursor);
-    outputModeButton_.onClick = [this]() {
-        if (midiOutputMode_ == MidiOutputMode::ReviseLast) {
-            midiOutputMode_ = MidiOutputMode::NewClip;
-        } else if (isLastGeneratedMidiClipValid()) {
+    outputMode_.setOptions({"New clip", "Revise last"});
+    outputMode_.onChange = [this](int index) {
+        if (index == 1 && isLastGeneratedMidiClipValid()) {
             midiOutputMode_ = MidiOutputMode::ReviseLast;
             contextEnabled_ = true;
             magda::dsl::Interpreter::setContextEnabled(true);
+        } else {
+            midiOutputMode_ = MidiOutputMode::NewClip;
         }
         updateOutputModeButton();
     };
-    addAndMakeVisible(outputModeButton_);
+    addAndMakeVisible(outputMode_);
     updateOutputModeButton();
 
     // Mix analysis is gathered from the mixer's Analyze button now (#886); this
@@ -1035,7 +1005,8 @@ AIChatConsoleContent::AIChatConsoleContent() {
     sendButton_.setColour(juce::DrawableButton::backgroundOnColourId,
                           juce::Colours::transparentBlack);
     sendButton_.setMouseCursor(juce::MouseCursor::PointingHandCursor);
-    sendButton_.setAlpha(0.35f);
+    sendButton_.setAlpha(0.45f);
+    sendButton_.setTooltip("Send");
     sendButton_.onClick = [this]() {
         if (processing_) {
             cancelRequest();
@@ -1076,62 +1047,9 @@ AIChatConsoleContent::AIChatConsoleContent() {
     copyButton_.setTooltip("Copy chat to clipboard");
     copyButton_.setAlpha(0.35f);
     copyButton_.onClick = [this]() {
-        juce::SystemClipboard::copyTextToClipboard(chatHistory_.getText());
+        juce::SystemClipboard::copyTextToClipboard(chatHistory_.getPlainText());
     };
     addAndMakeVisible(copyButton_);
-
-    // Tab buttons (MAGDA flat tab style)
-    setupTabButtons();
-
-    // DSL output area
-    dslOutput_.setMultiLine(true);
-    dslOutput_.setReadOnly(true);
-    dslOutput_.setFont(FontManager::getInstance().getMonoFont(12.0f));
-    dslOutput_.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
-    dslOutput_.setColour(juce::TextEditor::textColourId,
-                         ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_PROMPT));
-    dslOutput_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
-    dslOutput_.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
-    dslOutput_.setColour(juce::TextEditor::highlightColourId,
-                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
-    dslOutput_.setColour(juce::TextEditor::highlightedTextColourId, ActiveTheme::getTextColour());
-    dslOutput_.setText("MAGDA DSL Console\nCtrl+Enter to execute.\n\n");
-
-    // DSL code editor. Surface and token colours both come from the theme's
-    // syntaxColours; the editor keeps the panel-tier background so it reads as
-    // part of the console rather than as a detached editor pane.
-    dslEditor_ = std::make_unique<juce::CodeEditorComponent>(dslDocument_, &dslTokeniser_);
-    dslEditor_->setFont(FontManager::getInstance().getMonoFont(13.0f));
-    applyCodeEditorTheme(*dslEditor_, dslTokeniser_, CodeEditorSurface::DslConsole);
-    dslEditor_->setColour(juce::CodeEditorComponent::backgroundColourId,
-                          ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
-    dslEditor_->setLineNumbersShown(true);
-    dslEditor_->setTabSize(2, true);
-    dslEditor_->setScrollbarThickness(8);
-    dslEditor_->addKeyListener(this);
-
-    // DSL status bar
-    dslStatusLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    dslStatusLabel_.setColour(
-        juce::Label::backgroundColourId,
-        ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_BACKGROUND));
-    dslStatusLabel_.setColour(juce::Label::textColourId,
-                              ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_TEXT));
-#if JUCE_MAC
-    dslStatusLabel_.setText("  MAGDA DSL  |  Cmd+Enter: Run  |  Cmd+L: Clear",
-                            juce::dontSendNotification);
-#else
-    dslStatusLabel_.setText("  MAGDA DSL  |  Ctrl+Enter: Run  |  Ctrl+L: Clear",
-                            juce::dontSendNotification);
-#endif
-
-    // DSL components start hidden
-    dslOutput_.setVisible(false);
-    dslEditor_->setVisible(false);
-    dslStatusLabel_.setVisible(false);
-    addChildComponent(dslOutput_);
-    addChildComponent(*dslEditor_);
-    addChildComponent(dslStatusLabel_);
 
     // Config status bar
     configStatusLabel_.setFont(FontManager::getInstance().getMonoFont(10.0f));
@@ -1237,9 +1155,6 @@ AIChatConsoleContent::AIChatConsoleContent() {
 AIChatConsoleContent::~AIChatConsoleContent() {
     magda::MixAnalysisService::getInstance().removeListener(this);
     magda::ViewModeController::getInstance().removeListener(this);
-    outputModeButton_.setLookAndFeel(nullptr);
-    if (dslEditor_)
-        dslEditor_->removeKeyListener(this);
     if (inputBox_) {
         inputDocument_.removeListener(this);
         inputBox_->removeKeyListener(this);
@@ -1333,30 +1248,7 @@ juce::String AIChatConsoleContent::rewriteSlashCommand(const juce::String& text)
 }
 
 void AIChatConsoleContent::sendMessage(const juce::String& text) {
-    // Direct DSL execution — bypass AI entirely. Kept outside the slash
-    // command registry because /dsl isn't a "command with --help" — the
-    // payload is arbitrary DSL code, not a fixed argument set.
-    if (text.trimStart().startsWith("/dsl ")) {
-        auto dslCode = text.trimStart().substring(5).trim();
-        appendToChat(juce::String::charToString(0x25CF) + " " + text);
-
-        magda::dsl::Interpreter interpreter(*magdaApi_);
-        bool success = interpreter.execute(dslCode.toRawUTF8());
-
-        if (success) {
-            auto results = interpreter.getResults();
-            if (results.isEmpty())
-                results = "OK";
-            appendToChat(juce::String::charToString(0x25C6) + " " + results);
-        } else {
-            appendToChat(juce::String::charToString(0x25C6) +
-                         " Error: " + juce::String(interpreter.getError()));
-        }
-        clearInput();
-        return;
-    }
-
-    // Other slash commands — dispatch through the central registry. Returns
+    // Slash commands dispatch through the central registry. Returns
     // true when the message was fully consumed (intercepting commands like
     // /controller, /theme, or any meta-flag like --help). Returns false
     // when the message should continue down the normal AI path (e.g.
@@ -1391,8 +1283,9 @@ void AIChatConsoleContent::sendMessage(const juce::String& text) {
 
     // Swap send button to stop icon
     setThemedButtonIcon(sendButton_, BinaryData::stop_svg, BinaryData::stop_svgSize);
-    sendButton_.setAlpha(0.6f);
+    updateSendState();
 
+    chatHistory_.noteNextUserTarget(contextEnabled_ ? contextText_ : juce::String());
     appendToChat(juce::String::charToString(0x25CF) + " " + text);
     appendToChat(juce::String::charToString(0x25C6) + " Thinking");
 
@@ -1453,7 +1346,13 @@ void AIChatConsoleContent::cancelRequest() {
 
 void AIChatConsoleContent::restoreSendIcon() {
     setThemedButtonIcon(sendButton_, BinaryData::enter_svg, BinaryData::enter_svgSize);
-    sendButton_.setAlpha(0.35f);
+    updateSendState();
+}
+
+void AIChatConsoleContent::updateSendState() {
+    sendReady_ = processing_ || inputDocument_.getAllContent().trim().isNotEmpty();
+    sendButton_.setAlpha(sendReady_ ? 1.0f : 0.45f);
+    repaint(sendButton_.getBounds());
 }
 
 void AIChatConsoleContent::setThemedButtonIcon(juce::DrawableButton& button, const void* svgData,
@@ -1477,13 +1376,6 @@ void AIChatConsoleContent::lookAndFeelChanged() {
     // juce::Colour at construction, so re-apply them here or they keep the old
     // palette after a live theme change. updateConfigStatus() re-applies
     // configStatusLabel_'s state colour.
-    chatHistory_.setColour(juce::TextEditor::textColourId, ActiveTheme::getSecondaryTextColour());
-    chatHistory_.setColour(juce::TextEditor::highlightColourId,
-                           ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
-    chatHistory_.setColour(juce::TextEditor::highlightedTextColourId, ActiveTheme::getTextColour());
-    dslOutput_.setColour(juce::TextEditor::highlightColourId,
-                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
-    dslOutput_.setColour(juce::TextEditor::highlightedTextColourId, ActiveTheme::getTextColour());
     if (inputBox_ != nullptr) {
         inputBox_->setColour(juce::CodeEditorComponent::backgroundColourId,
                              ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
@@ -1496,16 +1388,6 @@ void AIChatConsoleContent::lookAndFeelChanged() {
         // construction, so the @plugin / /command colours need re-installing.
         inputBox_->setColourScheme(inputTokeniser_.getDefaultColourScheme());
     }
-    if (dslEditor_ != nullptr) {
-        applyCodeEditorTheme(*dslEditor_, dslTokeniser_, CodeEditorSurface::DslConsole);
-        dslEditor_->setColour(juce::CodeEditorComponent::backgroundColourId,
-                              ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
-    }
-    dslStatusLabel_.setColour(
-        juce::Label::backgroundColourId,
-        ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_BACKGROUND));
-    dslStatusLabel_.setColour(juce::Label::textColourId,
-                              ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_STATUS_TEXT));
     contextLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     analysisChip_.setColour(juce::Label::textColourId,
                             ActiveTheme::getColour(ActiveTheme::ACCENT_INFO));
@@ -1535,309 +1417,211 @@ void AIChatConsoleContent::timerCallback() {
         chatHistory_.setText(currentText.substring(0, thinkingPos) +
                              juce::String::charToString(0x25C6) + " Thinking" + dots +
                              currentText.substring(lineEnd));
-        chatHistory_.moveCaretToEnd();
     }
 }
 
 void AIChatConsoleContent::appendToChat(const juce::String& text) {
-    chatHistory_.moveCaretToEnd();
-    chatHistory_.insertTextAtCaret(text + "\n");
+    chatHistory_.append(text + "\n");
 }
 
 void AIChatConsoleContent::paint(juce::Graphics& g) {
-    g.fillAll(ActiveTheme::getPanelBackgroundColour());
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
 
-    if (activeTab_ == ConsoleTab::AI) {
-        // Draw chat history + status footer as one rounded panel
-        auto chatBounds = chatHistory_.getBounds().toFloat();
-        auto statusBounds = configStatusLabel_.getBounds().toFloat();
-        auto chatPanel = chatBounds.getUnion(statusBounds);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
-        g.fillRoundedRectangle(chatPanel, 4.0f);
+    // Header: brand, model chip.
+    g.setColour(ActiveTheme::getPanelBackgroundColour());
+    g.fillRect(headerBounds_);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
+    g.drawHorizontalLine(headerBounds_.getBottom() - 1, 0.0f, static_cast<float>(getWidth()));
+
+    auto brand = headerBounds_.reduced(12, 0);
+    const auto mark = brand.removeFromLeft(10).toFloat().withSizeKeepingCentre(9.0f, 9.0f);
+    juce::Path diamond;
+    diamond.addQuadrilateral(mark.getCentreX(), mark.getY(), mark.getRight(), mark.getCentreY(),
+                             mark.getCentreX(), mark.getBottom(), mark.getX(), mark.getCentreY());
+    g.setColour(ActiveTheme::getAccentColour());
+    g.fillPath(diamond);
+    brand.removeFromLeft(8);
+    g.setColour(ActiveTheme::getTextColour());
+    g.setFont(
+        FontManager::getInstance().getMonoFont(12.0f).boldened().withExtraKerningFactor(0.1f));
+    g.drawText("MAGDA", brand, juce::Justification::centredLeft, false);
+
+    if (!modelChipBounds_.isEmpty()) {
+        const auto chip = modelChipBounds_.toFloat();
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
+        g.fillRoundedRectangle(chip, 5.0f);
         g.setColour(ActiveTheme::getBorderColour());
-        g.drawRoundedRectangle(chatPanel, 4.0f, 1.0f);
-
-        // Separator between chat and status footer
-        float sepY = chatBounds.getBottom();
-        g.drawHorizontalLine(static_cast<int>(sepY), chatPanel.getX() + 1.0f,
-                             chatPanel.getRight() - 1.0f);
-
-        // Draw input box + bottom bar as one unified rounded rectangle
-        auto inputBounds = inputBox_->getBounds();
-        auto barBounds = bottomBarBounds_;
-        auto combined = inputBounds.getUnion(barBounds).toFloat();
-
-        g.setColour(ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
-        g.fillRoundedRectangle(combined, 4.0f);
-        g.setColour(ActiveTheme::getBorderColour());
-        g.drawRoundedRectangle(combined, 4.0f, 1.0f);
-
-        // Thin horizontal border between input and bottom bar
-        auto separatorY = static_cast<float>(inputBounds.getBottom());
-        g.drawHorizontalLine(static_cast<int>(separatorY), combined.getX() + 1.0f,
-                             combined.getRight() - 1.0f);
-
-        // Draw context icon
-        {
-            // #1402: the context glyph reflects the active view, not selection.
-            juce::Drawable* icon = nullptr;
-            switch (currentViewMode_) {
-                case magda::ViewMode::Live:
-                    icon = sessionIconDrawable_.get();
-                    break;
-                case magda::ViewMode::Arrange:
-                    icon = arrangeIconDrawable_.get();
-                    break;
-                case magda::ViewMode::Mix:
-                case magda::ViewMode::Master:
-                    icon = mixIconDrawable_.get();
-                    break;
-            }
-
-            if (icon) {
-                auto iconBounds = contextIconBounds_.toFloat().reduced(6.0f);
-                auto colour = contextEnabled_
-                                  ? ActiveTheme::getAccentColour()
-                                  : ActiveTheme::getSecondaryTextColour().withAlpha(0.3f);
-                static const auto svgGrey = juce::Colour(0xFFB3B3B3);
-                static const auto svgWhite = juce::Colours::white;
-                auto iconCopy = icon->createCopy();
-                iconCopy->replaceColour(svgGrey, colour);
-                iconCopy->replaceColour(svgWhite, colour);
-                // The footer view glyphs use fill="currentColor", which JUCE
-                // resolves to black. Recolour that too (matches SvgButton) or
-                // the icon renders dark regardless of the grey/white swaps.
-                iconCopy->replaceColour(juce::Colours::black, colour);
-                iconCopy->replaceColour(juce::Colour(0xFF000000), colour);
-                iconCopy->drawWithin(g, iconBounds, juce::RectanglePlacement::centred, 1.0f);
-            }
-        }
-
-    } else {
-        // Draw DSL output area as rounded panel
-        auto outputBounds = dslOutput_.getBounds().toFloat();
-        g.setColour(ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
-        g.fillRoundedRectangle(outputBounds, 4.0f);
-        g.setColour(ActiveTheme::getBorderColour());
-        g.drawRoundedRectangle(outputBounds, 4.0f, 1.0f);
+        g.drawRoundedRectangle(chip.reduced(0.5f), 5.0f, 1.0f);
+        const bool live = !configStatusLabel_.getText().containsIgnoreCase("no model");
+        g.setColour(live ? ActiveTheme::getColour(ActiveTheme::STATUS_SUCCESS)
+                         : ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+        g.fillEllipse(chip.getX() + 9.0f, chip.getCentreY() - 3.0f, 6.0f, 6.0f);
+        const auto c = juce::Point<float>(chip.getRight() - 12.0f, chip.getCentreY());
+        juce::Path caret;
+        caret.addTriangle(c.x - 3.5f, c.y - 1.5f, c.x + 3.5f, c.y - 1.5f, c.x, c.y + 2.5f);
+        g.setColour(ActiveTheme::getSecondaryTextColour());
+        g.fillPath(caret);
     }
+
+    // Composer: one field holding the prompt with its controls underneath.
+    const auto composer = composerBounds_.toFloat();
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
+    g.fillRoundedRectangle(composer, 6.0f);
+    g.setColour(ActiveTheme::getBorderColour());
+    g.drawRoundedRectangle(composer.reduced(0.5f), 6.0f, 1.0f);
+
+    if (!contextChipBounds_.isEmpty()) {
+        const auto chip = contextChipBounds_.toFloat();
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
+        g.fillRoundedRectangle(chip, 5.0f);
+        g.setColour(ActiveTheme::getBorderColour());
+        g.drawRoundedRectangle(chip.reduced(0.5f), 5.0f, 1.0f);
+    }
+
+    // #1402: the context glyph reflects the active view, not selection.
+    juce::Drawable* icon = nullptr;
+    switch (currentViewMode_) {
+        case magda::ViewMode::Live:
+            icon = sessionIconDrawable_.get();
+            break;
+        case magda::ViewMode::Arrange:
+            icon = arrangeIconDrawable_.get();
+            break;
+        case magda::ViewMode::Mix:
+        case magda::ViewMode::Master:
+            icon = mixIconDrawable_.get();
+            break;
+    }
+    if (icon != nullptr) {
+        const auto colour = contextEnabled_ ? ActiveTheme::getAccentColour()
+                                            : ActiveTheme::getSecondaryTextColour().withAlpha(0.3f);
+        auto iconCopy = icon->createCopy();
+        iconCopy->replaceColour(juce::Colour(0xFFB3B3B3), colour);
+        iconCopy->replaceColour(juce::Colours::white, colour);
+        // The footer view glyphs use fill="currentColor", which JUCE resolves to black.
+        iconCopy->replaceColour(juce::Colours::black, colour);
+        iconCopy->drawWithin(g, contextIconBounds_.toFloat().reduced(5.0f),
+                             juce::RectanglePlacement::centred, 1.0f);
+    }
+
+    // Send: a filled accent square once there is something to send.
+    const auto send = sendButton_.getBounds().toFloat();
+    g.setColour(sendReady_ ? ActiveTheme::getAccentColour()
+                           : ActiveTheme::getColour(ActiveTheme::SURFACE));
+    g.fillRoundedRectangle(send, 5.0f);
+    if (!sendReady_) {
+        g.setColour(ActiveTheme::getBorderColour());
+        g.drawRoundedRectangle(send.reduced(0.5f), 5.0f, 1.0f);
+    }
+
+    paintKeyHints(g);
+}
+
+void AIChatConsoleContent::paintKeyHints(juce::Graphics& g) const {
+    if (hintsBounds_.isEmpty())
+        return;
+    const auto font = FontManager::getInstance().getMonoFont(10.5f);
+    g.setFont(font);
+    auto drawHints = [&](juce::Rectangle<int> area,
+                         const std::vector<std::pair<juce::String, juce::String>>& hints,
+                         bool fromRight) {
+        auto row = area;
+        for (size_t i = 0; i < hints.size(); ++i) {
+            const auto& [key, label] = hints[fromRight ? hints.size() - 1 - i : i];
+            const int keyW =
+                juce::roundToInt(juce::GlyphArrangement::getStringWidth(font, key)) + 8;
+            const int labelW =
+                juce::roundToInt(juce::GlyphArrangement::getStringWidth(font, label)) + 2;
+            auto slot = fromRight ? row.removeFromRight(keyW + 5 + labelW)
+                                  : row.removeFromLeft(keyW + 5 + labelW);
+            const auto keyBox = slot.removeFromLeft(keyW).withSizeKeepingCentre(keyW, 15).toFloat();
+            g.setColour(ActiveTheme::getBorderColour());
+            g.drawRoundedRectangle(keyBox.reduced(0.5f), 3.0f, 1.0f);
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+            g.drawText(key, keyBox, juce::Justification::centred, false);
+            slot.removeFromLeft(5);
+            g.drawText(label, slot, juce::Justification::centredLeft, false);
+            if (fromRight)
+                row.removeFromRight(12);
+            else
+                row.removeFromLeft(12);
+        }
+    };
+    const auto enter = juce::String::fromUTF8("\xe2\x86\xb5");
+    const auto shift = juce::String::fromUTF8("\xe2\x87\xa7");
+    auto area = hintsBounds_;
+    drawHints(area.removeFromLeft(area.getWidth() / 2),
+              {{enter, "send"}, {shift + enter, "newline"}}, false);
+    drawHints(area, {{"@", "plugin"}, {"/", "command"}}, true);
 }
 
 void AIChatConsoleContent::resized() {
-    auto bounds = getLocalBounds().reduced(10);
+    auto bounds = getLocalBounds();
 
-    // Tab buttons at bottom
-    auto tabBar = bounds.removeFromBottom(22);
-    aiTabButton_->setBounds(tabBar.removeFromLeft(28));
-    tabBar.removeFromLeft(2);
-    dslTabButton_->setBounds(tabBar.removeFromLeft(28));
-    bounds.removeFromBottom(4);  // Spacing above tabs
-
-    if (activeTab_ == ConsoleTab::AI) {
-        // Context bar above tabs
-        auto bottomBar = bounds.removeFromBottom(26);
-        bottomBarBounds_ = bottomBar;
-
-        // Footer right edge, from the right: send, mix-analysis status, then
-        // the MIDI result destination control in arrangement view.
-        sendButton_.setBounds(bottomBar.removeFromRight(22));
-        if (analysisChip_.isVisible()) {
-            bottomBar.removeFromRight(6);
-            analysisChip_.setBounds(bottomBar.removeFromRight(120));
-        }
-        if (outputModeButton_.isVisible()) {
-            bottomBar.removeFromRight(6);
-            // Keep the button clear of the unified panel's separator and
-            // rounded bottom border, which are painted behind child controls.
-            outputModeButton_.setBounds(bottomBar.removeFromRight(82).reduced(0, 3));
-        }
-        contextIconBounds_ = bottomBar.removeFromLeft(22);
-        contextLabel_.setBounds(bottomBar);
-
-        // Input box directly above context bar (no gap — unified shape)
-        auto inputArea = bounds.removeFromBottom(80);
-        inputBox_->setBounds(inputArea);
-
-        bounds.removeFromBottom(8);  // Spacing
-
-        // Config status footer inside chat panel (bottom strip)
-        int statusH = 26;
-
-        chatHistory_.setBounds(bounds.withTrimmedBottom(statusH));
-
-        // Clear + copy buttons inside chat panel, top-right corner
-        auto chatBounds = chatHistory_.getBounds();
-        int btnSize = 20;
-        int margin = 4;
-        copyButton_.setBounds(chatBounds.getRight() - btnSize - margin, chatBounds.getY() + margin,
-                              btnSize, btnSize);
-        clearButton_.setBounds(chatBounds.getRight() - 2 * btnSize - margin - 2,
-                               chatBounds.getY() + margin, btnSize, btnSize);
-        clearButton_.toFront(false);
-        copyButton_.toFront(false);
-
-        // Status bar sits below chat history, inside the same visual panel
-        auto statusBar = juce::Rectangle<int>(bounds.getX(), bounds.getBottom() - statusH,
-                                              bounds.getWidth(), statusH);
-        statusBar.reduce(6, 2);  // Padding
-        if (serverToggleButton_ && serverToggleButton_->isVisible()) {
-            statusBar.removeFromRight(2);
-            serverToggleButton_->setBounds(statusBar.removeFromRight(20).reduced(1));
-            serverToggleButton_->toFront(false);
-        }
-        configStatusLabel_.setBounds(statusBar);
-        configStatusLabel_.toFront(false);
-    } else {
-        // DSL tab layout
-        bounds.removeFromBottom(4);  // Spacing above status bar
-        dslStatusLabel_.setBounds(bounds.removeFromBottom(20));
-        bounds.removeFromBottom(2);  // Spacing above editor
-        auto editorHeight = juce::jmax(60, bounds.getHeight() / 3);
-        dslEditor_->setBounds(bounds.removeFromBottom(editorHeight));
-        bounds.removeFromBottom(1);  // Separator
-        dslOutput_.setBounds(bounds);
+    // Header: MAGDA, the model chip (opens AI settings), copy and clear.
+    headerBounds_ = bounds.removeFromTop(40);
+    auto header = headerBounds_.reduced(12, 8);
+    copyButton_.setBounds(header.removeFromRight(24));
+    header.removeFromRight(4);
+    clearButton_.setBounds(header.removeFromRight(24));
+    header.removeFromLeft(78);  // diamond + MAGDA
+    const int labelWidth = juce::jmin(
+        header.getWidth() - 60, juce::roundToInt(juce::GlyphArrangement::getStringWidth(
+                                    configStatusLabel_.getFont(), configStatusLabel_.getText())) +
+                                    8);
+    modelChipBounds_ = header.removeFromLeft(juce::jmax(0, labelWidth) + 44);
+    configStatusLabel_.setBounds(modelChipBounds_.withTrimmedLeft(20).withTrimmedRight(22));
+    if (serverToggleButton_ && serverToggleButton_->isVisible()) {
+        header.removeFromLeft(6);
+        serverToggleButton_->setBounds(header.removeFromLeft(24).reduced(2));
     }
+
+    // Key hints along the bottom edge, the composer above them.
+    auto footer = bounds.removeFromBottom(26).reduced(12, 0);
+    hintsBounds_ = footer.withTrimmedBottom(6);
+    composerBounds_ = bounds.removeFromBottom(112).reduced(10, 0);
+
+    auto composer = composerBounds_.reduced(8, 8);
+    auto controls = composer.removeFromBottom(28);
+    bottomBarBounds_ = controls;
+    composer.removeFromBottom(6);
+    inputBox_->setBounds(composer.withTrimmedLeft(4));
+
+    sendButton_.setBounds(controls.removeFromRight(28));
+    controls.removeFromRight(8);
+    if (analysisChip_.isVisible()) {
+        analysisChip_.setBounds(controls.removeFromRight(120));
+        controls.removeFromRight(8);
+    }
+
+    const auto contextFont = contextLabel_.getFont();
+    const int contextWidth = juce::jlimit(60, juce::jmax(60, controls.getWidth() / 2),
+                                          juce::roundToInt(juce::GlyphArrangement::getStringWidth(
+                                              contextFont, contextLabel_.getText())) +
+                                              34);
+    contextChipBounds_ = controls.removeFromLeft(contextWidth);
+    auto chip = contextChipBounds_;
+    contextIconBounds_ = chip.removeFromLeft(24);
+    contextLabel_.setBounds(chip.withTrimmedRight(4));
+    controls.removeFromLeft(8);
+    if (outputMode_.isVisible())
+        outputMode_.setBounds(
+            controls.removeFromLeft(juce::jmin(controls.getWidth(), outputMode_.getIdealWidth())));
+
+    bounds.removeFromBottom(10);
+    chatHistory_.setBounds(bounds);
 }
 
 void AIChatConsoleContent::onActivated() {
     buildAliasList();
     updateConfigStatus();
     updateAnalysisChip();
-    if (isShowing()) {
-        if (activeTab_ == ConsoleTab::AI)
-            inputBox_->grabKeyboardFocus();
-        else if (dslEditor_)
-            dslEditor_->grabKeyboardFocus();
-    }
+    if (isShowing())
+        inputBox_->grabKeyboardFocus();
 }
 
 void AIChatConsoleContent::onDeactivated() {
     // Could save chat history here
-}
-
-// ============================================================================
-// Tab Switching
-// ============================================================================
-
-void AIChatConsoleContent::setupTabButtons() {
-    aiTabButton_ =
-        std::make_unique<magda::SvgButton>("AITab", BinaryData::ai_svg, BinaryData::ai_svgSize);
-    aiTabButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    // ICON_ON_ACCENT keeps the active glyph legible on the accent chip in
-    // every theme; a literal white got funnelled to TEXT_BRIGHT and vanished
-    // on themes whose bright text sits near the accent.
-    aiTabButton_->setActiveColor(ActiveTheme::ICON_ON_ACCENT);
-    aiTabButton_->setNormalBackgroundColor(ActiveTheme::SURFACE);
-    aiTabButton_->setActiveBackgroundColor(ActiveTheme::ACCENT_PRIMARY);
-    aiTabButton_->setClickingTogglesState(true);
-    aiTabButton_->setRadioGroupId(9001);
-    aiTabButton_->setToggleState(true, juce::dontSendNotification);
-    aiTabButton_->setTooltip("AI Chat");
-    aiTabButton_->onClick = [this]() { switchTab(ConsoleTab::AI); };
-    addAndMakeVisible(aiTabButton_.get());
-
-    dslTabButton_ = std::make_unique<magda::SvgButton>("DSLTab", BinaryData::script_svg,
-                                                       BinaryData::script_svgSize);
-    dslTabButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    dslTabButton_->setActiveColor(ActiveTheme::ICON_ON_ACCENT);
-    dslTabButton_->setNormalBackgroundColor(ActiveTheme::SURFACE);
-    dslTabButton_->setActiveBackgroundColor(ActiveTheme::ACCENT_PRIMARY);
-    dslTabButton_->setClickingTogglesState(true);
-    dslTabButton_->setRadioGroupId(9001);
-    dslTabButton_->setTooltip("DSL Console");
-    dslTabButton_->onClick = [this]() { switchTab(ConsoleTab::DSL); };
-    addAndMakeVisible(dslTabButton_.get());
-}
-
-void AIChatConsoleContent::switchTab(ConsoleTab tab) {
-    if (activeTab_ == tab)
-        return;
-    activeTab_ = tab;
-
-    bool isAI = (tab == ConsoleTab::AI);
-
-    // AI components
-    chatHistory_.setVisible(isAI);
-    inputBox_->setVisible(isAI);
-    sendButton_.setVisible(isAI);
-    contextLabel_.setVisible(isAI);
-    clearButton_.setVisible(isAI);
-    copyButton_.setVisible(isAI);
-    configStatusLabel_.setVisible(isAI);
-    updateOutputModeButton();
-
-    // DSL components
-    dslOutput_.setVisible(!isAI);
-    dslEditor_->setVisible(!isAI);
-    dslStatusLabel_.setVisible(!isAI);
-
-    resized();
-    repaint();
-
-    if (isAI)
-        inputBox_->grabKeyboardFocus();
-    else
-        dslEditor_->grabKeyboardFocus();
-}
-
-void AIChatConsoleContent::executeDSL() {
-    auto code = dslDocument_.getAllContent().trim();
-    if (code.isEmpty())
-        return;
-
-    // History
-    if (dslHistory_.isEmpty() || dslHistory_.strings.getLast() != code)
-        dslHistory_.add(code);
-    dslHistoryIndex_ = -1;
-
-    // Echo
-    appendDSLOutput("> " + code + "\n",
-                    ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_PROMPT));
-
-    // Built-in commands
-    if (code == "help") {
-        appendDSLOutput("MAGDA DSL Commands:\n"
-                        "  track(name=\"X\")              - Reference/create track\n"
-                        "  track(id=1)                  - Reference track by index\n"
-                        "  .clip.new(bar=1, length_bars=4) - Create MIDI clip\n"
-                        "  .fx.add(name=\"reverb\")       - Add effect\n"
-                        "  .notes.add(pitch=C4, beat=0) - Add note\n"
-                        "  .notes.add_chord(root=C4, quality=major)\n"
-                        "  filter(tracks, ...).delete()  - Bulk operations\n\n",
-                        ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_INFO));
-        dslDocument_.replaceAllContent({});
-        return;
-    }
-    if (code == "clear") {
-        dslOutput_.clear();
-        dslOutput_.setText("Output cleared.\n\n");
-        dslDocument_.replaceAllContent({});
-        return;
-    }
-
-    // Execute
-    magda::dsl::Interpreter interpreter(*magdaApi_);
-    bool success = interpreter.execute(code.toRawUTF8());
-
-    if (success) {
-        auto results = interpreter.getResults();
-        if (results.isEmpty())
-            results = "OK";
-        appendDSLOutput(results + "\n\n",
-                        ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_TEXT));
-    } else {
-        appendDSLOutput("Error: " + juce::String(interpreter.getError()) + "\n\n",
-                        ActiveTheme::getSyntaxColour(SyntaxColourRole::DSL_OUTPUT_ERROR));
-    }
-
-    dslDocument_.replaceAllContent({});
-}
-
-void AIChatConsoleContent::appendDSLOutput(const juce::String& text, juce::Colour colour) {
-    dslOutput_.setColour(juce::TextEditor::textColourId, colour);
-    dslOutput_.moveCaretToEnd();
-    dslOutput_.insertTextAtCaret(text);
-    dslOutput_.moveCaretToEnd();
 }
 
 // ============================================================================
@@ -2337,19 +2121,15 @@ void AIChatConsoleContent::updateOutputModeButton() {
     if (!haveLastResult)
         midiOutputMode_ = MidiOutputMode::NewClip;
 
-    const bool revising = midiOutputMode_ == MidiOutputMode::ReviseLast;
-    outputModeButton_.setButtonText(revising ? "Revise last" : "New clip");
-    outputModeButton_.setToggleState(revising, juce::dontSendNotification);
-    outputModeButton_.setEnabled(haveLastResult);
-    outputModeButton_.setTooltip(
-        haveLastResult ? (revising ? "Replace the most recent AI-created MIDI clip"
-                                   : "Create a new MIDI clip; click to revise the last AI result")
-                       : "Generate a MIDI clip before using Revise last");
+    outputMode_.setSelectedIndex(midiOutputMode_ == MidiOutputMode::ReviseLast ? 1 : 0);
+    outputMode_.setSegmentEnabled(1, haveLastResult);
+    outputMode_.setTooltip(haveLastResult
+                               ? "New clip, or replace the most recent AI-created MIDI clip"
+                               : "Generate a MIDI clip before using Revise last");
 
-    const bool shouldShow =
-        activeTab_ == ConsoleTab::AI && currentViewMode_ == magda::ViewMode::Arrange;
-    if (outputModeButton_.isVisible() != shouldShow) {
-        outputModeButton_.setVisible(shouldShow);
+    const bool shouldShow = currentViewMode_ == magda::ViewMode::Arrange;
+    if (outputMode_.isVisible() != shouldShow) {
+        outputMode_.setVisible(shouldShow);
         resized();
     }
 }
@@ -2391,12 +2171,12 @@ void AIChatConsoleContent::updateConfigStatus() {
         status += juce::String::fromUTF8(" \xc2\xb7 per-agent");
     } else if (preset == magda::preset::LOCAL_SERVER) {
         auto serverModel = config.getLocalServerModel();
-        status +=
-            " | " + (serverModel.empty() ? juce::String("No model") : juce::String(serverModel));
+        status += juce::String::fromUTF8(" \xc2\xb7 ") +
+                  (serverModel.empty() ? juce::String("No model") : juce::String(serverModel));
     } else if (musicCfg.model.empty()) {
-        status += " | Embedded";
+        status += juce::String::fromUTF8(" \xc2\xb7 Embedded");
     } else {
-        status += " | " + juce::String(musicCfg.model);
+        status += juce::String::fromUTF8(" \xc2\xb7 ") + juce::String(musicCfg.model);
     }
 
     // If embedded local provider, show model status + toggle button
@@ -2404,7 +2184,7 @@ void AIChatConsoleContent::updateConfigStatus() {
         auto& mgr = magda::LlamaModelManager::getInstance();
         if (mgr.isLoaded()) {
             auto modelName = juce::File(mgr.getLoadedModelPath()).getFileName();
-            status += " | " + modelName;
+            status += juce::String::fromUTF8(" \xc2\xb7 ") + modelName;
             serverToggleButton_->updateSvgData(BinaryData::server_stop_svg,
                                                BinaryData::server_stop_svgSize);
             serverToggleButton_->setNormalColor(juce::Colours::limegreen);
@@ -2412,7 +2192,7 @@ void AIChatConsoleContent::updateConfigStatus() {
             serverToggleButton_->setVisible(true);
             configStatusLabel_.setColour(juce::Label::textColourId, juce::Colours::limegreen);
         } else {
-            status += " | No model loaded";
+            status += juce::String::fromUTF8(" \xc2\xb7 No model loaded");
             serverToggleButton_->updateSvgData(BinaryData::server_play_svg,
                                                BinaryData::server_play_svgSize);
             serverToggleButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
@@ -2658,23 +2438,7 @@ void AIChatConsoleContent::insertAlias(const juce::String& alias) {
 }
 
 bool AIChatConsoleContent::keyPressed(const juce::KeyPress& key, juce::Component*) {
-    // DSL tab key handling
-    if (activeTab_ == ConsoleTab::DSL) {
-        // Ctrl+Enter — execute DSL
-        if (key.getModifiers().isCommandDown() && key.getKeyCode() == juce::KeyPress::returnKey) {
-            executeDSL();
-            return true;
-        }
-        // Ctrl+L — clear DSL output
-        if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'L') {
-            dslOutput_.clear();
-            dslOutput_.setText("Output cleared.\n\n");
-            return true;
-        }
-        return false;
-    }
-
-    // AI tab — autocomplete navigation, plus the Enter/Esc handling that
+    // Autocomplete navigation, plus the Enter/Esc handling that
     // used to live on TextEditor's onReturnKey/onEscapeKey callbacks before
     // we swapped the input box for a CodeEditorComponent.
     const bool popupVisible = autocompletePopup_ && autocompletePopup_->isVisible();
@@ -2779,6 +2543,7 @@ void AIChatConsoleContent::codeDocumentTextDeleted(int /*startIndex*/, int /*end
 void AIChatConsoleContent::onInputChanged() {
     if (!inputBox_)
         return;
+    updateSendState();
     auto text = inputDocument_.getAllContent();
 
     // Suppress by CONTENT, not by a one-shot flag. replaceAllContent() fires
@@ -2855,6 +2620,45 @@ void AIChatConsoleContent::buildSlashCommands() {
     agent.handler = [](const juce::String&, const std::map<juce::String, juce::String>&,
                        const juce::String&) { return false; };
     slashRegistry_->add(std::move(agent));
+
+    // /dsl — run MAGDA DSL directly, no model involved. The handler reads the raw text
+    // rather than the parsed positional, so code keeps its whitespace and newlines.
+    SlashCommand dsl;
+    dsl.name = "dsl";
+    dsl.description = "Run MAGDA DSL code directly";
+    dsl.usage = "/dsl <code>";
+    dsl.details = "Runs the code against the project without the AI. Shift+Enter adds a line.\n"
+                  "  track(name=\"X\")                  reference or create a track\n"
+                  "  track(id=1)                        reference a track by index\n"
+                  "  .clip.new(bar=1, length_bars=4)    create a MIDI clip\n"
+                  "  .fx.add(name=\"reverb\")           add an effect\n"
+                  "  .notes.add(pitch=C4, beat=0)       add a note\n"
+                  "  .notes.add_chord(root=C4, quality=major)\n"
+                  "  filter(tracks, ...).delete()       bulk operations";
+    dsl.examples = {
+        {"Tracks", {"track(name=\"Bass\")", "track(id=1).fx.add(name=\"reverb\")"}},
+        {"Clips",
+         {"track(id=1).clip.new(bar=1, length_bars=4)",
+          "track(id=1).clip.new(bar=1, length_bars=1).notes.add_chord(root=C4, quality=major)"}},
+    };
+    dsl.handler = [this](const juce::String& originalText,
+                         const std::map<juce::String, juce::String>& /*flags*/,
+                         const juce::String& /*positional*/) {
+        appendToChat(juce::String::charToString(0x25CF) + " " + originalText);
+        const auto code =
+            originalText.trimStart().fromFirstOccurrenceOf("/dsl", false, false).trim();
+        magda::dsl::Interpreter interpreter(*magdaApi_);
+        if (interpreter.execute(code.toRawUTF8())) {
+            auto results = interpreter.getResults();
+            appendToChat(juce::String::charToString(0x25C6) + " " +
+                         (results.isEmpty() ? juce::String("OK") : results));
+        } else {
+            appendToChat(juce::String::charToString(0x25C6) +
+                         " Error: " + juce::String(interpreter.getError()));
+        }
+        return true;
+    };
+    slashRegistry_->add(std::move(dsl));
 
     // /theme - generate a UI colour theme. The handler kicks the agent
     // thread; on success the theme is written to the Themes folder, selected,
@@ -3303,7 +3107,6 @@ void AIChatConsoleContent::ThemeRequestThread::run() {
                 anchor->store(text.length());
             }
             safeThis->chatHistory_.setText(text + chunk);
-            safeThis->chatHistory_.moveCaretToEnd();
         });
         return true;
     };
