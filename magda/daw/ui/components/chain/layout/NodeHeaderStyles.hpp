@@ -95,6 +95,13 @@ class GainSliderWithMeterTooltip : public juce::Slider {
         juce::Slider::mouseDown(event);
     }
 
+    void resized() override {
+        juce::Slider::resized();
+        // Without snapping, JUCE maps a fixed 250px of drag to the whole range; on a shorter
+        // fader the thumb lags the cursor and runs out of room. One pixel per pixel instead.
+        setMouseDragSensitivity(juce::jmax(1, isVertical() ? getHeight() : getWidth()));
+    }
+
     void mouseExit(const juce::MouseEvent& event) override {
         setScrollWheelEnabled(false);
         juce::Slider::mouseExit(event);

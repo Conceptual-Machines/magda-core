@@ -98,7 +98,8 @@ class CompiledEqCurveView final : public juce::Component,
     void paintNoteTile(juce::Graphics& g, float freqHz);
     int chipAt(juce::Point<float> p) const;
     juce::Rectangle<float> chipBounds(int band) const;
-    juce::Rectangle<float> enableSwitchBounds() const;
+    /// The band's on/off dot inside its chip.
+    juce::Rectangle<float> chipDotBounds(int band) const;
 
     // Cached per-band state used by paint(). Updated on the message thread
     // by the poll timer / device-snapshot path.

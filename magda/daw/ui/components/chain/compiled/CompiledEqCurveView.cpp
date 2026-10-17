@@ -368,8 +368,9 @@ int CompiledEqCurveView::chipAt(juce::Point<float> p) const {
     return -1;
 }
 
-juce::Rectangle<float> CompiledEqCurveView::enableSwitchBounds() const {
-    return geometry_.enableSwitch.toFloat();
+juce::Rectangle<float> CompiledEqCurveView::chipDotBounds(int band) const {
+    const auto inner = chipBounds(band).reduced(12.0f, 0.0f);
+    return juce::Rectangle<float>(8.0f, 8.0f).withCentre({inner.getX() + 4.0f, inner.getCentreY()});
 }
 
 void CompiledEqCurveView::paint(juce::Graphics& g) {
@@ -416,8 +417,14 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
                 totalDb += stagesDb(designs[b], freq);
         const float ownDb = stagesDb(designs[static_cast<size_t>(selectedBand_)], freq);
         const float x = plotArea_.getX() + u * plotArea_.getWidth();
-        const float y = dbToY(totalDb, plotArea_);
-        const float ownY = dbToY(ownDb, plotArea_);
+        // Unclamped and clipped below, so a cut leaves the plot instead of riding its floor.
+        const auto belowFloor = [this](float db) {
+            const float u =
+                0.5f - juce::jlimit(-4.0f * kGainAxisDb, kGainAxisDb, db) / (2.0f * kGainAxisDb);
+            return plotArea_.getY() + u * plotArea_.getHeight();
+        };
+        const float y = belowFloor(totalDb);
+        const float ownY = belowFloor(ownDb);
         if (i == 0) {
             curve.startNewSubPath(x, y);
             selectedShare.startNewSubPath(x, zeroY);
@@ -429,13 +436,17 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
     selectedShare.lineTo(plotArea_.getRight(), zeroY);
     selectedShare.closeSubPath();
     const auto bandColour = [](int band) { return device_shell::chainColour(band); };
-    if (selected.enabled) {
-        g.setColour(bandColour(selectedBand_).withAlpha(0.18f));
-        g.fillPath(selectedShare);
+    {
+        juce::Graphics::ScopedSaveState clip(g);
+        g.reduceClipRegion(plotArea_.toNearestInt());
+        if (selected.enabled) {
+            g.setColour(bandColour(selectedBand_).withAlpha(0.18f));
+            g.fillPath(selectedShare);
+        }
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT).withAlpha(0.9f));
+        g.strokePath(curve, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved,
+                                                 juce::PathStrokeType::rounded));
     }
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT).withAlpha(0.9f));
-    g.strokePath(curve, juce::PathStrokeType(1.6f, juce::PathStrokeType::curved,
-                                             juce::PathStrokeType::rounded));
 
     // Nodes: numbered, in their band's colour; a band that is off is a grey ring.
     g.setFont(fonts.getMonoFont(10.0f).boldened());
@@ -479,8 +490,7 @@ void CompiledEqCurveView::paintChips(juce::Graphics& g) {
             g.drawRoundedRectangle(chip.reduced(0.75f), 4.0f, 1.5f);
         }
         auto inner = chip.reduced(12.0f, 0.0f).withTrimmedRight(4.0f);
-        const auto dot = juce::Rectangle<float>(8.0f, 8.0f)
-                             .withCentre({inner.getX() + 4.0f, inner.getCentreY()});
+        const auto dot = chipDotBounds(b);
         if (band.enabled) {
             g.setColour(colour);
             g.fillEllipse(dot);
@@ -503,24 +513,10 @@ void CompiledEqCurveView::paintEditor(juce::Graphics& g) {
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_WELL));
     g.fillRoundedRectangle(editor, 4.0f);
 
-    // The band's switch, then its name.
-    const auto& band = bands_[static_cast<size_t>(selectedBand_)];
-    const auto colour = device_shell::chainColour(selectedBand_);
-    const auto track = enableSwitchBounds();
-    g.setColour(band.enabled ? colour : ActiveTheme::getColour(ActiveTheme::DEVICE_SWITCH_OFF));
-    g.fillRoundedRectangle(track, track.getHeight() / 2.0f);
-    const float knobX = band.enabled ? track.getRight() - track.getHeight() : track.getX();
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_BG));
-    g.fillEllipse(juce::Rectangle<float>(knobX, track.getY(), track.getHeight(), track.getHeight())
-                      .reduced(3.0f));
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
-    g.setFont(FontManager::getInstance().getHeadingFont(15.0f));
-    g.drawText("Band " + juce::String(selectedBand_ + 1), geometry_.name,
-               juce::Justification::centredLeft, false);
-
-    paintNoteTile(g, band.freq);
+    paintNoteTile(g, bands_[static_cast<size_t>(selectedBand_)].freq);
 
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
+    g.fillRect(geometry_.controlsDivider);
     g.fillRect(geometry_.divider);
 }
 
@@ -637,11 +633,11 @@ void CompiledEqCurveView::mouseExit(const juce::MouseEvent&) {
 void CompiledEqCurveView::mouseDown(const juce::MouseEvent& e) {
     if (const int chip = chipAt(e.position); chip >= 0) {
         selectBand(chip);
-        return;
-    }
-    if (enableSwitchBounds().contains(e.position)) {
-        setBandEnabled(selectedBand_, !bands_[static_cast<size_t>(selectedBand_)].enabled);
-        repaint();
+        // The chip's dot is the band's on/off switch.
+        if (chipDotBounds(chip).expanded(6.0f).contains(e.position)) {
+            setBandEnabled(chip, !bands_[static_cast<size_t>(chip)].enabled);
+            repaint();
+        }
         return;
     }
 
@@ -788,7 +784,7 @@ const CompiledPresentationSpec& getMagdaEqPresentation() {
             return std::make_unique<CompiledEqCurveView>(pluginId);
         },
         // The curve, a chip per band, and one band's controls at a time.
-        .preferredSlotWidth = 900,
+        .preferredSlotWidth = 724,
         .columnMajorGrid = true,
         .createLayout = []() -> std::unique_ptr<DeviceParamLayout> {
             return std::make_unique<CompiledEqBandLayout>();
