@@ -533,6 +533,23 @@ class AudioEngine : public AudioEngineListener {
         return {.request = nullptr, .refusal = "this engine does not plan freezes"};
     }
 
+    /**
+     * @brief Play @p file into the master chain in place of every track (#3081). Message thread.
+     *
+     * The file is the mix taken before the master chain; the master chain, fader and meter run on
+     * it live. Nothing is saved with the project. False when the engine cannot, or the file does
+     * not resolve.
+     */
+    virtual bool setMasterInputSource(const juce::File& /*file*/) {
+        return false;
+    }
+
+    /** @brief Back to the tracks, at the current position. */
+    virtual void clearMasterInputSource() {}
+    virtual bool hasMasterInputSource() const {
+        return false;
+    }
+
     /** @brief Take a finished freeze render as what @p trackId plays, and mark it frozen. */
     virtual void adoptTrackFreeze(TrackId /*trackId*/, const OfflineRenderRequest& /*request*/) {}
 

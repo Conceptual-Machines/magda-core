@@ -139,6 +139,18 @@ class EngineHost {
     /// playing clip keeps the one it was compiled with until this asks again.
     void refreshGrooves();
 
+    /**
+     * @brief Play @p file into the master chain in place of every track (#3081). Message thread.
+     *
+     * The file is the mix up to the master's input; beat zero of it is beat zero of the song.
+     * False, and nothing changes, when the file does not resolve.
+     */
+    bool setMasterInput(const juce::File& file);
+
+    /** @brief Back to the tracks, at the current position. Message thread. */
+    void clearMasterInput();
+    bool hasMasterInput() const;
+
     /// Supply the wave-device names behind persisted output routes.
     void setHardwareOutputProvider(HardwareChannelProvider provider);
 

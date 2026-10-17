@@ -56,6 +56,7 @@
 #include "LiveMidiQueue.hpp"
 #include "LiveMidiRouting.hpp"
 #include "LiveMidiSources.hpp"
+#include "MasterInputSource.hpp"
 #include "SessionArrangementCapture.hpp"
 #include "SlotLauncher.hpp"
 #include "TrackFreeze.hpp"
@@ -715,7 +716,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // What modulation makes live is a question about the parameter table, which is
         // resolved against a plan; this one is thrown away once it has answered (#1898).
         engine::PlanValues values;
-        resolveValues(plan, TrackManager::getInstance().getTracks(), master, values);
+        resolveValues(plan, valueModel(), master, values);
         if (values.params != nullptr)
             engine::promoteModulatedLiveness(plan, *values.params);
         return std::make_shared<const engine::RenderPlan>(engine::insertHandoffs(plan));
@@ -725,6 +726,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// anything renders ahead.
     std::set<TrackId> sessionTracks() const {
         std::set<TrackId> tracks;
+        if (masterInput_)
+            return tracks;
         const auto& clips = ClipManager::getInstance();
         for (const auto& track : TrackManager::getInstance().getTracks())
             if (!clips.getClipsOnTrack(track.id, ClipView::Session).empty())
@@ -772,10 +775,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         // Values and ids off the model rather than what plays: a frozen chain's
         // lanes stay addressed and its devices keep their state.
+        const auto valueTracks = valueModel();
         engine::PlanValues values;
-        report("values", resolveValues(*plan, model, *master, values));
+        report("values", resolveValues(*plan, valueTracks, *master, values));
 
-        const auto ids = engine::collectRuntimeStateIds(model, *master);
+        const auto ids = engine::collectRuntimeStateIds(valueTracks, *master);
         const auto result = session_->publish(plan, context_, ids, std::move(values));
         report("publish", result.messages);
 
@@ -846,8 +850,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // Monitor In it changes no topology, but the epoch still needs the
         // new TakeKey set before the next block. This follows the topology
         // check above so Monitor Auto can first add its input op.
-        const auto ids =
-            engine::collectRuntimeStateIds(TrackManager::getInstance().getTracks(), *master);
+        const auto ids = engine::collectRuntimeStateIds(valueModel(), *master);
         if (ids.takes != publishedTakeKeys_) {
             publishPlan(livePlan_);
             return;
@@ -856,8 +859,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         reconcileRecording();
 
         engine::PlanValues values;
-        report("values",
-               resolveValues(*livePlan_, TrackManager::getInstance().getTracks(), *master, values));
+        report("values", resolveValues(*livePlan_, valueModel(), *master, values));
 
         // A link edit is a values publish until it reaches something live: then it moves the
         // boundary, which only a plan can carry (#1898).
@@ -2358,7 +2360,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // the resulting Arrangement clip in the same live model transition.
         for (auto pass = 0; pass < 2; ++pass) {
             const auto& tracks = TrackManager::getInstance().getTracks();
-            auto lanes = lanesAsPlayed(clipLanesFor(tracks), tracks, frozen_, tempoMap());
+            auto lanes =
+                masterInput_
+                    ? std::vector<engine::ClipLane>{masterInputLane(*masterInput_, tempoMap())}
+                    : lanesAsPlayed(clipLanesFor(tracks), tracks, frozen_, tempoMap());
             for (auto& lane : lanes) {
                 // Live handles own sample-exact section boundaries; model mode only reports
                 // them (#2725).
@@ -2432,9 +2437,21 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         unfreezeTracksWithoutFiles();
     }
 
-    /// What live playback compiles: the model, with each frozen track playing its file.
+    /// What live playback compiles: the model, with each frozen track playing its file, or only
+    /// the master input while one is set (#3081).
     std::vector<TrackInfo> playedTracks() const {
+        if (masterInput_)
+            return {masterInputTrack()};
         return tracksAsPlayed(TrackManager::getInstance().getTracks(), frozen_);
+    }
+
+    /// What values and runtime ids resolve against: the model, plus the master input's track,
+    /// which the model does not hold.
+    std::vector<TrackInfo> valueModel() const {
+        auto tracks = TrackManager::getInstance().getTracks();
+        if (masterInput_)
+            tracks.push_back(masterInputTrack());
+        return tracks;
     }
 
     /// Whether a track froze, thawed or lost its file since the last reading.
@@ -2685,6 +2702,26 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     void wantClips() {
         clips_.store(true, std::memory_order_relaxed);
         triggerAsyncUpdate();
+    }
+
+    bool setMasterInput(const juce::File& file) {
+        auto input = pooledMasterInput(file);
+        if (!input)
+            return false;
+        if (input != masterInput_) {
+            masterInput_ = std::move(input);
+            wantPlan();
+            wantClips();
+        }
+        return true;
+    }
+
+    void clearMasterInput() {
+        if (!masterInput_)
+            return;
+        masterInput_.reset();
+        wantPlan();
+        wantClips();
     }
 
     /// Everything the model has asked for since the last one. A plan publish
@@ -4004,6 +4041,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     /// The frozen tracks the plan and the lanes were last published with.
     std::vector<FrozenTrack> frozen_;
+    std::optional<MasterInput> masterInput_;
 
     double bpm_ = 120.0;
     int numerator_ = 4;
@@ -4144,6 +4182,18 @@ void EngineHost::setRenderAhead(int milliseconds) {
         impl_->renderAheadMoved_.store(true, std::memory_order_relaxed);
         impl_->wantRebuild();
     }
+}
+
+bool EngineHost::setMasterInput(const juce::File& file) {
+    return impl_->setMasterInput(file);
+}
+
+void EngineHost::clearMasterInput() {
+    impl_->clearMasterInput();
+}
+
+bool EngineHost::hasMasterInput() const {
+    return impl_->masterInput_.has_value();
 }
 
 void EngineHost::refreshGrooves() {
