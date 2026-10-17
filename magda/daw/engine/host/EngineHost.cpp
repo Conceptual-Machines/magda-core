@@ -65,6 +65,7 @@
 #include "exec/ModulationLiveness.hpp"
 #include "exec/PlanValues.hpp"
 #include "exec/RenderThreadPool.hpp"
+#include "io/CaptureHistory.hpp"
 #include "io/LiveInput.hpp"
 #include "io/MidiTakeRecorder.hpp"
 #include "io/PrefetchThread.hpp"
@@ -451,6 +452,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         engine::setPlaybackTraceSink(nullptr, nullptr);
         stopTimer();
         detach();
+        dropCaptureHistory();
     }
 
     /// Audio thread: a slot's pass wrap or a voice's read window, into the
@@ -1245,12 +1247,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         int velocity = 0;
     };
     std::vector<HeardNote> heardNotes(KeepRange range) const {
-        if (captureRing_ == nullptr)
+        if (captureHistory_ == nullptr)
             return {};
         const auto devices = sources_.deviceSources();
         std::map<std::tuple<int, int, int>, HeardNote> held;
         std::vector<HeardNote> notes;
-        for (const auto& event : captureRing_->midiFrom(range.first)) {
+        for (const auto& event : captureHistory_->midiFrom(range.first)) {
             if (event.frame >= range.end || event.size < 3 ||
                 std::ranges::find(devices, event.source) == devices.end())
                 continue;
@@ -1277,9 +1279,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// @p range of the ring onto the timeline as one undo step (#3053): its audio on a new
     /// Capture track, its notes on a new track for each input that played them.
     RecentCaptureResult importRecent(std::int64_t first, std::int64_t end, bool audio, bool midi) {
-        if (captureRing_ == nullptr)
+        if (captureHistory_ == nullptr)
             return RecentCaptureResult::failed("The capture buffer is off");
-        const auto ring = captureRing_->meter(1);
+        const auto ring = captureHistory_->meter(1);
         const KeepRange range{std::max(first, ring.oldestReadable),
                               std::min(end, ring.writtenFrames)};
         if (range.end <= range.first)
@@ -1298,7 +1300,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         if (audio) {
             juce::AudioBuffer<float> buffer;
-            if (!captureRing_->read(range.first, range.end - range.first, buffer))
+            if (!captureHistory_->read(range.first, range.end - range.first, buffer))
                 return RecentCaptureResult::failed(
                     "That audio has already left the capture buffer");
             auto folder = ProjectManager::getInstance().getRecordingsDirectory();
@@ -1390,9 +1392,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// KEEP (#2311): what planKeep finds, as notes when a device was played in it and as
     /// audio otherwise.
     RecentCaptureResult captureRecentMaster(int bars) {
-        if (captureRing_ == nullptr)
+        if (captureHistory_ == nullptr)
             return RecentCaptureResult::failed("The capture buffer is off");
-        const auto plan = planKeep(captureRing_->meter(1), bars);
+        const auto plan = planKeep(captureHistory_->meter(1), bars);
         if (!plan)
             return RecentCaptureResult::failed(
                 "Nothing has been heard since the capture buffer started");
@@ -2894,6 +2896,95 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                 external->forgetDriverState();
     }
 
+    /// The ring's share of a history that goes on to a file (#3052): far more than the
+    /// record thread ever falls behind by, at about 23 MB a minute at 48 kHz.
+    static constexpr double kCaptureMemorySeconds = 60.0;
+    /// The whole history in memory when no file can be had: where #3051 stopped.
+    static constexpr double kCaptureMemoryOnlySeconds = 1800.0;
+
+    struct CaptureFile {
+        juce::File file;
+        std::unique_ptr<juce::FileOutputStream> out;
+    };
+
+    /// A new file for @p frames of history under @p parent (the temp folder when none), or
+    /// none when the disk can't take it.
+    static CaptureFile openCaptureFile(const juce::File& parent, std::int64_t frames) {
+        // A folder of its own, so clearing stale files never touches the user's.
+        const auto folder =
+            (parent != juce::File() ? parent
+                                    : juce::File::getSpecialLocation(juce::File::tempDirectory))
+                .getChildFile("MAGDA Capture");
+        if (!folder.createDirectory()) {
+            juce::Logger::writeToLog("[engine] Could not use " + folder.getFullPathName() +
+                                     " for the capture history; keeping it in memory");
+            return {};
+        }
+        // Left by a run that crashed: a live one rewrites its file every few milliseconds.
+        const auto stale = juce::Time::getCurrentTime() - juce::RelativeTime::minutes(1);
+        for (const auto& old : folder.findChildFiles(juce::File::findFiles, false, "capture*.raw"))
+            if (old.getLastModificationTime() < stale)
+                old.deleteFile();
+
+        // The whole file and a gigabyte besides, so the history never fills the disk.
+        const auto bytes = frames * kChannels * static_cast<std::int64_t>(sizeof(float));
+        if (folder.getBytesFreeOnVolume() < bytes + (std::int64_t{1} << 30)) {
+            juce::Logger::writeToLog("[engine] Not enough disk for the capture history; "
+                                     "keeping it in memory");
+            return {};
+        }
+        auto file = folder.getNonexistentChildFile("capture", ".raw");
+        auto out = std::make_unique<juce::FileOutputStream>(file);
+        if (out->failedToOpen()) {
+            juce::Logger::writeToLog("[engine] Could not open " + file.getFullPathName() +
+                                     " for the capture history; keeping it in memory");
+            return {};
+        }
+        return {file, std::move(out)};
+    }
+
+    /// The ring, and the file behind it when the history is longer than the ring. Kept
+    /// across rebuilds: what was heard is still where it was heard.
+    void prepareCapture(double sampleRate) {
+        const auto frames =
+            static_cast<std::int64_t>(captureSeconds_.load(std::memory_order_relaxed) * sampleRate);
+        if (captureRing_ != nullptr && frames == captureFrames_ && captureRingRate_ == sampleRate &&
+            captureFolder_ == captureFolderInUse_)
+            return;
+
+        dropCaptureHistory();
+        captureRing_.reset();
+        captureFrames_ = frames;
+        captureFolderInUse_ = captureFolder_;
+        captureRingRate_ = frames > 0 ? sampleRate : 0.0;
+        // No length is the buffer switched off: nothing allocated, nothing written.
+        if (frames <= 0)
+            return;
+
+        const auto toFrames = [sampleRate](double seconds) {
+            return static_cast<std::int64_t>(seconds * sampleRate);
+        };
+        const auto inMemory = std::min(frames, toFrames(kCaptureMemorySeconds));
+        auto file = frames > inMemory ? openCaptureFile(captureFolder_, frames) : CaptureFile{};
+        const auto ringFrames =
+            file.out != nullptr ? inMemory : std::min(frames, toFrames(kCaptureMemoryOnlySeconds));
+        captureRing_ = std::make_unique<engine::CaptureRing>(kChannels, ringFrames, sampleRate);
+        if (file.out == nullptr) {
+            captureHistory_ = std::make_unique<engine::CaptureHistory>(*captureRing_);
+            return;
+        }
+        captureHistory_ = std::make_unique<engine::CaptureHistory>(*captureRing_, file.file,
+                                                                   std::move(file.out), frames);
+        recordThread_.add(*captureHistory_);
+    }
+
+    /// Off the record thread first: removing it waits until the thread is out of it.
+    void dropCaptureHistory() {
+        if (captureHistory_ != nullptr && captureHistory_->onDisk())
+            recordThread_.remove(*captureHistory_);
+        captureHistory_.reset();
+    }
+
     /**
      * @brief Build the session the device just described, and fill it.
      *
@@ -2928,19 +3019,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         voiceThread_ = std::make_unique<engine::ClipVoiceThread>(*voices_);
 
         session_ = std::make_unique<engine::EngineSession>(factory_, &renderPool_, voices_.get());
-        // Kept across rebuilds: what was heard is still where it was heard.
-        const auto captureFrames = static_cast<std::int64_t>(
-            captureSeconds_.load(std::memory_order_relaxed) * context.sampleRate);
-        // No length is the buffer switched off: nothing allocated, nothing written.
-        if (captureFrames <= 0) {
-            captureRing_.reset();
-            captureRingRate_ = 0.0;
-        } else if (captureRing_ == nullptr || captureRingRate_ != context.sampleRate ||
-                   captureRing_->capacityFrames() != captureFrames) {
-            captureRing_ =
-                std::make_unique<engine::CaptureRing>(kChannels, captureFrames, context.sampleRate);
-            captureRingRate_ = context.sampleRate;
-        }
+        prepareCapture(context.sampleRate);
         session_->setCaptureRing(captureRing_.get());
         sessionRendersAhead_ = renderAheadBlocks(context) > 0;
         session_->setRenderAhead(renderAheadBlocks(context));
@@ -3884,7 +3963,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// The master's recent audio (#2311). Before the session, so it outlives it; only
     /// replaced in rebuild(), with no callback running.
     std::unique_ptr<engine::CaptureRing> captureRing_;
+    /// The ring with its rolling file (#3052); drained by recordThread_ while on disk.
+    std::unique_ptr<engine::CaptureHistory> captureHistory_;
     double captureRingRate_ = 0.0;
+    std::int64_t captureFrames_ = 0;
+    juce::File captureFolder_;
+    juce::File captureFolderInUse_;
     std::atomic<int> captureSeconds_{60};
     std::atomic<bool> captureMoved_{false};
 
@@ -4040,6 +4124,15 @@ void EngineHost::setGrooveProvider(GrooveProvider provider) {
 void EngineHost::setCaptureSeconds(int seconds) {
     seconds = std::max(seconds, 0);
     if (impl_->captureSeconds_.exchange(seconds) != seconds) {
+        impl_->captureMoved_.store(true, std::memory_order_relaxed);
+        impl_->wantRebuild();
+    }
+}
+
+void EngineHost::setCaptureFolder(const juce::File& folder) {
+    // Message thread, as rebuild() which reads it.
+    if (impl_->captureFolder_ != folder) {
+        impl_->captureFolder_ = folder;
         impl_->captureMoved_.store(true, std::memory_order_relaxed);
         impl_->wantRebuild();
     }
@@ -4441,7 +4534,7 @@ RecentCaptureResult EngineHost::captureRecentMaster(int bars) {
 
 RecentCaptureMeter EngineHost::recentCaptureMeter(int slices, int bars, bool withNotes) const {
     // Message thread, like the ring's only replacement in rebuild().
-    const auto* ring = impl_->captureRing_.get();
+    const auto* ring = impl_->captureHistory_.get();
     const auto rate = impl_->captureRingRate_;
     if (ring == nullptr || rate <= 0.0)
         return {};
@@ -4473,13 +4566,13 @@ RecentCaptureMeter EngineHost::recentCaptureMeter(int slices, int bars, bool wit
 }
 
 std::vector<float> EngineHost::recentPeaks(std::int64_t first, std::int64_t end, int slices) const {
-    const auto* ring = impl_->captureRing_.get();
+    const auto* ring = impl_->captureHistory_.get();
     return ring != nullptr ? ring->peaks(first, end, slices) : std::vector<float>{};
 }
 
 bool EngineHost::readRecent(std::int64_t first, std::int64_t frames,
                             juce::AudioBuffer<float>& out) const {
-    const auto* ring = impl_->captureRing_.get();
+    const auto* ring = impl_->captureHistory_.get();
     return ring != nullptr && ring->read(first, frames, out);
 }
 

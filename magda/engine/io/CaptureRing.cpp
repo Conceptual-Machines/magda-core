@@ -12,8 +12,7 @@ namespace {
 /// Frames a block may be writing while a reader copies: more than any callback delivers.
 constexpr std::int64_t kWriteMargin = 16384;
 
-/// Frames per peak: five minutes at 48 kHz is about 14000 of them.
-constexpr std::int64_t kFramesPerPeak = 1024;
+constexpr auto kFramesPerPeak = CaptureRing::kFramesPerPeak;
 
 /// Below this a chunk is silence (-60 dB), and this much of it ends a phrase.
 constexpr float kSilence = 0.001f;
@@ -169,6 +168,19 @@ std::int64_t CaptureRing::oldestKept(std::int64_t written, std::int64_t margin) 
     return std::max<std::int64_t>(0, written + margin - capacity_);
 }
 
+std::int64_t CaptureRing::oldestReadable() const {
+    return oldestKept(written_.load(std::memory_order_acquire), kWriteMargin);
+}
+
+CaptureMarks CaptureRing::marks() const {
+    return {.pass = {passStart_.load(std::memory_order_relaxed),
+                     passEnd_.load(std::memory_order_relaxed)},
+            .passBeats = {passStartBeat_.load(std::memory_order_relaxed),
+                          passEndBeat_.load(std::memory_order_relaxed)},
+            .phrase = {phraseStart_.load(std::memory_order_relaxed),
+                       phraseEnd_.load(std::memory_order_relaxed)}};
+}
+
 bool CaptureRing::read(std::int64_t firstFrame, std::int64_t frames,
                        juce::AudioBuffer<float>& out) const {
     const auto written = written_.load(std::memory_order_acquire);
@@ -192,6 +204,17 @@ bool CaptureRing::read(std::int64_t firstFrame, std::int64_t frames,
     return firstFrame >= oldestKept(written_.load(std::memory_order_acquire), kWriteMargin);
 }
 
+void applyMarks(CaptureMeter& meter, const CaptureMarks& marks) {
+    const auto clamp = [&](CaptureSpan span) {
+        return span.start < 0 ? CaptureSpan{}
+                              : CaptureSpan{std::max(span.start, meter.oldestReadable),
+                                            std::min(span.end, meter.writtenFrames)};
+    };
+    meter.pass = clamp(marks.pass);
+    meter.passBeats = marks.passBeats;
+    meter.phrase = clamp(marks.phrase);
+}
+
 CaptureMeter CaptureRing::meter(int slices) const {
     const auto written = written_.load(std::memory_order_acquire);
     CaptureMeter out{.writtenFrames = written,
@@ -201,16 +224,7 @@ CaptureMeter CaptureRing::meter(int slices) const {
     // The ring as a fixed window ending now, so the newest audio is always at the right.
     out.peaks = peaks(written - capacity_, written, slices);
 
-    const auto clamp = [&](std::int64_t start, std::int64_t end) {
-        return start < 0 ? CaptureSpan{}
-                         : CaptureSpan{std::max(start, out.oldestReadable), std::min(end, written)};
-    };
-    out.pass =
-        clamp(passStart_.load(std::memory_order_relaxed), passEnd_.load(std::memory_order_relaxed));
-    out.passBeats = {passStartBeat_.load(std::memory_order_relaxed),
-                     passEndBeat_.load(std::memory_order_relaxed)};
-    out.phrase = clamp(phraseStart_.load(std::memory_order_relaxed),
-                       phraseEnd_.load(std::memory_order_relaxed));
+    applyMarks(out, marks());
     return out;
 }
 

@@ -8,6 +8,8 @@
 #include <span>
 #include <vector>
 
+#include "io/RecordDrain.hpp"
+
 /**
  * @file RecordStream.hpp
  * @brief What the audio thread hands a disk during a take (#2460).
@@ -101,7 +103,7 @@ struct RecordStreamSettings {
  * room is taken at construction, which is what makes a write a copy and
  * nothing else.
  */
-class RecordStream {
+class RecordStream final : public RecordDrain {
   public:
     explicit RecordStream(RecordSink& sink, const RecordStreamSettings& settings = {});
 
@@ -139,7 +141,7 @@ class RecordStream {
      * rather than holding it: the take is already broken, and a queue nobody
      * drains would stop the audio thread writing the next one.
      */
-    bool drain();
+    bool drain() override;
 
     /**
      * @brief Drain what is left and close the sink.

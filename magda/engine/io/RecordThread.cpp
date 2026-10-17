@@ -16,7 +16,7 @@ RecordThread::~RecordThread() {
     stopThread(2000);
 }
 
-void RecordThread::add(RecordStream& stream) {
+void RecordThread::add(RecordDrain& stream) {
     {
         const std::scoped_lock guard(lock_);
         if (!std::ranges::contains(streams_, &stream))
@@ -26,7 +26,7 @@ void RecordThread::add(RecordStream& stream) {
     notify();
 }
 
-void RecordThread::remove(RecordStream& stream) {
+void RecordThread::remove(RecordDrain& stream) {
     const std::scoped_lock guard(lock_);
     streams_.erase(std::remove(streams_.begin(), streams_.end(), &stream), streams_.end());
 }

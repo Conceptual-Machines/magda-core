@@ -131,6 +131,10 @@ class EngineHost {
     /// change remakes the session once nothing plays or records, like render-ahead.
     void setCaptureSeconds(int seconds);
 
+    /// Where the history past the ring goes on disk (#3052); none is the system's temp
+    /// folder. A change starts a new history, as setCaptureSeconds does.
+    void setCaptureFolder(const juce::File& folder);
+
     /// Recompile the clips after the groove library changes: a groove already on a
     /// playing clip keeps the one it was compiled with until this asks again.
     void refreshGrooves();

@@ -46,6 +46,13 @@ struct CaptureMidiEvent {
     std::array<std::uint8_t, 3> bytes{};
 };
 
+/** @brief Where the latest pass and phrase lie, before clamping to what is still kept. */
+struct CaptureMarks {
+    CaptureSpan pass;
+    BeatRange passBeats;
+    CaptureSpan phrase;
+};
+
 /** @brief The ring as the meter and KEEP read it: cheap enough to poll. */
 struct CaptureMeter {
     std::int64_t writtenFrames = 0;
@@ -62,8 +69,14 @@ struct CaptureMeter {
     std::vector<float> peaks;  ///< the whole ring, oldest first
 };
 
+/** @brief @p marks into @p meter, clamped to the frames it says are readable. */
+void applyMarks(CaptureMeter& meter, const CaptureMarks& marks);
+
 class CaptureRing {
   public:
+    /// Frames per coarse peak: five minutes at 48 kHz is about 14000 of them.
+    static constexpr std::int64_t kFramesPerPeak = 1024;
+
     CaptureRing(int numChannels, std::int64_t capacityFrames, double sampleRate);
 
     int numChannels() const {
@@ -72,6 +85,15 @@ class CaptureRing {
     std::int64_t capacityFrames() const {
         return capacity_;
     }
+    std::int64_t writtenFrames() const {
+        return written_.load(std::memory_order_acquire);
+    }
+
+    /// The oldest frame read() can still copy. Any thread.
+    std::int64_t oldestReadable() const;
+
+    /// The latest pass and phrase, unclamped. Any thread.
+    CaptureMarks marks() const;
 
     /// Audio thread, once per rendered stretch. A @p block of one channel fills both sides.
     void write(const juce::AudioBuffer<float>& block, BeatRange beats, bool playing);

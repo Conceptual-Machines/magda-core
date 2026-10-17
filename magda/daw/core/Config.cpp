@@ -229,6 +229,7 @@ void Config::save() {
     root->setProperty("captureBuffer", captureEnabled);
     root->setProperty("captureSeconds", captureSeconds);
     root->setProperty("captureBars", captureBars);
+    root->setProperty("captureDir", toJuceString(captureDir));
 
     // Mixer view-toggle rail
     root->setProperty("mixerShowSends", mixerShowSends_);
@@ -672,6 +673,7 @@ void Config::load() {
     setCaptureEnabled(getBool("captureBuffer", captureEnabled));
     setCaptureSeconds(getInt("captureSeconds", captureSeconds));
     setCaptureBars(getInt("captureBars", captureBars));
+    captureDir = getString("captureDir", captureDir);
 
     mixerShowSends_ = getBool("mixerShowSends", mixerShowSends_);
     mixerShowRouting_ = getBool("mixerShowRouting", mixerShowRouting_);

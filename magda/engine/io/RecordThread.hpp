@@ -5,11 +5,11 @@
 #include <mutex>
 #include <vector>
 
-#include "io/RecordStream.hpp"
+#include "io/RecordDrain.hpp"
 
 /**
  * @file RecordThread.hpp
- * @brief The one thread allowed to write a take to disk.
+ * @brief The one thread allowed to write a take, or the capture history (#3052), to disk.
  *
  * PrefetchThread's counterpart, and the same shape for the same reasons: one
  * thread rather than one per take, above the interface and below the callback,
@@ -38,7 +38,7 @@ class RecordThread final : private juce::Thread {
 
     /// Start draining this stream. Off the audio thread; the stream must
     /// outlive the registration.
-    void add(RecordStream& stream);
+    void add(RecordDrain& stream);
 
     /**
      * @brief Stop draining it.
@@ -48,7 +48,7 @@ class RecordThread final : private juce::Thread {
      * still queued stays queued: closing a take is RecordStream::finish, and
      * an unregister that also flushed would decide where a take ends.
      */
-    void remove(RecordStream& stream);
+    void remove(RecordDrain& stream);
 
     /// Streams registered right now.
     std::size_t streamCount() const;
@@ -70,7 +70,7 @@ class RecordThread final : private juce::Thread {
     static constexpr int kIdleMilliseconds = 5;
 
     mutable std::mutex lock_;
-    std::vector<RecordStream*> streams_;
+    std::vector<RecordDrain*> streams_;
     bool runsInBackground_ = true;
 };
 
