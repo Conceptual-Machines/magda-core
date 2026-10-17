@@ -8,6 +8,7 @@
 
 #include "magda/daw/core/RackInfo.hpp"
 #include "magda/daw/core/TrackInfo.hpp"
+#include "tests/ParamSchemaFiles.hpp"
 
 /**
  * The legacy corpus (#2079): real projects and presets saved by released
@@ -200,9 +201,7 @@ inline void forEachDevice(const TrackInfo& track,
 inline const std::map<juce::String, juce::StringArray>& frozenParamSchema() {
     static const std::map<juce::String, juce::StringArray> schema = [] {
         std::map<juce::String, juce::StringArray> parsed;
-        juce::StringArray lines;
-        lines.addLines(juce::File(MAGDA_DEVICE_PARAM_SCHEMA_FILE).loadFileAsString());
-        for (const auto& line : lines) {
+        for (const auto& line : paramSchemaLines()) {
             if (line.isEmpty())
                 continue;
 

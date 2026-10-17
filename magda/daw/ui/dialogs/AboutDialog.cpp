@@ -3,6 +3,7 @@
 #include "BinaryData.h"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
+#include "extensions/Extension.hpp"
 #include "magda.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -55,8 +56,8 @@ class AboutDialog::ContentComponent : public juce::Component {
         }
 
         // Title as clickable link to website
-        titleLink_ =
-            std::make_unique<juce::HyperlinkButton>("MAGDA", juce::URL("https://magda.land"));
+        titleLink_ = std::make_unique<juce::HyperlinkButton>(
+            extensions::currentEdition().productName, juce::URL("https://magda.land"));
         titleLink_->setFont(FontManager::getInstance().getMicrogrammaFont(28.0f), false);
         titleLink_->setColour(juce::HyperlinkButton::textColourId,
                               ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));

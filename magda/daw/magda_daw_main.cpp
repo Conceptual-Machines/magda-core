@@ -37,6 +37,7 @@
 #include "core/controllers/ControllerProfileRegistry.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/PluginService.hpp"
+#include "extensions/Extension.hpp"
 #include "magda/scripting/LuaController.hpp"
 #include "magda/scripting/LuaScriptStore.hpp"
 #include "media_db/MediaDbContext.hpp"
@@ -170,6 +171,8 @@ class MagdaDAWApplication : public JUCEApplication {
   public:
     MagdaDAWApplication() = default;
 
+    // Not the edition's name: JUCE keys the single-instance lock on it, and every
+    // edition shares one install's data.
     const String getApplicationName() override {
         return "MAGDA";
     }
@@ -280,7 +283,10 @@ class MagdaDAWApplication : public JUCEApplication {
             lang != "en")
             magda::StringTable::getInstance().loadLanguage(lang);
 
-        // 2b. Show splash screen
+        // 2b. Extensions before the splash, which shows the edition they name.
+        magda::extensions::createExtensions();
+
+        // 2c. Show splash screen
         splashScreen_ = magda::SplashScreen::create();
 
         // Defer heavy initialization so the message loop can paint the splash.
@@ -370,6 +376,9 @@ class MagdaDAWApplication : public JUCEApplication {
         juce::Logger::writeToLog("Creating MainWindow...");
         mainWindow_ = std::make_unique<magda::MainWindow>(daw_engine_.get());
         juce::Logger::writeToLog("MainWindow created");
+
+        magda::extensions::AppContext extensionContext{*daw_engine_, *mainWindow_};
+        magda::extensions::startExtensions(extensionContext);
 
         // 4b. Remote API (#1856). Off unless configuration says otherwise, and
         // it opens nothing at all when disabled. After the window, because the
@@ -593,7 +602,11 @@ class MagdaDAWApplication : public JUCEApplication {
         // are still intact. Component destructors trigger removeChildComponent() →
         // repaint() chains that need valid heap state. If singletons are cleared
         // first, freed data + dangling listener references cause heap corruption.
-        DBG("[3] Destroying MainWindow...");
+        // Extensions may hold UI attached to the window, so they go first.
+        DBG("[3] Destroying extensions...");
+        magda::extensions::destroyExtensions();
+
+        DBG("[3a] Destroying MainWindow...");
         mainWindow_.reset();
 
         // Tear down the Lua controller before the engine — its dtor

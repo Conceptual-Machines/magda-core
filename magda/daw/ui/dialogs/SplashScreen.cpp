@@ -2,6 +2,7 @@
 
 #include "BinaryData.h"
 #include "core/StringTable.hpp"
+#include "extensions/Extension.hpp"
 #include "magda.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -77,7 +78,8 @@ class SplashScreen::ContentComponent : public juce::Component {
         auto& fm = FontManager::getInstance();
         g.setFont(fm.getMicrogrammaFont(28.0f));
         g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-        g.drawText("MAGDA", bounds.removeFromTop(40), juce::Justification::centred);
+        g.drawText(extensions::currentEdition().productName, bounds.removeFromTop(40),
+                   juce::Justification::centred);
 
         // Subtitle
         g.setFont(fm.getUIFont(14.0f));

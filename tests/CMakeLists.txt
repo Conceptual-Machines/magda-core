@@ -35,6 +35,7 @@ set(TEST_SOURCES
     clips/test_pianoroll_note_position.cpp
     clips/test_pianoroll_shown_content.cpp
     devices/test_nested_racks.cpp
+    extensions/test_extensions.cpp
     devices/test_rack_audio.cpp
     automation/test_modulation.cpp
     controllers/test_control_target.cpp
@@ -639,7 +640,16 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES engine/test_dawproject_round_trip.cpp)
 
 # Create test executable
+get_property(_magda_extension_tests GLOBAL PROPERTY MAGDA_EXTENSION_TEST_SOURCES)
+list(APPEND TEST_SOURCES ${_magda_extension_tests})
 add_executable(magda_tests ${TEST_SOURCES})
+get_property(_magda_extension_targets GLOBAL PROPERTY MAGDA_EXTENSION_TARGETS)
+foreach(_target IN LISTS _magda_extension_targets)
+    target_link_libraries(magda_tests PRIVATE "$<LINK_LIBRARY:WHOLE_ARCHIVE,${_target}>")
+endforeach()
+# A define cannot carry ';', so the list goes in '|'-separated (ParamSchemaFiles.hpp).
+get_property(_magda_extension_schemas GLOBAL PROPERTY MAGDA_EXTENSION_PARAM_SCHEMA_FILES)
+list(JOIN _magda_extension_schemas "|" MAGDA_EXTENSION_PARAM_SCHEMA_FILES)
 
 # The shared transport facade must compile and run without JUCE or TE (#2918).
 add_executable(magda_transport_api_tests
@@ -748,6 +758,7 @@ target_compile_definitions(magda_tests
     MAGDA_TEST_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/corpus"
     MAGDA_SMOKE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/smoke"
     MAGDA_DEVICE_PARAM_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/device_param_schema.txt"
+    MAGDA_EXTENSION_PARAM_SCHEMA_FILES="${MAGDA_EXTENSION_PARAM_SCHEMA_FILES}"
     # Where the bundled runtime patches and the Faust standard library are, for
     # the test that compiles the default synth (#2237). Read from the source
     # tree rather than from the staged copy beside the binary: the patch is what
@@ -1034,6 +1045,7 @@ target_compile_definitions(magda_juce_tests PRIVATE MAGDA_ENABLE_TEST_HOOKS=1
     # Frozen device parameter order (#1887) lives in the source tree so an
     # intentional change shows up as a reviewable diff.
     MAGDA_DEVICE_PARAM_SCHEMA_FILE="${CMAKE_CURRENT_SOURCE_DIR}/device_param_schema.txt"
+    MAGDA_EXTENSION_PARAM_SCHEMA_FILES="${MAGDA_EXTENSION_PARAM_SCHEMA_FILES}"
     # The legacy corpus (#2079): the JUCE suite converts the pre-v2 device state
     # its projects carry, which needs a live plugin to read the values off.
     MAGDA_LEGACY_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/corpus/legacy"

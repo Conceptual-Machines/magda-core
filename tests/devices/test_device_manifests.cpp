@@ -5,6 +5,7 @@
 #include <set>
 
 #include "magda/daw/audio/plugins/DeviceManifests.hpp"
+#include "tests/ParamSchemaFiles.hpp"
 
 // The manifests the build writes (#2939), against the frozen parameter order (#1887). A device
 // that renumbers, renames an id or drops a parameter fails here, before a saved project does.
@@ -20,9 +21,7 @@ struct FrozenDevice {
 
 std::map<juce::String, FrozenDevice> frozenSchema() {
     std::map<juce::String, FrozenDevice> devices;
-    juce::StringArray lines;
-    lines.addLines(juce::File(MAGDA_DEVICE_PARAM_SCHEMA_FILE).loadFileAsString());
-    for (const auto& line : lines) {
+    for (const auto& line : paramSchemaLines()) {
         if (line.isEmpty())
             continue;
         const auto id = line.upToFirstOccurrenceOf(" ", false, false);

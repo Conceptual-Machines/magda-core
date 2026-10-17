@@ -1,6 +1,9 @@
 # MAGDA DAW - Simple Build System
 # This Makefile provides a simple interface to build the MAGDA DAW project
 
+# Extra -D flags for every configure, e.g. a parent repository naming MAGDA_EXTENSION_DIRS.
+CMAKE_EXTRA_ARGS ?=
+
 # Build directories
 BUILD_DIR = cmake-build-debug
 BUILD_DIR_DEBUG_CPU = cmake-build-debug-cpu
@@ -87,7 +90,7 @@ all: debug
 .PHONY: setup
 setup:
 	@echo "🔧 Setting up MAGDA DAW project..."
-	@if [ ! -d ".git" ]; then \
+	@if [ ! -e ".git" ]; then \
 		echo "❌ Error: Not a git repository"; \
 		exit 1; \
 	fi
@@ -103,7 +106,7 @@ debug:
 	@mkdir -p $(BUILD_DIR) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR)/CMakeCache.txt ]; then \
 		echo "📝 Configuring project..."; \
-		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
+		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON $(CMAKE_EXTRA_ARGS) ..; \
 	fi
 	cd $(BUILD_DIR) && $(BUILD_ENV) ninja
 
@@ -114,7 +117,7 @@ debug-cpu:
 	cd $(BUILD_DIR_DEBUG_CPU) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug \
 		-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=OFF \
 		$(FETCHCONTENT_SOURCE_ARGS) \
-		-DMAGDA_ENABLE_DAWN_ANALYZER_POC=OFF ..
+		-DMAGDA_ENABLE_DAWN_ANALYZER_POC=OFF $(CMAKE_EXTRA_ARGS) ..
 	cd $(BUILD_DIR_DEBUG_CPU) && $(BUILD_ENV) ninja magda_daw_app
 
 .PHONY: debug-webgpu
@@ -126,7 +129,7 @@ debug-webgpu:
 		$(FETCHCONTENT_SOURCE_ARGS) \
 		-DMAGDA_ENABLE_DAWN_ANALYZER_POC=ON \
 		-DCMAKE_PREFIX_PATH=$(DAWN_PREFIX) \
-		-DDawn_DIR=$(DAWN_PREFIX)/lib/cmake/Dawn ..
+		-DDawn_DIR=$(DAWN_PREFIX)/lib/cmake/Dawn $(CMAKE_EXTRA_ARGS) ..
 	cd $(BUILD_DIR_DEBUG_WEBGPU) && $(BUILD_ENV) ninja magda_daw_app
 
 # Reconfigure build (force CMake to run)
@@ -134,14 +137,14 @@ debug-webgpu:
 configure:
 	@echo "📝 Reconfiguring MAGDA DAW (Debug)..."
 	@mkdir -p $(BUILD_DIR) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
-	cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
+	cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON $(CMAKE_EXTRA_ARGS) ..
 
 # Release build
 .PHONY: release
 release:
 	@echo "🚀 Building MAGDA DAW (Release)..."
 	@mkdir -p $(BUILD_DIR_RELEASE) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
-	cd $(BUILD_DIR_RELEASE) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
+	cd $(BUILD_DIR_RELEASE) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Release $(CMAKE_EXTRA_ARGS) ..
 	cd $(BUILD_DIR_RELEASE) && $(BUILD_ENV) ninja
 
 # Run the release application
@@ -162,7 +165,7 @@ asan:
 			-DCMAKE_C_FLAGS="-g -O1 -fno-omit-frame-pointer -fsanitize=address" \
 			-DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" \
 			-DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address" \
-			-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
+			-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON $(CMAKE_EXTRA_ARGS) ..; \
 	fi
 	cd $(BUILD_DIR_ASAN) && $(BUILD_ENV) ninja
 
@@ -184,7 +187,7 @@ tsan:
 			-DCMAKE_C_FLAGS="-g -O1 -fno-omit-frame-pointer -fsanitize=thread" \
 			-DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread" \
 			-DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=thread" \
-			-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
+			-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON $(CMAKE_EXTRA_ARGS) ..; \
 	fi
 	cd $(BUILD_DIR_TSAN) && $(BUILD_ENV) ninja
 
@@ -221,7 +224,7 @@ cli:
 	@mkdir -p $(BUILD_DIR) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR)/CMakeCache.txt ]; then \
 		echo "📝 Configuring project..."; \
-		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
+		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON $(CMAKE_EXTRA_ARGS) ..; \
 	fi
 	cd $(BUILD_DIR) && $(BUILD_ENV) ninja magda_cli
 
@@ -282,7 +285,7 @@ test-build:
 	@mkdir -p $(BUILD_DIR) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR)/CMakeCache.txt ]; then \
 		echo "📝 Configuring project with tests enabled..."; \
-		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
+		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON $(CMAKE_EXTRA_ARGS) ..; \
 	fi
 	cd $(BUILD_DIR) && $(BUILD_ENV) ninja magda_tests
 
@@ -291,7 +294,7 @@ test-build:
 device-manifests:
 	@mkdir -p $(BUILD_DIR) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR)/CMakeCache.txt ]; then \
-		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
+		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON $(CMAKE_EXTRA_ARGS) ..; \
 	fi
 	cd $(BUILD_DIR) && $(BUILD_ENV) ninja magda_device_manifests
 	$(BUILD_DIR)/tools/device_manifests/magda_device_manifests $(BUILD_DIR)/device-manifests
@@ -330,7 +333,7 @@ test-juce-build:
 	@mkdir -p $(BUILD_DIR) $(CCACHE_ROOT) $(CACHE_ROOT)/tmp $(CACHE_ROOT)/xdg
 	@if [ ! -f $(BUILD_DIR)/CMakeCache.txt ]; then \
 		echo "📝 Configuring project with tests enabled..."; \
-		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
+		cd $(BUILD_DIR) && $(BUILD_ENV) cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON $(CMAKE_EXTRA_ARGS) ..; \
 	fi
 	cd $(BUILD_DIR) && $(BUILD_ENV) ninja magda_juce_tests
 
@@ -369,7 +372,7 @@ test-tsan-build:
 			-DCMAKE_C_FLAGS="-g -O1 -fno-omit-frame-pointer -fsanitize=thread" \
 			-DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread" \
 			-DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=thread" \
-			-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON ..; \
+			-DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DMAGDA_BUILD_TESTS=ON $(CMAKE_EXTRA_ARGS) ..; \
 	fi
 	cd $(BUILD_DIR_TSAN) && $(BUILD_ENV) ninja magda_tests
 

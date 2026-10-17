@@ -57,6 +57,7 @@
 #include "core/UserAlert.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/PlaybackPositionTimer.hpp"
+#include "extensions/Extension.hpp"
 #include "project/ProjectManager.hpp"
 #include "stem_separation/StemSeparationService.hpp"
 
@@ -212,7 +213,8 @@ class MainWindow::MainComponent::ResizeHandle : public juce::Component {
 
 // MainWindow implementation
 MainWindow::MainWindow(AudioEngine* audioEngine)
-    : DocumentWindow("MAGDA", ActiveTheme::getBackgroundColour(), DocumentWindow::allButtons),
+    : DocumentWindow(extensions::currentEdition().productName, ActiveTheme::getBackgroundColour(),
+                     DocumentWindow::allButtons),
       externalAudioEngine_(audioEngine) {
     juce::Logger::writeToLog("[MainWindow] Constructor started");
     // Use native window decorations on every platform, including Linux. Linux
@@ -556,7 +558,7 @@ juce::ApplicationCommandManager& MainWindow::getCommandManager() {
 
 void MainWindow::updateWindowTitle() {
     auto& pm = ProjectManager::getInstance();
-    juce::String title = "MAGDA";
+    juce::String title = extensions::currentEdition().productName;
     if (pm.hasOpenProject()) {
         auto name = pm.getProjectName();
         if (name.isNotEmpty())

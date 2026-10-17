@@ -7,6 +7,7 @@
 #include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
 #include "magda/daw/audio/plugins/MagdaDevice.hpp"
 #include "magda/daw/audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "tests/ParamSchemaFiles.hpp"
 
 // The frozen parameter order (#1887) as the native engine sees it (#2556). Saved
 // automation, macro, mod and MIDI links persist a parameter's position, so every device
@@ -22,9 +23,7 @@ namespace audio = magda::daw::audio;
 
 std::map<juce::String, juce::String> frozenSchema() {
     std::map<juce::String, juce::String> lines;
-    juce::StringArray fileLines;
-    fileLines.addLines(juce::File(MAGDA_DEVICE_PARAM_SCHEMA_FILE).loadFileAsString());
-    for (const auto& line : fileLines)
+    for (const auto& line : paramSchemaLines())
         if (line.isNotEmpty())
             lines[line.upToFirstOccurrenceOf(" ", false, false)] = line;
     return lines;

@@ -41,12 +41,12 @@ TEST_CASE("Device catalog metadata resolves compiled and registered devices",
     CHECK_FALSE(magda::daw::findDeviceCatalogMetadata("unknown-device"));
 }
 
-#if defined(MAGDA_PRO_DEVICES_ENABLED) && MAGDA_PRO_DEVICES_ENABLED
-TEST_CASE("Optional pro pack registers its browser device through the SDK hook",
-          "[internal-plugin-registry][pro-devices]") {
-    const auto* spec = audio::findInternalPluginSpec("magda-pro-stub");
+#if defined(MAGDA_STUB_EXTENSION) && MAGDA_STUB_EXTENSION
+TEST_CASE("The stub extension registers its browser device through the SDK hook",
+          "[internal-plugin-registry][extensions]") {
+    const auto* spec = audio::findInternalPluginSpec("magda-extension-stub");
     REQUIRE(spec != nullptr);
-    REQUIRE(juce::String(spec->displayName) == "Pro Pack Stub");
+    REQUIRE(juce::String(spec->displayName) == "Extension Stub");
     REQUIRE(spec->showInBrowser);
     REQUIRE(spec->createDevice != nullptr);
 }
