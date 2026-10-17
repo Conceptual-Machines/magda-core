@@ -474,6 +474,29 @@ TEST_CASE("Canonicalizing library paths merges a file stored under two spellings
     REQUIRE(magda::media::canonicalizeLibraryPaths(db.handle()) == 0);
 }
 
+TEST_CASE("Label regions round-trip and mark the file as user-edited", "[media_db][metadata]") {
+    MediaDatabase db(":memory:");
+    db.execute("INSERT INTO media_file "
+               "(path, kind, format, size_bytes, mtime_ns, indexed_at) "
+               "VALUES ('sample.wav', 'audio', 'wav', 0, 0, 0)");
+
+    REQUIRE_FALSE(magda::media::getUserLabels(db, "sample.wav"));
+
+    std::vector<magda::media::LabelMetadata> labels{{"Verse", 0xffcc3333, 0.5, 2.0},
+                                                    {"Drop", 0x80112233, 4.0, 4.0}};
+    REQUIRE(magda::media::setUserLabels(db, "sample.wav", labels));
+    CHECK(magda::media::getUserLabels(db, "sample.wav") == labels);
+
+    SECTION("Clearing writes NULL") {
+        REQUIRE(magda::media::setUserLabels(db, "sample.wav", std::nullopt));
+        CHECK_FALSE(magda::media::getUserLabels(db, "sample.wav"));
+    }
+
+    SECTION("An unindexed file is not written") {
+        CHECK_FALSE(magda::media::setUserLabels(db, "missing.wav", labels));
+    }
+}
+
 TEST_CASE("Migration ladder rebuilds media_file to accept kind='progression'",
           "[media_db][migration]") {
     // Build a pre-v9 DB by hand: the kind CHECK lacks 'progression', plus the
@@ -529,6 +552,8 @@ TEST_CASE("Migration ladder rebuilds media_file to accept kind='progression'",
                          nullptr, nullptr, nullptr) != SQLITE_OK);
 
     migrateMediaDatabase(db, 8);
+    REQUIRE(sqlite3_exec(db, "SELECT labels_json FROM media_file", nullptr, nullptr, nullptr) ==
+            SQLITE_OK);
 
     // The rebuilt CHECK accepts 'progression'.
     REQUIRE(sqlite3_exec(db,

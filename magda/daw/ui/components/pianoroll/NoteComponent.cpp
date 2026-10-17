@@ -537,6 +537,7 @@ bool NoteComponent::handleToolClick(const juce::MouseEvent& e) {
         case EditTool::Line:
         case EditTool::Flat:
         case EditTool::Marker:
+        case EditTool::Label:
             break;
     }
     return false;

@@ -42,6 +42,16 @@ struct WarpMarkerMetadata {
     double beat = 0.0;
 };
 
+/// A label region on the file (#2316), in source seconds.
+struct LabelMetadata {
+    std::string name;
+    std::uint32_t argb = 0;
+    double startSec = 0.0;
+    double endSec = 0.0;
+
+    bool operator==(const LabelMetadata&) const = default;
+};
+
 struct EditableMediaRow {
     std::int64_t fileId = -1;
     std::filesystem::path path;
@@ -142,6 +152,11 @@ int canonicalizeLibraryPaths(sqlite3* db);
 void setUserWarpMarkers(MediaDatabase& db, const std::filesystem::path& path,
                         std::optional<std::vector<WarpMarkerMetadata>> markers);
 
+[[nodiscard]] std::optional<std::vector<LabelMetadata>> getUserLabels(
+    MediaDatabase& db, const std::filesystem::path& path);
+[[nodiscard]] bool setUserLabels(MediaDatabase& db, const std::filesystem::path& path,
+                                 std::optional<std::vector<LabelMetadata>> labels);
+
 [[nodiscard]] bool saveUserMetadata(MediaDatabase& db, const std::filesystem::path& path,
                                     std::optional<double> bpm, std::optional<std::string> keyRoot,
                                     std::optional<double> totalBeats, std::optional<bool> beatMode,
@@ -168,6 +183,11 @@ void setUserKeyRootForFile(const std::filesystem::path& path, std::optional<std:
 
 [[nodiscard]] std::optional<std::vector<WarpMarkerMetadata>> getUserWarpMarkersForFile(
     const std::filesystem::path& path);
+
+[[nodiscard]] std::optional<std::vector<LabelMetadata>> getUserLabelsForFile(
+    const std::filesystem::path& path);
+[[nodiscard]] bool setUserLabelsForFile(const std::filesystem::path& path,
+                                        std::optional<std::vector<LabelMetadata>> labels);
 
 [[nodiscard]] bool saveUserMetadataForFile(
     const std::filesystem::path& path, std::optional<double> bpm,

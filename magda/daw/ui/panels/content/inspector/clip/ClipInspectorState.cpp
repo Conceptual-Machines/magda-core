@@ -371,6 +371,10 @@ void ClipInspector::updateFromSelectedClip() {
     fadesSection_->setSelectedClips(selectedClipIds_);
     fadesSection_->setVisible(isAudio);
 
+    // ---- Labels (audio) ---------------------------------------------------
+    labelsSection_->setSelectedClips(selectedClipIds_);
+    labelsSection_->setVisible(isAudio && selectedClipIds_.size() == 1);
+
     // ---- Launch (session) -------------------------------------------------
     launchHeader_.setVisible(isSession);
     const bool launchOpen = isSession && !launchHeader_.isCollapsed();

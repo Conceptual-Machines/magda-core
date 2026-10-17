@@ -557,6 +557,9 @@ class ClipManager {
     void setGainEnvelope(ClipId clipId, ClipGainEnvelope envelope);
     void setGainEnvelopeShown(ClipId clipId, bool shown);
 
+    /// The primary event's label regions (#2316), each range ordered and sorted by start.
+    void setLabelRegions(ClipId clipId, std::vector<LabelRegion> labels);
+
     /// Let this clip play through its overlaps instead of the stack silencing
     /// one side (#2003). Audio and MIDI alike, unlike autoCrossfade.
     void setOverlapPlaysBoth(ClipId clipId, bool playsBoth);

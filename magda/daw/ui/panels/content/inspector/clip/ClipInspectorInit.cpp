@@ -12,6 +12,7 @@ ClipInspector::ClipInspector() {
     initPitchSection();
     initGrooveSection();
     initFadesSection();
+    initLabelsSection();
     initSessionLaunchSection();
     initViewport();
     lookAndFeelChanged();

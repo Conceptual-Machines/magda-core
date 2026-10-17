@@ -352,7 +352,8 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     sampleToolButtons_ = std::make_unique<EditToolButtons>(
         EditToolState::sampleEditor(),
         std::vector<std::pair<EditTool, const char*>>{
-            {EditTool::Pointer, "Pointer: move and remove warp markers"},
+            {EditTool::Pointer, "Pointer: move and remove warp markers and labels"},
+            {EditTool::Label, "Label: click to place a label, drag to label a region"},
             {EditTool::Marker, "Marker: click to place a warp marker (needs WARP)"}});
     headerBar_->addChildComponent(sampleToolButtons_.get());
 

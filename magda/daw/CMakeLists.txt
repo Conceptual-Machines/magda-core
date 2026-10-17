@@ -119,6 +119,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/midi_editor/v1/me-mpe.svg
     ../../assets/icons/midi_editor/v1/me-pencil.svg
     ../../assets/icons/midi_editor/v1/me-flat.svg
+    ../../assets/icons/midi_editor/v1/me-label.svg
     ../../assets/icons/midi_editor/v1/me-marker.svg
     ../../assets/icons/midi_editor/v1/me-piano-roll.svg
     ../../assets/icons/midi_editor/v1/me-pointer.svg
@@ -183,6 +184,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/waveform/note_slice.svg
     ../../assets/icons/waveform/curve.svg
     ../../assets/icons/waveform/spectrogram.svg
+    ../../assets/icons/waveform/transients.svg
     # Analysis device icons
     ../../assets/icons/analysis/postfx.svg
     ../../assets/icons/analysis/analysis2.svg

@@ -15,6 +15,7 @@ set(TEST_SOURCES
     clips/test_clip_tempo_detection_sequences.cpp
     clips/test_beat_mode_and_loop.cpp
     clips/test_clip_schema_migration.cpp
+    clips/test_label_regions.cpp
     audio/test_audio_source_length.cpp
     audio/test_audio_export.cpp
     audio/test_audio_to_midi.cpp
@@ -883,6 +884,7 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/panels/content/inspector/clip/ClipInspectorState.cpp
     ../magda/daw/ui/panels/content/inspector/clip/sections/ChordProgressionSection.cpp
     ../magda/daw/ui/panels/content/inspector/clip/sections/ClipFadesSection.cpp
+    ../magda/daw/ui/panels/content/inspector/clip/sections/ClipLabelsSection.cpp
     ../magda/daw/ui/panels/content/inspector/clip/sections/ClipTakesSection.cpp
     ../magda/daw/ui/components/clips/ClipComponent.cpp
     ../magda/daw/ui/components/clips/ClipEnvelopeOverlay.cpp
@@ -914,6 +916,7 @@ target_sources(magda_juce_tests PRIVATE
     ui/test_arrangement_row_alignment_juce.cpp
     ui/test_gain_envelope_editor_juce.cpp
     ../magda/daw/ui/components/waveform/WaveformGridComponent.cpp
+    ../magda/daw/ui/components/waveform/WaveformGridLabels.cpp
     ../magda/daw/ui/components/waveform/GainEnvelopeEditor.cpp
     ui/test_arrangement_vertical_scroll_juce.cpp
     agents/test_chord_progression_converter_juce.cpp

@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS media_file (
 	    total_beats_user    REAL,
 	    beat_mode_user      INTEGER CHECK (beat_mode_user IN (0, 1)),
 	    warp_markers_json   TEXT,
+	    labels_json         TEXT,
 
     shape   TEXT CHECK (shape  IN ('one-shot','loop','sustained','unknown')),
     family  TEXT CHECK (family IN

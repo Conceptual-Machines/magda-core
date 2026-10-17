@@ -148,7 +148,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     std::function<void(double, double)> onLoopDragEnded;      // Loop start/end committed on mouseUp
     std::function<void(double)> onPhaseMarkerChanged;         // Phase preview during drag (seconds)
     std::function<void(double)> onPhaseDragEnded;  // Phase committed on mouseUp (seconds)
-    std::function<void(double, double)> onZoomToLoopRequested;  // Loop start/end (seconds)
+    std::function<void(double, double)> onZoomToLoopRequested;  // Loop, else clip (seconds)
 
   private:
     // Display state

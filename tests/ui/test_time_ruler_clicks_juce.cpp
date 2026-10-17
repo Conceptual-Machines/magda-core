@@ -1,10 +1,14 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <utility>
+#include <vector>
+
 #include "magda/daw/ui/components/timeline/TimeRuler.hpp"
 
 /**
- * The piano roll's ruler: the lens area above the time ticks only zooms, a click on the ticks
- * moves the playhead and a double-click on them places the edit cursor.
+ * The piano roll's ruler: the lens area above the time ticks zooms, and a double-click there
+ * fits the view to the loop or the clip. A click on the ticks moves the playhead and a
+ * double-click on them places the edit cursor.
  */
 
 namespace {
@@ -32,6 +36,10 @@ class TimeRulerClicksTest final : public juce::UnitTest {
         int editCursorRequests = 0;
         ruler.onPlayheadPositionClicked = [&](double, bool) { ++playheadClicks; };
         ruler.onEditCursorRequested = [&](double, bool) { ++editCursorRequests; };
+        std::vector<std::pair<double, double>> fits;
+        ruler.onZoomToLoopRequested = [&](double start, double end) {
+            fits.emplace_back(start, end);
+        };
 
         const auto pressed = juce::ModifierKeys(juce::ModifierKeys::leftButtonModifier);
         const int lens = 4;
@@ -46,9 +54,24 @@ class TimeRulerClicksTest final : public juce::UnitTest {
         expectEquals(playheadClicks, 0);
         expectEquals(editCursorRequests, 0);
 
-        beginTest("A double-click in the lens area places nothing");
+        beginTest("A double-click in the lens area fits nothing without a clip");
         click(lens, 2);
         ruler.mouseDoubleClick(eventAt(ruler, 120, lens, pressed, 2));
+        expectEquals(editCursorRequests, 0);
+        expect(fits.empty());
+
+        beginTest("A double-click in the lens area fits the clip, or its loop");
+        ruler.setRelativeMode(true);
+        ruler.setClipLength(8.0);
+        ruler.mouseDoubleClick(eventAt(ruler, 300, lens, pressed, 2));
+        ruler.setLoopRegion(1.0, 2.0, true, true);
+        ruler.mouseDoubleClick(eventAt(ruler, 300, lens, pressed, 2));
+        expectEquals(static_cast<int>(fits.size()), 2);
+        if (fits.size() == 2) {
+            expectWithinAbsoluteError(fits[0].second, 8.0, 1e-9);
+            expectWithinAbsoluteError(fits[1].first, 1.0, 1e-9);
+            expectWithinAbsoluteError(fits[1].second, 3.0, 1e-9);
+        }
         expectEquals(editCursorRequests, 0);
 
         beginTest("A click on the time ticks moves the playhead");

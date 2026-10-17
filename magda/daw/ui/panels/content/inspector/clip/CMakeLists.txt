@@ -7,5 +7,6 @@ target_sources(magda_daw_app PRIVATE
     ClipInspectorState.cpp
     sections/ChordProgressionSection.cpp
     sections/ClipFadesSection.cpp
+    sections/ClipLabelsSection.cpp
     sections/ClipTakesSection.cpp
 )

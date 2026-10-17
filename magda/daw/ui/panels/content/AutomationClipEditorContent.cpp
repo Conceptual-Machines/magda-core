@@ -41,6 +41,12 @@ AutomationClipEditorContent::AutomationClipEditorContent() {
     timeRuler_->onZoomChanged = [this](double newZoom, double anchorTime, int anchorScreenX) {
         performAnchorPointZoom(newZoom, anchorTime, anchorScreenX);
     };
+    // The view already spans one loop cycle, or the clip, so fitting is a refit from zero.
+    timeRuler_->onZoomToLoopRequested = [this](double, double) {
+        horizontalZoom_ = 0.0;
+        updateView();
+        viewport_.setViewPosition(0, viewport_.getViewPositionY());
+    };
     timeRuler_->onScrollRequested = [this](int deltaX) {
         viewport_.setViewPosition(juce::jmax(0, viewport_.getViewPositionX() + deltaX),
                                   viewport_.getViewPositionY());

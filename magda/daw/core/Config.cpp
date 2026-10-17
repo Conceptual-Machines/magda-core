@@ -162,6 +162,7 @@ void Config::save() {
     // Transport
     root->setProperty("openPluginWindowOnDrop", openPluginWindowOnDrop);
     root->setProperty("audioEditorSpectrogram", audioEditorSpectrogram);
+    root->setProperty("audioEditorTransients", audioEditorTransients);
     root->setProperty("skipFourOscConversionPrompt", skipFourOscConversionPrompt);
     root->setProperty("transportShowBothFormats", transportShowBothFormats);
     root->setProperty("transportDefaultBarsBeats", transportDefaultBarsBeats);
@@ -604,6 +605,7 @@ void Config::load() {
 
     openPluginWindowOnDrop = getBool("openPluginWindowOnDrop", openPluginWindowOnDrop);
     audioEditorSpectrogram = getBool("audioEditorSpectrogram", audioEditorSpectrogram);
+    audioEditorTransients = getBool("audioEditorTransients", audioEditorTransients);
     skipFourOscConversionPrompt =
         getBool("skipFourOscConversionPrompt", skipFourOscConversionPrompt);
     transportShowBothFormats = getBool("transportShowBothFormats", transportShowBothFormats);
