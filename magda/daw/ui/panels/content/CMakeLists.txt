@@ -3,6 +3,8 @@ target_sources(magda_daw_app PRIVATE
     PluginBrowserContent.cpp
     MediaExplorerContent.cpp
     MediaDbBrowserContent.cpp
+    MediaDbFilterWidgets.cpp
+    ConsoleTranscript.cpp
     PresetBrowserContent.cpp
     EmptyContent.cpp
     AIChatConsoleContent.cpp

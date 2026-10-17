@@ -26,6 +26,8 @@
 #include "../../../media_db/MediaDbIndexer.hpp"
 #include "../../../media_db/MediaDbQuery.hpp"
 #include "../../components/common/SvgButton.hpp"
+#include "../../components/common/ToggleSwitch.hpp"
+#include "MediaDbFilterWidgets.hpp"
 
 namespace magda::daw::ui {
 
@@ -62,6 +64,9 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
     // not only mouse clicks. See ResultsTable::keyPressed.
     std::function<void(const juce::File&)> onFileSelected;
 
+    /// The row's play button: audition @p file now, whatever Auto says.
+    std::function<void(const juce::File&)> onPlayRequested;
+
     // Keyboard transport hooks for the results list (issue #1339):
     //   LEFT  arrow → onPreviewStopRequest  (stop the current preview)
     //   RIGHT arrow → onPreviewReplayRequest (restart preview from 0)
@@ -81,10 +86,13 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
     void resized() override;
     void lookAndFeelChanged() override;
     void visibilityChanged() override;
+    void mouseMove(const juce::MouseEvent& e) override;
+    void mouseExit(const juce::MouseEvent& e) override;
 
   private:
     class ResultsTableModel;
     class PopOutWindow;
+    class HeaderLookAndFeel;
 
     // TableListBox subclass that remembers the selection before JUCE's
     // RowComp collapses it. Pill-click bulk semantics need that snapshot
@@ -170,18 +178,16 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
     void setSortOrder(int columnId, bool ascending);
     void timerCallback() override;
 
-    // Filter strip — two rows.
-    // Row 1: family / shape / key dropdowns
-    // Row 2: BPM range + tonal toggle + pop-out
-    juce::ComboBox familyFilter_;
-    juce::ComboBox shapeFilter_;
-    juce::ComboBox keyFilter_;
-    juce::Label bpmLabel_;
-    juce::TextEditor bpmMinBox_;
-    juce::TextEditor bpmMaxBox_;
-    juce::ToggleButton tonalOnly_{"tonal"};
-    juce::TextEditor tagsFilter_;  // free-text tag filter, AND-tokenised
+    // Filter strip: pills, bpm range and tonal on one row; tag chips and pop-out below.
+    FilterPill familyFilter_;
+    FilterPill shapeFilter_;
+    FilterPill keyFilter_;
+    BpmRangeField bpmRange_;
+    ToggleSwitch tonalSwitch_;
+    juce::Label tonalLabel_;
+    TagChipInput tagsFilter_;
     std::unique_ptr<magda::SvgButton> popOutButton_;
+    juce::Rectangle<int> headerBand_;  // filter strip, painted as one band
 
     // Externally-driven kind filter. The DB browser doesn't own a kind
     // selector of its own — MediaExplorerContent reuses the search-bar
@@ -196,7 +202,10 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
     juce::Label statusLabel_;  // similar-mode status only; indexing status lives in parent strip
     std::unique_ptr<juce::ArrowButton> prevPageBtn_;
     std::unique_ptr<juce::ArrowButton> nextPageBtn_;
-    juce::Label pageLabel_;  // "Page N"
+    juce::Label rangeLabel_;  // "1–100 of 312"
+    juce::Label pageLabel_;   // "1 / 4"
+    std::unique_ptr<HeaderLookAndFeel> headerLnf_;
+    int hoveredRow_ = -1;
 
     // State
     juce::String queryText_;
@@ -211,6 +220,9 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
     // change (restartSearch).
     static constexpr int kPageSize = 100;
     int currentPage_ = 0;
+    /// Rows the current filter-only browse matches; -1 for text and similar searches.
+    int totalMatching_ = -1;
+    void updatePager();
 
     // Similar-sounds mode. When set, runSearch dispatches to
     // MediaDbQuery::similarTo using the seed file's audio embedding

@@ -24,7 +24,8 @@
 #include "../../../core/ViewModeController.hpp"
 #include "../../../project/ProjectManager.hpp"
 #include "../../code/ChatPromptTokeniser.hpp"
-#include "../../code/DSLTokeniser.hpp"
+#include "../../components/common/PillSegments.hpp"
+#include "ConsoleTranscript.hpp"
 #include "PanelContent.hpp"
 #include "SlashCommands.hpp"
 
@@ -140,13 +141,15 @@ class AIChatConsoleContent : public PanelContent,
     juce::String getMidiContextSummary() const;
     bool isMidiContextClipSelected(magda::ClipId clipId) const;
     void updateOutputModeButton();
+    void paintKeyHints(juce::Graphics& g) const;
+    void updateSendState();
     bool isLastGeneratedMidiClipValid() const;
     void rememberGeneratedMidiClip(magda::ClipId clipId);
 
     // Timer callback for "Thinking..." animation
     void timerCallback() override;
 
-    juce::TextEditor chatHistory_;
+    ConsoleTranscript chatHistory_;
 
     // Input box: CodeEditorComponent + ChatPromptTokeniser so @plugin and
     // /command syntax pick up colour automatically. inputDocument_ holds the
@@ -180,11 +183,19 @@ class AIChatConsoleContent : public PanelContent,
     // RequestThread::run and the drum context icon below the chat.
     bool drummerModeActive_ = false;
     juce::Label contextLabel_;
-    juce::TextButton outputModeButton_{"New clip"};
+    PillSegments outputMode_;
     juce::DrawableButton sendButton_{"send", juce::DrawableButton::ImageFitted};
     juce::DrawableButton clearButton_{"clear", juce::DrawableButton::ImageFitted};
     juce::DrawableButton copyButton_{"copy", juce::DrawableButton::ImageFitted};
     juce::Rectangle<int> bottomBarBounds_;
+    // Painted chrome placed by resized().
+    juce::Rectangle<int> headerBounds_;
+    juce::Rectangle<int> modelChipBounds_;
+    juce::Rectangle<int> composerBounds_;
+    juce::Rectangle<int> contextChipBounds_;
+    juce::Rectangle<int> hintsBounds_;
+    /// Send is lit once there is something to send, or while a request can be stopped.
+    bool sendReady_ = false;
     juce::Rectangle<int> contextIconBounds_;
     juce::String contextText_;
     bool contextEnabled_ = true;
@@ -332,26 +343,6 @@ class AIChatConsoleContent : public PanelContent,
     void hideAutocomplete();
     void insertAlias(const juce::String& alias);
     void insertParamAlias(const juce::String& pluginAlias, const juce::String& paramAlias);
-
-    // Tab switching: AI vs DSL
-    enum class ConsoleTab { AI, DSL };
-    ConsoleTab activeTab_ = ConsoleTab::AI;
-    std::unique_ptr<magda::SvgButton> aiTabButton_;
-    std::unique_ptr<magda::SvgButton> dslTabButton_;
-    void switchTab(ConsoleTab tab);
-    void setupTabButtons();
-
-    // DSL tab components
-    DSLTokeniser dslTokeniser_;
-    juce::CodeDocument dslDocument_;
-    std::unique_ptr<juce::CodeEditorComponent> dslEditor_;
-    juce::TextEditor dslOutput_;
-    juce::Label dslStatusLabel_;
-    juce::StringArray dslHistory_;
-    int dslHistoryIndex_ = -1;
-
-    void executeDSL();
-    void appendDSLOutput(const juce::String& text, juce::Colour colour);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AIChatConsoleContent)
 };

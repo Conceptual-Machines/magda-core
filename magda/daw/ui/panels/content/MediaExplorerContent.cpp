@@ -13,14 +13,52 @@
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FileBrowserLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "AudioThumbnailManager.hpp"
 #include "BinaryData.h"
 #include "MediaDbBrowserContent.hpp"
 #include "MediaExplorerPreviewState.hpp"
 #include "media_db/MediaDbMetadata.hpp"
+#include "ui/state/TimelineController.hpp"
 #include "ui/utils/AudioFileTypes.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+
+constexpr double kPreviewMinDb = -60.0;
+constexpr double kPreviewMaxDb = 6.0;
+constexpr double kPreviewDefaultDb = -6.0;
+const juce::String kMetaSep = juce::String::fromUTF8(" \xc2\xb7 ");
+
+float previewGain(double db) {
+    return juce::Decibels::decibelsToGain(static_cast<float>(db),
+                                          static_cast<float>(kPreviewMinDb));
+}
+
+/** @brief The transport's Auto and Sync: rounded field buttons with a regular-weight label. */
+class PreviewToggleLookAndFeel : public SmallButtonLookAndFeel {
+  public:
+    PreviewToggleLookAndFeel() : SmallButtonLookAndFeel(12.0f) {}
+
+    void drawButtonText(juce::Graphics& g, juce::TextButton& button, bool, bool) override {
+        g.setFont(FontManager::getInstance().getUIFont(getFontSize()));
+        g.setColour(button
+                        .findColour(button.getToggleState() ? juce::TextButton::textColourOnId
+                                                            : juce::TextButton::textColourOffId)
+                        .withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.5f));
+        g.drawText(button.getButtonText(), button.getLocalBounds(), juce::Justification::centred,
+                   false);
+    }
+};
+
+juce::String formatDb(double db) {
+    if (db <= kPreviewMinDb)
+        return juce::String::fromUTF8("-\xe2\x88\x9e dB");
+    return juce::String(db, 1) + " dB";
+}
+
+}  // namespace
 
 //==============================================================================
 // ThumbnailComponent - Displays waveform thumbnail for selected file
@@ -542,7 +580,7 @@ class MediaExplorerContent::SearchResultsComponent : public juce::Component,
     explicit SearchResultsComponent(MediaExplorerContent& owner)
         : juce::Thread("MediaSearch"), owner_(owner) {
         list_.setModel(this);
-        list_.setRowHeight(22);
+        list_.setRowHeight(FileBrowserLookAndFeel::kRowHeight);
         list_.setColour(juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
         addAndMakeVisible(list_);
     }
@@ -587,7 +625,7 @@ class MediaExplorerContent::SearchResultsComponent : public juce::Component,
     }
 
     void paint(juce::Graphics& g) override {
-        g.fillAll(ActiveTheme::getPanelBackgroundColour());
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
         if (results_.isEmpty()) {
             bool done = false;
             {
@@ -612,19 +650,19 @@ class MediaExplorerContent::SearchResultsComponent : public juce::Component,
             return;
         const auto& file = results_.getReference(row);
 
-        if (rowIsSelected) {
-            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
-            g.fillRect(0, 0, width, height);
-        }
+        FileBrowserLookAndFeel::paintRowBackground(g, width, height, rowIsSelected);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+        FileBrowserLookAndFeel::drawEntryGlyph(
+            g, {12.0f, static_cast<float>(height) * 0.5f - 6.0f, 13.0f, 12.0f}, false,
+            isAudioFile(file));
 
         // Name, then the containing folder relative to the searched root
         // (dimmed) so equally-named samples stay distinguishable.
         g.setColour(ActiveTheme::getTextColour());
-        const auto nameFont =
-            FontManager::getInstance().getUIFont(static_cast<float>(height) * 0.6f);
+        const auto nameFont = FontManager::getInstance().getUIFont(12.5f);
         g.setFont(nameFont);
         const auto name = file.getFileName();
-        auto bounds = juce::Rectangle<int>(0, 0, width, height).reduced(6, 0);
+        auto bounds = juce::Rectangle<int>(34, 0, width - 34, height).withTrimmedRight(6);
         juce::GlyphArrangement glyphs;
         glyphs.addLineOfText(nameFont, name, 0.0f, 0.0f);
         const int nameWidth =
@@ -636,7 +674,7 @@ class MediaExplorerContent::SearchResultsComponent : public juce::Component,
         if (relativeDir.isNotEmpty() && relativeDir != ".") {
             bounds.removeFromLeft(8);
             g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.7f));
-            g.setFont(FontManager::getInstance().getUIFont(static_cast<float>(height) * 0.5f));
+            g.setFont(FontManager::getInstance().getUIFont(11.0f));
             g.drawText(relativeDir, bounds, juce::Justification::centredLeft);
         }
     }
@@ -765,8 +803,12 @@ MediaExplorerContent::MediaExplorerContent() {
 
     // Setup search box (colours applied in applyThemeColours)
     searchBox_.setSelectAllWhenFocused(true);
+    searchBox_.setIndents(28, 0);
+    searchBox_.setJustification(juce::Justification::centredLeft);
+    searchBox_.setFont(FontManager::getInstance().getUIFont(13.0f));
     searchBox_.onTextChange = [this]() {
         searchTerm_ = searchBox_.getText();
+        repaint(searchBox_.getBounds());
         stopTimer();
         startTimer(300);  // 300 ms debounce
     };
@@ -911,40 +953,49 @@ MediaExplorerContent::MediaExplorerContent() {
     stopButton_->setEnabled(false);
     addAndMakeVisible(*stopButton_);
 
-    // Volume slider
     volumeSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
-    volumeSlider_.setRange(0.0, 1.0, 0.01);
-    volumeSlider_.setValue(0.7);
+    volumeSlider_.setRange(kPreviewMinDb, kPreviewMaxDb, 0.1);
+    volumeSlider_.setSkewFactorFromMidPoint(-12.0);
+    volumeSlider_.setDoubleClickReturnValue(true, kPreviewDefaultDb);
+    volumeSlider_.setValue(kPreviewDefaultDb, juce::dontSendNotification);
     volumeSlider_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     volumeSlider_.onValueChange = [this]() {
         if (transportSource_) {
-            transportSource_->setGain(static_cast<float>(volumeSlider_.getValue()));
+            transportSource_->setGain(previewGain(volumeSlider_.getValue()));
         }
+        volumeDbLabel_.setText(formatDb(volumeSlider_.getValue()), juce::dontSendNotification);
     };
     addAndMakeVisible(volumeSlider_);
 
-    // Auto-play toggle — automatically preview audio files on selection
+    volumeDbLabel_.setFont(FontManager::getInstance().getMonoFont(11.0f));
+    volumeDbLabel_.setJustificationType(juce::Justification::centredRight);
+    volumeDbLabel_.setText(formatDb(kPreviewDefaultDb), juce::dontSendNotification);
+    addAndMakeVisible(volumeDbLabel_);
+
+    toggleLnf_ = std::make_unique<PreviewToggleLookAndFeel>();
+    autoPlayButton_.setLookAndFeel(toggleLnf_.get());
+    syncButton_.setLookAndFeel(toggleLnf_.get());
     autoPlayButton_.setButtonText("Auto");
-    autoPlayButton_.setToggleState(false, juce::dontSendNotification);
-    autoPlayButton_.setLookAndFeel(&FileBrowserLookAndFeel::getInstance());
+    autoPlayButton_.setTooltip("Play files as they are selected");
+    autoPlayButton_.setClickingTogglesState(true);
     addAndMakeVisible(autoPlayButton_);
 
-    // Metadata labels (compact sizing)
+    syncButton_.setButtonText("Sync");
+    syncButton_.setTooltip("Play loops at the project tempo");
+    syncButton_.setClickingTogglesState(true);
+    syncButton_.onClick = [this]() { updatePreviewRate(); };
+    addAndMakeVisible(syncButton_);
+
     fileInfoLabel_.setText("No file selected", juce::dontSendNotification);
-    fileInfoLabel_.setFont(FontManager::getInstance().getUIFontBold(10.0f));
+    fileInfoLabel_.setFont(FontManager::getInstance().getUIFontMedium(13.0f));
     fileInfoLabel_.setJustificationType(juce::Justification::centredLeft);
     fileInfoLabel_.setMinimumHorizontalScale(1.0F);
     addAndMakeVisible(fileInfoLabel_);
 
     formatLabel_.setText("", juce::dontSendNotification);
-    formatLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    formatLabel_.setJustificationType(juce::Justification::centredLeft);
+    formatLabel_.setFont(FontManager::getInstance().getMonoFont(11.0f));
+    formatLabel_.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(formatLabel_);
-
-    propertiesLabel_.setText("", juce::dontSendNotification);
-    propertiesLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    propertiesLabel_.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(propertiesLabel_);
 
     // Waveform thumbnail
     thumbnailComponent_ = std::make_unique<ThumbnailComponent>();
@@ -1002,6 +1053,15 @@ MediaExplorerContent::MediaExplorerContent() {
     };
     // Issue #1339 — LEFT / RIGHT on the DB results table drive the same
     // preview transport that the filesystem browser uses.
+    dbBrowser_->onPlayRequested = [this](const juce::File& f) {
+        if (previewLockedForIndexing_) {
+            return;
+        }
+        if (f != currentPreviewFile_ || readerSource_ == nullptr) {
+            loadFileForPreview(f);
+        }
+        restartPreview();
+    };
     dbBrowser_->onPreviewStopRequest = [this]() { stopPreview(); };
     dbBrowser_->onPreviewReplayRequest = [this]() { restartPreview(); };
     // Surface indexing progress in the preview area so it's visible from
@@ -1059,6 +1119,7 @@ void MediaExplorerContent::setupFileBrowser(const juce::File& initialRoot) {
         listComp->setMultipleSelectionEnabled(true);
         listComp->setRowSelectedOnMouseDown(true);
         listComp->setOutlineThickness(0);  // borderless, matching the tree view
+        listComp->setRowHeight(FileBrowserLookAndFeel::kRowHeight);
         // Issue #1339 — bind LEFT/RIGHT on the file list to preview
         // stop/replay. UP/DOWN already audition via JUCE's built-in
         // selection-change path (FileListComponent::selectedRowsChanged
@@ -1074,6 +1135,7 @@ void MediaExplorerContent::setupFileBrowser(const juce::File& initialRoot) {
             dynamic_cast<juce::FileTreeComponent*>(fileBrowser_->getDisplayComponent())) {
         treeComp->setMultiSelectEnabled(true);
         treeComp->setIndentSize(16);
+        treeComp->setItemHeight(FileBrowserLookAndFeel::kRowHeight);
         treeComp->addKeyListener(this);
     }
 
@@ -1130,6 +1192,7 @@ MediaExplorerContent::~MediaExplorerContent() {
     teardownFileBrowser();
     viewModeSelector_.setLookAndFeel(nullptr);
     autoPlayButton_.setLookAndFeel(nullptr);
+    syncButton_.setLookAndFeel(nullptr);
 
     stopPreview();
 
@@ -1142,6 +1205,7 @@ MediaExplorerContent::~MediaExplorerContent() {
 
     audioSourcePlayer_.setSource(nullptr);
     transportSource_.reset();
+    stretchSource_.reset();
     readerSource_.reset();
     previewCallback_.reset();
 }
@@ -1330,7 +1394,7 @@ void MediaExplorerContent::setupAudioPreview() {
     // Setup transport source
     transportSource_ = std::make_unique<juce::AudioTransportSource>();
     transportSource_->addChangeListener(this);
-    transportSource_->setGain(static_cast<float>(volumeSlider_.getValue()));
+    transportSource_->setGain(previewGain(volumeSlider_.getValue()));
 
     // Setup audio device using shared device manager
     // The AudioEngine reference will be set by TabbedPanel via setAudioEngine()
@@ -1362,6 +1426,7 @@ void MediaExplorerContent::loadFileForPreview(const juce::File& file) {
     // CRITICAL: Clear the transport source BEFORE destroying the old reader source
     // This prevents use-after-free when clicking multiple samples
     transportSource_->setSource(nullptr);
+    stretchSource_.reset();
     readerSource_.reset();
 
     if (!file.existsAsFile()) {
@@ -1377,6 +1442,14 @@ void MediaExplorerContent::loadFileForPreview(const juce::File& file) {
 
         readerSource_ =
             std::make_unique<juce::AudioFormatReaderSource>(reader, true);  // owns reader
+        stretchSource_ = std::make_unique<magda::PreviewStretchSource>(readerSource_.get(), 2);
+
+        previewFileBpm_ = 0.0;
+        if (auto meta = magda::media::getEffectiveMetadataForFile(
+                std::filesystem::path(file.getFullPathName().toStdString()));
+            meta && meta->bpm && *meta->bpm > 0.0)
+            previewFileBpm_ = *meta->bpm;
+        updatePreviewRate();
 
         // Simple direct playback (no buffering)
         // This is fine for preview - most samples are small enough to stream directly
@@ -1387,7 +1460,7 @@ void MediaExplorerContent::loadFileForPreview(const juce::File& file) {
         // consumed at the device rate, so a 44.1 kHz file on a 48 kHz device plays 8.8%
         // fast and sharp. It also leaves the transport's sourceSampleRate at 0, which
         // makes getCurrentPosition() drift against the waveform playhead.
-        transportSource_->setSource(readerSource_.get(), 0, nullptr, fileSampleRate, 2);
+        transportSource_->setSource(stretchSource_.get(), 0, nullptr, fileSampleRate, 2);
 
         playButton_->setEnabled(true);
         updateFileInfo(file);
@@ -1414,9 +1487,10 @@ void MediaExplorerContent::playPreview() {
         return;
     }
     if (transportSource_ && !isPlaying_) {
+        isPlaying_ = true;
+        updatePreviewRate();
         transportSource_->setPosition(0.0);
         transportSource_->start();
-        isPlaying_ = true;
         playButton_->setEnabled(false);
         stopButton_->setEnabled(true);
         thumbnailComponent_->setPlaying(true);
@@ -1427,10 +1501,27 @@ void MediaExplorerContent::stopPreview() {
     if (transportSource_ && isPlaying_) {
         transportSource_->stop();
         isPlaying_ = false;
+        tempoPoll_.stopTimer();
         playButton_->setEnabled(currentPreviewFile_.existsAsFile());
         stopButton_->setEnabled(false);
         thumbnailComponent_->setPlaying(false);
     }
+}
+
+void MediaExplorerContent::updatePreviewRate() {
+    double rate = 1.0;
+    if (syncButton_.getToggleState() && previewFileBpm_ > 0.0) {
+        if (auto* controller = TimelineController::getCurrent())
+            rate = controller->getState().tempo.bpm / previewFileBpm_;
+    }
+    if (stretchSource_)
+        stretchSource_->setRate(rate);
+
+    const bool follow = syncButton_.getToggleState() && isPlaying_;
+    if (follow && !tempoPoll_.isTimerRunning())
+        tempoPoll_.startTimerHz(4);
+    else if (!follow)
+        tempoPoll_.stopTimer();
 }
 
 void MediaExplorerContent::restartPreview() {
@@ -1444,6 +1535,14 @@ void MediaExplorerContent::restartPreview() {
         stopPreview();
     }
     playPreview();
+}
+
+bool MediaExplorerContent::keyPressed(const juce::KeyPress& key) {
+    if (key == juce::KeyPress('f', juce::ModifierKeys::commandModifier, 0)) {
+        searchBox_.grabKeyboardFocus();
+        return true;
+    }
+    return false;
 }
 
 bool MediaExplorerContent::keyPressed(const juce::KeyPress& key, juce::Component* /*origin*/) {
@@ -1475,6 +1574,7 @@ void MediaExplorerContent::setPreviewLockedForIndexing(bool locked) {
         if (transportSource_) {
             transportSource_->setSource(nullptr);
         }
+        stretchSource_.reset();
         readerSource_.reset();
         playButton_->setEnabled(false);
         stopButton_->setEnabled(false);
@@ -1487,7 +1587,6 @@ void MediaExplorerContent::setPreviewLockedForIndexing(bool locked) {
         fileInfoLabel_.setText("Preview locked during media scan", juce::dontSendNotification);
         fileInfoLabel_.setTooltip({});
         formatLabel_.setText("", juce::dontSendNotification);
-        propertiesLabel_.setText("", juce::dontSendNotification);
         return;
     }
 
@@ -1506,42 +1605,32 @@ void MediaExplorerContent::updateFileInfo(const juce::File& file) {
         fileInfoLabel_.setText("No file selected", juce::dontSendNotification);
         fileInfoLabel_.setTooltip({});
         formatLabel_.setText("", juce::dontSendNotification);
-        propertiesLabel_.setText("", juce::dontSendNotification);
         return;
     }
 
-    // Full path. The label truncates visually, but the tooltip exposes the
-    // complete path when the preview row is narrow.
-    fileInfoLabel_.setText(file.getFullPathName(), juce::dontSendNotification);
+    fileInfoLabel_.setText(file.getFileName(), juce::dontSendNotification);
     fileInfoLabel_.setTooltip(file.getFullPathName());
 
-    auto* reader = formatManager_.createReaderFor(file);
-    if (reader != nullptr) {
-        double duration = reader->lengthInSamples / reader->sampleRate;
-        int bitDepth = reader->bitsPerSample;
-        int sampleRate = static_cast<int>(reader->sampleRate);
-        int channels = reader->numChannels;
-
-        // Format info: type, sample rate, bit depth
-        juce::String format = file.getFileExtension().toUpperCase().substring(1) + " | ";
-        format += juce::String(sampleRate / 1000.0, 1) + " kHz | ";
-        format += juce::String(bitDepth) + "-bit | ";
-        format += juce::String(channels == 1   ? "Mono"
-                               : channels == 2 ? "Stereo"
-                                               : juce::String(channels) + "ch");
-        formatLabel_.setText(format, juce::dontSendNotification);
-
-        // Properties: duration, file size
-        juce::String properties = "Duration: " + formatDuration(duration) + " | ";
-        properties += "Size: " + formatFileSize(file.getSize());
-        propertiesLabel_.setText(properties, juce::dontSendNotification);
-
-        delete reader;
-    } else {
-        formatLabel_.setText("Unknown format", juce::dontSendNotification);
-        propertiesLabel_.setText("Size: " + formatFileSize(file.getSize()),
-                                 juce::dontSendNotification);
+    std::unique_ptr<juce::AudioFormatReader> reader(formatManager_.createReaderFor(file));
+    if (reader == nullptr) {
+        formatLabel_.setText(formatFileSize(file.getSize()), juce::dontSendNotification);
+        return;
     }
+
+    const double seconds = static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
+    juce::StringArray parts;
+    if (previewFileBpm_ > 0.0)
+        parts.add(juce::String(juce::roundToInt(previewFileBpm_)) + " bpm");
+    parts.add(seconds < 60.0 ? juce::String(seconds, seconds < 1.0 ? 2 : 1) + "s"
+                             : formatDuration(seconds));
+    const double khz = reader->sampleRate / 1000.0;
+    parts.add((std::abs(khz - std::round(khz)) < 0.05 ? juce::String(juce::roundToInt(khz))
+                                                      : juce::String(khz, 1)) +
+              "k");
+    parts.add(juce::String(reader->bitsPerSample) + "b");
+    if (reader->numChannels == 1)
+        parts.add("mono");
+    formatLabel_.setText(parts.joinIntoString(kMetaSep), juce::dontSendNotification);
 }
 
 void MediaExplorerContent::navigateToDirectory(const juce::File& directory) {
@@ -1644,7 +1733,7 @@ bool MediaExplorerContent::isPresetFile(const juce::File& file) {
 }
 
 void MediaExplorerContent::applyThemeColours() {
-    searchBox_.setTextToShowWhenEmpty("Search media...", ActiveTheme::getSecondaryTextColour());
+    searchBox_.setTextToShowWhenEmpty("Search media", ActiveTheme::getSecondaryTextColour());
     searchBox_.setColour(juce::TextEditor::backgroundColourId,
                          ActiveTheme::getColour(ActiveTheme::SURFACE));
     searchBox_.setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
@@ -1671,15 +1760,20 @@ void MediaExplorerContent::applyThemeColours() {
     volumeSlider_.setColour(juce::Slider::trackColourId,
                             ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
 
-    autoPlayButton_.setColour(juce::ToggleButton::textColourId, ActiveTheme::getTextColour());
-    autoPlayButton_.setColour(juce::ToggleButton::tickColourId,
-                              ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-    autoPlayButton_.setColour(juce::ToggleButton::tickDisabledColourId,
-                              ActiveTheme::getSecondaryTextColour());
+    volumeDbLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
+
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
+    for (auto* toggle : {&autoPlayButton_, &syncButton_}) {
+        toggle->setColour(juce::TextButton::buttonColourId,
+                          ActiveTheme::getColour(ActiveTheme::SURFACE));
+        toggle->setColour(juce::TextButton::buttonOnColourId, accent.withAlpha(0.18f));
+        toggle->setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
+        toggle->setColour(juce::TextButton::textColourOnId, accent);
+        toggle->setColour(juce::ComboBox::outlineColourId, ActiveTheme::getBorderColour());
+    }
 
     fileInfoLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     formatLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    propertiesLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 
     applyFileBrowserThemeColours();
 }
@@ -1720,64 +1814,111 @@ void MediaExplorerContent::lookAndFeelChanged() {
 
 void MediaExplorerContent::paint(juce::Graphics& g) {
     g.fillAll(ActiveTheme::getPanelBackgroundColour());
+
+    if (!filterGroupBounds_.isEmpty()) {
+        const auto group = filterGroupBounds_.toFloat();
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
+        g.fillRoundedRectangle(group, 6.0f);
+        g.setColour(ActiveTheme::getBorderColour());
+        g.drawRoundedRectangle(group.reduced(0.5f), 6.0f, 1.0f);
+        for (auto* btn :
+             {midiFilterButton_.get(), progressionFilterButton_.get(), presetFilterButton_.get()})
+            g.drawVerticalLine(btn->getX(), group.getY() + 1.0f, group.getBottom() - 1.0f);
+    }
+
+    if (!previewBounds_.isEmpty()) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
+        g.drawHorizontalLine(previewBounds_.getY(), static_cast<float>(previewBounds_.getX()),
+                             static_cast<float>(previewBounds_.getRight()));
+    }
+}
+
+void MediaExplorerContent::paintOverChildren(juce::Graphics& g) {
+    // Search glyph and shortcut badge sit inside the search box.
+    const auto box = searchBox_.getBounds().toFloat();
+    const auto dim = ActiveTheme::getSecondaryTextColour();
+
+    const auto icon =
+        juce::Rectangle<float>(box.getX() + 10.0f, box.getCentreY() - 6.0f, 12.0f, 12.0f);
+    juce::Path glass;
+    glass.addEllipse(icon.getX(), icon.getY(), 9.0f, 9.0f);
+    glass.startNewSubPath(icon.getX() + 7.8f, icon.getY() + 7.8f);
+    glass.lineTo(icon.getRight(), icon.getBottom());
+    g.setColour(dim);
+    g.strokePath(glass, juce::PathStrokeType(1.4f, juce::PathStrokeType::curved,
+                                             juce::PathStrokeType::rounded));
+
+    if (searchBox_.isEmpty() && box.getWidth() > 160.0f) {
+        const auto font = FontManager::getInstance().getMonoFont(10.0f);
+        const juce::String hint = juce::String::fromUTF8("\xe2\x8c\x98"
+                                                         "F");
+        const float w = juce::GlyphArrangement::getStringWidth(font, hint) + 10.0f;
+        const auto badge =
+            juce::Rectangle<float>(box.getRight() - w - 8.0f, box.getCentreY() - 8.0f, w, 16.0f);
+        g.setColour(ActiveTheme::getBorderColour());
+        g.drawRoundedRectangle(badge, 3.0f, 1.0f);
+        g.setColour(dim);
+        g.setFont(font);
+        g.drawText(hint, badge, juce::Justification::centred, false);
+    }
 }
 
 void MediaExplorerContent::resized() {
-    auto bounds = getLocalBounds().reduced(4);
+    auto bounds = getLocalBounds().reduced(8, 6);
 
-    // Top bar with all controls
     auto topBar = bounds.removeFromTop(32);
+    viewModeSelector_.setBounds(topBar.removeFromRight(72).withSizeKeepingCentre(72, 30));
+    topBar.removeFromRight(8);
 
-    // Far right: list/tree view toggle (#1699)
-    viewModeSelector_.setBounds(topBar.removeFromRight(64).withSizeKeepingCentre(64, 24));
-    topBar.removeFromRight(6);
-
-    // Right: Type filter icon buttons (audio / midi / preset / progression),
-    // then search fills remaining space.
-    const int iconButtonSize = 30;
-    const int buttonSpacing = 4;
-    constexpr int kFilterIcons = 4;
-    const int rightSideWidth =
-        iconButtonSize * kFilterIcons + buttonSpacing * (kFilterIcons - 1) + 8;
-    auto searchWidth = juce::jmax(120, topBar.getWidth() - rightSideWidth);
-    searchBox_.setBounds(topBar.removeFromLeft(searchWidth));
-    topBar.removeFromLeft(8);
-
-    const int iconVerticalOffset = (topBar.getHeight() - iconButtonSize) / 2;
-    auto placeIcon = [&](magda::SvgButton& btn) {
-        btn.setBounds(topBar.removeFromLeft(iconButtonSize)
-                          .withTrimmedTop(iconVerticalOffset)
-                          .withHeight(iconButtonSize));
-    };
-    placeIcon(*audioFilterButton_);
-    topBar.removeFromLeft(buttonSpacing);
-    placeIcon(*midiFilterButton_);
-    topBar.removeFromLeft(buttonSpacing);
-    placeIcon(*progressionFilterButton_);
-    topBar.removeFromLeft(buttonSpacing);
-    placeIcon(*presetFilterButton_);
+    constexpr int kSegmentWidth = 34;
+    constexpr int kSegments = 4;
+    filterGroupBounds_ = topBar.removeFromRight(kSegmentWidth * kSegments);
+    auto group = filterGroupBounds_;
+    for (auto* btn : {audioFilterButton_.get(), midiFilterButton_.get(),
+                      progressionFilterButton_.get(), presetFilterButton_.get()})
+        btn->setBounds(group.removeFromLeft(kSegmentWidth).reduced(6));
+    topBar.removeFromRight(8);
+    searchBox_.setBounds(topBar);
 
     bounds.removeFromTop(8);
 
-    // Navigation buttons row (now redundant with sidebar, but keeping for now)
-    // Hide them to make room for sidebar layout
     homeButton_.setVisible(false);
     musicButton_.setVisible(false);
     desktopButton_.setVisible(false);
     browseButton_.setVisible(false);
 
-    // Reserve space for preview/inspector area at bottom (compact size)
-    const int previewAreaHeight = 120;
-    auto previewArea = bounds.removeFromBottom(previewAreaHeight);
+    // Name row, waveform, transport.
+    constexpr int kPreviewHeight = 10 + 22 + 6 + 56 + 8 + 30;
+    previewBounds_ = bounds.removeFromBottom(kPreviewHeight).expanded(8, 0);
+    auto preview = previewBounds_.reduced(8, 0);
+    preview.removeFromTop(10);
 
-    // Main content area: sidebar + file browser
-    // Left: Narrow sidebar with small icon buttons (fixed width)
+    auto nameRow = preview.removeFromTop(22);
+    formatLabel_.setBounds(nameRow.removeFromRight(juce::jmin(220, nameRow.getWidth() / 2)));
+    fileInfoLabel_.setBounds(nameRow);
+    preview.removeFromTop(6);
+
+    thumbnailComponent_->setBounds(preview.removeFromTop(56));
+    preview.removeFromTop(8);
+
+    auto transport = preview.removeFromTop(30);
+    playButton_->setBounds(transport.removeFromLeft(30));
+    transport.removeFromLeft(6);
+    stopButton_->setBounds(transport.removeFromLeft(30));
+    transport.removeFromLeft(10);
+    autoPlayButton_.setBounds(transport.removeFromLeft(52));
+    transport.removeFromLeft(6);
+    syncButton_.setBounds(transport.removeFromLeft(52));
+    transport.removeFromLeft(10);
+
+    volumeDbLabel_.setBounds(transport.removeFromRight(60));
+    volumeSlider_.setBounds(
+        transport.removeFromRight(juce::jlimit(60, 180, transport.getWidth() - 24)));
+
     const int sidebarWidth = 40;
     sidebarComponent_->setBounds(bounds.removeFromLeft(sidebarWidth));
-    bounds.removeFromLeft(8);  // Spacing between sidebar and browser
+    bounds.removeFromLeft(8);
 
-    // Right: File browser (filesystem mode) or DB browser (library mode) —
-    // same bounds either way, visibility is toggled at the click site.
     fileBrowser_->setBounds(bounds);
     if (searchResults_) {
         searchResults_->setBounds(bounds);
@@ -1785,31 +1926,6 @@ void MediaExplorerContent::resized() {
     if (dbBrowser_) {
         dbBrowser_->setBounds(bounds);
     }
-
-    // Now layout preview/inspector area
-    previewArea.removeFromTop(4);
-
-    // Metadata section
-    fileInfoLabel_.setBounds(previewArea.removeFromTop(14));
-    previewArea.removeFromTop(1);
-    formatLabel_.setBounds(previewArea.removeFromTop(12));
-    previewArea.removeFromTop(1);
-    propertiesLabel_.setBounds(previewArea.removeFromTop(12));
-    previewArea.removeFromTop(4);
-
-    // Waveform thumbnail
-    thumbnailComponent_->setBounds(previewArea.removeFromTop(40));
-    previewArea.removeFromTop(4);
-
-    // Preview controls row
-    auto previewRow = previewArea.removeFromTop(28);
-    playButton_->setBounds(previewRow.removeFromLeft(28));
-    previewRow.removeFromLeft(4);
-    stopButton_->setBounds(previewRow.removeFromLeft(28));
-    previewRow.removeFromLeft(8);
-    autoPlayButton_.setBounds(previewRow.removeFromLeft(60));
-    previewRow.removeFromLeft(12);
-    volumeSlider_.setBounds(previewRow.removeFromLeft(120));
 }
 
 void MediaExplorerContent::onActivated() {
@@ -1857,6 +1973,7 @@ void MediaExplorerContent::selectionChanged() {
     if (numSelected > 1) {
         stopPreview();
         transportSource_->setSource(nullptr);
+        stretchSource_.reset();
         readerSource_.reset();
         playButton_->setEnabled(false);
 
@@ -1867,9 +1984,7 @@ void MediaExplorerContent::selectionChanged() {
         fileInfoLabel_.setText(juce::String(numSelected) + " files selected",
                                juce::dontSendNotification);
         fileInfoLabel_.setTooltip({});
-        formatLabel_.setText("Multiple files", juce::dontSendNotification);
-        propertiesLabel_.setText("Total size: " + formatFileSize(totalBytes),
-                                 juce::dontSendNotification);
+        formatLabel_.setText(formatFileSize(totalBytes), juce::dontSendNotification);
         if (thumbnailComponent_)
             thumbnailComponent_->setFile(juce::File());
         return;
@@ -1881,12 +1996,12 @@ void MediaExplorerContent::selectionChanged() {
         // No valid file selected - stop preview
         stopPreview();
         transportSource_->setSource(nullptr);
+        stretchSource_.reset();
         readerSource_.reset();
         playButton_->setEnabled(false);
         fileInfoLabel_.setText("No file selected", juce::dontSendNotification);
         fileInfoLabel_.setTooltip({});
         formatLabel_.setText("", juce::dontSendNotification);
-        propertiesLabel_.setText("", juce::dontSendNotification);
         if (thumbnailComponent_) {
             thumbnailComponent_->setFile(juce::File());
         }
@@ -1904,12 +2019,10 @@ void MediaExplorerContent::selectionChanged() {
         stopPreview();
         playButton_->setEnabled(false);
 
-        fileInfoLabel_.setText(selectedFile.getFullPathName(), juce::dontSendNotification);
+        fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
         fileInfoLabel_.setTooltip(selectedFile.getFullPathName());
-        formatLabel_.setText("MIDI File", juce::dontSendNotification);
-        propertiesLabel_.setText("Size: " + formatFileSize(selectedFile.getSize()) +
-                                     " | Preview: Coming soon",
-                                 juce::dontSendNotification);
+        formatLabel_.setText("MIDI" + kMetaSep + formatFileSize(selectedFile.getSize()),
+                             juce::dontSendNotification);
 
         if (thumbnailComponent_) {
             thumbnailComponent_->setFile(juce::File());  // Clear thumbnail
@@ -1919,12 +2032,10 @@ void MediaExplorerContent::selectionChanged() {
         stopPreview();
         playButton_->setEnabled(false);
 
-        fileInfoLabel_.setText(selectedFile.getFullPathName(), juce::dontSendNotification);
+        fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
         fileInfoLabel_.setTooltip(selectedFile.getFullPathName());
-        formatLabel_.setText("Magda Clip", juce::dontSendNotification);
-        propertiesLabel_.setText("Size: " + formatFileSize(selectedFile.getSize()) +
-                                     " | Preview: Coming soon",
-                                 juce::dontSendNotification);
+        formatLabel_.setText("Clip" + kMetaSep + formatFileSize(selectedFile.getSize()),
+                             juce::dontSendNotification);
 
         if (thumbnailComponent_) {
             thumbnailComponent_->setFile(juce::File());  // Clear thumbnail
@@ -1934,11 +2045,10 @@ void MediaExplorerContent::selectionChanged() {
         stopPreview();
         playButton_->setEnabled(false);
 
-        fileInfoLabel_.setText(selectedFile.getFullPathName(), juce::dontSendNotification);
+        fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
         fileInfoLabel_.setTooltip(selectedFile.getFullPathName());
-        formatLabel_.setText("Preset", juce::dontSendNotification);
-        propertiesLabel_.setText("Size: " + formatFileSize(selectedFile.getSize()),
-                                 juce::dontSendNotification);
+        formatLabel_.setText("Preset" + kMetaSep + formatFileSize(selectedFile.getSize()),
+                             juce::dontSendNotification);
 
         if (thumbnailComponent_) {
             thumbnailComponent_->setFile(juce::File());  // Clear thumbnail
@@ -1948,11 +2058,10 @@ void MediaExplorerContent::selectionChanged() {
         stopPreview();
         playButton_->setEnabled(false);
 
-        fileInfoLabel_.setText(selectedFile.getFullPathName(), juce::dontSendNotification);
+        fileInfoLabel_.setText(selectedFile.getFileName(), juce::dontSendNotification);
         fileInfoLabel_.setTooltip(selectedFile.getFullPathName());
-        formatLabel_.setText("Unknown format", juce::dontSendNotification);
-        propertiesLabel_.setText("Size: " + formatFileSize(selectedFile.getSize()),
-                                 juce::dontSendNotification);
+        formatLabel_.setText("Unknown format" + kMetaSep + formatFileSize(selectedFile.getSize()),
+                             juce::dontSendNotification);
     }
 }
 

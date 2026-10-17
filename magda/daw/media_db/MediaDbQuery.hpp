@@ -132,6 +132,13 @@ class MediaDbQuery {
     // active and matches nothing.
     [[nodiscard]] int totalFiles() const;
 
+    /** @brief Rows a filter-only browse with @p filters would page through. */
+    [[nodiscard]] int countMatching(const QueryFilters& filters) const;
+
+    /** @brief Distinct library tags starting with @p prefix, most used first. */
+    [[nodiscard]] std::vector<std::string> tagsWithPrefix(const std::string& prefix,
+                                                          int limit = 8) const;
+
   private:
     MediaDatabase& db_;
     ClapTextEncoder* textEncoder_;

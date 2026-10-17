@@ -830,4 +830,46 @@ int MediaDbQuery::totalFiles() const {
     return n;
 }
 
+int MediaDbQuery::countMatching(const QueryFilters& filters) const {
+    const BuiltWhere where = buildWhere(filters);
+    const std::string sql = "SELECT COUNT(*) FROM media_file WHERE " + where.clause;
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.handle(), sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        return 0;
+    }
+    bindAll(stmt, 1, where);
+    int n = 0;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        n = sqlite3_column_int(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+    return n;
+}
+
+std::vector<std::string> MediaDbQuery::tagsWithPrefix(const std::string& prefix, int limit) const {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db_.handle(),
+                           "SELECT tag FROM media_tag WHERE tag LIKE ? ESCAPE '\\' "
+                           "GROUP BY tag ORDER BY COUNT(DISTINCT file_id) DESC, tag LIMIT ?",
+                           -1, &stmt, nullptr) != SQLITE_OK) {
+        return {};
+    }
+    std::string pattern;
+    for (const char c : prefix) {
+        if (c == '%' || c == '_' || c == '\\') {
+            pattern += '\\';
+        }
+        pattern += c;
+    }
+    pattern += '%';
+    sqlite3_bind_text(stmt, 1, pattern.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, std::max(limit, 0));
+    std::vector<std::string> out;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        out.emplace_back(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0)));
+    }
+    sqlite3_finalize(stmt);
+    return out;
+}
+
 }  // namespace magda::media

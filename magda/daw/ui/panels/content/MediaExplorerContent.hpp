@@ -6,6 +6,7 @@
 
 #include "../../../engine/AudioEngine.hpp"
 #include "../../components/common/PreviewOutputCallback.hpp"
+#include "../../components/common/PreviewStretchSource.hpp"
 #include "../../components/common/SvgButton.hpp"
 #include "PanelContent.hpp"
 #include "SearchTextEditor.hpp"
@@ -37,6 +38,7 @@ class MediaExplorerContent : public PanelContent,
     }
 
     void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
     void resized() final;
     void lookAndFeelChanged() override;
 
@@ -69,8 +71,9 @@ class MediaExplorerContent : public PanelContent,
     // The `using` un-hides the inherited Component::keyPressed(KeyPress)
     // overload that the two-arg KeyListener override would otherwise
     // shadow (-Woverloaded-virtual).
-    using juce::Component::keyPressed;
     bool keyPressed(const juce::KeyPress& key, juce::Component* origin) override;
+    /** @brief Cmd+F focuses the search box while the panel has focus. */
+    bool keyPressed(const juce::KeyPress& key) override;
 
   private:
     // Routes a click on the audio/MIDI/preset type icon to either the
@@ -95,13 +98,15 @@ class MediaExplorerContent : public PanelContent,
     // Preview controls
     std::unique_ptr<magda::SvgButton> playButton_;
     std::unique_ptr<magda::SvgButton> stopButton_;
-    juce::ToggleButton autoPlayButton_;
-    juce::Slider volumeSlider_;
+    std::unique_ptr<juce::LookAndFeel> toggleLnf_;
+    juce::TextButton autoPlayButton_;
+    juce::TextButton syncButton_;
+    juce::Slider volumeSlider_;  // dB
+    juce::Label volumeDbLabel_;
 
-    // Metadata display
+    // Metadata display: file name, then "bpm · length · rate · bits" on the right.
     juce::Label fileInfoLabel_;
     juce::Label formatLabel_;
-    juce::Label propertiesLabel_;
 
     // Waveform thumbnail preview
     class ThumbnailComponent;
@@ -183,6 +188,11 @@ class MediaExplorerContent : public PanelContent,
     juce::AudioSourcePlayer audioSourcePlayer_;
     std::unique_ptr<juce::AudioTransportSource> transportSource_;
     std::unique_ptr<juce::AudioFormatReaderSource> readerSource_;
+    std::unique_ptr<magda::PreviewStretchSource> stretchSource_;
+    /// The previewed file's library tempo; 0 when it has none, so Sync leaves it alone.
+    double previewFileBpm_ = 0.0;
+    /// Follows project tempo changes while a synced preview plays.
+    juce::TimedCallback tempoPoll_{[this] { updatePreviewRate(); }};
 
     // Preview output channel routing wrapper
     std::unique_ptr<magda::PreviewOutputCallback> previewCallback_;
@@ -217,6 +227,12 @@ class MediaExplorerContent : public PanelContent,
     // wrapper instead of calling playPreview() directly.
     void restartPreview();
     void setPreviewLockedForIndexing(bool locked);
+    /** @brief Stretch to the project tempo when Sync is on and the file has a tempo. */
+    void updatePreviewRate();
+
+    // Painted chrome placed by resized().
+    juce::Rectangle<int> filterGroupBounds_;
+    juce::Rectangle<int> previewBounds_;
     void updateFileInfo(const juce::File& file);
     void navigateToDirectory(const juce::File& directory);
     void updateMediaFilter();

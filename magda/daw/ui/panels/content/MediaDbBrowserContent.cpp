@@ -20,9 +20,7 @@
 #include "../../components/chain/layout/DeviceSlotHeaderLayout.hpp"
 #include "../../components/common/InternalFileDrag.hpp"
 #include "../../themes/ActiveTheme.hpp"
-#include "../../themes/FileBrowserLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
-#include "../../themes/SmallComboBoxLookAndFeel.hpp"
 #include "ui/components/common/MagdaAlertWindow.hpp"
 #include "ui/windows/AppShortcuts.hpp"
 
@@ -81,13 +79,21 @@ const std::vector<juce::String> kKeys = {
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
 };
 
-std::optional<std::string> selectedString(const juce::ComboBox& cb,
+std::optional<std::string> selectedString(const FilterPill& pill,
                                           const std::vector<juce::String>& table) {
-    const int id = cb.getSelectedId();
-    if (id <= 1 || id - 1 >= static_cast<int>(table.size())) {
+    const int index = pill.getSelectedIndex();
+    if (index <= 0 || index >= static_cast<int>(table.size())) {
         return std::nullopt;
     }
-    return table[static_cast<size_t>(id - 1)].toStdString();
+    return table[static_cast<size_t>(index)].toStdString();
+}
+
+/** @brief A pill's options: @p none for the table's sentinel, then its values. */
+juce::StringArray filterOptions(const std::vector<juce::String>& table, const char* none) {
+    juce::StringArray out{none};
+    for (size_t i = 1; i < table.size(); ++i)
+        out.add(table[i]);
+    return out;
 }
 
 class IndexTagOptionsComponent final : public juce::Component {
@@ -313,6 +319,42 @@ juce::String prettyKey(const std::optional<std::string>& root,
     return out;
 }
 
+/** @brief A fixed hue per family, so groups scan by colour. */
+juce::Colour familyColour(const std::string& family) {
+    static const std::unordered_map<std::string, juce::uint32> kHues = {
+        {"drum", 0xFFE8A33D},    {"bass", 0xFF5FC48A},       {"lead", 0xFFE5655B},
+        {"pad", 0xFF6C9BEF},     {"keys", 0xFF4FC1C9},       {"guitar", 0xFFD9824A},
+        {"vocal", 0xFFC27BE0},   {"orchestral", 0xFFD8C25A}, {"fx", 0xFFE56FA6},
+        {"texture", 0xFF9AA4B5},
+    };
+    if (auto it = kHues.find(family); it != kHues.end())
+        return juce::Colour(it->second);
+    return ActiveTheme::getSecondaryTextColour();
+}
+
+/** @brief Loop: circling arrows. One-shot: an attack corner. Sustained: a held line. */
+juce::Path shapeGlyph(const std::string& shape, juce::Rectangle<float> r) {
+    juce::Path p;
+    if (shape == "loop") {
+        const auto c = r.getCentre();
+        const float rad = r.getWidth() * 0.45F;
+        p.addCentredArc(c.x, c.y, rad, rad, 0.0F, 0.35F, 2.8F, true);
+        p.addCentredArc(c.x, c.y, rad, rad, 0.0F, 3.5F, 5.95F, true);
+        p.startNewSubPath(c.x + rad * 0.35F, c.y + rad * 1.05F);
+        p.lineTo(c.x - rad * 0.2F, c.y + rad);
+        p.lineTo(c.x + rad * 0.2F, c.y + rad * 0.55F);
+    } else if (shape == "one-shot") {
+        p.startNewSubPath(r.getX(), r.getBottom());
+        p.lineTo(r.getX() + r.getWidth() * 0.15F, r.getY());
+        p.lineTo(r.getRight(), r.getBottom());
+    } else {
+        p.startNewSubPath(r.getX(), r.getBottom());
+        p.lineTo(r.getX() + r.getWidth() * 0.2F, r.getY() + r.getHeight() * 0.3F);
+        p.lineTo(r.getRight(), r.getY() + r.getHeight() * 0.3F);
+    }
+    return p;
+}
+
 bool isAllowedValue(const juce::String& value, const std::vector<juce::String>& values) {
     for (size_t i = 1; i < values.size(); ++i) {
         if (value.equalsIgnoreCase(values[i])) {
@@ -477,152 +519,153 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
         owner_.setSortOrder(newSortColumnId, isForwards);
     }
 
-    void paintRowBackground(juce::Graphics& g, int rowNumber, int /*width*/, int /*height*/,
+    void paintRowBackground(juce::Graphics& g, int rowNumber, int width, int height,
                             bool rowIsSelected) override {
         if (rowIsSelected) {
             g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER));
-            return;
+            g.setColour(ActiveTheme::getAccentColour());
+            g.fillRect(0, 0, 2, height);
+        } else if (rowNumber == owner_.hoveredRow_) {
+            g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER).withAlpha(0.5F));
         }
-        if (rowNumber >= 0 && rowNumber < static_cast<int>(owner_.results_.size())) {
-            const auto& r = owner_.results_[static_cast<size_t>(rowNumber)];
-            if (r.kind == "audio" && r.tagged) {
-                g.fillAll(ActiveTheme::getAccentColour().withAlpha(0.055F));
-            }
-        }
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR).withAlpha(0.5F));
+        g.drawHorizontalLine(height - 1, 0.0F, static_cast<float>(width));
     }
 
     void paintCell(juce::Graphics& g, int row, int columnId, int width, int height,
-                   bool /*rowIsSelected*/) override {
+                   bool rowIsSelected) override {
         if (row < 0 || row >= static_cast<int>(owner_.results_.size())) {
             return;
         }
         const auto& r = owner_.results_[static_cast<size_t>(row)];
         const auto cell = juce::Rectangle<int>(0, 0, width, height);
+        const bool hovered = row == owner_.hoveredRow_;
 
-        const auto& font = FontManager::getInstance().getUIFont(11.0F);
-        g.setFont(font);
+        const auto uiFont = FontManager::getInstance().getUIFont(12.5F);
+        const auto monoFont = FontManager::getInstance().getMonoFont(12.0F);
 
-        auto drawPill = [&](const juce::String& text, juce::Colour col, bool showMenuArrow) {
-            if (text.isEmpty()) {
+        // A dash in place of a value is dimmed so the real values stand out.
+        auto drawValue = [&](const juce::String& text) {
+            const bool missing = text == "-";
+            g.setFont(monoFont);
+            g.setColour(missing ? ActiveTheme::getColour(ActiveTheme::TEXT_DIM)
+                                : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+            g.drawText(missing ? juce::String::fromUTF8("\xe2\x80\x93") : text, cell.reduced(8, 0),
+                       juce::Justification::centredRight, false);
+        };
+
+        auto drawMenuCaret = [&](juce::Rectangle<int> area) {
+            if (!hovered && !rowIsSelected) {
                 return;
             }
-            auto pill = cell.reduced(6, 4);
-            g.setColour(col.withAlpha(0.15F));
-            g.fillRoundedRectangle(pill.toFloat(), 3.0F);
-            g.setColour(col);
-            g.drawRoundedRectangle(pill.toFloat(), 3.0F, 1.0F);
-            auto textArea = pill;
-            if (showMenuArrow) {
-                textArea.removeFromRight(12);
-            }
-            g.drawText(text, textArea, juce::Justification::centred, true);
-            if (showMenuArrow) {
-                const auto arrow = pill.removeFromRight(12).toFloat();
-                juce::Path p;
-                p.addTriangle(arrow.getCentreX() - 3.0F, arrow.getCentreY() - 1.5F,
-                              arrow.getCentreX() + 3.0F, arrow.getCentreY() - 1.5F,
-                              arrow.getCentreX(), arrow.getCentreY() + 3.0F);
-                g.fillPath(p);
-            }
+            const auto c = area.removeFromRight(16).toFloat().getCentre();
+            juce::Path p;
+            p.addTriangle(c.x - 3.0F, c.y - 1.5F, c.x + 3.0F, c.y - 1.5F, c.x, c.y + 2.0F);
+            g.setColour(ActiveTheme::getSecondaryTextColour());
+            g.fillPath(p);
         };
 
         switch (columnId) {
+            case kColStatus: {
+                const float cx = static_cast<float>(width) * 0.5F;
+                const float cy = static_cast<float>(height) * 0.5F;
+                if (hovered || rowIsSelected) {
+                    juce::Path play;
+                    play.addTriangle(cx - 3.5F, cy - 4.5F, cx - 3.5F, cy + 4.5F, cx + 4.5F, cy);
+                    g.setColour(rowIsSelected ? ActiveTheme::getAccentColour()
+                                              : ActiveTheme::getTextColour());
+                    g.fillPath(play);
+                    break;
+                }
+                const auto state = integrityFor(r);
+                const float rad = 3.5F;
+                const auto dot = juce::Rectangle<float>(cx - rad, cy - rad, rad * 2.0F, rad * 2.0F);
+                if (state == RowIntegrity::Dirty) {
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::STATUS_WARNING));
+                    g.drawEllipse(dot, 1.4F);
+                } else if (state == RowIntegrity::Missing) {
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::STATUS_ERROR));
+                    g.fillEllipse(dot);
+                } else if (r.userEdited) {
+                    g.setColour(ActiveTheme::getAccentColour());
+                    g.fillEllipse(dot.reduced(0.75F));
+                }
+                break;
+            }
             case kColName: {
-                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-                // MAGDA's own presets carry the M in the gutter; the edited dot moves past it.
-                const bool magdaPreset = r.path.extension() == ".mps";
-                if (magdaPreset) {
+                int indent = 4;
+                if (r.path.extension() == ".mps") {
                     if (auto* glyph = magdaGlyph())
                         glyph->drawWithin(
                             g,
-                            juce::Rectangle<float>(5.0F, static_cast<float>(height) * 0.5F - 5.5F,
+                            juce::Rectangle<float>(4.0F, static_cast<float>(height) * 0.5F - 5.5F,
                                                    10.0F, 11.0F),
                             juce::RectanglePlacement::centred, 1.0F);
-                }
-                const int textIndent = magdaPreset ? (r.userEdited ? 30 : 20) : 18;
-                if (r.userEdited) {
-                    const float dotR = 3.0F;
-                    g.setColour(ActiveTheme::getAccentColour());
-                    g.fillEllipse(magdaPreset ? 19.0F : 8.0F,
-                                  static_cast<float>(height) * 0.5F - dotR, dotR * 2.0F,
-                                  dotR * 2.0F);
+                    indent = 20;
                 }
                 const bool rowMissing = integrityFor(r) == RowIntegrity::Missing;
-                if (rowMissing) {
-                    g.setColour(
-                        ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.55F));
-                    g.setFont(font.italicised());
-                } else if (r.kind == "audio" && !r.tagged) {
-                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-                    g.setFont(font.italicised());
-                } else {
-                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-                }
-                g.drawText(displayNameFor(r), cell.withTrimmedLeft(textIndent).reduced(0, 2),
+                g.setFont(uiFont);
+                g.setColour(rowMissing ? ActiveTheme::getColour(ActiveTheme::TEXT_DIM)
+                                       : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+                g.drawText(displayNameFor(r), cell.withTrimmedLeft(indent).withTrimmedRight(6),
                            juce::Justification::centredLeft, true);
                 break;
             }
-            case kColStatus: {
-                // Three states. Ok renders blank to keep healthy rows quiet.
-                // Dirty: amber outlined circle. Missing: filled red circle
-                // with a small slash through it. Same colours as elsewhere
-                // in the app so it matches the existing visual vocabulary.
-                const auto state = integrityFor(r);
-                if (state == RowIntegrity::Ok || state == RowIntegrity::Unknown) {
+            case kColFamily: {
+                if (r.family.empty()) {
+                    drawValue("-");
                     break;
                 }
-                const float r2 = 4.0F;
-                const auto cx = static_cast<float>(width) * 0.5F;
-                const auto cy = static_cast<float>(height) * 0.5F;
-                const auto rect = juce::Rectangle<float>(cx - r2, cy - r2, r2 * 2.0F, r2 * 2.0F);
-                if (state == RowIntegrity::Dirty) {
-                    g.setColour(juce::Colour(0xFFE0A93D));
-                    g.drawEllipse(rect, 1.5F);
-                } else {  // Missing
-                    g.setColour(juce::Colour(0xFFD05A4A));
-                    g.fillEllipse(rect);
-                    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER));
-                    g.drawLine(cx - r2 * 0.6F, cy + r2 * 0.6F, cx + r2 * 0.6F, cy - r2 * 0.6F,
-                               1.4F);
-                }
+                const auto hue = familyColour(r.family);
+                auto pill = cell.reduced(4, 5);
+                g.setColour(hue.withAlpha(0.14F));
+                g.fillRoundedRectangle(pill.toFloat(), static_cast<float>(pill.getHeight()) * 0.5F);
+                auto content = pill.reduced(8, 0);
+                const auto dot =
+                    content.removeFromLeft(6).toFloat().withSizeKeepingCentre(6.0F, 6.0F);
+                g.setColour(hue);
+                g.fillEllipse(dot);
+                content.removeFromLeft(6);
+                g.setFont(uiFont);
+                g.drawText(juce::String(r.family), content, juce::Justification::centredLeft, true);
+                drawMenuCaret(pill);
                 break;
             }
-            case kColFamily:
-                drawPill(juce::String(r.family),
-                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY), true);
+            case kColShape: {
+                if (r.shape.empty()) {
+                    drawValue("-");
+                    break;
+                }
+                auto area = cell.reduced(6, 0);
+                const auto icon =
+                    area.removeFromLeft(12).toFloat().withSizeKeepingCentre(10.0F, 10.0F);
+                g.setColour(ActiveTheme::getSecondaryTextColour());
+                g.strokePath(shapeGlyph(r.shape, icon),
+                             juce::PathStrokeType(1.2F, juce::PathStrokeType::curved,
+                                                  juce::PathStrokeType::rounded));
+                area.removeFromLeft(7);
+                g.setFont(uiFont);
+                g.drawText(juce::String(r.shape), area, juce::Justification::centredLeft, true);
+                drawMenuCaret(cell.reduced(4, 5));
                 break;
-            case kColShape:
-                drawPill(juce::String(r.shape), ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY),
-                         true);
-                break;
+            }
             case kColBpm:
-                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-                g.drawText(prettyBpm(r.bpm), cell.reduced(6, 2), juce::Justification::centredRight,
-                           true);
+                drawValue(prettyBpm(r.bpm));
                 break;
             case kColKey:
-                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-                g.drawText(prettyKey(r.keyRoot, r.keyScale), cell.reduced(6, 2),
-                           juce::Justification::centredRight, true);
+                drawValue(prettyKey(r.keyRoot, r.keyScale));
                 break;
             case kColDuration:
-                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-                g.drawText(prettyDuration(r.durationS), cell.reduced(6, 2),
-                           juce::Justification::centredRight, true);
+                drawValue(prettyDuration(r.durationS));
                 break;
             case kColTags: {
-                // Comma-joined tag list, single-line, truncated at the cell
-                // edge. Hidden by default in the docked browser; visible in
-                // the pop-out window where there's more horizontal room.
+                juce::StringArray tags;
+                for (const auto& t : r.tags)
+                    tags.add(juce::String(t));
+                g.setFont(uiFont);
                 g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-                juce::String joined;
-                for (const auto& t : r.tags) {
-                    if (joined.isNotEmpty()) {
-                        joined += ", ";
-                    }
-                    joined += juce::String(t);
-                }
-                g.drawText(joined, cell.reduced(6, 2), juce::Justification::centredLeft, true);
+                g.drawText(tags.joinIntoString(", "), cell.reduced(6, 2),
+                           juce::Justification::centredLeft, true);
                 break;
             }
             default:
@@ -674,6 +717,12 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
             return targets;
         };
 
+        if (columnId == kColStatus && e.mods.isLeftButtonDown() && !e.mods.isPopupMenu()) {
+            if (owner_.onPlayRequested) {
+                owner_.onPlayRequested(juce::File(juce::String(r.path.string())));
+            }
+            return;
+        }
         if (columnId == kColFamily && e.mods.isLeftButtonDown()) {
             auto targets = pillTargets();
             if (targets.restoreSelection) {
@@ -906,73 +955,92 @@ bool MediaDbBrowserContent::ResultsTable::keyPressed(const juce::KeyPress& key) 
 }
 
 // ===========================================================================
+// HeaderLookAndFeel — quiet uppercase column labels
+// ===========================================================================
+
+class MediaDbBrowserContent::HeaderLookAndFeel : public juce::LookAndFeel_V4 {
+  public:
+    void drawTableHeaderBackground(juce::Graphics& g, juce::TableHeaderComponent& header) override {
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
+        g.drawHorizontalLine(header.getHeight() - 1, 0.0F, static_cast<float>(header.getWidth()));
+    }
+
+    void drawTableHeaderColumn(juce::Graphics& g, juce::TableHeaderComponent& header,
+                               const juce::String& columnName, int columnId, int width, int height,
+                               bool isMouseOver, bool, int columnFlags) override {
+        const bool sorted = (columnFlags & (juce::TableHeaderComponent::sortedForwards |
+                                            juce::TableHeaderComponent::sortedBackwards)) != 0;
+        const auto colour = sorted        ? ActiveTheme::getAccentColour()
+                            : isMouseOver ? ActiveTheme::getTextColour()
+                                          : ActiveTheme::getSecondaryTextColour();
+        const bool numeric = columnId == kColBpm || columnId == kColKey || columnId == kColDuration;
+
+        auto area = juce::Rectangle<int>(0, 0, width, height).reduced(8, 0);
+        if (sorted) {
+            const auto arrow = (numeric ? area.removeFromLeft(10) : area.removeFromRight(10))
+                                   .toFloat()
+                                   .getCentre();
+            const bool up = (columnFlags & juce::TableHeaderComponent::sortedForwards) != 0;
+            juce::Path p;
+            p.addTriangle(arrow.x - 3.0F, arrow.y + (up ? 1.5F : -1.5F), arrow.x + 3.0F,
+                          arrow.y + (up ? 1.5F : -1.5F), arrow.x, arrow.y + (up ? -2.0F : 2.0F));
+            g.setColour(colour);
+            g.fillPath(p);
+        }
+
+        g.setColour(colour);
+        g.setFont(FontManager::getInstance().getMonoFont(10.5F).withExtraKerningFactor(0.08F));
+        g.drawText(columnName.toUpperCase(), area,
+                   numeric ? juce::Justification::centredRight : juce::Justification::centredLeft,
+                   true);
+        juce::ignoreUnused(header);
+    }
+};
+
+// ===========================================================================
 // MediaDbBrowserContent
 // ===========================================================================
 
 MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
-    : isPopOutInstance_(isPopOutInstance) {
-    // Style mirrors PluginBrowserContent's compact filter strip:
-    // SmallComboBoxLookAndFeel on dropdowns + explicit theme colours on
-    // each control. Labels and the index button share FileBrowserLookAndFeel
-    // because it carries the matching theme-font overrides.
-    auto& comboLnf = SmallComboBoxLookAndFeel::getInstance();
-    auto& fbLnf = FileBrowserLookAndFeel::getInstance();
-    const auto uiFont = FontManager::getInstance().getUIFont(11.0F);
-
-    bpmLabel_.setText("bpm", juce::dontSendNotification);
-    bpmLabel_.setFont(uiFont);
-    bpmLabel_.setJustificationType(juce::Justification::centredRight);
-
-    auto styleCombo = [&](juce::ComboBox& cb) { cb.setLookAndFeel(&comboLnf); };
-
-    // Family — strict closed-set dropdown (same shape as key/shape). The
-    // tags free-text field below is for matching anything that doesn't fit
-    // the predefined families.
-    familyFilter_.addItem("family: all", 1);
-    for (size_t i = 1; i < kFamilies.size(); ++i) {
-        familyFilter_.addItem(kFamilies[i], static_cast<int>(i + 1));
+    : familyFilter_("family", filterOptions(kFamilies, "all")),
+      shapeFilter_("shape", filterOptions(kShapes, "any")),
+      keyFilter_("key", filterOptions(kKeys, "any")),
+      isPopOutInstance_(isPopOutInstance) {
+    for (auto* pill : {&familyFilter_, &shapeFilter_, &keyFilter_}) {
+        pill->onChange = [this]() { restartSearch(); };
+        addAndMakeVisible(*pill);
     }
-    familyFilter_.setSelectedId(1, juce::dontSendNotification);
-    styleCombo(familyFilter_);
-    familyFilter_.onChange = [this]() { restartSearch(); };
 
-    shapeFilter_.addItem("shape: any", 1);
-    for (size_t i = 1; i < kShapes.size(); ++i) {
-        shapeFilter_.addItem(kShapes[i], static_cast<int>(i + 1));
-    }
-    shapeFilter_.setSelectedId(1, juce::dontSendNotification);
-    styleCombo(shapeFilter_);
-    shapeFilter_.onChange = [this]() { restartSearch(); };
+    bpmRange_.onChange = [this]() { restartSearch(); };
+    addAndMakeVisible(bpmRange_);
 
-    keyFilter_.addItem("key: any", 1);
-    for (size_t i = 1; i < kKeys.size(); ++i) {
-        keyFilter_.addItem(kKeys[i], static_cast<int>(i + 1));
-    }
-    keyFilter_.setSelectedId(1, juce::dontSendNotification);
-    styleCombo(keyFilter_);
-    keyFilter_.onChange = [this]() { restartSearch(); };
-
-    auto setupBpm = [&](juce::TextEditor& e) {
-        e.setInputRestrictions(4, "0123456789.");
-        e.setFont(uiFont);
-        e.onReturnKey = [this]() { restartSearch(); };
-        e.onFocusLost = [this]() { restartSearch(); };
+    tonalSwitch_.setTooltip("Only pitched material");
+    tonalSwitch_.onClick = [this]() {
+        tonalSwitch_.setOn(!tonalSwitch_.isOn());
+        restartSearch();
     };
-    setupBpm(bpmMinBox_);
-    setupBpm(bpmMaxBox_);
+    addAndMakeVisible(tonalSwitch_);
+    tonalLabel_.setText("tonal", juce::dontSendNotification);
+    tonalLabel_.setFont(FontManager::getInstance().getUIFont(12.0F));
+    tonalLabel_.setInterceptsMouseClicks(false, false);
+    addAndMakeVisible(tonalLabel_);
 
-    tonalOnly_.setLookAndFeel(&fbLnf);
-    tonalOnly_.onClick = [this]() { restartSearch(); };
+    // Tag chips AND-combine via FTS5 MATCH on media_fts.tag_text.
+    tagsFilter_.onChange = [this]() { restartSearch(); };
+    tagsFilter_.suggest = [](const juce::String& prefix) {
+        juce::StringArray out;
+        auto& ctx = magda::media::MediaDbContext::getInstance();
+        if (!ctx.ensureInitialized())
+            return out;
+        magda::media::MediaDbQuery query(ctx.db(), nullptr, nullptr);
+        for (const auto& tag : query.tagsWithPrefix(prefix.toStdString()))
+            out.add(juce::String(tag));
+        return out;
+    };
+    addAndMakeVisible(tagsFilter_);
 
-    // Tags free-text filter — whitespace-separated tokens are AND-combined
-    // via FTS5 MATCH against media_fts.tag_text. Updates on Enter / blur,
-    // matching the BPM range editors so we don't query on every keystroke.
-    tagsFilter_.setFont(uiFont);
-    tagsFilter_.onReturnKey = [this]() { restartSearch(); };
-    tagsFilter_.onFocusLost = [this]() { restartSearch(); };
-
-    // Pop-out button — opens this view in its own DocumentWindow. Hidden in
-    // the pop-out instance to avoid recursive windows.
+    // Hidden in the pop-out instance to avoid recursive windows.
     if (!isPopOutInstance_) {
         popOutButton_ = std::make_unique<magda::SvgButton>(
             "Open in window", BinaryData::open_in_new_svg, BinaryData::open_in_new_svgSize);
@@ -980,15 +1048,6 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
         popOutButton_->onClick = [this]() { openPopOutWindow(); };
         addAndMakeVisible(*popOutButton_);
     }
-
-    addAndMakeVisible(familyFilter_);
-    addAndMakeVisible(shapeFilter_);
-    addAndMakeVisible(keyFilter_);
-    addAndMakeVisible(bpmLabel_);
-    addAndMakeVisible(bpmMinBox_);
-    addAndMakeVisible(bpmMaxBox_);
-    addAndMakeVisible(tonalOnly_);
-    addAndMakeVisible(tagsFilter_);
 
     // Kind selection lives outside this component — see setKindFilter().
     // The search-bar file-type icons in MediaExplorerContent double as the
@@ -1004,10 +1063,14 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     resultsTable_.setHeader(std::move(tableHeader));
     resultsModel_ = std::make_unique<ResultsTableModel>(*this);
     resultsTable_.setModel(resultsModel_.get());
-    resultsTable_.setRowHeight(28);
+    resultsTable_.setRowHeight(30);
     resultsTable_.setMultipleSelectionEnabled(true);
-    resultsTable_.setHeaderHeight(22);
-    resultsTable_.setOutlineThickness(1);
+    resultsTable_.setHeaderHeight(30);
+    resultsTable_.setOutlineThickness(0);
+    headerLnf_ = std::make_unique<HeaderLookAndFeel>();
+    resultsTable_.getHeader().setLookAndFeel(headerLnf_.get());
+    // Children's moves reach mouseMove here, which tracks the hovered row.
+    resultsTable_.addMouseListener(this, true);
 
     // All theme-derived widget colours (including the header replaced by
     // setHeader above) live in applyThemeColours() so a live theme switch can
@@ -1041,11 +1104,6 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     };
 
     auto& header = resultsTable_.getHeader();
-    header.setColour(juce::TableHeaderComponent::backgroundColourId,
-                     ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05F));
-    header.setColour(juce::TableHeaderComponent::textColourId,
-                     ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-    header.setColour(juce::TableHeaderComponent::outlineColourId, ActiveTheme::getBorderColour());
     // appearsOnColumnMenu — right-click the header to show/hide any column.
     // JUCE drives the visibility toggle itself once the flag is set.
     const int flags = juce::TableHeaderComponent::visible | juce::TableHeaderComponent::resizable |
@@ -1053,18 +1111,16 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
                       juce::TableHeaderComponent::appearsOnColumnMenu |
                       juce::TableHeaderComponent::sortable;
     // (id, name, defaultWidth, minWidth, maxWidth, propertyFlags)
-    header.addColumn("Name", kColName, 260, 80, -1, flags);
-    // Narrow icon-only file-integrity column. No header label — the badge
-    // legend lives in tooltip / docs. Not sortable; status is computed
-    // client-side and a SQL sort key would require schema changes.
-    header.addColumn({}, kColStatus, 22, 22, 22,
+    // Status is the play gutter; not sortable, since integrity is computed client-side.
+    header.addColumn({}, kColStatus, 26, 26, 26,
                      juce::TableHeaderComponent::visible | juce::TableHeaderComponent::draggable |
                          juce::TableHeaderComponent::appearsOnColumnMenu);
-    header.addColumn("Family", kColFamily, 90, 50, -1, flags);
-    header.addColumn("Shape", kColShape, 90, 50, -1, flags);
-    header.addColumn("BPM", kColBpm, 60, 40, -1, flags);
-    header.addColumn("Key", kColKey, 60, 40, -1, flags);
-    header.addColumn("Duration", kColDuration, 70, 40, -1, flags);
+    header.addColumn("Name", kColName, 260, 80, -1, flags);
+    header.addColumn("Family", kColFamily, 96, 60, -1, flags);
+    header.addColumn("Shape", kColShape, 96, 60, -1, flags);
+    header.addColumn("BPM", kColBpm, 54, 40, -1, flags);
+    header.addColumn("Key", kColKey, 62, 40, -1, flags);
+    header.addColumn("Dur", kColDuration, 60, 40, -1, flags);
     header.addColumn("Tags", kColTags, 200, 80, -1, flags);
 
     // Per-view default visibility: the docked browser stays compact, the
@@ -1087,10 +1143,7 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
     emptyState_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(emptyState_);
 
-    // Pagination footer. Prev / "Page N" label / Next. Hidden when the
-    // result set fits in a single page (no need for any chrome). Uses the
-    // shared makeNavArrowButton style so it matches device/param paging
-    // arrows elsewhere in the app.
+    // Footer: "1–100 of 312" on the left, "‹ 1 / 4 ›" on the right.
     prevPageBtn_ = makeNavArrowButton("prev", 0.5F);
     prevPageBtn_->onClick = [this]() {
         if (currentPage_ > 0) {
@@ -1103,16 +1156,17 @@ MediaDbBrowserContent::MediaDbBrowserContent(bool isPopOutInstance)
         ++currentPage_;
         runSearch();
     };
-    pageLabel_.setFont(FontManager::getInstance().getUIFont(11.0F));
+    for (auto* label : {&rangeLabel_, &pageLabel_}) {
+        label->setFont(FontManager::getInstance().getMonoFont(11.0F));
+        label->setInterceptsMouseClicks(false, false);
+        label->setVisible(false);
+        addAndMakeVisible(*label);
+    }
+    rangeLabel_.setJustificationType(juce::Justification::centredLeft);
     pageLabel_.setJustificationType(juce::Justification::centred);
-    pageLabel_.setColour(juce::Label::textColourId,
-                         ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-    pageLabel_.setInterceptsMouseClicks(false, false);
     prevPageBtn_->setVisible(false);
     nextPageBtn_->setVisible(false);
-    pageLabel_.setVisible(false);
     addAndMakeVisible(*prevPageBtn_);
-    addAndMakeVisible(pageLabel_);
     addAndMakeVisible(*nextPageBtn_);
 
     // Similar-mode status. Indexing status is forwarded to MediaExplorerContent's
@@ -1154,52 +1208,21 @@ MediaDbBrowserContent::~MediaDbBrowserContent() {
     if (searchPool_) {
         searchPool_->removeAllJobs(true, -1);
     }
+    resultsTable_.removeMouseListener(this);
+    resultsTable_.getHeader().setLookAndFeel(nullptr);
     resultsTable_.setModel(nullptr);
-    familyFilter_.setLookAndFeel(nullptr);
-    shapeFilter_.setLookAndFeel(nullptr);
-    keyFilter_.setLookAndFeel(nullptr);
-    bpmMinBox_.setLookAndFeel(nullptr);
-    bpmMaxBox_.setLookAndFeel(nullptr);
-    tonalOnly_.setLookAndFeel(nullptr);
 }
 
 void MediaDbBrowserContent::applyThemeColours() {
-    bpmLabel_.setColour(juce::Label::textColourId,
-                        ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-
-    for (auto* cb : {&familyFilter_, &shapeFilter_, &keyFilter_}) {
-        cb->setColour(juce::ComboBox::backgroundColourId,
-                      ActiveTheme::getColour(ActiveTheme::SURFACE));
-        cb->setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
-        cb->setColour(juce::ComboBox::outlineColourId, ActiveTheme::getBorderColour());
-    }
-
-    const auto styleEditor = [](juce::TextEditor& e, const juce::String& placeholder) {
-        e.setTextToShowWhenEmpty(placeholder, ActiveTheme::getSecondaryTextColour());
-        e.setColour(juce::TextEditor::backgroundColourId,
-                    ActiveTheme::getColour(ActiveTheme::SURFACE));
-        e.setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
-        e.setColour(juce::TextEditor::outlineColourId, ActiveTheme::getBorderColour());
-    };
-    styleEditor(bpmMinBox_, "min");
-    styleEditor(bpmMaxBox_, "max");
-    styleEditor(tagsFilter_, "tags (e.g. drum 808)");
+    bpmRange_.applyThemeColours();
+    tagsFilter_.applyThemeColours();
+    tonalLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
+    for (auto* label : {&rangeLabel_, &pageLabel_})
+        label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 
     resultsTable_.setColour(juce::ListBox::backgroundColourId,
                             ActiveTheme::getColour(ActiveTheme::BACKGROUND));
-    resultsTable_.setColour(juce::ListBox::outlineColourId, ActiveTheme::getBorderColour());
-
-    // The column-label header draws through the LookAndFeel with its own
-    // colour ids; set them on the component (same pattern as the
-    // TrackManager/ParameterConfig/PluginSettings tables).
-    auto& header = resultsTable_.getHeader();
-    header.setColour(juce::TableHeaderComponent::backgroundColourId,
-                     ActiveTheme::getColour(ActiveTheme::SURFACE));
-    header.setColour(juce::TableHeaderComponent::textColourId, ActiveTheme::getTextColour());
-    header.setColour(juce::TableHeaderComponent::outlineColourId,
-                     ActiveTheme::getColour(ActiveTheme::SEPARATOR));
-    header.setColour(juce::TableHeaderComponent::highlightColourId,
-                     ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
+    resultsTable_.setColour(juce::ListBox::outlineColourId, juce::Colours::transparentBlack);
 }
 
 void MediaDbBrowserContent::lookAndFeelChanged() {
@@ -1208,43 +1231,43 @@ void MediaDbBrowserContent::lookAndFeelChanged() {
 }
 
 void MediaDbBrowserContent::paint(juce::Graphics& g) {
-    g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE));
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
+    g.fillRect(headerBand_);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
+    g.drawHorizontalLine(headerBand_.getBottom() - 1, static_cast<float>(headerBand_.getX()),
+                         static_cast<float>(headerBand_.getRight()));
+    if (rangeLabel_.isVisible())
+        g.drawHorizontalLine(rangeLabel_.getY() - 1, 0.0F, static_cast<float>(getWidth()));
 }
 
 void MediaDbBrowserContent::resized() {
     auto bounds = getLocalBounds();
 
-    // Two-row filter strip. Row 1: family / shape / key dropdowns + pop-out.
-    // Row 2: BPM range + tonal. Kind selection is driven externally from the
-    // search-bar icons (see MediaExplorerContent), so no third row.
-    auto row1 = bounds.removeFromTop(28);
-    row1.removeFromLeft(4);
-    row1.removeFromRight(4);
-    if (popOutButton_) {
-        popOutButton_->setBounds(row1.removeFromRight(24).reduced(2));
-        row1.removeFromRight(6);
+    // Filter strip: pills, bpm and tonal on one row; tag chips and pop-out on the next.
+    constexpr int kRow = 30;
+    constexpr int kGap = 8;
+    headerBand_ = bounds.removeFromTop(kRow * 2 + kGap * 3);
+    auto band = headerBand_.reduced(kGap);
+
+    auto row1 = band.removeFromTop(kRow);
+    for (auto* pill : {&familyFilter_, &shapeFilter_, &keyFilter_}) {
+        pill->setBounds(row1.removeFromLeft(juce::jmin(pill->getIdealWidth(), 130)));
+        row1.removeFromLeft(kGap);
     }
-    familyFilter_.setBounds(row1.removeFromLeft(110).reduced(2));
+    bpmRange_.setBounds(row1.removeFromLeft(juce::jlimit(110, 160, row1.getWidth() - 90)));
+    row1.removeFromLeft(kGap + 4);
+    tonalSwitch_.setBounds(row1.removeFromLeft(ToggleSwitch::kWidth + 4));
     row1.removeFromLeft(6);
-    shapeFilter_.setBounds(row1.removeFromLeft(100).reduced(2));
-    row1.removeFromLeft(6);
-    keyFilter_.setBounds(row1.removeFromLeft(90).reduced(2));
+    tonalLabel_.setBounds(row1.removeFromLeft(48));
 
-    auto row2 = bounds.removeFromTop(28);
-    row2.removeFromLeft(4);
-    row2.removeFromRight(4);
-    bpmLabel_.setBounds(row2.removeFromLeft(30));
-    bpmMinBox_.setBounds(row2.removeFromLeft(60).reduced(2));
-    row2.removeFromLeft(4);
-    bpmMaxBox_.setBounds(row2.removeFromLeft(60).reduced(2));
-    row2.removeFromLeft(8);
-    tonalOnly_.setBounds(row2.removeFromLeft(70).reduced(2));
-    row2.removeFromLeft(8);
-    // Tags fills the rest of the row — gives it room to breathe in
-    // popped-out / wide panels and stays at minimum ~140px in narrow ones.
-    tagsFilter_.setBounds(row2.reduced(2));
-
-    bounds.removeFromTop(4);
+    band.removeFromTop(kGap);
+    auto row2 = band.removeFromTop(kRow);
+    if (popOutButton_) {
+        popOutButton_->setBounds(row2.removeFromRight(kRow).reduced(3));
+        row2.removeFromRight(kGap);
+    }
+    tagsFilter_.setBounds(row2);
 
     // Similar-mode status strip at the bottom of the content area.
     if (statusLabel_.isVisible()) {
@@ -1254,17 +1277,39 @@ void MediaDbBrowserContent::resized() {
                                18);
     }
 
-    // Pagination footer sits just above the status strip: < | Page N | >.
-    // Hidden when there's only one page worth of results -> no reserved space.
-    if (prevPageBtn_ != nullptr && prevPageBtn_->isVisible()) {
-        auto pager = bounds.removeFromBottom(20).reduced(8, 2);
-        placeNavArrow(*prevPageBtn_, pager, /*fromLeft=*/true);
-        placeNavArrow(*nextPageBtn_, pager, /*fromLeft=*/false);
-        pageLabel_.setBounds(pager);
+    if (rangeLabel_.isVisible()) {
+        auto footer = bounds.removeFromBottom(28).reduced(12, 0);
+        if (pageLabel_.isVisible()) {
+            placeNavArrow(*nextPageBtn_, footer, /*fromLeft=*/false);
+            pageLabel_.setBounds(footer.removeFromRight(56));
+            placeNavArrow(*prevPageBtn_, footer, /*fromLeft=*/false);
+        }
+        rangeLabel_.setBounds(footer);
     }
 
     resultsTable_.setBounds(bounds);
     emptyState_.setBounds(bounds);
+}
+
+void MediaDbBrowserContent::mouseMove(const juce::MouseEvent& e) {
+    const auto pos = e.getEventRelativeTo(&resultsTable_).getPosition();
+    const int row = resultsTable_.getLocalBounds().contains(pos)
+                        ? resultsTable_.getRowContainingPosition(pos.x, pos.y)
+                        : -1;
+    if (row == hoveredRow_)
+        return;
+    const int previous = std::exchange(hoveredRow_, row);
+    for (const int r : {previous, row})
+        if (r >= 0)
+            resultsTable_.repaintRow(r);
+}
+
+void MediaDbBrowserContent::mouseExit(const juce::MouseEvent& e) {
+    if (e.eventComponent != this && resultsTable_.isParentOf(e.eventComponent) &&
+        resultsTable_.getLocalBounds().contains(e.getEventRelativeTo(&resultsTable_).getPosition()))
+        return;
+    if (hoveredRow_ >= 0)
+        resultsTable_.repaintRow(std::exchange(hoveredRow_, -1));
 }
 
 void MediaDbBrowserContent::setQueryText(const juce::String& text) {
@@ -2039,18 +2084,17 @@ magda::media::QueryFilters MediaDbBrowserContent::currentFilters() const {
         f.kind = *kindFilter_;
     }
 
-    if (bpmMinBox_.getText().isNotEmpty()) {
-        f.bpmMin = bpmMinBox_.getText().getDoubleValue();
-    }
-    if (bpmMaxBox_.getText().isNotEmpty()) {
-        f.bpmMax = bpmMaxBox_.getText().getDoubleValue();
-    }
-    if (tonalOnly_.getToggleState()) {
+    f.bpmMin = bpmRange_.getMin();
+    f.bpmMax = bpmRange_.getMax();
+    if (tonalSwitch_.isOn()) {
         f.tonal = true;
     }
-    const auto tagsText = tagsFilter_.getText().trim();
-    if (tagsText.isNotEmpty()) {
-        f.tags = tagsText.toStdString();
+    // Quoted so a tag like "lo-fi" stays one FTS5 phrase.
+    juce::StringArray quoted;
+    for (const auto& tag : tagsFilter_.getTags())
+        quoted.add("\"" + tag.removeCharacters("\"") + "\"");
+    if (!quoted.isEmpty()) {
+        f.tags = quoted.joinIntoString(" ").toStdString();
     }
     return f;
 }
@@ -2071,6 +2115,7 @@ void MediaDbBrowserContent::runSearch() {
     const auto sort = currentSort();
     const bool hasText = !queryText_.isEmpty();
     const int offset = currentPage_ * kPageSize;
+    totalMatching_ = -1;
 
     // Similar-sounds mode. No text encoder needed — uses the seed's audio
     // embedding already in the DB. Cosine over up to kCandidateCap=5000
@@ -2126,6 +2171,7 @@ void MediaDbBrowserContent::runSearch() {
         magda::media::MediaDbQuery query(ctx.db(), nullptr, nullptr);
         results_ =
             query.search(std::nullopt, filters, /*limit=*/kPageSize, /*offset=*/offset, {}, sort);
+        totalMatching_ = query.countMatching(filters);
         applySearchResultsToUi();
         return;
     }
@@ -2255,18 +2301,7 @@ void MediaDbBrowserContent::applySearchResultsToUi() {
         emptyState_.setText(text, juce::dontSendNotification);
     }
 
-    // Pagination chrome.
-    // - Show the footer when we're past page 1 OR the current page is full
-    //   (meaning there's probably a next page).
-    // - Prev disabled on page 1; Next disabled when we got a partial page.
-    const bool fullPage = static_cast<int>(results_.size()) >= kPageSize;
-    const bool showPager = currentPage_ > 0 || fullPage;
-    prevPageBtn_->setVisible(showPager);
-    nextPageBtn_->setVisible(showPager);
-    pageLabel_.setVisible(showPager);
-    prevPageBtn_->setEnabled(currentPage_ > 0);
-    nextPageBtn_->setEnabled(fullPage);
-    pageLabel_.setText("Page " + juce::String(currentPage_ + 1), juce::dontSendNotification);
+    updatePager();
 
     // Surface similar-mode in the status strip so the user knows why
     // they're seeing this result set (and how to leave: any filter / text
@@ -2280,6 +2315,34 @@ void MediaDbBrowserContent::applySearchResultsToUi() {
     }
 
     resized();  // re-layout: the table shrinks by the footer when shown
+}
+
+void MediaDbBrowserContent::updatePager() {
+    const int shown = static_cast<int>(results_.size());
+    const int first = currentPage_ * kPageSize;
+    const bool known = totalMatching_ >= 0;
+    const bool hasNext = known ? first + shown < totalMatching_ : shown >= kPageSize;
+
+    const auto dash = juce::String::fromUTF8("\xe2\x80\x93");
+    juce::String range = juce::String(first + 1) + dash + juce::String(first + shown);
+    if (known)
+        range += " of " + juce::String(totalMatching_);
+    rangeLabel_.setText(range, juce::dontSendNotification);
+
+    const int pages = known ? juce::jmax(1, (totalMatching_ + kPageSize - 1) / kPageSize) : 0;
+    pageLabel_.setText(known ? juce::String(currentPage_ + 1) + " / " + juce::String(pages)
+                             : juce::String(currentPage_ + 1),
+                       juce::dontSendNotification);
+
+    const bool show = shown > 0;
+    const bool paged = show && (currentPage_ > 0 || hasNext);
+    rangeLabel_.setVisible(show);
+    pageLabel_.setVisible(paged);
+    prevPageBtn_->setVisible(paged);
+    nextPageBtn_->setVisible(paged);
+    prevPageBtn_->setEnabled(currentPage_ > 0);
+    nextPageBtn_->setEnabled(hasNext);
+    resized();
 }
 
 void MediaDbBrowserContent::setKindFilter(std::optional<std::string> kind) {

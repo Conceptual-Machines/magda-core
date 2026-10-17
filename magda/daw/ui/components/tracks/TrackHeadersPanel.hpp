@@ -138,6 +138,9 @@ class TrackHeadersPanel : public juce::Component,
 
     // I/O routing column, shown for every track at once.
     void toggleIORouting();
+
+    /** @brief The add-track menu (audio, group, aux, chord), opened over @p screenArea. */
+    static void showAddTrackMenu(juce::Rectangle<int> screenArea);
     bool isIORoutingVisible() const;
     std::function<void()> onIORoutingToggled;
     /** Paints the AUDIO / MIDI column labels over @p ioColumnStrip, a strip as wide as the

@@ -791,6 +791,11 @@ target_include_directories(magda_daw_app
     ${CMAKE_SOURCE_DIR}
 )
 
+# The media browser's tempo-synced preview stretches with Signalsmith (header-only, MIT),
+# the engine's default stretcher.
+target_include_directories(magda_daw_app SYSTEM PRIVATE
+    ${CMAKE_SOURCE_DIR}/third_party/signalsmith-stretch)
+
 target_link_libraries(magda_plugin_scanner
     PRIVATE
     juce::juce_core

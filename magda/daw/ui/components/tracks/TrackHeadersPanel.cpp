@@ -3213,27 +3213,33 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
 }
 
 void TrackHeadersPanel::showAddTrackContextMenu(juce::Point<int> position) {
-    enum AddId : int { AddAudio = 1, AddGroup = 2, AddAux = 3 };
+    showAddTrackMenu(localAreaToGlobal(juce::Rectangle<int>(position.x, position.y, 1, 1)));
+}
+
+void TrackHeadersPanel::showAddTrackMenu(juce::Rectangle<int> screenArea) {
+    enum AddId : int { AddAudio = 1, AddGroup = 2, AddAux = 3, AddChord = 4 };
 
     juce::PopupMenu menu;
     menu.addItem(AddAudio, "Add Audio Track");
     menu.addItem(AddGroup, "Add Group Track");
     menu.addItem(AddAux, "Add Aux Track");
+    // A project holds one chord track.
+    menu.addItem(AddChord, "Add Chord Track",
+                 TrackManager::getInstance().getChordTrackId() == INVALID_TRACK_ID);
 
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
-                           localAreaToGlobal(juce::Rectangle<int>(position.x, position.y, 1, 1))),
-                       [](int result) {
-                           juce::PopupMenu::dismissAllActiveMenus();
-                           TrackType type = TrackType::Media;
-                           if (result == AddGroup)
-                               type = TrackType::Group;
-                           else if (result == AddAux)
-                               type = TrackType::Aux;
-                           else if (result != AddAudio)
-                               return;
-                           UndoManager::getInstance().executeCommand(
-                               std::make_unique<CreateTrackCommand>(type));
-                       });
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(screenArea), [](int result) {
+        juce::PopupMenu::dismissAllActiveMenus();
+        TrackType type = TrackType::Media;
+        if (result == AddGroup)
+            type = TrackType::Group;
+        else if (result == AddAux)
+            type = TrackType::Aux;
+        else if (result == AddChord)
+            type = TrackType::Chord;
+        else if (result != AddAudio)
+            return;
+        UndoManager::getInstance().executeCommand(std::make_unique<CreateTrackCommand>(type));
+    });
 }
 
 void TrackHeadersPanel::toggleRouting(int trackIndex, RoutingType type) {

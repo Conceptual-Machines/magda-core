@@ -9,8 +9,8 @@
 namespace magda::daw::ui {
 
 /**
- * @brief LookAndFeel for the file browser — Inter font, chevron arrows, themed popups,
- *        and a layout override that reclaims the hidden filename-editor space.
+ * @brief LookAndFeel for the media browser's disk view, styled like its database view:
+ *        a field-height path box and up button, and 30px rows with line glyphs.
  */
 class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
   public:
@@ -34,49 +34,93 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
     }
     ~FileBrowserLookAndFeel() override = default;
 
-    // ── ComboBox (path dropdown) ────────────────────────────────────────
+    // ── Shared with the media browser's other lists ─────────────────────
+
+    static constexpr int kRowHeight = 30;
+    static constexpr int kFieldHeight = 30;
+    static constexpr float kFieldRadius = 5.0f;
+
+    /** @brief Row chrome: selection fill with an accent edge, and a hairline under every row. */
+    static void paintRowBackground(juce::Graphics& g, int width, int height, bool selected) {
+        if (selected) {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER));
+            g.fillRect(0, 0, width, height);
+            g.setColour(ActiveTheme::getAccentColour());
+            g.fillRect(0, 0, 2, height);
+        }
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR).withAlpha(0.5f));
+        g.drawHorizontalLine(height - 1, 0.0f, static_cast<float>(width));
+    }
+
+    /** @brief A line glyph for a folder, an audio file, or anything else. */
+    static void drawEntryGlyph(juce::Graphics& g, juce::Rectangle<float> r, bool isDirectory,
+                               bool isAudio) {
+        juce::Path p;
+        if (isDirectory) {
+            const auto body = r.withTrimmedTop(r.getHeight() * 0.18f);
+            p.startNewSubPath(body.getX(), body.getBottom());
+            p.lineTo(body.getX(), r.getY());
+            p.lineTo(r.getX() + r.getWidth() * 0.38f, r.getY());
+            p.lineTo(r.getX() + r.getWidth() * 0.5f, body.getY());
+            p.lineTo(body.getRight(), body.getY());
+            p.lineTo(body.getRight(), body.getBottom());
+            p.closeSubPath();
+        } else if (isAudio) {
+            const float heights[] = {0.35f, 0.8f, 1.0f, 0.55f, 0.75f};
+            const float step = r.getWidth() / 4.0f;
+            for (int i = 0; i < 5; ++i) {
+                const float x = r.getX() + step * static_cast<float>(i);
+                const float half = r.getHeight() * heights[i] * 0.5f;
+                p.startNewSubPath(x, r.getCentreY() - half);
+                p.lineTo(x, r.getCentreY() + half);
+            }
+        } else {
+            const auto page = r.withSizeKeepingCentre(r.getWidth() * 0.75f, r.getHeight());
+            const float fold = page.getWidth() * 0.35f;
+            p.startNewSubPath(page.getX(), page.getY());
+            p.lineTo(page.getRight() - fold, page.getY());
+            p.lineTo(page.getRight(), page.getY() + fold);
+            p.lineTo(page.getRight(), page.getBottom());
+            p.lineTo(page.getX(), page.getBottom());
+            p.closeSubPath();
+        }
+        g.strokePath(p, juce::PathStrokeType(1.2f, juce::PathStrokeType::curved,
+                                             juce::PathStrokeType::rounded));
+    }
+
+    // ── ComboBox (path field) ───────────────────────────────────────────
 
     void drawComboBox(juce::Graphics& g, int width, int height, bool /*isButtonDown*/,
                       int /*buttonX*/, int /*buttonY*/, int /*buttonW*/, int /*buttonH*/,
                       juce::ComboBox& box) override {
-        auto bounds = juce::Rectangle<int>(0, 0, width, height).toFloat();
-        float cornerRadius = 2.0f;
+        const auto bounds = juce::Rectangle<int>(0, 0, width, height).toFloat();
+        g.setColour(ActiveTheme::getColour(box.isMouseOver(true) ? ActiveTheme::SURFACE_HOVER
+                                                                 : ActiveTheme::SURFACE));
+        g.fillRoundedRectangle(bounds, kFieldRadius);
+        g.setColour(ActiveTheme::getBorderColour());
+        g.drawRoundedRectangle(bounds.reduced(0.5f), kFieldRadius, 1.0f);
 
-        g.setColour(box.findColour(juce::ComboBox::backgroundColourId));
-        g.fillRoundedRectangle(bounds, cornerRadius);
-
-        g.setColour(box.findColour(juce::ComboBox::outlineColourId));
-        g.drawRoundedRectangle(bounds.reduced(0.5f), cornerRadius, 1.0f);
-
-        // Chevron arrow
-        const float arrowHeight = 4.0f;
-        const float arrowWidth = 6.0f;
-        const float arrowX = width - arrowWidth - 5.0f;
-        const float arrowY = height / 2.0f;
-
-        juce::Path arrow;
-        arrow.startNewSubPath(arrowX, arrowY - arrowHeight / 2.0f);
-        arrow.lineTo(arrowX + arrowWidth / 2.0f, arrowY + arrowHeight / 2.0f);
-        arrow.lineTo(arrowX + arrowWidth, arrowY - arrowHeight / 2.0f);
-
+        const auto c = juce::Point<float>(static_cast<float>(width) - 15.0f, bounds.getCentreY());
+        juce::Path caret;
+        caret.addTriangle(c.x - 3.5f, c.y - 1.5f, c.x + 3.5f, c.y - 1.5f, c.x, c.y + 2.5f);
         g.setColour(ActiveTheme::getSecondaryTextColour());
-        g.strokePath(arrow, juce::PathStrokeType(1.2f));
+        g.fillPath(caret);
     }
 
     void positionComboBoxText(juce::ComboBox& box, juce::Label& label) override {
-        const int arrowSpace = 14;
-        label.setBounds(4, 0, box.getWidth() - arrowSpace, box.getHeight());
-        label.setFont(FontManager::getInstance().getUIFont(11.0f));
+        label.setBounds(6, 0, box.getWidth() - 30, box.getHeight());
+        label.setFont(getComboBoxFont(box));
+        label.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     }
 
     juce::Font getComboBoxFont(juce::ComboBox& /*box*/) override {
-        return FontManager::getInstance().getUIFont(11.0f);
+        return FontManager::getInstance().getUIFont(12.5f);
     }
 
     // ── Popup menus ─────────────────────────────────────────────────────
 
     juce::Font getPopupMenuFont() override {
-        return FontManager::getInstance().getUIFont(11.0f);
+        return FontManager::getInstance().getUIFont(12.0f);
     }
 
     // Text buttons inheriting this LookAndFeel (e.g. "Index folder..." in
@@ -104,8 +148,8 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
         auto textArea = area.reduced(8, 0);
 
         if (isHighlighted && isActive) {
-            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.3f));
-            g.fillRect(area);
+            g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER));
+            g.fillRoundedRectangle(area.reduced(3, 0).toFloat(), 3.0f);
         }
 
         g.setColour(textColour != nullptr ? *textColour
@@ -170,108 +214,72 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
     void drawFileBrowserRow(juce::Graphics& g, int width, int height, const juce::File& file,
                             const juce::String& filename, juce::Image* /*osIcon*/,
                             const juce::String& fileSizeDescription,
-                            const juce::String& fileTimeDescription, bool isDirectory,
+                            const juce::String& /*fileTimeDescription*/, bool isDirectory,
                             bool isItemSelected, int /*itemIndex*/,
-                            juce::DirectoryContentsDisplayComponent& dcc) override {
-        // The tree view passes per-file OS icons while the list view doesn't;
-        // ignore them so both views draw identical rows.
-        juce::Image* icon = nullptr;
-        auto* fileListComp = dynamic_cast<juce::Component*>(&dcc);
+                            juce::DirectoryContentsDisplayComponent& /*dcc*/) override {
+        paintRowBackground(g, width, height, isItemSelected);
 
-        if (isItemSelected)
-            g.fillAll(fileListComp != nullptr
-                          ? fileListComp->findColour(
-                                juce::DirectoryContentsDisplayComponent::highlightColourId)
-                          : findColour(juce::DirectoryContentsDisplayComponent::highlightColourId));
-
-        const int x = 32;
-        g.setColour(juce::Colours::black);
-
-        // Use MIDI icon for .mid/.midi files
-        auto ext = file.getFileExtension().toLowerCase();
-        if (!isDirectory && (ext == ".mid" || ext == ".midi")) {
-            if (midiDrawable_) {
-                auto themedIcon = midiDrawable_->createCopy();
-                themedIcon->replaceColour(juce::Colour(0xFFB3B3B3),
-                                          ActiveTheme::getSecondaryTextColour());
-                ActiveTheme::applyToSvgIcon(*themedIcon);
-                themedIcon->drawWithin(
-                    g,
-                    juce::Rectangle<float>(2.0f, 2.0f, x - 4.0f, static_cast<float>(height) - 4.0f),
-                    juce::RectanglePlacement::centred | juce::RectanglePlacement::onlyReduceInSize,
-                    1.0f);
-            }
-        } else if (icon != nullptr && icon->isValid()) {
-            g.drawImageWithin(*icon, 2, 2, x - 4, height - 4,
-                              juce::RectanglePlacement::centred |
-                                  juce::RectanglePlacement::onlyReduceInSize,
-                              false);
+        const auto ext = file.getFileExtension().toLowerCase();
+        const auto glyph =
+            juce::Rectangle<float>(12.0f, static_cast<float>(height) * 0.5f - 6.0f, 13.0f, 12.0f);
+        if (!isDirectory && (ext == ".mid" || ext == ".midi") && midiDrawable_ != nullptr) {
+            auto themedIcon = midiDrawable_->createCopy();
+            themedIcon->replaceColour(juce::Colour(0xFFB3B3B3),
+                                      ActiveTheme::getSecondaryTextColour());
+            ActiveTheme::applyToSvgIcon(*themedIcon);
+            themedIcon->drawWithin(g, glyph.expanded(2.0f), juce::RectanglePlacement::centred,
+                                   1.0f);
         } else {
-            if (const auto* d =
-                    isDirectory ? getDefaultFolderImage() : getDefaultDocumentFileImage())
-                d->drawWithin(
-                    g,
-                    juce::Rectangle<float>(2.0f, 2.0f, x - 4.0f, static_cast<float>(height) - 4.0f),
-                    juce::RectanglePlacement::centred | juce::RectanglePlacement::onlyReduceInSize,
-                    1.0f);
+            g.setColour(isDirectory ? ActiveTheme::getSecondaryTextColour()
+                                    : ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+            const bool audio = juce::String(".wav.aif.aiff.flac.mp3.ogg.m4a.caf")
+                                   .contains(ext.isEmpty() ? juce::String("-") : ext);
+            drawEntryGlyph(g, glyph, isDirectory, audio);
         }
 
-        if (isItemSelected)
-            g.setColour(
-                fileListComp != nullptr
-                    ? fileListComp->findColour(
-                          juce::DirectoryContentsDisplayComponent::highlightedTextColourId)
-                    : findColour(juce::DirectoryContentsDisplayComponent::highlightedTextColourId));
-        else
-            g.setColour(fileListComp != nullptr
-                            ? fileListComp->findColour(
-                                  juce::DirectoryContentsDisplayComponent::textColourId)
-                            : findColour(juce::DirectoryContentsDisplayComponent::textColourId));
-
-        // Inter font instead of JUCE default — same relative sizing
-        g.setFont(FontManager::getInstance().getUIFont(static_cast<float>(height) * 0.7f));
-
-        if (width > 450 && !isDirectory) {
-            auto sizeX = juce::roundToInt(static_cast<float>(width) * 0.7f);
-            auto dateX = juce::roundToInt(static_cast<float>(width) * 0.8f);
-
-            g.drawFittedText(filename, x, 0, sizeX - x, height, juce::Justification::centredLeft,
-                             1);
-
-            g.setFont(FontManager::getInstance().getUIFont(static_cast<float>(height) * 0.5f));
+        auto text = juce::Rectangle<int>(34, 0, width - 34, height);
+        if (!isDirectory && width > 320) {
+            g.setFont(FontManager::getInstance().getMonoFont(11.0f));
             g.setColour(ActiveTheme::getSecondaryTextColour());
-
-            g.drawFittedText(fileSizeDescription, sizeX, 0, dateX - sizeX - 8, height,
-                             juce::Justification::centredRight, 1);
-
-            g.drawFittedText(fileTimeDescription, dateX, 0, width - 8 - dateX, height,
-                             juce::Justification::centredRight, 1);
-        } else {
-            g.drawFittedText(filename, x, 0, width - x, height, juce::Justification::centredLeft,
-                             1);
+            g.drawText(fileSizeDescription, text.removeFromRight(80).withTrimmedRight(10),
+                       juce::Justification::centredRight, false);
         }
+        g.setFont(FontManager::getInstance().getUIFont(12.5f));
+        g.setColour(ActiveTheme::getTextColour());
+        g.drawText(filename, text.withTrimmedRight(6), juce::Justification::centredLeft, true);
     }
 
     // ── Go-up button ────────────────────────────────────────────────────
 
+    /** @brief A field-sized square with an up chevron, matching the path field. */
+    class GoUpButton : public juce::Button {
+      public:
+        GoUpButton() : juce::Button("up") {
+            setTooltip("Parent folder");
+        }
+
+        void paintButton(juce::Graphics& g, bool highlighted, bool down) override {
+            const auto r = getLocalBounds().toFloat();
+            g.setColour(ActiveTheme::getColour(highlighted || down ? ActiveTheme::SURFACE_HOVER
+                                                                   : ActiveTheme::SURFACE));
+            g.fillRoundedRectangle(r, kFieldRadius);
+            g.setColour(ActiveTheme::getBorderColour());
+            g.drawRoundedRectangle(r.reduced(0.5f), kFieldRadius, 1.0f);
+
+            const auto c = r.getCentre();
+            juce::Path chevron;
+            chevron.startNewSubPath(c.x - 4.5f, c.y + 2.0f);
+            chevron.lineTo(c.x, c.y - 2.5f);
+            chevron.lineTo(c.x + 4.5f, c.y + 2.0f);
+            g.setColour(isEnabled() ? ActiveTheme::getTextColour()
+                                    : ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+            g.strokePath(chevron, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved,
+                                                       juce::PathStrokeType::rounded));
+        }
+    };
+
     juce::Button* createFileBrowserGoUpButton() override {
-        auto* goUpButton =
-            new juce::DrawableButton("up", juce::DrawableButton::ImageOnButtonBackground);
-
-        juce::Path arrowPath;
-        arrowPath.addArrow({50.0f, 100.0f, 50.0f, 0.0f}, 40.0f, 100.0f, 50.0f);
-
-        juce::DrawablePath arrowImage;
-        arrowImage.setFill(ActiveTheme::getSecondaryTextColour());
-        arrowImage.setPath(arrowPath);
-
-        goUpButton->setImages(&arrowImage);
-        goUpButton->setColour(juce::TextButton::buttonColourId,
-                              ActiveTheme::getColour(ActiveTheme::SURFACE));
-        goUpButton->setColour(juce::TextButton::buttonOnColourId,
-                              ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER));
-
-        return goUpButton;
+        return new GoUpButton();
     }
 
     // ── File-browser layout ─────────────────────────────────────────────
@@ -281,38 +289,27 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
                                     juce::FilePreviewComponent* previewComp,
                                     juce::ComboBox* currentPathBox, juce::TextEditor* filenameBox,
                                     juce::Button* goUpButton) override {
-        const int x = 8;
-        auto w = browserComp.getWidth() - x - x;
+        constexpr int kGap = 8;
+        auto bounds = browserComp.getLocalBounds();
+        if (previewComp != nullptr)
+            previewComp->setBounds(bounds.removeFromRight(bounds.getWidth() / 3));
 
-        if (previewComp != nullptr) {
-            auto previewWidth = w / 3;
-            previewComp->setBounds(x + w - previewWidth, 0, previewWidth, browserComp.getHeight());
-            w -= previewWidth + 4;
-        }
+        auto pathRow = bounds.removeFromTop(kFieldHeight + kGap * 2).reduced(kGap);
+        goUpButton->setBounds(pathRow.removeFromRight(kFieldHeight));
+        pathRow.removeFromRight(kGap);
+        currentPathBox->setBounds(pathRow);
 
-        int y = 4;
-
-        const int controlsHeight = 22;
-        const int upButtonWidth = 50;
-
-        currentPathBox->setBounds(x, y, w - upButtonWidth - 6, controlsHeight);
-        goUpButton->setBounds(x + w - upButtonWidth, y, upButtonWidth, controlsHeight);
-
-        y += controlsHeight + 4;
-
-        // Give the filename box zero height when it is hidden so the file list
-        // can occupy all the remaining vertical space.
-        const bool filenameVisible = filenameBox->isVisible();
-        const int bottomSectionHeight = filenameVisible ? controlsHeight + 8 : 0;
+        // The filename box stays hidden; it gets no room.
+        if (filenameBox->isVisible())
+            filenameBox->setBounds(bounds.removeFromBottom(kFieldHeight + kGap).reduced(kGap, 0));
 
         if (auto* listAsComp = dynamic_cast<juce::Component*>(fileListComponent)) {
             listAsComp->setColour(juce::ListBox::backgroundColourId,
-                                  ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
-            listAsComp->setBounds(x, y, w, browserComp.getHeight() - y - bottomSectionHeight);
-            y = listAsComp->getBottom() + 4;
+                                  ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+            listAsComp->setColour(juce::TreeView::backgroundColourId,
+                                  ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+            listAsComp->setBounds(bounds);
         }
-
-        filenameBox->setBounds(x + 50, y, w - 50, controlsHeight);
     }
 
     // ── Singleton ───────────────────────────────────────────────────────

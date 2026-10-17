@@ -8,7 +8,7 @@ namespace magda::daw::ui {
 ScriptingConsoleContent::ScriptingConsoleContent() {
     setName("Scripting Console");
 
-    placeholderLabel_.setText("DSL console has moved to the AI Chat panel (DSL tab).",
+    placeholderLabel_.setText("Run DSL from the AI console: type /dsl followed by the code.",
                               juce::dontSendNotification);
     placeholderLabel_.setFont(FontManager::getInstance().getUIFont(13.0f));
     placeholderLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
