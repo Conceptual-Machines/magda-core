@@ -208,6 +208,10 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/sidebar/plug.svg
     # Browser icons
     ../../assets/icons/browser/browser.svg
+    ../../assets/icons/browser/sidebar_project.svg
+    ../../assets/icons/browser/sidebar_disk.svg
+    ../../assets/icons/browser/sidebar_library.svg
+    ../../assets/icons/browser/sidebar_favorite.svg
     ../../assets/midi.svg
     ../../assets/icons/browser/icon-audio-boldm.svg
     ../../assets/icons/browser/icon-midi-boldm.svg

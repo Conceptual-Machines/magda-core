@@ -269,7 +269,7 @@ class MediaExplorerContent::ThumbnailComponent : public juce::Component,
 class FavoriteButton : public magda::SvgButton {
   public:
     FavoriteButton(const juce::String& name)
-        : SvgButton(name, BinaryData::favorite_svg, BinaryData::favorite_svgSize) {}
+        : SvgButton(name, BinaryData::sidebar_favorite_svg, BinaryData::sidebar_favorite_svgSize) {}
 
     std::function<void()> onRightClick;
 
@@ -286,14 +286,17 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
   public:
     SidebarComponent() {
         // Setup icon buttons
-        projectButton_ = std::make_unique<magda::SvgButton>("Project", BinaryData::project_home_svg,
-                                                            BinaryData::project_home_svgSize);
+        projectButton_ = std::make_unique<magda::SvgButton>(
+            "Project", BinaryData::sidebar_project_svg, BinaryData::sidebar_project_svgSize);
         projectButton_->setToggleable(true);
         projectButton_->setClickingTogglesState(true);
         projectButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
         projectButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         projectButton_->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         projectButton_->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        projectButton_->setActiveBackgroundColor(
+            ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.15f));
+        projectButton_->setCornerRadius(6.0f);
         projectButton_->onClick = [this]() {
             auto& pm = magda::ProjectManager::getInstance();
             // Prefer the media directory (works for both saved and unsaved projects)
@@ -310,14 +313,17 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         };
         addAndMakeVisible(*projectButton_);
 
-        diskButton_ = std::make_unique<magda::SvgButton>("Disk", BinaryData::harddrive_svg,
-                                                         BinaryData::harddrive_svgSize);
+        diskButton_ = std::make_unique<magda::SvgButton>("Disk", BinaryData::sidebar_disk_svg,
+                                                         BinaryData::sidebar_disk_svgSize);
         diskButton_->setToggleable(true);
         diskButton_->setClickingTogglesState(true);
         diskButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
         diskButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         diskButton_->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         diskButton_->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        diskButton_->setActiveBackgroundColor(
+            ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.15f));
+        diskButton_->setCornerRadius(6.0f);
         diskButton_->onClick = [this]() {
             if (!onLocationSelected) {
                 return;
@@ -333,14 +339,17 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
         // main content area into "library mode" (media DB) rather than
         // navigating the filesystem. The DB-mode UI is the placeholder until
         // F2 lands; the click here only fires the mode-switch callback.
-        libraryButton_ = std::make_unique<magda::SvgButton>("Library", BinaryData::database_svg,
-                                                            BinaryData::database_svgSize);
+        libraryButton_ = std::make_unique<magda::SvgButton>(
+            "Library", BinaryData::sidebar_library_svg, BinaryData::sidebar_library_svgSize);
         libraryButton_->setToggleable(true);
         libraryButton_->setClickingTogglesState(true);
         libraryButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
         libraryButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         libraryButton_->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         libraryButton_->setActiveColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        libraryButton_->setActiveBackgroundColor(
+            ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.15f));
+        libraryButton_->setCornerRadius(6.0f);
         libraryButton_->setTooltip("Media database");
         libraryButton_->onClick = [this]() {
             if (onLibrarySelected) {

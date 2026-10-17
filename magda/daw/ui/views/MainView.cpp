@@ -1185,12 +1185,12 @@ void MainView::resized() {
         trackLargeButton->setBounds(btnSide.removeFrom(botRow, btnSize));
         btnSide.removeSpacing(botRow, gap);
         addTrackButton->setBounds(btnSide.removeFrom(botRow, btnSize));
-        btnSide.removeSpacing(botRow, gap);
-        ioToggleButton->setBounds(btnSide.removeFrom(botRow, btnSize));
+        // The I/O toggle sits at the outer edge, over the I/O column it shows.
+        ioToggleButton->setBounds(axisSide.removeFrom(botRow, btnSize));
 
         // AUDIO / MIDI labels over the I/O column, in the lower row.
         repaint(ioLabelsStrip);
-        cornerButtonsRow = trackSmallButton->getBounds().getUnion(ioToggleButton->getBounds());
+        cornerButtonsRow = trackSmallButton->getBounds().getUnion(addTrackButton->getBounds());
         auto ioStrip = cornerArea;
         ioLabelsStrip = trackHeadersPanel->isIORoutingVisible()
                             ? axisSide.removeFrom(ioStrip, TrackHeadersPanel::IO_COLUMN_WIDTH)
