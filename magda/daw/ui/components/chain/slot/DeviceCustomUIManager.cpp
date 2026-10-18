@@ -552,7 +552,7 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     if (levelsUI_)
         return 460;
     if (chordEngineUI_)
-        return 800;  // 400 (BASE_SLOT_WIDTH) * 2
+        return 960;  // four suggestion columns between the chord and key columns
     if (samplerUI_)
         return 800;  // 400 (BASE_SLOT_WIDTH) * 2
     if (drumGridUI_)

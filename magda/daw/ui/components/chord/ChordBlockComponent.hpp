@@ -5,18 +5,15 @@
 #include <functional>
 
 #include "music/ChordTypes.hpp"
+#include "ui/components/chord/ChordFunction.hpp"
 
 namespace magda::daw::ui {
 
 /**
- * @brief Small draggable block showing a chord name
+ * @brief Draggable chord tile: the name, its degree under it, and a dot for its function.
  *
- * Matches the visual style used in the piano roll chord row:
- * ACCENT_PRIMARY at 20% alpha, 3px rounded corners, TEXT_PRIMARY text.
- *
- * Dragging a chord block creates a drag description containing
- * the chord data, which the piano roll can accept as a drop target
- * to insert MIDI notes.
+ * Dragging a tile writes the chord as a temp MIDI file, which the piano roll and the chord
+ * lane accept as a drop.
  */
 class ChordBlockComponent : public juce::Component {
   public:
@@ -40,10 +37,21 @@ class ChordBlockComponent : public juce::Component {
     void setDegreeLabel(const juce::String& degree) {
         degree_ = degree;
     }
+    /** The dot in the corner; None draws no dot. */
+    void setFunction(chord_function::HarmonicFunction function) {
+        function_ = function;
+    }
+    /** Lit as the chord that is sounding now. */
+    void setHighlighted(bool highlighted) {
+        highlighted_ = highlighted;
+        repaint();
+    }
 
   private:
     magda::music::Chord chord_;
     juce::String degree_;
+    chord_function::HarmonicFunction function_ = chord_function::HarmonicFunction::None;
+    bool highlighted_ = false;
     bool dragging_ = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChordBlockComponent)

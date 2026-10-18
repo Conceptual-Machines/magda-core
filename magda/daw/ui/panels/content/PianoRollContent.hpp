@@ -7,6 +7,7 @@
 
 #include "MidiEditorContent.hpp"
 #include "core/SelectionManager.hpp"
+#include "ui/components/chord/ChordFunction.hpp"
 #include "ui/components/common/EditorRail.hpp"
 #include "ui/components/pianoroll/PianoRollShownContent.hpp"
 #include "ui/components/pianoroll/PitchFoldMap.hpp"
@@ -252,6 +253,10 @@ class PianoRollContent : public MidiEditorContent,
 
     // Grid component management
     void setupGridCallbacks();
+    void drawSpineChordBlock(juce::Graphics& g, juce::Rectangle<int> block,
+                             const magda::ClipInfo::ChordAnnotation& annotation,
+                             const magda::ClipInfo& clip, std::optional<chord_function::Key> key,
+                             juce::Colour spine, bool lit, bool previewing) const;
     void drawChordRow(juce::Graphics& g, juce::Rectangle<int> area);
     static void drawVelocityHeader(juce::Graphics& g, juce::Rectangle<int> area);
     void detectChordsFromNotes();

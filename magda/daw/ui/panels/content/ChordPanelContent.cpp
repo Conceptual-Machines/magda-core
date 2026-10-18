@@ -1,5 +1,6 @@
 #include "ChordPanelContent.hpp"
 
+#include <array>
 #include <utility>
 
 #include "../../../../agents/chord_agent.hpp"
@@ -13,8 +14,8 @@
 #include "music/ChordEngine.hpp"
 #include "music/NotationSettings.hpp"
 #include "project/ProjectManager.hpp"
+#include "ui/components/chain/layout/NodeHeaderStyles.hpp"
 #include "ui/components/chord/ChordBlockComponent.hpp"
-#include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -32,30 +33,32 @@ ScaleBlockComponent::ScaleBlockComponent(magda::music::ScaleWithChords scale)
 }
 
 void ScaleBlockComponent::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds().toFloat();
+    auto& fonts = FontManager::getInstance();
+    const auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+    g.setColour(ActiveTheme::getColour(selected_       ? ActiveTheme::DEVICE_ROW_SELECTED
+                                       : isMouseOver() ? ActiveTheme::DEVICE_ROW_HOVER
+                                                       : ActiveTheme::DEVICE_FIELD));
+    g.fillRoundedRectangle(bounds, 5.0f);
+    g.setColour(ActiveTheme::getColour(selected_ ? ActiveTheme::DEVICE_ROW_SELECTED_BORDER
+                                                 : ActiveTheme::DEVICE_FIELD_BORDER));
+    g.drawRoundedRectangle(bounds, 5.0f, 1.0f);
 
-    // Green-tinted background — brighter when selected
-    float baseAlpha = selected_ ? 0.35f : 0.15f;
-    auto colour = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(baseAlpha);
-    if (isMouseOver())
-        colour = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(baseAlpha + 0.15f);
-
-    g.setColour(colour);
-    g.fillRoundedRectangle(bounds, 3.0f);
-
-    // Border when selected or hovered
-    if (selected_ || isMouseOver()) {
-        float borderAlpha = selected_ ? 0.7f : 0.5f;
-        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(borderAlpha));
-        g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
+    auto text = getLocalBounds().reduced(12, 0);
+    g.setFont(fonts.getMonoFont(10.5f));
+    g.setColour(
+        ActiveTheme::getColour(selected_ ? ActiveTheme::DEVICE_BLUE : ActiveTheme::DEVICE_DIM));
+    // The note count gives way to the name in a narrow column.
+    if (getWidth() >= 190) {
+        const auto count = juce::String(static_cast<int>(scale_.pitches.size())) + " notes";
+        g.drawText(count, text, juce::Justification::centredRight, false);
+        text.removeFromRight(60);
     }
 
-    // Scale name
-    g.setColour(selected_ ? ActiveTheme::getTextColour()
-                          : ActiveTheme::getTextColour().withAlpha(0.8f));
-    g.setFont(FontManager::getInstance().getUIFont(10.0f));
-    g.drawText(magda::music::NotationSettings::getInstance().formatRoot(juce::String(scale_.name)),
-               getLocalBounds().reduced(4, 0), juce::Justification::centred);
+    g.setFont(fonts.getUIFont(12.5f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
+    g.drawFittedText(
+        magda::music::NotationSettings::getInstance().formatRoot(juce::String(scale_.name)), text,
+        juce::Justification::centredLeft, 1, 0.75f);
 }
 
 void ScaleBlockComponent::mouseDown(const juce::MouseEvent& e) {
@@ -111,16 +114,14 @@ ScaleChordsPopup::ScaleChordsPopup(magda::music::ScaleWithChords scale) : scale_
 void ScaleChordsPopup::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
 
-    // Dark background with border
-    g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_PANEL));
     g.fillRoundedRectangle(bounds, 6.0f);
-    g.setColour(ActiveTheme::getBorderColour().brighter(0.2f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
     g.drawRoundedRectangle(bounds.reduced(0.5f), 6.0f, 1.0f);
 
-    // Title
     auto titleArea = getLocalBounds().reduced(10, 6).removeFromTop(20);
-    g.setColour(ActiveTheme::getTextColour());
-    g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+    g.setFont(FontManager::getInstance().getMonoFont(10.5f).withExtraKerningFactor(0.12f));
     g.drawText(magda::music::NotationSettings::getInstance().formatRoot(juce::String(scale_.name)),
                titleArea, juce::Justification::centredLeft);
 }
@@ -130,8 +131,8 @@ void ScaleChordsPopup::resized() {
     area.removeFromTop(24);  // title
 
     // Grid of chord blocks — single row if they fit, wrap otherwise
-    int blockWidth = 70;
-    int blockHeight = 36;
+    int blockWidth = 84;
+    int blockHeight = 46;
     int gap = 4;
 
     int x = area.getX();
@@ -174,8 +175,8 @@ void ScaleChordsPopup::dismiss() {
 void ScaleChordsPopup::showAt(juce::Component* parent, juce::Rectangle<int> targetArea) {
     // Calculate size based on chord count
     int numChords = static_cast<int>(chordBlocks_.size());
-    int blockWidth = 70;
-    int blockHeight = 36;
+    int blockWidth = 84;
+    int blockHeight = 46;
     int gap = 4;
     int cols = std::min(numChords, 7);
     int rows = (numChords + cols - 1) / cols;
@@ -212,18 +213,14 @@ BrowseScaleRowComponent::BrowseScaleRowComponent(magda::music::ScaleWithChords s
 }
 
 void BrowseScaleRowComponent::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds().toFloat();
-
-    float baseAlpha = 0.08f;
-    if (isMouseOver())
-        baseAlpha = 0.2f;
-    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE).withAlpha(baseAlpha));
-    g.fillRoundedRectangle(bounds, 3.0f);
-
-    g.setColour(ActiveTheme::getTextColour().withAlpha(0.8f));
-    g.setFont(FontManager::getInstance().getUIFont(10.0f));
+    const auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+    g.setColour(ActiveTheme::getColour(isMouseOver() ? ActiveTheme::DEVICE_ROW_HOVER
+                                                     : ActiveTheme::DEVICE_FIELD));
+    g.fillRoundedRectangle(bounds, 4.0f);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
+    g.setFont(FontManager::getInstance().getUIFont(12.0f));
     g.drawText(magda::music::NotationSettings::getInstance().formatRoot(juce::String(scale_.name)),
-               bounds.reduced(6, 0), juce::Justification::centredLeft);
+               bounds.reduced(10, 0), juce::Justification::centredLeft);
 }
 
 void BrowseScaleRowComponent::resized() {}
@@ -279,13 +276,13 @@ class AIContainerComponent : public juce::Component {
         float alpha = greyOut ? 0.3f : 1.0f;
 
         for (auto& row : paintData.rows) {
-            g.setColour(ActiveTheme::getAccentColour().withAlpha(alpha));
-            g.setFont(FontManager::getInstance().getUIFont(11.0f).boldened());
+            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT).withAlpha(alpha));
+            g.setFont(FontManager::getInstance().getUIFontMedium(12.5f));
             g.drawText(row.name, row.nameArea, juce::Justification::centredLeft);
 
             if (row.description.isNotEmpty() && !row.descArea.isEmpty()) {
-                g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(alpha));
-                g.setFont(FontManager::getInstance().getUIFont(9.5f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM).withAlpha(alpha));
+                g.setFont(FontManager::getInstance().getMonoFont(10.0f));
                 g.drawText(row.description, row.descArea, juce::Justification::centredLeft);
             }
         }
@@ -295,29 +292,27 @@ class AIContainerComponent : public juce::Component {
         if (loading && paintData.rows.empty()) {
             int y = 8;
             if (promptText.isNotEmpty()) {
-                g.setColour(ActiveTheme::getTextColour());
-                g.setFont(FontManager::getInstance().getUIFont(11.0f));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
+                g.setFont(FontManager::getInstance().getUIFont(12.0f));
                 g.drawText(promptText, 4, y, getWidth() - 8, 20, juce::Justification::centredLeft);
                 y += 24;
             }
-            g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.5f));
-            g.setFont(FontManager::getInstance().getUIFont(11.0f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+            g.setFont(FontManager::getInstance().getMonoFont(11.0f));
             g.drawText("Generating...", 4, y, getWidth() - 8, 20, juce::Justification::centredLeft);
             promptBottom = juce::jmax(promptBottom, y + 28);
         }
 
         // Draw streaming text below prompt/existing content
         if (streamingText.isNotEmpty()) {
-            auto font = FontManager::getInstance().getUIFont(9.5f);
+            auto font = FontManager::getInstance().getMonoFont(10.0f);
             g.setFont(font);
-            g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.7f));
 
             int textY = promptBottom;
             int textWidth = getWidth() - 8;
             auto layout = juce::TextLayout();
             juce::AttributedString attrStr;
-            attrStr.append(streamingText, font,
-                           ActiveTheme::getSecondaryTextColour().withAlpha(0.7f));
+            attrStr.append(streamingText, font, ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
             attrStr.setWordWrap(juce::AttributedString::WordWrap::byWord);
             layout.createLayout(attrStr, static_cast<float>(textWidth));
             layout.draw(g, juce::Rectangle<float>(4.0f, static_cast<float>(textY),
@@ -328,6 +323,92 @@ class AIContainerComponent : public juce::Component {
 };
 
 }  // anonymous namespace
+
+// ============================================================================
+// ToggleStrip
+// ============================================================================
+
+namespace {
+constexpr float kStripInset = 4.0f;
+constexpr float kStripSegmentPadding = 14.0f;
+
+juce::Font stripFont() {
+    return FontManager::getInstance().getUIFont(12.5f);
+}
+}  // namespace
+
+void ToggleStrip::setOptions(const juce::StringArray& options) {
+    options_ = options;
+    on_.assign(static_cast<size_t>(options.size()), false);
+    repaint();
+}
+
+void ToggleStrip::setOn(int index, bool on) {
+    if (index < 0 || index >= static_cast<int>(on_.size()))
+        return;
+    on_[static_cast<size_t>(index)] = on;
+    repaint();
+}
+
+bool ToggleStrip::isOn(int index) const {
+    return index >= 0 && index < static_cast<int>(on_.size()) && on_[static_cast<size_t>(index)];
+}
+
+int ToggleStrip::getPreferredWidth() const {
+    float width = 2.0f * kStripInset;
+    for (const auto& option : options_)
+        width += juce::GlyphArrangement::getStringWidth(stripFont(), option) +
+                 2.0f * kStripSegmentPadding;
+    return juce::roundToInt(width);
+}
+
+juce::Rectangle<float> ToggleStrip::segmentBounds(int index) const {
+    // Widths follow the labels, scaled to whatever room the strip was given.
+    const auto inner = getLocalBounds().toFloat().reduced(kStripInset);
+    std::vector<float> widths;
+    float total = 0.0f;
+    for (const auto& option : options_) {
+        widths.push_back(juce::GlyphArrangement::getStringWidth(stripFont(), option) +
+                         2.0f * kStripSegmentPadding);
+        total += widths.back();
+    }
+    const float scale = total > 0.0f ? inner.getWidth() / total : 1.0f;
+    float x = inner.getX();
+    for (int i = 0; i < index; ++i)
+        x += widths[static_cast<size_t>(i)] * scale;
+    return {x, inner.getY(), widths[static_cast<size_t>(index)] * scale, inner.getHeight()};
+}
+
+void ToggleStrip::paint(juce::Graphics& g) {
+    const auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));
+    g.fillRoundedRectangle(bounds, 6.0f);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
+    g.drawRoundedRectangle(bounds, 6.0f, 1.0f);
+
+    g.setFont(stripFont());
+    for (int i = 0; i < options_.size(); ++i) {
+        const auto segment = segmentBounds(i);
+        if (isOn(i)) {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
+            g.fillRoundedRectangle(segment, 4.0f);
+        }
+        g.setColour(
+            ActiveTheme::getColour(isOn(i) ? ActiveTheme::DEVICE_TEXT : ActiveTheme::DEVICE_DIM));
+        g.drawText(options_[i], segment, juce::Justification::centred, false);
+    }
+}
+
+void ToggleStrip::mouseDown(const juce::MouseEvent& e) {
+    for (int i = 0; i < options_.size(); ++i) {
+        if (!segmentBounds(i).contains(e.position))
+            continue;
+        setOn(i, !isOn(i));
+        if (onToggle)
+            onToggle(i, isOn(i));
+        return;
+    }
+}
 
 // ============================================================================
 // ChordPanelContent
@@ -430,6 +511,12 @@ void ChordPanelContent::setChordEngine(magda::daw::audio::MidiChordEnginePlugin*
     repaint();
 }
 
+void ChordPanelContent::setInEditorSidebar(bool inSidebar) {
+    inEditorSidebar_ = inSidebar;
+    resized();
+    repaint();
+}
+
 void ChordPanelContent::seedEngineFromProgression() {
     if (chordPlugin_ == nullptr || trackId_ != magda::TrackManager::getInstance().getChordTrackId())
         return;
@@ -479,6 +566,9 @@ void ChordPanelContent::timerCallback() {
     // Delayed clear of chord display after note release
     stopTimer();
     currentChord_.clear();
+    currentChordInfo_ = {};
+    for (auto& block : suggestionBlocks_)
+        block->setHighlighted(false);
     repaint();
 }
 
@@ -496,6 +586,9 @@ void ChordPanelContent::updateFromPlugin() {
         keyStr = keyMode->first + " " + keyMode->second;
     if (keyStr != detectedKey_) {
         detectedKey_ = keyStr;
+        key_ = keyMode.has_value() ? chord_function::parseKey(keyMode->first, keyMode->second)
+                                   : std::nullopt;
+        recentChords_.clear();  // rebuilds the history below with degrees in the new key
         needsRepaint = true;
     }
 
@@ -518,6 +611,9 @@ void ChordPanelContent::updateFromPlugin() {
             // New chord detected — show it immediately, cancel any pending clear
             stopTimer();
             currentChord_ = chord;
+            currentChordInfo_ = chordPlugin_->getCurrentChord();
+            for (auto& block : suggestionBlocks_)
+                block->setHighlighted(block->getChord().getDisplayName() == currentChord_);
             needsRepaint = true;
         } else if (currentChord_.isNotEmpty()) {
             // Notes released — start 1-second delayed clear
@@ -573,12 +669,24 @@ void ChordPanelContent::rebuildSuggestionBlocks() {
         removeChildComponent(block.get());
     suggestionBlocks_.clear();
 
-    for (const auto& item : suggestions_) {
-        auto block = std::make_unique<ChordBlockComponent>(item.chord);
-        block->setDegreeLabel(item.degree);
+    std::vector<const magda::music::ChordEngine::SuggestionItem*> ordered;
+    for (const auto& item : suggestions_)
+        if (item.source == "diatonic")
+            ordered.push_back(&item);
+    diatonicCount_ = ordered.size();
+    for (const auto& item : suggestions_)
+        if (item.source != "diatonic")
+            ordered.push_back(&item);
+
+    for (const auto* item : ordered) {
+        auto block = std::make_unique<ChordBlockComponent>(item->chord);
+        block->setDegreeLabel(item->degree);
+        block->setFunction(chord_function::functionOfDegree(item->degree));
+        block->setHighlighted(item->chord.getDisplayName() == currentChord_);
         block->onClicked = [this](const magda::music::Chord& c) { previewChord(c); };
         block->onReleased = [this] { stopPreview(); };
-        addAndMakeVisible(block.get());
+        block->setVisible(suggestionTab_ == SuggestionTab::KS && !browseMode_);
+        addChildComponent(block.get());
         suggestionBlocks_.push_back(std::move(block));
     }
 }
@@ -594,7 +702,9 @@ void ChordPanelContent::rebuildHistoryBlocks() {
     auto history = chordPlugin_->getRecentChords();
     int start = std::max(0, static_cast<int>(history.size()) - 8);
     for (int i = start; i < static_cast<int>(history.size()); ++i) {
-        auto block = std::make_unique<ChordBlockComponent>(history[static_cast<size_t>(i)]);
+        const auto& chord = history[static_cast<size_t>(i)];
+        auto block = std::make_unique<ChordBlockComponent>(chord);
+        block->setDegreeLabel(degreeInKey(chord));
         block->onClicked = [this](const magda::music::Chord& c) { previewChord(c); };
         block->onReleased = [this] { stopPreview(); };
         addAndMakeVisible(block.get());
@@ -695,12 +805,8 @@ void ChordPanelContent::enterBrowseMode() {
         aiSendBtn_->setVisible(false);
 
     // Hide tab-specific footer controls
-    noveltyLabel_->setVisible(false);
-    add7thsBtn_->setVisible(false);
-    add9thsBtn_->setVisible(false);
-    add11thsBtn_->setVisible(false);
-    add13thsBtn_->setVisible(false);
-    addAltBtn_->setVisible(false);
+    noveltySlider_.setVisible(false);
+    extensions_.setVisible(false);
     scaleFilterBtn_->setVisible(false);
 
     // Create key filter buttons (C, C#, D, ... B)
@@ -712,12 +818,13 @@ void ChordPanelContent::enterBrowseMode() {
             btn->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
             btn->setClickingTogglesState(true);
             btn->setColour(juce::TextButton::buttonColourId,
-                           ActiveTheme::getColour(ActiveTheme::SURFACE));
-            btn->setColour(juce::TextButton::buttonOnColourId, ActiveTheme::getAccentColour());
+                           ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));
+            btn->setColour(juce::TextButton::buttonOnColourId,
+                           ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
             btn->setColour(juce::TextButton::textColourOffId,
-                           ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+                           ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
             btn->setColour(juce::TextButton::textColourOnId,
-                           ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+                           ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
             btn->onClick = [this, i]() {
                 bool on = browseKeyButtons_[static_cast<size_t>(i)]->getToggleState();
                 // Exclusive toggle: deselect others
@@ -895,17 +1002,14 @@ void ChordPanelContent::switchToTab(SuggestionTab tab) {
     }
 
     // Toggle K&S footer controls
-    noveltyLabel_->setVisible(isKS);
-    add7thsBtn_->setVisible(isKS);
-    add9thsBtn_->setVisible(isKS);
-    add11thsBtn_->setVisible(isKS);
-    add13thsBtn_->setVisible(isKS);
-    addAltBtn_->setVisible(isKS);
+    noveltySlider_.setVisible(isKS);
+    extensions_.setVisible(isKS);
     scaleFilterBtn_->setVisible(isKS);
 
-    // Tab button state
     ksTabBtn_->setToggleState(isKS, juce::dontSendNotification);
     aiTabBtn_->setToggleState(!isKS, juce::dontSendNotification);
+    ksTabBtn_->setActive(isKS);
+    aiTabBtn_->setActive(!isKS);
 
     resized();
     repaint();
@@ -1596,120 +1700,71 @@ std::vector<AIProgression> ChordPanelContent::parseAIResponse(const juce::String
 }
 
 void ChordPanelContent::setupFooterControls() {
-    // Novelty slider (0-100%)
-    noveltyLabel_ = std::make_unique<magda::DraggableValueLabel>(
-        magda::DraggableValueLabel::Format::Percentage);
-    noveltyLabel_->setRange(0.0, 1.0, 0.3);
-    noveltyLabel_->setValue(0.3, juce::dontSendNotification);
-    noveltyLabel_->setFontSize(9.0f);
-    noveltyLabel_->setDrawBackground(false);
-    noveltyLabel_->setDrawBorder(false);
-    noveltyLabel_->setShowFillIndicator(false);
-    noveltyLabel_->setTextOverride("Nov 30%");
-    noveltyLabel_->setTooltip(
+    using node_header::applyDeviceIconStyle;
+    using node_header::DeviceIcon;
+    const juce::Colour glyphKey(0xFFB3B3B3);
+
+    noveltySlider_.setRange(0.0, 1.0, 0.01);
+    noveltySlider_.setValue(0.3, juce::dontSendNotification);
+    noveltySlider_.setDoubleClickReturnValue(true, 0.3);
+    noveltySlider_.setColour(juce::Slider::backgroundColourId,
+                             ActiveTheme::getColour(ActiveTheme::DEVICE_SLIDER_TRACK));
+    noveltySlider_.setColour(juce::Slider::trackColourId,
+                             ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE));
+    noveltySlider_.setColour(juce::Slider::thumbColourId,
+                             ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE));
+    noveltySlider_.setTooltip(
         "Balance between safe diatonic (0%) and adventurous non-diatonic (100%) suggestions");
-    noveltyLabel_->onValueChange = [this]() {
+    noveltySlider_.onValueChange = [this]() {
+        repaint(noveltyValue_);
         if (chordPlugin_) {
             chordPlugin_->getSuggestionParams().novelty =
-                static_cast<float>(noveltyLabel_->getValue());
-            int pct = static_cast<int>(noveltyLabel_->getValue() * 100.0);
-            noveltyLabel_->setTextOverride("Novelty " + juce::String(pct) + "%");
+                static_cast<float>(noveltySlider_.getValue());
             chordPlugin_->refreshSuggestions();
         }
     };
-    addAndMakeVisible(noveltyLabel_.get());
+    addAndMakeVisible(noveltySlider_);
 
-    // Toggle button helper — uses project-wide SmallButtonLookAndFeel
-    auto makeToggle = [this](const juce::String& text) {
-        auto btn = std::make_unique<juce::TextButton>(text);
-        btn->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-        btn->setClickingTogglesState(true);
-        btn->setColour(juce::TextButton::buttonColourId,
-                       ActiveTheme::getColour(ActiveTheme::SURFACE));
-        btn->setColour(juce::TextButton::buttonOnColourId, ActiveTheme::getAccentColour());
-        btn->setColour(juce::TextButton::textColourOffId,
-                       ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-        btn->setColour(juce::TextButton::textColourOnId,
-                       ActiveTheme::getColour(ActiveTheme::BACKGROUND));
-        addAndMakeVisible(btn.get());
-        return btn;
+    extensions_.setOptions({"7th", "9th", "11th", "13th", "Alt"});
+    extensions_.setOn(0, true);
+    extensions_.setTooltip("Extensions the suggestions may use; Alt adds borrowed chords and "
+                           "tritone substitutes");
+    extensions_.onToggle = [this](int index, bool on) {
+        if (!chordPlugin_)
+            return;
+        auto& params = chordPlugin_->getSuggestionParams();
+        bool* flags[] = {&params.add7ths, &params.add9ths, &params.add11ths, &params.add13ths,
+                         &params.addAlterations};
+        *flags[index] = on;
+        chordPlugin_->refreshSuggestions();
     };
+    addAndMakeVisible(extensions_);
 
-    // Notation cycle (C / Do / both) - drives the shared NotationSettings, so
-    // it flips both the engine's chord names and the chord-track lane blocks.
+    // Drives the shared NotationSettings, so it flips the chord-track lane's names too.
     notationBtn_ =
         std::make_unique<juce::TextButton>(magda::music::NotationSettings::getInstance().label());
     notationBtn_->setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     notationBtn_->setColour(juce::TextButton::buttonColourId,
-                            ActiveTheme::getColour(ActiveTheme::SURFACE));
+                            ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));
     notationBtn_->setColour(juce::TextButton::textColourOffId,
-                            ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+                            ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
     notationBtn_->setTooltip("Note notation: C / Do (solfege) / both");
     notationBtn_->onClick = [this]() {
         magda::music::NotationSettings::getInstance().cycle();
         notationBtn_->setButtonText(magda::music::NotationSettings::getInstance().label());
+        resized();
         repaint();
     };
     addAndMakeVisible(notationBtn_.get());
 
-    add7thsBtn_ = makeToggle("7th");
-    add7thsBtn_->setToggleState(true, juce::dontSendNotification);
-    add7thsBtn_->setTooltip("Include 7th chords (Maj7, min7, dom7, dim7)");
-    add7thsBtn_->onClick = [this]() {
-        if (chordPlugin_) {
-            chordPlugin_->getSuggestionParams().add7ths = add7thsBtn_->getToggleState();
-            chordPlugin_->refreshSuggestions();
-        }
-    };
-
-    add9thsBtn_ = makeToggle("9th");
-    add9thsBtn_->setTooltip("Include 9th chords (Maj9, min9, dom9)");
-    add9thsBtn_->onClick = [this]() {
-        if (chordPlugin_) {
-            chordPlugin_->getSuggestionParams().add9ths = add9thsBtn_->getToggleState();
-            chordPlugin_->refreshSuggestions();
-        }
-    };
-
-    add11thsBtn_ = makeToggle("11th");
-    add11thsBtn_->setTooltip("Include 11th chords (dom11, min11)");
-    add11thsBtn_->onClick = [this]() {
-        if (chordPlugin_) {
-            chordPlugin_->getSuggestionParams().add11ths = add11thsBtn_->getToggleState();
-            chordPlugin_->refreshSuggestions();
-        }
-    };
-
-    add13thsBtn_ = makeToggle("13th");
-    add13thsBtn_->setTooltip("Include 13th chords (dom13, min13)");
-    add13thsBtn_->onClick = [this]() {
-        if (chordPlugin_) {
-            chordPlugin_->getSuggestionParams().add13ths = add13thsBtn_->getToggleState();
-            chordPlugin_->refreshSuggestions();
-        }
-    };
-
-    addAltBtn_ = makeToggle("Alt");
-    addAltBtn_->setTooltip("Include altered/non-diatonic chords (borrowed chords, tritone subs)");
-    addAltBtn_->onClick = [this]() {
-        if (chordPlugin_) {
-            chordPlugin_->getSuggestionParams().addAlterations = addAltBtn_->getToggleState();
-            chordPlugin_->refreshSuggestions();
-        }
-    };
-
     scaleFilterBtn_ = std::make_unique<magda::SvgButton>("ScaleFilter", BinaryData::funnel_svg,
                                                          BinaryData::funnel_svgSize);
-    scaleFilterBtn_->setClickingTogglesState(true);
+    applyDeviceIconStyle(*scaleFilterBtn_, DeviceIcon::Toggle, glyphKey);
     scaleFilterBtn_->setToggleState(true, juce::dontSendNotification);
     scaleFilterBtn_->setActive(true);
-    scaleFilterBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));  // SVG fill color
-    scaleFilterBtn_->setActiveColor(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
-    scaleFilterBtn_->setActiveBackgroundColor(ActiveTheme::getAccentColour());
-    scaleFilterBtn_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     scaleFilterBtn_->setTooltip("Filter suggestions by detected scales");
     scaleFilterBtn_->onClick = [this]() {
-        bool on = scaleFilterBtn_->getToggleState();
+        const bool on = scaleFilterBtn_->getToggleState();
         scaleFilterBtn_->setActive(on);
         if (chordPlugin_) {
             chordPlugin_->getSuggestionParams().useScaleFiltering = on;
@@ -1720,16 +1775,14 @@ void ChordPanelContent::setupFooterControls() {
 
     browseBtn_ = std::make_unique<magda::SvgButton>("Browse", BinaryData::browser_svg,
                                                     BinaryData::browser_svgSize);
-    browseBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    browseBtn_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+    applyDeviceIconStyle(*browseBtn_, DeviceIcon::Action, glyphKey);
     browseBtn_->setTooltip("Browse scales");
     browseBtn_->onClick = [this]() { enterBrowseMode(); };
     addAndMakeVisible(browseBtn_.get());
 
     backBtn_ = std::make_unique<magda::SvgButton>("Back", BinaryData::chevron_left_svg,
                                                   BinaryData::chevron_left_svgSize);
-    backBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    backBtn_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+    applyDeviceIconStyle(*backBtn_, DeviceIcon::Action, glyphKey);
     backBtn_->setTooltip("Back to suggestions");
     backBtn_->onClick = [this]() { exitBrowseMode(); };
     backBtn_->setVisible(false);
@@ -1737,8 +1790,8 @@ void ChordPanelContent::setupFooterControls() {
 
     clearHistoryBtn_ = std::make_unique<magda::SvgButton>("ClearHistory", BinaryData::delete_svg,
                                                           BinaryData::delete_svgSize);
-    clearHistoryBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    clearHistoryBtn_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    applyDeviceIconStyle(*clearHistoryBtn_, DeviceIcon::Action, glyphKey, ActiveTheme::DEVICE_BLUE,
+                         22.0f);
     clearHistoryBtn_->setTooltip("Clear chord history and reset detection");
     clearHistoryBtn_->onClick = [this]() {
         if (chordPlugin_)
@@ -1746,42 +1799,31 @@ void ChordPanelContent::setupFooterControls() {
     };
     addAndMakeVisible(clearHistoryBtn_.get());
 
-    // Suggestion column tab buttons
     ksTabBtn_ = std::make_unique<magda::SvgButton>("KSTab", BinaryData::psychology_svg,
                                                    BinaryData::psychology_svgSize);
-    ksTabBtn_->setClickingTogglesState(true);
+    applyDeviceIconStyle(*ksTabBtn_, DeviceIcon::Toggle, juce::Colour(0xFFE3E3E3));
     ksTabBtn_->setRadioGroupId(1001);
     ksTabBtn_->setToggleState(true, juce::dontSendNotification);
-    ksTabBtn_->setOriginalColor(juce::Colour(0xFFE3E3E3));
-    // ICON_ON_ACCENT keeps the active glyph legible on the accent chip in
-    // every theme (see the AI console tab buttons).
-    ksTabBtn_->setActiveColor(ActiveTheme::ICON_ON_ACCENT);
-    ksTabBtn_->setNormalBackgroundColor(ActiveTheme::SURFACE);
-    ksTabBtn_->setActiveBackgroundColor(ActiveTheme::ACCENT_PRIMARY);
+    ksTabBtn_->setActive(true);
     ksTabBtn_->setTooltip("Krumhansl-Schmuckler profile suggestions");
     ksTabBtn_->onClick = [this]() { switchToTab(SuggestionTab::KS); };
     addAndMakeVisible(ksTabBtn_.get());
 
     aiTabBtn_ =
         std::make_unique<magda::SvgButton>("AITab", BinaryData::ai_svg, BinaryData::ai_svgSize);
-    aiTabBtn_->setClickingTogglesState(true);
+    applyDeviceIconStyle(*aiTabBtn_, DeviceIcon::Toggle, glyphKey, ActiveTheme::MIDI_KEY_ON);
     aiTabBtn_->setRadioGroupId(1001);
-    aiTabBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    aiTabBtn_->setActiveColor(ActiveTheme::ICON_ON_ACCENT);
-    aiTabBtn_->setNormalBackgroundColor(ActiveTheme::SURFACE);
-    aiTabBtn_->setActiveBackgroundColor(ActiveTheme::ACCENT_MODULATION);
     aiTabBtn_->setTooltip("AI chord progression suggestions");
     aiTabBtn_->onClick = [this]() { switchToTab(SuggestionTab::AI); };
     addAndMakeVisible(aiTabBtn_.get());
 
-    aiModelLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
+    aiModelLabel_.setFont(FontManager::getInstance().getMonoFont(10.5f));
     aiModelLabel_.setColour(juce::Label::textColourId,
-                            ActiveTheme::getSecondaryTextColour().withAlpha(0.6f));
+                            ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
     aiModelLabel_.setJustificationType(juce::Justification::centredLeft);
     aiModelLabel_.setVisible(false);
     addAndMakeVisible(aiModelLabel_);
 
-    // AI tab viewport for scrollable progression display
     aiViewport_ = std::make_unique<juce::Viewport>();
     aiContainer_ = std::make_unique<AIContainerComponent>();
     aiViewport_->setViewedComponent(aiContainer_.get(), false);
@@ -1789,25 +1831,28 @@ void ChordPanelContent::setupFooterControls() {
     aiViewport_->setVisible(false);
     addAndMakeVisible(aiViewport_.get());
 
-    // AI text input
     aiInputBox_ = std::make_unique<juce::TextEditor>();
     aiInputBox_->setMultiLine(false);
     aiInputBox_->setReturnKeyStartsNewLine(false);
-    aiInputBox_->setFont(FontManager::getInstance().getUIFont(11.0f));
+    aiInputBox_->setFont(FontManager::getInstance().getUIFont(12.0f));
+    aiInputBox_->setIndents(10, 7);
     aiInputBox_->setColour(juce::TextEditor::backgroundColourId,
-                           ActiveTheme::getColour(ActiveTheme::SURFACE));
-    aiInputBox_->setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
-    aiInputBox_->setColour(juce::TextEditor::outlineColourId, ActiveTheme::getBorderColour());
+                           ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));
+    aiInputBox_->setColour(juce::TextEditor::textColourId,
+                           ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
+    aiInputBox_->setColour(juce::TextEditor::outlineColourId,
+                           ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
+    aiInputBox_->setColour(juce::TextEditor::focusedOutlineColourId,
+                           ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE));
     aiInputBox_->setTextToShowWhenEmpty("Describe a chord progression...",
-                                        ActiveTheme::getSecondaryTextColour().withAlpha(0.5f));
+                                        ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
     aiInputBox_->onReturnKey = [this]() { requestAISuggestions(); };
     aiInputBox_->setVisible(false);
     addAndMakeVisible(aiInputBox_.get());
 
     aiSendBtn_ = std::make_unique<magda::SvgButton>("AISend", BinaryData::send_svg,
                                                     BinaryData::send_svgSize);
-    aiSendBtn_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    aiSendBtn_->setNormalColor(ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION));
+    applyDeviceIconStyle(*aiSendBtn_, DeviceIcon::Action, glyphKey);
     aiSendBtn_->onClick = [this]() { requestAISuggestions(); };
     aiSendBtn_->setVisible(false);
     addAndMakeVisible(aiSendBtn_.get());
@@ -1818,385 +1863,507 @@ void ChordPanelContent::syncFooterFromParams() {
         return;
 
     const auto& params = chordPlugin_->getSuggestionParams();
-    noveltyLabel_->setValue(params.novelty, juce::dontSendNotification);
-    int pct = static_cast<int>(params.novelty * 100.0f);
-    noveltyLabel_->setTextOverride("Novelty " + juce::String(pct) + "%");
-    add7thsBtn_->setToggleState(params.add7ths, juce::dontSendNotification);
-    add9thsBtn_->setToggleState(params.add9ths, juce::dontSendNotification);
-    add11thsBtn_->setToggleState(params.add11ths, juce::dontSendNotification);
-    add13thsBtn_->setToggleState(params.add13ths, juce::dontSendNotification);
-    addAltBtn_->setToggleState(params.addAlterations, juce::dontSendNotification);
+    noveltySlider_.setValue(params.novelty, juce::dontSendNotification);
+    const bool flags[] = {params.add7ths, params.add9ths, params.add11ths, params.add13ths,
+                          params.addAlterations};
+    for (int i = 0; i < 5; ++i)
+        extensions_.setOn(i, flags[i]);
     scaleFilterBtn_->setToggleState(params.useScaleFiltering, juce::dontSendNotification);
     scaleFilterBtn_->setActive(params.useScaleFiltering);
+    repaint();
 }
 
-void ChordPanelContent::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds();
+juce::String ChordPanelContent::degreeInKey(const magda::music::Chord& chord) const {
+    return key_.has_value() ? chord_function::romanNumeral(chord.root, chord.quality, *key_)
+                            : juce::String();
+}
 
-    // Background
-    g.setColour(ActiveTheme::getBackgroundColour());
-    g.fillRect(bounds);
-
-    // Left border
-    g.setColour(ActiveTheme::getBorderColour());
-    g.fillRect(bounds.getX(), bounds.getY(), 1, bounds.getHeight());
-
-    // Placeholder when no plugin connected
-    if (!chordPlugin_) {
-        g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
-        g.setFont(FontManager::getInstance().getUIFont(12.0f));
-        g.drawText("No MIDI device", bounds, juce::Justification::centred);
+void ChordPanelContent::paintSectionLabel(juce::Graphics& g, juce::Rectangle<int> area,
+                                          const juce::String& label, const juce::String& note) {
+    if (area.isEmpty())
         return;
-    }
+    const auto font = FontManager::getInstance().getMonoFont(10.0f).withExtraKerningFactor(0.12f);
+    g.setFont(font);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+    const auto text = label.toUpperCase();
+    g.drawText(text, area, juce::Justification::centredLeft, false);
+    if (note.isEmpty())
+        return;
+    const int width = juce::roundToInt(juce::GlyphArrangement::getStringWidth(font, text));
+    g.setFont(FontManager::getInstance().getMonoFont(10.0f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+    g.drawText(note, area.withTrimmedLeft(width + 10), juce::Justification::centredLeft, true);
+}
 
-    auto headerFont = FontManager::getInstance().getUIFont(10.0f);
+void ChordPanelContent::paintCurrentChord(juce::Graphics& g, juce::Rectangle<int> box) const {
+    static constexpr std::array<const char*, 12> kNoteNames{"C",  "C#", "D",  "D#", "E",  "F",
+                                                            "F#", "G",  "G#", "A",  "A#", "B"};
+    auto& fonts = FontManager::getInstance();
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_WELL));
+    g.fillRoundedRectangle(box.toFloat(), 6.0f);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
+    g.drawRoundedRectangle(box.toFloat().reduced(0.5f), 6.0f, 1.0f);
 
-    // --- Column 1: Detection ---
-    if (detectionCol_.getWidth() > 0) {
-        auto col = detectionCol_;
-        auto area = col.reduced(PADDING, 0);
-
-        // "CHORD" header
-        g.setColour(ActiveTheme::getSecondaryTextColour());
-        g.setFont(headerFont);
-        g.drawText("CHORD", area.removeFromTop(SECTION_HEADER_HEIGHT),
-                   juce::Justification::centredLeft);
-
-        // Current chord display box
-        auto chordBox = area.removeFromTop(44);
-        g.setColour(ActiveTheme::getBackgroundColour().brighter(0.06f));
-        g.fillRoundedRectangle(chordBox.toFloat(), 4.0f);
-        g.setColour(ActiveTheme::getBorderColour());
-        g.drawRoundedRectangle(chordBox.toFloat(), 4.0f, 1.0f);
-
-        if (currentChord_.isEmpty()) {
-            g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.4f));
-            g.setFont(FontManager::getInstance().getUIFont(13.0f));
-            g.drawText("Play...", chordBox, juce::Justification::centred);
-        } else {
-            g.setColour(ActiveTheme::getAccentColour());
-            g.setFont(FontManager::getInstance().getUIFont(20.0f).boldened());
-            g.drawText(currentChord_, chordBox, juce::Justification::centred);
+    auto inner = box.reduced(16, 10);
+    auto title = inEditorSidebar_ ? inner : inner.removeFromTop(34);
+    const auto& notation = magda::music::NotationSettings::getInstance();
+    if (currentChord_.isEmpty()) {
+        g.setFont(fonts.getUIFont(15.0f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+        g.drawFittedText("Play a chord...", title, juce::Justification::centredLeft, 2, 0.8f);
+    } else {
+        const auto nameFont = fonts.getUIFontMedium(26.0f);
+        const auto name = notation.format(currentChord_);
+        // The voicing's note names sit at the title's right when the name leaves them room.
+        juce::StringArray names;
+        for (const auto& note : currentChordInfo_.notes)
+            names.add(notation.formatRoot(kNoteNames[static_cast<size_t>(note.noteNumber % 12)]));
+        const auto notesFont = fonts.getMonoFont(11.0f).withExtraKerningFactor(0.1f);
+        const auto notes = names.joinIntoString(" ");
+        const float needed = juce::GlyphArrangement::getStringWidth(nameFont, name) +
+                             juce::GlyphArrangement::getStringWidth(notesFont, notes) + 64.0f;
+        if (needed <= static_cast<float>(title.getWidth())) {
+            g.setFont(notesFont);
+            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+            g.drawText(notes, title, juce::Justification::centredRight, false);
         }
 
-        area.removeFromTop(8);
+        g.setFont(nameFont);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
+        g.drawText(name, title, juce::Justification::centredLeft, true);
 
-        // "HISTORY" header with clear button
-        {
-            auto histHeaderArea = area.removeFromTop(SECTION_HEADER_HEIGHT);
-            g.setColour(ActiveTheme::getSecondaryTextColour());
-            g.setFont(headerFont);
-            g.drawText("HISTORY", histHeaderArea, juce::Justification::centredLeft);
-        }
-    }
-
-    // --- Column 2: Suggestions (browse OR tabbed: K&S / AI) ---
-    if (suggestionsCol_.getWidth() > 0) {
-        auto col = suggestionsCol_;
-
-        // Column separator
-        g.setColour(ActiveTheme::getBorderColour());
-        g.fillRect(col.getX(), col.getY() + 4, 1, col.getHeight() - 8);
-
-        auto area = col.reduced(PADDING, 0);
-
-        if (browseMode_) {
-            // Browse mode header
-            g.setColour(ActiveTheme::getSecondaryTextColour());
-            g.setFont(headerFont);
-            g.drawText("BROWSE SCALES", area.removeFromTop(SECTION_HEADER_HEIGHT),
-                       juce::Justification::centredLeft);
-        } else {
-            auto tabArea = area.removeFromTop(SECTION_HEADER_HEIGHT);
-            // Horizontal border below tab header
-            g.setColour(ActiveTheme::getBorderColour());
-            g.fillRect(col.getX() + PADDING, tabArea.getBottom(), col.getWidth() - 2 * PADDING, 1);
-
-            if (suggestionTab_ == SuggestionTab::KS) {
-                if (suggestionBlocks_.empty() && chordPlugin_) {
-                    g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
-                    g.setFont(FontManager::getInstance().getUIFont(11.0f));
-                    area.removeFromTop(8);
-                    g.drawText("Play to get suggestions", area.removeFromTop(20),
-                               juce::Justification::centredLeft);
-                }
-            } else {
-                // AI tab content — draw progression names and descriptions
-                if (!aiLoading_ && (!chordPlugin_ || chordPlugin_->getAIProgressions().empty())) {
-                    g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
-                    g.setFont(FontManager::getInstance().getUIFont(11.0f));
-                    area.removeFromTop(8);
-                    g.drawText("Type a prompt or press Send", area.removeFromTop(20),
-                               juce::Justification::centredLeft);
-                }
+        if (const auto degree = degreeInKey(currentChordInfo_); degree.isNotEmpty()) {
+            const auto badgeFont = fonts.getMonoFont(12.0f);
+            const int nameWidth =
+                juce::roundToInt(juce::GlyphArrangement::getStringWidth(nameFont, name));
+            const int badgeWidth =
+                juce::roundToInt(juce::GlyphArrangement::getStringWidth(badgeFont, degree)) + 14;
+            const auto badge = juce::Rectangle<int>(title.getX() + nameWidth + 12,
+                                                    title.getCentreY() - 9, badgeWidth, 24);
+            if (badge.getRight() <= title.getRight()) {
+                const auto blue = ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE);
+                g.setColour(blue.withAlpha(0.16f));
+                g.fillRoundedRectangle(badge.toFloat(), 4.0f);
+                g.setColour(blue);
+                g.setFont(badgeFont);
+                g.drawText(degree, badge, juce::Justification::centred, false);
             }
         }
     }
 
-    // --- Column 3: Key / Scale ---
-    if (keyScaleCol_.getWidth() > 0) {
-        auto col = keyScaleCol_;
+    if (inEditorSidebar_)
+        return;
 
-        // Column separator
-        g.setColour(ActiveTheme::getBorderColour());
-        g.fillRect(col.getX(), col.getY() + 4, 1, col.getHeight() - 8);
+    // Two octaves from the C under the lowest note; the voicing lights its keys.
+    inner.removeFromTop(6);
+    const auto keys = inner.withHeight(juce::jmin(inner.getHeight(), 70)).toFloat();
+    if (keys.getHeight() < 16.0f)
+        return;
 
-        auto area = col.reduced(PADDING, 0);
+    std::set<int> lit;
+    int lowest = 60;
+    if (currentChord_.isNotEmpty() && !currentChordInfo_.notes.empty()) {
+        lowest = 127;
+        for (const auto& note : currentChordInfo_.notes)
+            lowest = juce::jmin(lowest, note.noteNumber);
+    }
+    const int start = (lowest / 12) * 12;
+    if (currentChord_.isNotEmpty())
+        for (const auto& note : currentChordInfo_.notes)
+            lit.insert(note.noteNumber >= start + 24 ? start + 12 + note.noteNumber % 12
+                                                     : note.noteNumber);
 
-        g.setColour(ActiveTheme::getSecondaryTextColour());
-        g.setFont(headerFont);
-        g.drawText("KEY", area.removeFromTop(SECTION_HEADER_HEIGHT),
-                   juce::Justification::centredLeft);
+    static constexpr int kWhite[] = {0, 2, 4, 5, 7, 9, 11};
+    static constexpr int kBlack[] = {1, 3, -1, 6, 8, 10, -1};
+    const float whiteWidth = keys.getWidth() / 14.0f;
+    const auto blue = ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE);
+    for (int i = 0; i < 14; ++i) {
+        const int note = start + (i / 7) * 12 + kWhite[i % 7];
+        const auto key = juce::Rectangle<float>(keys.getX() + static_cast<float>(i) * whiteWidth,
+                                                keys.getY(), whiteWidth - 1.0f, keys.getHeight());
+        g.setColour(lit.contains(note) ? blue : ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
+        g.fillRoundedRectangle(key, 2.0f);
+    }
+    for (int i = 0; i < 14; ++i) {
+        if (kBlack[i % 7] < 0)
+            continue;
+        const int note = start + (i / 7) * 12 + kBlack[i % 7];
+        const auto key =
+            juce::Rectangle<float>(keys.getX() + (static_cast<float>(i) + 0.68f) * whiteWidth,
+                                   keys.getY(), whiteWidth * 0.62f, keys.getHeight() * 0.6f);
+        g.setColour(lit.contains(note) ? blue.darker(0.3f)
+                                       : ActiveTheme::getColour(ActiveTheme::DEVICE_WELL));
+        g.fillRoundedRectangle(key, 1.5f);
+    }
+}
 
-        if (detectedKey_.isNotEmpty()) {
-            area.removeFromTop(4);
-            g.setColour(ActiveTheme::getTextColour());
-            g.setFont(FontManager::getInstance().getUIFont(16.0f).boldened());
-            g.drawText(magda::music::NotationSettings::getInstance().formatRoot(detectedKey_),
-                       area.removeFromTop(24), juce::Justification::centredLeft);
-        } else {
-            area.removeFromTop(4);
-            g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
-            g.setFont(FontManager::getInstance().getUIFont(11.0f));
-            g.drawText("Detecting...", area.removeFromTop(20), juce::Justification::centredLeft);
-        }
+void ChordPanelContent::paint(juce::Graphics& g) {
+    auto& fonts = FontManager::getInstance();
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::DEVICE_BG));
+    const auto dim = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM);
+    const auto dim2 = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2);
 
-        area.removeFromTop(8);
-
-        // "SCALES" header
-        if (!scaleBlocks_.empty()) {
-            g.setColour(ActiveTheme::getSecondaryTextColour());
-            g.setFont(headerFont);
-            g.drawText("SCALES", area.removeFromTop(SECTION_HEADER_HEIGHT),
-                       juce::Justification::centredLeft);
-            // Scale blocks positioned in resized()
-        }
+    if (!chordPlugin_) {
+        g.setColour(dim2);
+        g.setFont(fonts.getMonoFont(11.0f));
+        g.drawText("No chord engine", getLocalBounds(), juce::Justification::centred);
+        return;
     }
 
-    // --- Border above browse button ---
-    if (chordPlugin_ && keyScaleCol_.getWidth() > 0 && browseBtn_ && browseBtn_->isVisible()) {
-        g.setColour(ActiveTheme::getBorderColour());
-        int browseTopY = browseBtn_->getY() - 6;
-        g.fillRect(keyScaleCol_.getX() + PADDING, browseTopY, keyScaleCol_.getWidth() - 2 * PADDING,
-                   1);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
+    for (const auto* column : {&suggestionsCol_, &keyScaleCol_})
+        if (column->getWidth() > 0)
+            g.fillRect(column->getX(), column->getY(), 1, column->getHeight());
+    g.fillRect(0, footer_.getY(), getWidth(), 1);
+    if (!footerDivider_.isEmpty())
+        g.fillRect(footerDivider_);
+
+    // Sounding chord and history.
+    paintSectionLabel(g, chordHeader_, "Chord");
+    if (!chordBox_.isEmpty())
+        paintCurrentChord(g, chordBox_);
+    if (!statusLine_.isEmpty()) {
+        const bool live = currentChord_.isNotEmpty();
+        g.setColour(
+            ActiveTheme::getColour(live ? ActiveTheme::DEVICE_GREEN : ActiveTheme::DEVICE_DIM2));
+        g.fillEllipse(juce::Rectangle<float>(7.0f, 7.0f)
+                          .withCentre({static_cast<float>(statusLine_.getX()) + 4.0f,
+                                       statusLine_.toFloat().getCentreY()}));
+        g.setColour(dim);
+        g.setFont(fonts.getMonoFont(10.5f));
+        g.drawText(
+            juce::String(juce::CharPointer_UTF8("MIDI in \xc2\xb7 play a chord or pick one")),
+            statusLine_.withTrimmedLeft(16), juce::Justification::centredLeft, true);
+    }
+    paintSectionLabel(g, historyHeader_, "History");
+    g.setColour(dim2);
+    g.setFont(fonts.getMonoFont(11.0f));
+    for (const auto& arrow : historyArrows_)
+        g.drawText(juce::String(juce::CharPointer_UTF8("\xe2\x86\x92")),
+                   juce::Rectangle<int>(18, HISTORY_HEIGHT).withPosition(arrow),
+                   juce::Justification::centred, false);
+
+    // Suggestions.
+    if (!tabNote_.isEmpty() && !recentChords_.empty()) {
+        g.setColour(dim2);
+        g.setFont(fonts.getMonoFont(10.5f));
+        g.drawText("after " +
+                       magda::music::NotationSettings::getInstance().format(recentChords_.back()),
+                   tabNote_, juce::Justification::centredLeft, true);
+    }
+    if (!legend_.isEmpty()) {
+        using chord_function::HarmonicFunction;
+        auto row = legend_;
+        g.setFont(fonts.getMonoFont(10.5f));
+        for (const auto& [function, label] :
+             {std::pair{HarmonicFunction::Dominant, "dominant"},
+              std::pair{HarmonicFunction::PreDominant, "pre-dominant"},
+              std::pair{HarmonicFunction::Tonic, "tonic"}}) {
+            const int width =
+                juce::roundToInt(juce::GlyphArrangement::getStringWidth(g.getCurrentFont(), label));
+            auto item = row.removeFromRight(width + 14);
+            row.removeFromRight(12);
+            g.setColour(chord_function::functionColour(function));
+            g.fillEllipse(juce::Rectangle<float>(6.0f, 6.0f)
+                              .withCentre({static_cast<float>(item.getX()) + 3.0f,
+                                           item.toFloat().getCentreY()}));
+            g.setColour(dim);
+            g.drawText(label, item.withTrimmedLeft(12), juce::Justification::centredLeft, false);
+        }
+    }
+    if (browseMode_) {
+        paintSectionLabel(g, diatonicHeader_, "Browse scales");
+    } else if (suggestionTab_ == SuggestionTab::KS) {
+        paintSectionLabel(g, diatonicHeader_, "Diatonic", "in key");
+        paintSectionLabel(g, beyondHeader_, "Beyond the key", "secondary, borrowed & substitutes");
+        if (suggestionBlocks_.empty()) {
+            g.setColour(dim2);
+            g.setFont(fonts.getMonoFont(11.0f));
+            g.drawText("Play a chord to get suggestions",
+                       suggestionsCol_.reduced(PADDING).withTrimmedTop(44).withHeight(20),
+                       juce::Justification::centredLeft, true);
+        }
+    } else if (!aiLoading_ && chordPlugin_->getAIProgressions().empty()) {
+        g.setColour(dim2);
+        g.setFont(fonts.getMonoFont(11.0f));
+        g.drawText("Describe a progression below and press send",
+                   suggestionsCol_.reduced(PADDING).withTrimmedTop(44).withHeight(20),
+                   juce::Justification::centredLeft, true);
     }
 
-    // --- Footer separator line ---
-    if (chordPlugin_) {
-        int footerY = getHeight() - FOOTER_HEIGHT;
-        g.setColour(ActiveTheme::getBorderColour());
-        g.fillRect(0, footerY, getWidth(), 1);
+    // Key and scales.
+    paintSectionLabel(g, keyHeader_, "Key");
+    if (!keyBox_.isEmpty()) {
+        for (const auto& box : {keyBox_, browseBox_}) {
+            if (box.isEmpty())
+                continue;
+            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_WELL));
+            g.fillRoundedRectangle(box.toFloat(), 6.0f);
+            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
+            g.drawRoundedRectangle(box.toFloat().reduced(0.5f), 6.0f, 1.0f);
+        }
+        const bool known = detectedKey_.isNotEmpty();
+        g.setFont(known ? fonts.getUIFontMedium(18.0f) : fonts.getUIFont(14.0f));
+        g.setColour(
+            ActiveTheme::getColour(known ? ActiveTheme::DEVICE_TEXT : ActiveTheme::DEVICE_DIM2));
+        g.drawFittedText(
+            known ? magda::music::NotationSettings::getInstance().formatRoot(detectedKey_)
+                  : juce::String("Detecting..."),
+            keyBox_.reduced(12, 0), juce::Justification::centredLeft, 1, 0.8f);
+    }
+    paintSectionLabel(g, scalesHeader_, "Scales");
+    if (scalesHeader_.getWidth() >= 210) {
+        g.setColour(dim2);
+        g.setFont(fonts.getMonoFont(10.0f));
+        g.drawText("shift-click filters", scalesHeader_, juce::Justification::centredRight, true);
+    }
+
+    // Footer.
+    paintSectionLabel(g, noveltyCaption_, "Novelty");
+    paintSectionLabel(g, extensionsCaption_, "Extensions");
+    g.setFont(fonts.getMonoFont(10.5f));
+    g.setColour(dim2);
+    g.drawText("safe", noveltySafe_, juce::Justification::centredRight, false);
+    g.drawText("wild", noveltyWild_, juce::Justification::centredLeft, false);
+    if (!noveltyValue_.isEmpty()) {
+        g.setFont(fonts.getMonoFont(11.5f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
+        g.drawText(juce::String(juce::roundToInt(noveltySlider_.getValue() * 100.0)) + "%",
+                   noveltyValue_, juce::Justification::centredLeft, false);
     }
 }
 
 void ChordPanelContent::resized() {
     auto bounds = getLocalBounds();
-
-    // Reserve footer area
-    auto footerArea = bounds.removeFromBottom(FOOTER_HEIGHT);
-
-    // 3-column split: detection (28%) | suggestions (50%) | key/scale (22%)
-    auto totalWidth = bounds.getWidth();
-    int detectionWidth = static_cast<int>(totalWidth * 0.28f);
-    int keyScaleWidth = static_cast<int>(totalWidth * 0.22f);
-
-    detectionCol_ = bounds.removeFromLeft(detectionWidth);
-    bounds.removeFromLeft(COLUMN_GAP);
-    keyScaleCol_ = bounds.removeFromRight(keyScaleWidth);
-    bounds.removeFromRight(COLUMN_GAP);
+    footer_ = bounds.removeFromBottom(FOOTER_HEIGHT);
+    const int total = bounds.getWidth();
+    detectionCol_ = bounds.removeFromLeft(juce::roundToInt(static_cast<float>(total) * 0.28f));
+    keyScaleCol_ = bounds.removeFromRight(juce::roundToInt(static_cast<float>(total) * 0.22f));
     suggestionsCol_ = bounds;
 
-    // Layout footer — depends on active tab (hidden in browse mode)
-    if (!browseMode_) {
-        auto footer = footerArea;
-        footer.removeFromTop(1);  // separator line
-        footer.removeFromLeft(detectionWidth + COLUMN_GAP);
+    const auto& fonts = FontManager::getInstance();
 
-        if (suggestionTab_ == SuggestionTab::KS) {
-            // K&S footer: novelty / 7th / 9th / 11th / 13th / alt / funnel
-            auto mid = footer.reduced(PADDING, 0);
-            scaleFilterBtn_->setBounds(mid.removeFromRight(22).reduced(0, 2));
-            mid.removeFromRight(4);
-            noveltyLabel_->setBounds(mid.removeFromLeft(80).reduced(0, 2));
-            mid.removeFromLeft(4);
-            add7thsBtn_->setBounds(mid.removeFromLeft(32).reduced(0, 2));
-            mid.removeFromLeft(2);
-            add9thsBtn_->setBounds(mid.removeFromLeft(32).reduced(0, 2));
-            mid.removeFromLeft(2);
-            add11thsBtn_->setBounds(mid.removeFromLeft(34).reduced(0, 2));
-            mid.removeFromLeft(2);
-            add13thsBtn_->setBounds(mid.removeFromLeft(34).reduced(0, 2));
-            mid.removeFromLeft(2);
-            addAltBtn_->setBounds(mid.removeFromLeft(32).reduced(0, 2));
-        } else {
-            // AI footer: [text input] [Send]
-            auto mid = footer.reduced(PADDING, 0);
-            aiSendBtn_->setBounds(mid.removeFromRight(22).reduced(0, 2));
-            mid.removeFromRight(4);
-            aiInputBox_->setBounds(mid.reduced(0, 1));
-        }
-    }
-
-    // Position history blocks in detection column
+    // Sounding chord, then history as a chain of chips.
     {
-        auto area = detectionCol_.reduced(PADDING, 0);
-        // "CHORD" header - notation toggle sits at its right, always visible
-        // (independent of the K&S / AI suggestion tab).
-        auto chordHeader = area.removeFromTop(SECTION_HEADER_HEIGHT);
-        notationBtn_->setBounds(chordHeader.removeFromRight(48).reduced(0, 2));
-        area.removeFromTop(44);  // chord display box
-        area.removeFromTop(8);   // gap
+        auto area = detectionCol_.reduced(PADDING);
+        chordHeader_ = area.removeFromTop(SECTION_HEADER_HEIGHT);
+        notationBtn_->setBounds(
+            chordHeader_.withLeft(chordHeader_.getRight() - 46).withSizeKeepingCentre(46, 20));
+        area.removeFromTop(4);
+        // History keeps one row of chips; the status line only shows when there is room for both.
+        constexpr int kHistoryNeeds = GAP * 2 + SECTION_HEADER_HEIGHT + 6 + HISTORY_HEIGHT;
+        constexpr int kStatusNeeds = GAP + 2 + 16;
+        const bool status = area.getHeight() >= 168 + kHistoryNeeds + kStatusNeeds;
+        chordBox_ = area.removeFromTop(
+            inEditorSidebar_
+                ? 58
+                : juce::jlimit(64, 168,
+                               area.getHeight() - kHistoryNeeds - (status ? kStatusNeeds : 0)));
+        statusLine_ = {};
+        if (status) {
+            area.removeFromTop(GAP + 2);
+            statusLine_ = area.removeFromTop(16);
+        }
+        area.removeFromTop(GAP * 2);
+        historyHeader_ = area.removeFromTop(SECTION_HEADER_HEIGHT);
+        clearHistoryBtn_->setBounds(
+            historyHeader_.withLeft(historyHeader_.getRight() - 26).withSizeKeepingCentre(26, 22));
+        area.removeFromTop(6);
 
-        auto histHeader = area.removeFromTop(SECTION_HEADER_HEIGHT);
-        clearHistoryBtn_->setBounds(histHeader.removeFromRight(22).reduced(0, 2));
-        area.removeFromTop(2);
-
-        if (!historyBlocks_.empty()) {
+        // Oldest chips drop first, so the chain always ends on the chord just played.
+        historyArrows_.clear();
+        constexpr int kArrow = 18;
+        const int chipHeight = juce::jmin(HISTORY_HEIGHT, area.getHeight());
+        std::vector<int> widths;
+        for (const auto& block : historyBlocks_) {
+            const auto name = magda::music::NotationSettings::getInstance().format(
+                block->getChord().getDisplayName());
+            widths.push_back(juce::jmax(48, juce::roundToInt(juce::GlyphArrangement::getStringWidth(
+                                                fonts.getUIFontMedium(12.5f), name)) +
+                                                22));
+        }
+        const auto layout = [&](size_t first, bool place) {
             int x = area.getX();
             int y = area.getY();
-            int blockWidth = std::max(50, (area.getWidth() - BLOCK_GAP) / 2);
-            bool overflow = false;
-
-            for (auto& block : historyBlocks_) {
-                if (overflow) {
-                    block->setVisible(false);
-                    continue;
-                }
-                if (x + blockWidth > area.getRight()) {
+            for (size_t i = first; i < historyBlocks_.size(); ++i) {
+                const int arrow = i == first ? 0 : kArrow;
+                if (x + arrow + widths[i] > area.getRight() && x > area.getX()) {
                     x = area.getX();
-                    y += BLOCK_HEIGHT + BLOCK_GAP;
+                    y += chipHeight + GAP;
                 }
-                if (y + BLOCK_HEIGHT > area.getBottom()) {
-                    overflow = true;
-                    block->setVisible(false);
-                    continue;
+                if (y + chipHeight > area.getBottom())
+                    return false;
+                if (place) {
+                    if (arrow > 0)
+                        historyArrows_.push_back({x, y + (chipHeight - HISTORY_HEIGHT) / 2});
+                    historyBlocks_[i]->setBounds(x + arrow, y,
+                                                 juce::jmin(widths[i], area.getRight() - x - arrow),
+                                                 chipHeight);
                 }
-                block->setBounds(x, y, blockWidth, BLOCK_HEIGHT);
-                block->setVisible(true);
-                x += blockWidth + BLOCK_GAP;
+                x += arrow + widths[i];
             }
-        }
+            return true;
+        };
+        size_t first = 0;
+        while (first < historyBlocks_.size() && (chipHeight < 24 || !layout(first, false)))
+            ++first;
+        for (size_t i = 0; i < historyBlocks_.size(); ++i)
+            historyBlocks_[i]->setVisible(i >= first);
+        layout(first, true);
     }
 
-    // Suggestions column — browse mode OR tab buttons + content
+    // Suggestions: the tab row, then the two groups (or browse, or the AI tab).
+    tabNote_ = legend_ = diatonicHeader_ = beyondHeader_ = {};
     {
-        auto area = suggestionsCol_.reduced(PADDING, 0);
+        auto area = suggestionsCol_.reduced(PADDING);
+        auto tabRow = area.removeFromTop(28);
+        ksTabBtn_->setBounds(tabRow.removeFromLeft(30).withSizeKeepingCentre(30, 26));
+        tabRow.removeFromLeft(4);
+        aiTabBtn_->setBounds(tabRow.removeFromLeft(30).withSizeKeepingCentre(30, 26));
+        tabRow.removeFromLeft(12);
+        aiModelLabel_.setBounds(tabRow);
+        if (!browseMode_ && suggestionTab_ == SuggestionTab::KS) {
+            tabNote_ = tabRow.removeFromLeft(juce::jmin(110, tabRow.getWidth()));
+            if (tabRow.getWidth() >= 260)
+                legend_ = tabRow;
+        }
+        area.removeFromTop(GAP + 2);
 
         if (browseMode_) {
-            // Browse mode takes over the entire suggestions column (no tabs)
-            area.removeFromTop(SECTION_HEADER_HEIGHT);  // "BROWSE SCALES" header painted in paint()
-            area.removeFromTop(2);
-
-            // Key filter buttons — two rows of 6
-            int keyBtnWidth = (area.getWidth() - 5 * 2) / 6;
-            for (int row = 0; row < 2; ++row) {
-                int x = area.getX();
-                for (int col = 0; col < 6; ++col) {
-                    int idx = row * 6 + col;
-                    if (idx < static_cast<int>(browseKeyButtons_.size())) {
-                        browseKeyButtons_[static_cast<size_t>(idx)]->setBounds(x, area.getY(),
-                                                                               keyBtnWidth, 18);
-                        x += keyBtnWidth + 2;
-                    }
-                }
-                area.removeFromTop(20);
-            }
+            diatonicHeader_ = area.removeFromTop(SECTION_HEADER_HEIGHT);
             area.removeFromTop(4);
-
+            const int keyWidth = (area.getWidth() - 5 * 4) / 6;
+            for (int row = 0; row < 2; ++row) {
+                auto keys = area.removeFromTop(24);
+                for (int col = 0; col < 6; ++col) {
+                    const auto index = static_cast<size_t>(row * 6 + col);
+                    if (index < browseKeyButtons_.size())
+                        browseKeyButtons_[index]->setBounds(keys.removeFromLeft(keyWidth));
+                    keys.removeFromLeft(4);
+                }
+                area.removeFromTop(4);
+            }
+            area.removeFromTop(GAP);
             if (browseViewport_) {
                 browseViewport_->setBounds(area);
                 layoutBrowseRows();
             }
-        } else {
-            // Tab buttons in header row
-            auto tabRow = area.removeFromTop(SECTION_HEADER_HEIGHT);
-            ksTabBtn_->setBounds(tabRow.removeFromLeft(28));
-            tabRow.removeFromLeft(2);
-            aiTabBtn_->setBounds(tabRow.removeFromLeft(28));
-            tabRow.removeFromLeft(6);
-            aiModelLabel_.setBounds(tabRow);
-
-            area.removeFromTop(2);
-
-            if (suggestionTab_ == SuggestionTab::KS) {
-                // K&S tab content
-                int numCols = area.getWidth() > 280 ? 3 : 2;
-                int blockWidth = (area.getWidth() - BLOCK_GAP * (numCols - 1)) / numCols;
-                int x = area.getX();
-                int y = area.getY();
-                bool overflow = false;
-
-                for (auto& block : suggestionBlocks_) {
-                    if (overflow) {
-                        block->setVisible(false);
-                        continue;
-                    }
-                    if (x + blockWidth > area.getRight() + 1) {
-                        x = area.getX();
-                        y += BLOCK_HEIGHT + BLOCK_GAP;
-                    }
-                    if (y + BLOCK_HEIGHT > area.getBottom()) {
-                        overflow = true;
-                        block->setVisible(false);
-                        continue;
-                    }
-                    block->setBounds(x, y, blockWidth, BLOCK_HEIGHT);
-                    block->setVisible(true);
-                    x += blockWidth + BLOCK_GAP;
+        } else if (suggestionTab_ == SuggestionTab::KS) {
+            const int width = area.getWidth();
+            const int columns = width >= 470 ? 4 : width >= 330 ? 3 : 2;
+            const int tileWidth = (width - GAP * (columns - 1)) / columns;
+            bool overflow = false;
+            const auto placeGroup = [&](size_t begin, size_t end, juce::Rectangle<int>& header) {
+                if (begin >= end)
+                    return;
+                if (area.getHeight() < SECTION_HEADER_HEIGHT + TILE_HEIGHT)
+                    overflow = true;
+                if (!overflow) {
+                    header = area.removeFromTop(SECTION_HEADER_HEIGHT);
+                    area.removeFromTop(4);
                 }
-            } else {
-                // AI tab content — scrollable viewport
-                if (aiViewport_) {
-                    aiViewport_->setBounds(area);
-                    layoutAIProgressionRows();
+                juce::Rectangle<int> row;
+                for (size_t i = begin; i < end; ++i) {
+                    auto& block = suggestionBlocks_[i];
+                    const int column = static_cast<int>(i - begin) % columns;
+                    if (column == 0 && !overflow) {
+                        if (i > begin)
+                            area.removeFromTop(GAP);
+                        overflow = area.getHeight() < TILE_HEIGHT;
+                        if (!overflow)
+                            row = area.removeFromTop(TILE_HEIGHT);
+                    }
+                    block->setVisible(!overflow);
+                    if (!overflow)
+                        block->setBounds(row.getX() + column * (tileWidth + GAP), row.getY(),
+                                         tileWidth, TILE_HEIGHT);
                 }
-            }
+                area.removeFromTop(GAP * 2);
+            };
+            placeGroup(0, diatonicCount_, diatonicHeader_);
+            placeGroup(diatonicCount_, suggestionBlocks_.size(), beyondHeader_);
+        } else if (aiViewport_) {
+            aiViewport_->setBounds(area);
+            layoutAIProgressionRows();
         }
     }
 
-    // Position scale blocks in key/scale column
+    // Key, with browse beside it, then the detected scales.
+    keyHeader_ = keyBox_ = browseBox_ = scalesHeader_ = {};
     {
-        auto area = keyScaleCol_.reduced(PADDING, 0);
-        area.removeFromTop(SECTION_HEADER_HEIGHT);  // "KEY" header
-
-        if (detectedKey_.isNotEmpty()) {
-            area.removeFromTop(4);   // gap
-            area.removeFromTop(24);  // key text
+        auto area = keyScaleCol_.reduced(PADDING);
+        keyHeader_ = area.removeFromTop(SECTION_HEADER_HEIGHT);
+        area.removeFromTop(4);
+        auto keyRow = area.removeFromTop(44);
+        // Beside the key when there is room for both, else at the right of its header.
+        juce::Rectangle<int> browse;
+        if (keyRow.getWidth() >= 170) {
+            browseBox_ = keyRow.removeFromRight(44);
+            keyRow.removeFromRight(GAP);
+            browse = browseBox_.withSizeKeepingCentre(30, 26);
         } else {
-            area.removeFromTop(4);
-            area.removeFromTop(20);
+            browse = keyHeader_.withLeft(keyHeader_.getRight() - 30).withSizeKeepingCentre(30, 24);
         }
-
-        area.removeFromTop(8);  // gap before SCALES
+        browseBtn_->setBounds(browse);
+        backBtn_->setBounds(browse);
+        keyBox_ = keyRow;
+        area.removeFromTop(GAP * 2);
 
         if (!scaleBlocks_.empty()) {
-            area.removeFromTop(SECTION_HEADER_HEIGHT);  // "SCALES" header
-            area.removeFromTop(2);
+            scalesHeader_ = area.removeFromTop(SECTION_HEADER_HEIGHT);
+            area.removeFromTop(4);
+        }
+        for (auto& block : scaleBlocks_) {
+            const bool fits = area.getHeight() >= SCALE_ROW_HEIGHT;
+            block->setVisible(fits);
+            if (!fits)
+                continue;
+            block->setBounds(area.removeFromTop(SCALE_ROW_HEIGHT));
+            area.removeFromTop(6);
+        }
+    }
 
-            int scaleBlockHeight = 26;
-            bool scaleOverflow = false;
-            for (auto& block : scaleBlocks_) {
-                if (scaleOverflow) {
-                    block->setVisible(false);
-                    continue;
-                }
-                if (area.getHeight() < scaleBlockHeight) {
-                    scaleOverflow = true;
-                    block->setVisible(false);
-                    continue;
-                }
-                block->setBounds(area.removeFromTop(scaleBlockHeight));
-                block->setVisible(true);
-                area.removeFromTop(BLOCK_GAP);
-            }
+    // Footer: novelty and the extensions for K&S, the prompt for AI.
+    noveltyCaption_ = noveltySafe_ = noveltyWild_ = noveltyValue_ = extensionsCaption_ =
+        footerDivider_ = {};
+    {
+        auto footer = footer_.withTrimmedTop(1).reduced(PADDING, 0);
+        if (inEditorSidebar_)
+            footer.removeFromLeft(26);
+        if (browseMode_)
+            return;
+        if (suggestionTab_ == SuggestionTab::AI) {
+            aiSendBtn_->setBounds(footer.removeFromRight(30).withSizeKeepingCentre(30, 26));
+            footer.removeFromRight(GAP);
+            aiInputBox_->setBounds(footer.withSizeKeepingCentre(footer.getWidth(), 30));
+            return;
         }
 
-        // Browse button pinned to bottom of key/scale column (border drawn in paint)
-        auto browseArea = keyScaleCol_.reduced(PADDING, 0);
-        browseArea.removeFromBottom(6);  // bottom padding
-        auto btnArea = browseArea.removeFromBottom(22).reduced(0, 1);
-        browseBtn_->setBounds(btnArea);
-        backBtn_->setBounds(btnArea);
+        scaleFilterBtn_->setBounds(footer.removeFromRight(30).withSizeKeepingCentre(30, 26));
+        footer.removeFromRight(GAP * 2);
+        const bool wide = footer.getWidth() >= 680;
+        if (wide) {
+            noveltyCaption_ = footer.removeFromLeft(72);
+            noveltySafe_ = footer.removeFromLeft(30);
+            footer.removeFromLeft(10);
+        }
+        const int sliderWidth = wide ? 140 : 110;
+        noveltySlider_.setBounds(
+            footer.removeFromLeft(sliderWidth).withSizeKeepingCentre(sliderWidth, 20));
+        if (wide) {
+            footer.removeFromLeft(10);
+            noveltyWild_ = footer.removeFromLeft(30);
+        }
+        footer.removeFromLeft(8);
+        noveltyValue_ = footer.removeFromLeft(40);
+        footer.removeFromLeft(GAP);
+        footerDivider_ = footer.removeFromLeft(1).reduced(0, 12);
+        footer.removeFromLeft(GAP * 2);
+        if (wide)
+            extensionsCaption_ = footer.removeFromLeft(90);
+        const int stripWidth = juce::jmin(extensions_.getPreferredWidth(), footer.getWidth());
+        extensions_.setBounds(
+            footer.removeFromLeft(stripWidth).withSizeKeepingCentre(stripWidth, 32));
     }
 }
 

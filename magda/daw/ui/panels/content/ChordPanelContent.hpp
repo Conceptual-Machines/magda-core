@@ -2,7 +2,9 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -12,6 +14,7 @@
 #include "core/Config.hpp"
 #include "music/ChordEngine.hpp"
 #include "music/Scales.hpp"
+#include "ui/components/chord/ChordFunction.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -79,6 +82,28 @@ class ScaleChordsPopup : public juce::Component {
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ScaleChordsPopup)
 };
 
+/**
+ * @brief Adjoining toggles in one field, each lit on its own: the suggestion extensions.
+ */
+class ToggleStrip : public juce::Component, public juce::SettableTooltipClient {
+  public:
+    void setOptions(const juce::StringArray& options);
+    void setOn(int index, bool on);
+    bool isOn(int index) const;
+    int getPreferredWidth() const;
+
+    std::function<void(int index, bool on)> onToggle;
+
+    void paint(juce::Graphics& g) override;
+    void mouseDown(const juce::MouseEvent& e) override;
+
+  private:
+    juce::Rectangle<float> segmentBounds(int index) const;
+
+    juce::StringArray options_;
+    std::vector<bool> on_;
+};
+
 using AIProgression = magda::daw::audio::MidiChordEnginePlugin::AIProgression;
 
 /**
@@ -100,18 +125,17 @@ class BrowseScaleRowComponent : public juce::Component {
     }
 
   private:
-    static constexpr int ROW_HEIGHT = 24;
+    static constexpr int ROW_HEIGHT = 30;
     magda::music::ScaleWithChords scale_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BrowseScaleRowComponent)
 };
 
 /**
- * @brief Chord analysis side panel for the bottom panel
+ * @brief The Chord Engine's face, in its device slot and beside the chord editor.
  *
- * Three-column layout with footer toolbar:
- *   Columns: Chord Detection | Suggestions | Key / Scale
- *   Footer:  [collapse] | novelty / 7ths / 9ths / alt | [explorer]
+ * Three columns over a footer: the sounding chord and its history | suggestions (K&S or AI) |
+ * key and scales. The footer holds novelty and the extensions, or the AI prompt.
  */
 class ChordPanelContent : public juce::Component,
                           private magda::daw::audio::MidiChordEnginePlugin::Listener,
@@ -127,6 +151,8 @@ class ChordPanelContent : public juce::Component,
 
     void setChordEngine(magda::daw::audio::MidiChordEnginePlugin* plugin,
                         magda::TrackId trackId = magda::INVALID_TRACK_ID);
+    /** Docked beside the chord editor: no keyboard, and the footer clears the collapse button. */
+    void setInEditorSidebar(bool inSidebar);
     void toggleScaleSelection(ScaleBlockComponent* block);
     void showScalePopup(const magda::music::ScaleWithChords& scale, juce::Component* source);
 
@@ -147,6 +173,11 @@ class ChordPanelContent : public juce::Component,
     void setupFooterControls();
     void syncFooterFromParams();
     void updateScaleFilterPitchClasses();
+    /** The roman numeral of @p chord in the detected key, or empty without one. */
+    juce::String degreeInKey(const magda::music::Chord& chord) const;
+    void paintCurrentChord(juce::Graphics& g, juce::Rectangle<int> box) const;
+    static void paintSectionLabel(juce::Graphics& g, juce::Rectangle<int> area,
+                                  const juce::String& label, const juce::String& note = {});
 
     magda::daw::audio::MidiChordEnginePlugin* chordPlugin_ = nullptr;
     // Prime the bound engine from the chord-track progression (no-op unless the
@@ -154,20 +185,25 @@ class ChordPanelContent : public juce::Component,
     void seedEngineFromProgression();
 
     magda::TrackId trackId_ = magda::INVALID_TRACK_ID;
+    bool inEditorSidebar_ = false;
 
     void previewChord(const magda::music::Chord& chord);
     void stopPreview();
 
     // Cached display state
     juce::String currentChord_;
+    magda::music::Chord currentChordInfo_;
     juce::String detectedKey_;
+    std::optional<chord_function::Key> key_;
     std::vector<juce::String> recentChords_;
     std::vector<magda::music::ChordEngine::SuggestionItem> suggestions_;
     std::vector<magda::music::ScaleWithChords> detectedScales_;
     std::set<std::string> selectedScaleNames_;  // persists across rebuilds
 
     // Child components — chord blocks and scale blocks
+    /// The diatonic suggestions first, then the rest: two groups under their own headers.
     std::vector<std::unique_ptr<ChordBlockComponent>> suggestionBlocks_;
+    size_t diatonicCount_ = 0;
     std::vector<std::unique_ptr<ChordBlockComponent>> historyBlocks_;
     std::vector<std::unique_ptr<ScaleBlockComponent>> scaleBlocks_;
 
@@ -175,12 +211,9 @@ class ChordPanelContent : public juce::Component,
     std::unique_ptr<ScaleChordsPopup> activePopup_;
 
     // Footer controls
-    std::unique_ptr<magda::DraggableValueLabel> noveltyLabel_;
-    std::unique_ptr<juce::TextButton> add7thsBtn_;
-    std::unique_ptr<juce::TextButton> add9thsBtn_;
-    std::unique_ptr<juce::TextButton> addAltBtn_;
-    std::unique_ptr<juce::TextButton> add11thsBtn_;
-    std::unique_ptr<juce::TextButton> add13thsBtn_;
+    juce::Slider noveltySlider_{juce::Slider::LinearHorizontal, juce::Slider::NoTextBox};
+    /// 7th, 9th, 11th, 13th and Alt, in that order.
+    ToggleStrip extensions_;
     std::unique_ptr<juce::TextButton> notationBtn_;  // cycles C / Do / both notation
     std::unique_ptr<magda::SvgButton> scaleFilterBtn_;
     std::unique_ptr<magda::SvgButton> browseBtn_;
@@ -250,18 +283,38 @@ class ChordPanelContent : public juce::Component,
     std::unique_ptr<AIRequestThread> aiThread_;
     std::atomic<bool> aiCancelFlag_{false};
 
-    // Column areas (computed in resized, used in paint for headers)
+    // Areas resized() lays out and paint() draws into.
     juce::Rectangle<int> detectionCol_;
     juce::Rectangle<int> suggestionsCol_;
     juce::Rectangle<int> keyScaleCol_;
+    juce::Rectangle<int> footer_;
+    juce::Rectangle<int> chordHeader_;
+    juce::Rectangle<int> chordBox_;
+    juce::Rectangle<int> statusLine_;
+    juce::Rectangle<int> historyHeader_;
+    juce::Rectangle<int> tabNote_;
+    juce::Rectangle<int> legend_;
+    juce::Rectangle<int> diatonicHeader_;
+    juce::Rectangle<int> beyondHeader_;
+    juce::Rectangle<int> keyHeader_;
+    juce::Rectangle<int> keyBox_;
+    juce::Rectangle<int> browseBox_;
+    juce::Rectangle<int> scalesHeader_;
+    juce::Rectangle<int> noveltyCaption_;
+    juce::Rectangle<int> noveltySafe_;
+    juce::Rectangle<int> noveltyWild_;
+    juce::Rectangle<int> noveltyValue_;
+    juce::Rectangle<int> extensionsCaption_;
+    juce::Rectangle<int> footerDivider_;
+    std::vector<juce::Point<int>> historyArrows_;
 
-    // Layout constants
-    static constexpr int COLUMN_GAP = 1;
-    static constexpr int SECTION_HEADER_HEIGHT = 20;
-    static constexpr int BLOCK_HEIGHT = 32;
-    static constexpr int BLOCK_GAP = 4;
-    static constexpr int PADDING = 8;
-    static constexpr int FOOTER_HEIGHT = 26;
+    static constexpr int SECTION_HEADER_HEIGHT = 24;
+    static constexpr int HISTORY_HEIGHT = 34;
+    static constexpr int TILE_HEIGHT = 54;
+    static constexpr int SCALE_ROW_HEIGHT = 36;
+    static constexpr int GAP = 8;
+    static constexpr int PADDING = 14;
+    static constexpr int FOOTER_HEIGHT = 46;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChordPanelContent)
 };
