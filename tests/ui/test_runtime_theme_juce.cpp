@@ -32,7 +32,7 @@ class RuntimeThemeTest final : public juce::UnitTest {
         expect(magda::ActiveTheme::getColourValue(magda::ActiveTheme::GATE_CURVE) == 0xFF00D4FF);
         expect(magda::ActiveTheme::getColourValue(magda::ActiveTheme::MULTIBAND_LOW) == 0xFF43A0FF);
         expect(magda::ActiveTheme::getColourValue(magda::ActiveTheme::SAMPLER_START_MARKER) ==
-               0xFFFF9800);
+               0xFFE8EDF1);
         expect(magda::ActiveTheme::getColourValue(magda::ActiveTheme::INSTRUMENT_BACKGROUND) ==
                0xFF0D0D0F);
         expect(magda::ActiveTheme::getColourValue(magda::ActiveTheme::TEXT_SLIDER_THUMB) ==
@@ -111,7 +111,7 @@ class RuntimeThemeTest final : public juce::UnitTest {
         expect(magda::ActiveTheme::getColour(magda::ActiveTheme::GATE_CURVE).getARGB() ==
                0xFF54DFFF);
         expect(magda::ActiveTheme::getColour(magda::ActiveTheme::SAMPLER_END_MARKER).getARGB() ==
-               0xFFFF7171);
+               0xFFFFFFFF);
         expect(magda::ActiveTheme::getColour(magda::ActiveTheme::INSTRUMENT_TEXT).getARGB() ==
                0xFFF3F3F8);
         expect(magda::ActiveTheme::getColour(magda::ActiveTheme::TEXT_SLIDER_THUMB).getARGB() ==
