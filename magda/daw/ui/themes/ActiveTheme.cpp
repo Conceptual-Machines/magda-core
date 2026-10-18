@@ -89,8 +89,8 @@ constexpr ActiveTheme::Palette darkPalette{
     0xFFFFB347,  // MULTIBAND_MID
     0xFFAA66FF,  // MULTIBAND_HIGH
     0xFFFF0000,  // MULTIBAND_LIMIT
-    0xFFFF9800,  // SAMPLER_START_MARKER
-    0xFFE53935,  // SAMPLER_END_MARKER
+    0xFFE8EDF1,  // SAMPLER_START_MARKER
+    0xFFE8EDF1,  // SAMPLER_END_MARKER
     0xFFC8C8C8,  // SPECTRUM_OVERLAY
     0xFF0D0D0F,  // INSTRUMENT_BACKGROUND
     0xFF141417,  // INSTRUMENT_PANEL
@@ -397,8 +397,8 @@ constexpr ActiveTheme::Palette lightPalette = [] {
     set(ColourRole::MULTIBAND_MID, 0xFF9B6500);
     set(ColourRole::MULTIBAND_HIGH, 0xFF7848B5);
     set(ColourRole::MULTIBAND_LIMIT, 0xFFC52E2E);
-    set(ColourRole::SAMPLER_START_MARKER, 0xFFB85F00);
-    set(ColourRole::SAMPLER_END_MARKER, 0xFFBE2F2B);
+    set(ColourRole::SAMPLER_START_MARKER, 0xFF1B242C);
+    set(ColourRole::SAMPLER_END_MARKER, 0xFF1B242C);
     set(ColourRole::SPECTRUM_OVERLAY, 0xFF4D5963);
     set(ColourRole::INSTRUMENT_BACKGROUND, 0xFFF2F4F6);
     set(ColourRole::INSTRUMENT_PANEL, 0xFFE7EBEF);
@@ -668,8 +668,8 @@ constexpr ActiveTheme::Palette highContrastPalette = [] {
     palette[colourRoleIndex(ColourRole::MULTIBAND_MID)] = 0xFFFFD166;
     palette[colourRoleIndex(ColourRole::MULTIBAND_HIGH)] = 0xFFCD9BFF;
     palette[colourRoleIndex(ColourRole::MULTIBAND_LIMIT)] = 0xFFFF6B6B;
-    palette[colourRoleIndex(ColourRole::SAMPLER_START_MARKER)] = 0xFFFFB452;
-    palette[colourRoleIndex(ColourRole::SAMPLER_END_MARKER)] = 0xFFFF7171;
+    palette[colourRoleIndex(ColourRole::SAMPLER_START_MARKER)] = 0xFFFFFFFF;
+    palette[colourRoleIndex(ColourRole::SAMPLER_END_MARKER)] = 0xFFFFFFFF;
     palette[colourRoleIndex(ColourRole::SPECTRUM_OVERLAY)] = 0xFFD8D8D8;
     palette[colourRoleIndex(ColourRole::INSTRUMENT_BACKGROUND)] = 0xFF08080A;
     palette[colourRoleIndex(ColourRole::INSTRUMENT_PANEL)] = 0xFF15151A;

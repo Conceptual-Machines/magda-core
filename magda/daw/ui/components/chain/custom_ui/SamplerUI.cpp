@@ -386,9 +386,9 @@ SamplerUI::SamplerUI() {
         markerSliders[i]->setVisible(false);
     }
 
-    viewChoice_.setOptions({"Sample", "Amp"});
+    viewChoice_.setOptions({"Sample", "Loop", "Amp"});
     viewChoice_.setSelectedIndex(0);
-    viewChoice_.onChange = [this](int index) { showAmpView(index == 1); };
+    viewChoice_.onChange = [this](int index) { showView(index); };
     addAndMakeVisible(viewChoice_);
 
     // --- Labels ---
@@ -409,9 +409,13 @@ SamplerUI::SamplerUI() {
         label->setVisible(false);
 }
 
-void SamplerUI::showAmpView(bool amp) {
-    ampView_ = amp;
+void SamplerUI::showView(int index) {
+    loopView_ = index == 1;
+    ampView_ = index == 2;
     envDrag_ = EnvHandle::None;
+    // The loop often sits on the sample's ends, where start and end would otherwise win.
+    waveformView_.setLoopMarkersFirst(loopView_);
+    syncWaveformMarkers();
     repaint();
 }
 
@@ -535,7 +539,19 @@ bool SamplerUI::isInterestedInFileDrag(const juce::StringArray& files) {
     return std::ranges::any_of(files, isAudioFile);
 }
 
+void SamplerUI::fileDragEnter(const juce::StringArray& /*files*/, int /*x*/, int /*y*/) {
+    dropHover_ = true;
+    repaint();
+}
+
+void SamplerUI::fileDragExit(const juce::StringArray& /*files*/) {
+    dropHover_ = false;
+    repaint();
+}
+
 void SamplerUI::filesDropped(const juce::StringArray& files, int /*x*/, int /*y*/) {
+    dropHover_ = false;
+    repaint();
     for (const auto& f : files) {
         juce::File file(f);
         if (file.existsAsFile() && onFileDropped) {
@@ -664,7 +680,7 @@ void SamplerUI::dragEnvelope(EnvHandle handle, juce::Point<float> position) {
 
 void SamplerUI::syncWaveformMarkers() {
     waveformView_.setMarkers({startSlider_.getValue(), endSlider_.getValue(),
-                              loopButton_->isActive(), loopStartSlider_.getValue(),
+                              loopView_ || loopButton_->isActive(), loopStartSlider_.getValue(),
                               loopEndSlider_.getValue()});
 }
 
@@ -892,6 +908,23 @@ void SamplerUI::paint(juce::Graphics& g) {
     g.restoreState();
 }
 
+// The well lights up under a sample being dragged in, whichever view is showing.
+void SamplerUI::paintOverChildren(juce::Graphics& g) {
+    if (!dropHover_ || waveArea_.isEmpty())
+        return;
+    const auto well = waveArea_.toFloat();
+    const auto accent = ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG).withAlpha(0.7f));
+    g.fillRoundedRectangle(well, 4.0f);
+    g.setColour(accent.withAlpha(0.12f));
+    g.fillRoundedRectangle(well, 4.0f);
+    g.setColour(accent);
+    g.drawRoundedRectangle(well.reduced(0.75f), 4.0f, 1.5f);
+    g.setFont(FontManager::getInstance().getMonoFont(11.0f));
+    g.drawText(hasWaveform_ ? "Drop to replace the sample" : "Drop to load", waveArea_,
+               juce::Justification::centred);
+}
+
 void SamplerUI::paintEnvelope(juce::Graphics& g) {
     const auto shape = envelopeShape();
     if (!shape.has_value())
@@ -962,7 +995,7 @@ void SamplerUI::resized() {
     auto columns = area.removeFromRight(3 * kSectionW + 2 * kSpace);
     area.removeFromRight(kSpace);
     viewChoice_.setBounds(
-        area.removeFromTop(kTitleH).removeFromLeft(120).withSizeKeepingCentre(120, 20));
+        area.removeFromTop(kTitleH).removeFromLeft(170).withSizeKeepingCentre(170, 20));
     area.removeFromTop(4);
     waveArea_ = area;
 

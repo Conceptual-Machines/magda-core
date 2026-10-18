@@ -97,11 +97,14 @@ class SamplerUI : public juce::Component,
 
     void lookAndFeelChanged() override;
     void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
 
     // FileDragAndDropTarget — samples dropped from the OS file manager.
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
+    void fileDragEnter(const juce::StringArray& files, int x, int y) override;
+    void fileDragExit(const juce::StringArray& files) override;
 
     // DragAndDropTarget — samples dragged from MAGDA's own browser arrive as an
     // internal {type:"files"} payload; these forward it to the handlers above.
@@ -215,7 +218,9 @@ class SamplerUI : public juce::Component,
     // Which view the plot shows: the recording or the envelope.
     magda::SegmentedChoice viewChoice_;
     bool ampView_ = false;
-    void showAmpView(bool amp);
+    bool dropHover_ = false;  ///< A sample is being dragged over the device.
+    bool loopView_ = false;   ///< The loop markers come first, and show while the loop is off.
+    void showView(int index);
 
     // The slice in frames, driving the hidden marker sliders.
     double sampleRate_ = 44100.0;
