@@ -62,6 +62,9 @@ SamplerUI::FrameBox::FrameBox()
     box_.onFocusLost = [this] { commit(); };
     box_.onEscapeKey = [this] { setFrames(frames_); };
     addAndMakeVisible(box_);
+    // A click on a component that takes no focus hands it to the first editor JUCE finds
+    // above it; as a container, the box stays out of that search and only takes a direct click.
+    setFocusContainerType(FocusContainerType::keyboardFocusContainer);
 
     // One frame per click; held, it repeats.
     for (auto [button, step] : {std::pair{&up_, 1}, std::pair{&down_, -1}}) {
@@ -352,7 +355,7 @@ SamplerUI::SamplerUI() {
     styleTileValue(glideSlider_);
     addAndMakeVisible(glideSlider_);
 
-    // --- Voice Mode (param 12): segmented Poly/Mono/Legato over a hidden slider ---
+    // --- Voice Mode (param 12): the slot footer shows it; this carries its links ---
     voiceModeSlider_.setRange(0.0, 2.0, 1.0);
     voiceModeSlider_.setValue(0.0, juce::dontSendNotification);
     voiceModeSlider_.setParamIndex(12);
@@ -360,11 +363,7 @@ SamplerUI::SamplerUI() {
         if (onParameterChanged)
             onParameterChanged(12, static_cast<float>(value));
     };
-    addChildComponent(voiceModeSlider_);  // hidden carrier; buttons drive it
-    voiceModeChoice_.setOptions({"Poly", "Mono", "Legato"});
-    voiceModeChoice_.onChange = [this](int mode) { setVoiceMode(mode); };
-    addAndMakeVisible(voiceModeChoice_);
-    updateVoiceModeButtons();
+    addChildComponent(voiceModeSlider_);
 
     // --- The slice in frames: boxes drive the marker sliders, which stay as the link carriers.
     static constexpr const char* kFrameCaptions[] = {"START", "END", "LOOP IN", "LOOP OUT"};
@@ -405,7 +404,6 @@ SamplerUI::SamplerUI() {
     setupLabel(fineLabel_, "Fine");
     setupLabel(levelLabel_, "Level");
     setupLabel(velAmountLabel_, "Velocity");
-    setupLabel(voiceModeLabel_, "Voice");
     setupLabel(glideLabel_, "Glide");
     for (auto* label : {&startLabel_, &endLabel_, &loopStartLabel_, &loopEndLabel_})
         label->setVisible(false);
@@ -423,18 +421,6 @@ void SamplerUI::syncFrameBoxes() {
     for (size_t i = 0; i < frameBoxes_.size(); ++i)
         frameBoxes_[i].setFrames(
             static_cast<juce::int64>(std::llround(markerSliders[i]->getValue() * sampleRate_)));
-}
-
-void SamplerUI::setVoiceMode(int mode) {
-    voiceMode_ = juce::jlimit(0, 2, mode);
-    voiceModeSlider_.setValue(voiceMode_, juce::dontSendNotification);
-    if (onParameterChanged)
-        onParameterChanged(12, static_cast<float>(voiceMode_));
-    updateVoiceModeButtons();
-}
-
-void SamplerUI::updateVoiceModeButtons() {
-    voiceModeChoice_.setSelectedIndex(voiceMode_);
 }
 
 SamplerUI::~SamplerUI() {
@@ -455,10 +441,9 @@ void SamplerUI::lookAndFeelChanged() {
     sampleNameLabel_.setColour(juce::Label::textColourId,
                                ActiveTheme::getColour(hasSampleName_ ? ActiveTheme::DEVICE_TEXT
                                                                      : ActiveTheme::DEVICE_DIM2));
-    for (auto* label :
-         {&rootNoteLabel_, &startLabel_, &endLabel_, &loopStartLabel_, &loopEndLabel_,
-          &attackLabel_, &decayLabel_, &sustainLabel_, &releaseLabel_, &pitchLabel_, &fineLabel_,
-          &levelLabel_, &velAmountLabel_, &voiceModeLabel_, &glideLabel_})
+    for (auto* label : {&rootNoteLabel_, &startLabel_, &endLabel_, &loopStartLabel_, &loopEndLabel_,
+                        &attackLabel_, &decayLabel_, &sustainLabel_, &releaseLabel_, &pitchLabel_,
+                        &fineLabel_, &levelLabel_, &velAmountLabel_, &glideLabel_})
         label->setColour(juce::Label::textColourId,
                          ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
     repaint();
@@ -481,9 +466,7 @@ void SamplerUI::updateParameters(float attack, float decay, float sustain, float
     velAmountSlider_.setValue(velAmount, juce::dontSendNotification);
 
     glideSlider_.setValue(glide, juce::dontSendNotification);
-    voiceMode_ = juce::jlimit(0, 2, static_cast<int>(std::lround(voiceMode)));
-    voiceModeSlider_.setValue(voiceMode_, juce::dontSendNotification);
-    updateVoiceModeButtons();
+    voiceModeSlider_.setValue(std::round(voiceMode), juce::dontSendNotification);
 
     rootNoteSlider_.setValue(rootNote, juce::dontSendNotification);
 
@@ -1017,13 +1000,9 @@ void SamplerUI::resized() {
         frameBoxes_[i].setBounds(row);
     }
 
-    // Pitch: voice mode spans its third row.
     place(tile(column[1], 0, 0), pitchLabel_, pitchSlider_);
     place(tile(column[1], 1, 0), fineLabel_, fineSlider_);
     place(tile(column[1], 0, 1), glideLabel_, glideSlider_);
-    voiceModeLabel_.setBounds({});
-    const auto voiceRow = tile(column[1], 0, 2).withWidth(kSectionW);
-    voiceModeChoice_.setBounds(voiceRow.withSizeKeepingCentre(kSectionW, 28));
 
     place(tile(column[2], 0, 0), attackLabel_, attackSlider_);
     place(tile(column[2], 1, 0), decayLabel_, decaySlider_);

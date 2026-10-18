@@ -181,15 +181,10 @@ class SamplerUI : public juce::Component,
     // Velocity amount
     LinkableTextSlider velAmountSlider_{TextSlider::Format::Decimal};
 
-    // Voice mode (Poly/Mono/Legato): segments drive a hidden linkable slider (param 12).
-    // Glide (param 13) is a normal time slider.
+    // Voice mode (param 12) lives in the slot footer; this hidden slider carries its links.
     LinkableTextSlider voiceModeSlider_{TextSlider::Format::Decimal};
-    magda::SegmentedChoice voiceModeChoice_;
     LinkableTextSlider glideSlider_{TextSlider::Format::Decimal};
-    juce::Label voiceModeLabel_, glideLabel_;
-    void setVoiceMode(int mode);
-    void updateVoiceModeButtons();
-    int voiceMode_ = 0;
+    juce::Label glideLabel_;
 
     // Labels
     juce::Label attackLabel_, decayLabel_, sustainLabel_, releaseLabel_;

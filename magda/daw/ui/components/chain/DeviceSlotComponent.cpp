@@ -33,6 +33,7 @@
 #include "layout/DeviceSlotHeaderLayout.hpp"
 #include "layout/FaceplateBelowGeometry.hpp"
 #include "layout/NodeHeaderStyles.hpp"
+#include "layout/VoiceModeParam.hpp"
 #include "modulation/DeviceLinkCallbacks.hpp"
 #include "modulation/MacroPanelComponent.hpp"
 #include "modulation/ModsPanelComponent.hpp"
@@ -564,6 +565,14 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     footerPageLabel_.setJustificationType(juce::Justification::centred);
     footerPageLabel_.setInterceptsMouseClicks(false, false);
     addChildComponent(footerPageLabel_);
+    voiceModeChoice_.setOptions({"Poly", "Mono", "Legato"});
+    voiceModeChoice_.onChange = [this](int mode) {
+        if (voiceModeParam_ >= 0)
+            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath_, voiceModeParam_,
+                                                                       static_cast<float>(mode));
+    };
+    addChildComponent(voiceModeChoice_);
+    refreshVoiceModeChoice();
     paramGrid_->onPrevPage = [this]() { goToPrevPage(); };
     paramGrid_->onNextPage = [this]() { goToNextPage(); };
     paramGrid_->onPageSelected = [this](int pageIndex) {
@@ -743,6 +752,7 @@ void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
     if (footer.isEmpty()) {
         paramsToggle_->setVisible(false);
         faceplateToggle_->setVisible(false);
+        voiceModeChoice_.setVisible(false);
         return;
     }
     // The header's button size, so a button styled for one fits the other.
@@ -771,6 +781,12 @@ void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
     const bool sidechain = scButton_ != nullptr && scButton_->isVisible();
     if (sidechain)
         place(*scButton_, true);
+    voiceModeChoice_.setVisible(voiceModeParam_ >= 0);
+    if (voiceModeParam_ >= 0) {
+        const int width = voiceModeChoice_.getPreferredWidth();
+        voiceModeChoice_.setBounds(area.removeFromLeft(width).withSizeKeepingCentre(width, size.y));
+        area.removeFromLeft(gap);
+    }
     for (auto* button : {multiOutButton_.get(), midiThruButton_.get()})
         if (button != nullptr && button->isVisible())
             place(*button, false);
@@ -969,6 +985,17 @@ void DeviceSlotComponent::toggleDeviceView(bool faceplate) {
         onDeviceLayoutChanged();
 }
 
+void DeviceSlotComponent::refreshVoiceModeChoice() {
+    const auto* param = isInternalDevice() ? findVoiceModeParameter(device_) : nullptr;
+    const int index = param != nullptr ? param->paramIndex : -1;
+    if (param != nullptr)
+        voiceModeChoice_.setSelectedIndex(juce::roundToInt(param->currentValue));
+    if (index != voiceModeParam_) {
+        voiceModeParam_ = index;
+        layoutFooter(footerArea_);
+    }
+}
+
 void DeviceSlotComponent::refreshFooterPageControls() {
     if (paramGrid_ == nullptr)
         return;
@@ -1156,6 +1183,8 @@ void DeviceSlotComponent::deviceParameterChanged(const magda::ChainNodePath& dev
         return;
 
     updateCachedParameterValue(device_, paramIndex, newValue);
+    if (paramIndex == voiceModeParam_)
+        refreshVoiceModeChoice();
 
     if (traits_.compiledPresentation &&
         refreshEngineAwareCompiledSlots(device_, nodePath_, paramIndex, *paramGrid_)) {
@@ -1227,6 +1256,7 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
 
     // The path is what reaches the plugin (#2634).
     adoptParameterList();
+    refreshVoiceModeChoice();
 
     customUI_.setDevicePath(path);
     updateDeviceSlotInlineUi(device_, compiledPanel_.get(), customUI_);
@@ -1373,6 +1403,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     if (midiThruButton_ != nullptr && midiThruButton_->isActive() != device.midiInThru)
         midiThruButton_->setActive(device.midiInThru);
     refreshMixKnobFromDevice(true);
+    refreshVoiceModeChoice();
 
     // Plugin instance may have just become available (or its program list changed
     // due to a state restore) — repopulate.

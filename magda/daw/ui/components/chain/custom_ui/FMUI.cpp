@@ -63,7 +63,8 @@ FMUI::FMUI() {
     makeLabel(kAmpAdsrBase + 3, "R");
     makeLabel(kGlideSlot, "Glide");
     makeLabel(kVelAmtSlot, "Vel");
-    makeLabel(kVoiceModeSlot, "Mode");
+    // Voice mode sits in the slot footer; its slider stays as the link carrier.
+    controls_[static_cast<size_t>(kVoiceModeSlot)].slider->setVisible(false);
     makeLabel(kGainSlot, "Gain");
     for (int op = 0; op < kNumOps; ++op)
         makeLabel(kResetBase + op, "Rst");
@@ -359,7 +360,7 @@ void FMUI::resized() {
         ampGraph_->setBounds(a.removeFromTop(a.getHeight() * 40 / 100).reduced(kCellPad));
         layoutCells(a.removeFromTop(a.getHeight() * 30 / 100),
                     {kAmpAdsrBase + 0, kAmpAdsrBase + 1, kAmpAdsrBase + 2, kAmpAdsrBase + 3}, 4);
-        layoutCells(a, {kGlideSlot, kVelAmtSlot, kGainSlot, kVoiceModeSlot}, 2);
+        layoutCells(a, {kGlideSlot, kVelAmtSlot, kGainSlot}, 3);
     }
 }
 
