@@ -173,8 +173,10 @@ juce_add_binary_data(MagdaAssets
     # Resume/arrangement icons
     ../../assets/icons/resume/resume.svg
     # Automation icons
-    ../../assets/icons/automation/horizontal_snap.svg
-    ../../assets/icons/automation/vertical_snap.svg
+    ../../assets/icons/automation/lock_time.svg
+    ../../assets/icons/automation/lock_value.svg
+    ../../assets/icons/automation/read.svg
+    ../../assets/icons/automation/remove.svg
     ../../assets/icons/automation/automation.svg
     ../../assets/icons/automation/automation_master_header.svg
     # Waveform icons

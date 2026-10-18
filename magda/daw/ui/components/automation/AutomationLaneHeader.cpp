@@ -67,32 +67,36 @@ class LaneHeaderButton : public juce::Button {
     juce::Colour activeColour_;
 };
 
-// Snap toggles: show an SVG glyph. The SVG authors its shapes in #B3B3B3, so
-// we recolour-replace into whatever glyph colour the base class dictates.
-class SnapIconLaneButton : public LaneHeaderButton {
+// The glyphs are authored in #B3B3B3 and recoloured to whatever the button dictates.
+void drawLaneIcon(juce::Graphics& g, const juce::Drawable& icon, juce::Rectangle<float> bounds,
+                  juce::Colour colour) {
+    auto copy = icon.createCopy();
+    copy->replaceColour(juce::Colour(0xFFB3B3B3), colour);
+    ActiveTheme::applyToSvgIcon(*copy);
+    copy->drawWithin(g, bounds.reduced(bounds.getWidth() * 0.2f), juce::RectanglePlacement::centred,
+                     1.0f);
+}
+
+// The on/off toggles: snap to grid, snap to value, read.
+class IconLaneButton : public LaneHeaderButton {
   public:
-    SnapIconLaneButton(const juce::String& name, const void* svgData, int svgSize)
-        : LaneHeaderButton(name, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)) {
+    IconLaneButton(const juce::String& name, const void* svgData, int svgSize)
+        : LaneHeaderButton(name, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)),
+          icon_(juce::Drawable::createFromImageData(svgData, svgSize)) {
         setClickingTogglesState(true);
-        drawable_ = juce::Drawable::createFromImageData(svgData, svgSize);
     }
 
     void paintGlyph(juce::Graphics& g, juce::Colour colour) override {
-        if (drawable_ == nullptr)
-            return;
-        auto copy = drawable_->createCopy();
-        copy->replaceColour(juce::Colour(0xFFB3B3B3), colour);
-        ActiveTheme::applyToSvgIcon(*copy);
-        copy->drawWithin(g, getLocalBounds().toFloat().reduced(1.0f),
-                         juce::RectanglePlacement::centred, 1.0f);
+        if (icon_ != nullptr)
+            drawLaneIcon(g, *icon_, getLocalBounds().toFloat(), colour);
     }
 
   private:
-    std::unique_ptr<juce::Drawable> drawable_;
+    std::unique_ptr<juce::Drawable> icon_;
 };
 
-// Delete button: always uses the reddish-purple "danger" fill whether toggled
-// or not (matches the device-header × button in NodeComponent). Overrides the
+// Delete button: always uses the reddish-purple "danger" tint whether toggled
+// or not, with the bin glyph. Overrides the
 // base background so the user immediately reads it as destructive.
 class DeleteLaneButton : public LaneHeaderButton {
   public:
@@ -129,52 +133,13 @@ class DeleteLaneButton : public LaneHeaderButton {
     }
 
     void paintGlyph(juce::Graphics& g, juce::Colour colour) override {
-        g.setColour(colour);
-        g.setFont(FontManager::getInstance().getUIFontBold(13.0f));
-        g.drawText(juce::String::fromUTF8("\xc3\x97"), getLocalBounds().toFloat(),
-                   juce::Justification::centred, false);
-    }
-};
-
-// Bypass button: broken-ring power glyph drawn procedurally, so we don't need
-// a separate SVG and the stroke stays crisp at the 20px button size. Off =
-// grey on SURFACE, On = white on cyan — same colour rules as snap toggles.
-class PowerGlyphButton : public LaneHeaderButton {
-  public:
-    PowerGlyphButton()
-        : LaneHeaderButton("Bypass", ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)) {
-        setClickingTogglesState(true);
+        if (icon_ != nullptr)
+            drawLaneIcon(g, *icon_, getLocalBounds().toFloat(), colour);
     }
 
-    void paintGlyph(juce::Graphics& g, juce::Colour colour) override {
-        auto bounds = getLocalBounds().toFloat();
-        // Leave padding so the glyph doesn't kiss the border.
-        auto glyph = bounds.reduced(bounds.getWidth() * 0.22f, bounds.getHeight() * 0.22f);
-
-        const float stroke = juce::jmax(1.4f, glyph.getWidth() * 0.12f);
-        const float cx = glyph.getCentreX();
-        const float cy = glyph.getCentreY();
-        const float radius = glyph.getWidth() * 0.5f - stroke * 0.5f;
-
-        // Broken ring: arc from ~20° past top going clockwise all the way
-        // around, leaving a gap at the top where the vertical stem passes
-        // through. Angles in JUCE are radians, 0 = 12 o'clock, clockwise.
-        constexpr float gap = 0.6f;  // Half-angle of the top gap, radians.
-        juce::Path ring;
-        ring.addCentredArc(cx, cy, radius, radius, 0.0f,
-                           gap,                                      // start angle
-                           juce::MathConstants<float>::twoPi - gap,  // end angle
-                           true);
-
-        g.setColour(colour);
-        g.strokePath(ring, juce::PathStrokeType(stroke, juce::PathStrokeType::curved,
-                                                juce::PathStrokeType::rounded));
-
-        // Vertical stem through the gap.
-        const float stemTop = cy - radius - stroke * 0.3f;
-        const float stemBottom = cy - radius * 0.15f;
-        g.drawLine(cx, stemTop, cx, stemBottom, stroke);
-    }
+  private:
+    std::unique_ptr<juce::Drawable> icon_ =
+        juce::Drawable::createFromImageData(BinaryData::remove_svg, BinaryData::remove_svgSize);
 };
 
 // Lane mode toggle: a lane hosts EITHER automation clips OR a free-drawn
@@ -239,21 +204,21 @@ std::unique_ptr<AutoLaneHeaderButtons> makeAutoLaneHeaderButtons(AutomationLaneI
     auto entry = std::make_unique<AutoLaneHeaderButtons>();
     entry->laneId = laneId;
 
-    entry->snapEditGridBtn =
-        std::make_unique<SnapIconLaneButton>("snapEditsToBeatGrid", BinaryData::horizontal_snap_svg,
-                                             BinaryData::horizontal_snap_svgSize);
+    entry->snapEditGridBtn = std::make_unique<IconLaneButton>(
+        "snapEditsToBeatGrid", BinaryData::lock_time_svg, BinaryData::lock_time_svgSize);
     entry->snapEditGridBtn->setTooltip("Snap edits to beat grid");
     host.addAndMakeVisible(*entry->snapEditGridBtn);
 
-    entry->snapValueBtn = std::make_unique<SnapIconLaneButton>(
-        "snapValue", BinaryData::vertical_snap_svg, BinaryData::vertical_snap_svgSize);
+    entry->snapValueBtn = std::make_unique<IconLaneButton>("snapValue", BinaryData::lock_value_svg,
+                                                           BinaryData::lock_value_svgSize);
     entry->snapValueBtn->setTooltip("Snap values to parameter grid");
     host.addAndMakeVisible(*entry->snapValueBtn);
 
-    // The power glyph controls the stable Reading/Disabled state. Transient
+    // Read controls the stable Reading/Disabled state. Transient
     // Touching/Writing states still show as powered because they return to
     // Reading when the gesture ends.
-    entry->bypassBtn = std::make_unique<PowerGlyphButton>();
+    entry->bypassBtn =
+        std::make_unique<IconLaneButton>("Read", BinaryData::read_svg, BinaryData::read_svgSize);
     entry->bypassBtn->setTooltip("Automation on/off");
     host.addAndMakeVisible(*entry->bypassBtn);
 
@@ -263,8 +228,7 @@ std::unique_ptr<AutoLaneHeaderButtons> makeAutoLaneHeaderButtons(AutomationLaneI
     entry->modeBtn->setTooltip("Lane mode: clips / free draw");
     host.addAndMakeVisible(*entry->modeBtn);
 
-    // Delete button: matches the device-header × in NodeComponent — same
-    // reddish-purple fill, same × glyph. Replaces the old "lane options"
+    // Delete button: a reddish-purple bin. Replaces the old "lane options"
     // menu; clearing points is handled via the Backspace key instead.
     entry->deleteBtn = std::make_unique<DeleteLaneButton>();
     entry->deleteBtn->setTooltip("Delete automation lane");
