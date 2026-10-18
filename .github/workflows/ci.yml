@@ -562,8 +562,9 @@ jobs:
             hosted "No RUNNER_STATUS_PAT available in this context; falling back to macos-15"
           fi
 
-          runners=$(gh api "repos/${{ github.repository }}/actions/runners" 2>/dev/null) \
-            || hosted "Could not read runner status; falling back to macos-15"
+          # The Mac runners are registered on the org, not the repo.
+          runners=$(gh api "orgs/${{ github.repository_owner }}/actions/runners" 2>&1) \
+            || hosted "Could not read org runner status ($runners); falling back to macos-15"
 
           primary=$(printf '%s' "$runners" | jq -r '
             .runners[]
@@ -622,7 +623,7 @@ jobs:
           # Earlier selectors/queued jobs own the available local slots first.
           # With two simultaneous idle selections, consecutive run numbers give
           # them opposite round-robin preferences. A third goes hosted.
-          if [ "$reservations" -ge "$available" ]; then
+          if [ "$available" -gt 0 ] && [ "$reservations" -ge "$available" ]; then
             hosted "Falling back to macos-15 (all $available available local runner(s) already reserved)"
           fi
 
