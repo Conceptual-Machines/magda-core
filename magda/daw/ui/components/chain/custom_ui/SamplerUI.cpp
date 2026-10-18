@@ -7,6 +7,7 @@
 
 #include "DisplayListGraphics.hpp"
 #include "core/GestureRouter.hpp"
+#include "ui/components/chain/layout/NodeHeaderStyles.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/CursorManager.hpp"
@@ -18,23 +19,100 @@
 namespace magda::daw::ui {
 
 namespace {
-constexpr int kNameRowH = 20;         // top sample-name / root / load row
-constexpr int kCtrlRowH = 30;         // one control row: label(12) + control(18)
-constexpr int kCtrlBlockH = 64;       // two control rows (bottom-aligned in each column)
-constexpr int kRightColPercent = 38;  // right (synth) column width as % of body
+constexpr int kSpace = 8;
+constexpr int kNameRowH = 24;
+constexpr int kTitleH = 22;
+constexpr int kTileW = 64;
+constexpr int kTileGap = 4;
+constexpr int kMaxTileH = 48;  ///< The grid's text tile, so these read as its cells.
+constexpr float kEnvHandleRadius = 4.5f;
+constexpr float kEnvHandleGrab = 9.0f;
+
+/// A value box that sits inside a painted tile: no frame or fill of its own.
+void styleTileValue(TextSlider& slider) {
+    slider.setDrawFrame(false);
+    slider.setShowFillIndicator(false);
+    slider.setBackgroundColour(juce::Colours::transparentBlack);
+    slider.setFont(FontManager::getInstance().getUIFontMedium(15.0f));
+    slider.setTextColour(ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
+    slider.setJustification(juce::Justification::centredLeft);
+}
+
+void styleTileValue(LinkableTextSlider& slider) {
+    styleTileValue(slider.getSlider());
+}
 }  // namespace
+
+SamplerUI::FrameBox::FrameBox()
+    : up_("up", 0.75f, ActiveTheme::getColour(ActiveTheme::DEVICE_DIM)),
+      down_("down", 0.25f, ActiveTheme::getColour(ActiveTheme::DEVICE_DIM)) {
+    box_.setFont(FontManager::getInstance().getMonoFont(11.0f));
+    box_.setJustification(juce::Justification::centredLeft);
+    box_.setInputRestrictions(10, "0123456789");
+    box_.setIndents(6, 4);
+    box_.setColour(juce::TextEditor::backgroundColourId,
+                   ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));
+    box_.setColour(juce::TextEditor::outlineColourId,
+                   ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
+    box_.setColour(juce::TextEditor::focusedOutlineColourId,
+                   ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE));
+    box_.setColour(juce::TextEditor::textColourId,
+                   ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
+    box_.onReturnKey = [this] { commit(); };
+    box_.onFocusLost = [this] { commit(); };
+    box_.onEscapeKey = [this] { setFrames(frames_); };
+    addAndMakeVisible(box_);
+
+    // One frame per click; held, it repeats.
+    for (auto [button, step] : {std::pair{&up_, 1}, std::pair{&down_, -1}}) {
+        button->setRepeatSpeed(350, 40);
+        button->onClick = [this, step = step] {
+            frames_ = std::max<juce::int64>(0, frames_ + step);
+            setFrames(frames_);
+            if (onCommit)
+                onCommit(frames_);
+        };
+        addAndMakeVisible(*button);
+    }
+}
+
+void SamplerUI::FrameBox::setFrames(juce::int64 frames) {
+    frames_ = frames;
+    box_.setText(juce::String(frames), false);
+}
+
+void SamplerUI::FrameBox::commit() {
+    const auto typed = box_.getText().getLargeIntValue();
+    if (typed == frames_)
+        return;
+    frames_ = std::max<juce::int64>(0, typed);
+    if (onCommit)
+        onCommit(frames_);
+}
+
+void SamplerUI::FrameBox::resized() {
+    auto area = getLocalBounds();
+    auto arrows = area.removeFromRight(12).reduced(0, 2);
+    up_.setBounds(arrows.removeFromTop(arrows.getHeight() / 2).reduced(1));
+    down_.setBounds(arrows.reduced(1));
+    area.removeFromRight(2);
+    box_.setBounds(area);
+}
 
 SamplerUI::SamplerUI() {
     // Sample name label
     sampleNameLabel_.setText("No sample loaded", juce::dontSendNotification);
     sampleNameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    sampleNameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
+    sampleNameLabel_.setColour(juce::Label::textColourId,
+                               ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
     sampleNameLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(sampleNameLabel_);
 
     // Load button (folder icon)
     loadButton_ = std::make_unique<magda::SvgButton>("Load Sample", BinaryData::folderopen_svg,
                                                      BinaryData::folderopen_svgSize);
+    node_header::applyDeviceIconStyle(*loadButton_, node_header::DeviceIcon::Action);
+    loadButton_->setTooltip("Load a sample");
     loadButton_->onClick = [this]() {
         if (onLoadSampleRequested)
             onLoadSampleRequested();
@@ -44,7 +122,8 @@ SamplerUI::SamplerUI() {
     // Root note slider (MIDI note 0-127, displayed as note name)
     rootNoteSlider_.setRange(0, 127, 1);
     rootNoteSlider_.setValue(60, juce::dontSendNotification);
-    rootNoteSlider_.setShowFillIndicator(false);
+    styleTileValue(rootNoteSlider_);
+    rootNoteSlider_.setFont(FontManager::getInstance().getMonoFont(11.0f));
     rootNoteSlider_.setValueFormatter([](double v) {
         static const char* noteNames[] = {"C",  "C#", "D",  "D#", "E",  "F",
                                           "F#", "G",  "G#", "A",  "A#", "B"};
@@ -94,6 +173,9 @@ SamplerUI::SamplerUI() {
     addAndMakeVisible(rootNoteSlider_);
 
     setupLabel(rootNoteLabel_, "ROOT");
+    rootNoteLabel_.setFont(
+        FontManager::getInstance().getMonoFont(10.0f).withExtraKerningFactor(0.12f));
+    rootNoteLabel_.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(rootNoteLabel_);
 
     // --- Time slider setup helper ---
@@ -122,6 +204,7 @@ SamplerUI::SamplerUI() {
                 onParameterChanged(paramIndex, static_cast<float>(value));
             repaint();
         };
+        styleTileValue(slider);
         addAndMakeVisible(slider);
     };
 
@@ -140,11 +223,10 @@ SamplerUI::SamplerUI() {
     // --- Loop toggle button (SVG icon) ---
     loopButton_ =
         std::make_unique<magda::SvgButton>("Loop", BinaryData::loop_svg, BinaryData::loop_svgSize);
-    loopButton_->setIconPadding(0.0f);
-    loopButton_->setStateColourReplacement(
-        juce::Colour(0xFF1A1A1A), ActiveTheme::PIANO_ROLL_BACKGROUND, ActiveTheme::ACCENT_PRIMARY);
-    loopButton_->setStateColourReplacement(juce::Colour(0xFFBCBCBC), ActiveTheme::ICON_TRANSPORT,
-                                           ActiveTheme::TEXT_BRIGHT);
+    node_header::applyDeviceIconStyle(*loopButton_, node_header::DeviceIcon::Toggle,
+                                      juce::Colour(0xFFBCBCBC), ActiveTheme::DEVICE_BLUE);
+    loopButton_->setClickingTogglesState(false);
+    loopButton_->setTooltip("Loop between the loop markers");
     loopButton_->onClick = [this]() {
         bool newState = !loopButton_->isActive();
         loopButton_->setActive(newState);
@@ -175,54 +257,10 @@ SamplerUI::SamplerUI() {
             onParameterChanged(2, static_cast<float>(value));
         repaint();
     };
+    styleTileValue(sustainSlider_);
     addAndMakeVisible(sustainSlider_);
 
     setupTimeSlider(releaseSlider_, 3, 0.001, 10.0, 0.1);
-
-    // --- ADSR graph (its own time axis, decoupled from the waveform) ---
-    addAndMakeVisible(envGraph_);
-    envGraph_.onStageChanged = [this](int paramIndex, float v) {
-        // Drive the matching value box, which forwards the write to the plugin.
-        switch (paramIndex) {
-            case 0:
-                attackSlider_.setValue(v, juce::sendNotificationSync);
-                break;
-            case 1:
-                decaySlider_.setValue(v, juce::sendNotificationSync);
-                break;
-            case 2:
-                sustainSlider_.setValue(v, juce::sendNotificationSync);
-                break;
-            case 3:
-                releaseSlider_.setValue(v, juce::sendNotificationSync);
-                break;
-            default:
-                break;
-        }
-    };
-    // Keep the graph in lockstep when a value box is edited directly (overrides the
-    // generic onValueChanged installed by setupTimeSlider for the ADSR sliders).
-    attackSlider_.onValueChanged = [this](double v) {
-        if (onParameterChanged)
-            onParameterChanged(0, static_cast<float>(v));
-        envGraph_.setStageValue(AdsrGraph::Attack, static_cast<float>(v));
-    };
-    decaySlider_.onValueChanged = [this](double v) {
-        if (onParameterChanged)
-            onParameterChanged(1, static_cast<float>(v));
-        envGraph_.setStageValue(AdsrGraph::Decay, static_cast<float>(v));
-    };
-    sustainSlider_.onValueChanged = [this](double v) {
-        if (onParameterChanged)
-            onParameterChanged(2, static_cast<float>(v));
-        envGraph_.setStageValue(AdsrGraph::Sustain, static_cast<float>(v));
-    };
-    releaseSlider_.onValueChanged = [this](double v) {
-        if (onParameterChanged)
-            onParameterChanged(3, static_cast<float>(v));
-        envGraph_.setStageValue(AdsrGraph::Release, static_cast<float>(v));
-    };
-    syncEnvGraph();
 
     // --- Pitch slider (-24 to +24 semitones) ---
     pitchSlider_.setRange(-24.0, 24.0, 1.0);
@@ -237,6 +275,7 @@ SamplerUI::SamplerUI() {
         if (onParameterChanged)
             onParameterChanged(4, static_cast<float>(value));
     };
+    styleTileValue(pitchSlider_);
     addAndMakeVisible(pitchSlider_);
 
     // --- Fine slider (-100 to +100 cents) ---
@@ -252,6 +291,7 @@ SamplerUI::SamplerUI() {
         if (onParameterChanged)
             onParameterChanged(5, static_cast<float>(value));
     };
+    styleTileValue(fineSlider_);
     addAndMakeVisible(fineSlider_);
 
     // --- Level slider (-60 to +12 dB) ---
@@ -266,6 +306,7 @@ SamplerUI::SamplerUI() {
         if (hasWaveform_)
             repaint();
     };
+    styleTileValue(levelSlider_);
     addAndMakeVisible(levelSlider_);
 
     // --- Velocity amount slider (0-100%) ---
@@ -285,6 +326,7 @@ SamplerUI::SamplerUI() {
             onParameterChanged(11, static_cast<float>(value));
         repaint();
     };
+    styleTileValue(velAmountSlider_);
     addAndMakeVisible(velAmountSlider_);
 
     // --- Glide (param 13): portamento time ---
@@ -307,6 +349,7 @@ SamplerUI::SamplerUI() {
             onParameterChanged(13, static_cast<float>(value));
     };
     glideSlider_.setParamIndex(13);
+    styleTileValue(glideSlider_);
     addAndMakeVisible(glideSlider_);
 
     // --- Voice Mode (param 12): segmented Poly/Mono/Legato over a hidden slider ---
@@ -318,41 +361,68 @@ SamplerUI::SamplerUI() {
             onParameterChanged(12, static_cast<float>(value));
     };
     addChildComponent(voiceModeSlider_);  // hidden carrier; buttons drive it
-    static const char* kModeNames[3] = {"Poly", "Mono", "Legato"};
-    for (int m = 0; m < 3; ++m) {
-        auto btn = std::make_unique<juce::TextButton>(kModeNames[m]);
-        btn->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
-        btn->setClickingTogglesState(false);
-        btn->setColour(juce::TextButton::buttonColourId,
-                       ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.10f));
-        btn->setColour(juce::TextButton::buttonOnColourId,
-                       ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-        btn->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
-        btn->setColour(juce::TextButton::textColourOnId,
-                       ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
-        btn->setConnectedEdges((m > 0 ? juce::Button::ConnectedOnLeft : 0) |
-                               (m < 2 ? juce::Button::ConnectedOnRight : 0));
-        btn->onClick = [this, m]() { setVoiceMode(m); };
-        addAndMakeVisible(*btn);
-        voiceModeButtons_[static_cast<size_t>(m)] = std::move(btn);
-    }
+    voiceModeChoice_.setOptions({"Poly", "Mono", "Legato"});
+    voiceModeChoice_.onChange = [this](int mode) { setVoiceMode(mode); };
+    addAndMakeVisible(voiceModeChoice_);
     updateVoiceModeButtons();
 
+    // --- The slice in frames: boxes drive the marker sliders, which stay as the link carriers.
+    static constexpr const char* kFrameCaptions[] = {"START", "END", "LOOP IN", "LOOP OUT"};
+    LinkableTextSlider* const markerSliders[] = {&startSlider_, &endSlider_, &loopStartSlider_,
+                                                 &loopEndSlider_};
+    for (size_t i = 0; i < frameBoxes_.size(); ++i) {
+        auto& caption = frameCaptions_[i];
+        caption.setText(kFrameCaptions[i], juce::dontSendNotification);
+        caption.setFont(
+            FontManager::getInstance().getMonoFont(10.0f).withExtraKerningFactor(0.08f));
+        caption.setColour(juce::Label::textColourId,
+                          ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+        addAndMakeVisible(caption);
+        frameBoxes_[i].onCommit = [this, slider = markerSliders[i]](juce::int64 frames) {
+            slider->setValue(static_cast<double>(frames) / sampleRate_, juce::sendNotificationSync);
+            syncFrameBoxes();
+            repaint();
+        };
+        addAndMakeVisible(frameBoxes_[i]);
+        markerSliders[i]->setVisible(false);
+    }
+
+    viewChoice_.setOptions({"Sample", "Amp"});
+    viewChoice_.setSelectedIndex(0);
+    viewChoice_.onChange = [this](int index) { showAmpView(index == 1); };
+    addAndMakeVisible(viewChoice_);
+
     // --- Labels ---
-    setupLabel(startLabel_, "START");
-    setupLabel(endLabel_, "END");
-    setupLabel(loopStartLabel_, "L.START");
-    setupLabel(loopEndLabel_, "L.END");
-    setupLabel(attackLabel_, "ATK");
-    setupLabel(decayLabel_, "DEC");
-    setupLabel(sustainLabel_, "SUS");
-    setupLabel(releaseLabel_, "REL");
-    setupLabel(pitchLabel_, "PITCH");
-    setupLabel(fineLabel_, "FINE");
-    setupLabel(levelLabel_, "LEVEL");
-    setupLabel(velAmountLabel_, "VEL");
-    setupLabel(voiceModeLabel_, "VOICE");
-    setupLabel(glideLabel_, "GLIDE");
+    setupLabel(startLabel_, "Start");
+    setupLabel(endLabel_, "End");
+    setupLabel(loopStartLabel_, "Loop in");
+    setupLabel(loopEndLabel_, "Loop out");
+    setupLabel(attackLabel_, "Attack");
+    setupLabel(decayLabel_, "Decay");
+    setupLabel(sustainLabel_, "Sustain");
+    setupLabel(releaseLabel_, "Release");
+    setupLabel(pitchLabel_, "Pitch");
+    setupLabel(fineLabel_, "Fine");
+    setupLabel(levelLabel_, "Level");
+    setupLabel(velAmountLabel_, "Velocity");
+    setupLabel(voiceModeLabel_, "Voice");
+    setupLabel(glideLabel_, "Glide");
+    for (auto* label : {&startLabel_, &endLabel_, &loopStartLabel_, &loopEndLabel_})
+        label->setVisible(false);
+}
+
+void SamplerUI::showAmpView(bool amp) {
+    ampView_ = amp;
+    envDrag_ = EnvHandle::None;
+    repaint();
+}
+
+void SamplerUI::syncFrameBoxes() {
+    const LinkableTextSlider* const markerSliders[] = {&startSlider_, &endSlider_,
+                                                       &loopStartSlider_, &loopEndSlider_};
+    for (size_t i = 0; i < frameBoxes_.size(); ++i)
+        frameBoxes_[i].setFrames(
+            static_cast<juce::int64>(std::llround(markerSliders[i]->getValue() * sampleRate_)));
 }
 
 void SamplerUI::setVoiceMode(int mode) {
@@ -364,51 +434,33 @@ void SamplerUI::setVoiceMode(int mode) {
 }
 
 void SamplerUI::updateVoiceModeButtons() {
-    for (int m = 0; m < 3; ++m)
-        if (voiceModeButtons_[static_cast<size_t>(m)])
-            voiceModeButtons_[static_cast<size_t>(m)]->setToggleState(m == voiceMode_,
-                                                                      juce::dontSendNotification);
+    voiceModeChoice_.setSelectedIndex(voiceMode_);
 }
 
 SamplerUI::~SamplerUI() {
     stopTimer();
-    for (auto& btn : voiceModeButtons_)
-        if (btn)
-            btn->setLookAndFeel(nullptr);
 }
 
 void SamplerUI::setupLabel(juce::Label& label, const juce::String& text) {
     label.setText(text, juce::dontSendNotification);
-    label.setFont(FontManager::getInstance().getUIFont(9.0f));
-    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    label.setJustificationType(juce::Justification::centred);
+    label.setFont(FontManager::getInstance().getUIFont(12.5f));
+    label.setColour(juce::Label::textColourId, ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+    label.setJustificationType(juce::Justification::centredLeft);
+    label.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(label);
 }
 
 void SamplerUI::lookAndFeelChanged() {
     // Re-apply cached theme colours after a live theme switch.
     sampleNameLabel_.setColour(juce::Label::textColourId,
-                               hasSampleName_ ? ActiveTheme::getTextColour()
-                                              : ActiveTheme::getSecondaryTextColour());
-
-    for (auto& btn : voiceModeButtons_) {
-        if (!btn)
-            continue;
-        btn->setColour(juce::TextButton::buttonColourId,
-                       ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.10f));
-        btn->setColour(juce::TextButton::buttonOnColourId,
-                       ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-        btn->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
-        btn->setColour(juce::TextButton::textColourOnId,
-                       ActiveTheme::getColour(ActiveTheme::TEXT_BRIGHT));
-    }
-
+                               ActiveTheme::getColour(hasSampleName_ ? ActiveTheme::DEVICE_TEXT
+                                                                     : ActiveTheme::DEVICE_DIM2));
     for (auto* label :
          {&rootNoteLabel_, &startLabel_, &endLabel_, &loopStartLabel_, &loopEndLabel_,
           &attackLabel_, &decayLabel_, &sustainLabel_, &releaseLabel_, &pitchLabel_, &fineLabel_,
           &levelLabel_, &velAmountLabel_, &voiceModeLabel_, &glideLabel_})
-        label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-
+        label->setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
     repaint();
 }
 
@@ -421,7 +473,6 @@ void SamplerUI::updateParameters(float attack, float decay, float sustain, float
     decaySlider_.setValue(decay, juce::dontSendNotification);
     sustainSlider_.setValue(sustain, juce::dontSendNotification);
     releaseSlider_.setValue(release, juce::dontSendNotification);
-    syncEnvGraph();  // mirror the live ADSR values into the graph
     pitchSlider_.setValue(pitch, juce::dontSendNotification);
     fineSlider_.setValue(fine, juce::dontSendNotification);
     levelSlider_.setValue(level, juce::dontSendNotification);
@@ -445,17 +496,22 @@ void SamplerUI::updateParameters(float attack, float decay, float sustain, float
     hasSampleName_ = sampleName.isNotEmpty();
     if (hasSampleName_) {
         sampleNameLabel_.setText(sampleName, juce::dontSendNotification);
-        sampleNameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
+        sampleNameLabel_.setColour(juce::Label::textColourId,
+                                   ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
     } else {
         sampleNameLabel_.setText("No sample loaded", juce::dontSendNotification);
         sampleNameLabel_.setColour(juce::Label::textColourId,
-                                   ActiveTheme::getSecondaryTextColour());
+                                   ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
     }
+    syncFrameBoxes();
+    repaint();
 }
 
-void SamplerUI::setWaveformData(const juce::AudioBuffer<float>* buffer, double /*sampleRate*/,
+void SamplerUI::setWaveformData(const juce::AudioBuffer<float>* buffer, double sampleRate,
                                 double sampleLengthSeconds) {
     sampleLength_ = sampleLengthSeconds;
+    if (sampleRate > 0.0)
+        sampleRate_ = sampleRate;
 
     if (buffer == nullptr || buffer->getNumSamples() == 0) {
         hasWaveform_ = false;
@@ -488,6 +544,7 @@ void SamplerUI::setWaveformData(const juce::AudioBuffer<float>* buffer, double /
     if (!isTimerRunning())
         startTimerHz(30);
 
+    syncFrameBoxes();
     repaint();
 }
 
@@ -533,41 +590,93 @@ void SamplerUI::itemDropped(const SourceDetails& details) {
 // =============================================================================
 
 juce::Rectangle<int> SamplerUI::getWaveformBounds() const {
-    // Left column: the waveform sits above that column's 2-row control block.
-    auto area = getLocalBounds().reduced(4);
-    area.removeFromTop(kNameRowH + 2);
-    const int rightColW = juce::jmax(280, area.getWidth() * kRightColPercent / 100);
-    area.removeFromRight(rightColW + 4);  // right (synth) column + gap -> left column
-    area.removeFromBottom(kCtrlBlockH);   // left column's control block
-    return area;
+    return waveArea_;
 }
 
-void SamplerUI::syncEnvGraph() {
-    auto timeInfo = [](float mn, float mx, int idx, float val) {
-        magda::ParameterInfo i;
-        i.minValue = mn;
-        i.maxValue = mx;
-        i.scale = magda::ParameterScale::Logarithmic;  // usable spread for short times
-        i.unit = "s";
-        i.defaultValue = mn;
-        i.currentValue = val;
-        i.paramIndex = idx;
-        return i;
+namespace {
+/// Each stage owns a fixed share of the width; its handle travels that share on a log scale.
+constexpr float kAttackShare = 0.22f, kDecayShare = 0.26f, kHoldShare = 0.2f, kReleaseShare = 0.32f;
+
+float stageFraction(const TextSlider& slider) {
+    const double lo = slider.getMinimum(), hi = slider.getMaximum();
+    return static_cast<float>(std::log(juce::jlimit(lo, hi, slider.getValue()) / lo) /
+                              std::log(hi / lo));
+}
+
+double stageValue(const TextSlider& slider, float fraction) {
+    const double lo = slider.getMinimum(), hi = slider.getMaximum();
+    return lo * std::pow(hi / lo, static_cast<double>(juce::jlimit(0.0f, 1.0f, fraction)));
+}
+}  // namespace
+
+juce::Rectangle<float> SamplerUI::envelopeArea() const {
+    auto area = waveArea_.toFloat().reduced(12.0f, 0.0f);
+    return area.withTrimmedTop(12.0f).withTrimmedBottom(18.0f);
+}
+
+std::optional<SamplerUI::EnvShape> SamplerUI::envelopeShape() const {
+    if (!ampView_ || waveArea_.isEmpty())
+        return std::nullopt;
+    const auto area = envelopeArea();
+    const float w = area.getWidth();
+    const auto y = [&](float level) { return area.getBottom() - level * area.getHeight(); };
+    const float x0 = area.getX();
+    const float peakX = x0 + w * kAttackShare * stageFraction(attackSlider_.getSlider());
+    const float decayX =
+        x0 + w * kAttackShare + w * kDecayShare * stageFraction(decaySlider_.getSlider());
+    const float holdX = x0 + w * (kAttackShare + kDecayShare + kHoldShare);
+    const float endX = holdX + w * kReleaseShare * stageFraction(releaseSlider_.getSlider());
+    const auto sustain = static_cast<float>(sustainSlider_.getValue());
+    return EnvShape{{x0, y(0.0f)},
+                    {peakX, y(1.0f)},
+                    {decayX, y(sustain)},
+                    {holdX, y(sustain)},
+                    {endX, y(0.0f)}};
+}
+
+SamplerUI::EnvHandle SamplerUI::envHandleAt(juce::Point<float> position) const {
+    const auto shape = envelopeShape();
+    if (!shape.has_value())
+        return EnvHandle::None;
+    for (const auto& [handle, point] :
+         {std::pair{EnvHandle::Release, shape->end}, std::pair{EnvHandle::Decay, shape->decayEnd},
+          std::pair{EnvHandle::Attack, shape->peak}})
+        if (position.getDistanceFrom(point) <= kEnvHandleGrab)
+            return handle;
+    return EnvHandle::None;
+}
+
+void SamplerUI::dragEnvelope(EnvHandle handle, juce::Point<float> position) {
+    const auto area = envelopeArea();
+    const float w = area.getWidth();
+    const auto within = [&](float start, float share) {
+        return (position.x - start) / (w * share);
     };
-    const auto a = static_cast<float>(attackSlider_.getValue());
-    const auto d = static_cast<float>(decaySlider_.getValue());
-    const auto s = static_cast<float>(sustainSlider_.getValue());
-    const auto r = static_cast<float>(releaseSlider_.getValue());
-    envGraph_.setStage(AdsrGraph::Attack, 0, timeInfo(0.001f, 5.0f, 0, a), a);
-    envGraph_.setStage(AdsrGraph::Decay, 1, timeInfo(0.001f, 5.0f, 1, d), d);
-    magda::ParameterInfo si;
-    si.minValue = 0.0f;
-    si.maxValue = 1.0f;
-    si.scale = magda::ParameterScale::Linear;
-    si.currentValue = s;
-    si.paramIndex = 2;
-    envGraph_.setStage(AdsrGraph::Sustain, 2, si, s);
-    envGraph_.setStage(AdsrGraph::Release, 3, timeInfo(0.001f, 10.0f, 3, r), r);
+    switch (handle) {
+        case EnvHandle::Attack:
+            attackSlider_.setValue(
+                stageValue(attackSlider_.getSlider(), within(area.getX(), kAttackShare)),
+                juce::sendNotificationSync);
+            break;
+        case EnvHandle::Decay:
+            decaySlider_.setValue(stageValue(decaySlider_.getSlider(),
+                                             within(area.getX() + w * kAttackShare, kDecayShare)),
+                                  juce::sendNotificationSync);
+            sustainSlider_.setValue(
+                juce::jlimit(0.0f, 1.0f, (area.getBottom() - position.y) / area.getHeight()),
+                juce::sendNotificationSync);
+            break;
+        case EnvHandle::Release:
+            releaseSlider_.setValue(
+                stageValue(releaseSlider_.getSlider(),
+                           within(area.getX() + w * (kAttackShare + kDecayShare + kHoldShare),
+                                  kReleaseShare)),
+                juce::sendNotificationSync);
+            break;
+        case EnvHandle::None:
+            break;
+    }
+    repaint();
 }
 
 void SamplerUI::syncWaveformMarkers() {
@@ -589,6 +698,7 @@ void SamplerUI::applyWaveformMarkers(const sdk::WaveformResponse& response) {
         push(loopEndSlider_, m.loopEnd);
         // The sliders round to their interval; the view follows what they kept.
         syncWaveformMarkers();
+        syncFrameBoxes();
     }
     if (response.repaint || response.markersChanged)
         repaint();
@@ -633,8 +743,20 @@ void SamplerUI::updateWaveformCursor(const juce::MouseEvent& e) {
 // =============================================================================
 
 void SamplerUI::mouseDown(const juce::MouseEvent& e) {
-    if (!getWaveformBounds().contains(e.getPosition()) || !hasWaveform_) {
+    envDrag_ = envHandleAt(e.position);
+    if (ampView_) {
         waveformGesture_ = false;
+        repaint();
+        return;
+    }
+    waveformGesture_ = false;
+    // An empty well is the load button's bigger twin, as its hint says.
+    if (!hasWaveform_ && getWaveformBounds().contains(e.getPosition())) {
+        if (onLoadSampleRequested)
+            onLoadSampleRequested();
+        return;
+    }
+    if (!getWaveformBounds().contains(e.getPosition()) || !hasWaveform_) {
         Component::mouseDown(e);
         return;
     }
@@ -646,6 +768,10 @@ void SamplerUI::mouseDown(const juce::MouseEvent& e) {
 }
 
 void SamplerUI::mouseDrag(const juce::MouseEvent& e) {
+    if (envDrag_ != EnvHandle::None) {
+        dragEnvelope(envDrag_, e.position);
+        return;
+    }
     if (!waveformGesture_ || !hasWaveform_) {
         Component::mouseDrag(e);
         return;
@@ -656,6 +782,11 @@ void SamplerUI::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void SamplerUI::mouseUp(const juce::MouseEvent& e) {
+    if (envDrag_ != EnvHandle::None) {
+        envDrag_ = EnvHandle::None;
+        repaint();
+        return;
+    }
     if (waveformGesture_)
         waveformView_.pointerUp(waveformPointer(e));
     waveformGesture_ = false;
@@ -663,11 +794,26 @@ void SamplerUI::mouseUp(const juce::MouseEvent& e) {
 }
 
 void SamplerUI::mouseMove(const juce::MouseEvent& e) {
+    if (ampView_) {
+        setMouseCursor(envHandleAt(e.position) != EnvHandle::None
+                           ? juce::MouseCursor::DraggingHandCursor
+                           : juce::MouseCursor::NormalCursor);
+        return;
+    }
+    if (!hasWaveform_ && getWaveformBounds().contains(e.getPosition())) {
+        setMouseCursor(juce::MouseCursor::PointingHandCursor);
+        return;
+    }
+    if (envHandleAt(e.position) != EnvHandle::None) {
+        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+        return;
+    }
     updateWaveformCursor(e);
 }
 
 void SamplerUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) {
-    if (!getWaveformBounds().contains(e.getPosition()) || !hasWaveform_ || sampleLength_ <= 0.0) {
+    if (ampView_ || !getWaveformBounds().contains(e.getPosition()) || !hasWaveform_ ||
+        sampleLength_ <= 0.0) {
         Component::mouseWheelMove(e, wheel);
         return;
     }
@@ -712,140 +858,182 @@ void SamplerUI::timerCallback() {
 // =============================================================================
 
 void SamplerUI::paint(juce::Graphics& g) {
-    // Background
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-    g.drawRect(getLocalBounds(), 1);
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
-    g.fillRect(getLocalBounds().reduced(1));
+    auto& fonts = FontManager::getInstance();
 
-    // Waveform area
-    auto waveformArea = getWaveformBounds();
-
-    if (hasWaveform_ && !waveformArea.isEmpty()) {
-        syncWaveformMarkers();
-        waveformView_.setPlayhead(sampleLength_ > 0.0 ? playheadPosition_ : 0.0);
-        waveformView_.render(waveformList_);
-        g.saveState();
-        g.setOrigin(waveformArea.getPosition());
-        sdk::juce_host::drawDisplayList(g, waveformList_, sdkRoleColour);
-        g.restoreState();
-    } else {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
-        g.fillRect(waveformArea);
-        g.setColour(ActiveTheme::getSecondaryTextColour());
-        g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        g.drawText("Drop sample or click Load", waveformArea, juce::Justification::centred);
+    // Tiles behind the value boxes: the grid cell's fill and border.
+    for (const auto& tile : tiles_) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));
+        g.fillRoundedRectangle(tile.toFloat(), 5.0f);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
+        g.drawRoundedRectangle(tile.toFloat().reduced(0.5f), 5.0f, 1.0f);
+    }
+    if (!rootChip_.isEmpty()) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));
+        g.fillRoundedRectangle(rootChip_.toFloat(), 4.0f);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
+        g.drawRoundedRectangle(rootChip_.toFloat().reduced(0.5f), 4.0f, 1.0f);
     }
 
-    // --- Divider between the left (waveform) and right (synth) columns ---
-    auto body = getLocalBounds().reduced(4);
-    body.removeFromTop(kNameRowH + 2);
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-    auto wave = getWaveformBounds();
-    g.drawVerticalLine(wave.getRight() + 2, static_cast<float>(body.getY()),
-                       static_cast<float>(body.getBottom()));
+    g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.12f));
+    static constexpr const char* kTitles[] = {"SAMPLE", "PITCH", "AMP"};
+    for (size_t i = 0; i < sectionTitles_.size(); ++i) {
+        g.setColour(
+            ActiveTheme::getColour(i == 2 ? ActiveTheme::DEVICE_BLUE : ActiveTheme::DEVICE_DIM));
+        g.drawText(kTitles[i], sectionTitles_[i], juce::Justification::centredLeft, false);
+    }
+
+    const auto waveformArea = getWaveformBounds();
+    if (waveformArea.isEmpty())
+        return;
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG));
+    g.fillRoundedRectangle(waveformArea.toFloat(), 4.0f);
+
+    if (ampView_) {
+        paintEnvelope(g);
+        return;
+    }
+    if (!hasWaveform_) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+        g.setFont(fonts.getMonoFont(11.0f));
+        g.drawText("Drop a sample or click to load", waveformArea, juce::Justification::centred);
+        return;
+    }
+
+    syncWaveformMarkers();
+    waveformView_.setPlayhead(sampleLength_ > 0.0 ? playheadPosition_ : 0.0);
+    waveformView_.render(waveformList_);
+    g.saveState();
+    g.reduceClipRegion(waveformArea);
+    g.setOrigin(waveformArea.getPosition());
+    sdk::juce_host::drawDisplayList(g, waveformList_, sdkRoleColour);
+    g.restoreState();
 }
 
-// =============================================================================
-// Layout
-// =============================================================================
+void SamplerUI::paintEnvelope(juce::Graphics& g) {
+    const auto shape = envelopeShape();
+    if (!shape.has_value())
+        return;
+    const auto area = envelopeArea();
+    juce::Graphics::ScopedSaveState clip(g);
+    g.reduceClipRegion(waveArea_);
+    // The stage boundaries: the handles never cross them.
+    const float shares[] = {kAttackShare, kDecayShare, kHoldShare, kReleaseShare};
+    float edges[5] = {area.getX()};
+    for (int i = 0; i < 4; ++i)
+        edges[i + 1] = edges[i] + shares[i] * area.getWidth();
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_GRID));
+    for (int i = 1; i < 4; ++i)
+        g.drawVerticalLine(juce::roundToInt(edges[i]), area.getY() - 4.0f, shape->start.y);
+    g.drawHorizontalLine(juce::roundToInt(shape->start.y), area.getX(), area.getRight());
+
+    const auto colour = ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE);
+    juce::Path path;
+    path.startNewSubPath(shape->start);
+    for (const auto point : {shape->peak, shape->decayEnd, shape->releaseStart, shape->end})
+        path.lineTo(point);
+    juce::Path fill = path;
+    fill.closeSubPath();
+    g.setColour(colour.withAlpha(0.12f));
+    g.fillPath(fill);
+    g.setColour(colour.withAlpha(0.9f));
+    g.strokePath(path, juce::PathStrokeType(1.5f));
+
+    for (const auto& [handle, point] :
+         {std::pair{EnvHandle::Attack, shape->peak}, std::pair{EnvHandle::Decay, shape->decayEnd},
+          std::pair{EnvHandle::Release, shape->end}}) {
+        const float radius = envDrag_ == handle ? kEnvHandleRadius + 1.5f : kEnvHandleRadius;
+        const auto dot = juce::Rectangle<float>(radius * 2, radius * 2).withCentre(point);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG));
+        g.fillEllipse(dot);
+        g.setColour(colour);
+        g.drawEllipse(dot, 1.5f);
+    }
+
+    // Each stage named under its zone.
+    g.setFont(FontManager::getInstance().getMonoFont(9.0f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+    const char* names[] = {"A", "D", "S", "R"};
+    for (int i = 0; i < 4; ++i)
+        g.drawText(
+            names[i],
+            juce::Rectangle<float>(edges[i], shape->start.y + 2.0f, edges[i + 1] - edges[i], 14.0f),
+            juce::Justification::centred, false);
+}
 
 void SamplerUI::resized() {
-    auto area = getLocalBounds().reduced(4);
+    auto area = getLocalBounds().reduced(kSpace);
 
-    // Row 1: Sample name + Root note + Load button (full width).
-    auto sampleRow = area.removeFromTop(kNameRowH);
-    loadButton_->setBounds(sampleRow.removeFromRight(20));
-    sampleRow.removeFromRight(4);
-    auto rootArea = sampleRow.removeFromRight(70);
-    rootNoteLabel_.setBounds(rootArea.removeFromLeft(30));
-    rootNoteSlider_.setBounds(rootArea);
-    sampleRow.removeFromRight(4);
-    sampleNameLabel_.setBounds(sampleRow);
-    area.removeFromTop(2);
+    // Name row: the sample, its root and the load button.
+    auto nameRow = area.removeFromTop(kNameRowH);
+    loadButton_->setBounds(nameRow.removeFromRight(26).withSizeKeepingCentre(26, 22));
+    nameRow.removeFromRight(kSpace);
+    rootChip_ = nameRow.removeFromRight(54).withSizeKeepingCentre(54, 22);
+    rootNoteSlider_.setBounds(rootChip_.reduced(6, 1));
+    nameRow.removeFromRight(6);
+    rootNoteLabel_.setBounds(nameRow.removeFromRight(40));
+    sampleNameLabel_.setBounds(nameRow);
+    area.removeFromTop(6);
 
-    // Two columns: LEFT (waveform + sample controls), RIGHT (ADSR graph + synth
-    // controls). Each is the viz on top with a 2-row control block bottom-aligned,
-    // so both viz areas share the same top and bottom.
-    const int rightColW = juce::jmax(280, area.getWidth() * kRightColPercent / 100);
-    auto rightCol = area.removeFromRight(rightColW);
-    area.removeFromRight(4);  // gap
-    auto leftCol = area;      // waveform column (waveform rect = getWaveformBounds)
+    // Sample, Pitch and Amp columns on the right, two tiles wide; the waveform takes the rest.
+    constexpr int kSectionW = 2 * kTileW + kTileGap;
+    auto columns = area.removeFromRight(3 * kSectionW + 2 * kSpace);
+    area.removeFromRight(kSpace);
+    viewChoice_.setBounds(
+        area.removeFromTop(kTitleH).removeFromLeft(120).withSizeKeepingCentre(120, 20));
+    area.removeFromTop(4);
+    waveArea_ = area;
 
-    auto layoutCell = [](juce::Rectangle<int> cell, juce::Label& label,
-                         LinkableTextSlider& slider) {
-        label.setBounds(cell.removeFromTop(12));
-        slider.setBounds(cell.removeFromTop(18).reduced(1, 0));
+    const int tileH = std::min(kMaxTileH, (columns.getHeight() - kTitleH - 2 * kTileGap) / 3);
+    tiles_.clear();
+    const auto tile = [&](juce::Rectangle<int> column, int col, int row) {
+        return juce::Rectangle<int>(column.getX() + col * (kTileW + kTileGap),
+                                    column.getY() + row * (tileH + kTileGap), kTileW, tileH);
+    };
+    const auto place = [&](juce::Rectangle<int> bounds, juce::Label& label,
+                           juce::Component& slider) {
+        tiles_.push_back(bounds);
+        auto inner = bounds.reduced(10, 6);
+        label.setBounds(inner.removeFromTop(14));
+        slider.setBounds(inner);
     };
 
-    // --- LEFT column control block (waveform fills above it) ---
-    auto leftCtrl = leftCol.removeFromBottom(kCtrlBlockH);
-    {
-        // Row 1: START | END | (icon) L.START | L.END
-        auto row1 = leftCtrl.removeFromTop(kCtrlRowH);
-        leftCtrl.removeFromTop(2);
-        auto row2 = leftCtrl.removeFromTop(kCtrlRowH);
-        int quarter = row1.getWidth() / 4;
-        int iconW = 20;
-        int loopW = (row1.getWidth() - 2 * quarter - iconW) / 2;
-        auto r1lab = row1.removeFromTop(12);
-        startLabel_.setBounds(r1lab.removeFromLeft(quarter));
-        endLabel_.setBounds(r1lab.removeFromLeft(quarter));
-        r1lab.removeFromLeft(iconW);
-        loopStartLabel_.setBounds(r1lab.removeFromLeft(loopW));
-        loopEndLabel_.setBounds(r1lab);
-        startSlider_.setBounds(row1.removeFromLeft(quarter).reduced(1, 0));
-        endSlider_.setBounds(row1.removeFromLeft(quarter).reduced(1, 0));
-        loopButton_->setBounds(row1.removeFromLeft(iconW));
-        loopStartSlider_.setBounds(row1.removeFromLeft(loopW).reduced(1, 0));
-        loopEndSlider_.setBounds(row1.reduced(1, 0));
-
-        // Row 2: PITCH | FINE | VOICE (segmented) | GLIDE
-        const int unit = row2.getWidth() / 5;
-        auto r2lab = row2.removeFromTop(12);
-        pitchLabel_.setBounds(r2lab.removeFromLeft(unit));
-        fineLabel_.setBounds(r2lab.removeFromLeft(unit));
-        voiceModeLabel_.setBounds(r2lab.removeFromLeft(unit * 2));
-        glideLabel_.setBounds(r2lab);
-        pitchSlider_.setBounds(row2.removeFromLeft(unit).reduced(1, 0));
-        fineSlider_.setBounds(row2.removeFromLeft(unit).reduced(1, 0));
-        auto voiceRow = row2.removeFromLeft(unit * 2).reduced(1, 0);
-        int btnW = voiceRow.getWidth() / 3;
-        for (int m = 0; m < 3; ++m) {
-            auto cell = (m == 2) ? voiceRow : voiceRow.removeFromLeft(btnW);
-            if (voiceModeButtons_[static_cast<size_t>(m)])
-                voiceModeButtons_[static_cast<size_t>(m)]->setBounds(cell);
-        }
-        glideSlider_.setBounds(row2.reduced(1, 0));
+    std::array<juce::Rectangle<int>, 3> column;
+    for (size_t i = 0; i < column.size(); ++i) {
+        column[i] = columns.removeFromLeft(kSectionW);
+        columns.removeFromLeft(kSpace);
+        sectionTitles_[i] = column[i].removeFromTop(kTitleH);
     }
 
-    // --- RIGHT column: ADSR graph (top) + 2-row control block ---
-    auto rightCtrl = rightCol.removeFromBottom(kCtrlBlockH);
-    rightCol.removeFromBottom(2);
-    envGraph_.setBounds(rightCol);
-    {
-        // Row 1: ATK | DEC | SUS | REL
-        auto row1 = rightCtrl.removeFromTop(kCtrlRowH);
-        rightCtrl.removeFromTop(2);
-        auto row2 = rightCtrl.removeFromTop(kCtrlRowH);
-        int q = row1.getWidth() / 4;
-        layoutCell(row1.removeFromLeft(q), attackLabel_, attackSlider_);
-        layoutCell(row1.removeFromLeft(q), decayLabel_, decaySlider_);
-        layoutCell(row1.removeFromLeft(q), sustainLabel_, sustainSlider_);
-        layoutCell(row1, releaseLabel_, releaseSlider_);
-
-        // Row 2: LEVEL | VEL
-        int half = row2.getWidth() / 2;
-        auto r2lab = row2.removeFromTop(12);
-        levelLabel_.setBounds(r2lab.removeFromLeft(half));
-        velAmountLabel_.setBounds(r2lab);
-        levelSlider_.setBounds(row2.removeFromLeft(half).reduced(1, 0));
-        velAmountSlider_.setBounds(row2.reduced(1, 0));
+    // Sample: the loop toggle rides its title row.
+    loopButton_->setBounds(sectionTitles_[0]
+                               .withLeft(sectionTitles_[0].getRight() - 30)
+                               .withSizeKeepingCentre(30, 24));
+    // Sample: a caption, a frame box and its arrows per marker.
+    auto frames = column[0];
+    for (size_t i = 0; i < frameBoxes_.size(); ++i) {
+        auto row = frames.removeFromTop(22);
+        frames.removeFromTop(kTileGap);
+        frameCaptions_[i].setBounds(row.removeFromLeft(56));
+        frameBoxes_[i].setBounds(row);
     }
+
+    // Pitch: voice mode spans its third row.
+    place(tile(column[1], 0, 0), pitchLabel_, pitchSlider_);
+    place(tile(column[1], 1, 0), fineLabel_, fineSlider_);
+    place(tile(column[1], 0, 1), glideLabel_, glideSlider_);
+    voiceModeLabel_.setBounds({});
+    const auto voiceRow = tile(column[1], 0, 2).withWidth(kSectionW);
+    voiceModeChoice_.setBounds(voiceRow.withSizeKeepingCentre(kSectionW, 28));
+
+    place(tile(column[2], 0, 0), attackLabel_, attackSlider_);
+    place(tile(column[2], 1, 0), decayLabel_, decaySlider_);
+    place(tile(column[2], 0, 1), sustainLabel_, sustainSlider_);
+    place(tile(column[2], 1, 1), releaseLabel_, releaseSlider_);
+    place(tile(column[2], 0, 2), levelLabel_, levelSlider_);
+    place(tile(column[2], 1, 2), velAmountLabel_, velAmountSlider_);
 
     // The view keeps the whole sample in reach at the new width.
-    const auto waveBounds = getWaveformBounds();
-    waveformView_.setSize(waveBounds.getWidth(), waveBounds.getHeight());
+    waveformView_.setSize(waveArea_.getWidth(), waveArea_.getHeight());
 }
 
 }  // namespace magda::daw::ui

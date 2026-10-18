@@ -70,6 +70,12 @@ class TextSlider : public juce::Component,
         value_ = juce::jlimit(minValue_, maxValue_, value_);
         updateLabel();
     }
+    double getMinimum() const {
+        return minValue_;
+    }
+    double getMaximum() const {
+        return maxValue_;
+    }
 
     /** Set a skew factor for logarithmic-feel drag behaviour.
         A centre value (e.g. 1000.0 for a 10–22000 Hz range) will be

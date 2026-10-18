@@ -45,6 +45,7 @@ class LinkableTextSlider : public juce::Component,
     void setBackgroundColour(const juce::Colour& colour);
     void setOrientation(TextSlider::Orientation orientation);
     TextSlider& getSlider();
+    const TextSlider& getSlider() const;
     bool isBeingDragged() const;
 
     // === Linking context (set by parent custom UI) ===
