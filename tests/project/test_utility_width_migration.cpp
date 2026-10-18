@@ -156,3 +156,48 @@ TEST_CASE("Percent-scale Utility Width passes through load unchanged",
     CHECK(width->currentValue == 150.0f);
     CHECK(width->maxValue == 200.0f);
 }
+
+TEST_CASE("A Utility's slot gain folds into its Gain param on load",
+          "[project][serialization][migration]") {
+    MigrationFixture fixture;
+
+    auto& tm = TrackManager::getInstance();
+    auto& pm = ProjectManager::getInstance();
+
+    // The Utility hides its slot gain fader, so a saved slot trim moves onto the Gain param.
+    auto trackId = tm.createTrack("Utility Track");
+    DeviceInfo utility;
+    utility.name = "Utility";
+    utility.pluginId = "magda_utility";
+    utility.format = PluginFormat::Internal;
+    ParameterInfo gain;
+    gain.paramIndex = 0;
+    gain.name = "Gain";
+    gain.minValue = -60.0f;
+    gain.maxValue = 12.0f;
+    gain.currentValue = 9.0f;
+    gain.scale = ParameterScale::FaderDB;
+    utility.parameters.push_back(gain);
+    utility.gainDb = 6.0f;
+    utility.gainValue = 2.0f;
+    auto deviceId = tm.addDeviceToTrack(trackId, utility);
+    REQUIRE(deviceId != INVALID_DEVICE_ID);
+
+    auto tempFile = fixture.createTempProjectFile(".mgd");
+    auto actualFile = MigrationFixture::wrappedPath(tempFile);
+    REQUIRE(pm.saveProjectAs(tempFile));
+
+    tm.clearAllTracks();
+    REQUIRE(pm.loadProject(actualFile));
+
+    auto* track = tm.getTrack(trackId);
+    REQUIRE(track != nullptr);
+    REQUIRE(track->chain.fxChainElements.size() == 1);
+
+    const auto& device = getDevice(track->chain.fxChainElements[0]);
+    const auto* loaded = device.findParameterByIndex(0);
+    REQUIRE(loaded != nullptr);
+    CHECK(loaded->currentValue == 12.0f);  // 9 + 6, clamped to the param's ceiling
+    CHECK(device.gainDb == 0.0f);
+    CHECK(device.gainValue == 1.0f);
+}

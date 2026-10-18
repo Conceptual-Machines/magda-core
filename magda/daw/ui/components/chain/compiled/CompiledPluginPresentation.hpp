@@ -118,6 +118,8 @@ struct CompiledPresentationSpec {
     std::span<const int> bandSlots;
     /// The device's own dry/wet slot: the side strip's mix knob drives it, so the grid drops it.
     int mixSlot = -1;
+    /// The device's own gain is its output gain: the side strip keeps the meter, drops its fader.
+    bool ownsOutputGain = false;
     /// Set, the device lays its knobs out itself and its faceplate spans the whole body under
     /// them; the faceplate turns the knobs' pages.
     std::unique_ptr<DeviceParamLayout> (*createLayout)() = nullptr;

@@ -6,7 +6,8 @@
 
 namespace magda::devices::faust {
 
-/// Stereo utility: gain, pan, M/S width, mono, low mono and polarity flips. No Faust engine.
+/// Stereo utility: gain, pan, M/S width, mono, low mono, polarity flips and L/R swap. No Faust
+/// engine.
 class Utility : public CompiledEffect {
   public:
     static constexpr const char* xmlTypeName = "magda_utility";
@@ -21,7 +22,8 @@ class Utility : public CompiledEffect {
     static constexpr int kLowMonoSlot = 5;
     static constexpr int kFlipLSlot = 6;
     static constexpr int kFlipRSlot = 7;
-    static constexpr int kHostSlotCount = 8;
+    static constexpr int kSwapSlot = 8;
+    static constexpr int kHostSlotCount = 9;
 
     std::string devicePluginId() const override {
         return xmlTypeName;

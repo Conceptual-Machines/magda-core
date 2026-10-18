@@ -719,8 +719,9 @@ void DeviceSlotComponent::layoutSideStrip(juce::Rectangle<int> strip) {
     levelMeter_.setBounds(fader);
     levelMeter_.setVisible(true);
     if (gainSlider_) {
+        const auto* spec = traits_.compiledPresentation;
         gainSlider_->setBounds(fader);
-        gainSlider_->setVisible(true);
+        gainSlider_->setVisible(spec == nullptr || !spec->ownsOutputGain);
         gainSlider_->toFront(false);
     }
 }

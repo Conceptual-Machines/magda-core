@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 
 #include "../../audio/plugins/InternalPluginRegistry.hpp"
 #include "../../core/DeviceParamMigrations.hpp"
@@ -31,6 +32,22 @@ void migrateUtilityWidthToPercent(DeviceInfo& device) {
         param.defaultValue = 100.0f;
         param.unit = technicalText(TechnicalTextToken::Percent);
     }
+}
+
+// The Utility hides its slot gain fader, its own Gain param being the one gain. A project that
+// set the slot gain folds it into that param, or the trim would apply with nothing to show it.
+void foldUtilitySlotGainIntoGain(DeviceInfo& device) {
+    constexpr int kUtilityGainSlot = 0;  // devices::faust::Utility::kGainSlot
+    if (!device.pluginId.equalsIgnoreCase("magda_utility") || std::abs(device.gainDb) < 1.0e-4f)
+        return;
+
+    auto* gain = device.findParameterByIndex(kUtilityGainSlot);
+    if (gain == nullptr)
+        return;
+    gain->currentValue =
+        std::clamp(gain->currentValue + device.gainDb, gain->minValue, gain->maxValue);
+    device.gainDb = 0.0f;
+    device.gainValue = 1.0f;
 }
 
 /// The slot at @p position of @p device's parameter array, or -1.
@@ -735,6 +752,7 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     // Device volume
     outDevice.gainValue = obj->getProperty("gainValue");
     outDevice.gainDb = obj->getProperty("gainDb");
+    foldUtilitySlotGainIntoGain(outDevice);
 
     // Macros
     auto macrosVar = obj->getProperty("macros");
