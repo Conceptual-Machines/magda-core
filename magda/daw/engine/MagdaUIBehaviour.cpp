@@ -202,6 +202,7 @@ bool PluginEditorWindow::keyPressed(const juce::KeyPress& key) {
 }
 
 PluginEditorWindow::~PluginEditorWindow() {
+    releaseToMainWindow(*this);
     clearContentComponent();
 }
 

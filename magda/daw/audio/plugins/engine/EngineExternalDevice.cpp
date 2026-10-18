@@ -65,6 +65,7 @@ namespace {
 juce::ApplicationCommandManager* editorCommandManager = nullptr;
 juce::ApplicationCommandTarget* editorCommandTarget = nullptr;
 void (*editorFloatingWindowHook)(juce::Component&) = nullptr;
+void (*editorReleaseWindowHook)(juce::Component&) = nullptr;
 
 /**
  * @brief Runs the app shortcut mapped to @p key on the app's command target.
@@ -102,8 +103,10 @@ void EngineExternalDevice::setApplicationCommands(juce::ApplicationCommandManage
     editorCommandTarget = target;
 }
 
-void EngineExternalDevice::setFloatingWindowHook(void (*hook)(juce::Component& window)) {
-    editorFloatingWindowHook = hook;
+void EngineExternalDevice::setFloatingWindowHooks(void (*opened)(juce::Component& window),
+                                                  void (*closing)(juce::Component& window)) {
+    editorFloatingWindowHook = opened;
+    editorReleaseWindowHook = closing;
 }
 
 /**
@@ -133,6 +136,8 @@ class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
 
     /// The editor goes while the plugin is still there to be told.
     ~EditorWindow() override {
+        if (editorReleaseWindowHook != nullptr)
+            editorReleaseWindowHook(*this);
         if (auto* editor = getContentComponent())
             editor->removeKeyListener(&shortcuts_);
         clearContentComponent();

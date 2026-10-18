@@ -655,7 +655,8 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     // MAGDA's own floating windows route unconsumed keys the same way.
     setAppShortcuts(&commandManager, this);
     setFloatingWindowOwner(this);
-    daw::audio::engine_adapter::EngineExternalDevice::setFloatingWindowHook(&floatOverMainWindow);
+    daw::audio::engine_adapter::EngineExternalDevice::setFloatingWindowHooks(&floatOverMainWindow,
+                                                                             &releaseToMainWindow);
 
     // Use external engine if provided, otherwise create our own
     if (externalEngine) {
@@ -1400,7 +1401,7 @@ MainWindow::MainComponent::~MainComponent() {
     PluginEditorWindow::appCommandTarget = nullptr;
     daw::audio::engine_adapter::EngineExternalDevice::setApplicationCommands(nullptr, nullptr);
     setAppShortcuts(nullptr, nullptr);
-    daw::audio::engine_adapter::EngineExternalDevice::setFloatingWindowHook(nullptr);
+    daw::audio::engine_adapter::EngineExternalDevice::setFloatingWindowHooks(nullptr, nullptr);
     setFloatingWindowOwner(nullptr);
 
     // Stop position timer before destroying

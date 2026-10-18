@@ -61,11 +61,24 @@ void floatWindow(juce::Component& window) {
     #endif
 #endif
 }
+
+void releaseWindow(juce::Component& window) {
+#if JUCE_WINDOWS
+    auto* peer = window.getPeer();
+    auto* ownerPeer = owner != nullptr ? owner->getPeer() : nullptr;
+    if (peer != nullptr && ownerPeer != nullptr &&
+        GetForegroundWindow() == static_cast<HWND>(peer->getNativeHandle()))
+        SetForegroundWindow(static_cast<HWND>(ownerPeer->getNativeHandle()));
+#else
+    juce::ignoreUnused(window);
+#endif
+}
 }  // namespace
 
 void setFloatingWindowOwner(juce::Component* mainWindow) {
     owner = mainWindow;
     detail::floatingWindowHook() = mainWindow != nullptr ? &floatWindow : nullptr;
+    detail::floatingWindowReleaseHook() = mainWindow != nullptr ? &releaseWindow : nullptr;
 #if JUCE_WINDOWS
     // Destroying an owner destroys its owned windows, plugin editors included.
     if (mainWindow == nullptr)
