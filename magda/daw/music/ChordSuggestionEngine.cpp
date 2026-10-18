@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <map>
 #include <numeric>
 #include <set>
@@ -318,10 +319,25 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
     nonDiatonicCandidates = filterRecentChords(nonDiatonicCandidates, recentChords);
 
     // Filter candidates based on scales, respecting novelty parameter
+    std::set<int> allowedPitchClasses;
+    bool scaleFiltersDiatonic = false;
+    bool scaleFiltersNonDiatonic = false;
+    const auto inScale = [&](const SuggestionItem& candidate) {
+        if (candidate.source == "polychord")
+            return true;
+        return std::ranges::all_of(candidate.chord.notes, [&](const auto& note) {
+            return allowedPitchClasses.contains(note.noteNumber % 12);
+        });
+    };
+    // Whether the scale filter, as novelty has set it, admits @p candidate.
+    const auto passesScaleFilter = [&](const SuggestionItem& candidate) {
+        const bool filtered =
+            candidate.source == "diatonic" ? scaleFiltersDiatonic : scaleFiltersNonDiatonic;
+        return !filtered || inScale(candidate);
+    };
+
     if (params.useScaleFiltering) {
         // Use explicit pitch classes from UI selection, or auto-detect
-        std::set<int> allowedPitchClasses;
-
         if (!params.explicitScalePitchClasses.empty()) {
             allowedPitchClasses = params.explicitScalePitchClasses;
         } else {
@@ -349,37 +365,10 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
             float filterStrength =
                 1.0f - (params.novelty / 0.8f);  // 1.0 at novelty=0, 0.0 at novelty=0.8
 
-            if (filterStrength > 0.2f) {
-                auto filterByPitchClasses = [&](const std::vector<SuggestionItem>& candidates) {
-                    if (allowedPitchClasses.empty())
-                        return candidates;
-                    std::vector<SuggestionItem> filtered;
-                    for (const auto& candidate : candidates) {
-                        if (candidate.source == "polychord") {
-                            filtered.push_back(candidate);
-                            continue;
-                        }
-                        bool belongs = true;
-                        for (const auto& note : candidate.chord.notes) {
-                            int pc = note.noteNumber % 12;
-                            if (allowedPitchClasses.find(pc) == allowedPitchClasses.end()) {
-                                belongs = false;
-                                break;
-                            }
-                        }
-                        if (belongs) {
-                            filtered.push_back(candidate);
-                        }
-                    }
-                    return filtered;
-                };
-
-                diatonicCandidates = filterByPitchClasses(diatonicCandidates);
-
-                if (filterStrength > 0.5f) {
-                    nonDiatonicCandidates = filterByPitchClasses(nonDiatonicCandidates);
-                }
-            }
+            scaleFiltersDiatonic = filterStrength > 0.2f;
+            scaleFiltersNonDiatonic = filterStrength > 0.5f;
+            std::erase_if(diatonicCandidates, std::not_fn(passesScaleFilter));
+            std::erase_if(nonDiatonicCandidates, std::not_fn(passesScaleFilter));
         }
     }
 
@@ -457,8 +446,11 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
         suggestions.push_back(std::move(candidate));
     }
 
-    // Ensure a minimum number of suggestions by progressively relaxing filters
+    // Ensure a minimum number of suggestions by progressively relaxing filters. A scale the
+    // user chose is not relaxed: a short list inside it beats a full one that ignores it.
     auto addUnique = [&](const SuggestionItem& item) {
+        if (!passesScaleFilter(item))
+            return;
         const auto name = normName(item.chord.name);
         if (seen.find(name) != seen.end())
             return;

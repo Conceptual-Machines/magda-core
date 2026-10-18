@@ -235,7 +235,8 @@ inline ChordSpec stringToChordSpec(const juce::String& chordString) {
         qualityStr = "maj";
     }
 
-    return {stringToRoot(rootStr), stringToQuality(qualityStr)};
+    // A display name carries the root's octave ("A4 min"); the spec has no octave.
+    return {stringToRoot(rootStr.trimCharactersAtEnd("0123456789")), stringToQuality(qualityStr)};
 }
 
 inline std::vector<int> getChordIntervals(ChordQuality quality) {
