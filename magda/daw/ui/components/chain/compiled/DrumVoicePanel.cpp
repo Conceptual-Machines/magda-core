@@ -342,7 +342,7 @@ template <size_t Voice> const CompiledPresentationSpec& drumVoicePresentation() 
         },
         // The plot at its minimum beside the cell columns, plus the side strip.
         .preferredSlotWidth =
-            DrumVoiceGeometry::kMinPlotWidth + 120 +
+            DrumVoiceGeometry::kMinPlotWidth + 64 +
             DrumVoiceGeometry::columnsWidth(drumVoiceSections(kDrumVoicePluginIds[Voice])),
         .createLayout = []() -> std::unique_ptr<DeviceParamLayout> {
             return std::make_unique<DrumVoiceLayout>(kDrumVoicePluginIds[Voice]);

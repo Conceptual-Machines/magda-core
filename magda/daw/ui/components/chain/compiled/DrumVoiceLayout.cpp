@@ -90,7 +90,7 @@ int DrumVoiceGeometry::cellHeight(ParamControlStyle style) {
 int DrumVoiceGeometry::columnsWidth(const std::vector<DrumVoiceSection>& sections) {
     int width = 0;
     for (const auto& section : sections)
-        width += section.columns * kCellWidth + (section.columns - 1) * kCellGap + kSpace * 2;
+        width += section.columns * kCellWidth + (section.columns - 1) * kCellGap + kSpace;
     return width;
 }
 
@@ -111,7 +111,7 @@ DrumVoiceGeometry DrumVoiceGeometry::of(juce::Rectangle<int> bounds, ParamContro
 
     for (const auto& section : sections) {
         const int width = section.columns * kCellWidth + (section.columns - 1) * kCellGap;
-        auto column = columns.removeFromLeft(width + kSpace * 2).reduced(kSpace, 0);
+        auto column = columns.removeFromLeft(width + kSpace).withTrimmedLeft(kSpace);
         g.titles.push_back(column.removeFromTop(kTitleHeight));
         for (size_t i = 0; i < section.slots.size(); ++i) {
             const int col = static_cast<int>(i) % section.columns;

@@ -42,9 +42,9 @@ struct DrumVoiceGeometry {
 
     static constexpr int kSpace = 8;
     static constexpr int kTitleHeight = 22;
-    static constexpr int kCellWidth = 76;
+    static constexpr int kCellWidth = 64;
     static constexpr int kCellGap = 4;
-    static constexpr int kMinPlotWidth = 300;
+    static constexpr int kMinPlotWidth = 240;
 
     static int cellHeight(ParamControlStyle style);
     /// Width of the cell columns, before the plot takes the rest.
