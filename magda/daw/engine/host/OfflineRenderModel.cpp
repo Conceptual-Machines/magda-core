@@ -145,9 +145,11 @@ OfflineRenderModel narrowForRender(OfflineRenderModel model, const OfflineRender
     if (hasHardwareOutput(model.master.audioOutputDevice))
         model.master.audioOutputDevice.clear();
 
+    // The mix as it reaches the master: the master's mute is what is heard, not what is rendered.
     if (!request.useMasterPlugins) {
         removePlugins(model.master.chain);
         faderToUnity(model.master);
+        model.master.muted = false;
         unityFaders.insert(model.master.id);
     }
 

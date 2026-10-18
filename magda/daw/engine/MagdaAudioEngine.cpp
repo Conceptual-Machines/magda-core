@@ -568,6 +568,18 @@ void MagdaAudioEngine::adoptTrackFreeze(TrackId trackId, const OfflineRenderRequ
     TrackManager::getInstance().setTrackFrozen(trackId, true);
 }
 
+bool MagdaAudioEngine::setMasterInputSource(const juce::File& file) {
+    return host_->setMasterInput(file);
+}
+
+void MagdaAudioEngine::clearMasterInputSource() {
+    host_->clearMasterInput();
+}
+
+bool MagdaAudioEngine::hasMasterInputSource() const {
+    return host_->hasMasterInput();
+}
+
 void MagdaAudioEngine::setTrackFrozen(TrackId trackId, bool frozen) {
     auto& tracks = TrackManager::getInstance();
     const auto* track = tracks.getTrack(trackId);
