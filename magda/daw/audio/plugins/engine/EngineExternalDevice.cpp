@@ -64,6 +64,7 @@ void clearNonFinite(juce::AudioBuffer<float>& audio, int numSamples) {
 namespace {
 juce::ApplicationCommandManager* editorCommandManager = nullptr;
 juce::ApplicationCommandTarget* editorCommandTarget = nullptr;
+void (*editorFloatingWindowHook)(juce::Component&) = nullptr;
 
 /**
  * @brief Runs the app shortcut mapped to @p key on the app's command target.
@@ -101,6 +102,10 @@ void EngineExternalDevice::setApplicationCommands(juce::ApplicationCommandManage
     editorCommandTarget = target;
 }
 
+void EngineExternalDevice::setFloatingWindowHook(void (*hook)(juce::Component& window)) {
+    editorFloatingWindowHook = hook;
+}
+
 /**
  * @brief The plugin's editor in a window of its own (#2580).
  *
@@ -120,9 +125,10 @@ class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
         setResizable(plugin.getActiveEditor() != nullptr && plugin.getActiveEditor()->isResizable(),
                      false);
         centreWithSize(getWidth(), getHeight());
-        // Floats over MAGDA, so clicking back into the app does not bury it.
-        setAlwaysOnTop(true);
         setVisible(true);
+        // Over MAGDA, so clicking back into the app does not bury it.
+        if (editorFloatingWindowHook != nullptr)
+            editorFloatingWindowHook(*this);
     }
 
     /// The editor goes while the plugin is still there to be told.

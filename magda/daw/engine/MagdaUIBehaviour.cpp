@@ -99,7 +99,7 @@ juce::ApplicationCommandTarget* PluginEditorWindow::appCommandTarget = nullptr;
 PluginEditorWindow::PluginEditorWindow(tracktion::Plugin& plugin,
                                        tracktion::PluginWindowState& state)
     : daw::ui::FloatingHostWindow(plugin.getName()), plugin_(plugin), state_(state) {
-    // Chrome (themed non-native title bar + always-on-top) comes from
+    // Chrome (themed non-native title bar) comes from
     // FloatingHostWindow. The non-native bar is essential here: native macOS close
     // can try to close the window after closeButtonPressed() returns, racing
     // Tracktion's window ownership; JUCE's bar gives us full control.
@@ -172,6 +172,7 @@ PluginEditorWindow::PluginEditorWindow(tracktion::Plugin& plugin,
         trackingBounds_ = true;
 
         setVisible(true);
+        floatOverMainWindow(*this);
     } else {
         DBG("PluginEditorWindow: Failed to create editor for: " << plugin.getName());
     }

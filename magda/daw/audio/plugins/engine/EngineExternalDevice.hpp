@@ -120,6 +120,9 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     static void setApplicationCommands(juce::ApplicationCommandManager* manager,
                                        juce::ApplicationCommandTarget* target);
 
+    /// Run on each editor window as it opens, to keep it over the main window (#3084).
+    static void setFloatingWindowHook(void (*hook)(juce::Component& window));
+
     /// Control executor only; excludes rendering while accessing program/state data.
     PresetOutcome pluginPreset(const PresetRequest& request);
 
