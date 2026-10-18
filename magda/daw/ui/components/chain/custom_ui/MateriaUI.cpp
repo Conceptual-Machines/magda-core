@@ -330,7 +330,7 @@ void MateriaUI::layoutRows(juce::Rectangle<int> area, const std::vector<int>& in
 void MateriaUI::resized() {
     // The chain row stretches us to the full panel height, so the layout is
     // height-elastic: the two visualisations absorb the slack while the control
-    // stacks keep a fixed size and sit centred in their columns.
+    // stacks sit centred in their columns, shrinking only when the panel is short.
     constexpr int kRowH = 44;
     constexpr int kGap = 8;
 
@@ -363,8 +363,8 @@ void MateriaUI::resized() {
 
     // Centre a stack of `rows` rows (rowH + gap each) within `col`, keeping a
     // common top across columns so the grid stays aligned.
-    auto rowStack = [](juce::Rectangle<int> col, int rows) {
-        const int stackH = rows * kRowH + (rows - 1) * kGap;
+    auto rowStack = [](juce::Rectangle<int> col, int rows, int rowH) {
+        const int stackH = rows * rowH + (rows - 1) * kGap;
         const int top = col.getY() + juce::jmax(0, (col.getHeight() - stackH) / 2);
         return juce::Rectangle<int>(col.getX(), top, col.getWidth(), stackH);
     };
@@ -382,9 +382,12 @@ void MateriaUI::resized() {
         bowCol_ = a.removeFromLeft(colW).reduced(3, 0);
         blowCol_ = a.removeFromLeft(colW).reduced(3, 0);
         strikeCol_ = a.reduced(3, 0);
-        layoutRows(rowStack(bowCol_, 3), {kBow, kBowTimbre}, kRowH, kGap);
-        layoutRows(rowStack(blowCol_, 3), {kBlow, kBlowFlow, kBlowTimbre}, kRowH, kGap);
-        layoutRows(rowStack(strikeCol_, 3), {kStrike, kStrikeMallet, kStrikeTimbre}, kRowH, kGap);
+        // Three rows shrink to the column rather than spill under the panel.
+        const int rowH = juce::jlimit(32, kRowH, (strikeCol_.getHeight() - 2 * kGap) / 3);
+        layoutRows(rowStack(bowCol_, 3, rowH), {kBow, kBowTimbre}, rowH, kGap);
+        layoutRows(rowStack(blowCol_, 3, rowH), {kBlow, kBlowFlow, kBlowTimbre}, rowH, kGap);
+        layoutRows(rowStack(strikeCol_, 3, rowH), {kStrike, kStrikeMallet, kStrikeTimbre}, rowH,
+                   kGap);
     }
 
     // RESONATOR: modal-response viz on top (absorbs the slack), five sliders as

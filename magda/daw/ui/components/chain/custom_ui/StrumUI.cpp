@@ -8,7 +8,7 @@ namespace magda::daw::ui {
 
 using Strum = daw::audio::MidiStrumPlugin;
 
-// Layout constants (match ArpeggiatorUI).
+// Layout constants.
 static constexpr int ROW_HEIGHT = 22;
 static constexpr int ROW_GAP = 4;
 static constexpr int LABEL_WIDTH = 52;

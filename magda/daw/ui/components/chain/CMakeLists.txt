@@ -72,6 +72,7 @@ target_sources(magda_daw_app PRIVATE
     compiled/CompiledPitchEditorView.cpp
     compiled/CompiledBitcrusherEditorView.cpp
     compiled/CompiledGateCurveView.cpp
+    compiled/ArpeggiatorTimeBendPanel.cpp
     compiled/CompiledUtilityView.cpp
     compiled/CompiledPluginPresentation.cpp
     compiled/MagdaDriveCurveView.cpp
@@ -91,7 +92,6 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/DrumVoiceUI.cpp
     custom_ui/StruckInstrumentUI.cpp
     custom_ui/AdsrGraph.cpp
-    custom_ui/ArpeggiatorUI.cpp
     custom_ui/StrumUI.cpp
     custom_ui/StepSequencerUI.cpp
     custom_ui/PolyStepSequencerUI.cpp
@@ -180,6 +180,7 @@ target_sources(magda_daw_app PRIVATE
     compiled/CompiledPitchEditorView.hpp
     compiled/CompiledBitcrusherEditorView.hpp
     compiled/CompiledGateCurveView.hpp
+    compiled/ArpeggiatorTimeBendPanel.hpp
     compiled/CompiledUtilityView.hpp
     compiled/CompiledPluginPresentation.hpp
     compiled/MagdaDriveCurveView.hpp
@@ -194,7 +195,6 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/HaloUI.hpp
     custom_ui/NimbusUI.hpp
     custom_ui/DeviceTelemetrySources.hpp
-    custom_ui/ArpeggiatorUI.hpp
     custom_ui/StrumUI.hpp
     custom_ui/StepSequencerUI.hpp
     custom_ui/PolyStepSequencerUI.hpp

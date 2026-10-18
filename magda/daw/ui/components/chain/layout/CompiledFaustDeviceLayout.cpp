@@ -96,6 +96,8 @@ ParamCell CompiledFaustDeviceLayout::cellFor(const magda::DeviceInfo& device, in
     cell.mode = ParamCell::Mode::Filled;
     cell.paramArrayIndex = paramArrayIdx;
     cell.targetParamIndex = param.paramIndex >= 0 ? param.paramIndex : paramArrayIdx;
+    if (const auto label = labels_.find(paramSlotIdx); label != labels_.end())
+        cell.label = label->second;
     cell.enabled = gateEnabled(device, param) &&
                    (isParameterEnabled_ == nullptr || isParameterEnabled_(device, paramSlotIdx));
     return cell;

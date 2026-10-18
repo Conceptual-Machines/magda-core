@@ -24,7 +24,6 @@ class StepSequencerPlugin;
 
 namespace magda::daw::ui {
 
-class ArpeggiatorUI;
 class ChordPanelContent;
 class DrumGridUI;
 class ExternalInsertUI;
@@ -206,9 +205,6 @@ class DeviceCustomUIManager {
     ChordPanelContent* getChordEngineUI() const {
         return chordEngineUI_.get();
     }
-    ArpeggiatorUI* getArpeggiatorUI() const {
-        return arpeggiatorUI_.get();
-    }
     StepSequencerUI* getStepSequencerUI() const {
         return stepSequencerUI_.get();
     }
@@ -285,7 +281,6 @@ class DeviceCustomUIManager {
     std::unique_ptr<SidechainUI> sidechainUI_;
     std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
     std::unique_ptr<ChordPanelContent> chordEngineUI_;
-    std::unique_ptr<ArpeggiatorUI> arpeggiatorUI_;
     std::unique_ptr<StrumUI> strumUI_;
     std::unique_ptr<StepSequencerUI> stepSequencerUI_;
     std::unique_ptr<PolyStepSequencerUI> polyStepSequencerUI_;
@@ -294,7 +289,6 @@ class DeviceCustomUIManager {
     std::unique_ptr<LevelsUI> levelsUI_;
 
     // Plugin raw pointers for timer polling / setNodePath updates
-    daw::audio::ArpeggiatorPlugin* arpPlugin_ = nullptr;
     daw::audio::MidiStrumPlugin* strumPlugin_ = nullptr;
     daw::audio::StepSequencerPlugin* stepSeqPlugin_ = nullptr;
     daw::audio::PolyStepSequencerPlugin* polyStepSeqPlugin_ = nullptr;

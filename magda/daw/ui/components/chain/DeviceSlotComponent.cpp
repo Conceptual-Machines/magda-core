@@ -22,7 +22,6 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "custom_ui/AnalyzerWindow.hpp"
-#include "custom_ui/ArpeggiatorUI.hpp"
 #include "custom_ui/FaustCustomUIRegistry.hpp"
 #include "custom_ui/FaustMeterPanel.hpp"
 #include "custom_ui/FaustUI.hpp"

@@ -13,7 +13,7 @@ namespace magda::daw::ui {
 /**
  * @brief Inline UI for the Strum MIDI effect.
  *
- * Sibling of ArpeggiatorUI. Exposes the strum controls (trigger / order / shape
+ * Exposes the strum controls (trigger / order / shape
  * preset / cycles / length / sync interval) plus a read-only onset-distribution
  * strip: vertical ticks marking where each strummed note lands in time, mirroring
  * the tick strip at the bottom of the Arpeggiator's Time Bend curve. The strum's

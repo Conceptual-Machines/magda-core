@@ -40,7 +40,6 @@
 #include "core/SelectionManager.hpp"
 #include "core/StepPatternCommands.hpp"
 #include "core/TrackManager.hpp"
-#include "custom_ui/ArpeggiatorUI.hpp"
 #include "custom_ui/DeviceTelemetrySources.hpp"
 #include "custom_ui/DrumVoiceUI.hpp"
 #include "custom_ui/FMUI.hpp"
@@ -463,8 +462,6 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return impulseResponseUI_.get();
     if (chordEngineUI_)
         return chordEngineUI_.get();
-    if (arpeggiatorUI_)
-        return arpeggiatorUI_.get();
     if (strumUI_)
         return strumUI_.get();
     if (stepSequencerUI_)
@@ -503,8 +500,6 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
         return impulseResponseUI_->getLinkableSliders();
     if (samplerUI_)
         return samplerUI_->getLinkableSliders();
-    if (arpeggiatorUI_)
-        return arpeggiatorUI_->getLinkableSliders();
     if (strumUI_)
         return strumUI_->getLinkableSliders();
     if (stepSequencerUI_)
@@ -517,9 +512,8 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
 bool DeviceCustomUIManager::hasAnyUI() const {
     return externalInsertUI_ || toneGeneratorUI_ || samplerUI_ || drumGridUI_ || polySynthUI_ ||
            fmUI_ || materiaUI_ || haloUI_ || nimbusUI_ || struckUI_ || drumVoiceUI_ ||
-           impulseResponseUI_ || sidechainUI_ || chordEngineUI_ || arpeggiatorUI_ || strumUI_ ||
-           stepSequencerUI_ || polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ ||
-           levelsUI_;
+           impulseResponseUI_ || sidechainUI_ || chordEngineUI_ || strumUI_ || stepSequencerUI_ ||
+           polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_;
 }
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
@@ -651,7 +645,10 @@ bool DeviceCustomUIManager::getSequencerStepRecordingState(bool polyphonic, int&
 
 void DeviceCustomUIManager::refreshArpeggiatorMidiActivity(magda::MidiNoteStrip& strip,
                                                            int& lastNote) const {
-    refreshSingleNoteStripFromPlugin(arpPlugin_, strip, lastNote);
+    // The arpeggiator draws on the param grid, so no faceplate here binds it; look it up.
+    const auto device = liveDevice();
+    refreshSingleNoteStripFromPlugin(dynamic_cast<daw::audio::ArpeggiatorPlugin*>(device.get()),
+                                     strip, lastNote);
 }
 
 void DeviceCustomUIManager::refreshStrumMidiActivity(magda::MidiNoteStrip& strip,
@@ -706,9 +703,6 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         sidechainUI_->updateFromParameters(device.parameters);
     if (strumUI_ && device.pluginId.equalsIgnoreCase(daw::audio::MidiStrumPlugin::xmlTypeName))
         strumUI_->updateFromParameters(device.parameters);
-    if (arpeggiatorUI_ &&
-        device.pluginId.equalsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName))
-        arpeggiatorUI_->updateFromParameters(device.parameters);
     // Parameters only. The slot's copy of the device is as old as the slot, so
     // its pattern is stale after any edit; the faceplates poll the device for that.
     if (stepSequencerUI_ &&
@@ -848,22 +842,6 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
         chordEngineUI_ = std::make_unique<ChordPanelContent>();
         parent.addAndMakeVisible(*chordEngineUI_);
         bindDeviceFaceplates();
-        return true;
-    }
-
-    if (device.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName)) {
-        arpeggiatorUI_ = std::make_unique<ArpeggiatorUI>();
-        forwardParameterChanges(*arpeggiatorUI_, callbacks);
-        // Non-slot settings are authored state: the edit patches the MODEL's
-        // state document, and the projection updates the live device (#2317).
-        // The model is what autosave writes and what the engine builds from,
-        // so the edit also dirties the project.
-        arpeggiatorUI_->onSettingsEdited = [this](const juce::NamedValueSet& settings) {
-            writeDeviceSettings(devicePath_, settings);
-        };
-        parent.addAndMakeVisible(*arpeggiatorUI_);
-        bindDeviceFaceplates();
-        update(device);
         return true;
     }
 
@@ -1772,10 +1750,9 @@ void DeviceCustomUIManager::refreshLivePluginBindings() {
 }
 
 bool DeviceCustomUIManager::needsDeviceRebind() const {
-    const bool polls = chordEngineUI_ != nullptr || arpeggiatorUI_ != nullptr ||
-                       strumUI_ != nullptr || stepSequencerUI_ != nullptr ||
-                       polyStepSequencerUI_ != nullptr || polySynthUI_ != nullptr ||
-                       struckUI_ != nullptr;
+    const bool polls = chordEngineUI_ != nullptr || strumUI_ != nullptr ||
+                       stepSequencerUI_ != nullptr || polyStepSequencerUI_ != nullptr ||
+                       polySynthUI_ != nullptr || struckUI_ != nullptr;
 
     // Compared rather than latched on "never bound": a session remade for a new
     // sample rate rebuilds every device without the model moving, and a
@@ -1795,14 +1772,6 @@ void DeviceCustomUIManager::bindDeviceFaceplates() {
         if (chord != chordPlugin_) {
             chordPlugin_ = chord;
             chordEngineUI_->setChordEngine(chord, devicePath_.trackId);
-        }
-    }
-
-    if (arpeggiatorUI_ != nullptr) {
-        auto* arp = dynamic_cast<daw::audio::ArpeggiatorPlugin*>(instance);
-        if (arp != arpPlugin_) {
-            arpPlugin_ = arp;
-            arpeggiatorUI_->setArpeggiator(arp);
         }
     }
 
@@ -1863,7 +1832,6 @@ void DeviceCustomUIManager::detachFromLivePlugin() {
     levelsTelemetry_.reset();
     nimbusTelemetry_.reset();
 
-    arpPlugin_ = nullptr;
     strumPlugin_ = nullptr;
     stepSeqPlugin_ = nullptr;
     polyStepSeqPlugin_ = nullptr;
@@ -2074,6 +2042,9 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
     if (struckUI_ && StruckInstrumentUI::handles(device.pluginId)) {
         struckUI_->updateFromParameters(device.parameters);
     }
+
+    if (strumUI_ && device.pluginId.equalsIgnoreCase(daw::audio::MidiStrumPlugin::xmlTypeName))
+        strumUI_->updateFromParameters(device.parameters);
 
     if (impulseResponseUI_ && device.pluginId == daw::audio::MagdaConvolutionPlugin::xmlTypeName) {
         impulseResponseUI_->updateFromParameters(device.parameters);
