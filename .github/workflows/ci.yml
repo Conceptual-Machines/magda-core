@@ -623,7 +623,7 @@ jobs:
           # Earlier selectors/queued jobs own the available local slots first.
           # With two simultaneous idle selections, consecutive run numbers give
           # them opposite round-robin preferences. A third goes hosted.
-          if [ "$reservations" -ge "$available" ]; then
+          if [ "$available" -gt 0 ] && [ "$reservations" -ge "$available" ]; then
             hosted "Falling back to macos-15 (all $available available local runner(s) already reserved)"
           fi
 
