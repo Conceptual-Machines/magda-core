@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "compiled/CompiledPluginPresentation.hpp"
+#include "core/Config.hpp"
 #include "core/DeviceInfo.hpp"
 #include "layout/UtilityGeometry.hpp"
 #include "plugins/compiled/MagdaUtilityCompiledPlugin.hpp"
@@ -16,9 +17,12 @@ namespace magda::daw::ui {
 
 /// The Utility's faceplate under its knobs: an L-R picture of the image, where the band's
 /// position is pan and its size is width, and the Mono / Low mono / Swap / polarity toggles.
-class CompiledUtilityView final : public juce::Component, public CompiledDevicePanel {
+class CompiledUtilityView final : public juce::Component,
+                                  public CompiledDevicePanel,
+                                  private magda::ConfigListener {
   public:
     explicit CompiledUtilityView(juce::String pluginId);
+    ~CompiledUtilityView() override;
 
     void updateFromDevice(const magda::DeviceInfo& device) override;
 
@@ -45,6 +49,10 @@ class CompiledUtilityView final : public juce::Component, public CompiledDeviceP
     using Plugin = magda::daw::audio::compiled::MagdaUtilityCompiledPlugin;
 
     enum class Drag { None, Pan, Width };
+
+    // The knobs above follow the global control style through Config, so the field does too.
+    void configChanged() override;
+    void syncControlStyle();
 
     float value(int slot, float fallback) const;
     bool isOn(int slot) const;

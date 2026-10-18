@@ -31,6 +31,24 @@ CompiledUtilityView::CompiledUtilityView(juce::String /*pluginId*/) {
         };
         addAndMakeVisible(toggle);
     }
+    style_ = resolveControlStyle(deviceSnapshot_.controlStyle);
+    magda::Config::getInstance().addListener(this);
+}
+
+CompiledUtilityView::~CompiledUtilityView() {
+    magda::Config::getInstance().removeListener(this);
+}
+
+void CompiledUtilityView::configChanged() {
+    syncControlStyle();
+}
+
+void CompiledUtilityView::syncControlStyle() {
+    if (const auto style = resolveControlStyle(deviceSnapshot_.controlStyle); style != style_) {
+        style_ = style;
+        resized();
+        repaint();
+    }
 }
 
 void CompiledUtilityView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -38,11 +56,7 @@ void CompiledUtilityView::updateFromDevice(const magda::DeviceInfo& device) {
     for (size_t i = 0; i < toggles_.size(); ++i)
         toggles_[i].setSelectedIndex(isOn(kToggleSlots[i]) ? 1 : 0);
 
-    // The knobs above size their rows for the control style, so the field follows it.
-    if (const auto style = resolveControlStyle(device.controlStyle); style != style_) {
-        style_ = style;
-        resized();
-    }
+    syncControlStyle();
     repaint();
 }
 

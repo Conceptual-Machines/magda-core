@@ -24,7 +24,7 @@ struct UtilityGeometry {
     static constexpr int kSpace = 8;
     static constexpr int kToggleGap = 4;
     static constexpr int kToggleHeight = 24;
-    static constexpr int kMinFieldHeight = 32;
+    static constexpr int kMinFieldHeight = 24;
     /// Low mono's label is the long one; the others share what is left.
     static constexpr float kLowMonoToggleWeight = 1.7f;
 
@@ -41,7 +41,7 @@ struct UtilityGeometry {
     }
 
     static int gainHeight(ParamControlStyle style) {
-        return style == ParamControlStyle::Knobs ? 96 : cellHeight(style);
+        return style == ParamControlStyle::Knobs ? 88 : cellHeight(style);
     }
 
     static UtilityGeometry of(juce::Rectangle<int> bounds, ParamControlStyle style) {
