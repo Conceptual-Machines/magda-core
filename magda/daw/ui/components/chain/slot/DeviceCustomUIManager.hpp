@@ -38,7 +38,6 @@ class FMUI;
 class MateriaUI;
 class HaloUI;
 class NimbusUI;
-class DrumVoiceUI;
 class StruckInstrumentUI;
 class SpectrumAnalyzerUI;
 class SpectrumTelemetrySource;
@@ -272,7 +271,6 @@ class DeviceCustomUIManager {
     std::unique_ptr<MateriaUI> materiaUI_;
     std::unique_ptr<HaloUI> haloUI_;
     std::unique_ptr<NimbusUI> nimbusUI_;
-    std::unique_ptr<DrumVoiceUI> drumVoiceUI_;
     std::unique_ptr<StruckInstrumentUI> struckUI_;
     std::unique_ptr<SidechainUI> sidechainUI_;
     std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;

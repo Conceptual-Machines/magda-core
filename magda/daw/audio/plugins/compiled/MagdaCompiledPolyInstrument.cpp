@@ -175,6 +175,58 @@ void MagdaCompiledPolyInstrument::initInstrument() {
     rebuildEngineState(kProvisionalSampleRate);
 }
 
+std::vector<float> MagdaCompiledPolyInstrument::renderPreviewHit(
+    const std::vector<float>& realSlotValues, int numSamples) const {
+    std::vector<float> hit(static_cast<size_t>(juce::jmax(0, numSamples)), 0.0f);
+    std::unique_ptr<::dsp> voice(createVoiceDsp());
+    if (voice == nullptr || hit.empty())
+        return hit;
+
+    // instanceInit, not init: classInit rewrites the class tables the device's voices read.
+    voice->instanceInit(static_cast<int>(sampleRate_));
+    PolyVoiceHarvester harvester;
+    voice->buildUserInterface(&harvester);
+    for (const auto& [slot, zones] : harvester.zonesByIdx)
+        if (slot >= 0 && slot < static_cast<int>(realSlotValues.size()))
+            for (FAUSTFLOAT* zone : zones)
+                *zone = static_cast<FAUSTFLOAT>(realSlotValues[static_cast<size_t>(slot)]);
+    const auto set = [&harvester](const char* name, FAUSTFLOAT value) {
+        if (auto it = harvester.reservedByName.find(name); it != harvester.reservedByName.end())
+            for (FAUSTFLOAT* zone : it->second)
+                *zone = value;
+    };
+    set("freq", FAUSTFLOAT(261.63));
+    set("gain", FAUSTFLOAT(1));
+    set("gate", FAUSTFLOAT(1));
+
+    const int outputs = voice->getNumOutputs();
+    if (outputs <= 0)
+        return hit;
+    constexpr int kBlock = 256;
+    std::vector<std::vector<FAUSTFLOAT>> buffers(static_cast<size_t>(outputs),
+                                                 std::vector<FAUSTFLOAT>(kBlock));
+    std::vector<FAUSTFLOAT*> channels;
+    for (auto& buffer : buffers)
+        channels.push_back(buffer.data());
+
+    const int gain = gainSlot();
+    const float trim =
+        gain >= 0 && gain < static_cast<int>(realSlotValues.size())
+            ? juce::Decibels::decibelsToGain(realSlotValues[static_cast<size_t>(gain)])
+            : 1.0f;
+    for (int start = 0; start < numSamples; start += kBlock) {
+        const int n = juce::jmin(kBlock, numSamples - start);
+        voice->compute(n, nullptr, channels.data());
+        for (int i = 0; i < n; ++i) {
+            float sum = 0.0f;
+            for (const auto& buffer : buffers)
+                sum += buffer[static_cast<size_t>(i)];
+            hit[static_cast<size_t>(start + i)] = trim * sum / static_cast<float>(outputs);
+        }
+    }
+    return hit;
+}
+
 void MagdaCompiledPolyInstrument::rebuildEngineState(int sampleRate) {
     sampleRate_ = sampleRate;
     poly_ = std::make_unique<mydsp_poly>(createVoiceDsp(), numVoices(), /*control*/ true,

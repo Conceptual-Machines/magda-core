@@ -41,7 +41,6 @@
 #include "core/StepPatternCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "custom_ui/DeviceTelemetrySources.hpp"
-#include "custom_ui/DrumVoiceUI.hpp"
 #include "custom_ui/FMUI.hpp"
 #include "custom_ui/HaloUI.hpp"
 #include "custom_ui/ImpulseResponseUI.hpp"
@@ -451,8 +450,6 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return haloUI_.get();
     if (nimbusUI_)
         return nimbusUI_.get();
-    if (drumVoiceUI_)
-        return drumVoiceUI_.get();
     if (struckUI_)
         return struckUI_.get();
     if (sidechainUI_)
@@ -485,8 +482,6 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
         return haloUI_->getLinkableSliders();
     if (nimbusUI_)
         return nimbusUI_->getLinkableSliders();
-    if (drumVoiceUI_)
-        return drumVoiceUI_->getLinkableSliders();
     if (struckUI_)
         return struckUI_->getLinkableSliders();
     if (toneGeneratorUI_)
@@ -506,9 +501,9 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
 
 bool DeviceCustomUIManager::hasAnyUI() const {
     return externalInsertUI_ || toneGeneratorUI_ || samplerUI_ || drumGridUI_ || polySynthUI_ ||
-           fmUI_ || materiaUI_ || haloUI_ || nimbusUI_ || struckUI_ || drumVoiceUI_ ||
-           impulseResponseUI_ || sidechainUI_ || chordEngineUI_ || stepSequencerUI_ ||
-           polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_;
+           fmUI_ || materiaUI_ || haloUI_ || nimbusUI_ || struckUI_ || impulseResponseUI_ ||
+           sidechainUI_ || chordEngineUI_ || stepSequencerUI_ || polyStepSequencerUI_ ||
+           oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_;
 }
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
@@ -522,8 +517,6 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
         return 760;  // modal-response spectrum + PARAMETERS | RESONATOR MODEL
     if (nimbusUI_)
         return 720;  // grain cloud + PARAMETERS | mode controls
-    if (drumVoiceUI_)
-        return drumVoiceUI_->preferredContentWidth();  // one labelled box per knob
     if (struckUI_)
         return struckUI_->preferredContentWidth();  // body panel + EXCITER | RESONATOR
     if (sidechainUI_)
@@ -685,8 +678,6 @@ void DeviceCustomUIManager::refreshChordEngineMidiActivity(magda::MidiNoteStrip&
 void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& device) {
     if (polySynthUI_ && device.pluginId.equalsIgnoreCase("magda_polysynth"))
         polySynthUI_->updateFromParameters(device.parameters);
-    if (drumVoiceUI_ && DrumVoiceUI::handles(device.pluginId))
-        drumVoiceUI_->updateFromParameters(device.parameters);
     if (struckUI_ && StruckInstrumentUI::handles(device.pluginId))
         struckUI_->updateFromParameters(device.parameters);
     if (fmUI_ && device.pluginId.equalsIgnoreCase("magda_fm"))
@@ -941,14 +932,6 @@ bool DeviceCustomUIManager::createCustomInstrumentUI(const magda::DeviceInfo& de
         forwardParameterChanges(*nimbusUI_, callbacks);
         parent.addAndMakeVisible(*nimbusUI_);
         refreshLivePluginBindings();
-        update(device);
-        return true;
-    }
-
-    if (DrumVoiceUI::handles(device.pluginId)) {
-        drumVoiceUI_ = std::make_unique<DrumVoiceUI>(device.pluginId);
-        forwardParameterChanges(*drumVoiceUI_, callbacks);
-        parent.addAndMakeVisible(*drumVoiceUI_);
         update(device);
         return true;
     }
@@ -2017,10 +2000,6 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
 
     if (nimbusUI_ && device.pluginId.equalsIgnoreCase("magda_clouds")) {
         nimbusUI_->updateFromParameters(device.parameters);
-    }
-
-    if (drumVoiceUI_ && DrumVoiceUI::handles(device.pluginId)) {
-        drumVoiceUI_->updateFromParameters(device.parameters);
     }
 
     if (struckUI_ && StruckInstrumentUI::handles(device.pluginId)) {

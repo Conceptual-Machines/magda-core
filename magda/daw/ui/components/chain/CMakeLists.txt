@@ -74,6 +74,9 @@ target_sources(magda_daw_app PRIVATE
     compiled/CompiledGateCurveView.cpp
     compiled/ArpeggiatorTimeBendPanel.cpp
     compiled/CompiledUtilityView.cpp
+    compiled/DrumHitPreview.cpp
+    compiled/DrumVoiceLayout.cpp
+    compiled/DrumVoicePanel.cpp
     compiled/StrumOnsetsPanel.cpp
     compiled/CompiledPluginPresentation.cpp
     compiled/MagdaDriveCurveView.cpp
@@ -90,7 +93,6 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/MateriaUI.cpp
     custom_ui/HaloUI.cpp
     custom_ui/NimbusUI.cpp
-    custom_ui/DrumVoiceUI.cpp
     custom_ui/StruckInstrumentUI.cpp
     custom_ui/AdsrGraph.cpp
     custom_ui/StepSequencerUI.cpp
@@ -182,6 +184,9 @@ target_sources(magda_daw_app PRIVATE
     compiled/CompiledGateCurveView.hpp
     compiled/ArpeggiatorTimeBendPanel.hpp
     compiled/CompiledUtilityView.hpp
+    compiled/DrumHitPreview.hpp
+    compiled/DrumVoiceLayout.hpp
+    compiled/DrumVoicePanel.hpp
     compiled/StrumOnsetsPanel.hpp
     compiled/CompiledPluginPresentation.hpp
     compiled/MagdaDriveCurveView.hpp

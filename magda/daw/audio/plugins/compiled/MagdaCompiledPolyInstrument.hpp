@@ -117,6 +117,18 @@ class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
         return nativeValueToDisplayValue(slotIndex, normalizedValue);
     }
 
+    /**
+     * @brief One hit of a fresh voice at @p realSlotValues, gate held, mixed to mono.
+     *
+     * For a faceplate's preview, off the audio thread. The voice is its own, so nothing the
+     * device renders with is touched; its class tables are the ones the device built.
+     */
+    std::vector<float> renderPreviewHit(const std::vector<float>& realSlotValues,
+                                        int numSamples) const;
+    double previewSampleRate() const {
+        return sampleRate_;
+    }
+
   protected:
     // ---- Hooks a concrete device implements -------------------------------
     // Allocate one single-voice dsp instance (e.g. `new MagdaKickDsp()`). The
