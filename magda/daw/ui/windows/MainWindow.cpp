@@ -40,6 +40,7 @@
 #include "../views/MixerView.hpp"
 #include "../views/SessionView.hpp"
 #include "AppShortcuts.hpp"
+#include "FloatingWindows.hpp"
 #include "audio/MidiBridge.hpp"
 #include "audio/midi/QwertyMidiKeyboard.hpp"
 #include "audio/plugins/engine/EngineExternalDevice.hpp"
@@ -330,6 +331,10 @@ MainWindow::~MainWindow() {
 
     removeKeyListener(mainComponent->getCommandManager().getKeyMappings());
     DBG("  [5c] MainWindow::~MainWindow - about to destroy content");
+}
+
+void MainWindow::minimisationStateChanged(bool isNowMinimised) {
+    floatingWindowOwnerMinimised(isNowMinimised);
 }
 
 void MainWindow::timerCallback() {
@@ -649,6 +654,9 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     daw::audio::engine_adapter::EngineExternalDevice::setApplicationCommands(&commandManager, this);
     // MAGDA's own floating windows route unconsumed keys the same way.
     setAppShortcuts(&commandManager, this);
+    setFloatingWindowOwner(this);
+    daw::audio::engine_adapter::EngineExternalDevice::setFloatingWindowHooks(&floatOverMainWindow,
+                                                                             &releaseToMainWindow);
 
     // Use external engine if provided, otherwise create our own
     if (externalEngine) {
@@ -1393,6 +1401,8 @@ MainWindow::MainComponent::~MainComponent() {
     PluginEditorWindow::appCommandTarget = nullptr;
     daw::audio::engine_adapter::EngineExternalDevice::setApplicationCommands(nullptr, nullptr);
     setAppShortcuts(nullptr, nullptr);
+    daw::audio::engine_adapter::EngineExternalDevice::setFloatingWindowHooks(nullptr, nullptr);
+    setFloatingWindowOwner(nullptr);
 
     // Stop position timer before destroying
     DBG("    [5e] Stopping position timer...");
