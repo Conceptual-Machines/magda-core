@@ -427,8 +427,11 @@ void PianoRollContent::onLaneModeChanged(magda::MidiDrawerComponent::LaneMode mo
 }
 
 void PianoRollContent::syncChordLaneFromClip() {
-    if (chordFocusMode())
+    // The chord editor is its lane: always shown, whatever the clip remembers.
+    if (chordFocusMode()) {
+        setChordRowVisible(true);
         return;
+    }
     const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
     if (clip == nullptr || !clip->isMidi())
         return;
@@ -1881,9 +1884,10 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
         int drawStartX = juce::jmax(0, startX) + area.getX();
         int drawEndX = juce::jmin(area.getWidth(), endX) + area.getX();
 
-        // 18px block, centred in the lane
-        auto blockBounds = juce::Rectangle<int>(drawStartX + 1, area.getCentreY() - 9,
-                                                drawEndX - drawStartX - 2, 18);
+        // The chord editor's blocks fill its lane; elsewhere an 18px block centred in it.
+        const int blockHeight = chordFocusMode() ? juce::jmax(18, area.getHeight() - 8) : 18;
+        auto blockBounds = juce::Rectangle<int>(drawStartX + 1, area.getCentreY() - blockHeight / 2,
+                                                drawEndX - drawStartX - 2, blockHeight);
         const bool selected =
             selectedChordGroup() != 0 && annotation.chordGroup == selectedChordGroup();
         const bool previewing =
