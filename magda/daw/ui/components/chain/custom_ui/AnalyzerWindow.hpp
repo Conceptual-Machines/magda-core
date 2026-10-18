@@ -31,6 +31,7 @@ class AnalyzerWindow : public FloatingHostWindow {
         setResizeLimits(360, 200, 4000, 3000);
         centreWithSize(720, 380);
         setVisible(true);
+        floatOverMainWindow(*this);
     }
 
     void closeButtonPressed() override {

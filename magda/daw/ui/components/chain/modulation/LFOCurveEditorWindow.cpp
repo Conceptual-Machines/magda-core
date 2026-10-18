@@ -6,6 +6,7 @@
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
+#include "ui/windows/FloatingWindows.hpp"
 
 namespace magda::daw::ui {
 
@@ -566,7 +567,7 @@ LFOCurveEditorWindow::LFOCurveEditorWindow(magda::ModInfo* modInfo,
     setResizeLimits(400, 200, 1000, 600);
     setUsingNativeTitleBar(false);
     setVisible(true);
-    setAlwaysOnTop(true);
+    floatOverMainWindow(*this);
 
     centreWithSize(getWidth(), getHeight());
 }

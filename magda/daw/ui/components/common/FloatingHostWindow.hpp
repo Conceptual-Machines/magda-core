@@ -5,6 +5,7 @@
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/MainLookAndFeel.hpp"
 #include "ui/windows/AppShortcuts.hpp"
+#include "ui/windows/FloatingWindows.hpp"
 
 namespace magda::daw::ui {
 
@@ -13,7 +14,8 @@ namespace magda::daw::ui {
  *
  * Used by both the analyzer scope/spectrum popout and the 3rd-party plugin
  * editor window so they are literally the same window type with the same chrome:
- * a JUCE (non-native) themed title bar, a dark background, and always-on-top.
+ * a JUCE (non-native) themed title bar and a dark background. Subclasses call
+ * floatOverMainWindow() once their constructor is done resizing the window.
  *
  * The non-native title bar is deliberate: it gives us full control over close
  * behaviour (native macOS close can race a window's owner during teardown) and a
@@ -29,7 +31,6 @@ class FloatingHostWindow : public juce::DocumentWindow {
         : juce::DocumentWindow(name, ActiveTheme::getColour(ActiveTheme::BACKGROUND), buttons) {
         setUsingNativeTitleBar(false);
         setTitleBarHeight(MainLookAndFeel::kTitleBarHeight);
-        setAlwaysOnTop(true);
     }
 
     // The background is a per-component colour override, so it outlives the
