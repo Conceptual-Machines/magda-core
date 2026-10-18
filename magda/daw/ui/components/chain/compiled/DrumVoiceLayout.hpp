@@ -26,9 +26,11 @@ struct DrumVoiceSection {
     int decaySlot = -1;
     int curveSlot = -1;
     int columns = 2;
+    /// Under the plot instead of a column of its own (the Output section).
+    bool underPlot = false;
 };
 
-/// The layers of @p pluginId, then an Output column holding the trailing Gain slot.
+/// The layers of @p pluginId, then an Output section under the plot for the trailing Gain.
 std::vector<DrumVoiceSection> drumVoiceSections(const juce::String& pluginId);
 
 /**
@@ -37,7 +39,7 @@ std::vector<DrumVoiceSection> drumVoiceSections(const juce::String& pluginId);
  */
 struct DrumVoiceGeometry {
     juce::Rectangle<int> plot;
-    std::vector<juce::Rectangle<int>> titles;  ///< One per section.
+    std::vector<juce::Rectangle<int>> titles;  ///< One per section; empty under the plot.
     std::vector<juce::Rectangle<int>> cells;   ///< One per slot, sections in order.
 
     static constexpr int kSpace = 8;

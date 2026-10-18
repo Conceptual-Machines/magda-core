@@ -71,7 +71,7 @@ std::vector<DrumVoiceSection> drumVoiceSections(const juce::String& pluginId) {
     for (const auto& section : sections)
         for (const int slot : section.slots)
             last = std::max(last, slot);
-    sections.push_back({.title = "Output", .slots = {last + 1}, .columns = 1});
+    sections.push_back({.title = "Output", .slots = {last + 1}, .columns = 1, .underPlot = true});
     return sections;
 }
 
@@ -90,7 +90,8 @@ int DrumVoiceGeometry::cellHeight(ParamControlStyle style) {
 int DrumVoiceGeometry::columnsWidth(const std::vector<DrumVoiceSection>& sections) {
     int width = 0;
     for (const auto& section : sections)
-        width += section.columns * kCellWidth + (section.columns - 1) * kCellGap + kSpace;
+        if (!section.underPlot)
+            width += section.columns * kCellWidth + (section.columns - 1) * kCellGap + kSpace;
     return width;
 }
 
@@ -101,15 +102,28 @@ DrumVoiceGeometry DrumVoiceGeometry::of(juce::Rectangle<int> bounds, ParamContro
     auto columns = area.removeFromRight(
         std::min(columnsWidth(sections), std::max(0, area.getWidth() - kMinPlotWidth)));
     area.removeFromRight(kSpace);
-    g.plot = area;
 
     int rows = 1;
     for (const auto& section : sections)
-        rows = std::max(rows, rowsOf(section));
+        if (!section.underPlot)
+            rows = std::max(rows, rowsOf(section));
     const int available = columns.getHeight() - kTitleHeight - (rows - 1) * kCellGap;
     const int cellH = std::min(cellHeight(style), std::max(24, available / rows));
 
+    // Sections under the plot sit in a row along its foot; the plot takes what is left above.
+    auto foot = area.removeFromBottom(cellH);
+    area.removeFromBottom(kSpace);
+    g.plot = area;
+
     for (const auto& section : sections) {
+        if (section.underPlot) {
+            g.titles.emplace_back();
+            for (size_t i = 0; i < section.slots.size(); ++i) {
+                g.cells.push_back(foot.removeFromLeft(kCellWidth));
+                foot.removeFromLeft(kCellGap);
+            }
+            continue;
+        }
         const int width = section.columns * kCellWidth + (section.columns - 1) * kCellGap;
         auto column = columns.removeFromLeft(width + kSpace).withTrimmedLeft(kSpace);
         g.titles.push_back(column.removeFromTop(kTitleHeight));
