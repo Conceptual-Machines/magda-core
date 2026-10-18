@@ -45,7 +45,6 @@ class SpectrumTelemetrySource;
 class SamplerUI;
 class SidechainUI;
 class StepSequencerUI;
-class StrumUI;
 class ToneGeneratorUI;
 class LevelsTelemetrySource;
 class NimbusTelemetrySource;
@@ -208,9 +207,6 @@ class DeviceCustomUIManager {
     StepSequencerUI* getStepSequencerUI() const {
         return stepSequencerUI_.get();
     }
-    StrumUI* getStrumUI() const {
-        return strumUI_.get();
-    }
     PolyStepSequencerUI* getPolyStepSequencerUI() const {
         return polyStepSequencerUI_.get();
     }
@@ -281,7 +277,6 @@ class DeviceCustomUIManager {
     std::unique_ptr<SidechainUI> sidechainUI_;
     std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
     std::unique_ptr<ChordPanelContent> chordEngineUI_;
-    std::unique_ptr<StrumUI> strumUI_;
     std::unique_ptr<StepSequencerUI> stepSequencerUI_;
     std::unique_ptr<PolyStepSequencerUI> polyStepSequencerUI_;
     std::unique_ptr<OscilloscopeUI> oscilloscopeUI_;
@@ -289,7 +284,6 @@ class DeviceCustomUIManager {
     std::unique_ptr<LevelsUI> levelsUI_;
 
     // Plugin raw pointers for timer polling / setNodePath updates
-    daw::audio::MidiStrumPlugin* strumPlugin_ = nullptr;
     daw::audio::StepSequencerPlugin* stepSeqPlugin_ = nullptr;
     daw::audio::PolyStepSequencerPlugin* polyStepSeqPlugin_ = nullptr;
     daw::audio::MidiChordEnginePlugin* chordPlugin_ = nullptr;
