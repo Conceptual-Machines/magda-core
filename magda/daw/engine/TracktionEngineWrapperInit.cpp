@@ -7,6 +7,7 @@
 #include "../audio/TrackMeters.hpp"
 #include "../audio/controllers/ControllerRouter.hpp"
 #include "../audio/insert_capture/InsertRenderCaptureService.hpp"
+#include "../audio/io/AudioDeviceOpenMark.hpp"
 #include "../audio/session/SessionClipScheduler.hpp"
 #include "../audio/session/SessionRecorder.hpp"
 #include "../core/AppPaths.hpp"
@@ -64,6 +65,23 @@ std::unique_ptr<AudioEngine> createDefaultAudioEngine(AudioEngineOptions options
     engine->setForceHeadless(options.headless);
     return engine;
 }
+
+namespace {
+
+/** @brief The backend and output Tracktion will open from @p storage, or empty for its default. */
+juce::String savedTracktionDeviceName(tracktion::PropertyStorage& storage) {
+    const auto audioXml = storage.getXmlProperty(tracktion::SettingID::audio_device_setup);
+    const auto* setup = audioXml != nullptr ? audioXml->getChildByName("DEVICESETUP") : nullptr;
+    if (setup == nullptr)
+        return {};
+
+    auto output = setup->getStringAttribute("audioOutputDeviceName");
+    if (output.isEmpty())
+        output = setup->getStringAttribute("audioDeviceName");
+    return setup->getStringAttribute("deviceType") + ": " + output;
+}
+
+}  // namespace
 
 bool TracktionEngineWrapper::isHeadlessRuntime() const {
     return app_services::isHeadless(forceHeadless_);
@@ -347,15 +365,28 @@ bool TracktionEngineWrapper::initialiseServices() {
     juce::Logger::writeToLog("[Init] initializePluginFormats() done");
 
     if (!isHeadlessRuntime()) {
-        // Initialize device manager with preferred settings
-        juce::Logger::writeToLog("[Init] initializeDeviceManager()...");
-        initializeDeviceManager();
-        juce::Logger::writeToLog("[Init] initializeDeviceManager() done");
+        // A driver that crashed the last launch opening it is not opened again (#3090).
+        auto& storage = engine_->getPropertyStorage();
+        const auto recovering = takeCrashedAudioDevice(paths::audioDeviceOpenMarkFile());
+        if (recovering)
+            storage.removeProperty(tracktion::SettingID::audio_device_setup);
 
-        // Configure audio devices if user has preferences
-        juce::Logger::writeToLog("[Init] configureAudioDevices()...");
-        configureAudioDevices();
-        juce::Logger::writeToLog("[Init] configureAudioDevices() done");
+        {
+            const AudioDeviceOpenMark mark(paths::audioDeviceOpenMarkFile(),
+                                           savedTracktionDeviceName(storage));
+
+            // Initialize device manager with preferred settings
+            juce::Logger::writeToLog("[Init] initializeDeviceManager()...");
+            initializeDeviceManager();
+            juce::Logger::writeToLog("[Init] initializeDeviceManager() done");
+
+            // Configure audio devices if user has preferences
+            if (!recovering) {
+                juce::Logger::writeToLog("[Init] configureAudioDevices()...");
+                configureAudioDevices();
+                juce::Logger::writeToLog("[Init] configureAudioDevices() done");
+            }
+        }
 
         // Setup MIDI devices
         juce::Logger::writeToLog("[Init] setupMidiDevices()...");

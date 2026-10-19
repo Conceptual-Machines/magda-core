@@ -200,6 +200,10 @@ juce::File lastScanReportFile() {
     return dataDir().getChildFile("last_scan_report.txt");
 }
 
+juce::File audioDeviceOpenMarkFile() {
+    return dataDir().getChildFile("opening_audio_device.txt");
+}
+
 juce::File pluginFavoritesFile() {
     return dataDir().getChildFile("plugin_favorites.xml");
 }
