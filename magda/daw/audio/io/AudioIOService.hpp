@@ -87,6 +87,8 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
     bool isSingleInterfaceBackend(const juce::String& backend) override;
     std::vector<double> availableSampleRates() const override;
     std::vector<int> availableBufferSizes() const override;
+    bool hasControlPanel() const override;
+    void showControlPanel() override;
 
     void addCallback(juce::AudioIODeviceCallback* callback) override {
         manager_.addAudioCallback(callback);

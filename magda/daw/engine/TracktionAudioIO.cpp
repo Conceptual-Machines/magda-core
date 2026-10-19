@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "../audio/io/DriverControlPanel.hpp"
 #include "WaveDeviceChannels.hpp"
 
 namespace magda {
@@ -180,6 +181,24 @@ std::vector<int> TracktionAudioIO::availableBufferSizes() const {
         for (const auto size : device->getAvailableBufferSizes())
             sizes.push_back(size);
     return sizes;
+}
+
+bool TracktionAudioIO::hasControlPanel() const {
+    const auto* device = manager().getCurrentAudioDevice();
+    return device != nullptr && device->hasControlPanel();
+}
+
+void TracktionAudioIO::showControlPanel() {
+    auto* device = manager().getCurrentAudioDevice();
+    if (device == nullptr || !device->hasControlPanel())
+        return;
+
+    // Read before closing: the channels chosen are the wave devices enabled on the open one.
+    const auto settings = chosen();
+    if (!showDriverControlPanel(*device))
+        return;
+    manager().closeAudioDevice();
+    apply(settings);
 }
 
 void TracktionAudioIO::addCallback(juce::AudioIODeviceCallback* callback) {

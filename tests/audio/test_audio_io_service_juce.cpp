@@ -26,6 +26,14 @@ juce::StringArray numbered(const juce::String& prefix, int count) {
     return names;
 }
 
+/** @brief A driver's own settings window, as ASIO drivers have (#3091). */
+struct DriverPanel {
+    bool present = false;
+    /// What the panel sets the block size to; 0 when it changes nothing.
+    int setsBufferSize = 0;
+    int shown = 0;
+};
+
 /** @brief What the fake interfaces were last asked to open, which is what the driver sees. */
 struct OpenRequest {
     juce::String backend;
@@ -35,6 +43,7 @@ struct OpenRequest {
     double sampleRate = 0.0;
     int bufferSize = 0;
     int opens = 0;
+    DriverPanel panel;
 };
 
 class FakeInterface final : public juce::AudioIODevice {
@@ -65,13 +74,18 @@ class FakeInterface final : public juce::AudioIODevice {
         if (getName() == "Broken")
             return "The interface refused to open";
 
+        // Like ASIO after a modal panel: the driver's block size, whatever was asked.
+        if (request_->panel.setsBufferSize > 0 && request_->panel.shown > 0)
+            bufferSize = request_->panel.setsBufferSize;
+
         *request_ = {.backend = getTypeName(),
                      .interfaceName = getName(),
                      .inputs = inputs,
                      .outputs = outputs,
                      .sampleRate = sampleRate,
                      .bufferSize = bufferSize,
-                     .opens = request_->opens + 1};
+                     .opens = request_->opens + 1,
+                     .panel = request_->panel};
         inputs_ = inputs;
         outputs_ = outputs;
         sampleRate_ = sampleRate;
@@ -122,6 +136,13 @@ class FakeInterface final : public juce::AudioIODevice {
     }
     int getInputLatencyInSamples() override {
         return kInputLatency;
+    }
+    bool hasControlPanel() const override {
+        return request_->panel.present;
+    }
+    bool showControlPanel() override {
+        ++request_->panel.shown;
+        return request_->panel.setsBufferSize > 0;
     }
 
   private:
@@ -384,6 +405,52 @@ class AudioIOServiceTest final : public juce::UnitTest {
             expectEquals(rig.request->bufferSize, 256);
             expect(magda::Config::getInstance().getAudioIO() == savedOn("Stereo", {1}, {0, 1}),
                    "saved cut to the channels the interface has");
+        }
+
+        beginTest("an interface without a control panel shows none");
+        {
+            Rig rig(savedOn("Stereo", {}, {0, 1}));
+            rig.service->open();
+            const auto opens = rig.request->opens;
+
+            expect(!rig.service->hasControlPanel());
+            rig.service->showControlPanel();
+            expectEquals(rig.request->panel.shown, 0);
+            expectEquals(rig.request->opens, opens);
+        }
+
+        beginTest("a control panel that changed nothing leaves the interface as it was");
+        {
+            Rig rig(savedOn("Stereo", {}, {0, 1}));
+            rig.request->panel.present = true;
+            rig.service->open();
+            const auto opens = rig.request->opens;
+
+            expect(rig.service->hasControlPanel());
+            rig.service->showControlPanel();
+            expectEquals(rig.request->panel.shown, 1);
+            expectEquals(rig.request->opens, opens);
+            expectEquals(rig.service->status().bufferSize, 256);
+        }
+
+        beginTest("a control panel's block size reopens the interface and is saved");
+        {
+            Rig rig(savedOn("Stereo", {0}, {0, 1}));
+            rig.request->panel = {.present = true, .setsBufferSize = 1024};
+            rig.service->open();
+            const auto opens = rig.request->opens;
+
+            rig.service->showControlPanel();
+            expectEquals(rig.request->opens, opens + 1);
+            expectEquals(rig.service->status().bufferSize, 1024);
+            expect(rig.request->inputs == channels({0}));
+            expect(rig.request->outputs == channels({0, 1}));
+
+            const auto saved = magda::Config::getInstance().getAudioIO();
+            expect(saved.has_value());
+            expectEquals(saved->bufferSize, 1024);
+            expectEquals(saved->sampleRate, 48000.0);
+            expect(saved->inputChannels == std::vector<int>{0});
         }
 
         beginTest("listeners hear the interface change");
