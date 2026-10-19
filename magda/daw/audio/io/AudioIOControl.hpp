@@ -71,6 +71,16 @@ class AudioIOControl : public HardwareChannels {
     virtual std::vector<double> availableSampleRates() const = 0;
     virtual std::vector<int> availableBufferSizes() const = 0;
 
+    /** @brief Whether the open interface's driver has its own settings window, as ASIO's do. */
+    virtual bool hasControlPanel() const = 0;
+
+    /**
+     * @brief Show the driver's settings window, reopening the interface on what it changed (#3091).
+     *
+     * Blocks while a modal panel is up. A modeless one (ASIO4ALL) asks for the reset itself.
+     */
+    virtual void showControlPanel() = 0;
+
     // ===== What attaches to the open interface =====
 
     /**

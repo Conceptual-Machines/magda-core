@@ -5,6 +5,7 @@
 #include <iterator>
 
 #include "CoreAudioRate.hpp"
+#include "DriverControlPanel.hpp"
 #include "HardwareRouteNames.hpp"
 #include "TracktionAudioSettings.hpp"
 
@@ -137,6 +138,35 @@ std::vector<int> AudioIOService::availableBufferSizes() const {
         for (const auto size : device->getAvailableBufferSizes())
             sizes.push_back(size);
     return sizes;
+}
+
+bool AudioIOService::hasControlPanel() const {
+    const auto* device = manager_.getCurrentAudioDevice();
+    return device != nullptr && device->hasControlPanel();
+}
+
+void AudioIOService::showControlPanel() {
+    auto* device = manager_.getCurrentAudioDevice();
+    if (device == nullptr || !device->hasControlPanel())
+        return;
+
+    // Read before closing: with nothing saved, the choice is what is open.
+    auto settings = chosen();
+    if (!showDriverControlPanel(*device))
+        return;
+
+    // The driver now picks the block size, so the choice keeps what it opened at.
+    manager_.closeAudioDevice();
+    if (const auto error = openFitted(fit(settings)); error.isNotEmpty()) {
+        log("could not reopen " + juce::String(settings.outputInterface) + ": " + error);
+        return;
+    }
+    const auto open = openSettings();
+    settings.sampleRate = open.sampleRate;
+    settings.bufferSize = open.bufferSize;
+    auto& config = Config::getInstance();
+    config.setAudioIO(settings);
+    config.save();
 }
 
 AudioIOControl::Status AudioIOService::status() const {

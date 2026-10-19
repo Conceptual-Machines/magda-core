@@ -484,6 +484,8 @@ target_sources(magda_daw PRIVATE
     io/AudioIOService.hpp
     io/CoreAudioRate.cpp
     io/CoreAudioRate.hpp
+    io/DriverControlPanel.cpp
+    io/DriverControlPanel.hpp
     io/HardwareRouteNames.cpp
     io/HardwareRouteNames.hpp
     io/TracktionAudioSettings.cpp

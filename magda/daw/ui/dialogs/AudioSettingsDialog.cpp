@@ -421,6 +421,11 @@ AudioSettingsDialog::AudioSettingsDialog(AudioEngine* audioEngine)
     outputDeviceComboBox_.onChange = [this]() { onOutputDeviceSelected(); };
     addAndMakeVisible(outputDeviceComboBox_);
 
+    controlPanelButton_.setButtonText(trEllipsis("audio_settings.button.control_panel"));
+    controlPanelButton_.setTooltip(tr("audio_settings.tooltip.control_panel"));
+    controlPanelButton_.onClick = [this]() { audio_->showControlPanel(); };
+    addChildComponent(controlPanelButton_);
+
     deviceRefreshSpinner_.setStyle(juce::ProgressBar::Style::circular);
     deviceRefreshSpinner_.setPercentageDisplay(false);
     deviceRefreshSpinner_.setColour(juce::ProgressBar::backgroundColourId,
@@ -621,6 +626,10 @@ void AudioSettingsDialog::resized() {
     auto inputDeviceArea = bounds.removeFromTop(28);
     inputDeviceLabel_.setBounds(inputDeviceArea.removeFromLeft(120));
     inputDeviceArea.removeFromLeft(10);  // spacing
+    if (controlPanelButton_.isVisible()) {
+        controlPanelButton_.setBounds(inputDeviceArea.removeFromRight(130));
+        inputDeviceArea.removeFromRight(10);  // spacing
+    }
     inputDeviceComboBox_.setBounds(inputDeviceArea);
     bounds.removeFromTop(5);  // spacing
 
@@ -1002,6 +1011,11 @@ void AudioSettingsDialog::refreshChosenInterface() {
 
 void AudioSettingsDialog::showOpenInterface() {
     const auto status = audio_->status();
+    if (const auto panel = audio_->hasControlPanel(); panel != controlPanelButton_.isVisible()) {
+        controlPanelButton_.setVisible(panel);
+        resized();
+    }
+
     if (status.interfaceName.isEmpty()) {
         deviceNameLabel_.setText(tr("audio_settings.status.no_interface"),
                                  juce::dontSendNotification);
