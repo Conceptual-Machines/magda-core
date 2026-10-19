@@ -605,19 +605,21 @@
     "label.interface": "インターフェース：",
     "label.input_interface": "入力インターフェース：",
     "label.output_interface": "出力インターフェース：",
+    "tooltip.control_panel": "",
     "tooltip.refreshing": "オーディオデバイスを更新中",
     "status.refreshing": "デバイスを更新中",
     "toggle.set_preferred": "優先デバイスに設定（起動時に自動選択）",
-    "label.engine": "オーディオエンジン：",
-    "engine.magda_beta": "MAGDA エンジン（ベータ）",
-    "engine.env_override": "今回の起動では MAGDA_AUDIO_ENGINE がこの設定より優先されます",
-    "engine.restart": "再起動後に反映されます",
+    "label.engine": "",
+    "engine.magda_beta": "",
+    "engine.env_override": "",
+    "engine.restart": "",
     "label.sample_rate": "サンプリングレート：",
     "label.buffer_size": "バッファサイズ：",
     "label.midi_inputs": "MIDI 入力：",
     "label.midi_output": "MIDI 出力：",
     "midi_output.none": "<< なし >>",
     "button.bluetooth_midi": "Bluetooth MIDI",
+    "button.control_panel": "",
     "button.close": "閉じる",
     "what.sample_rate": "サンプリングレート",
     "what.buffer_size": "バッファサイズ",
@@ -632,10 +634,10 @@
     "error.not_initialized": "オーディオエンジンが初期化されていません。オーディオ設定を開けません。"
   },
   "engine_prompt": {
-    "title": "MAGDA エンジンを試しますか？",
-    "message": "MAGDA には独自のオーディオエンジンがあり、現在ベータ版です。使用しますか？\n\nエンジンはオーディオ／MIDIの設定でいつでも切り替えられます。",
-    "dont_show_again": "今後表示しない",
-    "yes": "はい",
-    "no": "いいえ"
+    "title": "",
+    "message": "",
+    "dont_show_again": "",
+    "yes": "",
+    "no": ""
   }
 }

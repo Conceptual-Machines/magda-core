@@ -605,19 +605,21 @@
     "label.interface": "Interfaz:",
     "label.input_interface": "Interfase de entrada:",
     "label.output_interface": "Interfaz de salida:",
+    "tooltip.control_panel": "",
     "tooltip.refreshing": "Actualizar dispositivos de audio",
     "status.refreshing": "Actualizar dispositivos",
     "toggle.set_preferred": "Elegir predeterminado (al inicio)",
-    "label.engine": "Motor audio:",
-    "engine.magda_beta": "Motor MAGDA (beta)",
-    "engine.env_override": "MAGDA_MOTOR_AUDIO reemplaza esto para la ejecución actual",
-    "engine.restart": "Tiene efecto después de reiniciar",
+    "label.engine": "",
+    "engine.magda_beta": "",
+    "engine.env_override": "",
+    "engine.restart": "",
     "label.sample_rate": "Frecuencia de muestreo:",
     "label.buffer_size": "Tamaño búfer:",
     "label.midi_inputs": "Entradas MIDI:",
     "label.midi_output": "Salidas MIDI:",
     "midi_output.none": "<< ninguno >>",
     "button.bluetooth_midi": "Bluetooth MIDI",
+    "button.control_panel": "",
     "button.close": "Cerrar",
     "what.sample_rate": "frecuencia de muestreo",
     "what.buffer_size": "tamaño de búfer",
@@ -632,10 +634,10 @@
     "error.not_initialized": "Audio no iniciado. No se puede abrir los ajustes."
   },
   "engine_prompt": {
-    "title": "¿Probar el motor MAGDA?",
-    "message": "MAGDA tiene su propio motor de audio, ahora en fase beta. ¿Quieres usarlo?\n\nPuedes cambiar de motor en cualquier momento en Ajustes de Audio/MIDI.",
-    "dont_show_again": "No volver a mostrar",
-    "yes": "Si",
-    "no": "No"
+    "title": "",
+    "message": "",
+    "dont_show_again": "",
+    "yes": "",
+    "no": ""
   }
 }
