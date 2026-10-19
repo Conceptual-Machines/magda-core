@@ -43,9 +43,13 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
     /** @brief On the platform's backends, migrating from MAGDA's Tracktion Settings.xml. */
     AudioIOService();
 
-    /** @brief On @p backends instead, with @p tracktionSettings as what a first run migrates. */
+    /**
+     * @brief On @p backends instead, with @p tracktionSettings as what a first run migrates.
+     *
+     * @p openMark is the AudioDeviceOpenMark file; empty marks nothing.
+     */
     AudioIOService(std::vector<std::unique_ptr<juce::AudioIODeviceType>> backends,
-                   juce::File tracktionSettings);
+                   juce::File tracktionSettings, juce::File openMark = {});
 
     ~AudioIOService() override;
 
@@ -55,7 +59,8 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
     /**
      * @brief Open what was saved, else what Tracktion saved, else stereo out and no input.
      *
-     * A failure is logged and leaves nothing open, so the app still launches.
+     * A failure is logged and leaves nothing open, so the app still launches. After a launch
+     * that died opening an interface, the default is opened and saved instead (#3090).
      */
     void open();
 
@@ -148,6 +153,7 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
 
     juce::AudioDeviceManager manager_;
     juce::File tracktionSettings_;
+    juce::File openMark_;
 
     /// Cleared on destruction, so a rate switch finishing late does not open a dead service.
     std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);

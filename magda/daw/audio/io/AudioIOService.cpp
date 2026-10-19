@@ -4,6 +4,8 @@
 #include <cmath>
 #include <iterator>
 
+#include "../../core/AppPaths.hpp"
+#include "AudioDeviceOpenMark.hpp"
 #include "CoreAudioRate.hpp"
 #include "DriverControlPanel.hpp"
 #include "HardwareRouteNames.hpp"
@@ -43,11 +45,12 @@ void log(const juce::String& message) {
 
 }  // namespace
 
-AudioIOService::AudioIOService() : AudioIOService({}, tracktionSettingsFile()) {}
+AudioIOService::AudioIOService()
+    : AudioIOService({}, tracktionSettingsFile(), paths::audioDeviceOpenMarkFile()) {}
 
 AudioIOService::AudioIOService(std::vector<std::unique_ptr<juce::AudioIODeviceType>> backends,
-                               juce::File tracktionSettings)
-    : tracktionSettings_(std::move(tracktionSettings)) {
+                               juce::File tracktionSettings, juce::File openMark)
+    : tracktionSettings_(std::move(tracktionSettings)), openMark_(std::move(openMark)) {
     // Before the first scan: JUCE creates the platform's backends only when it has none.
     for (auto& backend : backends)
         manager_.addAudioDeviceType(std::move(backend));
@@ -63,16 +66,29 @@ AudioIOService::~AudioIOService() {
 
 void AudioIOService::open() {
     auto& config = Config::getInstance();
-    auto wanted = config.getAudioIO();
-    const auto migrating = !wanted.has_value();
+    const auto recovering = takeCrashedAudioDevice(openMark_).has_value();
+    auto wanted = recovering ? std::nullopt : config.getAudioIO();
+    const auto migrating = !recovering && !wanted.has_value();
     if (migrating)
         wanted = readTracktionAudioSettings(tracktionSettings_);
 
-    const auto fitted = fit(wanted);
-    if (const auto error = openFitted(fitted); error.isNotEmpty())
-        log("could not open " + juce::String(fitted.outputInterface) + " on " +
-            juce::String(fitted.backend) + ": " + error);
+    AudioIOSettings fitted;
+    {
+        // Over fit() too: probing the interface's channels loads its driver.
+        const AudioDeviceOpenMark mark(
+            openMark_, wanted ? juce::String(wanted->backend + ": " + wanted->outputInterface)
+                              : juce::String());
+        fitted = fit(wanted);
+        if (const auto error = openFitted(fitted); error.isNotEmpty())
+            log("could not open " + juce::String(fitted.outputInterface) + " on " +
+                juce::String(fitted.backend) + ": " + error);
+    }
 
+    if (recovering) {
+        config.setAudioIO(fitted);
+        config.save();
+        return;
+    }
     if (!migrating || !wanted)
         return;
 

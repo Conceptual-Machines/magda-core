@@ -631,7 +631,10 @@
     "error.open": "Could not open \"{0}\".\n\nError: {1}",
     "error.set": "Could not set the {0} to {1}.\n\nError: {2}",
     "error.not_initialized_title": "Audio Settings",
-    "error.not_initialized": "Audio engine not initialized. Cannot open audio settings."
+    "error.not_initialized": "Audio engine not initialized. Cannot open audio settings.",
+    "crash_recovery.title": "Audio Driver Skipped",
+    "crash_recovery.message": "MAGDA closed unexpectedly last time while opening {0}, so it started with the default audio driver instead.\n\nYou can choose a driver again in Audio/MIDI Settings.",
+    "crash_recovery.default": "the audio driver"
   },
   "engine_prompt": {
     "title": "Try the MAGDA Engine?",

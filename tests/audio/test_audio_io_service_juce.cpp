@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "magda/daw/audio/io/AudioDeviceOpenMark.hpp"
 #include "magda/daw/audio/io/AudioIOService.hpp"
 #include "magda/daw/core/Config.hpp"
 
@@ -44,6 +45,9 @@ struct OpenRequest {
     int bufferSize = 0;
     int opens = 0;
     DriverPanel panel;
+    /// The AudioDeviceOpenMark file, and whether it was there while the driver opened (#3090).
+    juce::File mark;
+    bool marked = false;
 };
 
 class FakeInterface final : public juce::AudioIODevice {
@@ -85,7 +89,9 @@ class FakeInterface final : public juce::AudioIODevice {
                      .sampleRate = sampleRate,
                      .bufferSize = bufferSize,
                      .opens = request_->opens + 1,
-                     .panel = request_->panel};
+                     .panel = request_->panel,
+                     .mark = request_->mark,
+                     .marked = request_->mark.existsAsFile()};
         inputs_ = inputs;
         outputs_ = outputs;
         sampleRate_ = sampleRate;
@@ -189,15 +195,16 @@ class FakeBackend final : public juce::AudioIODeviceType {
 
 /** @brief A service on the fake backend, starting from @p saved and no Tracktion settings. */
 struct Rig {
-    explicit Rig(std::optional<magda::AudioIOSettings> saved) {
+    explicit Rig(std::optional<magda::AudioIOSettings> saved, juce::File openMark = {}) {
         magda::Config::getInstance().setAudioIO(std::move(saved));
+        request->mark = openMark;
 
         std::vector<std::unique_ptr<juce::AudioIODeviceType>> backends;
         // The same interfaces on both, as Windows Audio's shared and exclusive modes have.
         backends.push_back(std::make_unique<FakeBackend>("Fake", request));
         backends.push_back(std::make_unique<FakeBackend>("Fake Exclusive", request));
-        service = std::make_unique<magda::AudioIOService>(std::move(backends),
-                                                          tracktionSettings.getFile());
+        service = std::make_unique<magda::AudioIOService>(
+            std::move(backends), tracktionSettings.getFile(), std::move(openMark));
     }
 
     ~Rig() {
@@ -451,6 +458,37 @@ class AudioIOServiceTest final : public juce::UnitTest {
             expectEquals(saved->bufferSize, 1024);
             expectEquals(saved->sampleRate, 48000.0);
             expect(saved->inputChannels == std::vector<int>{0});
+        }
+
+        beginTest("an open marks the interface while the driver opens and clears it after");
+        {
+            juce::TemporaryFile mark(".txt");
+            Rig rig(savedOn("Stereo", {}, {0, 1}), mark.getFile());
+            rig.service->open();
+
+            expect(rig.request->marked, "a driver crashing here would leave the mark behind");
+            expect(!mark.getFile().existsAsFile());
+            expect(rig.request->interfaceName == "Stereo");
+        }
+
+        beginTest("a mark the last launch left skips its interface for the default, saved");
+        {
+            juce::TemporaryFile mark(".txt");
+            mark.getFile().replaceWithText("Fake Exclusive: Stereo");
+            auto saved = savedOn("Stereo", {}, {0, 1});
+            saved.backend = "Fake Exclusive";
+            Rig rig(saved, mark.getFile());
+            rig.service->open();
+
+            expect(rig.request->backend == "Fake");
+            expect(rig.request->interfaceName == "Virtual");
+            expect(!mark.getFile().existsAsFile(), "the default opened, so nothing is left");
+
+            const auto& now = magda::Config::getInstance().getAudioIO();
+            expect(now.has_value() && now->backend == "Fake" && now->outputInterface == "Virtual",
+                   "the crashing choice is replaced, or the next launch opens it again");
+            expectEquals(magda::crashedAudioDeviceThisLaunch().value_or("none"),
+                         juce::String("Fake Exclusive: Stereo"));
         }
 
         beginTest("listeners hear the interface change");
