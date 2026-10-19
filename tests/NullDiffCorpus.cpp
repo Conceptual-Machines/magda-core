@@ -17,7 +17,6 @@
 #include "magda/daw/audio/plugins/MagdaSamplerPlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
-#include "music/GrooveLibrary.hpp"
 
 /**
  * The corpus itself (#2040): every case, as model values.
@@ -2264,7 +2263,7 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         clip.loopStartBeats = 0.0;
         clip.loopLengthBeats = 1.5;
         clip.timeBend =
-            *grooveTimeBend({"null-diff swing", 2, false, {0.0f, 0.25f, 0.0f, 0.25f}}, 4.0);
+            *sdk::sequencer::grooveTimeBend(std::vector<float>{0.0f, 0.25f, 0.0f, 0.25f}, 2, 4.0);
         clip.midiNotes.push_back(note(60, 0.0, 0.4));
         clip.midiNotes.push_back(note(64, 0.5, 0.4));
         clip.midiNotes.push_back(note(67, 1.0, 0.4));

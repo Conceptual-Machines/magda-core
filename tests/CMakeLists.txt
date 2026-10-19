@@ -562,8 +562,7 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES midi/test_midi_clip_playback.cpp)
     list(APPEND TEST_SOURCES clips/test_editor_playhead_fold.cpp)
     list(APPEND TEST_SOURCES audio/test_groove_library.cpp
-    audio/test_groove_store.cpp
-    audio/test_groove_time_bend.cpp)
+    audio/test_groove_store.cpp)
     list(APPEND TEST_SOURCES audio/test_transient_detector.cpp)
     list(APPEND TEST_SOURCES audio/test_source_loop_info.cpp)
 

@@ -23,17 +23,6 @@ struct GrooveTemplateData {
 };
 
 /**
- * @brief @p groove as a time bend in a meter of @p beatsPerBar, at @p amount (#3044).
- *
- * Each grid step k becomes the point ((k + lateness / 2) / n, k / n) of a cycle as long as the
- * groove; a late downbeat is a hold at the cycle's start. The cycle repeats the groove until it
- * fits a span of 1, 2 or 4 bars over 1 to 8 cycles. Nullopt when it cannot fit in 32 points. An
- * early downbeat is read as on the grid: the head cannot cross the top of the cycle.
- */
-std::optional<sdk::sequencer::TimeBend> grooveTimeBend(const GrooveTemplateData& groove,
-                                                       double beatsPerBar, float amount = 1.0f);
-
-/**
  * @brief The named grooves, owned here rather than by whichever engine renders.
  *
  * A clip plays a groove as a time bend, its curve loaded from here (#3044). The list

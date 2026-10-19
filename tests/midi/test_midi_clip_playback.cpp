@@ -13,7 +13,6 @@
 #include "clip/ClipSnapshotCompiler.hpp"
 #include "clip/MidiClipCompiler.hpp"
 #include "core/PitchExpressionCurve.hpp"
-#include "music/GrooveLibrary.hpp"
 
 /**
  * MIDI clip playback (#2039), on the audio thread.
@@ -237,7 +236,7 @@ class Rig {
 /// "Basic 8th Swing" as a time bend, which plays an off-beat late by half of
 /// 0.66 over a two-per-beat grid: 0.165 beats.
 magda::sdk::sequencer::TimeBend swingBend() {
-    return *magda::grooveTimeBend({"Swing", 2, true, {0.0f, 0.66f}}, 4.0);
+    return *magda::sdk::sequencer::grooveTimeBend(std::vector<float>{0.0f, 0.66f}, 2, 4.0);
 }
 
 /// The blocks one beat spans.
@@ -1404,7 +1403,7 @@ TEST_CASE("A swung note-off never precedes its own note-on", "[engine][clip][mid
     // A short note just before a fully swung off-beat: its written end is past the off-beat.
     auto clip = makeMidiClip(1, 0.0, 4.0);
     clip.midiNotes.push_back(note(60, 0.45, 0.1));
-    clip.timeBend = *magda::grooveTimeBend({"Wild", 2, false, {0.0f, 1.0f}}, 4.0);
+    clip.timeBend = *magda::sdk::sequencer::grooveTimeBend(std::vector<float>{0.0f, 1.0f}, 2, 4.0);
 
     Rig rig;
     rig.publish({clip});
