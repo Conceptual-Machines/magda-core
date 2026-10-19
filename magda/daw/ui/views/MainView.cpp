@@ -517,7 +517,8 @@ void MainView::setupComponents() {
                       BinaryData::bottom_open_svgSize);
     showMasterButton->setTooltip("Show master track");
     showMasterButton->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    showMasterButton->setNormalColor(juce::Colour(0xFFB3B3B3));
+    showMasterButton->setNormalColor(ActiveTheme::DEVICE_ICON);
+    showMasterButton->setHoverColor(ActiveTheme::DEVICE_ICON_HOVER);
     showMasterButton->onClick = [this]() {
         TrackManager::getInstance().setMasterVisible(
             ViewModeController::getInstance().getViewMode(), !masterVisible_);
@@ -2604,8 +2605,8 @@ void MainView::MasterHeaderPanel::setupControls() {
                                              BinaryData::bottom_close_svgSize);
     hideButton->setTooltip("Hide master track");
     hideButton->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    hideButton->setNormalColor(juce::Colour(0xFFB3B3B3));
-    hideButton->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+    hideButton->setNormalColor(ActiveTheme::DEVICE_ICON);
+    hideButton->setHoverColor(ActiveTheme::DEVICE_ICON_HOVER);
     hideButton->setPressedColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     hideButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     hideButton->setBorderThickness(1.0f);

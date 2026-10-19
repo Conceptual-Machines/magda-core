@@ -1070,9 +1070,9 @@ void BottomPanel::ensureChordPanelCreated() {
 
     chordCollapseButton_ = std::make_unique<SvgButton>("ChordCollapse", BinaryData::right_close_svg,
                                                        BinaryData::right_close_svgSize);
-    chordCollapseButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
-    chordCollapseButton_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-    chordCollapseButton_->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+    chordCollapseButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    chordCollapseButton_->setNormalColor(ActiveTheme::DEVICE_ICON);
+    chordCollapseButton_->setHoverColor(ActiveTheme::DEVICE_ICON_HOVER);
     chordCollapseButton_->setTooltip("Toggle chord panel");
     chordCollapseButton_->onClick = [this]() {
         chordPanelCollapsed_ = !chordPanelCollapsed_;

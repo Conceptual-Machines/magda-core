@@ -108,7 +108,9 @@ void PanelTabBar::setupCollapseButton() {
                                                          : BinaryData::right_close_svgSize;
 
     collapseButton_ = std::make_unique<magda::SvgButton>("Collapse", svgData, svgSize);
-    collapseButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
+    collapseButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    collapseButton_->setNormalColor(ActiveTheme::DEVICE_ICON);
+    collapseButton_->setHoverColor(ActiveTheme::DEVICE_ICON_HOVER);
     collapseButton_->onClick = [this]() {
         if (onCollapseClicked)
             onCollapseClicked();

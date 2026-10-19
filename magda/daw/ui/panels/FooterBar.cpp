@@ -508,7 +508,9 @@ void FooterBar::setupBottomCollapseButton() {
     // Start with "close" icon (panel starts expanded by default)
     bottomCollapseButton_ = std::make_unique<SvgButton>(
         "BottomCollapse", BinaryData::bottom_close_svg, BinaryData::bottom_close_svgSize);
-    bottomCollapseButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
+    bottomCollapseButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    bottomCollapseButton_->setNormalColor(ActiveTheme::DEVICE_ICON);
+    bottomCollapseButton_->setHoverColor(ActiveTheme::DEVICE_ICON_HOVER);
     bottomCollapseButton_->onClick = [this]() {
         if (onBottomPanelCollapseToggle)
             onBottomPanelCollapseToggle();

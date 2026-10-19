@@ -299,6 +299,10 @@ WaveformEditorContent::WaveformEditorContent() {
         "PropertiesToggle", BinaryData::right_close_svg, BinaryData::right_close_svgSize);
     propertiesToggle_->setTooltip("Toggle properties panel");
     magda::EditorRail::styleButton(*propertiesToggle_);
+    // Collapse / expand glyphs share one grey everywhere.
+    propertiesToggle_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    propertiesToggle_->setNormalColor(magda::ActiveTheme::DEVICE_ICON);
+    propertiesToggle_->setHoverColor(magda::ActiveTheme::DEVICE_ICON_HOVER);
     propertiesToggle_->setVisible(true);
     propertiesToggle_->onClick = [this]() {
         if (onTogglePropertiesPanel)
