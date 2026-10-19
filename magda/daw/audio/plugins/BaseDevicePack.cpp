@@ -75,8 +75,12 @@ constexpr const char* kDrumGridTags[] = {"drum-grid"};
 constexpr const char* kChordEngineTags[] = {"chord-engine"};
 constexpr const char* kArpeggiatorTags[] = {"arpeggiator", "midi-generator"};
 constexpr const char* kStrumTags[] = {"strum"};
-constexpr const char* kStepSequencerTags[] = {"step-sequencer", "midi-generator"};
-constexpr const char* kPolyStepSequencerTags[] = {"poly-step-sequencer", "midi-generator"};
+// "expandable-faceplate": the slot offers to lend the faceplate to the arrangement's area.
+constexpr const char* kSamplerTags[] = {"expandable-faceplate"};
+constexpr const char* kStepSequencerTags[] = {"step-sequencer", "midi-generator",
+                                              "expandable-faceplate"};
+constexpr const char* kPolyStepSequencerTags[] = {"poly-step-sequencer", "midi-generator",
+                                                  "expandable-faceplate"};
 constexpr const char* kSidechainTags[] = {"sidechain"};
 constexpr const char* kConvolutionTags[] = {"convolution", "impulse-response"};
 
@@ -150,6 +154,8 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
          .showInBrowser = true,
          .isInstrument = true,
+         .tags = kSamplerTags,
+         .tagCount = static_cast<int>(std::size(kSamplerTags)),
          .createDevice = createDevice<MagdaSamplerPlugin>});
     add(registry,
         {

@@ -197,3 +197,36 @@ TEST_CASE("Two note-ons of one pitch inside one sample are two notes", "[devices
     // The same instant twice is one note routed two ways.
     CHECK(render({100.2, 100.2}) == render({100.2}));
 }
+
+TEST_CASE("A held note loops between the loop markers past the sample's end",
+          "[devices][sampler][loop]") {
+    using namespace magda::daw::audio;
+    constexpr double kRate = 44100.0;
+    SamplerSynth synth;
+    synth.setCurrentPlaybackSampleRate(kRate);
+    auto* sound = new SamplerSound();
+    sound->audioData.setSize(1, 1024);
+    for (int i = 0; i < 1024; ++i)
+        sound->audioData.setSample(0, i, static_cast<float>(i + 1));
+    synth.addSound(sound);
+    auto* voice = new SamplerVoice(synth);
+    voice->setRootNote(60);
+    voice->setADSR(0.0f, 0.1f, 1.0f, 0.1f);
+    voice->setPlaybackRegion(0.0, 1024 / kRate, true, 256 / kRate, 512 / kRate, kRate);
+    synth.addVoice(voice);
+
+    juce::AudioBuffer<float> output(1, 4096);
+    output.clear();
+    juce::MidiBuffer midi;
+    midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+    synth.renderNextBlock(output, midi, 0, 4096);
+
+    // Frame n reads back as n + 1: past the loop end it wraps to the loop start.
+    CHECK(output.getSample(0, 511) == 512.0f);
+    CHECK(output.getSample(0, 512) == 257.0f);
+    for (int i = 1024; i < 4096; ++i) {
+        const float value = output.getSample(0, i);
+        REQUIRE(value >= 257.0f);
+        REQUIRE(value <= 512.0f);
+    }
+}

@@ -26,7 +26,8 @@ namespace magda::daw::ui {
  *
  * The sample's name, root and load button over two views: the whole recording with its start,
  * end and loop markers and the playhead, or the amp envelope with draggable handles. Beside them,
- * the slice as frame boxes with step arrows, and Pitch and Amp tiles.
+ * the slice as frame boxes with step arrows, and Pitch and Amp tiles. Expanded into the
+ * arrangement, it is the waveform and the loop switch.
  *
  * Parameter indices (matching MagdaSamplerPlugin::addParam order):
  *   0=attack, 1=decay, 2=sustain, 3=release, 4=pitch, 5=fine, 6=level,
@@ -202,6 +203,8 @@ class SamplerUI : public juce::Component,
     void applyWaveformMarkers(const sdk::WaveformResponse& response);
     sdk::WaveformPointer waveformPointer(const juce::MouseEvent& e) const;
     void updateWaveformCursor(const juce::MouseEvent& e);
+    /// Seconds or samples on the ruler, from a right-click on it.
+    void showRulerMenu();
 
     // The amp envelope in its own view: a handle per stage, in this component's coordinates.
     enum class EnvHandle { None, Attack, Decay, Release };
@@ -220,6 +223,12 @@ class SamplerUI : public juce::Component,
     bool ampView_ = false;
     bool dropHover_ = false;  ///< A sample is being dragged over the device.
     bool loopView_ = false;   ///< The loop markers come first, and show while the loop is off.
+    bool expanded_ = false;   ///< Lent to the arrangement: the waveform and the loop switch.
+    std::vector<juce::Component*> hiddenWhileExpanded_;
+    void setExpanded(bool expanded);
+    bool showsEnvelope() const {
+        return ampView_ && !expanded_;
+    }
     void showView(int index);
 
     // The slice in frames, driving the hidden marker sliders.
