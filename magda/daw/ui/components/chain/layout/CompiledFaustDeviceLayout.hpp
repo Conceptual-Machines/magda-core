@@ -1,6 +1,8 @@
 #pragma once
 
+#include <map>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include "layout/DeviceParamLayout.hpp"
@@ -31,12 +33,15 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
                               ParameterEnabledPredicate isParameterEnabled = nullptr,
                               std::span<const int> knobSlots = {},
                               std::span<const int> excludedSlots = {}, int maxColumns = 0,
-                              int leadingColumnCells = 0)
+                              int leadingColumnCells = 0,
+                              std::span<const std::pair<int, const char*>> knobLabels = {})
         : maxColumns_(maxColumns > 0 ? maxColumns : 2),
           leadingColumnCells_(leadingColumnCells),
           columnMajor_(columnMajor),
           isParameterEnabled_(isParameterEnabled),
           knobSlots_(knobSlots.begin(), knobSlots.end()) {
+        for (const auto& [slot, label] : knobLabels)
+            labels_[slot] = label;
         // Slots the device shows elsewhere (its mix, its faceplate strip) leave the grid.
         if (knobSlots_.empty() && !excludedSlots.empty())
             for (int slot = 0; slot < cellCount; ++slot)
@@ -77,6 +82,7 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
                       int currentPage) const override;
 
   private:
+    std::map<int, juce::String> labels_;
     int cellCount_ = 0;
     int cellsPerRow_ = 0;
     int maxColumns_ = 2;

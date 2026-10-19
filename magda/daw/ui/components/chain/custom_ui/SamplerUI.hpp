@@ -6,11 +6,13 @@
 #include <array>
 #include <functional>
 #include <memory>
+#include <optional>
+#include <vector>
 
-#include "custom_ui/AdsrGraph.hpp"
 #include "magda/sdk/display/DisplayList.hpp"
 #include "magda/sdk/waveview/WaveformView.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
+#include "ui/components/common/SegmentedChoice.hpp"
 #include "ui/components/common/SvgButton.hpp"
 
 namespace magda::daw::audio {
@@ -22,13 +24,9 @@ namespace magda::daw::ui {
 /**
  * @brief Custom inline UI for the Magda Sampler plugin
  *
- * Compact layout with:
- * - Sample file display + load button
- * - Waveform thumbnail with markers and playhead
- * - Sample start, loop start/end controls
- * - ADSR knobs (Attack, Decay, Sustain, Release)
- * - Pitch/Fine tuning
- * - Level control
+ * The sample's name, root and load button over two views: the whole recording with its start,
+ * end and loop markers and the playhead, or the amp envelope with draggable handles. Beside them,
+ * the slice as frame boxes with step arrows, and Pitch and Amp tiles.
  *
  * Parameter indices (matching MagdaSamplerPlugin::addParam order):
  *   0=attack, 1=decay, 2=sustain, 3=release, 4=pitch, 5=fine, 6=level,
@@ -99,11 +97,14 @@ class SamplerUI : public juce::Component,
 
     void lookAndFeelChanged() override;
     void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
 
     // FileDragAndDropTarget — samples dropped from the OS file manager.
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
+    void fileDragEnter(const juce::StringArray& files, int x, int y) override;
+    void fileDragExit(const juce::StringArray& files) override;
 
     // DragAndDropTarget — samples dragged from MAGDA's own browser arrive as an
     // internal {type:"files"} payload; these forward it to the handlers above.
@@ -122,6 +123,21 @@ class SamplerUI : public juce::Component,
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
   private:
+    /// A frame count typed or stepped one frame at a time, as Rhythmica's slice boxes.
+    class FrameBox : public juce::Component {
+      public:
+        FrameBox();
+        void setFrames(juce::int64 frames);
+        std::function<void(juce::int64 frames)> onCommit;
+        void resized() override;
+
+      private:
+        void commit();
+        juce::TextEditor box_;
+        juce::ArrowButton up_, down_;
+        juce::int64 frames_ = 0;
+    };
+
     // Timer
     void timerCallback() override;
 
@@ -157,8 +173,6 @@ class SamplerUI : public juce::Component,
     LinkableTextSlider decaySlider_{TextSlider::Format::Decimal};
     LinkableTextSlider sustainSlider_{TextSlider::Format::Decimal};
     LinkableTextSlider releaseSlider_{TextSlider::Format::Decimal};
-    // Dedicated ADSR graph (its own time axis, decoupled from the waveform).
-    AdsrGraph envGraph_;
 
     // Pitch
     LinkableTextSlider pitchSlider_{TextSlider::Format::Decimal};
@@ -170,15 +184,10 @@ class SamplerUI : public juce::Component,
     // Velocity amount
     LinkableTextSlider velAmountSlider_{TextSlider::Format::Decimal};
 
-    // Voice mode (Poly/Mono/Legato): segmented buttons drive a hidden linkable
-    // slider (param 12). Glide (param 13) is a normal time slider.
+    // Voice mode (param 12) lives in the slot footer; this hidden slider carries its links.
     LinkableTextSlider voiceModeSlider_{TextSlider::Format::Decimal};
-    std::array<std::unique_ptr<juce::TextButton>, 3> voiceModeButtons_;
     LinkableTextSlider glideSlider_{TextSlider::Format::Decimal};
-    juce::Label voiceModeLabel_, glideLabel_;
-    void setVoiceMode(int mode);
-    void updateVoiceModeButtons();
-    int voiceMode_ = 0;
+    juce::Label glideLabel_;
 
     // Labels
     juce::Label attackLabel_, decayLabel_, sustainLabel_, releaseLabel_;
@@ -194,8 +203,36 @@ class SamplerUI : public juce::Component,
     sdk::WaveformPointer waveformPointer(const juce::MouseEvent& e) const;
     void updateWaveformCursor(const juce::MouseEvent& e);
 
-    // Push the current ADSR slider values (+ ranges) into the envelope graph.
-    void syncEnvGraph();
+    // The amp envelope in its own view: a handle per stage, in this component's coordinates.
+    enum class EnvHandle { None, Attack, Decay, Release };
+    struct EnvShape {
+        juce::Point<float> start, peak, decayEnd, releaseStart, end;
+    };
+    std::optional<EnvShape> envelopeShape() const;
+    EnvHandle envHandleAt(juce::Point<float> position) const;
+    void dragEnvelope(EnvHandle handle, juce::Point<float> position);
+    EnvHandle envDrag_ = EnvHandle::None;
+    juce::Rectangle<float> envelopeArea() const;
+    void paintEnvelope(juce::Graphics& g);
+
+    // Which view the plot shows: the recording or the envelope.
+    magda::SegmentedChoice viewChoice_;
+    bool ampView_ = false;
+    bool dropHover_ = false;  ///< A sample is being dragged over the device.
+    bool loopView_ = false;   ///< The loop markers come first, and show while the loop is off.
+    void showView(int index);
+
+    // The slice in frames, driving the hidden marker sliders.
+    double sampleRate_ = 44100.0;
+    std::array<FrameBox, 4> frameBoxes_;
+    std::array<juce::Label, 4> frameCaptions_;
+    void syncFrameBoxes();
+
+    // Areas resized() lays out and paint() draws into.
+    juce::Rectangle<int> waveArea_;
+    std::array<juce::Rectangle<int>, 3> sectionTitles_;
+    std::vector<juce::Rectangle<int>> tiles_;
+    juce::Rectangle<int> rootChip_;
 
     void setupLabel(juce::Label& label, const juce::String& text);
 

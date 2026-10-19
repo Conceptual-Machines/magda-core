@@ -13,40 +13,50 @@ namespace magda::daw::ui {
 
 ChordBlockComponent::ChordBlockComponent(magda::music::Chord chord) : chord_(std::move(chord)) {
     setName("ChordBlock");
+    setRepaintsOnMouseActivity(true);
 }
 
 void ChordBlockComponent::paint(juce::Graphics& g) {
-    auto bounds = getLocalBounds().toFloat();
+    auto& fonts = FontManager::getInstance();
+    const auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+    const auto fill = highlighted_    ? ActiveTheme::DEVICE_ROW_SELECTED
+                      : isMouseOver() ? ActiveTheme::DEVICE_ROW_HOVER
+                                      : ActiveTheme::DEVICE_FIELD;
+    g.setColour(ActiveTheme::getColour(fill));
+    g.fillRoundedRectangle(bounds, 5.0f);
+    g.setColour(ActiveTheme::getColour(highlighted_ ? ActiveTheme::DEVICE_ROW_SELECTED_BORDER
+                                                    : ActiveTheme::DEVICE_FIELD_BORDER));
+    g.drawRoundedRectangle(bounds, 5.0f, 1.0f);
 
-    // Background — accent blue at 20% alpha (matches piano roll chord row style)
-    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.2f));
-    g.fillRoundedRectangle(bounds, 3.0f);
+    // Tall tiles (the suggestion grid) read larger than the history row's.
+    const bool tall = getHeight() >= 44;
+    auto text = getLocalBounds().reduced(tall ? 12 : 9, tall ? 9 : 4);
 
-    // Border on hover
-    if (isMouseOver()) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.5f));
-        g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
+    if (function_ != chord_function::HarmonicFunction::None) {
+        const auto dot = juce::Rectangle<float>(6.0f, 6.0f)
+                             .withCentre({static_cast<float>(getWidth() - (tall ? 15 : 10)),
+                                          tall ? 15.0f : 10.0f});
+        g.setColour(chord_function::functionColour(function_));
+        g.fillEllipse(dot);
+        text.removeFromRight(10);
     }
 
-    auto textBounds = getLocalBounds().reduced(4, 0);
-
-    // Chord name (in the active C / solfège notation)
-    auto displayName =
-        magda::music::NotationSettings::getInstance().format(chord_.getDisplayName());
-    g.setColour(ActiveTheme::getTextColour());
+    const auto name = magda::music::NotationSettings::getInstance().format(chord_.getDisplayName());
+    const float nameSize = tall ? 15.0f : 12.5f;
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
+    g.setFont(fonts.getUIFontMedium(nameSize));
     if (degree_.isEmpty()) {
-        g.setFont(FontManager::getInstance().getUIFont(11.0f));
-        g.drawText(displayName, textBounds, juce::Justification::centred);
-    } else {
-        // Two-line layout: chord name on top, degree below
-        auto nameArea = textBounds.removeFromTop(textBounds.getHeight() / 2);
-        g.setFont(FontManager::getInstance().getUIFont(11.0f));
-        g.drawText(displayName, nameArea, juce::Justification::centredBottom);
-
-        g.setColour(ActiveTheme::getSecondaryTextColour());
-        g.setFont(FontManager::getInstance().getUIFont(9.0f));
-        g.drawText(degree_, textBounds, juce::Justification::centredTop);
+        g.drawText(name, text, juce::Justification::centredLeft, true);
+        return;
     }
+    const int nameHeight = juce::roundToInt(nameSize * 1.35f);
+    const int degreeHeight = tall ? 14 : 11;
+    auto stack = text.withSizeKeepingCentre(text.getWidth(), nameHeight + degreeHeight);
+    g.drawText(name, stack.removeFromTop(nameHeight), juce::Justification::centredLeft, true);
+    g.setColour(
+        ActiveTheme::getColour(highlighted_ ? ActiveTheme::DEVICE_BLUE : ActiveTheme::DEVICE_DIM));
+    g.setFont(fonts.getMonoFont(tall ? 10.5f : 9.0f));
+    g.drawText(degree_, stack, juce::Justification::centredLeft, true);
 }
 
 void ChordBlockComponent::mouseDown(const juce::MouseEvent& /*e*/) {

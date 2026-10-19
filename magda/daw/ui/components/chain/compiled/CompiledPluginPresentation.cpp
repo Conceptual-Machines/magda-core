@@ -28,6 +28,13 @@ const CompiledPresentationSpec& getMagdaPitchPresentation();
 const CompiledPresentationSpec& getMagdaBitcrusherPresentation();
 const CompiledPresentationSpec& getMagdaGatePresentation();
 const CompiledPresentationSpec& getMagdaUtilityPresentation();
+const CompiledPresentationSpec& getArpeggiatorPresentation();
+const CompiledPresentationSpec& getStrumPresentation();
+const CompiledPresentationSpec& getMagdaKickPresentation();
+const CompiledPresentationSpec& getMagdaSnarePresentation();
+const CompiledPresentationSpec& getMagdaClapPresentation();
+const CompiledPresentationSpec& getMagdaHatPresentation();
+const CompiledPresentationSpec& getMagdaTomPresentation();
 
 namespace {
 
@@ -43,6 +50,10 @@ const CompiledPresentationSpec* const kAllPresentations[] = {
     &getMagdaEqPresentation(),        &getMagdaDimensionPresentation(),
     &getMagdaPitchPresentation(),     &getMagdaBitcrusherPresentation(),
     &getMagdaGatePresentation(),      &getMagdaUtilityPresentation(),
+    &getArpeggiatorPresentation(),    &getStrumPresentation(),
+    &getMagdaKickPresentation(),      &getMagdaSnarePresentation(),
+    &getMagdaClapPresentation(),      &getMagdaHatPresentation(),
+    &getMagdaTomPresentation(),
 };
 
 }  // namespace

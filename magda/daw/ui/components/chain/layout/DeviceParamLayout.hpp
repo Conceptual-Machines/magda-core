@@ -3,6 +3,7 @@
 #include <juce_graphics/juce_graphics.h>
 
 #include "core/DeviceInfo.hpp"
+#include "params/ParamControlStyle.hpp"
 
 namespace magda::daw::ui {
 
@@ -79,6 +80,8 @@ class DeviceParamLayout {
                                             bool /*faceplateShown*/) const {
         return {};
     }
+    /// The style the cells draw in, for a layout that sizes its own cells to it.
+    virtual void setControlStyle(ParamControlStyle /*style*/) {}
     /// Most columns a reflowing grid wraps at.
     virtual int maxColumns() const {
         return 2;

@@ -6,6 +6,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <utility>
 
 #include "core/DeviceInfo.hpp"
 #include "params/ParamLinkResolver.hpp"
@@ -107,6 +108,8 @@ struct CompiledPresentationSpec {
     /// The slots that remain as knobs, in order; -1 leaves a cell empty to group them.
     /// Empty keeps every slot in the grid.
     std::span<const int> knobSlots;
+    /// Names the knobs show in place of their parameters', by slot; unlisted slots keep theirs.
+    std::span<const std::pair<int, const char*>> knobLabels;
     /// Most knob columns beside the faceplate; 0 takes the default of two.
     int knobColumns = 0;
     /// The faceplate's width beside the knobs; 0 takes the default.
@@ -118,6 +121,8 @@ struct CompiledPresentationSpec {
     std::span<const int> bandSlots;
     /// The device's own dry/wet slot: the side strip's mix knob drives it, so the grid drops it.
     int mixSlot = -1;
+    /// The device's own gain is its output gain: the side strip keeps the meter, drops its fader.
+    bool ownsOutputGain = false;
     /// Set, the device lays its knobs out itself and its faceplate spans the whole body under
     /// them; the faceplate turns the knobs' pages.
     std::unique_ptr<DeviceParamLayout> (*createLayout)() = nullptr;

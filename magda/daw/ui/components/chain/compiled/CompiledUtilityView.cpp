@@ -2,391 +2,207 @@
 
 #include <cmath>
 
-#include "audio/plugins/compiled/MagdaUtilityCompiledPlugin.hpp"
-#include "ui/components/mixer/LevelMeterScale.hpp"
+#include "compiled/CompiledUtilityLayout.hpp"
 #include "ui/themes/ActiveTheme.hpp"
-#include "ui/themes/SmallButtonLookAndFeel.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
 namespace {
-float valueForSlot(const magda::DeviceInfo& device, int slotIndex, float fallback) {
-    for (const auto& param : device.parameters)
-        if (param.paramIndex == slotIndex)
-            return param.currentValue;
-    return fallback;
+
+constexpr float kEdgeGrabPx = 5.0f;
+constexpr float kLabelRowPx = 14.0f;
+
+juce::Rectangle<float> plotOf(juce::Rectangle<int> field) {
+    return field.toFloat().reduced(8.0f, 6.0f).withTrimmedBottom(kLabelRowPx);
 }
 
-const magda::ParameterInfo* parameterForSlot(const magda::DeviceInfo& device, int slotIndex) {
-    for (const auto& param : device.parameters)
-        if (param.paramIndex == slotIndex)
-            return &param;
-    return nullptr;
-}
-
-juce::String formatGainDb(double value) {
-    if (value <= -59.99)
-        return "-inf";
-    if (std::abs(value) < 0.05)
-        return "0.0";
-    return juce::String(value > 0.0 ? "+" : "") + juce::String(value, 1);
-}
-
-void styleNameLabel(juce::Label& label, const juce::String& text) {
-    label.setText(text, juce::dontSendNotification);
-    label.setFont(juce::Font(juce::FontOptions{9.0f}));
-    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    label.setJustificationType(juce::Justification::centred);
-    label.setMinimumHorizontalScale(0.72f);
-    label.setInterceptsMouseClicks(false, false);
-}
-
-void styleReadoutLabel(juce::Label& label) {
-    label.setFont(juce::Font(juce::FontOptions{10.0f}));
-    label.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
-    label.setJustificationType(juce::Justification::centred);
-    label.setMinimumHorizontalScale(0.72f);
-    label.setInterceptsMouseClicks(false, false);
-}
 }  // namespace
 
 CompiledUtilityView::CompiledUtilityView(juce::String /*pluginId*/) {
-    using Util = magda::daw::audio::compiled::MagdaUtilityCompiledPlugin;
-
-    const auto fillColour = ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL);
-
-    gainFader_.setRange(-60.0, 12.0, 0.0);
-    gainFader_.setValue(0.0, juce::dontSendNotification);
-    gainFader_.setFillColour(fillColour);
-    gainFader_.setFillProportionMapper(magda::level_meter_scale::dbFillProportion);
-    gainFader_.setVertical(true);
-    gainFader_.setShowText(false);
-    gainFader_.onValueChange = [this]() {
-        const auto v = gainFader_.getValue();
-        gainValue_.setText(formatGainDb(v), juce::dontSendNotification);
-        writeParameter(Util::kGainSlot, static_cast<float>(v));
-    };
-    // Right-click the gain fader gets the exact same menu as any other device
-    // param (link to mod / macro, show automation lane, MIDI learn) by routing
-    // to the overlay link slot that sits on top of the fader.
-    gainFader_.onRightClick = [this]() { gainLinkSlot_.showContextMenu(); };
-    addAndMakeVisible(gainFader_);
-
-    styleReadoutLabel(gainValue_);
-    gainValue_.setText(formatGainDb(0.0), juce::dontSendNotification);
-    addAndMakeVisible(gainValue_);
-
-    panLabel_.setRange(-1.0, 1.0, 0.0);
-    panLabel_.setValue(0.0, juce::dontSendNotification);
-    panLabel_.setFontSize(9.0f);
-    panLabel_.setFillColour(fillColour);
-    panLabel_.onValueChange = [this]() {
-        writeParameter(Util::kPanSlot, static_cast<float>(panLabel_.getValue()));
-    };
-    addAndMakeVisible(panLabel_);
-
-    widthLabel_.setRange(0.0, 200.0, 100.0);
-    widthLabel_.setValue(100.0, juce::dontSendNotification);
-    widthLabel_.setFontSize(9.0f);
-    widthLabel_.setDecimalPlaces(0);
-    widthLabel_.setSuffix("%");
-    widthLabel_.setFillColour(fillColour);
-    widthLabel_.onValueChange = [this]() {
-        writeParameter(Util::kWidthSlot, static_cast<float>(widthLabel_.getValue()));
-    };
-    addAndMakeVisible(widthLabel_);
-
-    xoverLabel_.setRange(20.0, 500.0, 120.0);
-    xoverLabel_.setValue(120.0, juce::dontSendNotification);
-    xoverLabel_.setFontSize(9.0f);
-    xoverLabel_.setSuffix(" Hz");
-    xoverLabel_.setFillColour(fillColour);
-    xoverLabel_.onValueChange = [this]() {
-        writeParameter(Util::kLowMonoFreqSlot, static_cast<float>(xoverLabel_.getValue()));
-    };
-    addAndMakeVisible(xoverLabel_);
-
-    styleNameLabel(gainName_, "GAIN");
-    styleNameLabel(panName_, "PAN");
-    styleNameLabel(widthName_, "WIDTH");
-    styleNameLabel(xoverName_, "XOVER");
-    addAndMakeVisible(gainName_);
-    addAndMakeVisible(panName_);
-    addAndMakeVisible(widthName_);
-    addAndMakeVisible(xoverName_);
-
-    const auto surface = ActiveTheme::getColour(ActiveTheme::SURFACE);
-    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
-    const auto inactive = ActiveTheme::getSecondaryTextColour();
-    const auto bg = ActiveTheme::getColour(ActiveTheme::BACKGROUND);
-
-    for (int i = 0; i < 4; ++i) {
-        auto& btn = btns_[static_cast<size_t>(i)];
-        btn.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-        btn.setButtonText(kBtnLabels[static_cast<size_t>(i)]);
-        btn.setClickingTogglesState(true);
-        btn.setColour(juce::TextButton::buttonColourId, surface);
-        btn.setColour(juce::TextButton::buttonOnColourId, accent);
-        btn.setColour(juce::TextButton::textColourOffId, inactive);
-        btn.setColour(juce::TextButton::textColourOnId, bg);
-        const int slot = Util::kMonoSlot + i;
-        btn.onClick = [this, slot, i]() {
-            const bool on = btns_[static_cast<size_t>(i)].getToggleState();
-            writeParameter(slot, on ? 1.0f : 0.0f);
+    static constexpr const char* kLabels[] = {"Mono", "Low mono", "Swap", "\xc3\x98 L",
+                                              "\xc3\x98 R"};
+    for (size_t i = 0; i < toggles_.size(); ++i) {
+        auto& toggle = toggles_[i];
+        toggle.setToggle(juce::String(juce::CharPointer_UTF8(kLabels[i])));
+        toggle.setSelectedIndex(0);
+        toggle.onChange = [this, slot = kToggleSlots[i]](int index) {
+            writeParameter(slot, index == 1 ? 1.0f : 0.0f);
         };
-        addAndMakeVisible(btn);
+        addAndMakeVisible(toggle);
     }
-
-    configureLinkSlots();
-    addAndMakeVisible(gainLinkSlot_);
-    addAndMakeVisible(panLinkSlot_);
+    style_ = resolveControlStyle(deviceSnapshot_.controlStyle);
+    magda::Config::getInstance().addListener(this);
 }
 
 CompiledUtilityView::~CompiledUtilityView() {
-    for (auto& btn : btns_)
-        btn.setLookAndFeel(nullptr);
+    magda::Config::getInstance().removeListener(this);
+}
+
+void CompiledUtilityView::configChanged() {
+    syncControlStyle();
+}
+
+void CompiledUtilityView::syncControlStyle() {
+    if (const auto style = resolveControlStyle(deviceSnapshot_.controlStyle); style != style_) {
+        style_ = style;
+        resized();
+        repaint();
+    }
 }
 
 void CompiledUtilityView::updateFromDevice(const magda::DeviceInfo& device) {
     deviceSnapshot_ = device;
-    syncFromDevice();
-}
+    for (size_t i = 0; i < toggles_.size(); ++i)
+        toggles_[i].setSelectedIndex(isOn(kToggleSlots[i]) ? 1 : 0);
 
-void CompiledUtilityView::updateFromDevice(const magda::DeviceInfo& device,
-                                           const ParamLinkContext* linkContext) {
-    deviceSnapshot_ = device;
-    if (linkContext != nullptr) {
-        linkContext_ = *linkContext;
-        hasLinkContext_ = true;
-    } else {
-        hasLinkContext_ = false;
-    }
-    syncFromDevice();
-    refreshLinkSlotContext();
-}
-
-void CompiledUtilityView::writeParameter(int slotIndex, float displayValue) {
-    // Through the model, like every other parameter edit in the chain. The
-    // device's own value is a mirror the host pushes into before each block, so
-    // writing it here would be overwritten by the next one and would skip
-    // automation, undo and the macro links on the way (#2192).
-    if (onParameterChanged)
-        onParameterChanged(slotIndex, displayValue);
-}
-
-void CompiledUtilityView::syncFromDevice() {
-    using Util = magda::daw::audio::compiled::MagdaUtilityCompiledPlugin;
-    const auto gain = valueForSlot(deviceSnapshot_, Util::kGainSlot, 0.0f);
-    gainFader_.setValue(gain, juce::dontSendNotification);
-    gainValue_.setText(formatGainDb(gain), juce::dontSendNotification);
-    panLabel_.setValue(valueForSlot(deviceSnapshot_, Util::kPanSlot, 0.0f),
-                       juce::dontSendNotification);
-    widthLabel_.setValue(valueForSlot(deviceSnapshot_, Util::kWidthSlot, 100.0f),
-                         juce::dontSendNotification);
-    xoverLabel_.setValue(valueForSlot(deviceSnapshot_, Util::kLowMonoFreqSlot, 120.0f),
-                         juce::dontSendNotification);
-    for (int i = 0; i < 4; ++i) {
-        const bool on = valueForSlot(deviceSnapshot_, Util::kMonoSlot + i, 0.0f) >= 0.5f;
-        btns_[static_cast<size_t>(i)].setToggleState(on, juce::dontSendNotification);
-    }
-    updateLinkSlotValues();
-}
-
-void CompiledUtilityView::configureLinkSlots() {
-    using Util = magda::daw::audio::compiled::MagdaUtilityCompiledPlugin;
-
-    auto configure = [this](ParamSlotComponent& slot, int slotIndex, const char* name,
-                            bool verticalOverlay) {
-        slot.setOverlayOnly(true);
-        slot.setLinkOverlayVertical(verticalOverlay);
-        slot.setParamIndex(slotIndex);
-        slot.setParamName(name);
-
-        slot.onModLinkedWithAmount = [this](int, const magda::ControlTarget& target, float amount) {
-            if (onLinkRequested)
-                onLinkRequested(target.paramIndex, amount);
-        };
-        slot.onModAmountChanged = [this](int, const magda::ControlTarget& target, float amount) {
-            if (onLinkAmountChanged)
-                onLinkAmountChanged(target.paramIndex, amount);
-        };
-        slot.onMacroLinked = [this](int, const magda::ControlTarget& target) {
-            if (onLinkRequested)
-                onLinkRequested(target.paramIndex, 0.3f);
-        };
-        slot.onMacroLinkedWithAmount = [this](int, const magda::ControlTarget& target,
-                                              float amount) {
-            if (onLinkRequested)
-                onLinkRequested(target.paramIndex, amount);
-        };
-        slot.onMacroAmountChanged = [this](int, const magda::ControlTarget& target, float amount) {
-            if (onLinkAmountChanged)
-                onLinkAmountChanged(target.paramIndex, amount);
-        };
-    };
-
-    configure(gainLinkSlot_, Util::kGainSlot, "Gain", true);
-    configure(panLinkSlot_, Util::kPanSlot, "Pan", false);
-
-    gainLinkSlot_.onShowAutomationLane = [this]() {
-        if (onShowAutomationLane)
-            onShowAutomationLane(Util::kGainSlot);
-    };
-    panLinkSlot_.onShowAutomationLane = [this]() {
-        if (onShowAutomationLane)
-            onShowAutomationLane(Util::kPanSlot);
-    };
-}
-
-void CompiledUtilityView::refreshLinkSlotContext() {
-    auto apply = [this](ParamSlotComponent& slot) {
-        slot.setDeviceId(hasLinkContext_ ? linkContext_.deviceId : magda::INVALID_DEVICE_ID);
-        slot.setDevicePath(hasLinkContext_ ? linkContext_.devicePath : magda::ChainNodePath{});
-        slot.setAvailableMods(hasLinkContext_ ? linkContext_.deviceMods : nullptr);
-        slot.setAvailableRackMods(hasLinkContext_ ? linkContext_.rackMods : nullptr);
-        slot.setAvailableTrackMods(hasLinkContext_ ? linkContext_.trackMods : nullptr);
-        slot.setAvailableMacros(hasLinkContext_ ? linkContext_.deviceMacros : nullptr);
-        slot.setAvailableRackMacros(hasLinkContext_ ? linkContext_.rackMacros : nullptr);
-        slot.setAvailableTrackMacros(hasLinkContext_ ? linkContext_.trackMacros : nullptr);
-        slot.setSelectedModIndex(hasLinkContext_ ? linkContext_.selectedModIndex : -1);
-        slot.setSelectedMacroIndex(hasLinkContext_ ? linkContext_.selectedMacroIndex : -1);
-    };
-
-    apply(gainLinkSlot_);
-    apply(panLinkSlot_);
-    gainLinkSlot_.refreshLinkModeState();
-    panLinkSlot_.refreshLinkModeState();
-
-    // The overlay link slots hide their own valueSlider_ (the part that paints
-    // the "automated" purple tint), so bind the automation target onto the
-    // visible DraggableValueLabels directly so they highlight like the track
-    // volume / pan readouts.
-    auto bindTarget = [this](magda::DraggableValueLabel& label, int slotIndex) {
-        if (!hasLinkContext_) {
-            label.clearAutomationTarget();
-            return;
-        }
-        magda::AutomationTarget target;
-        target.kind = magda::ControlTarget::Kind::PluginParam;
-        target.devicePath = linkContext_.devicePath;
-        target.paramIndex = slotIndex;
-        label.setAutomationTarget(target);
-    };
-    using Util = magda::daw::audio::compiled::MagdaUtilityCompiledPlugin;
-    bindTarget(gainFader_, Util::kGainSlot);
-    bindTarget(panLabel_, Util::kPanSlot);
-    bindTarget(widthLabel_, Util::kWidthSlot);
-    bindTarget(xoverLabel_, Util::kLowMonoFreqSlot);
-
-    updateLinkSlotValues();
-}
-
-void CompiledUtilityView::updateLinkSlotValues() {
-    using Util = magda::daw::audio::compiled::MagdaUtilityCompiledPlugin;
-
-    auto update = [this](ParamSlotComponent& slot, int slotIndex, float fallback, bool& infoSet) {
-        if (!infoSet) {
-            if (const auto* param = parameterForSlot(deviceSnapshot_, slotIndex)) {
-                infoSet = true;
-                slot.setParameterInfo(*param);
-            }
-        }
-        slot.setParamValue(valueForSlot(deviceSnapshot_, slotIndex, fallback));
-        slot.repaint();
-    };
-
-    update(gainLinkSlot_, Util::kGainSlot, 0.0f, gainLinkInfoSet_);
-    update(panLinkSlot_, Util::kPanSlot, 0.0f, panLinkInfoSet_);
-}
-
-void CompiledUtilityView::resized() {
-    constexpr int kPad = 6;
-    constexpr int kLabelH = 11;
-    constexpr int kControlH = 17;
-    constexpr int kButtonH = 17;
-    constexpr int kGap = 5;
-    constexpr int kFaderW = 30;
-    constexpr int kReadoutH = 16;
-    constexpr int kTopInset = 3;
-
-    auto body = getLocalBounds().reduced(kPad);
-    if (body.isEmpty())
-        return;
-
-    const int contentW = body.getWidth();
-    const int halfW = contentW / 2;
-    const int labelledControlH = kLabelH + 2 + kControlH;
-    body.removeFromTop(kTopInset);
-
-    auto takeTop = [](juce::Rectangle<int>& area, int height) {
-        return area.removeFromTop(juce::jmin(height, area.getHeight()));
-    };
-
-    auto takeBottom = [](juce::Rectangle<int>& area, int height) {
-        return area.removeFromBottom(juce::jmin(height, area.getHeight()));
-    };
-
-    auto dropTop = [&takeTop](juce::Rectangle<int>& area, int height) { takeTop(area, height); };
-
-    auto dropBottom = [&takeBottom](juce::Rectangle<int>& area, int height) {
-        takeBottom(area, height);
-    };
-
-    auto layoutLabeledControl = [&](juce::Label& name, juce::Component& value,
-                                    juce::Rectangle<int> area) {
-        name.setBounds(takeTop(area, kLabelH));
-        dropTop(area, 2);
-        value.setBounds(area);
-    };
-
-    auto layoutSplitControls = [&](juce::Label& nameA, juce::Component& valueA, juce::Label& nameB,
-                                   juce::Component& valueB, juce::Rectangle<int> area) {
-        auto left = area.removeFromLeft(halfW - 1);
-        area.removeFromLeft(2);
-        layoutLabeledControl(nameA, valueA, left);
-        layoutLabeledControl(nameB, valueB, area);
-    };
-
-    auto placeButtonRow = [&](juce::Rectangle<int> row, int leftIdx, int rightIdx) {
-        auto left = row.removeFromLeft(halfW - 1);
-        row.removeFromLeft(2);
-        btns_[static_cast<size_t>(leftIdx)].setBounds(left.reduced(1, 0));
-        btns_[static_cast<size_t>(rightIdx)].setBounds(row.reduced(1, 0));
-    };
-
-    auto lower = body;
-    auto buttonRow2 = takeBottom(lower, kButtonH);
-    dropBottom(lower, 3);
-    auto buttonRow1 = takeBottom(lower, kButtonH);
-    dropBottom(lower, kGap);
-    auto stereoBlock = takeBottom(lower, labelledControlH);
-    dropBottom(lower, kGap);
-    auto panBlock = takeBottom(lower, labelledControlH);
-    dropBottom(lower, kGap);
-    auto gainValueBlock = takeBottom(lower, kReadoutH);
-
-    auto gainBlock = lower;
-    gainName_.setBounds(takeTop(gainBlock, kLabelH));
-    dropTop(gainBlock, 3);
-    auto faderArea = gainBlock;
-    const int faderX = faderArea.getCentreX() - kFaderW / 2;
-    gainFader_.setBounds(faderX, faderArea.getY(), kFaderW, faderArea.getHeight());
-    gainLinkSlot_.setBounds(gainFader_.getBounds());
-
-    gainValue_.setBounds(gainValueBlock);
-    layoutLabeledControl(panName_, panLabel_, panBlock);
-    panLinkSlot_.setBounds(panLabel_.getBounds());
-    layoutSplitControls(widthName_, widthLabel_, xoverName_, xoverLabel_, stereoBlock);
-    placeButtonRow(buttonRow1, 0, 1);
-    placeButtonRow(buttonRow2, 2, 3);
-    gainLinkSlot_.toFront(false);
-    panLinkSlot_.toFront(false);
+    syncControlStyle();
+    repaint();
 }
 
 void CompiledUtilityView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
-    compiledPlugin_ =
-        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaUtilityCompiledPlugin>(
-            std::move(device));
+    compiledPlugin_ = std::dynamic_pointer_cast<Plugin>(std::move(device));
+}
+
+float CompiledUtilityView::value(int slot, float fallback) const {
+    const auto* param = deviceSnapshot_.findParameterByIndex(slot);
+    return param != nullptr ? param->currentValue : fallback;
+}
+
+bool CompiledUtilityView::isOn(int slot) const {
+    return value(slot, 0.0f) >= 0.5f;
+}
+
+void CompiledUtilityView::writeParameter(int slot, float newValue) {
+    // Through the model, so automation, undo and macro links see the edit (#2192).
+    if (auto* param = deviceSnapshot_.findParameterByIndex(slot))
+        param->currentValue = newValue;
+    if (onParameterChanged_)
+        onParameterChanged_(slot, newValue);
+    repaint();
+}
+
+juce::Range<float> CompiledUtilityView::bandRange() const {
+    const float size = isOn(Plugin::kMonoSlot)
+                           ? 0.0f
+                           : juce::jlimit(0.0f, 1.0f, value(Plugin::kWidthSlot, 100.0f) / 200.0f);
+    const float pan = juce::jlimit(-1.0f, 1.0f, value(Plugin::kPanSlot, 0.0f));
+    const float centre = 0.5f + 0.5f * pan * (1.0f - size);
+    return {centre - size * 0.5f, centre + size * 0.5f};
+}
+
+CompiledUtilityView::Drag CompiledUtilityView::dragFor(juce::Point<float> position) const {
+    if (!geometry_.field.contains(position.toInt()))
+        return Drag::None;
+    const auto plot = plotOf(geometry_.field);
+    const auto band = bandRange();
+    const float left = plot.getX() + band.getStart() * plot.getWidth();
+    const float right = plot.getX() + band.getEnd() * plot.getWidth();
+    const bool nearEdge =
+        std::abs(position.x - left) <= kEdgeGrabPx || std::abs(position.x - right) <= kEdgeGrabPx;
+    return nearEdge && !isOn(Plugin::kMonoSlot) ? Drag::Width : Drag::Pan;
+}
+
+void CompiledUtilityView::paint(juce::Graphics& g) {
+    if (geometry_.field.isEmpty())
+        return;
+
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG));
+    g.fillRoundedRectangle(geometry_.field.toFloat(), 4.0f);
+
+    const auto plot = plotOf(geometry_.field);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_GRID));
+    for (const float t : {0.25f, 0.5f, 0.75f}) {
+        const float x = plot.getX() + t * plot.getWidth();
+        g.drawVerticalLine(juce::roundToInt(x), plot.getY(), plot.getBottom());
+    }
+
+    // Swapped, the picture says so: what was on the left now plays on the right.
+    const bool swapped = isOn(Plugin::kSwapSlot);
+    auto labels = geometry_.field.toFloat().reduced(8.0f, 4.0f).removeFromBottom(kLabelRowPx);
+    g.setFont(FontManager::getInstance().getMonoFont(9.0f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+    g.drawText(swapped ? "R" : "L", labels, juce::Justification::centredLeft, false);
+    g.drawText("C", labels, juce::Justification::centred, false);
+    g.drawText(swapped ? "L" : "R", labels, juce::Justification::centredRight, false);
+
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE);
+    const auto range = bandRange();
+    const float left = plot.getX() + range.getStart() * plot.getWidth();
+    const float right = plot.getX() + range.getEnd() * plot.getWidth();
+    const bool active = drag_ != Drag::None;
+    if (right - left < 2.0f) {
+        g.setColour(accent);
+        g.fillRect(juce::Rectangle<float>(left - 1.0f, plot.getY(), 2.0f, plot.getHeight()));
+    } else {
+        const auto band = juce::Rectangle<float>(left, plot.getY(), right - left, plot.getHeight());
+        g.setColour(accent.withAlpha(active ? 0.28f : 0.18f));
+        g.fillRoundedRectangle(band, 3.0f);
+        g.setColour(accent.withAlpha(0.9f));
+        g.drawRoundedRectangle(band, 3.0f, 1.2f);
+    }
+
+    // Low mono folds the lows to the band's centre; the tick's height reads the crossover.
+    if (isOn(Plugin::kLowMonoSlot) && !isOn(Plugin::kMonoSlot)) {
+        const float freq = juce::jlimit(20.0f, 500.0f, value(Plugin::kLowMonoFreqSlot, 120.0f));
+        const float reach = 0.25f + 0.75f * std::log(freq / 20.0f) / std::log(500.0f / 20.0f);
+        const float centre = 0.5f * (left + right);
+        const float height = plot.getHeight() * reach;
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+        g.fillRect(juce::Rectangle<float>(centre - 1.5f, plot.getBottom() - height, 3.0f, height));
+    }
+}
+
+void CompiledUtilityView::resized() {
+    geometry_ = UtilityGeometry::of(getLocalBounds(), style_);
+    for (size_t i = 0; i < toggles_.size(); ++i)
+        toggles_[i].setBounds(geometry_.toggles[i]);
+}
+
+void CompiledUtilityView::mouseMove(const juce::MouseEvent& e) {
+    const auto drag = dragFor(e.position);
+    setMouseCursor(drag == Drag::Width ? juce::MouseCursor::LeftRightResizeCursor
+                   : drag == Drag::Pan ? juce::MouseCursor::DraggingHandCursor
+                                       : juce::MouseCursor::NormalCursor);
+}
+
+void CompiledUtilityView::mouseDown(const juce::MouseEvent& e) {
+    drag_ = onParameterChanged_ != nullptr ? dragFor(e.position) : Drag::None;
+    dragStartPan_ = value(Plugin::kPanSlot, 0.0f);
+    repaint();
+}
+
+void CompiledUtilityView::mouseDrag(const juce::MouseEvent& e) {
+    const auto plot = plotOf(geometry_.field);
+    if (drag_ == Drag::None || plot.getWidth() <= 0.0f)
+        return;
+
+    if (drag_ == Drag::Pan) {
+        // Relative, so the band doesn't jump to the pointer and a full-width band still pans.
+        const float delta =
+            static_cast<float>(e.getDistanceFromDragStartX()) / (0.5f * plot.getWidth());
+        writeParameter(Plugin::kPanSlot, juce::jlimit(-1.0f, 1.0f, dragStartPan_ + delta));
+        return;
+    }
+
+    const auto range = bandRange();
+    const float centre = plot.getX() + range.getStart() * plot.getWidth() +
+                         0.5f * range.getLength() * plot.getWidth();
+    const float halfSize = std::abs(e.position.x - centre) / plot.getWidth();
+    writeParameter(Plugin::kWidthSlot, juce::jlimit(0.0f, 200.0f, halfSize * 2.0f * 200.0f));
+}
+
+void CompiledUtilityView::mouseUp(const juce::MouseEvent&) {
+    drag_ = Drag::None;
+    repaint();
+}
+
+void CompiledUtilityView::mouseDoubleClick(const juce::MouseEvent& e) {
+    if (dragFor(e.position) == Drag::None || onParameterChanged_ == nullptr)
+        return;
+    for (const int slot : {Plugin::kPanSlot, Plugin::kWidthSlot})
+        if (const auto* param = deviceSnapshot_.findParameterByIndex(slot))
+            writeParameter(slot, param->defaultValue);
 }
 
 const CompiledPresentationSpec& getMagdaUtilityPresentation() {
@@ -397,9 +213,11 @@ const CompiledPresentationSpec& getMagdaUtilityPresentation() {
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<CompiledUtilityView>(pluginId);
         },
-        .visualMinFractionNumerator = 1,
-        .visualMinFractionDenominator = 1,
-        .preferredSlotWidth = 160,
+        .preferredSlotWidth = 270,
+        .ownsOutputGain = true,
+        .createLayout = []() -> std::unique_ptr<DeviceParamLayout> {
+            return std::make_unique<CompiledUtilityLayout>();
+        },
     };
     return kSpec;
 }

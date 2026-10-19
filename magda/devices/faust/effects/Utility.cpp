@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <utility>
 
 namespace magda::devices::faust {
 
@@ -66,6 +67,11 @@ std::vector<SlotInfo> Utility::slotInfos() const {
                          .minValue = 0.0f,
                          .maxValue = 1.0f,
                          .defaultValue = 0.0f};
+    infos[kSwapSlot] = {.name = "Swap",
+                        .scale = sdk::ParameterScale::Boolean,
+                        .minValue = 0.0f,
+                        .maxValue = 1.0f,
+                        .defaultValue = 0.0f};
 
     return infos;
 }
@@ -93,6 +99,7 @@ void Utility::processAudio(sdk::ProcessContext& context) {
     const bool lowMono = slotDisplayValue(kLowMonoSlot) >= 0.5f && !mono;
     const float flipL = slotDisplayValue(kFlipLSlot) >= 0.5f ? -1.0f : 1.0f;
     const float flipR = slotDisplayValue(kFlipRSlot) >= 0.5f ? -1.0f : 1.0f;
+    const bool swap = slotDisplayValue(kSwapSlot) >= 0.5f;
     const float panGainL = pan <= 0.0f ? 1.0f : 1.0f - pan;
     const float panGainR = pan >= 0.0f ? 1.0f : 1.0f + pan;
     const float lowMonoAlpha =
@@ -102,8 +109,12 @@ void Utility::processAudio(sdk::ProcessContext& context) {
     float* right = hostChannels > 1 ? context.audio.channel(1) : nullptr;
 
     for (int i = 0; i < numSamples; ++i) {
-        float l = left[i] * flipL * gain;
-        float r = (right != nullptr ? right[i] : left[i]) * flipR * gain;
+        float l = left[i];
+        float r = right != nullptr ? right[i] : left[i];
+        if (swap)
+            std::swap(l, r);
+        l *= flipL * gain;
+        r *= flipR * gain;
 
         const float mid = 0.5f * (l + r);
         const float side = 0.5f * (l - r);

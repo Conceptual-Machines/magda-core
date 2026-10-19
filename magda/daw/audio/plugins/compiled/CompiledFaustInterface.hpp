@@ -106,6 +106,9 @@ inline ParameterInfo hostSlotParameterInfo(const ICompiledFaustPlugin& host, int
     if (s.name.equalsIgnoreCase("Mix") && std::abs(s.minValue) < 1.0e-6f &&
         std::abs(s.maxValue - 1.0f) < 1.0e-6f)
         info.displayFormat = DisplayFormat::Percent;
+    if (s.name.equalsIgnoreCase("Pan") && std::abs(s.minValue + 1.0f) < 1.0e-6f &&
+        std::abs(s.maxValue - 1.0f) < 1.0e-6f)
+        info.displayFormat = DisplayFormat::Pan;
 
     if (index == host.engineAwareModeSlot()) {
         info.choices = host.modeChoicesForActiveEngine();

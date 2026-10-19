@@ -350,8 +350,9 @@ void ValueLabelControl::paint(juce::Graphics& g) {
             area.removeFromRight(4.0f);
             drawLocalizedText(g, text, area, juce::Justification::centredRight, textColour, false);
         } else {
-            drawLocalizedText(g, text, bounds.reduced(2.0f, 0.0f), justification_, textColour,
-                              false);
+            // Squeezed rather than cut when a value and its unit outgrow a narrow cell.
+            drawLocalizedFittedText(g, text, bounds.reduced(2.0f, 0.0f).toNearestInt(),
+                                    justification_, 1, textColour);
         }
     }
 }

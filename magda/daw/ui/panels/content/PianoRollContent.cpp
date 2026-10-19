@@ -27,6 +27,7 @@
 #include "engine/AudioEngine.hpp"
 #include "music/ChordEngine.hpp"
 #include "music/NotationSettings.hpp"
+#include "ui/components/chord/ChordFunction.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TimeBendPopup.hpp"
 #include "ui/components/pianoroll/CCLaneComponent.hpp"
@@ -427,8 +428,11 @@ void PianoRollContent::onLaneModeChanged(magda::MidiDrawerComponent::LaneMode mo
 }
 
 void PianoRollContent::syncChordLaneFromClip() {
-    if (chordFocusMode())
+    // The chord editor is its lane: always shown, whatever the clip remembers.
+    if (chordFocusMode()) {
+        setChordRowVisible(true);
         return;
+    }
     const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
     if (clip == nullptr || !clip->isMidi())
         return;
@@ -1792,6 +1796,59 @@ void PianoRollContent::setClip(magda::ClipId clipId) {
 // Drawing helpers
 // ============================================================================
 
+void PianoRollContent::drawSpineChordBlock(juce::Graphics& g, juce::Rectangle<int> block,
+                                           const magda::ClipInfo::ChordAnnotation& annotation,
+                                           const magda::ClipInfo& clip,
+                                           std::optional<chord_function::Key> key,
+                                           juce::Colour spine, bool lit, bool previewing) const {
+    const auto bounds = block.toFloat();
+    g.setColour(previewing ? spine.withAlpha(0.25f)
+                           : ActiveTheme::getColour(lit ? ActiveTheme::MIDI_CHORD_BLOCK_CURRENT
+                                                        : ActiveTheme::MIDI_CHORD_BLOCK));
+    g.fillRoundedRectangle(bounds, 4.0f);
+    g.setColour(spine);
+    g.fillRoundedRectangle(bounds.withWidth(juce::jmin(4.0f, bounds.getWidth())), 2.0f);
+    if (block.getWidth() < 28)
+        return;
+
+    auto& fonts = FontManager::getInstance();
+    const auto spec = magda::music::ChordEngine::parseChordName(annotation.chordName);
+    const auto degree = key.has_value()
+                            ? chord_function::romanNumeral(spec.root, spec.quality, *key)
+                            : juce::String();
+    const auto notes = annotation.chordGroup > 0
+                           ? std::ranges::count(clip.midiNotes, annotation.chordGroup,
+                                                &magda::MidiNote::chordGroup)
+                           : 0;
+
+    const float nameSize = juce::jlimit(13.0f, 24.0f, bounds.getHeight() * 0.2f);
+    const int nameHeight = juce::roundToInt(nameSize * 1.3f);
+    const bool detail = (degree.isNotEmpty() || notes > 0) && block.getHeight() >= nameHeight + 30;
+    auto text = block.reduced(18, 8);
+    auto stack = text.withSizeKeepingCentre(text.getWidth(), nameHeight + (detail ? 20 : 0));
+
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+    g.setFont(fonts.getUIFontMedium(nameSize));
+    g.drawText(magda::music::NotationSettings::getInstance().format(annotation.chordName),
+               stack.removeFromTop(nameHeight), juce::Justification::centredLeft, true);
+    if (!detail)
+        return;
+
+    auto row = stack.withHeight(16);
+    if (degree.isNotEmpty()) {
+        const auto font = fonts.getMonoFont(12.0f);
+        g.setFont(font);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        const int width =
+            juce::roundToInt(std::ceil(juce::GlyphArrangement::getStringWidth(font, degree))) + 2;
+        g.drawText(degree, row.removeFromLeft(width), juce::Justification::centredLeft, false);
+        row.removeFromLeft(8);
+    }
+    g.setColour(spine.withAlpha(0.9f));
+    for (int i = 0; i < notes && row.getWidth() >= 8; ++i)
+        g.fillEllipse(row.removeFromLeft(8).toFloat().withSizeKeepingCentre(5.0f, 5.0f));
+}
+
 void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area) {
     g.setColour(ActiveTheme::getColour(ActiveTheme::MIDI_LANE));
     g.fillRect(area);
@@ -1867,6 +1924,19 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
             playheadClipBeat = std::fmod(std::max(0.0, playheadClipBeat), span);
     }
 
+    // The chord editor draws its own chords large, with a spine, their degree and a dot per note;
+    // the degree reads against the key the progression itself suggests.
+    const bool spineBlocks = chordFocusMode() && isChordTrackLane;
+    std::optional<chord_function::Key> laneKey;
+    if (spineBlocks) {
+        std::vector<std::pair<magda::music::ChordRoot, magda::music::ChordQuality>> spelled;
+        for (const auto& annotation : clip->chordAnnotations) {
+            const auto spec = magda::music::ChordEngine::parseChordName(annotation.chordName);
+            spelled.emplace_back(spec.root, spec.quality);
+        }
+        laneKey = chord_function::estimateKey(spelled);
+    }
+
     for (const auto& annotation : clip->chordAnnotations) {
         double absBeat = annotation.beatPosition + clipStartBeats;
         int startX = static_cast<int>(absBeat * horizontalZoom_) + GRID_LEFT_PADDING - scrollX;
@@ -1881,9 +1951,10 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
         int drawStartX = juce::jmax(0, startX) + area.getX();
         int drawEndX = juce::jmin(area.getWidth(), endX) + area.getX();
 
-        // 18px block, centred in the lane
-        auto blockBounds = juce::Rectangle<int>(drawStartX + 1, area.getCentreY() - 9,
-                                                drawEndX - drawStartX - 2, 18);
+        // The chord editor's blocks fill its lane; elsewhere an 18px block centred in it.
+        const int blockHeight = chordFocusMode() ? juce::jmax(18, area.getHeight() - 8) : 18;
+        auto blockBounds = juce::Rectangle<int>(drawStartX + 1, area.getCentreY() - blockHeight / 2,
+                                                drawEndX - drawStartX - 2, blockHeight);
         const bool selected =
             selectedChordGroup() != 0 && annotation.chordGroup == selectedChordGroup();
         const bool previewing =
@@ -1898,56 +1969,63 @@ void PianoRollContent::drawChordRow(juce::Graphics& g, juce::Rectangle<int> area
         // Blue-tinted block with a 2px left edge; the chord under the playhead fills stronger.
         const bool current = playheadClipBeat >= annotation.beatPosition &&
                              playheadClipBeat < annotation.beatPosition + annotation.lengthBeats;
-        if (previewing) {
-            g.setColour(ActiveTheme::getColour(ActiveTheme::STATUS_SUCCESS).withAlpha(0.4f));
+        if (spineBlocks) {
+            drawSpineChordBlock(g, blockBounds, annotation, *clip, laneKey,
+                                previewing ? ActiveTheme::getColour(ActiveTheme::STATUS_SUCCESS)
+                                           : chordTrackColour,
+                                current || selected, previewing);
         } else {
-            g.setColour(ActiveTheme::getColour(current || selected
-                                                   ? ActiveTheme::MIDI_CHORD_BLOCK_CURRENT
-                                                   : ActiveTheme::MIDI_CHORD_BLOCK));
-        }
-        g.fillRoundedRectangle(blockBounds.toFloat(), 3.0f);
-        g.setColour(
-            ActiveTheme::getColour(ActiveTheme::MIDI_NOTE).withAlpha(current ? 1.0f : 0.7f));
-        g.fillRect(blockBounds.withWidth(2));
-        const auto fillColour = accent;
-
-        // The accent spine belongs to the chord-track chord (left). The MIDI
-        // track's own chord is bare (no spine).
-        const bool hasChordTrackChord = isChordTrackLane || comparing;
-        if (hasChordTrackChord && blockBounds.getWidth() > 8) {
-            juce::Rectangle<float> spine(static_cast<float>(blockBounds.getX() + 3),
-                                         static_cast<float>(blockBounds.getY() + 3), 3.0f,
-                                         static_cast<float>(blockBounds.getHeight() - 6));
-            const auto spineColour = previewing ? fillColour : chordTrackColour;
-            g.setColour(spineColour.withAlpha(previewing || selected ? 1.0f : 0.85f));
-            g.fillRoundedRectangle(spine, 1.5f);
-        }
-
-        // Chord name(s) in the active notation (C / solfège / both).
-        if (blockBounds.getWidth() > 14) {
-            const auto& notation = magda::music::NotationSettings::getInstance();
-            g.setFont(FontManager::getInstance().getUIFontMedium(13.0f));
-            if (isChordTrackLane) {
-                // Chord track's own chord: left, with spine.
-                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-                g.drawText(notation.format(annotation.chordName),
-                           blockBounds.withTrimmedLeft(12).withTrimmedRight(4),
-                           juce::Justification::centredLeft, true);
+            if (previewing) {
+                g.setColour(ActiveTheme::getColour(ActiveTheme::STATUS_SUCCESS).withAlpha(0.4f));
             } else {
-                // MIDI track chord: always right, no decoration.
-                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-                g.drawText(notation.format(annotation.chordName),
-                           blockBounds.withTrimmedLeft(8).withTrimmedRight(8),
-                           juce::Justification::centredRight, true);
-                // Intended chord-track chord (overlay only): left, with spine.
-                if (comparing) {
-                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-                    g.drawText(notation.format(intendedName),
+                g.setColour(ActiveTheme::getColour(current || selected
+                                                       ? ActiveTheme::MIDI_CHORD_BLOCK_CURRENT
+                                                       : ActiveTheme::MIDI_CHORD_BLOCK));
+            }
+            g.fillRoundedRectangle(blockBounds.toFloat(), 3.0f);
+            g.setColour(
+                ActiveTheme::getColour(ActiveTheme::MIDI_NOTE).withAlpha(current ? 1.0f : 0.7f));
+            g.fillRect(blockBounds.withWidth(2));
+            const auto fillColour = accent;
+
+            // The accent spine belongs to the chord-track chord (left). The MIDI
+            // track's own chord is bare (no spine).
+            const bool hasChordTrackChord = isChordTrackLane || comparing;
+            if (hasChordTrackChord && blockBounds.getWidth() > 8) {
+                juce::Rectangle<float> spine(static_cast<float>(blockBounds.getX() + 3),
+                                             static_cast<float>(blockBounds.getY() + 3), 3.0f,
+                                             static_cast<float>(blockBounds.getHeight() - 6));
+                const auto spineColour = previewing ? fillColour : chordTrackColour;
+                g.setColour(spineColour.withAlpha(previewing || selected ? 1.0f : 0.85f));
+                g.fillRoundedRectangle(spine, 1.5f);
+            }
+
+            // Chord name(s) in the active notation (C / solfège / both).
+            if (blockBounds.getWidth() > 14) {
+                const auto& notation = magda::music::NotationSettings::getInstance();
+                g.setFont(FontManager::getInstance().getUIFontMedium(13.0f));
+                if (isChordTrackLane) {
+                    // Chord track's own chord: left, with spine.
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+                    g.drawText(notation.format(annotation.chordName),
                                blockBounds.withTrimmedLeft(12).withTrimmedRight(4),
                                juce::Justification::centredLeft, true);
+                } else {
+                    // MIDI track chord: always right, no decoration.
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+                    g.drawText(notation.format(annotation.chordName),
+                               blockBounds.withTrimmedLeft(8).withTrimmedRight(8),
+                               juce::Justification::centredRight, true);
+                    // Intended chord-track chord (overlay only): left, with spine.
+                    if (comparing) {
+                        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+                        g.drawText(notation.format(intendedName),
+                                   blockBounds.withTrimmedLeft(12).withTrimmedRight(4),
+                                   juce::Justification::centredLeft, true);
+                    }
                 }
+                g.setFont(FontManager::getInstance().getUIFont(11.0f));
             }
-            g.setFont(FontManager::getInstance().getUIFont(11.0f));
         }
 
         // Selection ring + edge resize handles

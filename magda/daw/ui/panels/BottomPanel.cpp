@@ -1046,6 +1046,7 @@ void BottomPanel::ensureChordPanelCreated() {
         return;
 
     chordPanel_ = std::make_unique<daw::ui::ChordPanelContent>();
+    chordPanel_->setInEditorSidebar(true);
     addChildComponent(chordPanel_.get());
 
     chordCollapseButton_ = std::make_unique<SvgButton>("ChordCollapse", BinaryData::right_close_svg,
@@ -1237,6 +1238,7 @@ void BottomPanel::updateContentBasedOnSelection() {
 
     // Update tab icons and controls visibility
     showEditorTabs_ = needsTabs;
+    showChordEditor_ = targetContent == daw::ui::PanelContentType::ChordClipView;
     showPropsPanel_ = (targetContent == daw::ui::PanelContentType::WaveformEditor);
 
     // Show chord panel when piano roll is active and track has a chord engine
@@ -1587,7 +1589,7 @@ void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
 }
 
 bool BottomPanel::usesV1Toolbar() const {
-    return showEditorTabs_ || showPropsPanel_;
+    return showEditorTabs_ || showPropsPanel_ || showChordEditor_;
 }
 
 int BottomPanel::headerHeight() const {
@@ -1599,21 +1601,24 @@ void BottomPanel::layoutV1Toolbar(juce::Rectangle<int> headerBounds) {
     constexpr int textHeight = 22;
     auto& decor = headerBar_->decor;
 
-    Row(decor, headerBounds, headerBounds.getX() + 8, Row::From::Left)
-        .openWell()
-        .button(*pianoRollTab_)
-        .button(*drumGridTab_)
-        .closeWell()
-        .divider()
-        .button(*overlayTracksButton_);
+    // The chord editor has no note tools or editor tabs, only the grid and clip controls.
+    if (showEditorTabs_) {
+        Row(decor, headerBounds, headerBounds.getX() + 8, Row::From::Left)
+            .openWell()
+            .button(*pianoRollTab_)
+            .button(*drumGridTab_)
+            .closeWell()
+            .divider()
+            .button(*overlayTracksButton_);
 
-    Row::centred(decor, headerBounds, [&](Row& row) {
-        row.item(*toolButtons_, EditToolButtons::kWidth, EditToolButtons::kHeight)
-            .divider()
-            .button(*bendButton_)
-            .divider()
-            .item(*keyChip_, 80, kV1Button);
-    });
+        Row::centred(decor, headerBounds, [&](Row& row) {
+            row.item(*toolButtons_, EditToolButtons::kWidth, EditToolButtons::kHeight)
+                .divider()
+                .button(*bendButton_)
+                .divider()
+                .item(*keyChip_, 80, kV1Button);
+        });
+    }
 
     Row right(decor, headerBounds, headerBounds.getRight() - 8, Row::From::Right);
     if (fullscreenToggle_->isVisible())

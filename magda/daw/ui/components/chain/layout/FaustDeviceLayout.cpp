@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstdint>
 
+#include "layout/VoiceModeParam.hpp"
+
 namespace magda::daw::ui {
 
 namespace {
@@ -67,6 +69,8 @@ const std::vector<FaustDeviceLayout::GroupPage>& FaustDeviceLayout::pagesFor(
     std::vector<Group> groups;
     for (int i = 0; i < static_cast<int>(device.parameters.size()); ++i) {
         const auto& param = device.parameters[static_cast<size_t>(i)];
+        if (isVoiceModeParameter(param))
+            continue;
         const auto name = param.group.isEmpty() ? juce::String("Params") : param.group;
         auto it = std::ranges::find(groups, name, &Group::name);
         if (it == groups.end())

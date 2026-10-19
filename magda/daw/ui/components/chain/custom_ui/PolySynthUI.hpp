@@ -79,7 +79,6 @@ class PolySynthUI : public juce::Component, private juce::Timer {
     static constexpr int kOutputGainSlot = 43;     // master output gain (dB)
     static constexpr int kNumFilterTypes = 4;      // Lowpass / Highpass / Bandpass / Notch
     static constexpr int kNumSlopes = 2;           // 12 dB / 24 dB
-    static constexpr int kNumVoiceModes = 3;       // Poly / Mono / Legato
 
     struct Control {
         std::unique_ptr<juce::Label> label;
@@ -112,8 +111,6 @@ class PolySynthUI : public juce::Component, private juce::Timer {
     void setFilterSlope(int slope);
     void updateSlopeButtons();
     // Voice Mode (Poly / Mono / Legato) segmented buttons.
-    void setVoiceMode(int mode);
-    void updateVoiceModeButtons();
     // Per-oscillator phase-reset on/off toggles.
     void setOscReset(int osc, bool on);
     void updateOscResetButtons();
@@ -157,14 +154,12 @@ class PolySynthUI : public juce::Component, private juce::Timer {
     float filterRes_ = 0.3f;
     float filterDrive_ = 0.0f;
     int filterSlope_ = 0;  // 0 = 12 dB, 1 = 24 dB
-    int voiceMode_ = 0;    // 0 = Poly, 1 = Mono, 2 = Legato
     std::array<bool, kNumOscillators> oscReset_{};
     std::array<bool, kNumOscillators> oscEnabled_{};  // all true after construction
 
     // Segmented Filter Type + Slope + Voice Mode buttons (replace value boxes).
     std::array<std::unique_ptr<juce::TextButton>, kNumFilterTypes> typeButtons_;
     std::array<std::unique_ptr<juce::TextButton>, kNumSlopes> slopeButtons_;
-    std::array<std::unique_ptr<juce::TextButton>, kNumVoiceModes> voiceModeButtons_;
     // Per-oscillator waveform icon selectors (replace the wave value boxes),
     // matching the FM operator UI.
     std::array<IconSelector, kNumOscillators> waveSelectors_;

@@ -25,7 +25,8 @@ std::unique_ptr<DeviceParamLayout> createDeviceSlotParamLayout(const DeviceSlotT
         const int leading = spec->bandSlots.empty() ? 0 : static_cast<int>(spec->knobSlots.size());
         return std::make_unique<CompiledFaustDeviceLayout>(
             spec->layoutCellCount, spec->layoutCellsPerRow, spec->columnMajorGrid,
-            spec->isParameterEnabled, knobs, excludedSlots, spec->knobColumns, leading);
+            spec->isParameterEnabled, knobs, excludedSlots, spec->knobColumns, leading,
+            spec->knobLabels);
     }
 
     return std::make_unique<StandardDeviceLayout>();

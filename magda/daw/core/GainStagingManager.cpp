@@ -46,6 +46,29 @@ CascadeSuggestion computeCascadeSuggestion(float capturedPeakDb, float currentGa
     return suggestion;
 }
 
+// The Utility's own Gain param is its output gain: its slot hides the gain fader, so staging
+// reads and moves the param instead.
+constexpr int kUtilityGainSlot = 0;  // devices::faust::Utility::kGainSlot
+
+bool ownsOutputGain(const DeviceInfo& device) {
+    return device.pluginId.equalsIgnoreCase("magda_utility") &&
+           device.findParameterByIndex(kUtilityGainSlot) != nullptr;
+}
+
+float outputGainDb(const DeviceInfo& device) {
+    return ownsOutputGain(device) ? device.findParameterByIndex(kUtilityGainSlot)->currentValue
+                                  : device.gainDb;
+}
+
+void setOutputGainDb(const ChainNodePath& path, float gainDb) {
+    auto& tm = TrackManager::getInstance();
+    const auto* device = tm.getDeviceInChainByPath(path);
+    if (device != nullptr && ownsOutputGain(*device))
+        tm.setDeviceParameterValue(path, kUtilityGainSlot, gainDb);
+    else
+        tm.setDeviceGainDb(path, gainDb);
+}
+
 // One device's output-volume move, captured so the whole pass is a single
 // undo step.
 struct GainStageMove {
@@ -60,18 +83,16 @@ class GainStageCommand : public UndoableCommand {
     explicit GainStageCommand(std::vector<GainStageMove> moves) : moves_(std::move(moves)) {}
 
     void execute() override {
-        auto& tm = TrackManager::getInstance();
         for (const auto& move : moves_) {
-            tm.setDeviceGainDb(move.path, move.newGainDb);
+            setOutputGainDb(move.path, move.newGainDb);
             GainStagingManager::getInstance().markApplied(move.path,
                                                           move.newGainDb - move.oldGainDb);
         }
     }
 
     void undo() override {
-        auto& tm = TrackManager::getInstance();
         for (const auto& move : moves_) {
-            tm.setDeviceGainDb(move.path, move.oldGainDb);
+            setOutputGainDb(move.path, move.oldGainDb);
             GainStagingManager::getInstance().clearApplied(move.path);
         }
     }
@@ -156,7 +177,7 @@ void GainStagingManager::stopCollection() {
             continue;
         }
 
-        const auto suggestion = computeCascadeSuggestion(info.capturedPeakDb, device->gainDb,
+        const auto suggestion = computeCascadeSuggestion(info.capturedPeakDb, outputGainDb(*device),
                                                          cumulativeAppliedDb, targetDb_);
 
         // No signal seen during the pass -> leave the device untouched and
@@ -168,7 +189,8 @@ void GainStagingManager::stopCollection() {
         }
 
         if (suggestion.meaningful) {
-            moves.push_back({staged.path, staged.deviceId, device->gainDb, suggestion.gainDb});
+            moves.push_back(
+                {staged.path, staged.deviceId, outputGainDb(*device), suggestion.gainDb});
             cumulativeAppliedDb += suggestion.appliedDb;
             info.appliedDeltaDb = suggestion.appliedDb;
         } else {
@@ -253,10 +275,10 @@ std::vector<GainStagingManager::DeviceSnapshot> GainStagingManager::finishCaptur
         s.pluginId = device->pluginId;
         s.isInstrument = device->isInstrument;
         s.capturedPeakDb = it->second.capturedPeakDb;
-        s.currentGainDb = device->gainDb;
+        s.currentGainDb = outputGainDb(*device);
 
-        const auto suggestion = computeCascadeSuggestion(it->second.capturedPeakDb, device->gainDb,
-                                                         cumulativeAppliedDb, targetDb_);
+        const auto suggestion = computeCascadeSuggestion(
+            it->second.capturedPeakDb, outputGainDb(*device), cumulativeAppliedDb, targetDb_);
         s.suggestedGainDb = suggestion.gainDb;
         if (suggestion.meaningful)
             cumulativeAppliedDb += suggestion.appliedDb;
@@ -301,10 +323,10 @@ void GainStagingManager::applyAiMoves(
 
         const float newGainDb =
             juce::jlimit(kGainStageMinGainDb, kGainStageMaxGainDb, requestedGainDb);
-        if (std::abs(newGainDb - device->gainDb) < 0.05f)
+        if (std::abs(newGainDb - outputGainDb(*device)) < 0.05f)
             continue;  // negligible move
 
-        moves.push_back({path, path.getDeviceId(), device->gainDb, newGainDb});
+        moves.push_back({path, path.getDeviceId(), outputGainDb(*device), newGainDb});
     }
 
     if (!moves.empty())

@@ -225,6 +225,10 @@ TextSlider& LinkableTextSlider::getSlider() {
     return slider_;
 }
 
+const TextSlider& LinkableTextSlider::getSlider() const {
+    return slider_;
+}
+
 bool LinkableTextSlider::isBeingDragged() const {
     return slider_.isBeingDragged();
 }

@@ -377,6 +377,8 @@ void StruckInstrumentUI::layoutColumn(juce::Rectangle<int> area, const std::vect
     const int rows = static_cast<int>(slots.size());
     if (rows == 0)
         return;
+    // A column with more rows than the body has room for shrinks them rather than spilling out.
+    rowH = juce::jlimit(30, rowH, (area.getHeight() - (rows - 1) * gap) / rows);
     const int stackH = rows * rowH + (rows - 1) * gap;
     const int top = area.getY() + juce::jmax(0, (area.getHeight() - stackH) / 2);
     juce::Rectangle<int> stack(area.getX(), top, area.getWidth(), stackH);

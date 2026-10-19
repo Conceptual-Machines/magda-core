@@ -468,6 +468,7 @@ void ParamHostComponent::applyControlStyle() {
     const auto style = resolveControlStyle(controlStyleOverride_);
     for (int i = 0; i < allocatedCells_; ++i)
         paramSlots_[i]->setControlStyle(style);
+    layout_->setControlStyle(style);
 
     // Plug-ins: 8 columns in Text and Knobs (4 and 3 rows), 6 in Sliders.
     // Curated native layouts: balanced rows of at most the layout's columns, sized as those rows.

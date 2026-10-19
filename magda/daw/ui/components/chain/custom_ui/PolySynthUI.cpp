@@ -150,25 +150,6 @@ PolySynthUI::PolySynthUI() {
         slopeButtons_[static_cast<size_t>(s)] = std::move(btn);
     }
 
-    // Voice Mode (Poly / Mono / Legato) segmented toggle in the global strip.
-    static const char* kVoiceModeNames[kNumVoiceModes] = {"Poly", "Mono", "Legato"};
-    for (int v = 0; v < kNumVoiceModes; ++v) {
-        auto btn = std::make_unique<juce::TextButton>(kVoiceModeNames[v]);
-        btn->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
-        btn->setClickingTogglesState(false);
-        btn->setColour(juce::TextButton::buttonColourId,
-                       ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.10f));
-        btn->setColour(juce::TextButton::buttonOnColourId,
-                       ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-        btn->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
-        btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-        btn->setConnectedEdges((v > 0 ? juce::Button::ConnectedOnLeft : 0) |
-                               (v < kNumVoiceModes - 1 ? juce::Button::ConnectedOnRight : 0));
-        btn->onClick = [this, v]() { setVoiceMode(v); };
-        addAndMakeVisible(*btn);
-        voiceModeButtons_[static_cast<size_t>(v)] = std::move(btn);
-    }
-
     // Per-oscillator waveform icon selector (replaces the wave value box) plus an
     // enable toggle and a phase-reset toggle, one of each per oscillator column.
     oscEnabled_.fill(true);
@@ -236,7 +217,6 @@ PolySynthUI::PolySynthUI() {
                 FontManager::getInstance().getUIFont(10.0f));
     updateTypeButtons();
     updateSlopeButtons();
-    updateVoiceModeButtons();
     updateOscResetButtons();
     updateOscEnableButtons();
     updateWaveSelectors();
@@ -248,9 +228,6 @@ PolySynthUI::~PolySynthUI() {
         if (btn)
             btn->setLookAndFeel(nullptr);
     for (auto& btn : slopeButtons_)
-        if (btn)
-            btn->setLookAndFeel(nullptr);
-    for (auto& btn : voiceModeButtons_)
         if (btn)
             btn->setLookAndFeel(nullptr);
     for (auto& btn : oscResetButtons_)
@@ -311,23 +288,6 @@ void PolySynthUI::updateSlopeButtons() {
         if (slopeButtons_[static_cast<size_t>(i)])
             slopeButtons_[static_cast<size_t>(i)]->setToggleState(i == s,
                                                                   juce::dontSendNotification);
-}
-
-void PolySynthUI::setVoiceMode(int mode) {
-    mode = juce::jlimit(0, kNumVoiceModes - 1, mode);
-    voiceMode_ = mode;
-    controls_[kVoiceModeSlot].slider->setValue(mode, juce::dontSendNotification);
-    if (onParameterChanged)
-        onParameterChanged(kVoiceModeSlot, static_cast<float>(mode));
-    updateVoiceModeButtons();
-}
-
-void PolySynthUI::updateVoiceModeButtons() {
-    const int m = juce::jlimit(0, kNumVoiceModes - 1, voiceMode_);
-    for (int i = 0; i < kNumVoiceModes; ++i)
-        if (voiceModeButtons_[static_cast<size_t>(i)])
-            voiceModeButtons_[static_cast<size_t>(i)]->setToggleState(i == m,
-                                                                      juce::dontSendNotification);
 }
 
 void PolySynthUI::setOscReset(int osc, bool on) {
@@ -524,11 +484,6 @@ void PolySynthUI::updateFromParameters(const std::vector<magda::ParameterInfo>& 
         if (idx < kNumOscillators * kOscSlotCount && (idx % kOscSlotCount) == 0)
             updateWaveSelectors();  // wave slot -> dropdown
 
-        if (idx == kVoiceModeSlot) {
-            voiceMode_ = juce::jlimit(0, kNumVoiceModes - 1,
-                                      static_cast<int>(std::round(info.currentValue)));
-            updateVoiceModeButtons();
-        }
         if (idx >= kOscResetBaseSlot && idx < kOscResetBaseSlot + kNumOscillators) {
             oscReset_[static_cast<size_t>(idx - kOscResetBaseSlot)] = info.currentValue >= 0.5f;
             updateOscResetButtons();
@@ -599,17 +554,6 @@ void PolySynthUI::layoutOscSection() {
     }
 
     // Performance controls in the spare space below the oscillator columns.
-    a.removeFromTop(kSectionGap * 2);
-    // Voice Mode segmented buttons, spanning the full OSC-section width.
-    auto modeRow = a.removeFromTop(kCellLabelH + 18);
-    const int segW = modeRow.getWidth() / kNumVoiceModes;
-    for (int v = 0; v < kNumVoiceModes; ++v) {
-        if (!voiceModeButtons_[static_cast<size_t>(v)])
-            continue;
-        auto seg = (v == kNumVoiceModes - 1) ? modeRow
-                                             : juce::Rectangle<int>(modeRow.removeFromLeft(segW));
-        voiceModeButtons_[static_cast<size_t>(v)]->setBounds(seg);
-    }
     a.removeFromTop(kSectionGap * 2);
     // Glide / Bend Range / Vel>Amp / Vel>Cut / Output in one labelled row.
     auto perfRow = a.removeFromTop(kCellLabelH + 24);
@@ -750,8 +694,6 @@ void PolySynthUI::lookAndFeelChanged() {
     for (auto& btn : typeButtons_)
         refreshSegmentButton(btn.get());
     for (auto& btn : slopeButtons_)
-        refreshSegmentButton(btn.get());
-    for (auto& btn : voiceModeButtons_)
         refreshSegmentButton(btn.get());
     for (auto& btn : oscEnableButtons_)
         refreshSegmentButton(btn.get());

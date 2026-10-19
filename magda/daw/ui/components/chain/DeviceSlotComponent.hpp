@@ -273,6 +273,9 @@ class DeviceSlotComponent : public NodeComponent,
     juce::Rectangle<int> footerSeparator_, footerInfoArea_, midiLedArea_;
     std::unique_ptr<juce::ArrowButton> footerPrevPage_, footerNextPage_;
     juce::Label footerPageLabel_;
+    magda::SegmentedChoice voiceModeChoice_;
+    int voiceModeParam_ = -1;  ///< The parameter the footer's voice switch writes, or -1.
+    void refreshVoiceModeChoice();
     device_shell::MidiLed midiLed_;
     int sideStripWidth() const;
     void layoutSideStrip(juce::Rectangle<int> strip);

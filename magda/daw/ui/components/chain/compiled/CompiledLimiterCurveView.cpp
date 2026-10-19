@@ -280,15 +280,15 @@ void CompiledLimiterCurveView::paint(juce::Graphics& g) {
         grBar.withY(readoutStrip.getY()).withHeight(readoutStrip.getHeight()).toNearestInt(),
         juce::Justification::centred, 1);
 
-    // Threshold readout, top-right corner.
+    // Threshold readout, left of the GR bar so it never covers the bar's label.
+    constexpr int kThresholdReadoutWidth = 80;
     g.setColour(grColour.withAlpha(0.9f));
-    g.drawFittedText("THR " + juce::String(thresholdDb_, 1) + " dB",
-                     juce::Rectangle<int>(static_cast<int>(grBar.getRight()) -
-                                              static_cast<int>(grBar.getWidth() * 2.0f) - 8,
-                                          static_cast<int>(labelStrip.getY()),
-                                          static_cast<int>(grBar.getWidth() * 2.0f),
-                                          static_cast<int>(labelStrip.getHeight())),
-                     juce::Justification::right, 1);
+    g.drawFittedText(
+        "THR " + juce::String(thresholdDb_, 1) + " dB",
+        juce::Rectangle<int>(static_cast<int>(grBar.getX()) - 8 - kThresholdReadoutWidth,
+                             static_cast<int>(labelStrip.getY()), kThresholdReadoutWidth,
+                             static_cast<int>(labelStrip.getHeight())),
+        juce::Justification::right, 1);
 }
 
 const CompiledPresentationSpec& getMagdaLimiterPresentation() {

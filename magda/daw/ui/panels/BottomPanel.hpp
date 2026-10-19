@@ -175,7 +175,8 @@ class BottomPanel : public daw::ui::TabbedPanel,
     void syncClipEnabledButtonState();
 
     bool showEditorTabs_ = false;
-    bool updatingTabs_ = false;  // Guard against re-entrancy
+    bool showChordEditor_ = false;  // the chord clip editor, which shares the v1 toolbar
+    bool updatingTabs_ = false;     // Guard against re-entrancy
     static constexpr int SIDEBAR_WIDTH = 32;
 
     // Persisted user preference: which MIDI editor view

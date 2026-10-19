@@ -706,6 +706,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     std::shared_ptr<const engine::RenderPlan> compilePlan(const std::vector<TrackInfo>& tracks,
                                                           const TrackInfo& master) const {
         engine::CompileOptions options{.auditionMidi = true};
+        // Live playback is where the chord track is heard and its Chord Engine is built (#2446).
+        options.monitorTracks = true;
         options.hardwareOutputs = hardwareOutputs_;
         if (sessionRendersAhead_) {
             options.sessionTracks = sessionTracks();

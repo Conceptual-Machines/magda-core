@@ -72,7 +72,12 @@ target_sources(magda_daw_app PRIVATE
     compiled/CompiledPitchEditorView.cpp
     compiled/CompiledBitcrusherEditorView.cpp
     compiled/CompiledGateCurveView.cpp
+    compiled/ArpeggiatorTimeBendPanel.cpp
     compiled/CompiledUtilityView.cpp
+    compiled/DrumHitPreview.cpp
+    compiled/DrumVoiceLayout.cpp
+    compiled/DrumVoicePanel.cpp
+    compiled/StrumOnsetsPanel.cpp
     compiled/CompiledPluginPresentation.cpp
     compiled/MagdaDriveCurveView.cpp
     custom_ui/ToneGeneratorUI.cpp
@@ -88,11 +93,8 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/MateriaUI.cpp
     custom_ui/HaloUI.cpp
     custom_ui/NimbusUI.cpp
-    custom_ui/DrumVoiceUI.cpp
     custom_ui/StruckInstrumentUI.cpp
     custom_ui/AdsrGraph.cpp
-    custom_ui/ArpeggiatorUI.cpp
-    custom_ui/StrumUI.cpp
     custom_ui/StepSequencerUI.cpp
     custom_ui/PolyStepSequencerUI.cpp
     custom_ui/LevelsUI.cpp
@@ -180,7 +182,12 @@ target_sources(magda_daw_app PRIVATE
     compiled/CompiledPitchEditorView.hpp
     compiled/CompiledBitcrusherEditorView.hpp
     compiled/CompiledGateCurveView.hpp
+    compiled/ArpeggiatorTimeBendPanel.hpp
     compiled/CompiledUtilityView.hpp
+    compiled/DrumHitPreview.hpp
+    compiled/DrumVoiceLayout.hpp
+    compiled/DrumVoicePanel.hpp
+    compiled/StrumOnsetsPanel.hpp
     compiled/CompiledPluginPresentation.hpp
     compiled/MagdaDriveCurveView.hpp
     custom_ui/ToneGeneratorUI.hpp
@@ -194,8 +201,6 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/HaloUI.hpp
     custom_ui/NimbusUI.hpp
     custom_ui/DeviceTelemetrySources.hpp
-    custom_ui/ArpeggiatorUI.hpp
-    custom_ui/StrumUI.hpp
     custom_ui/StepSequencerUI.hpp
     custom_ui/PolyStepSequencerUI.hpp
     custom_ui/LevelsUI.hpp
