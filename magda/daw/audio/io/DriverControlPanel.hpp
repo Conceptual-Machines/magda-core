@@ -10,7 +10,7 @@
 namespace magda {
 
 /**
- * @brief Show @p device's control panel with MAGDA's windows blocked, as
+ * @brief Show @p device's control panel, with MAGDA's windows blocked on Windows as
  *        juce::AudioDeviceSelectorComponent does.
  *
  * @return Whether the driver changed something the interface must be reopened for.
