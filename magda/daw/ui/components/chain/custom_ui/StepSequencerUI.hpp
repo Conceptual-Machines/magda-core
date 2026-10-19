@@ -9,9 +9,8 @@
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "core/ParameterInfo.hpp"
 #include "core/StepPatternCommands.hpp"
+#include "custom_ui/SequencerFaceplate.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
-#include "ui/components/common/SvgButton.hpp"
-#include "ui/components/common/TimeBendEditor.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -20,16 +19,9 @@ namespace magda::daw::ui {
 /**
  * @brief 303-style step sequencer UI.
  *
- * Layout (top to bottom):
- *   - Controls row: Rate, Steps, Direction, Swing, Glide Time
- *   - Step boxes row: 16/32 clickable step cells showing note name
- *   - Accent row: toggle accent per step
- *   - Glide row: toggle glide per step
- *   - Mini keyboard: 2-octave keyboard with octave arrows on each side
- *
- * Click a step to select it, then click a keyboard key to assign pitch.
- * Use < > arrows to shift the keyboard range up/down by one octave.
- * Click accent/glide toggles directly.
+ * The steps on the left: their notes over a keyboard that sets the selected step's note, then a
+ * row each for gate, tie, glide and accent. The control column on the right holds the slots, the
+ * pattern's length and the time bend.
  *
  * Written against the model (#2299/#2313): slot values arrive through
  * updateFromParameters() and leave through onParameterChanged, the pattern
@@ -72,7 +64,11 @@ class StepSequencerUI : public juce::Component, private juce::Timer {
 
     std::vector<LinkableTextSlider*> getLinkableSliders();
 
-    void lookAndFeelChanged() override;
+    /// Shows or hides the time bend beside the controls.
+    void setTimeBendShown(bool shown);
+    /// The steps at their usual size beside the controls as they show now.
+    int preferredWidth() const;
+
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
@@ -83,24 +79,9 @@ class StepSequencerUI : public juce::Component, private juce::Timer {
     daw::audio::StepSequencerPlugin* device_ = nullptr;
     step_pattern::MonoPattern pattern_;
 
-    // --- Controls ---
-    juce::Label rateLabel_;
-    LinkableTextSlider rateSlider_;
-    juce::Label stepsLabel_;
-    LinkableTextSlider stepsSlider_;
-    juce::Label dirLabel_;
-    juce::ComboBox dirCombo_;
-    juce::Label swingLabel_;
-    LinkableTextSlider swingSlider_;
-    juce::Label glideLabel_;
-    LinkableTextSlider glideSlider_;
-
-    // --- Ramp curve ---
-    TimeBendEditor timeBend_;
-    juce::Label quantizeLabel_;
-    LinkableTextSlider quantizeSlider_;
-    juce::Label quantizeSubLabel_;
-    LinkableTextSlider quantizeSubSlider_;
+    sequencer_faceplate::SequencerControlPanel panel_;
+    LinkableTextSlider velocity_;
+    LinkableTextSlider accentVelocity_;
 
     // --- State ---
     int selectedStep_ = 0;       // Currently selected step for editing
@@ -121,50 +102,38 @@ class StepSequencerUI : public juce::Component, private juce::Timer {
         patternGesture_ = nextPatternGesture_.fetch_add(1);
     }
 
-    // --- Layout constants ---
-    static constexpr int CONTROL_ROW_HEIGHT = 22;
-    static constexpr int TIMELINE_HEIGHT = 12;
-    static constexpr int STEP_BOX_SIZE = 22;
-    static constexpr int TOGGLE_ROW_HEIGHT = 16;
-    static constexpr int KEYBOARD_HEIGHT = 48;
-    static constexpr int OCTAVE_ARROW_WIDTH = 20;
-    static constexpr int ROW_GAP = 3;
-    static constexpr int PADDING = 4;
-    static constexpr int LABEL_WIDTH = 44;
+    static constexpr int NOTE_ROW_HEIGHT = 28;
+    static constexpr int OCTAVE_BUTTON_HEIGHT = 22;
+    static constexpr int MIN_KEYBOARD_HEIGHT = 36;
+    static constexpr int MAX_KEYBOARD_HEIGHT = 84;
+    static constexpr int MIN_BASE_NOTE = 0;
+    static constexpr int MAX_BASE_NOTE = 96;
 
-    // --- Keyboard layout ---
-    // 2 octaves visible at a time, scrollable via octave arrows
-    static constexpr int KEYBOARD_NUM_NOTES = 24;
-    static constexpr int MIN_BASE_NOTE = 0;    // C-1
-    static constexpr int MAX_BASE_NOTE = 108;  // C8 (108 + 24 would be > 127)
+    /// Octaves the keyboard shows at its width.
+    int keyboardOctaves() const;
+    int keyboardNoteCount() const {
+        return keyboardOctaves() * 12;
+    }
 
-    // --- Drawing helpers ---
-    void drawTimeline(juce::Graphics& g, juce::Rectangle<int> area);
-    void drawStepBoxes(juce::Graphics& g, juce::Rectangle<int> area);
-    void drawAccentRow(juce::Graphics& g, juce::Rectangle<int> area);
-    void drawGlideTieRow(juce::Graphics& g, juce::Rectangle<int> area);
-    void drawKeyboard(juce::Graphics& g, juce::Rectangle<int> area);
-    void drawOctaveArrow(juce::Graphics& g, juce::Rectangle<int> area, bool isLeft);
+    void drawNoteRow(juce::Graphics& g);
+    void drawKeyboard(juce::Graphics& g);
+    void drawOctaveButtons(juce::Graphics& g);
 
-    // --- Hit testing ---
-    static int getStepAtX(int x, int areaX, int areaWidth, int numSteps);
-    int getKeyboardNoteAtPosition(juce::Point<int> pos, juce::Rectangle<int> area) const;
+    int getKeyboardNoteAtPosition(juce::Point<int> pos) const;
+    void toggleStepFlag(const juce::MouseEvent& e);
 
     // --- Layout bounds (computed in resized, used in paint/mouseDown) ---
-    juce::Rectangle<int> timelineArea_;
-    juce::Rectangle<int> stepBoxArea_;
-    juce::Rectangle<int> accentArea_;
-    juce::Rectangle<int> glideTieArea_;
+    juce::Rectangle<int> rulerArea_;
+    juce::Rectangle<int> noteArea_;
     juce::Rectangle<int> keyboardArea_;
+    juce::Rectangle<int> octaveLabelArea_;
     juce::Rectangle<int> octaveDownArea_;
     juce::Rectangle<int> octaveUpArea_;
-    juce::Rectangle<int> rampArea_;
-    juce::Rectangle<int> buttonArea_;
-    int dividerX_ = 0, dividerY_ = 0, dividerHeight_ = 0;
-
-    // --- Setup helpers ---
-    void setupLabel(juce::Label& label, const juce::String& text);
-    void setupSlider(LinkableTextSlider& slider, double min, double max, double step);
+    juce::Rectangle<int> gateArea_;
+    juce::Rectangle<int> tieArea_;
+    juce::Rectangle<int> glideArea_;
+    juce::Rectangle<int> accentArea_;
+    int dividerX_ = 0;
 
     void sendChange(int paramIndex, float value);
     void settingsEdited();
@@ -186,9 +155,6 @@ class StepSequencerUI : public juce::Component, private juce::Timer {
 
     // Context menu
     void showStepContextMenu(int stepIndex);
-
-    // Note name helper
-    static juce::String noteNameShort(int noteNumber);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(StepSequencerUI)
 };

@@ -28,6 +28,7 @@ target_sources(magda_daw_app PRIVATE
     InternalFileDrag.hpp
     MasterSpeakerButton.hpp
     SvgButton.hpp
+    AiSoundDesignerIcon.hpp
     EditTool.hpp
     EditToolbar.hpp
     EditorRail.hpp

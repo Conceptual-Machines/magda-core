@@ -203,6 +203,8 @@ class DeviceCustomUIManager {
     ChordPanelContent* getChordEngineUI() const {
         return chordEngineUI_.get();
     }
+    /// A step sequencer's time bend shown beside its controls, or hidden.
+    void setSequencerTimeBendShown(bool shown);
     StepSequencerUI* getStepSequencerUI() const {
         return stepSequencerUI_.get();
     }

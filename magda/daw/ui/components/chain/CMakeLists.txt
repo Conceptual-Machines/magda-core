@@ -95,6 +95,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/NimbusUI.cpp
     custom_ui/StruckInstrumentUI.cpp
     custom_ui/AdsrGraph.cpp
+    custom_ui/SequencerFaceplate.cpp
     custom_ui/StepSequencerUI.cpp
     custom_ui/PolyStepSequencerUI.cpp
     custom_ui/LevelsUI.cpp
@@ -201,6 +202,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/HaloUI.hpp
     custom_ui/NimbusUI.hpp
     custom_ui/DeviceTelemetrySources.hpp
+    custom_ui/SequencerFaceplate.hpp
     custom_ui/StepSequencerUI.hpp
     custom_ui/PolyStepSequencerUI.hpp
     custom_ui/LevelsUI.hpp

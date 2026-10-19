@@ -247,6 +247,7 @@ enum class ColourRole : std::size_t {
     DEVICE_BLUE,
     DEVICE_AMBER,
     DEVICE_RED,
+    DEVICE_VIOLET,
     DEVICE_KNOB_DISC,
     DEVICE_POINTER,
     DEVICE_SLIDER_TRACK,
@@ -593,6 +594,7 @@ class ActiveTheme {
     static constexpr auto DEVICE_BLUE = ColourRole::DEVICE_BLUE;
     static constexpr auto DEVICE_AMBER = ColourRole::DEVICE_AMBER;
     static constexpr auto DEVICE_RED = ColourRole::DEVICE_RED;
+    static constexpr auto DEVICE_VIOLET = ColourRole::DEVICE_VIOLET;
     static constexpr auto DEVICE_KNOB_DISC = ColourRole::DEVICE_KNOB_DISC;
     static constexpr auto DEVICE_POINTER = ColourRole::DEVICE_POINTER;
     static constexpr auto DEVICE_SLIDER_TRACK = ColourRole::DEVICE_SLIDER_TRACK;

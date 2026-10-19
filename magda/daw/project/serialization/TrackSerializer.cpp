@@ -521,6 +521,7 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     obj->setProperty("padDetailOpen", device.padDetailOpen);
     obj->setProperty("faceplateShown", device.faceplateShown);
     obj->setProperty("paramsShown", device.paramsShown);
+    obj->setProperty("timeBendShown", device.timeBendShown);
 
     // Parameters
     juce::Array<juce::var> paramsArray;
@@ -711,6 +712,8 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
         outDevice.paramsShown = static_cast<bool>(obj->getProperty("paramsShown"));
     if (!outDevice.faceplateShown)
         outDevice.paramsShown = true;
+    if (obj->hasProperty("timeBendShown"))
+        outDevice.timeBendShown = static_cast<bool>(obj->getProperty("timeBendShown"));
 
     // Parameters
     auto paramsVar = obj->getProperty("parameters");

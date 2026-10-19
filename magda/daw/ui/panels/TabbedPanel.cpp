@@ -58,7 +58,9 @@ void TabbedPanel::setupExpandButton() {
                                                          : BinaryData::right_open_svgSize;
 
     expandButton_ = std::make_unique<magda::SvgButton>("Expand", svgData, svgSize);
-    expandButton_->setOriginalColor(juce::Colour(0xFFBCBCBC));
+    expandButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
+    expandButton_->setNormalColor(ActiveTheme::DEVICE_ICON);
+    expandButton_->setHoverColor(ActiveTheme::DEVICE_ICON_HOVER);
     expandButton_->onClick = [this]() {
         PanelController::getInstance().toggleCollapsed(location_);
     };

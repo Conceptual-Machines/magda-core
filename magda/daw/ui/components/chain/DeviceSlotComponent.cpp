@@ -60,6 +60,7 @@
 #include "slot/DeviceSlotTraits.hpp"
 #include "slot/SequencerDeviceControls.hpp"
 #include "ui/components/mixer/LevelMeterScale.hpp"
+#include "ui/state/ExpandedFaceplate.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -303,8 +304,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // AI button (toggle AI sound-design panel). Visibility is gated on
     // whether the device's pluginId has a registered SoundDesignAgent —
     // updated in the resizedHeaderExtra path so it tracks device changes.
-    aiButton_ =
-        std::make_unique<magda::SvgButton>("AI", BinaryData::ai_svg, BinaryData::ai_svgSize);
+    aiButton_ = std::make_unique<magda::SvgButton>("AI", BinaryData::aisounddesigner_svg,
+                                                   BinaryData::aisounddesigner_svgSize);
     applyHeaderIconStyle(*aiButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     aiButton_->setToggleState(aiPanelVisible_, juce::dontSendNotification);
     aiButton_->setActive(aiPanelVisible_);
@@ -544,6 +545,21 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     faceplateToggle_->setTooltip("Show the faceplate");
     faceplateToggle_->onClick = [this]() { toggleDeviceView(true); };
     addChildComponent(*faceplateToggle_);
+    timeBendToggle_ = std::make_unique<magda::SvgButton>("TimeBend", BinaryData::devicetimebend_svg,
+                                                         BinaryData::devicetimebend_svgSize);
+    timeBendToggle_->setTooltip("Show the time bend");
+    timeBendToggle_->onClick = [this]() { toggleTimeBend(); };
+    addChildComponent(*timeBendToggle_);
+    expandToggle_ = std::make_unique<magda::SvgButton>("Expand", BinaryData::enter_fs_svg,
+                                                       BinaryData::enter_fs_svgSize);
+    expandToggle_->setTooltip("Expand the faceplate into the arrangement");
+    expandToggle_->onClick = [this]() { toggleFaceplateExpanded(); };
+    addChildComponent(*expandToggle_);
+    lentNote_.setText("Expanded in the arrangement", juce::dontSendNotification);
+    lentNote_.setJustificationType(juce::Justification::centred);
+    lentNote_.setFont(FontManager::getInstance().getUIFont(12.0f));
+    lentNote_.setColour(juce::Label::textColourId, ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+    addChildComponent(lentNote_);
 
     styleDeviceHeaderButtons();
 
@@ -749,6 +765,9 @@ void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
         if (arrow != nullptr)
             arrow->setVisible(paged);
     footerPageLabel_.setVisible(paged);
+    const bool sequencer = !footer.isEmpty() && isSequencerDevice(traits_);
+    timeBendToggle_->setVisible(sequencer);
+    expandToggle_->setVisible(sequencer);
     if (footer.isEmpty()) {
         paramsToggle_->setVisible(false);
         faceplateToggle_->setVisible(false);
@@ -776,6 +795,13 @@ void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
         faceplateToggle_->setToggleState(faceplateShown(), juce::dontSendNotification);
         place(*paramsToggle_, true);
         place(*faceplateToggle_, true);
+    }
+
+    if (sequencer) {
+        timeBendToggle_->setToggleState(device_.timeBendShown, juce::dontSendNotification);
+        expandToggle_->setToggleState(faceplateLent(), juce::dontSendNotification);
+        place(*timeBendToggle_, true);
+        place(*expandToggle_, true);
     }
 
     const bool sidechain = scButton_ != nullptr && scButton_->isVisible();
@@ -985,6 +1011,61 @@ void DeviceSlotComponent::toggleDeviceView(bool faceplate) {
         onDeviceLayoutChanged();
 }
 
+void DeviceSlotComponent::toggleTimeBend() {
+    device_.timeBendShown = !device_.timeBendShown;
+    if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_))
+        live->timeBendShown = device_.timeBendShown;
+    customUI_.setSequencerTimeBendShown(device_.timeBendShown);
+    resized();
+    if (onDeviceLayoutChanged)
+        onDeviceLayoutChanged();
+}
+
+bool DeviceSlotComponent::faceplateLent() const {
+    const auto* faceplate = customUI_.getActiveUI();
+    return faceplate != nullptr && magda::ExpandedFaceplate::getInstance().holds(*faceplate);
+}
+
+void DeviceSlotComponent::toggleFaceplateExpanded() {
+    if (faceplateLent())
+        magda::ExpandedFaceplate::getInstance().collapse();
+    else
+        lendFaceplate();
+}
+
+void DeviceSlotComponent::lendFaceplate() {
+    auto* faceplate = customUI_.getActiveUI();
+    if (faceplate == nullptr)
+        return;
+    auto title = device_.name;
+    if (const auto* track = magda::TrackManager::getInstance().getTrack(nodePath_.trackId))
+        title = track->name + juce::String::fromUTF8(" \xc2\xb7 ") + title;
+    magda::ExpandedFaceplate::getInstance().expand(
+        nodePath_, *faceplate, title,
+        [safe = juce::Component::SafePointer<DeviceSlotComponent>(this)] {
+            if (safe != nullptr)
+                safe->faceplateReturned();
+        });
+    resized();
+    if (onDeviceLayoutChanged)
+        onDeviceLayoutChanged();
+}
+
+void DeviceSlotComponent::faceplateReturned() {
+    if (auto* faceplate = customUI_.getActiveUI())
+        addChildComponent(*faceplate);
+    resized();
+    repaint();
+    if (onDeviceLayoutChanged)
+        onDeviceLayoutChanged();
+}
+
+void DeviceSlotComponent::reclaimExpandedFaceplate() {
+    if (nodePath_.isValid() && customUI_.getActiveUI() != nullptr && !faceplateLent() &&
+        magda::ExpandedFaceplate::getInstance().isPendingFor(nodePath_))
+        lendFaceplate();
+}
+
 void DeviceSlotComponent::refreshVoiceModeChoice() {
     const auto* param = isInternalDevice() ? findVoiceModeParameter(device_) : nullptr;
     const int index = param != nullptr ? param->paramIndex : -1;
@@ -1036,6 +1117,8 @@ void DeviceSlotComponent::styleDeviceHeaderButtons() {
     style(stepRecordButton_.get(), DeviceIcon::Action, ActiveTheme::STEP_RECORD);
     style(paramsToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(faceplateToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
+    style(timeBendToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
+    style(expandToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     if (stepRecordButton_)
         stepRecordButton_->setNormalColor(ActiveTheme::STEP_RECORD);
     if (scButton_)
@@ -1067,6 +1150,8 @@ void DeviceSlotComponent::lookAndFeelChanged() {
 }
 
 DeviceSlotComponent::~DeviceSlotComponent() {
+    if (const auto* faceplate = customUI_.getActiveUI())
+        magda::ExpandedFaceplate::getInstance().release(*faceplate);
     magda::TrackManager::getInstance().removeListener(this);
     magda::AutomationManager::getInstance().removeListener(this);
     magda::GainStagingManager::getInstance().removeListener(this);
@@ -1291,6 +1376,7 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     refreshControllerIndicators();
 
     refreshInlinePluginBindings();
+    reclaimExpandedFaceplate();
 }
 
 int DeviceSlotComponent::getPreferredWidth() const {
@@ -1305,7 +1391,7 @@ int DeviceSlotComponent::getPreferredWidth() const {
     const auto customWidth = customUI_.getPreferredContentWidth(
         drum_grid_slot::getPreferredContentWidth(traits_.isDrumGrid, customUI_.getDrumGridUI()));
     if (customWidth > 0)
-        return getTotalWidth(customWidth) + meterExtra;
+        return getTotalWidth(faceplateLent() ? kLentFaceplateWidth : customWidth) + meterExtra;
     int contentWidth = getDynamicSlotWidth();
     if (hasFaceplate() && faceplateBandRows() > 0)
         contentWidth = !paramsShown()     ? faceplateWidth()
@@ -1432,6 +1518,8 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Update custom UI if available
     if (customUI_.hasAnyUI() || faustUI_ || compiledPanel_) {
         updateDeviceSlotInlineUi(device_, compiledPanel_.get(), customUI_);
+        customUI_.setSequencerTimeBendShown(device_.timeBendShown);
+        reclaimExpandedFaceplate();
     }
 
     // Update parameter slots with current parameter data for current page
@@ -1616,7 +1704,10 @@ int DeviceSlotComponent::faustHeaderHeight() const {
 }
 
 void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
-    auto* activeCustomUI = customUI_.getActiveUI();
+    // A faceplate out in the arrangement is laid out there; its slot shows a note instead.
+    const bool lent = faceplateLent();
+    auto* activeCustomUI = lent ? nullptr : customUI_.getActiveUI();
+    lentNote_.setVisible(false);
     auto* compiledPanelComponent =
         compiledPanel_ != nullptr ? &compiledPanel_->component() : nullptr;
     const bool pluginPresetsAvailable = !collapsed_ && !traits_.isFaust &&
@@ -1658,6 +1749,10 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     }
     juce::ignoreUnused(onChordTrack);
     layoutSideStrip(sideStripArea_);
+    if (lent) {
+        lentNote_.setBounds(contentArea);
+        lentNote_.setVisible(true);
+    }
 
     // (Second header carve + programs combo placement happen in the
     //  `if (!collapsed_)` block above so the dropdown can sit flush right.)

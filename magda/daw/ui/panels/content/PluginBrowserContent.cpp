@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "../../../../agents/sound_design_agent.hpp"
+#include "../../components/common/AiSoundDesignerIcon.hpp"
 #include "../../dialogs/ParameterConfigDialog.hpp"
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -833,9 +834,13 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
     // explicit AI parameter selection can expose/hide the Sound Designer.
     if (magda::isSoundDesignSupported(plugin.uniqueId) ||
         magda::PluginParameterConfigStore::hasAiSoundDesignerParameters(plugin.uniqueId)) {
-        menu.addItem(
-            12, "AI Sound Designer", true,
-            magda::PluginPreferences::getInstance().aiSoundDesignerEnabled(pluginIdentifier));
+        juce::PopupMenu::Item item("AI Sound Designer");
+        item.itemID = 12;
+        item.isTicked =
+            magda::PluginPreferences::getInstance().aiSoundDesignerEnabled(pluginIdentifier);
+        item.image = magda::makeAiSoundDesignerIcon(
+            magda::ActiveTheme::getColour(magda::ActiveTheme::ACCENT_PRIMARY));
+        menu.addItem(std::move(item));
         menu.addSeparator();
     }
 

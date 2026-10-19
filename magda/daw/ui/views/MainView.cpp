@@ -296,6 +296,16 @@ void MainView::setupComponents() {
     // top of it.
     gridOverlay->toFront(false);
     playheadComponent->toFront(false);
+
+    faceplateHost_ = std::make_unique<ExpandedFaceplateHost>();
+    // As a mode change does: the aux rows come back through tracksChanged().
+    faceplateHost_->onShowingChanged = [this] {
+        tracksChanged();
+        updateModeContent();
+        resized();
+        repaint();
+    };
+    addChildComponent(*faceplateHost_);
     // A lane added / removed / resized changes the band height: re-run the
     // arrangement layout so the band and the tracks above it resize.
     masterAutomationContentPanel->onBandHeightChanged = [this]() {
@@ -507,7 +517,8 @@ void MainView::setupComponents() {
                       BinaryData::bottom_open_svgSize);
     showMasterButton->setTooltip("Show master track");
     showMasterButton->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    showMasterButton->setNormalColor(juce::Colour(0xFFB3B3B3));
+    showMasterButton->setNormalColor(ActiveTheme::DEVICE_ICON);
+    showMasterButton->setHoverColor(ActiveTheme::DEVICE_ICON_HOVER);
     showMasterButton->onClick = [this]() {
         TrackManager::getInstance().setMasterVisible(
             ViewModeController::getInstance().getViewMode(), !masterVisible_);
@@ -897,8 +908,8 @@ void MainView::masterChannelChanged() {
 
     if (newVisible != masterVisible_) {
         masterVisible_ = newVisible;
-        masterHeaderPanel->setVisible(masterVisible_ && !modeContent_);
-        masterContentPanel->setVisible(masterVisible_ && !modeContent_);
+        masterHeaderPanel->setVisible(masterVisible_ && !trackAreaReplaced());
+        masterContentPanel->setVisible(masterVisible_ && !trackAreaReplaced());
         resized();
         repaint();  // clear the vacated master-strip area (stale-paint fix)
     }
@@ -942,9 +953,12 @@ void MainView::updateModeContent() {
             addChildComponent(*modeContent_, getIndexOfChildComponent(gridOverlay.get()));
     }
 
-    const bool replaced = modeContent_ != nullptr;
-    if (replaced)
-        modeContent_->setVisible(true);
+    const bool faceplate = faceplateHost_ != nullptr && faceplateHost_->isShowing();
+    if (faceplateHost_ != nullptr)
+        faceplateHost_->setVisible(faceplate);
+    if (modeContent_)
+        modeContent_->setVisible(!faceplate);
+    const bool replaced = trackAreaReplaced();
     trackHeadersViewport->setVisible(!replaced);
     trackContentViewport->setVisible(!replaced);
     selectionOverlay->setVisible(!replaced);
@@ -956,6 +970,10 @@ void MainView::updateModeContent() {
         masterAutomationHeaderPanel->setVisible(false);
         masterAutomationViewport->setVisible(false);
     }
+}
+
+bool MainView::trackAreaReplaced() const {
+    return modeContent_ != nullptr || (faceplateHost_ != nullptr && faceplateHost_->isShowing());
 }
 
 juce::Rectangle<int> MainView::trackAreaBounds(const ArrangementLayout& layout) const {
@@ -1142,7 +1160,7 @@ void MainView::resized() {
     }
     // Always-present footer toggle: hide icon when the master is visible, show
     // icon when it's hidden.
-    showMasterButton->setVisible(!modeContent_);
+    showMasterButton->setVisible(!trackAreaReplaced());
     showMasterButton->updateSvgData(
         masterVisible_ ? BinaryData::bottom_close_svg : BinaryData::bottom_open_svg,
         masterVisible_ ? BinaryData::bottom_close_svgSize : BinaryData::bottom_open_svgSize);
@@ -1157,7 +1175,7 @@ void MainView::resized() {
         showMasterButton->toFront(false);
     }
 
-    const bool bandVisible = masterVisible_ && masterAutomationHeight > 0 && !modeContent_;
+    const bool bandVisible = masterVisible_ && masterAutomationHeight > 0 && !trackAreaReplaced();
     masterAutomationHeaderPanel->setVisible(bandVisible);
     masterAutomationViewport->setVisible(bandVisible);
     if (bandVisible) {
@@ -1248,6 +1266,11 @@ void MainView::resized() {
     trackHeadersViewport->setBounds(arrangementLayout.trackHeadersArea);
     trackHeadersPanel->refreshHeaderSideLayout();
     trackContentViewport->setBounds(arrangementLayout.trackContentArea);
+    if (faceplateHost_ != nullptr && faceplateHost_->isShowing()) {
+        // Over the grid and the playhead, which mark time the faceplate does not show.
+        faceplateHost_->setBounds(trackAreaBounds(arrangementLayout));
+        faceplateHost_->toFront(false);
+    }
     if (modeContent_) {
         const auto area = trackAreaBounds(arrangementLayout);
         modeContent_->setBounds(area);
@@ -2582,8 +2605,8 @@ void MainView::MasterHeaderPanel::setupControls() {
                                              BinaryData::bottom_close_svgSize);
     hideButton->setTooltip("Hide master track");
     hideButton->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    hideButton->setNormalColor(juce::Colour(0xFFB3B3B3));
-    hideButton->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+    hideButton->setNormalColor(ActiveTheme::DEVICE_ICON);
+    hideButton->setHoverColor(ActiveTheme::DEVICE_ICON_HOVER);
     hideButton->setPressedColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     hideButton->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
     hideButton->setBorderThickness(1.0f);
@@ -2789,8 +2812,8 @@ void MainView::tracksChanged() {
     bool newAuxVisible = auxCount > 0;
 
     auxVisible_ = newAuxVisible;
-    auxHeadersPanel->setVisible(auxVisible_ && !modeContent_);
-    auxContentPanel->setVisible(auxVisible_ && !modeContent_);
+    auxHeadersPanel->setVisible(auxVisible_ && !trackAreaReplaced());
+    auxContentPanel->setVisible(auxVisible_ && !trackAreaReplaced());
     auxContentPanel->setAuxTrackCount(auxCount);
     resized();
 }
