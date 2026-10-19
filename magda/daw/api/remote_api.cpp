@@ -3595,7 +3595,7 @@ OperationRegistry::OperationRegistry() {
         clipSchema());
     operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
         "destination", clipDestinationSchema());
-    add("clips.update", "Update clip name, enabled state, or groove template assignment",
+    add("clips.update", "Update clip name, enabled state, or groove (played as a time bend)",
         OperationAccess::Write, &handlers::clipsUpdate, operationInputSchema(R"json({
             "type":"object",
             "properties":{

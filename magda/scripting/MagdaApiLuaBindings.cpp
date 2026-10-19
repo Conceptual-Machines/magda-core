@@ -5,6 +5,7 @@
 
 #include "magda/daw/api/clip_api.hpp"
 #include "magda/daw/api/focused_api.hpp"
+#include "magda/daw/api/groove_api.hpp"
 #include "magda/daw/api/magda_api.hpp"
 #include "magda/daw/api/midi_api.hpp"
 #include "magda/daw/api/project_api.hpp"
@@ -482,7 +483,17 @@ int lua_clips_set_groove(lua_State* L) {
     auto* api = getApi(L);
     auto id = static_cast<ClipId>(luaL_checkinteger(L, 1));
     const char* tmpl = luaL_checkstring(L, 2);
-    api->clips().setGrooveTemplate(id, juce::String::fromUTF8(tmpl));
+    const auto strength = static_cast<float>(luaL_optnumber(L, 3, 1.0));
+    // A groove is played as the time bend it spells (#3044); an empty name clears it.
+    const auto name = juce::String::fromUTF8(tmpl);
+    if (name.isEmpty()) {
+        api->clips().setTimeBend(id, {});
+        return 0;
+    }
+    if (const auto bend = api->grooves().timeBend(name, strength))
+        api->clips().setTimeBend(id, *bend);
+    else
+        return luaL_error(L, "no groove named '%s'", tmpl);
     return 0;
 }
 

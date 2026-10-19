@@ -71,7 +71,7 @@ SnapshotSpan spanFromBeats(double startBeat, double endBeat, const TempoMap& tem
 
 ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
                                  const std::vector<ClipSourceInfo>& sources,
-                                 const TempoMap& tempoMap, const GrooveTemplateSet& grooves) {
+                                 const TempoMap& tempoMap) {
     ClipSnapshot snapshot;
     snapshot.tempoFingerprint = tempoMap.fingerprint();
 
@@ -156,12 +156,12 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
                 const auto bpm = tempoMap.bpmAt(clip.placement.startBeat);
                 midi.events = compileMidiEvents(clip, kCurveFloorSeconds * bpm / 60.0);
 
-                const auto grooveName = clip.grooveTemplate.toStdString();
-                if (!grooveName.empty() && !grooves.contains(grooveName))
-                    snapshot.diagnostics.push_back(label + "asks for groove '" + grooveName +
-                                                   "', which this installation does not have");
-
-                midi.groove = grooves.compile(grooveName, clip.grooveStrength);
+                if (clip.timeBend.isActive()) {
+                    const auto bar = tempoMap.barsAndBeatsAt(clip.placement.startBeat);
+                    midi.bend = clip.timeBend;
+                    midi.bendCycleBeats = clip.timeBend.cycleBeats(
+                        bar.denominator > 0 ? 4.0 * bar.numerator / bar.denominator : 4.0);
+                }
 
                 // An empty MIDI clip is carried rather than dropped, unlike an
                 // audio clip with no events. A clip with no notes yet is an
@@ -435,7 +435,7 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
             slotLane.trackId = lane.trackId;
             slotLane.clips.push_back(normalised);
 
-            auto compiled = compileClipSnapshot({slotLane}, sources, tempoMap, grooves);
+            auto compiled = compileClipSnapshot({slotLane}, sources, tempoMap);
 
             for (auto& diagnostic : compiled.diagnostics)
                 snapshot.diagnostics.push_back(std::move(diagnostic));

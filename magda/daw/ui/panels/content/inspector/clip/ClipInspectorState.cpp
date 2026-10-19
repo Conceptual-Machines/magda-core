@@ -356,23 +356,16 @@ void ClipInspector::updateFromSelectedClip() {
     for (auto& button : midiTransposeButtons_)
         button.setVisible(midiPitchOpen);
 
-    // ---- Groove (MIDI, not chord progressions) ----------------------------
-    const bool showGroove = isMidi && !isChordClip;
-    grooveHeader_.setVisible(showGroove);
-    const bool grooveOpen = showGroove && !grooveHeader_.isCollapsed();
-    const bool hasGroove = clip->grooveTemplate.isNotEmpty();
-    grooveTemplateButton_.setVisible(grooveOpen);
-    grooveTemplateButton_.setButtonText(hasGroove ? clip->grooveTemplate : "None");
-    grooveStrengthLabel_.setVisible(grooveOpen && hasGroove);
-    grooveStrengthValue_->setVisible(grooveOpen && hasGroove);
-    grooveStrengthValue_->setValue(clip->grooveStrength, juce::dontSendNotification);
-
     // ---- Fades (audio) ----------------------------------------------------
     fadesSection_->setSelectedClips(selectedClipIds_);
     fadesSection_->setVisible(isAudio);
 
     // ---- Labels (audio) ---------------------------------------------------
     labelsSection_->setSelectedClips(selectedClipIds_);
+    timeBendSection_->setSelectedClips(selectedClipIds_);
+    // Not on a chord progression, whose notes are generated.
+    timeBendSection_->setVisible(!isChordClip &&
+                                 timeBendSection_->getPreferredHeight(getWidth()) > 0);
     labelsSection_->setVisible(isAudio && selectedClipIds_.size() == 1);
 
     // ---- Launch (session) -------------------------------------------------

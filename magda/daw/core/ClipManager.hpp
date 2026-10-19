@@ -658,8 +658,8 @@ class ClipManager {
     void setRightChannelActive(ClipId clipId, bool active);
 
     // Groove/Shuffle/Swing (MIDI clips)
-    void setGrooveTemplate(ClipId clipId, const juce::String& templateName);
-    void setGrooveStrength(ClipId clipId, float strength);
+    /** @brief Sets a MIDI clip's time bend, sanitised. */
+    void setTimeBend(ClipId clipId, const sdk::sequencer::TimeBend& bend);
 
     // Per-clip grid settings (MIDI editor)
     void setClipGridSettings(ClipId clipId, bool autoGrid, int numerator, int denominator);

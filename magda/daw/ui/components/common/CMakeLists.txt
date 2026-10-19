@@ -1,7 +1,7 @@
 target_sources(magda_daw_app PRIVATE
-    RampCurveDisplay.cpp
+    TimeBendEditor.cpp
     NoteSlicePopup.cpp
-    TimeBendPopup.cpp
+    ClipTimeBendView.cpp
     SvgButton.cpp
     EditTool.cpp
     EditToolbar.cpp

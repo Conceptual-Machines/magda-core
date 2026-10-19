@@ -51,11 +51,6 @@ StepSequencerUI::StepSequencerUI() {
             "Set Step Count", [steps](step_pattern::MonoPattern& p) { p.length = steps; },
             stepsSlider_.isBeingDragged() ? magda::StepPatternGesture::Continuous
                                           : magda::StepPatternGesture::Discrete);
-        rampCurveDisplay_.setNumTicks(steps);
-        // Clamp cycles to num steps
-        cyclesSlider_.setRange(1.0, static_cast<double>(steps), 1.0);
-        if (cyclesSlider_.getValue() > steps)
-            cyclesSlider_.setValue(static_cast<double>(steps), juce::sendNotificationSync);
         repaint();
     };
     stepsSlider_.getSlider().onDragEnd = [this] { endPatternGesture(); };
@@ -96,52 +91,11 @@ StepSequencerUI::StepSequencerUI() {
         sendChange(SeqPlugin::kGateLength, static_cast<float>(value));
     };
 
-    // --- Ramp curve (time warp) ---
-    setupLabel(rampLabel_, "TIME BEND");
-    addAndMakeVisible(rampCurveDisplay_);
-    rampCurveDisplay_.onCurveChanged = [this](float depth, float skew) {
-        sendChange(SeqPlugin::kRamp, depth);
-        sendChange(SeqPlugin::kSkew, skew);
-        depthSlider_.setValue(depth, juce::dontSendNotification);
-        skewSlider_.setValue(skew, juce::dontSendNotification);
+    // --- Time bend ---
+    timeBend_.onCommit = [this](const auto& before, const auto& after) {
+        timeBendEdited(before, after);
     };
-
-    setupLabel(depthLabel_, "DEPTH");
-    depthLabel_.setJustificationType(juce::Justification::centred);
-    setupSlider(depthSlider_, -1.0, 1.0, 0.01);
-    depthSlider_.setValueFormatter(
-        [](double v) { return juce::String(juce::roundToInt(v * 100)); });
-    depthSlider_.setValueParser(
-        [](const juce::String& t) { return t.trim().getDoubleValue() / 100.0; });
-    depthSlider_.onValueChanged = [this](double value) {
-        sendChange(SeqPlugin::kRamp, static_cast<float>(value));
-        rampCurveDisplay_.setValues(static_cast<float>(value),
-                                    static_cast<float>(skewSlider_.getValue()));
-    };
-
-    setupLabel(skewLabel_, "SKEW");
-    skewLabel_.setJustificationType(juce::Justification::centred);
-    setupSlider(skewSlider_, -1.0, 1.0, 0.01);
-    skewSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v * 100)); });
-    skewSlider_.setValueParser(
-        [](const juce::String& t) { return t.trim().getDoubleValue() / 100.0; });
-    skewSlider_.onValueChanged = [this](double value) {
-        sendChange(SeqPlugin::kSkew, static_cast<float>(value));
-        rampCurveDisplay_.setValues(static_cast<float>(depthSlider_.getValue()),
-                                    static_cast<float>(value));
-    };
-
-    setupLabel(cyclesLabel_, "CYCLES");
-    setupSlider(cyclesSlider_, 1.0, static_cast<double>(SeqPlugin::MAX_STEPS), 1.0);
-    cyclesSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
-    cyclesSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
-    cyclesSlider_.onValueChanged = [this](double) { settingsEdited(); };
-
-    // Hard angle toggle (right-click on control point)
-    rampCurveDisplay_.onHardAngleChanged = [this](bool hardAngle) {
-        hardAngle_ = hardAngle;
-        settingsEdited();
-    };
+    addAndMakeVisible(timeBend_);
 
     // Quantize slider (adaptive snap strength 0-100%)
     setupLabel(quantizeLabel_, "QUANTIZE");
@@ -206,11 +160,10 @@ void StepSequencerUI::updateFromParameters(const std::vector<magda::ParameterInf
     glideSlider_.setValue(static_cast<double>(display(SeqPlugin::kGateLength, 0.8f)),
                           juce::dontSendNotification);
 
-    const float depth = display(SeqPlugin::kRamp, 0.0f);
-    const float skew = display(SeqPlugin::kSkew, 0.0f);
-    depthSlider_.setValue(static_cast<double>(depth), juce::dontSendNotification);
-    skewSlider_.setValue(static_cast<double>(skew), juce::dontSendNotification);
-    rampCurveDisplay_.setValues(depth, skew);
+    auto bend = timeBend_.getBend();
+    bend.amount = display(SeqPlugin::kBendAmount, 1.0f);
+    bend.cycles = juce::roundToInt(display(SeqPlugin::kBendCycles, 1.0f));
+    timeBend_.setBend(bend);
 
     syncSettingsFromDevice();
     repaint();
@@ -226,8 +179,6 @@ void StepSequencerUI::setPattern(const step_pattern::MonoPattern& pattern) {
     pattern_ = pattern;
     const int steps = pattern_.playingLength();
     stepsSlider_.setValue(static_cast<double>(steps), juce::dontSendNotification);
-    rampCurveDisplay_.setNumTicks(steps);
-    cyclesSlider_.setRange(1.0, static_cast<double>(steps), 1.0);
 
     if (changed)
         repaint();
@@ -237,17 +188,15 @@ void StepSequencerUI::syncSettingsFromDevice() {
     if (device_ == nullptr)
         return;
 
-    const int steps = pattern_.playingLength();
-    hardAngle_ = device_->hardAngle.load(std::memory_order_relaxed);
-    rampCurveDisplay_.setHardAngle(hardAngle_);
+    auto bend = device_->timeBend.current();
+    bend.amount = timeBend_.getBend().amount;
+    bend.cycles = timeBend_.getBend().cycles;
+    timeBend_.setBend(bend);
     quantizeSlider_.setValue(static_cast<double>(device_->quantize.load(std::memory_order_relaxed)),
                              juce::dontSendNotification);
     quantizeSubSlider_.setValue(
         static_cast<double>(device_->quantizeSub.load(std::memory_order_relaxed)),
         juce::dontSendNotification);
-    cyclesSlider_.setValue(static_cast<double>(juce::jlimit(
-                               1, steps, device_->rampCycles.load(std::memory_order_relaxed))),
-                           juce::dontSendNotification);
 }
 
 void StepSequencerUI::sendChange(int paramIndex, float value) {
@@ -264,11 +213,24 @@ void StepSequencerUI::settingsEdited() {
     // itself is updated by the projection, not by this UI.
     using IDs = daw::audio::StepSequencerPlugin::SettingIDs;
     juce::NamedValueSet settings;
-    settings.set(IDs::rampCycles, juce::roundToInt(cyclesSlider_.getValue()));
+    settings.set(daw::audio::DeviceTimeBend::settingId,
+                 juce::String(sdk::sequencer::timeBendToText(timeBend_.getBend())));
     settings.set(IDs::quantize, static_cast<float>(quantizeSlider_.getValue()));
     settings.set(IDs::quantizeSub, juce::roundToInt(quantizeSubSlider_.getValue()));
-    settings.set(IDs::hardAngle, hardAngle_);
     onSettingsEdited(settings);
+}
+
+void StepSequencerUI::timeBendEdited(const sdk::sequencer::TimeBend& before,
+                                     const sdk::sequencer::TimeBend& after) {
+    if (after.amount != before.amount)
+        sendChange(SeqPlugin::kBendAmount, after.amount);
+    if (after.cycles != before.cycles)
+        sendChange(SeqPlugin::kBendCycles, static_cast<float>(after.cycles));
+    auto rest = after;
+    rest.amount = before.amount;
+    rest.cycles = before.cycles;
+    if (!(rest == before))
+        settingsEdited();
 }
 
 void StepSequencerUI::editPattern(const juce::String& description,
@@ -308,6 +270,10 @@ void StepSequencerUI::timerCallback() {
     // without decoding the model's document 30 times a second. setPattern()
     // early-outs when nothing moved.
     setPattern(device_->pattern());
+    timeBend_.setPlayheadPhase(device_->bendPhase_.load(std::memory_order_relaxed));
+    timeBend_.setCycle(device_->bendCycleBeats_.load(std::memory_order_relaxed),
+                       device_->bendBeatsPerBar_.load(std::memory_order_relaxed));
+    timeBend_.setDefaultDivision(device_->bendStepBeats_.load(std::memory_order_relaxed));
 
     const int numSteps = pattern_.playingLength();
     int step = device_->currentPlayStep_.load(std::memory_order_relaxed);
@@ -315,10 +281,6 @@ void StepSequencerUI::timerCallback() {
     if (step != currentPlayStep_) {
         currentPlayStep_ = step;
         needsRepaint = true;
-        // Update curve display sweep
-        float pos = (step >= 0) ? static_cast<float>(step) / static_cast<float>(numSteps) : -1.0f;
-        rampCurveDisplay_.setPlaybackPosition(
-            pos, juce::jlimit(1, numSteps, device_->rampCycles.load(std::memory_order_relaxed)));
     }
     // Track step record position for highlight + parent header banner
     bool isRec = device_->isStepRecording();
@@ -419,31 +381,10 @@ void StepSequencerUI::resized() {
 
     bounds.removeFromTop(ROW_GAP + 2);
 
-    // TIME BEND label row
+    // Time bend: its header row and the curve.
     constexpr int LABEL_H = 14;
     constexpr int CELL_H = CONTROL_ROW_HEIGHT + LABEL_H;
-    constexpr int SLIDER_COL_W = 44;
-    {
-        auto labelRow = bounds.removeFromTop(LABEL_H);
-        rampLabel_.setBounds(labelRow);
-    }
-    auto rampRow = bounds.removeFromTop(CELL_H * 3);
-    {
-        // Sliders stacked on the right, each with label above
-        auto sliderCol = rampRow.removeFromRight(SLIDER_COL_W);
-        auto depthCell = sliderCol.removeFromTop(CELL_H);
-        depthLabel_.setBounds(depthCell.removeFromTop(LABEL_H));
-        depthSlider_.setBounds(depthCell);
-        auto skewCell = sliderCol.removeFromTop(CELL_H);
-        skewLabel_.setBounds(skewCell.removeFromTop(LABEL_H));
-        skewSlider_.setBounds(skewCell);
-        auto cyclesCell = sliderCol.removeFromTop(CELL_H);
-        cyclesLabel_.setBounds(cyclesCell.removeFromTop(LABEL_H));
-        cyclesSlider_.setBounds(cyclesCell);
-        // Curve fills remaining width
-        rampRow.removeFromRight(4);
-        rampCurveDisplay_.setBounds(rampRow);
-    }
+    timeBend_.setBounds(bounds.removeFromTop(LABEL_H + CELL_H * 3));
 }
 
 // =============================================================================
@@ -998,9 +939,8 @@ void StepSequencerUI::setupSlider(LinkableTextSlider& slider, double min, double
 
 void StepSequencerUI::lookAndFeelChanged() {
     // Re-apply cached theme colours after a live theme switch.
-    for (auto* label :
-         {&rateLabel_, &stepsLabel_, &dirLabel_, &swingLabel_, &glideLabel_, &rampLabel_,
-          &depthLabel_, &skewLabel_, &cyclesLabel_, &quantizeLabel_, &quantizeSubLabel_})
+    for (auto* label : {&rateLabel_, &stepsLabel_, &dirLabel_, &swingLabel_, &glideLabel_,
+                        &quantizeLabel_, &quantizeSubLabel_})
         label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 
     dirCombo_.setColour(juce::ComboBox::backgroundColourId,
@@ -1015,13 +955,17 @@ void StepSequencerUI::lookAndFeelChanged() {
 std::vector<LinkableTextSlider*> StepSequencerUI::getLinkableSliders() {
     magda::ChainNodePath dummy;
     // Param indices match AutomatableParameter registration order:
-    // 0=rate, 1=direction, 2=swing, 3=glidetime, 4=accentvel, 5=normalvel, 6=ramp, 7=skew
+    // 0=rate, 1=direction, 2=swing, 3=glidetime, 4=accentvel, 5=normalvel, 6=bend amount, 7=bend
+    // cycles
     rateSlider_.setLinkContext(magda::INVALID_DEVICE_ID, SeqPlugin::kRate, dummy);
     swingSlider_.setLinkContext(magda::INVALID_DEVICE_ID, SeqPlugin::kSwing, dummy);
     glideSlider_.setLinkContext(magda::INVALID_DEVICE_ID, SeqPlugin::kGateLength, dummy);
-    depthSlider_.setLinkContext(magda::INVALID_DEVICE_ID, SeqPlugin::kRamp, dummy);
-    skewSlider_.setLinkContext(magda::INVALID_DEVICE_ID, SeqPlugin::kSkew, dummy);
-    return {&rateSlider_, &swingSlider_, &glideSlider_, &depthSlider_, &skewSlider_};
+    timeBend_.amountSlider().setLinkContext(magda::INVALID_DEVICE_ID, SeqPlugin::kBendAmount,
+                                            dummy);
+    timeBend_.cyclesSlider().setLinkContext(magda::INVALID_DEVICE_ID, SeqPlugin::kBendCycles,
+                                            dummy);
+    return {&rateSlider_, &swingSlider_, &glideSlider_, &timeBend_.amountSlider(),
+            &timeBend_.cyclesSlider()};
 }
 
 }  // namespace magda::daw::ui

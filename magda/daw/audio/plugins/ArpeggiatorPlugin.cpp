@@ -2,18 +2,18 @@
 
 #include <algorithm>
 #include <limits>
-#include <magda/sdk/sequencer/RampCurve.hpp>
 
 namespace magda::daw::audio {
 
 const char* ArpeggiatorPlugin::xmlTypeName = "arpeggiator";
 
-const juce::Identifier ArpeggiatorPlugin::SettingIDs::rampCycles("arpRampCycles");
 const juce::Identifier ArpeggiatorPlugin::SettingIDs::quantize("arpQuantize");
 const juce::Identifier ArpeggiatorPlugin::SettingIDs::quantizeSub("arpQuantizeSub");
-const juce::Identifier ArpeggiatorPlugin::SettingIDs::hardAngle("arpHardAngle");
 
 namespace {
+
+/// Steps one stretch can play; a bend that rolls can put several cycles' worth in one.
+constexpr int kMaxHitsPerStretch = 256;
 
 /// Whether the host counts this MIDI source as live input. No list is
 /// "nothing is known live", never "everything is": the native engine says
@@ -159,23 +159,11 @@ sdk::ParameterDescriptor slotInfo(int index) {
             info.displayFormat = DisplayFormat::Percent;
             break;
 
-        case ArpeggiatorPlugin::kRamp:
-            info.stableId = "ramp";
-            info.name = "Timing Depth";
-            info.minValue = -1.0f;
-            info.maxValue = 1.0f;
-            info.defaultValue = 0.0f;
-            info.bipolarModulation = true;
-            break;
+        case ArpeggiatorPlugin::kBendAmount:
+            return DeviceTimeBend::amountSlot(index);
 
-        case ArpeggiatorPlugin::kSkew:
-            info.stableId = "skew";
-            info.name = "Timing Skew";
-            info.minValue = -1.0f;
-            info.maxValue = 1.0f;
-            info.defaultValue = 0.0f;
-            info.bipolarModulation = true;
-            break;
+        case ArpeggiatorPlugin::kBendCycles:
+            return DeviceTimeBend::cyclesSlot(index);
 
         case ArpeggiatorPlugin::kLatch:
             info.stableId = "latch";
@@ -264,16 +252,13 @@ void ArpeggiatorPlugin::reset() {
 }
 
 sdk::RestoreResult ArpeggiatorPlugin::restoreState(const sdk::StateNode& state) {
-    if (state.has(stateKey(SettingIDs::rampCycles)))
-        rampCycles.store(state.getInt(stateKey(SettingIDs::rampCycles)), std::memory_order_relaxed);
     if (state.has(stateKey(SettingIDs::quantize)))
         quantize.store(static_cast<float>(state.getDouble(stateKey(SettingIDs::quantize))),
                        std::memory_order_relaxed);
     if (state.has(stateKey(SettingIDs::quantizeSub)))
         quantizeSub.store(state.getInt(stateKey(SettingIDs::quantizeSub)),
                           std::memory_order_relaxed);
-    if (state.has(stateKey(SettingIDs::hardAngle)))
-        hardAngle.store(state.getBool(stateKey(SettingIDs::hardAngle)), std::memory_order_relaxed);
+    timeBend.restore(state);
     return sdk::RestoreResult::success();
 }
 
@@ -306,10 +291,6 @@ double ArpeggiatorPlugin::rateToBeats(Rate r) {
         default:
             return 0.5;
     }
-}
-
-double ArpeggiatorPlugin::applyRampCurve(double t, float depth, float skew, bool hardAngle) {
-    return sdk::sequencer::ramp_curve::applyRampCurve(t, depth, skew, hardAngle);
 }
 
 void ArpeggiatorPlugin::addHeldNote(int noteNumber, int velocity, bool fromLiveSource,
@@ -397,7 +378,6 @@ int ArpeggiatorPlugin::takeSoundingNote() {
 
 int ArpeggiatorPlugin::resetArpState() {
     const int note = takeSoundingNote();
-    currentStep_ = 0;
     arpOriginBeat_ = -1.0;
     lastBlockEndBeat_ = -1.0;
     wasPlaying_ = false;
@@ -504,14 +484,13 @@ struct ArpeggiatorPlugin::BlockScope {
     double stepBeats = 0.5;
     float gate = 1.0f;
     float swing = 0.0f;
-    float ramp = 0.0f;
-    float skew = 0.0f;
     VelocityMode velocityMode = VelocityMode::Original;
     int fixedVelocity = 100;
     float quantizeAmount = 0.0f;
     int quantizeSubdivisions = 16;
-    bool hardAngleCurve = false;
-    int rampCycleCount = 1;
+    sdk::sequencer::TimeBend bend;
+    /// One pass of the bend, in the block's meter.
+    double bendCycleBeats = 4.0;
 
     /**
      * @brief Where in the block the host put an input event.
@@ -579,54 +558,6 @@ struct ArpeggiatorPlugin::Stretch {
     double timeOf(double beat) const {
         return startSecs + (beat - startBeat) / (endBeat - startBeat) * durationSecs;
     }
-
-    /**
-     * @brief The grid position of a step, warped by the ramp curve inside its
-     *        cycle. Without ramp, steps are evenly spaced.
-     * @param step Global step index.
-     * @return The beat the step sits on before swing and quantize.
-     */
-    double gridBeat(int step) const {
-        const int cycle = step / seq.length;
-        const int stepInCycle = step % seq.length;
-        const double cycleStart = originBeat + cycle * cycleBeats;
-
-        if (std::abs(block.ramp) > 0.001f && seq.length > 1) {
-            const double tLinear =
-                static_cast<double>(stepInCycle) / static_cast<double>(seq.length);
-            const double tCurved = sdk::sequencer::ramp_curve::applyRampCurveWithCycles(
-                tLinear, block.ramp, block.skew, block.rampCycleCount, block.hardAngleCurve);
-            return cycleStart + tCurved * cycleBeats;
-        }
-        return cycleStart + stepInCycle * block.stepBeats;
-    }
-
-    /**
-     * @brief Where the step is actually played: swing on odd steps, then
-     *        quantize pulling that toward a regular grid.
-     *
-     * Neither can carry a step past its neighbour, so the walk keys on this
-     * instead of the raw grid and a step warped past the end of a stretch stays
-     * pending rather than being consumed unplayed (#2362).
-     *
-     * @param step Global step index.
-     * @return The beat the step is played on.
-     */
-    double warpedStepBeat(int step) const {
-        double beat = gridBeat(step);
-        // Half the gap to the next step, not half the nominal rate: Time Bend
-        // can compress two steps onto one beat, and a fixed offset would then
-        // swing the odd one past the even one that follows it.
-        if (step % 2 == 1 && block.swing > 0.0f)
-            beat += static_cast<double>(block.swing) * (gridBeat(step + 1) - beat) * 0.5;
-
-        if (block.quantizeAmount > 0.0f && block.quantizeSubdivisions > 0) {
-            const double gridSpacing = cycleBeats / static_cast<double>(block.quantizeSubdivisions);
-            const double snapped = std::round(beat / gridSpacing) * gridSpacing;
-            beat += (snapped - beat) * static_cast<double>(block.quantizeAmount);
-        }
-        return beat;
-    }
 };
 
 void ArpeggiatorPlugin::closeSoundingNote(BlockScope& block, double timeInBlock) {
@@ -675,31 +606,55 @@ void ArpeggiatorPlugin::applyInputEvent(BlockScope& block, int index, double tim
 }
 
 void ArpeggiatorPlugin::walkSteps(BlockScope& block, const Stretch& stretch) {
-    // Catch up to the stretch. Cycles are evenly spaced whatever the warp does
-    // inside one, so the cycle is a division and only its steps are walked:
-    // bounded work, not one pass per skipped step.
-    if (stretch.warpedStepBeat(currentStep_) < stretch.startBeat) {
-        // Warp carries a step across the cycle boundary either way, so the
-        // division lands a cycle early and the walk closes the rest.
-        const int cycle = static_cast<int>(std::floor((stretch.startBeat - stretch.originBeat) /
-                                                      stretch.cycleBeats)) -
-                          1;
-        currentStep_ = std::max(currentStep_, cycle * stretch.seq.length);
-        while (stretch.warpedStepBeat(currentStep_) < stretch.startBeat)
-            ++currentStep_;
+    // Tick k sits k steps after the origin, odd ones swung in pattern time, and plays where the
+    // bend's read head crosses it (#3044). Nothing carries between stretches: each plays the hits
+    // that land in it, so the host's cuts never change what plays.
+    const double origin = stretch.originBeat;
+    const double stepBeats = block.stepBeats;
+    const double swingBeats = static_cast<double>(block.swing) * stepBeats * 0.5;
+    const double quantize = static_cast<double>(block.quantizeAmount);
+    const double grid = quantize > 0.0 && block.quantizeSubdivisions > 0
+                            ? block.bendCycleBeats / block.quantizeSubdivisions
+                            : 0.0;
+    const double reach = grid > 0.0 ? 0.5 * grid * quantize : 0.0;
+    const double from = stretch.startBeat - origin;
+    const double to = stretch.endBeat - origin;
+
+    const auto ticks = [&](double lo, double hi, const auto& visit) {
+        auto k = std::max<long long>(
+            0, static_cast<long long>(std::floor((lo - swingBeats) / stepBeats)) - 1);
+        for (; static_cast<double>(k) * stepBeats <= hi; ++k)
+            visit(static_cast<double>(k) * stepBeats + (k % 2 != 0 ? swingBeats : 0.0), k);
+    };
+
+    struct Hit {
+        double beat;
+        long long tick;
+    };
+    std::array<Hit, kMaxHitsPerStretch> hits{};
+    int count = 0;
+    sdk::sequencer::forEachBentHit(block.bend, block.bendCycleBeats, from - reach, to + reach,
+                                   ticks, [&](double real, long long tick) {
+                                       double beat = real;
+                                       if (grid > 0.0)
+                                           beat +=
+                                               (std::round(beat / grid) * grid - beat) * quantize;
+                                       if (beat >= from && beat < to && count < kMaxHitsPerStretch)
+                                           hits[static_cast<size_t>(count++)] = {beat, tick};
+                                   });
+    // A falling bend emits later ticks first; insertion sort keeps ties in order, unallocated.
+    for (int i = 1; i < count; ++i) {
+        const auto held = hits[static_cast<size_t>(i)];
+        int j = i - 1;
+        for (; j >= 0 && hits[static_cast<size_t>(j)].beat > held.beat; --j)
+            hits[static_cast<size_t>(j + 1)] = hits[static_cast<size_t>(j)];
+        hits[static_cast<size_t>(j + 1)] = held;
     }
 
-    for (;;) {
-        const double stepBeat = stretch.warpedStepBeat(currentStep_);
-        // Left where it is rather than consumed: a step the warp moved past this
-        // stretch is played by the stretch that holds it, so the same input
-        // plays the same notes however the host cuts its callbacks up (#2415).
-        if (stepBeat >= stretch.endBeat)
-            break;
+    for (int h = 0; h < count; ++h) {
+        const double stepBeat = origin + hits[static_cast<size_t>(h)].beat;
+        const long long tick = hits[static_cast<size_t>(h)].tick;
 
-        // Never ahead of the stretch it is played in: the catch-up above leaves
-        // the walk on a step at or after the start, and a sequence rebuilt
-        // mid-block can only move one closer to it.
         const double timeInBlock = std::max(stretch.startSecs, stretch.timeOf(stepBeat));
 
         // Note-off for previous note
@@ -714,7 +669,7 @@ void ArpeggiatorPlugin::walkSteps(BlockScope& block, const Stretch& stretch) {
         if (block.pattern == Pattern::Random) {
             stepIdx = arpRandom_.nextInt(stretch.seq.length);
         } else {
-            stepIdx = currentStep_ % stretch.seq.length;
+            stepIdx = static_cast<int>(tick % stretch.seq.length);
         }
 
         const auto& note = stretch.seq.notes[static_cast<size_t>(stepIdx)];
@@ -724,7 +679,7 @@ void ArpeggiatorPlugin::walkSteps(BlockScope& block, const Stretch& stretch) {
         if (block.velocityMode == VelocityMode::Fixed) {
             vel = block.fixedVelocity;
         } else if (block.velocityMode == VelocityMode::Accent) {
-            vel = (currentStep_ % 4 == 0) ? juce::jmin(127, note.velocity + 30) : note.velocity;
+            vel = (tick % 4 == 0) ? juce::jmin(127, note.velocity + 30) : note.velocity;
         }
 
         // Note-on, carrying the provenance of whoever holds the pitch, so a
@@ -751,9 +706,15 @@ void ArpeggiatorPlugin::walkSteps(BlockScope& block, const Stretch& stretch) {
             lastNoteOffBeat_ = noteOffBeat;
         }
 
-        ++currentStep_;
-        currentPlayStep_.store(currentStep_ % stretch.seq.length, std::memory_order_relaxed);
+        currentPlayStep_.store(static_cast<int>(tick % stretch.seq.length),
+                               std::memory_order_relaxed);
         currentSeqLength_.store(stretch.seq.length, std::memory_order_relaxed);
+    }
+
+    if (block.bendCycleBeats > 0.0) {
+        const double cycles = to / block.bendCycleBeats;
+        displayedBendPhase_.store(static_cast<float>(cycles - std::floor(cycles)),
+                                  std::memory_order_relaxed);
     }
 }
 
@@ -800,7 +761,6 @@ void ArpeggiatorPlugin::playStretch(BlockScope& block, double startSecs, double 
     if (lastBlockEndBeat_ < 0.0 ||
         std::abs(stretch.startBeat - lastBlockEndBeat_) > kContiguousBeats) {
         closeSoundingNote(block, startSecs);
-        currentStep_ = 0;
         arpOriginBeat_ = -1.0;
     }
     lastBlockEndBeat_ = stretch.endBeat;
@@ -834,9 +794,8 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
         return;
 
     // The host pushed the modulated slot positions before this call; publish
-    // the Time Bend pair for the UI curve display (see displayedRamp_).
-    displayedRamp_.store(displayValue(kRamp), std::memory_order_relaxed);
-    displayedSkew_.store(displayValue(kSkew), std::memory_order_relaxed);
+    // the bend amount for the UI curve display (see displayedBendAmount_).
+    displayedBendAmount_.store(displayValue(kBendAmount), std::memory_order_relaxed);
 
     const double blockDurationSecs = static_cast<double>(context.numSamples()) / sampleRate_;
     const bool onTransportClock = context.isPlaying && context.tempoMap != nullptr;
@@ -860,15 +819,19 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
         .stepBeats = rateToBeats(static_cast<Rate>(displayIndex(kRate))),
         .gate = juce::jlimit(0.01f, 1.0f, displayValue(kGate)),
         .swing = juce::jlimit(0.0f, 1.0f, displayValue(kSwing)),
-        .ramp = juce::jlimit(-1.0f, 1.0f, displayValue(kRamp)),
-        .skew = juce::jlimit(-1.0f, 1.0f, displayValue(kSkew)),
         .velocityMode = static_cast<VelocityMode>(displayIndex(kVelMode)),
         .fixedVelocity = juce::jlimit(1, 127, displayIndex(kFixedVel)),
         .quantizeAmount = juce::jlimit(0.0f, 1.0f, quantize.load(std::memory_order_relaxed)),
         .quantizeSubdivisions = juce::jlimit(16, 512, quantizeSub.load(std::memory_order_relaxed)),
-        .hardAngleCurve = hardAngle.load(std::memory_order_relaxed),
-        .rampCycleCount = juce::jlimit(1, 8, rampCycles.load(std::memory_order_relaxed)),
+        .bend = timeBend.forBlock(displayValue(kBendAmount), displayIndex(kBendCycles)),
     };
+    const double beatsPerBar =
+        onTransportClock ? context.tempoMap->beatsPerBarAtSeconds(context.timelineStartSeconds)
+                         : 4.0;
+    block.bendCycleBeats = block.bend.cycleBeats(beatsPerBar);
+    displayedCycleBeats_.store(static_cast<float>(block.bendCycleBeats), std::memory_order_relaxed);
+    displayedStepBeats_.store(static_cast<float>(block.stepBeats), std::memory_order_relaxed);
+    displayedBeatsPerBar_.store(static_cast<float>(beatsPerBar), std::memory_order_relaxed);
 
     // What the arp passes on rather than consumes, emitted beside the notes it
     // generates. The guard covers the returns below: a block the arp leaves

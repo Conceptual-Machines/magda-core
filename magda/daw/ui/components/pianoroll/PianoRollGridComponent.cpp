@@ -20,6 +20,7 @@
 #include "VelocityReadout.hpp"
 #include "core/ChordAnnotationCommands.hpp"
 #include "core/ClipManager.hpp"
+#include "core/ClipTimeBend.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/MidiChordMarkers.hpp"
 #include "core/MidiNoteCommands.hpp"
@@ -27,6 +28,7 @@
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "project/ProjectManager.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/components/timeline/PlayheadStyle.hpp"
 #include "ui/utils/AudioFileTypes.hpp"
@@ -559,7 +561,47 @@ void PianoRollGridComponent::paintBeatLines(juce::Graphics& g, juce::Rectangle<i
 }
 
 void PianoRollGridComponent::paintOverChildren(juce::Graphics& g) {
+    paintBentNotes(g);
     paintPitchExpression(g);
+}
+
+void PianoRollGridComponent::paintBentNotes(juce::Graphics& g) {
+    auto& clipManager = ClipManager::getInstance();
+    const auto beatsPerBar = ProjectManager::getInstance().getCurrentProjectInfo().beatsPerBar();
+    const auto visibleArea = g.getClipBounds();
+
+    for (const auto clipId : clipIds_) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (clip == nullptr || !clip->isMidi() || !clip->timeBend.isActive())
+            continue;
+
+        const auto colour = getColourForClip(clipId);
+        const float alpha = isClipSelected(clipId) ? 1.0f : 0.5f;
+        for (const auto& played : playedNotes(*clip, beatsPerBar)) {
+            auto note = clip->midiNotes[played.noteIndex];
+            note.startBeat = played.startBeat;
+            if (!ClipOperations::clipMidiNoteToVisibleRange(*clip, note))
+                continue;
+            if (foldMap_ && foldMap_->isActive() &&
+                foldMap_->noteForRow(foldMap_->rowForNote(note.noteNumber)) != note.noteNumber)
+                continue;
+
+            const int x = beatToPixel(displayBeatForClipBeat(clipId, note.startBeat));
+            const int w = juce::jmax(8, static_cast<int>(note.lengthBeats * pixelsPerBeat_));
+            const int y = noteNumberToY(note.noteNumber);
+            if (x + w < visibleArea.getX() || x > visibleArea.getRight() ||
+                y + noteHeight_ < visibleArea.getY() || y > visibleArea.getBottom())
+                continue;
+
+            const auto rect =
+                juce::Rectangle<float>(static_cast<float>(x), static_cast<float>(y + 1),
+                                       static_cast<float>(w), static_cast<float>(noteHeight_ - 2));
+            g.setColour(colour.withAlpha(0.85f * alpha));
+            g.fillRoundedRectangle(rect, 2.0f);
+            g.setColour(colour.brighter(0.6f).withAlpha(alpha));
+            g.drawRoundedRectangle(rect, 2.0f, 1.0f);
+        }
+    }
 }
 
 void PianoRollGridComponent::resized() {
@@ -2583,6 +2625,8 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
 
         noteComp->setGhost(!isClipSelected(clipId));
         noteComp->updateFromNote(note, noteColour);
+        // Under a time bend the written note is where it is edited; where it plays is drawn over.
+        noteComp->setAlpha(clip->timeBend.isActive() ? 0.35f : 1.0f);
         noteComp->setVisible(true);
     }
     rebuildSelectedPitchRows();

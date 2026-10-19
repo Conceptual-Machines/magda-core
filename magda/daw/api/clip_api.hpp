@@ -31,7 +31,7 @@ class ClipApi {
     // does not play. Exposed here so the DSL can mute a specific clip, which
     // is tedious by hand and is the realistic use for a typed command.
     virtual void setClipEnabled(ClipId clipId, bool enabled) = 0;
-    virtual void setGrooveTemplate(ClipId clipId, const juce::String& templateName) = 0;
+    virtual void setTimeBend(ClipId clipId, const sdk::sequencer::TimeBend& bend) = 0;
 
     virtual bool addMidiNote(ClipId clipId, double startBeat, int noteNumber, double lengthBeats,
                              int velocity) = 0;

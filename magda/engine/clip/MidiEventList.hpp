@@ -18,10 +18,9 @@
  * The same move `AudioEventPlayback` makes with `WarpMap`. The sequence is a
  * value in an immutable snapshot, so an edit compiles a new one and swaps it in.
  *
- * Groove is the one thing not resolved here: it can't be, since it's
- * anchored to the project grid, so a looped clip grooves each pass
- * differently whenever its loop length isn't a whole multiple of the
- * template's period (GrooveTemplate.hpp).
+ * A time bend is the one thing not resolved here: it is anchored to the
+ * project grid, so a looped clip bends each pass differently whenever its loop
+ * length isn't a whole multiple of the bend's cycle (#3044).
  *
  * Beats throughout, in the clip's own content domain. Where those land on
  * the timeline is the fold's answer, below.
@@ -247,13 +246,8 @@ struct MidiEventList {
      * here, since what ended it was a boundary rather than itself.
      *
      * Bounded by @ref longestNoteBeats rather than walked from the top.
-     *
-     * @p widen is what a groove can move an edge by. With one in force
-     * these are candidates rather than an answer, since where a note
-     * sounds is not where it was written, and the caller settles it on the
-     * grooved edges.
      */
-    void notesSoundingAt(double beat, double widen, std::vector<std::int32_t>& out) const;
+    void notesSoundingAt(double beat, std::vector<std::int32_t>& out) const;
 };
 
 /**

@@ -4,6 +4,7 @@
 
 #include <array>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <utility>
 #include <vector>
@@ -192,7 +193,7 @@ class ClipMidiSource final : public EngineMidiSource {
     void endClip(juce::MidiBuffer& out, EventSample sample, ClipId clipId);
 
     /// The notes of @p clip actually sounding at @p timelineBeat, into @ref
-    /// scratch_. Grooved edges, not written ones, and one implementation for
+    /// scratch_. Bent strikes, not written ones, and one implementation for
     /// both the chase and the snapshot reconcile.
     void gatherSounding(const MidiClipPlayback& clip, const MidiFoldPass& pass,
                         double timelineBeat);
@@ -230,9 +231,22 @@ class ClipMidiSource final : public EngineMidiSource {
     bool renderSession(juce::MidiBuffer& out, const BlockInfo& block,
                        const TrackClipPlayback& track, bool reconcile);
 
-    /// Start @p index of @p clip's list at @p timelineBeat.
+    /// Start @p index of @p clip's list at @p timelineBeat; a bent note ends at @p endBeat.
     void startNote(juce::MidiBuffer& out, const BlockInfo& block, const MidiClipPlayback& clip,
-                   std::int32_t index, double timelineBeat);
+                   std::int32_t index, double timelineBeat, double endBeat = INFINITY);
+
+    /// The notes @p clip's bend strikes in timeline [@p from, @p to) of @p pass, in time order,
+    /// into @ref bentHits_ (#3044).
+    void collectBentHits(const MidiClipPlayback& clip, const MidiFoldPass& pass, double from,
+                         double to);
+
+    /// Strikes the bent notes of one pass in [@p from, @p to), ending each a written length on.
+    void playBentNotes(juce::MidiBuffer& out, const BlockInfo& block, const MidiClipPlayback& clip,
+                       const MidiFoldPass& pass, double from, double to);
+
+    /// Ends @p clip's bent notes whose end is before @p beat, each at its own end.
+    void endBentNotesBefore(juce::MidiBuffer& out, const BlockInfo& block, ClipId clipId,
+                            double beat);
 
     TrackId trackId_;
     ClipSnapshotFeed& clips_;
@@ -263,6 +277,14 @@ class ClipMidiSource final : public EngineMidiSource {
     /// Reserved off the audio thread, never grown on it.
     std::vector<OwedNote> owed_;
     std::vector<std::int32_t> scratch_;
+
+    struct BentHit {
+        double beat = 0.0;
+        std::int32_t index = 0;
+    };
+    std::vector<BentHit> bentHits_;
+    /// Beside @ref scratch_ when a bent clip is gathered: where each of those notes ends.
+    std::vector<double> scratchEnds_;
 
     std::atomic<int> dropped_{0};
     std::atomic<int> overflowed_{0};

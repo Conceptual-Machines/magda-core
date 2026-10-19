@@ -13,7 +13,6 @@
 #include "clip/ClipSnapshotCompiler.hpp"
 #include "clip/ClipSnapshotFeed.hpp"
 #include "clip/ClipVoicePool.hpp"
-#include "clip/GrooveTemplate.hpp"
 #include "exec/OfflineRender.hpp"
 #include "exec/PlanExecutor.hpp"
 #include "exec/PlanValues.hpp"
@@ -318,17 +317,6 @@ engine::TempoMap tempoMapFor(const Case& value) {
     return engine::TempoMap(std::move(changes), {});
 }
 
-GrooveTemplateSet groovesFor(const Case& value) {
-    if (value.grooveXml.isEmpty())
-        return {};
-
-    const auto document = juce::parseXML(value.grooveXml);
-    if (document == nullptr)
-        return {};
-
-    return GrooveTemplateSet::parse(*document);
-}
-
 /// Collects the render into one buffer, so that two renders are comparable
 /// sample for sample however either was cut into blocks.
 class BufferSink final : public OfflineRenderSink {
@@ -390,8 +378,8 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
         sources.push_back(
             {source.id, source.path.toStdString(), source.sampleRate, source.durationSeconds});
 
-    auto snapshot = std::make_shared<const ClipSnapshot>(
-        compileClipSnapshot(lanes, sources, tempo, groovesFor(value)));
+    auto snapshot =
+        std::make_shared<const ClipSnapshot>(compileClipSnapshot(lanes, sources, tempo));
     for (const auto& diagnostic : snapshot->diagnostics)
         result.diagnostics.push_back("snapshot: " + diagnostic);
 

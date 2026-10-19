@@ -1,6 +1,7 @@
 #include "GrooveLibrary.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <ranges>
 #include <utility>
 
@@ -13,7 +14,6 @@ GrooveLibrary& GrooveLibrary::getInstance() {
 
 void GrooveLibrary::import(std::vector<GrooveTemplateData> grooves) {
     grooves_ = std::move(grooves);
-    notifyChanged();
 }
 
 void GrooveLibrary::setStore(Reader reader, Writer writer) {
@@ -21,11 +21,6 @@ void GrooveLibrary::setStore(Reader reader, Writer writer) {
     writer_ = std::move(writer);
     if (reader_)
         import(reader_());
-}
-
-void GrooveLibrary::notifyChanged() const {
-    if (onChanged_)
-        onChanged_();
 }
 
 juce::StringArray GrooveLibrary::names() const {
@@ -53,7 +48,6 @@ bool GrooveLibrary::upsert(const GrooveTemplateData& groove) {
         // otherwise differ between the library and the store.
         if (reader_) {
             grooves_ = reader_();
-            notifyChanged();
             return true;
         }
     }
@@ -63,9 +57,17 @@ bool GrooveLibrary::upsert(const GrooveTemplateData& groove) {
         *existing = groove;
     else
         grooves_.push_back(groove);
-
-    notifyChanged();
     return true;
+}
+
+std::optional<sdk::sequencer::TimeBend> GrooveLibrary::bend(const juce::String& name,
+                                                            double beatsPerBar,
+                                                            float strength) const {
+    const auto* groove = find(name);
+    if (groove == nullptr)
+        return std::nullopt;
+    return sdk::sequencer::grooveTimeBend(groove->latenessProportions, groove->notesPerBeat,
+                                          beatsPerBar, groove->parameterized ? strength : 1.0f);
 }
 
 }  // namespace magda

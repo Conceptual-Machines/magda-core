@@ -182,6 +182,10 @@ struct ProjectInfo {
     double tempo = DEFAULT_BPM;
     int timeSignatureNumerator = DEFAULT_TIME_SIGNATURE_NUMERATOR;
     int timeSignatureDenominator = DEFAULT_TIME_SIGNATURE_DENOMINATOR;
+    /// Quarter-note beats in a bar of the project's time signature.
+    double beatsPerBar() const {
+        return magda::beatsPerBar(timeSignatureNumerator, timeSignatureDenominator);
+    }
     double projectLength = 240.0;  // seconds (legacy; derived from timelineLengthBars)
     double sampleRate = 44100.0;   // project working/render sample rate
 

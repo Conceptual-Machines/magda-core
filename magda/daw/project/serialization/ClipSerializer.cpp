@@ -3,6 +3,7 @@
 
 #include "ProjectSerializer.hpp"
 #include "SerializationHelpers.hpp"
+#include "music/GrooveLibrary.hpp"
 
 namespace magda {
 
@@ -634,11 +635,8 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
         }
     }
 
-    // Groove/Shuffle/Swing
-    if (clip.grooveTemplate.isNotEmpty())
-        obj->setProperty("grooveTemplate", clip.grooveTemplate);
-    if (clip.grooveStrength > 0.0f)
-        obj->setProperty("grooveStrength", clip.grooveStrength);
+    if (clip.isMidi() && !(clip.timeBend == sdk::sequencer::TimeBend{}))
+        obj->setProperty("timeBend", juce::String(sdk::sequencer::timeBendToText(clip.timeBend)));
 
     if (clip.isAudio() && !clip.audio().events.empty()) {
         auto* audioObj = new juce::DynamicObject();
@@ -973,10 +971,18 @@ bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& out
         }
     }
 
-    // Groove/Shuffle/Swing
-    outClip.grooveTemplate = obj->getProperty("grooveTemplate").toString();
-    outClip.grooveStrength =
-        static_cast<float>(static_cast<double>(obj->getProperty("grooveStrength")));
+    if (auto bend = sdk::sequencer::timeBendFromText(
+            obj->getProperty("timeBend").toString().toStdString())) {
+        outClip.timeBend = *bend;
+    } else if (const auto groove = obj->getProperty("grooveTemplate").toString();
+               groove.isNotEmpty()) {
+        // A clip saved with a groove plays it as the bend the groove spells (#3044), in 4/4:
+        // the project's meter is not read yet.
+        const auto strength =
+            static_cast<float>(static_cast<double>(obj->getProperty("grooveStrength")));
+        if (auto bend = GrooveLibrary::getInstance().bend(groove, 4.0, strength))
+            outClip.timeBend = *bend;
+    }
 
     auto* audioObj = obj->getProperty("audio").getDynamicObject();
     auto* legacyAudioSourceObj = obj->getProperty("audioSource").getDynamicObject();

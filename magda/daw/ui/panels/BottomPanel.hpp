@@ -27,6 +27,7 @@ class MagdaDevice;
 namespace daw::ui {
 class AudioClipPropertiesContent;
 class ChordPanelContent;
+class ClipTimeBendView;
 class PostFxPanelContent;
 }  // namespace daw::ui
 
@@ -258,6 +259,17 @@ class BottomPanel : public daw::ui::TabbedPanel,
     static constexpr int POSTFX_MIN_WIDTH = 240;
 
     std::unique_ptr<PropsResizeHandle> postFxResizer_;
+
+    // Time bend side panel (right side, in the MIDI editors), opened by the header's
+    // Time Bend button (#3044).
+    std::unique_ptr<daw::ui::ClipTimeBendView> timeBendPanel_;
+    bool timeBendOpen_ = false;
+    bool showTimeBendPanel_ = false;  // derived: timeBendOpen_ && a MIDI clip in the editor
+    int timeBendPanelWidth_ = 380;
+    static constexpr int TIMEBEND_MIN_WIDTH = 280;
+    static constexpr int TIMEBEND_MAX_WIDTH = 900;
+    std::unique_ptr<PropsResizeHandle> timeBendResizer_;
+    void updateTimeBendPanel(bool inMidiEditor, ClipId selectedClip);
 
     void ensureChordPanelCreated();
     void ensurePostFxPanelCreated();

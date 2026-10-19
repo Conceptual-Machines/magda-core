@@ -29,7 +29,6 @@
 #include "music/NotationSettings.hpp"
 #include "ui/components/chord/ChordFunction.hpp"
 #include "ui/components/common/SvgButton.hpp"
-#include "ui/components/common/TimeBendPopup.hpp"
 #include "ui/components/pianoroll/CCLaneComponent.hpp"
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
 #include "ui/components/pianoroll/MidiEditorKey.hpp"

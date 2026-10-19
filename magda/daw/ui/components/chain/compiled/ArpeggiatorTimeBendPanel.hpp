@@ -9,16 +9,15 @@
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
-#include "ui/components/common/RampCurveDisplay.hpp"
+#include "ui/components/common/TimeBendEditor.hpp"
 
 namespace magda::daw::ui {
 
 /**
- * @brief The Arpeggiator's faceplate beside its knob row: the time-bend curve and the settings
- *        that shape it (cycles, quantize, subdivision).
+ * @brief The Arpeggiator's faceplate beside its knob row: the time bend and quantize.
  *
- * Depth and skew are slots, edited here by dragging the curve and in the knob row. Cycles, Q,
- * Sub and the hard-angle toggle are settings, written to the model's state document (#2317).
+ * Bend amount and cycles are slots, in the knob row. The curve, its span and on/off, quantize
+ * and subdivision are settings, written to the model's state document (#2317).
  */
 class ArpeggiatorTimeBendPanel final : public juce::Component,
                                        public CompiledDevicePanel,
@@ -42,7 +41,7 @@ class ArpeggiatorTimeBendPanel final : public juce::Component,
         linkContextProvider_ = std::move(provider);
     }
     int preferredHeight() const override {
-        return 200;
+        return 220;
     }
 
     void paint(juce::Graphics& g) override;
@@ -54,20 +53,17 @@ class ArpeggiatorTimeBendPanel final : public juce::Component,
     void timerCallback() override;
     void syncSettingsFromDevice();
     void settingsEdited();
-    void writeParameter(int slot, float value);
 
     std::shared_ptr<Arp> arp_;
     std::function<void(int, float)> onParameterChanged_;
     std::function<std::optional<ParamLinkContext>()> linkContextProvider_;
     magda::ChainNodePath devicePath_;
-    bool hardAngle_ = false;
 
-    RampCurveDisplay curve_;
-    magda::DraggableValueLabel cycles_{magda::DraggableValueLabel::Format::Integer};
+    TimeBendEditor bend_;
     magda::DraggableValueLabel quantize_{magda::DraggableValueLabel::Format::Percentage};
     magda::DraggableValueLabel subdivision_{magda::DraggableValueLabel::Format::Integer};
     juce::Rectangle<int> header_;
-    juce::Rectangle<int> cyclesTile_, quantizeTile_, subdivisionTile_;
+    juce::Rectangle<int> quantizeTile_, subdivisionTile_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ArpeggiatorTimeBendPanel)
 };

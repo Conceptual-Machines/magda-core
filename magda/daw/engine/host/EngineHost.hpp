@@ -75,15 +75,6 @@ class EngineHost {
     };
     using HardwareChannelProvider = std::function<HardwareChannelCatalog()>;
 
-    /** @brief One named groove, as the app's library holds it (#2757). */
-    struct GrooveEntry {
-        std::string name;
-        std::vector<float> latenesses;
-        int notesPerBeat = 2;
-        bool parameterized = false;
-    };
-    using GrooveProvider = std::function<std::vector<GrooveEntry>()>;
-
     static std::vector<double> detectSourceTransients(const juce::String& path, float sensitivity);
 
     EngineHost();
@@ -113,15 +104,6 @@ class EngineHost {
     void setPluginServices(juce::AudioPluginFormatManager& formats,
                            const juce::KnownPluginList& knownPlugins);
 
-    /**
-     * @brief Supply the grooves a clip can name, read at each publish (#2757).
-     *
-     * Handed in rather than looked up, so a compile stays a pure function of what it was
-     * given. Without one no clip grooves, which is what this got before the library
-     * existed.
-     */
-    void setGrooveProvider(GrooveProvider provider);
-
     /// Render the deterministic side of the mix @p milliseconds ahead of the device, in whole
     /// blocks (#1898), or nothing ahead for zero. A change remakes the session once nothing
     /// plays or records.
@@ -134,10 +116,6 @@ class EngineHost {
     /// Where the history past the ring goes on disk (#3052); none is the system's temp
     /// folder. A change starts a new history, as setCaptureSeconds does.
     void setCaptureFolder(const juce::File& folder);
-
-    /// Recompile the clips after the groove library changes: a groove already on a
-    /// playing clip keeps the one it was compiled with until this asks again.
-    void refreshGrooves();
 
     /**
      * @brief Play @p file into the master chain in place of every track (#3081). Message thread.

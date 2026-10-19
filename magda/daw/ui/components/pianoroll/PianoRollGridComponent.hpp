@@ -482,6 +482,8 @@ class PianoRollGridComponent : public juce::Component,
     static constexpr double MAX_PITCH_EXPRESSION_SEMITONES = 48.0;
 
     void paintPitchExpression(juce::Graphics& g);
+    /// Where a clip's time bend plays its notes, over the written ones it dims (#3044).
+    void paintBentNotes(juce::Graphics& g);
     bool handleExpressionMouseDown(const juce::MouseEvent& e);
     void handleExpressionMouseDrag(const juce::MouseEvent& e);
     void handleExpressionMouseUp(const juce::MouseEvent& e);

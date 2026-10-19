@@ -51,27 +51,32 @@ TEST_CASE("Arpeggiator plays a step quantize pulls back into an earlier block",
     Rig rig;
     rig.setRate(Arp::Rate::Sixteenth);
     rig.arp.quantize.store(1.0f);
-    rig.arp.quantizeSub.store(16);
+    rig.arp.quantizeSub.store(20);
 
-    // Three notes make a 0.75-beat cycle, so the quantize grid is 0.046875 and
-    // the 1/16 steps do not sit on it: step 1 snaps back to 0.234375 and step 2
-    // forward to 0.515625, each across a block boundary. Over 0.683 beats.
+    // Twenty divisions of the bend's one-bar cycle is a 0.2-beat grid the 1/16
+    // steps do not sit on: steps 1 and 2 snap back to 0.2 and 0.4, each across a
+    // block boundary. Over 0.683 beats.
     CHECK(countNoteOns(rig, 32, {on(60), on(64), on(67)}) == 3);
 }
 
-TEST_CASE("Arpeggiator keeps a swung step inside the gap Time Bend leaves it",
+TEST_CASE("Arpeggiator plays its steps in time order through a bend that holds",
           "[arpeggiator][midi][swing]") {
     Rig rig;
     rig.setRate(Arp::Rate::Sixteenth);
-    // Depth -1 with a hard angle pins the first half of the cycle onto its
-    // start, so steps sit on top of each other and there is no room for swing
-    // to move the odd ones into.
-    rig.arp.setParameterValue(Arp::kRamp, -1.0f);
     rig.arp.setParameterValue(Arp::kSwing, 1.0f);
-    rig.arp.hardAngle.store(true);
+
+    // Holding the first half of the bar then catching up packs a bar of swung steps into two
+    // beats, so they land close together and in several cells of the crossing grid at once.
+    auto bend =
+        magda::sdk::sequencer::makeTimeBend(magda::sdk::sequencer::TimeBendShape::HoldThenCatchUp);
+    bend.on = true;
+    magda::sdk::StateNode state{"device"};
+    state.setString("timeBend", magda::sdk::sequencer::timeBendToText(bend));
+    rig.arp.timeBend.restore(state);
 
     double lastPlayed = -1.0;
-    for (int block = 0; block < 100; ++block) {
+    int noteOns = 0;
+    for (int block = 0; block < 200; ++block) {
         const double blockStart = block * kBlockSeconds;
         auto midi = rig.run(blockStart, block == 0 ? kChord : kNothing, true, false, kBlockSeconds);
         for (int i = 0; i < midi.size(); ++i) {
@@ -81,7 +86,10 @@ TEST_CASE("Arpeggiator keeps a swung step inside the gap Time Bend leaves it",
             if (midi.message(i).isNoteOn()) {
                 CHECK(blockStart + stamp >= lastPlayed);
                 lastPlayed = blockStart + stamp;
+                ++noteOns;
             }
         }
     }
+    // 200 blocks is 4.27 beats: the held half plays nothing, the catch-up all sixteen.
+    CHECK(noteOns >= 16);
 }

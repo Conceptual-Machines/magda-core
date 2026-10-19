@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <limits>
 
 #include "clip/SessionPlayback.hpp"
 
@@ -19,6 +21,9 @@ bool reachesInto(const SnapshotSpan& span, double startBeat, double endBeat) {
 /// could outrun the port budget. Room for the offs is reserved against this.
 constexpr int kOwedCapacity = ActiveNoteList::kChannels * ActiveNoteList::kNotes;
 
+/// Bent strikes one pass of one block can hold; past it the latest are dropped and counted.
+constexpr std::size_t kMaxBentHitsPerPass = 4096;
+
 }  // namespace
 
 ClipMidiSource::ClipMidiSource(TrackId trackId, ClipSnapshotFeed& clips)
@@ -34,6 +39,8 @@ void ClipMidiSource::prepare(const RenderContext&) {
     // what can be sounding, and what a chase gathers by what one clip holds.
     owed_.reserve(kOwedCapacity);
     scratch_.reserve(kOwedCapacity);
+    scratchEnds_.reserve(kOwedCapacity);
+    bentHits_.reserve(kMaxBentHitsPerPass);
 }
 
 bool ClipMidiSource::fits(int bytes) const {
@@ -119,7 +126,7 @@ bool ClipMidiSource::inHole(const MidiClipPlayback& clip, double beat) {
 
 void ClipMidiSource::startNote(juce::MidiBuffer& out, const BlockInfo& block,
                                const MidiClipPlayback& clip, std::int32_t index,
-                               double timelineBeat) {
+                               double timelineBeat, double endBeat) {
     const auto& event = clip.events.events[static_cast<std::size_t>(index)];
 
     if (inHole(clip, timelineBeat))
@@ -149,12 +156,81 @@ void ClipMidiSource::startNote(juce::MidiBuffer& out, const BlockInfo& block,
         active_.startBeat(channel, note) == timelineBeat)
         return;
 
+    // A bend strikes a pitch again while it still sounds; the old one ends where the new begins.
+    if (std::isfinite(endBeat) && active_.active(channel, note) &&
+        active_.owner(channel, note) == clip.clipId)
+        endNote(out, block.eventForBeat(timelineBeat), channel, note);
+
     emit(out, block.eventForBeat(timelineBeat), event);
 
     if (!active_.active(channel, note))
         ++activeCount_;
 
-    active_.start(channel, note, clip.clipId, timelineBeat);
+    active_.start(channel, note, clip.clipId, timelineBeat, endBeat);
+}
+
+void ClipMidiSource::collectBentHits(const MidiClipPlayback& clip, const MidiFoldPass& pass,
+                                     double from, double to) {
+    bentHits_.clear();
+    const auto zero = pass.timelineOfContentZero;
+    const auto& list = clip.events;
+
+    // Note-ons whose timeline beat is in [lo, hi], inside the pass's window.
+    const auto notesIn = [&](double lo, double hi, const auto& visit) {
+        const auto first = list.lowerBound(std::max(lo - zero, pass.windowStart));
+        const auto last = list.lowerBound(std::min(
+            std::nextafter(hi - zero, std::numeric_limits<double>::infinity()), pass.windowEnd));
+        for (auto i = first; i < last; ++i)
+            if (list.events[i].isNoteOn())
+                visit(zero + list.events[i].beat, static_cast<std::int32_t>(i));
+    };
+
+    sdk::sequencer::forEachBentHit(clip.bend, clip.bendCycleBeats, from, to, notesIn,
+                                   [&](double beat, std::int32_t index) {
+                                       if (bentHits_.size() < kMaxBentHitsPerPass)
+                                           bentHits_.push_back({beat, index});
+                                       else
+                                           dropped_.fetch_add(1, std::memory_order_relaxed);
+                                   });
+
+    // A falling bend emits later notes first. Insertion sort: in order already, but for those.
+    for (std::size_t i = 1; i < bentHits_.size(); ++i) {
+        const auto held = bentHits_[i];
+        auto j = i;
+        for (; j > 0 && bentHits_[j - 1].beat > held.beat; --j)
+            bentHits_[j] = bentHits_[j - 1];
+        bentHits_[j] = held;
+    }
+}
+
+void ClipMidiSource::endBentNotesBefore(juce::MidiBuffer& out, const BlockInfo& block,
+                                        ClipId clipId, double beat) {
+    scratch_.clear();
+    active_.forEach([&](int channel, int note) {
+        if (active_.owner(channel, note) == clipId && active_.endBeat(channel, note) < beat)
+            scratch_.push_back(static_cast<std::int32_t>(channel * 1000 + note));
+    });
+    for (const auto packed : scratch_) {
+        const auto channel = packed / 1000;
+        const auto note = packed % 1000;
+        const auto at = std::max(active_.endBeat(channel, note), active_.startBeat(channel, note));
+        endNote(out, block.eventForBeat(at), channel, note);
+    }
+}
+
+void ClipMidiSource::playBentNotes(juce::MidiBuffer& out, const BlockInfo& block,
+                                   const MidiClipPlayback& clip, const MidiFoldPass& pass,
+                                   double from, double to) {
+    const auto passEndBeat = pass.timelineOfContentZero + pass.windowEnd;
+    collectBentHits(clip, pass, from, std::min(to, passEndBeat));
+
+    for (const auto& hit : bentHits_) {
+        endBentNotesBefore(out, block, clip.clipId, hit.beat);
+        const auto& event = clip.events.events[static_cast<std::size_t>(hit.index)];
+        const auto end = std::min(hit.beat + (event.endBeat - event.beat), passEndBeat);
+        startNote(out, block, clip, hit.index, hit.beat, end);
+    }
+    endBentNotesBefore(out, block, clip.clipId, to);
 }
 
 void ClipMidiSource::chaseClip(juce::MidiBuffer& out, const BlockInfo& block,
@@ -192,8 +268,9 @@ void ClipMidiSource::chaseClip(juce::MidiBuffer& out, const BlockInfo& block,
     // Then the notes this instant is inside.
     gatherSounding(clip, pass, timelineBeat);
 
+    const bool bent = clip.bend.isActive();
     for (std::size_t i = 0; i < scratch_.size(); ++i)
-        startNote(out, block, clip, scratch_[i], timelineBeat);
+        startNote(out, block, clip, scratch_[i], timelineBeat, bent ? scratchEnds_[i] : INFINITY);
 
     // Polyphonic aftertouch belongs to a sounding note, so it is chased only
     // after the note-on above and only for notes this clip actually owns.
@@ -220,28 +297,52 @@ void ClipMidiSource::chaseClip(juce::MidiBuffer& out, const BlockInfo& block,
 
 void ClipMidiSource::gatherSounding(const MidiClipPlayback& clip, const MidiFoldPass& pass,
                                     double timelineBeat) {
-    // Where they SOUND rather than where they were written: the groove moves
-    // both edges independently, so the raw list is only a candidate set. Widened
-    // by what the groove can move and then settled on the grooved edges, so a
-    // locate between a note's written onset and its swung one does not start it
-    // early, and the inverse miss cannot happen either.
+    // Where they SOUND, which a time bend moves away from where they were written.
     //
     // One implementation for both callers. The chase asks this, and so does the
     // snapshot reconcile, and two derivations of "is it sounding" would be two
     // things to keep in step.
-    const auto widen = clip.groove.maxDisplacementBeats();
+    if (clip.bend.isActive()) {
+        // Struck within a note's length before the instant and still sounding at it.
+        collectBentHits(clip, pass, timelineBeat - clip.events.longestNoteBeats,
+                        std::nextafter(timelineBeat, std::numeric_limits<double>::infinity()));
+        scratch_.clear();
+        scratchEnds_.clear();
+        const auto passEndBeat = pass.timelineOfContentZero + pass.windowEnd;
+        for (const auto& hit : bentHits_) {
+            const auto& event = clip.events.events[static_cast<std::size_t>(hit.index)];
+            const auto end = std::min(hit.beat + (event.endBeat - event.beat), passEndBeat);
+            if (end <= timelineBeat || inHole(clip, hit.beat))
+                continue;
+            // A later strike of the same pitch is the one sounding.
+            const auto note = event.data1;
+            const auto channel = event.channel();
+            for (std::size_t k = 0; k < scratch_.size(); ++k) {
+                const auto& kept = clip.events.events[static_cast<std::size_t>(scratch_[k])];
+                if (kept.data1 == note && kept.channel() == channel) {
+                    scratch_.erase(scratch_.begin() + static_cast<std::ptrdiff_t>(k));
+                    scratchEnds_.erase(scratchEnds_.begin() + static_cast<std::ptrdiff_t>(k));
+                    break;
+                }
+            }
+            scratch_.push_back(hit.index);
+            scratchEnds_.push_back(end);
+        }
+        return;
+    }
+
     const auto contentBeat = timelineBeat - pass.timelineOfContentZero;
 
     scratch_.clear();
-    clip.events.notesSoundingAt(contentBeat, widen, scratch_);
+    clip.events.notesSoundingAt(contentBeat, scratch_);
 
     std::size_t kept = 0;
     for (std::size_t i = 0; i < scratch_.size(); ++i) {
         const auto index = scratch_[i];
         const auto& event = clip.events.events[static_cast<std::size_t>(index)];
 
-        const auto onBeat = clip.groove.groovyBeat(pass.timelineOfContentZero + event.beat);
-        const auto offBeat = clip.groove.groovyBeat(pass.timelineOfContentZero + event.endBeat);
+        const auto onBeat = pass.timelineOfContentZero + event.beat;
+        const auto offBeat = pass.timelineOfContentZero + event.endBeat;
 
         if (onBeat > timelineBeat || offBeat <= timelineBeat)
             continue;
@@ -268,7 +369,6 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
         overflowed_.fetch_add(1, std::memory_order_relaxed);
 
     const auto& list = clip.events;
-    const auto widen = clip.groove.maxDisplacementBeats();
 
     for (auto index = 0; index < count; ++index) {
         const auto& pass = passes[static_cast<std::size_t>(index)];
@@ -278,11 +378,8 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
         if (pass.startsPass)
             chaseClip(out, block, clip, pass, pass.timelineOfContentZero + pass.windowStart);
 
-        // Widened by what the groove can move, and clamped to the pass: an
-        // event grooved out of this block is picked up by the next one, whose
-        // window is widened the same way at the other end.
-        const auto searchFrom = std::max(pass.windowStart, pass.contentStart - widen);
-        const auto searchTo = std::min(pass.windowEnd, pass.contentEnd + widen);
+        const auto searchFrom = std::max(pass.windowStart, pass.contentStart);
+        const auto searchTo = std::min(pass.windowEnd, pass.contentEnd);
 
         const auto first = list.lowerBound(searchFrom);
         const auto last = list.lowerBound(searchTo);
@@ -298,10 +395,16 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
         // boundary: MidiBuffer can sort the output, it cannot repair @ref
         // active_. So note edges are walked in list order, which is beat order
         // with the compile's off-before-on tie-break, and a note's own on
-        // therefore always precedes its own off however the groove moves either.
+        // therefore always precedes its own off.
         const auto passEndBeat = pass.timelineOfContentZero + pass.windowEnd;
 
         for (auto phase = 0; phase < 2; ++phase) {
+            if (phase == 1 && clip.bend.isActive()) {
+                playBentNotes(out, block, clip, pass,
+                              std::max(from, pass.timelineOfContentZero + pass.contentStart),
+                              std::min(to, pass.timelineOfContentZero + pass.contentEnd));
+                continue;
+            }
             for (auto i = first; i < last; ++i) {
                 const auto& event = list.events[i];
 
@@ -311,19 +414,16 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
                 if ((isOn || isOff || followsNotes) != (phase == 1))
                     continue;
 
-                auto timelineBeat = pass.timelineOfContentZero + event.beat;
-                if (event.isNoteEdge())
-                    timelineBeat = clip.groove.groovyBeat(timelineBeat);
+                const auto timelineBeat = pass.timelineOfContentZero + event.beat;
 
                 if (timelineBeat < from || timelineBeat >= to)
                     continue;
 
                 if (isOn) {
-                    // Grooved out of its own pass. The pass end below has
-                    // already ended everything the pass started, and MidiBuffer
-                    // orders by sample, so emitting this would put the off
-                    // before the on and leave a note sounding that nothing here
-                    // knows about.
+                    // Past its own pass. The pass end below has already ended
+                    // everything the pass started, and MidiBuffer orders by
+                    // sample, so emitting this would put the off before the on
+                    // and leave a note sounding that nothing here knows about.
                     if (timelineBeat >= passEndBeat)
                         continue;
 
@@ -341,11 +441,8 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
                         active_.owner(channel, note) != clip.clipId)
                         continue;
 
-                    // Held inside its own note and inside its own pass. Both
-                    // edges groove independently, so an off can land before its
-                    // own on, which is held back to it rather than sent early;
-                    // and a positive groove can push it past the wrap, where
-                    // emitting it would clear the active entry, leave the
+                    // Held inside its own note and inside its own pass: an off
+                    // past the wrap would clear the active entry, leave the
                     // pass-end cleanup below with nothing to end, and ring the
                     // note into the next pass with a stray off waiting to cut
                     // whatever starts there.

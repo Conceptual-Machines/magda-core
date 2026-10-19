@@ -142,9 +142,6 @@ struct Case {
     std::vector<AutomationLaneInfo> lanes;
     std::vector<AutomationClipInfo> automationClips;
 
-    /// The groove templates the clips may name: a <GROOVETEMPLATES> document.
-    juce::String grooveXml;
-
     // --- what to render ------------------------------------------------------
 
     double startBeat = 0.0;
@@ -413,9 +410,5 @@ std::vector<std::string> externalDevicesIn(const Case& value);
  */
 std::vector<std::string> absentPluginsIn(const Case& value,
                                          const juce::KnownPluginList* knownPlugins);
-
-/// The groove template every grooving case names, and the one the runner
-/// installs.
-extern const char* const kGrooveName;
 
 }  // namespace magda::nulldiff

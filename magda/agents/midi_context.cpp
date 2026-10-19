@@ -115,8 +115,8 @@ juce::String buildMidiContext(MagdaApi& api, const std::vector<ClipId>& clipIds,
             out << " loop_start=" << number(clip.loopStartBeats)
                 << " loop_length=" << number(clip.loopLengthBeats);
         }
-        if (clip.grooveTemplate.isNotEmpty())
-            out << " groove=\"" << oneLine(clip.grooveTemplate) << "\"";
+        if (clip.timeBend.isActive())
+            out << " time_bend=\"" << sdk::sequencer::timeBendToText(clip.timeBend) << "\"";
         if (!clip.midiCCData.empty())
             out << " cc_events=" << static_cast<int>(clip.midiCCData.size());
         if (!clip.midiPitchBendData.empty())

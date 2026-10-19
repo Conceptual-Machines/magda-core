@@ -42,8 +42,6 @@ namespace adapter = ::magda::daw::audio::engine_adapter;
 
 namespace magda::nulldiff {
 
-const char* const kGrooveName = "null-diff swing";
-
 namespace {
 
 constexpr double kRate = 44100.0;
@@ -2252,11 +2250,11 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
 
     {
         // The single trickiest thing ported in slice 6. An odd loop length under
-        // a per-beat groove means each pass starts somewhere else in the
-        // pattern, so the groove is anchored to the project grid and looked up
-        // per pass rather than baked at compile time. Until this case, that was
-        // pinned only by the engine's own tests, which is to say by one reading
-        // of LoopedMidiEventGenerator.
+        // a per-beat swing means each pass starts somewhere else in the
+        // pattern, so the swing, now a time bend (#3044), is anchored to the
+        // project grid and read per pass rather than baked at compile time. Until this case, that
+        // was pinned only by the engine's own tests, which is to say by one reading of
+        // LoopedMidiEventGenerator.
         auto value =
             newCase("midi.fold", "an odd loop length under a per-beat groove", instrumentTrack());
 
@@ -2264,21 +2262,12 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         clip.loopEnabled = true;
         clip.loopStartBeats = 0.0;
         clip.loopLengthBeats = 1.5;
-        clip.grooveTemplate = kGrooveName;
-        clip.grooveStrength = 1.0f;
+        clip.timeBend =
+            *sdk::sequencer::grooveTimeBend(std::vector<float>{0.0f, 0.25f, 0.0f, 0.25f}, 2, 4.0);
         clip.midiNotes.push_back(note(60, 0.0, 0.4));
         clip.midiNotes.push_back(note(64, 0.5, 0.4));
         clip.midiNotes.push_back(note(67, 1.0, 0.4));
         value.clips.push_back(std::move(clip));
-
-        value.grooveXml =
-            "<GROOVETEMPLATES>"
-            "<GROOVETEMPLATE name=\"null-diff swing\" numberOfNotes=\"4\" notesPerBeat=\"2\" "
-            "parameterized=\"0\">"
-            "<SHIFT delta=\"0\"/><SHIFT delta=\"0.25\"/>"
-            "<SHIFT delta=\"0\"/><SHIFT delta=\"0.25\"/>"
-            "</GROOVETEMPLATE>"
-            "</GROOVETEMPLATES>";
 
         value.tier = AudioTier::None;
         value.compareMidiStreams = true;

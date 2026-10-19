@@ -3,10 +3,10 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <magda/sdk/sequencer/StepClock.hpp>
 #include <ranges>
 
 #include "ClipOperations.hpp"
+#include "ClipTimeBend.hpp"
 
 namespace magda {
 
@@ -115,20 +115,6 @@ std::optional<MidiEventState> glueMidiNoteToNext(const MidiEventState& state, si
     return after;
 }
 
-std::vector<MidiNoteStartBeat> collectMidiNoteStartBeats(const ClipInfo& clip,
-                                                         const std::vector<size_t>& noteIndices) {
-    std::vector<MidiNoteStartBeat> starts;
-    if (!clip.isMidi())
-        return starts;
-
-    starts.reserve(noteIndices.size());
-    for (size_t index : noteIndices) {
-        if (index < clip.midiNotes.size())
-            starts.push_back({index, clip.midiNotes[index].startBeat});
-    }
-    return starts;
-}
-
 std::vector<std::pair<size_t, double>> computeLegatoNoteLengths(
     const ClipInfo& clip, const std::vector<size_t>& noteIndices) {
     constexpr double kEpsilon = 1e-9;
@@ -171,83 +157,6 @@ std::vector<std::pair<size_t, double>> computeLegatoNoteLengths(
             result.emplace_back(n.index, newLength);
     }
     return result;
-}
-
-std::vector<MidiNoteStartBeat> calculateBentMidiNoteStartBeats(
-    const ClipInfo& clip, const std::vector<MidiNoteStartBeat>& originalStartBeats, float depth,
-    float skew, int cycles, float quantize, int quantizeSub, bool hardAngle) {
-    std::vector<MidiNoteStartBeat> validStarts;
-    if (!clip.isMidi())
-        return validStarts;
-
-    validStarts.reserve(originalStartBeats.size());
-    for (const auto& original : originalStartBeats) {
-        if (original.noteIndex < clip.midiNotes.size())
-            validStarts.push_back(original);
-    }
-
-    if (validStarts.size() < 2)
-        return {};
-
-    // Order the selection as a sequence of events: by onset, then by pitch so a
-    // chord strums low -> high. Each note then samples the curve at its own
-    // ordinal slot, so notes stacked on one onset (a chord) fan out in time
-    // instead of moving as a rigid block.
-    std::sort(validStarts.begin(), validStarts.end(),
-              [&clip](const MidiNoteStartBeat& a, const MidiNoteStartBeat& b) {
-                  if (a.startBeat != b.startBeat)
-                      return a.startBeat < b.startBeat;
-                  return clip.midiNotes[a.noteIndex].noteNumber <
-                         clip.midiNotes[b.noteIndex].noteNumber;
-              });
-
-    const double minBeat = validStarts.front().startBeat;
-    const double maxBeat = validStarts.back().startBeat;
-    double span = maxBeat - minBeat;
-
-    // Lone chord (all notes share an onset): no grid to warp, so give the strum
-    // a window to spread into, derived from the shortest selected note so it
-    // scales with the part rather than a fixed amount.
-    if (span < 1e-9) {
-        double minLen = std::numeric_limits<double>::max();
-        for (const auto& start : validStarts)
-            minLen = std::min(minLen, clip.midiNotes[start.noteIndex].lengthBeats);
-        if (minLen >= std::numeric_limits<double>::max() || minLen < 1e-9)
-            return {};
-        span = minLen;
-    }
-
-    const int noteCount = static_cast<int>(validStarts.size());
-    const auto ordinalDenom = static_cast<double>(noteCount - 1);
-
-    std::vector<MidiNoteStartBeat> bentStarts;
-    bentStarts.reserve(validStarts.size());
-    for (int i = 0; i < noteCount; ++i) {
-        const auto& start = validStarts[static_cast<size_t>(i)];
-        const double t = static_cast<double>(i) / ordinalDenom;
-        const double tEased =
-            sdk::sequencer::StepClock::applyRampCurveWithCycles(t, depth, skew, cycles, hardAngle);
-        // Shift each note by how far the curve pushes its ordinal slot, anchored
-        // on its true onset. Depth 0 -> tEased == t -> identity; a uniform mono
-        // line reduces to minBeat + curve(t) * span (the prior behaviour).
-        double newBeat = start.startBeat + (tEased - t) * span;
-
-        if (quantize > 0.0f && quantizeSub > 0) {
-            const double gridSpacing = span / static_cast<double>(quantizeSub);
-            const double snapped =
-                std::round((newBeat - minBeat) / gridSpacing) * gridSpacing + minBeat;
-            newBeat += (snapped - newBeat) * static_cast<double>(quantize);
-        }
-
-        auto constrainedNote = clip.midiNotes[start.noteIndex];
-        constrainedNote.startBeat = newBeat;
-        if (ClipOperations::constrainMidiNoteToVisibleRange(clip, constrainedNote))
-            newBeat = constrainedNote.startBeat;
-
-        bentStarts.push_back({start.noteIndex, newBeat});
-    }
-
-    return bentStarts;
 }
 
 // ============================================================================
@@ -1960,63 +1869,42 @@ void SetMidiPitchBendEventHandlesCommand::undo() {
 }
 
 // ============================================================================
-// BendNoteTimingCommand
+// BakeClipTimeBendCommand
 // ============================================================================
 
-BendNoteTimingCommand::BendNoteTimingCommand(ClipId clipId, std::vector<size_t> noteIndices,
-                                             float depth, float skew, int cycles, float quantize,
-                                             int quantizeSub, bool hardAngle)
-    : clipId_(clipId),
-      noteIndices_(std::move(noteIndices)),
-      depth_(depth),
-      skew_(skew),
-      cycles_(std::max(1, cycles)),
-      quantize_(quantize),
-      quantizeSub_(quantizeSub),
-      hardAngle_(hardAngle) {}
+BakeClipTimeBendCommand::BakeClipTimeBendCommand(ClipId clipId, double beatsPerBar)
+    : clipId_(clipId), beatsPerBar_(beatsPerBar) {}
 
-void BendNoteTimingCommand::execute() {
+void BakeClipTimeBendCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-
-    if (!clip || !clip->isMidi() || noteIndices_.size() < 2)
+    if (clip == nullptr || !clip->isMidi())
         return;
 
-    // Capture old values on first execute
-    if (!executed_) {
-        oldStartBeats_ = collectMidiNoteStartBeats(*clip, noteIndices_);
+    // Computed once, so redo writes what the first bake wrote.
+    if (!after_) {
+        before_ = clip->midiEventState();
+        bendBefore_ = clip->timeBend;
+        after_ = bakeTimeBend(*clip, beatsPerBar_);
+        if (!after_)
+            return;
     }
 
-    const auto bentStarts = calculateBentMidiNoteStartBeats(
-        *clip, oldStartBeats_, depth_, skew_, cycles_, quantize_, quantizeSub_, hardAngle_);
-    if (bentStarts.empty())
-        return;
-
-    for (const auto& bent : bentStarts) {
-        if (bent.noteIndex >= clip->midiNotes.size())
-            continue;
-        clip->midiNotes[bent.noteIndex].startBeat = bent.startBeat;
-    }
-
+    clip->setMidiEventState(*after_);
+    auto off = bendBefore_;
+    off.on = false;
+    clipManager.setTimeBend(clipId_, off);
     clipManager.forceNotifyClipPropertyChanged(clipId_);
-    executed_ = true;
 }
 
-void BendNoteTimingCommand::undo() {
-    if (!executed_)
-        return;
-
+void BakeClipTimeBendCommand::undo() {
     auto& clipManager = ClipManager::getInstance();
     auto* clip = clipManager.getClip(clipId_);
-
-    if (!clip || !clip->isMidi())
+    if (clip == nullptr || !clip->isMidi() || !before_ || !after_)
         return;
 
-    for (const auto& oldStart : oldStartBeats_) {
-        if (oldStart.noteIndex < clip->midiNotes.size())
-            clip->midiNotes[oldStart.noteIndex].startBeat = oldStart.startBeat;
-    }
-
+    clip->setMidiEventState(*before_);
+    clipManager.setTimeBend(clipId_, bendBefore_);
     clipManager.forceNotifyClipPropertyChanged(clipId_);
 }
 

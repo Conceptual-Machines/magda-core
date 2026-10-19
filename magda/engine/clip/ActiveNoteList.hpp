@@ -2,6 +2,7 @@
 
 #include <array>
 #include <bit>
+#include <cmath>
 #include <cstdint>
 
 #include "core/ClipTypes.hpp"
@@ -21,10 +22,9 @@
  * ending, or vanishing from the snapshot, can end its own notes without ending
  * its neighbour's.
  *
- * The note-on's timeline beat is carried for one reason: groove moves both edges
- * of a note independently, at different beats, so a grooved note-off can land
- * before its own note-on. Knowing where the on actually went is what lets the
- * off be clamped after it.
+ * The note-on's timeline beat is carried so a note-off can be clamped after it. A
+ * time-bent note carries where it ends too, since a bend can strike one written
+ * note several times and its offs are scheduled, not read (#3044).
  */
 
 namespace magda::engine {
@@ -34,10 +34,12 @@ class ActiveNoteList {
     static constexpr int kChannels = 16;
     static constexpr int kNotes = 128;
 
-    void start(int channel, int note, ClipId clipId, double timelineBeat) {
+    void start(int channel, int note, ClipId clipId, double timelineBeat,
+               double endBeat = INFINITY) {
         auto& entry = at(channel, note);
         entry.clipId = clipId;
         entry.startBeat = timelineBeat;
+        entry.endBeat = endBeat;
         mark(channel, note, clipId != INVALID_CLIP_ID);
     }
 
@@ -55,9 +57,14 @@ class ActiveNoteList {
     }
 
     /// Where the note-on actually sounded, which is not where the model put it
-    /// when a groove moved it.
+    /// when a time bend moved it.
     double startBeat(int channel, int note) const {
         return at(channel, note).startBeat;
+    }
+
+    /// Where a time-bent note ends, or infinity for a note whose off is in the clip.
+    double endBeat(int channel, int note) const {
+        return at(channel, note).endBeat;
     }
 
     bool any() const {
@@ -82,6 +89,7 @@ class ActiveNoteList {
     struct Entry {
         ClipId clipId = INVALID_CLIP_ID;
         double startBeat = 0.0;
+        double endBeat = INFINITY;
     };
 
     static std::size_t index(int channel, int note) {

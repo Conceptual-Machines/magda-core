@@ -1,5 +1,7 @@
 #include "DrumGridClipContent.hpp"
 
+#include <juce_audio_basics/juce_audio_basics.h>
+
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -14,6 +16,7 @@
 #include "audio/plugins/DrumGridTemplates.hpp"
 #include "core/ChordProgressionContext.hpp"
 #include "core/ClipOperations.hpp"
+#include "core/ClipTimeBend.hpp"
 #include "core/DrumGridPads.hpp"
 #include "core/DrumkitManager.hpp"
 #include "core/GestureRouter.hpp"
@@ -24,9 +27,9 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "music/NotationSettings.hpp"
+#include "project/ProjectManager.hpp"
 #include "ui/components/common/MagdaAlertWindow.hpp"
 #include "ui/components/common/SvgButton.hpp"
-#include "ui/components/common/TimeBendPopup.hpp"
 #include "ui/components/pianoroll/MidiDrawerComponent.hpp"
 #include "ui/components/pianoroll/MidiEditTool.hpp"
 #include "ui/components/pianoroll/NoteComponent.hpp"
@@ -1705,6 +1708,38 @@ class DrumGridClipGrid : public juce::Component,
         noteComponents_.clear();
     }
 
+    /// Where the clip's time bend plays its hits, over the written ones it dims (#3044).
+    void paintOverChildren(juce::Graphics& g) override {
+        const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
+        if (clip == nullptr || !padRows_ || !clip->timeBend.isActive())
+            return;
+
+        const auto colour = deriveClipInk(clip->colour);
+        const auto beatsPerBar =
+            magda::ProjectManager::getInstance().getCurrentProjectInfo().beatsPerBar();
+        const int cell = juce::jmax(4, rowHeight_ - 8);
+        for (const auto& played : magda::playedNotes(*clip, beatsPerBar)) {
+            auto note = clip->midiNotes[played.noteIndex];
+            note.startBeat = played.startBeat;
+            if (!magda::ClipOperations::clipMidiNoteToVisibleRange(*clip, note))
+                continue;
+            const int rowIndex = findRowForNote(note.noteNumber);
+            if (rowIndex < 0)
+                continue;
+
+            const int x = beatToPixel(clipBeatToDisplayBeat(note.startBeat));
+            const auto rect = juce::Rectangle<float>(
+                static_cast<float>(x + 1),
+                static_cast<float>(rowIndex * rowHeight_ + (rowHeight_ - cell) / 2),
+                static_cast<float>(cell), static_cast<float>(cell));
+            const float alpha = (*padRows_)[static_cast<size_t>(rowIndex)].muted ? 0.35f : 1.0f;
+            g.setColour(colour.withAlpha(0.85f * alpha));
+            g.fillRoundedRectangle(rect, 2.0f);
+            g.setColour(colour.brighter(0.6f).withAlpha(alpha));
+            g.drawRoundedRectangle(rect, 2.0f, 1.0f);
+        }
+    }
+
     void updateNoteComponentBounds() {
         auto& clipManager = magda::ClipManager::getInstance();
         const auto* clip = clipManager.getClip(clipId_);
@@ -1738,7 +1773,9 @@ class DrumGridClipGrid : public juce::Component,
 
             noteComp->setBounds(x + 1, y + (rowHeight_ - cell) / 2, w, cell);
             noteComp->updateFromNote(note, noteColour);
-            noteComp->setAlpha((*padRows_)[static_cast<size_t>(rowIndex)].muted ? 0.35f : 1.0f);
+            const bool dimmed =
+                (*padRows_)[static_cast<size_t>(rowIndex)].muted || clip->timeBend.isActive();
+            noteComp->setAlpha(dimmed ? 0.35f : 1.0f);
             noteComp->setVisible(true);
         }
     }

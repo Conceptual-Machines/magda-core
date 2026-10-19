@@ -11,8 +11,8 @@
 #include "core/ParameterInfo.hpp"
 #include "core/StepPatternCommands.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
-#include "ui/components/common/RampCurveDisplay.hpp"
 #include "ui/components/common/SvgButton.hpp"
+#include "ui/components/common/TimeBendEditor.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -139,9 +139,6 @@ class PolyStepSequencerUI : public juce::Component, private juce::Timer {
     daw::audio::PolyStepSequencerPlugin* device_ = nullptr;
     magda::ChainNodePath devicePath_;
     step_pattern::PolyPattern pattern_;
-    // Mirror of the curve display's hard-angle toggle, so settingsEdited() can
-    // publish the full settings set from the controls alone.
-    bool hardAngle_ = false;
 
     // --- Controls ---
     juce::Label rateLabel_;
@@ -160,14 +157,7 @@ class PolyStepSequencerUI : public juce::Component, private juce::Timer {
     LinkableTextSlider quantizeSubSlider_;
 
     // --- Ramp curve (time bend) ---
-    juce::Label rampLabel_;
-    RampCurveDisplay rampCurveDisplay_;
-    juce::Label depthLabel_;
-    LinkableTextSlider depthSlider_;
-    juce::Label skewLabel_;
-    LinkableTextSlider skewSlider_;
-    juce::Label cyclesLabel_;
-    LinkableTextSlider cyclesSlider_;
+    TimeBendEditor timeBend_;
 
     // --- View mode toggle (keys / drum) ---
     juce::TextButton viewModeButton_;
@@ -233,6 +223,9 @@ class PolyStepSequencerUI : public juce::Component, private juce::Timer {
 
     void sendChange(int paramIndex, float value);
     void settingsEdited();
+    /// Sends a bend edit on: AMOUNT and CYCLES as slots, the rest as settings.
+    void timeBendEdited(const sdk::sequencer::TimeBend& before,
+                        const sdk::sequencer::TimeBend& after);
     void syncSettingsFromDevice();
 
     /// Run @p edit over the model's pattern as one undoable step.

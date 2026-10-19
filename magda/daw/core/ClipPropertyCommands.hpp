@@ -1271,66 +1271,45 @@ class SetClipColourCommand : public UndoableCommand {
 };
 
 /**
- * @brief Command for setting clip groove template (supports merging)
+ * @brief Sets a clip's time bend; AMOUNT and CYCLES edits in a row merge into one step.
  */
-class SetClipGrooveTemplateCommand : public UndoableCommand {
+class SetClipTimeBendCommand : public UndoableCommand {
   public:
-    SetClipGrooveTemplateCommand(ClipId clipId, juce::String newTemplate)
-        : clipId_(clipId), newTemplate_(std::move(newTemplate)) {
-        auto* clip = ClipManager::getInstance().getClip(clipId);
-        if (clip)
-            oldTemplate_ = clip->grooveTemplate;
+    SetClipTimeBendCommand(ClipId clipId, sdk::sequencer::TimeBend newBend)
+        : clipId_(clipId), newBend_(newBend) {
+        if (const auto* clip = ClipManager::getInstance().getClip(clipId))
+            oldBend_ = clip->timeBend;
     }
 
     void execute() override {
-        ClipManager::getInstance().setGrooveTemplate(clipId_, newTemplate_);
+        ClipManager::getInstance().setTimeBend(clipId_, newBend_);
     }
     void undo() override {
-        ClipManager::getInstance().setGrooveTemplate(clipId_, oldTemplate_);
+        ClipManager::getInstance().setTimeBend(clipId_, oldBend_);
     }
     juce::String getDescription() const override {
-        return "Set Clip Groove Template";
-    }
-
-  private:
-    ClipId clipId_;
-    juce::String oldTemplate_, newTemplate_;
-};
-
-/**
- * @brief Command for setting clip groove strength (supports merging)
- */
-class SetClipGrooveStrengthCommand : public UndoableCommand {
-  public:
-    SetClipGrooveStrengthCommand(ClipId clipId, float newStrength)
-        : clipId_(clipId), newStrength_(newStrength) {
-        auto* clip = ClipManager::getInstance().getClip(clipId);
-        if (clip)
-            oldStrength_ = clip->grooveStrength;
-    }
-
-    void execute() override {
-        ClipManager::getInstance().setGrooveStrength(clipId_, newStrength_);
-    }
-    void undo() override {
-        ClipManager::getInstance().setGrooveStrength(clipId_, oldStrength_);
-    }
-    juce::String getDescription() const override {
-        return "Set Clip Groove Strength";
+        return "Set Clip Time Bend";
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (const auto* o = dynamic_cast<const SetClipGrooveStrengthCommand*>(other))
-            return o->clipId_ == clipId_;
-        return false;
+        const auto* o = dynamic_cast<const SetClipTimeBendCommand*>(other);
+        return o != nullptr && o->clipId_ == clipId_ && onlyAmountOrCycles() &&
+               o->onlyAmountOrCycles();
     }
     void mergeWith(const UndoableCommand* other) override {
-        newStrength_ = static_cast<const SetClipGrooveStrengthCommand*>(other)->newStrength_;
+        newBend_ = static_cast<const SetClipTimeBendCommand*>(other)->newBend_;
     }
 
   private:
+    bool onlyAmountOrCycles() const {
+        auto rest = newBend_;
+        rest.amount = oldBend_.amount;
+        rest.cycles = oldBend_.cycles;
+        return rest == oldBend_;
+    }
+
     ClipId clipId_;
-    float oldStrength_ = 0.0f, newStrength_;
+    sdk::sequencer::TimeBend oldBend_, newBend_;
 };
 
 }  // namespace magda

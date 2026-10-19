@@ -5000,9 +5000,13 @@ HandlerResult clipsUpdate(MagdaApi& api, const juce::var& input, const RequestCo
     // earlier field would leave the rename in place while reporting failure.
     // An empty name clears the assignment; anything else must name a template
     // that exists, or the clip would carry a groove that grooves nothing.
+    // A groove plays as the time bend it spells (#3044); an empty name clears the bend.
+    std::optional<sdk::sequencer::TimeBend> grooveBend;
     if (has(input, "grooveTemplate")) {
         const auto templateName = input["grooveTemplate"].toString();
-        if (templateName.isNotEmpty() && !api.grooves().getTemplateNames().contains(templateName)) {
+        grooveBend = templateName.isEmpty() ? sdk::sequencer::TimeBend{}
+                                            : api.grooves().timeBend(templateName, 1.0f);
+        if (!grooveBend) {
             return HandlerResult::fail(ErrorCode::NotFound,
                                        "groove template '" + templateName + "' not found");
         }
@@ -5023,9 +5027,8 @@ HandlerResult clipsUpdate(MagdaApi& api, const juce::var& input, const RequestCo
             [enabled](auto& manager, ClipId id) { manager.setClipEnabled(id, enabled); });
         mutated = true;
     }
-    if (has(input, "grooveTemplate") &&
-        current->grooveTemplate != input["grooveTemplate"].toString()) {
-        runCommand<SetClipGrooveTemplateCommand>(api, clipId, input["grooveTemplate"].toString());
+    if (grooveBend && !(current->timeBend == *grooveBend)) {
+        runCommand<SetClipTimeBendCommand>(api, clipId, *grooveBend);
         mutated = true;
     }
 

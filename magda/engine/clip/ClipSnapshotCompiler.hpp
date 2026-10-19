@@ -5,7 +5,6 @@
 #include <vector>
 
 #include "clip/ClipSnapshot.hpp"
-#include "clip/GrooveTemplate.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/TrackTypes.hpp"
 #include "core/TypeIds.hpp"
@@ -97,21 +96,8 @@ struct ClipLane {
  * neither, because being covered is what covering means.
  */
 /// @overload
-/// @param grooves The named groove templates a MIDI clip may ask for, as
-///        whoever owns them holds them. Handed over rather than looked up, like
-///        the sources and the tempo map: the engine reaches no singleton, and a
-///        compile is a pure function of what it was given. An empty set is legal
-///        and means no clip grooves, which is what the engine gets until the app
-///        is switched over to it.
 ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
                                  const std::vector<ClipSourceInfo>& sources,
-                                 const TempoMap& tempoMap, const GrooveTemplateSet& grooves);
-
-inline ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
-                                        const std::vector<ClipSourceInfo>& sources,
-                                        const TempoMap& tempoMap) {
-    static const GrooveTemplateSet none;
-    return compileClipSnapshot(lanes, sources, tempoMap, none);
-}
+                                 const TempoMap& tempoMap);
 
 }  // namespace magda::engine

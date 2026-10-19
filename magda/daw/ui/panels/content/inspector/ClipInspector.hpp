@@ -12,6 +12,7 @@
 #include "clip/sections/ClipFadesSection.hpp"
 #include "clip/sections/ClipLabelsSection.hpp"
 #include "clip/sections/ClipTakesSection.hpp"
+#include "clip/sections/ClipTimeBendSection.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
 #include "ui/components/common/CollapsibleSectionHeader.hpp"
@@ -66,7 +67,6 @@ class ClipInspector : public BaseInspector,
     void initWarpSection();
     void initSessionLaunchSection();
     void initPitchSection();
-    void initGrooveSection();
     void initMixSection();
     void initFadesSection();
     void initViewport();
@@ -163,23 +163,15 @@ class ClipInspector : public BaseInspector,
     std::array<juce::TextButton, 4> midiTransposeButtons_;  // -12, -1, +1, +12
     juce::Label midiTransposeHint_;
 
-    // ---- Groove (MIDI) ---------------------------------------------------
-    CollapsibleSectionHeader grooveHeader_{"Groove", "clipInspector.groove"};
-    juce::TextButton grooveTemplateButton_;
-    juce::Label grooveStrengthLabel_;
-    std::unique_ptr<magda::DraggableValueLabel> grooveStrengthValue_;
-
-    // Two-column groove template picker popup
-    class GroovePickerPopup;
-    void showGroovePicker();
-    void onGrooveTemplateSelected(const juce::String& templateName);
-
     // ---- Fades (audio) ---------------------------------------------------
     std::unique_ptr<ClipFadesSection> fadesSection_;
 
     // ---- Labels (audio, #2316) -------------------------------------------
     std::unique_ptr<ClipLabelsSection> labelsSection_;
     void initLabelsSection();
+
+    std::unique_ptr<ClipTimeBendSection> timeBendSection_;
+    void initTimeBendSection();
 
     // ---- Launch (session) ------------------------------------------------
     CollapsibleSectionHeader launchHeader_{"Launch", "clipInspector.launch"};

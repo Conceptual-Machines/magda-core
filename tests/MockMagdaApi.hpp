@@ -899,7 +899,7 @@ class MockClipApi : public ClipApi {
     std::vector<ClipId> deleted;
     std::vector<std::pair<ClipId, juce::String>> nameWrites;
     std::vector<std::pair<ClipId, bool>> enabledWrites;
-    std::vector<std::pair<ClipId, juce::String>> grooveWrites;
+    std::vector<std::pair<ClipId, sdk::sequencer::TimeBend>> timeBendWrites;
     std::vector<std::pair<ClipId, MidiNote>> noteAdds;
 
     struct QuantizeCall {
@@ -946,8 +946,8 @@ class MockClipApi : public ClipApi {
     void setClipEnabled(ClipId id, bool enabled) override {
         enabledWrites.push_back({id, enabled});
     }
-    void setGrooveTemplate(ClipId id, const juce::String& tmpl) override {
-        grooveWrites.push_back({id, tmpl});
+    void setTimeBend(ClipId id, const sdk::sequencer::TimeBend& bend) override {
+        timeBendWrites.push_back({id, bend});
     }
     bool addMidiNote(ClipId id, double startBeat, int noteNumber, double lengthBeats,
                      int velocity) override {
@@ -1907,6 +1907,15 @@ class MockGrooveApi : public GrooveApi {
     }
     juce::StringArray getTemplateNames() const override {
         return names;
+    }
+    std::optional<sdk::sequencer::TimeBend> timeBend(const juce::String& name,
+                                                     float strength) const override {
+        if (!names.contains(name))
+            return std::nullopt;
+        auto bend = sdk::sequencer::makeTimeBend(sdk::sequencer::TimeBendShape::Rush);
+        bend.on = true;
+        bend.amount = strength;
+        return bend;
     }
 };
 

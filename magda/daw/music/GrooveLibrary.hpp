@@ -8,6 +8,8 @@
 #include <juce_core/juce_core.h>
 
 #include <functional>
+#include <magda/sdk/sequencer/TimeBend.hpp>
+#include <optional>
 #include <vector>
 
 namespace magda {
@@ -23,7 +25,7 @@ struct GrooveTemplateData {
 /**
  * @brief The named grooves, owned here rather than by whichever engine renders.
  *
- * The engine compiles the entries into an engine::GrooveTemplateSet at publish. The list
+ * A clip plays a groove as a time bend, its curve loaded from here (#3044). The list
  * persists through GrooveStore, in MAGDA's own grooves.xml (#2761).
  */
 class GrooveLibrary {
@@ -57,22 +59,23 @@ class GrooveLibrary {
         writer_ = nullptr;
     }
 
-    /// Told when the list changes, so the native engine republishes what a clip compiled.
-    void setOnChanged(std::function<void()> onChanged) {
-        onChanged_ = std::move(onChanged);
-    }
-    void forgetOnChanged() {
-        onChanged_ = nullptr;
-    }
-
     juce::StringArray names() const;
 
-    /** @brief Every groove, for an engine compiling them into its own representation. */
+    /** @brief Every groove. */
     const std::vector<GrooveTemplateData>& all() const {
         return grooves_;
     }
 
     const GrooveTemplateData* find(const juce::String& name) const;
+
+    /**
+     * @brief The time bend the groove named @p name plays, in a meter of @p beatsPerBar.
+     *
+     * @p strength is its AMOUNT for a parameterized groove; the others carry their amount in the
+     * table. Nullopt when no groove has that name or it does not fit a bend.
+     */
+    std::optional<sdk::sequencer::TimeBend> bend(const juce::String& name, double beatsPerBar,
+                                                 float strength = 1.0f) const;
 
     /**
      * @brief Add @p groove, or replace the one of that name. False when it names nothing
@@ -83,12 +86,9 @@ class GrooveLibrary {
   private:
     GrooveLibrary() = default;
 
-    void notifyChanged() const;
-
     std::vector<GrooveTemplateData> grooves_;
     Reader reader_;
     Writer writer_;
-    std::function<void()> onChanged_;
 };
 
 }  // namespace magda

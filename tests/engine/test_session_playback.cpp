@@ -457,7 +457,7 @@ struct MidiRig {
         lane.session = std::move(session);
 
         auto compiled = std::make_shared<const ClipSnapshot>(
-            magda::engine::compileClipSnapshot({lane}, {}, tempoMap(), {}));
+            magda::engine::compileClipSnapshot({lane}, {}, tempoMap()));
         REQUIRE(compiled->diagnostics.empty());
         clips.publish(compiled);
     }
@@ -568,7 +568,7 @@ struct MidiSwitchRig {
         lane.playbackMode = mode;
 
         auto compiled = std::make_shared<const ClipSnapshot>(
-            magda::engine::compileClipSnapshot({lane}, {}, tempoMap(), {}));
+            magda::engine::compileClipSnapshot({lane}, {}, tempoMap()));
         REQUIRE(compiled->diagnostics.empty());
         clips.publish(compiled);
     }
@@ -3158,7 +3158,7 @@ TEST_CASE("A track's audio and its MIDI are gated by the same publish",
     const auto compiled = magda::engine::compileClipSnapshot(
         {ClipLane{kTrack,
                   {arrangementMidiClip(2, 0.0, 1000.0, {MidiNote{60, 100, 0.0, 1000.0, 0, {}}})}}},
-        {}, tempoMap(), {});
+        {}, tempoMap());
     rig.lane.midi = compiled.tracks.front().midi;
     rig.publish();
 

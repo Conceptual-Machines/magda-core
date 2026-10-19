@@ -37,19 +37,6 @@ class SetMidiEventStateCommand : public UndoableCommand {
  */
 enum class QuantizeMode { StartOnly, LengthOnly, StartAndLength };
 
-struct MidiNoteStartBeat {
-    size_t noteIndex;
-    double startBeat;
-};
-
-std::vector<MidiNoteStartBeat> collectMidiNoteStartBeats(const ClipInfo& clip,
-                                                         const std::vector<size_t>& noteIndices);
-
-std::vector<MidiNoteStartBeat> calculateBentMidiNoteStartBeats(
-    const ClipInfo& clip, const std::vector<MidiNoteStartBeat>& originalStartBeats, float depth,
-    float skew, int cycles = 1, float quantize = 0.0f, int quantizeSub = 64,
-    bool hardAngle = false);
-
 /**
  * @brief Compute new note lengths for a legato transform: each selected note is
  *        stretched (or shortened) so it ends exactly where the next selected note
@@ -908,33 +895,23 @@ class SetNoteChordGroupsCommand : public UndoableCommand {
 };
 
 /**
- * @brief Command for applying time bend curve to selected notes' timing.
- *
- * Redistributes note start times within their original span using the
- * ramp curve function (same as arpeggiator/step sequencer time bend).
+ * @brief Writes what a clip's time bend plays into its notes and turns the bend off; one step.
  */
-class BendNoteTimingCommand : public UndoableCommand {
+class BakeClipTimeBendCommand : public UndoableCommand {
   public:
-    BendNoteTimingCommand(ClipId clipId, std::vector<size_t> noteIndices, float depth, float skew,
-                          int cycles = 1, float quantize = 0.0f, int quantizeSub = 64,
-                          bool hardAngle = false);
+    BakeClipTimeBendCommand(ClipId clipId, double beatsPerBar);
 
     void execute() override;
     void undo() override;
     juce::String getDescription() const override {
-        return "Time Bend MIDI Notes";
+        return "Bake Time Bend";
     }
 
   private:
     ClipId clipId_;
-    std::vector<size_t> noteIndices_;
-    float depth_, skew_;
-    int cycles_;
-    float quantize_;
-    int quantizeSub_;
-    bool hardAngle_;
-    std::vector<MidiNoteStartBeat> oldStartBeats_;
-    bool executed_ = false;
+    double beatsPerBar_;
+    std::optional<MidiEventState> before_, after_;
+    sdk::sequencer::TimeBend bendBefore_;
 };
 
 }  // namespace magda

@@ -22,25 +22,21 @@ std::size_t MidiEventList::lowerBound(double beat) const {
     return static_cast<std::size_t>(std::distance(events.begin(), found));
 }
 
-void MidiEventList::notesSoundingAt(double beat, double widen,
-                                    std::vector<std::int32_t>& out) const {
+void MidiEventList::notesSoundingAt(double beat, std::vector<std::int32_t>& out) const {
     if (longestNoteBeats <= 0.0)
         return;
 
     // No note-on further back than the longest note can still be sounding, so
     // the walk is bounded by the material rather than by the clip's length.
-    // @p widen is what a groove can move an edge by: with one in force these are
-    // candidates and the caller decides on the grooved edges, so the window has
-    // to cover a note the groove has not moved into it yet.
-    auto index = lowerBound(beat - longestNoteBeats - widen);
-    const auto end = lowerBound(beat + widen);
+    auto index = lowerBound(beat - longestNoteBeats);
+    const auto end = lowerBound(beat);
 
     for (; index < end; ++index) {
         const auto& event = events[index];
         if (!event.isNoteOn())
             continue;
 
-        if (event.endBeat > beat - widen)
+        if (event.endBeat > beat)
             out.push_back(static_cast<std::int32_t>(index));
     }
 }

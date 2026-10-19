@@ -13,7 +13,6 @@ add_library(magda_engine STATIC
     clip/ClipSnapshotDump.cpp
     clip/ClipAudioSource.cpp
     clip/ClipMidiSource.cpp
-    clip/GrooveTemplate.cpp
     clip/MidiClipCompiler.cpp
     clip/MidiEventList.cpp
     clip/ClipStreamFeed.cpp
@@ -32,7 +31,6 @@ add_library(magda_engine STATIC
     clip/ClipMidiSource.hpp
     clip/SessionPlayback.hpp
     clip/ActiveNoteList.hpp
-    clip/GrooveTemplate.hpp
     clip/MidiClipCompiler.hpp
     clip/MidiEventList.hpp
     clip/ClipStreamFeed.hpp

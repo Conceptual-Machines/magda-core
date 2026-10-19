@@ -240,24 +240,18 @@ void ClipInspector::resized() {
         endSection(!midiPitchHeader_.isCollapsed());
     }
 
-    // Groove: template, then strength once one is chosen.
-    if (grooveHeader_.isVisible()) {
-        beginSection(grooveHeader_);
-        if (!grooveHeader_.isCollapsed()) {
-            grooveTemplateButton_.setBounds(addRow(fieldH));
-            if (grooveStrengthValue_->isVisible()) {
-                addSpace(gap);
-                grooveStrengthLabel_.setBounds(addRow(captionH));
-                grooveStrengthValue_->setBounds(addRow(fieldH));
-            }
-        }
-        endSection(!grooveHeader_.isCollapsed());
-    }
-
     // Fades lays itself out under its own header.
     if (const int h = fadesSection_->getPreferredHeight(); h > 0) {
         beginSection(*fadesSection_);
         fadesSection_->setBounds(fadesSection_->getBounds().withHeight(h));
+        y += h - CollapsibleSectionHeader::kHeight;
+        endSection(h > CollapsibleSectionHeader::kHeight);
+    }
+
+    if (const int h = timeBendSection_->getPreferredHeight(width);
+        h > 0 && timeBendSection_->isVisible()) {
+        beginSection(*timeBendSection_);
+        timeBendSection_->setBounds(timeBendSection_->getBounds().withHeight(h));
         y += h - CollapsibleSectionHeader::kHeight;
         endSection(h > CollapsibleSectionHeader::kHeight);
     }

@@ -272,17 +272,14 @@ Loss controllers() {
 }
 
 Loss groove() {
-    return {.field = "ClipInfo::grooveTemplate, grooveStrength",
-            .reason = "a groove names a template in a library the project does not contain, so "
-                      "there is nothing portable to write. The format's own answer is to bake "
-                      "the shifted times into the notes, which is a different clip",
+    return {.field = "ClipInfo::timeBend",
+            .reason = "a time bend is MAGDA's own curve and the format has no field for it. Its "
+                      "answer is to bake the bent times into the notes, which is a different clip",
             .restore = [](Case& imported, const Case& original) {
                 return forEachClip(imported, original, [](ClipInfo& clip, const ClipInfo& source) {
-                    if (clip.grooveTemplate == source.grooveTemplate &&
-                        clip.grooveStrength == source.grooveStrength)
+                    if (clip.timeBend == source.timeBend)
                         return false;
-                    clip.grooveTemplate = source.grooveTemplate;
-                    clip.grooveStrength = source.grooveStrength;
+                    clip.timeBend = source.timeBend;
                     return true;
                 });
             }};
