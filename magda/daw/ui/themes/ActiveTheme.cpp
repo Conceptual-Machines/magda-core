@@ -204,6 +204,7 @@ constexpr ActiveTheme::Palette darkPalette{
     0xFF6F9DFF,  // DEVICE_BLUE
     0xFFE08A3C,  // DEVICE_AMBER
     0xFFE0687A,  // DEVICE_RED
+    0xFFB48CFF,  // DEVICE_VIOLET
     0xFF20252C,  // DEVICE_KNOB_DISC
     0xFFDFE5EA,  // DEVICE_POINTER
     0xFF0F1216,  // DEVICE_SLIDER_TRACK
@@ -510,6 +511,7 @@ constexpr ActiveTheme::Palette lightPalette = [] {
     set(ColourRole::DEVICE_BLUE, 0xFF2E66C8);
     set(ColourRole::DEVICE_AMBER, 0xFFC45A00);
     set(ColourRole::DEVICE_RED, 0xFFC23A4E);
+    set(ColourRole::DEVICE_VIOLET, 0xFF7446C8);
     set(ColourRole::DEVICE_KNOB_DISC, 0xFFE3E8EC);
     set(ColourRole::DEVICE_POINTER, 0xFF1B242C);
     set(ColourRole::DEVICE_SLIDER_TRACK, 0xFFD3DAE0);
@@ -796,6 +798,7 @@ constexpr ActiveTheme::Palette highContrastPalette = [] {
     palette[colourRoleIndex(ColourRole::DEVICE_BLUE)] = 0xFF7AB8FF;
     palette[colourRoleIndex(ColourRole::DEVICE_AMBER)] = 0xFFFFC04D;
     palette[colourRoleIndex(ColourRole::DEVICE_RED)] = 0xFFFF6B6B;
+    palette[colourRoleIndex(ColourRole::DEVICE_VIOLET)] = 0xFFC9A6FF;
     palette[colourRoleIndex(ColourRole::DEVICE_KNOB_DISC)] = 0xFF101010;
     palette[colourRoleIndex(ColourRole::DEVICE_POINTER)] = 0xFFFFFFFF;
     palette[colourRoleIndex(ColourRole::DEVICE_SLIDER_TRACK)] = 0xFF202020;

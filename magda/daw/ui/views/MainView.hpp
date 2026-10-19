@@ -15,6 +15,7 @@
 #include "../layout/LayoutConfig.hpp"
 #include "../state/ModeContent.hpp"
 #include "../state/TimelineController.hpp"
+#include "ExpandedFaceplateHost.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/TrackManager.hpp"
@@ -187,7 +188,11 @@ class MainView : public juce::Component,
     // A registered mode's content in place of the track area (ModeContent.hpp, #3077).
     std::unique_ptr<ModeContentComponent> modeContent_;
     ViewMode modeContentMode_ = ViewMode::Arrange;
+    // A device faceplate lent to the track area; it covers a mode's content too.
+    std::unique_ptr<ExpandedFaceplateHost> faceplateHost_;
     void updateModeContent();
+    /// Whether something other than the tracks fills the track area.
+    bool trackAreaReplaced() const;
     int masterStripHeight = 84;
 
     // Master automation band: a pinned strip directly above the master strip

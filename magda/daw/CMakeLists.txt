@@ -138,6 +138,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/trackchain/mb-bands.svg
     ../../assets/icons/trackchain/device-faceplate.svg
     ../../assets/icons/trackchain/device-params.svg
+    ../../assets/icons/trackchain/device-time-bend.svg
     ../../assets/icons/trackchain/mb-faceplate.svg
     ../../assets/icons/trackchain/icon-spectrum-boldm.svg
     ../../assets/icons/trackchain/icon-levels-boldm.svg
@@ -263,7 +264,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/fontaudio/fad-logo-juce.svg
     # AI icons
     ../../assets/icons/ai/psychology.svg
-    ../../assets/icons/ai/ai.svg
+    ../../assets/icons/ai/ai-sound-designer.svg
     # Session view icons
     ../../assets/icons/session/hide.svg
     ../../assets/icons/session/rate.svg

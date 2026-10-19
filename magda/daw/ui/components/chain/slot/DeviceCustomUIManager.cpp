@@ -524,9 +524,9 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     if (impulseResponseUI_)
         return 350;
     if (stepSequencerUI_)
-        return 500;
+        return stepSequencerUI_->preferredWidth();
     if (polyStepSequencerUI_)
-        return 720;  // 560 grid + ~156 right-hand control panel
+        return polyStepSequencerUI_->preferredWidth();
     if (oscilloscopeUI_)
         return 500;
     if (spectrumAnalyzerUI_)
@@ -700,6 +700,13 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         polyStepSequencerUI_->updateFromParameters(device.parameters);
     if (impulseResponseUI_ && device.pluginId == daw::audio::MagdaConvolutionPlugin::xmlTypeName)
         impulseResponseUI_->updateFromParameters(device.parameters);
+}
+
+void DeviceCustomUIManager::setSequencerTimeBendShown(bool shown) {
+    if (stepSequencerUI_)
+        stepSequencerUI_->setTimeBendShown(shown);
+    if (polyStepSequencerUI_)
+        polyStepSequencerUI_->setTimeBendShown(shown);
 }
 
 void DeviceCustomUIManager::refreshSequencerState(const magda::DeviceInfo& device) {

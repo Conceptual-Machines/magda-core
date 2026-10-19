@@ -3273,6 +3273,30 @@ TEST_CASE("A device's faceplate and parameter views survive a project roundtrip"
     CHECK(roundTrip(false, false) == std::pair{false, true});
 }
 
+TEST_CASE("A sequencer's hidden time bend survives a project roundtrip",
+          "[project][serialization][device]") {
+    ProjectTestFixture fixture;
+    auto& trackManager = TrackManager::getInstance();
+    const auto trackId = trackManager.createTrack("Time Bend", TrackType::Media);
+
+    DeviceInfo device;
+    device.id = 30;
+    device.name = "Sequencer";
+    device.pluginId = "internal.sequencer";
+    device.format = PluginFormat::Internal;
+    device.timeBendShown = false;
+    REQUIRE(trackManager.addDeviceToTrack(trackId, device) != INVALID_DEVICE_ID);
+
+    ProjectInfo info;
+    const auto json = ProjectSerializer::serializeProject(info);
+    ProjectInfo loadedInfo;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loadedInfo));
+    const auto* track = trackManager.getTrack(trackId);
+    REQUIRE(track != nullptr);
+    REQUIRE(track->chain.fxChainElements.size() == 1);
+    CHECK_FALSE(getDevice(track->chain.fxChainElements[0]).timeBendShown);
+}
+
 TEST_CASE("Device channel counts survive a project roundtrip", "[project][serialization][device]") {
     ProjectTestFixture fixture;
 

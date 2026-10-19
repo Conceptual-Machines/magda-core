@@ -427,7 +427,7 @@ void FooterBar::setupLocalModelButtons() {
     };
 
     const std::array<LocalModelIcon, NUM_LOCAL_MODELS> icons = {{
-        {"LocalLLM", BinaryData::ai_svg, BinaryData::ai_svgSize},
+        {"LocalLLM", BinaryData::aisounddesigner_svg, BinaryData::aisounddesigner_svgSize},
         {"SampleAnalyzer", BinaryData::database_svg, BinaryData::database_svgSize},
     }};
 

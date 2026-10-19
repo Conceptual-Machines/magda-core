@@ -325,6 +325,8 @@ struct DeviceInfo {
     // Which of a faceplate device's two views show; at least one always does.
     bool faceplateShown = true;
     bool paramsShown = true;
+    /// Whether a sequencer's faceplate shows its time bend beside the controls.
+    bool timeBendShown = true;
 
     // AI panel output text — transient runtime state, NOT serialized to disk.
     // Lives on DeviceInfo so the streamed prompt/result history survives slot

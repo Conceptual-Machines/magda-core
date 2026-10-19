@@ -288,6 +288,17 @@ class DeviceSlotComponent : public NodeComponent,
     bool faceplateShown() const;
     bool paramsShown() const;
     void toggleDeviceView(bool faceplate);
+    /// A step sequencer's footer switches: its time bend beside the controls, and its faceplate
+    /// lent to the arrangement's track area (ExpandedFaceplate) with a note left in its place.
+    std::unique_ptr<magda::SvgButton> timeBendToggle_, expandToggle_;
+    juce::Label lentNote_;
+    void toggleTimeBend();
+    void toggleFaceplateExpanded();
+    void lendFaceplate();
+    void faceplateReturned();
+    bool faceplateLent() const;
+    /// Lends the faceplate again when this slot replaces one whose faceplate was out.
+    void reclaimExpandedFaceplate();
     /// The faceplate's width: its spec's, or the default.
     int faceplateWidth() const;
     /// Rows of band knobs over a faceplate-below device's faceplate (one); 0 for any other.
@@ -317,6 +328,8 @@ class DeviceSlotComponent : public NodeComponent,
     int faceplateSlotControlWidth(const FaceplateSlotControl& control) const;
     static int faceplateSlotWidthFor(const magda::ParameterInfo& param);
     static constexpr int kDropdownWidth = 72;
+    /// A slot whose faceplate is out in the arrangement keeps room for its note.
+    static constexpr int kLentFaceplateWidth = 220;
     bool faceplateSlotShown(const FaceplateSlotControl& control) const;
     /// Carve the faceplate-strip controls off the top of the laid-out faceplate.
     void layoutFaceplateSlotControls();

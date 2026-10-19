@@ -20,6 +20,7 @@
 #include "modulation/MacroPanelComponent.hpp"
 #include "modulation/ModsPanelComponent.hpp"
 #include "modulation/ModulatorEditorPanel.hpp"
+#include "ui/components/common/AiSoundDesignerIcon.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -1209,9 +1210,18 @@ void NodeComponent::paintAIPanel(juce::Graphics& g, juce::Rectangle<int> panelAr
     // Header label — the AIPanelComponent (when mounted) draws the input/
     // output below this strip; resizedAIPanel positions it skipping the 16px
     // header band.
-    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-    g.setFont(FontManager::getInstance().getUIFontBold(9.0f));
-    g.drawText("AI", panelArea.removeFromTop(16), juce::Justification::centred);
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
+    const auto font = FontManager::getInstance().getUIFontBold(9.0f);
+    const auto header = panelArea.removeFromTop(16);
+    const int textW = juce::roundToInt(juce::GlyphArrangement::getStringWidth(font, "AI")) + 2;
+    auto content = header.withSizeKeepingCentre(10 + 3 + textW, header.getHeight());
+    if (auto icon = makeAiSoundDesignerIcon(accent))
+        icon->drawWithin(g, content.removeFromLeft(10).toFloat(), juce::RectanglePlacement::centred,
+                         1.0f);
+    content.removeFromLeft(3);
+    g.setColour(accent);
+    g.setFont(font);
+    g.drawText("AI", content, juce::Justification::centredLeft);
 }
 
 void NodeComponent::resizedAIPanel(juce::Rectangle<int> panelArea) {

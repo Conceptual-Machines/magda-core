@@ -185,6 +185,7 @@ constexpr std::array<const char*, static_cast<std::size_t>(ColourRole::count)> k
     "deviceBlue",
     "deviceAmber",
     "deviceRed",
+    "deviceViolet",
     "deviceKnobDisc",
     "devicePointer",
     "deviceSliderTrack",

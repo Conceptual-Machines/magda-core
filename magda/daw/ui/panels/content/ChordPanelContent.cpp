@@ -1809,8 +1809,8 @@ void ChordPanelContent::setupFooterControls() {
     ksTabBtn_->onClick = [this]() { switchToTab(SuggestionTab::KS); };
     addAndMakeVisible(ksTabBtn_.get());
 
-    aiTabBtn_ =
-        std::make_unique<magda::SvgButton>("AITab", BinaryData::ai_svg, BinaryData::ai_svgSize);
+    aiTabBtn_ = std::make_unique<magda::SvgButton>("AITab", BinaryData::aisounddesigner_svg,
+                                                   BinaryData::aisounddesigner_svgSize);
     applyDeviceIconStyle(*aiTabBtn_, DeviceIcon::Toggle, glyphKey, ActiveTheme::MIDI_KEY_ON);
     aiTabBtn_->setRadioGroupId(1001);
     aiTabBtn_->setTooltip("AI chord progression suggestions");

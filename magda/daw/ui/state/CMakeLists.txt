@@ -10,4 +10,6 @@ target_sources(magda_daw PRIVATE
     KeyMappingStore.hpp
     ModeContent.cpp
     ModeContent.hpp
+    ExpandedFaceplate.cpp
+    ExpandedFaceplate.hpp
 )
