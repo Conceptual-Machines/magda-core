@@ -1,11 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <magda/sdk/sequencer/TimeBend.hpp>
 #include <optional>
 #include <string>
 #include <vector>
 
-#include "clip/GrooveTemplate.hpp"
 #include "clip/MidiEventList.hpp"
 #include "clip/WarpMap.hpp"
 #include "core/ClipInfo.hpp"
@@ -269,12 +269,11 @@ struct MidiClipPlayback {
     /// to do.
     MidiFold fold;
 
-    /// Compiled against this clip's own strength; the one thing here the
-    /// audio thread evaluates rather than reads, since groove is anchored to
-    /// the project grid and a looped clip grooves each pass differently
-    /// whenever its loop length isn't a whole multiple of the template's
-    /// period. Empty is the identity.
-    GrooveTemplate groove;
+    /// The read-head curve the notes play through, on the project grid (#3044). When it is
+    /// active the notes are struck where the head crosses them and ended a written length
+    /// later; controllers stay where they are written.
+    sdk::sequencer::TimeBend bend;
+    double bendCycleBeats = 0.0;
 };
 
 /**

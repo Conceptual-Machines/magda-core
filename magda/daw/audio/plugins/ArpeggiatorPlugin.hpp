@@ -6,6 +6,7 @@
 #include <magda/sdk/dsp/Random.hpp>
 
 #include "core/ParameterUtils.hpp"
+#include "plugins/DeviceTimeBend.hpp"
 #include "plugins/MidiMagdaDevice.hpp"
 
 namespace magda::daw::audio {
@@ -19,9 +20,9 @@ namespace magda::daw::audio {
  *
  * A MagdaDevice since #2299: one scheduler hosted by whichever engine is
  * running it. The slot ids, order and display ranges are the ones the retired
- * host-native plugin registered. The ramp-cycles / quantize / hard-angle
- * settings were never parameters - they persist as device state under the
- * retired property names and the faceplate writes them directly.
+ * host-native plugin registered. Quantize and the time bend's curve were never
+ * parameters - they persist as device state and the faceplate writes them
+ * directly.
  */
 class ArpeggiatorPlugin : public MidiMagdaDevice {
   public:
@@ -56,8 +57,8 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
         kOctaves,
         kGate,
         kSwing,
-        kRamp,  // -1..1: bezier depth (perpendicular bow)
-        kSkew,  // -1..1: control-point position offset from centre
+        kBendAmount,  // 0..1: how much of the time bend is heard
+        kBendCycles,  // 1..8: the bend repeated across its span
         kLatch,
         kVelMode,
         kFixedVel,
@@ -94,35 +95,30 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
     // document patches in this vocabulary (#2317), not as writes to the
     // atomics.
     struct SettingIDs {
-        static const juce::Identifier rampCycles;
         static const juce::Identifier quantize;
         static const juce::Identifier quantizeSub;
-        static const juce::Identifier hardAngle;
     };
 
     // --- Non-parameter settings (persisted device state) ---
     // Atomics: restoreState() writes on the message thread while process() reads.
-    std::atomic<int> rampCycles{1};      // 1-8: curve repetitions within one arp cycle
-    std::atomic<float> quantize{0.0f};   // 0..1: pull warped steps toward a regular grid
-    std::atomic<int> quantizeSub{16};    // grid subdivisions for quantize
-    std::atomic<bool> hardAngle{false};  // sharp-cornered ramp curve
+    std::atomic<float> quantize{0.0f};  // 0..1: pull played steps toward a regular grid
+    std::atomic<int> quantizeSub{16};   // grid subdivisions for quantize
 
-    /** Quadratic bezier timing curve. Control point at (skew, skew+depth) in graph space.
-     *  skew=0.5, depth=0  → linear.
-     *  depth > 0 → bowed above diagonal (front-loaded / log-like).
-     *  depth < 0 → bowed below diagonal (back-loaded / exp-like).
-     *  Moving skew away from 0.5 creates asymmetric curves. */
-    static double applyRampCurve(double t, float depth, float skew, bool hardAngle = false);
+    /// The time bend the steps play through, its cycle anchored where the chord came in.
+    DeviceTimeBend timeBend;
 
     /** Current arp step and sequence length for UI (set on audio thread). */
     std::atomic<int> currentPlayStep_{-1};
     std::atomic<int> currentSeqLength_{0};
 
-    /** Modulated Time Bend position for the UI curve display, refreshed every
-     *  block. The parameter mirror itself is audio-thread-owned, so the 30 Hz
-     *  UI timer reads these instead of racing it. */
-    std::atomic<float> displayedRamp_{0.0f};
-    std::atomic<float> displayedSkew_{0.0f};
+    /** @brief The modulated bend amount and where the walk is in the bend's cycle (0..1, or -1
+     *  when idle), for the faceplate's curve. */
+    std::atomic<float> displayedBendAmount_{1.0f};
+    std::atomic<float> displayedBendPhase_{-1.0f};
+    /// The bend's cycle and an arp step in beats, and the bar's length, for the curve's grid.
+    std::atomic<float> displayedCycleBeats_{4.0f};
+    std::atomic<float> displayedStepBeats_{0.5f};
+    std::atomic<float> displayedBeatsPerBar_{4.0f};
 
   private:
     // --- Audio-thread state ---
@@ -151,7 +147,6 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
     bool latchedSetStale_ = false;
 
     // Pattern state
-    int currentStep_ = 0;
     double arpOriginBeat_ = -1.0;
     int lastPlayedNote_ = -1;
     /// Source stamped on the sounding note's note-on, and on every note-off

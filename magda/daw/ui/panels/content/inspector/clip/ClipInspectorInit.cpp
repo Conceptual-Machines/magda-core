@@ -10,9 +10,9 @@ ClipInspector::ClipInspector() {
     initMixSection();
     initWarpSection();
     initPitchSection();
-    initGrooveSection();
     initFadesSection();
     initLabelsSection();
+    initTimeBendSection();
     initSessionLaunchSection();
     initViewport();
     lookAndFeelChanged();

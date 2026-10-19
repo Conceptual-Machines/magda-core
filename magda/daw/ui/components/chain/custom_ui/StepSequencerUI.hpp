@@ -10,8 +10,8 @@
 #include "core/ParameterInfo.hpp"
 #include "core/StepPatternCommands.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
-#include "ui/components/common/RampCurveDisplay.hpp"
 #include "ui/components/common/SvgButton.hpp"
+#include "ui/components/common/TimeBendEditor.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -51,8 +51,8 @@ class StepSequencerUI : public juce::Component, private juce::Timer {
 
     std::function<void(int paramIndex, float value)> onParameterChanged;
 
-    /// Fired when a non-slot setting (ramp cycles, quantize, subdivision, hard
-    /// angle) is edited, carrying ALL of them in the device's own state
+    /// Fired when a non-slot setting (the time bend, quantize, subdivision) is
+    /// edited, carrying ALL of them in the device's own state
     /// vocabulary (StepSequencerPlugin::SettingIDs). The owner patches the
     /// model's document; the projection updates the live device (#2317).
     std::function<void(const juce::NamedValueSet&)> onSettingsEdited;
@@ -82,9 +82,6 @@ class StepSequencerUI : public juce::Component, private juce::Timer {
   private:
     daw::audio::StepSequencerPlugin* device_ = nullptr;
     step_pattern::MonoPattern pattern_;
-    // Mirror of the curve display's hard-angle toggle, so settingsEdited() can
-    // publish the full settings set from the controls alone.
-    bool hardAngle_ = false;
 
     // --- Controls ---
     juce::Label rateLabel_;
@@ -99,14 +96,7 @@ class StepSequencerUI : public juce::Component, private juce::Timer {
     LinkableTextSlider glideSlider_;
 
     // --- Ramp curve ---
-    juce::Label rampLabel_;
-    RampCurveDisplay rampCurveDisplay_;
-    juce::Label depthLabel_;
-    LinkableTextSlider depthSlider_;
-    juce::Label skewLabel_;
-    LinkableTextSlider skewSlider_;
-    juce::Label cyclesLabel_;
-    LinkableTextSlider cyclesSlider_;
+    TimeBendEditor timeBend_;
     juce::Label quantizeLabel_;
     LinkableTextSlider quantizeSlider_;
     juce::Label quantizeSubLabel_;
@@ -178,6 +168,9 @@ class StepSequencerUI : public juce::Component, private juce::Timer {
 
     void sendChange(int paramIndex, float value);
     void settingsEdited();
+    /// Sends a bend edit on: AMOUNT and CYCLES as slots, the rest as settings.
+    void timeBendEdited(const sdk::sequencer::TimeBend& before,
+                        const sdk::sequencer::TimeBend& after);
     void syncSettingsFromDevice();
 
     /// Run @p edit over the model's pattern as one undoable step.

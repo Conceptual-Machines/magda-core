@@ -563,7 +563,7 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES clips/test_editor_playhead_fold.cpp)
     list(APPEND TEST_SOURCES audio/test_groove_library.cpp
     audio/test_groove_store.cpp
-    audio/test_groove_template.cpp)
+    audio/test_groove_time_bend.cpp)
     list(APPEND TEST_SOURCES audio/test_transient_detector.cpp)
     list(APPEND TEST_SOURCES audio/test_source_loop_info.cpp)
 
@@ -904,6 +904,10 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/panels/content/inspector/clip/sections/ClipFadesSection.cpp
     ../magda/daw/ui/panels/content/inspector/clip/sections/ClipLabelsSection.cpp
     ../magda/daw/ui/panels/content/inspector/clip/sections/ClipTakesSection.cpp
+    ../magda/daw/ui/panels/content/inspector/clip/sections/ClipTimeBendSection.cpp
+    ../magda/daw/ui/components/common/TimeBendEditor.cpp
+    ../magda/daw/ui/components/common/ClipTimeBendView.cpp
+    ../magda/daw/ui/components/common/LinkableTextSlider.cpp
     ../magda/daw/ui/components/clips/ClipComponent.cpp
     ../magda/daw/ui/components/clips/ClipEnvelopeOverlay.cpp
     ../magda/daw/ui/components/tracks/TrackContentPanel.cpp
@@ -964,7 +968,6 @@ target_sources(magda_juce_tests PRIVATE
         engine/test_engine_host_drum_grid_buses_juce.cpp
         # The native pass that records hardware inserts for a render (#2279)
         engine/test_engine_insert_capture_juce.cpp
-        engine/test_groove_entries_juce.cpp
         engine/test_engine_host_midi_recording_juce.cpp
         engine/test_engine_host_session_capture_juce.cpp
 

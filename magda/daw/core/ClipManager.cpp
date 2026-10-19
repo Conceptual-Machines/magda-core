@@ -2557,22 +2557,14 @@ void ClipManager::setIsReversed(ClipId clipId, bool reversed) {
 }
 
 // ============================================================================
-// Groove/Shuffle/Swing
+// Time bend
 // ============================================================================
 
-void ClipManager::setGrooveTemplate(ClipId clipId, const juce::String& templateName) {
+void ClipManager::setTimeBend(ClipId clipId, const sdk::sequencer::TimeBend& bend) {
     if (auto* clip = getClip(clipId)) {
         if (clip->isMidi()) {
-            clip->grooveTemplate = templateName;
-            notifyClipPropertyChanged(clipId);
-        }
-    }
-}
-
-void ClipManager::setGrooveStrength(ClipId clipId, float strength) {
-    if (auto* clip = getClip(clipId)) {
-        if (clip->isMidi()) {
-            clip->grooveStrength = juce::jlimit(0.0f, 1.0f, strength);
+            clip->timeBend = bend;
+            clip->timeBend.sanitise();
             notifyClipPropertyChanged(clipId);
         }
     }

@@ -496,7 +496,7 @@ TEST_CASE("What will not sound says so, and what is merely covered does not", "[
     }
 }
 
-TEST_CASE("A MIDI clip carries its events, its loop and its groove", "[engine][clip]") {
+TEST_CASE("A MIDI clip carries its events, its loop and its time bend", "[engine][clip]") {
     auto clip = makeMidiClip(1, 0.0, 8.0);
     clip.midiNotes.push_back(magda::MidiNote{60, 100, 0.0, 1.0, 0, {}});
     clip.midiNotes.push_back(magda::MidiNote{64, 90, 1.0, 1.0, 0, {}});
@@ -505,8 +505,9 @@ TEST_CASE("A MIDI clip carries its events, its loop and its groove", "[engine][c
     clip.loopLengthBeats = 4.0;
     clip.midiOffset = 0.5;
     clip.midiTrimOffset = 0.25;
-    clip.grooveTemplate = "Swing 16";
-    clip.grooveStrength = 0.6f;
+    clip.timeBend = magda::sdk::sequencer::makeTimeBend(magda::sdk::sequencer::TimeBendShape::Rush);
+    clip.timeBend.on = true;
+    clip.timeBend.bars = 2;
 
     const auto snapshot = compile({clip}, makeTempoMap());
     const auto* track = snapshot.find(kTrack);
@@ -522,11 +523,9 @@ TEST_CASE("A MIDI clip carries its events, its loop and its groove", "[engine][c
     CHECK(midi.fold.offsetBeats == Approx(0.5));
     CHECK(midi.fold.trimOffsetBeats == Approx(0.25));
 
-    // The groove is named but this installation has none, which is an ordinary
-    // answer and a diagnostic rather than a failure.
-    CHECK(midi.groove.empty());
-    REQUIRE(snapshot.diagnostics.size() == 1);
-    CHECK(snapshot.diagnostics.front().find("Swing 16") != std::string::npos);
+    // The bend is carried with its cycle in the project's 4/4.
+    CHECK(midi.bend == clip.timeBend);
+    CHECK(midi.bendCycleBeats == Approx(8.0));
     CHECK(track->audio.empty());
 }
 

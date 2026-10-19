@@ -7,6 +7,7 @@
 #include <magda/sdk/sequencer/PublishedPattern.hpp>
 
 #include "core/ParameterUtils.hpp"
+#include "plugins/DeviceTimeBend.hpp"
 #include "plugins/MidiMagdaDevice.hpp"
 
 namespace magda::daw::audio {
@@ -50,8 +51,8 @@ class StepSequencerPlugin : public MidiMagdaDevice {
         kGateLength,
         kAccentVelocity,
         kNormalVelocity,
-        kRamp,  // -1..1: bezier timing depth
-        kSkew,  // -1..1: control-point position offset from centre
+        kBendAmount,  // 0..1: how much of the time bend is heard
+        kBendCycles,  // 1..8: the bend repeated across its span
         kNumParams
     };
 
@@ -86,18 +87,23 @@ class StepSequencerPlugin : public MidiMagdaDevice {
     // the pattern, and pattern() is where it is read.
     struct SettingIDs {
         static const juce::Identifier numSteps;
-        static const juce::Identifier rampCycles;
-        static const juce::Identifier hardAngle;
         static const juce::Identifier quantize;
         static const juce::Identifier quantizeSub;
     };
 
     // --- Non-parameter settings (persisted device state) ---
     // Atomics: restoreState() writes on the message thread while process() reads.
-    std::atomic<int> rampCycles{1};      // 1-8: curve repetitions within one pattern cycle
-    std::atomic<bool> hardAngle{false};  // piecewise linear instead of smooth bezier
-    std::atomic<float> quantize{0.0f};   // 0-1: adaptive quantize strength
-    std::atomic<int> quantizeSub{16};    // quantize grid subdivisions
+    std::atomic<float> quantize{0.0f};  // 0-1: adaptive quantize strength
+    std::atomic<int> quantizeSub{16};   // quantize grid subdivisions
+
+    /// The time bend the steps play through; its setting is DeviceTimeBend::settingId.
+    DeviceTimeBend timeBend;
+    /// Where the block is in the bend's cycle (0..1, or -1 stopped), the cycle and a step in
+    /// beats, and the bar's length, for the faceplate's curve and its grid.
+    std::atomic<float> bendPhase_{-1.0f};
+    std::atomic<float> bendCycleBeats_{4.0f};
+    std::atomic<float> bendStepBeats_{0.25f};
+    std::atomic<float> bendBeatsPerBar_{4.0f};
 
     /// The pattern the model last published. Message thread only - the
     /// faceplate reads it to draw, and edits it through the model.

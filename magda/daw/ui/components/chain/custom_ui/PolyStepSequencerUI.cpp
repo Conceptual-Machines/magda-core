@@ -942,11 +942,6 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
             "Set Step Count", [steps](step_pattern::PolyPattern& p) { p.length = steps; },
             stepsSlider_.isBeingDragged() ? magda::StepPatternGesture::Continuous
                                           : magda::StepPatternGesture::Discrete);
-        rampCurveDisplay_.setNumTicks(steps);
-        // Clamp cycles to num steps
-        cyclesSlider_.setRange(1.0, static_cast<double>(steps), 1.0);
-        if (cyclesSlider_.getValue() > steps)
-            cyclesSlider_.setValue(static_cast<double>(steps), juce::sendNotificationSync);
         repaint();
     };
     stepsSlider_.getSlider().onDragEnd = [this] { endPatternGesture(); };
@@ -1005,52 +1000,11 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
         [](const juce::String& t) { return t.trim().getDoubleValue(); });
     quantizeSubSlider_.onValueChanged = [this](double) { settingsEdited(); };
 
-    // --- Ramp curve (time warp) ---
-    setupLabel(rampLabel_, "TIME BEND");
-    addAndMakeVisible(rampCurveDisplay_);
-    rampCurveDisplay_.onCurveChanged = [this](float depth, float skew) {
-        sendChange(PolySeqPlugin::kRamp, depth);
-        sendChange(PolySeqPlugin::kSkew, skew);
-        depthSlider_.setValue(depth, juce::dontSendNotification);
-        skewSlider_.setValue(skew, juce::dontSendNotification);
+    // --- Time bend ---
+    timeBend_.onCommit = [this](const auto& before, const auto& after) {
+        timeBendEdited(before, after);
     };
-
-    setupLabel(depthLabel_, "DEPTH");
-    depthLabel_.setJustificationType(juce::Justification::centred);
-    setupSlider(depthSlider_, -1.0, 1.0, 0.01);
-    depthSlider_.setValueFormatter(
-        [](double v) { return juce::String(juce::roundToInt(v * 100)); });
-    depthSlider_.setValueParser(
-        [](const juce::String& t) { return t.trim().getDoubleValue() / 100.0; });
-    depthSlider_.onValueChanged = [this](double value) {
-        sendChange(PolySeqPlugin::kRamp, static_cast<float>(value));
-        rampCurveDisplay_.setValues(static_cast<float>(value),
-                                    static_cast<float>(skewSlider_.getValue()));
-    };
-
-    setupLabel(skewLabel_, "SKEW");
-    skewLabel_.setJustificationType(juce::Justification::centred);
-    setupSlider(skewSlider_, -1.0, 1.0, 0.01);
-    skewSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v * 100)); });
-    skewSlider_.setValueParser(
-        [](const juce::String& t) { return t.trim().getDoubleValue() / 100.0; });
-    skewSlider_.onValueChanged = [this](double value) {
-        sendChange(PolySeqPlugin::kSkew, static_cast<float>(value));
-        rampCurveDisplay_.setValues(static_cast<float>(depthSlider_.getValue()),
-                                    static_cast<float>(value));
-    };
-
-    setupLabel(cyclesLabel_, "CYCLES");
-    setupSlider(cyclesSlider_, 1.0, static_cast<double>(PolySeqPlugin::MAX_STEPS), 1.0);
-    cyclesSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
-    cyclesSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
-    cyclesSlider_.onValueChanged = [this](double) { settingsEdited(); };
-
-    // Hard angle toggle (right-click on control point)
-    rampCurveDisplay_.onHardAngleChanged = [this](bool hardAngle) {
-        hardAngle_ = hardAngle;
-        settingsEdited();
-    };
+    addAndMakeVisible(timeBend_);
 
     // MIDI thru / step record live in the device-slot header, owned by
     // DeviceSlotComponent — not in this body.
@@ -1126,11 +1080,10 @@ void PolyStepSequencerUI::updateFromParameters(const std::vector<magda::Paramete
     gateLengthSlider_.setValue(static_cast<double>(display(PolySeqPlugin::kGateLength, 0.8f)),
                                juce::dontSendNotification);
 
-    const float depth = display(PolySeqPlugin::kRamp, 0.0f);
-    const float skew = display(PolySeqPlugin::kSkew, 0.0f);
-    depthSlider_.setValue(static_cast<double>(depth), juce::dontSendNotification);
-    skewSlider_.setValue(static_cast<double>(skew), juce::dontSendNotification);
-    rampCurveDisplay_.setValues(depth, skew);
+    auto bend = timeBend_.getBend();
+    bend.amount = display(PolySeqPlugin::kBendAmount, 1.0f);
+    bend.cycles = juce::roundToInt(display(PolySeqPlugin::kBendCycles, 1.0f));
+    timeBend_.setBend(bend);
 
     syncSettingsFromDevice();
     applyPatternViewMode();
@@ -1145,8 +1098,6 @@ void PolyStepSequencerUI::setPattern(const step_pattern::PolyPattern& pattern) {
     pattern_ = pattern;
     const int steps = pattern_.playingLength();
     stepsSlider_.setValue(static_cast<double>(steps), juce::dontSendNotification);
-    rampCurveDisplay_.setNumTicks(steps);
-    cyclesSlider_.setRange(1.0, static_cast<double>(steps), 1.0);
 
     if (!changed)
         return;
@@ -1160,17 +1111,15 @@ void PolyStepSequencerUI::syncSettingsFromDevice() {
     if (device_ == nullptr)
         return;
 
-    const int steps = pattern_.playingLength();
-    hardAngle_ = device_->hardAngle.load(std::memory_order_relaxed);
-    rampCurveDisplay_.setHardAngle(hardAngle_);
+    auto bend = device_->timeBend.current();
+    bend.amount = timeBend_.getBend().amount;
+    bend.cycles = timeBend_.getBend().cycles;
+    timeBend_.setBend(bend);
     quantizeSlider_.setValue(static_cast<double>(device_->quantize.load(std::memory_order_relaxed)),
                              juce::dontSendNotification);
     quantizeSubSlider_.setValue(
         static_cast<double>(device_->quantizeSub.load(std::memory_order_relaxed)),
         juce::dontSendNotification);
-    cyclesSlider_.setValue(static_cast<double>(juce::jlimit(
-                               1, steps, device_->rampCycles.load(std::memory_order_relaxed))),
-                           juce::dontSendNotification);
     drumViewActive_ = device_->viewMode() == "drum";
 }
 
@@ -1185,12 +1134,25 @@ void PolyStepSequencerUI::settingsEdited() {
 
     using IDs = daw::audio::PolyStepSequencerPlugin::SettingIDs;
     juce::NamedValueSet settings;
-    settings.set(IDs::rampCycles, juce::roundToInt(cyclesSlider_.getValue()));
+    settings.set(daw::audio::DeviceTimeBend::settingId,
+                 juce::String(sdk::sequencer::timeBendToText(timeBend_.getBend())));
     settings.set(IDs::quantize, static_cast<float>(quantizeSlider_.getValue()));
     settings.set(IDs::quantizeSub, juce::roundToInt(quantizeSubSlider_.getValue()));
-    settings.set(IDs::hardAngle, hardAngle_);
     settings.set(IDs::viewMode, drumViewActive_ ? juce::String("drum") : juce::String("keys"));
     onSettingsEdited(settings);
+}
+
+void PolyStepSequencerUI::timeBendEdited(const sdk::sequencer::TimeBend& before,
+                                         const sdk::sequencer::TimeBend& after) {
+    if (after.amount != before.amount)
+        sendChange(PolySeqPlugin::kBendAmount, after.amount);
+    if (after.cycles != before.cycles)
+        sendChange(PolySeqPlugin::kBendCycles, static_cast<float>(after.cycles));
+    auto rest = after;
+    rest.amount = before.amount;
+    rest.cycles = before.cycles;
+    if (!(rest == before))
+        settingsEdited();
 }
 
 void PolyStepSequencerUI::editPattern(const juce::String& description,
@@ -1256,16 +1218,15 @@ void PolyStepSequencerUI::timerCallback() {
     // catches every way a pattern can change, without decoding the model's
     // document 30 times a second.
     setPattern(device_->pattern());
+    timeBend_.setPlayheadPhase(device_->bendPhase_.load(std::memory_order_relaxed));
+    timeBend_.setCycle(device_->bendCycleBeats_.load(std::memory_order_relaxed),
+                       device_->bendBeatsPerBar_.load(std::memory_order_relaxed));
+    timeBend_.setDefaultDivision(device_->bendStepBeats_.load(std::memory_order_relaxed));
 
     int step = device_->currentPlayStep_.load(std::memory_order_relaxed);
     if (step != currentPlayStep_) {
         currentPlayStep_ = step;
         patternView_->setPlayStep(step);
-        // Update curve display sweep
-        const int numSteps = pattern_.playingLength();
-        float pos = (step >= 0) ? static_cast<float>(step) / static_cast<float>(numSteps) : -1.0f;
-        rampCurveDisplay_.setPlaybackPosition(
-            pos, juce::jlimit(1, numSteps, device_->rampCycles.load(std::memory_order_relaxed)));
     }
 }
 
@@ -1323,21 +1284,9 @@ void PolyStepSequencerUI::resized() {
         panel.removeFromTop(ROW_GAP);
     }
 
-    // --- TIME BEND: label, DEPTH/SKEW/CYCLES row, then the curve fills the
-    // rest of the panel height (as tall as the panel allows) ---
-    constexpr int LABEL_H = 14;
-    constexpr int CELL_H = CONTROL_ROW_HEIGHT + LABEL_H;
+    // --- Time bend: its header row, then the curve fills the rest of the panel ---
     panel.removeFromTop(ROW_GAP + 2);
-    rampLabel_.setBounds(panel.removeFromTop(LABEL_H));
-    {
-        auto boxRow = panel.removeFromTop(CELL_H);
-        const int cellW = boxRow.getWidth() / 3;
-        gridCell(depthLabel_, depthSlider_, boxRow.removeFromLeft(cellW));
-        gridCell(skewLabel_, skewSlider_, boxRow.removeFromLeft(cellW));
-        gridCell(cyclesLabel_, cyclesSlider_, boxRow);
-    }
-    panel.removeFromTop(2);
-    rampCurveDisplay_.setBounds(panel);  // curve takes all remaining height
+    timeBend_.setBounds(panel);
 
     // --- Main area (left): pattern grid + per-step lanes ---
     // Per-step lanes from the bottom up: PROB, VEL, TIE, GATE
@@ -1572,9 +1521,8 @@ void PolyStepSequencerUI::setupSlider(LinkableTextSlider& slider, double min, do
 
 void PolyStepSequencerUI::lookAndFeelChanged() {
     // Re-apply cached theme colours after a live theme switch.
-    for (auto* label :
-         {&rateLabel_, &stepsLabel_, &dirLabel_, &swingLabel_, &gateLengthLabel_, &quantizeLabel_,
-          &quantizeSubLabel_, &rampLabel_, &depthLabel_, &skewLabel_, &cyclesLabel_})
+    for (auto* label : {&rateLabel_, &stepsLabel_, &dirLabel_, &swingLabel_, &gateLengthLabel_,
+                        &quantizeLabel_, &quantizeSubLabel_})
         label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 
     dirCombo_.setColour(juce::ComboBox::backgroundColourId,
@@ -1596,13 +1544,16 @@ void PolyStepSequencerUI::lookAndFeelChanged() {
 std::vector<LinkableTextSlider*> PolyStepSequencerUI::getLinkableSliders() {
     magda::ChainNodePath dummy;
     // Param indices match AutomatableParameter registration order:
-    // 0=rate, 1=direction, 2=swing, 3=gatelength, 4=ramp, 5=skew
+    // 0=rate, 1=direction, 2=swing, 3=gatelength, 4=bend amount, 5=bend cycles
     rateSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 0, dummy);
     swingSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 2, dummy);
     gateLengthSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 3, dummy);
-    depthSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 4, dummy);
-    skewSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 5, dummy);
-    return {&rateSlider_, &swingSlider_, &gateLengthSlider_, &depthSlider_, &skewSlider_};
+    timeBend_.amountSlider().setLinkContext(magda::INVALID_DEVICE_ID, PolySeqPlugin::kBendAmount,
+                                            dummy);
+    timeBend_.cyclesSlider().setLinkContext(magda::INVALID_DEVICE_ID, PolySeqPlugin::kBendCycles,
+                                            dummy);
+    return {&rateSlider_, &swingSlider_, &gateLengthSlider_, &timeBend_.amountSlider(),
+            &timeBend_.cyclesSlider()};
 }
 
 }  // namespace magda::daw::ui

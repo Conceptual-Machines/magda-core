@@ -2845,14 +2845,6 @@ bool Interpreter::executeGrooveNew(const Params& params) {
                        " per beat)");
     }
 
-    // Refresh clip inspector so new template appears in dropdown immediately
-    auto clipId = getSelectedClipId();
-    if (clipId != INVALID_CLIP_ID) {
-        auto* clip = api_.clips().getClip(clipId);
-        if (clip && clip->isMidi())
-            api_.clips().setGrooveTemplate(clipId, clip->grooveTemplate);
-    }
-
     return true;
 }
 
@@ -2965,14 +2957,6 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
     ctx_.addResult("Extracted groove '" + juce::String(name) + "' from " +
                    juce::String(transientCount) + " transients (" + juce::String(patternLength) +
                    " steps, " + juce::String(notesPerBeat) + " per beat)");
-
-    // Refresh clip inspector so new template appears in dropdown immediately
-    auto selClipId = getSelectedClipId();
-    if (selClipId != INVALID_CLIP_ID) {
-        auto* selClip = api_.clips().getClip(selClipId);
-        if (selClip && selClip->isMidi())
-            api_.clips().setGrooveTemplate(selClipId, selClip->grooveTemplate);
-    }
     return true;
 }
 
@@ -2994,20 +2978,24 @@ bool Interpreter::executeGrooveSet(const Params& params) {
         return false;
     }
 
+    // A groove plays as the time bend it spells (#3044): the template loads its curve, and
+    // strength is the bend's AMOUNT.
+    const auto strength = static_cast<float>(params.getFloat("strength", 1.0));
+    auto bend = clip->timeBend;
     if (params.has("template")) {
-        api_.undo().executeCommand(
-            std::make_unique<SetClipGrooveTemplateCommand>(clipId, juce::String(templateName)));
+        const auto loaded = api_.grooves().timeBend(juce::String(templateName), strength);
+        if (!loaded) {
+            ctx_.setError("groove.set: no groove named \"" + juce::String(templateName) + "\"");
+            return false;
+        }
+        bend = *loaded;
+    } else if (params.has("strength")) {
+        bend.amount = strength;
     }
+    api_.undo().executeCommand(std::make_unique<SetClipTimeBendCommand>(clipId, bend));
 
-    if (params.has("strength")) {
-        float strength = static_cast<float>(params.getFloat("strength", 0.5));
-        api_.undo().executeCommand(
-            std::make_unique<SetClipGrooveStrengthCommand>(clipId, strength));
-    }
-
-    ctx_.addResult(
-        "Set groove on clip: template=\"" + juce::String(templateName) +
-        "\", strength=" + juce::String(params.getFloat("strength", clip->grooveStrength), 2));
+    ctx_.addResult("Set groove on clip: template=\"" + juce::String(templateName) +
+                   "\", strength=" + juce::String(bend.amount, 2));
     return true;
 }
 

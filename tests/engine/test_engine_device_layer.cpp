@@ -1098,17 +1098,16 @@ process = *(0.25), *(0.25);
 
 TEST_CASE("an engine-built arpeggiator gets the settings the model saved",
           "[engine][devices][2299]") {
-    // Ramp cycles / quantize / hard angle are device state, not parameters, so
+    // Quantize and the time bend's curve are device state, not parameters, so
     // the only way they reach a native render is through the model's saved
     // document. The faceplate edit path captures into DeviceInfo.pluginState;
     // this pins the other half: a device built from that state actually holds
     // the values.
     magda::device_state::Doc doc;
     doc.deviceType = "arpeggiator";
-    doc.root.props.set("arpRampCycles", 5);
+    doc.root.props.set("timeBend", juce::String("1|1|4|1|0,0,0,0,0,0,0,0;1,1,0,0,0,0,0,0;"));
     doc.root.props.set("arpQuantize", 0.75f);
     doc.root.props.set("arpQuantizeSub", 32);
-    doc.root.props.set("arpHardAngle", true);
 
     magda::DeviceInfo model;
     model.pluginId = "arpeggiator";
@@ -1124,10 +1123,9 @@ TEST_CASE("an engine-built arpeggiator gets the settings the model saved",
     auto* arp = dynamic_cast<magda::daw::audio::ArpeggiatorPlugin*>(&hosted->device());
     REQUIRE(arp != nullptr);
 
-    CHECK(arp->rampCycles.load() == 5);
     CHECK(arp->quantize.load() == Catch::Approx(0.75f));
     CHECK(arp->quantizeSub.load() == 32);
-    CHECK(arp->hardAngle.load());
+    CHECK(arp->timeBend.current().bars == 4);
 }
 
 TEST_CASE("a device saved as the engine's own XML is restored too", "[engine][devices][2602]") {
@@ -1138,8 +1136,8 @@ TEST_CASE("a device saved as the engine's own XML is restored too", "[engine][de
     // came up running its defaults (#2602).
     magda::DeviceInfo model;
     model.pluginId = "arpeggiator";
-    model.pluginState = R"(<PLUGIN type="arpeggiator" id="1042" arpRampCycles="5"
-                                  arpQuantize="0.75" arpQuantizeSub="32" arpHardAngle="1">
+    model.pluginState = R"(<PLUGIN type="arpeggiator" id="1042" arpQuantize="0.75"
+                                  arpQuantizeSub="32">
                              <MODIFIERASSIGNMENTS/>
                            </PLUGIN>)";
     REQUIRE(magda::device_state::looksLikeLegacyEngineState(model.pluginState));
@@ -1153,10 +1151,8 @@ TEST_CASE("a device saved as the engine's own XML is restored too", "[engine][de
     auto* arp = dynamic_cast<magda::daw::audio::ArpeggiatorPlugin*>(&hosted->device());
     REQUIRE(arp != nullptr);
 
-    CHECK(arp->rampCycles.load() == 5);
     CHECK(arp->quantize.load() == Catch::Approx(0.75f));
     CHECK(arp->quantizeSub.load() == 32);
-    CHECK(arp->hardAngle.load());
 }
 
 TEST_CASE("a step sequencer's pattern is read out of either format", "[engine][devices][2602]") {

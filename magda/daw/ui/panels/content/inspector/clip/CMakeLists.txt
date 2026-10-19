@@ -9,4 +9,5 @@ target_sources(magda_daw_app PRIVATE
     sections/ClipFadesSection.cpp
     sections/ClipLabelsSection.cpp
     sections/ClipTakesSection.cpp
+    sections/ClipTimeBendSection.cpp
 )

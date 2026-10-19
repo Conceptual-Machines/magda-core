@@ -4,6 +4,7 @@
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/ClipOperations.hpp"
+#include "magda/daw/core/ClipTimeBend.hpp"
 #include "magda/daw/core/MidiNoteCommands.hpp"
 #include "magda/daw/core/UndoManager.hpp"
 
@@ -480,60 +481,91 @@ TEST_CASE("MIDI quantize undo restores valid notes when invalid indices are skip
     REQUIRE(clip->midiNotes[1].lengthBeats == Catch::Approx(0.7));
 }
 
-TEST_CASE("BendNoteTimingCommand bends raw MIDI note starts and undoes exactly",
-          "[midi][commands][timebend][trim]") {
+TEST_CASE("A bend that reads backwards plays the bar's notes in reverse", "[midi][timebend]") {
     using namespace magda;
 
     auto& cm = ClipManager::getInstance();
     cm.clearAllClips();
     ClipId clipId = cm.createMidiClipBeats(1, 0.0, 4.0);
-    REQUIRE(clipId != INVALID_CLIP_ID);
+    for (int i = 0; i < 4; ++i)
+        REQUIRE(cm.addMidiNote(clipId, {60 + i, 100, static_cast<double>(i), 0.5}));
 
-    auto* clip = cm.getClip(clipId);
-    REQUIRE(clip != nullptr);
+    auto bend = sdk::sequencer::makeTimeBend(sdk::sequencer::TimeBendShape::Backwards);
+    bend.on = true;
+    cm.setTimeBend(clipId, bend);
 
-    REQUIRE(cm.addMidiNote(clipId, {60, 100, 0.5, 1.0}));
-    REQUIRE(cm.addMidiNote(clipId, {61, 100, 1.5, 0.5}));
-    REQUIRE(cm.addMidiNote(clipId, {62, 100, 3.0, 0.5}));
-    clip->midiTrimOffset = 1.0;
+    // The bar's first beat waits for the next bar's downbeat, so three strikes are played.
+    const auto played = playedNotes(*cm.getClip(clipId), 4.0);
+    REQUIRE(played.size() == 3);
+    CHECK(played[0].noteIndex == 3);
+    CHECK(played[0].startBeat == Catch::Approx(1.0));
+    CHECK(played[1].noteIndex == 2);
+    CHECK(played[2].noteIndex == 1);
 
-    BendNoteTimingCommand cmd(clipId, {0, 1, 2}, 0.25f, 0.0f, 1, 0.0f, 64, true);
-    cmd.execute();
-
-    // Time bend parameterizes each note by its ordinal slot in the sequence
-    // (so stacked chord notes strum), not by absolute beat. The endpoints stay
-    // put (ordinal t=0 and t=1); the middle note bends to its ordinal position.
-    REQUIRE(clip->midiNotes[0].startBeat == Catch::Approx(1.0));
-    REQUIRE(clip->midiNotes[1].startBeat == Catch::Approx(2.125));
-    REQUIRE(clip->midiNotes[2].startBeat == Catch::Approx(3.0));
-
-    cmd.undo();
-
-    REQUIRE(clip->midiNotes[0].startBeat == Catch::Approx(0.5));
-    REQUIRE(clip->midiNotes[1].startBeat == Catch::Approx(1.5));
-    REQUIRE(clip->midiNotes[2].startBeat == Catch::Approx(3.0));
+    // The notes themselves are where they were written.
+    for (int i = 0; i < 4; ++i)
+        CHECK(cm.getClip(clipId)->midiNotes[static_cast<size_t>(i)].startBeat == Catch::Approx(i));
 }
 
-TEST_CASE("BendNoteTimingCommand preserves non-zero selected span", "[midi][commands][timebend]") {
+TEST_CASE("A bend that goes there and back plays a note twice", "[midi][timebend]") {
     using namespace magda;
 
     auto& cm = ClipManager::getInstance();
     cm.clearAllClips();
-    ClipId clipId = cm.createMidiClipBeats(1, 0.0, 8.0);
-    REQUIRE(clipId != INVALID_CLIP_ID);
+    ClipId clipId = cm.createMidiClipBeats(1, 0.0, 4.0);
+    REQUIRE(cm.addMidiNote(clipId, {64, 100, 1.0, 0.25}));
 
-    REQUIRE(cm.addMidiNote(clipId, {60, 100, 2.0, 0.5}));
-    REQUIRE(cm.addMidiNote(clipId, {61, 100, 4.0, 0.5}));
-    REQUIRE(cm.addMidiNote(clipId, {62, 100, 6.0, 0.5}));
+    auto bend = sdk::sequencer::makeTimeBend(sdk::sequencer::TimeBendShape::ThereAndBack);
+    bend.on = true;
+    cm.setTimeBend(clipId, bend);
 
-    BendNoteTimingCommand cmd(clipId, {0, 1, 2}, 0.25f, 0.0f, 1, 0.0f, 64, true);
+    const auto played = playedNotes(*cm.getClip(clipId), 4.0);
+    REQUIRE(played.size() == 2);
+    CHECK(played[0].startBeat == Catch::Approx(0.5).margin(1e-6));
+    CHECK(played[1].startBeat == Catch::Approx(3.5).margin(1e-6));
+}
+
+TEST_CASE("Without a bend every note plays where it is written", "[midi][timebend]") {
+    using namespace magda;
+
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+    ClipId clipId = cm.createMidiClipBeats(1, 0.0, 4.0);
+    REQUIRE(cm.addMidiNote(clipId, {60, 100, 0.5, 0.5}));
+
+    const auto played = playedNotes(*cm.getClip(clipId), 4.0);
+    REQUIRE(played.size() == 1);
+    CHECK(played[0].startBeat == 0.5);
+}
+
+TEST_CASE("Baking writes what the bend plays, turns it off, and undoes exactly",
+          "[midi][commands][timebend]") {
+    using namespace magda;
+
+    auto& cm = ClipManager::getInstance();
+    cm.clearAllClips();
+    ClipId clipId = cm.createMidiClipBeats(1, 0.0, 4.0);
+    REQUIRE(cm.addMidiNote(clipId, {64, 100, 1.0, 0.25}));
+
+    auto bend = sdk::sequencer::makeTimeBend(sdk::sequencer::TimeBendShape::ThereAndBack);
+    bend.on = true;
+    cm.setTimeBend(clipId, bend);
+
+    BakeClipTimeBendCommand cmd(clipId, 4.0);
     cmd.execute();
 
-    auto* clip = cm.getClip(clipId);
-    REQUIRE(clip != nullptr);
-    REQUIRE(clip->midiNotes[0].startBeat == Catch::Approx(2.0));
-    REQUIRE(clip->midiNotes[1].startBeat == Catch::Approx(5.0));
-    REQUIRE(clip->midiNotes[2].startBeat == Catch::Approx(6.0));
+    const auto* clip = cm.getClip(clipId);
+    CHECK_FALSE(clip->timeBend.on);
+    REQUIRE(clip->midiNotes.size() == 2);
+    CHECK(clip->midiNotes[0].startBeat == Catch::Approx(0.5).margin(1e-6));
+    CHECK(clip->midiNotes[1].startBeat == Catch::Approx(3.5).margin(1e-6));
+    CHECK(clip->midiNotes[0].id != clip->midiNotes[1].id);
+
+    cmd.undo();
+
+    CHECK(clip->timeBend.on);
+    REQUIRE(clip->midiNotes.size() == 1);
+    CHECK(clip->midiNotes[0].startBeat == Catch::Approx(1.0));
 }
 
 TEST_CASE("SliceMidiNotesCommand reports every new slice index", "[midi][commands][slice]") {

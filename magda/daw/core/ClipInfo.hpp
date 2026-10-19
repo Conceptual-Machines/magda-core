@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <magda/sdk/sequencer/TimeBend.hpp>
 #include <map>
 #include <optional>
 #include <string>
@@ -1303,9 +1304,8 @@ struct ClipInfo {
     double midiOffset = 0.0;   // User-controlled start offset in beats (playback / offset marker)
     double midiTrimOffset = 0.0;  // Left-resize trim offset in beats (content origin on timeline)
 
-    // Groove/Shuffle/Swing (MIDI clips)
-    juce::String grooveTemplate;  // groove template name (empty = none)
-    float grooveStrength = 0.0f;  // 0.0–1.0, amount of groove to apply
+    /// The read-head curve the clip's notes play through, on the project grid (#3044).
+    sdk::sequencer::TimeBend timeBend;
 
     // Session view properties
     int sceneIndex = -1;  // -1 = not in session view (arrangement only)
@@ -1466,8 +1466,7 @@ struct ClipInfo {
         midiPolyAftertouchData = src.midiPolyAftertouchData;
         chordAnnotations = src.chordAnnotations;
         nextChordGroupId = src.nextChordGroupId;
-        grooveTemplate = src.grooveTemplate;
-        grooveStrength = src.grooveStrength;
+        timeBend = src.timeBend;
     }
 
     /// True when the content-defining fields are identical: the exact set
@@ -1480,7 +1479,7 @@ struct ClipInfo {
             midiChannelPressureData != src.midiChannelPressureData ||
             midiPolyAftertouchData != src.midiPolyAftertouchData ||
             chordAnnotations != src.chordAnnotations || nextChordGroupId != src.nextChordGroupId ||
-            grooveTemplate != src.grooveTemplate || grooveStrength != src.grooveStrength) {
+            !(timeBend == src.timeBend)) {
             return false;
         }
 

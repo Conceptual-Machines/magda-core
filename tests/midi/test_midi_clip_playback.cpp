@@ -11,9 +11,9 @@
 #include "ClipCallback.hpp"
 #include "clip/ClipMidiSource.hpp"
 #include "clip/ClipSnapshotCompiler.hpp"
-#include "clip/GrooveTemplate.hpp"
 #include "clip/MidiClipCompiler.hpp"
 #include "core/PitchExpressionCurve.hpp"
+#include "music/GrooveLibrary.hpp"
 
 /**
  * MIDI clip playback (#2039), on the audio thread.
@@ -45,7 +45,6 @@ using magda::engine::ClipSnapshot;
 using magda::engine::ClipSnapshotFeed;
 using magda::engine::compileClipSnapshot;
 using magda::engine::compileMidiEvents;
-using magda::engine::GrooveTemplateSet;
 using magda::engine::RenderContext;
 using magda::engine::TempoMap;
 
@@ -171,10 +170,9 @@ class Rig {
         source_.prepare(RenderContext{kSampleRate, kBlockSize, 2});
     }
 
-    void publish(std::vector<ClipInfo> clips, const GrooveTemplateSet& grooves = {},
-                 double bpm = 120.0) {
-        snapshot_ = std::make_shared<const ClipSnapshot>(compileClipSnapshot(
-            {ClipLane{kTrack, std::move(clips)}}, {}, makeTempoMap(bpm), grooves));
+    void publish(std::vector<ClipInfo> clips, double bpm = 120.0) {
+        snapshot_ = std::make_shared<const ClipSnapshot>(
+            compileClipSnapshot({ClipLane{kTrack, std::move(clips)}}, {}, makeTempoMap(bpm)));
         feed_.publish(snapshot_);
     }
 
@@ -236,12 +234,10 @@ class Rig {
     bool rolling_ = false;
 };
 
-/// "Basic 8th Swing", which displaces an off-beat by half of
+/// "Basic 8th Swing" as a time bend, which plays an off-beat late by half of
 /// 0.66 over a two-per-beat grid: 0.165 beats.
-GrooveTemplateSet swingSet() {
-    GrooveTemplateSet set;
-    set.add(GrooveTemplateSet::Entry{"Swing", {0.0f, 0.66f}, 2, 2, true});
-    return set;
+magda::sdk::sequencer::TimeBend swingBend() {
+    return *magda::grooveTimeBend({"Swing", 2, true, {0.0f, 0.66f}}, 4.0);
 }
 
 /// The blocks one beat spans.
@@ -862,7 +858,7 @@ TEST_CASE("A note that begins and ends inside one block is ended by its own off"
     CHECK(recorder.hanging().empty());
 }
 
-TEST_CASE("A note grooved past its loop pass does not outlive it", "[engine][clip][midi]") {
+TEST_CASE("A note swung past its loop pass does not outlive it", "[engine][clip][midi]") {
     // The walk's own filter is the block, not the pass, so a note near the
     // window end whose groove pushes it past the wrap would be emitted after the
     // pass-end note-offs had already run. In sample order the off precedes the
@@ -877,11 +873,10 @@ TEST_CASE("A note grooved past its loop pass does not outlive it", "[engine][cli
     clip.loopEnabled = true;
     clip.loopStartBeats = 0.0;
     clip.loopLengthBeats = 1.4;
-    clip.grooveTemplate = "Swing";
-    clip.grooveStrength = 1.0f;
+    clip.timeBend = swingBend();
 
     Rig rig;
-    rig.publish({clip}, swingSet());
+    rig.publish({clip});
 
     Recorder recorder;
     rig.roll(0, blockOf(6.0) - 1, recorder);
@@ -902,8 +897,7 @@ TEST_CASE("A note grooved past its loop pass does not outlive it", "[engine][cli
     CHECK(recorder.hanging().empty());
 }
 
-TEST_CASE("A note-off grooved past its loop pass is held back to the wrap",
-          "[engine][clip][midi]") {
+TEST_CASE("A swung note-off past its loop pass is held back to the wrap", "[engine][clip][midi]") {
     // The mirror of the note-on case. Emitting the off past the wrap clears the
     // active entry, so the pass-end cleanup finds nothing to end: the note rings
     // into the next pass and the stray off is left to cut whatever starts there.
@@ -913,11 +907,10 @@ TEST_CASE("A note-off grooved past its loop pass is held back to the wrap",
     clip.loopEnabled = true;
     clip.loopStartBeats = 0.0;
     clip.loopLengthBeats = 1.4;
-    clip.grooveTemplate = "Swing";
-    clip.grooveStrength = 1.0f;
+    clip.timeBend = swingBend();
 
     Rig rig;
-    rig.publish({clip}, swingSet());
+    rig.publish({clip});
 
     Recorder recorder;
     rig.roll(0, blockOf(6.0) - 1, recorder);
@@ -1160,16 +1153,14 @@ TEST_CASE("Locating into an expressive note reconstructs its bend on its own cha
 }
 
 TEST_CASE("A locate asks where a note sounds, not where it was written", "[engine][clip][midi]") {
-    // notesSoundingAt reads raw beats while playback grooves both edges, so a
-    // locate landing between a note's written onset and its swung one would
+    // A locate landing between a note's written onset and its swung one must not
     // start it early.
     auto clip = makeMidiClip(1, 0.0, 8.0);
     clip.midiNotes.push_back(note(60, 0.5, 2.0));
-    clip.grooveTemplate = "Swing";
-    clip.grooveStrength = 1.0f;
+    clip.timeBend = swingBend();
 
     Rig rig;
-    rig.publish({clip}, swingSet());
+    rig.publish({clip});
 
     Recorder recorder;
     // Onto the written onset, which the swing has already moved off. The chase
@@ -1322,18 +1313,17 @@ TEST_CASE("Locating into a hole strikes nothing", "[engine][clip][midi]") {
 }
 
 // =============================================================================
-// Groove
+// Swing, as a time bend (#3044)
 // =============================================================================
 
-TEST_CASE("Groove moves a note and leaves a controller alone", "[engine][clip][midi]") {
+TEST_CASE("Swing moves a note and leaves a controller alone", "[engine][clip][midi]") {
     auto clip = makeMidiClip(1, 0.0, 4.0);
     clip.midiNotes.push_back(note(60, 0.5, 0.25));
     clip.midiCCData.push_back(MidiCCData{74, 40, 0.5, MidiCurveType::Step, 0.0, {}, {}});
-    clip.grooveTemplate = "Swing";
-    clip.grooveStrength = 1.0f;
+    clip.timeBend = swingBend();
 
     Rig rig;
-    rig.publish({clip}, swingSet());
+    rig.publish({clip});
 
     Recorder recorder;
     rig.roll(0, blockOf(4.0) - 1, recorder);
@@ -1349,18 +1339,17 @@ TEST_CASE("Groove moves a note and leaves a controller alone", "[engine][clip][m
     CHECK(recorder.hanging().empty());
 }
 
-TEST_CASE("Groove is anchored to the project grid, not to the clip", "[engine][clip][midi]") {
+TEST_CASE("Swing is anchored to the project grid, not to the clip", "[engine][clip][midi]") {
     // A clip dragged half a beat does not take its swing with it: the clip's
     // content start is added before grooving and the clip's start subtracted
     // after (MidiNote::getPlaybackBeats).
     const auto displacementOf = [](double clipStart) {
         auto clip = makeMidiClip(1, clipStart, 4.0);
         clip.midiNotes.push_back(note(60, 0.0, 0.25));
-        clip.grooveTemplate = "Swing";
-        clip.grooveStrength = 1.0f;
+        clip.timeBend = swingBend();
 
         Rig rig;
-        rig.publish({clip}, swingSet());
+        rig.publish({clip});
         Recorder recorder;
         rig.roll(blockOf(clipStart), blockOf(clipStart + 4.0) - 1, recorder);
 
@@ -1378,7 +1367,7 @@ TEST_CASE("Groove is anchored to the project grid, not to the clip", "[engine][c
     CHECK(displacementOf(1.5) == Approx(0.5 * 0.66 / 2.0).margin(oneSample + 1e-9));
 }
 
-TEST_CASE("An odd-length loop grooves each pass differently", "[engine][clip][midi]") {
+TEST_CASE("An odd-length loop swings each pass differently", "[engine][clip][midi]") {
     // The case that decided groove runs at emit time rather than at compile
     // time. A 1.5-beat loop under a per-beat template starts its second pass on
     // the off-beat, so timeline anchoring and alike-passes cannot both hold.
@@ -1387,11 +1376,10 @@ TEST_CASE("An odd-length loop grooves each pass differently", "[engine][clip][mi
     clip.loopEnabled = true;
     clip.loopStartBeats = 0.0;
     clip.loopLengthBeats = 1.5;
-    clip.grooveTemplate = "Swing";
-    clip.grooveStrength = 1.0f;
+    clip.timeBend = swingBend();
 
     Rig rig;
-    rig.publish({clip}, swingSet());
+    rig.publish({clip});
 
     Recorder recorder;
     rig.roll(0, blockOf(6.0) - 1, recorder);
@@ -1412,18 +1400,14 @@ TEST_CASE("An odd-length loop grooves each pass differently", "[engine][clip][mi
     CHECK(recorder.hanging().empty());
 }
 
-TEST_CASE("A grooved note-off never precedes its own note-on", "[engine][clip][midi]") {
-    GrooveTemplateSet set;
-    // Extreme enough to move the two edges of a short note past each other.
-    set.add(GrooveTemplateSet::Entry{"Wild", {0.0f, 1.0f}, 2, 2, false});
-
+TEST_CASE("A swung note-off never precedes its own note-on", "[engine][clip][midi]") {
+    // A short note just before a fully swung off-beat: its written end is past the off-beat.
     auto clip = makeMidiClip(1, 0.0, 4.0);
     clip.midiNotes.push_back(note(60, 0.45, 0.1));
-    clip.grooveTemplate = "Wild";
-    clip.grooveStrength = 1.0f;
+    clip.timeBend = *magda::grooveTimeBend({"Wild", 2, false, {0.0f, 1.0f}}, 4.0);
 
     Rig rig;
-    rig.publish({clip}, set);
+    rig.publish({clip});
 
     Recorder recorder;
     rig.roll(0, blockOf(4.0) - 1, recorder);
@@ -1494,7 +1478,7 @@ TEST_CASE("A note inside a ramp is placed where the map puts it", "[engine][clip
 
     ClipSnapshotFeed feed;
     const auto snapshot = std::make_shared<const ClipSnapshot>(
-        compileClipSnapshot({ClipLane{kTrack, {clip}}}, {}, ramp, {}));
+        compileClipSnapshot({ClipLane{kTrack, {clip}}}, {}, ramp));
     feed.publish(snapshot);
 
     // Long enough to hold all three notes and to cross that boundary, which is
@@ -1580,7 +1564,7 @@ TEST_CASE("Adjacent notes release before retriggering at fractional sample posit
         }
     }
     feed.publish(std::make_shared<const ClipSnapshot>(
-        compileClipSnapshot({ClipLane{kTrack, clips}}, {}, makeTempoMap(), {})));
+        compileClipSnapshot({ClipLane{kTrack, clips}}, {}, makeTempoMap())));
 
     bool held = false;
     int ons = 0;
@@ -1645,4 +1629,127 @@ TEST_CASE("The active note list walks what sounds by channel, then pitch", "[mid
     for (const auto& [channel, note] : walked)
         notes.clear(channel, note);
     CHECK_FALSE(notes.any());
+}
+
+// =============================================================================
+// Time bend (#3044)
+// =============================================================================
+
+namespace {
+
+magda::sdk::sequencer::TimeBend bendOf(magda::sdk::sequencer::TimeBendShape shape) {
+    auto bend = magda::sdk::sequencer::makeTimeBend(shape);
+    bend.on = true;
+    return bend;
+}
+
+/// Four quarter notes, C D E F, a bar long.
+ClipInfo fourQuarters(double clipLength = 8.0) {
+    auto clip = makeMidiClip(1, 0.0, clipLength);
+    for (int i = 0; i < 4; ++i)
+        clip.midiNotes.push_back(note(60 + 2 * i, static_cast<double>(i), 0.5));
+    return clip;
+}
+
+}  // namespace
+
+TEST_CASE("A bend that reads backwards plays the bar in reverse",
+          "[engine][clip][midi][timebend]") {
+    auto clip = fourQuarters(4.0);
+    clip.timeBend = bendOf(magda::sdk::sequencer::TimeBendShape::Backwards);
+
+    Rig rig;
+    rig.publish({clip});
+    Recorder recorder;
+    rig.roll(0, blockOf(4.0) - 1, recorder);
+
+    // The bar's last beat plays first; its first beat waits for the next bar's downbeat.
+    const auto ons = recorder.noteOns();
+    REQUIRE(ons.size() == 3);
+    CHECK(ons[0].message.getNoteNumber() == 66);
+    CHECK(ons[0].beat() == Approx(1.0).margin(1e-3));
+    CHECK(ons[1].message.getNoteNumber() == 64);
+    CHECK(ons[2].message.getNoteNumber() == 62);
+    CHECK(recorder.hanging().empty());
+}
+
+TEST_CASE("A bend that goes there and back strikes each note twice",
+          "[engine][clip][midi][timebend]") {
+    auto clip = makeMidiClip(1, 0.0, 4.0);
+    clip.midiNotes.push_back(note(60, 1.0, 0.25));
+    clip.timeBend = bendOf(magda::sdk::sequencer::TimeBendShape::ThereAndBack);
+
+    Rig rig;
+    rig.publish({clip});
+    Recorder recorder;
+    rig.roll(0, blockOf(4.0) - 1, recorder);
+
+    const auto ons = recorder.noteOns();
+    REQUIRE(ons.size() == 2);
+    CHECK(ons[0].beat() == Approx(0.5).margin(1e-3));
+    CHECK(ons[1].beat() == Approx(3.5).margin(1e-3));
+    CHECK(recorder.noteOffs().size() == 2);
+    CHECK(recorder.hanging().empty());
+}
+
+TEST_CASE("A bend that holds plays nothing, then everything it held",
+          "[engine][clip][midi][timebend]") {
+    auto clip = fourQuarters(4.0);
+    clip.timeBend = bendOf(magda::sdk::sequencer::TimeBendShape::HoldThenCatchUp);
+
+    Rig rig;
+    rig.publish({clip});
+    Recorder recorder;
+    rig.roll(0, blockOf(4.0) - 1, recorder);
+
+    const auto ons = recorder.noteOns();
+    REQUIRE(ons.size() == 4);
+    for (const auto& on : ons)
+        CHECK(on.beat() >= 2.0 - 1e-3);
+    CHECK(recorder.hanging().empty());
+}
+
+TEST_CASE("A bent looped clip ends every note it strikes inside its pass",
+          "[engine][clip][midi][timebend]") {
+    auto clip = fourQuarters(12.0);
+    clip.midiNotes.push_back(note(72, 2.9, 0.8));  // runs past the 3-beat loop end
+    clip.loopEnabled = true;
+    clip.loopStartBeats = 0.0;
+    clip.loopLengthBeats = 3.0;
+    clip.timeBend = bendOf(magda::sdk::sequencer::TimeBendShape::RushThenDrag);
+    clip.timeBend.cycles = 3;
+
+    Rig rig;
+    rig.publish({clip});
+    Recorder recorder;
+    rig.roll(0, blockOf(12.0) - 1, recorder);
+
+    auto sounding = 0;
+    for (const auto& entry : recorder.captured) {
+        if (entry.message.isNoteOn())
+            ++sounding;
+        else if (entry.message.isNoteOff())
+            --sounding;
+        CHECK(sounding >= 0);
+    }
+    CHECK(recorder.noteOns().size() > 8);
+    CHECK(recorder.hanging().empty());
+}
+
+TEST_CASE("Locating into a bent note strikes it", "[engine][clip][midi][timebend]") {
+    auto clip = makeMidiClip(1, 0.0, 8.0);
+    clip.midiNotes.push_back(note(60, 3.0, 2.0));
+    // Backwards over one bar reads beat 3 at beat 1, so the note sounds from 1 to 3.
+    clip.timeBend = bendOf(magda::sdk::sequencer::TimeBendShape::Backwards);
+
+    Rig rig;
+    rig.publish({clip});
+    Recorder recorder;
+    rig.locate(blockOf(2.0), recorder);
+
+    REQUIRE(recorder.noteOns().size() == 1);
+    CHECK(recorder.noteOns().front().message.getNoteNumber() == 60);
+
+    rig.roll(blockOf(2.0) + 1, blockOf(8.0), recorder);
+    CHECK(recorder.hanging().empty());
 }

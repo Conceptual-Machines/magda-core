@@ -34,7 +34,7 @@
 #include "core/UndoManager.hpp"
 #include "music/NotationSettings.hpp"
 #include "state/PanelController.hpp"
-#include "ui/components/common/TimeBendPopup.hpp"
+#include "ui/components/common/ClipTimeBendView.hpp"
 #include "ui/components/common/ToggleChips.hpp"
 
 namespace magda {
@@ -443,6 +443,8 @@ BottomPanel::~BottomPanel() {
     keyChip_.reset();
     propsResizer_.reset();
     audioPropsPanel_.reset();
+    timeBendResizer_.reset();
+    timeBendPanel_.reset();
     chordResizer_.reset();
     chordPanel_.reset();
     postFxResizer_.reset();
@@ -700,24 +702,11 @@ void BottomPanel::setupHeaderControls() {
     // Time bend button: one geometry, with pressed colour supplied in code.
     bendButton_ = std::make_unique<SvgButton>("TimeBend", BinaryData::metimebend_svg,
                                               BinaryData::metimebend_svgSize);
-    bendButton_->setTooltip("Time Bend the selected notes");
+    bendButton_->setTooltip("Show the clip's time bend");
     styleButton(*bendButton_);
     bendButton_->onClick = [this]() {
-        const auto& noteSel = SelectionManager::getInstance().getNoteSelection();
-        if (!noteSel.isValid() || noteSel.noteIndices.size() < 2)
-            return;
-        auto clipId = noteSel.clipId;
-        auto indices = noteSel.noteIndices;
-        auto popup = std::make_unique<daw::ui::TimeBendPopup>(clipId, indices);
-        popup->onApply = [](magda::ClipId applyClipId, std::vector<size_t> applyIndices,
-                            float depth, float skew, int cycles, float quantize, int quantizeSub,
-                            bool hardAngle) {
-            auto cmd = std::make_unique<BendNoteTimingCommand>(applyClipId, std::move(applyIndices),
-                                                               depth, skew, cycles, quantize,
-                                                               quantizeSub, hardAngle);
-            UndoManager::getInstance().executeCommand(std::move(cmd));
-        };
-        daw::ui::TimeBendPopup::showAbove(std::move(popup), bendButton_.get());
+        timeBendOpen_ = !timeBendOpen_;
+        updateContentBasedOnSelection();
     };
     headerBar_->addChildComponent(bendButton_.get());
 
@@ -786,11 +775,13 @@ void BottomPanel::paint(juce::Graphics& g) {
 
     const bool hasHeader = shouldShowHeaderFor(getActiveContent());
 
-    // Time Bend is an action on the selection: full strength once it has two notes to bend.
+    // Time Bend lights while the clip in the editor has one in force.
     if (hasHeader && showEditorTabs_) {
-        const auto& noteSel = SelectionManager::getInstance().getNoteSelection();
-        const bool hasBendNotes = noteSel.isValid() && noteSel.noteIndices.size() >= 2;
-        bendButton_->setAlpha(hasBendNotes ? 1.0f : 0.45f);
+        const auto* clip =
+            ClipManager::getInstance().getClip(ClipManager::getInstance().getSelectedClip());
+        const bool bent = clip != nullptr && clip->isMidi() && clip->timeBend.isActive();
+        bendButton_->setAlpha(bent || showTimeBendPanel_ ? 1.0f : 0.6f);
+        bendButton_->setActive(showTimeBendPanel_);
     }
 
     // Vertical border on the left of the collapsed side panel strip
@@ -822,6 +813,10 @@ void BottomPanel::resized() {
             postFxPanel_->setVisible(false);
         if (postFxResizer_)
             postFxResizer_->setVisible(false);
+        if (timeBendPanel_) {
+            timeBendPanel_->setVisible(false);
+            timeBendResizer_->setVisible(false);
+        }
         TabbedPanel::resized();
         return;
     }
@@ -945,6 +940,30 @@ void BottomPanel::resized() {
         } else {
             postFxPanel_->setVisible(false);
             postFxResizer_->setVisible(false);
+        }
+    }
+
+    // The time bend panel sits inside the other right-hand panels.
+    if (timeBendPanel_) {
+        if (showTimeBendPanel_) {
+            auto fullContent = getLocalBounds();
+            if (hasHeader)
+                fullContent.removeFromTop(headerHeight());
+            if (showChordPanel_)
+                fullContent.removeFromRight(
+                    chordPanelCollapsed_ ? 28 : chordPanelWidth_ + RESIZE_HANDLE_SIZE);
+
+            const int width =
+                juce::jlimit(TIMEBEND_MIN_WIDTH, TIMEBEND_MAX_WIDTH, timeBendPanelWidth_);
+            timeBendResizer_->setBounds(fullContent.getRight() - width - RESIZE_HANDLE_SIZE,
+                                        fullContent.getY(), RESIZE_HANDLE_SIZE,
+                                        fullContent.getHeight());
+            timeBendResizer_->setVisible(true);
+            timeBendPanel_->setBounds(fullContent.removeFromRight(width).reduced(6));
+            timeBendPanel_->setVisible(true);
+        } else {
+            timeBendPanel_->setVisible(false);
+            timeBendResizer_->setVisible(false);
         }
     }
 }
@@ -1081,6 +1100,34 @@ void BottomPanel::ensureChordPanelCreated() {
         resized();
     };
     addChildComponent(chordResizer_.get());
+}
+
+void BottomPanel::updateTimeBendPanel(bool inMidiEditor, ClipId selectedClip) {
+    const auto* clip = ClipManager::getInstance().getClip(selectedClip);
+    showTimeBendPanel_ = timeBendOpen_ && inMidiEditor && clip != nullptr && clip->isMidi();
+    if (!showTimeBendPanel_) {
+        if (timeBendPanel_)
+            timeBendPanel_->setVisible(false);
+        resized();
+        repaint();
+        return;
+    }
+
+    if (!timeBendPanel_) {
+        timeBendPanel_ = std::make_unique<daw::ui::ClipTimeBendView>();
+        addChildComponent(timeBendPanel_.get());
+        timeBendResizer_ = std::make_unique<PropsResizeHandle>();
+        timeBendResizer_->onResize = [this](int delta) {
+            timeBendPanelWidth_ =
+                juce::jlimit(TIMEBEND_MIN_WIDTH, TIMEBEND_MAX_WIDTH, timeBendPanelWidth_ - delta);
+            resized();
+        };
+        addChildComponent(timeBendResizer_.get());
+    }
+    if (timeBendPanel_->clips() != std::vector<ClipId>{selectedClip})
+        timeBendPanel_->setClips({selectedClip});
+    resized();
+    repaint();
 }
 
 void BottomPanel::ensurePostFxPanelCreated() {
@@ -1270,6 +1317,9 @@ void BottomPanel::updateContentBasedOnSelection() {
     // The toggle button itself is wired after the content switch below.
     updatePostFxPanel(targetContent == daw::ui::PanelContentType::TrackChain, selectedTrack,
                       /*allowAutoReveal=*/true);
+    updateTimeBendPanel(targetContent == daw::ui::PanelContentType::PianoRoll ||
+                            targetContent == daw::ui::PanelContentType::DrumGridClipView,
+                        selectedClip);
 
     // Update MIDI tab icon active states
     if (showEditorTabs_) {
@@ -1763,6 +1813,11 @@ juce::Rectangle<int> BottomPanel::getContentBounds() {
     // Reserve space for the post-FX side panel when it is shown
     if (showPostFxPanel_) {
         bounds.removeFromRight(effectivePostFxWidth() + RESIZE_HANDLE_SIZE);
+    }
+    if (showTimeBendPanel_) {
+        bounds.removeFromRight(
+            juce::jlimit(TIMEBEND_MIN_WIDTH, TIMEBEND_MAX_WIDTH, timeBendPanelWidth_) +
+            RESIZE_HANDLE_SIZE);
     }
     return bounds;
 }

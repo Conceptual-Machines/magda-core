@@ -57,8 +57,8 @@ void ClipApiLive::setClipName(ClipId clipId, const juce::String& name) {
     ClipManager::getInstance().setClipName(clipId, name);
 }
 
-void ClipApiLive::setGrooveTemplate(ClipId clipId, const juce::String& templateName) {
-    ClipManager::getInstance().setGrooveTemplate(clipId, templateName);
+void ClipApiLive::setTimeBend(ClipId clipId, const sdk::sequencer::TimeBend& bend) {
+    ClipManager::getInstance().setTimeBend(clipId, bend);
 }
 
 bool ClipApiLive::addMidiNote(ClipId clipId, double startBeat, int noteNumber, double lengthBeats,

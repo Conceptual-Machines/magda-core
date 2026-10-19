@@ -135,6 +135,11 @@ class EngineTempoMapView final : public sdk::TempoMap {
         return map_.bpmAt(map_.timeToBeat(seconds));
     }
 
+    double beatsPerBarAtSeconds(double seconds) const override {
+        const auto bar = map_.barsAndBeatsAt(map_.timeToBeat(seconds));
+        return bar.denominator > 0 ? 4.0 * bar.numerator / bar.denominator : 4.0;
+    }
+
   private:
     const magda::engine::TempoMap& map_;
 };

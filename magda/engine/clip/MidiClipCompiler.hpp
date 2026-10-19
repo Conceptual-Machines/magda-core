@@ -70,9 +70,8 @@ constexpr int kMaxCurveStepsPerSegment = 4096;
  * by the caller because it owns the tempo map. Zero or less disables the floor,
  * which is what a test that wants every value change asks for.
  *
- * Groove is deliberately absent: it is anchored to the project grid, so a looped
- * clip grooves each pass differently and the lookup has to happen per pass, at
- * emit time (GrooveTemplate.hpp).
+ * The time bend is deliberately absent: it is anchored to the project grid, so a
+ * looped clip bends each pass differently and it is read per pass, at emit time.
  */
 MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats);
 

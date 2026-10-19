@@ -1,0 +1,98 @@
+#pragma once
+
+#include <juce_gui_basics/juce_gui_basics.h>
+
+#include <array>
+#include <functional>
+
+#include "magda/sdk/sequencer/TimeBend.hpp"
+#include "ui/components/common/LinkableTextSlider.hpp"
+#include "ui/components/common/SvgButton.hpp"
+
+namespace magda::daw::ui {
+
+/**
+ * @brief The time bend editor: the read-head curve, its shape menu, span, AMOUNT and CYCLES
+ * (#3044).
+ *
+ * The curve is a JUCE shell over sdk::CurveEditor; over it go the pattern as written, the curve
+ * heard when AMOUNT is below 1, a line per pattern step with a dot wherever the head crosses one,
+ * and the playhead. The editor holds no model: the host loads a bend and persists what comes out.
+ */
+class TimeBendEditor : public juce::Component {
+  public:
+    TimeBendEditor();
+    ~TimeBendEditor() override;
+
+    /** @brief Shows @p bend; a curve with the same point count updates in place. */
+    void setBend(const sdk::sequencer::TimeBend& bend);
+    const sdk::sequencer::TimeBend& getBend() const {
+        return bend_;
+    }
+
+    /** @brief The cycle and a bar in beats, for the grid's beat and bar lines. */
+    void setCycle(double cycleBeats, double beatsPerBar);
+
+    /** @brief The grid's division in beats until the GRID menu picks one: a device's step. */
+    void setDefaultDivision(double beats);
+
+    /** @brief Where the playhead is in the cycle, 0 to 1; negative hides it. */
+    void setPlayheadPhase(float phase);
+
+    /** @brief Hides the AMOUNT and CYCLES sliders, for a host that shows them as parameters. */
+    void setShowsAmountAndCycles(bool shows);
+
+    /// The curve as a gesture moves it; nothing is committed yet.
+    std::function<void(const sdk::sequencer::TimeBend&)> onPreview;
+    /// One edit, done: the bend before it and after.
+    std::function<void(const sdk::sequencer::TimeBend& before,
+                       const sdk::sequencer::TimeBend& after)>
+        onCommit;
+
+    LinkableTextSlider& amountSlider() {
+        return amount_;
+    }
+    LinkableTextSlider& cyclesSlider() {
+        return cycles_;
+    }
+
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+    void lookAndFeelChanged() override;
+
+  private:
+    class Canvas;
+
+    void commit(const sdk::sequencer::TimeBend& after);
+    /// Two header rows when the editor is too narrow for one.
+    bool headerWraps() const;
+    void showShapeMenu();
+    void showGridMenu();
+    void applyGrid();
+    void syncControls();
+
+    sdk::sequencer::TimeBend bend_;
+    bool showsAmountAndCycles_ = true;
+
+    magda::SvgButton powerButton_;
+    juce::TextButton shapeButton_{"SHAPE"};
+    std::array<juce::TextButton, 3> spanButtons_;
+    juce::Label spanLabel_;
+    juce::TextButton gridButton_{"1/16"};
+    juce::TextButton snapButton_{"SNAP"};
+    bool snap_ = true;
+    double cycleBeats_ = 4.0;
+    double beatsPerBar_ = 4.0;
+    /// Sixteenths, the grid most parts are written on, until a host or the menu says.
+    double division_ = 0.25;
+    bool divisionPicked_ = false;
+    juce::Label amountLabel_;
+    LinkableTextSlider amount_;
+    juce::Label cyclesLabel_;
+    LinkableTextSlider cycles_;
+    std::unique_ptr<Canvas> canvas_;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TimeBendEditor)
+};
+
+}  // namespace magda::daw::ui

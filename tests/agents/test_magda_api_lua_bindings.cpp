@@ -306,15 +306,19 @@ TEST_CASE("magda.clips.set_name and set_groove route through", "[lua_bindings][c
     LuaRuntime rt;
     registerMagdaApi(rt.state(), mock);
 
+    mock.grooves_.names.add("swing-66");
     REQUIRE(rt.eval("magda.clips.set_name(101, 'verse')"));
-    REQUIRE(rt.eval("magda.clips.set_groove(101, 'swing-66')"));
+    REQUIRE(rt.eval("magda.clips.set_groove(101, 'swing-66', 0.5)"));
 
     REQUIRE(mock.clips_.nameWrites.size() == 1);
     REQUIRE(mock.clips_.nameWrites[0].first == 101);
     REQUIRE(mock.clips_.nameWrites[0].second == "verse");
 
-    REQUIRE(mock.clips_.grooveWrites.size() == 1);
-    REQUIRE(mock.clips_.grooveWrites[0].second == "swing-66");
+    // A groove is played as the time bend it spells, at the strength given (#3044).
+    REQUIRE(mock.clips_.timeBendWrites.size() == 1);
+    REQUIRE(mock.clips_.timeBendWrites[0].first == 101);
+    REQUIRE(mock.clips_.timeBendWrites[0].second.on);
+    REQUIRE(mock.clips_.timeBendWrites[0].second.amount == 0.5f);
 }
 
 // ---- session ---------------------------------------------------------------

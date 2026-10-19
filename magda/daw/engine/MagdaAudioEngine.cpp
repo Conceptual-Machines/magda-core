@@ -171,19 +171,6 @@ bool MagdaAudioEngine::initialize() {
                                 : juce::String{};
     });
 
-    // Read at each publish, and republished when the library changes: a groove already
-    // on a playing clip keeps the one it was compiled with otherwise (#2757).
-    GrooveLibrary::getInstance().setOnChanged([this] { host_->refreshGrooves(); });
-    host_->setGrooveProvider([] {
-        std::vector<daw::engine_host::EngineHost::GrooveEntry> entries;
-        for (const auto& groove : GrooveLibrary::getInstance().all())
-            entries.push_back({.name = groove.name.toStdString(),
-                               .latenesses = groove.latenessProportions,
-                               .notesPerBeat = groove.notesPerBeat,
-                               .parameterized = groove.parameterized});
-        return entries;
-    });
-
     meterInto();
 
     // Named before the first publish, so a track routed to "all" hears the
@@ -267,7 +254,6 @@ void MagdaAudioEngine::shutdown() {
     const bool lent = std::exchange(initialised_, false);
     if (lent) {
         forgetDeviceParameterFormatter();
-        GrooveLibrary::getInstance().forgetOnChanged();
         GrooveLibrary::getInstance().forgetStore();
     }
 

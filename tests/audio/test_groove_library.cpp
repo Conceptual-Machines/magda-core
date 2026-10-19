@@ -23,7 +23,6 @@ struct EmptyLibrary {
 
     static void reset() {
         auto& library = GrooveLibrary::getInstance();
-        library.forgetOnChanged();
         library.forgetStore();
         library.import({});
     }
@@ -119,23 +118,26 @@ TEST_CASE("The library takes back what the store kept, not what it was asked for
     CHECK(library.find("  Swing  ") == nullptr);
 }
 
-TEST_CASE("A changed list is announced so the engine recompiles", "[groove-library][2757]") {
+TEST_CASE("A groove is looked up as the time bend it plays", "[groove-library][3044]") {
     const EmptyLibrary guard;
-    // The native engine reads the library only while publishing, so a groove edited on a
-    // playing clip would keep the one it was compiled with.
     auto& library = GrooveLibrary::getInstance();
-    int announced = 0;
-    library.setOnChanged([&announced] { ++announced; });
+    library.import({swing(),
+                    {.name = "Fixed",
+                     .notesPerBeat = 2,
+                     .parameterized = false,
+                     .latenessProportions = {0.0f, 0.5f}}});
 
-    library.import({swing()});
-    CHECK(announced == 1);
+    const auto swung = library.bend("Swing", 4.0, 0.25f);
+    REQUIRE(swung.has_value());
+    CHECK(swung->on);
+    CHECK(swung->amount == 0.25f);
 
-    CHECK(library.upsert(swing("Shuffle")));
-    CHECK(announced == 2);
+    // A table that is not parameterized carries its amount itself.
+    const auto fixed = library.bend("Fixed", 4.0, 0.25f);
+    REQUIRE(fixed.has_value());
+    CHECK(fixed->amount == 1.0f);
 
-    // A refused groove changes nothing, so it announces nothing.
-    CHECK_FALSE(library.upsert({.name = "Empty", .latenessProportions = {}}));
-    CHECK(announced == 2);
+    CHECK_FALSE(library.bend("Missing", 4.0).has_value());
 }
 
 TEST_CASE("The list outlives the engine that filled it", "[groove-library][2757]") {

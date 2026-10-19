@@ -1,6 +1,6 @@
 4bandEq 12 Low-pass freq,Low-pass gain,Low-pass Q,Mid freq 1,Mid gain 1,Mid Q 1,Mid freq 2,Mid gain 2,Mid Q 2,High-pass freq,High-pass gain,High-pass Q
 4osc 68 tune1,fineTune1,level1,pulseWidth1,detune1,spread1,pan1,tune2,fineTune2,level2,pulseWidth2,detune2,spread2,pan2,tune3,fineTune3,level3,pulseWidth3,detune3,spread3,pan3,tune4,fineTune4,level4,pulseWidth4,detune4,spread4,pan4,lfoRate1,lfoDepth1,lfoRate2,lfoDepth2,modAttack1,modDecay1,modSustain1,modRelease1,modAttack2,modDecay2,modSustain2,modRelease2,ampAttack,ampDecay,ampSustain,ampRelease,ampVelocity,filterAttack,filterDecay,filterSustain,filterRelease,filterFreq,filterResonance,filterAmount,filterKey,filterVelocity,distortion,reverbSize,reverbDamping,reverbWidth,reverbMix,delayFeedback,delayCrossfeed,delayMix,chorusSpeed,chorusDepth,chorusWidth,chorusMix,legato,masterLevel
-arpeggiator 10 pattern,rate,octaves,gate,swing,ramp,skew,latch,velmode,fixedvel
+arpeggiator 10 pattern,rate,octaves,gate,swing,bendAmount,bendCycles,latch,velmode,fixedvel
 chorus 0
 compressor 6 threshold,ratio,attack,release,output gain,input gain
 delay 2 feedback,mix proportion
@@ -51,10 +51,10 @@ midichordengine 0
 oscilloscope 0
 phaser 0
 pitchShifter 1 semitones up
-polystepsequencer 6 rate,direction,swing,gatelength,ramp,skew
+polystepsequencer 6 rate,direction,swing,gatelength,bendAmount,bendCycles
 reverb 6 room size,damping,wet level,dry level,width,mode
 sidechain 4 gain,attack,release,channelMode
 spectrumanalyzer 0
-stepsequencer 8 rate,direction,swing,gatelength,accentvel,normalvel,ramp,skew
+stepsequencer 8 rate,direction,swing,gatelength,accentvel,normalvel,bendAmount,bendCycles
 toneGenerator 4 oscType,bandLimit,frequency,level
 volume 2 volume,pan

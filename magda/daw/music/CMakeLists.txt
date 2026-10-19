@@ -18,6 +18,8 @@ add_library(magda_music STATIC
 )
 
 target_compile_features(magda_music PUBLIC cxx_std_23)
+# Grooves are spelled as SDK time bends (#3044); the SDK sits below this leaf.
+target_link_libraries(magda_music PUBLIC magda::sdk_core)
 target_include_directories(magda_music
     PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..

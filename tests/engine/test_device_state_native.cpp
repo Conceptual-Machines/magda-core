@@ -96,7 +96,7 @@ TEST_CASE("A v2 document's authored settings reach a native device and restore t
     ds::Doc doc;
     doc.deviceType = magda::daw::audio::ArpeggiatorPlugin::xmlTypeName;
     doc.root.props.set("arpQuantizeSub", 8);
-    doc.root.props.set("arpHardAngle", true);
+    doc.root.props.set("timeBend", juce::String("1|0.5|2|3|0,0,0,0,0,0,0,0;1,1,0,0,0,0,0,0;"));
 
     magda::DeviceInfo model;
     model.pluginId = magda::daw::audio::ArpeggiatorPlugin::xmlTypeName;
@@ -108,7 +108,8 @@ TEST_CASE("A v2 document's authored settings reach a native device and restore t
     auto* arp = dynamic_cast<magda::daw::audio::ArpeggiatorPlugin*>(&hosted->device());
     REQUIRE(arp != nullptr);
     CHECK(arp->quantizeSub.load() == 8);
-    CHECK(arp->hardAngle.load());
+    CHECK(arp->timeBend.current().on);
+    CHECK(arp->timeBend.current().bars == 2);
 
     const auto saved = magda::daw::audio::normaliseDeviceState(model.pluginState);
     REQUIRE(saved.has_value());
@@ -118,5 +119,5 @@ TEST_CASE("A v2 document's authored settings reach a native device and restore t
     auto* second = dynamic_cast<magda::daw::audio::ArpeggiatorPlugin*>(again.get());
     REQUIRE(second != nullptr);
     CHECK(second->quantizeSub.load() == arp->quantizeSub.load());
-    CHECK(second->hardAngle.load() == arp->hardAngle.load());
+    CHECK(second->timeBend.current() == arp->timeBend.current());
 }

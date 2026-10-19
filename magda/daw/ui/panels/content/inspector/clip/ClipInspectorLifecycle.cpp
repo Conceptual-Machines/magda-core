@@ -35,11 +35,11 @@ void ClipInspector::lookAndFeelChanged() {
     for (auto* label :
          {&startColumnLabel_, &endColumnLabel_, &lengthColumnLabel_, &clipLoopPhaseLabel_})
         label->setColour(juce::Label::textColourId, ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-    for (auto* label : {&clipRowLabel_, &loopRowLabel_, &volumeLabel_, &panLabel_, &gainLabel_,
-                        &transientSensitivityLabel_, &tempoLabel_, &sourceLengthLabel_,
-                        &speedLabel_, &pitchLabel_, &clipKeyLabel_, &midiTransposeLabel_,
-                        &grooveStrengthLabel_, &launchQuantizeLabel_, &followActionLabel_,
-                        &followActionDelayLabel_, &followActionLoopCountLabel_})
+    for (auto* label :
+         {&clipRowLabel_, &loopRowLabel_, &volumeLabel_, &panLabel_, &gainLabel_,
+          &transientSensitivityLabel_, &tempoLabel_, &sourceLengthLabel_, &speedLabel_,
+          &pitchLabel_, &clipKeyLabel_, &midiTransposeLabel_, &launchQuantizeLabel_,
+          &followActionLabel_, &followActionDelayLabel_, &followActionLoopCountLabel_})
         label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     midiTransposeHint_.setColour(juce::Label::textColourId,
                                  ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
@@ -58,12 +58,10 @@ void ClipInspector::lookAndFeelChanged() {
         clip_style::combo(*combo);
     for (auto* button : {&analogPitchToggle_, &reverseToggle_, &gainEnvelopeToggle_})
         clip_style::toggle(*button);
-    for (auto* button : {&halveTempoButton_, &doubleTempoButton_, &grooveTemplateButton_})
+    for (auto* button : {&halveTempoButton_, &doubleTempoButton_})
         clip_style::action(*button);
     for (auto& button : midiTransposeButtons_)
         clip_style::action(button);
-    grooveTemplateButton_.setColour(juce::TextButton::textColourOffId,
-                                    ActiveTheme::getTextColour());
 
     repaint();
 }

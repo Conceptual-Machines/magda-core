@@ -147,8 +147,8 @@ void dumpMidiClip(std::ostringstream& out, const MidiClipPlayback& clip) {
     out << " offset=" << fixed(clip.fold.offsetBeats, 3)
         << " trim=" << fixed(clip.fold.trimOffsetBeats, 3);
 
-    if (!clip.groove.empty())
-        out << " groove=" << fixed(clip.groove.maxDisplacementBeats(), 4);
+    if (clip.bend.isActive())
+        out << " bend=" << sdk::sequencer::timeBendToText(clip.bend);
 
     out << "\n";
     dumpHoles(out, clip.silenced);

@@ -1,6 +1,7 @@
 #include "plugins/PolyStepSequencerPlugin.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <ranges>
 
@@ -11,8 +12,6 @@ namespace magda::daw::audio {
 const char* PolyStepSequencerPlugin::xmlTypeName = "polystepsequencer";
 
 const juce::Identifier PolyStepSequencerPlugin::SettingIDs::numSteps("seqNumSteps");
-const juce::Identifier PolyStepSequencerPlugin::SettingIDs::rampCycles("seqRampCycles");
-const juce::Identifier PolyStepSequencerPlugin::SettingIDs::hardAngle("seqHardAngle");
 const juce::Identifier PolyStepSequencerPlugin::SettingIDs::quantize("seqQuantize");
 const juce::Identifier PolyStepSequencerPlugin::SettingIDs::quantizeSub("seqQuantizeSub");
 const juce::Identifier PolyStepSequencerPlugin::SettingIDs::viewMode("seqViewMode");
@@ -77,23 +76,11 @@ sdk::ParameterDescriptor slotInfo(int index) {
             info.displayFormat = DisplayFormat::Percent;
             break;
 
-        case PolyStepSequencerPlugin::kRamp:
-            info.stableId = "ramp";
-            info.name = "Timing Depth";
-            info.minValue = -1.0f;
-            info.maxValue = 1.0f;
-            info.defaultValue = 0.0f;
-            info.bipolarModulation = true;
-            break;
+        case PolyStepSequencerPlugin::kBendAmount:
+            return DeviceTimeBend::amountSlot(index);
 
-        case PolyStepSequencerPlugin::kSkew:
-            info.stableId = "skew";
-            info.name = "Timing Skew";
-            info.minValue = -1.0f;
-            info.maxValue = 1.0f;
-            info.defaultValue = 0.0f;
-            info.bipolarModulation = true;
-            break;
+        case PolyStepSequencerPlugin::kBendCycles:
+            return DeviceTimeBend::cyclesSlot(index);
 
         default:
             break;
@@ -172,10 +159,7 @@ sdk::RestoreResult PolyStepSequencerPlugin::restoreState(const sdk::StateNode& s
     // No seqMidiThru here. The toggle it stood for is DeviceInfo::midiInThru,
     // which the model saves and the compiler acts on (#2345), so a project that
     // has one loads with the property simply unread.
-    if (state.has(stateKey(SettingIDs::rampCycles)))
-        rampCycles.store(state.getInt(stateKey(SettingIDs::rampCycles)), std::memory_order_relaxed);
-    if (state.has(stateKey(SettingIDs::hardAngle)))
-        hardAngle.store(state.getBool(stateKey(SettingIDs::hardAngle)), std::memory_order_relaxed);
+    timeBend.restore(state);
     if (state.has(stateKey(SettingIDs::quantize)))
         quantize.store(static_cast<float>(state.getDouble(stateKey(SettingIDs::quantize))),
                        std::memory_order_relaxed);
@@ -313,10 +297,7 @@ void PolyStepSequencerPlugin::process(DeviceProcessContext& context) {
     params.direction = static_cast<sdk::sequencer::StepClock::Direction>(displayIndex(kDirection));
     params.swing = displayValue(kSwing);
     params.gateLength = displayValue(kGateLength);
-    params.ramp = displayValue(kRamp);
-    params.skew = displayValue(kSkew);
-    params.rampCycles = rampCycles.load(std::memory_order_relaxed);
-    params.hardAngle = hardAngle.load(std::memory_order_relaxed);
+    params.bend = timeBend.forBlock(displayValue(kBendAmount), displayIndex(kBendCycles));
     params.quantize = quantize.load(std::memory_order_relaxed);
     params.quantizeSub = quantizeSub.load(std::memory_order_relaxed);
 
@@ -326,10 +307,21 @@ void PolyStepSequencerPlugin::process(DeviceProcessContext& context) {
             haveTempo ? context.tempoMap->beatsAtSeconds(context.timelineStartSeconds) : 0.0,
         .endBeat = haveTempo ? context.tempoMap->beatsAtSeconds(context.timelineEndSeconds) : 0.0,
         .isPlaying = context.isPlaying && haveTempo,
-        .numSamples = context.numSamples()};
+        .numSamples = context.numSamples(),
+        .beatsPerBar =
+            haveTempo ? context.tempoMap->beatsPerBarAtSeconds(context.timelineStartSeconds) : 4.0};
 
     DeviceNoteSink sink{midi};
     sequencer_.processBlock(timing, live, params, sink);
+
+    const double cycleBeats = params.bend.cycleBeats(timing.beatsPerBar);
+    bendCycleBeats_.store(static_cast<float>(cycleBeats), std::memory_order_relaxed);
+    bendStepBeats_.store(static_cast<float>(sdk::sequencer::StepClock::rateToBeats(params.rate)),
+                         std::memory_order_relaxed);
+    bendBeatsPerBar_.store(static_cast<float>(timing.beatsPerBar), std::memory_order_relaxed);
+    const double cycles = cycleBeats > 0.0 ? timing.startBeat / cycleBeats : 0.0;
+    bendPhase_.store(timing.isPlaying ? static_cast<float>(cycles - std::floor(cycles)) : -1.0f,
+                     std::memory_order_relaxed);
 
     currentPlayStep_.store(sequencer_.currentStep(), std::memory_order_relaxed);
     if (sequencer_.soundingNote() >= 0)

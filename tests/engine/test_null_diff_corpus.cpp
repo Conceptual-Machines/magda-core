@@ -343,25 +343,3 @@ TEST_CASE("Render cases change tempo in steps rather than ramps", "[nulldiff][co
             CHECK(value.tempo[index].beat > value.tempo[index - 1].beat);
     }
 }
-
-TEST_CASE("A grooving case carries the template the engine will read", "[nulldiff][corpus]") {
-    // One XML string is the single source of the groove the case reads.
-    for (const auto& value : sharedCorpus(scratch())) {
-        auto namesAGroove = false;
-        for (const auto& clip : value.clips)
-            if (clip.grooveTemplate.isNotEmpty())
-                namesAGroove = true;
-
-        INFO(value.name);
-        CHECK(namesAGroove == value.grooveXml.isNotEmpty());
-
-        if (!namesAGroove)
-            continue;
-
-        const auto document = juce::parseXML(value.grooveXml);
-        REQUIRE(document != nullptr);
-        CHECK(document->getChildByName("GROOVETEMPLATE") != nullptr);
-        CHECK(document->getChildByName("GROOVETEMPLATE")->getStringAttribute("name") ==
-              juce::String(kGrooveName));
-    }
-}
