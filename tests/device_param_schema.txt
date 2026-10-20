@@ -46,7 +46,7 @@ magda_snare 20 magda_snare_transient_level,magda_snare_transient_pitch,magda_sna
 magda_strum 8 trigger,order,shape,cycles,loopsync,looprate,strumlength,syncinterval
 magda_tom 10 magda_tom_body_tune,magda_tom_body_bend,magda_tom_body_attack,magda_tom_body_decay,magda_tom_noise_level,magda_tom_noise_tone,magda_tom_noise_decay,magda_tom_body_curve,magda_tom_noise_curve,magda_tom_gain
 magda_utility 9 magda_utility_gain,magda_utility_pan,magda_utility_width,magda_utility_low_mono_freq,magda_utility_mono,magda_utility_low_mono,magda_utility_flip_l,magda_utility_flip_r,magda_utility_swap
-magdasampler 14 attack,decay,sustain,release,pitch,fine,level,sampleStart,sampleEnd,loopStart,loopEnd,velAmount,voiceMode,glide
+magdasampler 19 attack,decay,sustain,release,pitch,fine,level,sampleStart,sampleEnd,loopStart,loopEnd,velAmount,voiceMode,glide,pitchEnvAttack,pitchEnvDecay,pitchEnvSustain,pitchEnvRelease,pitchEnvAmount
 midichordengine 0
 oscilloscope 0
 phaser 0

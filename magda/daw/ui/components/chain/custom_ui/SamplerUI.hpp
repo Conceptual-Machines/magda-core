@@ -24,14 +24,13 @@ namespace magda::daw::ui {
 /**
  * @brief Custom inline UI for the Magda Sampler plugin
  *
- * The sample's name, root and load button over two views: the whole recording with its start,
- * end and loop markers and the playhead, or the amp envelope with draggable handles. Beside them,
- * the slice as frame boxes with step arrows, and Pitch and Amp tiles. Expanded into the
- * arrangement, it is the waveform and the loop switch.
+ * The sample's name, root and load button over its views: the whole recording with its start,
+ * end and loop markers and the playhead, or the amp or pitch envelope with draggable handles.
+ * Beside them, the slice as frame boxes with step arrows, and Pitch and envelope tiles; the
+ * envelope tiles follow the view. Expanded into the arrangement, it is the waveform and the loop
+ * switch.
  *
- * Parameter indices (matching MagdaSamplerPlugin::addParam order):
- *   0=attack, 1=decay, 2=sustain, 3=release, 4=pitch, 5=fine, 6=level,
- *   7=sampleStart, 8=sampleEnd, 9=loopStart, 10=loopEnd, 11=velAmount
+ * Parameter indices follow MagdaSamplerPlugin::ParamIndex; getLinkableSliders() lists them.
  *
  * Note: loopEnabled is non-automatable state controlled via onLoopEnabledChanged
  * and does not have a parameter index.
@@ -52,6 +51,9 @@ class SamplerUI : public juce::Component,
                           bool loopEnabled, float loopStart, float loopEnd, float velAmount,
                           const juce::String& sampleName, int rootNote, float voiceMode,
                           float glide);
+
+    /// The pitch envelope's stages and its depth in semitones (#3096).
+    void updatePitchEnvelope(float attack, float decay, float sustain, float release, float amount);
 
     /**
      * @brief Callback when a parameter changes (paramIndex, actualValue)
@@ -185,6 +187,14 @@ class SamplerUI : public juce::Component,
     // Velocity amount
     LinkableTextSlider velAmountSlider_{TextSlider::Format::Decimal};
 
+    // Pitch envelope: its stages share the amp stages' tiles, shown in the Pitch view.
+    LinkableTextSlider pitchAttackSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider pitchDecaySlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider pitchSustainSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider pitchReleaseSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider pitchEnvAmountSlider_{TextSlider::Format::Decimal};
+    juce::Label pitchEnvAmountLabel_;
+
     // Voice mode (param 12) lives in the slot footer; this hidden slider carries its links.
     LinkableTextSlider voiceModeSlider_{TextSlider::Format::Decimal};
     LinkableTextSlider glideSlider_{TextSlider::Format::Decimal};
@@ -206,28 +216,37 @@ class SamplerUI : public juce::Component,
     /// Seconds or samples on the ruler, from a right-click on it.
     void showRulerMenu();
 
-    // The amp envelope in its own view: a handle per stage, in this component's coordinates.
+    // The amp or pitch envelope in its own view: a handle per stage, in this component's
+    // coordinates.
     enum class EnvHandle { None, Attack, Decay, Release };
+    struct EnvSliders {
+        LinkableTextSlider *attack, *decay, *sustain, *release;
+    };
+    EnvSliders envSliders();
+    /// A negative pitch envelope bends down, so its shape hangs from the top.
+    bool envelopeInverted() const;
+    float envelopeLevelAt(float y) const;
     struct EnvShape {
         juce::Point<float> start, peak, decayEnd, releaseStart, end;
     };
-    std::optional<EnvShape> envelopeShape() const;
-    EnvHandle envHandleAt(juce::Point<float> position) const;
+    std::optional<EnvShape> envelopeShape();
+    EnvHandle envHandleAt(juce::Point<float> position);
     void dragEnvelope(EnvHandle handle, juce::Point<float> position);
     EnvHandle envDrag_ = EnvHandle::None;
     juce::Rectangle<float> envelopeArea() const;
     void paintEnvelope(juce::Graphics& g);
 
-    // Which view the plot shows: the recording or the envelope.
+    // Which view the plot shows: the recording or an envelope.
     magda::SegmentedChoice viewChoice_;
     bool ampView_ = false;
+    bool pitchView_ = false;
     bool dropHover_ = false;  ///< A sample is being dragged over the device.
     bool loopView_ = false;   ///< The loop markers come first, and show while the loop is off.
     bool expanded_ = false;   ///< Lent to the arrangement: the waveform and the loop switch.
     std::vector<juce::Component*> hiddenWhileExpanded_;
     void setExpanded(bool expanded);
     bool showsEnvelope() const {
-        return ampView_ && !expanded_;
+        return (ampView_ || pitchView_) && !expanded_;
     }
     void showView(int index);
 

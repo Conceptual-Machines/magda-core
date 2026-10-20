@@ -1,6 +1,8 @@
 #include <array>
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "DeviceTestBlock.hpp"
@@ -229,4 +231,62 @@ TEST_CASE("A held note loops between the loop markers past the sample's end",
         REQUIRE(value >= 257.0f);
         REQUIRE(value <= 512.0f);
     }
+}
+
+TEST_CASE("The pitch envelope bends a note by its amount", "[devices][sampler][3096]") {
+    using namespace magda::daw::audio;
+    constexpr double kRate = 44100.0;
+    // A held envelope at full level: the bend is the amount, every frame.
+    for (const auto [semitones, step] : {std::pair{0.0f, 1}, std::pair{12.0f, 2}}) {
+        CAPTURE(semitones);
+        SamplerSynth synth;
+        synth.setCurrentPlaybackSampleRate(kRate);
+        auto* sound = new SamplerSound();
+        sound->audioData.setSize(1, 4096);
+        for (int i = 0; i < 4096; ++i)
+            sound->audioData.setSample(0, i, static_cast<float>(i + 1));
+        synth.addSound(sound);
+        auto* voice = new SamplerVoice(synth);
+        voice->setRootNote(60);
+        voice->setADSR(0.0f, 0.1f, 1.0f, 0.1f);
+        voice->setPitchEnvelope(0.0f, 0.1f, 1.0f, 0.1f, semitones);
+        synth.addVoice(voice);
+
+        juce::AudioBuffer<float> output(1, 512);
+        output.clear();
+        juce::MidiBuffer midi;
+        midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+        synth.renderNextBlock(output, midi, 0, 512);
+
+        for (int i : {0, 1, 100, 511})
+            CHECK(output.getSample(0, i) == static_cast<float>(i * step + 1));
+    }
+}
+
+TEST_CASE("A pitch envelope that decays to nothing returns the note to its pitch",
+          "[devices][sampler][3096]") {
+    using namespace magda::daw::audio;
+    constexpr double kRate = 44100.0;
+    SamplerSynth synth;
+    synth.setCurrentPlaybackSampleRate(kRate);
+    auto* sound = new SamplerSound();
+    sound->audioData.setSize(1, 1 << 16);
+    for (int i = 0; i < sound->audioData.getNumSamples(); ++i)
+        sound->audioData.setSample(0, i, static_cast<float>(i + 1));
+    synth.addSound(sound);
+    auto* voice = new SamplerVoice(synth);
+    voice->setRootNote(60);
+    voice->setADSR(0.0f, 0.1f, 1.0f, 0.1f);
+    voice->setPitchEnvelope(0.0f, 0.01f, 0.0f, 0.1f, -24.0f);
+    synth.addVoice(voice);
+
+    juce::AudioBuffer<float> output(1, 4096);
+    output.clear();
+    juce::MidiBuffer midi;
+    midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+    synth.renderNextBlock(output, midi, 0, 4096);
+
+    // Two octaves down at the start reads a quarter frame per sample, then unbent after the decay.
+    CHECK(output.getSample(0, 1) - output.getSample(0, 0) == Catch::Approx(0.25f).margin(0.01f));
+    CHECK(output.getSample(0, 4000) - output.getSample(0, 3999) == Catch::Approx(1.0f));
 }

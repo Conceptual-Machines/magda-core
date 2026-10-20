@@ -100,6 +100,8 @@ class SamplerVoice : public juce::SynthesiserVoice {
     }
 
     void setADSR(float attack, float decay, float sustain, float release);
+    /// A per-note envelope bending the pitch by up to @p semitones at its peak (#3096).
+    void setPitchEnvelope(float attack, float decay, float sustain, float release, float semitones);
     void setPitchOffset(float semitones, float cents);
     void setPlaybackRegion(double startOffsetSeconds, double endSeconds, bool loop,
                            double loopStartSeconds, double loopEndSeconds, double sourceSampleRate);
@@ -145,6 +147,9 @@ class SamplerVoice : public juce::SynthesiserVoice {
 
     juce::ADSR adsr;
     juce::ADSR::Parameters adsrParams;
+    juce::ADSR pitchEnv;
+    juce::ADSR::Parameters pitchEnvParams;
+    float pitchEnvSemitones = 0.0f;
     double pitchRatio = 1.0;
     double sourceSamplePosition = 0.0;
     float velocityGain = 0.0f;
@@ -262,6 +267,11 @@ class MagdaSamplerPlugin : public MagdaDevice {
         kVelAmount,
         kVoiceMode,
         kGlide,
+        kPitchEnvAttack,
+        kPitchEnvDecay,
+        kPitchEnvSustain,
+        kPitchEnvRelease,
+        kPitchEnvAmount,
         kNumParams,
     };
 
