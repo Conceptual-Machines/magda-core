@@ -750,6 +750,9 @@ void pushSamplerParameters(SamplerUI& ui, const daw::audio::MagdaSamplerPlugin& 
                         slot(Sampler::kSampleEnd), sampler.loopEnabled(), slot(Sampler::kLoopStart),
                         slot(Sampler::kLoopEnd), slot(Sampler::kVelAmount), sampleName,
                         sampler.getRootNote(), slot(Sampler::kVoiceMode), slot(Sampler::kGlide));
+    ui.updatePitchEnvelope(slot(Sampler::kPitchEnvAttack), slot(Sampler::kPitchEnvDecay),
+                           slot(Sampler::kPitchEnvSustain), slot(Sampler::kPitchEnvRelease),
+                           slot(Sampler::kPitchEnvAmount));
 }
 
 }  // namespace
@@ -1931,6 +1934,8 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
         float loopStart = 0.0f, loopEnd = 0.0f;
         float velAmount = 1.0f;
         float voiceMode = 0.0f, glide = 0.0f;
+        float pitchAttack = 0.001f, pitchDecay = 0.2f, pitchSustain = 0.0f, pitchRelease = 0.1f;
+        float pitchAmount = 0.0f;
         bool loopEnabled = false;
         int rootNote = 60;
         juce::String sampleName;
@@ -1957,6 +1962,13 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
             voiceMode = device.parameters[12].currentValue;
             glide = device.parameters[13].currentValue;
         }
+        if (device.parameters.size() >= 19) {
+            pitchAttack = device.parameters[14].currentValue;
+            pitchDecay = device.parameters[15].currentValue;
+            pitchSustain = device.parameters[16].currentValue;
+            pitchRelease = device.parameters[17].currentValue;
+            pitchAmount = device.parameters[18].currentValue;
+        }
 
         auto rendered = liveDevice();
         if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(rendered.get())) {
@@ -1977,6 +1989,8 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
         samplerUI_->updateParameters(attack, decay, sustain, release, pitch, fine, level,
                                      sampleStart, sampleEnd, loopEnabled, loopStart, loopEnd,
                                      velAmount, sampleName, rootNote, voiceMode, glide);
+        samplerUI_->updatePitchEnvelope(pitchAttack, pitchDecay, pitchSustain, pitchRelease,
+                                        pitchAmount);
     }
 
     if (drumGridUI_ && device.pluginId.containsIgnoreCase("drumgrid")) {

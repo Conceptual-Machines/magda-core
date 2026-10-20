@@ -173,6 +173,57 @@ sdk::ParameterDescriptor slotInfo(int index) {
             info.defaultValue = 0.0f;
             break;
 
+        case MagdaSamplerPlugin::kPitchEnvAttack:
+            info.stableId = "pitchEnvAttack";
+            info.name = "Pitch Attack";
+            info.unit = "s";
+            info.scale = ParameterScale::Exponential;
+            info.exponent = kTimeSkew;
+            info.minValue = 0.001f;
+            info.maxValue = 5.0f;
+            info.defaultValue = 0.001f;
+            break;
+
+        case MagdaSamplerPlugin::kPitchEnvDecay:
+            info.stableId = "pitchEnvDecay";
+            info.name = "Pitch Decay";
+            info.unit = "s";
+            info.scale = ParameterScale::Exponential;
+            info.exponent = kTimeSkew;
+            info.minValue = 0.001f;
+            info.maxValue = 5.0f;
+            info.defaultValue = 0.2f;
+            break;
+
+        case MagdaSamplerPlugin::kPitchEnvSustain:
+            info.stableId = "pitchEnvSustain";
+            info.name = "Pitch Sustain";
+            info.minValue = 0.0f;
+            info.maxValue = 1.0f;
+            info.defaultValue = 0.0f;
+            info.displayFormat = DisplayFormat::Percent;
+            break;
+
+        case MagdaSamplerPlugin::kPitchEnvRelease:
+            info.stableId = "pitchEnvRelease";
+            info.name = "Pitch Release";
+            info.unit = "s";
+            info.scale = ParameterScale::Exponential;
+            info.exponent = kTimeSkew;
+            info.minValue = 0.001f;
+            info.maxValue = 10.0f;
+            info.defaultValue = 0.1f;
+            break;
+
+        case MagdaSamplerPlugin::kPitchEnvAmount:
+            info.stableId = "pitchEnvAmount";
+            info.name = "Pitch Env";
+            info.unit = "st";
+            info.minValue = -48.0f;
+            info.maxValue = 48.0f;
+            info.defaultValue = 0.0f;
+            break;
+
         default:
             break;
     }
@@ -208,22 +259,38 @@ SamplerVoice::SamplerVoice() {
     adsrParams.sustain = 1.0f;
     adsrParams.release = 0.1f;
     adsr.setParameters(adsrParams);
+
+    pitchEnvParams.attack = 0.001f;
+    pitchEnvParams.decay = 0.2f;
+    pitchEnvParams.sustain = 0.0f;
+    pitchEnvParams.release = 0.1f;
+    pitchEnv.setParameters(pitchEnvParams);
 }
 
-void SamplerVoice::setADSR(float attack, float decay, float sustain, float release) {
-    // No-op when nothing changed. updateVoiceParameters() calls this every block,
-    // and juce::ADSR::setParameters() recomputes releaseRate from `sustain`,
-    // clobbering the rate noteOff() derived from the live envelope level. Doing
-    // that every block while a voice is releasing stretches the release far past
-    // its set time, so only push to the ADSR when a value actually changes.
-    if (attack == adsrParams.attack && decay == adsrParams.decay && sustain == adsrParams.sustain &&
-        release == adsrParams.release)
+namespace {
+// No-op when nothing changed. updateVoiceParameters() calls this every block,
+// and juce::ADSR::setParameters() recomputes releaseRate from `sustain`,
+// clobbering the rate noteOff() derived from the live envelope level. Doing
+// that every block while a voice is releasing stretches the release far past
+// its set time, so only push to the ADSR when a value actually changes.
+void setStagesIfChanged(juce::ADSR& envelope, juce::ADSR::Parameters& current, float attack,
+                        float decay, float sustain, float release) {
+    if (attack == current.attack && decay == current.decay && sustain == current.sustain &&
+        release == current.release)
         return;
-    adsrParams.attack = attack;
-    adsrParams.decay = decay;
-    adsrParams.sustain = sustain;
-    adsrParams.release = release;
-    adsr.setParameters(adsrParams);
+    current = {attack, decay, sustain, release};
+    envelope.setParameters(current);
+}
+}  // namespace
+
+void SamplerVoice::setADSR(float attack, float decay, float sustain, float release) {
+    setStagesIfChanged(adsr, adsrParams, attack, decay, sustain, release);
+}
+
+void SamplerVoice::setPitchEnvelope(float attack, float decay, float sustain, float release,
+                                    float semitones) {
+    setStagesIfChanged(pitchEnv, pitchEnvParams, attack, decay, sustain, release);
+    pitchEnvSemitones = semitones;
 }
 
 void SamplerVoice::setPitchOffset(float semitones, float cents) {
@@ -304,13 +371,18 @@ void SamplerVoice::startNote(int midiNoteNumber, float velocity, juce::Synthesis
     adsr.setSampleRate(getSampleRate());
     adsr.setParameters(adsrParams);
     adsr.noteOn();
+    pitchEnv.setSampleRate(getSampleRate());
+    pitchEnv.setParameters(pitchEnvParams);
+    pitchEnv.noteOn();
 }
 
 void SamplerVoice::stopNote(float /*velocity*/, bool allowTailOff) {
     if (allowTailOff) {
         adsr.noteOff();
+        pitchEnv.noteOff();
     } else {
         adsr.reset();
+        pitchEnv.reset();
         clearCurrentNote();
     }
 }
@@ -331,6 +403,7 @@ void SamplerVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int s
 
     for (int i = 0; i < numSamples; ++i) {
         float envLevel = adsr.getNextSample();
+        const float pitchEnvLevel = pitchEnv.getNextSample();
 
         if (!adsr.isActive()) {
             clearCurrentNote();
@@ -380,7 +453,10 @@ void SamplerVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int s
                     out[extra][startSample + i] += sample;
         }
 
-        sourceSamplePosition += pitchRatio;
+        sourceSamplePosition +=
+            pitchEnvSemitones != 0.0f
+                ? pitchRatio * std::exp2(pitchEnvLevel * pitchEnvSemitones / 12.0f)
+                : pitchRatio;
 
         // Advance portamento toward the target pitch.
         if (glideSamplesRemaining > 0) {
@@ -583,6 +659,11 @@ void MagdaSamplerPlugin::updateVoiceParameters() {
 
     const float pitch = displayValue(kPitch);
     const float fine = displayValue(kFine);
+    const float pitchAttack = displayValue(kPitchEnvAttack);
+    const float pitchDecay = displayValue(kPitchEnvDecay);
+    const float pitchSustain = displayValue(kPitchEnvSustain);
+    const float pitchRelease = displayValue(kPitchEnvRelease);
+    const float pitchAmount = displayValue(kPitchEnvAmount);
 
     const auto facts = playback_.read();
     const double sourceSR = facts.sourceRate;
@@ -606,6 +687,8 @@ void MagdaSamplerPlugin::updateVoiceParameters() {
         if (auto* voice = dynamic_cast<SamplerVoice*>(synthesiser.getVoice(i))) {
             voice->setADSR(attack, decay, sustain, release);
             voice->setPitchOffset(pitch, fine);
+            voice->setPitchEnvelope(pitchAttack, pitchDecay, pitchSustain, pitchRelease,
+                                    pitchAmount);
             voice->setPlaybackRegion(sStart, sEnd, loopOn, lStart, lEnd, sourceSR);
             voice->setRootNote(facts.rootNote);
             voice->setVelocityAmount(velAmt);

@@ -242,47 +242,65 @@ SamplerUI::SamplerUI() {
     };
     addAndMakeVisible(*loopButton_);
 
+    // --- 0-1 shown as a percentage ---
+    auto setupPercentSlider = [this](LinkableTextSlider& slider, int paramIndex,
+                                     double defaultVal) {
+        slider.setRange(0.0, 1.0, 0.01);
+        slider.setValue(defaultVal, juce::dontSendNotification);
+        slider.setValueFormatter(
+            [](double v) { return juce::String(static_cast<int>(v * 100)) + "%"; });
+        slider.setValueParser([](const juce::String& text) {
+            juce::String t = text.trim();
+            if (t.endsWithIgnoreCase("%"))
+                t = t.dropLastCharacters(1).trim();
+            double v = t.getDoubleValue();
+            return v > 1.0 ? v / 100.0 : v;
+        });
+        slider.onValueChanged = [this, paramIndex](double value) {
+            if (onParameterChanged)
+                onParameterChanged(paramIndex, static_cast<float>(value));
+            repaint();
+        };
+        styleTileValue(slider);
+        addAndMakeVisible(slider);
+    };
+
+    // --- Whole semitones ---
+    auto setupSemitoneSlider = [this](LinkableTextSlider& slider, int paramIndex, double range) {
+        slider.setRange(-range, range, 1.0);
+        slider.setValue(0.0, juce::dontSendNotification);
+        slider.setValueFormatter(
+            [](double v) { return juce::String(static_cast<int>(v)) + " st"; });
+        slider.setValueParser([](const juce::String& text) {
+            return static_cast<double>(
+                text.trim().upToFirstOccurrenceOf(" ", false, false).getIntValue());
+        });
+        slider.onValueChanged = [this, paramIndex](double value) {
+            if (onParameterChanged)
+                onParameterChanged(paramIndex, static_cast<float>(value));
+            repaint();
+        };
+        styleTileValue(slider);
+        addAndMakeVisible(slider);
+    };
+
     // --- ADSR sliders ---
     setupTimeSlider(attackSlider_, 0, 0.001, 5.0, 0.001);
     setupTimeSlider(decaySlider_, 1, 0.001, 5.0, 0.1);
-
-    // Sustain (0-1, no units)
-    sustainSlider_.setRange(0.0, 1.0, 0.01);
-    sustainSlider_.setValue(1.0, juce::dontSendNotification);
-    sustainSlider_.setValueFormatter(
-        [](double v) { return juce::String(static_cast<int>(v * 100)) + "%"; });
-    sustainSlider_.setValueParser([](const juce::String& text) {
-        juce::String t = text.trim();
-        if (t.endsWithIgnoreCase("%"))
-            t = t.dropLastCharacters(1).trim();
-        double v = t.getDoubleValue();
-        return v > 1.0 ? v / 100.0 : v;
-    });
-    sustainSlider_.onValueChanged = [this](double value) {
-        if (onParameterChanged)
-            onParameterChanged(2, static_cast<float>(value));
-        repaint();
-    };
-    styleTileValue(sustainSlider_);
-    addAndMakeVisible(sustainSlider_);
-
+    setupPercentSlider(sustainSlider_, 2, 1.0);
     setupTimeSlider(releaseSlider_, 3, 0.001, 10.0, 0.1);
 
-    // --- Pitch slider (-24 to +24 semitones) ---
-    pitchSlider_.setRange(-24.0, 24.0, 1.0);
-    pitchSlider_.setValue(0.0, juce::dontSendNotification);
-    pitchSlider_.setValueFormatter(
-        [](double v) { return juce::String(static_cast<int>(v)) + " st"; });
-    pitchSlider_.setValueParser([](const juce::String& text) {
-        return static_cast<double>(
-            text.trim().upToFirstOccurrenceOf(" ", false, false).getIntValue());
-    });
-    pitchSlider_.onValueChanged = [this](double value) {
-        if (onParameterChanged)
-            onParameterChanged(4, static_cast<float>(value));
-    };
-    styleTileValue(pitchSlider_);
-    addAndMakeVisible(pitchSlider_);
+    // --- Pitch envelope (params 14-18): the stages show in the Pitch view only ---
+    setupTimeSlider(pitchAttackSlider_, 14, 0.001, 5.0, 0.001);
+    setupTimeSlider(pitchDecaySlider_, 15, 0.001, 5.0, 0.2);
+    setupPercentSlider(pitchSustainSlider_, 16, 0.0);
+    setupTimeSlider(pitchReleaseSlider_, 17, 0.001, 10.0, 0.1);
+    for (auto* slider :
+         {&pitchAttackSlider_, &pitchDecaySlider_, &pitchSustainSlider_, &pitchReleaseSlider_})
+        slider->setVisible(false);
+    setupSemitoneSlider(pitchEnvAmountSlider_, 18, 48.0);
+
+    setupSemitoneSlider(pitchSlider_, 4, 24.0);
 
     // --- Fine slider (-100 to +100 cents) ---
     fineSlider_.setRange(-100.0, 100.0, 1.0);
@@ -315,25 +333,7 @@ SamplerUI::SamplerUI() {
     styleTileValue(levelSlider_);
     addAndMakeVisible(levelSlider_);
 
-    // --- Velocity amount slider (0-100%) ---
-    velAmountSlider_.setRange(0.0, 1.0, 0.01);
-    velAmountSlider_.setValue(1.0, juce::dontSendNotification);
-    velAmountSlider_.setValueFormatter(
-        [](double v) { return juce::String(static_cast<int>(v * 100)) + "%"; });
-    velAmountSlider_.setValueParser([](const juce::String& text) {
-        juce::String t = text.trim();
-        if (t.endsWithIgnoreCase("%"))
-            t = t.dropLastCharacters(1).trim();
-        double v = t.getDoubleValue();
-        return v > 1.0 ? v / 100.0 : v;
-    });
-    velAmountSlider_.onValueChanged = [this](double value) {
-        if (onParameterChanged)
-            onParameterChanged(11, static_cast<float>(value));
-        repaint();
-    };
-    styleTileValue(velAmountSlider_);
-    addAndMakeVisible(velAmountSlider_);
+    setupPercentSlider(velAmountSlider_, 11, 1.0);
 
     // --- Glide (param 13): portamento time ---
     glideSlider_.setRange(0.0, 2000.0, 1.0);
@@ -389,7 +389,7 @@ SamplerUI::SamplerUI() {
         markerSliders[i]->setVisible(false);
     }
 
-    viewChoice_.setOptions({"Sample", "Loop", "Amp"});
+    viewChoice_.setOptions({"Sample", "Loop", "Amp", "Pitch"});
     viewChoice_.setSelectedIndex(0);
     viewChoice_.onChange = [this](int index) { showView(index); };
     addAndMakeVisible(viewChoice_);
@@ -408,6 +408,7 @@ SamplerUI::SamplerUI() {
     setupLabel(levelLabel_, "Level");
     setupLabel(velAmountLabel_, "Velocity");
     setupLabel(glideLabel_, "Glide");
+    setupLabel(pitchEnvAmountLabel_, "Env");
     for (auto* label : {&startLabel_, &endLabel_, &loopStartLabel_, &loopEndLabel_})
         label->setVisible(false);
 
@@ -417,7 +418,13 @@ SamplerUI::SamplerUI() {
 void SamplerUI::showView(int index) {
     loopView_ = index == 1;
     ampView_ = index == 2;
+    pitchView_ = index == 3;
     envDrag_ = EnvHandle::None;
+    for (auto* slider : {&attackSlider_, &decaySlider_, &sustainSlider_, &releaseSlider_})
+        slider->setVisible(!pitchView_);
+    for (auto* slider :
+         {&pitchAttackSlider_, &pitchDecaySlider_, &pitchSustainSlider_, &pitchReleaseSlider_})
+        slider->setVisible(pitchView_);
     // The loop often sits on the sample's ends, where start and end would otherwise win.
     waveformView_.setLoopMarkersFirst(loopView_);
     syncWaveformMarkers();
@@ -450,9 +457,10 @@ void SamplerUI::lookAndFeelChanged() {
     sampleNameLabel_.setColour(juce::Label::textColourId,
                                ActiveTheme::getColour(hasSampleName_ ? ActiveTheme::DEVICE_TEXT
                                                                      : ActiveTheme::DEVICE_DIM2));
-    for (auto* label : {&rootNoteLabel_, &startLabel_, &endLabel_, &loopStartLabel_, &loopEndLabel_,
-                        &attackLabel_, &decayLabel_, &sustainLabel_, &releaseLabel_, &pitchLabel_,
-                        &fineLabel_, &levelLabel_, &velAmountLabel_, &glideLabel_})
+    for (auto* label :
+         {&rootNoteLabel_, &startLabel_, &endLabel_, &loopStartLabel_, &loopEndLabel_,
+          &attackLabel_, &decayLabel_, &sustainLabel_, &releaseLabel_, &pitchLabel_, &fineLabel_,
+          &levelLabel_, &velAmountLabel_, &glideLabel_, &pitchEnvAmountLabel_})
         label->setColour(juce::Label::textColourId,
                          ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
     repaint();
@@ -496,6 +504,16 @@ void SamplerUI::updateParameters(float attack, float decay, float sustain, float
                                    ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
     }
     syncFrameBoxes();
+    repaint();
+}
+
+void SamplerUI::updatePitchEnvelope(float attack, float decay, float sustain, float release,
+                                    float amount) {
+    pitchAttackSlider_.setValue(attack, juce::dontSendNotification);
+    pitchDecaySlider_.setValue(decay, juce::dontSendNotification);
+    pitchSustainSlider_.setValue(sustain, juce::dontSendNotification);
+    pitchReleaseSlider_.setValue(release, juce::dontSendNotification);
+    pitchEnvAmountSlider_.setValue(amount, juce::dontSendNotification);
     repaint();
 }
 
@@ -618,19 +636,41 @@ juce::Rectangle<float> SamplerUI::envelopeArea() const {
     return area.withTrimmedTop(12.0f).withTrimmedBottom(18.0f);
 }
 
-std::optional<SamplerUI::EnvShape> SamplerUI::envelopeShape() const {
+SamplerUI::EnvSliders SamplerUI::envSliders() {
+    if (pitchView_)
+        return {&pitchAttackSlider_, &pitchDecaySlider_, &pitchSustainSlider_,
+                &pitchReleaseSlider_};
+    return {&attackSlider_, &decaySlider_, &sustainSlider_, &releaseSlider_};
+}
+
+bool SamplerUI::envelopeInverted() const {
+    return pitchView_ && pitchEnvAmountSlider_.getValue() < 0.0;
+}
+
+float SamplerUI::envelopeLevelAt(float y) const {
+    const auto area = envelopeArea();
+    const float fromBottom = (area.getBottom() - y) / area.getHeight();
+    return juce::jlimit(0.0f, 1.0f, envelopeInverted() ? 1.0f - fromBottom : fromBottom);
+}
+
+std::optional<SamplerUI::EnvShape> SamplerUI::envelopeShape() {
     if (!showsEnvelope() || waveArea_.isEmpty())
         return std::nullopt;
     const auto area = envelopeArea();
+    const auto env = envSliders();
     const float w = area.getWidth();
-    const auto y = [&](float level) { return area.getBottom() - level * area.getHeight(); };
+    const bool inverted = envelopeInverted();
+    const auto y = [&](float level) {
+        return inverted ? area.getY() + level * area.getHeight()
+                        : area.getBottom() - level * area.getHeight();
+    };
     const float x0 = area.getX();
-    const float peakX = x0 + w * kAttackShare * stageFraction(attackSlider_.getSlider());
+    const float peakX = x0 + w * kAttackShare * stageFraction(env.attack->getSlider());
     const float decayX =
-        x0 + w * kAttackShare + w * kDecayShare * stageFraction(decaySlider_.getSlider());
+        x0 + w * kAttackShare + w * kDecayShare * stageFraction(env.decay->getSlider());
     const float holdX = x0 + w * (kAttackShare + kDecayShare + kHoldShare);
-    const float endX = holdX + w * kReleaseShare * stageFraction(releaseSlider_.getSlider());
-    const auto sustain = static_cast<float>(sustainSlider_.getValue());
+    const float endX = holdX + w * kReleaseShare * stageFraction(env.release->getSlider());
+    const auto sustain = static_cast<float>(env.sustain->getValue());
     return EnvShape{{x0, y(0.0f)},
                     {peakX, y(1.0f)},
                     {decayX, y(sustain)},
@@ -638,7 +678,7 @@ std::optional<SamplerUI::EnvShape> SamplerUI::envelopeShape() const {
                     {endX, y(0.0f)}};
 }
 
-SamplerUI::EnvHandle SamplerUI::envHandleAt(juce::Point<float> position) const {
+SamplerUI::EnvHandle SamplerUI::envHandleAt(juce::Point<float> position) {
     const auto shape = envelopeShape();
     if (!shape.has_value())
         return EnvHandle::None;
@@ -652,27 +692,26 @@ SamplerUI::EnvHandle SamplerUI::envHandleAt(juce::Point<float> position) const {
 
 void SamplerUI::dragEnvelope(EnvHandle handle, juce::Point<float> position) {
     const auto area = envelopeArea();
+    const auto env = envSliders();
     const float w = area.getWidth();
     const auto within = [&](float start, float share) {
         return (position.x - start) / (w * share);
     };
     switch (handle) {
         case EnvHandle::Attack:
-            attackSlider_.setValue(
-                stageValue(attackSlider_.getSlider(), within(area.getX(), kAttackShare)),
+            env.attack->setValue(
+                stageValue(env.attack->getSlider(), within(area.getX(), kAttackShare)),
                 juce::sendNotificationSync);
             break;
         case EnvHandle::Decay:
-            decaySlider_.setValue(stageValue(decaySlider_.getSlider(),
-                                             within(area.getX() + w * kAttackShare, kDecayShare)),
-                                  juce::sendNotificationSync);
-            sustainSlider_.setValue(
-                juce::jlimit(0.0f, 1.0f, (area.getBottom() - position.y) / area.getHeight()),
-                juce::sendNotificationSync);
+            env.decay->setValue(stageValue(env.decay->getSlider(),
+                                           within(area.getX() + w * kAttackShare, kDecayShare)),
+                                juce::sendNotificationSync);
+            env.sustain->setValue(envelopeLevelAt(position.y), juce::sendNotificationSync);
             break;
         case EnvHandle::Release:
-            releaseSlider_.setValue(
-                stageValue(releaseSlider_.getSlider(),
+            env.release->setValue(
+                stageValue(env.release->getSlider(),
                            within(area.getX() + w * (kAttackShare + kDecayShare + kHoldShare),
                                   kReleaseShare)),
                 juce::sendNotificationSync);
@@ -861,13 +900,12 @@ void SamplerUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheel
 // =============================================================================
 
 std::vector<LinkableTextSlider*> SamplerUI::getLinkableSliders() {
-    // Parameter indices: 0=attack, 1=decay, 2=sustain, 3=release, 4=pitch, 5=fine, 6=level,
-    //                    7=sampleStart, 8=sampleEnd, 9=loopStart, 10=loopEnd, 11=velAmount,
-    //                    12=voiceMode, 13=glide
-    return {&attackSlider_,    &decaySlider_,     &sustainSlider_, &releaseSlider_,
-            &pitchSlider_,     &fineSlider_,      &levelSlider_,   &startSlider_,
-            &endSlider_,       &loopStartSlider_, &loopEndSlider_, &velAmountSlider_,
-            &voiceModeSlider_, &glideSlider_};
+    // In MagdaSamplerPlugin::ParamIndex order.
+    return {&attackSlider_,       &decaySlider_,        &sustainSlider_,       &releaseSlider_,
+            &pitchSlider_,        &fineSlider_,         &levelSlider_,         &startSlider_,
+            &endSlider_,          &loopStartSlider_,    &loopEndSlider_,       &velAmountSlider_,
+            &voiceModeSlider_,    &glideSlider_,        &pitchAttackSlider_,   &pitchDecaySlider_,
+            &pitchSustainSlider_, &pitchReleaseSlider_, &pitchEnvAmountSlider_};
 }
 
 void SamplerUI::timerCallback() {
@@ -902,11 +940,11 @@ void SamplerUI::paint(juce::Graphics& g) {
     }
 
     g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.12f));
-    static constexpr const char* kTitles[] = {"SAMPLE", "PITCH", "AMP"};
+    const char* titles[] = {"SAMPLE", "PITCH", pitchView_ ? "PITCH ENV" : "AMP"};
     for (size_t i = 0; i < sectionTitles_.size(); ++i) {
         g.setColour(
             ActiveTheme::getColour(i == 2 ? ActiveTheme::DEVICE_BLUE : ActiveTheme::DEVICE_DIM));
-        g.drawText(kTitles[i], sectionTitles_[i], juce::Justification::centredLeft, false);
+        g.drawText(titles[i], sectionTitles_[i], juce::Justification::centredLeft, false);
     }
 
     const auto waveformArea = getWaveformBounds();
@@ -971,6 +1009,14 @@ void SamplerUI::paintEnvelope(juce::Graphics& g) {
     g.drawHorizontalLine(juce::roundToInt(shape->start.y), area.getX(), area.getRight());
 
     const auto colour = ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE);
+    if (pitchView_) {
+        const auto amount = pitchEnvAmountSlider_.getValue();
+        g.setFont(FontManager::getInstance().getMonoFont(10.0f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+        g.drawText((amount > 0.0 ? "+" : "") + juce::String(static_cast<int>(amount)) + " st",
+                   area.withHeight(14.0f).translated(0.0f, -10.0f),
+                   juce::Justification::centredRight, false);
+    }
     juce::Path path;
     path.startNewSubPath(shape->start);
     for (const auto point : {shape->peak, shape->decayEnd, shape->releaseStart, shape->end})
@@ -997,11 +1043,11 @@ void SamplerUI::paintEnvelope(juce::Graphics& g) {
     g.setFont(FontManager::getInstance().getMonoFont(9.0f));
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
     const char* names[] = {"A", "D", "S", "R"};
+    const float labelY = envelopeInverted() ? area.getBottom() + 2.0f : shape->start.y + 2.0f;
     for (int i = 0; i < 4; ++i)
-        g.drawText(
-            names[i],
-            juce::Rectangle<float>(edges[i], shape->start.y + 2.0f, edges[i + 1] - edges[i], 14.0f),
-            juce::Justification::centred, false);
+        g.drawText(names[i],
+                   juce::Rectangle<float>(edges[i], labelY, edges[i + 1] - edges[i], 14.0f),
+                   juce::Justification::centred, false);
 }
 
 void SamplerUI::setExpanded(bool expanded) {
@@ -1057,7 +1103,7 @@ void SamplerUI::resized() {
     area.removeFromRight(kSpace);
     // The view choice, and beside it the loop switch: the Loop view only shows the markers.
     auto viewRow = area.removeFromTop(kTitleH);
-    viewChoice_.setBounds(viewRow.removeFromLeft(170).withSizeKeepingCentre(170, 20));
+    viewChoice_.setBounds(viewRow.removeFromLeft(220).withSizeKeepingCentre(220, 20));
     viewRow.removeFromLeft(6);
     loopButton_->setBounds(viewRow.removeFromLeft(24).withSizeKeepingCentre(24, 24));
     area.removeFromTop(4);
@@ -1096,11 +1142,16 @@ void SamplerUI::resized() {
     place(tile(column[1], 0, 0), pitchLabel_, pitchSlider_);
     place(tile(column[1], 1, 0), fineLabel_, fineSlider_);
     place(tile(column[1], 0, 1), glideLabel_, glideSlider_);
+    place(tile(column[1], 1, 1), pitchEnvAmountLabel_, pitchEnvAmountSlider_);
 
     place(tile(column[2], 0, 0), attackLabel_, attackSlider_);
     place(tile(column[2], 1, 0), decayLabel_, decaySlider_);
     place(tile(column[2], 0, 1), sustainLabel_, sustainSlider_);
     place(tile(column[2], 1, 1), releaseLabel_, releaseSlider_);
+    pitchAttackSlider_.setBounds(attackSlider_.getBounds());
+    pitchDecaySlider_.setBounds(decaySlider_.getBounds());
+    pitchSustainSlider_.setBounds(sustainSlider_.getBounds());
+    pitchReleaseSlider_.setBounds(releaseSlider_.getBounds());
     place(tile(column[2], 0, 2), levelLabel_, levelSlider_);
     place(tile(column[2], 1, 2), velAmountLabel_, velAmountSlider_);
 
