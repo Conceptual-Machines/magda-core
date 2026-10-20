@@ -9,6 +9,7 @@
 #include "core/GestureRouter.hpp"
 #include "ui/components/chain/layout/NodeHeaderStyles.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
+#include "ui/state/ExpandedFaceplate.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/CursorManager.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -227,7 +228,9 @@ SamplerUI::SamplerUI() {
     loopButton_ =
         std::make_unique<magda::SvgButton>("Loop", BinaryData::loop_svg, BinaryData::loop_svgSize);
     node_header::applyDeviceIconStyle(*loopButton_, node_header::DeviceIcon::Toggle,
-                                      juce::Colour(0xFFBCBCBC), ActiveTheme::DEVICE_BLUE);
+                                      juce::Colour(0xFFBCBCBC), ActiveTheme::ACCENT_ATTENTION);
+    // An 18 px glyph, at the view choice's height rather than a header icon's 12.
+    loopButton_->setIconPadding(3.0f);
     loopButton_->setClickingTogglesState(false);
     loopButton_->setTooltip("Loop between the loop markers");
     loopButton_->onClick = [this]() {
@@ -407,6 +410,8 @@ SamplerUI::SamplerUI() {
     setupLabel(glideLabel_, "Glide");
     for (auto* label : {&startLabel_, &endLabel_, &loopStartLabel_, &loopEndLabel_})
         label->setVisible(false);
+
+    waveformView_.setChrome({.ruler = true, .scrollBar = true});
 }
 
 void SamplerUI::showView(int index) {
@@ -614,7 +619,7 @@ juce::Rectangle<float> SamplerUI::envelopeArea() const {
 }
 
 std::optional<SamplerUI::EnvShape> SamplerUI::envelopeShape() const {
-    if (!ampView_ || waveArea_.isEmpty())
+    if (!showsEnvelope() || waveArea_.isEmpty())
         return std::nullopt;
     const auto area = envelopeArea();
     const float w = area.getWidth();
@@ -741,9 +746,32 @@ void SamplerUI::updateWaveformCursor(const juce::MouseEvent& e) {
 // Mouse Interaction on Waveform
 // =============================================================================
 
+void SamplerUI::showRulerMenu() {
+    const bool samples = waveformView_.chrome().units == sdk::WaveformUnits::Samples;
+    juce::PopupMenu menu;
+    menu.addItem(1, "Seconds", true, !samples);
+    menu.addItem(2, "Samples", true, samples);
+    menu.showMenuAsync(juce::PopupMenu::Options(),
+                       [safe = juce::Component::SafePointer<SamplerUI>(this)](int result) {
+                           if (safe == nullptr || result == 0)
+                               return;
+                           auto chrome = safe->waveformView_.chrome();
+                           chrome.units = result == 2 ? sdk::WaveformUnits::Samples
+                                                      : sdk::WaveformUnits::Seconds;
+                           safe->waveformView_.setChrome(chrome);
+                           safe->repaint(safe->getWaveformBounds());
+                       });
+}
+
 void SamplerUI::mouseDown(const juce::MouseEvent& e) {
+    if (!showsEnvelope() && hasWaveform_ && e.mods.isPopupMenu() &&
+        getWaveformBounds().contains(e.getPosition()) &&
+        waveformView_.overRuler(waveformPointer(e))) {
+        showRulerMenu();
+        return;
+    }
     envDrag_ = envHandleAt(e.position);
-    if (ampView_) {
+    if (showsEnvelope()) {
         waveformGesture_ = false;
         repaint();
         return;
@@ -793,7 +821,7 @@ void SamplerUI::mouseUp(const juce::MouseEvent& e) {
 }
 
 void SamplerUI::mouseMove(const juce::MouseEvent& e) {
-    if (ampView_) {
+    if (showsEnvelope()) {
         setMouseCursor(envHandleAt(e.position) != EnvHandle::None
                            ? juce::MouseCursor::DraggingHandCursor
                            : juce::MouseCursor::NormalCursor);
@@ -811,7 +839,7 @@ void SamplerUI::mouseMove(const juce::MouseEvent& e) {
 }
 
 void SamplerUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) {
-    if (ampView_ || !getWaveformBounds().contains(e.getPosition()) || !hasWaveform_ ||
+    if (showsEnvelope() || !getWaveformBounds().contains(e.getPosition()) || !hasWaveform_ ||
         sampleLength_ <= 0.0) {
         Component::mouseWheelMove(e, wheel);
         return;
@@ -887,7 +915,7 @@ void SamplerUI::paint(juce::Graphics& g) {
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG));
     g.fillRoundedRectangle(waveformArea.toFloat(), 4.0f);
 
-    if (ampView_) {
+    if (showsEnvelope()) {
         paintEnvelope(g);
         return;
     }
@@ -976,7 +1004,40 @@ void SamplerUI::paintEnvelope(juce::Graphics& g) {
             juce::Justification::centred, false);
 }
 
+void SamplerUI::setExpanded(bool expanded) {
+    if (expanded == expanded_)
+        return;
+    expanded_ = expanded;
+    if (expanded) {
+        for (auto* child : getChildren())
+            if (child->isVisible()) {
+                hiddenWhileExpanded_.push_back(child);
+                child->setVisible(false);
+            }
+        loopButton_->setVisible(true);
+        tiles_.clear();
+        sectionTitles_ = {};
+        rootChip_ = {};
+    } else {
+        for (auto* child : hiddenWhileExpanded_)
+            child->setVisible(true);
+        hiddenWhileExpanded_.clear();
+    }
+}
+
 void SamplerUI::resized() {
+    // Expanded into the arrangement, the faceplate is the waveform and its loop switch.
+    setExpanded(magda::ExpandedFaceplate::getInstance().holds(*this));
+    if (expanded_) {
+        auto area = getLocalBounds().reduced(kSpace);
+        loopButton_->setBounds(
+            area.removeFromTop(kTitleH).removeFromLeft(24).withSizeKeepingCentre(24, 24));
+        area.removeFromTop(4);
+        waveArea_ = area;
+        waveformView_.setSize(waveArea_.getWidth(), waveArea_.getHeight());
+        return;
+    }
+
     auto area = getLocalBounds().reduced(kSpace);
 
     // Name row: the sample, its root and the load button.
@@ -994,8 +1055,11 @@ void SamplerUI::resized() {
     constexpr int kSectionW = 2 * kTileW + kTileGap;
     auto columns = area.removeFromRight(3 * kSectionW + 2 * kSpace);
     area.removeFromRight(kSpace);
-    viewChoice_.setBounds(
-        area.removeFromTop(kTitleH).removeFromLeft(170).withSizeKeepingCentre(170, 20));
+    // The view choice, and beside it the loop switch: the Loop view only shows the markers.
+    auto viewRow = area.removeFromTop(kTitleH);
+    viewChoice_.setBounds(viewRow.removeFromLeft(170).withSizeKeepingCentre(170, 20));
+    viewRow.removeFromLeft(6);
+    loopButton_->setBounds(viewRow.removeFromLeft(24).withSizeKeepingCentre(24, 24));
     area.removeFromTop(4);
     waveArea_ = area;
 
@@ -1020,10 +1084,6 @@ void SamplerUI::resized() {
         sectionTitles_[i] = column[i].removeFromTop(kTitleH);
     }
 
-    // Sample: the loop toggle rides its title row.
-    loopButton_->setBounds(sectionTitles_[0]
-                               .withLeft(sectionTitles_[0].getRight() - 30)
-                               .withSizeKeepingCentre(30, 24));
     // Sample: a caption, a frame box and its arrows per marker.
     auto frames = column[0];
     for (size_t i = 0; i < frameBoxes_.size(); ++i) {

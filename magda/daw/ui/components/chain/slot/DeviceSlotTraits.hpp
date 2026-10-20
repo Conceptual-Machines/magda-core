@@ -14,6 +14,7 @@ struct DeviceSlotTraits {
     bool isStrum = false;
     bool isStepSequencer = false;
     bool isPolyStepSequencer = false;
+    bool expandsFaceplate = false;   // can lend its faceplate to the arrangement's area
     bool isFaust = false;            // runtime Faust effect
     bool isFaustInstrument = false;  // runtime Faust instrument
     bool isAnalysis = false;  // oscilloscope / spectrum / levels: passthrough, no gain/macros/mods

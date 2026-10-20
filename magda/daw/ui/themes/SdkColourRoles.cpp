@@ -40,7 +40,7 @@ juce::Colour sdkRoleColour(sdk::display::ColourRole role) {
         case Role::Waveform:
             return ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
         case Role::LoopRegion:
-            return ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE);
+            return ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
         case Role::MarkerStart:
             return ActiveTheme::getColour(ActiveTheme::SAMPLER_START_MARKER);
         case Role::MarkerEnd:

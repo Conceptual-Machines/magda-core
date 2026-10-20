@@ -766,8 +766,9 @@ void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
             arrow->setVisible(paged);
     footerPageLabel_.setVisible(paged);
     const bool sequencer = !footer.isEmpty() && isSequencerDevice(traits_);
+    const bool expandable = !footer.isEmpty() && traits_.expandsFaceplate;
     timeBendToggle_->setVisible(sequencer);
-    expandToggle_->setVisible(sequencer);
+    expandToggle_->setVisible(expandable);
     if (footer.isEmpty()) {
         paramsToggle_->setVisible(false);
         faceplateToggle_->setVisible(false);
@@ -799,8 +800,10 @@ void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
 
     if (sequencer) {
         timeBendToggle_->setToggleState(device_.timeBendShown, juce::dontSendNotification);
-        expandToggle_->setToggleState(faceplateLent(), juce::dontSendNotification);
         place(*timeBendToggle_, true);
+    }
+    if (expandable) {
+        expandToggle_->setToggleState(faceplateLent(), juce::dontSendNotification);
         place(*expandToggle_, true);
     }
 
