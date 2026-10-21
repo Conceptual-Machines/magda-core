@@ -27,6 +27,7 @@ constexpr const char* kHostKey = "magda";
 constexpr const char* kSamplerId = "magdasampler";
 constexpr const char* kSamplePathProperty = "source";
 constexpr const char* kSampleAssetKey = "sample";
+constexpr const char* kZoneType = "zone";
 
 juce::String utf8(const std::string& text) {
     return juce::String::fromUTF8(text.c_str(), static_cast<int>(text.size()));
@@ -87,9 +88,9 @@ juce::String sha256Of(const juce::File& file) {
 }
 
 /// A sample path on its way out: the state names the asset, and the asset names the file.
-bool moveSampleToAsset(sdk::StateDocument& doc, const juce::File& presetFile,
+bool moveSourceToAsset(sdk::StateNode& node, const std::string& key, const juce::File& presetFile,
                        std::vector<sdk::PresetAsset>& assets) {
-    const auto* value = doc.root.find(kSamplePathProperty);
+    const auto* value = node.find(kSamplePathProperty);
     if (value == nullptr || value->toString().empty())
         return true;
 
@@ -103,11 +104,24 @@ bool moveSampleToAsset(sdk::StateDocument& doc, const juce::File& presetFile,
     if (!sdk::isValidAssetPath(relative.toStdString()))
         return false;
 
-    sdk::PresetAsset asset{kSampleAssetKey, relative.toStdString(), std::nullopt};
+    sdk::PresetAsset asset{key, relative.toStdString(), std::nullopt};
     if (file.existsAsFile())
         asset.sha256 = sha256Of(file).toStdString();
     assets.push_back(std::move(asset));
-    doc.root.setString(kSamplePathProperty, kSampleAssetKey);
+    node.setString(kSamplePathProperty, key);
+    return true;
+}
+
+/// The Sampler's own sample, then each zone's (#3098) as `zone-1`, `zone-2` and on.
+bool moveSampleToAsset(sdk::StateDocument& doc, const juce::File& presetFile,
+                       std::vector<sdk::PresetAsset>& assets) {
+    if (!moveSourceToAsset(doc.root, kSampleAssetKey, presetFile, assets))
+        return false;
+    int zone = 0;
+    for (auto& child : doc.root.children())
+        if (child.type() == kZoneType &&
+            !moveSourceToAsset(child, "zone-" + std::to_string(++zone), presetFile, assets))
+            return false;
     return true;
 }
 
@@ -415,10 +429,17 @@ ReadResult readEnvelope(const juce::String& text, const juce::File& presetFile,
                 result.warnings.add("Asset '" + utf8(asset.key) + "' differs from the saved copy");
         }
 
-        if (pluginId == kSamplerId)
-            if (const auto* source = doc.root.find(kSamplePathProperty))
+        const auto restoreSource = [&assetPaths](sdk::StateNode& node) {
+            if (const auto* source = node.find(kSamplePathProperty))
                 if (const auto it = assetPaths.find(source->toString()); it != assetPaths.end())
-                    doc.root.setString(kSamplePathProperty, it->second.toStdString());
+                    node.setString(kSamplePathProperty, it->second.toStdString());
+        };
+        if (pluginId == kSamplerId) {
+            restoreSource(doc.root);
+            for (auto& child : doc.root.children())
+                if (child.type() == kZoneType)
+                    restoreSource(child);
+        }
 
         // An empty document is a device that saved nothing.
         if (!doc.root.isEmpty())

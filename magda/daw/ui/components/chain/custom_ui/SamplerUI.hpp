@@ -9,8 +9,12 @@
 #include <optional>
 #include <vector>
 
+#include "custom_ui/SamplerZoneEditor.hpp"
+#include "custom_ui/SamplerZoneRow.hpp"
+#include "layout/DashedAddButton.hpp"
 #include "magda/sdk/display/DisplayList.hpp"
 #include "magda/sdk/waveview/WaveformView.hpp"
+#include "plugins/SamplerZones.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/SegmentedChoice.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -24,10 +28,14 @@ namespace magda::daw::ui {
 /**
  * @brief Custom inline UI for the Magda Sampler plugin
  *
- * The sample's name, root and load button over four tabs, each a plot and its controls: Sample is
+ * The zone list on the left, as a rack lists its chains (#3098), then the selected zone's
+ * name, root and load button over four tabs, each a plot and its controls: Sample is
  * the recording with its start, end and loop markers, the playhead and the slice as frame boxes;
  * Pitch, Filter and Amp are that module's envelope with draggable handles beside its tiles.
- * Expanded into the arrangement, it is the waveform and the loop switch.
+ * Expanded into the arrangement, it is the zone map over the waveform and the loop switch.
+ *
+ * With a list of zones (#3098) the name, root, markers and loop are the selected zone's and
+ * edit it; with one zone they are the sampler's, the markers its parameters.
  *
  * Parameter indices follow MagdaSamplerPlugin::ParamIndex; getLinkableSliders() lists them.
  *
@@ -102,6 +110,26 @@ class SamplerUI : public juce::Component,
         return hasWaveform_;
     }
 
+    /// One zone as the faceplate shows it; it keeps the zone's audio alive while drawn.
+    struct ZoneView {
+        daw::audio::SamplerZoneSettings settings;
+        std::shared_ptr<const daw::audio::SampleAudio> audio;
+    };
+    /// The sampler's zones, from map @p generation; @p list is whether they are a zone list
+    /// rather than the one-zone sampler. A generation already shown is skipped.
+    void setZones(std::vector<ZoneView> zones, bool list, std::uint64_t generation);
+
+    std::function<void(int index, const daw::audio::SamplerZoneSettings& zone)> onZoneEdited;
+    std::function<void(int index)> onZoneRemoved;
+    /// A sample dropped on the zone map, to play on @p key.
+    std::function<void(const juce::File& file, int key)> onZoneAdded;
+    /// Several samples or a folder dropped, to map by name.
+    std::function<void(const juce::Array<juce::File>& files)> onFilesDropped;
+    /// Samples added to the zone list, from its Add button or a drop on it.
+    std::function<void(const juce::Array<juce::File>& files)> onZonesAdded;
+    /// The zone the playhead belongs to, or -1.
+    std::function<int()> getPlaybackZone;
+
     void lookAndFeelChanged() override;
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
@@ -147,6 +175,31 @@ class SamplerUI : public juce::Component,
 
     // Timer
     void timerCallback() override;
+
+    // Zones (#3098): the map, which one the faceplate shows, and the editor over it.
+    std::vector<ZoneView> zones_;
+    bool zoneList_ = false;
+    int selectedZone_ = 0;
+    std::uint64_t zoneGeneration_ = 0;
+    std::shared_ptr<const daw::audio::SampleAudio> shownAudio_;
+    SamplerZoneEditor zoneEditor_;
+
+    // The zone list: a row per zone in the view the tabs pick, then Add zone.
+    SamplerZoneRow::View zoneView_ = SamplerZoneRow::View::Mix;
+    juce::Rectangle<int> zonePanel_, zoneTabs_;
+    juce::Viewport zoneListView_;
+    juce::Component zoneListContent_;
+    std::vector<std::unique_ptr<SamplerZoneRow>> zoneRows_;
+    DashedAddButton addZoneButton_{"Add zone"};
+    juce::Rectangle<int> zoneTabBounds(SamplerZoneRow::View view) const;
+    void refreshZoneRows();
+    void layoutZoneList();
+    void selectZone(int index);
+    void chooseZonesToAdd();
+    /// The selected zone into the name, root, waveform and, for a list, the markers and loop.
+    void showSelectedZone();
+    /// Edit the selected zone of a list through @p change.
+    void editSelectedZone(const std::function<void(daw::audio::SamplerZoneSettings&)>& change);
 
     juce::Rectangle<int> getWaveformBounds() const;
 

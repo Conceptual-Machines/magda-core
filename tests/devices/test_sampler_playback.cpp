@@ -12,65 +12,208 @@
 
 /**
  * @file test_sampler_playback.cpp
- * @brief The sampler's one cross-thread boundary (#2384).
+ * @brief The sampler's one cross-thread boundary (#2384) and the zone map it carries (#3098).
  *
- * What the audio thread may read about the loaded sound, and nothing else: an
- * installed SamplerSound is immutable, so anything a reader needs is published
- * here or it does not cross.
+ * The audio thread reads a whole immutable map; a replaced one is freed on the message thread
+ * once no voice reads it.
  */
 
 using magda::daw::audio::SamplerPlayback;
 using magda::daw::audio::SamplerSound;
+using magda::daw::audio::SamplerSynth;
+using magda::daw::audio::SamplerVoice;
+using magda::daw::audio::SamplerZone;
+using magda::daw::audio::SamplerZoneMap;
 
-TEST_CASE("A sampler that has loaded nothing reads its fallbacks", "[devices][sampler][playback]") {
-    // What the audio thread gets before any sound is installed, which is a
-    // rate it can divide by rather than a zero.
+namespace {
+
+/// A zone over @p frames of a ramp, frame n reading back as n + 1 (+ @p offset), so what a
+/// voice read is readable off its output.
+SamplerZone rampZone(int frames, double rate = 44100.0, float offset = 0.0f) {
+    auto audio = std::make_shared<magda::daw::audio::SampleAudio>();
+    audio->buffer.setSize(1, frames);
+    audio->sourceRate = rate;
+    for (int i = 0; i < frames; ++i)
+        audio->buffer.setSample(0, i, static_cast<float>(i + 1) + offset);
+    SamplerZone zone;
+    zone.audio = std::move(audio);
+    return zone;
+}
+
+/// A synthesiser playing @p map, with @p voices voices whose envelopes are open from the first
+/// sample.
+struct ZoneSynth {
+    SamplerSynth synth;
+    SamplerZoneMap map;
+
+    explicit ZoneSynth(std::vector<SamplerZone> zones, double rate = 44100.0, int voices = 1) {
+        for (size_t i = 0; i < zones.size(); ++i)
+            zones[i].index = static_cast<int>(i);
+        map.zones = std::move(zones);
+        synth.setCurrentPlaybackSampleRate(rate);
+        synth.addSound(new SamplerSound());
+        for (int i = 0; i < voices; ++i) {
+            auto* voice = new SamplerVoice(synth);
+            voice->setADSR(0.0f, 0.1f, 1.0f, 0.1f);
+            synth.addVoice(voice);
+        }
+        synth.setZoneMap(&map);
+    }
+
+    SamplerVoice& voice(int index = 0) {
+        return *dynamic_cast<SamplerVoice*>(synth.getVoice(index));
+    }
+
+    juce::AudioBuffer<float> play(int note, float velocity, int frames, int channels = 1) {
+        juce::AudioBuffer<float> output(channels, frames);
+        output.clear();
+        juce::MidiBuffer midi;
+        midi.addEvent(juce::MidiMessage::noteOn(1, note, velocity), 0);
+        synth.renderNextBlock(output, midi, 0, frames);
+        return output;
+    }
+};
+
+}  // namespace
+
+TEST_CASE("A sampler that has loaded nothing plays an empty map", "[devices][sampler][playback]") {
     const SamplerPlayback playback;
-    const auto facts = playback.read();
-
-    CHECK(facts.sourceRate == 44100.0);
-    CHECK(facts.lengthSeconds == 0.0);
-    CHECK(facts.rootNote == 60);
+    CHECK(playback.acquire().zones.empty());
+    CHECK(&playback.acquire() == &playback.current());
 }
 
-TEST_CASE("A publication carries every field the audio thread reads",
+TEST_CASE("Each publication is a new generation the audio thread reads whole",
           "[devices][sampler][playback]") {
     SamplerPlayback playback;
-    playback.publish(SamplerPlayback::Facts{96000.0, 2.5, 48});
+    const auto first = playback.current().generation;
 
-    const auto facts = playback.read();
+    SamplerZoneMap map;
+    map.zones.push_back(rampZone(16));
+    map.zones.back().settings.rootNote = 48;
+    playback.publish(std::move(map));
 
-    CHECK(facts.sourceRate == 96000.0);
-    CHECK(facts.lengthSeconds == 2.5);
-    CHECK(facts.rootNote == 48);
+    const auto& read = playback.acquire();
+    CHECK(read.generation > first);
+    REQUIRE(read.zones.size() == 1);
+    CHECK(read.zones.front().settings.rootNote == 48);
 }
 
-TEST_CASE("Moving the root note leaves the loaded sound's facts alone",
+TEST_CASE("A replaced map lives until the audio thread lets go of it",
           "[devices][sampler][playback]") {
-    // The one field a user changes without loading anything, so it publishes on
-    // its own rather than round-tripping the sound.
     SamplerPlayback playback;
-    playback.publish(SamplerPlayback::Facts{48000.0, 1.25, 60});
+    SamplerZoneMap map;
+    map.zones.push_back(rampZone(16));
+    playback.publish(std::move(map));
+    const auto* held = &playback.acquire();
+    std::weak_ptr<const magda::daw::audio::SampleAudio> audio = held->zones.front().audio;
 
-    playback.publishRootNote(72);
+    // A voice still reads the map the edit replaced.
+    playback.acknowledge(held->generation);
+    playback.publish({});
+    REQUIRE(playback.retiredCount() > 0);
+    playback.releaseRetired();
+    CHECK_FALSE(audio.expired());
 
-    const auto facts = playback.read();
-
-    CHECK(facts.rootNote == 72);
-    CHECK(facts.sourceRate == 48000.0);
-    CHECK(facts.lengthSeconds == 1.25);
+    // A block that reads only the newest map frees the rest.
+    playback.acknowledge(playback.acquire().generation);
+    playback.releaseRetired();
+    CHECK(playback.retiredCount() == 0);
+    CHECK(audio.expired());
 }
 
-TEST_CASE("An installed sound carries nothing that changes", "[devices][sampler][playback]") {
-    // The invariant the boundary rests on: every field of a SamplerSound is set
-    // before the synthesiser takes it and never written again, so the audio
-    // thread reading one cannot race a message-thread edit.
-    static_assert(std::is_same_v<decltype(SamplerSound::sourceSampleRate), double>,
-                  "a sound's rate is plain data, not something published through it");
+TEST_CASE("A note plays the zone whose key and velocity ranges hold it",
+          "[devices][sampler][3098]") {
+    auto low = rampZone(1024, 44100.0, 0.0f);
+    low.settings.zones.keyLow = 0;
+    low.settings.zones.keyHigh = 59;
+    auto soft = rampZone(1024, 44100.0, 1000.0f);
+    soft.settings.zones.keyLow = 60;
+    soft.settings.zones.velocityHigh = 63;
+    auto loud = rampZone(1024, 44100.0, 2000.0f);
+    loud.settings.zones.keyLow = 60;
+    loud.settings.zones.velocityLow = 64;
+    for (auto* zone : {&low, &soft, &loud})
+        zone->settings.rootNote = zone->settings.zones.keyLow;
 
-    SamplerSound sound;
-    CHECK_FALSE(sound.hasData());
-    CHECK(sound.sourceSampleRate == 44100.0);
+    const auto firstFrame = [&](int note, float velocity) {
+        ZoneSynth synth({low, soft, loud});
+        synth.voice().setVelocityAmount(0.0f);
+        return synth.play(note, velocity, 8).getSample(0, 0);
+    };
+    CHECK(firstFrame(0, 1.0f) == 1.0f);
+    CHECK(firstFrame(60, 0.3f) == 1001.0f);
+    CHECK(firstFrame(60, 0.9f) == 2001.0f);
+}
+
+TEST_CASE("Overlapping zones sound together, each on its own voice", "[devices][sampler][3098]") {
+    ZoneSynth synth({rampZone(1024, 44100.0, 0.0f), rampZone(1024, 44100.0, 1000.0f)}, 44100.0, 4);
+    CHECK(synth.play(60, 1.0f, 8).getSample(0, 0) == 1.0f + 1001.0f);
+}
+
+TEST_CASE("Round-robin zones take turns, as a rack's chains do", "[devices][sampler][3098]") {
+    auto first = rampZone(1024, 44100.0, 0.0f);
+    first.settings.zones.roundRobin = true;
+    auto second = rampZone(1024, 44100.0, 1000.0f);
+    second.settings.zones.roundRobin = true;
+    ZoneSynth synth({first, second}, 44100.0, 4);
+    // Each hit has ended before the next.
+    for (int i = 0; i < 4; ++i)
+        synth.voice(i).setADSR(0.0f, 0.1f, 1.0f, 0.001f);
+
+    std::vector<float> heard;
+    for (int hit = 0; hit < 4; ++hit) {
+        juce::AudioBuffer<float> output(1, 256);
+        output.clear();
+        juce::MidiBuffer midi;
+        midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+        midi.addEvent(juce::MidiMessage::noteOff(1, 60), 4);
+        synth.synth.renderNextBlock(output, midi, 0, 256);
+        heard.push_back(output.getSample(0, 0));
+    }
+    CHECK(heard == std::vector<float>{1.0f, 1001.0f, 1.0f, 1001.0f});
+}
+
+TEST_CASE("A zone's velocity fade turns down the notes inside it", "[devices][sampler][3098]") {
+    auto zone = rampZone(1024);
+    zone.settings.zones.velocityFadeLow = 63;
+    ZoneSynth synth({zone});
+    synth.voice().setVelocityAmount(1.0f);
+    const float soft = synth.play(60, 32.0f / 127.0f, 8).getSample(0, 0);
+    ZoneSynth full({rampZone(1024)});
+    const float unfaded = full.play(60, 32.0f / 127.0f, 8).getSample(0, 0);
+    // Velocity 32 sits half way up a 63-step fade from 1.
+    CHECK(soft == Catch::Approx(unfaded * 0.5f).margin(0.02f));
+}
+
+TEST_CASE("A zone's root, tune and gain shape what it plays", "[devices][sampler][3098]") {
+    auto zone = rampZone(4096);
+    zone.settings.rootNote = 48;
+    zone.settings.gainDb = -6.0f;
+    ZoneSynth octaveUp({zone});
+    // An octave above the root reads every other frame, at the zone's gain.
+    const auto output = octaveUp.play(60, 1.0f, 8);
+    const float gain = juce::Decibels::decibelsToGain(-6.0f);
+    CHECK(output.getSample(0, 1) == Catch::Approx(3.0f * gain));
+
+    zone.settings.rootNote = 60;
+    zone.settings.gainDb = 0.0f;
+    zone.settings.tuneCents = 1200.0f;
+    ZoneSynth tuned({zone});
+    CHECK(tuned.play(60, 1.0f, 8).getSample(0, 1) == Catch::Approx(3.0f));
+}
+
+TEST_CASE("A zone of a list plays its own markers", "[devices][sampler][3098]") {
+    auto zone = rampZone(1024);
+    zone.settings.region.start = 100 / 44100.0;
+    ZoneSynth synth({zone});
+    // The parameters' markers are for the one-zone sampler; this zone ignores them.
+    synth.voice().setParameterRegion({.start = 500 / 44100.0});
+    CHECK(synth.play(60, 1.0f, 8).getSample(0, 0) == Catch::Approx(101.0f));
+
+    zone.regionFromParameters = true;
+    ZoneSynth fromParameters({zone});
+    fromParameters.voice().setParameterRegion({.start = 500 / 44100.0});
+    CHECK(fromParameters.play(60, 1.0f, 8).getSample(0, 0) == Catch::Approx(501.0f));
 }
 
 TEST_CASE("Short sampler notes render between their MIDI edges",
@@ -81,23 +224,14 @@ TEST_CASE("Short sampler notes render between their MIDI edges",
     for (const int onset : {0, 64}) {
         for (const int length : {1, 16, 31, 32, 128}) {
             CAPTURE(onset, length);
-            SamplerSynth synth;
-            synth.setCurrentPlaybackSampleRate(44100.0);
-            auto* sound = new SamplerSound();
-            sound->audioData.setSize(1, 1024);
-            for (int i = 0; i < 1024; ++i)
-                sound->audioData.setSample(0, i, 1.0f);
-            synth.addSound(sound);
-            auto* voice = new SamplerVoice();
-            voice->setRootNote(60);
-            voice->setADSR(0.001f, 0.1f, 1.0f, 0.1f);
-            synth.addVoice(voice);
+            ZoneSynth zones({rampZone(1024)});
+            zones.voice().setADSR(0.001f, 0.1f, 1.0f, 0.1f);
             juce::AudioBuffer<float> output(1, 512);
             output.clear();
             juce::MidiBuffer midi;
             midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), onset);
             midi.addEvent(juce::MidiMessage::noteOff(1, 60), onset + length);
-            synth.renderNextBlock(output, midi, 0, 512);
+            zones.synth.renderNextBlock(output, midi, 0, 512);
             CHECK(output.getMagnitude(0, onset, length) > 0.0f);
             if (onset > 0)
                 CHECK(output.getMagnitude(0, 0, onset) == 0.0f);
@@ -112,25 +246,15 @@ TEST_CASE("A note a fraction into its sample starts the sample that fraction lat
     // Frame n reads back as n + 1, and the envelope is open from the first
     // sample, so what the voice read is readable off the output.
     const auto render = [](float fraction) {
-        SamplerSynth synth;
-        synth.setCurrentPlaybackSampleRate(44100.0);
-        auto* sound = new SamplerSound();
-        sound->audioData.setSize(1, 1024);
-        for (int i = 0; i < 1024; ++i)
-            sound->audioData.setSample(0, i, static_cast<float>(i + 1));
-        synth.addSound(sound);
-        auto* voice = new SamplerVoice(synth);
-        voice->setRootNote(60);
-        voice->setADSR(0.0f, 0.1f, 1.0f, 0.1f);
-        synth.addVoice(voice);
+        ZoneSynth zones({rampZone(1024)});
 
         juce::AudioBuffer<float> output(1, 256);
         output.clear();
         juce::MidiBuffer midi;
         midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 64);
         const std::array<float, 1> fractions{fraction};
-        synth.beginBlock(fractions);
-        synth.renderNextBlock(output, midi, 0, 256);
+        zones.synth.beginBlock(fractions);
+        zones.synth.renderNextBlock(output, midi, 0, 256);
         return output;
     };
 
@@ -205,24 +329,10 @@ TEST_CASE("A held note loops between the loop markers past the sample's end",
           "[devices][sampler][loop]") {
     using namespace magda::daw::audio;
     constexpr double kRate = 44100.0;
-    SamplerSynth synth;
-    synth.setCurrentPlaybackSampleRate(kRate);
-    auto* sound = new SamplerSound();
-    sound->audioData.setSize(1, 1024);
-    for (int i = 0; i < 1024; ++i)
-        sound->audioData.setSample(0, i, static_cast<float>(i + 1));
-    synth.addSound(sound);
-    auto* voice = new SamplerVoice(synth);
-    voice->setRootNote(60);
-    voice->setADSR(0.0f, 0.1f, 1.0f, 0.1f);
-    voice->setPlaybackRegion(0.0, 1024 / kRate, true, 256 / kRate, 512 / kRate, kRate);
-    synth.addVoice(voice);
-
-    juce::AudioBuffer<float> output(1, 4096);
-    output.clear();
-    juce::MidiBuffer midi;
-    midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
-    synth.renderNextBlock(output, midi, 0, 4096);
+    auto zone = rampZone(1024, kRate);
+    zone.settings.region = {0.0, 1024 / kRate, true, 256 / kRate, 512 / kRate};
+    ZoneSynth synth({zone}, kRate);
+    const auto output = synth.play(60, 1.0f, 4096);
 
     // Frame n reads back as n + 1: past the loop end it wraps to the loop start.
     CHECK(output.getSample(0, 511) == 512.0f);
@@ -240,24 +350,9 @@ TEST_CASE("The pitch envelope bends a note by its amount", "[devices][sampler][3
     // A held envelope at full level: the bend is the amount, every frame.
     for (const auto [semitones, step] : {std::pair{0.0f, 1}, std::pair{12.0f, 2}}) {
         CAPTURE(semitones);
-        SamplerSynth synth;
-        synth.setCurrentPlaybackSampleRate(kRate);
-        auto* sound = new SamplerSound();
-        sound->audioData.setSize(1, 4096);
-        for (int i = 0; i < 4096; ++i)
-            sound->audioData.setSample(0, i, static_cast<float>(i + 1));
-        synth.addSound(sound);
-        auto* voice = new SamplerVoice(synth);
-        voice->setRootNote(60);
-        voice->setADSR(0.0f, 0.1f, 1.0f, 0.1f);
-        voice->setPitchEnvelope(0.0f, 0.1f, 1.0f, 0.1f, semitones);
-        synth.addVoice(voice);
-
-        juce::AudioBuffer<float> output(1, 512);
-        output.clear();
-        juce::MidiBuffer midi;
-        midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
-        synth.renderNextBlock(output, midi, 0, 512);
+        ZoneSynth synth({rampZone(4096, kRate)}, kRate);
+        synth.voice().setPitchEnvelope(0.0f, 0.1f, 1.0f, 0.1f, semitones);
+        const auto output = synth.play(60, 1.0f, 512);
 
         for (int i : {0, 1, 100, 511})
             CHECK(output.getSample(0, i) == static_cast<float>(i * step + 1));
@@ -268,24 +363,9 @@ TEST_CASE("A pitch envelope that decays to nothing returns the note to its pitch
           "[devices][sampler][3096]") {
     using namespace magda::daw::audio;
     constexpr double kRate = 44100.0;
-    SamplerSynth synth;
-    synth.setCurrentPlaybackSampleRate(kRate);
-    auto* sound = new SamplerSound();
-    sound->audioData.setSize(1, 1 << 16);
-    for (int i = 0; i < sound->audioData.getNumSamples(); ++i)
-        sound->audioData.setSample(0, i, static_cast<float>(i + 1));
-    synth.addSound(sound);
-    auto* voice = new SamplerVoice(synth);
-    voice->setRootNote(60);
-    voice->setADSR(0.0f, 0.1f, 1.0f, 0.1f);
-    voice->setPitchEnvelope(0.0f, 0.01f, 0.0f, 0.1f, -24.0f);
-    synth.addVoice(voice);
-
-    juce::AudioBuffer<float> output(1, 4096);
-    output.clear();
-    juce::MidiBuffer midi;
-    midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
-    synth.renderNextBlock(output, midi, 0, 4096);
+    ZoneSynth synth({rampZone(1 << 16, kRate)}, kRate);
+    synth.voice().setPitchEnvelope(0.0f, 0.01f, 0.0f, 0.1f, -24.0f);
+    const auto output = synth.play(60, 1.0f, 4096);
 
     // Two octaves down at the start reads a quarter frame per sample, then unbent after the decay.
     CHECK(output.getSample(0, 1) - output.getSample(0, 0) == Catch::Approx(0.25f).margin(0.01f));
@@ -300,30 +380,20 @@ juce::AudioBuffer<float> renderFilteredSine(
     int note = 60, float velocity = 1.0f, float envDecay = 1.0f) {
     using namespace magda::daw::audio;
     constexpr double kRate = 48000.0;
-    SamplerSynth synth;
-    synth.setCurrentPlaybackSampleRate(kRate);
-    auto* sound = new SamplerSound();
-    sound->sourceSampleRate = kRate;
-    sound->audioData.setSize(1, frames * 4);
-    for (int i = 0; i < sound->audioData.getNumSamples(); ++i)
-        sound->audioData.setSample(0, i,
-                                   std::sin(2.0f * juce::MathConstants<float>::pi * hz *
-                                            static_cast<float>(i) / static_cast<float>(kRate)));
-    synth.addSound(sound);
-    auto* voice = new SamplerVoice(synth);
-    voice->setRootNote(note);
-    voice->setADSR(0.0f, 0.1f, 1.0f, 0.1f);
-    voice->setFilterEnvelope(0.0f, envDecay, 0.0f, 0.1f);
-    voice->setFilter(filter);
-    voice->prepareFilter(kRate);
-    synth.addVoice(voice);
-
-    juce::AudioBuffer<float> output(2, frames);
-    output.clear();
-    juce::MidiBuffer midi;
-    midi.addEvent(juce::MidiMessage::noteOn(1, note, velocity), 0);
-    synth.renderNextBlock(output, midi, 0, frames);
-    return output;
+    auto zone = rampZone(frames * 4, kRate);
+    auto audio = std::make_shared<SampleAudio>(*zone.audio);
+    for (int i = 0; i < audio->buffer.getNumSamples(); ++i)
+        audio->buffer.setSample(0, i,
+                                std::sin(2.0f * juce::MathConstants<float>::pi * hz *
+                                         static_cast<float>(i) / static_cast<float>(kRate)));
+    zone.audio = audio;
+    zone.settings.rootNote = note;
+    ZoneSynth synth({zone}, kRate);
+    auto& voice = synth.voice();
+    voice.setFilterEnvelope(0.0f, envDecay, 0.0f, 0.1f);
+    voice.setFilter(filter);
+    voice.prepareFilter(kRate);
+    return synth.play(note, velocity, frames, 2);
 }
 
 }  // namespace
