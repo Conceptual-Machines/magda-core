@@ -1,5 +1,6 @@
 #include "sampling/SamplerModelEdits.hpp"
 
+#include <algorithm>
 #include <functional>
 
 #include "core/DeviceState.hpp"
@@ -174,7 +175,10 @@ std::vector<Zone> zones(const ChainNodePath& devicePath) {
 }
 
 bool setZones(const ChainNodePath& devicePath, const std::vector<Zone>& zones) {
-    const bool list = zones.size() > 1;
+    // An empty zone stays a list entry: the one-zone sampler without a source is no zone at all.
+    const bool list = zones.size() > 1 || std::ranges::any_of(zones, [](const Zone& zone) {
+                          return zone.source.isEmpty();
+                      });
     if (!authorState(devicePath, [&zones, list](device_state::Doc& doc) {
             std::erase_if(doc.root.children, isZoneNode);
             if (list) {
@@ -257,6 +261,31 @@ bool addZone(const ChainNodePath& devicePath, const juce::File& file, int key) {
     added->rootNote = added->zones.keyLow = added->zones.keyHigh = juce::jlimit(0, 127, key);
     auto all = zones(devicePath);
     all.push_back(*added);
+    return setZones(devicePath, all);
+}
+
+bool addEmptyZone(const ChainNodePath& devicePath) {
+    auto all = zones(devicePath);
+    all.emplace_back();
+    return setZones(devicePath, all);
+}
+
+bool setZoneSample(const ChainNodePath& devicePath, int index, const juce::File& file) {
+    auto all = zones(devicePath);
+    const auto chosen = zoneFor(file);
+    if (!chosen || index < 0 || index >= static_cast<int>(all.size()))
+        return false;
+    auto& zone = all[static_cast<size_t>(index)];
+    // The zone keeps its ranges, tune and gain; its root moves only when the file names one.
+    const auto choice = Sampler::readSampleChoice(file);
+    if (const auto named = daw::audio::noteFromFileName(file.getFileNameWithoutExtension()))
+        zone.rootNote = *named;
+    else if (choice.rootFromMetadata)
+        zone.rootNote = choice.rootNote;
+    const bool loop = zone.region.loop;
+    zone.source = chosen->source;
+    zone.region = chosen->region;
+    zone.region.loop = loop;
     return setZones(devicePath, all);
 }
 

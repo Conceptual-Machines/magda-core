@@ -536,7 +536,7 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     if (chordEngineUI_)
         return 960;  // four suggestion columns between the chord and key columns
     if (samplerUI_)
-        return 1080;  // the zone list, then 400 (BASE_SLOT_WIDTH) * 2
+        return samplerUI_->preferredWidth();
     if (drumGridUI_)
         return drumGridFallback;
     if (externalInsertUI_)
@@ -790,6 +790,11 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         impulseResponseUI_->updateFromParameters(device.parameters);
 }
 
+void DeviceCustomUIManager::setSamplerZonesShown(bool shown) {
+    if (samplerUI_)
+        samplerUI_->setZonesShown(shown);
+}
+
 void DeviceCustomUIManager::setSequencerTimeBendShown(bool shown) {
     if (stepSequencerUI_)
         stepSequencerUI_->setTimeBendShown(shown);
@@ -901,6 +906,12 @@ bool DeviceCustomUIManager::createSamplerUI(const magda::DeviceInfo& device,
     samplerUI_->onZonesAdded = [this, afterZoneEdit](const juce::Array<juce::File>& files) {
         afterZoneEdit(magda::sampler_edits::addZones(devicePath_, files));
     };
+    samplerUI_->onEmptyZoneAdded = [this, afterZoneEdit]() {
+        afterZoneEdit(magda::sampler_edits::addEmptyZone(devicePath_));
+    };
+    samplerUI_->onZoneSampleChosen = [this, afterZoneEdit](int index, const juce::File& file) {
+        afterZoneEdit(magda::sampler_edits::setZoneSample(devicePath_, index, file));
+    };
 
     // Shared logic for loading a sample file and refreshing the UI
     auto loadFile = [cb = callbacks](const juce::File& file) {
@@ -919,6 +930,10 @@ bool DeviceCustomUIManager::createSamplerUI(const magda::DeviceInfo& device,
                                      const auto results = chooser->getResults();
                                      if (results.size() > 1 && ui != nullptr && ui->onFilesDropped)
                                          ui->onFilesDropped(results);
+                                     // A zone list's selected zone takes the one chosen.
+                                     else if (results.size() == 1 && ui != nullptr &&
+                                              ui->listZone() >= 0 && ui->onZoneSampleChosen)
+                                         ui->onZoneSampleChosen(ui->listZone(), results[0]);
                                      else if (results.size() == 1 && results[0].existsAsFile())
                                          loadFile(results[0]);
                                  });

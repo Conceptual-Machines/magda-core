@@ -327,6 +327,8 @@ struct DeviceInfo {
     bool paramsShown = true;
     /// Whether a sequencer's faceplate shows its time bend beside the controls.
     bool timeBendShown = true;
+    /// Whether a sampler's faceplate shows its zone list (#3098).
+    bool zonesShown = true;
 
     // AI panel output text — transient runtime state, NOT serialized to disk.
     // Lives on DeviceInfo so the streamed prompt/result history survives slot

@@ -11,7 +11,7 @@ namespace {
 constexpr double kMinGainDb = -48.0;
 constexpr int kButtonWidth = 20;
 constexpr float kButtonHeight = 20.0f;
-constexpr int kNameWidth = 96;
+constexpr int kNameWidth = 80;
 }  // namespace
 
 SamplerZoneRow::SamplerZoneRow() {

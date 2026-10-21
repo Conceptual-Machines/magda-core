@@ -125,8 +125,20 @@ class SamplerUI : public juce::Component,
     std::function<void(const juce::File& file, int key)> onZoneAdded;
     /// Several samples or a folder dropped, to map by name.
     std::function<void(const juce::Array<juce::File>& files)> onFilesDropped;
-    /// Samples added to the zone list, from its Add button or a drop on it.
+    /// Samples dropped on the zone list, below its zones.
     std::function<void(const juce::Array<juce::File>& files)> onZonesAdded;
+    /// The zone list's Add button: a zone with no sample.
+    std::function<void()> onEmptyZoneAdded;
+    /// A sample for zone @p index, dropped on its row or loaded while it is selected.
+    std::function<void(int index, const juce::File& file)> onZoneSampleChosen;
+    /// The selected zone of a zone list, which a loaded sample goes into, or -1.
+    int listZone() const {
+        return zoneList_ && !zones_.empty() ? selectedZone_ : -1;
+    }
+
+    /// The zone list beside the faceplate, from the slot footer's switch.
+    void setZonesShown(bool shown);
+    int preferredWidth() const;
     /// The zone the playhead belongs to, or -1.
     std::function<int()> getPlaybackZone;
 
@@ -195,7 +207,10 @@ class SamplerUI : public juce::Component,
     void refreshZoneRows();
     void layoutZoneList();
     void selectZone(int index);
-    void chooseZonesToAdd();
+    bool zonesShown_ = true;
+    bool selectAddedZone_ = false;  ///< Add zone was pressed; the next map selects the new one.
+    /// The row under @p position, in this component's coordinates, or -1.
+    int zoneRowAt(juce::Point<int> position) const;
     /// The selected zone into the name, root, waveform and, for a list, the markers and loop.
     void showSelectedZone();
     /// Edit the selected zone of a list through @p change.

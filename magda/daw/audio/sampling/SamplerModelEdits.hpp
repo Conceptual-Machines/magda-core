@@ -49,6 +49,12 @@ bool addZones(const ChainNodePath& devicePath, const juce::Array<juce::File>& fi
 /// Add a zone playing @p file on @p key alone, rooted there.
 bool addZone(const ChainNodePath& devicePath, const juce::File& file, int key);
 
+/// Add a zone with no sample, open across every key and velocity.
+bool addEmptyZone(const ChainNodePath& devicePath);
+
+/// Point zone @p index at @p file, its markers spanning it; its ranges, tune and gain stay.
+bool setZoneSample(const ChainNodePath& devicePath, int index, const juce::File& file);
+
 bool updateZone(const ChainNodePath& devicePath, int index,
                 const daw::audio::SamplerZoneSettings& zone);
 bool removeZone(const ChainNodePath& devicePath, int index);

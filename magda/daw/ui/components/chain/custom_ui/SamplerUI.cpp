@@ -28,7 +28,9 @@ constexpr int kTitleH = 22;
 constexpr int kTileW = 64;
 constexpr int kTileGap = 4;
 constexpr int kMaxTileH = 48;  ///< The grid's text tile, so these read as its cells.
-constexpr int kZonePanelW = 280;
+constexpr int kZonePanelW = 220;
+constexpr int kFaceplateW =
+    660;  ///< The tabs' columns and a waveform that still fits its view row.
 constexpr float kEnvHandleRadius = 4.5f;
 constexpr float kEnvHandleGrab = 9.0f;
 
@@ -544,8 +546,12 @@ SamplerUI::SamplerUI() {
     };
     addChildComponent(zoneEditor_);
 
-    addZoneButton_.setTooltip("Add samples as zones that play every key");
-    addZoneButton_.onClick = [this] { chooseZonesToAdd(); };
+    addZoneButton_.setTooltip("Add an empty zone; drop a sample on it to fill it");
+    addZoneButton_.onClick = [this] {
+        selectAddedZone_ = true;
+        if (onEmptyZoneAdded)
+            onEmptyZoneAdded();
+    };
     zoneListContent_.addAndMakeVisible(addZoneButton_);
     zoneListView_.setViewedComponent(&zoneListContent_, false);
     zoneListView_.setScrollBarsShown(true, false);
@@ -562,17 +568,23 @@ void SamplerUI::selectZone(int index) {
     refreshZoneRows();
 }
 
-void SamplerUI::chooseZonesToAdd() {
-    auto chooser = std::make_shared<juce::FileChooser>("Add Zones", juce::File(),
-                                                       "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
-    chooser->launchAsync(
-        juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles |
-            juce::FileBrowserComponent::canSelectMultipleItems,
-        [safe = juce::Component::SafePointer<SamplerUI>(this), chooser](const juce::FileChooser&) {
-            const auto results = chooser->getResults();
-            if (safe != nullptr && !results.isEmpty() && safe->onZonesAdded)
-                safe->onZonesAdded(results);
-        });
+void SamplerUI::setZonesShown(bool shown) {
+    if (shown == zonesShown_)
+        return;
+    zonesShown_ = shown;
+    resized();
+    repaint();
+}
+
+int SamplerUI::preferredWidth() const {
+    return kFaceplateW + (zonesShown_ ? kZonePanelW + kSpace : 0);
+}
+
+int SamplerUI::zoneRowAt(juce::Point<int> position) const {
+    for (size_t i = 0; i < zoneRows_.size(); ++i)
+        if (zoneRows_[i]->getScreenBounds().contains(localPointToGlobal(position)))
+            return static_cast<int>(i);
+    return -1;
 }
 
 void SamplerUI::refreshZoneRows() {
@@ -631,6 +643,8 @@ void SamplerUI::setZones(std::vector<ZoneView> zones, bool list, std::uint64_t g
     zoneGeneration_ = generation;
     zones_ = std::move(zones);
     zoneList_ = list;
+    if (std::exchange(selectAddedZone_, false))
+        selectedZone_ = static_cast<int>(zones_.size()) - 1;
     selectedZone_ =
         juce::jlimit(0, juce::jmax(0, static_cast<int>(zones_.size()) - 1), selectedZone_);
     std::vector<daw::audio::SamplerZoneSettings> settings;
@@ -961,8 +975,14 @@ void SamplerUI::filesDropped(const juce::StringArray& files, int x, int y) {
     if (dropped.isEmpty())
         return;
 
-    // On the zone list, each joins the zones; elsewhere several or a folder become a map by
-    // name (#3098).
+    // On a zone's row, one fills that zone; elsewhere on the list each joins the zones;
+    // elsewhere several or a folder become a map by name (#3098).
+    const int row = zoneRowAt({x, y});
+    if (row >= 0 && dropped.size() == 1 && !dropped.getFirst().isDirectory()) {
+        if (onZoneSampleChosen)
+            onZoneSampleChosen(row, dropped.getFirst());
+        return;
+    }
     if (zonePanel_.contains(x, y)) {
         if (onZonesAdded)
             onZonesAdded(dropped);
@@ -978,6 +998,11 @@ void SamplerUI::filesDropped(const juce::StringArray& files, int x, int y) {
     if (zoneEditor_.isVisible() && zoneEditor_.gridContains(onMap)) {
         if (onZoneAdded)
             onZoneAdded(dropped.getFirst(), zoneEditor_.keyAt(static_cast<float>(onMap.x)));
+        return;
+    }
+    if (listZone() >= 0) {
+        if (onZoneSampleChosen)
+            onZoneSampleChosen(listZone(), dropped.getFirst());
         return;
     }
     if (onFileDropped)
@@ -1554,10 +1579,12 @@ void SamplerUI::resized() {
     auto area = getLocalBounds().reduced(kSpace);
 
     // The zone list down the left, as a rack's chains.
-    zonePanel_ = area.removeFromLeft(kZonePanelW);
+    zoneListView_.setVisible(zonesShown_);
+    zonePanel_ = zonesShown_ ? area.removeFromLeft(kZonePanelW) : juce::Rectangle<int>();
     zoneTabs_ = zonePanel_.withHeight(kNameRowH);
     layoutZoneList();
-    area.removeFromLeft(kSpace);
+    if (zonesShown_)
+        area.removeFromLeft(kSpace);
 
     // Name row: the sample, its root and the load button.
     auto nameRow = area.removeFromTop(kNameRowH);

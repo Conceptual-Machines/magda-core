@@ -244,3 +244,52 @@ TEST_CASE("A map edited down to one zone is the one-zone sampler again",
 
     TrackManager::getInstance().clearAllTracks();
 }
+
+TEST_CASE("An empty zone is a zone, and a sample dropped on it fills it",
+          "[sampler][model-authority][3098]") {
+    const auto path = addSampler();
+
+    REQUIRE(sampler_edits::addEmptyZone(path));
+    auto zones = sampler_edits::zones(path);
+    REQUIRE(zones.size() == 1);
+    CHECK(zones[0].source.isEmpty());
+    CHECK(authoredDoc(path).root.children.size() == 1);
+
+    zones[0].zones.keyLow = 36;
+    zones[0].zones.keyHigh = 47;
+    REQUIRE(sampler_edits::updateZone(path, 0, zones[0]));
+
+    // Filled, the only zone is the one-zone sampler, its ranges and markers kept.
+    const auto file = writeTestWav(0.5, "Kick_C1");
+    REQUIRE(sampler_edits::setZoneSample(path, 0, file));
+    const auto doc = authoredDoc(path);
+    CHECK(doc.root.children.empty());
+    CHECK(doc.root.props[Sampler::StateIDs::source].toString() == file.getFullPathName());
+    CHECK(static_cast<int>(doc.root.props[Sampler::StateIDs::rootNote]) == 36);
+    CHECK(static_cast<int>(doc.root.props["keyHigh"]) == 47);
+    CHECK(modelValue(path, Sampler::kSampleEnd) == Catch::Approx(0.5f));
+
+    TrackManager::getInstance().clearAllTracks();
+}
+
+TEST_CASE("A sample chosen for one zone of a list leaves the others",
+          "[sampler][model-authority][3098]") {
+    const auto path = addSampler();
+    const auto first = writeTestWav(1.0, "Pad_C3");
+    REQUIRE(sampler_edits::loadSample(path, first));
+    REQUIRE(sampler_edits::addEmptyZone(path));
+    REQUIRE(sampler_edits::addEmptyZone(path));
+
+    const auto file = writeTestWav(0.25);
+    REQUIRE(sampler_edits::setZoneSample(path, 2, file));
+
+    const auto zones = sampler_edits::zones(path);
+    REQUIRE(zones.size() == 3);
+    CHECK(zones[0].source == first.getFullPathName());
+    CHECK(zones[1].source.isEmpty());
+    CHECK(zones[2].source == file.getFullPathName());
+    CHECK(zones[2].region.end == Catch::Approx(0.25));
+    CHECK_FALSE(sampler_edits::setZoneSample(path, 3, file));
+
+    TrackManager::getInstance().clearAllTracks();
+}

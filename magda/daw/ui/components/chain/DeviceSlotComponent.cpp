@@ -550,6 +550,11 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     timeBendToggle_->setTooltip("Show the time bend");
     timeBendToggle_->onClick = [this]() { toggleTimeBend(); };
     addChildComponent(*timeBendToggle_);
+    zonesToggle_ = std::make_unique<magda::SvgButton>("Zones", BinaryData::mbbands_svg,
+                                                      BinaryData::mbbands_svgSize);
+    zonesToggle_->setTooltip("Show the zones");
+    zonesToggle_->onClick = [this]() { toggleZones(); };
+    addChildComponent(*zonesToggle_);
     expandToggle_ = std::make_unique<magda::SvgButton>("Expand", BinaryData::enter_fs_svg,
                                                        BinaryData::enter_fs_svgSize);
     expandToggle_->setTooltip("Expand the faceplate into the arrangement");
@@ -767,7 +772,9 @@ void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
     footerPageLabel_.setVisible(paged);
     const bool sequencer = !footer.isEmpty() && isSequencerDevice(traits_);
     const bool expandable = !footer.isEmpty() && traits_.expandsFaceplate;
+    const bool zoned = !footer.isEmpty() && customUI_.hasSamplerUI();
     timeBendToggle_->setVisible(sequencer);
+    zonesToggle_->setVisible(zoned);
     expandToggle_->setVisible(expandable);
     if (footer.isEmpty()) {
         paramsToggle_->setVisible(false);
@@ -801,6 +808,10 @@ void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
     if (sequencer) {
         timeBendToggle_->setToggleState(device_.timeBendShown, juce::dontSendNotification);
         place(*timeBendToggle_, true);
+    }
+    if (zoned) {
+        zonesToggle_->setToggleState(device_.zonesShown, juce::dontSendNotification);
+        place(*zonesToggle_, true);
     }
     if (expandable) {
         expandToggle_->setToggleState(faceplateLent(), juce::dontSendNotification);
@@ -1024,6 +1035,16 @@ void DeviceSlotComponent::toggleTimeBend() {
         onDeviceLayoutChanged();
 }
 
+void DeviceSlotComponent::toggleZones() {
+    device_.zonesShown = !device_.zonesShown;
+    if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_))
+        live->zonesShown = device_.zonesShown;
+    customUI_.setSamplerZonesShown(device_.zonesShown);
+    resized();
+    if (onDeviceLayoutChanged)
+        onDeviceLayoutChanged();
+}
+
 bool DeviceSlotComponent::faceplateLent() const {
     const auto* faceplate = customUI_.getActiveUI();
     return faceplate != nullptr && magda::ExpandedFaceplate::getInstance().holds(*faceplate);
@@ -1121,6 +1142,7 @@ void DeviceSlotComponent::styleDeviceHeaderButtons() {
     style(paramsToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(faceplateToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(timeBendToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
+    style(zonesToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(expandToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     if (stepRecordButton_)
         stepRecordButton_->setNormalColor(ActiveTheme::STEP_RECORD);
@@ -1522,6 +1544,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     if (customUI_.hasAnyUI() || faustUI_ || compiledPanel_) {
         updateDeviceSlotInlineUi(device_, compiledPanel_.get(), customUI_);
         customUI_.setSequencerTimeBendShown(device_.timeBendShown);
+        customUI_.setSamplerZonesShown(device_.zonesShown);
         reclaimExpandedFaceplate();
     }
 
