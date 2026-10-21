@@ -1,4 +1,5 @@
 #include <array>
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <vector>
 
@@ -412,6 +413,88 @@ TEST_CASE("The limiter migration drops the three parameters it lost", "[migratio
     CHECK(migrations::migratedParamIndex(*limiter, 5) == 3);  // Output
     CHECK(!migrations::migratedParamIndex(*limiter, 6));      // Autogain, gone
     CHECK(limiter->seeded.empty());
+}
+
+}  // namespace magda
+
+// -----------------------------------------------------------------------------
+// Choice lists that grew (#3097)
+// -----------------------------------------------------------------------------
+
+namespace magda {
+namespace {
+
+/// A Filter as an old file saved it: Engine's list ended at Diode (5), and the SVF's Mode list at
+/// Notch (3).
+DeviceInfo makeOldFilter(DeviceId id, float engine) {
+    DeviceInfo device;
+    device.id = id;
+    device.pluginId = "magda_filter";
+    for (int index = 0; index < 7; ++index) {
+        ParameterInfo param;
+        param.paramIndex = index;
+        device.parameters.push_back(param);
+    }
+    device.parameters[3].currentValue = engine;
+    device.parameters[3].maxValue = 5.0f;
+    device.parameters[4].maxValue = 3.0f;
+    return device;
+}
+
+AutomationLaneInfo laneAt(AutomationLaneId id, ControlTarget target, double value) {
+    AutomationLaneInfo lane;
+    lane.id = id;
+    lane.target = std::move(target);
+    AutomationPoint point;
+    point.value = value;
+    lane.absolutePoints.push_back(point);
+    return lane;
+}
+
+}  // namespace
+
+TEST_CASE("Automation on a grown choice list keeps its choices", "[migration][params][3097]") {
+    constexpr TrackId kTrackId = 1;
+    constexpr DeviceId kSvf = 1;
+    constexpr DeviceId kOberheim = 2;
+
+    std::vector<TrackInfo> tracks(1);
+    auto& track = tracks.front();
+    track.id = kTrackId;
+    track.chain.fxChainElements.push_back(makeOldFilter(kSvf, 0.0f));
+    track.chain.fxChainElements.push_back(makeOldFilter(kOberheim, 3.0f));
+    track.mods.push_back(ModInfo(0));
+
+    ModLink modeLink;
+    modeLink.target = targetFor(kTrackId, kSvf, 4);
+    modeLink.amount = 1.0f;
+    track.mods[0].links.push_back(modeLink);
+
+    // Diode was 5/5 of Engine; Notch 3/3 and HP 2/3 of the SVF's Mode.
+    std::vector<AutomationLaneInfo> lanes{laneAt(1, targetFor(kTrackId, kSvf, 3), 1.0),
+                                          laneAt(2, targetFor(kTrackId, kSvf, 4), 2.0 / 3.0),
+                                          laneAt(3, targetFor(kTrackId, kOberheim, 4), 2.0 / 3.0)};
+    std::vector<AutomationClipInfo> clips(1);
+    clips[0].laneId = 2;
+    AutomationPoint notch;
+    notch.value = 1.0;
+    clips[0].points.push_back(notch);
+
+    for (int load = 0; load < 2; ++load) {
+        CAPTURE(load);
+        migrations::applyChoiceGrowths(tracks, nullptr, lanes, clips);
+
+        CHECK(lanes[0].absolutePoints[0].value * 6.0 == Catch::Approx(5.0));
+        CHECK(lanes[1].absolutePoints[0].value * 4.0 == Catch::Approx(2.0));
+        CHECK(clips[0].points[0].value * 4.0 == Catch::Approx(3.0));
+        CHECK(track.mods[0].links[0].amount == Catch::Approx(0.75f));
+        // The Oberheim's modes did not grow.
+        CHECK(lanes[2].absolutePoints[0].value == Catch::Approx(2.0 / 3.0));
+    }
+
+    const auto& svf = getDevice(track.chain.fxChainElements.front());
+    CHECK(svf.parameters[3].maxValue == 6.0f);
+    CHECK(svf.parameters[4].maxValue == 4.0f);
 }
 
 }  // namespace magda

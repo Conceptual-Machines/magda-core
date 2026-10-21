@@ -612,6 +612,10 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
         device_param_migrations::applyParamIndexMigrations(
             outData.tracks, outData.masterTrack.get(), outData.automationLanes,
             outData.automationClips);
+        // Then any choice list that grew, before its saved length is lost.
+        device_param_migrations::applyChoiceGrowths(outData.tracks, outData.masterTrack.get(),
+                                                    outData.automationLanes,
+                                                    outData.automationClips);
 
         // Then an id for every pad device saved before pads had them. On the
         // staged model, not at commit: a pad with no id cannot be keyed, so the
@@ -1022,6 +1026,9 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
     device_param_migrations::applyParamIndexMigrations(
         stagedTracks, hasMasterTrack ? &stagedMasterTrack : nullptr, stagedAutomation,
         stagedAutomationClips);
+    device_param_migrations::applyChoiceGrowths(stagedTracks,
+                                                hasMasterTrack ? &stagedMasterTrack : nullptr,
+                                                stagedAutomation, stagedAutomationClips);
 
     // Then the pad addresses saved before pad ownership was a step type (#2219).
     pad_paths::migrateLegacyPadPaths(stagedTracks, hasMasterTrack ? &stagedMasterTrack : nullptr,

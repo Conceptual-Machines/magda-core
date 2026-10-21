@@ -213,6 +213,9 @@ class DeviceCustomUIManager {
     }
 
   private:
+    /// The sampler faceplate from the model's parameter values, which an edit from anywhere
+    /// updates.
+    void updateSamplerUI(const magda::DeviceInfo& device);
     void refreshSequencerState(const magda::DeviceInfo& device);
     // Hand the oscilloscope / spectrum / levels / Nimbus faceplates their
     // telemetry source. The device-backed ones re-resolve on every read, so one

@@ -67,6 +67,18 @@ std::optional<juce::Path> iconFor(const juce::String& option) {
         path.lineTo(0.35f, 0.3f);
         path.quadraticTo(0.5f, 1.6f, 0.65f, 0.3f);
         path.lineTo(1.0f, 0.3f);
+    } else if (name == "notch+") {
+        path.startNewSubPath(0.0f, 0.55f);
+        path.quadraticTo(0.2f, 0.55f, 0.3f, 0.12f);
+        path.quadraticTo(0.42f, 0.5f, 0.5f, 0.95f);
+        path.quadraticTo(0.58f, 0.5f, 0.7f, 0.12f);
+        path.quadraticTo(0.8f, 0.55f, 1.0f, 0.55f);
+    } else if (name == "comb+" || name == "comb-") {
+        // Peaks on the harmonics, or on the half-harmonics between them.
+        const float phase = name == "comb+" ? 0.0f : 0.5f;
+        sampled([phase](float x) {
+            return 0.5f - 0.4f * std::cos((x * 3.0f + phase) * juce::MathConstants<float>::twoPi);
+        });
     } else if (name == "sine") {
         sampled(
             [](float x) { return 0.5f - 0.45f * std::sin(x * juce::MathConstants<float>::twoPi); });

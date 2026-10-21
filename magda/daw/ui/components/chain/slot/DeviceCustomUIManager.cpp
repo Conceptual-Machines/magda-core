@@ -675,7 +675,86 @@ void DeviceCustomUIManager::refreshChordEngineMidiActivity(magda::MidiNoteStrip&
     lastChordCount = count;
 }
 
+void DeviceCustomUIManager::updateSamplerUI(const magda::DeviceInfo& device) {
+    float attack = 0.001f, decay = 0.1f, sustain = 1.0f, release = 0.1f;
+    float pitch = 0.0f, fine = 0.0f, level = 0.0f;
+    float sampleStart = 0.0f, sampleEnd = 0.0f;
+    float loopStart = 0.0f, loopEnd = 0.0f;
+    float velAmount = 1.0f;
+    float voiceMode = 0.0f, glide = 0.0f;
+    float pitchAttack = 0.001f, pitchDecay = 0.2f, pitchSustain = 0.0f, pitchRelease = 0.1f;
+    float pitchAmount = 0.0f;
+    bool loopEnabled = false;
+    int rootNote = 60;
+    juce::String sampleName;
+
+    if (device.parameters.size() >= 7) {
+        attack = device.parameters[0].currentValue;
+        decay = device.parameters[1].currentValue;
+        sustain = device.parameters[2].currentValue;
+        release = device.parameters[3].currentValue;
+        pitch = device.parameters[4].currentValue;
+        fine = device.parameters[5].currentValue;
+        level = device.parameters[6].currentValue;
+    }
+    if (device.parameters.size() >= 11) {
+        sampleStart = device.parameters[7].currentValue;
+        sampleEnd = device.parameters[8].currentValue;
+        loopStart = device.parameters[9].currentValue;
+        loopEnd = device.parameters[10].currentValue;
+    }
+    if (device.parameters.size() >= 12) {
+        velAmount = device.parameters[11].currentValue;
+    }
+    if (device.parameters.size() >= 14) {
+        voiceMode = device.parameters[12].currentValue;
+        glide = device.parameters[13].currentValue;
+    }
+    if (device.parameters.size() >= 19) {
+        pitchAttack = device.parameters[14].currentValue;
+        pitchDecay = device.parameters[15].currentValue;
+        pitchSustain = device.parameters[16].currentValue;
+        pitchRelease = device.parameters[17].currentValue;
+        pitchAmount = device.parameters[18].currentValue;
+    }
+
+    auto rendered = liveDevice();
+    if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(rendered.get())) {
+        auto file = sampler->getSampleFile();
+        if (file.existsAsFile())
+            sampleName = file.getFileNameWithoutExtension();
+        loopEnabled = sampler->loopEnabled();
+        sampleStart = sampler->displayValue(daw::audio::MagdaSamplerPlugin::kSampleStart);
+        sampleEnd = sampler->displayValue(daw::audio::MagdaSamplerPlugin::kSampleEnd);
+        loopStart = sampler->displayValue(daw::audio::MagdaSamplerPlugin::kLoopStart);
+        loopEnd = sampler->displayValue(daw::audio::MagdaSamplerPlugin::kLoopEnd);
+        rootNote = sampler->getRootNote();
+        if (!samplerUI_->hasWaveform())
+            samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
+                                        sampler->getSampleLengthSeconds());
+    }
+
+    samplerUI_->updateParameters(attack, decay, sustain, release, pitch, fine, level, sampleStart,
+                                 sampleEnd, loopEnabled, loopStart, loopEnd, velAmount, sampleName,
+                                 rootNote, voiceMode, glide);
+    samplerUI_->updatePitchEnvelope(pitchAttack, pitchDecay, pitchSustain, pitchRelease,
+                                    pitchAmount);
+    if (device.parameters.size() >= daw::audio::MagdaSamplerPlugin::kNumParams) {
+        std::array<float, SamplerUI::kFilterSlotCount> filter{};
+        for (int i = 0; i < SamplerUI::kFilterSlotCount; ++i)
+            filter[static_cast<size_t>(i)] =
+                device
+                    .parameters[static_cast<size_t>(daw::audio::MagdaSamplerPlugin::kFilterType +
+                                                    i)]
+                    .currentValue;
+        samplerUI_->updateFilter(filter);
+    }
+}
+
 void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& device) {
+    if (samplerUI_ &&
+        device.pluginId.containsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName))
+        updateSamplerUI(device);
     if (polySynthUI_ && device.pluginId.equalsIgnoreCase("magda_polysynth"))
         polySynthUI_->updateFromParameters(device.parameters);
     if (struckUI_ && StruckInstrumentUI::handles(device.pluginId))
@@ -737,6 +816,9 @@ void DeviceCustomUIManager::createToneGeneratorUI(const magda::DeviceInfo& devic
 
 namespace {
 
+static_assert(SamplerUI::kFilterSlotCount == daw::audio::MagdaSamplerPlugin::kFilterEnvAmount -
+                                                 daw::audio::MagdaSamplerPlugin::kFilterType + 1);
+
 /// Push every sampler slot into the faceplate, reading each in its display
 /// units off the device. The faceplate's argument order is frozen; the enum
 /// spells out which slot each one is.
@@ -753,6 +835,10 @@ void pushSamplerParameters(SamplerUI& ui, const daw::audio::MagdaSamplerPlugin& 
     ui.updatePitchEnvelope(slot(Sampler::kPitchEnvAttack), slot(Sampler::kPitchEnvDecay),
                            slot(Sampler::kPitchEnvSustain), slot(Sampler::kPitchEnvRelease),
                            slot(Sampler::kPitchEnvAmount));
+    std::array<float, SamplerUI::kFilterSlotCount> filter{};
+    for (int i = 0; i < SamplerUI::kFilterSlotCount; ++i)
+        filter[static_cast<size_t>(i)] = slot(Sampler::kFilterType + i);
+    ui.updateFilter(filter);
 }
 
 }  // namespace
@@ -1927,71 +2013,8 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
     }
 
     if (samplerUI_ &&
-        device.pluginId.containsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
-        float attack = 0.001f, decay = 0.1f, sustain = 1.0f, release = 0.1f;
-        float pitch = 0.0f, fine = 0.0f, level = 0.0f;
-        float sampleStart = 0.0f, sampleEnd = 0.0f;
-        float loopStart = 0.0f, loopEnd = 0.0f;
-        float velAmount = 1.0f;
-        float voiceMode = 0.0f, glide = 0.0f;
-        float pitchAttack = 0.001f, pitchDecay = 0.2f, pitchSustain = 0.0f, pitchRelease = 0.1f;
-        float pitchAmount = 0.0f;
-        bool loopEnabled = false;
-        int rootNote = 60;
-        juce::String sampleName;
-
-        if (device.parameters.size() >= 7) {
-            attack = device.parameters[0].currentValue;
-            decay = device.parameters[1].currentValue;
-            sustain = device.parameters[2].currentValue;
-            release = device.parameters[3].currentValue;
-            pitch = device.parameters[4].currentValue;
-            fine = device.parameters[5].currentValue;
-            level = device.parameters[6].currentValue;
-        }
-        if (device.parameters.size() >= 11) {
-            sampleStart = device.parameters[7].currentValue;
-            sampleEnd = device.parameters[8].currentValue;
-            loopStart = device.parameters[9].currentValue;
-            loopEnd = device.parameters[10].currentValue;
-        }
-        if (device.parameters.size() >= 12) {
-            velAmount = device.parameters[11].currentValue;
-        }
-        if (device.parameters.size() >= 14) {
-            voiceMode = device.parameters[12].currentValue;
-            glide = device.parameters[13].currentValue;
-        }
-        if (device.parameters.size() >= 19) {
-            pitchAttack = device.parameters[14].currentValue;
-            pitchDecay = device.parameters[15].currentValue;
-            pitchSustain = device.parameters[16].currentValue;
-            pitchRelease = device.parameters[17].currentValue;
-            pitchAmount = device.parameters[18].currentValue;
-        }
-
-        auto rendered = liveDevice();
-        if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(rendered.get())) {
-            auto file = sampler->getSampleFile();
-            if (file.existsAsFile())
-                sampleName = file.getFileNameWithoutExtension();
-            loopEnabled = sampler->loopEnabled();
-            sampleStart = sampler->displayValue(daw::audio::MagdaSamplerPlugin::kSampleStart);
-            sampleEnd = sampler->displayValue(daw::audio::MagdaSamplerPlugin::kSampleEnd);
-            loopStart = sampler->displayValue(daw::audio::MagdaSamplerPlugin::kLoopStart);
-            loopEnd = sampler->displayValue(daw::audio::MagdaSamplerPlugin::kLoopEnd);
-            rootNote = sampler->getRootNote();
-            if (!samplerUI_->hasWaveform())
-                samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
-                                            sampler->getSampleLengthSeconds());
-        }
-
-        samplerUI_->updateParameters(attack, decay, sustain, release, pitch, fine, level,
-                                     sampleStart, sampleEnd, loopEnabled, loopStart, loopEnd,
-                                     velAmount, sampleName, rootNote, voiceMode, glide);
-        samplerUI_->updatePitchEnvelope(pitchAttack, pitchDecay, pitchSustain, pitchRelease,
-                                        pitchAmount);
-    }
+        device.pluginId.containsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName))
+        updateSamplerUI(device);
 
     if (drumGridUI_ && device.pluginId.containsIgnoreCase("drumgrid")) {
         drumGridUI_->restoreDetailCollapsed(!device.padDetailOpen);

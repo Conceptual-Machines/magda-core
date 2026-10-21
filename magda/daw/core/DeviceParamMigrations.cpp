@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <functional>
 #include <map>
+#include <optional>
 #include <set>
 
 #include "AutomationInfo.hpp"
@@ -463,6 +465,97 @@ void migrateRackPreset(RackInfo& rack, const MigrationTable& table) {
             migrateOwnerLinks(macros, mods, lookupById(found));
         });
     });
+}
+
+const std::vector<ChoiceGrowth>& shippedChoiceGrowths() {
+    // magda_filter slots: 3 Engine, 4 Mode (engine-aware), 3 = 0 is the SVF.
+    static const std::vector<ChoiceGrowth> growths{
+        {"magda_filter", "Filter gained the Comb engine (#3097)", 3, 5.0f, 6.0f},
+        {"magda_filter", "Filter's SVF gained the Notch+ mode (#3097)", 4, 3.0f, 4.0f, 3, 0.0f},
+    };
+    return growths;
+}
+
+void applyChoiceGrowths(std::vector<TrackInfo>& tracks, TrackInfo* masterTrack,
+                        std::vector<AutomationLaneInfo>& lanes,
+                        std::vector<AutomationClipInfo>& automationClips,
+                        const std::vector<ChoiceGrowth>& table) {
+    if (table.empty())
+        return;
+
+    std::vector<DeviceAtPath> devices;
+    for (auto& track : tracks) {
+        auto onTrack = devicesInTrack(track);
+        devices.insert(devices.end(), onTrack.begin(), onTrack.end());
+    }
+    if (masterTrack != nullptr) {
+        auto onMaster = devicesInTrack(*masterTrack);
+        devices.insert(devices.end(), onMaster.begin(), onMaster.end());
+    }
+
+    // Matched before anything changes, since each match rewrites the max it was matched on.
+    std::map<std::pair<ChainNodePath, int>, float> scaleByTarget;
+    for (const auto& [path, device] : devices) {
+        for (const auto& growth : table) {
+            if (!device->pluginId.equalsIgnoreCase(growth.deviceType))
+                continue;
+            const auto* param = device->findParameterByIndex(growth.paramIndex);
+            if (param == nullptr || std::abs(param->maxValue - growth.savedMax) > 1.0e-3f)
+                continue;
+            if (growth.whenParam >= 0) {
+                const auto* when = device->findParameterByIndex(growth.whenParam);
+                if (when == nullptr || std::abs(when->currentValue - growth.whenValue) > 1.0e-3f)
+                    continue;
+            }
+            scaleByTarget[{path, growth.paramIndex}] = growth.savedMax / growth.newMax;
+        }
+    }
+    if (scaleByTarget.empty())
+        return;
+
+    for (const auto& [path, device] : devices)
+        for (const auto& growth : table)
+            if (scaleByTarget.count({path, growth.paramIndex}) > 0)
+                if (auto* param = device->findParameterByIndex(growth.paramIndex))
+                    param->maxValue = growth.newMax;
+
+    const auto scaleFor = [&scaleByTarget](const ControlTarget& target) -> std::optional<float> {
+        if (target.kind != ControlTarget::Kind::PluginParam)
+            return std::nullopt;
+        const auto found = scaleByTarget.find({target.devicePath, target.paramIndex});
+        return found != scaleByTarget.end() ? std::optional<float>(found->second) : std::nullopt;
+    };
+
+    std::map<AutomationLaneId, float> laneScales;
+    for (auto& lane : lanes) {
+        const auto scale = scaleFor(lane.target);
+        if (!scale)
+            continue;
+        laneScales[lane.id] = *scale;
+        for (auto& point : lane.absolutePoints)
+            point.value *= *scale;
+    }
+    for (auto& clip : automationClips)
+        if (const auto found = laneScales.find(clip.laneId); found != laneScales.end())
+            for (auto& point : clip.points)
+                point.value *= found->second;
+
+    const auto scaleLinks = [&scaleFor](TrackInfo& track) {
+        forEachLinkOwnerInTrack(track, [&scaleFor](MacroArray& macros, ModArray& mods) {
+            for (auto& macro : macros)
+                for (auto& link : macro.links)
+                    if (const auto scale = scaleFor(link.target))
+                        link.amount *= *scale;
+            for (auto& mod : mods)
+                for (auto& link : mod.links)
+                    if (const auto scale = scaleFor(link.target))
+                        link.amount *= *scale;
+        });
+    };
+    for (auto& track : tracks)
+        scaleLinks(track);
+    if (masterTrack != nullptr)
+        scaleLinks(*masterTrack);
 }
 
 }  // namespace magda::device_param_migrations

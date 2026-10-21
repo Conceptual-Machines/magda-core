@@ -5,10 +5,12 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <memory>
 #include <span>
 #include <vector>
 
 #include "core/ParameterUtils.hpp"
+#include "devices/faust/effects/FilterEngines.hpp"
 #include "plugins/MagdaDevice.hpp"
 
 namespace magda::daw::audio {
@@ -102,6 +104,28 @@ class SamplerVoice : public juce::SynthesiserVoice {
     void setADSR(float attack, float decay, float sustain, float release);
     /// A per-note envelope bending the pitch by up to @p semitones at its peak (#3096).
     void setPitchEnvelope(float attack, float decay, float sustain, float release, float semitones);
+
+    /// The per-voice filter (#3097). Off when @ref family is negative.
+    struct FilterSettings {
+        int family = -1;
+        int mode = 0;
+        /// 2, 4 or 6 poles as 0, 1, 2; the SVF reads it.
+        int poleIndex = 0;
+        float cutoffHz = 1000.0f;
+        float resonance = 0.0f;
+        /// 1 moves the cutoff a semitone per semitone away from middle C.
+        float keyTrack = 0.0f;
+        /// 1 puts a silent velocity kVelocityRangeSemitones below a full one.
+        float velocity = 0.0f;
+        float envelopeSemitones = 0.0f;
+    };
+    static constexpr float kVelocityRangeSemitones = 48.0f;
+    void setFilter(const FilterSettings& settings) {
+        filterSettings = settings;
+    }
+    void setFilterEnvelope(float attack, float decay, float sustain, float release);
+    /// Allocates the voice's filters. Message thread, before the first block.
+    void prepareFilter(double sampleRate);
     void setPitchOffset(float semitones, float cents);
     void setPlaybackRegion(double startOffsetSeconds, double endSeconds, bool loop,
                            double loopStartSeconds, double loopEndSeconds, double sourceSampleRate);
@@ -150,6 +174,19 @@ class SamplerVoice : public juce::SynthesiserVoice {
     juce::ADSR pitchEnv;
     juce::ADSR::Parameters pitchEnvParams;
     float pitchEnvSemitones = 0.0f;
+
+    /// The cutoff for the note playing, with the filter envelope at @p envelopeLevel.
+    float filterCutoffHz(float envelopeLevel) const;
+    /// How often the filter's cutoff follows its envelope, in samples.
+    static constexpr int kFilterChunk = 32;
+    std::unique_ptr<devices::faust::FilterBank> filter;
+    juce::ADSR filterEnv;
+    juce::ADSR::Parameters filterEnvParams;
+    FilterSettings filterSettings;
+    /// The FilterBank dsp the last block ran, or -1.
+    int activeFilterDsp = -1;
+    int playingNote = 60;
+    float noteVelocity = 1.0f;
     double pitchRatio = 1.0;
     double sourceSamplePosition = 0.0;
     float velocityGain = 0.0f;
@@ -272,6 +309,18 @@ class MagdaSamplerPlugin : public MagdaDevice {
         kPitchEnvSustain,
         kPitchEnvRelease,
         kPitchEnvAmount,
+        kFilterType,
+        kFilterMode,
+        kFilterPoles,
+        kFilterCutoff,
+        kFilterResonance,
+        kFilterKeyTrack,
+        kFilterVelocity,
+        kFilterEnvAttack,
+        kFilterEnvDecay,
+        kFilterEnvSustain,
+        kFilterEnvRelease,
+        kFilterEnvAmount,
         kNumParams,
     };
 

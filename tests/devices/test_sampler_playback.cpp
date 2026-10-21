@@ -1,6 +1,7 @@
 #include <array>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -289,4 +290,156 @@ TEST_CASE("A pitch envelope that decays to nothing returns the note to its pitch
     // Two octaves down at the start reads a quarter frame per sample, then unbent after the decay.
     CHECK(output.getSample(0, 1) - output.getSample(0, 0) == Catch::Approx(0.25f).margin(0.01f));
     CHECK(output.getSample(0, 4000) - output.getSample(0, 3999) == Catch::Approx(1.0f));
+}
+
+namespace {
+
+/// One voice holding @p note over a sine at @p hz, through @p filter, for @p frames.
+juce::AudioBuffer<float> renderFilteredSine(
+    const magda::daw::audio::SamplerVoice::FilterSettings& filter, float hz, int frames,
+    int note = 60, float velocity = 1.0f, float envDecay = 1.0f) {
+    using namespace magda::daw::audio;
+    constexpr double kRate = 48000.0;
+    SamplerSynth synth;
+    synth.setCurrentPlaybackSampleRate(kRate);
+    auto* sound = new SamplerSound();
+    sound->sourceSampleRate = kRate;
+    sound->audioData.setSize(1, frames * 4);
+    for (int i = 0; i < sound->audioData.getNumSamples(); ++i)
+        sound->audioData.setSample(0, i,
+                                   std::sin(2.0f * juce::MathConstants<float>::pi * hz *
+                                            static_cast<float>(i) / static_cast<float>(kRate)));
+    synth.addSound(sound);
+    auto* voice = new SamplerVoice(synth);
+    voice->setRootNote(note);
+    voice->setADSR(0.0f, 0.1f, 1.0f, 0.1f);
+    voice->setFilterEnvelope(0.0f, envDecay, 0.0f, 0.1f);
+    voice->setFilter(filter);
+    voice->prepareFilter(kRate);
+    synth.addVoice(voice);
+
+    juce::AudioBuffer<float> output(2, frames);
+    output.clear();
+    juce::MidiBuffer midi;
+    midi.addEvent(juce::MidiMessage::noteOn(1, note, velocity), 0);
+    synth.renderNextBlock(output, midi, 0, frames);
+    return output;
+}
+
+}  // namespace
+
+TEST_CASE("Each low-pass filter type turns down a tone far above its cutoff",
+          "[devices][sampler][3097]") {
+    using Settings = magda::daw::audio::SamplerVoice::FilterSettings;
+    const auto open = renderFilteredSine(Settings{}, 8000.0f, 9600);
+    const float openLevel = open.getRMSLevel(0, 4800, 4800);
+    REQUIRE(openLevel > 0.5f);
+
+    // Every type but the comb, whose peaks run up the harmonics.
+    for (int family = 0; family < static_cast<int>(magda::devices::faust::FilterFamily::Comb);
+         ++family) {
+        CAPTURE(family);
+        Settings filter;
+        filter.family = family;
+        filter.cutoffHz = 200.0f;
+        const auto filtered = renderFilteredSine(filter, 8000.0f, 9600);
+        CHECK(filtered.getRMSLevel(0, 4800, 4800) < openLevel * 0.05f);
+        // A mono sample still reaches both sides.
+        CHECK(filtered.getRMSLevel(1, 4800, 4800) == filtered.getRMSLevel(0, 4800, 4800));
+    }
+}
+
+TEST_CASE("A mode the filter type lacks plays as low-pass", "[devices][sampler][3097]") {
+    magda::daw::audio::SamplerVoice::FilterSettings filter;
+    filter.family = static_cast<int>(magda::devices::faust::FilterFamily::Ladder);
+    filter.mode = 3;
+    filter.cutoffHz = 5000.0f;
+    const auto output = renderFilteredSine(filter, 200.0f, 9600);
+    CHECK(output.getRMSLevel(0, 4800, 4800) > 0.5f);
+}
+
+TEST_CASE("The filter envelope opens the filter and closes it again", "[devices][sampler][3097]") {
+    magda::daw::audio::SamplerVoice::FilterSettings filter;
+    filter.family = static_cast<int>(magda::devices::faust::FilterFamily::SVF);
+    filter.cutoffHz = 100.0f;
+    filter.envelopeSemitones = 72.0f;
+    const auto output = renderFilteredSine(filter, 4000.0f, 48000, 60, 1.0f, 0.05f);
+    // Six octaves up at the peak passes 4 kHz; decayed to nothing, 100 Hz does not.
+    CHECK(output.getRMSLevel(0, 0, 480) > 0.3f);
+    CHECK(output.getRMSLevel(0, 24000, 4800) < 0.01f);
+}
+
+TEST_CASE("Key tracking and velocity move the cutoff", "[devices][sampler][3097]") {
+    using Settings = magda::daw::audio::SamplerVoice::FilterSettings;
+    Settings filter;
+    filter.family = static_cast<int>(magda::devices::faust::FilterFamily::SVF);
+    filter.cutoffHz = 500.0f;
+
+    const auto level = [](const juce::AudioBuffer<float>& output) {
+        return output.getRMSLevel(0, 4800, 4800);
+    };
+    const float untracked = level(renderFilteredSine(filter, 4000.0f, 9600, 84));
+    filter.keyTrack = 1.0f;
+    // Two octaves above middle C opens a fully tracking filter two octaves.
+    const float tracked = level(renderFilteredSine(filter, 4000.0f, 9600, 84));
+    CHECK(tracked > untracked * 4.0f);
+
+    filter.keyTrack = 0.0f;
+    filter.cutoffHz = 4000.0f;
+    filter.velocity = 1.0f;
+    const float loud = level(renderFilteredSine(filter, 2000.0f, 9600, 60, 1.0f));
+    const float soft = level(renderFilteredSine(filter, 2000.0f, 9600, 60, 0.25f));
+    CHECK(soft < loud * 0.2f);
+}
+
+TEST_CASE("A new sampler has its filter off", "[devices][sampler][3097]") {
+    magda::daw::audio::MagdaSamplerPlugin sampler;
+    CHECK(sampler.displayValue(magda::daw::audio::MagdaSamplerPlugin::kFilterType) == 0.0f);
+}
+
+TEST_CASE("More poles turn a tone above the cutoff down further", "[devices][sampler][3097]") {
+    magda::daw::audio::SamplerVoice::FilterSettings filter;
+    filter.family = static_cast<int>(magda::devices::faust::FilterFamily::SVF);
+    filter.cutoffHz = 500.0f;
+    float previous = 1.0f;
+    for (int poles = 0; poles < 3; ++poles) {
+        CAPTURE(poles);
+        filter.poleIndex = poles;
+        const float level = renderFilteredSine(filter, 2000.0f, 9600).getRMSLevel(0, 4800, 4800);
+        // Two octaves up: about 24, 48 and 72 dB down.
+        CHECK(level < previous * 0.2f);
+        previous = level;
+    }
+}
+
+TEST_CASE("Notch+ cuts its cutoff and lifts the peaks either side", "[devices][sampler][3097]") {
+    magda::daw::audio::SamplerVoice::FilterSettings filter;
+    filter.family = static_cast<int>(magda::devices::faust::FilterFamily::SVF);
+    filter.mode = magda::devices::faust::kNotchPlusMode;
+    filter.cutoffHz = 1000.0f;
+    filter.resonance = 1.0f;
+    const auto level = [&](float hz) {
+        return renderFilteredSine(filter, hz, 9600).getRMSLevel(0, 4800, 4800);
+    };
+    const float open = 1.0f / std::sqrt(2.0f);
+    CHECK(level(1000.0f) < open * 0.05f);
+    CHECK(level(1414.2f) > open * 1.5f);
+    CHECK(level(707.1f) > open * 1.5f);
+}
+
+TEST_CASE("The comb passes the cutoff's harmonics and cuts between them",
+          "[devices][sampler][3097]") {
+    magda::daw::audio::SamplerVoice::FilterSettings filter;
+    filter.family = static_cast<int>(magda::devices::faust::FilterFamily::Comb);
+    filter.cutoffHz = 1000.0f;
+    const auto level = [&](float hz) {
+        return renderFilteredSine(filter, hz, 9600).getRMSLevel(0, 4800, 4800);
+    };
+    CHECK(level(2000.0f) > 0.5f);
+    CHECK(level(1500.0f) < 0.02f);
+
+    // Minus moves the peaks onto the odd half-harmonics.
+    filter.mode = 1;
+    CHECK(level(1500.0f) > 0.5f);
+    CHECK(level(2000.0f) < 0.02f);
 }

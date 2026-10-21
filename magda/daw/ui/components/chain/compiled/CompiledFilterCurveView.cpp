@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <complex>
 #include <vector>
 
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
@@ -135,8 +136,8 @@ void CompiledFilterCurveView::setRawState(int engine, int modeIndex, float cutof
         doublePole_ = doubleSlope;
         repaint();
     }
-    family_ = static_cast<FilterFamily>(juce::jlimit(0, 4, engine));
-    targetModeIndex_ = juce::jlimit(0, 3, modeIndex);
+    family_ = static_cast<FilterFamily>(juce::jlimit(0, 6, engine));
+    targetModeIndex_ = juce::jlimit(0, 4, modeIndex);
     targetCutoffHz_ = juce::jlimit(kMinCutoffHz, kMaxFreq, cutoffHz);
     targetResonance_ = juce::jlimit(0.0f, 1.0f, resonance01);
     targetDrive_ = juce::jlimit(0.0f, 1.0f, drive01);
@@ -212,7 +213,12 @@ void CompiledFilterCurveView::updateTargetValues() {
     targetResonance_ = juce::jlimit(0.0f, 1.0f, resonance);
     targetDrive_ = juce::jlimit(0.0f, 1.0f, drive);
     targetModeIndex_ = mode;
-    family_ = static_cast<FilterFamily>(juce::jlimit(0, 4, engine));
+    family_ = static_cast<FilterFamily>(juce::jlimit(0, 6, engine));
+    svfStages_ =
+        1 + juce::jlimit(
+                0, 2,
+                static_cast<int>(std::round(valueForSlot(deviceSnapshot_, Filter::kPolesSlot,
+                                                         static_cast<float>(svfStages_ - 1)))));
 }
 
 bool CompiledFilterCurveView::hasActiveCurveLinks() const {
@@ -266,8 +272,10 @@ void CompiledFilterCurveView::timerCallback() {
 }
 
 CompiledFilterCurveView::FilterMode CompiledFilterCurveView::modeForIndex() const {
-    if (family_ == FilterFamily::Ladder)
+    if (family_ == FilterFamily::Ladder || family_ == FilterFamily::Diode)
         return FilterMode::LowPass;
+    if (family_ == FilterFamily::SVF && modeIndex_ == 4)
+        return FilterMode::NotchPlus;
     if (family_ == FilterFamily::Korg35)
         return modeIndex_ == 1 ? FilterMode::HighPass : FilterMode::LowPass;
     if (family_ == FilterFamily::SallenKey) {
@@ -301,31 +309,73 @@ float CompiledFilterCurveView::qValue() const {
         case FilterFamily::Korg35:
         case FilterFamily::SallenKey:
             return exponential(0.7f, 10.0f);
+        case FilterFamily::Diode:
+            return exponential(0.7f, 20.0f);
+        case FilterFamily::Comb:
+            break;
     }
     return 1.0f;
 }
 
+float CompiledFilterCurveView::stageMagnitude(FilterMode mode, float r, float q) const {
+    const float denom = std::sqrt(std::pow(1.0f - r * r, 2.0f) + std::pow(r / q, 2.0f));
+    switch (mode) {
+        case FilterMode::LowPass:
+            return 1.0f / denom;
+        case FilterMode::BandPass:
+            return (r / q) / denom;
+        case FilterMode::HighPass:
+            return (r * r) / denom;
+        case FilterMode::Notch:
+        case FilterMode::NotchPlus:
+            return std::abs(1.0f - r * r) / denom;
+    }
+    return 1.0f;
+}
+
+// magda_filter_svf_notch.dsp: unity band-passes half an octave either side, then a Q 2 notch.
+float CompiledFilterCurveView::notchPlusMagnitude(float r) const {
+    using Complex = std::complex<float>;
+    const auto bandPass = [](float ratio, float q) {
+        const Complex s(0.0f, ratio);
+        return (s / q) / (s * s + s / q + 1.0f);
+    };
+    const float peakQ = 0.7f * std::pow(15.0f / 0.7f, resonance_);
+    const Complex s(0.0f, r);
+    const Complex notch = (s * s + 1.0f) / (s * s + s / 2.0f + 1.0f);
+    const Complex lifted =
+        1.0f + 2.0f * resonance_ * (bandPass(r / 0.7071f, peakQ) + bandPass(r / 1.4142f, peakQ));
+    return std::abs(lifted * notch);
+}
+
+// magda_filter_comb.dsp: a period of one cycle at the cutoff, so r is the phase in cycles.
+float CompiledFilterCurveView::combMagnitude(float r) const {
+    using Complex = std::complex<float>;
+    const float feedback = 0.98f * resonance_;
+    const float sign = modeIndex_ == 1 ? -1.0f : 1.0f;
+    const Complex delay = std::polar(1.0f, -juce::MathConstants<float>::twoPi * r);
+    return 0.5f * std::sqrt(1.0f - feedback) * std::abs(1.0f + sign * delay) /
+           std::abs(1.0f - sign * feedback * delay);
+}
+
 float CompiledFilterCurveView::responseDbAt(float frequencyHz) const {
     const float r = juce::jlimit(0.001f, 1000.0f, frequencyHz / cutoffHz_);
-    const float q = qValue();
-    const float denom = std::sqrt(std::pow(1.0f - r * r, 2.0f) + std::pow(r / q, 2.0f));
+    const auto mode = modeForIndex();
 
     float magnitude = 1.0f;
-    switch (modeForIndex()) {
-        case FilterMode::LowPass:
-            magnitude = 1.0f / denom;
-            if (family_ == FilterFamily::Ladder)
-                magnitude *= magnitude;
-            break;
-        case FilterMode::BandPass:
-            magnitude = (r / q) / denom;
-            break;
-        case FilterMode::HighPass:
-            magnitude = (r * r) / denom;
-            break;
-        case FilterMode::Notch:
-            magnitude = std::abs(1.0f - r * r) / denom;
-            break;
+    if (family_ == FilterFamily::Comb) {
+        magnitude = combMagnitude(r);
+    } else if (mode == FilterMode::NotchPlus) {
+        magnitude = notchPlusMagnitude(r);
+    } else {
+        magnitude = stageMagnitude(mode, r, qValue());
+        if (mode == FilterMode::LowPass &&
+            (family_ == FilterFamily::Ladder || family_ == FilterFamily::Diode))
+            magnitude *= magnitude;
+        // The stages ahead of the last (magda_filter_svf_staged.dsp) sit at Q 0.707.
+        if (family_ == FilterFamily::SVF)
+            for (int stage = 1; stage < svfStages_; ++stage)
+                magnitude *= stageMagnitude(mode, r, 0.7071f);
     }
 
     if (doublePole_)

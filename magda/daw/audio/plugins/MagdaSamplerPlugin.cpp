@@ -224,6 +224,128 @@ sdk::ParameterDescriptor slotInfo(int index) {
             info.defaultValue = 0.0f;
             break;
 
+        // Off first, then the Filter device's engines in its order.
+        case MagdaSamplerPlugin::kFilterType:
+            info.stableId = "filterType";
+            info.name = "Filter Type";
+            info.scale = ParameterScale::Discrete;
+            info.choices = sdk::choicesFromLabels(
+                {"Off", "SVF", "Ladder", "Korg 35", "Oberheim", "Sallen-Key", "Diode", "Comb"});
+            info.minValue = 0.0f;
+            info.maxValue = static_cast<float>(info.choices.size() - 1);
+            info.defaultValue = 0.0f;
+            break;
+
+        // A mode the type lacks plays as its first; Comb reads the first two as + and -.
+        case MagdaSamplerPlugin::kFilterMode:
+            info.stableId = "filterMode";
+            info.name = "Filter Mode";
+            info.scale = ParameterScale::Discrete;
+            info.choices = sdk::choicesFromLabels({"LP", "BP", "HP", "Notch", "Notch+"});
+            info.minValue = 0.0f;
+            info.maxValue = 4.0f;
+            info.defaultValue = 0.0f;
+            break;
+
+        case MagdaSamplerPlugin::kFilterPoles:
+            info.stableId = "filterPoles";
+            info.name = "Filter Poles";
+            info.scale = ParameterScale::Discrete;
+            info.choices = sdk::choicesFromLabels({"2", "4", "6"});
+            info.minValue = 0.0f;
+            info.maxValue = 2.0f;
+            info.defaultValue = 0.0f;
+            break;
+
+        case MagdaSamplerPlugin::kFilterCutoff:
+            info.stableId = "filterCutoff";
+            info.name = "Cutoff";
+            info.unit = "Hz";
+            info.scale = ParameterScale::Logarithmic;
+            info.scaleAnchor = 1000.0f;
+            info.minValue = 20.0f;
+            info.maxValue = 20000.0f;
+            info.defaultValue = 1000.0f;
+            break;
+
+        case MagdaSamplerPlugin::kFilterResonance:
+            info.stableId = "filterResonance";
+            info.name = "Resonance";
+            info.minValue = 0.0f;
+            info.maxValue = 1.0f;
+            info.defaultValue = 0.0f;
+            info.displayFormat = DisplayFormat::Percent;
+            break;
+
+        case MagdaSamplerPlugin::kFilterKeyTrack:
+            info.stableId = "filterKeyTrack";
+            info.name = "Key Track";
+            info.minValue = 0.0f;
+            info.maxValue = 1.0f;
+            info.defaultValue = 0.0f;
+            info.displayFormat = DisplayFormat::Percent;
+            break;
+
+        case MagdaSamplerPlugin::kFilterVelocity:
+            info.stableId = "filterVelocity";
+            info.name = "Filter Velocity";
+            info.minValue = 0.0f;
+            info.maxValue = 1.0f;
+            info.defaultValue = 0.0f;
+            info.displayFormat = DisplayFormat::Percent;
+            break;
+
+        case MagdaSamplerPlugin::kFilterEnvAttack:
+            info.stableId = "filterEnvAttack";
+            info.name = "Filter Attack";
+            info.unit = "s";
+            info.scale = ParameterScale::Exponential;
+            info.exponent = kTimeSkew;
+            info.minValue = 0.001f;
+            info.maxValue = 5.0f;
+            info.defaultValue = 0.001f;
+            break;
+
+        case MagdaSamplerPlugin::kFilterEnvDecay:
+            info.stableId = "filterEnvDecay";
+            info.name = "Filter Decay";
+            info.unit = "s";
+            info.scale = ParameterScale::Exponential;
+            info.exponent = kTimeSkew;
+            info.minValue = 0.001f;
+            info.maxValue = 5.0f;
+            info.defaultValue = 0.3f;
+            break;
+
+        case MagdaSamplerPlugin::kFilterEnvSustain:
+            info.stableId = "filterEnvSustain";
+            info.name = "Filter Sustain";
+            info.minValue = 0.0f;
+            info.maxValue = 1.0f;
+            info.defaultValue = 0.0f;
+            info.displayFormat = DisplayFormat::Percent;
+            break;
+
+        case MagdaSamplerPlugin::kFilterEnvRelease:
+            info.stableId = "filterEnvRelease";
+            info.name = "Filter Release";
+            info.unit = "s";
+            info.scale = ParameterScale::Exponential;
+            info.exponent = kTimeSkew;
+            info.minValue = 0.001f;
+            info.maxValue = 10.0f;
+            info.defaultValue = 0.1f;
+            break;
+
+        case MagdaSamplerPlugin::kFilterEnvAmount:
+            info.stableId = "filterEnvAmount";
+            info.name = "Filter Env";
+            info.unit = "st";
+            info.minValue = -72.0f;
+            info.maxValue = 72.0f;
+            info.defaultValue = 0.0f;
+            break;
+
         default:
             break;
     }
@@ -265,6 +387,12 @@ SamplerVoice::SamplerVoice() {
     pitchEnvParams.sustain = 0.0f;
     pitchEnvParams.release = 0.1f;
     pitchEnv.setParameters(pitchEnvParams);
+
+    filterEnvParams.attack = 0.001f;
+    filterEnvParams.decay = 0.3f;
+    filterEnvParams.sustain = 0.0f;
+    filterEnvParams.release = 0.1f;
+    filterEnv.setParameters(filterEnvParams);
 }
 
 namespace {
@@ -291,6 +419,27 @@ void SamplerVoice::setPitchEnvelope(float attack, float decay, float sustain, fl
                                     float semitones) {
     setStagesIfChanged(pitchEnv, pitchEnvParams, attack, decay, sustain, release);
     pitchEnvSemitones = semitones;
+}
+
+void SamplerVoice::setFilterEnvelope(float attack, float decay, float sustain, float release) {
+    setStagesIfChanged(filterEnv, filterEnvParams, attack, decay, sustain, release);
+}
+
+void SamplerVoice::prepareFilter(double sampleRate) {
+    if (filter == nullptr)
+        filter = std::make_unique<devices::faust::FilterBank>();
+    // Fast enough to follow a pluck's filter envelope, slow enough not to zipper.
+    constexpr float kVoiceSmoothingSeconds = 0.001f;
+    filter->prepare(sampleRate, kVoiceSmoothingSeconds);
+    activeFilterDsp = -1;
+}
+
+float SamplerVoice::filterCutoffHz(float envelopeLevel) const {
+    const float semitones =
+        filterSettings.keyTrack * static_cast<float>(playingNote - 60) +
+        filterSettings.envelopeSemitones * envelopeLevel -
+        filterSettings.velocity * (1.0f - noteVelocity) * kVelocityRangeSemitones;
+    return filterSettings.cutoffHz * std::exp2(semitones / 12.0f);
 }
 
 void SamplerVoice::setPitchOffset(float semitones, float cents) {
@@ -324,6 +473,7 @@ void SamplerVoice::glideToNote(int midiNoteNumber) {
     if (sound == nullptr || !sound->hasData())
         return;
     targetPitchRatio = pitchRatioForNote(midiNoteNumber, *sound);
+    playingNote = midiNoteNumber;
     if (glideSeconds > 0.0)
         beginGlide();  // slur to the new pitch, no envelope/position change
     else {
@@ -353,6 +503,8 @@ void SamplerVoice::startNote(int midiNoteNumber, float velocity, juce::Synthesis
         return;
 
     velocityGain = 1.0f - velAmount * (1.0f - velocity);
+    noteVelocity = velocity;
+    playingNote = midiNoteNumber;
 
     targetPitchRatio = pitchRatioForNote(midiNoteNumber, *sound);
     if (glideSeconds > 0.0 && glidePrimed)
@@ -374,15 +526,25 @@ void SamplerVoice::startNote(int midiNoteNumber, float velocity, juce::Synthesis
     pitchEnv.setSampleRate(getSampleRate());
     pitchEnv.setParameters(pitchEnvParams);
     pitchEnv.noteOn();
+    filterEnv.setSampleRate(getSampleRate());
+    filterEnv.setParameters(filterEnvParams);
+    filterEnv.noteOn();
+    // A new note starts the filter from silence rather than the last note's ringing.
+    if (filter != nullptr && filterSettings.family >= 0 &&
+        filterSettings.family < devices::faust::kFilterFamilyCount)
+        filter->reset(static_cast<devices::faust::FilterFamily>(filterSettings.family),
+                      filterSettings.mode, filterSettings.poleIndex);
 }
 
 void SamplerVoice::stopNote(float /*velocity*/, bool allowTailOff) {
     if (allowTailOff) {
         adsr.noteOff();
         pitchEnv.noteOff();
+        filterEnv.noteOff();
     } else {
         adsr.reset();
         pitchEnv.reset();
+        filterEnv.reset();
         clearCurrentNote();
     }
 }
@@ -395,78 +557,118 @@ void SamplerVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int s
 
     const int totalSamples = sound->audioData.getNumSamples();
     const int outChannels = outputBuffer.getNumChannels();
-    const int numChannels = juce::jmin(outChannels, sound->audioData.getNumChannels());
+    // The voice's filter is stereo, so a voice renders at most two channels.
+    const int numChannels = juce::jmin(outChannels, sound->audioData.getNumChannels(), 2);
     const bool monoFanout = numChannels == 1 && outChannels > 1;
+
+    const bool filtering = filter != nullptr && filterSettings.family >= 0 &&
+                           filterSettings.family < devices::faust::kFilterFamilyCount;
+    const auto family = static_cast<devices::faust::FilterFamily>(filterSettings.family);
+    // A switch of type, mode or poles can land on a dsp with stale state.
+    const int dsp = filtering ? devices::faust::filterDspFor(family, filterSettings.mode,
+                                                             filterSettings.poleIndex)
+                              : -1;
+    if (filtering && dsp != activeFilterDsp)
+        filter->reset(family, filterSettings.mode, filterSettings.poleIndex);
+    activeFilterDsp = dsp;
 
     float* const* const out = outputBuffer.getArrayOfWritePointers();
     const float* const* const src = sound->audioData.getArrayOfReadPointers();
+    float dry[2][kFilterChunk];
+    float wet[2][kFilterChunk];
+    const float* const dryChannels[2] = {dry[0], dry[1]};
+    float* const wetChannels[2] = {wet[0], wet[1]};
 
-    for (int i = 0; i < numSamples; ++i) {
-        float envLevel = adsr.getNextSample();
-        const float pitchEnvLevel = pitchEnv.getNextSample();
+    bool ended = false;
+    for (int done = 0; done < numSamples && !ended;) {
+        const int chunk = juce::jmin(kFilterChunk, numSamples - done);
+        float filterEnvAtStart = 0.0f;
+        int rendered = 0;
+        for (; rendered < chunk; ++rendered) {
+            float envLevel = adsr.getNextSample();
+            const float pitchEnvLevel = pitchEnv.getNextSample();
+            const float filterEnvLevel = filterEnv.getNextSample();
+            if (rendered == 0)
+                filterEnvAtStart = filterEnvLevel;
 
-        if (!adsr.isActive()) {
-            clearCurrentNote();
-            return;
-        }
+            if (!adsr.isActive()) {
+                ended = true;
+                break;
+            }
 
-        // Loop wrap before reading — ensure position is valid
-        if (loopEnabled && loopEndSample > loopStartSample) {
-            if (sourceSamplePosition >= loopEndSample) {
-                double loopLen = loopEndSample - loopStartSample;
-                sourceSamplePosition =
-                    loopStartSample + std::fmod(sourceSamplePosition - loopStartSample, loopLen);
+            // Loop wrap before reading — ensure position is valid
+            if (loopEnabled && loopEndSample > loopStartSample) {
+                if (sourceSamplePosition >= loopEndSample) {
+                    double loopLen = loopEndSample - loopStartSample;
+                    sourceSamplePosition =
+                        loopStartSample +
+                        std::fmod(sourceSamplePosition - loopStartSample, loopLen);
+                }
+            }
+
+            const auto whole = std::floor(sourceSamplePosition);
+            int pos0 = static_cast<int>(whole);
+            auto frac = static_cast<float>(sourceSamplePosition - whole);
+
+            // Stop at sample end (if set) or end of file — skip when looping
+            if (!loopEnabled || loopEndSample <= loopStartSample) {
+                int endLimit =
+                    (sampleEndSample > 0.0) ? static_cast<int>(sampleEndSample) : totalSamples - 1;
+                if (pos0 >= endLimit) {
+                    ended = true;
+                    break;
+                }
+            }
+
+            // Bounds safety. Behind the first frame is silence rather than trimmed
+            // material, and a note that falls part way into its sample starts there.
+            pos0 = juce::jmin(totalSamples - 1, pos0);
+            const int firstFrame = juce::jmax(0, static_cast<int>(sampleStartOffset));
+
+            float gain = envLevel * velocityGain;
+
+            for (int ch = 0; ch < numChannels; ++ch) {
+                const float* data = src[ch];
+                float s0 = pos0 >= firstFrame ? data[pos0] : 0.0f;
+                float s1 =
+                    (pos0 + 1 >= firstFrame && pos0 + 1 < totalSamples) ? data[pos0 + 1] : 0.0f;
+                dry[ch][rendered] = (s0 + frac * (s1 - s0)) * gain;
+            }
+
+            sourceSamplePosition +=
+                pitchEnvSemitones != 0.0f
+                    ? pitchRatio * std::exp2(pitchEnvLevel * pitchEnvSemitones / 12.0f)
+                    : pitchRatio;
+
+            // Advance portamento toward the target pitch.
+            if (glideSamplesRemaining > 0) {
+                pitchRatio += glideIncrement;
+                if (--glideSamplesRemaining == 0)
+                    pitchRatio = targetPitchRatio;
             }
         }
 
-        const auto whole = std::floor(sourceSamplePosition);
-        int pos0 = static_cast<int>(whole);
-        auto frac = static_cast<float>(sourceSamplePosition - whole);
-
-        // Stop at sample end (if set) or end of file — skip when looping
-        if (!loopEnabled || loopEndSample <= loopStartSample) {
-            int endLimit =
-                (sampleEndSample > 0.0) ? static_cast<int>(sampleEndSample) : totalSamples - 1;
-            if (pos0 >= endLimit) {
-                clearCurrentNote();
-                return;
-            }
+        const float* const* voiceOut = dryChannels;
+        if (filtering && rendered > 0) {
+            if (numChannels == 1)
+                std::copy_n(dry[0], rendered, dry[1]);
+            filter->process(family, filterSettings.mode, filterSettings.poleIndex,
+                            filterCutoffHz(filterEnvAtStart), filterSettings.resonance, dryChannels,
+                            wetChannels, rendered);
+            voiceOut = wetChannels;
         }
 
-        // Bounds safety. Behind the first frame is silence rather than trimmed
-        // material, and a note that falls part way into its sample starts there.
-        pos0 = juce::jmin(totalSamples - 1, pos0);
-        const int firstFrame = juce::jmax(0, static_cast<int>(sampleStartOffset));
-
-        float gain = envLevel * velocityGain;
-
-        for (int ch = 0; ch < numChannels; ++ch) {
-            const float* data = src[ch];
-            float s0 = pos0 >= firstFrame ? data[pos0] : 0.0f;
-            float s1 = (pos0 + 1 >= firstFrame && pos0 + 1 < totalSamples) ? data[pos0 + 1] : 0.0f;
-            float sample = (s0 + frac * (s1 - s0)) * gain;
-            out[ch][startSample + i] += sample;
-
-            // A mono source feeds every output channel.
-            if (monoFanout)
-                for (int extra = 1; extra < outChannels; ++extra)
-                    out[extra][startSample + i] += sample;
+        // A mono source feeds every output channel.
+        for (int ch = 0; ch < (monoFanout ? outChannels : numChannels); ++ch) {
+            const float* voice = voiceOut[monoFanout ? 0 : ch];
+            float* dest = out[ch] + startSample + done;
+            for (int i = 0; i < rendered; ++i)
+                dest[i] += voice[i];
         }
-
-        sourceSamplePosition +=
-            pitchEnvSemitones != 0.0f
-                ? pitchRatio * std::exp2(pitchEnvLevel * pitchEnvSemitones / 12.0f)
-                : pitchRatio;
-
-        // Advance portamento toward the target pitch.
-        if (glideSamplesRemaining > 0) {
-            pitchRatio += glideIncrement;
-            if (--glideSamplesRemaining == 0)
-                pitchRatio = targetPitchRatio;
-        }
+        done += rendered;
     }
 
-    if (!adsr.isActive())
+    if (ended || !adsr.isActive())
         clearCurrentNote();
 }
 
@@ -641,6 +843,9 @@ void MagdaSamplerPlugin::setDisplayValue(int index, float value) {
 void MagdaSamplerPlugin::prepare(const DevicePrepareContext& context) {
     sampleRate = context.sampleRate;
     synthesiser.setCurrentPlaybackSampleRate(sampleRate);
+    for (int i = 0; i < synthesiser.getNumVoices(); ++i)
+        if (auto* voice = dynamic_cast<SamplerVoice*>(synthesiser.getVoice(i)))
+            voice->prepareFilter(sampleRate);
 }
 
 void MagdaSamplerPlugin::release() {
@@ -664,6 +869,20 @@ void MagdaSamplerPlugin::updateVoiceParameters() {
     const float pitchSustain = displayValue(kPitchEnvSustain);
     const float pitchRelease = displayValue(kPitchEnvRelease);
     const float pitchAmount = displayValue(kPitchEnvAmount);
+
+    SamplerVoice::FilterSettings filter;
+    filter.family = static_cast<int>(std::lround(displayValue(kFilterType))) - 1;
+    filter.mode = static_cast<int>(std::lround(displayValue(kFilterMode)));
+    filter.poleIndex = static_cast<int>(std::lround(displayValue(kFilterPoles)));
+    filter.cutoffHz = displayValue(kFilterCutoff);
+    filter.resonance = displayValue(kFilterResonance);
+    filter.keyTrack = displayValue(kFilterKeyTrack);
+    filter.velocity = displayValue(kFilterVelocity);
+    filter.envelopeSemitones = displayValue(kFilterEnvAmount);
+    const float filterAttack = displayValue(kFilterEnvAttack);
+    const float filterDecay = displayValue(kFilterEnvDecay);
+    const float filterSustain = displayValue(kFilterEnvSustain);
+    const float filterRelease = displayValue(kFilterEnvRelease);
 
     const auto facts = playback_.read();
     const double sourceSR = facts.sourceRate;
@@ -689,6 +908,8 @@ void MagdaSamplerPlugin::updateVoiceParameters() {
             voice->setPitchOffset(pitch, fine);
             voice->setPitchEnvelope(pitchAttack, pitchDecay, pitchSustain, pitchRelease,
                                     pitchAmount);
+            voice->setFilter(filter);
+            voice->setFilterEnvelope(filterAttack, filterDecay, filterSustain, filterRelease);
             voice->setPlaybackRegion(sStart, sEnd, loopOn, lStart, lEnd, sourceSR);
             voice->setRootNote(facts.rootNote);
             voice->setVelocityAmount(velAmt);

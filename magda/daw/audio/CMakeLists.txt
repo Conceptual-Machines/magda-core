@@ -39,6 +39,21 @@ magda_compile_faust_dsp(
     MAGDA_DIODE_GENERATED_CPP
 )
 magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/filter/magda_filter_comb.dsp"
+    MagdaCombDsp
+    MAGDA_COMB_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/filter/magda_filter_svf_staged.dsp"
+    MagdaSVFStagedDsp
+    MAGDA_SVF_STAGED_GENERATED_CPP
+)
+magda_compile_faust_dsp(
+    "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/filter/magda_filter_svf_notch.dsp"
+    MagdaSVFNotchPlusDsp
+    MAGDA_SVF_NOTCH_GENERATED_CPP
+)
+magda_compile_faust_dsp(
     "${CMAKE_CURRENT_SOURCE_DIR}/faust_dsp/compiled/distortion/magda_saturator.dsp"
     MagdaSaturatorDsp
     MAGDA_SATURATOR_GENERATED_CPP
@@ -222,6 +237,9 @@ add_custom_target(magda_compiled_dsps
         "${MAGDA_OBERHEIM_GENERATED_CPP}"
         "${MAGDA_SALLEN_KEY_GENERATED_CPP}"
         "${MAGDA_DIODE_GENERATED_CPP}"
+        "${MAGDA_COMB_GENERATED_CPP}"
+        "${MAGDA_SVF_STAGED_GENERATED_CPP}"
+        "${MAGDA_SVF_NOTCH_GENERATED_CPP}"
         "${MAGDA_SATURATOR_GENERATED_CPP}"
         "${MAGDA_POLYSYNTH_GENERATED_CPP}"
         "${MAGDA_FM_GENERATED_CPP}"

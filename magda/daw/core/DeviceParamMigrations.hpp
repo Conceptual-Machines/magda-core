@@ -155,6 +155,44 @@ void dropParamLinksInTrack(TrackInfo& track, const std::set<ChainNodePath>& path
 std::vector<AutomationLaneId> lanesAddressing(const std::vector<AutomationLaneInfo>& lanes,
                                               const std::set<ChainNodePath>& paths);
 
+// --- Discrete parameters whose choices grew ---------------------------------
+
+/**
+ * A discrete parameter that gained choices at the END of its list. Its value is
+ * saved as a choice index and stays put, but automation and link depths are
+ * normalised positions, which the longer list moves onto different choices.
+ */
+struct ChoiceGrowth {
+    const char* deviceType = nullptr;
+    const char* reason = nullptr;
+    int paramIndex = -1;
+    /// The list's last index as the file saved it, which marks the file as old.
+    float savedMax = 0.0f;
+    float newMax = 0.0f;
+    /// For a list that follows another slot (an engine-aware mode): only when
+    /// the slot at @ref whenParam holds @ref whenValue. Negative: always.
+    int whenParam = -1;
+    float whenValue = 0.0f;
+};
+
+const std::vector<ChoiceGrowth>& shippedChoiceGrowths();
+
+/**
+ * Scale every automation point, clip point and link depth addressing a grown
+ * parameter onto its longer list, and record the new maximum on the device so
+ * a second load leaves it alone.
+ */
+void applyChoiceGrowths(std::vector<TrackInfo>& tracks, TrackInfo* masterTrack,
+                        std::vector<AutomationLaneInfo>& lanes,
+                        std::vector<AutomationClipInfo>& automationClips,
+                        const std::vector<ChoiceGrowth>& table);
+
+inline void applyChoiceGrowths(std::vector<TrackInfo>& tracks, TrackInfo* masterTrack,
+                               std::vector<AutomationLaneInfo>& lanes,
+                               std::vector<AutomationClipInfo>& automationClips) {
+    applyChoiceGrowths(tracks, masterTrack, lanes, automationClips, shippedChoiceGrowths());
+}
+
 // --- Fragments -------------------------------------------------------------
 //
 // A preset carries no surrounding project, and its device ids are unique inside

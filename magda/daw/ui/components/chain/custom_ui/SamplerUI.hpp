@@ -24,11 +24,10 @@ namespace magda::daw::ui {
 /**
  * @brief Custom inline UI for the Magda Sampler plugin
  *
- * The sample's name, root and load button over its views: the whole recording with its start,
- * end and loop markers and the playhead, or the amp or pitch envelope with draggable handles.
- * Beside them, the slice as frame boxes with step arrows, and Pitch and envelope tiles; the
- * envelope tiles follow the view. Expanded into the arrangement, it is the waveform and the loop
- * switch.
+ * The sample's name, root and load button over four tabs, each a plot and its controls: Sample is
+ * the recording with its start, end and loop markers, the playhead and the slice as frame boxes;
+ * Pitch, Filter and Amp are that module's envelope with draggable handles beside its tiles.
+ * Expanded into the arrangement, it is the waveform and the loop switch.
  *
  * Parameter indices follow MagdaSamplerPlugin::ParamIndex; getLinkableSliders() lists them.
  *
@@ -54,6 +53,11 @@ class SamplerUI : public juce::Component,
 
     /// The pitch envelope's stages and its depth in semitones (#3096).
     void updatePitchEnvelope(float attack, float decay, float sustain, float release, float amount);
+
+    /// The filter's slots from MagdaSamplerPlugin::kFilterType to kFilterEnvAmount, in that order
+    /// (#3097).
+    static constexpr int kFilterSlotCount = 12;
+    void updateFilter(const std::array<float, kFilterSlotCount>& values);
 
     /**
      * @brief Callback when a parameter changes (paramIndex, actualValue)
@@ -195,6 +199,35 @@ class SamplerUI : public juce::Component,
     LinkableTextSlider pitchEnvAmountSlider_{TextSlider::Format::Decimal};
     juce::Label pitchEnvAmountLabel_;
 
+    // Filter: its own column, and its envelope's stages in the amp stages' tiles in the Filter
+    // view. In MagdaSamplerPlugin::ParamIndex order from kFilterType.
+    LinkableTextSlider filterTypeSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider filterModeSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider filterPolesSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider filterCutoffSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider filterResonanceSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider filterKeyTrackSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider filterVelocitySlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider filterAttackSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider filterDecaySlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider filterSustainSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider filterReleaseSlider_{TextSlider::Format::Decimal};
+    LinkableTextSlider filterEnvAmountSlider_{TextSlider::Format::Decimal};
+    std::array<LinkableTextSlider*, kFilterSlotCount> filterSliders();
+    // Type, mode and poles are picked here; their sliders above stay hidden and carry the links.
+    juce::ComboBox filterTypeBox_;
+    magda::SegmentedChoice filterModeChoice_;
+    magda::SegmentedChoice filterPolesChoice_;
+    juce::Label filterModeLabel_, filterPolesLabel_, filterCutoffLabel_, filterResonanceLabel_,
+        filterKeyTrackLabel_, filterVelocityLabel_, filterEnvAmountLabel_;
+    /// Dim what the chosen type does not read, and show the mode it plays.
+    void refreshFilterTiles();
+
+    enum class View { Sample, Pitch, Filter, Amp };
+    View view_ = View::Sample;
+    /// What a tab shows beside its plot.
+    std::vector<juce::Component*> controlsFor(View view);
+
     // Voice mode (param 12) lives in the slot footer; this hidden slider carries its links.
     LinkableTextSlider voiceModeSlider_{TextSlider::Format::Decimal};
     LinkableTextSlider glideSlider_{TextSlider::Format::Decimal};
@@ -236,17 +269,17 @@ class SamplerUI : public juce::Component,
     juce::Rectangle<float> envelopeArea() const;
     void paintEnvelope(juce::Graphics& g);
 
-    // Which view the plot shows: the recording or an envelope.
+    // Which tab shows: the recording or a module's envelope, each with its controls.
     magda::SegmentedChoice viewChoice_;
     bool ampView_ = false;
     bool pitchView_ = false;
+    bool filterView_ = false;
     bool dropHover_ = false;  ///< A sample is being dragged over the device.
-    bool loopView_ = false;   ///< The loop markers come first, and show while the loop is off.
     bool expanded_ = false;   ///< Lent to the arrangement: the waveform and the loop switch.
     std::vector<juce::Component*> hiddenWhileExpanded_;
     void setExpanded(bool expanded);
     bool showsEnvelope() const {
-        return (ampView_ || pitchView_) && !expanded_;
+        return (ampView_ || pitchView_ || filterView_) && !expanded_;
     }
     void showView(int index);
 
@@ -255,10 +288,12 @@ class SamplerUI : public juce::Component,
     std::array<FrameBox, 4> frameBoxes_;
     std::array<juce::Label, 4> frameCaptions_;
     void syncFrameBoxes();
+    /// LOOP IN and LOOP OUT greyed and locked while the loop is off.
+    void lockLoopBoxes();
 
     // Areas resized() lays out and paint() draws into.
     juce::Rectangle<int> waveArea_;
-    std::array<juce::Rectangle<int>, 3> sectionTitles_;
+    std::array<juce::Rectangle<int>, 2> sectionTitles_;
     std::vector<juce::Rectangle<int>> tiles_;
     juce::Rectangle<int> rootChip_;
 

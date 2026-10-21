@@ -8,6 +8,11 @@ msm = library("magda_smoothing.lib");
 
 smoo = msm.smooth(ba.tau2pole(0.02));
 
+// How fast cutoff and resonance follow a change. The Filter device leaves it at
+// 20 ms; a sampler voice shortens it so its filter envelope is not smeared (#3097).
+smoothing = hslider("Smoothing [unit:s] [idx:4]", 0.02, 0.0005, 0.1, 0.0001);
+ctl = msm.smooth(ba.tau2pole(smoothing));
+
 // Cutoff and resonance are deliberately NOT smoothed here. A smoothed
 // frequency is a per-sample signal, which forces tan() into the sample loop:
 // this filter's single tan() call measured ~16% of its total cost on arm64,
@@ -20,8 +25,10 @@ res    = hslider("Resonance [idx:1]", 0.0, 0.0, 1.0, 0.001);
 
 drive  = hslider("Drive [idx:2]", 0.0, 0.0, 1.0, 0.001) : smoo;
 
-mode   = nentry("Mode [idx:3] [style:menu{'LP':0;'BP':1;'HP':2;'Notch':3}]",
-                0, 0, 3, 1);
+// Notch+ is the Notch+ variant's (magda_filter_svf_notch.dsp); it is listed so
+// every SVF variant reads the mode slot on the same five steps.
+mode   = nentry("Mode [idx:3] [style:menu{'LP':0;'BP':1;'HP':2;'Notch':3;'Notch+':4}]",
+                0, 0, 4, 1);
 
 // SVF Q 0.5..40, exponential so each step of the knob multiplies Q; the TPT
 // core stays stable at any Q, and the top is near self-oscillation.
@@ -31,9 +38,9 @@ safeCutoff = min(cutoff, ma.SR * 0.45);
 // The two TPT coefficients, computed once per block and then smoothed at
 // audio rate. Smoothing g rather than the frequency traces a marginally
 // different path across a sweep, since tan is nonlinear, but both are
-// 20 ms one-poles and the endpoints are identical.
-g = tan(safeCutoff * ma.PI / ma.SR) : smoo;
-k = 1.0 / q : smoo;
+// one-poles of the same time and the endpoints are identical.
+g = tan(safeCutoff * ma.PI / ma.SR) : ctl;
+k = 1.0 / q : ctl;
 
 // Drive: dry/saturated lerp; tanh(4) normalisation keeps unity-amplitude
 // signals at unity at full drive.
@@ -68,7 +75,7 @@ with {
 svf(x) = ((x : svfCoef(0)),
           (x : svfCoef(1)),
           (x : svfCoef(2)),
-          (x : svfCoef(3))) : ba.selectn(4, int(mode));
+          (x : svfCoef(3))) : ba.selectn(4, int(min(mode, 3)));
 
 // Stereo: independent filter state per channel.
 process = par(i, 2, drivenIn : svf);
