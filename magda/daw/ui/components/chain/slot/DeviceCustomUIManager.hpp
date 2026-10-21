@@ -205,6 +205,11 @@ class DeviceCustomUIManager {
     }
     /// A step sequencer's time bend shown beside its controls, or hidden.
     void setSequencerTimeBendShown(bool shown);
+    /// The sampler's zone list beside its faceplate (#3098).
+    void setSamplerZonesShown(bool shown);
+    bool hasSamplerUI() const {
+        return samplerUI_ != nullptr;
+    }
     StepSequencerUI* getStepSequencerUI() const {
         return stepSequencerUI_.get();
     }

@@ -28,6 +28,9 @@ constexpr int kTitleH = 22;
 constexpr int kTileW = 64;
 constexpr int kTileGap = 4;
 constexpr int kMaxTileH = 48;  ///< The grid's text tile, so these read as its cells.
+constexpr int kZonePanelW = 220;
+constexpr int kFaceplateW =
+    660;  ///< The tabs' columns and a waveform that still fits its view row.
 constexpr float kEnvHandleRadius = 4.5f;
 constexpr float kEnvHandleGrab = 9.0f;
 
@@ -190,7 +193,9 @@ SamplerUI::SamplerUI() {
         return juce::jlimit(0.0, 127.0, static_cast<double>((octave + 2) * 12 + semitone));
     });
     rootNoteSlider_.onValueChanged = [this](double value) {
-        if (onRootNoteChanged)
+        if (zoneList_)
+            editSelectedZone([&value](auto& zone) { zone.rootNote = juce::roundToInt(value); });
+        else if (onRootNoteChanged)
             onRootNoteChanged(juce::roundToInt(value));
     };
     addAndMakeVisible(rootNoteSlider_);
@@ -223,7 +228,14 @@ SamplerUI::SamplerUI() {
             return v > 10.0 ? v / 1000.0 : v;  // assume ms if > 10
         });
         slider.onValueChanged = [this, paramIndex](double value) {
-            if (onParameterChanged)
+            // A zone of a list keeps its own markers (params 7-10), not the parameters.
+            if (zoneList_ && paramIndex >= 7 && paramIndex <= 10)
+                editSelectedZone([paramIndex, value](auto& zone) {
+                    double* const markers[] = {&zone.region.start, &zone.region.end,
+                                               &zone.region.loopStart, &zone.region.loopEnd};
+                    *markers[paramIndex - 7] = value;
+                });
+            else if (onParameterChanged)
                 onParameterChanged(paramIndex, static_cast<float>(value));
             repaint();
         };
@@ -255,7 +267,9 @@ SamplerUI::SamplerUI() {
     loopButton_->onClick = [this]() {
         bool newState = !loopButton_->isActive();
         loopButton_->setActive(newState);
-        if (onLoopEnabledChanged)
+        if (zoneList_)
+            editSelectedZone([newState](auto& zone) { zone.region.loop = newState; });
+        else if (onLoopEnabledChanged)
             onLoopEnabledChanged(newState);
         lockLoopBoxes();
         repaint();
@@ -520,6 +534,177 @@ SamplerUI::SamplerUI() {
     waveformView_.setChrome({.ruler = true, .scrollBar = true});
     showView(0);
     lockLoopBoxes();
+
+    zoneEditor_.onSelect = [this](int index) { selectZone(index); };
+    zoneEditor_.onEdit = [this](int index, const daw::audio::SamplerZoneSettings& zone) {
+        if (onZoneEdited)
+            onZoneEdited(index, zone);
+    };
+    zoneEditor_.onRemove = [this](int index) {
+        if (onZoneRemoved)
+            onZoneRemoved(index);
+    };
+    addChildComponent(zoneEditor_);
+
+    addZoneButton_.setTooltip("Add an empty zone; drop a sample on it to fill it");
+    addZoneButton_.onClick = [this] {
+        selectAddedZone_ = true;
+        if (onEmptyZoneAdded)
+            onEmptyZoneAdded();
+    };
+    zoneListContent_.addAndMakeVisible(addZoneButton_);
+    zoneListView_.setViewedComponent(&zoneListContent_, false);
+    zoneListView_.setScrollBarsShown(true, false);
+    zoneListView_.setScrollBarThickness(6);
+    addAndMakeVisible(zoneListView_);
+}
+
+void SamplerUI::selectZone(int index) {
+    if (index < 0 || index >= static_cast<int>(zones_.size()))
+        return;
+    selectedZone_ = index;
+    zoneEditor_.setSelected(index);
+    showSelectedZone();
+    refreshZoneRows();
+}
+
+void SamplerUI::setZonesShown(bool shown) {
+    if (shown == zonesShown_)
+        return;
+    zonesShown_ = shown;
+    resized();
+    repaint();
+}
+
+int SamplerUI::preferredWidth() const {
+    return kFaceplateW + (zonesShown_ ? kZonePanelW + kSpace : 0);
+}
+
+int SamplerUI::zoneRowAt(juce::Point<int> position) const {
+    for (size_t i = 0; i < zoneRows_.size(); ++i)
+        if (zoneRows_[i]->getScreenBounds().contains(localPointToGlobal(position)))
+            return static_cast<int>(i);
+    return -1;
+}
+
+void SamplerUI::refreshZoneRows() {
+    // Rows are kept while the count holds, so a drag on one survives a refresh.
+    if (zoneRows_.size() != zones_.size()) {
+        zoneRows_.clear();
+        for (size_t i = 0; i < zones_.size(); ++i) {
+            auto row = std::make_unique<SamplerZoneRow>();
+            row->onSelect = [this](int index) { selectZone(index); };
+            row->onEdit = [this](int index, const daw::audio::SamplerZoneSettings& zone) {
+                if (onZoneEdited)
+                    onZoneEdited(index, zone);
+            };
+            row->onRemove = [this](int index) {
+                if (onZoneRemoved)
+                    onZoneRemoved(index);
+            };
+            zoneListContent_.addAndMakeVisible(*row);
+            zoneRows_.push_back(std::move(row));
+        }
+    }
+    for (size_t i = 0; i < zones_.size(); ++i)
+        zoneRows_[i]->setZone(zones_[i].settings, static_cast<int>(i),
+                              static_cast<int>(i) == selectedZone_);
+    layoutZoneList();
+}
+
+void SamplerUI::layoutZoneList() {
+    auto area = zonePanel_.withTrimmedTop(zoneTabs_.getHeight() + 4);
+    if (area.isEmpty())
+        return;
+    constexpr int kGap = 4;
+    constexpr int kAddHeight = 22;
+    const int rows = static_cast<int>(zoneRows_.size());
+    const int content = rows * (SamplerZoneRow::kHeight + kGap) + kAddHeight;
+    zoneListView_.setBounds(area);
+    const int width = area.getWidth() - (content > area.getHeight() ? 8 : 0);
+    zoneListContent_.setSize(width, content);
+    auto list = zoneListContent_.getLocalBounds();
+    for (auto& row : zoneRows_) {
+        row->setView(zoneView_);
+        row->setBounds(list.removeFromTop(SamplerZoneRow::kHeight));
+        list.removeFromTop(kGap);
+    }
+    addZoneButton_.setBounds(list.removeFromTop(kAddHeight));
+}
+
+juce::Rectangle<int> SamplerUI::zoneTabBounds(SamplerZoneRow::View view) const {
+    const int width = zoneTabs_.getWidth() / 3;
+    return zoneTabs_.withWidth(width).translated(width * static_cast<int>(view), 0);
+}
+
+void SamplerUI::setZones(std::vector<ZoneView> zones, bool list, std::uint64_t generation) {
+    if (generation == zoneGeneration_)
+        return;
+    zoneGeneration_ = generation;
+    zones_ = std::move(zones);
+    zoneList_ = list;
+    if (std::exchange(selectAddedZone_, false))
+        selectedZone_ = static_cast<int>(zones_.size()) - 1;
+    selectedZone_ =
+        juce::jlimit(0, juce::jmax(0, static_cast<int>(zones_.size()) - 1), selectedZone_);
+    std::vector<daw::audio::SamplerZoneSettings> settings;
+    for (const auto& zone : zones_)
+        settings.push_back(zone.settings);
+    zoneEditor_.setZones(settings);
+    zoneEditor_.setSelected(zones_.empty() ? -1 : selectedZone_);
+    showSelectedZone();
+    refreshZoneRows();
+}
+
+void SamplerUI::showSelectedZone() {
+    if (zones_.empty()) {
+        shownAudio_.reset();
+        setWaveformData(nullptr, 0.0, 0.0);
+        return;
+    }
+    const auto& zone = zones_[static_cast<size_t>(selectedZone_)];
+    // A new map that shares this zone's audio keeps the view's zoom and scroll.
+    if (zone.audio != shownAudio_) {
+        shownAudio_ = zone.audio;
+        if (zone.audio != nullptr)
+            setWaveformData(&zone.audio->buffer, zone.audio->sourceRate,
+                            zone.audio->lengthSeconds());
+        else
+            setWaveformData(nullptr, 0.0, 0.0);
+    }
+    rootNoteSlider_.setValue(zone.settings.rootNote, juce::dontSendNotification);
+    if (!zoneList_)
+        return;
+
+    hasSampleName_ = true;
+    sampleNameLabel_.setText(juce::File(zone.settings.source).getFileNameWithoutExtension() +
+                                 juce::String::fromUTF8("  ·  zone ") +
+                                 juce::String(selectedZone_ + 1) + " of " +
+                                 juce::String(zones_.size()),
+                             juce::dontSendNotification);
+    sampleNameLabel_.setColour(juce::Label::textColourId,
+                               ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
+    const auto& region = zone.settings.region;
+    for (auto [slider, value] :
+         {std::pair{&startSlider_, region.start}, std::pair{&endSlider_, region.end},
+          std::pair{&loopStartSlider_, region.loopStart},
+          std::pair{&loopEndSlider_, region.loopEnd}})
+        slider->getSlider().setValueWithInterval(value, 0.0, juce::dontSendNotification);
+    loopButton_->setActive(region.loop);
+    lockLoopBoxes();
+    syncFrameBoxes();
+    repaint();
+}
+
+void SamplerUI::editSelectedZone(
+    const std::function<void(daw::audio::SamplerZoneSettings&)>& change) {
+    if (zones_.empty())
+        return;
+    auto zone = zones_[static_cast<size_t>(selectedZone_)].settings;
+    change(zone);
+    zones_[static_cast<size_t>(selectedZone_)].settings = zone;
+    if (onZoneEdited)
+        onZoneEdited(selectedZone_, zone);
 }
 
 void SamplerUI::showView(int index) {
@@ -645,6 +830,12 @@ void SamplerUI::updateParameters(float attack, float decay, float sustain, float
     glideSlider_.setValue(glide, juce::dontSendNotification);
     voiceModeSlider_.setValue(std::round(voiceMode), juce::dontSendNotification);
 
+    // A zone of a list has its own name, root, markers and loop; showSelectedZone() sets them.
+    if (zoneList_) {
+        repaint();
+        return;
+    }
+
     rootNoteSlider_.setValue(rootNote, juce::dontSendNotification);
 
     // The markers keep frame precision, as the frame boxes set them.
@@ -759,7 +950,9 @@ void SamplerUI::setWaveformData(const juce::AudioBuffer<float>* buffer, double s
 }
 
 bool SamplerUI::isInterestedInFileDrag(const juce::StringArray& files) {
-    return std::ranges::any_of(files, isAudioFile);
+    return std::ranges::any_of(files, [](const juce::String& path) {
+        return isAudioFile(path) || juce::File(path).isDirectory();
+    });
 }
 
 void SamplerUI::fileDragEnter(const juce::StringArray& /*files*/, int /*x*/, int /*y*/) {
@@ -772,16 +965,48 @@ void SamplerUI::fileDragExit(const juce::StringArray& /*files*/) {
     repaint();
 }
 
-void SamplerUI::filesDropped(const juce::StringArray& files, int /*x*/, int /*y*/) {
+void SamplerUI::filesDropped(const juce::StringArray& files, int x, int y) {
     dropHover_ = false;
     repaint();
-    for (const auto& f : files) {
-        juce::File file(f);
-        if (file.existsAsFile() && onFileDropped) {
-            onFileDropped(file);
-            break;
-        }
+    juce::Array<juce::File> dropped;
+    for (const auto& path : files)
+        if (const juce::File file(path); file.isDirectory() || isAudioFile(path))
+            dropped.add(file);
+    if (dropped.isEmpty())
+        return;
+
+    // On a zone's row, one fills that zone; elsewhere on the list each joins the zones;
+    // elsewhere several or a folder become a map by name (#3098).
+    const int row = zoneRowAt({x, y});
+    if (row >= 0 && dropped.size() == 1 && !dropped.getFirst().isDirectory()) {
+        if (onZoneSampleChosen)
+            onZoneSampleChosen(row, dropped.getFirst());
+        return;
     }
+    if (zonePanel_.contains(x, y)) {
+        if (onZonesAdded)
+            onZonesAdded(dropped);
+        return;
+    }
+    if (dropped.size() > 1 || dropped.getFirst().isDirectory()) {
+        if (onFilesDropped)
+            onFilesDropped(dropped);
+        return;
+    }
+    // One on the zone map adds a zone on the key under it; anywhere else it replaces.
+    const auto onMap = zoneEditor_.getLocalPoint(this, juce::Point<int>(x, y));
+    if (zoneEditor_.isVisible() && zoneEditor_.gridContains(onMap)) {
+        if (onZoneAdded)
+            onZoneAdded(dropped.getFirst(), zoneEditor_.keyAt(static_cast<float>(onMap.x)));
+        return;
+    }
+    if (listZone() >= 0) {
+        if (onZoneSampleChosen)
+            onZoneSampleChosen(listZone(), dropped.getFirst());
+        return;
+    }
+    if (onFileDropped)
+        onFileDropped(dropped.getFirst());
 }
 
 // Samples dragged from MAGDA's own browser come through as an internal
@@ -1014,6 +1239,14 @@ void SamplerUI::showRulerMenu() {
 }
 
 void SamplerUI::mouseDown(const juce::MouseEvent& e) {
+    for (const auto view :
+         {SamplerZoneRow::View::Mix, SamplerZoneRow::View::Key, SamplerZoneRow::View::Velocity})
+        if (zoneTabBounds(view).contains(e.getPosition())) {
+            zoneView_ = view;
+            layoutZoneList();
+            repaint(zoneTabs_);
+            return;
+        }
     if (!showsEnvelope() && hasWaveform_ && e.mods.isPopupMenu() &&
         getWaveformBounds().contains(e.getPosition()) &&
         waveformView_.overRuler(waveformPointer(e))) {
@@ -1125,7 +1358,9 @@ std::vector<LinkableTextSlider*> SamplerUI::getLinkableSliders() {
 
 void SamplerUI::timerCallback() {
     if (getPlaybackPosition) {
-        double newPos = getPlaybackPosition();
+        // The playhead shows on the zone it plays.
+        const bool shown = !getPlaybackZone || getPlaybackZone() == selectedZone_;
+        double newPos = shown ? getPlaybackPosition() : 0.0;
         if (std::abs(newPos - playheadPosition_) > 0.0001) {
             playheadPosition_ = newPos;
             repaint(getWaveformBounds());
@@ -1152,6 +1387,26 @@ void SamplerUI::paint(juce::Graphics& g) {
         g.fillRoundedRectangle(rootChip_.toFloat(), 4.0f);
         g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
         g.drawRoundedRectangle(rootChip_.toFloat().reduced(0.5f), 4.0f, 1.0f);
+    }
+
+    // The zone list's views, tabbed as a rack's chain list is.
+    if (!zoneTabs_.isEmpty()) {
+        g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f));
+        for (const auto& [view, name] : {std::pair{SamplerZoneRow::View::Mix, "MIX"},
+                                         std::pair{SamplerZoneRow::View::Key, "KEY"},
+                                         std::pair{SamplerZoneRow::View::Velocity, "VEL"}}) {
+            const auto tab = zoneTabBounds(view);
+            const bool active = view == zoneView_;
+            g.setColour(ActiveTheme::getColour(active ? ActiveTheme::DEVICE_VALUE_TEXT
+                                                      : ActiveTheme::DEVICE_DIM2));
+            g.drawText(name, tab, juce::Justification::centred, false);
+            if (active) {
+                g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE));
+                g.fillRect(tab.withTop(tab.getBottom() - 2));
+            }
+        }
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
+        g.fillRect(zoneTabs_.withTop(zoneTabs_.getBottom() - 1));
     }
 
     g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.12f));
@@ -1290,6 +1545,7 @@ void SamplerUI::setExpanded(bool expanded) {
                 child->setVisible(false);
             }
         loopButton_->setVisible(true);
+        zoneEditor_.setVisible(true);
         tiles_.clear();
         sectionTitles_ = {};
         rootChip_ = {};
@@ -1297,14 +1553,21 @@ void SamplerUI::setExpanded(bool expanded) {
         for (auto* child : hiddenWhileExpanded_)
             child->setVisible(true);
         hiddenWhileExpanded_.clear();
+        zoneEditor_.setVisible(false);
     }
 }
 
 void SamplerUI::resized() {
-    // Expanded into the arrangement, the faceplate is the waveform and its loop switch.
+    // Expanded into the arrangement, the faceplate is the zone map, the waveform and its loop
+    // switch.
     setExpanded(magda::ExpandedFaceplate::getInstance().holds(*this));
     if (expanded_) {
+        zonePanel_ = {};
+        zoneTabs_ = {};
         auto area = getLocalBounds().reduced(kSpace);
+        // The zone map over the selected zone's waveform.
+        zoneEditor_.setBounds(area.removeFromTop(juce::jmax(140, area.getHeight() * 2 / 5)));
+        area.removeFromTop(kSpace);
         loopButton_->setBounds(
             area.removeFromTop(kTitleH).removeFromLeft(24).withSizeKeepingCentre(24, 24));
         area.removeFromTop(4);
@@ -1314,6 +1577,14 @@ void SamplerUI::resized() {
     }
 
     auto area = getLocalBounds().reduced(kSpace);
+
+    // The zone list down the left, as a rack's chains.
+    zoneListView_.setVisible(zonesShown_);
+    zonePanel_ = zonesShown_ ? area.removeFromLeft(kZonePanelW) : juce::Rectangle<int>();
+    zoneTabs_ = zonePanel_.withHeight(kNameRowH);
+    layoutZoneList();
+    if (zonesShown_)
+        area.removeFromLeft(kSpace);
 
     // Name row: the sample, its root and the load button.
     auto nameRow = area.removeFromTop(kNameRowH);

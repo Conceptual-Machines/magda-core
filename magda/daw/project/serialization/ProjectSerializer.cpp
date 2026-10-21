@@ -69,7 +69,8 @@ void mapTakePaths(juce::var& clips, const std::function<juce::String(const juce:
     }
 }
 
-/// A Sampler's file is the `source` of its device state, at any depth of the chain.
+/// A Sampler's files are the `source` of its device state and of each of its zones, at any
+/// depth of the chain.
 void mapSamplerSources(const juce::var& tree,
                        const std::function<juce::String(const juce::String&)>& map) {
     if (const auto* array = tree.getArray()) {
@@ -82,12 +83,21 @@ void mapSamplerSources(const juce::var& tree,
         return;
     if (object->getProperty("pluginId").toString() == "magdasampler") {
         if (auto doc = device_state::decode(object->getProperty("pluginState").toString())) {
-            const auto path = doc->root.props["source"].toString();
-            const auto mapped = map(path);
-            if (path.isNotEmpty() && mapped != path) {
-                doc->root.props.set("source", mapped);
+            bool changed = false;
+            const auto remap = [&map, &changed](device_state::Node& node) {
+                const auto path = node.props["source"].toString();
+                const auto mapped = map(path);
+                if (path.isNotEmpty() && mapped != path) {
+                    node.props.set("source", mapped);
+                    changed = true;
+                }
+            };
+            remap(doc->root);
+            for (auto& child : doc->root.children)
+                if (child.type == "zone")
+                    remap(child);
+            if (changed)
                 object->setProperty("pluginState", device_state::encode(*doc));
-            }
         }
     }
     for (const auto& property : object->getProperties())

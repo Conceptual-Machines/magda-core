@@ -536,7 +536,7 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     if (chordEngineUI_)
         return 960;  // four suggestion columns between the chord and key columns
     if (samplerUI_)
-        return 800;  // 400 (BASE_SLOT_WIDTH) * 2
+        return samplerUI_->preferredWidth();
     if (drumGridUI_)
         return drumGridFallback;
     if (externalInsertUI_)
@@ -675,6 +675,17 @@ void DeviceCustomUIManager::refreshChordEngineMidiActivity(magda::MidiNoteStrip&
     lastChordCount = count;
 }
 
+namespace {
+/// The live sampler's zones into the faceplate (#3098); a map it already shows is skipped.
+void pushSamplerZones(SamplerUI& ui, const daw::audio::MagdaSamplerPlugin& sampler) {
+    const auto& map = sampler.zoneMap();
+    std::vector<SamplerUI::ZoneView> zones;
+    for (const auto& zone : map.zones)
+        zones.push_back({zone.settings, zone.audio});
+    ui.setZones(std::move(zones), sampler.hasZoneList(), map.generation);
+}
+}  // namespace
+
 void DeviceCustomUIManager::updateSamplerUI(const magda::DeviceInfo& device) {
     float attack = 0.001f, decay = 0.1f, sustain = 1.0f, release = 0.1f;
     float pitch = 0.0f, fine = 0.0f, level = 0.0f;
@@ -729,9 +740,7 @@ void DeviceCustomUIManager::updateSamplerUI(const magda::DeviceInfo& device) {
         loopStart = sampler->displayValue(daw::audio::MagdaSamplerPlugin::kLoopStart);
         loopEnd = sampler->displayValue(daw::audio::MagdaSamplerPlugin::kLoopEnd);
         rootNote = sampler->getRootNote();
-        if (!samplerUI_->hasWaveform())
-            samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
-                                        sampler->getSampleLengthSeconds());
+        pushSamplerZones(*samplerUI_, *sampler);
     }
 
     samplerUI_->updateParameters(attack, decay, sustain, release, pitch, fine, level, sampleStart,
@@ -779,6 +788,11 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         polyStepSequencerUI_->updateFromParameters(device.parameters);
     if (impulseResponseUI_ && device.pluginId == daw::audio::MagdaConvolutionPlugin::xmlTypeName)
         impulseResponseUI_->updateFromParameters(device.parameters);
+}
+
+void DeviceCustomUIManager::setSamplerZonesShown(bool shown) {
+    if (samplerUI_)
+        samplerUI_->setZonesShown(shown);
 }
 
 void DeviceCustomUIManager::setSequencerTimeBendShown(bool shown) {
@@ -865,22 +879,65 @@ bool DeviceCustomUIManager::createSamplerUI(const magda::DeviceInfo& device,
         return static_cast<double>(executeDeviceCommand(cb, kSamplerGetPlaybackPosition));
     };
 
+    // Zone edits author the model as the sample load does; the projection updates the device.
+    const auto afterZoneEdit = [this](bool edited) {
+        auto device = liveDevice();
+        if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(device.get());
+            edited && sampler != nullptr && samplerUI_ != nullptr)
+            pushSamplerZones(*samplerUI_, *sampler);
+    };
+    samplerUI_->getPlaybackZone = [this]() {
+        auto device = liveDevice();
+        auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(device.get());
+        return sampler != nullptr ? sampler->getPlaybackZone() : -1;
+    };
+    samplerUI_->onZoneEdited = [this, afterZoneEdit](int index, const auto& zone) {
+        afterZoneEdit(magda::sampler_edits::updateZone(devicePath_, index, zone));
+    };
+    samplerUI_->onZoneRemoved = [this, afterZoneEdit](int index) {
+        afterZoneEdit(magda::sampler_edits::removeZone(devicePath_, index));
+    };
+    samplerUI_->onZoneAdded = [this, afterZoneEdit](const juce::File& file, int key) {
+        afterZoneEdit(magda::sampler_edits::addZone(devicePath_, file, key));
+    };
+    samplerUI_->onFilesDropped = [this, afterZoneEdit](const juce::Array<juce::File>& files) {
+        afterZoneEdit(magda::sampler_edits::loadSamples(devicePath_, files));
+    };
+    samplerUI_->onZonesAdded = [this, afterZoneEdit](const juce::Array<juce::File>& files) {
+        afterZoneEdit(magda::sampler_edits::addZones(devicePath_, files));
+    };
+    samplerUI_->onEmptyZoneAdded = [this, afterZoneEdit]() {
+        afterZoneEdit(magda::sampler_edits::addEmptyZone(devicePath_));
+    };
+    samplerUI_->onZoneSampleChosen = [this, afterZoneEdit](int index, const juce::File& file) {
+        afterZoneEdit(magda::sampler_edits::setZoneSample(devicePath_, index, file));
+    };
+
     // Shared logic for loading a sample file and refreshing the UI
     auto loadFile = [cb = callbacks](const juce::File& file) {
         executeDeviceCommand(cb, kSamplerLoadSample, file.getFullPathName());
     };
 
-    samplerUI_->onLoadSampleRequested = [loadFile]() {
-        auto chooser = std::make_shared<juce::FileChooser>("Load Sample", juce::File(),
-                                                           "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
-        chooser->launchAsync(juce::FileBrowserComponent::openMode |
-                                 juce::FileBrowserComponent::canSelectFiles,
-                             [loadFile, chooser](const juce::FileChooser&) {
-                                 auto result = chooser->getResult();
-                                 if (result.existsAsFile())
-                                     loadFile(result);
-                             });
-    };
+    // Several files chosen at once map by name, as a drop of several does.
+    samplerUI_->onLoadSampleRequested =
+        [loadFile, ui = juce::Component::SafePointer<SamplerUI>(samplerUI_.get())]() {
+            auto chooser = std::make_shared<juce::FileChooser>(
+                "Load Sample", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
+            chooser->launchAsync(juce::FileBrowserComponent::openMode |
+                                     juce::FileBrowserComponent::canSelectFiles |
+                                     juce::FileBrowserComponent::canSelectMultipleItems,
+                                 [loadFile, chooser, ui](const juce::FileChooser&) {
+                                     const auto results = chooser->getResults();
+                                     if (results.size() > 1 && ui != nullptr && ui->onFilesDropped)
+                                         ui->onFilesDropped(results);
+                                     // A zone list's selected zone takes the one chosen.
+                                     else if (results.size() == 1 && ui != nullptr &&
+                                              ui->listZone() >= 0 && ui->onZoneSampleChosen)
+                                         ui->onZoneSampleChosen(ui->listZone(), results[0]);
+                                     else if (results.size() == 1 && results[0].existsAsFile())
+                                         loadFile(results[0]);
+                                 });
+        };
 
     samplerUI_->onFileDropped = loadFile;
 
@@ -1633,9 +1690,8 @@ juce::var DeviceCustomUIManager::executeSamplerCommand(const juce::Identifier& c
     device = liveDevice();
     sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(device.get());
     if (sampler != nullptr && samplerUI_ != nullptr) {
+        pushSamplerZones(*samplerUI_, *sampler);
         pushSamplerParameters(*samplerUI_, *sampler, file.getFileNameWithoutExtension());
-        samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
-                                    sampler->getSampleLengthSeconds());
     }
     return true;
 }

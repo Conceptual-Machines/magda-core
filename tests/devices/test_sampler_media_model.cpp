@@ -70,3 +70,47 @@ TEST_CASE("The model's samplers are walked and repointed where they sit",
     tracks.clearAllTracks();
     dir.deleteRecursively();
 }
+
+TEST_CASE("Each of a sampler's zones is walked and repointed on its own",
+          "[sampler][missing-media][3098]") {
+    auto& tracks = TrackManager::getInstance();
+    tracks.clearAllTracks();
+    const auto dir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                         .getChildFile("magda-sampler-media-zones");
+    dir.deleteRecursively();
+    REQUIRE(dir.createDirectory());
+    const auto low = dir.getChildFile("low.wav");
+    const auto high = dir.getChildFile("high.wav");
+
+    auto sampler = padSamplerDevice({}, 60);
+    device_state::Doc doc;
+    doc.deviceType = "magdasampler";
+    for (const auto& file : {low, high}) {
+        device_state::Node zone;
+        zone.type = "zone";
+        zone.props.set("source", file.getFullPathName());
+        zone.props.set("rootNote", 60);
+        doc.root.children.push_back(zone);
+    }
+    sampler.pluginState = device_state::encode(doc);
+    const auto trackId = tracks.createTrack("Sampler");
+    const auto path =
+        ChainNodePath::topLevelDevice(trackId, tracks.addDeviceToTrack(trackId, sampler));
+
+    auto references = modelSamplerMedia();
+    REQUIRE(references.size() == 2);
+    CHECK(references[0].source == low);
+    CHECK(references[1].source == high);
+
+    const auto moved = dir.getChildFile("moved").getChildFile("high.wav");
+    references[1].replace(moved);
+    const auto* device = tracks.getDeviceInChainByPath(path);
+    REQUIRE(device != nullptr);
+    const auto after = device_state::decode(device->pluginState);
+    REQUIRE(after.has_value());
+    CHECK(after->root.children[0].props["source"].toString() == low.getFullPathName());
+    CHECK(after->root.children[1].props["source"].toString() == moved.getFullPathName());
+
+    tracks.clearAllTracks();
+    dir.deleteRecursively();
+}

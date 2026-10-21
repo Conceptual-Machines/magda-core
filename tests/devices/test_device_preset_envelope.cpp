@@ -224,6 +224,42 @@ TEST_CASE("A Sampler's file is an asset relative to the preset", "[preset-envelo
     CHECK(loadedState->root.props["rootNote"] == juce::var(60));
 }
 
+TEST_CASE("Each zone's file is an asset of its own", "[preset-envelope][3098]") {
+    ScratchPresets scratch;
+    const auto low = scratch.root.getChildFile("samples/piano C3.wav");
+    const auto high = scratch.root.getChildFile("samples/piano C4.wav");
+    REQUIRE(low.getParentDirectory().createDirectory());
+    REQUIRE(low.replaceWithText("low"));
+    REQUIRE(high.replaceWithText("high"));
+
+    auto device = internalDevice("magdasampler");
+    device_state::Doc doc;
+    doc.deviceType = "magdasampler";
+    for (const auto& file : {low, high}) {
+        device_state::Node zone;
+        zone.type = "zone";
+        zone.props.set("source", file.getFullPathName());
+        doc.root.children.push_back(zone);
+    }
+    device.pluginState = device_state::encode(doc);
+
+    requireSameFromBothFormats(scratch, device);
+
+    const auto file = scratch.file(device.name, "New");
+    const auto read = sdk::readPreset(file.loadFileAsString().toStdString());
+    REQUIRE(read.ok());
+    REQUIRE(read.preset->assets.size() == 2);
+    CHECK(read.preset->assets[0].key == "zone-1");
+    CHECK(read.preset->assets[1].key == "zone-2");
+    CHECK_FALSE(file.loadFileAsString().contains(scratch.root.getFullPathName()));
+
+    const auto loaded = device_state::decode(load(device.name, "New").pluginState);
+    REQUIRE(loaded.has_value());
+    REQUIRE(loaded->root.children.size() == 2);
+    CHECK(loaded->root.children[0].props["source"].toString() == low.getFullPathName());
+    CHECK(loaded->root.children[1].props["source"].toString() == high.getFullPathName());
+}
+
 TEST_CASE("A missing asset still loads and is reported", "[preset-envelope]") {
     ScratchPresets scratch;
     const auto sample = scratch.root.getChildFile("samples/gone.wav");

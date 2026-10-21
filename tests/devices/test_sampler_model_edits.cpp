@@ -73,7 +73,7 @@ juce::File scratchDir() {
 }
 
 /// A sine of @p seconds, so the marker span the load derives is a known number.
-juce::File writeTestWav(double seconds) {
+juce::File writeTestWav(double seconds, const juce::String& name = "sample") {
     constexpr double sampleRate = 44100.0;
     const int numSamples = static_cast<int>(seconds * sampleRate);
     juce::AudioBuffer<float> buffer(1, numSamples);
@@ -81,7 +81,7 @@ juce::File writeTestWav(double seconds) {
         buffer.setSample(0, i,
                          0.5f * std::sin(static_cast<float>(i) * 440.0f * 6.2831853f / 44100.0f));
 
-    const auto file = scratchDir().getNonexistentChildFile("sample", ".wav");
+    const auto file = scratchDir().getNonexistentChildFile(name, ".wav");
     juce::WavAudioFormat wav;
     std::unique_ptr<juce::AudioFormatWriter> writer(
         wav.createWriterFor(new juce::FileOutputStream(file), sampleRate, 1, 16, {}, 0));
@@ -161,5 +161,135 @@ TEST_CASE("An unreadable sample is refused before anything is written",
     CHECK_FALSE(authoredDoc(path).root.props.contains(Sampler::StateIDs::source));
 
     notAudio.deleteFile();
+    TrackManager::getInstance().clearAllTracks();
+}
+
+TEST_CASE("Several samples load as zones mapped by the notes in their names",
+          "[sampler][model-authority][3098]") {
+    const auto path = addSampler();
+    const auto c3 = writeTestWav(0.25, "Piano_C3");
+    const auto e3 = writeTestWav(0.25, "Piano_E3");
+    const auto softG3 = writeTestWav(0.25, "Piano_G3_1");
+    const auto loudG3 = writeTestWav(0.5, "Piano_G3_2");
+
+    REQUIRE(sampler_edits::loadSamples(path, {loudG3, c3, softG3, e3}));
+
+    const auto zones = sampler_edits::zones(path);
+    REQUIRE(zones.size() == 4);
+    CHECK(zones[0].source == c3.getFullPathName());
+    CHECK(zones[0].rootNote == 60);
+    CHECK(zones[0].zones.keyLow == 0);
+    CHECK(zones[0].zones.keyHigh == 61);
+    CHECK(zones[1].rootNote == 64);
+    CHECK(zones[1].zones.keyLow == 62);
+    CHECK(zones[1].zones.keyHigh == 65);
+    // Two files on G3 stack as velocity layers, softest by name first.
+    CHECK(zones[2].source == softG3.getFullPathName());
+    CHECK(zones[2].zones.keyLow == 66);
+    CHECK(zones[2].zones.keyHigh == 127);
+    CHECK(zones[2].zones.velocityHigh == 63);
+    CHECK(zones[3].source == loudG3.getFullPathName());
+    CHECK(zones[3].zones.velocityLow == 64);
+    CHECK(zones[3].region.end == Catch::Approx(0.5));
+
+    // A list of zones is the document's children; the root names no file of its own.
+    const auto doc = authoredDoc(path);
+    CHECK(doc.root.children.size() == 4);
+    CHECK(doc.root.props[Sampler::StateIDs::source].isVoid());
+
+    TrackManager::getInstance().clearAllTracks();
+}
+
+TEST_CASE("A zone added to a one-zone sampler keeps the first zone's markers",
+          "[sampler][model-authority][3098]") {
+    const auto path = addSampler();
+    const auto first = writeTestWav(1.0);
+    REQUIRE(sampler_edits::loadSample(path, first));
+    TrackManager::getInstance().setDeviceParameterValue(path, Sampler::kSampleEnd, 0.5f);
+    REQUIRE(sampler_edits::setLoopEnabled(path, true));
+
+    REQUIRE(sampler_edits::addZone(path, writeTestWav(0.25), 72));
+
+    const auto zones = sampler_edits::zones(path);
+    REQUIRE(zones.size() == 2);
+    CHECK(zones[0].source == first.getFullPathName());
+    CHECK(zones[0].region.end == Catch::Approx(0.5));
+    CHECK(zones[0].region.loop);
+    CHECK(zones[1].rootNote == 72);
+    CHECK(zones[1].zones.keyLow == 72);
+    CHECK(zones[1].zones.keyHigh == 72);
+
+    TrackManager::getInstance().clearAllTracks();
+}
+
+TEST_CASE("A map edited down to one zone is the one-zone sampler again",
+          "[sampler][model-authority][3098]") {
+    const auto path = addSampler();
+    const auto kept = writeTestWav(1.0);
+    REQUIRE(sampler_edits::loadSamples(path, {writeTestWav(0.25, "Bass_C2"), kept}));
+    auto zones = sampler_edits::zones(path);
+    REQUIRE(zones.size() == 2);
+    const int keptIndex = zones[0].source == kept.getFullPathName() ? 0 : 1;
+    zones[static_cast<size_t>(keptIndex)].region.end = 0.75;
+    zones[static_cast<size_t>(keptIndex)].zones.keyLow = 48;
+    REQUIRE(sampler_edits::updateZone(path, keptIndex, zones[static_cast<size_t>(keptIndex)]));
+
+    REQUIRE(sampler_edits::removeZone(path, 1 - keptIndex));
+
+    const auto doc = authoredDoc(path);
+    CHECK(doc.root.children.empty());
+    CHECK(doc.root.props[Sampler::StateIDs::source].toString() == kept.getFullPathName());
+    CHECK(static_cast<int>(doc.root.props["keyLow"]) == 48);
+    CHECK(modelValue(path, Sampler::kSampleEnd) == Catch::Approx(0.75f));
+
+    TrackManager::getInstance().clearAllTracks();
+}
+
+TEST_CASE("An empty zone is a zone, and a sample dropped on it fills it",
+          "[sampler][model-authority][3098]") {
+    const auto path = addSampler();
+
+    REQUIRE(sampler_edits::addEmptyZone(path));
+    auto zones = sampler_edits::zones(path);
+    REQUIRE(zones.size() == 1);
+    CHECK(zones[0].source.isEmpty());
+    CHECK(authoredDoc(path).root.children.size() == 1);
+
+    zones[0].zones.keyLow = 36;
+    zones[0].zones.keyHigh = 47;
+    REQUIRE(sampler_edits::updateZone(path, 0, zones[0]));
+
+    // Filled, the only zone is the one-zone sampler, its ranges and markers kept.
+    const auto file = writeTestWav(0.5, "Kick_C1");
+    REQUIRE(sampler_edits::setZoneSample(path, 0, file));
+    const auto doc = authoredDoc(path);
+    CHECK(doc.root.children.empty());
+    CHECK(doc.root.props[Sampler::StateIDs::source].toString() == file.getFullPathName());
+    CHECK(static_cast<int>(doc.root.props[Sampler::StateIDs::rootNote]) == 36);
+    CHECK(static_cast<int>(doc.root.props["keyHigh"]) == 47);
+    CHECK(modelValue(path, Sampler::kSampleEnd) == Catch::Approx(0.5f));
+
+    TrackManager::getInstance().clearAllTracks();
+}
+
+TEST_CASE("A sample chosen for one zone of a list leaves the others",
+          "[sampler][model-authority][3098]") {
+    const auto path = addSampler();
+    const auto first = writeTestWav(1.0, "Pad_C3");
+    REQUIRE(sampler_edits::loadSample(path, first));
+    REQUIRE(sampler_edits::addEmptyZone(path));
+    REQUIRE(sampler_edits::addEmptyZone(path));
+
+    const auto file = writeTestWav(0.25);
+    REQUIRE(sampler_edits::setZoneSample(path, 2, file));
+
+    const auto zones = sampler_edits::zones(path);
+    REQUIRE(zones.size() == 3);
+    CHECK(zones[0].source == first.getFullPathName());
+    CHECK(zones[1].source.isEmpty());
+    CHECK(zones[2].source == file.getFullPathName());
+    CHECK(zones[2].region.end == Catch::Approx(0.25));
+    CHECK_FALSE(sampler_edits::setZoneSample(path, 3, file));
+
     TrackManager::getInstance().clearAllTracks();
 }

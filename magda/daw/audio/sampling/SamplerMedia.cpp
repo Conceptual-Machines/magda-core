@@ -11,6 +11,23 @@ SamplerMedia& SamplerMedia::getInstance() {
     return media;
 }
 
+namespace {
+
+/// Point the root's source (@p zone -1) or the @p zone th zone's at @p file.
+void repoint(device_state::Doc& doc, int zone, const juce::File& file) {
+    if (zone < 0) {
+        doc.root.props.set("source", file.getFullPathName());
+        return;
+    }
+    for (auto& child : doc.root.children)
+        if (child.type == "zone" && zone-- == 0) {
+            child.props.set("source", file.getFullPathName());
+            return;
+        }
+}
+
+}  // namespace
+
 std::vector<SamplerMediaReference> modelSamplerMedia() {
     std::vector<SamplerMediaReference> references;
     auto& tracks = TrackManager::getInstance();
@@ -29,15 +46,24 @@ std::vector<SamplerMediaReference> modelSamplerMedia() {
                 if (device.pluginId != "magdasampler")
                     return true;
                 const auto doc = device_state::decode(device.pluginState);
-                const auto source = doc ? doc->root.props["source"].toString() : juce::String();
-                if (source.isNotEmpty() && juce::File::isAbsolutePath(source))
-                    references.push_back({juce::File(source), [path](const juce::File& file) {
+                if (!doc)
+                    return true;
+                // The root's own source, then each zone's (#3098); -1 names the root.
+                const auto add = [&references, &path](const juce::String& source, int zone) {
+                    if (source.isEmpty() || !juce::File::isAbsolutePath(source))
+                        return;
+                    references.push_back({juce::File(source), [path, zone](const juce::File& file) {
                                               TrackManager::getInstance().updateDeviceAuthoredState(
-                                                  path, [&file](device_state::Doc& doc) {
-                                                      doc.root.props.set("source",
-                                                                         file.getFullPathName());
+                                                  path, [&file, zone](device_state::Doc& doc) {
+                                                      repoint(doc, zone, file);
                                                   });
                                           }});
+                };
+                add(doc->root.props["source"].toString(), -1);
+                int zone = 0;
+                for (const auto& child : doc->root.children)
+                    if (child.type == "zone")
+                        add(child.props["source"].toString(), zone++);
                 return true;
             });
     }

@@ -53,9 +53,9 @@ class SamplerMedia {
 /**
  * @brief Every Sampler in the model, pads and racks included, with how to repoint it.
  *
- * What an engine with no live sampler objects registers: the file is the `source` of
- * each Sampler's device state, and repointing patches only that, keeping the root
- * note and markers.
+ * What an engine with no live sampler objects registers: a file is the `source` of
+ * each Sampler's device state or of one of its zones, and repointing patches only that,
+ * keeping the root note and markers.
  */
 std::vector<SamplerMediaReference> modelSamplerMedia();
 

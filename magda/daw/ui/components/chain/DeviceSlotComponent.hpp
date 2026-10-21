@@ -290,9 +290,10 @@ class DeviceSlotComponent : public NodeComponent,
     void toggleDeviceView(bool faceplate);
     /// A step sequencer's footer switches: its time bend beside the controls, and its faceplate
     /// lent to the arrangement's track area (ExpandedFaceplate) with a note left in its place.
-    std::unique_ptr<magda::SvgButton> timeBendToggle_, expandToggle_;
+    std::unique_ptr<magda::SvgButton> timeBendToggle_, zonesToggle_, expandToggle_;
     juce::Label lentNote_;
     void toggleTimeBend();
+    void toggleZones();
     void toggleFaceplateExpanded();
     void lendFaceplate();
     void faceplateReturned();

@@ -5,6 +5,7 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <map>
 #include <memory>
 #include <span>
 #include <vector>
@@ -12,78 +13,67 @@
 #include "core/ParameterUtils.hpp"
 #include "devices/faust/effects/FilterEngines.hpp"
 #include "plugins/MagdaDevice.hpp"
+#include "plugins/SamplerZones.hpp"
 
 namespace magda::daw::audio {
 
 //==============================================================================
 /**
- * @brief Holds loaded sample data for the sampler
+ * @brief The one sound the synthesiser holds. Which audio a voice reads is its zone's, picked
+ *        by SamplerSynth per note (#3098), so this carries nothing.
  */
 struct SamplerSound : public juce::SynthesiserSound {
-    /// Immutable once the synthesiser holds it (#2384). Nothing writes a field
-    /// of an installed sound, so what crosses to the audio thread is one thing,
-    /// SamplerPlayback, rather than a mix of fields here and members there.
-    juce::AudioBuffer<float> audioData;
-    double sourceSampleRate = 44100.0;
-
     bool appliesToNote(int) override {
         return true;
     }
     bool appliesToChannel(int) override {
         return true;
     }
-
-    bool hasData() const {
-        return audioData.getNumSamples() > 0;
-    }
 };
 
 //==============================================================================
 /**
- * @brief What the audio thread reads about the loaded sound (#2384).
+ * @brief The zone map the audio thread plays (#2384, #3098).
  *
- * The sampler's one cross-thread boundary. The message thread publishes here
- * when it installs a sound or the user moves the root note; the audio thread
- * reads it per block. An installed SamplerSound is immutable, so auditing what
- * crosses threads means reading this class and nothing else.
- *
- * Three atomics rather than a snapshot behind a seqlock, which would spin the
- * audio thread waiting on the message thread. They clamp marker ranges and
- * pitch a note, so a triple torn across a load costs one block's clamp.
+ * The sampler's one cross-thread boundary. The message thread publishes a whole immutable map;
+ * the audio thread reads the latest per block and acknowledges the oldest generation a voice
+ * still reads. A replaced map is kept until then and freed here, on the message thread, so the
+ * audio thread never frees audio and never waits.
  */
 class SamplerPlayback {
   public:
-    struct Facts {
-        double sourceRate = 44100.0;
-        double lengthSeconds = 0.0;
-        int rootNote = 60;
-    };
+    SamplerPlayback();
 
-    /// @brief Publish @p facts. Message thread, once the synthesiser holds the
-    ///        sound they describe.
-    void publish(const Facts& facts) {
-        sourceRate_.store(facts.sourceRate, std::memory_order_relaxed);
-        lengthSeconds_.store(facts.lengthSeconds, std::memory_order_relaxed);
-        rootNote_.store(facts.rootNote, std::memory_order_relaxed);
+    /// @brief Make @p map the one the next block plays. Message thread.
+    void publish(SamplerZoneMap map);
+
+    /// What was last published. Message thread.
+    const SamplerZoneMap& current() const {
+        return *current_;
     }
 
-    /// @brief Republish the root note alone, which is the one field a user
-    ///        changes without loading anything. Message thread.
-    void publishRootNote(int note) {
-        rootNote_.store(note, std::memory_order_relaxed);
+    /// @brief Free the replaced maps no voice reads any more. Message thread.
+    void releaseRetired();
+    std::size_t retiredCount() const {
+        return retired_.size();
     }
 
-    /// @brief What was last published. Audio thread.
-    Facts read() const {
-        return Facts{sourceRate_.load(std::memory_order_relaxed),
-                     lengthSeconds_.load(std::memory_order_relaxed),
-                     rootNote_.load(std::memory_order_relaxed)};
+    /// The latest map. Audio thread, once per block.
+    const SamplerZoneMap& acquire() const {
+        return *latest_.load(std::memory_order_acquire);
+    }
+
+    /// No map older than @p generation is read any more. Audio thread, after each block.
+    void acknowledge(std::uint64_t generation) {
+        acknowledged_.store(generation, std::memory_order_release);
     }
 
   private:
-    std::atomic<double> sourceRate_{44100.0};
-    std::atomic<double> lengthSeconds_{0.0};
-    std::atomic<int> rootNote_{60};
+    std::shared_ptr<const SamplerZoneMap> current_;
+    std::vector<std::shared_ptr<const SamplerZoneMap>> retired_;
+    std::atomic<const SamplerZoneMap*> latest_{nullptr};
+    std::atomic<std::uint64_t> acknowledged_{0};
+    std::uint64_t nextGeneration_ = 1;
 };
 
 //==============================================================================
@@ -127,15 +117,24 @@ class SamplerVoice : public juce::SynthesiserVoice {
     /// Allocates the voice's filters. Message thread, before the first block.
     void prepareFilter(double sampleRate);
     void setPitchOffset(float semitones, float cents);
-    void setPlaybackRegion(double startOffsetSeconds, double endSeconds, bool loop,
-                           double loopStartSeconds, double loopEndSeconds, double sourceSampleRate);
+    /// The markers a zone with SamplerZone::regionFromParameters plays, pushed in per block.
+    void setParameterRegion(const SamplerRegion& region) {
+        parameterRegion = region;
+    }
     void setVelocityAmount(float amount) {
         velAmount = amount;
     }
-    /// The root note to pitch against. Pushed in per block from the published
-    /// facts, so the voice never reads a field of the sound (#2384).
-    void setRootNote(int note) {
-        rootNote = note;
+    /// The zone the next startNote() plays, from map @p generation (#3098). SamplerSynth sets
+    /// it just before starting the voice.
+    void assignZone(const SamplerZone* zone, std::uint64_t generation) {
+        zone_ = zone;
+        zoneGeneration_ = generation;
+    }
+    const SamplerZone* zone() const {
+        return zone_;
+    }
+    std::uint64_t zoneGeneration() const {
+        return zoneGeneration_;
     }
     // Portamento glide time (seconds); 0 = instant pitch change.
     void setGlideSeconds(double s) {
@@ -161,11 +160,16 @@ class SamplerVoice : public juce::SynthesiserVoice {
     }
 
   private:
-    // Pitch ratio for `midiNoteNumber`, including the pitch/fine offset, against
-    // the published root note and the sound's sample rate.
-    double pitchRatioForNote(int midiNoteNumber, const SamplerSound& sound) const;
+    // Pitch ratio for `midiNoteNumber`, including the pitch/fine offset and the zone's tune,
+    // against the zone's root note and its audio's sample rate.
+    double pitchRatioForNote(int midiNoteNumber) const;
+    const SamplerRegion& region() const {
+        return zone_->regionFromParameters ? parameterRegion : zone_->settings.region;
+    }
 
-    int rootNote = 60;
+    const SamplerZone* zone_ = nullptr;
+    std::uint64_t zoneGeneration_ = 0;
+    SamplerRegion parameterRegion;
     // Arm a glide from the current pitchRatio to targetPitchRatio over glideSeconds.
     void beginGlide();
 
@@ -201,12 +205,8 @@ class SamplerVoice : public juce::SynthesiserVoice {
     int glideSamplesRemaining = 0;
     bool glidePrimed = false;  // false until the first note; first note jumps (no glide)
 
-    double sampleStartOffset = 0.0;
-    double sampleEndSample = 0.0;  // 0 = play to end of file
+    float zoneGain = 1.0f;
     const SamplerSynth* synth_ = nullptr;
-    bool loopEnabled = false;
-    double loopStartSample = 0.0;
-    double loopEndSample = 0.0;
 };
 
 //==============================================================================
@@ -231,6 +231,11 @@ class SamplerSynth : public juce::Synthesiser {
         glideSeconds = s;
     }
 
+    /// The zones the block's notes pick from. Audio thread, before rendering.
+    void setZoneMap(const SamplerZoneMap* map) {
+        zoneMap_ = map;
+    }
+
     void noteOn(int midiChannel, int midiNoteNumber, float velocity) override;
     void noteOff(int midiChannel, int midiNoteNumber, float velocity, bool allowTailOff) override;
     void allNotesOff(int midiChannel, bool allowTailOff) override;
@@ -253,6 +258,21 @@ class SamplerSynth : public juce::Synthesiser {
 
   private:
     SamplerVoice* monoVoice();
+    /// The zones that answer @p note at @p velocity, taking round-robin turns, into @ref picked_.
+    void pickZones(int note, float velocity);
+    struct PickedZone {
+        const SamplerZone* zone;
+        /// The note's velocity scaled by the zone's fades.
+        float velocity;
+    };
+    /// Start @p voice on @p zone, or on nothing when @p zone is null.
+    void startZone(SamplerVoice* voice, const SamplerZone* zone, int midiChannel, int note,
+                   float velocity);
+
+    const SamplerZoneMap* zoneMap_ = nullptr;
+    std::vector<PickedZone> picked_;
+    /// Which round-robin zone the next note-on plays, counted across notes as a rack does.
+    std::uint32_t nextTurn_ = 0;
 
     std::span<const float> fractions_;
     std::size_t nextEvent_ = 0;
@@ -324,12 +344,24 @@ class MagdaSamplerPlugin : public MagdaDevice {
         kNumParams,
     };
 
-    /// The device's own non-parameter state. The spellings are the retired
-    /// plugin's, so a saved project reads its sample back.
+    /// The device's own non-parameter state. The first three are the retired plugin's
+    /// spellings, so a saved project reads its sample back.
+    ///
+    /// One zone is the root's own properties with the marker parameters, as before #3098.
+    /// Two or more are `zone` children, each with its source, root, ranges and markers. The
+    /// ranges and fades are kSamplerZoneFields.
     struct StateIDs {
         static const juce::Identifier source;
         static const juce::Identifier rootNote;
         static const juce::Identifier loopEnabled;
+        static const juce::Identifier zone;
+        static const juce::Identifier tune;
+        static const juce::Identifier gain;
+        static const juce::Identifier roundRobin;
+        static const juce::Identifier start;
+        static const juce::Identifier end;
+        static const juce::Identifier loopStart;
+        static const juce::Identifier loopEnd;
     };
 
     //==============================================================================
@@ -386,6 +418,8 @@ class MagdaSamplerPlugin : public MagdaDevice {
         bool valid = false;
         int rootNote = 60;
         float markerSeconds = 0.0f;
+        /// Whether the metadata named @ref rootNote rather than it being middle C by default.
+        bool rootFromMetadata = false;
     };
     static SampleChoice readSampleChoice(const juce::File& file);
 
@@ -405,12 +439,22 @@ class MagdaSamplerPlugin : public MagdaDevice {
      */
     void relocateSample(const juce::File& file);
 
+    /// The first zone's file, audio and root: the whole sampler when it has one zone.
     juce::File getSampleFile() const;
     const juce::AudioBuffer<float>* getWaveform() const;
     double getSampleLengthSeconds() const;
     double getSampleRate() const;
     int getRootNote() const;
     void setRootNote(int note);
+
+    /// Every zone, as the audio thread plays them (#3098). Message thread.
+    const SamplerZoneMap& zoneMap() const {
+        return playback_.current();
+    }
+    /// Whether the zones are the document's `zone` children rather than the one root zone.
+    bool hasZoneList() const {
+        return zoneList_;
+    }
 
     /// Loop on/off. Never a parameter on the retired plugin either — the
     /// faceplate writes it and it persists as device state.
@@ -426,21 +470,29 @@ class MagdaSamplerPlugin : public MagdaDevice {
     double getPlaybackPosition() const {
         return currentPlaybackPosition_.load(std::memory_order_relaxed);
     }
+    /// The zone that voice plays, or -1 when none sounds.
+    int getPlaybackZone() const {
+        return currentPlaybackZone_.load(std::memory_order_relaxed);
+    }
 
   private:
     //==============================================================================
     void updateVoiceParameters();
 
-    /// Republish what the audio thread reads of the loaded sound. Message
-    /// thread, after the synthesiser holds it (#2378).
-    void publishSoundFacts();
-    /// Put the synthesiser back to holding no audio. What an authored document
+    /// A file's audio, read again only when the file changed since (#2379). Null when no
+    /// sample format can read it.
+    std::shared_ptr<const SampleAudio> audioFor(const juce::String& path);
+    /// Build the map from @ref zones_ and hand it to the audio thread. Message thread.
+    void publishZones();
+    /// Put the sampler back to holding no audio. What an authored document
     /// with no source means (see restoreState).
     void unloadSample();
+    /// Restore the one root zone: its file, its settings and the marker parameters.
+    void restoreRootZone(const sdk::StateNode& state);
 
-    /// True when the audio loaded IS the file at @p path, still as it was when
-    /// it was read. The path alone cannot tell a re-projection of the same
-    /// document from a file replaced in place (#2379).
+    /// True when the root zone holds the audio of the file at @p path, still as it was when
+    /// it was read. The path alone cannot tell a re-projection of the same document from a
+    /// file replaced in place (#2379).
     bool holdsAudioFrom(const juce::String& path) const;
 
     SamplerSynth synthesiser;
@@ -469,12 +521,6 @@ class MagdaSamplerPlugin : public MagdaDevice {
     /// Whether a voice was still sounding when the last block ended. Audio thread only.
     bool sounding_ = false;
 
-    /// Owned by the synthesiser, and only ever read on the message thread. The
-    /// audio thread reads @ref soundSourceRate_ and @ref soundLengthSeconds_
-    /// instead: a load frees this one while a block may still be inside
-    /// applyToBuffer (#2378).
-    SamplerSound* currentSound = nullptr;
-
     /// Everything that crosses to the audio thread (#2384).
     SamplerPlayback playback_;
     double sampleRate = 44100.0;
@@ -488,12 +534,34 @@ class MagdaSamplerPlugin : public MagdaDevice {
     std::atomic<bool> loopEnabled_{false};
     std::atomic<double> tailSeconds_{0.1};
     std::atomic<double> currentPlaybackPosition_{0.0};
+    std::atomic<int> currentPlaybackZone_{-1};
 
-    juce::String samplePath_;
-    /// What the file looked like when its audio was read — see holdsAudioFrom().
-    juce::int64 sampleFileSize_ = 0;
-    juce::int64 sampleFileModifiedMs_ = 0;
-    int rootNote_ = 60;
+    /// The authored zones, message thread only. A zone whose file is missing keeps its path,
+    /// a relocate away from playing again.
+    std::vector<SamplerZoneSettings> zones_;
+    bool zoneList_ = false;
+
+    struct LoadedAudio {
+        std::shared_ptr<const SampleAudio> audio;
+        juce::int64 size = 0;
+        juce::int64 modifiedMs = 0;
+    };
+    std::map<juce::String, LoadedAudio> loaded_;
+
+    /// Frees replaced maps once the audio thread has let go of them; runs only while some wait.
+    class RetireTimer : public juce::Timer {
+      public:
+        explicit RetireTimer(SamplerPlayback& playback) : playback_(playback) {}
+        void timerCallback() override {
+            playback_.releaseRetired();
+            if (playback_.retiredCount() == 0)
+                stopTimer();
+        }
+
+      private:
+        SamplerPlayback& playback_;
+    };
+    RetireTimer retireTimer_{playback_};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MagdaSamplerPlugin)
 };

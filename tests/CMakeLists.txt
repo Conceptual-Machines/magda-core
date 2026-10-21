@@ -169,6 +169,7 @@ set(TEST_SOURCES
     # The sampler's one cross-thread boundary (#2384): what the audio thread may
     # read about the loaded sound, with the installed sound itself immutable.
     devices/test_sampler_playback.cpp
+    devices/test_sampler_zones.cpp
     ui/test_velocity_lane_utils.cpp
     utilities/test_grid_constants.cpp
     utilities/test_ui_scale.cpp
