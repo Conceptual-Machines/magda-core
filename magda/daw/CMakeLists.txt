@@ -696,6 +696,9 @@ target_compile_definitions(magda_daw
     TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH=1
     MAGDA_DAWPROJECT_SCHEMA_DIR="${CMAKE_SOURCE_DIR}/third_party/dawproject"
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
+    # JUCE defaults JACK off; it dlopens libjack, so this adds no runtime dependency (#3107).
+    $<$<PLATFORM_ID:Linux>:JUCE_JACK=1>
+    $<$<PLATFORM_ID:Linux>:JUCE_JACK_CLIENT_NAME="MAGDA">
     # Whether there is a second engine to choose at all (#2551). MagdaAudioEngine
     # is compiled here whatever the answer, so it is the one place that has to
     # ask: without the host below linked, choosing that engine is a link error
@@ -748,6 +751,7 @@ target_compile_definitions(magda_daw_app
     TRACKTION_ENABLE_TIMESTRETCH_SOUNDTOUCH=1
     TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH=1
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
+    $<$<PLATFORM_ID:Linux>:JUCE_JACK=1>
 )
 
 if(APPLE)
@@ -865,6 +869,7 @@ target_compile_definitions(magda_cli
     TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH=1
     JUCE_WEB_BROWSER=0
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
+    $<$<PLATFORM_ID:Linux>:JUCE_JACK=1>
 )
 
 target_include_directories(magda_cli

@@ -2,6 +2,7 @@
 
 #include "../api/magda_api_live.hpp"
 #include "../audio/AudioBridge.hpp"
+#include "../audio/AudioDriverUtils.hpp"
 #include "../audio/DeviceParameterDisplayTextProvider.hpp"
 #include "../audio/MidiBridge.hpp"
 #include "../audio/TrackMeters.hpp"
@@ -222,13 +223,10 @@ void TracktionEngineWrapper::configureAudioDevices() {
 
     auto& dm = engine_->getDeviceManager();
     auto& juceDeviceManager = dm.deviceManager;
-    const auto& deviceTypes = juceDeviceManager.getAvailableDeviceTypes();
-
-    if (deviceTypes.isEmpty()) {
+    auto* deviceType = magda::activeDeviceTypeFor(juceDeviceManager);
+    if (deviceType == nullptr) {
         return;
     }
-
-    auto* deviceType = deviceTypes[0];  // Use first available type (CoreAudio on macOS)
     deviceType->scanForDevices();
 
     auto outputDevices = deviceType->getDeviceNames(false);  // outputs
