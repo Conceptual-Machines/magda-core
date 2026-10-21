@@ -112,9 +112,11 @@ bool moveSourceToAsset(sdk::StateNode& node, const std::string& key, const juce:
     return true;
 }
 
-/// The Sampler's own sample, then each zone's (#3098) as `zone-1`, `zone-2` and on.
+/// The Sampler's own sample, then each zone's (#3098) as `zone-1`, `zone-2` and on. The file
+/// its zones were imported from (#3099) is this machine's, and the preset plays without it.
 bool moveSampleToAsset(sdk::StateDocument& doc, const juce::File& presetFile,
                        std::vector<sdk::PresetAsset>& assets) {
+    doc.root.remove("instrument");
     if (!moveSourceToAsset(doc.root, kSampleAssetKey, presetFile, assets))
         return false;
     int zone = 0;

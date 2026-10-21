@@ -6,6 +6,7 @@
 
 #include "core/ChainNodePath.hpp"
 #include "plugins/SamplerZones.hpp"
+#include "sampling/SamplerImport.hpp"
 
 namespace magda::sampler_edits {
 
@@ -41,6 +42,16 @@ bool setZones(const ChainNodePath& devicePath,
 /// Replace the zones with @p files, folders opened, mapped by the notes in their names. One
 /// file is loadSample(). False when none of them is a sample.
 bool loadSamples(const ChainNodePath& devicePath, const juce::Array<juce::File>& files);
+
+/// Replace the zones with an SFZ or DecentSampler instrument's (#3099), or SoundFont preset
+/// @p preset's (#2210), its envelopes and filter
+/// onto the parameters, and remember @p file. What it holds says what was left out, or why
+/// nothing was imported.
+sampler_import::Instrument importInstrument(const ChainNodePath& devicePath, const juce::File& file,
+                                            int preset = 0);
+
+/// Where a SoundFont's samples are written for its zones to play (#2210).
+juce::File soundFontSampleFolder(const juce::File& font);
 
 /// Add a zone per file, folders opened, open across every key and velocity, rooted at the note its
 /// name or metadata names. Added to an empty sampler, one file is loadSample().

@@ -378,6 +378,7 @@ const juce::Identifier MagdaSamplerPlugin::StateIDs::start("start");
 const juce::Identifier MagdaSamplerPlugin::StateIDs::end("end");
 const juce::Identifier MagdaSamplerPlugin::StateIDs::loopStart("loopStart");
 const juce::Identifier MagdaSamplerPlugin::StateIDs::loopEnd("loopEnd");
+const juce::Identifier MagdaSamplerPlugin::StateIDs::instrument("instrument");
 
 //==============================================================================
 // SamplerPlayback
@@ -887,6 +888,10 @@ MagdaSamplerPlugin::~MagdaSamplerPlugin() {
 
 //==============================================================================
 sdk::ParameterDescriptor MagdaSamplerPlugin::parameterDescriptor(int index) const {
+    return slotDescriptor(index);
+}
+
+sdk::ParameterDescriptor MagdaSamplerPlugin::slotDescriptor(int index) {
     if (index < 0 || index >= kNumParams)
         return {};
 

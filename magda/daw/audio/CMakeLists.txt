@@ -450,6 +450,10 @@ target_sources(magda_daw PRIVATE
     midi/MidiDeviceMatch.cpp
     faust/FaustModelEdits.cpp
     faust/FaustModelEdits.hpp
+    sampling/SamplerImport.cpp
+    sampling/SamplerImport.hpp
+    sampling/SamplerImportBuilder.hpp
+    sampling/SoundFontImport.cpp
     sampling/SamplerMedia.cpp
     sampling/SamplerModelEdits.cpp
     sampling/SamplerModelEdits.hpp

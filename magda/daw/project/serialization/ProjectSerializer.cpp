@@ -84,18 +84,19 @@ void mapSamplerSources(const juce::var& tree,
     if (object->getProperty("pluginId").toString() == "magdasampler") {
         if (auto doc = device_state::decode(object->getProperty("pluginState").toString())) {
             bool changed = false;
-            const auto remap = [&map, &changed](device_state::Node& node) {
-                const auto path = node.props["source"].toString();
+            const auto remap = [&map, &changed](device_state::Node& node, const char* key) {
+                const auto path = node.props[key].toString();
                 const auto mapped = map(path);
                 if (path.isNotEmpty() && mapped != path) {
-                    node.props.set("source", mapped);
+                    node.props.set(key, mapped);
                     changed = true;
                 }
             };
-            remap(doc->root);
+            remap(doc->root, "source");
+            remap(doc->root, "instrument");
             for (auto& child : doc->root.children)
                 if (child.type == "zone")
-                    remap(child);
+                    remap(child, "source");
             if (changed)
                 object->setProperty("pluginState", device_state::encode(*doc));
         }

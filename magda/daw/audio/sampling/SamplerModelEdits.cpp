@@ -3,10 +3,12 @@
 #include <algorithm>
 #include <functional>
 
+#include "core/AppPaths.hpp"
 #include "core/DeviceState.hpp"
 #include "core/TrackManager.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "project/ProjectManager.hpp"
+#include "sampling/SamplerImport.hpp"
 
 namespace magda::sampler_edits {
 
@@ -134,6 +136,7 @@ bool loadSample(const ChainNodePath& devicePath, const juce::File& file) {
     const auto& path = file.getFullPathName();
     if (!authorState(devicePath, [&path, &choice](device_state::Doc& doc) {
             std::erase_if(doc.root.children, isZoneNode);
+            doc.root.props.remove(IDs::instrument);
             doc.root.props.set(Sampler::StateIDs::source, path);
             doc.root.props.set(Sampler::StateIDs::rootNote, choice.rootNote);
         }))
@@ -235,7 +238,59 @@ bool loadSamples(const ChainNodePath& devicePath, const juce::Array<juce::File>&
         zone.region.loopEnd = seconds;
         zones.push_back(zone);
     }
-    return setZones(devicePath, zones);
+    return setZones(devicePath, zones) && authorState(devicePath, [](device_state::Doc& doc) {
+               doc.root.props.remove(IDs::instrument);
+           });
+}
+
+juce::File soundFontSampleFolder(const juce::File& font) {
+    // Named for the file and its version, so an edited SoundFont writes its samples afresh.
+    const auto version = font.getFullPathName() + juce::String(font.getSize()) +
+                         juce::String(font.getLastModificationTime().toMilliseconds());
+    return paths::dataDir()
+        .getChildFile("SoundFonts")
+        .getChildFile(juce::File::createLegalFileName(font.getFileNameWithoutExtension()) + "-" +
+                      juce::String::toHexString(version.hashCode64()));
+}
+
+sampler_import::Instrument importInstrument(const ChainNodePath& devicePath, const juce::File& file,
+                                            int preset) {
+    auto instrument =
+        sampler_import::isSoundFont(file)
+            ? sampler_import::importSoundFont(file, preset, soundFontSampleFolder(file))
+            : sampler_import::importInstrument(file);
+    if (instrument.error.isNotEmpty())
+        return instrument;
+    const auto& path = file.getFullPathName();
+    if (!setZones(devicePath, instrument.zones) ||
+        !authorState(devicePath, [&path](device_state::Doc& doc) {
+            doc.root.props.set(IDs::instrument, path);
+        })) {
+        instrument.error = "The sampler could not be written";
+        return instrument;
+    }
+
+    // What the formats describe starts from its default, so a previous patch's filter does not
+    // colour the instrument.
+    constexpr int kImported[] = {Sampler::kAttack,           Sampler::kDecay,
+                                 Sampler::kSustain,          Sampler::kRelease,
+                                 Sampler::kVelAmount,        Sampler::kPitchEnvAttack,
+                                 Sampler::kPitchEnvDecay,    Sampler::kPitchEnvSustain,
+                                 Sampler::kPitchEnvRelease,  Sampler::kPitchEnvAmount,
+                                 Sampler::kFilterType,       Sampler::kFilterMode,
+                                 Sampler::kFilterPoles,      Sampler::kFilterCutoff,
+                                 Sampler::kFilterResonance,  Sampler::kFilterKeyTrack,
+                                 Sampler::kFilterVelocity,   Sampler::kFilterEnvAttack,
+                                 Sampler::kFilterEnvDecay,   Sampler::kFilterEnvSustain,
+                                 Sampler::kFilterEnvRelease, Sampler::kFilterEnvAmount};
+    for (const int index : kImported) {
+        const auto it = instrument.parameters.find(index);
+        const auto value = it != instrument.parameters.end()
+                               ? it->second
+                               : Sampler::slotDescriptor(index).defaultValue;
+        TrackManager::getInstance().setDeviceParameterValue(devicePath, index, value);
+    }
+    return instrument;
 }
 
 bool addZones(const ChainNodePath& devicePath, const juce::Array<juce::File>& dropped) {

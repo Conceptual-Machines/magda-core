@@ -67,6 +67,7 @@
 #include "slot/ExternalInsertUI.hpp"
 #include "slot/StepSequencerClipExport.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
+#include "ui/components/common/Toast.hpp"
 #include "ui/components/mixer/MidiNoteStrip.hpp"
 #include "ui/panels/content/ChordPanelContent.hpp"
 #include "ui/panels/content/PluginBrowserContent.hpp"
@@ -676,6 +677,26 @@ void DeviceCustomUIManager::refreshChordEngineMidiActivity(magda::MidiNoteStrip&
 }
 
 namespace {
+/// What an import made of @p file, for a toast: its zones, or why none, and what it left out.
+juce::String instrumentImportSummary(const juce::File& file,
+                                     const sampler_import::Instrument& imported) {
+    const auto name = file.getFileName();
+    if (imported.error.isNotEmpty())
+        return "Could not import " + name + ": " + imported.error;
+    auto summary = "Imported " + name + ": " + juce::String(imported.zones.size()) +
+                   (imported.zones.size() == 1 ? " zone" : " zones");
+    if (imported.dropped.isEmpty())
+        return summary;
+    constexpr int kListed = 4;
+    juce::StringArray listed(imported.dropped);
+    if (listed.size() > kListed) {
+        const auto more = listed.size() - kListed;
+        listed.removeRange(kListed, more);
+        listed.add(juce::String(more) + " more");
+    }
+    return summary + ". Not imported: " + listed.joinIntoString(", ");
+}
+
 /// The live sampler's zones into the faceplate (#3098); a map it already shows is skipped.
 void pushSamplerZones(SamplerUI& ui, const daw::audio::MagdaSamplerPlugin& sampler) {
     const auto& map = sampler.zoneMap();
@@ -906,6 +927,37 @@ bool DeviceCustomUIManager::createSamplerUI(const magda::DeviceInfo& device,
     samplerUI_->onZonesAdded = [this, afterZoneEdit](const juce::Array<juce::File>& files) {
         afterZoneEdit(magda::sampler_edits::addZones(devicePath_, files));
     };
+    const auto import = [this, afterZoneEdit](const juce::File& file, int preset) {
+        const auto imported = magda::sampler_edits::importInstrument(devicePath_, file, preset);
+        afterZoneEdit(imported.error.isEmpty());
+        Toast::showGlobal(instrumentImportSummary(file, imported), 6000);
+    };
+    samplerUI_->onInstrumentChosen = [this, import](const juce::File& file) {
+        const auto presets = sampler_import::soundFontPresets(file);
+        if (presets.size() <= 1) {
+            import(file, presets.empty() ? 0 : presets.front().index);
+            return;
+        }
+        // A SoundFont holds many presets, a General MIDI one 128 or more: one is picked.
+        juce::PopupMenu menu;
+        std::map<int, juce::PopupMenu> banks;
+        for (const auto& preset : presets)
+            banks[preset.bank].addItem(preset.index + 1,
+                                       juce::String(preset.program).paddedLeft('0', 3) + "  " +
+                                           preset.name);
+        if (banks.size() == 1)
+            menu = banks.begin()->second;
+        else
+            for (const auto& [bank, items] : banks)
+                menu.addSubMenu("Bank " + juce::String(bank), items);
+        menu.showMenuAsync(
+            juce::PopupMenu::Options().withTargetComponent(samplerUI_.get()),
+            [import, file,
+             ui = juce::Component::SafePointer<SamplerUI>(samplerUI_.get())](int chosen) {
+                if (chosen > 0 && ui != nullptr)
+                    import(file, chosen - 1);
+            });
+    };
     samplerUI_->onEmptyZoneAdded = [this, afterZoneEdit]() {
         afterZoneEdit(magda::sampler_edits::addEmptyZone(devicePath_));
     };
@@ -922,21 +974,25 @@ bool DeviceCustomUIManager::createSamplerUI(const magda::DeviceInfo& device,
     samplerUI_->onLoadSampleRequested =
         [loadFile, ui = juce::Component::SafePointer<SamplerUI>(samplerUI_.get())]() {
             auto chooser = std::make_shared<juce::FileChooser>(
-                "Load Sample", juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
-            chooser->launchAsync(juce::FileBrowserComponent::openMode |
-                                     juce::FileBrowserComponent::canSelectFiles |
-                                     juce::FileBrowserComponent::canSelectMultipleItems,
-                                 [loadFile, chooser, ui](const juce::FileChooser&) {
-                                     const auto results = chooser->getResults();
-                                     if (results.size() > 1 && ui != nullptr && ui->onFilesDropped)
-                                         ui->onFilesDropped(results);
-                                     // A zone list's selected zone takes the one chosen.
-                                     else if (results.size() == 1 && ui != nullptr &&
-                                              ui->listZone() >= 0 && ui->onZoneSampleChosen)
-                                         ui->onZoneSampleChosen(ui->listZone(), results[0]);
-                                     else if (results.size() == 1 && results[0].existsAsFile())
-                                         loadFile(results[0]);
-                                 });
+                "Load Sample", juce::File(),
+                "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3;*.sfz;*.dspreset;*.sf2;*.sf3");
+            chooser->launchAsync(
+                juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles |
+                    juce::FileBrowserComponent::canSelectMultipleItems,
+                [loadFile, chooser, ui](const juce::FileChooser&) {
+                    const auto results = chooser->getResults();
+                    if (results.size() == 1 && ui != nullptr &&
+                        sampler_import::isInstrumentFile(results[0]) && ui->onInstrumentChosen)
+                        ui->onInstrumentChosen(results[0]);
+                    else if (results.size() > 1 && ui != nullptr && ui->onFilesDropped)
+                        ui->onFilesDropped(results);
+                    // A zone list's selected zone takes the one chosen.
+                    else if (results.size() == 1 && ui != nullptr && ui->listZone() >= 0 &&
+                             ui->onZoneSampleChosen)
+                        ui->onZoneSampleChosen(ui->listZone(), results[0]);
+                    else if (results.size() == 1 && results[0].existsAsFile())
+                        loadFile(results[0]);
+                });
         };
 
     samplerUI_->onFileDropped = loadFile;

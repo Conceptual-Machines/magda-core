@@ -1712,6 +1712,11 @@ juce::String MediaExplorerContent::getMediaFilterPattern() const {
         // Preset file formats (placeholder extensions)
         patterns.add("*.magdapreset");
         patterns.add("*.magdaclip");
+        // Sampler instruments (#3099).
+        patterns.add("*.sfz");
+        patterns.add("*.dspreset");
+        patterns.add("*.sf2");
+        patterns.add("*.sf3");
     }
 
     // If no filters active, show all supported types
@@ -1726,6 +1731,11 @@ juce::String MediaExplorerContent::getMediaFilterPattern() const {
         patterns.add("*.midi");
         patterns.add("*.magdapreset");
         patterns.add("*.magdaclip");
+        // Sampler instruments (#3099).
+        patterns.add("*.sfz");
+        patterns.add("*.dspreset");
+        patterns.add("*.sf2");
+        patterns.add("*.sf3");
     }
 
     return patterns.joinIntoString(";");

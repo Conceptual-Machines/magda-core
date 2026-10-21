@@ -170,6 +170,8 @@ set(TEST_SOURCES
     # read about the loaded sound, with the installed sound itself immutable.
     devices/test_sampler_playback.cpp
     devices/test_sampler_zones.cpp
+    devices/test_sampler_import.cpp
+    devices/test_soundfont_import.cpp
     ui/test_velocity_lane_utils.cpp
     utilities/test_grid_constants.cpp
     utilities/test_ui_scale.cpp
