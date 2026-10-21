@@ -7,6 +7,7 @@
 
 #include "DisplayListGraphics.hpp"
 #include "core/GestureRouter.hpp"
+#include "devices/faust/effects/FilterEngines.hpp"
 #include "ui/components/chain/layout/NodeHeaderStyles.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/state/ExpandedFaceplate.hpp"
@@ -15,6 +16,7 @@
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SdkColourRoles.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
+#include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 #include "ui/utils/AudioFileTypes.hpp"
 
 namespace magda::daw::ui {
@@ -41,6 +43,23 @@ void styleTileValue(TextSlider& slider) {
 
 void styleTileValue(LinkableTextSlider& slider) {
     styleTileValue(slider.getSlider());
+}
+
+// The sampler's Filter Type list: Off, then the Filter device's engines.
+const juce::StringArray kFilterTypes{"Off",      "SVF",        "Ladder", "Korg 35",
+                                     "Oberheim", "Sallen-Key", "Diode",  "Comb"};
+
+/// What a type plays for each Filter Mode step; past its own modes it plays its first.
+juce::StringArray filterModeLabels(int type) {
+    using magda::devices::faust::FilterFamily;
+    if (type <= 0)
+        return {"LP", "BP", "HP", "Notch", "Notch+"};
+    const auto family = static_cast<FilterFamily>(type - 1);
+    if (family == FilterFamily::Comb)
+        return {"Comb+", "Comb-"};
+    juce::StringArray all{"LP", "BP", "HP", "Notch", "Notch+"};
+    all.removeRange(magda::devices::faust::filterModeCount(family), all.size());
+    return all;
 }
 }  // namespace
 
@@ -238,6 +257,7 @@ SamplerUI::SamplerUI() {
         loopButton_->setActive(newState);
         if (onLoopEnabledChanged)
             onLoopEnabledChanged(newState);
+        lockLoopBoxes();
         repaint();
     };
     addAndMakeVisible(*loopButton_);
@@ -290,17 +310,92 @@ SamplerUI::SamplerUI() {
     setupPercentSlider(sustainSlider_, 2, 1.0);
     setupTimeSlider(releaseSlider_, 3, 0.001, 10.0, 0.1);
 
-    // --- Pitch envelope (params 14-18): the stages show in the Pitch view only ---
+    // --- Pitch envelope (params 14-18) ---
     setupTimeSlider(pitchAttackSlider_, 14, 0.001, 5.0, 0.001);
     setupTimeSlider(pitchDecaySlider_, 15, 0.001, 5.0, 0.2);
     setupPercentSlider(pitchSustainSlider_, 16, 0.0);
     setupTimeSlider(pitchReleaseSlider_, 17, 0.001, 10.0, 0.1);
-    for (auto* slider :
-         {&pitchAttackSlider_, &pitchDecaySlider_, &pitchSustainSlider_, &pitchReleaseSlider_})
-        slider->setVisible(false);
     setupSemitoneSlider(pitchEnvAmountSlider_, 18, 48.0);
 
     setupSemitoneSlider(pitchSlider_, 4, 24.0);
+
+    // --- Filter (params 19-30) ---
+    auto setupChoiceSlider = [this](LinkableTextSlider& slider, int paramIndex, int count,
+                                    std::function<juce::String(int)> label) {
+        slider.setRange(0.0, static_cast<double>(count - 1), 1.0);
+        slider.setValue(0.0, juce::dontSendNotification);
+        slider.setValueFormatter([label](double v) { return label(juce::roundToInt(v)); });
+        slider.setValueParser([label, count](const juce::String& text) {
+            for (int i = 0; i < count; ++i)
+                if (label(i).equalsIgnoreCase(text.trim()))
+                    return static_cast<double>(i);
+            return text.getDoubleValue();
+        });
+        slider.onValueChanged = [this, paramIndex](double value) {
+            if (onParameterChanged)
+                onParameterChanged(paramIndex, static_cast<float>(value));
+            refreshFilterTiles();
+            repaint();
+        };
+        styleTileValue(slider);
+        addAndMakeVisible(slider);
+    };
+    setupChoiceSlider(filterTypeSlider_, 19, kFilterTypes.size(),
+                      [](int i) { return kFilterTypes[i]; });
+    setupChoiceSlider(filterModeSlider_, 20, 5, [this](int i) {
+        const auto labels = filterModeLabels(juce::roundToInt(filterTypeSlider_.getValue()));
+        return labels[i < labels.size() ? i : 0];
+    });
+    setupChoiceSlider(filterPolesSlider_, 21, 3, [](int i) { return juce::String(2 + 2 * i); });
+    for (auto* slider : {&filterTypeSlider_, &filterModeSlider_, &filterPolesSlider_})
+        slider->setVisible(false);
+
+    filterTypeBox_.addItemList(kFilterTypes, 1);
+    filterTypeBox_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
+    filterTypeBox_.setJustificationType(juce::Justification::centredRight);
+    filterTypeBox_.setSelectedId(1, juce::dontSendNotification);
+    filterTypeBox_.onChange = [this] {
+        filterTypeSlider_.setValue(filterTypeBox_.getSelectedId() - 1, juce::sendNotificationSync);
+    };
+    addAndMakeVisible(filterTypeBox_);
+    lookAndFeelChanged();
+    filterModeChoice_.onChange = [this](int index) {
+        filterModeSlider_.setValue(index, juce::sendNotificationSync);
+    };
+    addAndMakeVisible(filterModeChoice_);
+    filterPolesChoice_.setOptions({"2", "4", "6"});
+    filterPolesChoice_.onChange = [this](int index) {
+        filterPolesSlider_.setValue(index, juce::sendNotificationSync);
+    };
+    addAndMakeVisible(filterPolesChoice_);
+
+    filterCutoffSlider_.setRange(20.0, 20000.0, 1.0);
+    filterCutoffSlider_.getSlider().setSkewForCentre(1000.0);
+    filterCutoffSlider_.setValue(1000.0, juce::dontSendNotification);
+    filterCutoffSlider_.setValueFormatter([](double v) {
+        return v < 1000.0 ? juce::String(juce::roundToInt(v)) + " Hz"
+                          : juce::String(v / 1000.0, v < 10000.0 ? 2 : 1) + " kHz";
+    });
+    filterCutoffSlider_.setValueParser([](const juce::String& text) {
+        const auto t = text.trim();
+        const double v = t.getDoubleValue();
+        return t.containsIgnoreCase("k") ? v * 1000.0 : v;
+    });
+    filterCutoffSlider_.onValueChanged = [this](double value) {
+        if (onParameterChanged)
+            onParameterChanged(22, static_cast<float>(value));
+    };
+    styleTileValue(filterCutoffSlider_);
+    addAndMakeVisible(filterCutoffSlider_);
+
+    setupPercentSlider(filterResonanceSlider_, 23, 0.0);
+    setupPercentSlider(filterKeyTrackSlider_, 24, 0.0);
+    setupPercentSlider(filterVelocitySlider_, 25, 0.0);
+    setupTimeSlider(filterAttackSlider_, 26, 0.001, 5.0, 0.001);
+    setupTimeSlider(filterDecaySlider_, 27, 0.001, 5.0, 0.3);
+    setupPercentSlider(filterSustainSlider_, 28, 0.0);
+    setupTimeSlider(filterReleaseSlider_, 29, 0.001, 10.0, 0.1);
+    setupSemitoneSlider(filterEnvAmountSlider_, 30, 72.0);
 
     // --- Fine slider (-100 to +100 cents) ---
     fineSlider_.setRange(-100.0, 100.0, 1.0);
@@ -381,7 +476,9 @@ SamplerUI::SamplerUI() {
                           ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
         addAndMakeVisible(caption);
         frameBoxes_[i].onCommit = [this, slider = markerSliders[i]](juce::int64 frames) {
-            slider->setValue(static_cast<double>(frames) / sampleRate_, juce::sendNotificationSync);
+            // Unrounded: the slider's millisecond step would swallow a one-frame arrow step.
+            slider->getSlider().setValueWithInterval(static_cast<double>(frames) / sampleRate_, 0.0,
+                                                     juce::sendNotificationSync);
             syncFrameBoxes();
             repaint();
         };
@@ -389,7 +486,7 @@ SamplerUI::SamplerUI() {
         markerSliders[i]->setVisible(false);
     }
 
-    viewChoice_.setOptions({"Sample", "Loop", "Amp", "Pitch"});
+    viewChoice_.setOptions({"Sample", "Pitch", "Filter", "Amp"});
     viewChoice_.setSelectedIndex(0);
     viewChoice_.onChange = [this](int index) { showView(index); };
     addAndMakeVisible(viewChoice_);
@@ -409,26 +506,78 @@ SamplerUI::SamplerUI() {
     setupLabel(velAmountLabel_, "Velocity");
     setupLabel(glideLabel_, "Glide");
     setupLabel(pitchEnvAmountLabel_, "Env");
+    setupLabel(filterModeLabel_, "Mode");
+    setupLabel(filterPolesLabel_, "Poles");
+    setupLabel(filterCutoffLabel_, "Cutoff");
+    setupLabel(filterResonanceLabel_, "Res");
+    setupLabel(filterKeyTrackLabel_, "Key");
+    setupLabel(filterVelocityLabel_, "Vel");
+    setupLabel(filterEnvAmountLabel_, "Env");
+    refreshFilterTiles();
     for (auto* label : {&startLabel_, &endLabel_, &loopStartLabel_, &loopEndLabel_})
         label->setVisible(false);
 
     waveformView_.setChrome({.ruler = true, .scrollBar = true});
+    showView(0);
+    lockLoopBoxes();
 }
 
 void SamplerUI::showView(int index) {
-    loopView_ = index == 1;
-    ampView_ = index == 2;
-    pitchView_ = index == 3;
+    view_ = static_cast<View>(juce::jlimit(0, 3, index));
+    pitchView_ = view_ == View::Pitch;
+    filterView_ = view_ == View::Filter;
+    ampView_ = view_ == View::Amp;
     envDrag_ = EnvHandle::None;
-    for (auto* slider : {&attackSlider_, &decaySlider_, &sustainSlider_, &releaseSlider_})
-        slider->setVisible(!pitchView_);
-    for (auto* slider :
-         {&pitchAttackSlider_, &pitchDecaySlider_, &pitchSustainSlider_, &pitchReleaseSlider_})
-        slider->setVisible(pitchView_);
-    // The loop often sits on the sample's ends, where start and end would otherwise win.
-    waveformView_.setLoopMarkersFirst(loopView_);
+    for (auto view : {View::Sample, View::Pitch, View::Filter, View::Amp})
+        for (auto* control : controlsFor(view))
+            control->setVisible(view == view_);
+    // One set of stage names, over whichever envelope's tiles are showing.
+    for (auto* label : {&attackLabel_, &decayLabel_, &sustainLabel_, &releaseLabel_})
+        label->setVisible(view_ != View::Sample);
+    loopButton_->setVisible(view_ == View::Sample);
     syncWaveformMarkers();
+    resized();
     repaint();
+}
+
+std::vector<juce::Component*> SamplerUI::controlsFor(View view) {
+    switch (view) {
+        case View::Sample: {
+            std::vector<juce::Component*> controls;
+            for (auto& box : frameBoxes_)
+                controls.push_back(&box);
+            for (auto& caption : frameCaptions_)
+                controls.push_back(&caption);
+            return controls;
+        }
+        case View::Pitch:
+            return {&pitchSlider_,          &fineSlider_,          &glideSlider_,
+                    &pitchEnvAmountSlider_, &pitchLabel_,          &fineLabel_,
+                    &glideLabel_,           &pitchEnvAmountLabel_, &pitchAttackSlider_,
+                    &pitchDecaySlider_,     &pitchSustainSlider_,  &pitchReleaseSlider_};
+        case View::Filter:
+            return {&filterTypeBox_,        &filterModeChoice_,      &filterPolesChoice_,
+                    &filterCutoffSlider_,   &filterResonanceSlider_, &filterKeyTrackSlider_,
+                    &filterVelocitySlider_, &filterEnvAmountSlider_, &filterModeLabel_,
+                    &filterPolesLabel_,     &filterCutoffLabel_,     &filterResonanceLabel_,
+                    &filterKeyTrackLabel_,  &filterVelocityLabel_,   &filterEnvAmountLabel_,
+                    &filterAttackSlider_,   &filterDecaySlider_,     &filterSustainSlider_,
+                    &filterReleaseSlider_};
+        case View::Amp:
+            return {&attackSlider_, &decaySlider_,     &sustainSlider_, &releaseSlider_,
+                    &levelSlider_,  &velAmountSlider_, &levelLabel_,    &velAmountLabel_};
+    }
+    return {};
+}
+
+void SamplerUI::lockLoopBoxes() {
+    // frameBoxes_ is START, END, LOOP IN, LOOP OUT.
+    const bool loopOn = loopButton_->isActive();
+    for (size_t i : {size_t{2}, size_t{3}}) {
+        frameBoxes_[i].setEnabled(loopOn);
+        frameBoxes_[i].setAlpha(loopOn ? 1.0f : 0.4f);
+        frameCaptions_[i].setAlpha(loopOn ? 1.0f : 0.4f);
+    }
 }
 
 void SamplerUI::syncFrameBoxes() {
@@ -441,6 +590,7 @@ void SamplerUI::syncFrameBoxes() {
 
 SamplerUI::~SamplerUI() {
     stopTimer();
+    filterTypeBox_.setLookAndFeel(nullptr);
 }
 
 void SamplerUI::setupLabel(juce::Label& label, const juce::String& text) {
@@ -457,10 +607,20 @@ void SamplerUI::lookAndFeelChanged() {
     sampleNameLabel_.setColour(juce::Label::textColourId,
                                ActiveTheme::getColour(hasSampleName_ ? ActiveTheme::DEVICE_TEXT
                                                                      : ActiveTheme::DEVICE_DIM2));
-    for (auto* label :
-         {&rootNoteLabel_, &startLabel_, &endLabel_, &loopStartLabel_, &loopEndLabel_,
-          &attackLabel_, &decayLabel_, &sustainLabel_, &releaseLabel_, &pitchLabel_, &fineLabel_,
-          &levelLabel_, &velAmountLabel_, &glideLabel_, &pitchEnvAmountLabel_})
+    filterTypeBox_.setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    filterTypeBox_.setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    filterTypeBox_.setColour(juce::ComboBox::textColourId,
+                             ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
+    filterTypeBox_.setColour(juce::ComboBox::arrowColourId,
+                             ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+    for (auto* label : {&rootNoteLabel_,        &startLabel_,          &endLabel_,
+                        &loopStartLabel_,       &loopEndLabel_,        &attackLabel_,
+                        &decayLabel_,           &sustainLabel_,        &releaseLabel_,
+                        &pitchLabel_,           &fineLabel_,           &levelLabel_,
+                        &velAmountLabel_,       &glideLabel_,          &pitchEnvAmountLabel_,
+                        &filterModeLabel_,      &filterPolesLabel_,    &filterCutoffLabel_,
+                        &filterResonanceLabel_, &filterKeyTrackLabel_, &filterVelocityLabel_,
+                        &filterEnvAmountLabel_})
         label->setColour(juce::Label::textColourId,
                          ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
     repaint();
@@ -487,11 +647,13 @@ void SamplerUI::updateParameters(float attack, float decay, float sustain, float
 
     rootNoteSlider_.setValue(rootNote, juce::dontSendNotification);
 
-    startSlider_.setValue(sampleStart, juce::dontSendNotification);
-    endSlider_.setValue(sampleEnd, juce::dontSendNotification);
+    // The markers keep frame precision, as the frame boxes set them.
+    for (auto [slider, value] :
+         {std::pair{&startSlider_, sampleStart}, std::pair{&endSlider_, sampleEnd},
+          std::pair{&loopStartSlider_, loopStart}, std::pair{&loopEndSlider_, loopEnd}})
+        slider->getSlider().setValueWithInterval(value, 0.0, juce::dontSendNotification);
     loopButton_->setActive(loopEnabled);
-    loopStartSlider_.setValue(loopStart, juce::dontSendNotification);
-    loopEndSlider_.setValue(loopEnd, juce::dontSendNotification);
+    lockLoopBoxes();
 
     hasSampleName_ = sampleName.isNotEmpty();
     if (hasSampleName_) {
@@ -505,6 +667,44 @@ void SamplerUI::updateParameters(float attack, float decay, float sustain, float
     }
     syncFrameBoxes();
     repaint();
+}
+
+std::array<LinkableTextSlider*, SamplerUI::kFilterSlotCount> SamplerUI::filterSliders() {
+    return {&filterTypeSlider_,     &filterModeSlider_,      &filterPolesSlider_,
+            &filterCutoffSlider_,   &filterResonanceSlider_, &filterKeyTrackSlider_,
+            &filterVelocitySlider_, &filterAttackSlider_,    &filterDecaySlider_,
+            &filterSustainSlider_,  &filterReleaseSlider_,   &filterEnvAmountSlider_};
+}
+
+void SamplerUI::updateFilter(const std::array<float, kFilterSlotCount>& values) {
+    const auto sliders = filterSliders();
+    for (size_t i = 0; i < sliders.size(); ++i)
+        sliders[i]->setValue(values[i], juce::dontSendNotification);
+    refreshFilterTiles();
+    repaint();
+}
+
+void SamplerUI::refreshFilterTiles() {
+    using magda::devices::faust::FilterFamily;
+    const int type = juce::roundToInt(filterTypeSlider_.getValue());
+    const bool on = type > 0;
+    const auto family = static_cast<FilterFamily>(juce::jmax(0, type - 1));
+    const bool modes = on && magda::devices::faust::filterModeCount(family) > 1;
+    const bool poles =
+        on && family == FilterFamily::SVF &&
+        juce::roundToInt(filterModeSlider_.getValue()) < magda::devices::faust::kNotchPlusMode;
+    constexpr float kDim = 0.4f;
+    for (auto* slider : filterSliders())
+        if (slider != &filterTypeSlider_)
+            slider->setAlpha(on ? 1.0f : kDim);
+    filterTypeBox_.setSelectedId(type + 1, juce::dontSendNotification);
+    const auto modeLabels = filterModeLabels(type);
+    const int mode = juce::roundToInt(filterModeSlider_.getValue());
+    filterModeChoice_.setOptions(modeLabels);
+    filterModeChoice_.setSelectedIndex(mode < modeLabels.size() ? mode : 0);
+    filterModeChoice_.setAlpha(modes ? 1.0f : kDim);
+    filterPolesChoice_.setSelectedIndex(juce::roundToInt(filterPolesSlider_.getValue()));
+    filterPolesChoice_.setAlpha(poles ? 1.0f : kDim);
 }
 
 void SamplerUI::updatePitchEnvelope(float attack, float decay, float sustain, float release,
@@ -637,6 +837,9 @@ juce::Rectangle<float> SamplerUI::envelopeArea() const {
 }
 
 SamplerUI::EnvSliders SamplerUI::envSliders() {
+    if (filterView_)
+        return {&filterAttackSlider_, &filterDecaySlider_, &filterSustainSlider_,
+                &filterReleaseSlider_};
     if (pitchView_)
         return {&pitchAttackSlider_, &pitchDecaySlider_, &pitchSustainSlider_,
                 &pitchReleaseSlider_};
@@ -644,7 +847,8 @@ SamplerUI::EnvSliders SamplerUI::envSliders() {
 }
 
 bool SamplerUI::envelopeInverted() const {
-    return pitchView_ && pitchEnvAmountSlider_.getValue() < 0.0;
+    return (pitchView_ && pitchEnvAmountSlider_.getValue() < 0.0) ||
+           (filterView_ && filterEnvAmountSlider_.getValue() < 0.0);
 }
 
 float SamplerUI::envelopeLevelAt(float y) const {
@@ -723,9 +927,16 @@ void SamplerUI::dragEnvelope(EnvHandle handle, juce::Point<float> position) {
 }
 
 void SamplerUI::syncWaveformMarkers() {
-    waveformView_.setMarkers({startSlider_.getValue(), endSlider_.getValue(),
-                              loopView_ || loopButton_->isActive(), loopStartSlider_.getValue(),
-                              loopEndSlider_.getValue()});
+    // The loop's markers while it is on, the start and end's otherwise.
+    const bool loopOn = loopButton_->isActive();
+    sdk::WaveformMarkers markers;
+    markers.start = startSlider_.getValue();
+    markers.end = endSlider_.getValue();
+    markers.startEnd = !loopOn;
+    markers.loop = loopOn;
+    markers.loopStart = loopStartSlider_.getValue();
+    markers.loopEnd = loopEndSlider_.getValue();
+    waveformView_.setMarkers(markers);
 }
 
 void SamplerUI::applyWaveformMarkers(const sdk::WaveformResponse& response) {
@@ -901,11 +1112,15 @@ void SamplerUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheel
 
 std::vector<LinkableTextSlider*> SamplerUI::getLinkableSliders() {
     // In MagdaSamplerPlugin::ParamIndex order.
-    return {&attackSlider_,       &decaySlider_,        &sustainSlider_,       &releaseSlider_,
-            &pitchSlider_,        &fineSlider_,         &levelSlider_,         &startSlider_,
-            &endSlider_,          &loopStartSlider_,    &loopEndSlider_,       &velAmountSlider_,
-            &voiceModeSlider_,    &glideSlider_,        &pitchAttackSlider_,   &pitchDecaySlider_,
-            &pitchSustainSlider_, &pitchReleaseSlider_, &pitchEnvAmountSlider_};
+    std::vector<LinkableTextSlider*> sliders{
+        &attackSlider_,       &decaySlider_,        &sustainSlider_,       &releaseSlider_,
+        &pitchSlider_,        &fineSlider_,         &levelSlider_,         &startSlider_,
+        &endSlider_,          &loopStartSlider_,    &loopEndSlider_,       &velAmountSlider_,
+        &voiceModeSlider_,    &glideSlider_,        &pitchAttackSlider_,   &pitchDecaySlider_,
+        &pitchSustainSlider_, &pitchReleaseSlider_, &pitchEnvAmountSlider_};
+    for (auto* slider : filterSliders())
+        sliders.push_back(slider);
+    return sliders;
 }
 
 void SamplerUI::timerCallback() {
@@ -940,10 +1155,23 @@ void SamplerUI::paint(juce::Graphics& g) {
     }
 
     g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.12f));
-    const char* titles[] = {"SAMPLE", "PITCH", pitchView_ ? "PITCH ENV" : "AMP"};
+    // The envelope column is lit, as the plot beside it draws that envelope.
+    const std::array<const char*, 2> titles = [this]() -> std::array<const char*, 2> {
+        switch (view_) {
+            case View::Pitch:
+                return {"PITCH", "PITCH ENV"};
+            case View::Filter:
+                return {"FILTER", "FILTER ENV"};
+            case View::Amp:
+                return {"", "AMP"};
+            case View::Sample:
+                break;
+        }
+        return {"", "SAMPLE"};
+    }();
     for (size_t i = 0; i < sectionTitles_.size(); ++i) {
-        g.setColour(
-            ActiveTheme::getColour(i == 2 ? ActiveTheme::DEVICE_BLUE : ActiveTheme::DEVICE_DIM));
+        g.setColour(ActiveTheme::getColour(
+            i == 1 && view_ != View::Sample ? ActiveTheme::DEVICE_BLUE : ActiveTheme::DEVICE_DIM));
         g.drawText(titles[i], sectionTitles_[i], juce::Justification::centredLeft, false);
     }
 
@@ -1009,8 +1237,9 @@ void SamplerUI::paintEnvelope(juce::Graphics& g) {
     g.drawHorizontalLine(juce::roundToInt(shape->start.y), area.getX(), area.getRight());
 
     const auto colour = ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE);
-    if (pitchView_) {
-        const auto amount = pitchEnvAmountSlider_.getValue();
+    if (pitchView_ || filterView_) {
+        const auto amount =
+            (filterView_ ? filterEnvAmountSlider_ : pitchEnvAmountSlider_).getValue();
         g.setFont(FontManager::getInstance().getMonoFont(10.0f));
         g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
         g.drawText((amount > 0.0 ? "+" : "") + juce::String(static_cast<int>(amount)) + " st",
@@ -1097,13 +1326,15 @@ void SamplerUI::resized() {
     sampleNameLabel_.setBounds(nameRow);
     area.removeFromTop(6);
 
-    // Sample, Pitch and Amp columns on the right, two tiles wide; the waveform takes the rest.
+    // The tab's columns on the right, the plot takes the rest. A module tab is its own column
+    // and its envelope's; Sample and Amp are one column each.
     constexpr int kSectionW = 2 * kTileW + kTileGap;
-    auto columns = area.removeFromRight(3 * kSectionW + 2 * kSpace);
+    constexpr int kFilterW = 3 * kTileW + 2 * kTileGap;
+    const int firstW = view_ == View::Filter ? kFilterW : view_ == View::Pitch ? kSectionW : 0;
+    auto columns = area.removeFromRight(firstW + (firstW > 0 ? kSpace : 0) + kSectionW);
     area.removeFromRight(kSpace);
-    // The view choice, and beside it the loop switch: the Loop view only shows the markers.
     auto viewRow = area.removeFromTop(kTitleH);
-    viewChoice_.setBounds(viewRow.removeFromLeft(220).withSizeKeepingCentre(220, 20));
+    viewChoice_.setBounds(viewRow.removeFromLeft(240).withSizeKeepingCentre(240, 20));
     viewRow.removeFromLeft(6);
     loopButton_->setBounds(viewRow.removeFromLeft(24).withSizeKeepingCentre(24, 24));
     area.removeFromTop(4);
@@ -1123,37 +1354,64 @@ void SamplerUI::resized() {
         slider.setBounds(inner);
     };
 
-    std::array<juce::Rectangle<int>, 3> column;
-    for (size_t i = 0; i < column.size(); ++i) {
-        column[i] = columns.removeFromLeft(kSectionW);
+    // [0] the module's own column, empty on Sample and Amp; [1] the envelope's, or the slice.
+    std::array<juce::Rectangle<int>, 2> column;
+    column[0] = columns.removeFromLeft(firstW);
+    if (firstW > 0)
         columns.removeFromLeft(kSpace);
+    column[1] = columns;
+    for (size_t i = 0; i < column.size(); ++i)
         sectionTitles_[i] = column[i].removeFromTop(kTitleH);
+
+    const auto placeStages = [&](LinkableTextSlider& attack, LinkableTextSlider& decay,
+                                 LinkableTextSlider& sustain, LinkableTextSlider& release) {
+        place(tile(column[1], 0, 0), attackLabel_, attack);
+        place(tile(column[1], 1, 0), decayLabel_, decay);
+        place(tile(column[1], 0, 1), sustainLabel_, sustain);
+        place(tile(column[1], 1, 1), releaseLabel_, release);
+    };
+
+    switch (view_) {
+        case View::Sample: {
+            // A caption, a frame box and its arrows per marker.
+            auto frames = column[1];
+            for (size_t i = 0; i < frameBoxes_.size(); ++i) {
+                auto row = frames.removeFromTop(22);
+                frames.removeFromTop(kTileGap);
+                frameCaptions_[i].setBounds(row.removeFromLeft(56));
+                frameBoxes_[i].setBounds(row);
+            }
+            break;
+        }
+        case View::Pitch:
+            place(tile(column[0], 0, 0), pitchLabel_, pitchSlider_);
+            place(tile(column[0], 1, 0), fineLabel_, fineSlider_);
+            place(tile(column[0], 0, 1), glideLabel_, glideSlider_);
+            place(tile(column[0], 1, 1), pitchEnvAmountLabel_, pitchEnvAmountSlider_);
+            placeStages(pitchAttackSlider_, pitchDecaySlider_, pitchSustainSlider_,
+                        pitchReleaseSlider_);
+            break;
+        case View::Filter:
+            // The type picks the model, so it sits in the title row beside the section's name.
+            filterTypeBox_.setBounds(sectionTitles_[0].withTrimmedLeft(70).withSizeKeepingCentre(
+                sectionTitles_[0].getWidth() - 70, 20));
+            place(tile(column[0], 0, 0).getUnion(tile(column[0], 2, 0)), filterModeLabel_,
+                  filterModeChoice_);
+            place(tile(column[0], 0, 1), filterCutoffLabel_, filterCutoffSlider_);
+            place(tile(column[0], 1, 1), filterResonanceLabel_, filterResonanceSlider_);
+            place(tile(column[0], 2, 1), filterPolesLabel_, filterPolesChoice_);
+            place(tile(column[0], 0, 2), filterKeyTrackLabel_, filterKeyTrackSlider_);
+            place(tile(column[0], 1, 2), filterVelocityLabel_, filterVelocitySlider_);
+            place(tile(column[0], 2, 2), filterEnvAmountLabel_, filterEnvAmountSlider_);
+            placeStages(filterAttackSlider_, filterDecaySlider_, filterSustainSlider_,
+                        filterReleaseSlider_);
+            break;
+        case View::Amp:
+            placeStages(attackSlider_, decaySlider_, sustainSlider_, releaseSlider_);
+            place(tile(column[1], 0, 2), levelLabel_, levelSlider_);
+            place(tile(column[1], 1, 2), velAmountLabel_, velAmountSlider_);
+            break;
     }
-
-    // Sample: a caption, a frame box and its arrows per marker.
-    auto frames = column[0];
-    for (size_t i = 0; i < frameBoxes_.size(); ++i) {
-        auto row = frames.removeFromTop(22);
-        frames.removeFromTop(kTileGap);
-        frameCaptions_[i].setBounds(row.removeFromLeft(56));
-        frameBoxes_[i].setBounds(row);
-    }
-
-    place(tile(column[1], 0, 0), pitchLabel_, pitchSlider_);
-    place(tile(column[1], 1, 0), fineLabel_, fineSlider_);
-    place(tile(column[1], 0, 1), glideLabel_, glideSlider_);
-    place(tile(column[1], 1, 1), pitchEnvAmountLabel_, pitchEnvAmountSlider_);
-
-    place(tile(column[2], 0, 0), attackLabel_, attackSlider_);
-    place(tile(column[2], 1, 0), decayLabel_, decaySlider_);
-    place(tile(column[2], 0, 1), sustainLabel_, sustainSlider_);
-    place(tile(column[2], 1, 1), releaseLabel_, releaseSlider_);
-    pitchAttackSlider_.setBounds(attackSlider_.getBounds());
-    pitchDecaySlider_.setBounds(decaySlider_.getBounds());
-    pitchSustainSlider_.setBounds(sustainSlider_.getBounds());
-    pitchReleaseSlider_.setBounds(releaseSlider_.getBounds());
-    place(tile(column[2], 0, 2), levelLabel_, levelSlider_);
-    place(tile(column[2], 1, 2), velAmountLabel_, velAmountSlider_);
 
     // The view keeps the whole sample in reach at the new width.
     waveformView_.setSize(waveArea_.getWidth(), waveArea_.getHeight());

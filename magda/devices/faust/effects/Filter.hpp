@@ -5,12 +5,13 @@
 #include <vector>
 
 #include "devices/faust/CompiledEffect.hpp"
+#include "devices/faust/effects/FilterEngines.hpp"
 
 namespace magda::devices::faust {
 
 /**
- * @brief One device over six filter engines (SVF, Moog ladder, Korg 35, Oberheim SEM, Sallen-Key,
- *        diode ladder); only the one Engine selects runs compute().
+ * @brief One device over seven filter engines (SVF, Moog ladder, Korg 35, Oberheim SEM,
+ *        Sallen-Key, diode ladder, comb); only the one Engine selects runs compute().
  *
  * Every engine gets the shared zones each block so a switch finds its settings, though its filter
  * state is stale and clicks once. Mode is engine-aware; an unsupported mode falls back to LP.
@@ -28,9 +29,11 @@ class Filter : public CompiledEffect {
     static constexpr int kModeSlot = 4;
     static constexpr int kLimitSlot = 5;
     static constexpr int kMixSlot = 6;
-    static constexpr int kHostSlotCount = 7;
-    enum class FilterFamily { SVF, Ladder, Korg35, Oberheim, SallenKey, Diode };
-    static constexpr int kEngineCount = 6;
+    /// 2, 4 or 6 poles; only the SVF reads it.
+    static constexpr int kPolesSlot = 7;
+    static constexpr int kHostSlotCount = 8;
+    using FilterFamily = faust::FilterFamily;
+    static constexpr int kEngineCount = kFilterFamilyCount;
 
     /// The modes @p engineIndex's dsp declares, so the dropdown never offers one it cannot produce.
     static std::vector<std::string> modeChoicesForEngine(int engineIndex);
@@ -39,7 +42,13 @@ class Filter : public CompiledEffect {
         return kModeSlot;
     }
     std::vector<std::string> engineModeChoices() const override {
-        return modeChoicesForEngine(activeEngine());
+        return modeChoicesForEngine(selectedEngine());
+    }
+
+    /// The compiled dsp that plays the Engine, Mode and Poles slots: the SVF is three.
+    int activeEngine() const override;
+    bool isSlotHiddenForActiveEngine(int slot) const override {
+        return slot == kPolesSlot && selectedEngine() != static_cast<int>(FilterFamily::SVF);
     }
 
     /// The signal in and out, mixed to mono, for the faceplate's spectrum.
@@ -67,7 +76,7 @@ class Filter : public CompiledEffect {
         return "magda_filter_";
     }
     int engineCount() const override {
-        return kEngineCount;
+        return kFilterDspCount;
     }
     int engineSlot() const override {
         return kEngineSlot;
@@ -79,6 +88,11 @@ class Filter : public CompiledEffect {
     void onPrepare(double sampleRate, int maximumBlockSize) override;
 
   private:
+    /// The Engine slot's choice, which the dsp behind it may not share an index with.
+    int selectedEngine() const {
+        return CompiledEffect::activeEngine();
+    }
+
     // The dry signal for Mix, one block per channel, sized at prepare so the audio thread
     // never allocates; channels past the capacity stay wet.
     static constexpr int kMaxDryChannels = 8;

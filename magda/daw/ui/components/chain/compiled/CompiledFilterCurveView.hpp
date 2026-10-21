@@ -30,7 +30,8 @@ class CompiledFilterCurveView final : public juce::Component,
     /// Drive the curve directly from raw values, for hosts that are not the
     /// MagdaFilterCompiledPlugin (e.g. the poly synth's built-in SVF). Bypasses
     /// the device-snapshot / plugin path entirely.
-    /// @param engine     0=SVF 1=Ladder 2=Korg35 3=Oberheim 4=SallenKey
+    /// @param engine     the Filter's Engine order: 0=SVF 1=Ladder 2=Korg35 3=Oberheim
+    ///                   4=SallenKey 5=Diode 6=Comb
     /// @param modeIndex   this view's order: 0=LP 1=BP 2=HP 3=Notch
     /// @param doubleSlope  true = 24 dB/oct (two cascaded stages); false = 12 dB
     void setRawState(int engine, int modeIndex, float cutoffHz, float resonance01, float drive01,
@@ -74,8 +75,8 @@ class CompiledFilterCurveView final : public juce::Component,
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
   private:
-    enum class FilterFamily { SVF, Ladder, Korg35, Oberheim, SallenKey };
-    enum class FilterMode { LowPass, BandPass, HighPass, Notch };
+    enum class FilterFamily { SVF, Ladder, Korg35, Oberheim, SallenKey, Diode, Comb };
+    enum class FilterMode { LowPass, BandPass, HighPass, Notch, NotchPlus };
 
     FilterFamily family_ = FilterFamily::SVF;
     float cutoffHz_ = 1000.0f;
@@ -83,6 +84,7 @@ class CompiledFilterCurveView final : public juce::Component,
     float drive_ = 0.0f;
     int modeIndex_ = 0;
     bool doublePole_ = false;  // 24 dB/oct: square the magnitude
+    int svfStages_ = 1;        ///< The Filter's Poles slot: 2, 4 or 6 poles as 1-3 stages.
     float targetCutoffHz_ = 1000.0f;
     float targetResonance_ = 0.0f;
     float targetDrive_ = 0.0f;
@@ -104,6 +106,9 @@ class CompiledFilterCurveView final : public juce::Component,
 
     FilterMode modeForIndex() const;
     float responseDbAt(float frequencyHz) const;
+    float stageMagnitude(FilterMode mode, float r, float q) const;
+    float notchPlusMagnitude(float r) const;
+    float combMagnitude(float r) const;
     float qValue() const;
     void updateTargetValues();
     bool hasActiveCurveLinks() const;

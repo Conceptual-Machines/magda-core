@@ -1,0 +1,28 @@
+// The TPT state-variable filter (Zavalishin, Simper's form) the SVF variants
+// that stack stages share: one stage with its mode chosen at control rate.
+ba = library("basics.lib");
+
+// One stage's three outputs: input, band-pass and low-pass.
+raw(g, k) = tick ~ (_,_) : !,!,_,_,_
+with {
+    tick(ic1eq, ic2eq, v0) =
+        2 * v1 - ic1eq,
+        2 * v2 - ic2eq,
+        v0, v1, v2
+    with {
+        v1 = ic1eq + g * (v0 - ic2eq) : /(1 + g * (g + k));
+        v2 = ic2eq + g * v1;
+    };
+};
+
+// Mode @p m is LP, BP, HP or Notch. @p bpGain scales band-pass: 1 is the
+// classic peak of Q, k makes it unity.
+stage(m, g, k, bpGain) = raw(g, k) : mixer
+with {
+    mixer(v0, v1, v2) = v0 * a + v1 * b + v2 * c;
+    a = ba.selectn(4, m, 0, 0, 1, 1);
+    b = ba.selectn(4, m, 0, bpGain, 0 - k, 0 - k);
+    c = ba.selectn(4, m, 1, 0, -1, 0);
+};
+
+unityBp(g, k) = stage(1, g, k, k);

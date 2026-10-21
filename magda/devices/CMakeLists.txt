@@ -21,6 +21,7 @@ add_library(magda_portable_devices STATIC
     faust/effects/Dimension.cpp
     faust/effects/Eq.cpp
     faust/effects/Filter.cpp
+    faust/effects/FilterEngines.cpp
     faust/effects/Flanger.cpp
     faust/effects/FreqShift.cpp
     faust/effects/GateExpander.cpp

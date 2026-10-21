@@ -395,6 +395,7 @@ bool PresetManager::loadTrackPresetById(const juce::String& presetId, TrackPrese
             legacy_devices::migrateRetiredDevicesInProject(tracks, nullptr, lanes, clips);
             legacy_devices::normalizeChordEngineRoleInProject(tracks, nullptr);
             device_param_migrations::applyParamIndexMigrations(tracks, nullptr, lanes, clips);
+            device_param_migrations::applyChoiceGrowths(tracks, nullptr, lanes, clips);
             daw::audio::device_state_hydration::hydrateStagedProject(tracks, nullptr, savedVersion);
             outPreset.track = std::move(tracks.front());
             outPreset.hasTrackSettings = true;
