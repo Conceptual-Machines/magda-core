@@ -22,6 +22,7 @@
 #include "audio/controllers/ControllerParamReader.hpp"
 #include "audio/controllers/ControllerParamWriter.hpp"
 #include "audio/controllers/ControllerRouter.hpp"
+#include "audio/io/AudioDeviceOpenMark.hpp"
 #include "audio/osc/OscService.hpp"
 #include "core/AppPaths.hpp"
 #include "core/ClipManager.hpp"
@@ -434,6 +435,15 @@ class MagdaDAWApplication : public JUCEApplication {
 
         // 5. Dismiss splash screen
         splashScreen_.reset();
+
+        if (const auto crashed = magda::crashedAudioDeviceThisLaunch())
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::MessageBoxIconType::WarningIcon,
+                magda::tr("audio_settings.crash_recovery.title"),
+                magda::tr("audio_settings.crash_recovery.message")
+                    .replace("{0}", crashed->isNotEmpty()
+                                        ? *crashed
+                                        : magda::tr("audio_settings.crash_recovery.default")));
 
         // 6. Auto-load local model if configured and enabled
         {

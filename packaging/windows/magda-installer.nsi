@@ -26,6 +26,7 @@ Var McpBinDir
 
 ; Uninstaller pages
 !insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_COMPONENTS
 !insertmacro MUI_UNPAGE_INSTFILES
 
 !insertmacro MUI_LANGUAGE "English"
@@ -179,7 +180,8 @@ vc_redist_ok:
     System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
 SectionEnd
 
-Section "Uninstall"
+Section "un.MAGDA" SecUnProgram
+    SectionIn RO
     Delete "$INSTDIR\MAGDA.exe"
     Delete "$INSTDIR\mgd_doc_icon.ico"
     Delete "$INSTDIR\magda_plugin_scanner.exe"
@@ -216,4 +218,12 @@ Section "Uninstall"
     DeleteRegKey HKCR ".mgd"
     DeleteRegKey HKCR "MAGDA.Project"
     System::Call 'shell32::SHChangeNotify(i 0x08000000, i 0, i 0, i 0)'
+SectionEnd
+
+; Settings, logs and caches in %APPDATA%\MAGDA. Left behind, a setting that crashes MAGDA
+; survives a reinstall (#3090). Documents\MAGDA holds the user's own work and stays.
+Section "un.Settings, logs and caches" SecUnData
+    SetShellVarContext current
+    StrCmp $APPDATA "" +2
+    RMDir /r "$APPDATA\MAGDA"
 SectionEnd
