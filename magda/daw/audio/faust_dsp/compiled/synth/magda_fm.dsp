@@ -5,6 +5,7 @@ declare version "1.0";
 
 import("stdfaust.lib");
 msm = library("magda_smoothing.lib");
+mf = library("magda_filters.lib");
 
 // ============================================================================
 // Reserved per-voice MIDI controls
@@ -109,14 +110,40 @@ opEn(1) = nentry("Op2 Enable [idx:39] [style:menu{'Off':0;'On':1}]", 1, 0, 1, 1)
 opEn(2) = nentry("Op3 Enable [idx:40] [style:menu{'Off':0;'On':1}]", 1, 0, 1, 1);
 opEn(3) = nentry("Op4 Enable [idx:41] [style:menu{'Off':0;'On':1}]", 1, 0, 1, 1);
 
-// ============================================================================
-// FM matrix
-// ============================================================================
-// Each operator reads its waveform at a phase modulated by the matrix-weighted
-// sum of the (one-sample-delayed) operator outputs. `~ si.bus(4)` closes the
-// 4-wide feedback loop, giving the single-sample delay every FM feedback path
-// needs. Phase modulation is applied as cycles (pm radians / 2pi) added to the
-// phasor, so it works uniformly for every waveshape; Noise ignores phase.
+// Filter (#3120). 42 and 43 are the wrapper's Gain and Voice Mode. Off by
+// default, so existing patches sound the same. Type is the SVF's, Comb Mode
+// the comb's; Poles apply to the SVF (the ladder is 4-pole).
+fOn     = nentry("Filter Enable [idx:44] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
+fEngine = nentry("Filter Engine [idx:45] [style:menu{'SVF':0;'Ladder':1;'Comb':2}]", 0, 0, 2, 1);
+fType   = nentry("Filter Type [idx:46] [style:menu{'Lowpass':0;'Highpass':1;'Bandpass':2;'Notch':3}]", 0, 0, 3, 1);
+fComb   = nentry("Filter Comb Mode [idx:47] [style:menu{'+':0;'-':1}]", 0, 0, 1, 1);
+fPoles  = nentry("Filter Poles [idx:48] [style:menu{'2':0;'4':1;'6':2}]", 0, 0, 2, 1);
+fCutoff = hslider("Filter Cutoff [unit:Hz] [scale:log] [idx:49]", 2000, 20, 20000, 1);
+fRes    = hslider("Filter Resonance [idx:50]", 0.3, 0.0, 1.0, 0.001);
+fDrive  = hslider("Filter Drive [idx:51]", 0.0, 0.0, 1.0, 0.001);
+// Octaves of cutoff per octave of the played note, around C4.
+fKey    = hslider("Filter Key Track [idx:52]", 0.0, 0.0, 1.0, 0.001);
+fVel    = hslider("Filter Vel [unit:oct] [idx:53]", 0.0, 0.0, 6.0, 0.01);
+fEnvAmt = hslider("Filter Env [unit:oct] [idx:54]", 0.0, -4.0, 4.0, 0.01);
+fAtt    = hslider("Filter Attack [idx:55]",  5.0,   1.0, 2000.0, 0.1) * 0.001;
+fDec    = hslider("Filter Decay [idx:56]",   300.0, 1.0, 2000.0, 0.1) * 0.001;
+fSus    = hslider("Filter Sustain [idx:57]", 0.5,   0.0, 1.0,    0.001);
+fRel    = hslider("Filter Release [idx:58]", 400.0, 1.0, 4000.0, 0.1) * 0.001;
+
+// The filter as a matrix node (#3121). In Matrix position its input is the
+// operators' sends instead of the mix, its output phase-modulates the operators
+// through the returns (radians, as the matrix) and reaches the mix at F Level.
+fSend(0) = hslider("M 1>F [idx:59]", 0.0, 0.0, 1.0, 0.001);
+fSend(1) = hslider("M 2>F [idx:60]", 0.0, 0.0, 1.0, 0.001);
+fSend(2) = hslider("M 3>F [idx:61]", 0.0, 0.0, 1.0, 0.001);
+fSend(3) = hslider("M 4>F [idx:62]", 0.0, 0.0, 1.0, 0.001);
+fRet(0)  = hslider("M F>1 [idx:63]", 0.0, 0.0, 8.0, 0.001);
+fRet(1)  = hslider("M F>2 [idx:64]", 0.0, 0.0, 8.0, 0.001);
+fRet(2)  = hslider("M F>3 [idx:65]", 0.0, 0.0, 8.0, 0.001);
+fRet(3)  = hslider("M F>4 [idx:66]", 0.0, 0.0, 8.0, 0.001);
+fLvl     = hslider("F Level [unit:dB] [idx:67]", 0.0, -60.0, 6.0, 0.1);
+fPos     = nentry("Filter Position [idx:68] [style:menu{'Output':0;'Matrix':1}]", 0, 0, 1, 1);
+
 // Smooth the continuous controls so dragging a matrix amount / ratio / level
 // glides instead of stepping per block (the stepped values were the zipper noise
 // on tweak). Wave is discrete and the envelope times are per-note, so they are
@@ -125,9 +152,54 @@ opEn(3) = nentry("Op4 Enable [idx:41] [style:menu{'Off':0;'On':1}]", 1, 0, 1, 1)
 // glide is the point of one and the other is already half a millisecond.
 sm(x) = x : msm.polySmoo(gate);
 
-operators(y0, y1, y2, y3) = op(0), op(1), op(2), op(3)
+// ============================================================================
+// Filter
+// ============================================================================
+// One control-rate selector picks @p dry or an engine, and only that one runs:
+// smoothing the on/off switch measured twice the idle cost.
+fSel(on) = on * (int(fEngine) + 1);
+filter(sel, dry, x) = ba.selectn(4, sel, dry, enable(svfOut, sel == 1),
+                                 enable(ladderOut, sel == 2), enable(combOut, sel == 3))
 with {
-    pm(i) = sm(m(0, i)) * y0 + sm(m(1, i)) * y1 + sm(m(2, i)) * y2 + sm(m(3, i)) * y3;
+    r = sm(fRes);
+    fEnv = en.adsre(fAtt, fDec, fSus, fRel, gate);
+    octs = sm(fEnvAmt) * fEnv + sm(fVel) * gainG + sm(fKey) * log(freqG / 261.63) / log(2.0);
+    fc = sm(fCutoff) * pow(2.0, octs) : max(20.0) : min(min(20000.0, ma.SR * 0.45));
+    driven = x : mf.drive(sm(fDrive));
+    // Resonance as the Filter device's: SVF Q 0.5..40, ladder q to 0.99, comb feedback to 0.98.
+    svfOut = driven : mf.svfPoles(ba.selectn(4, int(fType), 0, 2, 1, 3), int(fPoles),
+                                  tan(fc * ma.PI / ma.SR), 1.0 / (0.5 * pow(80.0, r)));
+    ladderOut = driven : mf.ladder(r * 0.99, fc);
+    combOut = driven : mf.comb(8192, max(2.0, min(8188.0, ma.SR / fc)),
+                               1.0 - 2.0 * (fComb > 0.5), 0.98 * r);
+};
+
+// One filter serves both positions. Output filters the operators' mix (#3120);
+// Matrix makes it a fifth node, run only while something is sent to it.
+inMatrix = fPos > 0.5;
+anySend = (fSend(0) + fSend(1) + fSend(2) + fSend(3)) > 0.0;
+nodeOn = (fOn > 0.5) * (anySend | (1 - inMatrix));
+matrixOn = (fOn > 0.5) * inMatrix * anySend;
+
+// dB -> linear gain (floored to silence at -60 dB), smoothed to avoid steps.
+dbGain(db) = sm(db > -59.5) * ba.db2linear(sm(db));
+lvl(i) = dbGain(outLvl(i));
+
+// ============================================================================
+// FM matrix
+// ============================================================================
+// Each operator reads its waveform at a phase modulated by the matrix-weighted
+// sum of the (one-sample-delayed) operator outputs. `~ si.bus(5)` closes the
+// loop, giving the single-sample delay every FM feedback path needs. Phase
+// modulation is applied as cycles (pm radians / 2pi) added to the phasor, so it
+// works uniformly for every waveshape; Noise ignores phase.
+// The filter node is the loop's fifth signal, so it too reads the operators one
+// sample late. tanh bounds its input, so a resonant filter in the loop can't
+// run away.
+operators(y0, y1, y2, y3, yf) = op(0), op(1), op(2), op(3), node, out
+with {
+    pm(i) = sm(m(0, i)) * y0 + sm(m(1, i)) * y1 + sm(m(2, i)) * y2 + sm(m(3, i)) * y3
+          + enable(sm(fRet(i)) * yf, matrixOn);
     // Resettable phasor (os.hs_phasor) so Phase Reset restarts the op at 0 on
     // note-on; glide-smoothed pitch (freqG) carries portamento.
     mphase(i) = os.hs_phasor(1.0, freqG * sm(ratio(i)), (reset(i) > 0) * phaseResetRise) +
@@ -139,13 +211,15 @@ with {
     sqr(x) = 2.0 * float(x < 0.5) - 1.0;
     op(i) = ba.selectn(5, int(wave(i)), sine(p(i)), tri(p(i)), saw(p(i)), sqr(p(i)), no.noise)
             * sm(opEn(i));
+    ops = op(0) * lvl(0) + op(1) * lvl(1) + op(2) * lvl(2) + op(3) * lvl(3);
+    sends = sm(fSend(0)) * y0 + sm(fSend(1)) * y1 + sm(fSend(2)) * y2 + sm(fSend(3)) * y3;
+    // The node is the loop's fifth signal; `out` is the voice, after the loop.
+    node = filter(fSel(nodeOn), select2(inMatrix, ops, 0.0),
+                  select2(inMatrix, ops, enable(ma.tanh(sends), matrixOn)));
+    out = select2(inMatrix, node, ops + enable(node * dbGain(fLvl), matrixOn));
 };
 
-// dB -> linear gain (floored to silence at -60 dB), smoothed to avoid steps.
-lvl(i) = sm(outLvl(i) > -59.5) * ba.db2linear(sm(outLvl(i)));
-mix(y0, y1, y2, y3) = y0 * lvl(0) + y1 * lvl(1) + y2 * lvl(2) + y3 * lvl(3);
-
-voice = (operators ~ si.bus(4)) : mix : *(env) : *(velGain);
+voice = (operators ~ si.bus(5)) : (si.block(5), _) : *(env) : *(velGain);
 
 // Mono voice fanned to a stereo pair (the poly allocator sums all voices).
 process = voice <: _, _;

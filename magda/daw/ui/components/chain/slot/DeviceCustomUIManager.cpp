@@ -511,7 +511,7 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     if (polySynthUI_)
         return 960;  // OSC rows | filter tabs | envelope tabs
     if (fmUI_)
-        return 740;  // 4x4 matrix + 4 operator columns + wider amp/right column
+        return 1100;  // OPERATORS | MATRIX | FILTER | envelope tabs
     if (materiaUI_)
         return 720;  // VOICE row + EXCITER | RESONATOR two-column faceplate
     if (haloUI_)

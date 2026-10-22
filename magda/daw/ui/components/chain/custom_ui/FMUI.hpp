@@ -7,26 +7,22 @@
 #include <memory>
 #include <vector>
 
+#include "compiled/CompiledFilterCurveView.hpp"
 #include "core/ParameterInfo.hpp"
 #include "custom_ui/AdsrGraph.hpp"
-#include "ui/components/common/IconSelector.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
+#include "ui/components/common/SegmentedChoice.hpp"
 
 namespace magda::daw::ui {
 
 /**
- * @brief Custom UI for the compiled FM synth (magda_fm).
+ * @brief Custom UI for the compiled FM synth (magda_fm), in the v1 faceplate style.
  *
- * Centrepiece is the 4x4 modulation matrix: a grid of value boxes where cell
- * (row=src, col=dst) is M(src,dst) - how much operator src phase-modulates
- * operator dst (the diagonal is self-feedback). Below it, one column per
- * operator (Wave dropdown / Ratio / Level) and a row for the amp ADSR + Gain.
- *
- * Every control is a LinkableTextSlider carrying its host slot index via
- * setParamIndex(), so mod / macro / automation / MIDI-Learn drag-linking is
- * wired by DeviceSlotComponent::setupCustomUILinking(); the manager pushes live
- * values in via updateFromParameters(). Wave dropdowns overlay hidden sliders
- * (which keep the value + linking), the same trick PolySynthUI uses.
+ * Four panels: OPERATORS (a row per operator, and the filter node's level), the
+ * MATRIX (row = source, column = destination, the filter a fifth node), the
+ * FILTER, and the amp and filter envelopes as tabs. The operator rows and the
+ * matrix rows line up. Every slot keeps a LinkableTextSlider, hidden where a
+ * segmented choice, combo or toggle shows it, so linking reaches all of them.
  */
 class FMUI : public juce::Component {
   public:
@@ -41,55 +37,102 @@ class FMUI : public juce::Component {
     void lookAndFeelChanged() override;
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void mouseDown(const juce::MouseEvent& e) override;
 
   private:
     // Host slot layout - must match magda_fm.dsp / the C++ wrapper.
     static constexpr int kNumOps = 4;
-    static constexpr int kMatrixBase = 0;    // 0..15, idx = src*4 + dst
-    static constexpr int kRatioBase = 16;    // 16..19
-    static constexpr int kLevelBase = 20;    // 20..23
-    static constexpr int kAmpAdsrBase = 24;  // 24..27 (A/D/S/R)
-    static constexpr int kWaveBase = 28;     // 28..31
+    static constexpr int kNodes = kNumOps + 1;  // the operators and the filter
+    static constexpr int kMatrixBase = 0;       // 0..15, idx = src*4 + dst
+    static constexpr int kRatioBase = 16;
+    static constexpr int kLevelBase = 20;
+    static constexpr int kAmpAdsrBase = 24;
+    static constexpr int kWaveBase = 28;
     static constexpr int kGlideSlot = 32;
     static constexpr int kVelAmtSlot = 33;
-    static constexpr int kResetBase = 34;   // 34..37 (per-op phase reset)
-    static constexpr int kEnableBase = 38;  // 38..41 (per-op enable / mute)
+    static constexpr int kResetBase = 34;
+    static constexpr int kEnableBase = 38;
     static constexpr int kGainSlot = 42;
     static constexpr int kVoiceModeSlot = 43;
-    static constexpr int kNumParams = 44;
-    static constexpr int kNumWaves = 5;  // Sine / Triangle / Saw / Square / Noise
+    static constexpr int kFilterEnableSlot = 44;
+    static constexpr int kFilterEngineSlot = 45;
+    static constexpr int kFilterTypeSlot = 46;
+    static constexpr int kFilterCombModeSlot = 47;
+    static constexpr int kFilterPolesSlot = 48;
+    static constexpr int kFilterCutoffSlot = 49;
+    static constexpr int kFilterResonanceSlot = 50;
+    static constexpr int kFilterDriveSlot = 51;
+    static constexpr int kFilterKeyTrackSlot = 52;
+    static constexpr int kFilterVelSlot = 53;
+    static constexpr int kFilterEnvSlot = 54;
+    static constexpr int kFilterAdsrBase = 55;
+    static constexpr int kFilterSendBase = 59;    // 59..62, Op n > F
+    static constexpr int kFilterReturnBase = 63;  // 63..66, F > Op n
+    static constexpr int kFilterLevelSlot = 67;
+    static constexpr int kFilterPositionSlot = 68;
+    static constexpr int kNumParams = 69;
 
     struct Control {
         std::unique_ptr<juce::Label> label;
         std::unique_ptr<LinkableTextSlider> slider;
+        juce::Rectangle<int> tile;  ///< Painted behind the value; empty when unplaced.
     };
 
-    void setOpWave(int op, int wave);
-    void updateWaveSelectors();
-    void setOpReset(int op, bool on);
-    void updateResetButtons();
-    void setOpEnable(int op, bool on);
-    void updateEnableButtons();
-    // Grey out (and disable) every control in a disabled operator's column.
-    void applyOpColumnEnabled(int op);
-    void layoutCells(juce::Rectangle<int> area, const std::vector<int>& indices, int cols);
+    /// What the FILTER panel and the matrix's F cells show, cached from the slots.
+    struct FilterState {
+        bool on = false;
+        bool inMatrix = false;
+        int engine = 0;  // SVF / Ladder / Comb
+        int type = 0;    // LP / HP / BP / Notch
+        int combMode = 0;
+        int poles = 0;
+        float cutoffHz = 2000.0f;
+        float resonance = 0.3f;
+        float drive = 0.0f;
+    };
+
+    /// The slot in matrix cell (@p src, @p dst), the filter being node 4; -1 for F > F.
+    static int matrixSlot(int src, int dst);
+
+    // A tile at @p bounds: slot @p slot's caption above its value, or the value alone.
+    void placeTile(int slot, juce::Rectangle<int> bounds, bool withCaption = true);
+    void placeTiles(juce::Rectangle<int> area, const std::vector<int>& slots, int cols);
+    void layoutOperatorPanel();
+    void layoutMatrixPanel();
+    void layoutFilterPanel();
+    void layoutEnvelopePanel();
+    void styleControls();
+
+    // Write a choice slot from its segment, combo or toggle.
+    void setChoiceSlot(int slot, int value);
+    // Cache a choice or filter value and refresh what shows it.
+    void syncFromParam(int slot, float value);
+    void syncGraphFromParam(int slot, float value);
+    void refreshOperatorRows();
+    void refreshFilterPanel();
+    void refreshEnvelopePanel();
 
     std::array<Control, kNumParams> controls_;
 
-    // Per-operator waveform icon selectors (overlay the hidden wave sliders).
-    std::array<IconSelector, kNumOps> waveSelectors_;
-    // Per-operator phase-reset toggles (overlay the hidden reset sliders).
-    std::array<std::unique_ptr<juce::TextButton>, kNumOps> resetButtons_;
+    std::array<juce::ComboBox, kNumOps> waveBoxes_;
+    std::array<bool, kNumOps> opEnabled_{true, true, true, true};
     std::array<bool, kNumOps> opReset_{};
-    // Per-operator enable (mute) toggles; disabling greys out the column.
-    std::array<std::unique_ptr<juce::TextButton>, kNumOps> enableButtons_;
-    std::array<bool, kNumOps> opEnabled_{};  // all true after construction
 
-    // Draggable amp ADSR envelope (replaces the A/D/S/R value boxes as the editor).
     std::unique_ptr<AdsrGraph> ampGraph_;
+    std::unique_ptr<AdsrGraph> filterGraph_;
+    bool showFilterEnvelope_ = false;
 
-    // Cached section rectangles for painted titles / matrix headers.
-    juce::Rectangle<int> matrixArea_, opsArea_, ampArea_;
+    FilterState filter_;
+    std::unique_ptr<CompiledFilterCurveView> filterCurve_;
+    magda::SegmentedChoice positionChoice_, engineChoice_, typeChoice_, combChoice_, polesChoice_;
+
+    // Painted parts, kept for paint and hit-testing.
+    juce::Rectangle<int> opsPanel_, matrixPanel_, filterPanel_, envelopePanel_;
+    std::array<juce::Rectangle<int>, kNumOps> waveTiles_, enableDots_, resetTiles_;
+    std::array<juce::Rectangle<int>, kNodes> opRowLabels_, matrixRowLabels_, matrixColLabels_;
+    std::array<juce::Rectangle<int>, 4> opColumnCaptions_;
+    juce::Rectangle<int> filterRowTile_, filterTab_, filterDot_, sendsCaption_;
+    std::array<juce::Rectangle<int>, 2> envelopeTabs_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FMUI)
 };

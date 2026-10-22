@@ -128,6 +128,22 @@ std::optional<juce::Path> iconFor(const juce::String& option) {
             path.startNewSubPath(0.65f, y);
             path.lineTo(0.85f, y);
         }
+    } else if (name == "output") {
+        // A block at the end of the chain.
+        path.startNewSubPath(0.0f, 0.5f);
+        path.lineTo(0.35f, 0.5f);
+        path.addRectangle(0.35f, 0.2f, 0.35f, 0.6f);
+        path.startNewSubPath(0.7f, 0.5f);
+        path.lineTo(1.0f, 0.5f);
+    } else if (name == "matrix") {
+        // A block inside a feedback loop.
+        path.addRectangle(0.32f, 0.45f, 0.36f, 0.45f);
+        path.startNewSubPath(0.68f, 0.68f);
+        path.lineTo(0.92f, 0.68f);
+        path.lineTo(0.92f, 0.1f);
+        path.lineTo(0.08f, 0.1f);
+        path.lineTo(0.08f, 0.68f);
+        path.lineTo(0.32f, 0.68f);
     } else {
         return std::nullopt;
     }
@@ -244,11 +260,20 @@ void SegmentedChoice::mouseDown(const juce::MouseEvent& e) {
 }
 
 juce::String SegmentedChoice::getTooltip() {
-    static const std::map<juce::String, juce::String> kNames{
-        {"lp", "Low Pass"},         {"hp", "High Pass"},  {"bp", "Band Pass"},
-        {"lc", "Low Cut"},          {"hc", "High Cut"},   {"ls", "Low Shelf"},
-        {"hs", "High Shelf"},       {"bell", "Bell"},     {"notch", "Notch"},
-        {"s&h", "Sample and Hold"}, {"serial", "Serial"}, {"parallel", "Parallel"}};
+    static const std::map<juce::String, juce::String> kNames{{"lp", "Low Pass"},
+                                                             {"hp", "High Pass"},
+                                                             {"bp", "Band Pass"},
+                                                             {"lc", "Low Cut"},
+                                                             {"hc", "High Cut"},
+                                                             {"ls", "Low Shelf"},
+                                                             {"hs", "High Shelf"},
+                                                             {"bell", "Bell"},
+                                                             {"notch", "Notch"},
+                                                             {"s&h", "Sample and Hold"},
+                                                             {"serial", "Serial"},
+                                                             {"parallel", "Parallel"},
+                                                             {"output", "Filter on the output"},
+                                                             {"matrix", "Filter in the matrix"}};
     const auto mouse = getMouseXYRelative().toFloat();
     for (int i = 0; i < options_.size(); ++i) {
         if (!segmentBounds(i).contains(mouse) || !allHaveIcons(options_))

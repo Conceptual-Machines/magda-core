@@ -5,7 +5,7 @@ declare version "1.0";
 
 import("stdfaust.lib");
 msm = library("magda_smoothing.lib");
-svf = library("magda_svf.lib");
+mf = library("magda_filters.lib");
 
 // The plain SVF's controls and coefficients (magda_filter_svf.dsp); see there.
 smoothing = hslider("Smoothing [unit:s] [idx:4]", 0.02, 0.0005, 0.1, 0.0001);
@@ -17,21 +17,14 @@ drive  = hslider("Drive [idx:2]", 0.0, 0.0, 1.0, 0.001) : msm.smooth(ba.tau2pole
 prewarp(hz) = tan(min(hz, ma.SR * 0.45) * ma.PI / ma.SR) : ctl;
 g = prewarp(cutoff);
 k = 1.0 / (0.5 * pow(80.0, res)) : ctl;
-drivenIn(x) = (1.0 - drive) * x
-            + drive * (ma.tanh(4.0 * x) / ma.tanh(4.0));
+drivenIn = mf.drive(drive);
 
 // Notch+ is listed so every SVF variant reads the mode slot on the same steps.
 mode   = nentry("Mode [idx:3] [style:menu{'LP':0;'BP':1;'HP':2;'Notch':3;'Notch+':4}]", 0, 0, 4, 1);
 poles  = nentry("Poles [idx:5] [style:menu{'2':0;'4':1;'6':2}]", 1, 0, 2, 1);
 
-// Stages ahead of the last are flat-ish and unity at the band's centre;
-// resonance lives in the last stage only, so stacking adds slope, not peaks.
-kFlat = sqrt(2.0);
+// 2 poles is the plain SVF's job; here it plays 4.
 m = int(min(mode, 3));
-staged(x) = ba.selectn(2, poles > 1.5, pre1, pre2) : svf.stage(m, g, k, 1.0)
-with {
-    pre1 = x : svf.stage(m, g, kFlat, kFlat);
-    pre2 = pre1 : svf.stage(m, g, kFlat, kFlat);
-};
+staged = mf.svfPoles(m, max(1, int(poles)), g, k);
 
 process = par(i, 2, drivenIn : staged);

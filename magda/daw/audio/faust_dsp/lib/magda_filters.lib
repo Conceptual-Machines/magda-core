@@ -1,0 +1,39 @@
+// Filter engine cores shared by the Filter device, Poly Synth and FM (#3120).
+// Controls, smoothing and stereo stay with each dsp; these take coefficients.
+ba = library("basics.lib");
+ma = library("maths.lib");
+de = library("delays.lib");
+ve = library("vaeffects.lib");
+svf = library("magda_svf.lib");
+
+// Dry/saturated lerp; tanh(4) normalisation keeps unity-amplitude signals at
+// unity at full drive. Zero drive skips the tanh.
+drive(d, x) = (1.0 - d) * x + d * (enable(ma.tanh(4.0 * x), d > 0.0) / ma.tanh(4.0));
+
+// The SVF with 1-3 stages in series (2, 4 or 6 poles), resonance in the last
+// only, so stacking adds slope, not peaks. @p m is magda_svf.lib's mode order
+// and @p k the last stage's damping. Stages @p poles doesn't use don't run.
+kFlat = sqrt(2.0);
+svfPoles(m, poles, g, k, x) =
+    ba.selectn(3, int(poles), x, enable(pre1, int(poles) == 1), enable(pre2, int(poles) == 2))
+    : svf.stage(m, g, k, 1.0)
+with {
+    pre1 = x : svf.stage(m, g, kFlat, kFlat);
+    pre2 = pre1 : svf.stage(m, g, kFlat, kFlat);
+};
+
+// Moog ladder: 4-pole low-pass. Keep @p q just under 1 to stay out of the
+// self-oscillation runaway.
+ladder(q, fc) = ve.moog_vcf_2bn(q, fc);
+
+// A feedback comb with a feedforward tap: the tap keeps the notches between
+// the peaks at zero for any feedback, so feedback 0 is still a comb. The sqrt
+// holds the level roughly steady as feedback narrows the peaks. @p sign 1 puts
+// the peaks on the harmonics of SR / period, -1 on its odd half-harmonics.
+// The tap is the loop's own delayed signal, so the comb holds one delay line.
+comb(maxDelay, period, sign, feedback, x) = x : (loop ~ (de.fdelay3(maxDelay, period - 1.0), !)) : tap
+with {
+    // The recursion adds one sample, so the loop's own delay is one short.
+    loop(delayed, in) = in + sign * feedback * delayed, delayed;
+    tap(y, delayed) = 0.5 * sqrt(1.0 - feedback) * (y + sign * delayed);
+};

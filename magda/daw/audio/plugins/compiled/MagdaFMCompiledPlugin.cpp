@@ -120,6 +120,91 @@ std::vector<MagdaFMCompiledPlugin::HostSlotInfo> MagdaFMCompiledPlugin::voiceSlo
     return v;
 }
 
+std::vector<MagdaFMCompiledPlugin::HostSlotInfo> MagdaFMCompiledPlugin::slotInfos() const {
+    using magda::ParameterScale;
+    auto infos = MagdaCompiledPolyInstrument::slotInfos();
+    infos.resize(kHostSlotCount);
+
+    const auto choice = [](const juce::String& name, float def,
+                           std::vector<juce::String> choices) -> HostSlotInfo {
+        return {.name = name,
+                .scale = ParameterScale::Discrete,
+                .minValue = 0.0f,
+                .maxValue = static_cast<float>(choices.size() - 1),
+                .defaultValue = def,
+                .choices = std::move(choices)};
+    };
+    infos[kFilterEnableSlot] = choice("Filter Enable", 0.0f, {"Off", "On"});
+    infos[kFilterEngineSlot] = choice("Filter Engine", 0.0f, {"SVF", "Ladder", "Comb"});
+    infos[kFilterTypeSlot] =
+        choice("Filter Type", 0.0f, {"Lowpass", "Highpass", "Bandpass", "Notch"});
+    infos[kFilterCombModeSlot] = choice("Filter Comb Mode", 0.0f, {"+", "-"});
+    infos[kFilterPolesSlot] = choice("Filter Poles", 0.0f, {"2", "4", "6"});
+
+    infos[kFilterCutoffSlot] = {.name = "Filter Cutoff",
+                                .unit = "Hz",
+                                .scale = ParameterScale::Logarithmic,
+                                .minValue = 20.0f,
+                                .maxValue = 20000.0f,
+                                .defaultValue = 2000.0f};
+    infos[kFilterResonanceSlot] = {.name = "Filter Resonance",
+                                   .scale = ParameterScale::Linear,
+                                   .minValue = 0.0f,
+                                   .maxValue = 1.0f,
+                                   .defaultValue = 0.3f};
+    infos[kFilterDriveSlot] = {.name = "Filter Drive",
+                               .scale = ParameterScale::Linear,
+                               .minValue = 0.0f,
+                               .maxValue = 1.0f,
+                               .defaultValue = 0.0f};
+    infos[kFilterKeyTrackSlot] = {.name = "Filter Key Track",
+                                  .scale = ParameterScale::Linear,
+                                  .minValue = 0.0f,
+                                  .maxValue = 1.0f,
+                                  .defaultValue = 0.0f};
+    infos[kFilterVelSlot] = {.name = "Filter Vel",
+                             .unit = "oct",
+                             .scale = ParameterScale::Linear,
+                             .minValue = 0.0f,
+                             .maxValue = 6.0f,
+                             .defaultValue = 0.0f};
+    infos[kFilterEnvSlot] = {.name = "Filter Env",
+                             .unit = "oct",
+                             .scale = ParameterScale::Linear,
+                             .minValue = -4.0f,
+                             .maxValue = 4.0f,
+                             .defaultValue = 0.0f};
+
+    // Filter ADSR, ranged as the amp's (24..27).
+    const juce::String stage[4] = {"Attack", "Decay", "Sustain", "Release"};
+    for (int i = 0; i < 4; ++i) {
+        infos[kFilterAdsrBaseSlot + i] = infos[24 + i];
+        infos[kFilterAdsrBaseSlot + i].name = "Filter " + stage[i];
+    }
+
+    // The filter node, named as the matrix's cells (M1F = op 1 into the filter).
+    for (int op = 0; op < 4; ++op) {
+        infos[kFilterSendBaseSlot + op] = {.name = "M" + juce::String(op + 1) + "F",
+                                           .scale = ParameterScale::Linear,
+                                           .minValue = 0.0f,
+                                           .maxValue = 1.0f,
+                                           .defaultValue = 0.0f};
+        infos[kFilterReturnBaseSlot + op] = {.name = "MF" + juce::String(op + 1),
+                                             .scale = ParameterScale::Linear,
+                                             .minValue = 0.0f,
+                                             .maxValue = 8.0f,
+                                             .defaultValue = 0.0f};
+    }
+    infos[kFilterLevelSlot] = {.name = "F Level",
+                               .unit = "dB",
+                               .scale = ParameterScale::FaderDB,
+                               .minValue = -60.0f,
+                               .maxValue = 6.0f,
+                               .defaultValue = 0.0f};
+    infos[kFilterPositionSlot] = choice("Filter Position", 0.0f, {"Output", "Matrix"});
+    return infos;
+}
+
 const CompiledPluginSpec& getMagdaFMSpec() {
     static const CompiledPluginSpec kSpec{
         .pluginId = MagdaFMCompiledPlugin::xmlTypeName,
