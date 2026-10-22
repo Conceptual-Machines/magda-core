@@ -431,10 +431,14 @@ target_sources(magda_daw PRIVATE
     CompService.cpp
     CompService.hpp
     # The one owner of hardware audio I/O (#2746)
+    io/AudioDeviceOpenMark.cpp
+    io/AudioDeviceOpenMark.hpp
     io/AudioIOService.cpp
     io/AudioIOService.hpp
     io/CoreAudioRate.cpp
     io/CoreAudioRate.hpp
+    io/DriverControlPanel.cpp
+    io/DriverControlPanel.hpp
     io/HardwareRouteNames.cpp
     io/HardwareRouteNames.hpp
     io/LegacyAudioSettings.cpp

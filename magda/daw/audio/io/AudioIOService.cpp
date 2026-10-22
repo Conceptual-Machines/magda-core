@@ -4,7 +4,10 @@
 #include <cmath>
 #include <iterator>
 
+#include "../../core/AppPaths.hpp"
+#include "AudioDeviceOpenMark.hpp"
 #include "CoreAudioRate.hpp"
+#include "DriverControlPanel.hpp"
 #include "HardwareRouteNames.hpp"
 #include "LegacyAudioSettings.hpp"
 
@@ -42,11 +45,12 @@ void log(const juce::String& message) {
 
 }  // namespace
 
-AudioIOService::AudioIOService() : AudioIOService({}, legacySettingsFile()) {}
+AudioIOService::AudioIOService()
+    : AudioIOService({}, legacySettingsFile(), paths::audioDeviceOpenMarkFile()) {}
 
 AudioIOService::AudioIOService(std::vector<std::unique_ptr<juce::AudioIODeviceType>> backends,
-                               juce::File legacySettings)
-    : legacySettings_(std::move(legacySettings)) {
+                               juce::File legacySettings, juce::File openMark)
+    : legacySettings_(std::move(legacySettings)), openMark_(std::move(openMark)) {
     // Before the first scan: JUCE creates the platform's backends only when it has none.
     for (auto& backend : backends)
         manager_.addAudioDeviceType(std::move(backend));
@@ -62,16 +66,29 @@ AudioIOService::~AudioIOService() {
 
 void AudioIOService::open() {
     auto& config = Config::getInstance();
-    auto wanted = config.getAudioIO();
-    const auto migrating = !wanted.has_value();
+    const auto recovering = takeCrashedAudioDevice(openMark_).has_value();
+    auto wanted = recovering ? std::nullopt : config.getAudioIO();
+    const auto migrating = !recovering && !wanted.has_value();
     if (migrating)
         wanted = readLegacyAudioSettings(legacySettings_);
 
-    const auto fitted = fit(wanted);
-    if (const auto error = openFitted(fitted); error.isNotEmpty())
-        log("could not open " + juce::String(fitted.outputInterface) + " on " +
-            juce::String(fitted.backend) + ": " + error);
+    AudioIOSettings fitted;
+    {
+        // Over fit() too: probing the interface's channels loads its driver.
+        const AudioDeviceOpenMark mark(
+            openMark_, wanted ? juce::String(wanted->backend + ": " + wanted->outputInterface)
+                              : juce::String());
+        fitted = fit(wanted);
+        if (const auto error = openFitted(fitted); error.isNotEmpty())
+            log("could not open " + juce::String(fitted.outputInterface) + " on " +
+                juce::String(fitted.backend) + ": " + error);
+    }
 
+    if (recovering) {
+        config.setAudioIO(fitted);
+        config.save();
+        return;
+    }
     if (!migrating || !wanted)
         return;
 
@@ -137,6 +154,35 @@ std::vector<int> AudioIOService::availableBufferSizes() const {
         for (const auto size : device->getAvailableBufferSizes())
             sizes.push_back(size);
     return sizes;
+}
+
+bool AudioIOService::hasControlPanel() const {
+    const auto* device = manager_.getCurrentAudioDevice();
+    return device != nullptr && device->hasControlPanel();
+}
+
+void AudioIOService::showControlPanel() {
+    auto* device = manager_.getCurrentAudioDevice();
+    if (device == nullptr || !device->hasControlPanel())
+        return;
+
+    // Read before closing: with nothing saved, the choice is what is open.
+    auto settings = chosen();
+    if (!showDriverControlPanel(*device))
+        return;
+
+    // The driver now picks the block size, so the choice keeps what it opened at.
+    manager_.closeAudioDevice();
+    if (const auto error = openFitted(fit(settings)); error.isNotEmpty()) {
+        log("could not reopen " + juce::String(settings.outputInterface) + ": " + error);
+        return;
+    }
+    const auto open = openSettings();
+    settings.sampleRate = open.sampleRate;
+    settings.bufferSize = open.bufferSize;
+    auto& config = Config::getInstance();
+    config.setAudioIO(settings);
+    config.save();
 }
 
 AudioIOControl::Status AudioIOService::status() const {

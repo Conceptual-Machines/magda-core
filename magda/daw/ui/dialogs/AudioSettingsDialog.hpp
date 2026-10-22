@@ -164,6 +164,8 @@ class AudioSettingsDialog : public juce::Component, private HardwareChannels::Li
     juce::ComboBox inputDeviceComboBox_;
     juce::Label outputDeviceLabel_;
     juce::ComboBox outputDeviceComboBox_;
+    /// Shown while the open interface's driver has its own settings window (#3091).
+    juce::TextButton controlPanelButton_;
     double deviceRefreshProgress_ = -1.0;
     juce::ProgressBar deviceRefreshSpinner_;
     juce::Label deviceRefreshLabel_;
