@@ -5,6 +5,7 @@ declare version "1.0";
 
 import("stdfaust.lib");
 msm = library("magda_smoothing.lib");
+mf = library("magda_filters.lib");
 
 // How fast cutoff and resonance follow a change. The Filter device leaves it at
 // 20 ms; a sampler voice shortens it so its filter envelope is not smeared (#3097).
@@ -26,9 +27,8 @@ drive  = hslider("Drive [idx:2]", 0.0, 0.0, 1.0, 0.001)
 // short of unity prevents the self-oscillation runaway state at extremes.
 q = res * 0.99;
 
-drivenIn(x) = (1.0 - drive) * x
-            + drive * (ma.tanh(4.0 * x) / ma.tanh(4.0));
+drivenIn = mf.drive(drive);
 
-ladder(x) = x : ve.moog_vcf_2bn(q, cutoff);
+ladder = mf.ladder(q, cutoff);
 
 process = par(i, 2, drivenIn : ladder);

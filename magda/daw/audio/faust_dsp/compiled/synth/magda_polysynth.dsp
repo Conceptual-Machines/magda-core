@@ -5,7 +5,7 @@ declare version "1.0";
 
 import("stdfaust.lib");
 msm = library("magda_smoothing.lib");
-svf = library("magda_svf.lib");
+mf = library("magda_filters.lib");
 
 // ============================================================================
 // Reserved per-voice MIDI controls
@@ -231,17 +231,10 @@ with {
 filterEnv = adsre(fAtt, fDec, fSus, fRel, gate);
 fcOf(cut, envAmt) = (cut * pow(2.0, envAmt * filterEnv + velFilt * gain)) : max(20.0) : min(20000.0) : smoo;
 
-// The SVF with 1-3 stages, resonance in the last only, as magda_filter_svf_staged.dsp.
 // A single stage is fi.svf exactly (k = 1/Q, unscaled band-pass).
-kFlat = sqrt(2.0);
-svfPoles(type, poles, fc, q, x) =
-    ba.selectn(3, int(poles), x, enable(pre1, int(poles) == 1), enable(pre2, int(poles) == 2))
-    : svf.stage(m, g, 1.0 / q, 1.0)
+svfPoles(type, poles, fc, q) = mf.svfPoles(m, poles, tan(fc * ma.PI / ma.SR), 1.0 / q)
 with {
     m = ba.selectn(4, int(type), 0, 2, 1, 3);  // menu order -> magda_svf.lib's
-    g = tan(fc * ma.PI / ma.SR);
-    pre1 = x : svf.stage(m, g, kFlat, kFlat);
-    pre2 = pre1 : svf.stage(m, g, kFlat, kFlat);
 };
 
 // Gain staging. The SVF's resonant peak adds up to ~Q of gain near the cutoff,
@@ -250,10 +243,7 @@ with {
 // (high velocity / resonance) overdrives gracefully instead of hard-clipping
 // downstream - tanh is ~linear for small signals, so clean patches stay clean.
 ampEnv  = adsre(aAtt, aDec, aSus, aRel, gate);  // see filterEnv: no click on Mono retrigger
-// Drive: dry/saturated lerp; tanh(4) normalisation keeps unity-amplitude
-// signals at unity at full drive (matches magda_filter_svf.dsp).
-drivenIn(d, x) = (1.0 - d) * x
-               + d * (enable(ma.tanh(4.0 * x), d > 0.0) / ma.tanh(4.0));
+drivenIn = mf.drive;
 
 // A bypassed filter, the stages its poles don't use and zero drive don't run.
 filterBlock(on, type, poles, cut, envAmt, r, d, x) = x * (1.0 - e) + enable(y, e > 0.0) * e
