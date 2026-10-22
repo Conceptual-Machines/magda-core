@@ -4,6 +4,7 @@ Open audio settings from **Settings > Audio Settings**. The dialog is organised 
 
 ## Audio Device
 
+- **Driver** — The audio system MAGDA talks to (Core Audio on macOS; ASIO, WASAPI or DirectSound on Windows; ALSA or JACK on Linux)
 - **Output device** — Select your audio interface or built-in output
 - **Input device** — Select the audio input for recording
 - **Sample rate** — 44100 Hz and 48000 Hz are common choices
@@ -14,6 +15,21 @@ Open audio settings from **Settings > Audio Settings**. The dialog is organised 
 
 !!! note "Silence after changing the sample rate"
     Many audio interfaces mute their outputs for a few seconds after a sample rate change while they re-sync their clock, even after the new rate is shown. Anything played in that window is lost, the metronome included, and the same happens with any other app on that interface. Wait a few seconds after switching before you press play or record.
+
+## Linux Drivers
+
+Most Linux desktops run PipeWire, which accepts JACK, PulseAudio and ALSA clients. Pick the driver for how you want to work:
+
+| Driver | Device | Use it for |
+|---|---|---|
+| **JACK** | Your interface | Recording and production. Lowest latency through PipeWire (`pipewire-jack`) or a JACK server |
+| **ALSA** | **Pulseaudio output** | Hearing MAGDA alongside the browser and other apps. Higher latency |
+| **ALSA** | A `hw:` device | Direct hardware access. Other apps can't play while MAGDA holds the device |
+
+There is no separate PulseAudio driver: the **Pulseaudio output** device under ALSA goes through PulseAudio, or through `pipewire-pulse` on PipeWire. It's listed when the ALSA PulseAudio plugin is installed (`libasound2-plugins` on Debian/Ubuntu, `alsa-plugins-pulseaudio` on Fedora/Arch).
+
+!!! note "64 inputs and outputs under ALSA"
+    On PipeWire, ALSA's default device can show up as 64 inputs and 64 outputs instead of your interface, and playback may break. Switch the driver to **JACK** to see the real interface.
 
 ## Channel Configuration
 
