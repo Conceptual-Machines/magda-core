@@ -40,9 +40,9 @@ juce::Font compactCaptionFont() {
     return FontManager::getInstance().getUIFont(10.5f);
 }
 
-// Tiles in the OSC panel, which take the compact sizes.
+// The oscillator rows' tiles, which take the compact sizes.
 std::vector<int> compactSlots() {
-    std::vector<int> slots{32, 30, 37, 38, 43};  // Glide, Bend, Vel>Amp, Vel>Cut, Output
+    std::vector<int> slots;
     for (int osc = 0; osc < 4; ++osc)
         for (int p = 1; p < 4; ++p)
             slots.push_back(osc * 4 + p);
@@ -93,6 +93,8 @@ PolySynthUI::PolySynthUI() {
     captions[kVelFilterSlot] = "Vel>Cut";
     captions[kOutputGainSlot] = "Output";
     captions[kFilterBlendSlot] = "Blend";
+    captions[kUnisonDetuneSlot] = "Detune";
+    captions[kUnisonSpreadSlot] = "Spread";
 
     for (int i = 0; i < kNumParams; ++i) {
         auto& c = controls_[static_cast<size_t>(i)];
@@ -160,11 +162,14 @@ PolySynthUI::PolySynthUI() {
     polesChoice_.onChange = [this](int index) {
         setChoiceSlot(kFilterSlots[static_cast<size_t>(selectedFilter_)].poles, index);
     };
-    for (auto* choice : {&routingChoice_, &typeChoice_, &polesChoice_})
+    voicesChoice_.setOptions({"1", "2", "4", "8"});
+    voicesChoice_.onChange = [this](int index) { setChoiceSlot(kUnisonVoicesSlot, index); };
+    for (auto* choice : {&routingChoice_, &typeChoice_, &polesChoice_, &voicesChoice_})
         addAndMakeVisible(*choice);
 
     styleControls();
     refreshOscRows();
+    refreshOscPanel();
     refreshFilterPanel();
     refreshEnvelopePanel();
 }
@@ -182,7 +187,7 @@ void PolySynthUI::styleControls() {
         c.label->setColour(juce::Label::textColourId, colour(ActiveTheme::DEVICE_DIM));
         sampler_tiles::styleValue(*c.slider);
     }
-    // The OSC panel's tiles are narrow: the v1 text cell's sizes fit "-60.0 dB".
+    // The oscillator rows' tiles are narrow: the v1 text cell's sizes fit "-60.0 dB".
     for (int slot : compactSlots()) {
         auto& c = controls_[static_cast<size_t>(slot)];
         c.slider->setFont(FontManager::getInstance().getUIFontMedium(13.5f));
@@ -242,6 +247,34 @@ void PolySynthUI::refreshOscRows() {
             c.slider->setAlpha(alpha);
             c.label->setAlpha(alpha);
         }
+    }
+    repaint();
+}
+
+void PolySynthUI::refreshOscPanel() {
+    for (int osc = 0; osc < kNumOscillators; ++osc) {
+        waveBoxes_[static_cast<size_t>(osc)].setVisible(!showVoiceTab_);
+        for (int p = 1; p < kOscSlotCount; ++p) {
+            auto& c = controls_[static_cast<size_t>(osc * kOscSlotCount + p)];
+            c.slider->setVisible(!showVoiceTab_ && !c.tile.isEmpty());
+            c.label->setVisible(!showVoiceTab_ && !c.tile.isEmpty());
+        }
+    }
+    for (int slot : {kUnisonDetuneSlot, kUnisonSpreadSlot, kGlideSlot, kBendRangeSlot,
+                     kOutputGainSlot, kVelAmpSlot, kVelFilterSlot}) {
+        auto& c = controls_[static_cast<size_t>(slot)];
+        c.slider->setVisible(showVoiceTab_ && !c.tile.isEmpty());
+        c.label->setVisible(showVoiceTab_ && !c.tile.isEmpty());
+    }
+    voicesChoice_.setVisible(showVoiceTab_);
+
+    // Detune and spread act once there is more than one voice.
+    const int voices = juce::roundToInt(controls_[kUnisonVoicesSlot].slider->getValue());
+    voicesChoice_.setSelectedIndex(voices);
+    const float alpha = voices > 0 ? 1.0f : 0.4f;
+    for (int slot : {kUnisonDetuneSlot, kUnisonSpreadSlot}) {
+        controls_[static_cast<size_t>(slot)].slider->setAlpha(alpha);
+        controls_[static_cast<size_t>(slot)].label->setAlpha(alpha);
     }
     repaint();
 }
@@ -346,6 +379,10 @@ void PolySynthUI::syncChoiceFromParam(int paramIndex, float value) {
     if (paramIndex == kFilterRoutingSlot) {
         filterRouting_ = choice;
         refreshFilterPanel();
+        return;
+    }
+    if (paramIndex == kUnisonVoicesSlot) {
+        refreshOscPanel();
         return;
     }
     if (paramIndex < kNumOscillators * kOscSlotCount && paramIndex % kOscSlotCount == 0) {
@@ -458,17 +495,32 @@ void PolySynthUI::placeTiles(juce::Rectangle<int> area, const std::vector<int>& 
 
 void PolySynthUI::layoutOscPanel() {
     auto a = oscPanel_.reduced(kPanelPadX, kPanelPadY);
-    oscTitle_ = a.removeFromTop(kHeaderH);
-    a.removeFromTop(4);
+    auto header = a.removeFromTop(kHeaderH);
+    oscTabs_[0] = takeTab(header, "OSC", false);
+    oscTabs_[1] = takeTab(header, "VOICE", false);
+    a.removeFromTop(kTileGap);
 
-    const int tileH = juce::jlimit(kMinTileH, kMaxTileH, (a.getHeight() - 5 * kTileGap) / 5);
-    placeTiles(a.removeFromBottom(tileH),
-               {kGlideSlot, kBendRangeSlot, kVelAmpSlot, kVelFilterSlot, kOutputGainSlot}, 5);
-    a.removeFromBottom(kTileGap * 2);
+    // VOICE: the unison stack, then the performance controls, three across.
+    const int tileH = juce::jlimit(kMinTileH, kMaxTileH, (a.getHeight() - 3 * kTileGap) / 4);
+    auto voice = a;
+    auto unison = voice.removeFromTop(tileH);
+    voice.removeFromTop(kTileGap);
+    const int tileW = (unison.getWidth() - 2 * kTileGap) / 3;
+    voicesTile_ = unison.withWidth(tileW);
+    auto voicesInner = voicesTile_.reduced(9, 5);
+    voicesInner.removeFromTop(kCaptionH);
+    voicesChoice_.setBounds(voicesInner.withSizeKeepingCentre(
+        juce::jmin(voicesInner.getWidth(), voicesChoice_.getPreferredWidth()),
+        juce::jmin(voicesInner.getHeight(), 20)));
+    placeTile(kUnisonDetuneSlot, unison.withX(unison.getX() + tileW + kTileGap).withWidth(tileW));
+    placeTile(kUnisonSpreadSlot,
+              unison.withX(unison.getX() + 2 * (tileW + kTileGap)).withWidth(tileW));
+    placeTiles(voice.removeFromTop(2 * tileH + kTileGap),
+               {kGlideSlot, kBendRangeSlot, kOutputGainSlot, kVelAmpSlot, kVelFilterSlot}, 3);
 
-    // A row per oscillator: Wave | Level | Coarse | Fine | Reset, as the mock's columns.
+    // OSC: a row per oscillator, Wave | Level | Coarse | Fine | Reset, as the mock's columns.
     static constexpr float kColumns[] = {0.28f, 0.22f, 0.16f, 0.17f};
-    const int rowH = juce::jmin(tileH, (a.getHeight() - 3 * kTileGap) / kNumOscillators);
+    const int rowH = juce::jmin(kMaxTileH + 8, (a.getHeight() - 3 * kTileGap) / kNumOscillators);
     const int usableW = a.getWidth() - 4 * kTileGap;
     for (int osc = 0; osc < kNumOscillators; ++osc) {
         auto row = a.removeFromTop(rowH);
@@ -554,6 +606,7 @@ void PolySynthUI::resized() {
     layoutFilterPanel();
     layoutEnvelopePanel();
     // Placing tiles shows every one; the tabs then hide the unselected ones.
+    refreshOscPanel();
     refreshFilterPanel();
     refreshEnvelopePanel();
 }
@@ -564,7 +617,12 @@ void PolySynthUI::resized() {
 
 void PolySynthUI::mouseDown(const juce::MouseEvent& e) {
     const auto p = e.getPosition();
-    for (int osc = 0; osc < kNumOscillators; ++osc) {
+    for (int tab = 0; tab < 2; ++tab)
+        if (oscTabs_[static_cast<size_t>(tab)].contains(p) && (tab == 1) != showVoiceTab_) {
+            showVoiceTab_ = tab == 1;
+            return refreshOscPanel();
+        }
+    for (int osc = 0; osc < kNumOscillators && !showVoiceTab_; ++osc) {
         const auto i = static_cast<size_t>(osc);
         if (enableDots_[i].contains(p))
             return setChoiceSlot(kOscEnableBaseSlot + osc, oscEnabled_[i] ? 0 : 1);
@@ -619,9 +677,17 @@ void PolySynthUI::paint(juce::Graphics& g) {
         if (c.slider->isVisible())
             field(c.tile, c.slider->getAlpha());
 
+    if (showVoiceTab_) {
+        field(voicesTile_, 1.0f);
+        g.setFont(captionFont());
+        g.setColour(colour(ActiveTheme::DEVICE_DIM));
+        g.drawText("Voices", voicesTile_.reduced(9, 5).removeFromTop(kCaptionH),
+                   juce::Justification::centredLeft, true);
+    }
+
     // Oscillator rows: the wave tile with its enable dot, and the reset checkbox.
     g.setFont(compactCaptionFont());
-    for (int osc = 0; osc < kNumOscillators; ++osc) {
+    for (int osc = 0; osc < kNumOscillators && !showVoiceTab_; ++osc) {
         const auto i = static_cast<size_t>(osc);
         const float alpha = oscEnabled_[i] ? 1.0f : 0.35f;
         field(waveTiles_[i], alpha);
@@ -655,8 +721,8 @@ void PolySynthUI::paint(juce::Graphics& g) {
             g.fillRect(area.withTop(area.getBottom() - 2));
         }
     };
-    g.setColour(colour(ActiveTheme::DEVICE_TITLE));
-    g.drawText("OSC", oscTitle_, juce::Justification::centredLeft, false);
+    tab(oscTabs_[0], "OSC", !showVoiceTab_, false);
+    tab(oscTabs_[1], "VOICE", showVoiceTab_, false);
     for (int f = 0; f < kNumFilters; ++f) {
         const auto i = static_cast<size_t>(f);
         tab(filterTabs_[i], "FILTER " + juce::String(f + 1), f == selectedFilter_, true);

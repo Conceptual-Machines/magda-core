@@ -23,8 +23,9 @@ namespace magda::daw::ui {
 /**
  * @brief Custom UI for the compiled Poly Synth (magda_polysynth), in the v1 faceplate style.
  *
- * Three panels: OSC (a row per oscillator, the performance controls beneath), the two
- * filters as tabs with their routing, and the amp and filter envelopes as tabs. Values
+ * Three panels: OSC (a row per oscillator) with VOICE (unison and the performance
+ * controls) as tabs, the two filters as tabs with their routing, and the amp and filter
+ * envelopes as tabs. Values
  * sit in text tiles; every slot keeps a LinkableTextSlider, hidden where a segmented
  * choice, combo or toggle shows it, so linking reaches all of them.
  */
@@ -55,7 +56,7 @@ class PolySynthUI : public juce::Component, private juce::Timer {
     // Host slot layout — must match magda_polysynth.dsp / the C++ wrapper.
     static constexpr int kNumOscillators = 4;
     static constexpr int kOscSlotCount = 4;  // wave / level / coarse / fine
-    static constexpr int kNumParams = 54;
+    static constexpr int kNumParams = 57;
 
     static constexpr int kFilterTypeSlot = 16;
     static constexpr int kCutoffSlot = 17;
@@ -75,6 +76,9 @@ class PolySynthUI : public juce::Component, private juce::Timer {
     static constexpr int kOutputGainSlot = 43;     // master output gain (dB)
     static constexpr int kFilterRoutingSlot = 52;
     static constexpr int kFilterBlendSlot = 53;
+    static constexpr int kUnisonVoicesSlot = 54;
+    static constexpr int kUnisonDetuneSlot = 55;
+    static constexpr int kUnisonSpreadSlot = 56;
     static constexpr int kNumFilters = 2;
 
     struct FilterSlots {
@@ -113,6 +117,8 @@ class PolySynthUI : public juce::Component, private juce::Timer {
     // Write a choice slot from its control.
     void setChoiceSlot(int slot, int value);
     void refreshOscRows();
+    // Show the selected OSC/VOICE tab's controls.
+    void refreshOscPanel();
     // Show the selected filter's controls and reflect its choices.
     void refreshFilterPanel();
     void refreshEnvelopePanel();
@@ -147,17 +153,18 @@ class PolySynthUI : public juce::Component, private juce::Timer {
     int filterRouting_ = 0;  // 0 = Serial, 1 = Parallel
     int selectedFilter_ = 0;
     bool showFilterEnvelope_ = false;
+    bool showVoiceTab_ = false;
     std::array<bool, kNumOscillators> oscReset_{};
     std::array<bool, kNumOscillators> oscEnabled_{true, true, true, true};
 
     std::array<juce::ComboBox, kNumOscillators> waveBoxes_;
-    magda::SegmentedChoice routingChoice_, typeChoice_, polesChoice_;
+    magda::SegmentedChoice routingChoice_, typeChoice_, polesChoice_, voicesChoice_;
 
     // Painted parts, kept for hit-testing.
-    juce::Rectangle<int> oscPanel_, filterPanel_, envelopePanel_, oscTitle_;
+    juce::Rectangle<int> oscPanel_, filterPanel_, envelopePanel_, voicesTile_;
     std::array<juce::Rectangle<int>, kNumOscillators> waveTiles_, enableDots_, resetTiles_;
     std::array<juce::Rectangle<int>, kNumFilters> filterTabs_, filterDots_;
-    std::array<juce::Rectangle<int>, 2> envelopeTabs_;
+    std::array<juce::Rectangle<int>, 2> oscTabs_, envelopeTabs_;
     juce::Rectangle<int> polesCaption_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PolySynthUI)

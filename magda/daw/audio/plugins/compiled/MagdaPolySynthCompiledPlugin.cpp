@@ -261,6 +261,24 @@ std::vector<MagdaPolySynthCompiledPlugin::HostSlotInfo> MagdaPolySynthCompiledPl
                                .maxValue = 1.0f,
                                .defaultValue = 0.5f};
 
+    infos[kUnisonVoicesSlot] = {.name = "Unison Voices",
+                                .scale = magda::ParameterScale::Discrete,
+                                .minValue = 0.0f,
+                                .maxValue = 3.0f,
+                                .defaultValue = 0.0f,
+                                .choices = {"1", "2", "4", "8"}};
+    infos[kUnisonDetuneSlot] = {.name = "Unison Detune",
+                                .unit = magda::technicalText(magda::TechnicalTextToken::Cents),
+                                .scale = magda::ParameterScale::Linear,
+                                .minValue = 0.0f,
+                                .maxValue = 100.0f,
+                                .defaultValue = 20.0f};
+    infos[kUnisonSpreadSlot] = {.name = "Unison Spread",
+                                .scale = magda::ParameterScale::Linear,
+                                .minValue = 0.0f,
+                                .maxValue = 1.0f,
+                                .defaultValue = 0.5f};
+
     return infos;
 }
 
@@ -269,10 +287,10 @@ const CompiledPluginSpec& getMagdaPolySynthSpec() {
         .pluginId = MagdaPolySynthCompiledPlugin::xmlTypeName,
         .displayName = "Poly Synth",
         .browserCategory = "Synth",
-        .description =
-            "Compiled Faust polyphonic synth: four detunable oscillators "
-            "(sine/saw/square/triangle) into two multimode filters, serial or "
-            "parallel, with a filter envelope, plus an ADSR amp envelope. 16-voice, MIDI-driven.",
+        .description = "Compiled Faust polyphonic synth: four detunable oscillators "
+                       "(sine/saw/square/triangle) with up to 8 stereo unison copies, into two "
+                       "multimode filters, serial or parallel, with a filter envelope, plus an "
+                       "ADSR amp envelope. 16-voice, MIDI-driven.",
         .createDevice = [](const DevicePluginCreationContext&) -> std::unique_ptr<MagdaDevice> {
             return std::make_unique<MagdaPolySynthCompiledPlugin>();
         },

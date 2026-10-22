@@ -1,5 +1,5 @@
 declare name "MagdaPolySynth";
-declare description "Four-oscillator polyphonic synth: four detunable oscillators (sine / saw / square / triangle) summed into two multimode state-variable filters (serial or parallel) sharing an envelope, plus an ADSR amplitude envelope.";
+declare description "Four-oscillator polyphonic synth: four detunable oscillators (sine / saw / square / triangle), up to eight stereo unison copies of them, into two multimode state-variable filters (serial or parallel) sharing an envelope, plus an ADSR amplitude envelope.";
 declare license "GPL-3.0";
 declare version "1.0";
 
@@ -67,34 +67,34 @@ with {
     x1 = (t - 1.0) / dt;
     near1 = x1 * x1 + 2.0 * x1 + 1.0;
 };
-sawBlep(f, ph, rst) = (2.0 * p - 1.0) - polyblep(dt, p)
+// One phasor per oscillator feeds every shape; `ph` is where a reset puts it.
+// selectn runs all four shapes; gating them with enable measured slower.
+oscShape(wave, f, ph, rst) = ba.selectn(4, int(wave), shape(0), shape(1), shape(2), shape(3))
 with {
     p = os.lf_sawpos_phase_reset(f, ph, rst);
     dt = max(ma.EPSILON, f / ma.SR);
+    saw = (2.0 * p - 1.0) - polyblep(dt, p);
+    sqr = (2.0 * float(p < 0.5) - 1.0) + polyblep(dt, p) - polyblep(dt, ma.frac(p + 0.5));
+    shape(0) = sin(2.0 * ma.PI * p);
+    shape(1) = saw;
+    shape(2) = sqr;
+    shape(3) = sqr : fi.pole(0.999) : *(4.0 * f / ma.SR);  // integrated square
 };
-sqrBlep(f, rst) = (2.0 * float(p < 0.5) - 1.0) + polyblep(dt, p) - polyblep(dt, ma.frac(p + 0.5))
-with {
-    p = os.lf_sawpos_reset(f, rst);
-    dt = max(ma.EPSILON, f / ma.SR);
-};
-triBlep(f, rst) = sqrBlep(f, rst) : fi.pole(0.999) : *(4.0 * f / ma.SR);  // integrated square
-sinBlep(f, rst) = sin(2.0 * ma.PI * os.lf_sawpos_reset(f, rst));
-oscShape(wave, f, rst) =
-    ba.selectn(4, int(wave), sinBlep(f, rst), sawBlep(f, 0.0, rst), sqrBlep(f, rst), triBlep(f, rst));
 
 // One oscillator. `wave` selects the shape (Sine/Saw/Square/Triangle),
 // `coarse` shifts pitch in semitones and `fine` in cents; `level` is the
-// pre-mix gain in dB (converted to a linear multiplier). selectn evaluates every
-// branch, so all four shapes always run. `bendSemis` shifts every osc together by
-// the live pitch-bend amount; `freqG` carries the glide; `rstOn` restarts this
-// oscillator's phase on note-on. `en` (0/1) mutes a disabled oscillator,
-// smoothed so toggling it does not click.
-oscBank(wave, level, coarse, fine, rstOn, en) =
-    oscShape(wave, f, (rstOn > 0) * gateRise)
-    * (level : ba.db2linear : smoo)
-    * (en : smoo)
+// pre-mix gain in dB (converted to a linear multiplier; the -60 dB floor is
+// silence, shown as -inf). `bendSemis` shifts every
+// osc together by the live pitch-bend amount; `freqG` carries the glide; `rstOn`
+// restarts this oscillator's phase on note-on. `en` (0/1) mutes a disabled
+// oscillator, smoothed so toggling it does not click. `cents` and `ph` are the
+// unison copy's detune and reset phase; `skip` (1 on the extra copies) stops a
+// silent oscillator running. enable costs more than it saves on the main copy.
+oscBank(skip, wave, level, coarse, fine, rstOn, en, cents, ph) =
+    skipping(skip, oscShape(wave, f, ph, (rstOn > 0) * gateRise), gain > 0.0) * gain
 with {
-    f = freqG * pow(2.0, (coarse + fine / 100.0 + bendSemis) / 12.0);
+    gain = ((level > -60.0) * ba.db2linear(level) : smoo) * (en : smoo);
+    f = freqG * pow(2.0, (coarse + (fine + cents) / 100.0 + bendSemis) / 12.0);
 };
 
 // Oscillator 1 (idx 0..3)
@@ -184,13 +184,32 @@ f2On      = nentry("Filter 2 Enable [idx:51] [style:menu{'Off':0;'On':1}]", 0, 0
 fRouting  = nentry("Filter Routing [idx:52] [style:menu{'Serial':0;'Parallel':1}]", 0, 0, 1, 1);
 fBlend    = hslider("Filter Blend [idx:53]", 0.5, 0.0, 1.0, 0.001) : smoo;
 
+// Unison (idx 54..56). One voice by default, which is the synth without unison.
+uVoices   = nentry("Unison Voices [idx:54] [style:menu{'1':0;'2':1;'4':2;'8':3}]", 0, 0, 3, 1);
+uDetune   = hslider("Unison Detune [unit:cent] [idx:55]", 20, 0, 100, 0.1) : smoo;
+uSpread   = hslider("Unison Spread [idx:56]", 0.5, 0.0, 1.0, 0.001) : smoo;
+
 // ============================================================================
 // DSP
 // ============================================================================
-oscMix = oscBank(osc1Wave, osc1Level, osc1Coarse, osc1Fine, osc1Reset, osc1Enable)
-       + oscBank(osc2Wave, osc2Level, osc2Coarse, osc2Fine, osc2Reset, osc2Enable)
-       + oscBank(osc3Wave, osc3Level, osc3Coarse, osc3Fine, osc3Reset, osc3Enable)
-       + oscBank(osc4Wave, osc4Level, osc4Coarse, osc4Fine, osc4Reset, osc4Enable);
+skipping(0, x, on) = x;
+skipping(1, x, on) = enable(x, on);
+oscMix(skip, cents, ph) = oscBank(skip, osc1Wave, osc1Level, osc1Coarse, osc1Fine, osc1Reset, osc1Enable, cents, ph)
+                  + oscBank(skip, osc2Wave, osc2Level, osc2Coarse, osc2Fine, osc2Reset, osc2Enable, cents, ph)
+                  + oscBank(skip, osc3Wave, osc3Level, osc3Coarse, osc3Fine, osc3Reset, osc3Enable, cents, ph)
+                  + oscBank(skip, osc4Wave, osc4Level, osc4Coarse, osc4Fine, osc4Reset, osc4Enable, cents, ph);
+
+// Unison (#2924): copies spaced evenly across +/- Detune, panned to alternate
+// sides as 4OSC does, wider towards the edges, summed at 1/sqrt(n). Copies past
+// the count don't run. One copy is the synth without unison, sample for sample.
+uMax = 8;
+uCount = ba.selectn(4, int(uVoices), 1, 2, 4, 8);
+uPos(k) = select2(uCount > 1, 0.0, 2.0 * k / max(1.0, uCount - 1.0) - 1.0);
+uPan(k) = uSpread * (1.0 - 2.0 * (k % 2)) * abs(uPos(k));
+uPhase(k) = ma.frac(k * 0.6180339887);  // spread the copies' reset phases
+uCopy(0) = oscMix(0, 0.0, 0.0);
+uCopy(k) = enable(oscMix(1, uDetune * uPos(k), uPhase(k)), uCount > k) * (uCount > k);
+unisonMix = par(k, uMax, uCopy(k) <: *(1.0 - uPan(k)), *(1.0 + uPan(k))) :> /(sqrt(uCount)), /(sqrt(uCount));
 
 // Resonance 0..0.95 -> Q 0.5..~9.5. Filter-envelope output scales the cutoff
 // exponentially (in octaves) and the result is clamped to the audio band.
@@ -199,13 +218,25 @@ oscMix = oscBank(osc1Wave, osc1Level, osc1Coarse, osc1Fine, osc1Reset, osc1Enabl
 // host's one-sample gate dip) collapses the envelope from sustain to zero in
 // one sample - an audible click on every mono note. adsre is a one-pole slew
 // toward the segment target, so it resumes from the current level instead.
-filterEnv = en.adsre(fAtt, fDec, fSus, fRel, gate);
+// en.adsre with its three rates worked out per block instead of per sample.
+adsre(att, dec, sus, rel, gate) = target : si.smooth(pole)
+with {
+    ugate = gate > 0;
+    samps = ugate : +~(*(ugate));
+    attPhase = (samps < int(att * ma.SR)) | (ugate : ba.impulsify);
+    target = select2(ugate, 0.0, select2(attPhase, sus * float(ugate), ugate));
+    rate(t60) = ba.tau2pole(t60 / 6.91);
+    pole = select2(ugate, rate(rel), select2(attPhase, rate(dec), rate(att)));
+};
+filterEnv = adsre(fAtt, fDec, fSus, fRel, gate);
 fcOf(cut, envAmt) = (cut * pow(2.0, envAmt * filterEnv + velFilt * gain)) : max(20.0) : min(20000.0) : smoo;
 
 // The SVF with 1-3 stages, resonance in the last only, as magda_filter_svf_staged.dsp.
 // A single stage is fi.svf exactly (k = 1/Q, unscaled band-pass).
 kFlat = sqrt(2.0);
-svfPoles(type, poles, fc, q, x) = ba.selectn(3, int(poles), x, pre1, pre2) : svf.stage(m, g, 1.0 / q, 1.0)
+svfPoles(type, poles, fc, q, x) =
+    ba.selectn(3, int(poles), x, enable(pre1, int(poles) == 1), enable(pre2, int(poles) == 2))
+    : svf.stage(m, g, 1.0 / q, 1.0)
 with {
     m = ba.selectn(4, int(type), 0, 2, 1, 3);  // menu order -> magda_svf.lib's
     g = tan(fc * ma.PI / ma.SR);
@@ -218,13 +249,14 @@ with {
 // constant (filterBlock). The per-voice tanh then soft-clips peaks so a hot voice
 // (high velocity / resonance) overdrives gracefully instead of hard-clipping
 // downstream - tanh is ~linear for small signals, so clean patches stay clean.
-ampEnv  = en.adsre(aAtt, aDec, aSus, aRel, gate);  // see filterEnv: no click on Mono retrigger
+ampEnv  = adsre(aAtt, aDec, aSus, aRel, gate);  // see filterEnv: no click on Mono retrigger
 // Drive: dry/saturated lerp; tanh(4) normalisation keeps unity-amplitude
 // signals at unity at full drive (matches magda_filter_svf.dsp).
 drivenIn(d, x) = (1.0 - d) * x
-               + d * (ma.tanh(4.0 * x) / ma.tanh(4.0));
+               + d * (enable(ma.tanh(4.0 * x), d > 0.0) / ma.tanh(4.0));
 
-filterBlock(on, type, poles, cut, envAmt, r, d, x) = x * (1.0 - e) + y * e
+// A bypassed filter, the stages its poles don't use and zero drive don't run.
+filterBlock(on, type, poles, cut, envAmt, r, d, x) = x * (1.0 - e) + enable(y, e > 0.0) * e
 with {
     e = on : smoo;
     y = x * (1.0 - 0.5 * r) : drivenIn(d) : svfPoles(type, poles, fcOf(cut, envAmt), 0.5 + r * 9.5);
@@ -240,7 +272,8 @@ with {
     y1 = filter1(x);
 };
 
-voice   = ((oscMix : filters) * ampEnv * ampVel : ma.tanh) * outGain;
+voice(x) = ((x : filters) * ampEnv * ampVel : ma.tanh) * outGain;
 
-// Mono voice fanned to a stereo pair (the poly allocator sums all voices).
-process = voice <: _, _;
+// The right channel gets its own filters only once unison can pan.
+stereo = uCount > 1;
+process = unisonMix : (voice, enable(voice, stereo)) : (_ <: _, _), _ : _, select2(stereo);
