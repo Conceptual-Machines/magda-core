@@ -76,6 +76,7 @@ class DeviceSlotComponent : public NodeComponent,
         return device_.id;
     }
     int getPreferredWidth() const override;
+    HeightRange getHeightRange() const override;
 
     // Override to update param slots when path is set
     void setNodePath(const magda::ChainNodePath& path) override;

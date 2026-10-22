@@ -1444,7 +1444,8 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
     g.setColour(ActiveTheme::getTextColour());
     g.setFont(
         FontManager::getInstance().getMonoFont(12.0f).boldened().withExtraKerningFactor(0.1f));
-    g.drawText("MAGDA", brand, juce::Justification::centredLeft, false);
+    if (showWordmark_)
+        g.drawText("MAGDA", brand, juce::Justification::centredLeft, false);
 
     if (!modelChipBounds_.isEmpty()) {
         const auto chip = modelChipBounds_.toFloat();
@@ -1564,14 +1565,22 @@ void AIChatConsoleContent::resized() {
     copyButton_.setBounds(header.removeFromRight(24));
     header.removeFromRight(4);
     clearButton_.setBounds(header.removeFromRight(24));
-    header.removeFromLeft(78);  // diamond + MAGDA
-    const int labelWidth = juce::jmin(
-        header.getWidth() - 60, juce::roundToInt(juce::GlyphArrangement::getStringWidth(
-                                    configStatusLabel_.getFont(), configStatusLabel_.getText())) +
-                                    8);
-    modelChipBounds_ = header.removeFromLeft(juce::jmax(0, labelWidth) + 44);
+    // On a narrow console the wordmark goes, then the model chip's label (#3117).
+    const bool showServer = serverToggleButton_ && serverToggleButton_->isVisible();
+    const int serverWidth = showServer ? 30 : 0;
+    constexpr int kWordmarkWidth = 78;  // diamond + MAGDA
+    constexpr int kChipMinWidth = 44;
+    showWordmark_ = header.getWidth() >= kWordmarkWidth + kChipMinWidth + serverWidth;
+    header.removeFromLeft(showWordmark_ ? kWordmarkWidth : 20);
+    const int labelWidth =
+        juce::jmin(header.getWidth() - serverWidth - 60,
+                   juce::roundToInt(juce::GlyphArrangement::getStringWidth(
+                       configStatusLabel_.getFont(), configStatusLabel_.getText())) +
+                       8);
+    modelChipBounds_ = header.removeFromLeft(
+        juce::jmin(juce::jmax(0, labelWidth) + 44, juce::jmax(0, header.getWidth() - serverWidth)));
     configStatusLabel_.setBounds(modelChipBounds_.withTrimmedLeft(20).withTrimmedRight(22));
-    if (serverToggleButton_ && serverToggleButton_->isVisible()) {
+    if (showServer) {
         header.removeFromLeft(6);
         serverToggleButton_->setBounds(header.removeFromLeft(24).reduced(2));
     }
@@ -1590,7 +1599,9 @@ void AIChatConsoleContent::resized() {
     sendButton_.setBounds(controls.removeFromRight(28));
     controls.removeFromRight(8);
     if (analysisChip_.isVisible()) {
-        analysisChip_.setBounds(controls.removeFromRight(120));
+        // Leaves the context chip its 60px minimum on a narrow console (#3117).
+        analysisChip_.setBounds(
+            controls.removeFromRight(juce::jlimit(0, 120, controls.getWidth() - 76)));
         controls.removeFromRight(8);
     }
 

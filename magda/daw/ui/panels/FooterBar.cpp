@@ -237,7 +237,7 @@ void FooterBar::resized() {
         exitModeButton_->setBounds(buttonX, buttonY, BUTTON_SIZE, BUTTON_SIZE);
     } else if (exitModeButton_ != nullptr) {
         constexpr int kExitButtonWidth = 96;
-        constexpr int kExitButtonHeight = 22;
+        constexpr int kExitButtonHeight = 20;
         exitModeButton_->setBounds(buttonX, (bounds.getHeight() - kExitButtonHeight) / 2,
                                    kExitButtonWidth, kExitButtonHeight);
     }
@@ -341,6 +341,7 @@ void FooterBar::setupButtons() {
         modeButtons[i]->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         modeButtons[i]->setActiveColor(icons[i].accent);
         modeButtons[i]->setActiveBackgroundColor(icons[i].accent.withAlpha(0.2f));
+        modeButtons[i]->setIconPadding(BUTTON_ICON_PADDING);
 
         addAndMakeVisible(*modeButtons[i]);  // Safe with ManagedChild
     }
@@ -359,6 +360,7 @@ void FooterBar::refreshRegisteredModes() {
         button->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         button->setActiveColor(content.accent);
         button->setActiveBackgroundColor(content.accent.withAlpha(0.2f));
+        button->setIconPadding(BUTTON_ICON_PADDING);
         button->onClick = [mode = mode]() { ViewModeController::getInstance().setViewMode(mode); };
         addAndMakeVisible(*button);
         registeredModeButtons_.emplace_back(mode, std::move(button));
@@ -382,7 +384,7 @@ void FooterBar::updateExitModeButton(ViewMode currentMode) {
         button->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         button->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         // A secondary action beside the mode icons, so its glyph is drawn smaller.
-        button->setIconPadding(9.0f);
+        button->setIconPadding(7.0f);
         exitModeButton_ = std::move(button);
     } else {
         exitModeButton_ = std::make_unique<juce::TextButton>(text);

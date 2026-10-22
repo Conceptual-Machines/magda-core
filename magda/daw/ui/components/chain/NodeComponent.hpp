@@ -14,6 +14,7 @@
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
 #include "ui/components/common/SvgButton.hpp"
+#include "ui/layout/HeightRange.hpp"
 
 namespace magda::daw::ui {
 
@@ -159,6 +160,11 @@ class NodeComponent : public juce::Component,
             return getLeftPanelsWidth() + COLLAPSED_WIDTH + getRightPanelsWidth();
         }
         return getTotalWidth(200);  // Default base width
+    }
+
+    /** @brief Node-height needs of a faceplate that declares them (#3119); empty otherwise. */
+    virtual HeightRange getHeightRange() const {
+        return {};
     }
 
     // Width when collapsed

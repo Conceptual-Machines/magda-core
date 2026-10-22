@@ -1771,9 +1771,9 @@ void TrackChainContent::layoutChainContent() {
     int totalWidth = calculateTotalContentWidth();
 
     // Account for scrollbar if needed
-    if (totalWidth > availableWidth) {
-        chainHeight = juce::jmax(MIN_CHAIN_HEIGHT, chainHeight - 8);  // Space for scrollbar
-    }
+    const int scrollbarHeight = totalWidth > availableWidth ? 8 : 0;
+    chainHeight = juce::jmax(MIN_CHAIN_HEIGHT, chainHeight - scrollbarHeight);
+    chainChrome_ = getHeight() - viewportHeight + scrollbarHeight;
 
     // Set container size
     chainContainer_->setSize(juce::jmax(totalWidth, availableWidth), chainHeight);
@@ -1799,6 +1799,14 @@ void TrackChainContent::layoutChainContent() {
         x += nodeWidth + scaledArrowWidth + scaledSlotSpacing;
     }
 
+    // Below a faceplate's minimum the chain keeps that height and the viewport scrolls.
+    if (const int minimum = nodesHeightRange().minimum; minimum > chainHeight) {
+        chainHeight = minimum;
+        chainContainer_->setSize(chainContainer_->getWidth(), chainHeight);
+        for (auto& node : nodeComponents_)
+            node->setSize(node->getWidth(), chainHeight);
+    }
+
     // An empty chain centres a large drop target; once devices exist it collapses to the
     // append slot pinned at the right edge (see calculateAppendZoneX).
     addDeviceButton_.setVisible(selectedTrackId_ != magda::INVALID_TRACK_ID);
@@ -1814,6 +1822,17 @@ void TrackChainContent::layoutChainContent() {
     }
     addDeviceButton_.toFront(false);
     chainContainer_->repaint();
+}
+
+HeightRange TrackChainContent::nodesHeightRange() const {
+    HeightRange range;
+    for (const auto& node : nodeComponents_)
+        range = range.unite(node->getHeightRange());
+    return range;
+}
+
+HeightRange TrackChainContent::getHeightRange() const {
+    return nodesHeightRange().plus(chainChrome_);
 }
 
 juce::Rectangle<int> TrackChainContent::emptyDropTargetBounds() const {

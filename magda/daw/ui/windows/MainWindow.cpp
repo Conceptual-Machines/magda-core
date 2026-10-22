@@ -759,15 +759,15 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         auto& layout = LayoutConfig::getInstance();
         // Ask the active content for its preferred height. Falls back to
         // the layout default if the content returns 0 (no preference).
-        int optimalHeight = 0;
-        if (auto* content = bottomPanel->getActiveContent())
+        int optimalHeight = bottomPanel->getPanelHeightRange().ideal;
+        if (auto* content = bottomPanel->getActiveContent(); optimalHeight <= 0 && content)
             optimalHeight = content->getOptimalPanelHeight(getHeight());
         if (optimalHeight <= 0)
             optimalHeight = layout.defaultBottomPanelHeight;
         int maxHeight = static_cast<int>(getHeight() * layout.maxBottomPanelRatio);
+        const int minHeight = minimumBottomPanelHeight();
         bottomPanelHeight =
-            juce::jlimit(layout.minBottomPanelHeight,
-                         juce::jmax(layout.minBottomPanelHeight, maxHeight), optimalHeight);
+            juce::jlimit(minHeight, juce::jmax(minHeight, maxHeight), optimalHeight);
         if (bottomPanelCollapsed) {
             bottomPanelCollapsed = false;
             bottomPanel->setCollapsed(false);
@@ -1134,9 +1134,9 @@ void MainWindow::MainComponent::setupResizeHandles() {
                     footerBar->setBottomPanelCollapsed(false);
             }
             int maxHeight = static_cast<int>(getHeight() * layout.maxBottomPanelRatio);
+            const int minHeight = minimumBottomPanelHeight();
             bottomPanelHeight =
-                juce::jlimit(layout.minBottomPanelHeight,
-                             juce::jmax(layout.minBottomPanelHeight, maxHeight), newHeight);
+                juce::jlimit(minHeight, juce::jmax(minHeight, maxHeight), newHeight);
         }
         resized();
     };
@@ -1497,6 +1497,7 @@ void MainWindow::MainComponent::resized() {
     // Enforce both minimum and maximum so non-collapsed panels stay within valid range
     const int minLeftWidth = leftPanelCollapsed ? 0 : layout.minPanelWidth;
     const int minRightWidth = rightPanelCollapsed ? 0 : layout.minPanelWidth;
+    // The content's own minimum applies to drags only, so adding a device never moves the panel.
     const int minBottomHeight = bottomPanelCollapsed ? 0 : layout.minBottomPanelHeight;
 
     leftPanelWidth =
@@ -1580,6 +1581,12 @@ void MainWindow::MainComponent::layoutBottomPanel(juce::Rectangle<int>& bounds) 
     bottomPanel->setCollapsed(false);
     bottomPanel->setVisible(true);
     bottomResizer->setVisible(true);
+}
+
+int MainWindow::MainComponent::minimumBottomPanelHeight() const {
+    const int layoutMinimum = LayoutConfig::getInstance().minBottomPanelHeight;
+    return bottomPanel ? juce::jmax(layoutMinimum, bottomPanel->getPanelHeightRange().minimum)
+                       : layoutMinimum;
 }
 
 void MainWindow::MainComponent::toggleEditorFullscreen() {

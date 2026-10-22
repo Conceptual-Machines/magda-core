@@ -225,17 +225,29 @@ void MasterInspectorView::paint(juce::Graphics& g) {
         total.draw(g, row.toFloat());
 
         if (sampleRate_ > 0.0) {
-            juce::AttributedString samples;
-            samples.append(juce::String(totalSamples_),
-                           FontManager::getInstance().getMonoFont(15.0f),
-                           ActiveTheme::getSecondaryTextColour());
+            const auto widthOf = [](const juce::AttributedString& text) {
+                juce::TextLayout layout;
+                layout.createLayout(text, 10000.0f);
+                return layout.getWidth();
+            };
             const auto khz = sampleRate_ / 1000.0;
             const auto rate = std::abs(khz - std::round(khz)) < 0.05
                                   ? juce::String(juce::roundToInt(khz))
                                   : juce::String(khz, 1);
-            samples.append(" smp @ " + rate + "k", mono, dim);
-            samples.setJustification(juce::Justification::bottomRight);
-            samples.draw(g, row.toFloat().withTrimmedBottom(2.0f));
+            // The rate, then the whole sample count, give way on a narrow inspector (#3117).
+            const float room = static_cast<float>(row.getWidth()) - widthOf(total) - 8.0f;
+            for (const auto& suffix : {" smp @ " + rate + "k", juce::String(" smp")}) {
+                juce::AttributedString samples;
+                samples.append(juce::String(totalSamples_),
+                               FontManager::getInstance().getMonoFont(15.0f),
+                               ActiveTheme::getSecondaryTextColour());
+                samples.append(suffix, mono, dim);
+                if (widthOf(samples) > room)
+                    continue;
+                samples.setJustification(juce::Justification::bottomRight);
+                samples.draw(g, row.toFloat().withTrimmedBottom(2.0f));
+                break;
+            }
         }
     }
 
@@ -247,8 +259,9 @@ void MasterInspectorView::paint(juce::Graphics& g) {
         if (contributors_.empty()) {
             g.setFont(FontManager::getInstance().getUIFont(12.0f));
             g.setColour(dim);
-            g.drawText("No plugin latency on the master chain", contributorsArea_,
-                       juce::Justification::centred, false);
+            g.drawFittedText("No plugin latency on the master chain",
+                             contributorsArea_.reduced(8, 0), juce::Justification::centred, 2,
+                             1.0f);
             return;
         }
 
@@ -262,8 +275,9 @@ void MasterInspectorView::paint(juce::Graphics& g) {
             }
             row.reduce(10, 0);
             const auto& c = contributors_[i];
-            auto bar = row.removeFromRight(juce::jmin(110, row.getWidth() / 3))
-                           .withSizeKeepingCentre(juce::jmin(110, row.getWidth() / 3), 4);
+            // A fifth of the row, so the device name keeps room on a narrow inspector (#3117).
+            const int barWidth = juce::jmin(110, row.getWidth() / 5);
+            auto bar = row.removeFromRight(barWidth).withSizeKeepingCentre(barWidth, 4);
             g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
             g.fillRoundedRectangle(bar.toFloat(), 2.0f);
             g.setColour(i == 0 ? ActiveTheme::getColour(ActiveTheme::STATUS_WARNING)
@@ -273,7 +287,7 @@ void MasterInspectorView::paint(juce::Graphics& g) {
             row.removeFromRight(10);
             g.setFont(mono);
             g.setColour(ActiveTheme::getTextColour());
-            g.drawText(juce::String(c.ms, 1) + " ms", row.removeFromRight(64),
+            g.drawText(juce::String(c.ms, 1) + " ms", row.removeFromRight(56),
                        juce::Justification::centredRight, false);
             g.setFont(FontManager::getInstance().getUIFont(12.5f));
             g.drawText(c.name, row, juce::Justification::centredLeft, true);

@@ -39,14 +39,21 @@ bool ChordProgressionSection::isChordClip() const {
     return track != nullptr && track->type == magda::TrackType::Chord;
 }
 
+bool ChordProgressionSection::emptyHintFits() const {
+    return juce::GlyphArrangement::getStringWidth(FontManager::getInstance().getUIFont(11.0f),
+                                                  kEmptyHint) <= static_cast<float>(getWidth());
+}
+
 int ChordProgressionSection::getPreferredHeight() const {
     if (!isChordClip())
         return 0;
     const auto* clip = magda::ClipManager::getInstance().getClip(clipId_);
     if (clip == nullptr)
         return 0;
-    // Always show the header (even with no chords yet, as a hint).
-    const int rows = std::max(1, static_cast<int>(clip->chordAnnotations.size()));
+    // Always show the header (even with no chords yet, as a hint, wrapped when narrow).
+    const int rows = clip->chordAnnotations.empty()
+                         ? (emptyHintFits() ? 1 : 2)
+                         : static_cast<int>(clip->chordAnnotations.size());
     return HEADER_H + rows * ROW_H + 4;
 }
 
@@ -64,8 +71,8 @@ void ChordProgressionSection::paint(juce::Graphics& g) {
     if (clip->chordAnnotations.empty()) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.6f));
         g.setFont(FontManager::getInstance().getUIFont(11.0f));
-        g.drawText("No chords yet - click the chord lane to add one.", area.removeFromTop(ROW_H),
-                   juce::Justification::centredLeft);
+        g.drawFittedText(kEmptyHint, area.removeFromTop(emptyHintFits() ? ROW_H : 2 * ROW_H),
+                         juce::Justification::centredLeft, 2, 1.0f);
         return;
     }
 

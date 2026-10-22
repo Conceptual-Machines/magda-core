@@ -5,6 +5,8 @@
 #include <array>
 #include <optional>
 
+#include "ui/layout/HeightRange.hpp"
+
 namespace magda::daw::ui {
 
 /**
@@ -119,6 +121,12 @@ class PanelContent : public juce::Component {
     virtual int getOptimalPanelHeight(int windowHeight) const {
         juce::ignoreUnused(windowHeight);
         return 0;
+    }
+
+    /** @brief Content-height needs (#3119): the panel won't shrink below the minimum, and a
+     *  header double-click sizes it to the ideal. Empty means no preference. */
+    virtual HeightRange getHeightRange() const {
+        return {};
     }
 
   private:

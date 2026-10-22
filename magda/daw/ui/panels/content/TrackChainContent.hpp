@@ -69,6 +69,7 @@ class TrackChainContent : public PanelContent,
     }
 
     int getOptimalPanelHeight(int windowHeight) const override;
+    HeightRange getHeightRange() const override;
 
     void populateHeader(juce::Component& headerBar) override;
     void depopulateHeader(juce::Component& headerBar) override;
@@ -249,6 +250,11 @@ class TrackChainContent : public PanelContent,
 
     // All node components in signal flow order (devices and racks unified)
     std::vector<std::unique_ptr<NodeComponent>> nodeComponents_;
+
+    /** @brief The tightest needs among the nodes, in node-height terms (#3119). */
+    HeightRange nodesHeightRange() const;
+    // This content's height minus the chain height it gives the nodes, before MIN_CHAIN_HEIGHT.
+    int chainChrome_ = 0;
 
     static constexpr int ARROW_WIDTH = 4;  // Small gap between device slots
     static constexpr int SLOT_SPACING = 8;

@@ -522,11 +522,20 @@ void PluginBrowserContent::paint(juce::Graphics& g) {
 void PluginBrowserContent::resized() {
     auto bounds = getLocalBounds().reduced(8);
 
-    // Top row: search box and view mode selector
+    // Top row: search box and view mode selector, stacked when the panel is narrow (#3117)
+    constexpr int kSelectorWidth = 130;
+    constexpr int kMinSearchWidth = 160;
     auto topRow = bounds.removeFromTop(SearchTextEditor::kHeight);
-    viewModeSelector_.setBounds(topRow.removeFromRight(130).withSizeKeepingCentre(130, 30));
-    topRow.removeFromRight(6);
-    searchBox_.setBounds(topRow);
+    if (topRow.getWidth() < kSelectorWidth + 6 + kMinSearchWidth) {
+        searchBox_.setBounds(topRow);
+        bounds.removeFromTop(6);
+        viewModeSelector_.setBounds(bounds.removeFromTop(30));
+    } else {
+        viewModeSelector_.setBounds(
+            topRow.removeFromRight(kSelectorWidth).withSizeKeepingCentre(kSelectorWidth, 30));
+        topRow.removeFromRight(6);
+        searchBox_.setBounds(topRow);
+    }
 
     bounds.removeFromTop(6);
 

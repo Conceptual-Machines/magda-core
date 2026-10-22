@@ -187,9 +187,14 @@ void ClipInspector::resized() {
             if (clipBpmValue_.isVisible()) {
                 addSpace(gap);
                 auto [tempoCaption, lengthCaption] = halves(addRow(captionH + 2));
-                doubleTempoButton_.setBounds(tempoCaption.removeFromRight(26).withTrimmedBottom(2));
+                // The x2 / /2 buttons narrow before the "Tempo" caption clips (#3117).
+                const int tempoButtonW =
+                    juce::jlimit(18, 26, (tempoCaption.getWidth() - 3 - 34) / 2);
+                doubleTempoButton_.setBounds(
+                    tempoCaption.removeFromRight(tempoButtonW).withTrimmedBottom(2));
                 tempoCaption.removeFromRight(3);
-                halveTempoButton_.setBounds(tempoCaption.removeFromRight(26).withTrimmedBottom(2));
+                halveTempoButton_.setBounds(
+                    tempoCaption.removeFromRight(tempoButtonW).withTrimmedBottom(2));
                 tempoLabel_.setBounds(tempoCaption);
                 sourceLengthLabel_.setBounds(lengthCaption);
                 addSpace(2);
@@ -226,7 +231,8 @@ void ClipInspector::resized() {
         if (!midiPitchHeader_.isCollapsed()) {
             midiTransposeLabel_.setBounds(addRow(captionH));
             auto row = addRow(fieldH);
-            const int buttonW = 34;
+            // Buttons narrow so the "notes" hint keeps its 36px (#3117).
+            const int buttonW = juce::jlimit(24, 34, (row.getWidth() - 12 - 36) / 4);
             midiTransposeButtons_[0].setBounds(row.removeFromLeft(buttonW));
             row.removeFromLeft(4);
             midiTransposeButtons_[1].setBounds(row.removeFromLeft(buttonW));
