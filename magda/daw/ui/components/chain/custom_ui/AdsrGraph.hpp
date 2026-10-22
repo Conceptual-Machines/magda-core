@@ -4,6 +4,8 @@
 
 #include <array>
 #include <functional>
+#include <optional>
+#include <utility>
 
 #include "core/ParameterInfo.hpp"
 
@@ -37,6 +39,12 @@ class AdsrGraph : public juce::Component {
     /// Update just the current value of a stage (e.g. after a value-box edit).
     void setStageValue(Stage stage, float displayValue);
 
+    /// Draw on @p background with @p line, instead of the theme's background and accent.
+    void setColours(juce::Colour background, juce::Colour line) {
+        colours_ = {background, line};
+        repaint();
+    }
+
     std::function<void(int paramIndex, float displayValue)> onStageChanged;
 
     void paint(juce::Graphics& g) override;
@@ -45,6 +53,8 @@ class AdsrGraph : public juce::Component {
     void mouseUp(const juce::MouseEvent& e) override;
 
   private:
+    std::optional<std::pair<juce::Colour, juce::Colour>> colours_;
+
     struct StageState {
         int paramIndex = -1;
         magda::ParameterInfo info;

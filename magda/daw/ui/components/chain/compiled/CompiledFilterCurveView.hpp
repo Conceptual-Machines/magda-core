@@ -33,9 +33,9 @@ class CompiledFilterCurveView final : public juce::Component,
     /// @param engine     the Filter's Engine order: 0=SVF 1=Ladder 2=Korg35 3=Oberheim
     ///                   4=SallenKey 5=Diode 6=Comb
     /// @param modeIndex   this view's order: 0=LP 1=BP 2=HP 3=Notch
-    /// @param doubleSlope  true = 24 dB/oct (two cascaded stages); false = 12 dB
+    /// @param svfStages  the SVF's 2, 4 or 6 poles as 1-3 stages
     void setRawState(int engine, int modeIndex, float cutoffHz, float resonance01, float drive01,
-                     bool doubleSlope = false);
+                     int svfStages = 1);
 
     /// Override the curve/fill accent (defaults to ACCENT_POSITIVE). Lets a host
     /// match the curve to its own theme (e.g. the poly synth's blue envelopes).
@@ -83,8 +83,7 @@ class CompiledFilterCurveView final : public juce::Component,
     float resonance_ = 0.0f;
     float drive_ = 0.0f;
     int modeIndex_ = 0;
-    bool doublePole_ = false;  // 24 dB/oct: square the magnitude
-    int svfStages_ = 1;        ///< The Filter's Poles slot: 2, 4 or 6 poles as 1-3 stages.
+    int svfStages_ = 1;  ///< The Filter's Poles slot: 2, 4 or 6 poles as 1-3 stages.
     float targetCutoffHz_ = 1000.0f;
     float targetResonance_ = 0.0f;
     float targetDrive_ = 0.0f;

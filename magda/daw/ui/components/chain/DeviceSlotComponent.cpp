@@ -764,8 +764,11 @@ void DeviceSlotComponent::resizedShellFooter(juce::Rectangle<int> footer) {
 
 void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
     footerSeparator_ = footerInfoArea_ = midiLedArea_ = {};
+    // A custom faceplate takes the body in place of the grid, so its pages have nothing to turn.
+    const bool gridHidden = isInternalDevice() && customUI_.hasAnyUI();
     const bool paged = !footer.isEmpty() && paramGrid_ != nullptr && paramGrid_->paginates() &&
-                       !paramGrid_->showsOwnPagination() && paramsShown() && !faceplateUnderGrid();
+                       !paramGrid_->showsOwnPagination() && paramsShown() &&
+                       !faceplateUnderGrid() && !gridHidden;
     for (auto* arrow : {footerPrevPage_.get(), footerNextPage_.get()})
         if (arrow != nullptr)
             arrow->setVisible(paged);

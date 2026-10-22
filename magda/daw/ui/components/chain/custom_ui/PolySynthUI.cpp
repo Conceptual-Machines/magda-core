@@ -4,86 +4,116 @@
 #include <cmath>
 #include <ranges>
 
-#include "BinaryData.h"
 #include "audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "core/RangesHelpers.hpp"
+#include "custom_ui/SamplerTiles.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
-#include "ui/themes/SmallButtonLookAndFeel.hpp"
+#include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
 namespace {
-constexpr int kSectionTitleH = 15;
-constexpr int kCellLabelH = 12;
-constexpr int kCellPad = 3;
-constexpr int kSectionGap = 4;
+constexpr int kPanelGap = 8;
+constexpr int kPanelPadX = 10;
+constexpr int kPanelPadY = 8;
+constexpr int kHeaderH = 22;
+constexpr int kTileGap = 6;
+constexpr int kCaptionH = 14;
+constexpr int kMinTileH = 32;
+constexpr int kMaxTileH = 46;
+constexpr int kDot = 6;
 
-// Waveform icons in the dsp's wave order: 0 Sine / 1 Saw / 2 Square / 3 Triangle,
-// so the selector index maps 1:1 to the Osc Wave slot value.
-void populateWaveSelector(IconSelector& sel) {
-    sel.addOption(BinaryData::fadmodsine_svg, BinaryData::fadmodsine_svgSize, "Sine");
-    sel.addOption(BinaryData::fadmodsawup_svg, BinaryData::fadmodsawup_svgSize, "Saw");
-    sel.addOption(BinaryData::fadmodsquare_svg, BinaryData::fadmodsquare_svgSize, "Square");
-    sel.addOption(BinaryData::fadmodtri_svg, BinaryData::fadmodtri_svgSize, "Triangle");
+juce::Colour colour(magda::ColourRole role) {
+    return ActiveTheme::getColour(role);
+}
+
+juce::Font titleFont() {
+    return FontManager::getInstance().getMonoFont(10.0f).withExtraKerningFactor(0.12f);
+}
+
+juce::Font captionFont() {
+    return FontManager::getInstance().getUIFont(12.0f);
+}
+
+juce::Font compactCaptionFont() {
+    return FontManager::getInstance().getUIFont(10.5f);
+}
+
+// Tiles in the OSC panel, which take the compact sizes.
+std::vector<int> compactSlots() {
+    std::vector<int> slots{32, 30, 37, 38, 43};  // Glide, Bend, Vel>Amp, Vel>Cut, Output
+    for (int osc = 0; osc < 4; ++osc)
+        for (int p = 1; p < 4; ++p)
+            slots.push_back(osc * 4 + p);
+    return slots;
+}
+
+// The SVF's Q (0.5 + 9.5 r) as the curve view's resonance (Q = 0.5 * 80^r).
+float curveResonance(float resonance) {
+    return std::log(1.0f + 19.0f * resonance) / std::log(80.0f);
+}
+
+juce::String oscPrefix(int osc) {
+    return "0" + juce::String(osc + 1) + " ";
+}
+
+// A tab title with its on/off dot in front, at the start of @p row.
+juce::Rectangle<int> takeTab(juce::Rectangle<int>& row, const juce::String& title, bool withDot) {
+    const int textW = juce::GlyphArrangement::getStringWidthInt(titleFont(), title);
+    auto tab = row.removeFromLeft((withDot ? kDot + 6 : 0) + textW);
+    row.removeFromLeft(18);
+    return tab;
 }
 }  // namespace
 
 PolySynthUI::PolySynthUI() {
-    // Short per-slot labels. The oscillator cells are prefixed with the
-    // oscillator number so each cell is self-describing in the dense grid.
-    // Per-oscillator control labels. The column header (the enable toggle) carries
-    // the oscillator number, so these are bare control names.
+    std::array<juce::String, kNumParams> captions;
     for (int osc = 0; osc < kNumOscillators; ++osc) {
-        const int base = osc * kOscSlotCount;
-        labels_[static_cast<size_t>(base) + 0] = "Wave";
-        labels_[static_cast<size_t>(base) + 1] = "Level";
-        labels_[static_cast<size_t>(base) + 2] = "Coarse";
-        labels_[static_cast<size_t>(base) + 3] = "Fine";
+        const auto base = static_cast<size_t>(osc * kOscSlotCount);
+        captions[base + 1] = oscPrefix(osc) + "Lvl";
+        captions[base + 2] = oscPrefix(osc) + "Crs";
+        captions[base + 3] = oscPrefix(osc) + "Fine";
     }
-    labels_[kFilterTypeSlot] = "Type";
-    labels_[kCutoffSlot] = "Cutoff";
-    labels_[kResonanceSlot] = "Reso";
-    labels_[kFilterEnvAmtSlot] = "Env Amt";
-    labels_[kFilterDriveSlot] = "Drive";
-    labels_[kFilterSlopeSlot] = "Slope";
-    labels_[kFilterAttackSlot + 0] = "Attack";
-    labels_[kFilterAttackSlot + 1] = "Decay";
-    labels_[kFilterAttackSlot + 2] = "Sustain";
-    labels_[kFilterAttackSlot + 3] = "Release";
-    labels_[kAmpAttackSlot + 0] = "Attack";
-    labels_[kAmpAttackSlot + 1] = "Decay";
-    labels_[kAmpAttackSlot + 2] = "Sustain";
-    labels_[kAmpAttackSlot + 3] = "Release";
-    labels_[kBendRangeSlot] = "Bend Range";
-    labels_[kVoiceModeSlot] = "Mode";
-    labels_[kGlideSlot] = "Glide";
-    for (int osc = 0; osc < kNumOscillators; ++osc)
-        labels_[kOscResetBaseSlot + osc] = "Rst";
-    labels_[kVelAmpSlot] = "Vel>Amp";
-    labels_[kVelFilterSlot] = "Vel>Cut";
-    labels_[kOutputGainSlot] = "Output";
+    for (const auto& f : kFilterSlots) {
+        captions[static_cast<size_t>(f.cutoff)] = "Cutoff";
+        captions[static_cast<size_t>(f.resonance)] = "Reso";
+        captions[static_cast<size_t>(f.envAmt)] = "Env Amt";
+        captions[static_cast<size_t>(f.drive)] = "Drive";
+    }
+    for (int base : {kFilterAttackSlot, kAmpAttackSlot}) {
+        captions[static_cast<size_t>(base)] = "Attack";
+        captions[static_cast<size_t>(base + 1)] = "Decay";
+        captions[static_cast<size_t>(base + 2)] = "Sustain";
+        captions[static_cast<size_t>(base + 3)] = "Release";
+    }
+    captions[kGlideSlot] = "Glide";
+    captions[kBendRangeSlot] = "Bend";
+    captions[kVelAmpSlot] = "Vel>Amp";
+    captions[kVelFilterSlot] = "Vel>Cut";
+    captions[kOutputGainSlot] = "Output";
+    captions[kFilterBlendSlot] = "Blend";
 
     for (int i = 0; i < kNumParams; ++i) {
         auto& c = controls_[static_cast<size_t>(i)];
 
         c.label = std::make_unique<juce::Label>();
-        c.label->setText(labels_[static_cast<size_t>(i)], juce::dontSendNotification);
-        c.label->setFont(FontManager::getInstance().getUIFont(10.0f));
-        c.label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
+        c.label->setText(captions[static_cast<size_t>(i)], juce::dontSendNotification);
+        c.label->setBorderSize({});
         c.label->setJustificationType(juce::Justification::centredLeft);
-        addAndMakeVisible(*c.label);
+        c.label->setInterceptsMouseClicks(false, false);
+        addChildComponent(*c.label);
 
         c.slider = std::make_unique<LinkableTextSlider>();
         c.slider->setParamIndex(i);
-        const int idx = i;
-        c.slider->onValueChanged = [this, idx](double v) {
+        c.slider->onValueChanged = [this, i](double v) {
             if (onParameterChanged)
-                onParameterChanged(idx, static_cast<float>(v));
-            syncGraphFromParam(idx, static_cast<float>(v));
-            syncFilterCurveFromParam(idx, static_cast<float>(v));
+                onParameterChanged(i, static_cast<float>(v));
+            syncGraphFromParam(i, static_cast<float>(v));
+            syncChoiceFromParam(i, static_cast<float>(v));
         };
-        addAndMakeVisible(*c.slider);
+        // Shown only once placed in a tile; choices, toggles and combos keep theirs hidden.
+        addChildComponent(*c.slider);
     }
 
     // Dragging an envelope handle writes the plugin value AND keeps the matching
@@ -101,141 +131,73 @@ PolySynthUI::PolySynthUI() {
     filterGraph_ = std::make_unique<AdsrGraph>();
     wireGraph(*ampGraph_);
     wireGraph(*filterGraph_);
-    addAndMakeVisible(*ampGraph_);
-    addAndMakeVisible(*filterGraph_);
+    addChildComponent(*ampGraph_);
+    addChildComponent(*filterGraph_);
 
     filterCurve_ = std::make_unique<CompiledFilterCurveView>("magda_polysynth");
-    filterCurve_->setCurveColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     addAndMakeVisible(*filterCurve_);
-    pushFilterCurve();
 
-    // Filter Type as a segmented multi-button row (Lowpass/Highpass/Bandpass/
-    // Notch) instead of a value box. The hidden Type slider still carries the
-    // value for state/linking; the buttons drive it.
-    static const char* kTypeNames[kNumFilterTypes] = {"Lowpass", "Highpass", "Bandpass", "Notch"};
-    for (int t = 0; t < kNumFilterTypes; ++t) {
-        auto btn = std::make_unique<juce::TextButton>(kTypeNames[t]);
-        btn->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());  // theme font
-        // Selection is driven explicitly via updateTypeButtons() (not the radio
-        // group / click-toggle, which left two segments lit at once).
-        btn->setClickingTogglesState(false);
-        btn->setColour(juce::TextButton::buttonColourId,
-                       ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.10f));
-        btn->setColour(juce::TextButton::buttonOnColourId,
-                       ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-        btn->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
-        btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-        btn->setConnectedEdges((t > 0 ? juce::Button::ConnectedOnLeft : 0) |
-                               (t < kNumFilterTypes - 1 ? juce::Button::ConnectedOnRight : 0));
-        btn->onClick = [this, t]() { setFilterType(t); };
-        addAndMakeVisible(*btn);
-        typeButtons_[static_cast<size_t>(t)] = std::move(btn);
-    }
-    // Slope 12/24 dB segmented toggle (top-right of the filter section).
-    static const char* kSlopeNames[kNumSlopes] = {"12 dB", "24 dB"};
-    for (int s = 0; s < kNumSlopes; ++s) {
-        auto btn = std::make_unique<juce::TextButton>(kSlopeNames[s]);
-        btn->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
-        btn->setClickingTogglesState(false);
-        btn->setColour(juce::TextButton::buttonColourId,
-                       ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.10f));
-        btn->setColour(juce::TextButton::buttonOnColourId,
-                       ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-        btn->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
-        btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-        btn->setConnectedEdges(s == 0 ? juce::Button::ConnectedOnRight
-                                      : juce::Button::ConnectedOnLeft);
-        btn->onClick = [this, s]() { setFilterSlope(s); };
-        addAndMakeVisible(*btn);
-        slopeButtons_[static_cast<size_t>(s)] = std::move(btn);
-    }
-
-    // Per-oscillator waveform icon selector (replaces the wave value box) plus an
-    // enable toggle and a phase-reset toggle, one of each per oscillator column.
-    oscEnabled_.fill(true);
     for (int osc = 0; osc < kNumOscillators; ++osc) {
-        auto& sel = waveSelectors_[static_cast<size_t>(osc)];
-        populateWaveSelector(sel);
-        sel.onChange = [this, osc](int wave) { setOscWave(osc, wave); };
-        addAndMakeVisible(sel);
-
-        // Enable (mute) toggle, doubling as the column header. Lit = audible.
-        auto en = std::make_unique<juce::TextButton>("OSC " + juce::String(osc + 1));
-        en->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
-        en->setClickingTogglesState(false);
-        en->setColour(juce::TextButton::buttonColourId,
-                      ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.10f));
-        en->setColour(juce::TextButton::buttonOnColourId,
-                      ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-        en->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
-        en->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-        en->setTooltip("Enable / disable this oscillator");
-        en->onClick = [this, osc]() { setOscEnable(osc, !oscEnabled_[static_cast<size_t>(osc)]); };
-        addAndMakeVisible(*en);
-        oscEnableButtons_[static_cast<size_t>(osc)] = std::move(en);
-
-        auto rst = std::make_unique<juce::TextButton>("R");  // phase-reset toggle
-        rst->setLookAndFeel(&FlatTabButtonLookAndFeel::getInstance());
-        rst->setClickingTogglesState(false);
-        rst->setColour(juce::TextButton::buttonColourId,
-                       ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.10f));
-        rst->setColour(juce::TextButton::buttonOnColourId,
-                       ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-        rst->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
-        rst->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-        rst->setTooltip("Reset oscillator phase on note-on");
-        rst->onClick = [this, osc]() { setOscReset(osc, !oscReset_[static_cast<size_t>(osc)]); };
-        addAndMakeVisible(*rst);
-        oscResetButtons_[static_cast<size_t>(osc)] = std::move(rst);
+        auto& box = waveBoxes_[static_cast<size_t>(osc)];
+        box.addItemList({"Sine", "Saw", "Square", "Triangle"}, 1);
+        box.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
+        box.setJustificationType(juce::Justification::centredLeft);
+        box.onChange = [this, osc] {
+            const int wave = waveBoxes_[static_cast<size_t>(osc)].getSelectedId() - 1;
+            if (wave >= 0)
+                setChoiceSlot(osc * kOscSlotCount, wave);
+        };
+        addAndMakeVisible(box);
     }
 
-    // The Type/Slope/Mode value boxes and the per-osc Wave/Reset boxes are
-    // replaced by the buttons/dropdowns; keep the objects (for linking/value) but
-    // hide them.
-    controls_[kFilterTypeSlot].slider->setVisible(false);
-    controls_[kFilterTypeSlot].label->setVisible(false);
-    controls_[kFilterSlopeSlot].slider->setVisible(false);
-    controls_[kFilterSlopeSlot].label->setVisible(false);
-    controls_[kVoiceModeSlot].slider->setVisible(false);
-    controls_[kVoiceModeSlot].label->setVisible(false);
-    for (int osc = 0; osc < kNumOscillators; ++osc) {
-        // Icon selector / enable + reset toggles replace the value boxes; hide the
-        // underlying sliders and the wave/reset labels (the toggles are labelled).
-        const auto waveSlot = static_cast<std::size_t>(osc) * kOscSlotCount;
-        controls_[waveSlot].slider->setVisible(false);
-        controls_[waveSlot].label->setVisible(false);
-        controls_[kOscResetBaseSlot + osc].slider->setVisible(false);
-        controls_[kOscResetBaseSlot + osc].label->setVisible(false);
-        controls_[kOscEnableBaseSlot + osc].slider->setVisible(false);
-        controls_[kOscEnableBaseSlot + osc].label->setVisible(false);
-    }
-    // Slightly smaller font on the osc value boxes so the unit suffix is not
-    // cramped and the boxes read lighter.
-    for (int osc = 0; osc < kNumOscillators; ++osc)
-        for (int p = 1; p < kOscSlotCount; ++p)  // Level / Coarse / Fine
-            controls_[osc * kOscSlotCount + p].slider->setFont(
-                FontManager::getInstance().getUIFont(10.0f));
-    updateTypeButtons();
-    updateSlopeButtons();
-    updateOscResetButtons();
-    updateOscEnableButtons();
-    updateWaveSelectors();
+    routingChoice_.setOptions({"Serial", "Parallel"});
+    routingChoice_.onChange = [this](int index) { setChoiceSlot(kFilterRoutingSlot, index); };
+    typeChoice_.setOptions({"LP", "HP", "BP", "Notch"});  // drawn as their responses
+    typeChoice_.onChange = [this](int index) {
+        setChoiceSlot(kFilterSlots[static_cast<size_t>(selectedFilter_)].type, index);
+    };
+    polesChoice_.setOptions({"2", "4", "6"});
+    polesChoice_.onChange = [this](int index) {
+        setChoiceSlot(kFilterSlots[static_cast<size_t>(selectedFilter_)].poles, index);
+    };
+    for (auto* choice : {&routingChoice_, &typeChoice_, &polesChoice_})
+        addAndMakeVisible(*choice);
+
+    styleControls();
+    refreshOscRows();
+    refreshFilterPanel();
+    refreshEnvelopePanel();
 }
 
 PolySynthUI::~PolySynthUI() {
     stopTimer();
-    for (auto& btn : typeButtons_)
-        if (btn)
-            btn->setLookAndFeel(nullptr);
-    for (auto& btn : slopeButtons_)
-        if (btn)
-            btn->setLookAndFeel(nullptr);
-    for (auto& btn : oscResetButtons_)
-        if (btn)
-            btn->setLookAndFeel(nullptr);
-    for (auto& btn : oscEnableButtons_)
-        if (btn)
-            btn->setLookAndFeel(nullptr);
+    for (auto& box : waveBoxes_)
+        box.setLookAndFeel(nullptr);
+}
+
+void PolySynthUI::styleControls() {
+    for (int i = 0; i < kNumParams; ++i) {
+        auto& c = controls_[static_cast<size_t>(i)];
+        c.label->setFont(captionFont());
+        c.label->setColour(juce::Label::textColourId, colour(ActiveTheme::DEVICE_DIM));
+        sampler_tiles::styleValue(*c.slider);
+    }
+    // The OSC panel's tiles are narrow: the v1 text cell's sizes fit "-60.0 dB".
+    for (int slot : compactSlots()) {
+        auto& c = controls_[static_cast<size_t>(slot)];
+        c.slider->setFont(FontManager::getInstance().getUIFontMedium(13.5f));
+        c.label->setFont(compactCaptionFont());
+    }
+
+    for (auto& box : waveBoxes_) {
+        box.setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+        box.setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+        box.setColour(juce::ComboBox::textColourId, colour(ActiveTheme::DEVICE_VALUE_TEXT));
+        box.setColour(juce::ComboBox::arrowColourId, colour(ActiveTheme::DEVICE_DIM));
+    }
+    filterCurve_->setCurveColour(colour(ActiveTheme::DEVICE_BLUE));
+    for (auto* graph : {ampGraph_.get(), filterGraph_.get()})
+        graph->setColours(colour(ActiveTheme::DEVICE_GRAPH_BG), colour(ActiveTheme::DEVICE_BLUE));
 }
 
 void PolySynthUI::setLivePlugin(magda::daw::audio::compiled::MagdaPolySynthCompiledPlugin* plugin) {
@@ -243,7 +205,7 @@ void PolySynthUI::setLivePlugin(magda::daw::audio::compiled::MagdaPolySynthCompi
         return;
 
     livePlugin_ = plugin;
-    liveCurveInitialised_ = false;
+    liveCurve_.reset();
     liveCurveRefreshPending_ = plugin != nullptr;
     if (livePlugin_ != nullptr) {
         timerCallback();
@@ -254,139 +216,100 @@ void PolySynthUI::setLivePlugin(magda::daw::audio::compiled::MagdaPolySynthCompi
     }
 }
 
-void PolySynthUI::setFilterType(int type) {
-    type = juce::jlimit(0, kNumFilterTypes - 1, type);
-    filterType_ = type;
-    controls_[kFilterTypeSlot].slider->setValue(type, juce::dontSendNotification);
+void PolySynthUI::setChoiceSlot(int slot, int value) {
+    controls_[static_cast<size_t>(slot)].slider->setValue(value, juce::dontSendNotification);
     if (onParameterChanged)
-        onParameterChanged(kFilterTypeSlot, static_cast<float>(type));
-    updateTypeButtons();
-    pushFilterCurve();
+        onParameterChanged(slot, static_cast<float>(value));
+    syncChoiceFromParam(slot, static_cast<float>(value));
 }
 
-void PolySynthUI::updateTypeButtons() {
-    const int t = juce::jlimit(0, kNumFilterTypes - 1, filterType_);
-    for (int i = 0; i < kNumFilterTypes; ++i)
-        if (typeButtons_[static_cast<size_t>(i)])
-            typeButtons_[static_cast<size_t>(i)]->setToggleState(i == t,
-                                                                 juce::dontSendNotification);
-}
-
-void PolySynthUI::setFilterSlope(int slope) {
-    slope = juce::jlimit(0, kNumSlopes - 1, slope);
-    filterSlope_ = slope;
-    controls_[kFilterSlopeSlot].slider->setValue(slope, juce::dontSendNotification);
-    if (onParameterChanged)
-        onParameterChanged(kFilterSlopeSlot, static_cast<float>(slope));
-    updateSlopeButtons();
-    pushFilterCurve();
-}
-
-void PolySynthUI::updateSlopeButtons() {
-    const int s = juce::jlimit(0, kNumSlopes - 1, filterSlope_);
-    for (int i = 0; i < kNumSlopes; ++i)
-        if (slopeButtons_[static_cast<size_t>(i)])
-            slopeButtons_[static_cast<size_t>(i)]->setToggleState(i == s,
-                                                                  juce::dontSendNotification);
-}
-
-void PolySynthUI::setOscReset(int osc, bool on) {
-    if (osc < 0 || osc >= kNumOscillators)
-        return;
-    oscReset_[static_cast<size_t>(osc)] = on;
-    const int slot = kOscResetBaseSlot + osc;
-    controls_[slot].slider->setValue(on ? 1.0 : 0.0, juce::dontSendNotification);
-    if (onParameterChanged)
-        onParameterChanged(slot, on ? 1.0f : 0.0f);
-    updateOscResetButtons();
-}
-
-void PolySynthUI::updateOscResetButtons() {
-    for (int osc = 0; osc < kNumOscillators; ++osc)
-        if (oscResetButtons_[static_cast<size_t>(osc)])
-            oscResetButtons_[static_cast<size_t>(osc)]->setToggleState(
-                oscReset_[static_cast<size_t>(osc)], juce::dontSendNotification);
-}
-
-void PolySynthUI::setOscEnable(int osc, bool on) {
-    if (osc < 0 || osc >= kNumOscillators)
-        return;
-    oscEnabled_[static_cast<size_t>(osc)] = on;
-    const int slot = kOscEnableBaseSlot + osc;
-    controls_[slot].slider->setValue(on ? 1.0 : 0.0, juce::dontSendNotification);
-    if (onParameterChanged)
-        onParameterChanged(slot, on ? 1.0f : 0.0f);
-    updateOscEnableButtons();
-    applyOscColumnEnabled(osc);
-}
-
-void PolySynthUI::updateOscEnableButtons() {
-    for (int osc = 0; osc < kNumOscillators; ++osc)
-        if (oscEnableButtons_[static_cast<size_t>(osc)])
-            oscEnableButtons_[static_cast<size_t>(osc)]->setToggleState(
-                oscEnabled_[static_cast<size_t>(osc)], juce::dontSendNotification);
-}
-
-void PolySynthUI::applyOscColumnEnabled(int osc) {
-    if (osc < 0 || osc >= kNumOscillators)
-        return;
-    const bool on = oscEnabled_[static_cast<size_t>(osc)];
-    const float alpha = on ? 1.0f : 0.3f;
-    // Grey out (and disable interaction with) everything in the column except the
-    // enable toggle itself, which stays live so the column can be re-enabled.
-    const int base = osc * kOscSlotCount;
-    for (int p = 0; p < kOscSlotCount; ++p) {
-        auto& c = controls_[static_cast<size_t>(base) + p];
-        c.slider->setEnabled(on);
-        c.slider->setAlpha(alpha);
-        if (c.label)
-            c.label->setAlpha(alpha);
-    }
-    auto& sel = waveSelectors_[static_cast<size_t>(osc)];
-    sel.setEnabled(on);
-    sel.setAlpha(alpha);
-    if (auto& rst = oscResetButtons_[static_cast<size_t>(osc)]) {
-        rst->setEnabled(on);
-        rst->setAlpha(alpha);
-    }
-    if (auto& rlabel = controls_[static_cast<size_t>(kOscResetBaseSlot) + osc].label)
-        rlabel->setAlpha(alpha);
-}
-
-void PolySynthUI::setOscWave(int osc, int wave) {
-    if (osc < 0 || osc >= kNumOscillators)
-        return;
-    wave = juce::jlimit(0, 3, wave);
-    const int slot = osc * kOscSlotCount;
-    controls_[slot].slider->setValue(wave, juce::dontSendNotification);
-    if (onParameterChanged)
-        onParameterChanged(slot, static_cast<float>(wave));
-    updateWaveSelectors();
-}
-
-void PolySynthUI::updateWaveSelectors() {
+void PolySynthUI::refreshOscRows() {
     for (int osc = 0; osc < kNumOscillators; ++osc) {
-        const auto waveSlot = static_cast<std::size_t>(osc) * kOscSlotCount;
+        const auto waveSlot = static_cast<size_t>(osc * kOscSlotCount);
         const int wave = juce::jlimit(
             0, 3, static_cast<int>(std::round(controls_[waveSlot].slider->getValue())));
-        waveSelectors_[static_cast<size_t>(osc)].setSelectedIndex(wave, juce::dontSendNotification);
+        auto& box = waveBoxes_[static_cast<size_t>(osc)];
+        box.setSelectedId(wave + 1, juce::dontSendNotification);
+
+        // A disabled oscillator's row greys out; its dot stays live to turn it back on.
+        const bool on = oscEnabled_[static_cast<size_t>(osc)];
+        const float alpha = on ? 1.0f : 0.35f;
+        box.setEnabled(on);
+        box.setAlpha(alpha);
+        for (int p = 1; p < kOscSlotCount; ++p) {
+            auto& c = controls_[waveSlot + static_cast<size_t>(p)];
+            c.slider->setEnabled(on);
+            c.slider->setAlpha(alpha);
+            c.label->setAlpha(alpha);
+        }
     }
+    repaint();
+}
+
+void PolySynthUI::refreshFilterPanel() {
+    const auto& state = filterState_[static_cast<size_t>(selectedFilter_)];
+    const bool enabled = filterEnabled_[static_cast<size_t>(selectedFilter_)];
+    typeChoice_.setSelectedIndex(state.type);
+    polesChoice_.setSelectedIndex(state.poles);
+    routingChoice_.setSelectedIndex(filterRouting_);
+
+    const float alpha = enabled ? 1.0f : 0.4f;
+    for (juce::Component* c :
+         {static_cast<juce::Component*>(&typeChoice_), static_cast<juce::Component*>(&polesChoice_),
+          static_cast<juce::Component*>(filterCurve_.get())})
+        c->setAlpha(alpha);
+    for (int f = 0; f < kNumFilters; ++f) {
+        const auto& slots = kFilterSlots[static_cast<size_t>(f)];
+        for (int slot : {slots.cutoff, slots.resonance, slots.envAmt, slots.drive}) {
+            auto& c = controls_[static_cast<size_t>(slot)];
+            const bool shown = f == selectedFilter_ && !c.tile.isEmpty();
+            c.slider->setVisible(shown);
+            c.label->setVisible(shown);
+            c.slider->setAlpha(alpha);
+            c.label->setAlpha(alpha);
+        }
+    }
+    // Blend mixes the two only in parallel.
+    const float blendAlpha = filterRouting_ == 1 ? 1.0f : 0.4f;
+    controls_[kFilterBlendSlot].slider->setAlpha(blendAlpha);
+    controls_[kFilterBlendSlot].label->setAlpha(blendAlpha);
+
+    liveCurve_.reset();
+    if (livePlugin_ != nullptr)
+        liveCurveRefreshPending_ = true;
+    else
+        pushFilterCurve();
+    repaint();
+}
+
+void PolySynthUI::refreshEnvelopePanel() {
+    ampGraph_->setVisible(!showFilterEnvelope_);
+    filterGraph_->setVisible(showFilterEnvelope_);
+    for (int stage = 0; stage < AdsrGraph::kNumStages; ++stage) {
+        for (auto [base, shown] : {std::pair{kAmpAttackSlot, !showFilterEnvelope_},
+                                   std::pair{kFilterAttackSlot, showFilterEnvelope_}}) {
+            auto& c = controls_[static_cast<size_t>(base + stage)];
+            c.slider->setVisible(shown && !c.tile.isEmpty());
+            c.label->setVisible(shown && !c.tile.isEmpty());
+        }
+    }
+    repaint();
 }
 
 void PolySynthUI::pushFilterCurve() {
-    pushFilterCurve(filterType_, filterCutoffHz_, filterRes_, filterDrive_, filterSlope_);
+    pushFilterCurve(filterState_[static_cast<size_t>(selectedFilter_)]);
 }
 
-void PolySynthUI::pushFilterCurve(int type, float cutoffHz, float resonance, float drive,
-                                  int slope) {
+void PolySynthUI::pushFilterCurve(const CurveState& state) {
     if (!filterCurve_)
         return;
     // Synth filter Type order (0=LP 1=HP 2=BP 3=Notch) -> the curve view's order
     // (0=LP 1=BP 2=HP 3=Notch).
     static constexpr int kTypeToViewMode[4] = {0, 2, 1, 3};
-    const int mode = kTypeToViewMode[juce::jlimit(0, 3, type)];
+    const int mode = kTypeToViewMode[juce::jlimit(0, 3, state.type)];
     // Engine 0 = SVF (the synth's only filter family).
-    filterCurve_->setRawState(0, mode, cutoffHz, resonance, drive, slope == 1);
+    filterCurve_->setRawState(0, mode, state.cutoffHz, curveResonance(state.resonance), state.drive,
+                              state.poles + 1);
 }
 
 void PolySynthUI::timerCallback() {
@@ -400,57 +323,66 @@ void PolySynthUI::timerCallback() {
         return fallback;
     };
 
-    const int type = static_cast<int>(
-        std::round(readDisplayValue(kFilterTypeSlot, static_cast<float>(filterType_))));
-    const float cutoff = readDisplayValue(kCutoffSlot, filterCutoffHz_);
-    const float resonance = readDisplayValue(kResonanceSlot, filterRes_);
-    const float drive = readDisplayValue(kFilterDriveSlot, filterDrive_);
-    const int slope = static_cast<int>(
-        std::round(readDisplayValue(kFilterSlopeSlot, static_cast<float>(filterSlope_))));
+    const auto& slots = kFilterSlots[static_cast<size_t>(selectedFilter_)];
+    const auto& base = filterState_[static_cast<size_t>(selectedFilter_)];
+    CurveState live;
+    live.type =
+        static_cast<int>(std::round(readDisplayValue(slots.type, static_cast<float>(base.type))));
+    live.cutoffHz = readDisplayValue(slots.cutoff, base.cutoffHz);
+    live.resonance = readDisplayValue(slots.resonance, base.resonance);
+    live.drive = readDisplayValue(slots.drive, base.drive);
+    live.poles =
+        static_cast<int>(std::round(readDisplayValue(slots.poles, static_cast<float>(base.poles))));
 
-    const bool changed = !liveCurveInitialised_ || type != liveFilterType_ ||
-                         std::abs(cutoff - liveFilterCutoffHz_) > 0.01f ||
-                         std::abs(resonance - liveFilterRes_) > 0.0001f ||
-                         std::abs(drive - liveFilterDrive_) > 0.0001f || slope != liveFilterSlope_;
-    if (!changed && !liveCurveRefreshPending_)
+    if (live == liveCurve_ && !liveCurveRefreshPending_)
         return;
-
-    liveFilterType_ = type;
-    liveFilterCutoffHz_ = cutoff;
-    liveFilterRes_ = resonance;
-    liveFilterDrive_ = drive;
-    liveFilterSlope_ = slope;
-    liveCurveInitialised_ = true;
+    liveCurve_ = live;
     liveCurveRefreshPending_ = false;
-    pushFilterCurve(type, cutoff, resonance, drive, slope);
+    pushFilterCurve(live);
 }
 
-void PolySynthUI::syncFilterCurveFromParam(int paramIndex, float value) {
-    switch (paramIndex) {
-        case kFilterTypeSlot:
-            filterType_ = static_cast<int>(std::round(value));
-            updateTypeButtons();
-            break;
-        case kCutoffSlot:
-            filterCutoffHz_ = value;
-            break;
-        case kResonanceSlot:
-            filterRes_ = value;
-            break;
-        case kFilterDriveSlot:
-            filterDrive_ = value;
-            break;
-        case kFilterSlopeSlot:
-            filterSlope_ = static_cast<int>(std::round(value));
-            updateSlopeButtons();
-            break;
-        default:
-            return;  // not a filter-curve param
+void PolySynthUI::syncChoiceFromParam(int paramIndex, float value) {
+    const int choice = static_cast<int>(std::round(value));
+    if (paramIndex == kFilterRoutingSlot) {
+        filterRouting_ = choice;
+        refreshFilterPanel();
+        return;
     }
-    if (livePlugin_ != nullptr)
-        liveCurveRefreshPending_ = true;
-    else
-        pushFilterCurve();
+    if (paramIndex < kNumOscillators * kOscSlotCount && paramIndex % kOscSlotCount == 0) {
+        refreshOscRows();
+        return;
+    }
+    if (paramIndex >= kOscResetBaseSlot && paramIndex < kOscResetBaseSlot + kNumOscillators) {
+        oscReset_[static_cast<size_t>(paramIndex - kOscResetBaseSlot)] = choice != 0;
+        repaint();
+        return;
+    }
+    if (paramIndex >= kOscEnableBaseSlot && paramIndex < kOscEnableBaseSlot + kNumOscillators) {
+        oscEnabled_[static_cast<size_t>(paramIndex - kOscEnableBaseSlot)] = choice != 0;
+        refreshOscRows();
+        return;
+    }
+    for (int f = 0; f < kNumFilters; ++f) {
+        const auto& slots = kFilterSlots[static_cast<size_t>(f)];
+        auto& state = filterState_[static_cast<size_t>(f)];
+        if (paramIndex == slots.type)
+            state.type = choice;
+        else if (paramIndex == slots.cutoff)
+            state.cutoffHz = value;
+        else if (paramIndex == slots.resonance)
+            state.resonance = value;
+        else if (paramIndex == slots.drive)
+            state.drive = value;
+        else if (paramIndex == slots.poles)
+            state.poles = choice;
+        else if (paramIndex == slots.enable)
+            filterEnabled_[static_cast<size_t>(f)] = choice != 0;
+        else
+            continue;
+        if (f == selectedFilter_ || paramIndex == slots.enable)
+            refreshFilterPanel();
+        return;
+    }
 }
 
 void PolySynthUI::syncGraphFromParam(int paramIndex, float value) {
@@ -470,7 +402,7 @@ void PolySynthUI::updateFromParameters(const std::vector<magda::ParameterInfo>& 
         auto& c = controls_[static_cast<size_t>(idx)];
         c.slider->setParameterInfo(info);
         // Drop the unit suffix on the osc coarse (st) / fine (cents) boxes so it
-        // does not clip in the narrow cells; the column label already names them.
+        // does not clip in the narrow cells; the caption already names them.
         if (idx < kNumOscillators * kOscSlotCount) {
             const int col = idx % kOscSlotCount;
             if (col == 2 || col == 3)
@@ -480,20 +412,7 @@ void PolySynthUI::updateFromParameters(const std::vector<magda::ParameterInfo>& 
         c.slider->setValue(info.currentValue, juce::dontSendNotification);
 
         syncGraphFromParam(idx, info.currentValue);
-        syncFilterCurveFromParam(idx, info.currentValue);
-        if (idx < kNumOscillators * kOscSlotCount && (idx % kOscSlotCount) == 0)
-            updateWaveSelectors();  // wave slot -> dropdown
-
-        if (idx >= kOscResetBaseSlot && idx < kOscResetBaseSlot + kNumOscillators) {
-            oscReset_[static_cast<size_t>(idx - kOscResetBaseSlot)] = info.currentValue >= 0.5f;
-            updateOscResetButtons();
-        }
-        if (idx >= kOscEnableBaseSlot && idx < kOscEnableBaseSlot + kNumOscillators) {
-            const int osc = idx - kOscEnableBaseSlot;
-            oscEnabled_[static_cast<size_t>(osc)] = info.currentValue >= 0.5f;
-            updateOscEnableButtons();
-            applyOscColumnEnabled(osc);
-        }
+        syncChoiceFromParam(idx, info.currentValue);
 
         // Mirror the ADSR slots into their envelope graphs (carries the range too).
         if (idx >= kAmpAttackSlot && idx < kAmpAttackSlot + AdsrGraph::kNumStages)
@@ -511,220 +430,244 @@ std::vector<LinkableTextSlider*> PolySynthUI::getLinkableSliders() {
     return controls_ | std::views::transform(sliderOf) | toStd<std::vector<LinkableTextSlider*>>();
 }
 
-void PolySynthUI::layoutOscSection() {
-    auto a = oscArea_.reduced(kSectionGap);
-    a.removeFromTop(kSectionTitleH);
+// =============================================================================
+// Layout
+// =============================================================================
 
-    // Four oscillator columns side by side. Each column, top to bottom: the enable
-    // toggle (header, carries the osc number), the waveform icon selector, the
-    // Level / Coarse / Fine value boxes, and a phase-reset toggle pinned to the
-    // bottom. The performance controls live in the spare space below.
-    constexpr int kHeaderH = 18;
-    constexpr int kWaveH = 22;
-    constexpr int kResetH = 16;
-    constexpr int kColsMaxH = 176;
-    const int perfH = (kCellLabelH + 18) + kSectionGap * 2 + (kCellLabelH + 24) + kSectionGap * 2;
-    auto colsRegion = a.removeFromTop(juce::jmin(kColsMaxH, juce::jmax(0, a.getHeight() - perfH)));
-
-    const int colW = colsRegion.getWidth() / kNumOscillators;
-    for (int osc = 0; osc < kNumOscillators; ++osc) {
-        auto col = juce::Rectangle<int>(colsRegion.getX() + osc * colW, colsRegion.getY(), colW,
-                                        colsRegion.getHeight())
-                       .reduced(kCellPad, 1);
-        if (auto& en = oscEnableButtons_[static_cast<size_t>(osc)])
-            en->setBounds(col.removeFromTop(kHeaderH));
-        col.removeFromTop(2);
-        waveSelectors_[static_cast<size_t>(osc)].setBounds(col.removeFromTop(kWaveH));
-        col.removeFromTop(2);
-        // Reset (retrigger) toggle pinned to the bottom, left-aligned with the
-        // column's value boxes; value boxes fill the rest.
-        auto resetRow = col.removeFromBottom(kResetH);
-        if (auto& rst = oscResetButtons_[static_cast<size_t>(osc)]) {
-            const int rw = juce::jmin(24, resetRow.getWidth());
-            const int rh = juce::jmin(12, resetRow.getHeight());
-            rst->setBounds(resetRow.getX(), resetRow.getCentreY() - rh / 2, rw, rh);
-        }
-        const int boxH = col.getHeight() / 3;
-        for (int p = 1; p < kOscSlotCount; ++p) {  // Level / Coarse / Fine
-            auto cell = col.removeFromTop(boxH).reduced(0, 1);
-            auto& c = controls_[static_cast<size_t>(osc) * kOscSlotCount + p];
-            c.label->setBounds(cell.removeFromTop(kCellLabelH));
-            c.slider->setBounds(cell);
-        }
-    }
-
-    // Performance controls in the spare space below the oscillator columns.
-    a.removeFromTop(kSectionGap * 2);
-    // Glide / Bend Range / Vel>Amp / Vel>Cut / Output in one labelled row.
-    auto perfRow = a.removeFromTop(kCellLabelH + 24);
-    layoutCells(perfRow, {kGlideSlot, kBendRangeSlot, kVelAmpSlot, kVelFilterSlot, kOutputGainSlot},
-                5);
+void PolySynthUI::placeTile(int slot, juce::Rectangle<int> bounds) {
+    auto& c = controls_[static_cast<size_t>(slot)];
+    c.tile = bounds;
+    const bool compact = std::ranges::contains(compactSlots(), slot);
+    auto inner = bounds.reduced(compact ? 7 : 9, 5);
+    c.label->setBounds(inner.removeFromTop(kCaptionH));
+    c.slider->setBounds(inner);
+    c.label->setVisible(true);
+    c.slider->setVisible(true);
 }
 
-void PolySynthUI::layoutCells(juce::Rectangle<int> a, const std::vector<int>& indices, int cols) {
-    const int n = static_cast<int>(indices.size());
-    if (n == 0 || cols <= 0)
-        return;
+void PolySynthUI::placeTiles(juce::Rectangle<int> area, const std::vector<int>& slots, int cols) {
+    const int n = static_cast<int>(slots.size());
     const int rows = (n + cols - 1) / cols;
-    const int cellW = a.getWidth() / cols;
-    const int cellH = a.getHeight() / rows;
+    const int tileW = (area.getWidth() - (cols - 1) * kTileGap) / cols;
+    const int tileH = (area.getHeight() - (rows - 1) * kTileGap) / rows;
+    for (int i = 0; i < n; ++i)
+        placeTile(slots[static_cast<size_t>(i)],
+                  {area.getX() + (i % cols) * (tileW + kTileGap),
+                   area.getY() + (i / cols) * (tileH + kTileGap), tileW, tileH});
+}
 
-    for (int i = 0; i < n; ++i) {
-        const int col = i % cols;
-        const int row = i / cols;
-        juce::Rectangle<int> cell(a.getX() + col * cellW, a.getY() + row * cellH, cellW, cellH);
-        cell = cell.reduced(kCellPad, 1);
+void PolySynthUI::layoutOscPanel() {
+    auto a = oscPanel_.reduced(kPanelPadX, kPanelPadY);
+    oscTitle_ = a.removeFromTop(kHeaderH);
+    a.removeFromTop(4);
 
-        auto& c = controls_[static_cast<size_t>(indices[static_cast<size_t>(i)])];
-        c.label->setBounds(cell.removeFromTop(kCellLabelH));
-        c.slider->setBounds(cell);
+    const int tileH = juce::jlimit(kMinTileH, kMaxTileH, (a.getHeight() - 5 * kTileGap) / 5);
+    placeTiles(a.removeFromBottom(tileH),
+               {kGlideSlot, kBendRangeSlot, kVelAmpSlot, kVelFilterSlot, kOutputGainSlot}, 5);
+    a.removeFromBottom(kTileGap * 2);
+
+    // A row per oscillator: Wave | Level | Coarse | Fine | Reset, as the mock's columns.
+    static constexpr float kColumns[] = {0.28f, 0.22f, 0.16f, 0.17f};
+    const int rowH = juce::jmin(tileH, (a.getHeight() - 3 * kTileGap) / kNumOscillators);
+    const int usableW = a.getWidth() - 4 * kTileGap;
+    for (int osc = 0; osc < kNumOscillators; ++osc) {
+        auto row = a.removeFromTop(rowH);
+        a.removeFromTop(kTileGap);
+        const auto take = [&](float share) {
+            auto tile = row.removeFromLeft(juce::roundToInt(usableW * share));
+            row.removeFromLeft(kTileGap);
+            return tile;
+        };
+        const auto i = static_cast<size_t>(osc);
+        waveTiles_[i] = take(kColumns[0]);
+        auto waveInner = waveTiles_[i].reduced(7, 5);
+        auto caption = waveInner.removeFromTop(kCaptionH);
+        enableDots_[i] = caption.removeFromRight(kDot).withSizeKeepingCentre(kDot + 6, kDot + 6);
+        waveBoxes_[i].setBounds(waveInner.withTrimmedLeft(-4));
+        for (int p = 1; p < kOscSlotCount; ++p)
+            placeTile(osc * kOscSlotCount + p, take(kColumns[p]));
+        resetTiles_[i] = row;
     }
 }
 
-void PolySynthUI::layoutSection(juce::Rectangle<int> area, const std::vector<int>& indices,
-                                int cols) {
-    auto a = area.reduced(kSectionGap);
-    a.removeFromTop(kSectionTitleH);  // painted title strip
-    layoutCells(a, indices, cols);
+void PolySynthUI::layoutFilterPanel() {
+    auto a = filterPanel_.reduced(kPanelPadX, kPanelPadY);
+
+    // Tabs on the left, the shared routing and blend on the right.
+    auto header = a.removeFromTop(kHeaderH);
+    for (int f = 0; f < kNumFilters; ++f) {
+        filterTabs_[static_cast<size_t>(f)] =
+            takeTab(header, "FILTER " + juce::String(f + 1), true);
+        filterDots_[static_cast<size_t>(f)] =
+            filterTabs_[static_cast<size_t>(f)].withWidth(kDot).withSizeKeepingCentre(kDot + 6,
+                                                                                      kDot + 6);
+    }
+    routingChoice_.setBounds(header.removeFromRight(routingChoice_.getPreferredWidth()));
+    a.removeFromTop(kTileGap);
+
+    auto choiceRow = a.removeFromTop(kHeaderH);
+    typeChoice_.setBounds(choiceRow.removeFromLeft(typeChoice_.getPreferredWidth()));
+    polesChoice_.setBounds(choiceRow.removeFromRight(polesChoice_.getPreferredWidth()));
+    polesCaption_ = choiceRow.removeFromRight(46);
+    a.removeFromTop(kTileGap);
+
+    // Both filters' tiles share the 2x2 grid; only the selected tab's show.
+    const int tileH = juce::jlimit(kMinTileH, kMaxTileH, a.getHeight() / 5);
+    auto grid = a.removeFromBottom(2 * tileH + kTileGap);
+    a.removeFromBottom(kTileGap);
+    filterCurve_->setBounds(a);
+    // Blend mixes the two filters, so it stands beside either tab's grid.
+    placeTile(kFilterBlendSlot, grid.removeFromRight(grid.getWidth() / 4));
+    grid.removeFromRight(kTileGap);
+    for (const auto& f : kFilterSlots)
+        placeTiles(grid, {f.cutoff, f.resonance, f.envAmt, f.drive}, 2);
 }
 
-void PolySynthUI::layoutAdsrSection(juce::Rectangle<int> area, AdsrGraph* graph,
-                                    const std::vector<int>& indices, int cols) {
-    auto a = area.reduced(kSectionGap);
-    a.removeFromTop(kSectionTitleH);  // painted title strip
+void PolySynthUI::layoutEnvelopePanel() {
+    auto a = envelopePanel_.reduced(kPanelPadX, kPanelPadY);
+    auto header = a.removeFromTop(kHeaderH);
+    envelopeTabs_[0] = takeTab(header, "AMP ADSR", false);
+    envelopeTabs_[1] = takeTab(header, "FILTER ADSR", false);
+    a.removeFromTop(kTileGap);
 
-    // Envelope graph on top, value boxes (cols-wide grid) beneath.
-    const int rows = (static_cast<int>(indices.size()) + cols - 1) / cols;
-    const int boxRowH = rows * (kCellLabelH + 20);
-    auto boxes = a.removeFromBottom(std::min(boxRowH, a.getHeight() / 2));
-    graph->setBounds(a.reduced(2));
-    layoutCells(boxes, indices, cols);
+    const int tileH = juce::jlimit(kMinTileH, kMaxTileH, a.getHeight() / 5);
+    auto grid = a.removeFromBottom(2 * tileH + kTileGap);
+    a.removeFromBottom(kTileGap);
+    ampGraph_->setBounds(a);
+    filterGraph_->setBounds(a);
+    for (int base : {kAmpAttackSlot, kFilterAttackSlot})
+        placeTiles(grid, {base, base + 1, base + 2, base + 3}, 2);
 }
 
 void PolySynthUI::resized() {
-    auto b = getLocalBounds().reduced(2);
+    auto b = getLocalBounds().reduced(kPanelGap);
+    const int oscW = b.getWidth() * 38 / 100;
+    const int filterW = b.getWidth() * 36 / 100;
 
-    // Three columns: OSC and FILTER (with the response curve) full-height on the
-    // left, the two envelopes stacked in a narrower column on the right. The
-    // performance controls (Voice Mode + Glide/Bend/Velocity) live in the OSC
-    // column's spare space below the oscillator rows.
-    const int adsrW = b.getWidth() * 2 / 7;
-    const int mainW = b.getWidth() - adsrW;
-    // OSC now holds four oscillator columns, so give it a little more than half of
-    // the main block; FILTER keeps the response curve + 2x2 grid in the rest.
-    const int oscW = mainW * 11 / 20;
-    const int adsrX = b.getX() + mainW;
-    const int halfH = b.getHeight() / 2;
+    oscPanel_ = b.removeFromLeft(oscW);
+    b.removeFromLeft(kPanelGap);
+    filterPanel_ = b.removeFromLeft(filterW);
+    b.removeFromLeft(kPanelGap);
+    envelopePanel_ = b;
 
-    oscArea_ = {b.getX(), b.getY(), oscW, b.getHeight()};
-    filterArea_ = {b.getX() + oscW, b.getY(), mainW - oscW, b.getHeight()};
-    ampArea_ = {adsrX, b.getY(), adsrW, halfH};
-    filterEnvArea_ = {adsrX, b.getY() + halfH, adsrW, b.getHeight() - halfH};
+    layoutOscPanel();
+    layoutFilterPanel();
+    layoutEnvelopePanel();
+    // Placing tiles shows every one; the tabs then hide the unselected ones.
+    refreshFilterPanel();
+    refreshEnvelopePanel();
+}
 
-    layoutOscSection();
-    // Filter section: Type segmented buttons on top, response curve in the
-    // middle, the remaining control rows beneath.
-    {
-        auto a = filterArea_.reduced(kSectionGap);
-        auto titleRow = a.removeFromTop(kSectionTitleH);
+// =============================================================================
+// Interaction and paint
+// =============================================================================
 
-        // Slope 12/24 toggle on the right of the title row.
-        {
-            auto slopeArea = titleRow.removeFromRight(96);
-            const int segW = slopeArea.getWidth() / kNumSlopes;
-            for (int s = 0; s < kNumSlopes; ++s) {
-                if (!slopeButtons_[static_cast<size_t>(s)])
-                    continue;
-                auto seg = (s == kNumSlopes - 1)
-                               ? slopeArea
-                               : juce::Rectangle<int>(slopeArea.removeFromLeft(segW));
-                slopeButtons_[static_cast<size_t>(s)]->setBounds(seg);
-            }
-        }
-
-        // Type buttons row.
-        auto typeRow = a.removeFromTop(kCellLabelH + 18).reduced(kCellPad, 1);
-        const int segW = typeRow.getWidth() / kNumFilterTypes;
-        for (int t = 0; t < kNumFilterTypes; ++t) {
-            if (!typeButtons_[static_cast<size_t>(t)])
-                continue;
-            auto seg = (t == kNumFilterTypes - 1)
-                           ? typeRow
-                           : juce::Rectangle<int>(typeRow.removeFromLeft(segW));
-            typeButtons_[static_cast<size_t>(t)]->setBounds(seg);
-        }
-        a.removeFromTop(kSectionGap);
-
-        const std::vector<int> filterCtrls = {kCutoffSlot, kResonanceSlot, kFilterEnvAmtSlot,
-                                              kFilterDriveSlot};
-        // 2x2 grid for the four value boxes; curve fills the space above them.
-        const int rowH = kCellLabelH + 20;
-        const int ctrlH = std::min(2 * rowH, a.getHeight() / 2);
-        auto ctrlArea = a.removeFromBottom(ctrlH);
-        if (filterCurve_)
-            filterCurve_->setBounds(a.reduced(2));
-        layoutCells(ctrlArea, filterCtrls, 2);
+void PolySynthUI::mouseDown(const juce::MouseEvent& e) {
+    const auto p = e.getPosition();
+    for (int osc = 0; osc < kNumOscillators; ++osc) {
+        const auto i = static_cast<size_t>(osc);
+        if (enableDots_[i].contains(p))
+            return setChoiceSlot(kOscEnableBaseSlot + osc, oscEnabled_[i] ? 0 : 1);
+        if (resetTiles_[i].contains(p) && oscEnabled_[i])
+            return setChoiceSlot(kOscResetBaseSlot + osc, oscReset_[i] ? 0 : 1);
     }
-    layoutAdsrSection(ampArea_, ampGraph_.get(),
-                      {kAmpAttackSlot, kAmpAttackSlot + 1, kAmpAttackSlot + 2, kAmpAttackSlot + 3});
-    layoutAdsrSection(
-        filterEnvArea_, filterGraph_.get(),
-        {kFilterAttackSlot, kFilterAttackSlot + 1, kFilterAttackSlot + 2, kFilterAttackSlot + 3});
+    for (int f = 0; f < kNumFilters; ++f) {
+        const auto i = static_cast<size_t>(f);
+        if (filterDots_[i].contains(p))
+            return setChoiceSlot(kFilterSlots[i].enable, filterEnabled_[i] ? 0 : 1);
+        if (filterTabs_[i].contains(p) && f != selectedFilter_) {
+            selectedFilter_ = f;
+            return refreshFilterPanel();
+        }
+    }
+    for (int tab = 0; tab < 2; ++tab)
+        if (envelopeTabs_[static_cast<size_t>(tab)].contains(p) &&
+            (tab == 1) != showFilterEnvelope_) {
+            showFilterEnvelope_ = tab == 1;
+            return refreshEnvelopePanel();
+        }
 }
 
 void PolySynthUI::lookAndFeelChanged() {
-    // Re-apply cached theme colours after a live theme switch.
-    for (auto& c : controls_)
-        if (c.label)
-            c.label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-
-    if (filterCurve_)
-        filterCurve_->setCurveColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-
-    auto refreshSegmentButton = [](juce::TextButton* btn) {
-        if (!btn)
-            return;
-        btn->setColour(juce::TextButton::buttonColourId,
-                       ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.10f));
-        btn->setColour(juce::TextButton::buttonOnColourId,
-                       ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-        btn->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
-        btn->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-    };
-    for (auto& btn : typeButtons_)
-        refreshSegmentButton(btn.get());
-    for (auto& btn : slopeButtons_)
-        refreshSegmentButton(btn.get());
-    for (auto& btn : oscEnableButtons_)
-        refreshSegmentButton(btn.get());
-    for (auto& btn : oscResetButtons_)
-        refreshSegmentButton(btn.get());
-
+    styleControls();
     repaint();
 }
 
 void PolySynthUI::paint(juce::Graphics& g) {
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
-    g.fillRect(getLocalBounds());
+    g.fillAll(colour(ActiveTheme::DEVICE_BG));
 
-    const auto border = ActiveTheme::getColour(ActiveTheme::BORDER);
-    const auto titleColour = ActiveTheme::getTextColour();
-    const auto titleFont = FontManager::getInstance().getUIFont(11.0f);
+    for (const auto& panel : {oscPanel_, filterPanel_, envelopePanel_}) {
+        g.setColour(colour(ActiveTheme::DEVICE_PANEL));
+        g.fillRoundedRectangle(panel.toFloat(), 6.0f);
+        g.setColour(colour(ActiveTheme::DEVICE_LINE));
+        g.drawRoundedRectangle(panel.toFloat().reduced(0.5f), 6.0f, 1.0f);
+    }
 
-    auto drawSection = [&](const juce::Rectangle<int>& area, const juce::String& title) {
-        auto a = area.reduced(kSectionGap);
-        g.setColour(border);
-        g.drawRect(a, 1);
-        g.setColour(titleColour);
-        g.setFont(titleFont);
-        g.drawText(title, a.removeFromTop(kSectionTitleH).reduced(kCellPad, 0),
-                   juce::Justification::centredLeft);
+    const auto field = [&g](juce::Rectangle<int> tile, float alpha) {
+        if (tile.isEmpty())
+            return;
+        g.beginTransparencyLayer(alpha);
+        sampler_tiles::paint(g, tile, 4.0f);
+        g.endTransparencyLayer();
+    };
+    const auto dot = [&g](juce::Rectangle<int> hit, bool on) {
+        g.setColour(colour(on ? ActiveTheme::DEVICE_BLUE : ActiveTheme::DEVICE_SWITCH_OFF));
+        g.fillEllipse(hit.toFloat().withSizeKeepingCentre(kDot, kDot));
     };
 
-    drawSection(oscArea_, "OSC");
-    drawSection(filterArea_, "FILTER");
-    drawSection(ampArea_, "AMP ADSR");
-    drawSection(filterEnvArea_, "FILTER ADSR");
+    for (const auto& c : controls_)
+        if (c.slider->isVisible())
+            field(c.tile, c.slider->getAlpha());
+
+    // Oscillator rows: the wave tile with its enable dot, and the reset checkbox.
+    g.setFont(compactCaptionFont());
+    for (int osc = 0; osc < kNumOscillators; ++osc) {
+        const auto i = static_cast<size_t>(osc);
+        const float alpha = oscEnabled_[i] ? 1.0f : 0.35f;
+        field(waveTiles_[i], alpha);
+        field(resetTiles_[i], alpha);
+        g.setColour(colour(ActiveTheme::DEVICE_DIM).withMultipliedAlpha(alpha));
+        g.drawText(oscPrefix(osc) + "Wave", waveTiles_[i].reduced(7, 5).removeFromTop(kCaptionH),
+                   juce::Justification::centredLeft, true);
+        auto resetInner = resetTiles_[i].reduced(7, 5);
+        g.drawText("Rst", resetInner.removeFromTop(kCaptionH), juce::Justification::centredLeft,
+                   true);
+        const auto box = resetInner.withWidth(12).withSizeKeepingCentre(12, 12).toFloat();
+        if (oscReset_[i]) {
+            g.setColour(colour(ActiveTheme::DEVICE_BLUE).withMultipliedAlpha(alpha));
+            g.fillRoundedRectangle(box, 2.0f);
+        }
+        g.setColour(
+            colour(ActiveTheme::DEVICE_FIELD_BORDER).brighter(0.3f).withMultipliedAlpha(alpha));
+        g.drawRoundedRectangle(box.reduced(0.5f), 2.0f, 1.0f);
+        dot(enableDots_[i], oscEnabled_[i]);
+    }
+
+    // Titles and tabs: the selected tab lit and underlined.
+    g.setFont(titleFont());
+    const auto tab = [&](juce::Rectangle<int> area, const juce::String& title, bool selected,
+                         bool withDot) {
+        g.setColour(colour(selected ? ActiveTheme::DEVICE_TITLE : ActiveTheme::DEVICE_DIM));
+        g.drawText(title, withDot ? area.withTrimmedLeft(kDot + 6) : area,
+                   juce::Justification::centredLeft, false);
+        if (selected) {
+            g.setColour(colour(ActiveTheme::DEVICE_BLUE));
+            g.fillRect(area.withTop(area.getBottom() - 2));
+        }
+    };
+    g.setColour(colour(ActiveTheme::DEVICE_TITLE));
+    g.drawText("OSC", oscTitle_, juce::Justification::centredLeft, false);
+    for (int f = 0; f < kNumFilters; ++f) {
+        const auto i = static_cast<size_t>(f);
+        tab(filterTabs_[i], "FILTER " + juce::String(f + 1), f == selectedFilter_, true);
+        dot(filterDots_[i], filterEnabled_[i]);
+    }
+    tab(envelopeTabs_[0], "AMP ADSR", !showFilterEnvelope_, false);
+    tab(envelopeTabs_[1], "FILTER ADSR", showFilterEnvelope_, false);
+    g.setColour(colour(ActiveTheme::DEVICE_DIM)
+                    .withMultipliedAlpha(
+                        filterEnabled_[static_cast<size_t>(selectedFilter_)] ? 1.0f : 0.4f));
+    g.drawText("POLES", polesCaption_, juce::Justification::centred, false);
 }
 
 }  // namespace magda::daw::ui

@@ -509,7 +509,7 @@ bool DeviceCustomUIManager::hasAnyUI() const {
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
     if (polySynthUI_)
-        return 860;  // four oscillator columns + filter + stacked envelope column
+        return 960;  // OSC rows | filter tabs | envelope tabs
     if (fmUI_)
         return 740;  // 4x4 matrix + 4 operator columns + wider amp/right column
     if (materiaUI_)

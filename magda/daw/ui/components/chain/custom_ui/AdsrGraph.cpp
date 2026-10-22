@@ -77,8 +77,10 @@ AdsrGraph::Geometry AdsrGraph::computeGeometry() const {
 }
 
 void AdsrGraph::paint(juce::Graphics& gfx) {
-    const auto bg = ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.25f);
-    const auto line = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
+    const auto bg =
+        colours_ ? colours_->first : ActiveTheme::getColour(ActiveTheme::BACKGROUND).darker(0.25f);
+    const auto line =
+        colours_ ? colours_->second : ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
     const auto fillC = line.withAlpha(0.18f);
     const auto handleC = line.brighter(0.2f);
 

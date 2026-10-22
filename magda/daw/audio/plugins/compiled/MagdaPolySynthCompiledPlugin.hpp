@@ -10,8 +10,8 @@ class dsp;
 namespace magda::daw::audio::compiled {
 
 /**
- * @brief Compiled-Faust polyphonic instrument: 4 oscillators -> multimode SVF
- *        (with its own envelope) -> ADSR amp.
+ * @brief Compiled-Faust polyphonic instrument: 4 oscillators -> two multimode
+ *        SVFs, serial or parallel (sharing an envelope) -> ADSR amp.
  *
  * The build-time-compiled single-voice MagdaPolySynthDsp is wrapped at runtime
  * in mydsp_poly (group=false), which allocates voices and drives the reserved
@@ -55,7 +55,17 @@ class MagdaPolySynthCompiledPlugin : public MagdaCompiledPolyInstrument {
     static constexpr int kVelFilterSlot = 38;
     static constexpr int kOscEnableBaseSlot = 39;
     static constexpr int kOutputGainSlot = 43;
-    static constexpr int kHostSlotCount = 44;
+    static constexpr int kFilter2TypeSlot = 44;  // .. 49: cutoff, reso, env, drive, slope
+    static constexpr int kFilter2CutoffSlot = 45;
+    static constexpr int kFilter2ResonanceSlot = 46;
+    static constexpr int kFilter2EnvAmtSlot = 47;
+    static constexpr int kFilter2DriveSlot = 48;
+    static constexpr int kFilter2SlopeSlot = 49;
+    static constexpr int kFilter1EnableSlot = 50;
+    static constexpr int kFilter2EnableSlot = 51;
+    static constexpr int kFilterRoutingSlot = 52;
+    static constexpr int kFilterBlendSlot = 53;
+    static constexpr int kHostSlotCount = 54;
     static constexpr int kNumVoices = 16;
 
     juce::String devicePluginId() const override {
