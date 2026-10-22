@@ -83,16 +83,17 @@ with {
 
 // One oscillator. `wave` selects the shape (Sine/Saw/Square/Triangle),
 // `coarse` shifts pitch in semitones and `fine` in cents; `level` is the
-// pre-mix gain in dB (converted to a linear multiplier). `bendSemis` shifts every
+// pre-mix gain in dB (converted to a linear multiplier; the -60 dB floor is
+// silence, shown as -inf). `bendSemis` shifts every
 // osc together by the live pitch-bend amount; `freqG` carries the glide; `rstOn`
 // restarts this oscillator's phase on note-on. `en` (0/1) mutes a disabled
 // oscillator, smoothed so toggling it does not click. `cents` and `ph` are the
-// unison copy's detune and reset phase.
-oscBank(wave, level, coarse, fine, rstOn, en, cents, ph) =
-    oscShape(wave, f, ph, (rstOn > 0) * gateRise)
-    * (level : ba.db2linear : smoo)
-    * (en : smoo)
+// unison copy's detune and reset phase; `skip` (1 on the extra copies) stops a
+// silent oscillator running. enable costs more than it saves on the main copy.
+oscBank(skip, wave, level, coarse, fine, rstOn, en, cents, ph) =
+    skipping(skip, oscShape(wave, f, ph, (rstOn > 0) * gateRise), gain > 0.0) * gain
 with {
+    gain = ((level > -60.0) * ba.db2linear(level) : smoo) * (en : smoo);
     f = freqG * pow(2.0, (coarse + (fine + cents) / 100.0 + bendSemis) / 12.0);
 };
 
@@ -191,10 +192,12 @@ uSpread   = hslider("Unison Spread [idx:56]", 0.5, 0.0, 1.0, 0.001) : smoo;
 // ============================================================================
 // DSP
 // ============================================================================
-oscMix(cents, ph) = oscBank(osc1Wave, osc1Level, osc1Coarse, osc1Fine, osc1Reset, osc1Enable, cents, ph)
-                  + oscBank(osc2Wave, osc2Level, osc2Coarse, osc2Fine, osc2Reset, osc2Enable, cents, ph)
-                  + oscBank(osc3Wave, osc3Level, osc3Coarse, osc3Fine, osc3Reset, osc3Enable, cents, ph)
-                  + oscBank(osc4Wave, osc4Level, osc4Coarse, osc4Fine, osc4Reset, osc4Enable, cents, ph);
+skipping(0, x, on) = x;
+skipping(1, x, on) = enable(x, on);
+oscMix(skip, cents, ph) = oscBank(skip, osc1Wave, osc1Level, osc1Coarse, osc1Fine, osc1Reset, osc1Enable, cents, ph)
+                  + oscBank(skip, osc2Wave, osc2Level, osc2Coarse, osc2Fine, osc2Reset, osc2Enable, cents, ph)
+                  + oscBank(skip, osc3Wave, osc3Level, osc3Coarse, osc3Fine, osc3Reset, osc3Enable, cents, ph)
+                  + oscBank(skip, osc4Wave, osc4Level, osc4Coarse, osc4Fine, osc4Reset, osc4Enable, cents, ph);
 
 // Unison (#2924): copies spaced evenly across +/- Detune, panned to alternate
 // sides as 4OSC does, wider towards the edges, summed at 1/sqrt(n). Copies past
@@ -204,8 +207,8 @@ uCount = ba.selectn(4, int(uVoices), 1, 2, 4, 8);
 uPos(k) = select2(uCount > 1, 0.0, 2.0 * k / max(1.0, uCount - 1.0) - 1.0);
 uPan(k) = uSpread * (1.0 - 2.0 * (k % 2)) * abs(uPos(k));
 uPhase(k) = ma.frac(k * 0.6180339887);  // spread the copies' reset phases
-uCopy(0) = oscMix(0.0, 0.0);
-uCopy(k) = enable(oscMix(uDetune * uPos(k), uPhase(k)), uCount > k) * (uCount > k);
+uCopy(0) = oscMix(0, 0.0, 0.0);
+uCopy(k) = enable(oscMix(1, uDetune * uPos(k), uPhase(k)), uCount > k) * (uCount > k);
 unisonMix = par(k, uMax, uCopy(k) <: *(1.0 - uPan(k)), *(1.0 + uPan(k))) :> /(sqrt(uCount)), /(sqrt(uCount));
 
 // Resonance 0..0.95 -> Q 0.5..~9.5. Filter-envelope output scales the cutoff
@@ -215,13 +218,25 @@ unisonMix = par(k, uMax, uCopy(k) <: *(1.0 - uPan(k)), *(1.0 + uPan(k))) :> /(sq
 // host's one-sample gate dip) collapses the envelope from sustain to zero in
 // one sample - an audible click on every mono note. adsre is a one-pole slew
 // toward the segment target, so it resumes from the current level instead.
-filterEnv = en.adsre(fAtt, fDec, fSus, fRel, gate);
+// en.adsre with its three rates worked out per block instead of per sample.
+adsre(att, dec, sus, rel, gate) = target : si.smooth(pole)
+with {
+    ugate = gate > 0;
+    samps = ugate : +~(*(ugate));
+    attPhase = (samps < int(att * ma.SR)) | (ugate : ba.impulsify);
+    target = select2(ugate, 0.0, select2(attPhase, sus * float(ugate), ugate));
+    rate(t60) = ba.tau2pole(t60 / 6.91);
+    pole = select2(ugate, rate(rel), select2(attPhase, rate(dec), rate(att)));
+};
+filterEnv = adsre(fAtt, fDec, fSus, fRel, gate);
 fcOf(cut, envAmt) = (cut * pow(2.0, envAmt * filterEnv + velFilt * gain)) : max(20.0) : min(20000.0) : smoo;
 
 // The SVF with 1-3 stages, resonance in the last only, as magda_filter_svf_staged.dsp.
 // A single stage is fi.svf exactly (k = 1/Q, unscaled band-pass).
 kFlat = sqrt(2.0);
-svfPoles(type, poles, fc, q, x) = ba.selectn(3, int(poles), x, pre1, pre2) : svf.stage(m, g, 1.0 / q, 1.0)
+svfPoles(type, poles, fc, q, x) =
+    ba.selectn(3, int(poles), x, enable(pre1, int(poles) == 1), enable(pre2, int(poles) == 2))
+    : svf.stage(m, g, 1.0 / q, 1.0)
 with {
     m = ba.selectn(4, int(type), 0, 2, 1, 3);  // menu order -> magda_svf.lib's
     g = tan(fc * ma.PI / ma.SR);
@@ -234,13 +249,14 @@ with {
 // constant (filterBlock). The per-voice tanh then soft-clips peaks so a hot voice
 // (high velocity / resonance) overdrives gracefully instead of hard-clipping
 // downstream - tanh is ~linear for small signals, so clean patches stay clean.
-ampEnv  = en.adsre(aAtt, aDec, aSus, aRel, gate);  // see filterEnv: no click on Mono retrigger
+ampEnv  = adsre(aAtt, aDec, aSus, aRel, gate);  // see filterEnv: no click on Mono retrigger
 // Drive: dry/saturated lerp; tanh(4) normalisation keeps unity-amplitude
 // signals at unity at full drive (matches magda_filter_svf.dsp).
 drivenIn(d, x) = (1.0 - d) * x
-               + d * (ma.tanh(4.0 * x) / ma.tanh(4.0));
+               + d * (enable(ma.tanh(4.0 * x), d > 0.0) / ma.tanh(4.0));
 
-filterBlock(on, type, poles, cut, envAmt, r, d, x) = x * (1.0 - e) + y * e
+// A bypassed filter, the stages its poles don't use and zero drive don't run.
+filterBlock(on, type, poles, cut, envAmt, r, d, x) = x * (1.0 - e) + enable(y, e > 0.0) * e
 with {
     e = on : smoo;
     y = x * (1.0 - 0.5 * r) : drivenIn(d) : svfPoles(type, poles, fcOf(cut, envAmt), 0.5 + r * 9.5);
