@@ -14,12 +14,6 @@ PresetBrowserContent::PresetBrowserContent() {
     titleLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addAndMakeVisible(titleLabel_);
 
-    // Setup search box
-    searchBox_.setTextToShowWhenEmpty("Search presets...", ActiveTheme::getSecondaryTextColour());
-    searchBox_.setColour(juce::TextEditor::backgroundColourId,
-                         ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
-    searchBox_.setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
-    searchBox_.setColour(juce::TextEditor::outlineColourId, ActiveTheme::getBorderColour());
     addAndMakeVisible(searchBox_);
 }
 
@@ -38,7 +32,11 @@ void PresetBrowserContent::resized() {
 
     titleLabel_.setBounds(bounds.removeFromTop(24));
     bounds.removeFromTop(8);  // Spacing
-    searchBox_.setBounds(bounds.removeFromTop(28));
+    searchBox_.setBounds(bounds.removeFromTop(SearchTextEditor::kHeight));
+}
+
+bool PresetBrowserContent::keyPressed(const juce::KeyPress& key) {
+    return searchBox_.handleFocusShortcut(key);
 }
 
 void PresetBrowserContent::onActivated() {

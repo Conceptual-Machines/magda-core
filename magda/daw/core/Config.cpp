@@ -360,6 +360,7 @@ void Config::save() {
     root->setProperty("browserFilterMidi", browserFilterMidi);
     root->setProperty("browserFilterPreset", browserFilterPreset);
     root->setProperty("browserTreeView", browserTreeView);
+    root->setProperty("browserPreviewExpanded", browserPreviewExpanded);
     root->setProperty("browserDefaultDirectory", toJuceString(browserDefaultDirectory));
     root->setProperty("browserLastView", toJuceString(browserLastView));
     root->setProperty("pluginBrowserViewMode", toJuceString(pluginBrowserViewMode));
@@ -914,6 +915,7 @@ void Config::load() {
     browserFilterMidi = getBool("browserFilterMidi", browserFilterMidi);
     browserFilterPreset = getBool("browserFilterPreset", browserFilterPreset);
     browserTreeView = getBool("browserTreeView", browserTreeView);
+    browserPreviewExpanded = getBool("browserPreviewExpanded", browserPreviewExpanded);
     browserDefaultDirectory = getString("browserDefaultDirectory", browserDefaultDirectory);
     browserLastView = getString("browserLastView", browserLastView);
     pluginBrowserViewMode = getString("pluginBrowserViewMode", pluginBrowserViewMode);
