@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PanelContent.hpp"
+#include "SearchTextEditor.hpp"
 
 namespace magda::daw::ui {
 
@@ -24,12 +25,14 @@ class PresetBrowserContent : public PanelContent {
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    /** @brief Cmd+F focuses the search box while the panel has focus. */
+    bool keyPressed(const juce::KeyPress& key) override;
 
     void onActivated() override;
     void onDeactivated() override;
 
   private:
-    juce::TextEditor searchBox_;
+    SearchTextEditor searchBox_{"Search presets"};
     juce::Label titleLabel_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PresetBrowserContent)

@@ -2,6 +2,7 @@ target_sources(magda_daw_app PRIVATE
     PanelContentFactory.cpp
     PluginBrowserContent.cpp
     MediaExplorerContent.cpp
+    SearchTextEditor.cpp
     MediaDbBrowserContent.cpp
     MediaDbFilterWidgets.cpp
     ConsoleTranscript.cpp

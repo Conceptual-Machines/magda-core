@@ -75,6 +75,8 @@ class PluginBrowserContent : public PanelContent,
     void paint(juce::Graphics& g) override;
     void resized() override;
     void lookAndFeelChanged() override;
+    /** @brief Cmd+F focuses the search box while the panel has focus. */
+    bool keyPressed(const juce::KeyPress& key) override;
 
     void onActivated() override;
     void onDeactivated() override;
@@ -99,7 +101,7 @@ class PluginBrowserContent : public PanelContent,
 
   private:
     // UI Components
-    SearchTextEditor searchBox_;
+    SearchTextEditor searchBox_{"Search plugins"};
     juce::TreeView pluginTree_;
     juce::ComboBox viewModeSelector_;
 

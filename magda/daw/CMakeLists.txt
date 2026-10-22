@@ -211,6 +211,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/sidebar/plug.svg
     # Browser icons
     ../../assets/icons/browser/browser.svg
+    ../../assets/icons/browser/preview_auto.svg
+    ../../assets/icons/browser/preview_sync.svg
     ../../assets/icons/browser/sidebar_project.svg
     ../../assets/icons/browser/sidebar_disk.svg
     ../../assets/icons/browser/sidebar_library.svg

@@ -808,6 +808,14 @@ class Config {
         browserTreeView = enabled;
     }
 
+    // Sample browser preview: file name and waveform above the transport row (#3115)
+    bool getBrowserPreviewExpanded() const {
+        return browserPreviewExpanded;
+    }
+    void setBrowserPreviewExpanded(bool expanded) {
+        browserPreviewExpanded = expanded;
+    }
+
     // Browser Default Directory
     std::string getBrowserDefaultDirectory() const {
         return browserDefaultDirectory;
@@ -1730,10 +1738,11 @@ class Config {
     bool postFxPostFaderByDefault = true;
 
     // Browser filter settings (media explorer)
-    bool browserFilterAudio = true;    // Show audio files by default
-    bool browserFilterMidi = false;    // Hide MIDI files by default
-    bool browserFilterPreset = false;  // Hide MAGDA presets by default
-    bool browserTreeView = false;      // Sample browser: tree view instead of flat list (#1699)
+    bool browserFilterAudio = true;      // Show audio files by default
+    bool browserFilterMidi = false;      // Hide MIDI files by default
+    bool browserFilterPreset = false;    // Hide MAGDA presets by default
+    bool browserTreeView = false;        // Sample browser: tree view instead of flat list (#1699)
+    bool browserPreviewExpanded = true;  // Sample browser: name + waveform shown (#3115)
 
     // Browser favorites and default directory
     std::vector<std::string> browserFavorites;

@@ -38,7 +38,6 @@ class MediaExplorerContent : public PanelContent,
     }
 
     void paint(juce::Graphics& g) override;
-    void paintOverChildren(juce::Graphics& g) override;
     void resized() final;
     void lookAndFeelChanged() override;
 
@@ -81,8 +80,8 @@ class MediaExplorerContent : public PanelContent,
     void onTypeIconClicked(magda::SvgButton* clicked);
 
     // Top Bar Components
-    juce::ComboBox sourceSelector_;  // Left: Source dropdown (User, Library, etc.)
-    SearchTextEditor searchBox_;     // Center-left: Search
+    juce::ComboBox sourceSelector_;               // Left: Source dropdown (User, Library, etc.)
+    SearchTextEditor searchBox_{"Search media"};  // Center-left: Search
     std::unique_ptr<magda::SvgButton> audioFilterButton_;        // Center: Audio type filter
     std::unique_ptr<magda::SvgButton> midiFilterButton_;         // Center: MIDI type filter
     std::unique_ptr<magda::SvgButton> presetFilterButton_;       // Center: Preset type filter
@@ -98,9 +97,10 @@ class MediaExplorerContent : public PanelContent,
     // Preview controls
     std::unique_ptr<magda::SvgButton> playButton_;
     std::unique_ptr<magda::SvgButton> stopButton_;
-    std::unique_ptr<juce::LookAndFeel> toggleLnf_;
-    juce::TextButton autoPlayButton_;
-    juce::TextButton syncButton_;
+    std::unique_ptr<magda::SvgButton> autoPlayButton_;
+    std::unique_ptr<magda::SvgButton> syncButton_;
+    // Shows the name row and waveform; off leaves only the transport row (#3115).
+    std::unique_ptr<magda::SvgButton> detailsButton_;
     juce::Slider volumeSlider_;  // dB
     juce::Label volumeDbLabel_;
 

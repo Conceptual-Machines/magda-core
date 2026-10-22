@@ -13,7 +13,6 @@
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FileBrowserLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
-#include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "AudioThumbnailManager.hpp"
 #include "BinaryData.h"
 #include "MediaDbBrowserContent.hpp"
@@ -35,22 +34,6 @@ float previewGain(double db) {
     return juce::Decibels::decibelsToGain(static_cast<float>(db),
                                           static_cast<float>(kPreviewMinDb));
 }
-
-/** @brief The transport's Auto and Sync: rounded field buttons with a regular-weight label. */
-class PreviewToggleLookAndFeel : public SmallButtonLookAndFeel {
-  public:
-    PreviewToggleLookAndFeel() : SmallButtonLookAndFeel(12.0f) {}
-
-    void drawButtonText(juce::Graphics& g, juce::TextButton& button, bool, bool) override {
-        g.setFont(FontManager::getInstance().getUIFont(getFontSize()));
-        g.setColour(button
-                        .findColour(button.getToggleState() ? juce::TextButton::textColourOnId
-                                                            : juce::TextButton::textColourOffId)
-                        .withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.5f));
-        g.drawText(button.getButtonText(), button.getLocalBounds(), juce::Justification::centred,
-                   false);
-    }
-};
 
 juce::String formatDb(double db) {
     if (db <= kPreviewMinDb)
@@ -810,14 +793,8 @@ MediaExplorerContent::MediaExplorerContent() {
     // Source selector removed - not needed for now
     // Can be added back later if needed
 
-    // Setup search box (colours applied in applyThemeColours)
-    searchBox_.setSelectAllWhenFocused(true);
-    searchBox_.setIndents(28, 0);
-    searchBox_.setJustification(juce::Justification::centredLeft);
-    searchBox_.setFont(FontManager::getInstance().getUIFont(13.0f));
     searchBox_.onTextChange = [this]() {
         searchTerm_ = searchBox_.getText();
-        repaint(searchBox_.getBounds());
         stopTimer();
         startTimer(300);  // 300 ms debounce
     };
@@ -981,19 +958,43 @@ MediaExplorerContent::MediaExplorerContent() {
     volumeDbLabel_.setText(formatDb(kPreviewDefaultDb), juce::dontSendNotification);
     addAndMakeVisible(volumeDbLabel_);
 
-    toggleLnf_ = std::make_unique<PreviewToggleLookAndFeel>();
-    autoPlayButton_.setLookAndFeel(toggleLnf_.get());
-    syncButton_.setLookAndFeel(toggleLnf_.get());
-    autoPlayButton_.setButtonText("Auto");
-    autoPlayButton_.setTooltip("Play files as they are selected");
-    autoPlayButton_.setClickingTogglesState(true);
-    addAndMakeVisible(autoPlayButton_);
+    const auto makePreviewToggle = [this](const juce::String& name, const char* svg, int svgSize,
+                                          const juce::String& tooltip) {
+        auto button = std::make_unique<magda::SvgButton>(name, svg, static_cast<size_t>(svgSize));
+        button->setOriginalColor(juce::Colour(0xFFB3B3B3));
+        button->setNormalColor(ActiveTheme::TEXT_DIM);
+        button->setHoverColor(ActiveTheme::TEXT_PRIMARY);
+        button->setTintedChip(ActiveTheme::ACCENT_PRIMARY);
+        button->setBorderColor(ActiveTheme::BORDER);
+        button->setCornerRadius(5.0f);
+        button->setIconPadding(6.0f);
+        button->setToggleable(true);
+        button->setClickingTogglesState(true);
+        button->setTooltip(tooltip);
+        addAndMakeVisible(*button);
+        return button;
+    };
 
-    syncButton_.setButtonText("Sync");
-    syncButton_.setTooltip("Play loops at the project tempo");
-    syncButton_.setClickingTogglesState(true);
-    syncButton_.onClick = [this]() { updatePreviewRate(); };
-    addAndMakeVisible(syncButton_);
+    autoPlayButton_ =
+        makePreviewToggle("Auto", BinaryData::preview_auto_svg, BinaryData::preview_auto_svgSize,
+                          "Auto: play files as they are selected");
+
+    syncButton_ =
+        makePreviewToggle("Sync", BinaryData::preview_sync_svg, BinaryData::preview_sync_svgSize,
+                          "Sync: play loops at the project tempo");
+    syncButton_->onClick = [this]() { updatePreviewRate(); };
+
+    detailsButton_ =
+        makePreviewToggle("Wave", BinaryData::sinewave_svg, BinaryData::sinewave_svgSize,
+                          "Show the file name and waveform");
+    detailsButton_->setToggleState(magda::Config::getInstance().getBrowserPreviewExpanded(),
+                                   juce::dontSendNotification);
+    detailsButton_->onClick = [this]() {
+        magda::Config::getInstance().setBrowserPreviewExpanded(detailsButton_->getToggleState());
+        magda::Config::getInstance().save();
+        resized();
+        repaint();
+    };
 
     fileInfoLabel_.setText("No file selected", juce::dontSendNotification);
     fileInfoLabel_.setFont(FontManager::getInstance().getUIFontMedium(13.0f));
@@ -1056,7 +1057,7 @@ MediaExplorerContent::MediaExplorerContent() {
         // This fires from both mouse clicks (ResultsTableModel::cellClicked)
         // and keyboard nav (ResultsTable::keyPressed → onKeyboardRowSelected)
         // — issue #1339.
-        if (autoPlayButton_.getToggleState()) {
+        if (autoPlayButton_->getToggleState()) {
             playPreview();
         }
     };
@@ -1200,8 +1201,6 @@ void MediaExplorerContent::rebuildFileBrowser() {
 MediaExplorerContent::~MediaExplorerContent() {
     teardownFileBrowser();
     viewModeSelector_.setLookAndFeel(nullptr);
-    autoPlayButton_.setLookAndFeel(nullptr);
-    syncButton_.setLookAndFeel(nullptr);
 
     stopPreview();
 
@@ -1519,14 +1518,14 @@ void MediaExplorerContent::stopPreview() {
 
 void MediaExplorerContent::updatePreviewRate() {
     double rate = 1.0;
-    if (syncButton_.getToggleState() && previewFileBpm_ > 0.0) {
+    if (syncButton_->getToggleState() && previewFileBpm_ > 0.0) {
         if (auto* controller = TimelineController::getCurrent())
             rate = controller->getState().tempo.bpm / previewFileBpm_;
     }
     if (stretchSource_)
         stretchSource_->setRate(rate);
 
-    const bool follow = syncButton_.getToggleState() && isPlaying_;
+    const bool follow = syncButton_->getToggleState() && isPlaying_;
     if (follow && !tempoPoll_.isTimerRunning())
         tempoPoll_.startTimerHz(4);
     else if (!follow)
@@ -1547,11 +1546,7 @@ void MediaExplorerContent::restartPreview() {
 }
 
 bool MediaExplorerContent::keyPressed(const juce::KeyPress& key) {
-    if (key == juce::KeyPress('f', juce::ModifierKeys::commandModifier, 0)) {
-        searchBox_.grabKeyboardFocus();
-        return true;
-    }
-    return false;
+    return searchBox_.handleFocusShortcut(key);
 }
 
 bool MediaExplorerContent::keyPressed(const juce::KeyPress& key, juce::Component* /*origin*/) {
@@ -1577,6 +1572,8 @@ void MediaExplorerContent::setPreviewLockedForIndexing(bool locked) {
     if (thumbnailComponent_) {
         thumbnailComponent_->setIndexingActive(locked);
     }
+    // The scan status and its stop button live in the waveform area.
+    resized();
 
     if (locked) {
         stopPreview();
@@ -1587,7 +1584,7 @@ void MediaExplorerContent::setPreviewLockedForIndexing(bool locked) {
         readerSource_.reset();
         playButton_->setEnabled(false);
         stopButton_->setEnabled(false);
-        autoPlayButton_.setEnabled(false);
+        autoPlayButton_->setEnabled(false);
         volumeSlider_.setEnabled(false);
         currentPreviewFile_ = juce::File();
         if (thumbnailComponent_) {
@@ -1599,7 +1596,7 @@ void MediaExplorerContent::setPreviewLockedForIndexing(bool locked) {
         return;
     }
 
-    autoPlayButton_.setEnabled(true);
+    autoPlayButton_->setEnabled(true);
     volumeSlider_.setEnabled(true);
     playButton_->setEnabled(currentPreviewFile_.existsAsFile());
     stopButton_->setEnabled(false);
@@ -1752,15 +1749,6 @@ bool MediaExplorerContent::isPresetFile(const juce::File& file) {
 }
 
 void MediaExplorerContent::applyThemeColours() {
-    searchBox_.setTextToShowWhenEmpty("Search media", ActiveTheme::getSecondaryTextColour());
-    searchBox_.setColour(juce::TextEditor::backgroundColourId,
-                         ActiveTheme::getColour(ActiveTheme::SURFACE));
-    searchBox_.setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
-    searchBox_.setColour(juce::TextEditor::highlightColourId,
-                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.45f));
-    searchBox_.setColour(juce::TextEditor::highlightedTextColourId, ActiveTheme::getTextColour());
-    searchBox_.setColour(juce::TextEditor::outlineColourId, ActiveTheme::getBorderColour());
-
     viewModeSelector_.setColour(juce::ComboBox::backgroundColourId,
                                 ActiveTheme::getColour(ActiveTheme::SURFACE));
     viewModeSelector_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
@@ -1780,16 +1768,6 @@ void MediaExplorerContent::applyThemeColours() {
                             ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
 
     volumeDbLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-
-    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
-    for (auto* toggle : {&autoPlayButton_, &syncButton_}) {
-        toggle->setColour(juce::TextButton::buttonColourId,
-                          ActiveTheme::getColour(ActiveTheme::SURFACE));
-        toggle->setColour(juce::TextButton::buttonOnColourId, accent.withAlpha(0.18f));
-        toggle->setColour(juce::TextButton::textColourOffId, ActiveTheme::getTextColour());
-        toggle->setColour(juce::TextButton::textColourOnId, accent);
-        toggle->setColour(juce::ComboBox::outlineColourId, ActiveTheme::getBorderColour());
-    }
 
     fileInfoLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     formatLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
@@ -1852,40 +1830,10 @@ void MediaExplorerContent::paint(juce::Graphics& g) {
     }
 }
 
-void MediaExplorerContent::paintOverChildren(juce::Graphics& g) {
-    // Search glyph and shortcut badge sit inside the search box.
-    const auto box = searchBox_.getBounds().toFloat();
-    const auto dim = ActiveTheme::getSecondaryTextColour();
-
-    const auto icon =
-        juce::Rectangle<float>(box.getX() + 10.0f, box.getCentreY() - 6.0f, 12.0f, 12.0f);
-    juce::Path glass;
-    glass.addEllipse(icon.getX(), icon.getY(), 9.0f, 9.0f);
-    glass.startNewSubPath(icon.getX() + 7.8f, icon.getY() + 7.8f);
-    glass.lineTo(icon.getRight(), icon.getBottom());
-    g.setColour(dim);
-    g.strokePath(glass, juce::PathStrokeType(1.4f, juce::PathStrokeType::curved,
-                                             juce::PathStrokeType::rounded));
-
-    if (searchBox_.isEmpty() && box.getWidth() > 160.0f) {
-        const auto font = FontManager::getInstance().getMonoFont(10.0f);
-        const juce::String hint = juce::String::fromUTF8("\xe2\x8c\x98"
-                                                         "F");
-        const float w = juce::GlyphArrangement::getStringWidth(font, hint) + 10.0f;
-        const auto badge =
-            juce::Rectangle<float>(box.getRight() - w - 8.0f, box.getCentreY() - 8.0f, w, 16.0f);
-        g.setColour(ActiveTheme::getBorderColour());
-        g.drawRoundedRectangle(badge, 3.0f, 1.0f);
-        g.setColour(dim);
-        g.setFont(font);
-        g.drawText(hint, badge, juce::Justification::centred, false);
-    }
-}
-
 void MediaExplorerContent::resized() {
     auto bounds = getLocalBounds().reduced(8, 6);
 
-    auto topBar = bounds.removeFromTop(32);
+    auto topBar = bounds.removeFromTop(SearchTextEditor::kHeight);
     viewModeSelector_.setBounds(topBar.removeFromRight(72).withSizeKeepingCentre(72, 30));
     topBar.removeFromRight(8);
 
@@ -1906,29 +1854,39 @@ void MediaExplorerContent::resized() {
     desktopButton_.setVisible(false);
     browseButton_.setVisible(false);
 
-    // Name row, waveform, transport.
-    constexpr int kPreviewHeight = 10 + 22 + 6 + 56 + 8 + 30;
-    previewBounds_ = bounds.removeFromBottom(kPreviewHeight).expanded(8, 0);
+    // Name row, waveform, transport. Collapsed keeps only the transport, except while a
+    // media scan reports its progress in the waveform area.
+    const bool showDetails = detailsButton_->getToggleState() || previewLockedForIndexing_;
+    constexpr int kDetailsHeight = 22 + 6 + 56 + 8;
+    constexpr int kTransportHeight = 24;
+    const int previewHeight = 6 + (showDetails ? kDetailsHeight : 0) + kTransportHeight;
+    previewBounds_ = bounds.removeFromBottom(previewHeight).expanded(8, 0);
     auto preview = previewBounds_.reduced(8, 0);
-    preview.removeFromTop(10);
-
-    auto nameRow = preview.removeFromTop(22);
-    formatLabel_.setBounds(nameRow.removeFromRight(juce::jmin(220, nameRow.getWidth() / 2)));
-    fileInfoLabel_.setBounds(nameRow);
     preview.removeFromTop(6);
 
-    thumbnailComponent_->setBounds(preview.removeFromTop(56));
-    preview.removeFromTop(8);
+    fileInfoLabel_.setVisible(showDetails);
+    formatLabel_.setVisible(showDetails);
+    thumbnailComponent_->setVisible(showDetails);
+    if (showDetails) {
+        auto nameRow = preview.removeFromTop(22);
+        formatLabel_.setBounds(nameRow.removeFromRight(juce::jmin(220, nameRow.getWidth() / 2)));
+        fileInfoLabel_.setBounds(nameRow);
+        preview.removeFromTop(6);
 
-    auto transport = preview.removeFromTop(30);
-    playButton_->setBounds(transport.removeFromLeft(30));
-    transport.removeFromLeft(6);
-    stopButton_->setBounds(transport.removeFromLeft(30));
+        thumbnailComponent_->setBounds(preview.removeFromTop(56));
+        preview.removeFromTop(8);
+    }
+
+    auto transport = preview.removeFromTop(kTransportHeight);
+    playButton_->setBounds(transport.removeFromLeft(kTransportHeight));
+    transport.removeFromLeft(4);
+    stopButton_->setBounds(transport.removeFromLeft(kTransportHeight));
     transport.removeFromLeft(10);
-    autoPlayButton_.setBounds(transport.removeFromLeft(52));
+    for (auto* toggle : {autoPlayButton_.get(), syncButton_.get(), detailsButton_.get()}) {
+        toggle->setBounds(transport.removeFromLeft(kTransportHeight));
+        transport.removeFromLeft(4);
+    }
     transport.removeFromLeft(6);
-    syncButton_.setBounds(transport.removeFromLeft(52));
-    transport.removeFromLeft(10);
 
     volumeDbLabel_.setBounds(transport.removeFromRight(60));
     volumeSlider_.setBounds(
@@ -2030,7 +1988,7 @@ void MediaExplorerContent::selectionChanged() {
     // Handle different file types
     if (isAudioFile(selectedFile)) {
         loadFileForPreview(selectedFile);
-        if (autoPlayButton_.getToggleState()) {
+        if (autoPlayButton_->getToggleState()) {
             playPreview();
         }
     } else if (isMidiFile(selectedFile)) {
@@ -2450,7 +2408,7 @@ void MediaExplorerContent::searchResultSelected(const juce::File& file) {
     fileForDrag_ = file;
     if (isAudioFile(file)) {
         loadFileForPreview(file);
-        if (autoPlayButton_.getToggleState())
+        if (autoPlayButton_->getToggleState())
             playPreview();
     } else {
         stopPreview();

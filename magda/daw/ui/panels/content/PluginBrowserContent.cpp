@@ -438,7 +438,6 @@ PluginBrowserContent::PluginBrowserContent() {
     setName("Plugin Browser");
 
     // Setup search box
-    searchBox_.setSelectAllWhenFocused(true);
     searchBox_.onTextChange = [this]() { filterBySearch(searchBox_.getText()); };
     addAndMakeVisible(searchBox_);
 
@@ -475,15 +474,6 @@ PluginBrowserContent::PluginBrowserContent() {
 }
 
 void PluginBrowserContent::applyThemeColours() {
-    searchBox_.setTextToShowWhenEmpty("Search plugins...", ActiveTheme::getSecondaryTextColour());
-    searchBox_.setColour(juce::TextEditor::backgroundColourId,
-                         ActiveTheme::getColour(ActiveTheme::SURFACE));
-    searchBox_.setColour(juce::TextEditor::textColourId, ActiveTheme::getTextColour());
-    searchBox_.setColour(juce::TextEditor::highlightColourId,
-                         ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.45f));
-    searchBox_.setColour(juce::TextEditor::highlightedTextColourId, ActiveTheme::getTextColour());
-    searchBox_.setColour(juce::TextEditor::outlineColourId, ActiveTheme::getBorderColour());
-
     viewModeSelector_.setColour(juce::ComboBox::backgroundColourId,
                                 ActiveTheme::getColour(ActiveTheme::SURFACE));
     viewModeSelector_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
@@ -521,6 +511,10 @@ void PluginBrowserContent::lookAndFeelChanged() {
     repaint();
 }
 
+bool PluginBrowserContent::keyPressed(const juce::KeyPress& key) {
+    return searchBox_.handleFocusShortcut(key);
+}
+
 void PluginBrowserContent::paint(juce::Graphics& g) {
     g.fillAll(ActiveTheme::getPanelBackgroundColour());
 }
@@ -529,8 +523,8 @@ void PluginBrowserContent::resized() {
     auto bounds = getLocalBounds().reduced(8);
 
     // Top row: search box and view mode selector
-    auto topRow = bounds.removeFromTop(28);
-    viewModeSelector_.setBounds(topRow.removeFromRight(130));
+    auto topRow = bounds.removeFromTop(SearchTextEditor::kHeight);
+    viewModeSelector_.setBounds(topRow.removeFromRight(130).withSizeKeepingCentre(130, 30));
     topRow.removeFromRight(6);
     searchBox_.setBounds(topRow);
 
