@@ -320,6 +320,17 @@ set(_magda_engine_device_adapter_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/EngineMagdaDevice.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/PluginAssignments.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/engine/PluginAssignments.hpp"
+    # Host-side ARA (#1579): beside the external device, since both hold plugin instances.
+    "${CMAKE_CURRENT_SOURCE_DIR}/ara/AraDocument.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ara/AraDocument.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ara/AraHostControllers.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ara/AraHostControllers.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ara/AraMusicalContent.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ara/AraMusicalContent.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ara/AraRegionTiming.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ara/AraRegionTiming.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ara/AraSupport.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ara/AraSupport.hpp"
 )
 
 set(_magda_base_device_support_sources
@@ -417,6 +428,13 @@ target_sources(magda_base_devices PRIVATE
         PUBLIC
         magda_device_sdk
         magda_engine
+    )
+    # magda_daw's set: JUCE declares the ARA host classes only with a hosting format on too.
+    target_compile_definitions(magda_engine_devices PRIVATE
+        JUCE_PLUGINHOST_VST3=1
+        JUCE_PLUGINHOST_AU=1
+        JUCE_PLUGINHOST_LV2=1
+        JUCE_PLUGINHOST_ARA=1
     )
 
 target_sources(magda_daw PRIVATE

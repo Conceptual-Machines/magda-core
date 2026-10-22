@@ -93,6 +93,8 @@ set(TEST_SOURCES
     devices/test_plugin_browser_metadata_merge.cpp
     devices/test_plugin_metadata_store.cpp
     devices/test_external_plugin_lookup.cpp
+    # The ARA musical context and region times, without a plugin (#1579).
+    audio/test_ara_conversions.cpp
     devices/test_prune_missing_plugins.cpp
     devices/test_plugin_service_state.cpp
     devices/test_known_plugin_list_duplicates.cpp
@@ -803,6 +805,26 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.10")
     catch_discover_tests(magda_tests)
 endif()
 
+# A real ARA plugin for the host-side ARA tests (#1579): plays its regions' source back
+# unchanged, so a render equal to the file proves the document and the host's reads.
+juce_add_plugin(magda_ara_identity_fixture
+    PRODUCT_NAME "MAGDA ARA Identity"
+    COMPANY_NAME "Conceptual Machines"
+    BUNDLE_ID com.conceptualmachines.magda.araidentity
+    COMPANY_WEBSITE "https://github.com/Conceptual-Machines/magda-core"
+    PLUGIN_MANUFACTURER_CODE Cmgd
+    PLUGIN_CODE Mara
+    IS_SYNTH FALSE
+    NEEDS_MIDI_INPUT FALSE
+    NEEDS_MIDI_OUTPUT FALSE
+    IS_ARA_EFFECT TRUE
+    FORMATS VST3
+    VST3_AUTO_MANIFEST FALSE)
+target_sources(magda_ara_identity_fixture PRIVATE fixtures/ara_identity/AraIdentityPlugin.cpp)
+target_compile_definitions(magda_ara_identity_fixture PUBLIC
+    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0)
+target_link_libraries(magda_ara_identity_fixture PRIVATE juce::juce_audio_processors juce::juce_audio_formats)
+
 # JUCE Unit Test Console Application
 juce_add_console_app(magda_juce_tests
     VERSION "${MAGDA_BUNDLE_VERSION}"
@@ -1002,6 +1024,9 @@ target_sources(magda_juce_tests PRIVATE
 
         # Controllers, OSC and sound design use the native hosted parameter path (#2655).
         controllers/test_native_controller_parameters_juce.cpp
+
+        # A host-side ARA document over a real ARA plugin (#1579).
+        audio/test_ara_document_juce.cpp
     )
 
 # Link required libraries for JUCE tests
@@ -1027,6 +1052,10 @@ target_link_libraries(magda_juce_tests
 # Native rendering and app host services.
     target_link_libraries(magda_juce_tests PRIVATE magda_engine magda_engine_devices
                           magda_engine_host)
+
+add_dependencies(magda_juce_tests magda_ara_identity_fixture_VST3)
+target_compile_definitions(magda_juce_tests PRIVATE
+    MAGDA_ARA_IDENTITY_PLUGIN="$<GENEX_EVAL:$<TARGET_PROPERTY:magda_ara_identity_fixture_VST3,JUCE_PLUGIN_ARTEFACT_FILE>>")
 
 # The Faust standard library is deliberately NOT staged beside this binary,
 # unlike magda_tests (#2081).

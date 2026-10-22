@@ -25,3 +25,9 @@
 [submodule "third_party/magda-sdk"]
 	path = third_party/magda-sdk
 	url = https://github.com/Conceptual-Machines/magda-sdk.git
+[submodule "third_party/ara_sdk/ARA_API"]
+	path = third_party/ara_sdk/ARA_API
+	url = https://github.com/Celemony/ARA_API.git
+[submodule "third_party/ara_sdk/ARA_Library"]
+	path = third_party/ara_sdk/ARA_Library
+	url = https://github.com/Celemony/ARA_Library.git

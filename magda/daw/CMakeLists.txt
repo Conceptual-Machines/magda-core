@@ -690,6 +690,7 @@ target_compile_definitions(magda_daw
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=1
     JUCE_PLUGINHOST_LV2=1
+    JUCE_PLUGINHOST_ARA=1
     JUCE_MODAL_LOOPS_PERMITTED=1
     MAGDA_DAWPROJECT_SCHEMA_DIR="${CMAKE_SOURCE_DIR}/third_party/dawproject"
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
@@ -724,6 +725,7 @@ target_compile_definitions(magda_daw_app
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=1
     JUCE_PLUGINHOST_LV2=1
+    JUCE_PLUGINHOST_ARA=1
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
     $<$<PLATFORM_ID:Linux>:JUCE_JACK=1>
 )
@@ -807,6 +809,7 @@ target_compile_definitions(magda_plugin_scanner
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=1
     JUCE_PLUGINHOST_LV2=1
+    JUCE_PLUGINHOST_ARA=1
     JUCE_WEB_BROWSER=0
 )
 
@@ -843,6 +846,7 @@ target_compile_definitions(magda_cli
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_AU=1
     JUCE_PLUGINHOST_LV2=1
+    JUCE_PLUGINHOST_ARA=1
     JUCE_WEB_BROWSER=0
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
     $<$<PLATFORM_ID:Linux>:JUCE_JACK=1>
