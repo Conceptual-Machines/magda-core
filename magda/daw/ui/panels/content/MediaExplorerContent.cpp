@@ -1833,19 +1833,30 @@ void MediaExplorerContent::paint(juce::Graphics& g) {
 void MediaExplorerContent::resized() {
     auto bounds = getLocalBounds().reduced(8, 6);
 
-    auto topBar = bounds.removeFromTop(SearchTextEditor::kHeight);
-    viewModeSelector_.setBounds(topBar.removeFromRight(72).withSizeKeepingCentre(72, 30));
-    topBar.removeFromRight(8);
-
     constexpr int kSegmentWidth = 34;
     constexpr int kSegments = 4;
-    filterGroupBounds_ = topBar.removeFromRight(kSegmentWidth * kSegments);
+    constexpr int kViewModeWidth = 72;
+    constexpr int kMinSearchWidth = 160;
+    auto topBar = bounds.removeFromTop(SearchTextEditor::kHeight);
+    // Too narrow for one row (#3117): the search keeps the first row, filters and view drop below.
+    auto controlsRow = topBar;
+    if (topBar.getWidth() < kMinSearchWidth + kSegmentWidth * kSegments + kViewModeWidth + 16) {
+        searchBox_.setBounds(topBar);
+        bounds.removeFromTop(6);
+        controlsRow = bounds.removeFromTop(SearchTextEditor::kHeight);
+    }
+    viewModeSelector_.setBounds(
+        controlsRow.removeFromRight(kViewModeWidth).withSizeKeepingCentre(kViewModeWidth, 30));
+    controlsRow.removeFromRight(8);
+
+    filterGroupBounds_ = controlsRow.removeFromRight(kSegmentWidth * kSegments);
     auto group = filterGroupBounds_;
     for (auto* btn : {audioFilterButton_.get(), midiFilterButton_.get(),
                       progressionFilterButton_.get(), presetFilterButton_.get()})
         btn->setBounds(group.removeFromLeft(kSegmentWidth).reduced(6));
-    topBar.removeFromRight(8);
-    searchBox_.setBounds(topBar);
+    controlsRow.removeFromRight(8);
+    if (controlsRow.getY() == topBar.getY())
+        searchBox_.setBounds(controlsRow);
 
     bounds.removeFromTop(8);
 
@@ -1888,9 +1899,11 @@ void MediaExplorerContent::resized() {
     }
     transport.removeFromLeft(6);
 
-    volumeDbLabel_.setBounds(transport.removeFromRight(60));
-    volumeSlider_.setBounds(
-        transport.removeFromRight(juce::jlimit(60, 180, transport.getWidth() - 24)));
+    // The dB readout gives way first when the row is narrow (#3117).
+    volumeDbLabel_.setVisible(transport.getWidth() >= 120);
+    if (volumeDbLabel_.isVisible())
+        volumeDbLabel_.setBounds(transport.removeFromRight(60));
+    volumeSlider_.setBounds(transport.removeFromRight(juce::jmin(180, transport.getWidth())));
 
     const int sidebarWidth = 40;
     sidebarComponent_->setBounds(bounds.removeFromLeft(sidebarWidth));

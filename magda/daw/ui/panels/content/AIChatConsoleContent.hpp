@@ -191,6 +191,7 @@ class AIChatConsoleContent : public PanelContent,
     // Painted chrome placed by resized().
     juce::Rectangle<int> headerBounds_;
     juce::Rectangle<int> modelChipBounds_;
+    bool showWordmark_ = true;  // dropped on a narrow console, the diamond stays (#3117)
     juce::Rectangle<int> composerBounds_;
     juce::Rectangle<int> contextChipBounds_;
     juce::Rectangle<int> hintsBounds_;

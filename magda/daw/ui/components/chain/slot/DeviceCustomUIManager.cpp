@@ -545,6 +545,15 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     return 0;
 }
 
+HeightRange DeviceCustomUIManager::getContentHeightRange() const {
+    // One compact range for every instrument so the panel holds its height between them: the
+    // Drum Grid's pad text sets the minimum, FM's operator rows at kMinTileH the ideal.
+    if (polySynthUI_ || fmUI_ || samplerUI_ || stepSequencerUI_ || polyStepSequencerUI_ ||
+        drumGridUI_)
+        return {238, 244};
+    return {};
+}
+
 std::shared_ptr<daw::audio::MagdaDevice> DeviceCustomUIManager::liveDevice() const {
     if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine())
         return audioEngine->renderedDevice(devicePath_);

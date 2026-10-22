@@ -226,6 +226,8 @@ class MainWindow::MainComponent : public juce::Component,
     // area between transport and footer. Restores the previous height on
     // exit. Applies to piano roll and drum grid (issue #1282).
     void toggleEditorFullscreen();
+    /** @brief The bottom panel's floor: the layout minimum, or more for a device that needs it. */
+    int minimumBottomPanelHeight() const;
     bool isEditorFullscreen() const {
         return editorFullscreen_;
     }

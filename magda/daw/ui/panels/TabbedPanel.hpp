@@ -75,6 +75,9 @@ class TabbedPanel : public juce::Component, public PanelStateListener {
         return activeContent_;
     }
 
+    /** @brief The active content's height needs in panel-height terms (#3119). */
+    HeightRange getPanelHeightRange() const;
+
   protected:
     /**
      * @brief Override to customize background painting

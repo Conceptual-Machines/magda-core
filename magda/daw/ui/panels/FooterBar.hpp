@@ -52,7 +52,8 @@ class FooterBar : public juce::Component,
   private:
     static constexpr int NUM_MODES = 3;
     static constexpr int NUM_LOCAL_MODELS = 2;
-    static constexpr int BUTTON_SIZE = 32;
+    static constexpr int BUTTON_SIZE = 26;
+    static constexpr float BUTTON_ICON_PADDING = 3.0f;
     static constexpr int BUTTON_SPACING = 16;
 
     std::array<magda::ManagedChild<SvgButton>, NUM_MODES> modeButtons;

@@ -105,7 +105,7 @@ struct LayoutConfig {
     // Main window panels
     int transportHeight = 48;  // fixed; the bar has no resize handle
 
-    int footerHeight = 40;
+    int footerHeight = 30;
 
     int defaultLeftPanelWidth = 300;
     int defaultRightPanelWidth = 300;

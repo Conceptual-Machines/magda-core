@@ -228,6 +228,13 @@ void TabbedPanel::updateFromState() {
     repaint();
 }
 
+HeightRange TabbedPanel::getPanelHeightRange() const {
+    if (activeContent_ == nullptr || !activeContent_->isVisible() ||
+        activeContent_->getHeight() <= 0)
+        return {};
+    return activeContent_->getHeightRange().plus(getHeight() - activeContent_->getHeight());
+}
+
 void TabbedPanel::switchToContent(PanelContentType type) {
     // Get or create new content before deactivating old
     auto* incoming = getOrCreateContent(type);

@@ -40,6 +40,8 @@ class ChordProgressionSection : public juce::Component, private juce::ChangeList
 
     static constexpr int HEADER_H = 20;
     static constexpr int ROW_H = 22;
+    static constexpr const char* kEmptyHint = "No chords yet - click the chord lane to add one.";
+    bool emptyHintFits() const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChordProgressionSection)
 };

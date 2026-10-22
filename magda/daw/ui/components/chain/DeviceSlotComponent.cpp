@@ -1431,6 +1431,14 @@ int DeviceSlotComponent::getPreferredWidth() const {
     return getTotalWidth(contentWidth) + meterExtra;
 }
 
+HeightRange DeviceSlotComponent::getHeightRange() const {
+    auto* ui = customUI_.getActiveUI();
+    if (collapsed_ || ui == nullptr || !isParentOf(ui) || !ui->isVisible() || ui->getHeight() <= 0)
+        return {};
+    // Measured rather than summed, so the header and strips count as currently laid out.
+    return customUI_.getContentHeightRange().plus(getHeight() - ui->getHeight());
+}
+
 void DeviceSlotComponent::showPresetMenu() {
     juce::Component::SafePointer<DeviceSlotComponent> self(this);
     magdaPresetPresenter_.showMenu(
