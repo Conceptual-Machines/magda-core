@@ -44,8 +44,15 @@ struct AraRegionSpec {
  */
 class AraDocument {
   public:
-    /** @brief A document over @p factory, or null when the plugin refuses to create one. */
+    /**
+     * @brief A document over @p factory, or null when the plugin refuses to create one.
+     *
+     * @p anchor is an unbound instance of the same plugin, held until after the controller is
+     * gone: JUCE's factory does not keep the plugin's module loaded, and on Linux a VST3 module
+     * unloads with its last instance, taking the controller's code with it.
+     */
     static std::unique_ptr<AraDocument> create(juce::ARAFactoryWrapper factory,
+                                               std::unique_ptr<juce::AudioPluginInstance> anchor,
                                                const juce::String& name,
                                                engine::AudioFileReaderFactory& files,
                                                AraModelEvents events = {},
@@ -127,6 +134,9 @@ class AraDocument {
     AraTransportRequests transport_;
     engine::AudioFileReaderFactory* files_ = nullptr;
     AraContentAccess* content_ = nullptr;
+
+    // Outlives the controller: it is what keeps the controller's module mapped.
+    std::unique_ptr<juce::AudioPluginInstance> anchor_;
 
     std::unique_ptr<juce::ARAHostDocumentController> host_;
 

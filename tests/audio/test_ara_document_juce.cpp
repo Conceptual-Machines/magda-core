@@ -83,7 +83,10 @@ class AraDocumentTest final : public juce::UnitTest {
 
         beginTest("a document is created from the plugin's factory");
         magda::daw::engine_host::EngineFileReaders files;
-        auto document = ara::AraDocument::create(factoryOf(*instance), "Test", files);
+        // The render instance is destroyed mid-test; the anchor is what keeps the module loaded.
+        auto anchor = format.createInstanceFromDescription(*found[0], kRate, kBlock, error);
+        auto document =
+            ara::AraDocument::create(factoryOf(*instance), std::move(anchor), "Test", files);
         expect(document != nullptr);
         if (document == nullptr)
             return;

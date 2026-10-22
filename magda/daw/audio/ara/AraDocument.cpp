@@ -19,15 +19,17 @@ AraDocument::AraDocument(AraModelEvents events, AraTransportRequests transport)
     : events_(std::move(events)), transport_(std::move(transport)) {}
 
 std::unique_ptr<AraDocument> AraDocument::create(juce::ARAFactoryWrapper factory,
+                                                 std::unique_ptr<juce::AudioPluginInstance> anchor,
                                                  const juce::String& name,
                                                  engine::AudioFileReaderFactory& files,
                                                  AraModelEvents events,
                                                  AraTransportRequests transport) {
-    if (factory.get() == nullptr)
+    if (factory.get() == nullptr || anchor == nullptr)
         return nullptr;
 
     std::unique_ptr<AraDocument> document(new AraDocument(std::move(events), std::move(transport)));
     document->files_ = &files;
+    document->anchor_ = std::move(anchor);
 
     auto content = std::make_unique<AraContentAccess>();
     document->content_ = content.get();
