@@ -10,8 +10,9 @@ class dsp;
 namespace magda::daw::audio::compiled {
 
 /**
- * @brief Compiled-Faust polyphonic instrument: 4 oscillators -> two multimode
- *        SVFs, serial or parallel (sharing an envelope) -> ADSR amp.
+ * @brief Compiled-Faust polyphonic instrument: 4 oscillators, stacked up to 8
+ *        unison copies -> two multimode SVFs, serial or parallel (sharing an
+ *        envelope) -> ADSR amp.
  *
  * The build-time-compiled single-voice MagdaPolySynthDsp is wrapped at runtime
  * in mydsp_poly (group=false), which allocates voices and drives the reserved
@@ -65,7 +66,10 @@ class MagdaPolySynthCompiledPlugin : public MagdaCompiledPolyInstrument {
     static constexpr int kFilter2EnableSlot = 51;
     static constexpr int kFilterRoutingSlot = 52;
     static constexpr int kFilterBlendSlot = 53;
-    static constexpr int kHostSlotCount = 54;
+    static constexpr int kUnisonVoicesSlot = 54;
+    static constexpr int kUnisonDetuneSlot = 55;
+    static constexpr int kUnisonSpreadSlot = 56;
+    static constexpr int kHostSlotCount = 57;
     static constexpr int kNumVoices = 16;
 
     juce::String devicePluginId() const override {

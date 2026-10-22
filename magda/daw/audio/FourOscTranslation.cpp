@@ -196,6 +196,14 @@ float clampToSlot(const DeviceInfo& poly, int slot, float value) {
     return value;
 }
 
+float slotCurrentValue(const DeviceInfo& poly, int slot) {
+    for (const auto& parameter : poly.parameters)
+        if (parameter.paramIndex == slot)
+            return parameter.currentValue;
+
+    return 0.0f;
+}
+
 /// The top of a slot's range, for a control that has to be put out of the way.
 float slotMaximum(const DeviceInfo& poly, int slot) {
     for (const auto& parameter : poly.parameters)
@@ -355,8 +363,6 @@ void translateOscillators(const DeviceInfo& fourOsc, const juce::ValueTree& prop
         // saves.
         for (const auto& [id, label, reason] :
              {std::tuple{"pulseWidth", "Pulse Width", "no pulse width control"},
-              std::tuple{"detune", "Detune", "no unison"},
-              std::tuple{"spread", "Spread", "no unison"},
               std::tuple{"pan", "Pan", "no per-oscillator pan"}})
             if (isSetByPatch(fourOsc, props, juce::String(id) + number))
                 gaps.push_back({"Osc " + number + " " + label, juce::String("dropped: ") + reason});
@@ -422,14 +428,69 @@ void translateFilter(const DeviceInfo& fourOsc, const juce::ValueTree& props, De
         gaps.push_back({"Filter Key", "dropped: no keyboard tracking"});
 }
 
-void reportUnisonAndEffects(const DeviceInfo& fourOsc, const juce::ValueTree& props,
-                            std::vector<FourOscGap>& gaps) {
-    for (auto osc = 1; osc <= PolySynth::kNumOscillators; ++osc)
-        if (propertyOr(props, "voices" + juce::String(osc), 1) > 1) {
-            gaps.push_back({"Unison", "dropped: Poly Synth has one voice per oscillator"});
-            break;
-        }
+/// 4OSC stacks voices per oscillator; Poly Synth's unison is one stack for all
+/// of them, so the oscillator with the most voices sets it (#2924).
+void translateUnison(const DeviceInfo& fourOsc, const juce::ValueTree& props, DeviceInfo& poly,
+                     std::vector<FourOscGap>& gaps) {
+    struct Stack {
+        int voices;
+        float detune, spread;
+        bool operator==(const Stack&) const = default;
+    };
+    std::vector<std::pair<int, Stack>> sounding;
+    for (auto osc = 1; osc <= PolySynth::kNumOscillators; ++osc) {
+        const auto number = juce::String(osc);
+        const auto fallback =
+            osc == 1 ? static_cast<int>(FourOscWave::sine) : static_cast<int>(FourOscWave::none);
+        if (!polyWaveFor(
+                static_cast<FourOscWave>(propertyOr(props, "waveShape" + number, fallback))))
+            continue;
+        const auto voices = std::clamp(propertyOr(props, "voices" + number, 1), 1, 8);
+        // A single 4OSC voice ignores detune and spread.
+        sounding.push_back(
+            {osc, voices == 1 ? Stack{1, 0.0f, 0.0f}
+                              : Stack{voices, parameterValue(fourOsc, props, "detune" + number),
+                                      parameterValue(fourOsc, props, "spread" + number)}});
+    }
 
+    const auto widest = std::ranges::max_element(
+        sounding, {}, [](const auto& entry) { return entry.second.voices; });
+    if (widest == sounding.end() || widest->second.voices == 1)
+        return;
+    const auto stack = widest->second;
+
+    // Nearest of 2, 4 and 8, ties going up.
+    const auto choice = stack.voices <= 2 ? 1 : stack.voices <= 5 ? 2 : 3;
+    setSlot(poly, PolySynth::kUnisonVoicesSlot, static_cast<float>(choice));
+    if (const auto count = 1 << choice; count != stack.voices)
+        gaps.push_back({"Unison voices",
+                        juce::String(stack.voices) + " voices played as " + juce::String(count)});
+
+    // 4OSC's detune is the stack's whole width in semitones; Poly Synth's is
+    // cents either side. Its spread's sign only picks which side goes first.
+    setSlot(poly, PolySynth::kUnisonDetuneSlot,
+            clampToSlot(poly, PolySynth::kUnisonDetuneSlot, stack.detune * 50.0f));
+    setSlot(poly, PolySynth::kUnisonSpreadSlot,
+            clampToSlot(poly, PolySynth::kUnisonSpreadSlot, std::abs(stack.spread) / 100.0f));
+
+    // 4OSC sums a stack at 1/n and Poly Synth at 1/sqrt(n): take each
+    // oscillator's own stack back out of its level to keep the balance.
+    for (const auto& [osc, own] : sounding) {
+        const auto slot = PolySynth::kOscBaseSlot + (osc - 1) * PolySynth::kOscSlotCount + 1;
+        if (own.voices > 1)
+            setSlot(poly, slot,
+                    clampToSlot(poly, slot,
+                                slotCurrentValue(poly, slot) -
+                                    10.0f * std::log10(static_cast<float>(own.voices))));
+    }
+
+    if (!std::ranges::all_of(sounding, [&](const auto& entry) { return entry.second == stack; }))
+        gaps.push_back(
+            {"Unison", "one stack for every oscillator, from Osc " + juce::String(widest->first)});
+}
+
+void reportEffects(const DeviceInfo& fourOsc, const juce::ValueTree& props,
+                   std::vector<FourOscGap>& gaps) {
     for (auto lfo = 1; lfo <= 2; ++lfo)
         if (isSetByPatch(fourOsc, props, "lfoDepth" + juce::String(lfo))) {
             gaps.push_back({"LFO", "dropped: use a modifier on the parameter"});
@@ -605,7 +666,8 @@ FourOscTranslation translateFourOsc(const DeviceInfo& fourOsc,
     setSlot(translated.device, PolySynth::kVoiceModeSlot,
             static_cast<float>(polyVoiceModeFor(propertyOr(props, "voiceMode", 2))));
 
-    reportUnisonAndEffects(fourOsc, props, translated.gaps);
+    translateUnison(fourOsc, props, translated.device, translated.gaps);
+    reportEffects(fourOsc, props, translated.gaps);
 
     if (nextEffectId)
         translated.effects = buildEffects(fourOsc, props, nextEffectId);

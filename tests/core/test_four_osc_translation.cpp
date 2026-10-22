@@ -326,10 +326,57 @@ TEST_CASE("Voice mode is reordered rather than copied", "[core][4osc]") {
           0.0f);
 }
 
-TEST_CASE("Unison is reported rather than translated into something thinner", "[core][4osc]") {
-    const auto patch = FourOscPatch{}.property("waveShape1", 3).property("voices1", 4).build();
+TEST_CASE("4OSC unison becomes Poly Synth's", "[core][4osc][2924]") {
+    const auto patch = FourOscPatch{}
+                           .property("waveShape1", 3)
+                           .property("voices1", 4)
+                           .parameter("detune1", 0.3f)
+                           .parameter("spread1", -60.0f)
+                           .build();
+    const auto translated = magda::daw::audio::translateFourOsc(patch);
 
-    CHECK(mentions(magda::daw::audio::translateFourOsc(patch).gaps, "Unison"));
+    CHECK(slotValue(translated.device, PolySynth::kUnisonVoicesSlot) == 2.0f);  // 4
+    // 0.3 semitones wide is 15 cents either side.
+    CHECK(slotValue(translated.device, PolySynth::kUnisonDetuneSlot) == Catch::Approx(15.0f));
+    CHECK(slotValue(translated.device, PolySynth::kUnisonSpreadSlot) == Catch::Approx(0.6f));
+    // 4OSC sums four voices at 1/4, Poly Synth at 1/2.
+    CHECK(slotValue(translated.device, oscSlot(1, 1)) == Catch::Approx(-6.0206f).margin(1.0e-3));
+    CHECK(translated.gaps.empty());
+}
+
+TEST_CASE("A 4OSC voice count Poly Synth lacks takes the nearest", "[core][4osc][2924]") {
+    for (auto [voices, choice] : {std::pair{3, 2.0f}, std::pair{5, 2.0f}, std::pair{6, 3.0f}}) {
+        CAPTURE(voices);
+        const auto translated = magda::daw::audio::translateFourOsc(
+            FourOscPatch{}.property("waveShape1", 3).property("voices1", voices).build());
+        CHECK(slotValue(translated.device, PolySynth::kUnisonVoicesSlot) == choice);
+        CHECK(mentions(translated.gaps, "Unison voices"));
+    }
+}
+
+TEST_CASE("Per-oscillator 4OSC stacks share the widest one", "[core][4osc][2924]") {
+    const auto translated = magda::daw::audio::translateFourOsc(FourOscPatch{}
+                                                                    .property("waveShape1", 3)
+                                                                    .property("voices1", 2)
+                                                                    .property("waveShape2", 5)
+                                                                    .property("voices2", 8)
+                                                                    .parameter("detune2", 0.5f)
+                                                                    .build());
+
+    CHECK(slotValue(translated.device, PolySynth::kUnisonVoicesSlot) == 3.0f);  // 8
+    CHECK(slotValue(translated.device, PolySynth::kUnisonDetuneSlot) == Catch::Approx(25.0f));
+    // Each oscillator gives back its own stack, not the shared one.
+    CHECK(slotValue(translated.device, oscSlot(1, 1)) == Catch::Approx(-3.0103f).margin(1.0e-3));
+    CHECK(slotValue(translated.device, oscSlot(2, 1)) == Catch::Approx(-9.0309f).margin(1.0e-3));
+    CHECK(mentions(translated.gaps, "Unison"));
+}
+
+TEST_CASE("Detune on a single 4OSC voice changes nothing to carry", "[core][4osc][2924]") {
+    const auto translated = magda::daw::audio::translateFourOsc(
+        FourOscPatch{}.property("waveShape1", 3).parameter("detune1", 0.4f).build());
+
+    CHECK(slotValue(translated.device, PolySynth::kUnisonVoicesSlot) == 0.0f);
+    CHECK(translated.gaps.empty());
 }
 
 TEST_CASE("A patch using nothing Poly Synth lacks reports no gaps", "[core][4osc]") {
@@ -375,7 +422,7 @@ TEST_CASE("The conversion prompt names what will be lost", "[core][4osc]") {
     magda::TrackInfo track;
     track.id = magda::TrackId{1};
     track.chain.fxChainElements.emplace_back(
-        FourOscPatch{}.property("waveShape1", 3).property("voices1", 4).build());
+        FourOscPatch{}.property("waveShape1", 3).property("voices1", 3).build());
 
     magda::TrackInfo master;
     master.id = magda::MASTER_TRACK_ID;

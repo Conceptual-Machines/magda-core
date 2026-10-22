@@ -79,6 +79,7 @@ set(TEST_SOURCES
     # All-notes-off beside the events, which the instrument used to drop (#2418)
     devices/test_instrument_panic.cpp
     devices/test_polysynth_filters.cpp
+    devices/test_polysynth_unison.cpp
     # An idle instrument skips its render, exactly (#2786)
     devices/test_instrument_idle.cpp
     devices/test_device_sdk_handles.cpp
