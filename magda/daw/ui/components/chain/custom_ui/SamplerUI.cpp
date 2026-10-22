@@ -8,6 +8,7 @@
 #include "DisplayListGraphics.hpp"
 #include "core/GestureRouter.hpp"
 #include "devices/faust/effects/FilterEngines.hpp"
+#include "sampling/SamplerImport.hpp"
 #include "ui/components/chain/layout/NodeHeaderStyles.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/state/ExpandedFaceplate.hpp"
@@ -951,7 +952,8 @@ void SamplerUI::setWaveformData(const juce::AudioBuffer<float>* buffer, double s
 
 bool SamplerUI::isInterestedInFileDrag(const juce::StringArray& files) {
     return std::ranges::any_of(files, [](const juce::String& path) {
-        return isAudioFile(path) || juce::File(path).isDirectory();
+        const juce::File file(path);
+        return isAudioFile(path) || file.isDirectory() || sampler_import::isInstrumentFile(file);
     });
 }
 
@@ -968,6 +970,13 @@ void SamplerUI::fileDragExit(const juce::StringArray& /*files*/) {
 void SamplerUI::filesDropped(const juce::StringArray& files, int x, int y) {
     dropHover_ = false;
     repaint();
+    // An instrument replaces the zones wherever it lands.
+    for (const auto& path : files)
+        if (const juce::File file(path); sampler_import::isInstrumentFile(file)) {
+            if (onInstrumentChosen)
+                onInstrumentChosen(file);
+            return;
+        }
     juce::Array<juce::File> dropped;
     for (const auto& path : files)
         if (const juce::File file(path); file.isDirectory() || isAudioFile(path))

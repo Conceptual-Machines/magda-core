@@ -13,15 +13,15 @@ SamplerMedia& SamplerMedia::getInstance() {
 
 namespace {
 
-/// Point the root's source (@p zone -1) or the @p zone th zone's at @p file.
-void repoint(device_state::Doc& doc, int zone, const juce::File& file) {
+/// Point the root's @p key (@p zone -1) or the @p zone th zone's at @p file.
+void repoint(device_state::Doc& doc, const juce::String& key, int zone, const juce::File& file) {
     if (zone < 0) {
-        doc.root.props.set("source", file.getFullPathName());
+        doc.root.props.set(key, file.getFullPathName());
         return;
     }
     for (auto& child : doc.root.children)
         if (child.type == "zone" && zone-- == 0) {
-            child.props.set("source", file.getFullPathName());
+            child.props.set(key, file.getFullPathName());
             return;
         }
 }
@@ -48,22 +48,27 @@ std::vector<SamplerMediaReference> modelSamplerMedia() {
                 const auto doc = device_state::decode(device.pluginState);
                 if (!doc)
                     return true;
-                // The root's own source, then each zone's (#3098); -1 names the root.
-                const auto add = [&references, &path](const juce::String& source, int zone) {
+                // The root's own source and the instrument it was imported from (#3099), then
+                // each zone's source (#3098); -1 names the root.
+                const auto add = [&references, &path](const device_state::Node& node,
+                                                      const juce::String& key, int zone) {
+                    const auto source = node.props[juce::Identifier(key)].toString();
                     if (source.isEmpty() || !juce::File::isAbsolutePath(source))
                         return;
-                    references.push_back({juce::File(source), [path, zone](const juce::File& file) {
-                                              TrackManager::getInstance().updateDeviceAuthoredState(
-                                                  path, [&file, zone](device_state::Doc& doc) {
-                                                      repoint(doc, zone, file);
-                                                  });
-                                          }});
+                    references.push_back(
+                        {juce::File(source), [path, key, zone](const juce::File& file) {
+                             TrackManager::getInstance().updateDeviceAuthoredState(
+                                 path, [&file, &key, zone](device_state::Doc& doc) {
+                                     repoint(doc, key, zone, file);
+                                 });
+                         }});
                 };
-                add(doc->root.props["source"].toString(), -1);
+                add(doc->root, "source", -1);
+                add(doc->root, "instrument", -1);
                 int zone = 0;
                 for (const auto& child : doc->root.children)
                     if (child.type == "zone")
-                        add(child.props["source"].toString(), zone++);
+                        add(child, "source", zone++);
                 return true;
             });
     }

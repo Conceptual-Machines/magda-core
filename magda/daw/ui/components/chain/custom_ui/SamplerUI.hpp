@@ -127,6 +127,8 @@ class SamplerUI : public juce::Component,
     std::function<void(const juce::Array<juce::File>& files)> onFilesDropped;
     /// Samples dropped on the zone list, below its zones.
     std::function<void(const juce::Array<juce::File>& files)> onZonesAdded;
+    /// An SFZ or DecentSampler file dropped, to import as the zones (#3099).
+    std::function<void(const juce::File& file)> onInstrumentChosen;
     /// The zone list's Add button: a zone with no sample.
     std::function<void()> onEmptyZoneAdded;
     /// A sample for zone @p index, dropped on its row or loaded while it is selected.

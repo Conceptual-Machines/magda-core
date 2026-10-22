@@ -349,7 +349,8 @@ class MagdaSamplerPlugin : public MagdaDevice {
     ///
     /// One zone is the root's own properties with the marker parameters, as before #3098.
     /// Two or more are `zone` children, each with its source, root, ranges and markers. The
-    /// ranges and fades are kSamplerZoneFields.
+    /// ranges and fades are kSamplerZoneFields. `instrument` is the SFZ or DecentSampler file the
+    /// zones were imported from (#3099), kept for collect and relocate; nothing plays it.
     struct StateIDs {
         static const juce::Identifier source;
         static const juce::Identifier rootNote;
@@ -362,6 +363,7 @@ class MagdaSamplerPlugin : public MagdaDevice {
         static const juce::Identifier end;
         static const juce::Identifier loopStart;
         static const juce::Identifier loopEnd;
+        static const juce::Identifier instrument;
     };
 
     //==============================================================================
@@ -398,6 +400,8 @@ class MagdaSamplerPlugin : public MagdaDevice {
         return kNumParams;
     }
     sdk::ParameterDescriptor parameterDescriptor(int index) const override;
+    /// The same, without a device: what an importer reads ranges and defaults from.
+    static sdk::ParameterDescriptor slotDescriptor(int index);
     ParameterInfo parameterInfo(int index) const override;
     float parameterValue(int index) const override;
     void setParameterValue(int index, float value) override;
