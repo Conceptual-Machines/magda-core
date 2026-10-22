@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "core/ChainNodePath.hpp"
-#include "plugins/SamplerZones.hpp"
+#include "plugins/sampler/SamplerZones.hpp"
 #include "sampling/SamplerImport.hpp"
 
 namespace magda::sampler_edits {

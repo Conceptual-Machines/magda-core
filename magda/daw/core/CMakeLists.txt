@@ -58,6 +58,7 @@ target_sources(magda_daw PRIVATE
     ParameterDetector.cpp
     PresetManager.cpp
     DevicePresetEnvelope.cpp
+    SamplerDevices.cpp
     DrumkitManager.cpp
     GrooveStore.cpp
     DeviceCatalogMetadata.cpp

@@ -81,7 +81,10 @@ target_sources(magda_daw_app PRIVATE
     compiled/CompiledPluginPresentation.cpp
     compiled/MagdaDriveCurveView.cpp
     custom_ui/ToneGeneratorUI.cpp
+    custom_ui/SamplerEnvelopeView.cpp
     custom_ui/SamplerUI.cpp
+    custom_ui/SamplerWaveformPane.cpp
+    custom_ui/SamplerZoneList.cpp
     custom_ui/SamplerZoneEditor.cpp
     custom_ui/SamplerZoneRow.cpp
     custom_ui/SidechainUI.cpp
@@ -194,7 +197,11 @@ target_sources(magda_daw_app PRIVATE
     compiled/CompiledPluginPresentation.hpp
     compiled/MagdaDriveCurveView.hpp
     custom_ui/ToneGeneratorUI.hpp
+    custom_ui/SamplerEnvelopeView.hpp
+    custom_ui/SamplerTiles.hpp
     custom_ui/SamplerUI.hpp
+    custom_ui/SamplerWaveformPane.hpp
+    custom_ui/SamplerZoneList.hpp
     custom_ui/SamplerZoneEditor.hpp
     custom_ui/SamplerZoneRow.hpp
     custom_ui/ImpulseResponseUI.hpp

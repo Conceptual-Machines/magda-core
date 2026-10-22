@@ -6,7 +6,7 @@
 #include <functional>
 
 #include "ZoneBar.hpp"
-#include "plugins/SamplerZones.hpp"
+#include "plugins/sampler/SamplerZones.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
 

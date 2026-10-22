@@ -2,6 +2,7 @@
 
 #include "core/ChainWalk.hpp"
 #include "core/DeviceState.hpp"
+#include "core/SamplerDevices.hpp"
 #include "core/TrackManager.hpp"
 
 namespace magda {
@@ -43,7 +44,7 @@ std::vector<SamplerMediaReference> modelSamplerMedia() {
             track->chain.fxChainElements, ChainNodePath::trackLevel(trackId),
             chain_walk::Pads::Enter,
             [&references](const DeviceInfo& device, const ChainNodePath& path) {
-                if (device.pluginId != "magdasampler")
+                if (!sampler_devices::isSampler(device.pluginId))
                     return true;
                 const auto doc = device_state::decode(device.pluginState);
                 if (!doc)

@@ -6,7 +6,7 @@
 #include <functional>
 #include <vector>
 
-#include "plugins/SamplerZones.hpp"
+#include "plugins/sampler/SamplerZones.hpp"
 #include "ui/components/common/TextSlider.hpp"
 
 namespace magda::daw::ui {

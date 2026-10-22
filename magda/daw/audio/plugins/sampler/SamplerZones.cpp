@@ -1,9 +1,33 @@
-#include "plugins/SamplerZones.hpp"
+#include "plugins/sampler/SamplerZones.hpp"
 
 #include <algorithm>
 #include <map>
 
 namespace magda::daw::audio {
+
+const juce::Identifier SamplerStateIDs::source("source");
+const juce::Identifier SamplerStateIDs::rootNote("rootNote");
+const juce::Identifier SamplerStateIDs::loopEnabled("loopEnabled");
+const juce::Identifier SamplerStateIDs::zone("zone");
+const juce::Identifier SamplerStateIDs::tune("tune");
+const juce::Identifier SamplerStateIDs::gain("gain");
+const juce::Identifier SamplerStateIDs::roundRobin("roundRobin");
+const juce::Identifier SamplerStateIDs::start("start");
+const juce::Identifier SamplerStateIDs::end("end");
+const juce::Identifier SamplerStateIDs::loopStart("loopStart");
+const juce::Identifier SamplerStateIDs::loopEnd("loopEnd");
+const juce::Identifier SamplerStateIDs::instrument("instrument");
+
+juce::AudioFormatManager& samplerAudioFormats() {
+    // The retired plugin read through its own basic-format manager; keeping that list keeps the
+    // device engine-neutral.
+    static juce::AudioFormatManager formats;
+    [[maybe_unused]] static const bool registered = [] {
+        formats.registerBasicFormats();
+        return true;
+    }();
+    return formats;
+}
 
 namespace {
 

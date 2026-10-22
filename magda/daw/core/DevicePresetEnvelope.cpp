@@ -16,6 +16,7 @@
 #include "../project/serialization/ProjectSerializer.hpp"
 #include "ControlTarget.hpp"
 #include "LegacyDeviceAliases.hpp"
+#include "SamplerDevices.hpp"
 #include "version.hpp"
 
 namespace magda::device_preset {
@@ -24,7 +25,6 @@ namespace {
 
 constexpr int kHostVersion = 1;
 constexpr const char* kHostKey = "magda";
-constexpr const char* kSamplerId = "magdasampler";
 constexpr const char* kSamplePathProperty = "source";
 constexpr const char* kSampleAssetKey = "sample";
 constexpr const char* kZoneType = "zone";
@@ -255,7 +255,8 @@ std::optional<juce::String> writeEnvelope(const DeviceInfo& device, const juce::
         }
         if (doc.deviceType.empty())
             return std::nullopt;
-        if (device.pluginId == kSamplerId && !moveSampleToAsset(doc, presetFile, preset.assets))
+        if (sampler_devices::isSampler(device.pluginId) &&
+            !moveSampleToAsset(doc, presetFile, preset.assets))
             return std::nullopt;
 
         preset.deviceType = doc.deviceType;
@@ -436,7 +437,7 @@ ReadResult readEnvelope(const juce::String& text, const juce::File& presetFile,
                 if (const auto it = assetPaths.find(source->toString()); it != assetPaths.end())
                     node.setString(kSamplePathProperty, it->second.toStdString());
         };
-        if (pluginId == kSamplerId) {
+        if (sampler_devices::isSampler(pluginId)) {
             restoreSource(doc.root);
             for (auto& child : doc.root.children())
                 if (child.type() == kZoneType)

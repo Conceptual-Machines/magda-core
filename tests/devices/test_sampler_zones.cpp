@@ -7,7 +7,7 @@
 #include "DeviceTestBlock.hpp"
 #include "TestDeviceMidiBuffer.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
-#include "plugins/SamplerZones.hpp"
+#include "plugins/sampler/SamplerZones.hpp"
 
 using namespace magda::daw::audio;
 using Sampler = MagdaSamplerPlugin;

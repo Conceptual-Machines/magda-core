@@ -5,7 +5,7 @@
 #include <map>
 #include <vector>
 
-#include "plugins/SamplerZones.hpp"
+#include "plugins/sampler/SamplerZones.hpp"
 
 namespace magda::sampler_import {
 
