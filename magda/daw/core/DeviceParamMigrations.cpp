@@ -472,6 +472,8 @@ const std::vector<ChoiceGrowth>& shippedChoiceGrowths() {
     static const std::vector<ChoiceGrowth> growths{
         {"magda_filter", "Filter gained the Comb engine (#3097)", 3, 5.0f, 6.0f},
         {"magda_filter", "Filter's SVF gained the Notch+ mode (#3097)", 4, 3.0f, 4.0f, 3, 0.0f},
+        {"magda_polysynth", "Poly Synth's Filter Slope became 2, 4 or 6 poles (#2926)", 29, 1.0f,
+         2.0f},
     };
     return growths;
 }

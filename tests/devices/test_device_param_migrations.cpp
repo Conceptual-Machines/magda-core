@@ -497,4 +497,31 @@ TEST_CASE("Automation on a grown choice list keeps its choices", "[migration][pa
     CHECK(svf.parameters[4].maxValue == 4.0f);
 }
 
+TEST_CASE("Automation on Poly Synth's slope keeps 24 dB on 4 poles", "[migration][params][2926]") {
+    constexpr TrackId kTrackId = 1;
+    constexpr DeviceId kSynth = 1;
+
+    std::vector<TrackInfo> tracks(1);
+    auto& track = tracks.front();
+    track.id = kTrackId;
+    DeviceInfo synth;
+    synth.id = kSynth;
+    synth.pluginId = "magda_polysynth";
+    for (int index = 0; index < 44; ++index) {
+        ParameterInfo param;
+        param.paramIndex = index;
+        synth.parameters.push_back(param);
+    }
+    synth.parameters[29].maxValue = 1.0f;
+    track.chain.fxChainElements.push_back(synth);
+
+    std::vector<AutomationLaneInfo> lanes{laneAt(1, targetFor(kTrackId, kSynth, 29), 1.0)};
+    std::vector<AutomationClipInfo> clips;
+    for (int load = 0; load < 2; ++load) {
+        CAPTURE(load);
+        migrations::applyChoiceGrowths(tracks, nullptr, lanes, clips);
+        CHECK(lanes[0].absolutePoints[0].value * 2.0 == Catch::Approx(1.0));
+    }
+}
+
 }  // namespace magda

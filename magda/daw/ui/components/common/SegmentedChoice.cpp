@@ -101,6 +101,33 @@ std::optional<juce::Path> iconFor(const juce::String& option) {
             path.lineTo(x, path.getCurrentPosition().y);
             path.lineTo(x, y);
         }
+    } else if (name == "serial") {
+        // Two blocks in a chain.
+        path.startNewSubPath(0.0f, 0.5f);
+        path.lineTo(0.12f, 0.5f);
+        path.addRectangle(0.12f, 0.25f, 0.28f, 0.5f);
+        path.startNewSubPath(0.4f, 0.5f);
+        path.lineTo(0.6f, 0.5f);
+        path.addRectangle(0.6f, 0.25f, 0.28f, 0.5f);
+        path.startNewSubPath(0.88f, 0.5f);
+        path.lineTo(1.0f, 0.5f);
+    } else if (name == "parallel") {
+        // One input split across two blocks and summed.
+        path.startNewSubPath(0.0f, 0.5f);
+        path.lineTo(0.15f, 0.5f);
+        path.startNewSubPath(0.15f, 0.15f);
+        path.lineTo(0.15f, 0.85f);
+        path.startNewSubPath(0.85f, 0.15f);
+        path.lineTo(0.85f, 0.85f);
+        path.startNewSubPath(0.85f, 0.5f);
+        path.lineTo(1.0f, 0.5f);
+        for (const float y : {0.15f, 0.85f}) {
+            path.startNewSubPath(0.15f, y);
+            path.lineTo(0.35f, y);
+            path.addRectangle(0.35f, y - 0.15f, 0.3f, 0.3f);
+            path.startNewSubPath(0.65f, y);
+            path.lineTo(0.85f, y);
+        }
     } else {
         return std::nullopt;
     }
@@ -218,9 +245,10 @@ void SegmentedChoice::mouseDown(const juce::MouseEvent& e) {
 
 juce::String SegmentedChoice::getTooltip() {
     static const std::map<juce::String, juce::String> kNames{
-        {"lp", "Low Pass"}, {"hp", "High Pass"},       {"bp", "Band Pass"},  {"lc", "Low Cut"},
-        {"hc", "High Cut"}, {"ls", "Low Shelf"},       {"hs", "High Shelf"}, {"bell", "Bell"},
-        {"notch", "Notch"}, {"s&h", "Sample and Hold"}};
+        {"lp", "Low Pass"},         {"hp", "High Pass"},  {"bp", "Band Pass"},
+        {"lc", "Low Cut"},          {"hc", "High Cut"},   {"ls", "Low Shelf"},
+        {"hs", "High Shelf"},       {"bell", "Bell"},     {"notch", "Notch"},
+        {"s&h", "Sample and Hold"}, {"serial", "Serial"}, {"parallel", "Parallel"}};
     const auto mouse = getMouseXYRelative().toFloat();
     for (int i = 0; i < options_.size(); ++i) {
         if (!segmentBounds(i).contains(mouse) || !allHaveIcons(options_))

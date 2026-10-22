@@ -130,10 +130,11 @@ void CompiledFilterCurveView::setCompiledPlugin(
 }
 
 void CompiledFilterCurveView::setRawState(int engine, int modeIndex, float cutoffHz,
-                                          float resonance01, float drive01, bool doubleSlope) {
+                                          float resonance01, float drive01, int svfStages) {
     compiledPlugin_ = nullptr;  // raw path: never read from a plugin / snapshot
-    if (doublePole_ != doubleSlope) {
-        doublePole_ = doubleSlope;
+    svfStages = juce::jlimit(1, 3, svfStages);
+    if (svfStages_ != svfStages) {
+        svfStages_ = svfStages;
         repaint();
     }
     family_ = static_cast<FilterFamily>(juce::jlimit(0, 6, engine));
@@ -377,9 +378,6 @@ float CompiledFilterCurveView::responseDbAt(float frequencyHz) const {
             for (int stage = 1; stage < svfStages_; ++stage)
                 magnitude *= stageMagnitude(mode, r, 0.7071f);
     }
-
-    if (doublePole_)
-        magnitude *= magnitude;  // 24 dB/oct: two cascaded stages
 
     const float driveTrimDb = -drive_ * 2.5f;
     return linearToDb(magnitude) + driveTrimDb;

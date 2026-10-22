@@ -1,10 +1,11 @@
 declare name "MagdaPolySynth";
-declare description "Four-oscillator polyphonic synth: four detunable oscillators (sine / saw / square / triangle) summed into a multimode state-variable filter with its own envelope, plus an ADSR amplitude envelope.";
+declare description "Four-oscillator polyphonic synth: four detunable oscillators (sine / saw / square / triangle) summed into two multimode state-variable filters (serial or parallel) sharing an envelope, plus an ADSR amplitude envelope.";
 declare license "GPL-3.0";
 declare version "1.0";
 
 import("stdfaust.lib");
 msm = library("magda_smoothing.lib");
+svf = library("magda_svf.lib");
 
 // ============================================================================
 // Reserved per-voice MIDI controls
@@ -129,8 +130,8 @@ fEnvAmt = hslider("Filter Env [unit:oct] [idx:19]", 0, -4, 4, 0.01);
 // Pre-filter drive saturation, ported verbatim from magda_filter_svf.dsp.
 // idx:28 (after the amp envelope) so the existing slot indices stay stable.
 fDrive  = hslider("Filter Drive [idx:28]", 0.0, 0.0, 1.0, 0.001) : smoo;
-// Slope: 12 dB/oct (single 2-pole) or 24 dB/oct (two cascaded stages).
-fSlope  = nentry("Filter Slope [idx:29] [style:menu{'12 dB':0;'24 dB':1}]", 0, 0, 1, 1);
+// Poles: 2, 4 or 6. Named Slope for its stable slot id.
+fSlope  = nentry("Filter Slope [idx:29] [style:menu{'2':0;'4':1;'6':2}]", 0, 0, 2, 1);
 // Envelope times are exposed in milliseconds for finer control; the host
 // formatter shows ms below 1 s and switches to seconds above. The DSP converts
 // back to seconds at the envelope.
@@ -166,6 +167,23 @@ osc4Enable = nentry("Osc 4 Enable [idx:42] [style:menu{'Off':0;'On':1}]", 1, 0, 
 // back down. 0 dB = unity.
 outGain = hslider("Output [unit:dB] [idx:43]", 0, -60, 6, 0.1) : ba.db2linear : smoo;
 
+// Filter 2 (idx 44..49) mirrors Filter 1 and shares its envelope and Vel Filter.
+f2Type    = nentry("Filter 2 Type [idx:44] [style:menu{'Lowpass':0;'Highpass':1;'Bandpass':2;'Notch':3}]", 0, 0, 3, 1);
+f2Cutoff  = hslider("Filter 2 Cutoff [unit:Hz] [idx:45] [scale:log]", 3000, 50, 18000, 1);
+f2Res     = hslider("Filter 2 Resonance [idx:46]", 0.3, 0.0, 0.95, 0.001);
+f2EnvAmt  = hslider("Filter 2 Env [unit:oct] [idx:47]", 0, -4, 4, 0.01);
+f2Drive   = hslider("Filter 2 Drive [idx:48]", 0.0, 0.0, 1.0, 0.001) : smoo;
+f2Slope   = nentry("Filter 2 Slope [idx:49] [style:menu{'2':0;'4':1;'6':2}]", 0, 0, 2, 1);
+
+// A bypassed filter passes its input through. Filter 2 starts bypassed so
+// existing patches keep their sound.
+f1On      = nentry("Filter 1 Enable [idx:50] [style:menu{'Off':0;'On':1}]", 1, 0, 1, 1);
+f2On      = nentry("Filter 2 Enable [idx:51] [style:menu{'Off':0;'On':1}]", 0, 0, 1, 1);
+// Serial: Filter 1 into Filter 2. Parallel: both fed the osc mix, mixed by Blend
+// (0 = Filter 1 only, 1 = Filter 2 only).
+fRouting  = nentry("Filter Routing [idx:52] [style:menu{'Serial':0;'Parallel':1}]", 0, 0, 1, 1);
+fBlend    = hslider("Filter Blend [idx:53]", 0.5, 0.0, 1.0, 0.001) : smoo;
+
 // ============================================================================
 // DSP
 // ============================================================================
@@ -176,37 +194,53 @@ oscMix = oscBank(osc1Wave, osc1Level, osc1Coarse, osc1Fine, osc1Reset, osc1Enabl
 
 // Resonance 0..0.95 -> Q 0.5..~9.5. Filter-envelope output scales the cutoff
 // exponentially (in octaves) and the result is clamped to the audio band.
-Q         = 0.5 + res * 9.5;
 // en.adsre (exponential segments), not en.adsr: the linear adsr's attack
 // counter hard-resets on the gate's rising edge, so a Mono retrigger (the
 // host's one-sample gate dip) collapses the envelope from sustain to zero in
 // one sample - an audible click on every mono note. adsre is a one-pole slew
 // toward the segment target, so it resumes from the current level instead.
 filterEnv = en.adsre(fAtt, fDec, fSus, fRel, gate);
-fc        = (cutoff * pow(2.0, fEnvAmt * filterEnv + velFilt * gain)) : max(20.0) : min(20000.0) : smoo;
+fcOf(cut, envAmt) = (cut * pow(2.0, envAmt * filterEnv + velFilt * gain)) : max(20.0) : min(20000.0) : smoo;
 
-filterMux(x) = ba.selectn(4, int(filterType),
-    x : fi.svf.lp(fc, Q),
-    x : fi.svf.hp(fc, Q),
-    x : fi.svf.bp(fc, Q),
-    x : fi.svf.notch(fc, Q));
-
-// Slope: 12 dB = one 2-pole stage, 24 dB = two cascaded stages. Both branches
-// run (selectn is strict); the menu picks one.
-filterSlope(x) = (filterMux(x), filterMux(filterMux(x))) : ba.selectn(2, int(fSlope));
+// The SVF with 1-3 stages, resonance in the last only, as magda_filter_svf_staged.dsp.
+// A single stage is fi.svf exactly (k = 1/Q, unscaled band-pass).
+kFlat = sqrt(2.0);
+svfPoles(type, poles, fc, q, x) = ba.selectn(3, int(poles), x, pre1, pre2) : svf.stage(m, g, 1.0 / q, 1.0)
+with {
+    m = ba.selectn(4, int(type), 0, 2, 1, 3);  // menu order -> magda_svf.lib's
+    g = tan(fc * ma.PI / ma.SR);
+    pre1 = x : svf.stage(m, g, kFlat, kFlat);
+    pre2 = pre1 : svf.stage(m, g, kFlat, kFlat);
+};
 
 // Gain staging. The SVF's resonant peak adds up to ~Q of gain near the cutoff,
 // so trim the filter input as resonance rises to keep the level roughly
-// constant (resComp). The per-voice tanh then soft-clips peaks so a hot voice
+// constant (filterBlock). The per-voice tanh then soft-clips peaks so a hot voice
 // (high velocity / resonance) overdrives gracefully instead of hard-clipping
 // downstream - tanh is ~linear for small signals, so clean patches stay clean.
-resComp = 1.0 - 0.5 * res;
 ampEnv  = en.adsre(aAtt, aDec, aSus, aRel, gate);  // see filterEnv: no click on Mono retrigger
 // Drive: dry/saturated lerp; tanh(4) normalisation keeps unity-amplitude
 // signals at unity at full drive (matches magda_filter_svf.dsp).
-drivenIn(x) = (1.0 - fDrive) * x
-            + fDrive * (ma.tanh(4.0 * x) / ma.tanh(4.0));
-voice   = ((oscMix * resComp : drivenIn : filterSlope) * ampEnv * ampVel : ma.tanh) * outGain;
+drivenIn(d, x) = (1.0 - d) * x
+               + d * (ma.tanh(4.0 * x) / ma.tanh(4.0));
+
+filterBlock(on, type, poles, cut, envAmt, r, d, x) = x * (1.0 - e) + y * e
+with {
+    e = on : smoo;
+    y = x * (1.0 - 0.5 * r) : drivenIn(d) : svfPoles(type, poles, fcOf(cut, envAmt), 0.5 + r * 9.5);
+};
+filter1 = filterBlock(f1On, filterType, fSlope, cutoff, fEnvAmt, res, fDrive);
+filter2 = filterBlock(f2On, f2Type, f2Slope, f2Cutoff, f2EnvAmt, f2Res, f2Drive);
+
+// One Filter 2 serves both routings: its input crossfades from Filter 1's
+// output (serial) to the osc mix (parallel).
+filters(x) = y1 * r * (1.0 - fBlend) + filter2(y1 * (1.0 - r) + x * r) * (1.0 - r + r * fBlend)
+with {
+    r = fRouting : smoo;
+    y1 = filter1(x);
+};
+
+voice   = ((oscMix : filters) * ampEnv * ampVel : ma.tanh) * outGain;
 
 // Mono voice fanned to a stereo pair (the poly allocator sums all voices).
 process = voice <: _, _;

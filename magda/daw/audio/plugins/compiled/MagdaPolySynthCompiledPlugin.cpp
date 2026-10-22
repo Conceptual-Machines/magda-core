@@ -23,6 +23,8 @@ std::vector<MagdaPolySynthCompiledPlugin::HostSlotInfo> MagdaPolySynthCompiledPl
     const {
     std::vector<HostSlotInfo> infos(kHostSlotCount);
     const std::vector<juce::String> waveChoices{"Sine", "Saw", "Square", "Triangle"};
+    const std::vector<juce::String> filterTypeChoices{"Lowpass", "Highpass", "Bandpass", "Notch"};
+    const std::vector<juce::String> poleChoices{"2", "4", "6"};
 
     // Four contiguous slots per oscillator (wave / level / coarse / fine).
     // Osc 1 is audible by default; the rest start silent.
@@ -61,7 +63,7 @@ std::vector<MagdaPolySynthCompiledPlugin::HostSlotInfo> MagdaPolySynthCompiledPl
                               .minValue = 0.0f,
                               .maxValue = 3.0f,
                               .defaultValue = 0.0f,
-                              .choices = {"Lowpass", "Highpass", "Bandpass", "Notch"}};
+                              .choices = filterTypeChoices};
     infos[kCutoffSlot] = {.name = "Cutoff",
                           .unit = "Hz",
                           .scale = magda::ParameterScale::Logarithmic,
@@ -135,12 +137,13 @@ std::vector<MagdaPolySynthCompiledPlugin::HostSlotInfo> MagdaPolySynthCompiledPl
                                .maxValue = 1.0f,
                                .defaultValue = 0.0f};
 
+    // Poles; the name keeps the slot id the 12/24 dB slope shipped with.
     infos[kFilterSlopeSlot] = {.name = "Filter Slope",
                                .scale = magda::ParameterScale::Discrete,
                                .minValue = 0.0f,
-                               .maxValue = 1.0f,
+                               .maxValue = 2.0f,
                                .defaultValue = 0.0f,
-                               .choices = {"12 dB", "24 dB"}};
+                               .choices = poleChoices};
 
     infos[kBendRangeSlot] = {.name = "Bend Range",
                              .unit = magda::technicalText(magda::TechnicalTextToken::Semitones),
@@ -200,6 +203,64 @@ std::vector<MagdaPolySynthCompiledPlugin::HostSlotInfo> MagdaPolySynthCompiledPl
                               .maxValue = 6.0f,
                               .defaultValue = 0.0f};
 
+    infos[kFilter2TypeSlot] = {.name = "Filter 2 Type",
+                               .scale = magda::ParameterScale::Discrete,
+                               .minValue = 0.0f,
+                               .maxValue = 3.0f,
+                               .defaultValue = 0.0f,
+                               .choices = filterTypeChoices};
+    infos[kFilter2CutoffSlot] = {.name = "Filter 2 Cutoff",
+                                 .unit = "Hz",
+                                 .scale = magda::ParameterScale::Logarithmic,
+                                 .minValue = 50.0f,
+                                 .maxValue = 18000.0f,
+                                 .defaultValue = 3000.0f};
+    infos[kFilter2ResonanceSlot] = {.name = "Filter 2 Resonance",
+                                    .scale = magda::ParameterScale::Linear,
+                                    .minValue = 0.0f,
+                                    .maxValue = 0.95f,
+                                    .defaultValue = 0.3f};
+    infos[kFilter2EnvAmtSlot] = {.name = "Filter 2 Env",
+                                 .unit = "oct",
+                                 .scale = magda::ParameterScale::Linear,
+                                 .minValue = -4.0f,
+                                 .maxValue = 4.0f,
+                                 .defaultValue = 0.0f};
+    infos[kFilter2DriveSlot] = {.name = "Filter 2 Drive",
+                                .scale = magda::ParameterScale::Linear,
+                                .minValue = 0.0f,
+                                .maxValue = 1.0f,
+                                .defaultValue = 0.0f};
+    infos[kFilter2SlopeSlot] = {.name = "Filter 2 Slope",
+                                .scale = magda::ParameterScale::Discrete,
+                                .minValue = 0.0f,
+                                .maxValue = 2.0f,
+                                .defaultValue = 0.0f,
+                                .choices = poleChoices};
+    infos[kFilter1EnableSlot] = {.name = "Filter 1 Enable",
+                                 .scale = magda::ParameterScale::Discrete,
+                                 .minValue = 0.0f,
+                                 .maxValue = 1.0f,
+                                 .defaultValue = 1.0f,
+                                 .choices = {"Off", "On"}};
+    infos[kFilter2EnableSlot] = {.name = "Filter 2 Enable",
+                                 .scale = magda::ParameterScale::Discrete,
+                                 .minValue = 0.0f,
+                                 .maxValue = 1.0f,
+                                 .defaultValue = 0.0f,
+                                 .choices = {"Off", "On"}};
+    infos[kFilterRoutingSlot] = {.name = "Filter Routing",
+                                 .scale = magda::ParameterScale::Discrete,
+                                 .minValue = 0.0f,
+                                 .maxValue = 1.0f,
+                                 .defaultValue = 0.0f,
+                                 .choices = {"Serial", "Parallel"}};
+    infos[kFilterBlendSlot] = {.name = "Filter Blend",
+                               .scale = magda::ParameterScale::Linear,
+                               .minValue = 0.0f,
+                               .maxValue = 1.0f,
+                               .defaultValue = 0.5f};
+
     return infos;
 }
 
@@ -208,9 +269,10 @@ const CompiledPluginSpec& getMagdaPolySynthSpec() {
         .pluginId = MagdaPolySynthCompiledPlugin::xmlTypeName,
         .displayName = "Poly Synth",
         .browserCategory = "Synth",
-        .description = "Compiled Faust polyphonic synth: four detunable oscillators "
-                       "(sine/saw/square/triangle) into a multimode filter with its own "
-                       "envelope, plus an ADSR amp envelope. 16-voice, MIDI-driven.",
+        .description =
+            "Compiled Faust polyphonic synth: four detunable oscillators "
+            "(sine/saw/square/triangle) into two multimode filters, serial or "
+            "parallel, with a filter envelope, plus an ADSR amp envelope. 16-voice, MIDI-driven.",
         .createDevice = [](const DevicePluginCreationContext&) -> std::unique_ptr<MagdaDevice> {
             return std::make_unique<MagdaPolySynthCompiledPlugin>();
         },
