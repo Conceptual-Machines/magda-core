@@ -1,6 +1,6 @@
 #pragma once
 
-#include <juce_audio_basics/juce_audio_basics.h>
+#include <juce_audio_formats/juce_audio_formats.h>
 
 #include <cstdint>
 #include <functional>
@@ -11,6 +11,31 @@
 #include "core/ChainZones.hpp"
 
 namespace magda::daw::audio {
+
+/// The state document's names for a sampler's non-parameter state. The first three are the
+/// retired plugin's spellings, so a saved project reads its sample back.
+///
+/// One zone is the root's own properties, its markers the device's marker parameters, as before
+/// #3098. Two or more are `zone` children, each with its source, root, ranges and markers. The
+/// ranges and fades are kSamplerZoneFields. `instrument` is the SFZ, DecentSampler or SoundFont
+/// file the zones were imported from (#3099), kept for collect and relocate; nothing plays it.
+struct SamplerStateIDs {
+    static const juce::Identifier source;
+    static const juce::Identifier rootNote;
+    static const juce::Identifier loopEnabled;
+    static const juce::Identifier zone;
+    static const juce::Identifier tune;
+    static const juce::Identifier gain;
+    static const juce::Identifier roundRobin;
+    static const juce::Identifier start;
+    static const juce::Identifier end;
+    static const juce::Identifier loopStart;
+    static const juce::Identifier loopEnd;
+    static const juce::Identifier instrument;
+};
+
+/// The formats a sample can arrive in, as every sampler reads them. Message thread.
+juce::AudioFormatManager& samplerAudioFormats();
 
 /// One file's audio, read once and never written again. Zones share it.
 struct SampleAudio {

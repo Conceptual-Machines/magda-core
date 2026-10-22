@@ -5,6 +5,7 @@
 
 #include "core/AppPaths.hpp"
 #include "core/DeviceState.hpp"
+#include "core/SamplerDevices.hpp"
 #include "core/TrackManager.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "project/ProjectManager.hpp"
@@ -18,19 +19,33 @@ using Sampler = daw::audio::MagdaSamplerPlugin;
 using IDs = Sampler::StateIDs;
 using Zone = daw::audio::SamplerZoneSettings;
 
+/// The layout of the device at @p devicePath, or null when it is not built on the Sampler (#3100).
+const sampler_devices::Layout* layoutAt(const ChainNodePath& devicePath) {
+    const auto* device = TrackManager::getInstance().getDeviceInChainByPath(devicePath);
+    return device != nullptr ? sampler_devices::layoutOf(device->pluginId) : nullptr;
+}
+
+/// Sampler parameter @p parameter onto the device's slot for it, when it has one.
+void setParameter(const ChainNodePath& devicePath, int parameter, float value) {
+    if (const auto* layout = layoutAt(devicePath))
+        if (const int slot = layout->slot(parameter); slot >= 0)
+            TrackManager::getInstance().setDeviceParameterValue(devicePath, slot, value);
+}
+
 /// Patch the device's state document on the model; the projection pushes the
 /// result into the live device. The model is what autosave writes and what both
 /// engines build from, so a change also dirties the project.
 bool authorState(const ChainNodePath& devicePath,
                  const std::function<void(device_state::Doc&)>& patch) {
-    if (!TrackManager::getInstance().updateDeviceAuthoredState(devicePath, patch))
+    if (layoutAt(devicePath) == nullptr ||
+        !TrackManager::getInstance().updateDeviceAuthoredState(devicePath, patch))
         return false;
     ProjectManager::getInstance().markDirty();
     return true;
 }
 
-constexpr int kMarkerSlots[] = {Sampler::kSampleStart, Sampler::kSampleEnd, Sampler::kLoopStart,
-                                Sampler::kLoopEnd};
+constexpr int kMarkers[] = {Sampler::kSampleStart, Sampler::kSampleEnd, Sampler::kLoopStart,
+                            Sampler::kLoopEnd};
 
 Zone readZone(const device_state::Node& node) {
     const auto& props = node.props;
@@ -145,17 +160,17 @@ bool loadSample(const ChainNodePath& devicePath, const juce::File& file) {
     // After the state, because the projection seats the model's markers on the
     // device on its way in: written first, they would be the ones the new
     // sample inherits rather than the ones it replaces.
-    auto& tracks = TrackManager::getInstance();
-    tracks.setDeviceParameterValue(devicePath, Sampler::kSampleStart, 0.0f);
-    tracks.setDeviceParameterValue(devicePath, Sampler::kSampleEnd, choice.markerSeconds);
-    tracks.setDeviceParameterValue(devicePath, Sampler::kLoopStart, 0.0f);
-    tracks.setDeviceParameterValue(devicePath, Sampler::kLoopEnd, choice.markerSeconds);
+    setParameter(devicePath, Sampler::kSampleStart, 0.0f);
+    setParameter(devicePath, Sampler::kSampleEnd, choice.markerSeconds);
+    setParameter(devicePath, Sampler::kLoopStart, 0.0f);
+    setParameter(devicePath, Sampler::kLoopEnd, choice.markerSeconds);
     return true;
 }
 
 std::vector<Zone> zones(const ChainNodePath& devicePath) {
     const auto* device = TrackManager::getInstance().getDeviceInChainByPath(devicePath);
-    if (device == nullptr)
+    const auto* layout = layoutAt(devicePath);
+    if (device == nullptr || layout == nullptr)
         return {};
     const auto doc = device_state::decode(device->pluginState);
     if (!doc)
@@ -171,8 +186,8 @@ std::vector<Zone> zones(const ChainNodePath& devicePath) {
     auto zone = readZone(doc->root);
     double* const markers[] = {&zone.region.start, &zone.region.end, &zone.region.loopStart,
                                &zone.region.loopEnd};
-    for (size_t i = 0; i < std::size(kMarkerSlots); ++i)
-        if (const auto* param = device->findParameterByIndex(kMarkerSlots[i]))
+    for (size_t i = 0; i < std::size(kMarkers); ++i)
+        if (const auto* param = device->findParameterByIndex(layout->slot(kMarkers[i])))
             *markers[i] = param->currentValue;
     return {zone};
 }
@@ -209,9 +224,8 @@ bool setZones(const ChainNodePath& devicePath, const std::vector<Zone>& zones) {
     if (zones.size() == 1) {
         const auto& region = zones.front().region;
         const double markers[] = {region.start, region.end, region.loopStart, region.loopEnd};
-        for (size_t i = 0; i < std::size(kMarkerSlots); ++i)
-            TrackManager::getInstance().setDeviceParameterValue(devicePath, kMarkerSlots[i],
-                                                                static_cast<float>(markers[i]));
+        for (size_t i = 0; i < std::size(kMarkers); ++i)
+            setParameter(devicePath, kMarkers[i], static_cast<float>(markers[i]));
     }
     return true;
 }
@@ -283,12 +297,17 @@ sampler_import::Instrument importInstrument(const ChainNodePath& devicePath, con
                                  Sampler::kFilterVelocity,   Sampler::kFilterEnvAttack,
                                  Sampler::kFilterEnvDecay,   Sampler::kFilterEnvSustain,
                                  Sampler::kFilterEnvRelease, Sampler::kFilterEnvAmount};
-    for (const int index : kImported) {
-        const auto it = instrument.parameters.find(index);
-        const auto value = it != instrument.parameters.end()
-                               ? it->second
-                               : Sampler::slotDescriptor(index).defaultValue;
-        TrackManager::getInstance().setDeviceParameterValue(devicePath, index, value);
+    const auto* device = TrackManager::getInstance().getDeviceInChainByPath(devicePath);
+    const auto* layout = layoutAt(devicePath);
+    for (const int parameter : kImported) {
+        const auto* slot = device != nullptr && layout != nullptr
+                               ? device->findParameterByIndex(layout->slot(parameter))
+                               : nullptr;
+        if (slot == nullptr)
+            continue;
+        const auto it = instrument.parameters.find(parameter);
+        setParameter(devicePath, parameter,
+                     it != instrument.parameters.end() ? it->second : slot->defaultValue);
     }
     return instrument;
 }

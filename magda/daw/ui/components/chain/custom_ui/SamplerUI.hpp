@@ -9,12 +9,11 @@
 #include <optional>
 #include <vector>
 
+#include "custom_ui/SamplerEnvelopeView.hpp"
+#include "custom_ui/SamplerWaveformPane.hpp"
 #include "custom_ui/SamplerZoneEditor.hpp"
-#include "custom_ui/SamplerZoneRow.hpp"
-#include "layout/DashedAddButton.hpp"
-#include "magda/sdk/display/DisplayList.hpp"
-#include "magda/sdk/waveview/WaveformView.hpp"
-#include "plugins/SamplerZones.hpp"
+#include "custom_ui/SamplerZoneList.hpp"
+#include "plugins/sampler/SamplerZones.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/SegmentedChoice.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -107,7 +106,7 @@ class SamplerUI : public juce::Component,
                          double sampleLengthSeconds);
 
     bool hasWaveform() const {
-        return hasWaveform_;
+        return waveformPane_.hasAudio();
     }
 
     /// One zone as the faceplate shows it; it keeps the zone's audio alive while drawn.
@@ -164,13 +163,6 @@ class SamplerUI : public juce::Component,
     void itemDragExit(const SourceDetails& details) override;
     void itemDropped(const SourceDetails& details) override;
 
-    // Mouse interaction on waveform
-    void mouseDown(const juce::MouseEvent& e) override;
-    void mouseDrag(const juce::MouseEvent& e) override;
-    void mouseUp(const juce::MouseEvent& e) override;
-    void mouseMove(const juce::MouseEvent& e) override;
-    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
-
   private:
     /// A frame count typed or stepped one frame at a time, as Rhythmica's slice boxes.
     class FrameBox : public juce::Component {
@@ -198,16 +190,9 @@ class SamplerUI : public juce::Component,
     std::shared_ptr<const daw::audio::SampleAudio> shownAudio_;
     SamplerZoneEditor zoneEditor_;
 
-    // The zone list: a row per zone in the view the tabs pick, then Add zone.
-    SamplerZoneRow::View zoneView_ = SamplerZoneRow::View::Mix;
-    juce::Rectangle<int> zonePanel_, zoneTabs_;
-    juce::Viewport zoneListView_;
-    juce::Component zoneListContent_;
-    std::vector<std::unique_ptr<SamplerZoneRow>> zoneRows_;
-    DashedAddButton addZoneButton_{"Add zone"};
-    juce::Rectangle<int> zoneTabBounds(SamplerZoneRow::View view) const;
+    // The zone list down the left, as a rack's chains.
+    SamplerZoneList zoneListPanel_;
     void refreshZoneRows();
-    void layoutZoneList();
     void selectZone(int index);
     bool zonesShown_ = true;
     bool selectAddedZone_ = false;  ///< Add zone was pressed; the next map selects the new one.
@@ -227,15 +212,12 @@ class SamplerUI : public juce::Component,
     TextSlider rootNoteSlider_{TextSlider::Format::Decimal};
     juce::Label rootNoteLabel_;
 
-    // Waveform pane: zoom, scroll, markers and drawing live in the SDK view (magda-sdk
-    // docs/waveform-view.md); the sliders stay the markers' source of truth.
-    bool hasWaveform_ = false;
-    double sampleLength_ = 0.0;
-    double playheadPosition_ = 0.0;
-    std::unique_ptr<sdk::BufferWaveformSource> waveformSource_;
-    sdk::WaveformView waveformView_;
-    sdk::display::DisplayList waveformList_;
-    bool waveformGesture_ = false;
+    // The waveform; the sliders stay the markers' source of truth.
+    SamplerWaveformPane waveformPane_;
+    /// The markers as the sliders hold them, the loop's while it is on.
+    sdk::WaveformMarkers sliderMarkers() const;
+    /// A marker the pane moved, out to its slider (and so to the parameter).
+    void markersMoved(const sdk::WaveformMarkers& markers);
 
     // Sample start/end / Loop controls
     LinkableTextSlider startSlider_{TextSlider::Format::Decimal};
@@ -310,34 +292,10 @@ class SamplerUI : public juce::Component,
     // Waveform gain (driven by level parameter)
     float waveformGain_ = 1.0f;
 
-    /// The sliders' marker values into the view, before it hit-tests or draws.
-    void syncWaveformMarkers();
-    /// A marker the view moved, out to its slider (and so to the parameter).
-    void applyWaveformMarkers(const sdk::WaveformResponse& response);
-    sdk::WaveformPointer waveformPointer(const juce::MouseEvent& e) const;
-    void updateWaveformCursor(const juce::MouseEvent& e);
-    /// Seconds or samples on the ruler, from a right-click on it.
-    void showRulerMenu();
-
-    // The amp or pitch envelope in its own view: a handle per stage, in this component's
-    // coordinates.
-    enum class EnvHandle { None, Attack, Decay, Release };
-    struct EnvSliders {
-        LinkableTextSlider *attack, *decay, *sustain, *release;
-    };
-    EnvSliders envSliders();
-    /// A negative pitch envelope bends down, so its shape hangs from the top.
-    bool envelopeInverted() const;
-    float envelopeLevelAt(float y) const;
-    struct EnvShape {
-        juce::Point<float> start, peak, decayEnd, releaseStart, end;
-    };
-    std::optional<EnvShape> envelopeShape();
-    EnvHandle envHandleAt(juce::Point<float> position);
-    void dragEnvelope(EnvHandle handle, juce::Point<float> position);
-    EnvHandle envDrag_ = EnvHandle::None;
-    juce::Rectangle<float> envelopeArea() const;
-    void paintEnvelope(juce::Graphics& g);
+    // The amp, pitch or filter envelope in its own view.
+    SamplerEnvelopeView envelopeView_;
+    /// The envelope the tab shows, for the envelope view.
+    SamplerEnvelopeView::Stages envelopeStages();
 
     // Which tab shows: the recording or a module's envelope, each with its controls.
     magda::SegmentedChoice viewChoice_;

@@ -24,6 +24,7 @@
 #include "../ProjectManager.hpp"
 #include "DawProjectArchive.hpp"
 #include "NativeProjectDocumentAdapter.hpp"
+#include "core/SamplerDevices.hpp"
 
 namespace magda {
 
@@ -81,7 +82,7 @@ void mapSamplerSources(const juce::var& tree,
     auto* object = tree.getDynamicObject();
     if (object == nullptr)
         return;
-    if (object->getProperty("pluginId").toString() == "magdasampler") {
+    if (sampler_devices::isSampler(object->getProperty("pluginId").toString())) {
         if (auto doc = device_state::decode(object->getProperty("pluginState").toString())) {
             bool changed = false;
             const auto remap = [&map, &changed](device_state::Node& node, const char* key) {

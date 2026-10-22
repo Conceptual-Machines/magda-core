@@ -5,17 +5,14 @@
 #include <algorithm>
 #include <cmath>
 
-#include "DisplayListGraphics.hpp"
-#include "core/GestureRouter.hpp"
+#include "custom_ui/SamplerTiles.hpp"
 #include "devices/faust/effects/FilterEngines.hpp"
 #include "sampling/SamplerImport.hpp"
 #include "ui/components/chain/layout/NodeHeaderStyles.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/state/ExpandedFaceplate.hpp"
 #include "ui/themes/ActiveTheme.hpp"
-#include "ui/themes/CursorManager.hpp"
 #include "ui/themes/FontManager.hpp"
-#include "ui/themes/SdkColourRoles.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 #include "ui/utils/AudioFileTypes.hpp"
@@ -26,28 +23,12 @@ namespace {
 constexpr int kSpace = 8;
 constexpr int kNameRowH = 24;
 constexpr int kTitleH = 22;
-constexpr int kTileW = 64;
-constexpr int kTileGap = 4;
-constexpr int kMaxTileH = 48;  ///< The grid's text tile, so these read as its cells.
+constexpr int kTileW = sampler_tiles::kWidth;
+constexpr int kTileGap = sampler_tiles::kGap;
+constexpr int kMaxTileH = sampler_tiles::kMaxHeight;
 constexpr int kZonePanelW = 220;
 constexpr int kFaceplateW =
     660;  ///< The tabs' columns and a waveform that still fits its view row.
-constexpr float kEnvHandleRadius = 4.5f;
-constexpr float kEnvHandleGrab = 9.0f;
-
-/// A value box that sits inside a painted tile: no frame or fill of its own.
-void styleTileValue(TextSlider& slider) {
-    slider.setDrawFrame(false);
-    slider.setShowFillIndicator(false);
-    slider.setBackgroundColour(juce::Colours::transparentBlack);
-    slider.setFont(FontManager::getInstance().getUIFontMedium(15.0f));
-    slider.setTextColour(ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
-    slider.setJustification(juce::Justification::centredLeft);
-}
-
-void styleTileValue(LinkableTextSlider& slider) {
-    styleTileValue(slider.getSlider());
-}
 
 // The sampler's Filter Type list: Off, then the Filter device's engines.
 const juce::StringArray kFilterTypes{"Off",      "SVF",        "Ladder", "Korg 35",
@@ -149,7 +130,7 @@ SamplerUI::SamplerUI() {
     // Root note slider (MIDI note 0-127, displayed as note name)
     rootNoteSlider_.setRange(0, 127, 1);
     rootNoteSlider_.setValue(60, juce::dontSendNotification);
-    styleTileValue(rootNoteSlider_);
+    sampler_tiles::styleValue(rootNoteSlider_);
     rootNoteSlider_.setFont(FontManager::getInstance().getMonoFont(11.0f));
     rootNoteSlider_.setValueFormatter([](double v) {
         static const char* noteNames[] = {"C",  "C#", "D",  "D#", "E",  "F",
@@ -240,7 +221,7 @@ SamplerUI::SamplerUI() {
                 onParameterChanged(paramIndex, static_cast<float>(value));
             repaint();
         };
-        styleTileValue(slider);
+        sampler_tiles::styleValue(slider);
         addAndMakeVisible(slider);
     };
 
@@ -296,7 +277,7 @@ SamplerUI::SamplerUI() {
                 onParameterChanged(paramIndex, static_cast<float>(value));
             repaint();
         };
-        styleTileValue(slider);
+        sampler_tiles::styleValue(slider);
         addAndMakeVisible(slider);
     };
 
@@ -315,7 +296,7 @@ SamplerUI::SamplerUI() {
                 onParameterChanged(paramIndex, static_cast<float>(value));
             repaint();
         };
-        styleTileValue(slider);
+        sampler_tiles::styleValue(slider);
         addAndMakeVisible(slider);
     };
 
@@ -352,7 +333,7 @@ SamplerUI::SamplerUI() {
             refreshFilterTiles();
             repaint();
         };
-        styleTileValue(slider);
+        sampler_tiles::styleValue(slider);
         addAndMakeVisible(slider);
     };
     setupChoiceSlider(filterTypeSlider_, 19, kFilterTypes.size(),
@@ -400,7 +381,7 @@ SamplerUI::SamplerUI() {
         if (onParameterChanged)
             onParameterChanged(22, static_cast<float>(value));
     };
-    styleTileValue(filterCutoffSlider_);
+    sampler_tiles::styleValue(filterCutoffSlider_);
     addAndMakeVisible(filterCutoffSlider_);
 
     setupPercentSlider(filterResonanceSlider_, 23, 0.0);
@@ -425,7 +406,7 @@ SamplerUI::SamplerUI() {
         if (onParameterChanged)
             onParameterChanged(5, static_cast<float>(value));
     };
-    styleTileValue(fineSlider_);
+    sampler_tiles::styleValue(fineSlider_);
     addAndMakeVisible(fineSlider_);
 
     // --- Level slider (-60 to +12 dB) ---
@@ -436,11 +417,9 @@ SamplerUI::SamplerUI() {
             onParameterChanged(6, static_cast<float>(value));
         // Update waveform scaling to reflect level
         waveformGain_ = juce::Decibels::decibelsToGain(static_cast<float>(value));
-        waveformView_.setGain(waveformGain_);
-        if (hasWaveform_)
-            repaint();
+        waveformPane_.setGain(waveformGain_);
     };
-    styleTileValue(levelSlider_);
+    sampler_tiles::styleValue(levelSlider_);
     addAndMakeVisible(levelSlider_);
 
     setupPercentSlider(velAmountSlider_, 11, 1.0);
@@ -465,7 +444,7 @@ SamplerUI::SamplerUI() {
             onParameterChanged(13, static_cast<float>(value));
     };
     glideSlider_.setParamIndex(13);
-    styleTileValue(glideSlider_);
+    sampler_tiles::styleValue(glideSlider_);
     addAndMakeVisible(glideSlider_);
 
     // --- Voice Mode (param 12): the slot footer shows it; this carries its links ---
@@ -532,7 +511,16 @@ SamplerUI::SamplerUI() {
     for (auto* label : {&startLabel_, &endLabel_, &loopStartLabel_, &loopEndLabel_})
         label->setVisible(false);
 
-    waveformView_.setChrome({.ruler = true, .scrollBar = true});
+    waveformPane_.markers = [this] { return sliderMarkers(); };
+    waveformPane_.onMarkersMoved = [this](const sdk::WaveformMarkers& markers) {
+        markersMoved(markers);
+    };
+    waveformPane_.onEmptyClicked = [this] {
+        if (onLoadSampleRequested)
+            onLoadSampleRequested();
+    };
+    addAndMakeVisible(waveformPane_);
+    addChildComponent(envelopeView_);
     showView(0);
     lockLoopBoxes();
 
@@ -547,17 +535,21 @@ SamplerUI::SamplerUI() {
     };
     addChildComponent(zoneEditor_);
 
-    addZoneButton_.setTooltip("Add an empty zone; drop a sample on it to fill it");
-    addZoneButton_.onClick = [this] {
+    zoneListPanel_.onSelect = [this](int index) { selectZone(index); };
+    zoneListPanel_.onEdit = [this](int index, const daw::audio::SamplerZoneSettings& zone) {
+        if (onZoneEdited)
+            onZoneEdited(index, zone);
+    };
+    zoneListPanel_.onRemove = [this](int index) {
+        if (onZoneRemoved)
+            onZoneRemoved(index);
+    };
+    zoneListPanel_.onAdd = [this] {
         selectAddedZone_ = true;
         if (onEmptyZoneAdded)
             onEmptyZoneAdded();
     };
-    zoneListContent_.addAndMakeVisible(addZoneButton_);
-    zoneListView_.setViewedComponent(&zoneListContent_, false);
-    zoneListView_.setScrollBarsShown(true, false);
-    zoneListView_.setScrollBarThickness(6);
-    addAndMakeVisible(zoneListView_);
+    addAndMakeVisible(zoneListPanel_);
 }
 
 void SamplerUI::selectZone(int index) {
@@ -582,60 +574,16 @@ int SamplerUI::preferredWidth() const {
 }
 
 int SamplerUI::zoneRowAt(juce::Point<int> position) const {
-    for (size_t i = 0; i < zoneRows_.size(); ++i)
-        if (zoneRows_[i]->getScreenBounds().contains(localPointToGlobal(position)))
-            return static_cast<int>(i);
-    return -1;
+    return zoneListPanel_.isVisible() && zoneListPanel_.getBounds().contains(position)
+               ? zoneListPanel_.rowAt(zoneListPanel_.getLocalPoint(this, position))
+               : -1;
 }
 
 void SamplerUI::refreshZoneRows() {
-    // Rows are kept while the count holds, so a drag on one survives a refresh.
-    if (zoneRows_.size() != zones_.size()) {
-        zoneRows_.clear();
-        for (size_t i = 0; i < zones_.size(); ++i) {
-            auto row = std::make_unique<SamplerZoneRow>();
-            row->onSelect = [this](int index) { selectZone(index); };
-            row->onEdit = [this](int index, const daw::audio::SamplerZoneSettings& zone) {
-                if (onZoneEdited)
-                    onZoneEdited(index, zone);
-            };
-            row->onRemove = [this](int index) {
-                if (onZoneRemoved)
-                    onZoneRemoved(index);
-            };
-            zoneListContent_.addAndMakeVisible(*row);
-            zoneRows_.push_back(std::move(row));
-        }
-    }
-    for (size_t i = 0; i < zones_.size(); ++i)
-        zoneRows_[i]->setZone(zones_[i].settings, static_cast<int>(i),
-                              static_cast<int>(i) == selectedZone_);
-    layoutZoneList();
-}
-
-void SamplerUI::layoutZoneList() {
-    auto area = zonePanel_.withTrimmedTop(zoneTabs_.getHeight() + 4);
-    if (area.isEmpty())
-        return;
-    constexpr int kGap = 4;
-    constexpr int kAddHeight = 22;
-    const int rows = static_cast<int>(zoneRows_.size());
-    const int content = rows * (SamplerZoneRow::kHeight + kGap) + kAddHeight;
-    zoneListView_.setBounds(area);
-    const int width = area.getWidth() - (content > area.getHeight() ? 8 : 0);
-    zoneListContent_.setSize(width, content);
-    auto list = zoneListContent_.getLocalBounds();
-    for (auto& row : zoneRows_) {
-        row->setView(zoneView_);
-        row->setBounds(list.removeFromTop(SamplerZoneRow::kHeight));
-        list.removeFromTop(kGap);
-    }
-    addZoneButton_.setBounds(list.removeFromTop(kAddHeight));
-}
-
-juce::Rectangle<int> SamplerUI::zoneTabBounds(SamplerZoneRow::View view) const {
-    const int width = zoneTabs_.getWidth() / 3;
-    return zoneTabs_.withWidth(width).translated(width * static_cast<int>(view), 0);
+    std::vector<daw::audio::SamplerZoneSettings> settings;
+    for (const auto& zone : zones_)
+        settings.push_back(zone.settings);
+    zoneListPanel_.setZones(settings, selectedZone_);
 }
 
 void SamplerUI::setZones(std::vector<ZoneView> zones, bool list, std::uint64_t generation) {
@@ -713,7 +661,7 @@ void SamplerUI::showView(int index) {
     pitchView_ = view_ == View::Pitch;
     filterView_ = view_ == View::Filter;
     ampView_ = view_ == View::Amp;
-    envDrag_ = EnvHandle::None;
+    envelopeView_.setStages(envelopeStages());
     for (auto view : {View::Sample, View::Pitch, View::Filter, View::Amp})
         for (auto* control : controlsFor(view))
             control->setVisible(view == view_);
@@ -721,7 +669,6 @@ void SamplerUI::showView(int index) {
     for (auto* label : {&attackLabel_, &decayLabel_, &sustainLabel_, &releaseLabel_})
         label->setVisible(view_ != View::Sample);
     loopButton_->setVisible(view_ == View::Sample);
-    syncWaveformMarkers();
     resized();
     repaint();
 }
@@ -825,7 +772,7 @@ void SamplerUI::updateParameters(float attack, float decay, float sustain, float
     fineSlider_.setValue(fine, juce::dontSendNotification);
     levelSlider_.setValue(level, juce::dontSendNotification);
     waveformGain_ = juce::Decibels::decibelsToGain(level);
-    waveformView_.setGain(waveformGain_);
+    waveformPane_.setGain(waveformGain_);
     velAmountSlider_.setValue(velAmount, juce::dontSendNotification);
 
     glideSlider_.setValue(glide, juce::dontSendNotification);
@@ -911,14 +858,11 @@ void SamplerUI::updatePitchEnvelope(float attack, float decay, float sustain, fl
 
 void SamplerUI::setWaveformData(const juce::AudioBuffer<float>* buffer, double sampleRate,
                                 double sampleLengthSeconds) {
-    sampleLength_ = sampleLengthSeconds;
     if (sampleRate > 0.0)
         sampleRate_ = sampleRate;
 
     if (buffer == nullptr || buffer->getNumSamples() == 0) {
-        hasWaveform_ = false;
-        waveformView_.setSource(nullptr, 0.0);
-        waveformSource_.reset();
+        waveformPane_.setAudio(nullptr, 0.0);
         stopTimer();
         repaint();
         return;
@@ -934,14 +878,7 @@ void SamplerUI::setWaveformData(const juce::AudioBuffer<float>* buffer, double s
     if (endSlider_.getValue() < 0.001)
         endSlider_.setValue(sampleLengthSeconds, juce::dontSendNotification);
 
-    hasWaveform_ = true;
-
-    // The view draws channel 0 and fits the whole sample to the pane.
-    waveformSource_ = std::make_unique<sdk::BufferWaveformSource>(buffer->getReadPointer(0),
-                                                                  buffer->getNumSamples());
-    const auto waveArea = getWaveformBounds();
-    waveformView_.setSize(waveArea.getWidth(), waveArea.getHeight());
-    waveformView_.setSource(waveformSource_.get(), sampleLength_);
+    waveformPane_.setAudio(buffer, sampleLengthSeconds);
 
     if (!isTimerRunning())
         startTimerHz(30);
@@ -992,7 +929,7 @@ void SamplerUI::filesDropped(const juce::StringArray& files, int x, int y) {
             onZoneSampleChosen(row, dropped.getFirst());
         return;
     }
-    if (zonePanel_.contains(x, y)) {
+    if (zoneListPanel_.isVisible() && zoneListPanel_.getBounds().contains(x, y)) {
         if (onZonesAdded)
             onZonesAdded(dropped);
         return;
@@ -1049,118 +986,17 @@ juce::Rectangle<int> SamplerUI::getWaveformBounds() const {
     return waveArea_;
 }
 
-namespace {
-/// Each stage owns a fixed share of the width; its handle travels that share on a log scale.
-constexpr float kAttackShare = 0.22f, kDecayShare = 0.26f, kHoldShare = 0.2f, kReleaseShare = 0.32f;
-
-float stageFraction(const TextSlider& slider) {
-    const double lo = slider.getMinimum(), hi = slider.getMaximum();
-    return static_cast<float>(std::log(juce::jlimit(lo, hi, slider.getValue()) / lo) /
-                              std::log(hi / lo));
-}
-
-double stageValue(const TextSlider& slider, float fraction) {
-    const double lo = slider.getMinimum(), hi = slider.getMaximum();
-    return lo * std::pow(hi / lo, static_cast<double>(juce::jlimit(0.0f, 1.0f, fraction)));
-}
-}  // namespace
-
-juce::Rectangle<float> SamplerUI::envelopeArea() const {
-    auto area = waveArea_.toFloat().reduced(12.0f, 0.0f);
-    return area.withTrimmedTop(12.0f).withTrimmedBottom(18.0f);
-}
-
-SamplerUI::EnvSliders SamplerUI::envSliders() {
+SamplerEnvelopeView::Stages SamplerUI::envelopeStages() {
     if (filterView_)
         return {&filterAttackSlider_, &filterDecaySlider_, &filterSustainSlider_,
-                &filterReleaseSlider_};
+                &filterReleaseSlider_, &filterEnvAmountSlider_};
     if (pitchView_)
-        return {&pitchAttackSlider_, &pitchDecaySlider_, &pitchSustainSlider_,
-                &pitchReleaseSlider_};
-    return {&attackSlider_, &decaySlider_, &sustainSlider_, &releaseSlider_};
+        return {&pitchAttackSlider_, &pitchDecaySlider_, &pitchSustainSlider_, &pitchReleaseSlider_,
+                &pitchEnvAmountSlider_};
+    return {&attackSlider_, &decaySlider_, &sustainSlider_, &releaseSlider_, nullptr};
 }
 
-bool SamplerUI::envelopeInverted() const {
-    return (pitchView_ && pitchEnvAmountSlider_.getValue() < 0.0) ||
-           (filterView_ && filterEnvAmountSlider_.getValue() < 0.0);
-}
-
-float SamplerUI::envelopeLevelAt(float y) const {
-    const auto area = envelopeArea();
-    const float fromBottom = (area.getBottom() - y) / area.getHeight();
-    return juce::jlimit(0.0f, 1.0f, envelopeInverted() ? 1.0f - fromBottom : fromBottom);
-}
-
-std::optional<SamplerUI::EnvShape> SamplerUI::envelopeShape() {
-    if (!showsEnvelope() || waveArea_.isEmpty())
-        return std::nullopt;
-    const auto area = envelopeArea();
-    const auto env = envSliders();
-    const float w = area.getWidth();
-    const bool inverted = envelopeInverted();
-    const auto y = [&](float level) {
-        return inverted ? area.getY() + level * area.getHeight()
-                        : area.getBottom() - level * area.getHeight();
-    };
-    const float x0 = area.getX();
-    const float peakX = x0 + w * kAttackShare * stageFraction(env.attack->getSlider());
-    const float decayX =
-        x0 + w * kAttackShare + w * kDecayShare * stageFraction(env.decay->getSlider());
-    const float holdX = x0 + w * (kAttackShare + kDecayShare + kHoldShare);
-    const float endX = holdX + w * kReleaseShare * stageFraction(env.release->getSlider());
-    const auto sustain = static_cast<float>(env.sustain->getValue());
-    return EnvShape{{x0, y(0.0f)},
-                    {peakX, y(1.0f)},
-                    {decayX, y(sustain)},
-                    {holdX, y(sustain)},
-                    {endX, y(0.0f)}};
-}
-
-SamplerUI::EnvHandle SamplerUI::envHandleAt(juce::Point<float> position) {
-    const auto shape = envelopeShape();
-    if (!shape.has_value())
-        return EnvHandle::None;
-    for (const auto& [handle, point] :
-         {std::pair{EnvHandle::Release, shape->end}, std::pair{EnvHandle::Decay, shape->decayEnd},
-          std::pair{EnvHandle::Attack, shape->peak}})
-        if (position.getDistanceFrom(point) <= kEnvHandleGrab)
-            return handle;
-    return EnvHandle::None;
-}
-
-void SamplerUI::dragEnvelope(EnvHandle handle, juce::Point<float> position) {
-    const auto area = envelopeArea();
-    const auto env = envSliders();
-    const float w = area.getWidth();
-    const auto within = [&](float start, float share) {
-        return (position.x - start) / (w * share);
-    };
-    switch (handle) {
-        case EnvHandle::Attack:
-            env.attack->setValue(
-                stageValue(env.attack->getSlider(), within(area.getX(), kAttackShare)),
-                juce::sendNotificationSync);
-            break;
-        case EnvHandle::Decay:
-            env.decay->setValue(stageValue(env.decay->getSlider(),
-                                           within(area.getX() + w * kAttackShare, kDecayShare)),
-                                juce::sendNotificationSync);
-            env.sustain->setValue(envelopeLevelAt(position.y), juce::sendNotificationSync);
-            break;
-        case EnvHandle::Release:
-            env.release->setValue(
-                stageValue(env.release->getSlider(),
-                           within(area.getX() + w * (kAttackShare + kDecayShare + kHoldShare),
-                                  kReleaseShare)),
-                juce::sendNotificationSync);
-            break;
-        case EnvHandle::None:
-            break;
-    }
-    repaint();
-}
-
-void SamplerUI::syncWaveformMarkers() {
+sdk::WaveformMarkers SamplerUI::sliderMarkers() const {
     // The loop's markers while it is on, the start and end's otherwise.
     const bool loopOn = loopButton_->isActive();
     sdk::WaveformMarkers markers;
@@ -1170,182 +1006,19 @@ void SamplerUI::syncWaveformMarkers() {
     markers.loop = loopOn;
     markers.loopStart = loopStartSlider_.getValue();
     markers.loopEnd = loopEndSlider_.getValue();
-    waveformView_.setMarkers(markers);
+    return markers;
 }
 
-void SamplerUI::applyWaveformMarkers(const sdk::WaveformResponse& response) {
-    if (response.markersChanged) {
-        const auto& m = waveformView_.markers();
-        const auto push = [](LinkableTextSlider& slider, double value) {
-            if (slider.getValue() != value)
-                slider.setValue(value, juce::sendNotificationSync);
-        };
-        push(startSlider_, m.start);
-        push(endSlider_, m.end);
-        push(loopStartSlider_, m.loopStart);
-        push(loopEndSlider_, m.loopEnd);
-        // The sliders round to their interval; the view follows what they kept.
-        syncWaveformMarkers();
-        syncFrameBoxes();
-    }
-    if (response.repaint || response.markersChanged)
-        repaint();
-}
-
-sdk::WaveformPointer SamplerUI::waveformPointer(const juce::MouseEvent& e) const {
-    const auto local = e.getPosition() - getWaveformBounds().getPosition();
-    return {static_cast<float>(local.x), static_cast<float>(local.y), e.mods.isShiftDown(),
-            e.mods.isCommandDown(),      e.mods.isAltDown(),          e.mods.isMiddleButtonDown()};
-}
-
-void SamplerUI::updateWaveformCursor(const juce::MouseEvent& e) {
-    if (!getWaveformBounds().contains(e.getPosition()) || !hasWaveform_) {
-        setMouseCursor(juce::MouseCursor::NormalCursor);
-        return;
-    }
-    syncWaveformMarkers();
-    switch (waveformView_.cursor(waveformPointer(e))) {
-        case sdk::WaveformCursor::ResizeLeftRight:
-            setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-            break;
-        case sdk::WaveformCursor::DraggingHand:
-            setMouseCursor(juce::MouseCursor::DraggingHandCursor);
-            break;
-        case sdk::WaveformCursor::Zoom:
-            setMouseCursor(CursorManager::getInstance().getZoomCursor());
-            break;
-        case sdk::WaveformCursor::ZoomIn:
-            setMouseCursor(CursorManager::getInstance().getZoomInCursor());
-            break;
-        case sdk::WaveformCursor::ZoomOut:
-            setMouseCursor(CursorManager::getInstance().getZoomOutCursor());
-            break;
-        case sdk::WaveformCursor::Normal:
-            setMouseCursor(juce::MouseCursor::NormalCursor);
-            break;
-    }
-}
-
-// =============================================================================
-// Mouse Interaction on Waveform
-// =============================================================================
-
-void SamplerUI::showRulerMenu() {
-    const bool samples = waveformView_.chrome().units == sdk::WaveformUnits::Samples;
-    juce::PopupMenu menu;
-    menu.addItem(1, "Seconds", true, !samples);
-    menu.addItem(2, "Samples", true, samples);
-    menu.showMenuAsync(juce::PopupMenu::Options(),
-                       [safe = juce::Component::SafePointer<SamplerUI>(this)](int result) {
-                           if (safe == nullptr || result == 0)
-                               return;
-                           auto chrome = safe->waveformView_.chrome();
-                           chrome.units = result == 2 ? sdk::WaveformUnits::Samples
-                                                      : sdk::WaveformUnits::Seconds;
-                           safe->waveformView_.setChrome(chrome);
-                           safe->repaint(safe->getWaveformBounds());
-                       });
-}
-
-void SamplerUI::mouseDown(const juce::MouseEvent& e) {
-    for (const auto view :
-         {SamplerZoneRow::View::Mix, SamplerZoneRow::View::Key, SamplerZoneRow::View::Velocity})
-        if (zoneTabBounds(view).contains(e.getPosition())) {
-            zoneView_ = view;
-            layoutZoneList();
-            repaint(zoneTabs_);
-            return;
-        }
-    if (!showsEnvelope() && hasWaveform_ && e.mods.isPopupMenu() &&
-        getWaveformBounds().contains(e.getPosition()) &&
-        waveformView_.overRuler(waveformPointer(e))) {
-        showRulerMenu();
-        return;
-    }
-    envDrag_ = envHandleAt(e.position);
-    if (showsEnvelope()) {
-        waveformGesture_ = false;
-        repaint();
-        return;
-    }
-    waveformGesture_ = false;
-    // An empty well is the load button's bigger twin, as its hint says.
-    if (!hasWaveform_ && getWaveformBounds().contains(e.getPosition())) {
-        if (onLoadSampleRequested)
-            onLoadSampleRequested();
-        return;
-    }
-    if (!getWaveformBounds().contains(e.getPosition()) || !hasWaveform_) {
-        Component::mouseDown(e);
-        return;
-    }
-    waveformGesture_ = true;
-    syncWaveformMarkers();
-    applyWaveformMarkers(waveformView_.pointerDown(waveformPointer(e)));
-    if (e.mods.isCommandDown())
-        setMouseCursor(CursorManager::getInstance().getZoomCursor());
-}
-
-void SamplerUI::mouseDrag(const juce::MouseEvent& e) {
-    if (envDrag_ != EnvHandle::None) {
-        dragEnvelope(envDrag_, e.position);
-        return;
-    }
-    if (!waveformGesture_ || !hasWaveform_) {
-        Component::mouseDrag(e);
-        return;
-    }
-    applyWaveformMarkers(waveformView_.pointerDrag(waveformPointer(e)));
-    if (e.mods.isCommandDown())
-        updateWaveformCursor(e);
-}
-
-void SamplerUI::mouseUp(const juce::MouseEvent& e) {
-    if (envDrag_ != EnvHandle::None) {
-        envDrag_ = EnvHandle::None;
-        repaint();
-        return;
-    }
-    if (waveformGesture_)
-        waveformView_.pointerUp(waveformPointer(e));
-    waveformGesture_ = false;
-    updateWaveformCursor(e);
-}
-
-void SamplerUI::mouseMove(const juce::MouseEvent& e) {
-    if (showsEnvelope()) {
-        setMouseCursor(envHandleAt(e.position) != EnvHandle::None
-                           ? juce::MouseCursor::DraggingHandCursor
-                           : juce::MouseCursor::NormalCursor);
-        return;
-    }
-    if (!hasWaveform_ && getWaveformBounds().contains(e.getPosition())) {
-        setMouseCursor(juce::MouseCursor::PointingHandCursor);
-        return;
-    }
-    if (envHandleAt(e.position) != EnvHandle::None) {
-        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
-        return;
-    }
-    updateWaveformCursor(e);
-}
-
-void SamplerUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) {
-    if (showsEnvelope() || !getWaveformBounds().contains(e.getPosition()) || !hasWaveform_ ||
-        sampleLength_ <= 0.0) {
-        Component::mouseWheelMove(e, wheel);
-        return;
-    }
-
-    const auto gesture = magda::GestureRouter::getInstance().resolve(
-        magda::GestureContext::Sampler, wheel, e.mods, e.getPosition());
-    if (gesture.type != magda::GestureActionType::ZoomHorizontal) {
-        Component::mouseWheelMove(e, wheel);
-        return;
-    }
-
-    applyWaveformMarkers(
-        waveformView_.zoomBy(1.0 + static_cast<double>(gesture.magnitude), waveformPointer(e).x));
+void SamplerUI::markersMoved(const sdk::WaveformMarkers& markers) {
+    const auto push = [](LinkableTextSlider& slider, double value) {
+        if (slider.getValue() != value)
+            slider.setValue(value, juce::sendNotificationSync);
+    };
+    push(startSlider_, markers.start);
+    push(endSlider_, markers.end);
+    push(loopStartSlider_, markers.loopStart);
+    push(loopEndSlider_, markers.loopEnd);
+    syncFrameBoxes();
 }
 
 // =============================================================================
@@ -1369,11 +1042,7 @@ void SamplerUI::timerCallback() {
     if (getPlaybackPosition) {
         // The playhead shows on the zone it plays.
         const bool shown = !getPlaybackZone || getPlaybackZone() == selectedZone_;
-        double newPos = shown ? getPlaybackPosition() : 0.0;
-        if (std::abs(newPos - playheadPosition_) > 0.0001) {
-            playheadPosition_ = newPos;
-            repaint(getWaveformBounds());
-        }
+        waveformPane_.setPlayhead(shown ? getPlaybackPosition() : 0.0);
     }
 }
 
@@ -1385,38 +1054,10 @@ void SamplerUI::paint(juce::Graphics& g) {
     auto& fonts = FontManager::getInstance();
 
     // Tiles behind the value boxes: the grid cell's fill and border.
-    for (const auto& tile : tiles_) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));
-        g.fillRoundedRectangle(tile.toFloat(), 5.0f);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
-        g.drawRoundedRectangle(tile.toFloat().reduced(0.5f), 5.0f, 1.0f);
-    }
-    if (!rootChip_.isEmpty()) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));
-        g.fillRoundedRectangle(rootChip_.toFloat(), 4.0f);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
-        g.drawRoundedRectangle(rootChip_.toFloat().reduced(0.5f), 4.0f, 1.0f);
-    }
-
-    // The zone list's views, tabbed as a rack's chain list is.
-    if (!zoneTabs_.isEmpty()) {
-        g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f));
-        for (const auto& [view, name] : {std::pair{SamplerZoneRow::View::Mix, "MIX"},
-                                         std::pair{SamplerZoneRow::View::Key, "KEY"},
-                                         std::pair{SamplerZoneRow::View::Velocity, "VEL"}}) {
-            const auto tab = zoneTabBounds(view);
-            const bool active = view == zoneView_;
-            g.setColour(ActiveTheme::getColour(active ? ActiveTheme::DEVICE_VALUE_TEXT
-                                                      : ActiveTheme::DEVICE_DIM2));
-            g.drawText(name, tab, juce::Justification::centred, false);
-            if (active) {
-                g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE));
-                g.fillRect(tab.withTop(tab.getBottom() - 2));
-            }
-        }
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
-        g.fillRect(zoneTabs_.withTop(zoneTabs_.getBottom() - 1));
-    }
+    for (const auto& tile : tiles_)
+        sampler_tiles::paint(g, tile);
+    if (!rootChip_.isEmpty())
+        sampler_tiles::paint(g, rootChip_, 4.0f);
 
     g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.12f));
     // The envelope column is lit, as the plot beside it draws that envelope.
@@ -1438,32 +1079,6 @@ void SamplerUI::paint(juce::Graphics& g) {
             i == 1 && view_ != View::Sample ? ActiveTheme::DEVICE_BLUE : ActiveTheme::DEVICE_DIM));
         g.drawText(titles[i], sectionTitles_[i], juce::Justification::centredLeft, false);
     }
-
-    const auto waveformArea = getWaveformBounds();
-    if (waveformArea.isEmpty())
-        return;
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG));
-    g.fillRoundedRectangle(waveformArea.toFloat(), 4.0f);
-
-    if (showsEnvelope()) {
-        paintEnvelope(g);
-        return;
-    }
-    if (!hasWaveform_) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
-        g.setFont(fonts.getMonoFont(11.0f));
-        g.drawText("Drop a sample or click to load", waveformArea, juce::Justification::centred);
-        return;
-    }
-
-    syncWaveformMarkers();
-    waveformView_.setPlayhead(sampleLength_ > 0.0 ? playheadPosition_ : 0.0);
-    waveformView_.render(waveformList_);
-    g.saveState();
-    g.reduceClipRegion(waveformArea);
-    g.setOrigin(waveformArea.getPosition());
-    sdk::juce_host::drawDisplayList(g, waveformList_, sdkRoleColour);
-    g.restoreState();
 }
 
 // The well lights up under a sample being dragged in, whichever view is showing.
@@ -1479,68 +1094,8 @@ void SamplerUI::paintOverChildren(juce::Graphics& g) {
     g.setColour(accent);
     g.drawRoundedRectangle(well.reduced(0.75f), 4.0f, 1.5f);
     g.setFont(FontManager::getInstance().getMonoFont(11.0f));
-    g.drawText(hasWaveform_ ? "Drop to replace the sample" : "Drop to load", waveArea_,
+    g.drawText(hasWaveform() ? "Drop to replace the sample" : "Drop to load", waveArea_,
                juce::Justification::centred);
-}
-
-void SamplerUI::paintEnvelope(juce::Graphics& g) {
-    const auto shape = envelopeShape();
-    if (!shape.has_value())
-        return;
-    const auto area = envelopeArea();
-    juce::Graphics::ScopedSaveState clip(g);
-    g.reduceClipRegion(waveArea_);
-    // The stage boundaries: the handles never cross them.
-    const float shares[] = {kAttackShare, kDecayShare, kHoldShare, kReleaseShare};
-    float edges[5] = {area.getX()};
-    for (int i = 0; i < 4; ++i)
-        edges[i + 1] = edges[i] + shares[i] * area.getWidth();
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_GRID));
-    for (int i = 1; i < 4; ++i)
-        g.drawVerticalLine(juce::roundToInt(edges[i]), area.getY() - 4.0f, shape->start.y);
-    g.drawHorizontalLine(juce::roundToInt(shape->start.y), area.getX(), area.getRight());
-
-    const auto colour = ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE);
-    if (pitchView_ || filterView_) {
-        const auto amount =
-            (filterView_ ? filterEnvAmountSlider_ : pitchEnvAmountSlider_).getValue();
-        g.setFont(FontManager::getInstance().getMonoFont(10.0f));
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
-        g.drawText((amount > 0.0 ? "+" : "") + juce::String(static_cast<int>(amount)) + " st",
-                   area.withHeight(14.0f).translated(0.0f, -10.0f),
-                   juce::Justification::centredRight, false);
-    }
-    juce::Path path;
-    path.startNewSubPath(shape->start);
-    for (const auto point : {shape->peak, shape->decayEnd, shape->releaseStart, shape->end})
-        path.lineTo(point);
-    juce::Path fill = path;
-    fill.closeSubPath();
-    g.setColour(colour.withAlpha(0.12f));
-    g.fillPath(fill);
-    g.setColour(colour.withAlpha(0.9f));
-    g.strokePath(path, juce::PathStrokeType(1.5f));
-
-    for (const auto& [handle, point] :
-         {std::pair{EnvHandle::Attack, shape->peak}, std::pair{EnvHandle::Decay, shape->decayEnd},
-          std::pair{EnvHandle::Release, shape->end}}) {
-        const float radius = envDrag_ == handle ? kEnvHandleRadius + 1.5f : kEnvHandleRadius;
-        const auto dot = juce::Rectangle<float>(radius * 2, radius * 2).withCentre(point);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG));
-        g.fillEllipse(dot);
-        g.setColour(colour);
-        g.drawEllipse(dot, 1.5f);
-    }
-
-    // Each stage named under its zone.
-    g.setFont(FontManager::getInstance().getMonoFont(9.0f));
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
-    const char* names[] = {"A", "D", "S", "R"};
-    const float labelY = envelopeInverted() ? area.getBottom() + 2.0f : shape->start.y + 2.0f;
-    for (int i = 0; i < 4; ++i)
-        g.drawText(names[i],
-                   juce::Rectangle<float>(edges[i], labelY, edges[i + 1] - edges[i], 14.0f),
-                   juce::Justification::centred, false);
 }
 
 void SamplerUI::setExpanded(bool expanded) {
@@ -1555,6 +1110,7 @@ void SamplerUI::setExpanded(bool expanded) {
             }
         loopButton_->setVisible(true);
         zoneEditor_.setVisible(true);
+        waveformPane_.setVisible(true);
         tiles_.clear();
         sectionTitles_ = {};
         rootChip_ = {};
@@ -1571,8 +1127,6 @@ void SamplerUI::resized() {
     // switch.
     setExpanded(magda::ExpandedFaceplate::getInstance().holds(*this));
     if (expanded_) {
-        zonePanel_ = {};
-        zoneTabs_ = {};
         auto area = getLocalBounds().reduced(kSpace);
         // The zone map over the selected zone's waveform.
         zoneEditor_.setBounds(area.removeFromTop(juce::jmax(140, area.getHeight() * 2 / 5)));
@@ -1581,17 +1135,16 @@ void SamplerUI::resized() {
             area.removeFromTop(kTitleH).removeFromLeft(24).withSizeKeepingCentre(24, 24));
         area.removeFromTop(4);
         waveArea_ = area;
-        waveformView_.setSize(waveArea_.getWidth(), waveArea_.getHeight());
+        waveformPane_.setBounds(waveArea_);
         return;
     }
 
     auto area = getLocalBounds().reduced(kSpace);
 
     // The zone list down the left, as a rack's chains.
-    zoneListView_.setVisible(zonesShown_);
-    zonePanel_ = zonesShown_ ? area.removeFromLeft(kZonePanelW) : juce::Rectangle<int>();
-    zoneTabs_ = zonePanel_.withHeight(kNameRowH);
-    layoutZoneList();
+    zoneListPanel_.setVisible(zonesShown_);
+    zoneListPanel_.setBounds(zonesShown_ ? area.removeFromLeft(kZonePanelW)
+                                         : juce::Rectangle<int>());
     if (zonesShown_)
         area.removeFromLeft(kSpace);
 
@@ -1693,8 +1246,11 @@ void SamplerUI::resized() {
             break;
     }
 
-    // The view keeps the whole sample in reach at the new width.
-    waveformView_.setSize(waveArea_.getWidth(), waveArea_.getHeight());
+    // One plot in the well: the sample, or the tab's envelope.
+    waveformPane_.setBounds(waveArea_);
+    envelopeView_.setBounds(waveArea_);
+    waveformPane_.setVisible(!showsEnvelope());
+    envelopeView_.setVisible(showsEnvelope());
 }
 
 }  // namespace magda::daw::ui
