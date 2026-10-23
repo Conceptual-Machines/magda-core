@@ -7,6 +7,7 @@
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "layout/DashedAddButton.hpp"
+#include "ui/components/common/ViewportScrollBar.hpp"
 
 namespace magda::daw::ui {
 
@@ -44,8 +45,6 @@ class ChainPanel : public NodeComponent, private juce::Timer {
     int getContentWidth() const;   // Returns full width needed to show all devices
     /// The width that shows its widest device whole, with the add slot beside it.
     int getMinimumContentWidth() const;
-    /// The tightest needs among the chain's devices, measured from this panel (#3119).
-    HeightRange getHeightRange() const override;
     void setMaxWidth(int maxWidth);  // Set maximum width before scrolling kicks in
 
     // Horizontal zoom (Cmd/Ctrl + scroll wheel)
@@ -95,6 +94,7 @@ class ChainPanel : public NodeComponent, private juce::Timer {
     magda::ChainId chainId_;
     bool hasChain_ = false;
     int maxWidth_ = 0;  // 0 = no limit, otherwise constrain width and scroll
+    void applyMaxWidthToSlots();
 
     // Horizontal zoom
     float zoomLevel_ = 1.0f;
@@ -106,6 +106,7 @@ class ChainPanel : public NodeComponent, private juce::Timer {
     // Chain elements (devices and nested racks) with viewport for horizontal scrolling
     std::unique_ptr<ZoomableViewport> elementViewport_;
     std::unique_ptr<ElementSlotsContainer> elementSlotsContainer_;
+    std::unique_ptr<ViewportScrollBar> scrollBar_;  ///< In the bottom padding, over no slot space.
     DashedAddButton addDeviceButton_;
     std::vector<std::unique_ptr<NodeComponent>> elementSlots_;
 

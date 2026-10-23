@@ -590,14 +590,14 @@ int RackComponent::getPreferredWidth() const {
                getRightPanelsWidth();
     }
 
-    // Fitted to what is on screen, but never narrower than the chain's widest device:
-    // the rack scrolls through its devices, and the track's chain scrolls to the rack.
-    const int minimum = minimumViewportWidth();
-    int viewportWidth = minimum;
+    // Fitted to the width left, scrolling through its devices, even a wide one, past it (#3141).
+    // Unbounded, it is never narrower than the chain's widest device.
+    int viewportWidth = minimumViewportWidth();
     if (chainPanel_ && chainPanel_->isVisible())
         viewportWidth = juce::jmax(viewportWidth, chainPanel_->getContentWidth());
     if (availableWidth_ > 0)
-        viewportWidth = juce::jlimit(minimum, juce::jmax(minimum, availableWidth_ - fixedWidth()),
+        viewportWidth = juce::jlimit(MIN_VIEWPORT_WIDTH,
+                                     juce::jmax(MIN_VIEWPORT_WIDTH, availableWidth_ - fixedWidth()),
                                      viewportWidth);
     return fixedWidth() + viewportWidth;
 }
@@ -616,8 +616,9 @@ void RackComponent::setAvailableWidth(int width) {
     availableWidth_ = width;
 
     // Pass remaining width to chain panel after accounting for base rack width
+    // Not floored at minimumViewportWidth(): that is measured from the devices this caps.
     if (chainPanel_ && chainPanel_->isVisible())
-        chainPanel_->setMaxWidth(juce::jmax(minimumViewportWidth(), width - fixedWidth()));
+        chainPanel_->setMaxWidth(juce::jmax(MIN_VIEWPORT_WIDTH, width - fixedWidth()));
 }
 
 void RackComponent::updateFromRack(const magda::RackInfo& rack) {

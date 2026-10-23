@@ -260,6 +260,8 @@ void TabbedPanel::switchToContent(PanelContentType type) {
     }
 
     repaint();
+    if (onActiveContentChanged)
+        onActiveContentChanged();
 }
 
 PanelContent* TabbedPanel::getOrCreateContent(PanelContentType type) {

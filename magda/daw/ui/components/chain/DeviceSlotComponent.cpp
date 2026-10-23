@@ -577,15 +577,15 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         std::make_unique<ParamHostComponent>(createDeviceSlotParamLayout(traits_, gridExcluded));
     paramGrid_->setFooterPagination(true);
 
-    footerPrevPage_ = makeNavArrowButton("Previous page", 0.5f);
-    footerPrevPage_->onClick = [this]() { goToPrevPage(); };
-    addChildComponent(*footerPrevPage_);
-    footerNextPage_ = makeNavArrowButton("Next page", 0.0f);
-    footerNextPage_->onClick = [this]() { goToNextPage(); };
-    addChildComponent(*footerNextPage_);
-    footerPageLabel_.setJustificationType(juce::Justification::centred);
-    footerPageLabel_.setInterceptsMouseClicks(false, false);
-    addChildComponent(footerPageLabel_);
+    pagePrevButton_ = makeNavArrowButton("Previous page", 0.5f);
+    pagePrevButton_->onClick = [this]() { goToPrevPage(); };
+    addChildComponent(*pagePrevButton_);
+    pageNextButton_ = makeNavArrowButton("Next page", 0.0f);
+    pageNextButton_->onClick = [this]() { goToNextPage(); };
+    addChildComponent(*pageNextButton_);
+    pageLabel_.setJustificationType(juce::Justification::centred);
+    pageLabel_.setInterceptsMouseClicks(false, false);
+    addChildComponent(pageLabel_);
     voiceModeChoice_.setOptions({"Poly", "Mono", "Legato"});
     voiceModeChoice_.onChange = [this](int mode) {
         if (voiceModeParam_ >= 0)
@@ -602,7 +602,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                                      .updateParamModulation = [this]() { updateParamModulation(); },
                                      .repaint =
                                          [this]() {
-                                             refreshFooterPageControls();
+                                             refreshPageControls();
                                              repaint();
                                          }});
     };
@@ -689,15 +689,10 @@ void DeviceSlotComponent::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int>
     device_shell::paintFrame(g, bounds, headerHeight,
                              {.headerSeparatorLeft = headerSeparators_.left,
                               .headerSeparatorRight = headerSeparators_.right,
+                              .sidebar = sidebarArea_,
                               .sideStrip = sideStripArea_,
-                              .footer = footerArea_,
-                              .footerSeparator = footerSeparator_,
-                              .footerInfo = footerInfoArea_,
                               .midiLed = midiLedArea_},
-                             footerInfoArea_.isEmpty()
-                                 ? juce::String()
-                                 : device_shell::audioInfoText(device_.audioOutputChannels),
-                             midiLed_.isLit());
+                             {}, midiLed_.isLit());
 }
 
 int DeviceSlotComponent::sideStripWidth() const {
@@ -754,92 +749,86 @@ void DeviceSlotComponent::layoutSideStrip(juce::Rectangle<int> strip) {
     }
 }
 
-// [Sidechain] | info ... [MIDI LED][Thru][Multi-out], or the page arrows centred
-// for a plug-in with more than one page.
-void DeviceSlotComponent::resizedShellFooter(juce::Rectangle<int> footer) {
-    footerArea_ = footer;
-    layoutFooter(footerArea_);
-}
+// [name] ... [voice][MIDI LED], then the header's own buttons.
+juce::Rectangle<int> DeviceSlotComponent::layoutHeaderControls(juce::Rectangle<int> area) {
+    midiLedArea_ = {};
+    voiceModeChoice_.setVisible(!area.isEmpty() && voiceModeParam_ >= 0);
+    if (area.isEmpty())
+        return area;
 
-void DeviceSlotComponent::layoutFooter(juce::Rectangle<int> footer) {
-    footerSeparator_ = footerInfoArea_ = midiLedArea_ = {};
-    // A custom faceplate takes the body in place of the grid, so its pages have nothing to turn.
-    const bool gridHidden = isInternalDevice() && customUI_.hasAnyUI();
-    const bool paged = !footer.isEmpty() && paramGrid_ != nullptr && paramGrid_->paginates() &&
-                       !paramGrid_->showsOwnPagination() && paramsShown() &&
-                       !faceplateUnderGrid() && !gridHidden;
-    for (auto* arrow : {footerPrevPage_.get(), footerNextPage_.get()})
-        if (arrow != nullptr)
-            arrow->setVisible(paged);
-    footerPageLabel_.setVisible(paged);
-    const bool sequencer = !footer.isEmpty() && isSequencerDevice(traits_);
-    const bool expandable = !footer.isEmpty() && traits_.expandsFaceplate;
-    const bool zoned = !footer.isEmpty() && customUI_.hasSamplerUI();
-    timeBendToggle_->setVisible(sequencer);
-    zonesToggle_->setVisible(zoned);
-    expandToggle_->setVisible(expandable);
-    if (footer.isEmpty()) {
-        paramsToggle_->setVisible(false);
-        faceplateToggle_->setVisible(false);
-        voiceModeChoice_.setVisible(false);
-        return;
-    }
-    // The header's button size, so a button styled for one fits the other.
-    const auto size = getHeaderButtonSize();
     const int gap = getHeaderButtonGap();
-    auto area = footer.reduced(10, 0);
-    const auto place = [&](juce::Component& component, bool fromLeft) {
-        auto slot = fromLeft ? area.removeFromLeft(size.x) : area.removeFromRight(size.x);
-        component.setBounds(slot.withSizeKeepingCentre(size.x, size.y));
-        if (fromLeft)
-            area.removeFromLeft(gap);
-        else
-            area.removeFromRight(gap);
-    };
-
-    const bool faceplate = hasFaceplate();
-    paramsToggle_->setVisible(faceplate);
-    faceplateToggle_->setVisible(faceplate);
-    if (faceplate) {
-        paramsToggle_->setToggleState(paramsShown(), juce::dontSendNotification);
-        faceplateToggle_->setToggleState(faceplateShown(), juce::dontSendNotification);
-        place(*paramsToggle_, true);
-        place(*faceplateToggle_, true);
-    }
-
-    if (sequencer) {
-        timeBendToggle_->setToggleState(device_.timeBendShown, juce::dontSendNotification);
-        place(*timeBendToggle_, true);
-    }
-    if (zoned) {
-        zonesToggle_->setToggleState(device_.zonesShown, juce::dontSendNotification);
-        place(*zonesToggle_, true);
-    }
-    if (expandable) {
-        expandToggle_->setToggleState(faceplateLent(), juce::dontSendNotification);
-        place(*expandToggle_, true);
-    }
-
-    const bool sidechain = scButton_ != nullptr && scButton_->isVisible();
-    if (sidechain)
-        place(*scButton_, true);
-    voiceModeChoice_.setVisible(voiceModeParam_ >= 0);
     if (voiceModeParam_ >= 0) {
         const int width = voiceModeChoice_.getPreferredWidth();
-        voiceModeChoice_.setBounds(area.removeFromLeft(width).withSizeKeepingCentre(width, size.y));
-        area.removeFromLeft(gap);
+        voiceModeChoice_.setBounds(
+            area.removeFromRight(width).withSizeKeepingCentre(width, getHeaderButtonSize().y));
+        area.removeFromRight(gap);
     }
-    for (auto* button : {multiOutButton_.get(), midiThruButton_.get()})
-        if (button != nullptr && button->isVisible())
-            place(*button, false);
     midiLedArea_ = area.removeFromRight(7).withSizeKeepingCentre(7, 7);
     area.removeFromRight(gap);
+    return area;
+}
 
+std::vector<juce::Component*> DeviceSlotComponent::sidebarButtons() const {
+    const auto visibility = getHeaderControlVisibility(traits_, device_, isInternalDevice());
+    std::vector<juce::Component*> buttons;
+    const auto add = [&buttons](juce::Component* button, bool shown) {
+        if (button != nullptr && shown)
+            buttons.push_back(button);
+    };
+    add(paramsToggle_.get(), hasFaceplate());
+    add(faceplateToggle_.get(), hasFaceplate());
+    add(timeBendToggle_.get(), isSequencerDevice(traits_));
+    add(zonesToggle_.get(), customUI_.hasSamplerUI());
+    add(expandToggle_.get(), traits_.expandsFaceplate);
+    add(scButton_.get(), visibility.sidechain);
+    add(midiThruButton_.get(), visibility.midiThru);
+    add(multiOutButton_.get(), visibility.multiOut);
+    return buttons;
+}
+
+bool DeviceSlotComponent::sidebarPaged() const {
+    // A custom faceplate takes the body in place of the grid, so its pages have nothing to turn.
+    const bool gridHidden = isInternalDevice() && customUI_.hasAnyUI();
+    return paramGrid_ != nullptr && paramGrid_->paginates() && !paramGrid_->showsOwnPagination() &&
+           paramsShown() && !faceplateUnderGrid() && !gridHidden;
+}
+
+int DeviceSlotComponent::sidebarWidth() const {
+    return !collapsed_ && (sidebarPaged() || !sidebarButtons().empty()) ? SIDEBAR_WIDTH : 0;
+}
+
+void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
+    const bool shown = !bar.isEmpty();
+    for (auto* toggle : {paramsToggle_.get(), faceplateToggle_.get(), timeBendToggle_.get(),
+                         zonesToggle_.get(), expandToggle_.get()})
+        toggle->setVisible(false);
+    const bool paged = shown && sidebarPaged();
+    for (auto* arrow : {pagePrevButton_.get(), pageNextButton_.get()})
+        if (arrow != nullptr)
+            arrow->setVisible(paged);
+    pageLabel_.setVisible(paged);
+    if (!shown)
+        return;
+
+    paramsToggle_->setToggleState(paramsShown(), juce::dontSendNotification);
+    faceplateToggle_->setToggleState(faceplateShown(), juce::dontSendNotification);
+    timeBendToggle_->setToggleState(device_.timeBendShown, juce::dontSendNotification);
+    zonesToggle_->setToggleState(device_.zonesShown, juce::dontSendNotification);
+    expandToggle_->setToggleState(faceplateLent(), juce::dontSendNotification);
+
+    auto area = bar.reduced(0, 6);
+    const auto size = getHeaderButtonSize();
+    for (auto* button : sidebarButtons()) {
+        button->setBounds(area.removeFromTop(size.y).withSizeKeepingCentre(size.x, size.y));
+        button->setVisible(true);
+        area.removeFromTop(getHeaderButtonGap());
+    }
     if (paged) {
-        auto nav = footer.withSizeKeepingCentre(96, size.y);
-        footerPrevPage_->setBounds(nav.removeFromLeft(16).withSizeKeepingCentre(12, 12));
-        footerNextPage_->setBounds(nav.removeFromRight(16).withSizeKeepingCentre(12, 12));
-        footerPageLabel_.setBounds(nav);
+        auto arrows = area.removeFromBottom(16);
+        pagePrevButton_->setBounds(
+            arrows.removeFromLeft(bar.getWidth() / 2).withSizeKeepingCentre(12, 12));
+        pageNextButton_->setBounds(arrows.withSizeKeepingCentre(12, 12));
+        pageLabel_.setBounds(area.removeFromBottom(16));
     }
 }
 
@@ -1099,25 +1088,25 @@ void DeviceSlotComponent::refreshVoiceModeChoice() {
         voiceModeChoice_.setSelectedIndex(juce::roundToInt(param->currentValue));
     if (index != voiceModeParam_) {
         voiceModeParam_ = index;
-        layoutFooter(footerArea_);
+        resized();
     }
 }
 
-void DeviceSlotComponent::refreshFooterPageControls() {
+void DeviceSlotComponent::refreshPageControls() {
     if (paramGrid_ == nullptr)
         return;
-    footerPageLabel_.setFont(FontManager::getInstance().getMonoFont(11.0f));
-    footerPageLabel_.setColour(juce::Label::textColourId,
-                               ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+    pageLabel_.setFont(FontManager::getInstance().getMonoFont(11.0f));
+    pageLabel_.setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
     const int page = paramGrid_->getCurrentPage();
     const int total = paramGrid_->getTotalPages();
-    footerPageLabel_.setText(juce::String(page + 1) + "/" + juce::String(total),
-                             juce::dontSendNotification);
-    if (footerPrevPage_)
-        footerPrevPage_->setEnabled(page > 0);
-    if (footerNextPage_)
-        footerNextPage_->setEnabled(page < total - 1);
-    layoutFooter(footerArea_);
+    pageLabel_.setText(juce::String(page + 1) + "/" + juce::String(total),
+                       juce::dontSendNotification);
+    if (pagePrevButton_)
+        pagePrevButton_->setEnabled(page > 0);
+    if (pageNextButton_)
+        pageNextButton_->setEnabled(page < total - 1);
+    resized();
 }
 
 void DeviceSlotComponent::styleDeviceHeaderButtons() {
@@ -1200,7 +1189,7 @@ void DeviceSlotComponent::timerCallback() {
     if (!engine)
         return;
 
-    // The footer LED holds for a few frames after the track's MIDI activity moves.
+    // The header LED holds for a few frames after the track's MIDI activity moves.
     if (midiLed_.update(engine->meters().midiActivity.getActivityCounter(nodePath_.trackId)))
         repaint(midiLedArea_.expanded(4));
 
@@ -1406,10 +1395,26 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     reclaimExpandedFaceplate();
 }
 
+void DeviceSlotComponent::setAvailableWidth(int width) {
+    // A Drum Grid fits its pad chain to the width left, scrolling through it like a rack.
+    if (auto* drumGrid = customUI_.getDrumGridUI())
+        drumGrid->setMaxContentWidth(
+            width > 0 ? juce::jmax(1, width - getTotalWidth(0) - sideStripWidth() - sidebarWidth())
+                      : 0);
+}
+
+int DeviceSlotComponent::getMinimumWidth() const {
+    const auto* drumGrid = customUI_.getDrumGridUI();
+    if (drumGrid == nullptr || collapsed_)
+        return 0;
+    return getTotalWidth(drumGrid->fixedContentWidth() + DrumGridUI::kMinChainWidth) +
+           sideStripWidth() + sidebarWidth();
+}
+
 int DeviceSlotComponent::getPreferredWidth() const {
-    // Meter strip + padding is added to content width (not via getMeterWidth since meter is
+    // Side strip and sidebar are added to content width (not via getMeterWidth since they are
     // content-area only)
-    const int meterExtra = sideStripWidth();
+    const int meterExtra = sideStripWidth() + sidebarWidth();
 
     if (collapsed_) {
         return getLeftPanelsWidth() + COLLAPSED_WIDTH + METER_STRIP_WIDTH + 2 +
@@ -1428,14 +1433,6 @@ int DeviceSlotComponent::getPreferredWidth() const {
         contentWidth =
             (paramsShown() ? contentWidth : 0) + (faceplateShown() ? faceplateWidth() : 0);
     return getTotalWidth(contentWidth) + meterExtra;
-}
-
-HeightRange DeviceSlotComponent::getHeightRange() const {
-    auto* ui = customUI_.getActiveUI();
-    if (collapsed_ || ui == nullptr || !isParentOf(ui) || !ui->isVisible() || ui->getHeight() <= 0)
-        return {};
-    // Measured rather than summed, so the header and strips count as currently laid out.
-    return customUI_.getContentHeightRange().plus(getHeight() - ui->getHeight());
 }
 
 void DeviceSlotComponent::showPresetMenu() {
@@ -1752,14 +1749,13 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     const auto* slotTrack = magda::TrackManager::getInstance().getTrack(nodePath_.trackId);
     const bool onChordTrack = slotTrack && slotTrack->type == magda::TrackType::Chord;
     juce::ignoreUnused(pluginPresetsAvailable);
-    // The footer was laid out by resizedShellFooter, across the side panels too.
     sideStripArea_ = {};
-    if (collapsed_) {
-        footerArea_ = {};
-        layoutFooter(footerArea_);
-    } else if (const int strip = sideStripWidth(); strip > 0) {
+    sidebarArea_ = contentArea.removeFromLeft(sidebarWidth());
+    if (collapsed_)
+        layoutHeaderControls({});
+    else if (const int strip = sideStripWidth(); strip > 0)
         sideStripArea_ = contentArea.removeFromRight(strip);
-    }
+    layoutSidebar(sidebarArea_);
 
     if (!prepareDeviceSlotContentFrame(
             contentArea, traits_, device_, collapsed_, isInternalDevice(), false,
@@ -1817,13 +1813,6 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
          .paramGrid = paramGrid_.get()},
         faustHeaderHeight());
     layoutFaceplateSlotControls();
-
-    if (auto* drumGrid = customUI_.getDrumGridUI(); drumGrid != nullptr && !footerArea_.isEmpty()) {
-        drumGrid->setBounds(contentArea.withBottom(footerArea_.getBottom()));
-        // Its footer holds the page controls; the slot's multi-out sits over it.
-        if (multiOutButton_ != nullptr)
-            multiOutButton_->toFront(false);
-    }
 }
 
 void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
@@ -1845,6 +1834,7 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
          .stepRecordButton = stepRecordButton_.get(),
          .midiThruButton = midiThruButton_.get()},
         DeviceSlotHeaderMetrics{});
+    headerArea = layoutHeaderControls(headerArea);
 }
 
 void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
@@ -2132,7 +2122,7 @@ void DeviceSlotComponent::updateParameterValues() {
 
 void DeviceSlotComponent::updateParameterPagination() {
     updateDeviceSlotParameterPagination(device_, paramGrid_.get());
-    refreshFooterPageControls();
+    refreshPageControls();
 }
 
 void DeviceSlotComponent::goToPrevPage() {
@@ -2142,7 +2132,7 @@ void DeviceSlotComponent::goToPrevPage() {
          .updateParamModulation = [this]() { updateParamModulation(); },
          .repaint =
              [this]() {
-                 refreshFooterPageControls();
+                 refreshPageControls();
                  repaint();
              }});
 }
@@ -2153,7 +2143,7 @@ void DeviceSlotComponent::goToNextPage() {
                                      .updateParamModulation = [this]() { updateParamModulation(); },
                                      .repaint =
                                          [this]() {
-                                             refreshFooterPageControls();
+                                             refreshPageControls();
                                              repaint();
                                          }});
 }

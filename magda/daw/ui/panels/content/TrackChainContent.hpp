@@ -17,6 +17,7 @@
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/MidiActivityLed.hpp"
 #include "ui/components/common/SvgButton.hpp"
+#include "ui/components/common/ViewportScrollBar.hpp"
 
 namespace magda::daw::ui {
 
@@ -68,7 +69,6 @@ class TrackChainContent : public PanelContent,
         return true;
     }
 
-    int getOptimalPanelHeight(int windowHeight) const override;
     HeightRange getHeightRange() const override;
 
     void populateHeader(juce::Component& headerBar) override;
@@ -246,15 +246,11 @@ class TrackChainContent : public PanelContent,
     std::unique_ptr<ZoomableViewport> chainViewport_;
     class ChainContainer;
     std::unique_ptr<ChainContainer> chainContainer_;
+    std::unique_ptr<ViewportScrollBar> scrollBar_;  ///< In the bottom inset, over no node space.
     juce::TextButton addDeviceButton_;
 
     // All node components in signal flow order (devices and racks unified)
     std::vector<std::unique_ptr<NodeComponent>> nodeComponents_;
-
-    /** @brief The tightest needs among the nodes, in node-height terms (#3119). */
-    HeightRange nodesHeightRange() const;
-    // This content's height minus the chain height it gives the nodes, before MIN_CHAIN_HEIGHT.
-    int chainChrome_ = 0;
 
     static constexpr int ARROW_WIDTH = 4;  // Small gap between device slots
     static constexpr int SLOT_SPACING = 8;
@@ -270,7 +266,9 @@ class TrackChainContent : public PanelContent,
     void clearDeviceSelection();
 
     static constexpr int MODS_PANEL_WIDTH = 170;
-    static constexpr int MIN_CHAIN_HEIGHT = 280;  // Minimum content height before scrolling
+    // Every node's height: a Drum Grid's ideal with a scrolling pad chain, as measured (#3141).
+    static constexpr int NODE_HEIGHT = 357;
+    static constexpr int CONTENT_INSET = 8;
 
     // Horizontal zoom
     float zoomLevel_ = 1.0f;

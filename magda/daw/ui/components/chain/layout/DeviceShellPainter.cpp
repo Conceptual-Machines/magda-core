@@ -38,6 +38,15 @@ void paintHeader(juce::Graphics& g, juce::Rectangle<float> frame, int headerHeig
 void paintSideStrip(juce::Graphics& g, juce::Rectangle<float> frame, const ShellRows& rows) {
     const auto line = ActiveTheme::getColour(ActiveTheme::DEVICE_LINE);
 
+    // The sidebar fills the content inset on its left, like the strip does on its right.
+    if (!rows.sidebar.isEmpty()) {
+        const auto bar = rows.sidebar.withLeft(rows.sidebar.getX() - 2).toFloat();
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_HEAD2));
+        g.fillRect(bar);
+        g.setColour(line);
+        g.fillRect(bar.getRight() - 1.0f, bar.getY(), 1.0f, bar.getHeight());
+    }
+
     if (!rows.sideStrip.isEmpty()) {
         const juce::Rectangle<float> strip(
             static_cast<float>(rows.sideStrip.getX()), static_cast<float>(rows.sideStrip.getY()),
@@ -51,7 +60,7 @@ void paintSideStrip(juce::Graphics& g, juce::Rectangle<float> frame, const Shell
 }
 
 void paintFooter(juce::Graphics& g, juce::Rectangle<float> frame, const ShellRows& rows,
-                 const juce::String& footerInfo, bool midiLedLit) {
+                 const juce::String& footerInfo) {
     const auto line = ActiveTheme::getColour(ActiveTheme::DEVICE_LINE);
     const float top = static_cast<float>(rows.footer.getY());
     juce::Path footer;
@@ -72,19 +81,19 @@ void paintFooter(juce::Graphics& g, juce::Rectangle<float> frame, const ShellRow
         g.setFont(FontManager::getInstance().getMonoFont(11.0f));
         g.drawText(footerInfo, rows.footerInfo, juce::Justification::centredLeft, false);
     }
+}
 
-    if (!rows.midiLed.isEmpty()) {
-        const auto led = rows.midiLed.toFloat();
-        if (midiLedLit) {
-            const auto green = ActiveTheme::getColour(ActiveTheme::DEVICE_GREEN);
-            g.setColour(green.withAlpha(0.35f));
-            g.fillEllipse(led.expanded(3.0f));
-            g.setColour(green);
-        } else {
-            g.setColour(line);
-        }
-        g.fillEllipse(led);
+void paintMidiLed(juce::Graphics& g, juce::Rectangle<int> area, bool lit) {
+    const auto led = area.toFloat();
+    if (lit) {
+        const auto green = ActiveTheme::getColour(ActiveTheme::DEVICE_GREEN);
+        g.setColour(green.withAlpha(0.35f));
+        g.fillEllipse(led.expanded(3.0f));
+        g.setColour(green);
+    } else {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
     }
+    g.fillEllipse(led);
 }
 
 }  // namespace
@@ -99,23 +108,12 @@ void paintFrame(juce::Graphics& g, juce::Rectangle<int> bounds, int headerHeight
         paintHeader(g, frame, headerHeight, rows);
     paintSideStrip(g, frame, rows);
     if (!rows.footer.isEmpty())
-        paintFooter(g, frame, rows, footerInfo, midiLedLit);
+        paintFooter(g, frame, rows, footerInfo);
+    if (!rows.midiLed.isEmpty())
+        paintMidiLed(g, rows.midiLed, midiLedLit);
 
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FRAME_BORDER));
     g.drawRoundedRectangle(frame.reduced(0.5f), kRadius, 1.0f);
-}
-
-juce::String audioInfoText(int outputChannels) {
-    double sampleRate = 0.0;
-    if (auto* engine = magda::TrackManager::getInstance().getAudioEngine())
-        if (auto* audioIO = engine->getAudioIO())
-            sampleRate = audioIO->status().sampleRate;
-    juce::String info = outputChannels == 1 ? "mono" : "stereo";
-    if (sampleRate > 0.0)
-        info << juce::String::fromUTF8(" \xc2\xb7 ")
-             << juce::String(sampleRate / 1000.0, std::fmod(sampleRate, 1000.0) == 0.0 ? 0 : 1)
-             << " kHz";
-    return info;
 }
 
 void paintGainSlider(juce::Graphics& g, juce::Rectangle<int> area, double db, double minDb) {

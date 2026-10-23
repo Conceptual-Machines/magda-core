@@ -45,7 +45,7 @@ struct DeviceSlotHeaderSeparators {
 };
 
 /// Sidechain, multi-out, MIDI thru and delta keep their visibility here but are
-/// placed by the footer and side strip, not the expanded header.
+/// placed by the slot's sidebar and side strip, not the expanded header.
 DeviceSlotHeaderSeparators layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
                                                           const DeviceSlotTraits& traits,
                                                           const magda::DeviceInfo& device,

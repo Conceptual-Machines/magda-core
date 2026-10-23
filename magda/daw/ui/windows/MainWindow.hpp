@@ -263,6 +263,7 @@ class MainWindow::MainComponent : public juce::Component,
     // expands to the maximum height that still leaves the resizer
     // reachable. prevBottomPanelHeight_ snapshots the height to restore.
     bool editorFullscreen_ = false;
+    bool relayingOut_ = false;  ///< Guards resized()'s one re-run for a newly measured minimum.
     int prevBottomPanelHeight_ = 0;
     bool prevBottomPanelVisible_ = true;
     bool prevBottomPanelCollapsed_ = false;

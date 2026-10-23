@@ -59,6 +59,9 @@ class TabbedPanel : public juce::Component, public PanelStateListener {
      */
     std::function<void(bool)> onCollapseChanged;
 
+    /** @brief Called once a newly active content has been laid out. */
+    std::function<void()> onActiveContentChanged;
+
     /**
      * @brief Set the audio engine reference for panels that need it
      * This reference will be passed to content that implements setAudioEngine()
