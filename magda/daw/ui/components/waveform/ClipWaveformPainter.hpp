@@ -20,6 +20,10 @@ struct ClipWaveformSpec {
     juce::Colour colour = juce::Colours::black;
     bool thick = false;  // selected-clip stroke weight
 
+    /// Played raw by an ARA plugin (#3137): the stretch of file the clip covers, forwards and
+    /// unstretched from its start, with no loop or warp.
+    bool raw = false;
+
     // Resize-drag preview state (ClipComponent mid-ResizeLeft). When set,
     // these replace the clip's committed offset / loop phase.
     std::optional<double> previewOffset;

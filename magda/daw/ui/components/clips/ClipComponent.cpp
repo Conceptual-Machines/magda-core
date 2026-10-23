@@ -627,6 +627,7 @@ void ClipComponent::paintAudioClipDirect(juce::Graphics& g, const ClipInfo& clip
     spec.tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
     spec.colour = waveColourOverride.isTransparent() ? juce::Colours::black : waveColourOverride;
     spec.thick = isSelected_ || SelectionManager::getInstance().isClipSelected(clipId_);
+    spec.raw = magda::araPluginForClip(clip.id).has_value();
     if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
         spec.previewOffset = audioEventRef(resizePreviewClip_).anchorSeconds();
         spec.previewLoopStart = audioEventRef(resizePreviewClip_).loopStartSeconds();

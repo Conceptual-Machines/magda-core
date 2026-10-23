@@ -75,7 +75,8 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
         return;
     }
 
-    if (audioEventRef(clip).reversed) {
+    const bool mirrored = audioEventRef(clip).reversed && !spec.raw;
+    if (mirrored) {
         g.saveState();
         g.addTransform(juce::AffineTransform::scale(-1.0f, 1.0f, waveformArea.getCentreX(),
                                                     waveformArea.getCentreY()));
@@ -100,7 +101,7 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
 
     bool useWarpedDraw = false;
     std::vector<WarpMarker> warpMarkers;
-    if (audioEventRef(clip).warpEnabled) {
+    if (audioEventRef(clip).warpEnabled && !spec.raw) {
         warpMarkers = getClipWarpMarkers(clipId);
         useWarpedDraw = warpMarkers.size() >= 2;
     }
@@ -139,7 +140,7 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
         wspec.cycleWarp = maxWarp - minWarp;
         daw::ui::drawWarpedWaveform(g, thumbnailManager, audioEventRef(clip).sourceFilePath(),
                                     warpMarkers, wspec);
-    } else if (di.isLooped()) {
+    } else if (di.isLooped() && !spec.raw) {
         double sourceDurationForBeats = audioEventRef(clip).sourceDurationSeconds();
         if (sourceDurationForBeats <= 0.0 && fileDuration > 0.0)
             sourceDurationForBeats = fileDuration;
@@ -251,7 +252,8 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
         double fileEnd = displayOffset + di.timelineToSource(clipDisplayLength);
         if (fileDuration > 0.0 && fileEnd > fileDuration)
             fileEnd = fileDuration;
-        double clampedTimelineDuration = di.sourceToTimeline(fileEnd - fileStart);
+        double clampedTimelineDuration =
+            spec.raw ? fileEnd - fileStart : di.sourceToTimeline(fileEnd - fileStart);
         int drawWidth = secondsToPixels(clampedTimelineDuration, pixelsPerSecond);
         drawWidth = juce::jmin(drawWidth, waveformArea.getWidth());
         auto drawRect = juce::Rectangle<int>(waveformArea.getX(), waveformArea.getY(), drawWidth,
@@ -261,7 +263,7 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
                                           fileStart, fileEnd, waveColour, gainLinear, true, thick);
     }
 
-    if (audioEventRef(clip).reversed)
+    if (mirrored)
         g.restoreState();
 }
 

@@ -95,9 +95,11 @@ std::vector<std::string> AraDocument::syncRegions(const std::vector<AraRegionSpe
         wantedEvents.insert({spec.clipId, spec.eventId});
         wantedSources.insert(spec.sourceId);
 
-        // A source whose file moved is a different source to the plugin.
+        // A file moved to an identical copy keeps its source, and the edits on it (#3137);
+        // any other file is a different source to the plugin.
         if (const auto found = sources_.find(spec.sourceId);
-            found != sources_.end() && found->second->record.path != spec.sourcePath)
+            found != sources_.end() && found->second->record.path != spec.sourcePath &&
+            !repoint(*found->second, spec.sourcePath))
             dropSource(spec.sourceId);
     }
 
@@ -140,6 +142,25 @@ void AraDocument::dropSource(SourceId id) {
             dropEvent(key);
     }
     sources_.erase(id);
+}
+
+bool AraDocument::repoint(SourceEntry& source, const std::string& path) {
+    const auto file = files_->open(path);
+    if (file == nullptr || file->sampleRate() != source.record.sampleRate ||
+        file->lengthInSamples() != source.record.lengthInSamples ||
+        file->numChannels() != source.record.numChannels)
+        return false;
+
+    source.record.path = path;
+    auto properties = juce::ARAHostModel::AudioSource::getEmptyProperties();
+    properties.name = source.record.path.c_str();
+    properties.persistentID = source.persistentId.c_str();
+    properties.sampleCount = source.record.lengthInSamples;
+    properties.sampleRate = source.record.sampleRate;
+    properties.channelCount = source.record.numChannels;
+    properties.merits64BitSamples = false;
+    source.source->update(properties);
+    return true;
 }
 
 AraDocument::SourceEntry* AraDocument::ensureSource(const AraRegionSpec& spec,

@@ -7,6 +7,7 @@
 #include "magda/daw/audio/AraTracks.hpp"
 #include "magda/daw/audio/plugins/engine/EngineExternalDevice.hpp"
 #include "magda/daw/core/ClipManager.hpp"
+#include "magda/daw/core/SourcePool.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/engine/PluginService.hpp"
 #include "magda/daw/engine/host/AraTrackEditing.hpp"
@@ -98,7 +99,7 @@ class AraTrackEditingTest final : public juce::UnitTest {
             editing.forgetProject();
         }
 
-        testRestoresFromTheArchive();
+        testRestoresFromTheArchive(folder);
         testFindsTheAraPluginOnATrack();
 
         magda::test::resetJuceProjectState();
@@ -162,13 +163,23 @@ class AraTrackEditingTest final : public juce::UnitTest {
     }
 
     void testFollowsAMovedClip(EngineExternalDevice& device) {
-        beginTest("Moving the clip moves what the plugin plays");
+        beginTest("Moving the clip moves what the plugin plays, without pausing it");
         auto& clips = magda::ClipManager::getInstance();
+        const auto before = prepares(device);
         clips.getClip(clip_)->setPlacementBeats(8.0, 4.0);
         clips.forceNotifyClipPropertyChanged(clip_);
 
         expectEquals(mismatches(blockAt(device, 4.0), 0), 0, "at the new start");
         expectEquals(mismatches(blockAt(device, 2.0), -kFileSamples), 0, "at the old: silence");
+        expectEquals(prepares(device), before, "no dry moment while it moved (#3137)");
+    }
+
+    /** @brief How many times the fixture has been prepared, from its counter parameter. */
+    static int prepares(EngineExternalDevice& device) {
+        for (auto* parameter : device.plugin().getParameters())
+            if (parameter->getName(32) == "Prepares")
+                return juce::roundToInt(parameter->getValue() * 1000.0f);
+        return -1;
     }
 
     void testPlaysAReversedClipRaw(EngineExternalDevice& device) {
@@ -212,9 +223,18 @@ class AraTrackEditingTest final : public juce::UnitTest {
         expect(bytes.find("clip:" + std::to_string(clip_) + "/event:") != std::string::npos);
     }
 
-    void testRestoresFromTheArchive() {
-        beginTest("A plugin attached in a reopened project restores the archive");
+    void testRestoresFromTheArchive(const juce::File& folder) {
+        beginTest(
+            "A plugin attached in a reopened project restores the archive, file moved or not");
         messages_.clear();
+        // Moved since the save: the archive still names its source (#3137).
+        auto& clips = magda::ClipManager::getInstance();
+        const auto source = clips.getClip(clip_)->primaryEvent()->sourceId;
+        const auto moved = folder.getChildFile("moved").getChildFile("vocal.wav");
+        moved.getParentDirectory().createDirectory();
+        juce::File(magda::sourcePathOf(source)).copyFileTo(moved);
+        magda::SourcePool::getInstance().relink(source, moved.getFullPathName());
+        clips.forceNotifyClipPropertyChanged(clip_);
         {
             AraTrackEditing editing(formats_, known_, tempo);
             editing.notify = [this](const juce::String& message) { messages_.add(message); };
