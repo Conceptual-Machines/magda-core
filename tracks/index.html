@@ -709,6 +709,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Track Controls">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#input-monitoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      Input Monitoring
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2311,6 +2326,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Track Controls">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#input-monitoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      Input Monitoring
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2486,13 +2516,44 @@
 <li><strong>Mute</strong> (M) — Silence the track. Shortcut: select the track and press <span class="keys"><kbd class="key-m">M</kbd></span></li>
 <li><strong>Solo</strong> (S) — Solo the track. Shortcut: select the track and press <span class="keys"><kbd class="key-shift">Shift</kbd><span>+</span><kbd class="key-s">S</kbd></span></li>
 <li><strong>Record arm</strong> (R) — Arm the track for recording</li>
-<li><strong>Input monitor</strong> — Monitor the live input signal through the track</li>
+<li><strong>Input monitor</strong> — Monitor the live input signal through the track (see <a href="#input-monitoring">Input Monitoring</a>)</li>
 <li><strong>Automation</strong> — Toggle automation read/write for the track</li>
 <li><strong>Sends</strong> - Level to each aux / return the track feeds</li>
 <li><strong>Routing</strong> - Input and output routing for the track (see <a href="#track-to-track-routing">Track-to-Track Routing</a>)</li>
 <li><strong>Meter</strong> - Peak level meter for the track</li>
 </ul>
 <p>The <strong>Automation</strong> button lights purple when the track holds automation.</p>
+<h3 id="input-monitoring">Input Monitoring<a class="headerlink" href="#input-monitoring" title="Permanent link">&para;</a></h3>
+<p>The input monitor button has three modes:</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Colour</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Off</strong></td>
+<td>Grey</td>
+<td>The live input is not monitored</td>
+</tr>
+<tr>
+<td><strong>In</strong></td>
+<td>Green</td>
+<td>The live input is always monitored, whether or not the track is record armed</td>
+</tr>
+<tr>
+<td><strong>Auto</strong></td>
+<td>Blue</td>
+<td>The live input is monitored only while the track is record armed</td>
+</tr>
+</tbody>
+</table>
+<p>Click the button to cycle Off → In → Auto, or right-click it to pick a mode from a menu.</p>
+<p>To play an instrument without arming its track, for example to practise before recording, set its monitor to <strong>In</strong>.</p>
+<p>With <strong>Auto-monitor selected track</strong> enabled (Preferences → General → Behavior), selecting a track sets its monitor to Auto and turns the previously selected track's monitor Off. This overrides a mode you set by hand. The option is off by default.</p>
 <h2 id="multi-output-plugins">Multi-Output Plugins<a class="headerlink" href="#multi-output-plugins" title="Permanent link">&para;</a></h2>
 <p>When an instrument plugin has more than two output channels (e.g. Kontakt, Battery, Drum Machine Designer), MAGDA can create separate output tracks for each stereo pair.</p>
 <ul>
