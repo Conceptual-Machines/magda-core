@@ -40,6 +40,15 @@ Examples:
 - If pre-commit hooks fail (e.g. clang-format), re-stage the formatted files and create a **new** commit. Do NOT amend
 - Never use `--no-verify`
 
+## Issues and PRs
+
+- One issue, one PR: scope an issue to what a single self-contained PR delivers. Group related
+  issues with an `epic:*` label, not an umbrella issue that stays open.
+- The PR closes its issue in full. Leftovers go in a new issue (or get dropped); they are never
+  a reason to keep the original open.
+- Put `Closes #N` in the PR body. GitHub ignores it on merges into `dev/0.X.0`, so the
+  `close-issues-on-dev-merge` workflow closes the issue when the PR merges.
+
 ## Dangerous Commands — NEVER Run Without Explicit User Request
 
 - `git push --force`
