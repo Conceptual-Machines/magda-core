@@ -1,0 +1,28 @@
+name: Close Issues on Dev Merge
+
+# GitHub only honours "Closes #N" on merges into the default branch; PRs here land on dev/*.
+on:
+  pull_request:
+    types: [ closed ]
+
+jobs:
+  close-issues:
+    name: Close issues named in the PR body
+    if: github.event.pull_request.merged && github.base_ref != github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+
+    steps:
+    - name: Close referenced issues
+      env:
+        GH_TOKEN: ${{ github.token }}
+        BODY: ${{ github.event.pull_request.body }}
+        PR: ${{ github.event.pull_request.number }}
+      run: |
+        issues=$(grep -oiE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?):? #[0-9]+' <<<"$BODY" | grep -oE '[0-9]+' | sort -u || true)
+        for n in $issues; do
+          if [ "$(gh issue view "$n" -R "$GITHUB_REPOSITORY" --json state -q .state)" = "OPEN" ]; then
+            gh issue close "$n" -R "$GITHUB_REPOSITORY" --comment "Done in #$PR"
+          fi
+        done
