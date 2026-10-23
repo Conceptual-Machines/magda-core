@@ -150,6 +150,13 @@ TransportPanel::~TransportPanel() {
         button->setLookAndFeel(nullptr);
 }
 
+void TransportPanel::toggleMetronome() {
+    const bool enabled = !metronomeButton->isActive();
+    metronomeButton->setActive(enabled);
+    if (onMetronomeToggle)
+        onMetronomeToggle(enabled);
+}
+
 void TransportPanel::configChanged() {
     const auto style = transport::styleFromKey(Config::getInstance().getTransportStyle());
     if (style == style_)
@@ -1244,12 +1251,7 @@ void TransportPanel::setupTempoAndQuantize() {
     styleTransportButton(*metronomeButton, ActiveTheme::ACCENT_PRIMARY);
     metronomeButton->setIconPadding(2.0f);
     metronomeButton->setNormalColor(juce::Colour(0xFFBCBCBC));
-    metronomeButton->onClick = [this]() {
-        bool newState = !metronomeButton->isActive();
-        metronomeButton->setActive(newState);
-        if (onMetronomeToggle)
-            onMetronomeToggle(newState);
-    };
+    metronomeButton->onClick = [this]() { toggleMetronome(); };
     addAndMakeVisible(*metronomeButton);
 
     // Count-in button. Left-click opens the length menu; there is no toggle,

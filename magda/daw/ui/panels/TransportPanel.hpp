@@ -45,6 +45,9 @@ class TransportPanel : public juce::Component,
     // need re-applying rather than repainting to pick up the new theme.
     void lookAndFeelChanged() override;
 
+    /** @brief Flip the metronome button and report it, as a click does. */
+    void toggleMetronome();
+
     // Transport control callbacks
     std::function<void()> onPlay;
     std::function<void()> onStop;

@@ -54,6 +54,7 @@ enum {
     nudgeClipsUp = 0x1021,            // Shift+Up: move selected clips to the track above
     nudgeClipsDown = 0x1022,          // Shift+Down: move selected clips to the track below
     toggleClipGainEnvelope = 0x1023,  // E: show/hide the gain envelope on selected audio clips
+    quantizeSelection = 0x1024,       // Q: selected notes, else selected MIDI clips, to the grid
 
     // Transport menu
     play = 0x2000,  // Space: toggles play/stop (perform() already toggles)
@@ -69,6 +70,7 @@ enum {
     goToSelectionStart = 0x200A,
     goToSelectionEnd = 0x200B,
     captureRecentAudio = 0x200C,  // The master's last bars onto a new track (#2311)
+    toggleMetronome = 0x200D,     // C (#2966)
 
     // Track menu
     newAudioTrack = 0x3000,
@@ -89,10 +91,16 @@ enum {
     togglePianoRollFullscreen = 0x4006,  // Cmd/Ctrl+Shift+P
     zoomIn = 0x4007,                     // H: zoom the arrangement in
     zoomOut = 0x4008,                    // G: zoom the arrangement out
+    showLiveView = 0x4009,               // F1 (#2966)
+    showArrangeView = 0x400A,            // F2
+    showMixView = 0x400B,                // F3
 
     // Help menu
     showHelp = 0x5000,
-    about = 0x5001
+    about = 0x5001,
+    // Settings menu
+    openPreferences = 0x6000,    // Cmd/Ctrl+, (#3019)
+    openAudioSettings = 0x6001,  // no default: there is no convention to follow
 };
 
 }  // namespace magda::CommandIDs
