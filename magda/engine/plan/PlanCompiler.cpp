@@ -254,6 +254,16 @@ class Compiler {
 
     void emitTrack(const TrackInfo& track);
 
+    /// The track's chain, fader, sends, meter and mute, from @p signal on.
+    /// Returns what leaves the mute.
+    PortRef emitStrip(const TrackInfo& track, ChainSignal signal);
+
+    /// Send @p out where @p track's output routing names.
+    void routeOutput(const TrackInfo& track, PortRef out);
+
+    /// The Pad track that is pad @p padId's channel on grid @p gridId, or null.
+    const TrackInfo* padChannelFor(DeviceId gridId, ChainId padId) const;
+
     /// The track's live MIDI input op, whether it is routed to a device or
     /// only auditioned. One per track either way, since the store keys inputs
     /// by TrackId.
@@ -355,6 +365,9 @@ class Compiler {
     /// instrument is an FX-section device, which is the one space those ids can
     /// come from.
     std::map<std::pair<TrackId, DeviceId>, std::map<int, TrackId>> multiOutTargets_;
+    /// Each pad's channel, by grid and pad. A channel is emitted inside its
+    /// grid rather than in the track order (#3010).
+    std::map<std::pair<DeviceId, ChainId>, const TrackInfo*> padChannels_;
     /// Tracks whose MIDI another track reads, through a MIDI sidechain or an
     /// internal MIDI route. Their MIDI clips have to be compiled even when
     /// their own chain has nothing that consumes MIDI.
@@ -448,7 +461,13 @@ bool Compiler::multiOutPairIsConnected(const MultiOutTrackLink& link, TrackId re
 
 bool Compiler::carriesClips(const TrackInfo& track) const {
     return track.id != master_.id && track.type != TrackType::Aux &&
-           track.type != TrackType::Group && track.type != TrackType::MultiOut;
+           track.type != TrackType::Group && track.type != TrackType::MultiOut &&
+           track.type != TrackType::Pad;
+}
+
+const TrackInfo* Compiler::padChannelFor(DeviceId gridId, ChainId padId) const {
+    const auto found = padChannels_.find({gridId, padId});
+    return found == padChannels_.end() ? nullptr : found->second;
 }
 
 TrackRoute Compiler::audioInputRoute(const TrackInfo& track) const {
@@ -542,7 +561,20 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
     };
     std::vector<Edge> edges;
 
+    // A pad channel compiles inside its grid's track, so every edge it has is
+    // that track's.
+    std::vector<std::size_t> compiledIn(numTracks);
+    for (std::size_t i = 0; i < numTracks; ++i) {
+        compiledIn[i] = i;
+        const auto& track = tracks_[i];
+        if (track.padLink && padChannelFor(track.padLink->gridId, track.padLink->padId) == &track)
+            if (const auto grid = indexById.find(track.parentId); grid != indexById.end())
+                compiledIn[i] = grid->second;
+    }
+
     const auto addEdge = [&](std::size_t from, std::size_t to, int routeSignal = -1) {
+        from = compiledIn[from];
+        to = compiledIn[to];
         if (from == to || skipped[from] || skipped[to])
             return;
         edges.push_back({from, to, routeSignal, true});
@@ -592,7 +624,7 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
 
             // A track routed from itself is a loop of one, which no ordering can
             // satisfy, so it is settled here rather than found as a component.
-            if (static_cast<std::size_t>(source) == i) {
+            if (compiledIn[static_cast<std::size_t>(source)] == compiledIn[i]) {
                 resolveCyclicRoute(i, i, signal);
                 return;
             }
@@ -760,7 +792,7 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
     std::set<std::size_t> ready;
     std::size_t remaining = 0;
     for (std::size_t i = 0; i < numTracks; ++i) {
-        if (skipped[i])
+        if (skipped[i] || compiledIn[i] != i)
             continue;
         ++remaining;
         if (indegree[i] == 0)
@@ -1525,10 +1557,8 @@ ChainSignal Compiler::emitPadRack(const DeviceInfo& device, const ChainSite& sit
     if (device.bypassed)
         return signal;
 
-    // Keyed by the bus each pad plays out of. Bus 0 is the device's own output
-    // and flows on down the chain; the rest are output pairs a multi-out track
-    // reads, the way an instrument's further pairs are.
-    std::map<int, std::vector<PortRef>> busAudio;
+    // What reaches the device's own output and flows on down the chain.
+    std::vector<PortRef> mainAudio;
 
     for (const auto& pad : pads.chains) {
         if (pad.bypassed)
@@ -1643,47 +1673,34 @@ ChainSignal Compiler::emitPadRack(const DeviceInfo& device, const ChainSite& sit
             fader.padPanParam = device.paramIndexFor("padPan" + std::to_string(slot));
         }
 
-        busAudio[pad.outputIndex].push_back(PortRef{faderOp, 0});
-    }
-
-    // The pairs a multi-out track claimed from this device, the same map an
-    // instrument's further outputs are read through.
-    const auto targets = multiOutTargets_.find({site.trackId, device.id});
-
-    for (const auto& [bus, audio] : busAudio) {
-        if (bus == 0 || audio.empty())
-            continue;
-
-        // Mixed per bus, and keyed on the bus so two of them are two ops.
-        const OpKey busKey{site.trackId,    pads.id, INVALID_CHAIN_ID, INVALID_DEVICE_ID,
-                           OpRole::RackMix, bus,     site.segment};
-        const auto mixed = emitMix(busKey, audio);
-
-        const auto* claimed = targets == multiOutTargets_.end() ? nullptr : &targets->second;
-        const auto target =
-            claimed == nullptr ? std::map<int, TrackId>::const_iterator{} : claimed->find(bus);
-        if (claimed == nullptr || target == claimed->end()) {
-            // No track opened this pair, which is what the current engine does
-            // with a pin no RackInstance was made for. Reported rather than
-            // folded into the main mix: the model says these pads play
-            // somewhere else, and mixing them into the device's own output
-            // would render a project nobody saved.
-            diagnose("device " + std::to_string(device.id) + " on track " +
-                     std::to_string(site.trackId) + ": bus " + std::to_string(bus) +
-                     " reaches no track, the pads on it are silent");
-            continue;
+        // The pad's mixer channel (#3010): its chain, fader, sends, meter and
+        // mute, here rather than in the track order, since it feeds back into
+        // this grid. Routed elsewhere, it leaves the grid's mix.
+        PortRef padOutput{faderOp, 0};
+        if (const auto* channel = padChannelFor(device.id, pad.id)) {
+            std::vector<PortRef> sources{padOutput};
+            if (const auto pending = pendingInputs_.find(channel->id);
+                pending != pendingInputs_.end()) {
+                sources.insert(sources.end(), pending->second.begin(), pending->second.end());
+                pendingInputs_.erase(pending);
+            }
+            const OpKey inputKey{channel->id,       INVALID_RACK_ID,         INVALID_CHAIN_ID,
+                                 INVALID_DEVICE_ID, OpRole::TrackAudioInput, 0};
+            padOutput = emitStrip(*channel, ChainSignal{emitMix(inputKey, sources), noInput()});
+            if (resolveAudioDestination(*channel) != site.trackId) {
+                routeOutput(*channel, padOutput);
+                continue;
+            }
         }
-
-        pendingInputs_[target->second].push_back(mixed);
+        mainAudio.push_back(padOutput);
     }
 
-    const auto main = busAudio.find(0);
-    if (main == busAudio.end() || main->second.empty())
+    if (mainAudio.empty())
         return signal;
 
     const OpKey mixKey{site.trackId,    pads.id, INVALID_CHAIN_ID, INVALID_DEVICE_ID,
                        OpRole::RackMix, 0,       site.segment};
-    auto wet = emitMix(mixKey, main->second);
+    auto wet = emitMix(mixKey, mainAudio);
 
     // The device's own slot controls. An expanded Drum Grid is still a device in
     // the chain, so the gain and meter its slot carries have to sit where every
@@ -1746,9 +1763,6 @@ ChainSignal Compiler::emitElements(const std::vector<ChainElement>& elements, co
 }
 
 void Compiler::emitTrack(const TrackInfo& track) {
-    const auto isMaster = track.id == master_.id;
-    const ChainSite fxSite{track.id, INVALID_RACK_ID, INVALID_CHAIN_ID, ChainSegment::Fx};
-
     // --- chain head ---
 
     // A multi-out pair arrives through pendingInputs_, put there by the device
@@ -1921,6 +1935,13 @@ void Compiler::emitTrack(const TrackInfo& track) {
         trackMidiInput_[track.id] = signal.midi;
     }
 
+    routeOutput(track, emitStrip(track, signal));
+}
+
+PortRef Compiler::emitStrip(const TrackInfo& track, ChainSignal signal) {
+    const auto isMaster = track.id == master_.id;
+    const ChainSite fxSite{track.id, INVALID_RACK_ID, INVALID_CHAIN_ID, ChainSegment::Fx};
+
     // --- chain ---
 
     // Chain power gates the whole insert chain without touching the devices'
@@ -2030,8 +2051,11 @@ void Compiler::emitTrack(const TrackInfo& track) {
                         INVALID_DEVICE_ID, OpRole::TrackMute, 0};
     out = PortRef{addOp(OpKind::Gain, muteKey, {out}, {SignalKind::Audio}), 0};
     trackRoutedOutput_[track.id] = out;
+    return out;
+}
 
-    // --- output routing ---
+void Compiler::routeOutput(const TrackInfo& track, PortRef out) {
+    const auto isMaster = track.id == master_.id;
 
     if (isMaster) {
         const OpKey outputKey{track.id,          INVALID_RACK_ID,        INVALID_CHAIN_ID,
@@ -2217,6 +2241,10 @@ RenderPlan Compiler::run() {
                      std::to_string(link.sourceDeviceId) + " is already read by track " +
                      std::to_string(owner->second) + ", this track renders silence");
     }
+
+    for (const auto& track : tracks_)
+        if (track.type == TrackType::Pad && track.padLink)
+            padChannels_.emplace(std::pair{track.padLink->gridId, track.padLink->padId}, &track);
 
     for (const auto* track : computeTrackOrder())
         emitTrack(*track);

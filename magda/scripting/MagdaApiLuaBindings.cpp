@@ -262,6 +262,8 @@ const char* trackTypeToLuaString(TrackType t) {
             return "master";
         case TrackType::MultiOut:
             return "multi_out";
+        case TrackType::Pad:
+            return "pad";
     }
     return "audio";
 }

@@ -1,3 +1,4 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <limits>
 #include <memory>
@@ -1333,17 +1334,23 @@ TEST_CASE("Drum Grid facade edits pads and their device chains as undoable steps
     REQUIRE_FALSE(devices.updatePad(gridPath, 0, overlap));
     REQUIRE(tm.getPad(gridPath, 0)->highNote == padNoteFor(0));
 
+    // A pad with a device is mixed on its channel (#3010), and undone as one step.
+    const auto* channel = tm.getPadChannel(gridPath, 0);
+    REQUIRE(channel != nullptr);
+    const auto channelId = channel->id;
     PadUpdate settings;
     settings.levelDb = -6.0f;
     settings.pan = 0.25f;
     settings.muted = true;
-    settings.outputBus = 1;
     REQUIRE(devices.updatePad(gridPath, 0, settings));
-    REQUIRE(tm.getPad(gridPath, 0)->volume == -6.0f);
-    REQUIRE(tm.getPad(gridPath, 0)->outputIndex == 1);
-    UndoManager::getInstance().undo();
+    REQUIRE(tm.getTrack(channelId)->volume == Catch::Approx(0.501187f));
+    REQUIRE(tm.getTrack(channelId)->pan == 0.25f);
+    REQUIRE(tm.getTrack(channelId)->muted);
     REQUIRE(tm.getPad(gridPath, 0)->volume == 0.0f);
-    REQUIRE(tm.getPad(gridPath, 0)->outputIndex == 0);
+    UndoManager::getInstance().undo();
+    REQUIRE(tm.getTrack(channelId)->volume == 1.0f);
+    REQUIRE(tm.getTrack(channelId)->pan == 0.0f);
+    REQUIRE_FALSE(tm.getTrack(channelId)->muted);
 
     PadUpdate moved;
     moved.lowNote = padNoteFor(2);
@@ -1352,7 +1359,7 @@ TEST_CASE("Drum Grid facade edits pads and their device chains as undoable steps
     REQUIRE(devices.updatePad(gridPath, 0, moved));
     REQUIRE(tm.getPad(gridPath, 0) == nullptr);
     REQUIRE(tm.getPad(gridPath, 2)->id == chainId);
-    REQUIRE(tm.getPad(gridPath, 2)->volume == -9.0f);
+    REQUIRE(tm.getTrack(channelId)->volume == Catch::Approx(0.354813f));
 
     const auto sampleFile = juce::File::createTempFile(".wav");
     REQUIRE(sampleFile.create().wasOk());

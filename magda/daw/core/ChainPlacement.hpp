@@ -19,7 +19,6 @@ enum class PlacementRefusal {
     Allowed,
     DestinationCannotHostInstrument,  ///< An aux or group track, and the subtree has an instrument
     DestinationInsideSource,          ///< A rack being put inside one of its own chains
-    PadOnABus,                        ///< A Drum Grid pad routed to a bus no destination carries
     OwnsMultiOutChildTracks,          ///< A device whose pairs drive child tracks of its own track
 };
 

@@ -55,8 +55,7 @@ class DrumGridUI : public juce::Component,
 
     /** Update cached info for a single pad. Called from DeviceSlotComponent::updateCustomUI. */
     void updatePadInfo(int padIndex, const juce::String& sampleName, bool mute, bool solo,
-                       float levelDb, float pan, int chainIndex = -1, bool bypassed = false,
-                       int busOutput = 0);
+                       float levelDb, float pan, int chainIndex = -1, bool bypassed = false);
 
     /** Set which pad is selected and populate the detail panel. */
     void setSelectedPad(int padIndex);
@@ -100,17 +99,16 @@ class DrumGridUI : public juce::Component,
     /** Called when play button is pressed/released on a pad. (padIndex, isNoteOn) */
     std::function<void(int, bool)> onNotePreview;
 
-    /** @brief A pad's switches, faders and output as the model holds them. */
+    /** @brief A pad's switches and faders, which are its mixer channel's (#3010). */
     struct PadMix {
         float level = 0.0f;
         float pan = 0.0f;
         bool mute = false;
         bool solo = false;
-        int busOutput = 0;
     };
 
-    /// Read at the poll rate, so a pad fader moved elsewhere (a mixer
-    /// sub-channel) shows here. Nothing for a pad with no chain.
+    /// Read at the poll rate, so a pad's channel moved in the mixer shows here.
+    /// Nothing for a pad with no chain.
     std::function<std::optional<PadMix>(int padIndex)> getPadMix;
 
     /// Whether a pad has sounded since it was last asked. Read at the poll rate.
@@ -151,6 +149,10 @@ class DrumGridUI : public juce::Component,
 
     /** Width the panels want: rail, pads, the editor when open, and the chain. */
     int getPreferredContentWidth() const;
+
+    /// What the grid needs to fit: the pads' text, or the selected pad's chain
+    /// once its devices need more (#3119).
+    HeightRange getHeightRange() const;
 
     //==============================================================================
     // Component overrides
@@ -231,7 +233,6 @@ class DrumGridUI : public juce::Component,
         float level = 0.0f;
         float pan = 0.0f;
         int chainIndex = -1;  // Index of the chain covering this pad, or -1 if empty
-        int busOutput = 0;    // 0 = Main, 1+ = multi-out bus
     };
 
     std::array<PadInfo, kTotalPads> padInfos_;

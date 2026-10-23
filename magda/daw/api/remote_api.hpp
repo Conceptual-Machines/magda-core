@@ -485,7 +485,7 @@ struct PadDto {
     bool muted = false;
     bool solo = false;
     bool bypassed = false;
-    int outputBus = 0;
+    std::optional<TrackId> channelTrackId;  ///< The pad's mixer channel (#3010)
     std::vector<DevicePathDto> devicePaths;
 
     bool operator==(const PadDto&) const = default;
@@ -961,6 +961,9 @@ ChordTrackDto makeChordTrackDto(const TrackInfo* track, ClipApi& clips);
 ClipDto makeClipDto(const ClipInfo& clip);
 std::vector<MidiEventDto> makeMidiEventDtos(const ClipInfo& clip);
 DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks);
+/// A pad with a mixer channel in @p tracks reads its level, pan and switches off it (#3010).
+std::vector<PadDto> makePadDtos(const DeviceInfo& grid, const ChainNodePath& gridPath,
+                                const std::vector<TrackInfo>& tracks);
 std::vector<PadDto> makePadDtos(const DeviceInfo& grid, const ChainNodePath& gridPath);
 DeviceCatalogEntryDto makeDeviceCatalogEntryDto(const DeviceCatalogEntry& entry);
 DevicePresetDto makeDevicePresetDto(const DevicePresetEntry& entry);

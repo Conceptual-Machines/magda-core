@@ -703,8 +703,7 @@ void DeviceSlotComponent::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int>
 int DeviceSlotComponent::sideStripWidth() const {
     const auto* track = magda::TrackManager::getInstance().getTrack(nodePath_.trackId);
     const bool onChordTrack = track != nullptr && track->type == magda::TrackType::Chord;
-    // The Drum Grid's pads and chain take the full width; its gain lives on the pads.
-    if (stripsAnalysisChrome() || onChordTrack || traits_.isDrumGrid)
+    if (stripsAnalysisChrome() || onChordTrack)
         return 0;
     // MIDI devices emit no audio; only the note-strip utilities keep a strip.
     const bool midiDevice = device_.deviceType == magda::DeviceType::MIDI || traits_.isChordEngine;

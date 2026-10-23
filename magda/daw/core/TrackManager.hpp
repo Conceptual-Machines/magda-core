@@ -14,6 +14,7 @@
 #include "ChainPlacement.hpp"
 #include "DeviceState.hpp"
 #include "HostedParameterEdit.hpp"
+#include "PadChannels.hpp"
 #include "SelectionManager.hpp"
 #include "TrackInfo.hpp"
 #include "TrackTypes.hpp"
@@ -729,34 +730,20 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setPadLayerSolo(const ChainNodePath& gridPath, ChainId layerId, bool solo);
     void setPadLayerBypassed(const ChainNodePath& gridPath, ChainId layerId, bool bypassed);
 
-    /// A pad's fader, pan and switches.
+    /// A pad's fader (dB), pan and switches: its channel's once it has one.
     void setPadVolume(const ChainNodePath& gridPath, int padIndex, float volume);
     void setPadPan(const ChainNodePath& gridPath, int padIndex, float pan);
     void setPadMuted(const ChainNodePath& gridPath, int padIndex, bool muted);
     void setPadSolo(const ChainNodePath& gridPath, int padIndex, bool solo);
     void setPadBypassed(const ChainNodePath& gridPath, int padIndex, bool bypassed);
 
-    /// Which output a pad plays out of: 0 is the grid's own mix, 1+ a multi-out
-    /// bus. `ChainInfo::outputIndex`, the same field a rack chain routes with.
-    ///
-    /// False, and refused, for a bus on a grid that is not a top-level device.
-    /// A multi-out child track is fed by an output instance the instrument rack
-    /// manager makes for a wrapped top-level instrument; a grid inside a MAGDA
-    /// rack is loaded by RackSyncManager and has no such entry, so the bus
-    /// would name a track nothing reaches (#2211).
-    bool setPadOutput(const ChainNodePath& gridPath, int padIndex, int outputIndex);
+    /// The mixer channel pad @p padIndex plays through, or null while it holds
+    /// nothing (#3010). Its fader, pan and switches are the pad's.
+    const TrackInfo* getPadChannel(const ChainNodePath& gridPath, int padIndex) const;
 
-    /// Whether a bus can be assigned to @p gridPath's pads at all.
-    static bool padBusesAvailable(const ChainNodePath& gridPath);
-
-    /// Put every pad back on the grid's own mix. True when any of them moved.
-    ///
-    /// A grid can cross into a placement where buses do not work after the
-    /// assignment was made -- `wrapDeviceInRack()` moves it into a rack and
-    /// keeps its pads -- and a project can be loaded already in that state. The
-    /// device sync calls this so a pad never stays pointed at a bus nothing
-    /// carries (#2211).
-    bool resetPadBuses(const ChainNodePath& gridPath);
+    /// Give every pad that holds a device its channel and take the rest away
+    /// (`pad_channels::sync()`). Runs on every structural notification.
+    void syncPadChannels();
 
     /// Whether @p padIndex's chain could take this range: inside the grid's own
     /// notes, and clear of every other pad chain's. Asked before the edit so a
@@ -1467,6 +1454,14 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     int nextRackId_ = 1;
     int nextChainId_ = 1;
     int nextAuxBusIndex_ = 0;
+    // Pad channels a sync removed, for the pad that comes back on an undo.
+    pad_channels::Stash padChannelStash_;
+    bool syncingPadChannels_ = false;
+
+    // The sync without its notification, for the notifiers to run first. Held
+    // off while a batch is open, since a half-restored project has grids whose
+    // channels are not back yet.
+    bool reconcilePadChannels();
     MasterChannelState masterChannel_;
     TrackInfo masterTrack_;  // Dedicated TrackInfo for master channel (id=MASTER_TRACK_ID)
     TrackId selectedTrackId_ = INVALID_TRACK_ID;

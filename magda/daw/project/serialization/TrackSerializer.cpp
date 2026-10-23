@@ -183,6 +183,13 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
         obj->setProperty("multiOutLink", juce::var(moLinkObj));
     }
 
+    if (track.padLink.has_value()) {
+        auto* padLinkObj = new juce::DynamicObject();
+        padLinkObj->setProperty("gridId", track.padLink->gridId);
+        padLinkObj->setProperty("padId", track.padLink->padId);
+        obj->setProperty("padLink", juce::var(padLinkObj));
+    }
+
     // Sends
     juce::Array<juce::var> sendsArray;
     for (const auto& send : track.sends) {
@@ -344,6 +351,12 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
         link.sourceDeviceId = moLinkObj->getProperty("sourceDeviceId");
         link.outputPairIndex = moLinkObj->getProperty("outputPairIndex");
         outTrack.multiOutLink = link;
+    }
+
+    if (auto padLinkVar = obj->getProperty("padLink"); padLinkVar.isObject()) {
+        auto* padLinkObj = padLinkVar.getDynamicObject();
+        outTrack.padLink =
+            PadChannelLink{padLinkObj->getProperty("gridId"), padLinkObj->getProperty("padId")};
     }
 
     // Sends

@@ -93,6 +93,11 @@ struct TrackControlsPolicy {
                 p.pan = p.mute = p.solo = p.automation = true;
                 p.audioOut = p.sends = true;
                 break;
+            case TrackType::Pad:
+                // A Drum Grid pad's channel: mix controls, sends and its output.
+                p.pan = p.mute = p.solo = p.automation = true;
+                p.audioOut = p.sends = true;
+                break;
             case TrackType::Aux:
                 // Return bus: mix controls only — no routing, no sends.
                 p.pan = p.mute = p.solo = p.automation = true;

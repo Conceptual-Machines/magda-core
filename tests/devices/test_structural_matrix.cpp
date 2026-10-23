@@ -94,13 +94,13 @@ enum class Subject {
     Effect,
     Instrument,
     Rack,
-    RoutedGrid,      ///< A Drum Grid with a pad on a multi-out bus
+    PaddedGrid,      ///< A Drum Grid whose pad plays through a mixer channel
     MultiOutDriver,  ///< A device whose pair drives a child track
 };
 
 constexpr std::array kSubjects{
     Subject::Effect,     Subject::Instrument,     Subject::Rack,
-    Subject::RoutedGrid, Subject::MultiOutDriver,
+    Subject::PaddedGrid, Subject::MultiOutDriver,
 };
 
 const char* label(Subject subject) {
@@ -111,8 +111,8 @@ const char* label(Subject subject) {
             return "an instrument";
         case Subject::Rack:
             return "a rack";
-        case Subject::RoutedGrid:
-            return "a routed Drum Grid";
+        case Subject::PaddedGrid:
+            return "a Drum Grid with a pad channel";
         case Subject::MultiOutDriver:
             return "a multi-out device driving a child track";
     }
@@ -157,7 +157,7 @@ const char* label(Disposition disposition) {
 }
 
 bool carriesAnInstrument(Subject subject) {
-    return subject == Subject::Instrument || subject == Subject::RoutedGrid ||
+    return subject == Subject::Instrument || subject == Subject::PaddedGrid ||
            subject == Subject::MultiOutDriver;
 }
 
@@ -203,16 +203,16 @@ Disposition expectedOutcome(Operation operation, Subject subject, Container sour
         case Operation::Wrap:
             if (isFlatSection(source))
                 return Disposition::Refused;
-            // Wrapping takes the element off the top level, which is where a pad
-            // bus and a multi-out pair are carried from.
-            if (subject == Subject::RoutedGrid || subject == Subject::MultiOutDriver)
+            // Wrapping takes the element off the top level, which is where a
+            // multi-out pair is carried from.
+            if (subject == Subject::MultiOutDriver)
                 return Disposition::Refused;
             return Disposition::Applied;
 
         case Operation::Duplicate:
             // A copy pasted back beside itself. It has no source as far as the
             // placement rules are concerned, so only what it carries matters,
-            // and a routed grid only ever stands in the track's own list.
+            // and every subject here stands in a chain list.
             return isFlatSection(source) ? Disposition::Refused : Disposition::Applied;
 
         case Operation::Paste:
@@ -223,11 +223,7 @@ Disposition expectedOutcome(Operation operation, Subject subject, Container sour
             if (carriesAnInstrument(subject) && auxDestination)
                 return Disposition::Refused;
             // A pasted subtree owns no child tracks and leaves no track, so the
-            // rules keyed on where it came from pass. What it carries still has
-            // to land somewhere that carries it: a pad on a bus needs the output
-            // instance made for a top-level instrument.
-            if (subject == Subject::RoutedGrid && destination != Container::TrackList)
-                return Disposition::Refused;
+            // rules keyed on where it came from pass.
             return Disposition::Applied;
 
         case Operation::Move:
@@ -240,9 +236,10 @@ Disposition expectedOutcome(Operation operation, Subject subject, Container sour
                 return Disposition::Applied;
             if (carriesAnInstrument(subject) && auxDestination)
                 return Disposition::Refused;
-            // Both of these are keyed on the track the subtree stands on, and
-            // both are stranded by any placement change.
-            if (subject == Subject::RoutedGrid || subject == Subject::MultiOutDriver)
+            // A pair's child track is keyed on the track the device stands on,
+            // and is stranded by any placement change. A pad channel follows its
+            // grid (#3010).
+            if (subject == Subject::MultiOutDriver)
                 return Disposition::Refused;
             return Disposition::Applied;
     }
@@ -608,7 +605,7 @@ World buildWorld(Container container) {
 /// when it can. The one place a combination is declared impossible.
 juce::String cannotPlace(Subject subject, Container container) {
     const bool carriesAnInstrument = subject == Subject::Instrument ||
-                                     subject == Subject::RoutedGrid ||
+                                     subject == Subject::PaddedGrid ||
                                      subject == Subject::MultiOutDriver;
     if (isFlatSection(container)) {
         if (subject == Subject::Rack)
@@ -617,10 +614,6 @@ juce::String cannotPlace(Subject subject, Container container) {
             return "the post-fader and mixer-analysis sections take effects only: nothing "
                    "generates sound after the fader";
     }
-
-    if (subject == Subject::RoutedGrid && container != Container::TrackList)
-        return "a pad's bus is carried by the output instance made for a top-level instrument, "
-               "so only a grid in the track's own list can be on one";
 
     return {};
 }
@@ -651,10 +644,10 @@ ChainNodePath placeSubject(Subject subject, const Shapes& shapes, Container cont
         case Subject::Rack:
             return append(*containerPath, rackHolding("Subject", effect("Inside")));
 
-        case Subject::RoutedGrid: {
+        case Subject::PaddedGrid: {
             const auto gridPath = append(*containerPath, makeDeviceElement(drumGrid("Subject")));
             REQUIRE(tm.setPadDevice(gridPath, 3, instrument("Kick")) != INVALID_DEVICE_ID);
-            REQUIRE(tm.setPadOutput(gridPath, 3, 1));
+            REQUIRE(tm.getPadChannel(gridPath, 3) != nullptr);
             return gridPath;
         }
 
@@ -1057,7 +1050,7 @@ TEST_CASE("Every pad structural edit from every container is refused or reversib
 
             const auto apply = operation.apply;
             requireCell(cell,
-                        expectedOutcome(Operation::PadEdit, Subject::RoutedGrid, container,
+                        expectedOutcome(Operation::PadEdit, Subject::PaddedGrid, container,
                                         container, TrackRole::Host),
                         std::make_unique<EditPadsCommand>(
                             gridPath, operation.name, [gridPath, padChainId, padDeviceId, apply] {

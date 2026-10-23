@@ -366,7 +366,6 @@ void DrumGridUI::timerCallback() {
         float chainPan = mix->pan;
         bool chainMute = mix->mute;
         bool chainSolo = mix->solo;
-        int chainBusOutput = mix->busOutput;
 
         bool changed = false;
         if (std::abs(info.level - chainLevel) > 0.01f) {
@@ -385,10 +384,6 @@ void DrumGridUI::timerCallback() {
             info.solo = chainSolo;
             changed = true;
         }
-        if (info.busOutput != chainBusOutput) {
-            info.busOutput = chainBusOutput;
-            changed = true;
-        }
 
         if (changed && i == selectedPad_)
             detailNeedsRefresh = true;
@@ -399,8 +394,7 @@ void DrumGridUI::timerCallback() {
 }
 
 void DrumGridUI::updatePadInfo(int padIndex, const juce::String& sampleName, bool mute, bool solo,
-                               float levelDb, float pan, int chainIndex, bool bypassed,
-                               int busOutput) {
+                               float levelDb, float pan, int chainIndex, bool bypassed) {
     if (padIndex < 0 || padIndex >= kTotalPads)
         return;
 
@@ -412,7 +406,6 @@ void DrumGridUI::updatePadInfo(int padIndex, const juce::String& sampleName, boo
     info.level = levelDb;
     info.pan = pan;
     info.chainIndex = chainIndex;
-    info.busOutput = busOutput;
 
     // Update visible pad buttons if this pad is on the current page
     int pageStart = currentPage_ * kPadsPerPage;
@@ -694,7 +687,6 @@ void DrumGridUI::paintOverChildren(juce::Graphics& g) {
 void DrumGridUI::resized() {
     auto area = getLocalBounds();
     footerArea_ = area.removeFromBottom(kFooterHeight);
-    layoutFooter(footerArea_);
 
     railArea_ = area.removeFromLeft(kRailWidth);
     auto rail = railArea_.reduced(5, 8);
@@ -712,6 +704,7 @@ void DrumGridUI::resized() {
         pad.setBounds(grid.getX() + col * (cellW + kPadGap), grid.getY() + row * (cellH + kPadGap),
                       cellW, cellH);
     }
+    layoutFooter(footerArea_.withX(grid.getX()).withWidth(grid.getWidth()));
 
     editorArea_ = {};
     if (!detailCollapsed_)
@@ -777,9 +770,9 @@ void DrumGridUI::layoutChain(juce::Rectangle<int> area) {
         emptyAddButton_.setBounds(area.reduced(6).removeFromLeft(40));
 }
 
+/// @p area spans the pad grid, so the arrows sit under its outer columns.
 void DrumGridUI::layoutFooter(juce::Rectangle<int> area) {
-    auto inner = area.reduced(10, 0);
-    auto nav = inner.removeFromLeft(220);
+    auto nav = area;
     prevPageButton_->setBounds(nav.removeFromLeft(16).withSizeKeepingCentre(12, 12));
     nextPageButton_->setBounds(nav.removeFromRight(16).withSizeKeepingCentre(12, 12));
     pageTextArea_ = nav;
@@ -933,6 +926,14 @@ int DrumGridUI::getPreferredContentWidth() const {
         width += kEditorWidth;
     const int chainWidth = selectedPadHasChain() ? padChainView_.getContentWidth() : 0;
     return width + juce::jmax(kMinChainWidth, chainWidth);
+}
+
+HeightRange DrumGridUI::getHeightRange() const {
+    // The pad text sets the floor, shared with the other compact instruments.
+    const HeightRange pads{238, 244};
+    if (!padChainView_.isVisible() || padChainView_.getHeight() <= 0)
+        return pads;
+    return pads.unite(padChainView_.getHeightRange().plus(getHeight() - padChainView_.getHeight()));
 }
 
 void DrumGridUI::setDetailCollapsed(bool collapsed) {

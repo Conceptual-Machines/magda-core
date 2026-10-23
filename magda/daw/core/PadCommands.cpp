@@ -1,5 +1,7 @@
 #include "PadCommands.hpp"
 
+#include <juce_audio_basics/juce_audio_basics.h>
+
 #include <memory>
 #include <utility>
 
@@ -16,6 +18,44 @@ PadRack snapshotPads(const ChainNodePath& gridPath) {
     if (const auto* live = TrackManager::getInstance().getPads(gridPath))
         pads.reset(std::make_unique<RackInfo>(*live));
     return pads;
+}
+
+/// What a pad edit can change on the grid's channels: a pad's fader and
+/// switches are its channel's (#3010).
+std::vector<EditPadsCommand::ChannelMix> snapshotChannelMix(const ChainNodePath& gridPath) {
+    std::vector<EditPadsCommand::ChannelMix> mixes;
+    for (const auto& track : TrackManager::getInstance().getTracks())
+        if (track.padLink && track.padLink->gridId == gridPath.getDeviceId())
+            mixes.push_back({track.id, track.volume, track.pan, track.muted, track.soloed});
+    return mixes;
+}
+
+void restoreChannelMix(const std::vector<EditPadsCommand::ChannelMix>& mixes) {
+    auto& tm = TrackManager::getInstance();
+    for (const auto& mix : mixes) {
+        const auto* track = tm.getTrack(mix.trackId);
+        if (track == nullptr)
+            continue;
+        if (track->volume != mix.volume)
+            tm.setTrackVolume(mix.trackId, mix.volume);
+        if (track->pan != mix.pan)
+            tm.setTrackPan(mix.trackId, mix.pan);
+        if (track->muted != mix.muted)
+            tm.setTrackMuted(mix.trackId, mix.muted);
+        if (track->soloed != mix.soloed)
+            tm.setTrackSoloed(mix.trackId, mix.soloed);
+    }
+}
+
+/// A pad's level in dB or its pan, from its channel once it has one.
+float padFaderValue(const ChainNodePath& gridPath, int padIndex,
+                    SetPadFaderCommand::Target target) {
+    auto& tm = TrackManager::getInstance();
+    const auto volume = target == SetPadFaderCommand::Target::Volume;
+    if (const auto* channel = tm.getPadChannel(gridPath, padIndex))
+        return volume ? juce::Decibels::gainToDecibels(channel->volume, -60.0f) : channel->pan;
+    const auto* pad = tm.getPad(gridPath, padIndex);
+    return pad == nullptr ? 0.0f : volume ? pad->volume : pad->pan;
 }
 
 }  // namespace
@@ -37,6 +77,7 @@ void EditPadsCommand::execute() {
     // with it.
     if (executed_) {
         tm.setPads(gridPath_, padsAfter_);
+        restoreChannelMix(mixAfter_);
         return;
     }
 
@@ -47,10 +88,12 @@ void EditPadsCommand::execute() {
     // this captures the grid plugin only.
     PluginService::getInstance().capturePluginStateAt(gridPath_);
     padsBefore_ = snapshotPads(gridPath_);
+    mixBefore_ = snapshotChannelMix(gridPath_);
 
     edit_();
 
     padsAfter_ = snapshotPads(gridPath_);
+    mixAfter_ = snapshotChannelMix(gridPath_);
     executed_ = true;
 }
 
@@ -59,6 +102,7 @@ void EditPadsCommand::undo() {
         return;
 
     TrackManager::getInstance().setPads(gridPath_, padsBefore_);
+    restoreChannelMix(mixBefore_);
 }
 
 void editPads(const ChainNodePath& gridPath, const juce::String& description,
@@ -78,8 +122,8 @@ SetPadFaderCommand::SetPadFaderCommand(ChainNodePath gridPath, int padIndex, Tar
       target_(target),
       newValue_(value),
       gesture_(gesture) {
-    if (const auto* pad = TrackManager::getInstance().getPad(gridPath_, padIndex_)) {
-        oldValue_ = target_ == Target::Volume ? pad->volume : pad->pan;
+    if (TrackManager::getInstance().getPad(gridPath_, padIndex_) != nullptr) {
+        oldValue_ = padFaderValue(gridPath_, padIndex_, target_);
         valid_ = true;
     }
 }

@@ -639,6 +639,10 @@ void DeleteTrackCommand::undo() {
     auto& trackManager = TrackManager::getInstance();
     auto& clipManager = ClipManager::getInstance();
 
+    // In one batch, so a grid's pad channels are back before anything syncs
+    // them against its pads (#3010).
+    TrackManager::BatchScope batch;
+
     // Ascending by where each stood, so the list refills left to right. A child
     // restored before its parent finds no parent to rejoin, and needs none: the
     // parent's own stored childIds still names it.

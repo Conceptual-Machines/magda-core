@@ -23,6 +23,18 @@ struct MultiOutTrackLink {
 };
 
 /**
+ * @brief Links a Pad track to the Drum Grid pad whose channel it is (#3010).
+ *
+ * The grid's track is the Pad track's parent, so the link names only the pad.
+ */
+struct PadChannelLink {
+    DeviceId gridId = INVALID_DEVICE_ID;
+    ChainId padId = INVALID_CHAIN_ID;
+
+    bool operator==(const PadChannelLink&) const = default;
+};
+
+/**
  * @brief Describes a send from this track to an aux track
  */
 struct SendInfo {
@@ -117,6 +129,9 @@ struct TrackInfo {
     // Multi-output link (set when type == MultiOut)
     std::optional<MultiOutTrackLink> multiOutLink;
 
+    // Pad link (set when type == Pad)
+    std::optional<PadChannelLink> padLink;
+
     // Signal chain: main (pre-fader) FX tree + post-fader FX list. The track
     // fader (VolumeAndPan) sits structurally between the two segments.
     TrackChain chain;
@@ -175,6 +190,7 @@ struct TrackInfo {
             sends = other.sends;
             auxBusIndex = other.auxBusIndex;
             multiOutLink = other.multiOutLink;
+            padLink = other.padLink;
             viewSettings = other.viewSettings;
             mods = other.mods;
             macros = other.macros;

@@ -3087,10 +3087,10 @@ void MainView::AuxHeadersPanel::updateMetering(AudioEngine* engine) {
     if (!engine)
         return;
 
-    auto& meteringBuffer = engine->meters().mixer;
+    auto& meteringBuffer = engine->meters().arrangement;
     for (auto& row : auxRows_) {
         MeterData data;
-        if (meteringBuffer.popLevels(row->trackId, data))
+        if (drainPeak(meteringBuffer, row->trackId, data))
             row->peakMeter->setLevels(data.peakL, data.peakR);
     }
 }

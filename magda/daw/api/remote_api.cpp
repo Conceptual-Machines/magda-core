@@ -257,7 +257,7 @@ const juce::var& trackSchema() {
         "properties":{
             "id":{"anyOf":[{"type":"integer","const":-2},
                            {"type":"integer","minimum":0}]},
-            "type":{"type":"string","enum":["audio","group","aux","master","multi_out","chord"]},
+            "type":{"type":"string","enum":["audio","group","aux","master","multi_out","chord","pad"]},
             "name":{"type":"string"},
             "colourArgb":{"type":"integer","minimum":0,"maximum":4294967295},
             "parentId":{"type":["integer","null"]},
@@ -901,12 +901,12 @@ const juce::var& padSchema() {
                 "muted":{"type":"boolean"},
                 "solo":{"type":"boolean"},
                 "bypassed":{"type":"boolean"},
-                "outputBus":{"type":"integer","minimum":0,"maximum":31},
+                "channelTrackId":{"type":["integer","null"]},
                 "devicePaths":{"type":"array"}
             },
             "required":["gridPath","index","midiNote","populated","chainId","chainPath","lowNote",
                         "highNote","rootNote","name","levelDb","pan","muted","solo",
-                        "bypassed","outputBus","devicePaths"],
+                        "bypassed","channelTrackId","devicePaths"],
             "additionalProperties":false
         })json");
         auto* properties = schema["properties"].getDynamicObject();
@@ -2135,7 +2135,7 @@ juce::var toJson(const PadDto& dto) {
     object->setProperty("muted", dto.muted);
     object->setProperty("solo", dto.solo);
     object->setProperty("bypassed", dto.bypassed);
-    object->setProperty("outputBus", dto.outputBus);
+    object->setProperty("channelTrackId", nullableId(dto.channelTrackId));
     juce::Array<juce::var> paths;
     for (const auto& path : dto.devicePaths)
         paths.add(toJson(path));
@@ -2642,7 +2642,7 @@ std::optional<PadDto> padFromJson(const juce::var& json, Error& error) {
     dto.muted = static_cast<bool>(json["muted"]);
     dto.solo = static_cast<bool>(json["solo"]);
     dto.bypassed = static_cast<bool>(json["bypassed"]);
-    dto.outputBus = readInt(json, "outputBus");
+    dto.channelTrackId = readNullableId<TrackId>(json, "channelTrackId");
     for (const auto& path : *json["devicePaths"].getArray())
         dto.devicePaths.push_back(devicePathFromJson(path));
     return dto;
@@ -3723,8 +3723,7 @@ OperationRegistry::OperationRegistry() {
         "levelDb":{"type":"number","minimum":-60,"maximum":6},
         "pan":{"type":"number","minimum":-1,"maximum":1},
         "muted":{"type":"boolean"},"solo":{"type":"boolean"},
-        "bypassed":{"type":"boolean"},
-        "outputBus":{"type":"integer","minimum":0,"maximum":31}},
+        "bypassed":{"type":"boolean"}},
         "required":["gridPath","padIndex"],"additionalProperties":false
     })json",
                     padSchema());

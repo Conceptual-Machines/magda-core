@@ -193,7 +193,7 @@ TEST_CASE("Undoing a device removal restores the serialized model",
         ChainNodePath::topLevelDevice(trackId, doomed)));
 }
 
-TEST_CASE("Undoing the removal of a routed grid restores the serialized model",
+TEST_CASE("Undoing the removal of a grid restores its pad channels",
           "[structural][undo][roundtrip][pads]") {
     resetState();
     auto& tm = TrackManager::getInstance();
@@ -209,7 +209,8 @@ TEST_CASE("Undoing the removal of a routed grid restores the serialized model",
     voice.isInstrument = true;
     voice.deviceType = DeviceType::Instrument;
     REQUIRE(tm.setPadDevice(gridPath, 0, voice) != INVALID_DEVICE_ID);
-    REQUIRE(tm.setPadOutput(gridPath, 0, 1));
+    REQUIRE(tm.getPadChannel(gridPath, 0) != nullptr);
+    tm.setTrackVolume(tm.getPadChannel(gridPath, 0)->id, 0.5f);
 
     UndoManager::getInstance().clearHistory();
     requireUndoRoundTrip(std::make_unique<RemoveDeviceByPathCommand>(gridPath));

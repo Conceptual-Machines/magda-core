@@ -2687,7 +2687,7 @@ void MixerView::timerCallback() {
     for (auto& strip : channelStrips) {
         int trackId = strip->getTrackId();
         MeterData data;
-        if (meteringBuffer.popLevels(trackId, data)) {
+        if (drainPeak(meteringBuffer, trackId, data)) {
             strip->setMeterLevels(data.peakL, data.peakR);
         }
     }
@@ -2696,7 +2696,7 @@ void MixerView::timerCallback() {
     for (auto& strip : auxChannelStrips) {
         int trackId = strip->getTrackId();
         MeterData data;
-        if (meteringBuffer.popLevels(trackId, data)) {
+        if (drainPeak(meteringBuffer, trackId, data)) {
             strip->setMeterLevels(data.peakL, data.peakR);
         }
     }

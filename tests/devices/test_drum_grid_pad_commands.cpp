@@ -1,4 +1,7 @@
+#include <juce_audio_basics/juce_audio_basics.h>
+
 #include <algorithm>
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "PadLayerTestPaths.hpp"
@@ -53,6 +56,13 @@ DeviceInfo padVoice(const juce::String& name) {
     return device;
 }
 
+/// A pad's level in dB, which is its channel's fader (#3010).
+float padLevelDb(const ChainNodePath& gridPath, int padIndex) {
+    const auto* channel = TrackManager::getInstance().getPadChannel(gridPath, padIndex);
+    REQUIRE(channel != nullptr);
+    return juce::Decibels::gainToDecibels(channel->volume, -60.0f);
+}
+
 }  // namespace
 
 TEST_CASE("A pad edit lands on the pad, not on a rack that shares its number",
@@ -96,7 +106,7 @@ TEST_CASE("A pad edit lands on the pad, not on a rack that shares its number",
             CHECK(chain.elements.empty());
 }
 
-TEST_CASE("A pad's fader and switches move the pad's own chain", "[drumgrid][pads][commands]") {
+TEST_CASE("A pad's fader and switches land on its channel", "[drumgrid][pads][commands]") {
     resetState();
     auto& tm = TrackManager::getInstance();
 
@@ -115,12 +125,15 @@ TEST_CASE("A pad's fader and switches move the pad's own chain", "[drumgrid][pad
     tm.setPadSolo(gridPath, padIndex, true);
     tm.setPadBypassed(gridPath, padIndex, true);
 
+    // The mix is the pad's mixer channel's (#3010); bypass stays the pad's own.
+    const auto* channel = tm.getPadChannel(gridPath, padIndex);
+    REQUIRE(channel != nullptr);
+    CHECK(padLevelDb(gridPath, padIndex) == Catch::Approx(-6.0f));
+    CHECK(channel->pan == -0.5f);
+    CHECK(channel->muted);
+    CHECK(channel->soloed);
     const auto* pad = tm.getPad(gridPath, padIndex);
     REQUIRE(pad != nullptr);
-    CHECK(pad->volume == -6.0f);
-    CHECK(pad->pan == -0.5f);
-    CHECK(pad->muted);
-    CHECK(pad->solo);
     CHECK(pad->bypassed);
 
     // The rack chain that shares the grid's number is untouched.
@@ -513,7 +526,7 @@ TEST_CASE("A pad device is found by id like any other device", "[drumgrid][pads]
           ChainNodePath::chainDevice(trackId, rackId, rackChainId, rackDeviceId));
 }
 
-TEST_CASE("A pad's output bus and key range are model state", "[drumgrid][pads][commands]") {
+TEST_CASE("A pad's key range is model state", "[drumgrid][pads][commands]") {
     resetState();
     auto& tm = TrackManager::getInstance();
 
@@ -523,9 +536,6 @@ TEST_CASE("A pad's output bus and key range are model state", "[drumgrid][pads][
 
     constexpr int padIndex = 5;
     REQUIRE(tm.setPadDevice(gridPath, padIndex, padVoice("Clap")) != INVALID_DEVICE_ID);
-
-    tm.setPadOutput(gridPath, padIndex, 2);
-    CHECK(tm.getPad(gridPath, padIndex)->outputIndex == 2);
 
     // A range arrives low-first whichever way round the sliders were dragged.
     // Widened over the two notes above it, the pad still answers to its own.
@@ -592,10 +602,10 @@ TEST_CASE("A pad edit is one undo step", "[drumgrid][pads][commands][undo]") {
 
     editPads(gridPath, "Mute Pad",
              [gridPath]() { TrackManager::getInstance().setPadMuted(gridPath, padIndex, true); });
-    CHECK(tm.getPad(gridPath, padIndex)->muted);
+    CHECK(tm.getPadChannel(gridPath, padIndex)->muted);
 
     REQUIRE(undo.undo());
-    CHECK_FALSE(tm.getPad(gridPath, padIndex)->muted);
+    CHECK_FALSE(tm.getPadChannel(gridPath, padIndex)->muted);
 
     // The pad itself goes back, devices and all: the snapshot is the whole rack.
     REQUIRE(undo.undo());
@@ -610,7 +620,7 @@ TEST_CASE("A pad edit is one undo step", "[drumgrid][pads][commands][undo]") {
     CHECK(getDevice(tm.getPad(gridPath, padIndex)->layers[0].elements[0]).id == voiceId);
 
     REQUIRE(undo.redo());
-    CHECK(tm.getPad(gridPath, padIndex)->muted);
+    CHECK(tm.getPadChannel(gridPath, padIndex)->muted);
     CHECK(getDevice(tm.getPad(gridPath, padIndex)->layers[0].elements[0]).id == voiceId);
 }
 
@@ -720,7 +730,7 @@ TEST_CASE("A dragged pad fader is one undo step, not one per move",
     for (float db : {-1.0f, -2.0f, -3.0f, -4.0f})
         setPadFader(gridPath, padIndex, Target::Volume, db, /*gesture=*/1);
 
-    CHECK(tm.getPad(gridPath, padIndex)->volume == -4.0f);
+    CHECK(padLevelDb(gridPath, padIndex) == Catch::Approx(-4.0f));
 
     // The next drag is a new gesture, so it does not fold into the last one.
     // UndoManager merges adjacent commands with no timeout of its own, so
@@ -728,18 +738,18 @@ TEST_CASE("A dragged pad fader is one undo step, not one per move",
     setPadFader(gridPath, padIndex, Target::Volume, -8.0f, /*gesture=*/2);
 
     REQUIRE(undo.undo());
-    CHECK(tm.getPad(gridPath, padIndex)->volume == -4.0f);
+    CHECK(padLevelDb(gridPath, padIndex) == Catch::Approx(-4.0f));
 
     // One step back to where the first drag started, not four.
     REQUIRE(undo.undo());
-    CHECK(tm.getPad(gridPath, padIndex)->volume == 0.0f);
+    CHECK(padLevelDb(gridPath, padIndex) == Catch::Approx(0.0f).margin(1e-4));
 
     // And pan is its own step, not the level's.
     setPadFader(gridPath, padIndex, Target::Pan, -0.5f, /*gesture=*/3);
     setPadFader(gridPath, padIndex, Target::Volume, -2.0f, /*gesture=*/3);
     REQUIRE(undo.undo());
-    CHECK(tm.getPad(gridPath, padIndex)->volume == 0.0f);
-    CHECK(tm.getPad(gridPath, padIndex)->pan == -0.5f);
+    CHECK(padLevelDb(gridPath, padIndex) == Catch::Approx(0.0f).margin(1e-4));
+    CHECK(tm.getPadChannel(gridPath, padIndex)->pan == -0.5f);
 }
 
 TEST_CASE("A pad's range cannot reach a note another pad already answers to",
@@ -806,92 +816,6 @@ TEST_CASE("A pad's range has to stay inside the notes the grid shows",
     CHECK(tm.getPad(gridPath, 0)->rootNote == 127);
 }
 
-TEST_CASE("A pad on a grid inside a rack cannot be put on a bus", "[drumgrid][pads][commands]") {
-    // A multi-out child track is fed by the output instance InstrumentRackManager
-    // makes when it wraps a top-level instrument. A grid inside a MAGDA rack is
-    // loaded by RackSyncManager and has no entry there, so a bus would name a
-    // track nothing reaches and the pads on it would go silent.
-    resetState();
-    auto& tm = TrackManager::getInstance();
-
-    const auto trackId = tm.createTrack("Drums");
-    const auto rackId = tm.addRackToTrack(trackId, "Rack");
-    const auto rackChainId = tm.addChainToRack(ChainNodePath::rack(trackId, rackId));
-    const auto rackChainPath = ChainNodePath::chain(trackId, rackId, rackChainId);
-    const auto nestedGridId = tm.addDeviceToChainByPath(rackChainPath, drumGridDevice());
-    REQUIRE(nestedGridId != INVALID_DEVICE_ID);
-
-    const auto nestedGridPath = rackChainPath.withDevice(nestedGridId);
-    REQUIRE(tm.setPadDevice(nestedGridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
-
-    CHECK_FALSE(tm.padBusesAvailable(nestedGridPath));
-    CHECK_FALSE(tm.setPadOutput(nestedGridPath, 0, 1));
-    CHECK(tm.getPad(nestedGridPath, 0)->outputIndex == 0);
-
-    // Back to the grid's own mix is always allowed, nested or not.
-    CHECK(tm.setPadOutput(nestedGridPath, 0, 0));
-
-    // A top-level grid takes one.
-    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
-    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
-    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Snare")) != INVALID_DEVICE_ID);
-    CHECK(tm.padBusesAvailable(gridPath));
-    CHECK(tm.setPadOutput(gridPath, 0, 2));
-    CHECK(tm.getPad(gridPath, 0)->outputIndex == 2);
-}
-
-TEST_CASE("A grid with a pad on a bus is not wrapped into a rack", "[drumgrid][pads][commands]") {
-    // Wrapping would take the grid somewhere no bus is carried, so the move
-    // would have to put every pad back on the main mix. That clean-up is not
-    // part of the undoable step the move is, so undoing the wrap would return
-    // the grid to the top level with its routing gone. Refused instead.
-    resetState();
-    auto& tm = TrackManager::getInstance();
-
-    const auto trackId = tm.createTrack("Drums");
-    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
-    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
-
-    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
-    REQUIRE(tm.setPadOutput(gridPath, 0, 1));
-
-    CHECK(tm.wrapDeviceInRack(trackId, gridId) == INVALID_RACK_ID);
-    CHECK(tm.findDevicePath(gridId) == gridPath);
-    CHECK(tm.getPad(gridPath, 0)->outputIndex == 1);
-
-    // Back on the main mix, it wraps like any other device.
-    REQUIRE(tm.setPadOutput(gridPath, 0, 0));
-    CHECK(tm.wrapDeviceInRack(trackId, gridId) != INVALID_RACK_ID);
-}
-
-TEST_CASE("A grid with a pad on a bus is not dragged into a rack", "[drumgrid][pads][commands]") {
-    // The drag-and-drop path is a move, not a wrap, and reaches neither wrap
-    // API. Undo of a move puts the already-reset grid back at the top level,
-    // which is the routing loss the wrap refusal exists to prevent.
-    resetState();
-    auto& tm = TrackManager::getInstance();
-
-    const auto trackId = tm.createTrack("Drums");
-    const auto rackId = tm.addRackToTrack(trackId, "Rack");
-    const auto rackChainId = tm.addChainToRack(ChainNodePath::rack(trackId, rackId));
-    const auto rackChainPath = ChainNodePath::chain(trackId, rackId, rackChainId);
-    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
-    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
-
-    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
-    REQUIRE(tm.setPadOutput(gridPath, 0, 1));
-
-    CHECK_FALSE(tm.moveChainElement(gridPath, rackChainPath, 0));
-    CHECK(tm.findDevicePath(gridId) == gridPath);
-
-    // Reordering inside the track's own list is not a placement change.
-    CHECK(tm.moveChainElement(gridPath, ChainNodePath::trackLevel(trackId), 0));
-
-    // And once the pad is back on the main mix it moves like anything else.
-    REQUIRE(tm.setPadOutput(tm.findDevicePath(gridId), 0, 0));
-    CHECK(tm.moveChainElement(tm.findDevicePath(gridId), rackChainPath, 0));
-}
-
 TEST_CASE("A copied Drum Grid's pads get ids of their own", "[drumgrid][pads][commands]") {
     // The copy path allocates a new id for the outer grid. Without descending
     // into its pads the clone kept every pad DeviceId from the source, so the
@@ -948,75 +872,6 @@ TEST_CASE("A copied Drum Grid's pads get ids of their own", "[drumgrid][pads][co
     CHECK(tm.findDevicePath(voiceId) ==
           magda::test::firstLayerPath(gridPath, padChainId).withDevice(voiceId));
     CHECK(tm.findDevicePath(clonedVoice.id).getDeviceId() == clonedVoice.id);
-}
-
-TEST_CASE("A grid with a pad on a bus is not dragged to another track",
-          "[drumgrid][pads][commands]") {
-    // A track-level destination on another track is still a placement change:
-    // the pair state moves with the device while the child track it made still
-    // links to the track it came from, so the sync finds the pair active, makes
-    // nothing, and the pad goes quiet.
-    resetState();
-    auto& tm = TrackManager::getInstance();
-
-    const auto trackId = tm.createTrack("Drums");
-    const auto otherTrackId = tm.createTrack("Other");
-    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
-    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
-
-    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
-    REQUIRE(tm.setPadOutput(gridPath, 0, 1));
-
-    CHECK_FALSE(tm.moveChainElement(gridPath, ChainNodePath::trackLevel(otherTrackId), 0));
-    CHECK(tm.findDevicePath(gridId) == gridPath);
-
-    REQUIRE(tm.setPadOutput(gridPath, 0, 0));
-    CHECK(tm.moveChainElement(gridPath, ChainNodePath::trackLevel(otherTrackId), 0));
-}
-
-TEST_CASE("A copied grid owns no child tracks yet", "[drumgrid][pads][commands]") {
-    // Ownership of a generated child track belongs to one placed instance, so a
-    // copy must not inherit it. It cannot: the assignment is the child track's
-    // own link, and a DeviceInfo carries no record of it to copy (#2220).
-    resetState();
-    auto& tm = TrackManager::getInstance();
-
-    const auto trackId = tm.createTrack("Drums");
-    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
-    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
-    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
-
-    {
-        auto* grid = tm.getDeviceInChainByPath(gridPath);
-        REQUIRE(grid != nullptr);
-        grid->multiOut.isMultiOut = true;
-        grid->multiOut.outputPairs.resize(2);
-    }
-
-    // A real child track, rather than a flag saying there is one.
-    const auto childTrackId = tm.activateMultiOutPair(trackId, gridId, 1);
-    REQUIRE(childTrackId != INVALID_TRACK_ID);
-    REQUIRE(tm.multiOutPairIsActive(trackId, gridId, 1));
-
-    std::vector<ChainElement> copied;
-    copied.push_back(makeDeviceElement(*tm.getDeviceInChainByPath(gridPath)));
-    REQUIRE(tm.insertChainElementsByPath(ChainNodePath::trackLevel(trackId), std::move(copied), 1,
-                                         /*reassignIds=*/true));
-
-    const auto& clone = getDevice(tm.getTrack(trackId)->chain.fxChainElements[1]);
-    REQUIRE(clone.id != gridId);
-    REQUIRE(clone.multiOut.outputPairs.size() == 2);
-
-    // The copy drives nothing, and the original still drives its own child.
-    CHECK_FALSE(tm.multiOutPairIsActive(trackId, clone.id, 1));
-    CHECK(tm.multiOutChildTrack(trackId, clone.id, 1) == INVALID_TRACK_ID);
-    CHECK(tm.multiOutChildTrack(trackId, gridId, 1) == childTrackId);
-
-    // And the child track still names the device it was made for.
-    const auto* child = tm.getTrack(childTrackId);
-    REQUIRE(child != nullptr);
-    REQUIRE(child->multiOutLink.has_value());
-    CHECK(child->multiOutLink->sourceDeviceId == gridId);
 }
 
 TEST_CASE("A copied link into a rack inside a pad follows the copy", "[drumgrid][pads][commands]") {
@@ -1085,59 +940,6 @@ TEST_CASE("A copied link into a rack inside a pad follows the copy", "[drumgrid]
     CHECK(tm.findDevicePath(kNested).getDeviceId() == kNested);
 }
 
-TEST_CASE("Pads on a grid that is already nested are put back on the main mix",
-          "[drumgrid][pads][commands]") {
-    // A project can be loaded with a nested grid whose pads are on buses, from
-    // before the wrap was refused or by hand. Nothing carries a bus off one, so
-    // the device sync puts them back rather than leaving them silent.
-    resetState();
-    auto& tm = TrackManager::getInstance();
-
-    const auto trackId = tm.createTrack("Drums");
-    const auto rackId = tm.addRackToTrack(trackId, "Rack");
-    const auto rackChainId = tm.addChainToRack(ChainNodePath::rack(trackId, rackId));
-    const auto rackChainPath = ChainNodePath::chain(trackId, rackId, rackChainId);
-    const auto gridId = tm.addDeviceToChainByPath(rackChainPath, drumGridDevice());
-    const auto gridPath = rackChainPath.withDevice(gridId);
-
-    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
-    REQUIRE(tm.setPadDevice(gridPath, 1, padVoice("Snare")) != INVALID_DEVICE_ID);
-
-    // Straight onto the model, the way a loaded project arrives: the setter
-    // refuses a bus here.
-    REQUIRE_FALSE(tm.setPadOutput(gridPath, 0, 1));
-    tm.getPadChain(gridPath, tm.getPad(gridPath, 0)->id)->outputIndex = 1;
-    tm.getPadChain(gridPath, tm.getPad(gridPath, 1)->id)->outputIndex = 2;
-
-    CHECK(tm.resetPadBuses(gridPath));
-    CHECK(tm.getPad(gridPath, 0)->outputIndex == 0);
-    CHECK(tm.getPad(gridPath, 1)->outputIndex == 0);
-
-    // And it says so only when something actually moved.
-    CHECK_FALSE(tm.resetPadBuses(gridPath));
-}
-
-TEST_CASE("A pad's bus has to name one the plan can route", "[drumgrid][pads][commands]") {
-    // The live plugin clamps what it is given and the plan compiler takes the
-    // model's value as it finds it, so an out-of-range index makes the two
-    // disagree: the plan reports a bus that reaches no track and silences the
-    // pads on it rather than folding them into the device's own mix.
-    resetState();
-    auto& tm = TrackManager::getInstance();
-
-    const auto trackId = tm.createTrack("Drums");
-    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
-    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
-    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
-
-    CHECK_FALSE(tm.setPadOutput(gridPath, 0, -1));
-    CHECK_FALSE(tm.setPadOutput(gridPath, 0, kPadBusCount));
-    CHECK(tm.getPad(gridPath, 0)->outputIndex == 0);
-
-    CHECK(tm.setPadOutput(gridPath, 0, kPadBusCount - 1));
-    CHECK(tm.getPad(gridPath, 0)->outputIndex == kPadBusCount - 1);
-}
-
 TEST_CASE("A pad chain answering to more than one note can still be deleted",
           "[drumgrid][pads][commands]") {
     // clearPad() is the pad's own delete and leaves a chain shared with its
@@ -1165,119 +967,6 @@ TEST_CASE("A pad chain answering to more than one note can still be deleted",
     CHECK(tm.getPad(gridPath, 0) == nullptr);
     CHECK(tm.getPad(gridPath, 1) == nullptr);
     CHECK(tm.getPad(gridPath, 2) == nullptr);
-}
-
-TEST_CASE("A routed grid is restored by undoing its deletion",
-          "[drumgrid][pads][commands][undo][placement]") {
-    // The remove commands put the device back through
-    // `insertChainElementsByPath()`, and discard the result. A placement rule
-    // that refused a source-less reconstruction would therefore make undo
-    // restore nothing at all, silently (#2221).
-    resetState();
-    auto& tm = TrackManager::getInstance();
-
-    const auto trackId = tm.createTrack("Drums");
-    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
-    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
-    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
-
-    // A pad on a bus, which only a top-level grid may have.
-    REQUIRE(tm.padBusesAvailable(gridPath));
-    REQUIRE(tm.setPadOutput(gridPath, 0, 1));
-    REQUIRE(tm.getPad(gridPath, 0)->outputIndex == 1);
-
-    auto& undo = UndoManager::getInstance();
-    undo.executeCommand(std::make_unique<RemoveDeviceByPathCommand>(gridPath));
-    REQUIRE(tm.getDeviceInChainByPath(gridPath) == nullptr);
-
-    REQUIRE(undo.undo());
-
-    const auto* restored = tm.getDeviceInChainByPath(gridPath);
-    REQUIRE(restored != nullptr);
-    CHECK(restored->id == gridId);
-
-    // With its routing intact, which is the whole reason ids are preserved.
-    const auto* pad = tm.getPad(gridPath, 0);
-    REQUIRE(pad != nullptr);
-    CHECK(pad->outputIndex == 1);
-}
-
-TEST_CASE("A routed grid pastes at track level but not into a rack",
-          "[drumgrid][pads][commands][placement]") {
-    // A copy keeps each pad's outputIndex, and owns no child tracks. A track's
-    // own list can carry its buses; a rack chain cannot (#2221).
-    resetState();
-    auto& tm = TrackManager::getInstance();
-
-    const auto trackId = tm.createTrack("Drums");
-    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
-    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
-    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
-    REQUIRE(tm.setPadOutput(gridPath, 0, 1));
-
-    const auto rackId = tm.addRackToTrack(trackId, "FX Rack");
-    const auto rackChainId = tm.addChainToRack(ChainNodePath::rack(trackId, rackId));
-    const auto rackChainPath = ChainNodePath::chain(trackId, rackId, rackChainId);
-
-    const auto copyOfGrid = [&] {
-        std::vector<ChainElement> elements;
-        elements.push_back(makeDeviceElement(*tm.getDeviceInChainByPath(gridPath)));
-        return elements;
-    };
-
-    // A rack chain carries no bus off the grid, so it is refused and nothing
-    // lands there.
-    CHECK_FALSE(tm.insertChainElementsByPath(rackChainPath, copyOfGrid(), 0,
-                                             /*reassignIds=*/true));
-    CHECK(tm.getChainByPath(rackChainPath)->elements.empty());
-
-    // The track's own list carries them, so the paste is allowed.
-    REQUIRE(tm.insertChainElementsByPath(ChainNodePath::trackLevel(trackId), copyOfGrid(), 1,
-                                         /*reassignIds=*/true));
-    const auto& elements = tm.getTrack(trackId)->chain.fxChainElements;
-    REQUIRE(elements.size() == 3);  // grid, the copy, rack
-    const auto& clone = getDevice(elements[1]);
-    CHECK(clone.id != gridId);
-    REQUIRE(static_cast<bool>(clone.pads));
-    CHECK(clone.pads->chains[0].outputIndex == 1);
-}
-
-TEST_CASE("A rack carrying a routed grid is refused even at track level",
-          "[drumgrid][pads][commands][placement]") {
-    // The destination rule speaks for the subtree root only. A rack landing in
-    // the track's own list is top-level, but the grid inside it is not, so its
-    // bus has no output instance to be carried by and sync would drop the
-    // routing silently (#2221).
-    resetState();
-    auto& tm = TrackManager::getInstance();
-
-    const auto trackId = tm.createTrack("Drums");
-    const auto gridId = tm.addDeviceToTrack(trackId, drumGridDevice());
-    const auto gridPath = ChainNodePath::topLevelDevice(trackId, gridId);
-    REQUIRE(tm.setPadDevice(gridPath, 0, padVoice("Kick")) != INVALID_DEVICE_ID);
-    REQUIRE(tm.setPadOutput(gridPath, 0, 1));
-
-    // A rack holding a copy of the routed grid, built on the model directly:
-    // no command makes one, and the point is what the rule says about it.
-    RackInfo carrier;
-    carrier.id = 500;
-    carrier.name = "Carrier";
-    ChainInfo carrierChain;
-    carrierChain.id = 501;
-    carrierChain.elements.push_back(makeDeviceElement(*tm.getDeviceInChainByPath(gridPath)));
-    carrier.chains.push_back(std::move(carrierChain));
-
-    std::vector<ChainElement> pasted;
-    pasted.push_back(makeRackElement(std::move(carrier)));
-
-    CHECK_FALSE(tm.insertChainElementsByPath(ChainNodePath::trackLevel(trackId), std::move(pasted),
-                                             1, /*reassignIds=*/true));
-
-    // Nothing landed: the grid is still the track's only element.
-    const auto& elements = tm.getTrack(trackId)->chain.fxChainElements;
-    REQUIRE(elements.size() == 1);
-    CHECK(isDevice(elements[0]));
-    CHECK(getDevice(elements[0]).id == gridId);
 }
 
 // Pad layers (#3007).

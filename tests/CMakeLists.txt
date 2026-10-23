@@ -43,6 +43,8 @@ set(TEST_SOURCES
     devices/test_chain_fingerprint.cpp
     devices/test_chain_info_copy.cpp
     devices/test_drum_grid_pad_commands.cpp
+    devices/test_drum_grid_pad_channels.cpp
+    audio/test_track_meters.cpp
     devices/test_pad_path_types.cpp
     devices/test_device_parameter_text.cpp
     devices/test_structural_undo_roundtrip.cpp
@@ -994,7 +996,6 @@ target_sources(magda_juce_tests PRIVATE
         engine/test_engine_host_publish_juce.cpp
         engine/test_engine_host_audio_input_juce.cpp
         engine/test_engine_host_hardware_outputs_juce.cpp
-        engine/test_engine_host_drum_grid_buses_juce.cpp
         # The native pass that records hardware inserts for a render (#2279)
         engine/test_engine_insert_capture_juce.cpp
         engine/test_engine_host_midi_recording_juce.cpp

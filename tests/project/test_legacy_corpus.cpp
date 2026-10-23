@@ -1,5 +1,6 @@
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <set>
 #include <vector>
@@ -74,7 +75,9 @@ struct Counts {
 
 Counts countStaged(const StagedProjectData& staged) {
     Counts counts;
-    counts.tracks = static_cast<int>(staged.tracks.size());
+    // The tracks the file saved: a pad's mixer channel is made at load (#3010).
+    counts.tracks = static_cast<int>(std::ranges::count_if(
+        staged.tracks, [](const TrackInfo& t) { return t.type != TrackType::Pad; }));
     counts.masterTrack = staged.masterTrack != nullptr;
     counts.clips = static_cast<int>(staged.clips.size());
     counts.automationLanes = static_cast<int>(staged.automationLanes.size());

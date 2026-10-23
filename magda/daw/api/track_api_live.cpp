@@ -148,7 +148,7 @@ bool sendGraphHasCycle(const std::vector<TrackInfo>& tracks, TrackId changedTrac
 
 bool trackCanSendAudio(TrackType type) {
     return type == TrackType::Media || type == TrackType::Group || type == TrackType::Aux ||
-           type == TrackType::MultiOut;
+           type == TrackType::MultiOut || type == TrackType::Pad;
 }
 
 void ensureSendIds(TrackId sourceTrackId, std::vector<SendInfo>& sends) {

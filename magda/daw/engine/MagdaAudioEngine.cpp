@@ -103,6 +103,7 @@ void MagdaAudioEngine::meterInto() {
 
         const MeterData data{.peakL = peakL, .peakR = peakR};
         meters_.mixer.pushLevels(trackId, data);
+        meters_.arrangement.pushLevels(trackId, data);
         meters_.recording.pushLevels(trackId, data);
         meters_.setRemotePeak(trackId, data);
     });
