@@ -25,7 +25,7 @@ class MenuCallbacksGuard {
 TEST_CASE("MenuManager dispatches registered application commands to menu callbacks",
           "[commands][menu]") {
     auto& menuManager = magda::MenuManager::getInstance();
-    std::array<int, 14> calls{};
+    std::array<int, 16> calls{};
     MenuCallbacksGuard guard(menuManager);
 
     magda::MenuManager::MenuCallbacks callbacks;
@@ -43,6 +43,8 @@ TEST_CASE("MenuManager dispatches registered application commands to menu callba
     callbacks.onDeleteTrack = [&] { ++calls[11]; };
     callbacks.onToggleArrangeSession = [&] { ++calls[12]; };
     callbacks.onAbout = [&] { ++calls[13]; };
+    callbacks.onPreferences = [&] { ++calls[14]; };
+    callbacks.onAudioSettings = [&] { ++calls[15]; };
     menuManager.initialize(callbacks);
 
     const std::array commandIDs{
@@ -53,6 +55,7 @@ TEST_CASE("MenuManager dispatches registered application commands to menu callba
         magda::CommandIDs::exportMidi,           magda::CommandIDs::importDawProject,
         magda::CommandIDs::exportDawProject,     magda::CommandIDs::deleteTrack,
         magda::CommandIDs::toggleArrangeSession, magda::CommandIDs::about,
+        magda::CommandIDs::openPreferences,      magda::CommandIDs::openAudioSettings,
     };
     static_assert(calls.size() == commandIDs.size());
 

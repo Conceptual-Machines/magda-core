@@ -84,6 +84,12 @@ bool MenuManager::invokeApplicationCommand(juce::CommandID commandID) {
         case CommandIDs::about:
             callback = &callbacks_.onAbout;
             break;
+        case CommandIDs::openPreferences:
+            callback = &callbacks_.onPreferences;
+            break;
+        case CommandIDs::openAudioSettings:
+            callback = &callbacks_.onAudioSettings;
+            break;
         default:
             return false;
     }
@@ -317,7 +323,10 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                          true, false);
 #if !JUCE_MAC
             menu.addSeparator();
-            menu.addItem(Preferences, trEllipsis("menu.settings.preferences"), true, false);
+            menu.addItem(Preferences,
+                         trEllipsis("menu.settings.preferences") +
+                             keyHint(CommandIDs::openPreferences),
+                         true, false);
 #endif
             break;
         }
@@ -401,15 +410,20 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
 
         case 5:  // Settings
         {
-            menu.addItem(Preferences, trEllipsis("menu.settings.preferences"), true, false);
+            menu.addItem(Preferences,
+                         trEllipsis("menu.settings.preferences") +
+                             keyHint(CommandIDs::openPreferences),
+                         true, false);
             menu.addSeparator();
             menu.addItem(AISettings, trEllipsis("menu.settings.ai"), true, false);
             menu.addSeparator();
-            menu.addItem(AudioSettings,
-                         trEllipsis("menu.settings.audio_midi")
-                             .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Audio))
-                             .replace("{1}", magda::technicalText(magda::TechnicalTextToken::Midi)),
-                         true, false);
+            menu.addItem(
+                AudioSettings,
+                trEllipsis("menu.settings.audio_midi")
+                        .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Audio))
+                        .replace("{1}", magda::technicalText(magda::TechnicalTextToken::Midi)) +
+                    keyHint(CommandIDs::openAudioSettings),
+                true, false);
             menu.addSeparator();
             menu.addItem(ControllerSettings, trEllipsis("menu.settings.controllers"), true, false);
             menu.addItem(ConnectionSettings, trEllipsis("menu.settings.connections"), true, false);
@@ -604,8 +618,7 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
                 callbacks_.onSelectAll();
             break;
         case Preferences:
-            if (callbacks_.onPreferences)
-                callbacks_.onPreferences();
+            invokeApplicationCommand(CommandIDs::openPreferences);
             break;
         // Settings menu
         case AISettings:
@@ -613,8 +626,7 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
                 callbacks_.onAISettings();
             break;
         case AudioSettings:
-            if (callbacks_.onAudioSettings)
-                callbacks_.onAudioSettings();
+            invokeApplicationCommand(CommandIDs::openAudioSettings);
             break;
         case PluginSettings:
             if (callbacks_.onPluginSettings)

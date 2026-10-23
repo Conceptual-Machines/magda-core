@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <numeric>
 #include <ranges>
 
 #include "../../core/AutomationCommands.hpp"
@@ -14,6 +15,9 @@
 #include "../../core/TrackPropertyCommands.hpp"
 #include "../../core/UIScale.hpp"
 #include "../../core/UndoManager.hpp"
+#include "../panels/BottomPanel.hpp"
+#include "../panels/TransportPanel.hpp"
+#include "../panels/content/MidiEditorContent.hpp"
 #include "../state/MarkerRippleCommand.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
@@ -99,6 +103,39 @@ bool overlapsTimelineRange(const ClipInfo& clip, double startSeconds, double end
            timelineEndSeconds(clip, bpm) > startSeconds;
 }
 
+/** @brief Snap note starts to @p gridBeats: the selected notes, else every note of the selected
+ * MIDI clips. Returns whether anything was quantized. */
+bool quantizeSelectionToGrid(double gridBeats) {
+    auto& selection = SelectionManager::getInstance();
+    auto& undo = UndoManager::getInstance();
+
+    if (selection.hasNoteSelection()) {
+        const auto& notes = selection.getNoteSelection();
+        undo.executeCommand(std::make_unique<QuantizeMidiNotesCommand>(
+            notes.clipId, notes.noteIndices, gridBeats, QuantizeMode::StartOnly));
+        return true;
+    }
+
+    std::vector<ClipId> midiClips;
+    for (auto clipId : selection.getSelectedClips())
+        if (const auto* clip = ClipManager::getInstance().getClip(clipId);
+            clip != nullptr && clip->isMidi() && !clip->midiNotes.empty())
+            midiClips.push_back(clipId);
+
+    if (midiClips.empty())
+        return false;
+
+    undo.beginCompoundOperation("Quantize Clips");
+    for (auto clipId : midiClips) {
+        std::vector<size_t> all(ClipManager::getInstance().getClip(clipId)->midiNotes.size());
+        std::iota(all.begin(), all.end(), 0);
+        undo.executeCommand(std::make_unique<QuantizeMidiNotesCommand>(
+            clipId, std::move(all), gridBeats, QuantizeMode::StartOnly));
+    }
+    undo.endCompoundOperation();
+    return true;
+}
+
 void rippleTempoAutomation(RippleTempoAutomationCommand::Mode mode, double startBeat,
                            double endBeat) {
     UndoManager::getInstance().executeCommand(
@@ -125,21 +162,24 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         toggleClipEnabled, escapeAction, insertTime, duplicateTimeRange, duplicateLoopRange,
         splitAllTracksAtCursor, copyTimeRange, cutTimeRange, deleteTimeRange, copyLoopRange,
         cutLoopRange, deleteLoopRange, pasteRipple, nudgeClipsEarlier, nudgeClipsLater,
-        nudgeClipsUp, nudgeClipsDown, toggleClipGainEnvelope,
+        nudgeClipsUp, nudgeClipsDown, toggleClipGainEnvelope, quantizeSelection,
         // File menu
         newProject, openProject, saveProject, saveProjectAs, exportAudio, closeProject,
         projectSettings, collectFiles, exportMidi, importDawProject, exportDawProject,
         // Transport
         play, stop, record, goToStart, goToEnd, addMarker, goToPreviousMarker, goToNextMarker,
         goToLoopStart, goToLoopEnd, goToSelectionStart, goToSelectionEnd, captureRecentAudio,
+        toggleMetronome,
         // Track
         newAudioTrack, newMidiTrack, deleteTrack, duplicateTrackNoContent,
         duplicateTrackContentOnly, toggleMuteSelectedTracks, toggleSoloSelectedTracks,
         // View
         toggleArrangeSession, cycleViewForward, cycleViewBackward, uiScaleUp, uiScaleDown,
-        togglePianoRollFullscreen, zoomIn, zoomOut,
+        togglePianoRollFullscreen, zoomIn, zoomOut, showLiveView, showArrangeView, showMixView,
         // Help
-        about};
+        about,
+        // Settings
+        openPreferences, openAudioSettings};
 
     commands.addArray(allCommands, juce::numElementsInArray(allCommands));
 }
@@ -333,6 +373,13 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             result.addDefaultKeypress('0', 0);
             break;
 
+        // Q, as in Logic, Cubase, Studio One and Bitwig (#2966).
+        case quantizeSelection:
+            result.setInfo("Quantize",
+                           "Quantize selected notes, or selected MIDI clips, to the grid", "Edit",
+                           0);
+            result.addDefaultKeypress('q', 0);
+            break;
         case toggleClipGainEnvelope:
             result.setInfo("Show/Hide Gain Envelope",
                            "Show or hide the gain envelope on selected audio clips", "Edit", 0);
@@ -443,6 +490,11 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             result.addDefaultKeypress('c', juce::ModifierKeys::commandModifier |
                                                juce::ModifierKeys::shiftModifier);
             break;
+        // C, as in Cubase and Studio One (#2966).
+        case toggleMetronome:
+            result.setInfo("Metronome", "Turn the metronome on or off", "Transport", 0);
+            result.addDefaultKeypress('c', 0);
+            break;
         case goToPreviousMarker:
             result.setInfo("Previous Marker", "Jump to the previous timeline marker", "Transport",
                            0);
@@ -545,6 +597,18 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
             result.addDefaultKeypress('p', juce::ModifierKeys::commandModifier |
                                                juce::ModifierKeys::shiftModifier);
             break;
+        case showLiveView:
+            result.setInfo("Live View", "Switch to the live view", "View", 0);
+            result.addDefaultKeypress(juce::KeyPress::F1Key, 0);
+            break;
+        case showArrangeView:
+            result.setInfo("Arrange View", "Switch to the arrange view", "View", 0);
+            result.addDefaultKeypress(juce::KeyPress::F2Key, 0);
+            break;
+        case showMixView:
+            result.setInfo("Mix View", "Switch to the mix view", "View", 0);
+            result.addDefaultKeypress(juce::KeyPress::F3Key, 0);
+            break;
         // H / G, as in Cubase (#2265).
         case zoomIn:
             result.setInfo("Zoom In", "Zoom the arrangement in", "View", 0);
@@ -558,6 +622,16 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         // Help
         case about:
             result.setInfo("About", "About this application", "Help", 0);
+            break;
+
+        // Settings. Cmd/Ctrl+, is the platform convention for an app's preferences (#3019).
+        case openPreferences:
+            result.setInfo("Preferences", "Open the preferences", "Settings", 0);
+            result.addDefaultKeypress(',', juce::ModifierKeys::commandModifier);
+            break;
+        case openAudioSettings:
+            result.setInfo("Audio/MIDI Settings", "Open the audio and MIDI device settings",
+                           "Settings", 0);
             break;
 
         default:
@@ -1857,6 +1931,12 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             toggleCapturePanel();
             return true;
 
+        case toggleMetronome:
+            if (transportPanel == nullptr)
+                return false;
+            transportPanel->toggleMetronome();
+            return true;
+
         case goToPreviousMarker:
             if (mainView)
                 mainView->getTimelineController().dispatch(GoToPreviousMarkerEvent{});
@@ -2022,6 +2102,33 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         case togglePianoRollFullscreen:
             toggleEditorFullscreen();
             return true;
+
+        case showLiveView:
+        case showArrangeView:
+        case showMixView:
+            ViewModeController::getInstance().setViewMode(
+                info.commandID == showLiveView      ? ViewMode::Live
+                : info.commandID == showArrangeView ? ViewMode::Arrange
+                                                    : ViewMode::Mix);
+            return true;
+
+        case quantizeSelection: {
+            // Notes snap to their editor's grid, clips to the arrangement's visible grid,
+            // which is what the clip menu's "Current Grid" uses.
+            double grid = 0.0;
+            if (auto* editor = bottomPanel != nullptr ? dynamic_cast<daw::ui::MidiEditorContent*>(
+                                                            bottomPanel->getActiveContent())
+                                                      : nullptr;
+                editor != nullptr && selectionManager.hasNoteSelection())
+                grid = editor->getGridResolutionBeats();
+            else if (mainView != nullptr) {
+                const auto& state = mainView->getTimelineController().getState();
+                grid = GridConstants::computeGridInterval(
+                    state.display.gridQuantize, state.zoom.horizontalZoom,
+                    state.tempo.beatsPerBar(), state.tempo.signatureBeatLength(), 50);
+            }
+            return grid > 0.0 && quantizeSelectionToGrid(grid);
+        }
 
         case zoomIn:
         case zoomOut:
