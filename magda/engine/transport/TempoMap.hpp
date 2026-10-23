@@ -147,6 +147,18 @@ class TempoMap {
      */
     BeatTick tickAtOrAfter(double beat) const;
 
+    /** @brief Where one baked constant-tempo section begins. */
+    struct SectionStart {
+        double beat = 0.0;
+        double seconds = 0.0;
+        int numerator = 4;
+        int denominator = 4;
+    };
+
+    /// Every section in beat order, ramps as their subdivisions: the exact piecewise-linear
+    /// map an ARA tempo reader is asked for (#1579).
+    std::vector<SectionStart> sectionStarts() const;
+
     /**
      * @brief Identity of the tempo track this was baked from.
      *

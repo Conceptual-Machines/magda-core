@@ -310,6 +310,17 @@ double TempoMap::signatureEndAfter(double beat) const {
     return sectionForBeat(beat).signatureEndBeat;
 }
 
+std::vector<TempoMap::SectionStart> TempoMap::sectionStarts() const {
+    std::vector<SectionStart> starts;
+    starts.reserve(sections_.size());
+    for (const auto& section : sections_)
+        starts.push_back({.beat = section.startBeat,
+                          .seconds = section.startTime,
+                          .numerator = section.numerator,
+                          .denominator = section.denominator});
+    return starts;
+}
+
 BeatTick TempoMap::tickAtOrAfter(double beat) const {
     const auto& section = sectionForBeat(beat);
     const auto tickBeats = tickBeatsOf(section.denominator);

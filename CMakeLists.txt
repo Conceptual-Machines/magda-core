@@ -189,6 +189,9 @@ set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
 # JUCE is the explicit framework dependency for the app and native host.
 add_subdirectory(third_party/JUCE)
 
+# ARA SDK 2.3.0, the release JUCE 9 requires (its BREAKING_CHANGES.md) (#1579). Headers only.
+juce_set_ara_sdk_path(${CMAKE_CURRENT_SOURCE_DIR}/third_party/ara_sdk)
+
 # SoundTouch — time stretching for the native engine (#1882, #2037). Vendored here
 # rather than borrowed from the Tracktion fork, which the engine may not include.
 # Signalsmith Stretch sits beside it and is header-only, so it needs no target.
