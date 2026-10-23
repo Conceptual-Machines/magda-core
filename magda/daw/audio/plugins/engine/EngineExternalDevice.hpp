@@ -110,6 +110,33 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
      */
     magda::HostParameters describeParameters() const;
 
+    // ===== Host-side bindings (ARA, #1579). Message thread. =====
+
+    /** @brief What a host-side binding keeps on the device. Destroyed before the plugin is. */
+    class Attachment {
+      public:
+        virtual ~Attachment() = default;
+
+        /// The plugin's window just opened.
+        virtual void editorOpened() {}
+    };
+
+    /// Replaces any earlier attachment.
+    void attach(std::unique_ptr<Attachment> attachment);
+
+    juce::AudioPluginInstance& plugin() {
+        return *instance_;
+    }
+
+    /**
+     * @brief Run @p change with the plugin out of the audio path and unprepared, then prepare it.
+     *
+     * The audio thread skips the device while this holds its callback lock, so the block plays
+     * dry for that long. ARA wants a playback region added or removed this way. For ARA effects
+     * only: releasing shuts a VST3's MIDI input down for good (prepare()).
+     */
+    void whileUnprepared(const std::function<void()>& change);
+
     // ===== The plugin's own window (#2580). Call on the control executor. =====
 
     /// False for a plugin with no editor of its own.
@@ -310,6 +337,10 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
                            const juce::AudioBuffer<float>& processed, int numSamples) const;
 
     std::unique_ptr<juce::AudioPluginInstance> instance_;
+
+    /// After the instance, so it is destroyed first: it holds pointers into the plugin.
+    std::unique_ptr<Attachment> attachment_;
+
     std::unique_ptr<PlayHead> playHead_;
 
     /// Null while the window is not open; its close button resets it.

@@ -1027,6 +1027,8 @@ target_sources(magda_juce_tests PRIVATE
 
         # A host-side ARA document over a real ARA plugin (#1579).
         audio/test_ara_document_juce.cpp
+        # An ARA plugin on a track playing that track's clips live (#1579).
+        audio/test_ara_track_editing_juce.cpp
     )
 
 # Link required libraries for JUCE tests

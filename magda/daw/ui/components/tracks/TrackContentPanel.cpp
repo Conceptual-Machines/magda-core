@@ -2536,6 +2536,13 @@ void TrackContentPanel::clipsChanged() {
     rebuildClipComponents();
 }
 
+void TrackContentPanel::trackDevicesChanged(TrackId trackId) {
+    for (auto& clipComp : clipComponents_)
+        if (const auto* clip = ClipManager::getInstance().getClip(clipComp->getClipId());
+            clip != nullptr && clip->trackId == trackId)
+            clipComp->repaint();
+}
+
 void TrackContentPanel::clipPropertyChanged(ClipId clipId) {
     groupExtentCacheDirty_ = true;
     // Find the clip component and update its position/size

@@ -591,6 +591,7 @@ EngineExternalDevice::~EngineExternalDevice() {
     // First: the editor is the plugin's own component (#2580).
     jassert(editor_ == nullptr || juce::MessageManager::existsAndIsCurrentThread());
     editor_.reset();
+    attachment_.reset();
 
     instance_->removeListener(listener_.get());
 
@@ -1008,7 +1009,22 @@ bool EngineExternalDevice::showEditor() {
         return false;
 
     editor_ = std::make_unique<EditorWindow>(*instance_, [this] { hideEditor(); });
+    if (attachment_ != nullptr)
+        attachment_->editorOpened();
     return true;
+}
+
+void EngineExternalDevice::attach(std::unique_ptr<Attachment> attachment) {
+    attachment_ = std::move(attachment);
+}
+
+void EngineExternalDevice::whileUnprepared(const std::function<void()>& change) {
+    const juce::ScopedLock lock(instance_->getCallbackLock());
+    if (prepared_)
+        instance_->releaseResources();
+    change();
+    if (prepared_)
+        instance_->prepareToPlay(sampleRate_, preparedBlockSize_);
 }
 
 void EngineExternalDevice::hideEditor() {

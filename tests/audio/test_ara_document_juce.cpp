@@ -134,7 +134,13 @@ class AraDocumentTest final : public juce::UnitTest {
         expectEquals(static_cast<int>(document.sourceCount()), 1);
         expectEquals(static_cast<int>(document.regionCount()), 1);
 
-        auto extension = document.bind(instance, ARA::kARAPlaybackRendererRole);
+        const auto* bound =
+            document.bind(instance, ARA::kARAPlaybackRendererRole | ARA::kARAEditorViewRole);
+        expect(bound != nullptr && bound->editorViewInterface != nullptr);
+        // What makes an editor show (and analyse) a region; the fixture just accepts it.
+        document.select(bound, {{1, 1}});
+
+        const juce::ARAHostModel::PlugInExtensionInstance extension{bound};
         expect(extension.isValid());
         auto renderer = extension.getPlaybackRendererInterface();
         expect(renderer.isValid());

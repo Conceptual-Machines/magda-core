@@ -4,6 +4,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -32,8 +33,16 @@ struct AraRegionSpec {
     TrackId trackId = INVALID_TRACK_ID;
     SourceId sourceId = INVALID_SOURCE_ID;
     std::string sourcePath;
+
     AraRegionTiming timing;
     std::string name;
+
+    /// The IDs the plugin's archive names these objects by; derived from the path and the
+    /// event when empty. Only the first spec naming a source sets its ID.
+    std::string sourcePersistentId;
+    std::string modificationPersistentId;
+
+    bool operator==(const AraRegionSpec&) const = default;
 };
 
 /**
@@ -44,6 +53,8 @@ struct AraRegionSpec {
  */
 class AraDocument {
   public:
+    using EventKey = std::pair<ClipId, EventId>;
+
     /**
      * @brief A document over @p factory, or null when the plugin refuses to create one.
      *
@@ -76,12 +87,38 @@ class AraDocument {
     std::vector<std::string> syncRegions(const std::vector<AraRegionSpec>& regions);
 
     /**
-     * @brief Bind @p instance to this document with @p roles.
+     * @brief Bind @p instance to this document with @p roles, or null when it will not.
      *
-     * Before the instance is prepared: ARA fixes an instance's roles at binding.
+     * Before the instance is prepared: ARA fixes an instance's roles at binding. Done here
+     * rather than through JUCE, whose wrapper hides the editor-view interface select() needs;
+     * wrap the result in juce::ARAHostModel::PlugInExtensionInstance for the renderers.
      */
-    juce::ARAHostModel::PlugInExtensionInstance bind(juce::AudioPluginInstance& instance,
-                                                     ARA::ARAPlugInInstanceRoleFlags roles);
+    const ARA::ARAPlugInExtensionInstance* bind(juce::AudioPluginInstance& instance,
+                                                ARA::ARAPlugInInstanceRoleFlags roles);
+
+    /**
+     * @brief Tell @p instance's editor to show @p events' regions.
+     *
+     * Plugins such as Melodyne show, and analyse, only what the host's selection names.
+     */
+    void select(const ARA::ARAPlugInExtensionInstance* instance,
+                const std::vector<EventKey>& events);
+
+    /**
+     * @brief The events whose regions were created since the last call, still present.
+     *
+     * A host assigns these to its renderers after the edit that made them; regions removed by a
+     * sync leave the renderers on their own (JUCE's registry listens for their deletion).
+     */
+    std::vector<EventKey> takeNewRegions();
+
+    /**
+     * @brief Ask the plugin to analyse every source it has not finished with.
+     *
+     * For the content types its factory says it can analyse; some plugins wait for this call
+     * rather than starting on their own when a source appears.
+     */
+    void requestAnalysis();
 
     /** @brief The region for one event, or null. */
     juce::ARAHostModel::PlaybackRegion* region(ClipId clip, EventId event) const;
@@ -95,9 +132,32 @@ class AraDocument {
 
     ARA::Host::DocumentController& controller() const;
 
-  private:
-    using EventKey = std::pair<ClipId, EventId>;
+    /** @brief The event a modification the plugin reported on belongs to, if it is still here. */
+    std::optional<EventKey> eventFor(ARA::ARAAudioModificationHostRef modification) const;
 
+    /** @brief The event a region the plugin reported on belongs to, if it is still here. */
+    std::optional<EventKey> eventFor(ARA::ARAPlaybackRegionHostRef region) const;
+
+    /** @brief The ID the plugin's factory writes its archives under. */
+    std::string archiveId() const;
+
+    /** @brief Whether this plugin can read an archive written under @p id. */
+    bool canRead(const std::string& id) const;
+
+    /** @brief The whole document as the plugin archives it, or nothing when it refuses. */
+    std::optional<juce::MemoryBlock> store();
+
+    /**
+     * @brief Build @p regions and inject @p archive's state into them, in one edit.
+     *
+     * Objects are matched by persistent ID, so @p regions must carry the IDs the archive was
+     * stored with. Returns the lines syncRegions() refused, plus one if the plugin could not
+     * read the archive.
+     */
+    std::vector<std::string> restore(const std::vector<AraRegionSpec>& regions,
+                                     const AraArchiveIn& archive);
+
+  private:
     struct SourceEntry {
         AraSourceRecord record;
         std::string persistentId;
@@ -113,6 +173,7 @@ class AraDocument {
     struct RegionEntry {
         TrackId trackId = INVALID_TRACK_ID;
         std::string name;
+        AraRegionTiming timing;
         std::unique_ptr<juce::ARAHostModel::PlaybackRegion> region;
     };
 
@@ -146,6 +207,7 @@ class AraDocument {
     std::map<SourceId, std::unique_ptr<SourceEntry>> sources_;
     std::map<EventKey, ModificationEntry> modifications_;
     std::map<EventKey, RegionEntry> regions_;
+    std::vector<EventKey> newRegions_;
 };
 
 }  // namespace magda::daw::audio::ara

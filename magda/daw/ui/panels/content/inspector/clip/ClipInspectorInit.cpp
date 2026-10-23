@@ -21,6 +21,7 @@ ClipInspector::ClipInspector() {
 ClipInspector::~ClipInspector() {
     magda::Config::getInstance().removeListener(this);
     magda::ClipManager::getInstance().removeListener(this);
+    magda::TrackManager::getInstance().removeListener(this);
 }
 
 double ClipInspector::projectBpm() const {

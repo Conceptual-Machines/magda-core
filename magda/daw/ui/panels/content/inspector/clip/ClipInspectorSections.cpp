@@ -183,6 +183,7 @@ void ClipInspector::initHeader() {
     clipGhostIcon_->setIconPadding(5.0f);
     clipGhostIcon_->setTooltip("Ghost clip");
     addChildComponent(*clipGhostIcon_);
+    addChildComponent(araChip_);
 
     saveLibraryButton_.setTooltip(
         "Save current clip settings or MIDI clip file to the media library");
@@ -643,6 +644,11 @@ void ClipInspector::initWarpSection() {
 
     clip_style::caption(transientSensitivityLabel_, "Transient sensitivity");
     clipPropsContainer_.addChildComponent(transientSensitivityLabel_);
+
+    clip_style::caption(araNoteLabel_, {});
+    araNoteLabel_.setColour(juce::Label::textColourId,
+                            ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+    clipPropsContainer_.addChildComponent(araNoteLabel_);
 
     transientSensitivityValue_ =
         std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Percentage);

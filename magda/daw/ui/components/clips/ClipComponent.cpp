@@ -23,6 +23,7 @@
 #include "../waveform/ClipWaveformPainter.hpp"
 #include "../waveform/WarpedWaveformRenderer.hpp"
 #include "ClipEnvelopeOverlay.hpp"
+#include "audio/AraTracks.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/ChordAnnotationCommands.hpp"
 #include "core/ChordProgressionConverter.hpp"
@@ -521,14 +522,17 @@ void ClipComponent::paint(juce::Graphics& g) {
         paintResizeHandles(g, bounds);
     }
 
+    // A clip an ARA plugin plays raw has no fades or volume of MAGDA's to show (#1579).
+    const bool mixHandles = clip->isAudio() && !magda::araPluginForClip(clip->id).has_value();
+
     // Draw fade handles (selected audio clips only)
-    if (isSelected_ && clip->isAudio()) {
+    if (isSelected_ && mixHandles) {
         paintFadeHandles(g, *clip, getLocalBounds());
     }
 
     // Draw volume line (audio clips with non-zero volume, or when hovering/dragging); a shown gain
     // envelope takes its place (#3064).
-    if (clip->isAudio() && !clip->gainEnvelopeShown &&
+    if (mixHandles && !clip->gainEnvelopeShown &&
         (std::abs(clip->volumeDB) > 0.01f || hoverVolumeHandle_ ||
          dragMode_ == DragMode::VolumeDrag)) {
         auto wfArea = bounds.reduced(2, 0).withTrimmedTop(headerHeight() + 2).withTrimmedBottom(2);
@@ -664,9 +668,12 @@ void ClipComponent::paintAudioClip(juce::Graphics& g, const ClipInfo& clip,
     const auto colour = displayColour(clip);
     paintClipBody(g, bounds, bodyColour(clip), showThrough);
 
-    // A shown gain envelope dims the waveform under it, as the audio editor does (#3064).
+    // A shown gain envelope dims the waveform under it, as the audio editor does (#3064), and
+    // so does an ARA plugin playing the clip raw, whose MAGDA settings are off (#1579).
     auto waveColour = deriveClipInk(colour);
-    if (clip.gainEnvelopeShown)
+    if (magda::araPluginForClip(clip.id).has_value())
+        waveColour = waveColour.withAlpha(0.4f);
+    else if (clip.gainEnvelopeShown)
         waveColour = waveColour.withAlpha(0.35f);
     else if (ghosted)
         waveColour = waveColour.withAlpha(0.5f);
@@ -1168,6 +1175,20 @@ void ClipComponent::paintClipHeader(juce::Graphics& g, const ClipInfo& clip,
         }
     }
 
+    // Played by an ARA plugin on the track (#1579): its initial, as the inspector shows it.
+    if (const auto ara = magda::araPluginForClip(clip.id);
+        ara.has_value() && headerArea.getWidth() > HEADER_HEIGHT + 4) {
+        const auto chipArea = headerArea.removeFromLeft(HEADER_HEIGHT).reduced(2, 3);
+        if (chipArea.intersects(g.getClipBounds())) {
+            g.setColour(headerForeground.withAlpha(0.22f));
+            g.fillRoundedRectangle(chipArea.toFloat(), 2.0f);
+            g.setColour(headerForeground);
+            g.setFont(FontManager::getInstance().getUIFont(9.5f).boldened());
+            g.drawText(ara->substring(0, 1).toUpperCase(), chipArea, juce::Justification::centred,
+                       false);
+        }
+    }
+
     // Status marks at the right, outermost first: reverse, warp, loop, beat mode.
     std::vector<StatusGlyph> marks;
     if (clip.isAudio() && audioEventRef(clip).reversed)
@@ -1451,7 +1472,8 @@ void ClipComponent::resized() {
 
 void ClipComponent::syncGainEnvelope() {
     const auto* clip = getClipInfo();
-    const auto shown = clip != nullptr && clip->isAudio() && clip->gainEnvelopeShown;
+    const auto shown = clip != nullptr && clip->isAudio() && clip->gainEnvelopeShown &&
+                       !magda::araPluginForClip(clip->id).has_value();
     if (!shown) {
         gainEnvelope_.reset();
         return;
@@ -1867,11 +1889,16 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Shift+edge = stretch mode (time-stretches audio source or scales MIDI notes)
+    // Shift+edge = stretch mode (time-stretches audio source or scales MIDI notes). An audio
+    // clip an ARA plugin plays is not MAGDA's to stretch (#1579), so there it resizes.
+    const auto canStretch = [](const ClipInfo& c) {
+        if (c.isMidi())
+            return true;
+        return c.isAudio() && magda::audioEventRef(c).sourceFilePath().isNotEmpty() &&
+               !magda::araPluginForClip(c.id).has_value();
+    };
     if (isOnLeftEdge(e.x)) {
-        if (e.mods.isShiftDown() &&
-            ((clip->isAudio() && magda::audioEventRef(*clip).sourceFilePath().isNotEmpty()) ||
-             clip->isMidi())) {
+        if (e.mods.isShiftDown() && canStretch(*clip)) {
             dragMode_ = DragMode::StretchLeft;
             dragStartSpeedRatio_ = magda::audioEventRef(*clip).speedRatio;
             dragStartClipSnapshot_ = *clip;
@@ -1916,9 +1943,7 @@ void ClipComponent::mouseDown(const juce::MouseEvent& e) {
             }
         }
     } else if (isOnRightEdge(e.x)) {
-        if (e.mods.isShiftDown() &&
-            ((clip->isAudio() && magda::audioEventRef(*clip).sourceFilePath().isNotEmpty()) ||
-             clip->isMidi())) {
+        if (e.mods.isShiftDown() && canStretch(*clip)) {
             dragMode_ = DragMode::StretchRight;
             dragStartSpeedRatio_ = magda::audioEventRef(*clip).speedRatio;
             dragStartClipSnapshot_ = *clip;
@@ -3328,6 +3353,7 @@ interaction::ClipSnapshot ClipComponent::makeHitSnapshot() const {
         s.fadeOutSeconds = fades.fadeOutSeconds;
         s.volumeGainLinear = juce::Decibels::decibelsToGain(clip->volumeDB);
         s.volumeLineShown = !clip->gainEnvelopeShown;
+        s.mixHandles = !magda::araPluginForClip(clip->id).has_value();
     }
     return s;
 }
@@ -3631,7 +3657,8 @@ void ClipComponent::showContextMenu() {
     }
 
     if (!isMultiSelection && clipForMenu && clipForMenu->isAudio()) {
-        menu.addItem(54, "Show Gain Envelope", true, clipForMenu->gainEnvelopeShown);
+        menu.addItem(54, "Show Gain Envelope", !magda::araPluginForClip(clipForMenu->id),
+                     clipForMenu->gainEnvelopeShown);
         menu.addSeparator();
     }
 

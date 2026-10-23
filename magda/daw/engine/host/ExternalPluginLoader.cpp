@@ -94,6 +94,10 @@ void ExternalPluginLoader::setServices(juce::AudioPluginFormatManager* formats,
     services_.knownPlugins = knownPlugins;
 }
 
+void ExternalPluginLoader::onExternalLoaded(ExternalLoaded loaded) {
+    externalLoaded_ = std::move(loaded);
+}
+
 void ExternalPluginLoader::onPluginEdit(PluginEdit sink) {
     pluginEdit_ = std::move(sink);
 }
@@ -238,6 +242,8 @@ void ExternalPluginLoader::complete(engine::DeviceKey key, std::uint64_t generat
         editSources_.insert_or_assign(key, EditSource{.edits = external->pluginEdits(),
                                                       .request = assignments_.request(key)});
         external->listenForPluginEdits([wake = wake_] { wake->trigger(); });
+        if (externalLoaded_)
+            externalLoaded_(key, *external);
     }
 
     slot.instance = std::move(result.device);

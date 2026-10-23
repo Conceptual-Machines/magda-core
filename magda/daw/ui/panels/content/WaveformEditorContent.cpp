@@ -9,6 +9,7 @@
 #include "../../themes/CursorManager.hpp"
 #include "../../themes/FontManager.hpp"
 #include "BinaryData.h"
+#include "audio/AraTracks.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "audio/CompService.hpp"
 #include "audio/WarpMarkerManager.hpp"
@@ -829,7 +830,8 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
 
             // Update warp mode state
             bool warpEnabled = magda::audioEventRef(*clip).warpEnabled;
-            gridComponent_->setWarpMode(warpEnabled);
+            // No warp markers where an ARA plugin plays the clip (#1579).
+            gridComponent_->setWarpMode(warpEnabled && !magda::araPluginForClip(editingClipId_));
 
             // Latched first: the edit below notifies, and lands back here.
             const bool wasWarpEnabled = std::exchange(wasWarpEnabled_, warpEnabled);
@@ -1055,7 +1057,8 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
         // Update warp mode state
         if (clip) {
             bool warpEnabled = magda::audioEventRef(*clip).warpEnabled;
-            gridComponent_->setWarpMode(warpEnabled);
+            // No warp markers where an ARA plugin plays the clip (#1579).
+            gridComponent_->setWarpMode(warpEnabled && !magda::araPluginForClip(editingClipId_));
             wasWarpEnabled_ = warpEnabled;
 
             refreshWarpMarkers();
@@ -1133,7 +1136,8 @@ void WaveformEditorContent::syncGainEnvelope() {
     const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
     const auto editable = clip && clip->isAudio();
     const auto takeLanes = editable && clip->audio().takes.size() > 1 && clip->takesExpanded;
-    const auto shown = editable && clip->gainEnvelopeShown && !takeLanes;
+    const auto shown = editable && clip->gainEnvelopeShown && !takeLanes &&
+                       !araPluginForClip(clip->id).has_value();
 
     gridComponent_->setGainEnvelopeShown(shown);
 }

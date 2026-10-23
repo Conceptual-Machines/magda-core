@@ -52,6 +52,8 @@ void ClipInspector::resized() {
             chip(saveLibraryButton_);
         if (clipGhostIcon_->isVisible())
             chip(*clipGhostIcon_);
+        if (araChip_.isVisible())
+            chip(araChip_);
         row.removeFromRight(4);
 
         nameArea_ = row.reduced(nameFilled_ ? 6 : 0, 2);
@@ -151,6 +153,10 @@ void ClipInspector::resized() {
     if (mixHeader_.isVisible()) {
         beginSection(mixHeader_);
         if (!mixHeader_.isCollapsed()) {
+            if (araNoteLabel_.isVisible() && araNoteInMix_) {
+                araNoteLabel_.setBounds(addRow(captionH));
+                addSpace(gap);
+            }
             const int thirdW = (width - 2 * 6) / 3;
             auto thirds = [&](juce::Rectangle<int> row, juce::Component& a, juce::Component& b,
                               juce::Component& c) {
@@ -174,6 +180,10 @@ void ClipInspector::resized() {
     if (warpHeader_.isVisible()) {
         beginSection(warpHeader_);
         if (!warpHeader_.isCollapsed()) {
+            if (araNoteLabel_.isVisible() && !araNoteInMix_) {
+                araNoteLabel_.setBounds(addRow(captionH));
+                addSpace(gap);
+            }
             {
                 auto [left, right] = halves(addRow(fieldH));
                 playbackModeStrip_.setBounds(left);

@@ -19,6 +19,8 @@ struct AraRegionTiming {
     double durationInModification = 0.0;
     double startInPlayback = 0.0;
     double durationInPlayback = 0.0;
+
+    bool operator==(const AraRegionTiming&) const = default;
 };
 
 /** @brief @p event's source range (its loop region when looping), clamped to the file. */

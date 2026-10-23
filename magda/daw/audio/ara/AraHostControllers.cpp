@@ -16,13 +16,15 @@ ARA::ARAAudioReaderHostRef AraAudioAccess::createAudioReaderForSource(
     ARA::ARAAudioSourceHostRef source, bool use64BitSamples) noexcept {
     // Every source is declared without 64-bit merit, so a plugin asking for doubles is one
     // that ignored that; refusing is what the API allows.
+    const auto* record = AraSourceConverter::fromHostRef(source);
     if (use64BitSamples)
         return nullptr;
 
-    const auto* record = AraSourceConverter::fromHostRef(source);
     auto file = files_.open(record->path);
-    if (file == nullptr)
+    if (file == nullptr) {
+        juce::Logger::writeToLog("[ara] could not open " + juce::String(record->path));
         return nullptr;
+    }
 
     auto reader = std::make_unique<Reader>(
         Reader{.file = std::move(file), .numChannels = record->numChannels});

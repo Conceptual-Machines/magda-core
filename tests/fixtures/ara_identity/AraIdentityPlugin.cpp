@@ -67,7 +67,12 @@ class IdentityRenderer final : public juce::ARAPlaybackRenderer {
     std::map<juce::ARAAudioSource*, std::unique_ptr<juce::ARAAudioSourceReader>> readers_;
 };
 
-/** @brief Nothing to archive: the render is a function of the source alone. */
+/**
+ * @brief Archives its modifications' persistent IDs and nothing else.
+ *
+ * The render is a function of the source alone; the IDs are there so a host test can see its
+ * own objects come back out of an archive, and a restore fails on an archive it did not write.
+ */
 class IdentityDocument final : public juce::ARADocumentControllerSpecialisation {
   public:
     using juce::ARADocumentControllerSpecialisation::ARADocumentControllerSpecialisation;
@@ -77,15 +82,32 @@ class IdentityDocument final : public juce::ARADocumentControllerSpecialisation 
         return new IdentityRenderer(getDocumentController());
     }
 
-    bool doRestoreObjectsFromStream(juce::ARAInputStream&,
+    bool doRestoreObjectsFromStream(juce::ARAInputStream& input,
                                     const juce::ARARestoreObjectsFilter*) noexcept override {
+        if (input.readString() != kMagic)
+            return false;
+        const auto count = input.readInt();
+        for (int i = 0; i < count; ++i)
+            input.readString();
+        return !input.failed();
+    }
+
+    bool doStoreObjectsToStream(juce::ARAOutputStream& output,
+                                const juce::ARAStoreObjectsFilter*) noexcept override {
+        juce::StringArray ids;
+        for (auto* source : getDocument()->getAudioSources())
+            for (auto* modification : source->getAudioModifications())
+                ids.add(modification->getPersistentID());
+
+        output.writeString(kMagic);
+        output.writeInt(ids.size());
+        for (const auto& id : ids)
+            output.writeString(id);
         return true;
     }
 
-    bool doStoreObjectsToStream(juce::ARAOutputStream&,
-                                const juce::ARAStoreObjectsFilter*) noexcept override {
-        return true;
-    }
+  private:
+    static constexpr const char* kMagic = "magda-ara-identity";
 };
 
 /** @brief A stereo effect whose only processing is its ARA renderer. */

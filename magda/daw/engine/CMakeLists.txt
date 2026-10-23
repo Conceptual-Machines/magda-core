@@ -31,6 +31,8 @@ target_sources(magda_daw_app PRIVATE
     target_sources(magda_daw PRIVATE MagdaAudioEngine.cpp MagdaAudioEngine.hpp)
 
     add_library(magda_engine_host STATIC
+        host/AraTrackEditing.cpp
+        host/AraTrackEditing.hpp
         host/ClickSounds.cpp
         host/EngineHost.cpp
         host/EngineInsertCapture.cpp
@@ -104,6 +106,14 @@ target_sources(magda_daw_app PRIVATE
         target_compile_definitions(magda_engine_host PRIVATE
             $<TARGET_PROPERTY:${_juce_module},INTERFACE_COMPILE_DEFINITIONS>)
     endforeach()
+    # magda_daw's set: ARA track editing reaches JUCE's ARA host classes (#1579), which
+    # JUCE declares only with a hosting format on too.
+    target_compile_definitions(magda_engine_host PRIVATE
+        JUCE_PLUGINHOST_VST3=1
+        JUCE_PLUGINHOST_AU=1
+        JUCE_PLUGINHOST_LV2=1
+        JUCE_PLUGINHOST_ARA=1
+    )
 
 # --- One construction site ----------------------------------------------------
 #

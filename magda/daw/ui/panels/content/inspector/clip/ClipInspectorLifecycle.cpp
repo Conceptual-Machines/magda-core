@@ -6,10 +6,21 @@ namespace magda::daw::ui {
 
 void ClipInspector::onActivated() {
     magda::ClipManager::getInstance().addListener(this);
+    magda::TrackManager::getInstance().addListener(this);
 }
 
 void ClipInspector::onDeactivated() {
     magda::ClipManager::getInstance().removeListener(this);
+    magda::TrackManager::getInstance().removeListener(this);
+}
+
+void ClipInspector::trackDevicesChanged(magda::TrackId trackId) {
+    for (auto id : selectedClipIds_)
+        if (const auto* clip = magda::ClipManager::getInstance().getClip(id);
+            clip != nullptr && clip->trackId == trackId) {
+            updateFromSelectedClip();
+            return;
+        }
 }
 
 void ClipInspector::paint(juce::Graphics& g) {
