@@ -239,13 +239,15 @@ class RackComponent : public NodeComponent, public juce::Timer {
     static constexpr int HEADER_BAR_HEIGHT = 28;
     static constexpr int FOOTER_BAR_HEIGHT = 24;
     static constexpr int SIDE_STRIP_WIDTH = 40;
-    static constexpr int CHAIN_LIST_WIDTH = 460;
+    static constexpr int CHAIN_LIST_WIDTH = 300;
     static constexpr int COLUMN_HEADER_HEIGHT = 16;
     static constexpr int CHAIN_TABS_HEIGHT = 28;
     static constexpr int ROW_GAP = 6;
     static constexpr int ADD_CHAIN_HEIGHT = 34;
     static constexpr int FACEPLATE_WIDTH = 380;
     static constexpr int FACEPLATE_MIN_HEIGHT = 150;
+    /// The chain viewport's floor: its widest device, or the add slot alone.
+    int minimumViewportWidth() const;
     static constexpr int MIN_VIEWPORT_WIDTH = 53;  // 1px rule, 6px padding, 40px add slot
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(RackComponent)

@@ -1832,7 +1832,9 @@ HeightRange TrackChainContent::nodesHeightRange() const {
 }
 
 HeightRange TrackChainContent::getHeightRange() const {
-    return nodesHeightRange().plus(chainChrome_);
+    // Never below the chain's own floor: under it the chain scrolls vertically and
+    // takes a rack's horizontal scrollbar out of view with it.
+    return nodesHeightRange().unite({MIN_CHAIN_HEIGHT, MIN_CHAIN_HEIGHT}).plus(chainChrome_);
 }
 
 juce::Rectangle<int> TrackChainContent::emptyDropTargetBounds() const {

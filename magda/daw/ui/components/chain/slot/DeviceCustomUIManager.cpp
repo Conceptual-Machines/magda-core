@@ -1325,33 +1325,6 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             });
     };
 
-    // A pad's switches are its channel's once it has one (#3010).
-    drumGridUI_->onPadMuteChanged = [gridPath, postPadEdit](int padIndex, bool muted) {
-        if (const auto* channel =
-                magda::TrackManager::getInstance().getPadChannel(gridPath(), padIndex)) {
-            magda::UndoManager::getInstance().executeCommand(
-                std::make_unique<magda::SetTrackMuteCommand>(channel->id, muted));
-            return;
-        }
-        postPadEdit(muted ? "Mute Pad" : "Unmute Pad",
-                    [padIndex, muted](const magda::ChainNodePath& grid) {
-                        magda::TrackManager::getInstance().setPadMuted(grid, padIndex, muted);
-                    });
-    };
-
-    drumGridUI_->onPadSoloChanged = [gridPath, postPadEdit](int padIndex, bool soloed) {
-        if (const auto* channel =
-                magda::TrackManager::getInstance().getPadChannel(gridPath(), padIndex)) {
-            magda::UndoManager::getInstance().executeCommand(
-                std::make_unique<magda::SetTrackSoloCommand>(channel->id, soloed));
-            return;
-        }
-        postPadEdit(soloed ? "Solo Pad" : "Unsolo Pad",
-                    [padIndex, soloed](const magda::ChainNodePath& grid) {
-                        magda::TrackManager::getInstance().setPadSolo(grid, padIndex, soloed);
-                    });
-    };
-
     // Plugin drag and drop onto pads: an instrument replaces the pad
     drumGridUI_->onPluginDropped = [postPadEdit, updatePadFromModel,
                                     loadSampleToPad](int padIndex, const juce::DynamicObject& obj) {
@@ -1515,6 +1488,46 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
                 updatePadFromModel(srcPad);
                 updatePadFromModel(dstPad);
             });
+    };
+
+    // The master-out row mixes the pad's channel, and only what moved becomes an undo step (#3010).
+    drumGridUI_->onPadMixChanged = [this, gridPath](int padIndex, float volume, float pan) {
+        if (drumGridUI_ == nullptr || !drumGridUI_->getPadMix)
+            return;
+        const auto mix = drumGridUI_->getPadMix(padIndex);
+        if (!mix)
+            return;
+        using Target = magda::SetPadFaderCommand::Target;
+        const auto gesture = drumGridUI_->getFaderGesture();
+        if (volume != mix->level)
+            magda::setPadFader(gridPath(), padIndex, Target::Volume, volume, gesture);
+        if (pan != mix->pan)
+            magda::setPadFader(gridPath(), padIndex, Target::Pan, pan, gesture);
+    };
+
+    drumGridUI_->onPadSwitchesChanged = [this, gridPath, postPadEdit](int padIndex, bool muted,
+                                                                      bool soloed, bool bypassed) {
+        auto& tm = magda::TrackManager::getInstance();
+        const auto grid = gridPath();
+        const auto* pad = tm.getPad(grid, padIndex);
+        if (pad == nullptr || drumGridUI_ == nullptr || !drumGridUI_->getPadMix)
+            return;
+        const auto mix = drumGridUI_->getPadMix(padIndex);
+        if (pad->bypassed != bypassed)
+            postPadEdit(bypassed ? "Bypass Pad" : "Enable Pad",
+                        [padIndex, bypassed](const magda::ChainNodePath& path) {
+                            magda::TrackManager::getInstance().setPadBypassed(path, padIndex,
+                                                                              bypassed);
+                        });
+        if (const auto* channel = tm.getPadChannel(grid, padIndex); channel != nullptr && mix) {
+            auto& undo = magda::UndoManager::getInstance();
+            if (mix->mute != muted)
+                undo.executeCommand(
+                    std::make_unique<magda::SetTrackMuteCommand>(channel->id, muted));
+            if (mix->solo != soloed)
+                undo.executeCommand(
+                    std::make_unique<magda::SetTrackSoloCommand>(channel->id, soloed));
+        }
     };
 
     drumGridUI_->getPadMix = [gridPath](int padIndex) -> std::optional<DrumGridUI::PadMix> {

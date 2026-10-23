@@ -153,6 +153,11 @@ void PadLayerRow::setLayer(const PadLayerView& layer, int index, bool selected) 
     repaint();
 }
 
+void PadLayerRow::setRemovable(bool removable) {
+    removable_ = removable;
+    resized();
+}
+
 void PadLayerRow::reportSwitches() {
     if (onSwitchesChanged)
         onSwitchesChanged(layer_.id, layer_.mute, layer_.solo, layer_.bypassed);
@@ -198,11 +203,15 @@ void PadLayerRow::resized() {
     area.removeFromLeft(kNameWidth + 4);
 
     if (view_ == View::Mix) {
-        auto buttons = area.removeFromRight(4 * kButtonWidth + 3 * 2);
+        const int count = removable_ ? 4 : 3;
+        removeButton_.setVisible(removable_);
+        auto buttons = area.removeFromRight(count * kButtonWidth + (count - 1) * 2);
         for (juce::Component* button : {static_cast<juce::Component*>(&muteButton_),
                                         static_cast<juce::Component*>(&soloButton_),
                                         static_cast<juce::Component*>(&powerButton_),
                                         static_cast<juce::Component*>(&removeButton_)}) {
+            if (button == &removeButton_ && !removable_)
+                continue;
             button->setBounds(
                 buttons.removeFromLeft(kButtonWidth)
                     .withSizeKeepingCentre(kButtonWidth, static_cast<int>(kButtonHeight)));

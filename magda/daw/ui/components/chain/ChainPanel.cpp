@@ -389,6 +389,14 @@ int ChainPanel::getContentWidth() const {
     return calculateTotalContentWidth() + 1 + 2 * PADDING;
 }
 
+int ChainPanel::getMinimumContentWidth() const {
+    int widest = 0;
+    for (const auto& slot : elementSlots_)
+        widest = juce::jmax(widest, getScaledWidth(slot->getPreferredWidth()));
+    return widest + getScaledWidth(ARROW_WIDTH) + getScaledWidth(APPEND_ZONE_WIDTH) + 1 +
+           2 * PADDING;
+}
+
 void ChainPanel::setMaxWidth(int maxWidth) {
     maxWidth_ = maxWidth;
 }

@@ -41,6 +41,8 @@ class PadLayerRow : public juce::Component {
 
     void setLayer(const PadLayerView& layer, int index, bool selected);
     void setView(View view);
+    /// The pad's master-out row has no remove: clearing a pad is the pad's.
+    void setRemovable(bool removable);
     magda::ChainId getLayerId() const {
         return layer_.id;
     }
@@ -73,6 +75,7 @@ class PadLayerRow : public juce::Component {
     bool selected_ = false;
     bool hovered_ = false;
     bool dragging_ = false;
+    bool removable_ = true;
 
     magda::DraggableValueLabel gainLabel_{magda::DraggableValueLabel::Format::Decibels};
     magda::DraggableValueLabel panLabel_{magda::DraggableValueLabel::Format::Pan};
