@@ -14,6 +14,7 @@
 #include "../common/EditTool.hpp"
 #include "../timeline/TimeRuler.hpp"
 #include "WarpedWaveformRenderer.hpp"
+#include "audio/AraTracks.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/ClipOperations.hpp"
 
@@ -1465,7 +1466,13 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
         return;
     }
 
-    if (nearPhaseMarker) {
+    // Not MAGDA's to stretch or loop on a track an ARA plugin plays (#1579): there Shift+edge
+    // resizes and the loop phase marker stays put.
+    const bool araPlayed = magda::araPluginForClip(editingClipId_).has_value();
+    if (araPlayed)
+        shiftHeld = false;
+
+    if (nearPhaseMarker && !araPlayed) {
         dragMode_ = DragMode::PhaseMarker;
     } else if (nearLeftEdge) {
         dragMode_ = shiftHeld ? DragMode::StretchLeft : DragMode::ResizeLeft;

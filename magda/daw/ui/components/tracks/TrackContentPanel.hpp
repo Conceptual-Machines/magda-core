@@ -69,6 +69,8 @@ class TrackContentPanel : public juce::Component,
     void tracksChanged() final;
     void trackSelectionChanged(magda::TrackId trackId) override;
     void trackPropertyChanged(int trackId) override;
+    /// An ARA plugin added or removed changes how the track's clips draw (#1579).
+    void trackDevicesChanged(TrackId trackId) override;
 
     // ClipManagerListener implementation
     void clipsChanged() override;

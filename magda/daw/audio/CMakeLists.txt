@@ -448,6 +448,9 @@ target_sources(magda_daw PRIVATE
     TrackMeasurementManager.cpp
     CompService.cpp
     CompService.hpp
+    # Which tracks an ARA plugin plays, so stretch and pitch controls stand down there (#1579)
+    AraTracks.cpp
+    AraTracks.hpp
     # The one owner of hardware audio I/O (#2746)
     io/AudioDeviceOpenMark.cpp
     io/AudioDeviceOpenMark.hpp

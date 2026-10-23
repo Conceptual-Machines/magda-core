@@ -94,6 +94,13 @@ class ExternalPluginLoader final : private juce::AsyncUpdater {
     /// applied edits (#2651). Message thread.
     void onWoken(std::function<void()> woken);
 
+    using ExternalLoaded =
+        std::function<void(engine::DeviceKey key, audio::engine_adapter::EngineExternalDevice&)>;
+
+    /// Each loaded external plugin, before the engine has prepared it: where an ARA plugin is
+    /// bound to its document, which has to come first (#1579). Message thread.
+    void onExternalLoaded(ExternalLoaded loaded);
+
     /**
      * @brief The instance for @p key, or nothing yet.
      *
@@ -164,6 +171,7 @@ class ExternalPluginLoader final : private juce::AsyncUpdater {
     Loaded loaded_;
     PluginEdit pluginEdit_;
     std::function<void()> woken_;
+    ExternalLoaded externalLoaded_;
 
     std::shared_ptr<Wake> wake_;
     std::map<engine::DeviceKey, EditSource> editSources_;

@@ -5,6 +5,7 @@
 #include "../../../../state/TimelineController.hpp"
 #include "../../../../utils/TimelineUtils.hpp"
 #include "../ClipInspector.hpp"
+#include "audio/AraTracks.hpp"
 #include "core/AudioClipSourceDisplay.hpp"
 #include "core/ClipDisplayInfo.hpp"
 #include "core/TempoUtils.hpp"
@@ -212,6 +213,13 @@ void ClipInspector::updateFromSelectedClip() {
 
     clipEnabledToggle_->setActive(clip->enabled);
 
+    const auto araPlayer = magda::araPluginForClip(clip->id);
+    araChip_.setVisible(araPlayer.has_value());
+    if (araPlayer) {
+        araChip_.setLetter(araPlayer->substring(0, 1).toUpperCase());
+        araChip_.setTooltip("Played by " + *araPlayer);
+    }
+
     const auto ghostSiblings = magda::ClipManager::getInstance().getLinkGroupSiblings(clip->id);
     clipGhostIcon_->setVisible(!ghostSiblings.empty());
     if (!ghostSiblings.empty()) {
@@ -331,6 +339,60 @@ void ClipInspector::updateFromSelectedClip() {
     pitchCentsValue_->setVisible(warpOpen);
     if (isAudio)
         updatePitchDisplays(event.pitchChange);
+
+    // On a track an ARA plugin plays, the plugin renders the raw file: MAGDA's mix, stretch
+    // and pitch do not apply there, so their controls stand down (#1579). The values stay.
+    const auto araPlugin = isAudio ? araPluginForClip(clip->id) : std::nullopt;
+    araNoteInMix_ = mixOpen;
+    araNoteLabel_.setVisible(araPlugin.has_value() && (mixOpen || warpOpen));
+    if (araPlugin)
+        araNoteLabel_.setText(*araPlugin +
+                                  " plays the raw clip: mix, loop, warp and pitch don't apply",
+                              juce::dontSendNotification);
+
+    // Controls nothing above sets each refresh come back only when the stand-down ends, so a
+    // switch disabled for its own reason (the strip's tempo lookup) is left alone.
+    const std::initializer_list<juce::Component*> unmanaged{&clipLoopSwitch_,
+                                                            clipLoopPhaseValue_.get(),
+                                                            &volumeLabel_,
+                                                            &panLabel_,
+                                                            &gainLabel_,
+                                                            clipVolumeValue_.get(),
+                                                            clipPanValue_.get(),
+                                                            clipGainValue_.get(),
+                                                            &reverseToggle_,
+                                                            &gainEnvelopeToggle_,
+                                                            fadesSection_.get(),
+                                                            &clipWarpSwitch_,
+                                                            &playbackModeStrip_,
+                                                            &stretchModeCombo_,
+                                                            &transientSensitivityLabel_,
+                                                            transientSensitivityValue_.get(),
+                                                            &speedLabel_,
+                                                            &pitchLabel_,
+                                                            pitchSemitonesValue_.get(),
+                                                            pitchCentsValue_.get()};
+    if (araPlugin) {
+        for (juce::Component* c : std::initializer_list<juce::Component*>{
+                 &tempoLabel_, &clipBpmValue_, &clipBpmUnitLabel_, &halveTempoButton_,
+                 &doubleTempoButton_, &sourceLengthLabel_, clipBeatsLengthValue_.get(),
+                 clipStretchValue_.get(), &analogPitchToggle_, clipLoopStartValue_.get(),
+                 clipLoopEndValue_.get(), &loopRowLabel_}) {
+            c->setEnabled(false);
+            c->setAlpha(0.4f);
+        }
+        for (auto* c : unmanaged) {
+            c->setEnabled(false);
+            c->setAlpha(0.4f);
+        }
+    } else if (araStoodDown_) {
+        for (auto* c : unmanaged) {
+            c->setEnabled(true);
+            c->setAlpha(1.0f);
+        }
+        analogPitchToggle_.setAlpha(1.0f);
+    }
+    araStoodDown_ = araPlugin.has_value();
 
     const bool showKey = warpOpen && !isMulti;
     clipKeyLabel_.setVisible(showKey);

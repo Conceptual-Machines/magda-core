@@ -15,6 +15,7 @@
 #include "AudioEngine.hpp"
 #include "BinaryData.h"
 #include "TransportTextWidths.hpp"
+#include "audio/AraTracks.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
 #include "content/AudioClipPropertiesContent.hpp"
 #include "content/AutomationClipEditorContent.hpp"
@@ -644,7 +645,7 @@ void BottomPanel::setupHeaderControls() {
         if (clipId == INVALID_CLIP_ID)
             return;
         const auto* clip = ClipManager::getInstance().getClip(clipId);
-        if (clip == nullptr)
+        if (clip == nullptr || araPluginForClip(clipId).has_value())
             return;
 
         const bool newState = !loopButton_->isActive();
@@ -671,7 +672,8 @@ void BottomPanel::setupHeaderControls() {
     gainEnvelopeButton_->onClick = [this]() {
         auto& cm = ClipManager::getInstance();
         const auto clipId = getActiveEditingClipId();
-        if (const auto* clip = cm.getClip(clipId); clip && clip->isAudio())
+        if (const auto* clip = cm.getClip(clipId);
+            clip && clip->isAudio() && !araPluginForClip(clipId))
             cm.setGainEnvelopeShown(clipId, !clip->gainEnvelopeShown);
     };
     headerBar_->addChildComponent(gainEnvelopeButton_.get());
@@ -1542,20 +1544,25 @@ void BottomPanel::syncLoopButtonState() {
             dynamic_cast<daw::ui::AutomationClipEditorContent*>(getActiveContent())) {
         const auto* clip = AutomationManager::getInstance().getClip(autoEditor->getEditingClipId());
         loopButton_->setActive(clip != nullptr && clip->looping);
+        loopButton_->setEnabled(true);
         return;
     }
     const auto clipId = getActiveEditingClipId();
     const auto* clip =
         (clipId != INVALID_CLIP_ID) ? ClipManager::getInstance().getClip(clipId) : nullptr;
     loopButton_->setActive(clip != nullptr && clip->loopEnabled);
+    // An ARA plugin plays the clip once, raw (#1579).
+    loopButton_->setEnabled(clip == nullptr || !araPluginForClip(clip->id).has_value());
 }
 
 void BottomPanel::syncGainEnvelopeButtonState() {
     if (!gainEnvelopeButton_)
         return;
     const auto* clip = ClipManager::getInstance().getClip(getActiveEditingClipId());
-    const auto shown = clip != nullptr && clip->isAudio() && clip->gainEnvelopeShown;
+    const auto ara = clip != nullptr && araPluginForClip(clip->id).has_value();
+    const auto shown = clip != nullptr && clip->isAudio() && clip->gainEnvelopeShown && !ara;
     gainEnvelopeButton_->setActive(shown);
+    gainEnvelopeButton_->setEnabled(!ara);
 
     // One toolbox at a time: the envelope's while it is shown, the sample view's otherwise.
     const auto audioEditor = gainEnvelopeButton_->isVisible();

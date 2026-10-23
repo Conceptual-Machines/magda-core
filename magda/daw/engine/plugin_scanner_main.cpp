@@ -193,6 +193,8 @@ class PluginScannerWorker : public juce::ChildProcessWorker {
         stream.writeInt(desc.uniqueId);
         stream.writeBool(desc.isInstrument);
         stream.writeString(desc.category);
+        // Last, so the field order above stays what it was (#1579).
+        stream.writeBool(desc.hasARAExtension);
         sendMessageToCoordinator(msg);
     }
 

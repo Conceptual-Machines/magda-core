@@ -2,6 +2,7 @@
 #include <numeric>
 #include <ranges>
 
+#include "../../audio/AraTracks.hpp"
 #include "../../core/AutomationCommands.hpp"
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
@@ -1815,8 +1816,9 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     bpm = mainView->getTimelineController().getState().tempo.bpm;
 
                 for (auto clipId : selectedClips) {
+                    // An ARA plugin plays its track's clips once, raw (#1579).
                     auto* clip = clipManager.getClip(clipId);
-                    if (clip)
+                    if (clip && !araPluginForClip(clipId))
                         clipManager.setClipLoopEnabled(clipId, !clip->loopEnabled, bpm);
                 }
             }
@@ -1856,7 +1858,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             // A view flag, so not an undo step; the first audio clip decides, as for enable.
             std::vector<ClipId> audioClips;
             for (auto clipId : selectionManager.getSelectedClips())
-                if (const auto* clip = clipManager.getClip(clipId); clip && clip->isAudio())
+                if (const auto* clip = clipManager.getClip(clipId);
+                    clip && clip->isAudio() && !araPluginForClip(clipId))
                     audioClips.push_back(clipId);
             if (!audioClips.empty()) {
                 const auto shown = !clipManager.getClip(audioClips.front())->gainEnvelopeShown;

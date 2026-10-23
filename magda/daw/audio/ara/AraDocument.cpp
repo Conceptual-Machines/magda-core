@@ -1,5 +1,13 @@
 #include "AraDocument.hpp"
 
+#include <ARA_API/ARAVST3.h>
+#include <pluginterfaces/vst/ivstcomponent.h>
+
+#if JUCE_MAC
+    #include <ARA_API/ARAAudioUnit.h>
+    #include <AudioToolbox/AudioToolbox.h>
+#endif
+
 #include <algorithm>
 #include <set>
 
@@ -153,7 +161,8 @@ AraDocument::SourceEntry* AraDocument::ensureSource(const AraRegionSpec& spec,
                      .sampleRate = file->sampleRate(),
                      .lengthInSamples = file->lengthInSamples(),
                      .numChannels = file->numChannels()};
-    entry->persistentId = "source:" + spec.sourcePath;
+    entry->persistentId =
+        spec.sourcePersistentId.empty() ? "source:" + spec.sourcePath : spec.sourcePersistentId;
 
     auto properties = juce::ARAHostModel::AudioSource::getEmptyProperties();
     properties.name = spec.sourcePath.c_str();
@@ -194,14 +203,19 @@ void AraDocument::placeRegion(const AraRegionSpec& spec, SourceEntry& source) {
 
     // An event now reading another source (a comp render, say) is a new modification.
     if (const auto found = modifications_.find(key);
-        found != modifications_.end() && found->second.sourceId != spec.sourceId)
+        found != modifications_.end() &&
+        (found->second.sourceId != spec.sourceId ||
+         (!spec.modificationPersistentId.empty() &&
+          found->second.persistentId != spec.modificationPersistentId)))
         dropEvent(key);
 
     auto& modification = modifications_[key];
     if (modification.modification == nullptr) {
         modification.sourceId = spec.sourceId;
         modification.persistentId =
-            "clip:" + std::to_string(spec.clipId) + "/event:" + std::to_string(spec.eventId);
+            spec.modificationPersistentId.empty()
+                ? "clip:" + std::to_string(spec.clipId) + "/event:" + std::to_string(spec.eventId)
+                : spec.modificationPersistentId;
 
         auto properties = juce::ARAHostModel::AudioModification::getEmptyProperties();
         properties.name = spec.name.c_str();
@@ -213,8 +227,15 @@ void AraDocument::placeRegion(const AraRegionSpec& spec, SourceEntry& source) {
 
     auto& sequence = ensureSequence(spec.trackId);
     auto& region = regions_[key];
+
+    // Unchanged properties are not re-sent: a plugin may take any update as a content change.
+    if (region.region != nullptr && region.trackId == spec.trackId && region.name == spec.name &&
+        region.timing == spec.timing)
+        return;
+
     region.trackId = spec.trackId;
     region.name = spec.name;
+    region.timing = spec.timing;
 
     auto properties = juce::ARAHostModel::PlaybackRegion::getEmptyProperties();
     properties.transformationFlags = ARA::kARAPlaybackTransformationNoChanges;
@@ -227,19 +248,165 @@ void AraDocument::placeRegion(const AraRegionSpec& spec, SourceEntry& source) {
     properties.name = region.name.c_str();
     properties.color = nullptr;
 
-    if (region.region == nullptr)
+    if (region.region == nullptr) {
         region.region = std::make_unique<juce::ARAHostModel::PlaybackRegion>(
             hostRefOf<RegionEntry, ARA::ARAPlaybackRegionHostRef>(&region), controller(),
             *modification.modification, properties);
-    else
+        newRegions_.push_back(key);
+    } else
         region.region->update(properties);
 }
 
-juce::ARAHostModel::PlugInExtensionInstance AraDocument::bind(
-    juce::AudioPluginInstance& instance, ARA::ARAPlugInInstanceRoleFlags roles) {
+const ARA::ARAPlugInExtensionInstance* AraDocument::bind(juce::AudioPluginInstance& instance,
+                                                         ARA::ARAPlugInInstanceRoleFlags roles) {
     constexpr auto kAllRoles =
         ARA::kARAPlaybackRendererRole | ARA::kARAEditorRendererRole | ARA::kARAEditorViewRole;
-    return host_->bindDocumentToPluginInstance(instance, kAllRoles, roles);
+    const auto documentRef = controller().getRef();
+
+    if (auto* vst3 = instance.getVST3Client()) {
+        // ARA::IPlugInEntryPoint2's IID, spelled out: the definition lives in JUCE's VST3 code.
+        const Steinberg::TUID entryPointIid =
+            INLINE_UID(0xCD9A5913, 0xC9EB46D7, 0x96CA53AD, 0xD1DB89F5);
+        ARA::IPlugInEntryPoint2* entryPoint = nullptr;
+        if (auto* component = vst3->getIComponentPtr();
+            component != nullptr &&
+            component->queryInterface(entryPointIid, reinterpret_cast<void**>(&entryPoint)) ==
+                Steinberg::kResultOk &&
+            entryPoint != nullptr) {
+            const auto* bound =
+                entryPoint->bindToDocumentControllerWithRoles(documentRef, kAllRoles, roles);
+            entryPoint->release();
+            return bound;
+        }
+    }
+
+#if JUCE_MAC
+    if (auto* au = instance.getAudioUnitClient()) {
+        auto size = static_cast<UInt32>(sizeof(ARA::ARAAudioUnitPlugInExtensionBinding));
+        const auto expected = size;
+        ARA::ARAAudioUnitPlugInExtensionBinding binding{ARA::kARAAudioUnitMagic, documentRef,
+                                                        nullptr, kAllRoles, roles};
+        if (AudioUnitGetProperty(au->getAudioUnitHandle(),
+                                 ARA::kAudioUnitProperty_ARAPlugInExtensionBindingWithRoles,
+                                 kAudioUnitScope_Global, 0, &binding, &size) == noErr &&
+            size == expected && binding.inOutMagicNumber == ARA::kARAAudioUnitMagic &&
+            binding.inDocumentControllerRef == documentRef)
+            return binding.outPlugInExtension;
+    }
+#endif
+
+    return nullptr;
+}
+
+void AraDocument::select(const ARA::ARAPlugInExtensionInstance* instance,
+                         const std::vector<EventKey>& events) {
+    if (instance == nullptr || instance->editorViewInterface == nullptr)
+        return;
+
+    std::vector<ARA::ARAPlaybackRegionRef> regionRefs;
+    std::vector<ARA::ARARegionSequenceRef> sequenceRefs;
+    for (const auto& key : events) {
+        const auto found = regions_.find(key);
+        if (found == regions_.end() || found->second.region == nullptr)
+            continue;
+        regionRefs.push_back(found->second.region->getPluginRef());
+        if (const auto sequence = sequences_.find(found->second.trackId);
+            sequence != sequences_.end())
+            sequenceRefs.push_back(sequence->second.sequence->getPluginRef());
+    }
+
+    auto selection = juce::makeARASizedStruct(&ARA::ARAViewSelection::timeRange);
+    selection.playbackRegionRefsCount = regionRefs.size();
+    selection.playbackRegionRefs = regionRefs.data();
+    selection.regionSequenceRefsCount = sequenceRefs.size();
+    selection.regionSequenceRefs = sequenceRefs.data();
+    selection.timeRange = nullptr;
+    ARA::Host::EditorView(instance).notifySelection(&selection);
+}
+
+std::optional<AraDocument::EventKey> AraDocument::eventFor(
+    ARA::ARAAudioModificationHostRef modification) const {
+    for (const auto& [key, entry] : modifications_)
+        if (hostRefOf<const ModificationEntry, ARA::ARAAudioModificationHostRef>(&entry) ==
+            modification)
+            return key;
+    return std::nullopt;
+}
+
+std::optional<AraDocument::EventKey> AraDocument::eventFor(
+    ARA::ARAPlaybackRegionHostRef region) const {
+    for (const auto& [key, entry] : regions_)
+        if (hostRefOf<const RegionEntry, ARA::ARAPlaybackRegionHostRef>(&entry) == region)
+            return key;
+    return std::nullopt;
+}
+
+std::string AraDocument::archiveId() const {
+    const auto* factory = controller().getFactory();
+    return factory != nullptr && factory->documentArchiveID != nullptr ? factory->documentArchiveID
+                                                                       : std::string{};
+}
+
+bool AraDocument::canRead(const std::string& id) const {
+    const auto* factory = controller().getFactory();
+    if (factory == nullptr || id.empty())
+        return false;
+    if (factory->documentArchiveID != nullptr && id == factory->documentArchiveID)
+        return true;
+    for (ARA::ARASize i = 0; i < factory->compatibleDocumentArchiveIDsCount; ++i)
+        if (id == factory->compatibleDocumentArchiveIDs[i])
+            return true;
+    return false;
+}
+
+std::optional<juce::MemoryBlock> AraDocument::store() {
+    juce::MemoryOutputStream stream;
+    if (!controller().storeObjectsToArchive(AraArchiveOutConverter::toHostRef(&stream), nullptr))
+        return std::nullopt;
+    return stream.getMemoryBlock();
+}
+
+std::vector<std::string> AraDocument::restore(const std::vector<AraRegionSpec>& regions,
+                                              const AraArchiveIn& archive) {
+    // One edit for both: the plugin injects archived state into objects it has just seen made.
+    const juce::ARAEditGuard guard(controller());
+    auto refused = syncRegions(regions);
+
+    // Versioning is the host's to check before the call, not the plugin's to survive.
+    if (!canRead(archive.archiveId)) {
+        refused.push_back("its saved state is from a version of the plugin that cannot read it");
+        return refused;
+    }
+
+    auto in = archive;
+    if (!controller().restoreObjectsFromArchive(AraArchiveInConverter::toHostRef(&in), nullptr))
+        refused.push_back("the plugin could not read its saved state");
+    return refused;
+}
+
+void AraDocument::requestAnalysis() {
+    const auto* factory = controller().getFactory();
+    if (factory == nullptr || factory->analyzeableContentTypesCount == 0)
+        return;
+
+    for (const auto& [id, entry] : sources_) {
+        std::vector<ARA::ARAContentType> incomplete;
+        for (ARA::ARASize i = 0; i < factory->analyzeableContentTypesCount; ++i)
+            if (controller().isAudioSourceContentAnalysisIncomplete(
+                    entry->source->getPluginRef(), factory->analyzeableContentTypes[i]))
+                incomplete.push_back(factory->analyzeableContentTypes[i]);
+        if (!incomplete.empty())
+            controller().requestAudioSourceContentAnalysis(entry->source->getPluginRef(),
+                                                           incomplete.size(), incomplete.data());
+    }
+}
+
+std::vector<AraDocument::EventKey> AraDocument::takeNewRegions() {
+    std::vector<EventKey> created;
+    for (const auto& key : std::exchange(newRegions_, {}))
+        if (regions_.contains(key))
+            created.push_back(key);
+    return created;
 }
 
 juce::ARAHostModel::PlaybackRegion* AraDocument::region(ClipId clip, EventId event) const {

@@ -43,6 +43,7 @@
 #include "../../core/UndoManager.hpp"
 #include "../../core/controllers/BindingRegistry.hpp"
 #include "../../project/ProjectManager.hpp"
+#include "AraTrackEditing.hpp"
 #include "EngineInsertCapture.hpp"
 #include "EngineOfflineRender.hpp"
 #include "EngineProject.hpp"
@@ -432,6 +433,16 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         // A device that applied edits wakes the same drain (#2651).
         loader_.onWoken([this] { plane_.settleParameterEdits(); });
+
+        // An ARA plugin is bound to its document before the engine prepares it (#1579).
+        loader_.onExternalLoaded([this](engine::DeviceKey key,
+                                        adapter::EngineExternalDevice& device) {
+            if (araTracks_ == nullptr)
+                return;
+            const auto path = TrackManager::getInstance().findDevicePath(key.deviceId, key.segment);
+            if (path.isValid())
+                araTracks_->attach(path.trackId, device);
+        });
 
         // A tap read late loses nothing, since the peak is held until
         // something takes it, so this is how smooth a meter looks.
@@ -2475,6 +2486,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             sessionCapture_.attach(*session_);
         }
         factory_.forgetBuiltDevices();
+        if (araTracks_ != nullptr)
+            araTracks_->forgetProject();
         routing_.reset();
         devicePaths_.clear();
 
@@ -4114,6 +4127,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// The racks the model holds, which a rack id alone addresses (#2649).
     std::set<RackId> rackIds_;
 
+    /// ARA plugins on tracks (#1579), once there are plugin services to load with. Late, so it
+    /// goes before the tempo map it reads; documents outlive it on the devices bound to them.
+    std::unique_ptr<AraTrackEditing> araTracks_;
+
     /// Hot-plug, on the message thread. Last, so it is destroyed first and
     /// nothing calls back into a host that is already unwinding.
     juce::MidiDeviceListConnection deviceList_ =
@@ -4133,6 +4150,9 @@ void EngineHost::setPluginServices(juce::AudioPluginFormatManager& formats,
     impl_->loader_.setServices(&formats, &knownPlugins);
     impl_->formats_ = &formats;
     impl_->knownPlugins_ = &knownPlugins;
+    impl_->araTracks_ = std::make_unique<AraTrackEditing>(
+        formats, knownPlugins,
+        [impl = impl_.get()]() -> const engine::TempoMap& { return impl->tempoMap(); });
 }
 
 void EngineHost::setCaptureSeconds(int seconds) {

@@ -31,6 +31,7 @@ namespace magda::daw::ui {
  */
 class ClipInspector : public BaseInspector,
                       public magda::ClipManagerListener,
+                      private magda::TrackManagerListener,
                       private magda::ConfigListener {
   public:
     ClipInspector();
@@ -58,6 +59,11 @@ class ClipInspector : public BaseInspector,
     // ClipManagerListener interface
     void clipsChanged() override;
     void clipPropertyChanged(magda::ClipId clipId) override;
+
+    // TrackManagerListener: an ARA plugin added to or removed from a selected clip's track
+    // changes what the warp section offers (#1579).
+    void tracksChanged() override {}
+    void trackDevicesChanged(magda::TrackId trackId) override;
     void clipSelectionChanged(magda::ClipId clipId) override;
 
   private:
@@ -87,7 +93,8 @@ class ClipInspector : public BaseInspector,
     juce::Label clipNameValue_;
     juce::Label clipSubline_;
     std::unique_ptr<juce::Component> colourSwatch_;
-    std::unique_ptr<magda::SvgButton> clipGhostIcon_;  // link glyph, ghost clips only
+    std::unique_ptr<magda::SvgButton> clipGhostIcon_;     // link glyph, ghost clips only
+    GlyphChip araChip_{"ARA", GlyphChip::Glyph::Letter};  // the plugin that plays it (#1579)
     GlyphChip saveLibraryButton_{"Save to library", GlyphChip::Glyph::Bookmark};
     std::unique_ptr<magda::SvgButton> clipEnabledToggle_;  // enable/disable clip (#1736)
     // The name field follows the track header style: filled with the clip colour in Full bar.
@@ -156,6 +163,11 @@ class ClipInspector : public BaseInspector,
     juce::Label clipKeyLabel_;
     juce::ComboBox clipKeyRootCombo_;
     double displayedSourceBpm_ = 0.0;
+    // An ARA plugin on the track renders the raw file, so mix, stretch and pitch stand down
+    // (#1579). The note sits in the first of the two sections that is open.
+    juce::Label araNoteLabel_;
+    bool araStoodDown_ = false;
+    bool araNoteInMix_ = false;
 
     // ---- Pitch (MIDI) ----------------------------------------------------
     CollapsibleSectionHeader midiPitchHeader_{"Pitch", "clipInspector.midiPitch"};

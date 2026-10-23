@@ -9,7 +9,13 @@ namespace magda::daw::ui {
 /** @brief A square header chip that draws a small vector glyph. */
 class GlyphChip : public juce::Button {
   public:
-    enum class Glyph { Bookmark };
+    enum class Glyph { Bookmark, Letter };
+
+    /// What Glyph::Letter draws: one or two characters.
+    void setLetter(const juce::String& letter) {
+        letter_ = letter;
+        repaint();
+    }
 
     GlyphChip(const juce::String& name, Glyph glyph) : juce::Button(name), glyph_(glyph) {}
 
@@ -36,11 +42,15 @@ class GlyphChip : public juce::Button {
             p.lineTo(c.x - 4.0f, c.y + 6.0f);
             p.closeSubPath();
             g.strokePath(p, juce::PathStrokeType(1.3f, juce::PathStrokeType::curved));
+        } else {
+            g.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+            g.drawText(letter_, bounds, juce::Justification::centred, false);
         }
     }
 
   private:
     Glyph glyph_;
+    juce::String letter_;
 };
 
 }  // namespace magda::daw::ui

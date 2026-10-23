@@ -111,6 +111,7 @@ void ScanWorker::handleMessageFromWorker(const juce::MemoryBlock& message) {
         desc.uniqueId = stream.readInt();
         desc.isInstrument = stream.readBool();
         desc.category = stream.readString();
+        desc.hasARAExtension = !stream.isExhausted() && stream.readBool();
 
         currentResult_.foundPlugins.add(desc);
         DBG("[ScanWorker " << workerIndex_ << "] Found: " << desc.name << " ("

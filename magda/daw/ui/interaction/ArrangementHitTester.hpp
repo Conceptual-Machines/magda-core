@@ -197,6 +197,7 @@ struct ClipSnapshot {
     double clipLengthSeconds = 0.0;
     float volumeGainLinear = 1.0f;  // jlimit(0,1, decibelsToGain(volumeDB))
     bool volumeLineShown = true;    // false under a shown gain envelope (#3064)
+    bool mixHandles = true;         // false where an ARA plugin plays the clip raw (#1579)
 };
 
 /** Zone + hover flags for a clip-local point. Priority: fade handles >
