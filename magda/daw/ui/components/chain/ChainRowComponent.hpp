@@ -172,8 +172,9 @@ class ChainRowComponent : public juce::Component,
     void lookAndFeelChanged() override;
 
     static constexpr int ROW_HEIGHT = 38;
-    static constexpr int COLUMN_GAP = 8;
-    static constexpr int BUTTON_WIDTH = 28;
+    static constexpr int COLUMN_GAP = 4;
+    static constexpr int BUTTON_WIDTH = 20;
+    static constexpr int BUTTON_GAP = 2;
     static constexpr float BUTTON_HEIGHT = 24.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChainRowComponent)

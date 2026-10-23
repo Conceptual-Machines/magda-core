@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <set>
 #include <string>
@@ -270,26 +271,101 @@ TEST_CASE("A pad's mix keeps the Drum Grid's slot gain and meter", "[engine][pla
     }));
 }
 
-TEST_CASE("Pads on an unclaimed bus are reported, not folded into the main mix",
-          "[engine][plan][padrack]") {
-    // The model says these pads play somewhere else. Mixing them into the
-    // device's own output would render a project nobody saved.
-    auto aux = makePad(1, 38, 40, 60, 102);
-    aux.outputIndex = 2;
+namespace {
 
-    const auto plan = compileWith(makeDrumGrid(10, {makePad(0, 36, 36, 60, 101), std::move(aux)}));
+/// Pad @p padId's channel on grid @p gridId, a child of @p gridTrackId (#3010).
+TrackInfo makePadChannel(TrackId id, TrackId gridTrackId, DeviceId gridId, ChainId padId) {
+    auto channel = makeTrack(id);
+    channel.type = TrackType::Pad;
+    channel.parentId = gridTrackId;
+    channel.padLink = PadChannelLink{gridId, padId};
+    channel.audioOutputDevice = "track:" + juce::String(gridTrackId);
+    return channel;
+}
 
-    CHECK(std::ranges::any_of(plan.diagnostics, [](const std::string& diagnostic) {
-        return diagnostic.find("bus 2 reaches no track") != std::string::npos;
-    }));
+const magda::engine::PlanOp* findOp(const RenderPlan& plan, OpRole role, TrackId trackId) {
+    const auto found = std::ranges::find_if(plan.ops, [&](const magda::engine::PlanOp& op) {
+        return op.key.role == role && op.key.trackId == trackId;
+    });
+    return found == plan.ops.end() ? nullptr : &*found;
+}
 
-    // The main mix takes one pad, not both.
+std::size_t mainMixInputs(const RenderPlan& plan) {
     const auto mixes = opsOfKind(plan, OpKind::MixAudio);
     const auto mainMix = std::ranges::find_if(mixes, [](const magda::engine::PlanOp* op) {
-        return op->key.role == OpRole::RackMix && op->key.index == 0;
+        return op->key.role == OpRole::RackMix && op->key.index == 0 &&
+               op->key.chainId == INVALID_CHAIN_ID;
     });
-    if (mainMix != mixes.end())
-        CHECK((*mainMix)->inputs.size() == 1);
+    return mainMix == mixes.end() ? 0 : (*mainMix)->inputs.size();
+}
+
+}  // namespace
+
+TEST_CASE("A pad's channel strip compiles inside its grid", "[engine][plan][padrack][3010]") {
+    // The channel feeds back into the grid's own mix, so it cannot wait for its
+    // turn in the track order: the grid's track would already be compiled.
+    auto grid = makeTrack(1);
+    grid.chain.fxChainElements.push_back(
+        makeDrumGrid(10, {makePad(0, 36, 36, 60, 101), makePad(1, 38, 38, 60, 102)}));
+    grid.childIds = {2};
+    const auto channel = makePadChannel(2, 1, 10, 0);
+
+    const auto plan = magda::engine::compileRenderPlan({grid, channel}, makeMaster(), {});
+
+    CHECK(plan.diagnostics.empty());
+    CHECK(magda::engine::validatePlan(plan).empty());
+    CHECK(findOp(plan, OpRole::TrackFader, 2) != nullptr);
+    CHECK(findOp(plan, OpRole::TrackMute, 2) != nullptr);
+    // Both pads reach the grid's mix: one through its channel, one directly.
+    CHECK(mainMixInputs(plan) == 2);
+}
+
+TEST_CASE("A pad channel routed elsewhere leaves the grid's mix", "[engine][plan][padrack][3010]") {
+    auto grid = makeTrack(1);
+    grid.chain.fxChainElements.push_back(
+        makeDrumGrid(10, {makePad(0, 36, 36, 60, 101), makePad(1, 38, 38, 60, 102)}));
+    grid.childIds = {2};
+    auto channel = makePadChannel(2, 1, 10, 0);
+    auto bus = makeTrack(3);
+    bus.type = TrackType::Group;
+    channel.audioOutputDevice = "track:3";
+
+    // The bus stands before the grid's track, so the order has to come from the
+    // channel's route, taken as the grid's.
+    const auto plan = magda::engine::compileRenderPlan({bus, grid, channel}, makeMaster(), {});
+
+    CHECK(plan.diagnostics.empty());
+    CHECK(magda::engine::validatePlan(plan).empty());
+    CHECK(mainMixInputs(plan) == 1);
+    const auto* busInput = findOp(plan, OpRole::TrackAudioInput, 3);
+    REQUIRE(busInput != nullptr);
+    CHECK(busInput->inputs.size() == 1);
+}
+
+TEST_CASE("A soloed pad channel keeps its grid's track audible", "[engine][plan][padrack][3010]") {
+    auto grid = makeTrack(1);
+    grid.chain.fxChainElements.push_back(
+        makeDrumGrid(10, {makePad(0, 36, 36, 60, 101), makePad(1, 38, 38, 60, 102)}));
+    grid.childIds = {2, 3};
+    auto soloed = makePadChannel(2, 1, 10, 0);
+    soloed.soloed = true;
+    const auto other = makePadChannel(3, 1, 10, 1);
+    const auto elsewhere = makeTrack(4);
+    const std::vector<TrackInfo> tracks{grid, soloed, other, elsewhere};
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), {});
+    magda::engine::PlanValues values;
+    magda::engine::resolvePlanValues(plan, tracks, makeMaster(), values);
+
+    const auto muteGain = [&](TrackId trackId) {
+        const auto* op = findOp(plan, OpRole::TrackMute, trackId);
+        REQUIRE(op != nullptr);
+        return values.ops[static_cast<std::size_t>(op - plan.ops.data())].gainLeft;
+    };
+    CHECK(muteGain(2) == 1.0f);
+    CHECK(muteGain(1) == 1.0f);
+    CHECK(muteGain(3) == 0.0f);
+    CHECK(muteGain(4) == 0.0f);
 }
 
 TEST_CASE("A pad's devices reach the parameter table", "[engine][plan][padrack]") {

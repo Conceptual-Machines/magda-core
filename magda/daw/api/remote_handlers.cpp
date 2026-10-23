@@ -3048,7 +3048,8 @@ std::optional<ChainNodePath> gridPathFromInput(MagdaApi& api, const juce::var& i
 }
 
 juce::var padResult(MagdaApi& api, const ChainNodePath& path, int index) {
-    return toJson(makePadDtos(*api.devices().getDevice(path), path)[static_cast<size_t>(index)]);
+    return toJson(makePadDtos(*api.devices().getDevice(path), path,
+                              api.tracks().getTracks())[static_cast<size_t>(index)]);
 }
 
 }  // namespace
@@ -3058,7 +3059,8 @@ HandlerResult padsList(MagdaApi& api, const juce::var& input, const RequestConte
     if (!path)
         return HandlerResult::fail(ErrorCode::NotFound, "no Drum Grid at gridPath");
     std::vector<juce::var> items;
-    for (const auto& pad : makePadDtos(*api.devices().getDevice(*path), *path))
+    for (const auto& pad :
+         makePadDtos(*api.devices().getDevice(*path), *path, api.tracks().getTracks()))
         items.push_back(toJson(pad));
     return HandlerResult::ok(toJsonArray(items));
 }
@@ -3068,7 +3070,9 @@ HandlerResult padsCreate(MagdaApi& api, const juce::var& input, const RequestCon
     if (!path)
         return HandlerResult::fail(ErrorCode::NotFound, "no Drum Grid at gridPath");
     const auto index = readInt(input, "padIndex");
-    if (makePadDtos(*api.devices().getDevice(*path), *path)[static_cast<size_t>(index)].populated)
+    if (makePadDtos(*api.devices().getDevice(*path), *path,
+                    api.tracks().getTracks())[static_cast<size_t>(index)]
+            .populated)
         return HandlerResult::unchanged(padResult(api, *path, index));
     if (api.devices().createPad(*path, index) == INVALID_CHAIN_ID)
         return HandlerResult::fail(ErrorCode::Conflict, "pad could not be created");
@@ -3106,7 +3110,9 @@ HandlerResult padsClear(MagdaApi& api, const juce::var& input, const RequestCont
     if (!path)
         return HandlerResult::fail(ErrorCode::NotFound, "no Drum Grid at gridPath");
     const auto index = readInt(input, "padIndex");
-    if (!makePadDtos(*api.devices().getDevice(*path), *path)[static_cast<size_t>(index)].populated)
+    if (!makePadDtos(*api.devices().getDevice(*path), *path,
+                     api.tracks().getTracks())[static_cast<size_t>(index)]
+             .populated)
         return HandlerResult::unchanged(acceptedResult());
     if (!api.devices().clearPad(*path, index))
         return HandlerResult::fail(ErrorCode::Conflict, "pad spans multiple notes");
@@ -3121,7 +3127,8 @@ HandlerResult padsSwap(MagdaApi& api, const juce::var& input, const RequestConte
     const auto b = readInt(input, "padB");
     if (a == b)
         return HandlerResult::unchanged(acceptedResult());
-    const auto slots = makePadDtos(*api.devices().getDevice(*path), *path);
+    const auto slots =
+        makePadDtos(*api.devices().getDevice(*path), *path, api.tracks().getTracks());
     if (!slots[static_cast<size_t>(a)].populated && !slots[static_cast<size_t>(b)].populated)
         return HandlerResult::unchanged(acceptedResult());
     if (!api.devices().swapPads(*path, a, b))
@@ -3134,14 +3141,10 @@ HandlerResult padsUpdate(MagdaApi& api, const juce::var& input, const RequestCon
     if (!path)
         return HandlerResult::fail(ErrorCode::NotFound, "no Drum Grid at gridPath");
     const auto index = readInt(input, "padIndex");
-    const auto before =
-        makePadDtos(*api.devices().getDevice(*path), *path)[static_cast<size_t>(index)];
+    const auto before = makePadDtos(*api.devices().getDevice(*path), *path,
+                                    api.tracks().getTracks())[static_cast<size_t>(index)];
     if (!before.populated)
         return HandlerResult::fail(ErrorCode::NotFound, "pad is empty");
-    if (has(input, "outputBus") && readInt(input, "outputBus") > 0 &&
-        path->getType() != ChainNodeType::TopLevelDevice)
-        return HandlerResult::fail(ErrorCode::Conflict,
-                                   "output buses are unavailable to nested Drum Grids");
     if (readInt(input, "lowNote", before.lowNote) > readInt(input, "highNote", before.highNote))
         return HandlerResult::fail(ErrorCode::ValidationFailed, "lowNote must not exceed highNote");
     const auto same = [&input](const char* key, auto current) {
@@ -3151,7 +3154,7 @@ HandlerResult padsUpdate(MagdaApi& api, const juce::var& input, const RequestCon
     if (same("lowNote", before.lowNote) && same("highNote", before.highNote) &&
         same("rootNote", before.rootNote) && same("levelDb", before.levelDb) &&
         same("pan", before.pan) && same("muted", before.muted) && same("solo", before.solo) &&
-        same("bypassed", before.bypassed) && same("outputBus", before.outputBus))
+        same("bypassed", before.bypassed))
         return HandlerResult::unchanged(toJson(before));
     PadUpdate update;
     if (has(input, "lowNote"))
@@ -3170,13 +3173,10 @@ HandlerResult padsUpdate(MagdaApi& api, const juce::var& input, const RequestCon
         update.solo = readBool(input, "solo");
     if (has(input, "bypassed"))
         update.bypassed = readBool(input, "bypassed");
-    if (has(input, "outputBus"))
-        update.outputBus = readInt(input, "outputBus");
     if (!api.devices().updatePad(*path, index, update))
-        return HandlerResult::fail(
-            ErrorCode::Conflict,
-            "pad note range overlaps another pad or output bus is unavailable");
-    const auto after = makePadDtos(*api.devices().getDevice(*path), *path);
+        return HandlerResult::fail(ErrorCode::Conflict, "pad note range overlaps another pad");
+    const auto after =
+        makePadDtos(*api.devices().getDevice(*path), *path, api.tracks().getTracks());
     const auto edited = std::ranges::find(after, before.chainId, &PadDto::chainId);
     return HandlerResult::ok(
         toJson(edited != after.end() ? *edited : after[static_cast<size_t>(index)]));

@@ -46,12 +46,23 @@ class EditPadsCommand : public UndoableCommand {
         return description_;
     }
 
+    /// A grid channel's fader and switches, which are its pad's (#3010).
+    struct ChannelMix {
+        TrackId trackId = INVALID_TRACK_ID;
+        float volume = 1.0f;
+        float pan = 0.0f;
+        bool muted = false;
+        bool soloed = false;
+    };
+
   private:
     ChainNodePath gridPath_;
     juce::String description_;
     std::function<void()> edit_;
     PadRack padsBefore_;
     PadRack padsAfter_;
+    std::vector<ChannelMix> mixBefore_;
+    std::vector<ChannelMix> mixAfter_;
     bool executed_ = false;
 };
 

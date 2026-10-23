@@ -158,7 +158,6 @@ struct PadUpdate {
     std::optional<bool> muted;
     std::optional<bool> solo;
     std::optional<bool> bypassed;
-    std::optional<int> outputBus;
 };
 
 enum class SidechainOwnerKind { Device, Rack };

@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <atomic>
 #include <magda/sdk/lockfree/MeteringBuffer.hpp>
 
@@ -14,16 +15,32 @@
 
 namespace magda {
 
+/// Every reading @p ring holds for @p trackId, as the loudest of them. Popping one
+/// per frame lets a reader that slips a frame show levels that late from then on.
+inline bool drainPeak(MeteringBuffer& ring, TrackId trackId, MeterData& peak) {
+    MeterData reading;
+    bool any = false;
+    while (ring.popLevels(trackId, reading)) {
+        peak.peakL = any ? std::max(peak.peakL, reading.peakL) : reading.peakL;
+        peak.peakR = any ? std::max(peak.peakR, reading.peakR) : reading.peakR;
+        peak.clipped = (any && peak.clipped) || reading.clipped;
+        any = true;
+    }
+    return any;
+}
+
 /**
  * @brief Per-track level and MIDI-activity data, fed at frame rate by whichever
  * engine renders.
  *
- * The mixer and recording preview have independent rings. Remote reads need
+ * The mixer, the arrangement and recording preview have independent rings: a
+ * read drains one, so two views sharing a ring would split the readings between
+ * them, and a hidden view's timer still runs. Remote reads need
  * the latest value even after a long idle period, so they use atomics instead
  * of a ring that stops accepting writes when it fills.
  */
 struct TrackMeters {
-    MeteringBuffer mixer, recording;
+    MeteringBuffer mixer, arrangement, recording;
     struct LatestLevel {
         std::atomic<float> peakL{0.0f}, peakR{0.0f};
         std::atomic<bool> clipped{false}, available{false};

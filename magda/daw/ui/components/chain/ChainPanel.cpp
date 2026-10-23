@@ -370,6 +370,15 @@ void ChainPanel::resizedContent(juce::Rectangle<int> /*contentArea*/) {
     addDeviceButton_.setBounds(x, 0, getScaledWidth(APPEND_ZONE_WIDTH), containerHeight);
 }
 
+HeightRange ChainPanel::getHeightRange() const {
+    HeightRange range;
+    for (const auto& slot : elementSlots_)
+        range = range.unite(slot->getHeightRange());
+    if (range.isEmpty() || elementSlots_.empty())
+        return range;
+    return range.plus(getHeight() - elementSlots_.front()->getHeight());
+}
+
 int ChainPanel::calculateTotalContentWidth() const {
     // The append zone sits past the last slot, where calculateAppendZoneX()
     // already ends.
@@ -378,6 +387,14 @@ int ChainPanel::calculateTotalContentWidth() const {
 
 int ChainPanel::getContentWidth() const {
     return calculateTotalContentWidth() + 1 + 2 * PADDING;
+}
+
+int ChainPanel::getMinimumContentWidth() const {
+    int widest = 0;
+    for (const auto& slot : elementSlots_)
+        widest = juce::jmax(widest, getScaledWidth(slot->getPreferredWidth()));
+    return widest + getScaledWidth(ARROW_WIDTH) + getScaledWidth(APPEND_ZONE_WIDTH) + 1 +
+           2 * PADDING;
 }
 
 void ChainPanel::setMaxWidth(int maxWidth) {

@@ -9,6 +9,7 @@ target_sources(magda_daw PRIVATE
     ChainNodePath.cpp
     DeviceInfo.cpp
     DrumGridPads.cpp
+    PadChannels.cpp
     ControlTarget.cpp
     MixerStripOrder.cpp
     UIScale.cpp

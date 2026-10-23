@@ -40,6 +40,8 @@
 #include "core/SelectionManager.hpp"
 #include "core/StepPatternCommands.hpp"
 #include "core/TrackManager.hpp"
+#include "core/TrackPropertyCommands.hpp"
+#include "core/UndoManager.hpp"
 #include "custom_ui/DeviceTelemetrySources.hpp"
 #include "custom_ui/FMUI.hpp"
 #include "custom_ui/HaloUI.hpp"
@@ -547,9 +549,11 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
 
 HeightRange DeviceCustomUIManager::getContentHeightRange() const {
     // One compact range for every instrument so the panel holds its height between them: the
-    // Drum Grid's pad text sets the minimum, FM's operator rows at kMinTileH the ideal.
-    if (polySynthUI_ || fmUI_ || samplerUI_ || stepSequencerUI_ || polyStepSequencerUI_ ||
-        drumGridUI_)
+    // Drum Grid's pad text sets the minimum, FM's operator rows at kMinTileH the ideal. The
+    // grid grows past it when the selected pad's chain needs more.
+    if (drumGridUI_)
+        return drumGridUI_->getHeightRange();
+    if (polySynthUI_ || fmUI_ || samplerUI_ || stepSequencerUI_ || polyStepSequencerUI_)
         return {238, 244};
     return {};
 }
@@ -1235,7 +1239,7 @@ void DeviceCustomUIManager::showPad(int padIndex, const magda::ChainInfo* pad) {
     }
 
     drumGridUI_->updatePadInfo(padIndex, magda::padVoiceName(*pad), pad->muted, pad->solo,
-                               pad->volume, pad->pan, pad->id, pad->bypassed, pad->outputIndex);
+                               pad->volume, pad->pan, pad->id, pad->bypassed);
 }
 
 bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
@@ -1319,20 +1323,6 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             [this, padIndex]() {
                 drumGridUI_->updatePadInfo(padIndex, "", false, false, 0.0f, 0.0f, -1);
             });
-    };
-
-    drumGridUI_->onPadMuteChanged = [postPadEdit](int padIndex, bool muted) {
-        postPadEdit(muted ? "Mute Pad" : "Unmute Pad",
-                    [padIndex, muted](const magda::ChainNodePath& grid) {
-                        magda::TrackManager::getInstance().setPadMuted(grid, padIndex, muted);
-                    });
-    };
-
-    drumGridUI_->onPadSoloChanged = [postPadEdit](int padIndex, bool soloed) {
-        postPadEdit(soloed ? "Solo Pad" : "Unsolo Pad",
-                    [padIndex, soloed](const magda::ChainNodePath& grid) {
-                        magda::TrackManager::getInstance().setPadSolo(grid, padIndex, soloed);
-                    });
     };
 
     // Plugin drag and drop onto pads: an instrument replaces the pad
@@ -1500,15 +1490,59 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             });
     };
 
+    // The master-out row mixes the pad's channel, and only what moved becomes an undo step (#3010).
+    drumGridUI_->onPadMixChanged = [this, gridPath](int padIndex, float volume, float pan) {
+        if (drumGridUI_ == nullptr || !drumGridUI_->getPadMix)
+            return;
+        const auto mix = drumGridUI_->getPadMix(padIndex);
+        if (!mix)
+            return;
+        using Target = magda::SetPadFaderCommand::Target;
+        const auto gesture = drumGridUI_->getFaderGesture();
+        if (volume != mix->level)
+            magda::setPadFader(gridPath(), padIndex, Target::Volume, volume, gesture);
+        if (pan != mix->pan)
+            magda::setPadFader(gridPath(), padIndex, Target::Pan, pan, gesture);
+    };
+
+    drumGridUI_->onPadSwitchesChanged = [this, gridPath, postPadEdit](int padIndex, bool muted,
+                                                                      bool soloed, bool bypassed) {
+        auto& tm = magda::TrackManager::getInstance();
+        const auto grid = gridPath();
+        const auto* pad = tm.getPad(grid, padIndex);
+        if (pad == nullptr || drumGridUI_ == nullptr || !drumGridUI_->getPadMix)
+            return;
+        const auto mix = drumGridUI_->getPadMix(padIndex);
+        if (pad->bypassed != bypassed)
+            postPadEdit(bypassed ? "Bypass Pad" : "Enable Pad",
+                        [padIndex, bypassed](const magda::ChainNodePath& path) {
+                            magda::TrackManager::getInstance().setPadBypassed(path, padIndex,
+                                                                              bypassed);
+                        });
+        if (const auto* channel = tm.getPadChannel(grid, padIndex); channel != nullptr && mix) {
+            auto& undo = magda::UndoManager::getInstance();
+            if (mix->mute != muted)
+                undo.executeCommand(
+                    std::make_unique<magda::SetTrackMuteCommand>(channel->id, muted));
+            if (mix->solo != soloed)
+                undo.executeCommand(
+                    std::make_unique<magda::SetTrackSoloCommand>(channel->id, soloed));
+        }
+    };
+
     drumGridUI_->getPadMix = [gridPath](int padIndex) -> std::optional<DrumGridUI::PadMix> {
-        const auto* pad = magda::TrackManager::getInstance().getPad(gridPath(), padIndex);
+        auto& tm = magda::TrackManager::getInstance();
+        const auto* pad = tm.getPad(gridPath(), padIndex);
         if (pad == nullptr)
             return std::nullopt;
-        return DrumGridUI::PadMix{.level = pad->volume,
-                                  .pan = pad->pan,
-                                  .mute = pad->muted,
-                                  .solo = pad->solo,
-                                  .busOutput = pad->outputIndex};
+        if (const auto* channel = tm.getPadChannel(gridPath(), padIndex))
+            return DrumGridUI::PadMix{.level =
+                                          juce::Decibels::gainToDecibels(channel->volume, -60.0f),
+                                      .pan = channel->pan,
+                                      .mute = channel->muted,
+                                      .solo = channel->soloed};
+        return DrumGridUI::PadMix{
+            .level = pad->volume, .pan = pad->pan, .mute = pad->muted, .solo = pad->solo};
     };
 
     drumGridUI_->consumePadTrigger = [gridPath](int padIndex) {

@@ -201,13 +201,14 @@ void ChainRowComponent::lookAndFeelChanged() {
 }
 
 ChainRowComponent::Columns ChainRowComponent::columnsFor(juce::Rectangle<int> row) {
-    auto area = row.reduced(10, 0);
+    // The Drum Grid pad editor's row measurements, so both lists fit 300 px.
+    auto area = row.reduced(8, 0);
     Columns columns;
-    columns.name = area.removeFromLeft(100);
+    columns.name = area.removeFromLeft(68);
     area.removeFromLeft(COLUMN_GAP);
-    columns.buttons = area.removeFromRight(4 * BUTTON_WIDTH + 3 * 4);
+    columns.buttons = area.removeFromRight(4 * BUTTON_WIDTH + 3 * BUTTON_GAP);
     area.removeFromRight(COLUMN_GAP);
-    columns.pan = area.removeFromRight(64);
+    columns.pan = area.removeFromRight(36);
     area.removeFromRight(COLUMN_GAP);
     columns.gain = area;
     return columns;
@@ -412,7 +413,7 @@ void ChainRowComponent::resized() {
         button->setBounds(
             buttons.removeFromLeft(BUTTON_WIDTH)
                 .withSizeKeepingCentre(BUTTON_WIDTH, static_cast<int>(BUTTON_HEIGHT)));
-        buttons.removeFromLeft(4);
+        buttons.removeFromLeft(BUTTON_GAP);
     }
 }
 

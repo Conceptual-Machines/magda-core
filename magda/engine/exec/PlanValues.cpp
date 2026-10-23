@@ -134,6 +134,9 @@ class Resolver {
         byId_.emplace(master.id, &master);
 
         anySolo_ = std::ranges::any_of(tracks, [](const TrackInfo& t) { return t.soloed; });
+        for (const auto& track : tracks)
+            if (track.soloed)
+                markSoloPath(track);
 
         for (const auto& track : tracks)
             collectSilencedRacks(track.chain.fxChainElements, false);
@@ -178,6 +181,11 @@ class Resolver {
     /// that keeps a soloed group's children audible, since a child is only
     /// soloed by way of the group it feeds.
     bool isSoloIncludingDestination(const TrackInfo& track, int depth = 0) const;
+
+    /// The other half: every track a soloed track's audio passes through on its
+    /// way out, its parent first. A soloed pad keeps its grid's track audible,
+    /// and a soloed group child its group (#3010).
+    void markSoloPath(const TrackInfo& track, int depth = 0);
 
     /// The track's destination, when its output routing names one.
     const TrackInfo* destinationOf(const TrackInfo& track) const {
@@ -230,6 +238,7 @@ class Resolver {
     const TrackInfo& master_;
     std::unordered_map<TrackId, const TrackInfo*> byId_;
     std::set<RackId> silencedRacks_;
+    std::set<TrackId> soloPath_;
     bool anySolo_ = false;
     std::vector<std::string> messages_;
 };
@@ -310,6 +319,14 @@ bool Resolver::isSoloIncludingDestination(const TrackInfo& track, int depth) con
     return false;
 }
 
+void Resolver::markSoloPath(const TrackInfo& track, int depth) {
+    if (depth >= kMaxTrackWalk)
+        return;
+    for (const auto* next : {findTrack(track.parentId), destinationOf(track)})
+        if (next != nullptr && soloPath_.insert(next->id).second)
+            markSoloPath(*next, depth + 1);
+}
+
 bool Resolver::isAudible(const TrackInfo& track) const {
     // The audibility policy, in the order the current engine applies it:
     // inherited mute is absolute, then solo beats self-mute, then another
@@ -321,6 +338,8 @@ bool Resolver::isAudible(const TrackInfo& track) const {
     // audible while everything else is silenced.
     if (isSoloIncludingDestination(track))
         return true;
+    if (soloPath_.contains(track.id))
+        return !track.muted;
     if (anySolo_ && track.id != master_.id)
         return false;
     return !track.muted;

@@ -7,6 +7,7 @@
 #include "../core/ClipInfo.hpp"
 #include "../core/DeviceInfo.hpp"
 #include "../core/DrumGridPads.hpp"
+#include "../core/PadChannels.hpp"
 #include "../core/ParameterUtils.hpp"
 #include "../core/PluginParameterConfigStore.hpp"
 #include "../core/RackInfo.hpp"
@@ -51,6 +52,8 @@ juce::String trackTypeName(TrackType type) {
             return "multi_out";
         case TrackType::Chord:
             return "chord";
+        case TrackType::Pad:
+            return "pad";
     }
     return "audio";
 }
@@ -220,6 +223,19 @@ DeviceDto makeDeviceDto(const DeviceInfo& device, TrackId trackId, std::optional
     dto.gainDb = device.gainDb;
     dto.sidechain = makeSidechainDto(device);
     return dto;
+}
+
+/// A pad with a mixer channel is mixed there (#3010).
+void readPadChannel(PadDto& pad, DeviceId gridId, const std::vector<TrackInfo>& tracks) {
+    const auto* channel =
+        pad.chainId ? pad_channels::findChannel(tracks, gridId, *pad.chainId) : nullptr;
+    if (channel == nullptr)
+        return;
+    pad.channelTrackId = channel->id;
+    pad.levelDb = juce::Decibels::gainToDecibels(channel->volume, -60.0f);
+    pad.pan = channel->pan;
+    pad.muted = channel->muted;
+    pad.solo = channel->soloed;
 }
 
 void appendPadDevices(const DeviceInfo& grid, const ChainNodePath& gridPath, DeviceGraphDto& graph);
@@ -556,10 +572,23 @@ DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks) {
                               ChainNodePath::postFxDevice(track.id, element.device.id)));
         // mixerAnalysisElements are session-only UI state and are deliberately excluded.
     }
+
+    // A pad's mix is its channel's, found among the same tracks (#3010).
+    for (auto& pad : graph.pads) {
+        const auto& gridPath = pad.gridPath;
+        const auto gridId = gridPath.topLevelDeviceId.value_or(
+            gridPath.steps.empty() ? INVALID_DEVICE_ID : gridPath.steps.back().id);
+        readPadChannel(pad, gridId, tracks);
+    }
     return graph;
 }
 
 std::vector<PadDto> makePadDtos(const DeviceInfo& grid, const ChainNodePath& gridPath) {
+    return makePadDtos(grid, gridPath, {});
+}
+
+std::vector<PadDto> makePadDtos(const DeviceInfo& grid, const ChainNodePath& gridPath,
+                                const std::vector<TrackInfo>& tracks) {
     std::vector<PadDto> result;
     result.reserve(kPadCount);
     for (int index = 0; index < kPadCount; ++index) {
@@ -585,7 +614,7 @@ std::vector<PadDto> makePadDtos(const DeviceInfo& grid, const ChainNodePath& gri
             dto.muted = pad->muted;
             dto.solo = pad->solo;
             dto.bypassed = pad->bypassed;
-            dto.outputBus = pad->outputIndex;
+            readPadChannel(dto, grid.id, tracks);
             for (const auto& layer : pad->layers)
                 for (const auto& element : layer.elements)
                     if (isDevice(element))

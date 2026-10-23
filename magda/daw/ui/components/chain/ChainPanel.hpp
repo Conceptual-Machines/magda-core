@@ -40,8 +40,12 @@ class ChainPanel : public NodeComponent, private juce::Timer {
     void refresh();                // Rebuild device slots without resetting panel state
     void updateParamIndicators();  // Repaint parameter modulation indicators
     void clear();
-    void onDeviceLayoutChanged();    // Called when a device slot's size changes (panel toggle)
-    int getContentWidth() const;     // Returns full width needed to show all devices
+    void onDeviceLayoutChanged();  // Called when a device slot's size changes (panel toggle)
+    int getContentWidth() const;   // Returns full width needed to show all devices
+    /// The width that shows its widest device whole, with the add slot beside it.
+    int getMinimumContentWidth() const;
+    /// The tightest needs among the chain's devices, measured from this panel (#3119).
+    HeightRange getHeightRange() const override;
     void setMaxWidth(int maxWidth);  // Set maximum width before scrolling kicks in
 
     // Horizontal zoom (Cmd/Ctrl + scroll wheel)

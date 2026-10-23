@@ -17,6 +17,7 @@
 #include "../../core/DrumGridPads.hpp"
 #include "../../core/LegacyDeviceAliases.hpp"
 #include "../../core/OpenProjectAddressing.hpp"
+#include "../../core/PadChannels.hpp"
 #include "../../core/PadPathMigration.hpp"
 #include "../../core/SelectionManager.hpp"
 #include "../../core/TrackManager.hpp"
@@ -35,6 +36,14 @@ thread_local juce::String ProjectSerializer::lastError_;
 // ============================================================================
 
 namespace {
+
+/// Every pad holding a device gets its channel, numbered after the staged ids.
+void migratePadChannels(std::vector<TrackInfo>& tracks) {
+    TrackId nextTrackId = 1;
+    for (const auto& track : tracks)
+        nextTrackId = std::max(nextTrackId, track.id + 1);
+    pad_channels::sync(tracks, nextTrackId);
+}
 
 /// Written relative by this project, not an absolute path from another platform: a
 /// macOS "/Volumes/..." path is not absolute to Windows, and must not be re-rooted.
@@ -649,6 +658,10 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
         daw::audio::device_state_hydration::hydrateStagedProject(
             outData.tracks, outData.masterTrack.get(), outData.info.version);
 
+        // Then the pads' mixer channels (#3010), which is also where a pad on a
+        // bus moves onto one. After the pad ids, which the channels link by.
+        migratePadChannels(outData.tracks);
+
         // Parameter aliases (UserProject layer -- opaque pass-through to AliasRegistry)
         if (obj->hasProperty("paramAliases"))
             outData.info.paramAliases = obj->getProperty("paramAliases");
@@ -1049,6 +1062,9 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
     // Then the retired duplicate parameter record (#2317), same as loadAndStage.
     daw::audio::device_state_hydration::hydrateStagedProject(
         stagedTracks, hasMasterTrack ? &stagedMasterTrack : nullptr, outInfo.version);
+
+    // Then the pads' mixer channels (#3010), same as loadAndStage.
+    migratePadChannels(stagedTracks);
 
     // Stage 2: All components validated successfully - now commit to managers atomically
     installStagedSources(stagedSources, stagedLegacySources, stagedClips);

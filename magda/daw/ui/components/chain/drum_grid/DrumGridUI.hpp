@@ -55,8 +55,7 @@ class DrumGridUI : public juce::Component,
 
     /** Update cached info for a single pad. Called from DeviceSlotComponent::updateCustomUI. */
     void updatePadInfo(int padIndex, const juce::String& sampleName, bool mute, bool solo,
-                       float levelDb, float pan, int chainIndex = -1, bool bypassed = false,
-                       int busOutput = 0);
+                       float levelDb, float pan, int chainIndex = -1, bool bypassed = false);
 
     /** Set which pad is selected and populate the detail panel. */
     void setSelectedPad(int padIndex);
@@ -82,12 +81,6 @@ class DrumGridUI : public juce::Component,
         return faderGesture_;
     }
 
-    /** Called when pad mute changes. (padIndex, muted) */
-    std::function<void(int, bool)> onPadMuteChanged;
-
-    /** Called when pad solo changes. (padIndex, soloed) */
-    std::function<void(int, bool)> onPadSoloChanged;
-
     /** Called when a plugin is dropped onto a pad. (padIndex, DynamicObject with plugin info) */
     std::function<void(int, const juce::DynamicObject&)> onPluginDropped;
 
@@ -100,17 +93,16 @@ class DrumGridUI : public juce::Component,
     /** Called when play button is pressed/released on a pad. (padIndex, isNoteOn) */
     std::function<void(int, bool)> onNotePreview;
 
-    /** @brief A pad's switches, faders and output as the model holds them. */
+    /** @brief A pad's switches and faders, which are its mixer channel's (#3010). */
     struct PadMix {
         float level = 0.0f;
         float pan = 0.0f;
         bool mute = false;
         bool solo = false;
-        int busOutput = 0;
     };
 
-    /// Read at the poll rate, so a pad fader moved elsewhere (a mixer
-    /// sub-channel) shows here. Nothing for a pad with no chain.
+    /// Read at the poll rate, so a pad's channel moved in the mixer shows here.
+    /// Nothing for a pad with no chain.
     std::function<std::optional<PadMix>(int padIndex)> getPadMix;
 
     /// Whether a pad has sounded since it was last asked. Read at the poll rate.
@@ -140,6 +132,10 @@ class DrumGridUI : public juce::Component,
         onLayerSwitchesChanged;
     /// Live, per move; coalesces into one undo step per fader gesture.
     std::function<void(magda::ChainId layerId, float volumeDb, float pan)> onLayerMixChanged;
+
+    /// The master-out row: the pad's channel fader and switches, and its power (#3010).
+    std::function<void(int padIndex, float volumeDb, float pan)> onPadMixChanged;
+    std::function<void(int padIndex, bool mute, bool solo, bool bypassed)> onPadSwitchesChanged;
     /// Once per drag: a zone change recompiles the pad.
     std::function<void(magda::ChainId layerId, const magda::ChainZones& zones)> onLayerZonesChanged;
 
@@ -151,6 +147,10 @@ class DrumGridUI : public juce::Component,
 
     /** Width the panels want: rail, pads, the editor when open, and the chain. */
     int getPreferredContentWidth() const;
+
+    /// What the grid needs to fit: the pads' text, or the selected pad's chain
+    /// once its devices need more (#3119).
+    HeightRange getHeightRange() const;
 
     //==============================================================================
     // Component overrides
@@ -231,7 +231,6 @@ class DrumGridUI : public juce::Component,
         float level = 0.0f;
         float pan = 0.0f;
         int chainIndex = -1;  // Index of the chain covering this pad, or -1 if empty
-        int busOutput = 0;    // 0 = Main, 1+ = multi-out bus
     };
 
     std::array<PadInfo, kTotalPads> padInfos_;
@@ -252,6 +251,8 @@ class DrumGridUI : public juce::Component,
 
     // Rail
     juce::TextButton editorToggle_{"i"};
+    // Switches the editor from the pad's layers to its master out (#3010).
+    magda::SvgButton padOutToggle_{"Out", BinaryData::pad_out_svg, BinaryData::pad_out_svgSize};
 
     // Pad editor
     // Each tab lists every layer in that view; the pad's own mix is its mixer channel (#3010).
@@ -270,9 +271,7 @@ class DrumGridUI : public juce::Component,
     // Chain
     ChainPanel padChainView_;
     DashedAddButton emptyAddButton_;
-    magda::SvgButton chainMuteButton_{"mute", BinaryData::master_on_svg,
-                                      BinaryData::master_on_svgSize};
-    magda::SvgButton chainSoloButton_{"solo", BinaryData::solo_svg, BinaryData::solo_svgSize};
+    PadLayerRow padRow_;
 
     // Footer
     std::unique_ptr<juce::ArrowButton> prevPageButton_;
@@ -280,7 +279,7 @@ class DrumGridUI : public juce::Component,
 
     // Areas laid out in resized() and painted in paint()
     juce::Rectangle<int> railArea_, padsArea_, editorArea_, chainArea_, footerArea_;
-    juce::Rectangle<int> editorHeaderArea_, chainHeaderArea_, pageTextArea_;
+    juce::Rectangle<int> editorHeaderArea_, pageTextArea_;
     juce::Rectangle<int> tabsArea_;
 
     // Plugin drop highlight
@@ -298,8 +297,9 @@ class DrumGridUI : public juce::Component,
     void layoutChain(juce::Rectangle<int> area);
     void layoutFooter(juce::Rectangle<int> area);
     void paintEditor(juce::Graphics& g);
-    void paintChainHeader(juce::Graphics& g);
+    void paintEmptyChain(juce::Graphics& g);
     bool selectedPadHasChain() const;
+    void refreshPadRow();
 
     const PadLayerView* selectedLayer() const;
     void refreshLayers();

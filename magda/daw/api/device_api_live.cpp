@@ -25,6 +25,7 @@
 #include "../core/PresetManager.hpp"
 #include "../core/TrackCommands.hpp"
 #include "../core/TrackManager.hpp"
+#include "../core/TrackPropertyCommands.hpp"
 #include "../core/UndoManager.hpp"
 #include "../core/controllers/BindingRegistry.hpp"
 #include "../engine/AudioEngine.hpp"
@@ -894,15 +895,23 @@ bool DeviceApiLive::updatePad(const ChainNodePath& gridPath, int padIndex,
     const auto* pad = tm.getPad(gridPath, padIndex);
     if (pad == nullptr)
         return false;
-    const bool changed = (update.lowNote && *update.lowNote != pad->lowNote) ||
-                         (update.highNote && *update.highNote != pad->highNote) ||
-                         (update.rootNote && *update.rootNote != pad->rootNote) ||
-                         (update.levelDb && *update.levelDb != pad->volume) ||
-                         (update.pan && *update.pan != pad->pan) ||
-                         (update.muted && *update.muted != pad->muted) ||
-                         (update.solo && *update.solo != pad->solo) ||
-                         (update.bypassed && *update.bypassed != pad->bypassed) ||
-                         (update.outputBus && *update.outputBus != pad->outputIndex);
+
+    // A pad with a channel is mixed there, and undone the way a track is (#3010).
+    const auto* channel = tm.getPadChannel(gridPath, padIndex);
+    const auto channelId = channel != nullptr ? channel->id : INVALID_TRACK_ID;
+    const float levelDb =
+        channel != nullptr ? juce::Decibels::gainToDecibels(channel->volume, -60.0f) : pad->volume;
+    const float pan = channel != nullptr ? channel->pan : pad->pan;
+    const bool muted = channel != nullptr ? channel->muted : pad->muted;
+    const bool solo = channel != nullptr ? channel->soloed : pad->solo;
+
+    const bool changed =
+        (update.lowNote && *update.lowNote != pad->lowNote) ||
+        (update.highNote && *update.highNote != pad->highNote) ||
+        (update.rootNote && *update.rootNote != pad->rootNote) ||
+        (update.levelDb && *update.levelDb != levelDb) || (update.pan && *update.pan != pan) ||
+        (update.muted && *update.muted != muted) || (update.solo && *update.solo != solo) ||
+        (update.bypassed && *update.bypassed != pad->bypassed);
     if (!changed)
         return true;
     const int low = update.lowNote.value_or(pad->lowNote);
@@ -911,31 +920,43 @@ bool DeviceApiLive::updatePad(const ChainNodePath& gridPath, int padIndex,
     if (low < kPadBaseNote || high >= kPadBaseNote + kPadCount || low > high || root < 0 ||
         root > 127 || !tm.padNoteRangeIsFree(gridPath, padIndex, low, high))
         return false;
-    if (update.outputBus && (*update.outputBus < 0 || *update.outputBus >= kPadBusCount ||
-                             (*update.outputBus > 0 && !tm.padBusesAvailable(gridPath))))
-        return false;
     if ((update.levelDb &&
          (!std::isfinite(*update.levelDb) || *update.levelDb < -60.0f || *update.levelDb > 6.0f)) ||
         (update.pan && (!std::isfinite(*update.pan) || *update.pan < -1.0f || *update.pan > 1.0f)))
         return false;
-    editPads(gridPath, "Update Pad", [&] {
+
+    auto& undo = UndoManager::getInstance();
+    undo.beginCompoundOperation("Update Pad");
+    if (channelId != INVALID_TRACK_ID) {
         if (update.levelDb)
-            tm.setPadVolume(gridPath, padIndex, *update.levelDb);
+            undo.executeCommand(std::make_unique<SetTrackVolumeCommand>(
+                channelId, juce::Decibels::decibelsToGain(*update.levelDb, -60.0f)));
         if (update.pan)
-            tm.setPadPan(gridPath, padIndex, *update.pan);
+            undo.executeCommand(std::make_unique<SetTrackPanCommand>(channelId, *update.pan));
         if (update.muted)
-            tm.setPadMuted(gridPath, padIndex, *update.muted);
+            undo.executeCommand(std::make_unique<SetTrackMuteCommand>(channelId, *update.muted));
         if (update.solo)
-            tm.setPadSolo(gridPath, padIndex, *update.solo);
+            undo.executeCommand(std::make_unique<SetTrackSoloCommand>(channelId, *update.solo));
+    }
+    editPads(gridPath, "Update Pad", [&] {
+        if (channelId == INVALID_TRACK_ID) {
+            if (update.levelDb)
+                tm.setPadVolume(gridPath, padIndex, *update.levelDb);
+            if (update.pan)
+                tm.setPadPan(gridPath, padIndex, *update.pan);
+            if (update.muted)
+                tm.setPadMuted(gridPath, padIndex, *update.muted);
+            if (update.solo)
+                tm.setPadSolo(gridPath, padIndex, *update.solo);
+        }
         if (update.bypassed)
             tm.setPadBypassed(gridPath, padIndex, *update.bypassed);
-        if (update.outputBus)
-            tm.setPadOutput(gridPath, padIndex, *update.outputBus);
         // A changed range may no longer cover padIndex. Apply the other fields
         // while the chain is still reachable through that index.
         if (update.lowNote || update.highNote || update.rootNote)
             tm.setPadNoteRange(gridPath, padIndex, low, high, root);
     });
+    undo.endCompoundOperation();
     return true;
 }
 

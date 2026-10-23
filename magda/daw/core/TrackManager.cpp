@@ -608,6 +608,11 @@ void TrackManager::deleteTrack(TrackId trackId) {
     auto& sm = magda::SelectionManager::getInstance();
     sm.clearSelection();
 
+    // Kept, so a redo that rebuilds the grid's track gives its pads back the
+    // same channels (#3010).
+    if (track->padLink)
+        padChannelStash_[{track->padLink->gridId, track->padLink->padId}] = *track;
+
     auto& clipManager = magda::ClipManager::getInstance();
     auto clipIds = clipManager.getClipsOnTrack(trackId);
     DBG("TrackManager::deleteTrack clip cleanup trackId=" << trackId
@@ -3465,6 +3470,7 @@ void TrackManager::createDefaultTracks(int count) {
 
 void TrackManager::clearAllTracks() {
     tracks_.clear();
+    padChannelStash_.clear();
     masterTrack_.chain.fxChainElements.clear();
     masterTrack_.chain.postFxChainElements.clear();
     masterTrack_.chain.mixerAnalysisElements.clear();
@@ -3597,6 +3603,7 @@ void TrackManager::notifyTracksChanged() {
         tracksChangedPending_ = true;
         return;
     }
+    reconcilePadChannels();
     ScopedNotifyGuard guard(*this);
     for (size_t i = 0; i < listeners_.size(); ++i) {
         if (listeners_[i])
@@ -3686,19 +3693,31 @@ void TrackManager::notifyTrackSelectionChanged(TrackId trackId) {
 }
 
 void TrackManager::notifyTrackDevicesChanged(TrackId trackId) {
-    ScopedNotifyGuard guard(*this);
-    for (size_t i = 0; i < listeners_.size(); ++i) {
-        if (listeners_[i])
-            listeners_[i]->trackDevicesChanged(trackId);
+    const auto padChannelsChanged = reconcilePadChannels();
+    {
+        ScopedNotifyGuard guard(*this);
+        for (size_t i = 0; i < listeners_.size(); ++i) {
+            if (listeners_[i])
+                listeners_[i]->trackDevicesChanged(trackId);
+        }
     }
+    if (padChannelsChanged)
+        notifyTracksChanged();
 }
 
 void TrackManager::notifyDeviceAdded(const ChainNodePath& devicePath, const DeviceInfo& device) {
-    ScopedNotifyGuard guard(*this);
-    for (size_t i = 0; i < listeners_.size(); ++i) {
-        if (listeners_[i])
-            listeners_[i]->deviceAdded(devicePath, device);
+    // A copy: the sync below can reallocate the chain @p device lives in.
+    const auto added = device;
+    const auto padChannelsChanged = reconcilePadChannels();
+    {
+        ScopedNotifyGuard guard(*this);
+        for (size_t i = 0; i < listeners_.size(); ++i) {
+            if (listeners_[i])
+                listeners_[i]->deviceAdded(devicePath, added);
+        }
     }
+    if (padChannelsChanged)
+        notifyTracksChanged();
 }
 
 void TrackManager::notifyDeviceModifiersChanged(TrackId trackId) {

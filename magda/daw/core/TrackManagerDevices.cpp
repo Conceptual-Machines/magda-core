@@ -43,63 +43,6 @@ template <typename Id> bool remapId(std::map<Id, Id> const& ids, int& value) {
     return true;
 }
 
-/// Whether anything in @p element has a Drum Grid pad routed to a bus.
-///
-/// The whole subtree, because a rack being moved carries its devices with it.
-/// The single-device callers this replaces looked only at the element itself.
-bool anyPadOnABusInSubtree(const ChainElement& element) {
-    if (magda::isDevice(element)) {
-        const auto& device = magda::getDevice(element);
-        if (anyPadOnABus(device))
-            return true;
-
-        if (device.pads)
-            for (const auto& pad : device.pads->chains)
-                for (const auto& layer : pad.layers)
-                    for (const auto& padElement : layer.elements)
-                        if (anyPadOnABusInSubtree(padElement))
-                            return true;
-        return false;
-    }
-
-    if (!magda::isRack(element))
-        return false;
-
-    for (const auto& chain : magda::getRack(element).chains)
-        for (const auto& nested : chain.elements)
-            if (anyPadOnABusInSubtree(nested))
-                return true;
-    return false;
-}
-
-/// Whether anything strictly BELOW @p element has a Drum Grid pad routed to a bus.
-///
-/// The distinction the destination rule needs. Only the root of a subtree lands
-/// where the caller says it lands; anything below it stays nested inside the
-/// root wherever that is, so it can never be the top-level instrument whose
-/// output instance carries a bus (#2221).
-bool anyPadOnABusBelowRoot(const ChainElement& element) {
-    if (magda::isDevice(element)) {
-        const auto& device = magda::getDevice(element);
-        if (device.pads)
-            for (const auto& pad : device.pads->chains)
-                for (const auto& layer : pad.layers)
-                    for (const auto& padElement : layer.elements)
-                        if (anyPadOnABusInSubtree(padElement))
-                            return true;
-        return false;
-    }
-
-    if (!magda::isRack(element))
-        return false;
-
-    for (const auto& chain : magda::getRack(element).chains)
-        for (const auto& nested : chain.elements)
-            if (anyPadOnABusInSubtree(nested))
-                return true;
-    return false;
-}
-
 /// Whether anything in @p element drives a multi-out child track of @p sourceTrackId.
 ///
 /// The whole subtree, because a rack being moved carries its devices with it.
@@ -880,34 +823,9 @@ PlacementRefusal TrackManager::checkPlacement(const PlacementRequest& request) c
         return PlacementRefusal::DestinationCannotHostInstrument;
     }
 
-    // A pad on a bus is carried by the output instance made for a top-level
-    // instrument. Nowhere else carries one, so a destination that is not a
-    // track's own list would silently drop the routing, and leaving the track
-    // the buses were realised on would leave its child tracks behind. Neither
-    // clean-up is part of the undoable step (#2211).
-    //
-    // A source-less reconstruction is neither: a paste, or an undo putting a
-    // deleted device back, owns no child tracks and leaves no track. Refusing it
-    // would have made undoing the deletion of a routed grid restore nothing at
-    // all, silently, because the callers discard the result (#2221).
-    //
-    // Only the root lands where the caller says it lands. A routed grid deeper
-    // in the subtree stays nested inside that root wherever it goes, so it can
-    // never be the top-level instrument its bus needs, whatever the destination.
-    if (anyPadOnABusBelowRoot(*request.subtree))
-        return PlacementRefusal::PadOnABus;
-
-    if (magda::isDevice(*request.subtree) && anyPadOnABus(magda::getDevice(*request.subtree))) {
-        const bool hasSource = request.sourcePath.trackId != INVALID_TRACK_ID;
-        const bool leavesItsTrack =
-            hasSource && request.destination.trackId != request.sourcePath.trackId;
-        if (!request.destinationIsTrackTopLevel || leavesItsTrack)
-            return PlacementRefusal::PadOnABus;
-    }
-
-    // And the same for a multi-out pair: the child track's link names the track
-    // the device stands on, so moving it strands the link, and a device off the
-    // top level has no output instance to carry a bus at all (#2220).
+    // A multi-out pair's child track names the track the device stands on, so
+    // moving the device strands the link, and a device off the top level has no
+    // output instance to carry a pair at all (#2220).
     if (ownsMultiOutChildTracks(*this, *request.subtree, request.sourcePath.trackId))
         return PlacementRefusal::OwnsMultiOutChildTracks;
 

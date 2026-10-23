@@ -29,7 +29,8 @@ enum class TrackType {
     Aux = 4,       // Receives from sends
     Master = 5,    // Final output
     MultiOut = 6,  // Output track for multi-out instrument pair
-    Chord = 7      // Singleton chord-progression track (monitor-only, excluded from render)
+    Chord = 7,     // Singleton chord-progression track (monitor-only, excluded from render)
+    Pad = 8        // One Drum Grid pad's mixer channel, a child of the grid's track (#3010)
 };
 
 /**
@@ -206,6 +207,21 @@ constexpr TrackTypeTraits traitsOf(TrackType type) {
                 .isSingleton = true,
                 .isDeviceOwned = false,
             };
+
+        // A Drum Grid pad's channel strip. Its audio comes from the pad and its
+        // notes from the grid's track, so it has no lane and no input of its own.
+        case TrackType::Pad:
+            return {
+                .hasTimeline = false,
+                .userClips = UserClipAcceptance::None,
+                .takesExternalInput = false,
+                .hostsInstrument = false,
+                .occupiesArrangementRow = true,
+                .canHaveChildren = false,
+                .isRendered = true,
+                .isSingleton = false,
+                .isDeviceOwned = true,
+            };
     }
 
     // Unreachable for any declared type; a value cast in from outside the enum
@@ -230,6 +246,8 @@ inline const char* getTrackTypeName(TrackType type) {
             return "MultiOut";
         case TrackType::Chord:
             return "Chord";
+        case TrackType::Pad:
+            return "Pad";
     }
     return "Unknown";
 }
@@ -256,6 +274,8 @@ inline TrackType trackTypeFromInt(int v) {
             return TrackType::MultiOut;
         case 7:
             return TrackType::Chord;
+        case 8:
+            return TrackType::Pad;
         default:
             return TrackType::Media;
     }

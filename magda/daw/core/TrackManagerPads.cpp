@@ -1,8 +1,11 @@
+#include <juce_audio_basics/juce_audio_basics.h>
+
 #include <algorithm>
 #include <cmath>
 
 #include "ChainWalk.hpp"
 #include "DrumGridPads.hpp"
+#include "PadChannels.hpp"
 #include "RackInfo.hpp"
 #include "SelectionManager.hpp"
 #include "TrackManager.hpp"
@@ -379,30 +382,74 @@ void TrackManager::swapPads(const ChainNodePath& gridPath, int padA, int padB) {
     notifyTrackDevicesChanged(gridPath.trackId);
 }
 
-/// A pad's fader, pan and switches are its chain's, set the unambiguous way.
+bool TrackManager::reconcilePadChannels() {
+    if (syncingPadChannels_)
+        return false;
+    if (batchDepth_ > 0) {
+        tracksChangedPending_ = true;
+        return false;
+    }
+    const juce::ScopedValueSetter<bool> guard(syncingPadChannels_, true);
+    if (!pad_channels::sync(tracks_, nextTrackId_, &padChannelStash_))
+        return false;
+
+    // A channel that went may still be selected.
+    auto& selection = SelectionManager::getInstance();
+    for (const auto id : selection.getSelectedTracks()) {
+        if (getTrack(id) == nullptr) {
+            selection.clearSelection();
+            break;
+        }
+    }
+    return true;
+}
+
+void TrackManager::syncPadChannels() {
+    if (reconcilePadChannels())
+        notifyTracksChanged();
+}
+
+const TrackInfo* TrackManager::getPadChannel(const ChainNodePath& gridPath, int padIndex) const {
+    const auto* pad = getPad(gridPath, padIndex);
+    return pad != nullptr ? pad_channels::findChannel(tracks_, gridPath.getDeviceId(), pad->id)
+                          : nullptr;
+}
+
+/// A pad with a channel is mixed on the channel. One without has no sound, and
+/// its chain keeps the value for the channel it will get (#3010).
 void TrackManager::setPadVolume(const ChainNodePath& gridPath, int padIndex, float volume) {
-    if (auto* pad = mutablePad(gridPath, padIndex)) {
-        pad->volume = juce::jlimit(-60.0f, 6.0f, volume);
+    volume = juce::jlimit(-60.0f, 6.0f, volume);
+    if (const auto* channel = getPadChannel(gridPath, padIndex)) {
+        setTrackVolume(channel->id, juce::Decibels::decibelsToGain(volume, -60.0f));
+    } else if (auto* pad = mutablePad(gridPath, padIndex)) {
+        pad->volume = volume;
         notifyTrackPropertyChanged(gridPath.trackId);
     }
 }
 
 void TrackManager::setPadPan(const ChainNodePath& gridPath, int padIndex, float pan) {
-    if (auto* pad = mutablePad(gridPath, padIndex)) {
-        pad->pan = juce::jlimit(-1.0f, 1.0f, pan);
+    pan = juce::jlimit(-1.0f, 1.0f, pan);
+    if (const auto* channel = getPadChannel(gridPath, padIndex)) {
+        setTrackPan(channel->id, pan);
+    } else if (auto* pad = mutablePad(gridPath, padIndex)) {
+        pad->pan = pan;
         notifyTrackPropertyChanged(gridPath.trackId);
     }
 }
 
 void TrackManager::setPadMuted(const ChainNodePath& gridPath, int padIndex, bool muted) {
-    if (auto* pad = mutablePad(gridPath, padIndex)) {
+    if (const auto* channel = getPadChannel(gridPath, padIndex)) {
+        setTrackMuted(channel->id, muted);
+    } else if (auto* pad = mutablePad(gridPath, padIndex)) {
         pad->muted = muted;
         notifyTrackDevicesChanged(gridPath.trackId);
     }
 }
 
 void TrackManager::setPadSolo(const ChainNodePath& gridPath, int padIndex, bool solo) {
-    if (auto* pad = mutablePad(gridPath, padIndex)) {
+    if (const auto* channel = getPadChannel(gridPath, padIndex)) {
+        setTrackSoloed(channel->id, solo);
+    } else if (auto* pad = mutablePad(gridPath, padIndex)) {
         pad->solo = solo;
         notifyTrackDevicesChanged(gridPath.trackId);
     }
@@ -413,60 +460,6 @@ void TrackManager::setPadBypassed(const ChainNodePath& gridPath, int padIndex, b
         pad->bypassed = bypassed;
         notifyTrackDevicesChanged(gridPath.trackId);
     }
-}
-
-bool TrackManager::padBusesAvailable(const ChainNodePath& gridPath) {
-    // A multi-out child track is fed by the output instance
-    // InstrumentRackManager makes when it wraps a top-level instrument. A grid
-    // inside a MAGDA rack is loaded by RackSyncManager instead and has no entry
-    // there, so nothing would carry a bus off it: the pads on that bus would
-    // simply go silent. Refused until that route exists (#2211).
-    return gridPath.getType() == ChainNodeType::TopLevelDevice;
-}
-
-bool TrackManager::resetPadBuses(const ChainNodePath& gridPath) {
-    auto* pads = getPads(gridPath);
-    if (pads == nullptr)
-        return false;
-
-    bool moved = false;
-    for (auto& pad : pads->chains) {
-        if (pad.outputIndex == 0)
-            continue;
-        pad.outputIndex = 0;
-        moved = true;
-    }
-
-    if (moved)
-        notifyTrackDevicesChanged(gridPath.trackId);
-
-    return moved;
-}
-
-bool TrackManager::setPadOutput(const ChainNodePath& gridPath, int padIndex, int outputIndex) {
-    // The bus has to be one that exists. The live plugin clamps what it is
-    // given and the plan compiler takes the model's value as it finds it, so an
-    // out-of-range index makes the two engines disagree: the plan reports a bus
-    // that reaches no track and the pads on it go silent (#2211).
-    if (outputIndex < 0 || outputIndex >= kPadBusCount)
-        return false;
-
-    if (outputIndex != 0 && !padBusesAvailable(gridPath))
-        return false;
-
-    auto* pad = mutablePad(gridPath, padIndex);
-    if (pad == nullptr)
-        return false;
-    if (pad->outputIndex == outputIndex)
-        return true;
-
-    pad->outputIndex = outputIndex;
-
-    // trackDevicesChanged, not trackPropertyChanged: a pad's bus decides
-    // whether the grid needs a multi-out child track for it, and that is
-    // settled by the device sync (PluginManager::syncDrumGridMultiOutTracks).
-    notifyTrackDevicesChanged(gridPath.trackId);
-    return true;
 }
 
 bool TrackManager::padNoteRangeIsFree(const ChainNodePath& gridPath, int padIndex, int lowNote,

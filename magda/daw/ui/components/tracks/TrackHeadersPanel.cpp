@@ -527,7 +527,7 @@ void TrackHeadersPanel::timerCallback() {
         return;
 
     auto& meters = audioEngine_->meters();
-    auto& meteringBuffer = meters.mixer;
+    auto& meteringBuffer = meters.arrangement;
 
     // Decay rate for MIDI activity (fade out over time)
     const float midiDecayRate = 0.7f;  // Per frame decay (~100ms to near-zero at 30fps)
@@ -550,7 +550,7 @@ void TrackHeadersPanel::timerCallback() {
     for (auto& header : trackHeaders) {
         // Update audio meters
         MeterData data;
-        if (meteringBuffer.popLevels(header->trackId, data)) {
+        if (drainPeak(meteringBuffer, header->trackId, data)) {
             if (header->meterComponent) {
                 static_cast<LevelMeter*>(header->meterComponent.get())
                     ->setLevels(data.peakL, data.peakR);
