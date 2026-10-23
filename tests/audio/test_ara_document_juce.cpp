@@ -197,6 +197,17 @@ class AraDocumentTest final : public juce::UnitTest {
             file,
             {.durationInModification = 1.0, .startInPlayback = 4.0, .durationInPlayback = 1.0})});
         expect(document.region(1, 1) == before);
+
+        beginTest("a source moved to an identical copy keeps its region, and its edits (#3137)");
+        const auto copy = file.getSiblingFile("magda_ara_moved.wav");
+        file.copyFileTo(copy);
+        document.takeNewRegions();
+        document.syncRegions({spec(
+            copy,
+            {.durationInModification = 1.0, .startInPlayback = 4.0, .durationInPlayback = 1.0})});
+        expect(document.takeNewRegions().empty(), "not recreated");
+        expectEquals(static_cast<int>(document.sourceCount()), 1);
+        copy.deleteFile();
         document.syncRegions({});
     }
 };

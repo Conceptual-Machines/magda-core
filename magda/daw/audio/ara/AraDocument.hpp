@@ -186,6 +186,8 @@ class AraDocument {
 
     void dropEvent(const EventKey& key);
     void dropSource(SourceId id);
+    /** @brief Point @p source at @p path if that file has the same shape; false if not. */
+    bool repoint(SourceEntry& source, const std::string& path);
     SourceEntry* ensureSource(const AraRegionSpec& spec, std::vector<std::string>& refused);
     SequenceEntry& ensureSequence(TrackId track);
     void placeRegion(const AraRegionSpec& spec, SourceEntry& source);

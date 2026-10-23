@@ -1,6 +1,8 @@
 #include "AraTrackEditing.hpp"
 
+#include <map>
 #include <set>
+#include <tuple>
 
 #include "EngineProject.hpp"
 #include "EngineRuntimeFactory.hpp"
@@ -42,6 +44,15 @@ bool writeArchive(const juce::File& file, const std::string& archiveId,
         out.write(data.getData(), data.getSize());
     }
     return temp.overwriteTargetFileWithTemporary();
+}
+
+/** @brief The regions' keys with the tracks and files they are on, which renderers hold them by. */
+auto shapeOf(const std::vector<ara::AraRegionSpec>& regions) {
+    std::map<EventKey, std::tuple<TrackId, SourceId, std::string>> shape;
+    for (const auto& region : regions)
+        shape[{region.clipId, region.eventId}] = {region.trackId, region.sourceId,
+                                                  region.sourcePath};
+    return shape;
 }
 
 }  // namespace
@@ -222,7 +233,8 @@ std::shared_ptr<AraTrackEditing::Document> AraTrackEditing::documentFor(
     if (const auto found = documents_.find(id); found != documents_.end())
         return found->second;
 
-    // VST3 answers at once, which is what lets the instance be bound before it is prepared.
+    // VST3 and AUv2 answer at once, which is what lets the instance be bound before it is
+    // prepared; only an AUv3, instantiated out of process, answers late.
     std::optional<juce::ARAFactoryWrapper> factory;
     juce::createARAFactoryAsync(plugin,
                                 [&factory](juce::ARAFactoryWrapper f) { factory = std::move(f); });
@@ -290,18 +302,25 @@ void AraTrackEditing::sync(Document& document) {
                      .sourcePath = event.filePath,
                      .timing = timing,
                      .name = model != nullptr ? model->name.toStdString() : std::string{},
-                     .sourcePersistentId = "source:" + event.filePath,
+                     // The pool's ID, saved with the project and kept through a relink.
+                     .sourcePersistentId = "source:" + std::to_string(event.sourceId),
                      .modificationPersistentId = "clip:" + std::to_string(clip.clipId) +
                                                  "/event:" + std::to_string(event.eventId)});
             }
 
     // Region changes go to every instance; a new instance only needs its own regions handed over.
     const bool changed = !document.started || regions != document.regions;
+    // Only adding or removing a renderer's region needs the plugin unprepared: a region that
+    // just moves is edited while it plays, with no dry moment (#3137).
+    const bool reshaped = !document.started || shapeOf(regions) != shapeOf(document.regions) ||
+                          std::ranges::any_of(regions, [&document](const auto& region) {
+                              return document.ara->region(region.clipId, region.eventId) == nullptr;
+                          });
     std::vector<Binding*> touched;
     for (auto* binding : document.bindings)
-        if (changed || binding->stale())
+        if (reshaped || binding->stale())
             touched.push_back(binding);
-    if (touched.empty())
+    if (touched.empty() && !changed)
         return;
 
     std::set<EventKey> created;
