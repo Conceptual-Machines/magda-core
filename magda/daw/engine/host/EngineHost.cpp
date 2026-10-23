@@ -4151,7 +4151,8 @@ void EngineHost::setPluginServices(juce::AudioPluginFormatManager& formats,
     impl_->formats_ = &formats;
     impl_->knownPlugins_ = &knownPlugins;
     impl_->araTracks_ = std::make_unique<AraTrackEditing>(
-        formats, [impl = impl_.get()]() -> const engine::TempoMap& { return impl->tempoMap(); });
+        formats, knownPlugins,
+        [impl = impl_.get()]() -> const engine::TempoMap& { return impl->tempoMap(); });
 }
 
 void EngineHost::setCaptureSeconds(int seconds) {

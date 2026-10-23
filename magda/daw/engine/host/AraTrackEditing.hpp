@@ -32,8 +32,9 @@ class AraTrackEditing final : private ClipManagerListener,
                               private ProjectManagerListener,
                               private juce::Timer {
   public:
-    /// @p tempo is read whenever the plugins are handed the project's musical context.
-    AraTrackEditing(juce::AudioPluginFormatManager& formats,
+    /// @p tempo is read whenever the plugins are handed the project's musical context; @p known
+    /// is where a loaded instance's scanned description is found.
+    AraTrackEditing(juce::AudioPluginFormatManager& formats, const juce::KnownPluginList& known,
                     std::function<const engine::TempoMap&()> tempo);
     ~AraTrackEditing() override;
 
@@ -71,6 +72,7 @@ class AraTrackEditing final : private ClipManagerListener,
     void report(const juce::String& message) const;
 
     juce::AudioPluginFormatManager& formats_;
+    const juce::KnownPluginList& known_;
     std::function<const engine::TempoMap&()> tempo_;
     std::map<juce::String, std::shared_ptr<Document>> documents_;
 };

@@ -71,13 +71,14 @@ class AraTrackEditingTest final : public juce::UnitTest {
         if (found.isEmpty())
             return;
         plugin_ = *found[0];
+        known_.addType(plugin_);
 
         // Beat 4 at 120 bpm: the clip starts two seconds in.
         clip_ = magda::ClipManager::getInstance().createAudioClipBeats(kTrack, 4.0, 4.0,
                                                                        file.getFullPathName());
 
         {
-            AraTrackEditing editing(formats_, tempo);
+            AraTrackEditing editing(formats_, known_, tempo);
             editing.notify = [this](const juce::String& message) { messages_.add(message); };
             auto device = load();
             if (device == nullptr)
@@ -215,7 +216,7 @@ class AraTrackEditingTest final : public juce::UnitTest {
         beginTest("A plugin attached in a reopened project restores the archive");
         messages_.clear();
         {
-            AraTrackEditing editing(formats_, tempo);
+            AraTrackEditing editing(formats_, known_, tempo);
             editing.notify = [this](const juce::String& message) { messages_.add(message); };
             auto device = load();
             if (device == nullptr)
@@ -261,6 +262,7 @@ class AraTrackEditingTest final : public juce::UnitTest {
     }
 
     juce::AudioPluginFormatManager formats_;
+    juce::KnownPluginList known_;
     juce::PluginDescription plugin_;
     magda::ClipId clip_ = magda::INVALID_CLIP_ID;
     juce::StringArray messages_;

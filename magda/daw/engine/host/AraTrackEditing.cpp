@@ -164,8 +164,9 @@ class AraTrackEditing::Binding final : public ExternalDevice::Attachment {
 // ============================================================================
 
 AraTrackEditing::AraTrackEditing(juce::AudioPluginFormatManager& formats,
+                                 const juce::KnownPluginList& known,
                                  std::function<const engine::TempoMap&()> tempo)
-    : formats_(formats), tempo_(std::move(tempo)) {
+    : formats_(formats), known_(known), tempo_(std::move(tempo)) {
     ClipManager::getInstance().addListener(this);
     ProjectManager::getInstance().addListener(this);
 }
@@ -208,7 +209,15 @@ void AraTrackEditing::attach(TrackId track, ExternalDevice& device) {
 
 std::shared_ptr<AraTrackEditing::Document> AraTrackEditing::documentFor(
     juce::AudioPluginInstance& plugin) {
-    const auto description = plugin.getPluginDescription();
+    // The scan's description, not the instance's: on Linux a VST3 instance names the .so in its
+    // bundle as its file, which no format will open again.
+    auto description = plugin.getPluginDescription();
+    for (const auto& known : known_.getTypes())
+        if (known.pluginFormatName == description.pluginFormatName &&
+            known.uniqueId == description.uniqueId && known.name == description.name) {
+            description = known;
+            break;
+        }
     const auto id = description.createIdentifierString();
     if (const auto found = documents_.find(id); found != documents_.end())
         return found->second;
