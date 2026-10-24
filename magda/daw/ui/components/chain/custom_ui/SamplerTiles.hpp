@@ -32,6 +32,47 @@ inline void styleValue(LinkableTextSlider& slider) {
     styleValue(slider.getSlider());
 }
 
+/**
+ * @brief A caption and its value inside @p inner, as the height allows (#3144).
+ *
+ * Caption over value while the value fits under it, sized to the room left. At the height a
+ * rack's chain leaves, a wide tile puts the two on one line; a narrow one stacks them in small
+ * text, since one line would truncate both.
+ */
+inline void layoutCaptioned(juce::Label& caption, LinkableTextSlider& value,
+                            juce::Rectangle<int> inner, const juce::Font& captionFont,
+                            float valueSize) {
+    constexpr int kCaptionH = 14;
+    constexpr int kSmallCaptionH = 10;
+    constexpr int kMinValueH = 13;
+    constexpr int kMinOneLineW = 72;
+    auto& fonts = FontManager::getInstance();
+    const auto small = fonts.getUIFont(9.5f);
+
+    if (inner.getHeight() - kCaptionH >= kMinValueH) {
+        caption.setFont(captionFont);
+        caption.setBounds(inner.removeFromTop(kCaptionH));
+        value.setBounds(inner);
+        value.setFont(fonts.getUIFontMedium(juce::jmin(valueSize, float(inner.getHeight()))));
+        value.getSlider().setJustification(juce::Justification::centredLeft);
+    } else if (inner.getWidth() < kMinOneLineW) {
+        caption.setFont(small);
+        caption.setBounds(inner.removeFromTop(kSmallCaptionH));
+        value.setBounds(inner);
+        value.setFont(fonts.getUIFontMedium(juce::jmin(11.0f, float(inner.getHeight()))));
+        value.getSlider().setJustification(juce::Justification::centredLeft);
+    } else {
+        // The caption takes its own width, so the value keeps the rest.
+        caption.setFont(small);
+        const int captionW =
+            juce::GlyphArrangement::getStringWidthInt(small, caption.getText()) + 6;
+        caption.setBounds(inner.removeFromLeft(juce::jmin(captionW, inner.getWidth() / 2)));
+        value.setBounds(inner);
+        value.setFont(fonts.getUIFontMedium(11.0f));
+        value.getSlider().setJustification(juce::Justification::centredRight);
+    }
+}
+
 /// The cell behind a tile's caption and value: the grid cell's fill and border.
 inline void paint(juce::Graphics& g, juce::Rectangle<int> tile, float corner = 5.0f) {
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));
