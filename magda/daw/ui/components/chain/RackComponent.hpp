@@ -85,12 +85,6 @@ class RackComponent : public NodeComponent, public juce::Timer {
     bool sidePanelsInsideShell() const override {
         return true;
     }
-    // Only a multiband rack has a footer, for its view toggles: the chain select row gave its
-    // height back to the devices at the compact device height (#3144).
-    int getShellFooterHeight() const override {
-        return collapsed_ || !multiband_ ? 0 : FOOTER_BAR_HEIGHT;
-    }
-    void resizedShellFooter(juce::Rectangle<int> footer) override;
     juce::Point<int> getHeaderButtonSize() const override {
         return {24, 20};
     }
@@ -130,11 +124,11 @@ class RackComponent : public NodeComponent, public juce::Timer {
     ChainView chainView_ = ChainView::Mix;
     juce::Rectangle<int> chainTabsArea_;
 
-    /// The rack's chain selector, in the footer under the chain list.
+    /// The rack's chain selector, at the foot of the sidebar.
     std::unique_ptr<ChainSelectorControl> selector_;
-    juce::Rectangle<int> selectorCaption_;
     void layoutSideStrip(juce::Rectangle<int> strip);
-    void layoutFooter(juce::Rectangle<int> footer);
+    /// The view toggles down the left, as on a device, over the chain selector (#3144).
+    void layoutSidebar(juce::Rectangle<int> bar);
 
     void initializeCommon(const magda::RackInfo& rack);
     void onAddChainClicked();
@@ -180,11 +174,14 @@ class RackComponent : public NodeComponent, public juce::Timer {
     std::unique_ptr<multiband::CrossoverDisplay> crossoverDisplay_;
     std::vector<std::unique_ptr<multiband::CrossoverDivider>> crossoverDividers_;
     juce::Rectangle<int> faceplateArea_;
-    /// The footer's bands and faceplate toggles.
-    std::unique_ptr<magda::SvgButton> bandsToggle_, faceplateToggle_;
+    /// The sidebar's view toggles: the chain list (a multiband rack's bands), the selected
+    /// chain, and a multiband rack's faceplate.
+    std::unique_ptr<magda::SvgButton> listToggle_, chainToggle_, faceplateToggle_;
     bool faceplateShown_ = true;
     bool bandsShown_ = true;
-    void toggleMultibandView(bool faceplate);
+    bool chainShown_ = true;
+    void toggleListView(bool faceplate);
+    void toggleChainView();
     void syncMultiband(const magda::RackInfo& rack);
     void splitSelectedBand();
 
@@ -240,7 +237,7 @@ class RackComponent : public NodeComponent, public juce::Timer {
 
     static constexpr int METER_STRIP_WIDTH = 18;  // collapsed strip meter
     static constexpr int HEADER_BAR_HEIGHT = 28;
-    static constexpr int FOOTER_BAR_HEIGHT = 24;
+    static constexpr int SIDEBAR_WIDTH = 32;
     static constexpr int SIDE_STRIP_WIDTH = 40;
     static constexpr int CHAIN_LIST_WIDTH = 300;
     static constexpr int COLUMN_HEADER_HEIGHT = 16;

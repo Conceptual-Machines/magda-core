@@ -962,8 +962,9 @@ juce::var ProjectSerializer::serializeRackInfo(const RackInfo& rack) {
         }
         obj->setProperty("crossovers", juce::var(crossovers));
         obj->setProperty("faceplateShown", rack.faceplateShown);
-        obj->setProperty("bandsShown", rack.bandsShown);
     }
+    obj->setProperty("bandsShown", rack.bandsShown);
+    obj->setProperty("chainShown", rack.chainShown);
 
     // Chains
     juce::Array<juce::var> chainsArray;
@@ -1083,6 +1084,8 @@ bool ProjectSerializer::deserializeRackInfo(const juce::var& json, RackInfo& out
         !outRack.faceplateShown ||
         static_cast<bool>(obj->getProperty("bandsShown").isVoid() ? juce::var(true)
                                                                   : obj->getProperty("bandsShown"));
+    if (const auto chainShown = obj->getProperty("chainShown"); !chainShown.isVoid())
+        outRack.chainShown = static_cast<bool>(chainShown);
     normaliseMultiband(outRack);
 
     // Sidechain

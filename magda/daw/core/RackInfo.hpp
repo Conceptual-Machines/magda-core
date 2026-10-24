@@ -170,9 +170,11 @@ struct RackInfo {
     bool isMultiband() const {
         return multiband;
     }
-    /// Which of a multiband rack's faceplate and band list show; at least one does.
+    /// Which of a multiband rack's faceplate and band list show; at least one does. A rack's
+    /// chain list is its `bandsShown` too, and `chainShown` its selected chain (#3144).
     bool faceplateShown = true;
     bool bandsShown = true;
+    bool chainShown = true;
 
     // UI panel state
     bool modPanelOpen = false;    // Modulator panel visible
@@ -215,6 +217,7 @@ struct RackInfo {
             crossovers = other.crossovers;
             faceplateShown = other.faceplateShown;
             bandsShown = other.bandsShown;
+            chainShown = other.chainShown;
             modPanelOpen = other.modPanelOpen;
             paramPanelOpen = other.paramPanelOpen;
             macros = other.macros;
