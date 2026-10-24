@@ -6,7 +6,6 @@
 #include <utility>
 #include <vector>
 
-#include "PadLayerTestPaths.hpp"
 #include "StructuralRoundTrip.hpp"
 #include "magda/daw/core/DrumGridPads.hpp"
 #include "magda/daw/core/PadCommands.hpp"
@@ -517,8 +516,7 @@ Shapes buildShapes(const juce::String& name, TrackType type, const std::set<Cont
         const auto gridPath = ChainNodePath::topLevelDevice(shapes.id, shapes.gridId);
         const auto padChainId = tm.ensurePad(gridPath, 0);
         REQUIRE(padChainId != INVALID_CHAIN_ID);
-        // Devices live in the pad's layers (#3007).
-        const auto padChain = magda::test::firstLayerPath(gridPath, padChainId);
+        const auto padChain = ChainNodePath::padChain(shapes.id, shapes.gridId, padChainId);
         shapes.containers[Container::PadChain] = padChain;
 
         if (asked(Container::PadNestedRackChain)) {

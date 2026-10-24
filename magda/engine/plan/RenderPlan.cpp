@@ -206,8 +206,6 @@ const char* toString(OpRole role) {
             return "edgeCrossfade";
         case OpRole::Handoff:
             return "handoff";
-        case OpRole::PadLayerSplit:
-            return "padLayerSplit";
         case OpRole::RackChainSplit:
             return "rackChainSplit";
         case OpRole::RackBandSplit:

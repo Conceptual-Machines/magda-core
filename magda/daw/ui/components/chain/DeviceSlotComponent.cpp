@@ -555,6 +555,16 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     zonesToggle_->setTooltip("Show the zones");
     zonesToggle_->onClick = [this]() { toggleZones(); };
     addChildComponent(*zonesToggle_);
+    padPanelToggle_ = std::make_unique<magda::SvgButton>(
+        "PadPanel", BinaryData::iconpadpanelboldm_svg, BinaryData::iconpadpanelboldm_svgSize);
+    padPanelToggle_->setTooltip("Show the pad panel");
+    padPanelToggle_->onClick = [this]() { togglePadView(true); };
+    addChildComponent(*padPanelToggle_);
+    padChainToggle_ = std::make_unique<magda::SvgButton>(
+        "PadChain", BinaryData::iconpadchainboldm_svg, BinaryData::iconpadchainboldm_svgSize);
+    padChainToggle_->setTooltip("Show the pad's chain");
+    padChainToggle_->onClick = [this]() { togglePadView(false); };
+    addChildComponent(*padChainToggle_);
     expandToggle_ = std::make_unique<magda::SvgButton>("Expand", BinaryData::enter_fs_svg,
                                                        BinaryData::enter_fs_svgSize);
     expandToggle_->setTooltip("Expand the faceplate into the arrangement");
@@ -786,6 +796,8 @@ std::vector<juce::Component*> DeviceSlotComponent::sidebarButtons() const {
     add(faceplateToggle_.get(), hasFaceplate());
     add(timeBendToggle_.get(), isSequencerDevice(traits_));
     add(zonesToggle_.get(), customUI_.hasSamplerUI());
+    add(padPanelToggle_.get(), customUI_.getDrumGridUI() != nullptr);
+    add(padChainToggle_.get(), customUI_.getDrumGridUI() != nullptr);
     return buttons;
 }
 
@@ -802,8 +814,8 @@ int DeviceSlotComponent::sidebarWidth() const {
 
 void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
     const bool shown = !bar.isEmpty();
-    for (auto* toggle :
-         {paramsToggle_.get(), faceplateToggle_.get(), timeBendToggle_.get(), zonesToggle_.get()})
+    for (auto* toggle : {paramsToggle_.get(), faceplateToggle_.get(), timeBendToggle_.get(),
+                         zonesToggle_.get(), padPanelToggle_.get(), padChainToggle_.get()})
         toggle->setVisible(false);
     const bool paged = shown && sidebarPaged();
     for (auto* arrow : {pagePrevButton_.get(), pageNextButton_.get()})
@@ -817,6 +829,8 @@ void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
     faceplateToggle_->setToggleState(faceplateShown(), juce::dontSendNotification);
     timeBendToggle_->setToggleState(device_.timeBendShown, juce::dontSendNotification);
     zonesToggle_->setToggleState(device_.zonesShown, juce::dontSendNotification);
+    padPanelToggle_->setToggleState(device_.padPanelShown, juce::dontSendNotification);
+    padChainToggle_->setToggleState(device_.padChainShown, juce::dontSendNotification);
 
     auto area = bar.reduced(0, 6);
     const auto size = getHeaderButtonSize();
@@ -1038,6 +1052,19 @@ void DeviceSlotComponent::toggleZones() {
         onDeviceLayoutChanged();
 }
 
+void DeviceSlotComponent::togglePadView(bool panel) {
+    auto& shown = panel ? device_.padPanelShown : device_.padChainShown;
+    shown = !shown;
+    if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
+        live->padPanelShown = device_.padPanelShown;
+        live->padChainShown = device_.padChainShown;
+    }
+    customUI_.setDrumGridViewsShown(device_.padPanelShown, device_.padChainShown);
+    resized();
+    if (onDeviceLayoutChanged)
+        onDeviceLayoutChanged();
+}
+
 bool DeviceSlotComponent::faceplateLent() const {
     const auto* faceplate = customUI_.getActiveUI();
     return faceplate != nullptr && magda::ExpandedFaceplate::getInstance().holds(*faceplate);
@@ -1136,6 +1163,8 @@ void DeviceSlotComponent::styleDeviceHeaderButtons() {
     style(faceplateToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(timeBendToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(zonesToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
+    style(padPanelToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
+    style(padChainToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(expandToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     if (stepRecordButton_)
         stepRecordButton_->setNormalColor(ActiveTheme::STEP_RECORD);
@@ -1409,7 +1438,7 @@ int DeviceSlotComponent::getMinimumWidth() const {
     const auto* drumGrid = customUI_.getDrumGridUI();
     if (drumGrid == nullptr || collapsed_)
         return 0;
-    return getTotalWidth(drumGrid->fixedContentWidth() + DrumGridUI::kMinChainWidth) +
+    return getTotalWidth(drumGrid->fixedContentWidth() + drumGrid->minimumChainWidth()) +
            sideStripWidth() + sidebarWidth();
 }
 
@@ -1554,6 +1583,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
         updateDeviceSlotInlineUi(device_, compiledPanel_.get(), customUI_);
         customUI_.setSequencerTimeBendShown(device_.timeBendShown);
         customUI_.setSamplerZonesShown(device_.zonesShown);
+        customUI_.setDrumGridViewsShown(device_.padPanelShown, device_.padChainShown);
         reclaimExpandedFaceplate();
     }
 

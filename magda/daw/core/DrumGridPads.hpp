@@ -67,8 +67,8 @@ int padNoteFor(int padIndex);
 /// to those parameters has to ask the same question the device does.
 int padParameterSlot(const ChainInfo& pad);
 
-/// Point `device.pads->id` at whatever `device.id` currently is, and give every
-/// pad a layer (`migratePadLayers()`). No-op for a device with no pads.
+/// Point `device.pads->id` at whatever `device.id` currently is. No-op for a
+/// device with no pads.
 void stampPadRackId(DeviceInfo& device);
 
 /// @p device's pads, made (empty) if it has none. Only call for a pad-per-chain
@@ -83,39 +83,20 @@ const ChainInfo* findPadChain(const RackInfo& pads, int padIndex);
 ///
 /// A new one answers to that pad's note alone and is rooted on it, which is
 /// what a sampler mapped at C0 needs to play from whichever pad triggered it.
-/// It starts with one empty layer.
 ChainInfo& ensurePadChain(RackInfo& pads, int padIndex);
 
-/// The next free chain id in @p pads, counting pads and their layers.
+/// The next free chain id in @p pads.
 ///
-/// Pad and layer ids are rack-local and stay with them across saves, so nothing
-/// that names one (a macro, a mod, an op key) has to be remapped. One counter
-/// for both keeps a layer's ops apart from every pad's.
+/// Pad chain ids are rack-local and stay with the pad across saves, so nothing
+/// that names one (a macro, a mod, an op key) has to be remapped.
 ChainId nextPadChainId(const RackInfo& pads);
 
-/// The pad or layer carrying @p chainId, or null.
+/// The pad carrying @p chainId, or null.
 ChainInfo* findPadChainById(RackInfo& pads, ChainId chainId);
 const ChainInfo* findPadChainById(const RackInfo& pads, ChainId chainId);
 
-/// The layer of @p pad carrying @p layerId, or null.
-ChainInfo* findPadLayer(ChainInfo& pad, ChainId layerId);
-const ChainInfo* findPadLayer(const ChainInfo& pad, ChainId layerId);
-
-/// The pad holding the layer @p layerId, or null.
-ChainInfo* padOfLayer(RackInfo& pads, ChainId layerId);
-const ChainInfo* padOfLayer(const RackInfo& pads, ChainId layerId);
-
-/// Append an empty layer to @p pad, with an id fresh across @p pads.
-ChainInfo& addPadLayer(RackInfo& pads, ChainInfo& pad);
-
-/// True when any of @p pad's layers holds an element.
+/// True when @p pad's chain holds an element.
 bool padHasDevices(const ChainInfo& pad);
-
-/// Give every pad at least one layer, moving a pad's own elements into it.
-///
-/// A project saved before layers (#3007) keeps each pad's chain as its only
-/// layer, so it sounds the same.
-void migratePadLayers(RackInfo& pads);
 
 /// The device a pad sampler needs to play @p samplePath, rooted on @p rootNote.
 ///
@@ -124,7 +105,7 @@ void migratePadLayers(RackInfo& pads);
 /// re-derived after a save and reload.
 DeviceInfo padSamplerDevice(const juce::String& samplePath, int rootNote);
 
-/// What @p pad's first device is called, across its layers: a sampler by the
+/// What @p pad's first device is called, inside a rack too: a sampler by the
 /// sample it plays. Empty for a pad with no device.
 juce::String padVoiceName(const ChainInfo& pad);
 

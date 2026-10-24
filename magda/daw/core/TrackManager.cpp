@@ -76,7 +76,6 @@ void remapDuplicatedPath(ChainNodePath& path, const DuplicateIdRemap& remap) {
                 touched = remapDuplicateId(remap.devices, step.id) || touched;
                 break;
             case ChainStepType::PadChain:
-            case ChainStepType::PadLayer:
                 break;  // Pad chain ids are rack-local and survive duplication
             case ChainStepType::Segment:
                 break;  // Segment steps carry no remappable ID
@@ -2644,11 +2643,7 @@ void TrackManager::clearSelectionsUnderDevice(const DeviceInfo& device,
 }
 
 void TrackManager::clearSelectionsUnderPad(const ChainInfo& pad, const ChainNodePath& padPath) {
-    for (const auto& layer : pad.layers) {
-        const auto layerPath = padPath.withPadLayer(layer.id);
-        clearSelectionsUnderChain(layer.elements, layerPath);
-        SelectionManager::getInstance().clearSelectionForDeletedChainNode(layerPath);
-    }
+    clearSelectionsUnderChain(pad.elements, padPath);
     SelectionManager::getInstance().clearSelectionForDeletedChainNode(padPath);
 }
 
@@ -2853,7 +2848,6 @@ RackInfo* TrackManager::getRackByPath(const ChainNodePath& rackPath) {
             // the first step of a pad-owned path, so one reaching here would be
             // a pad step in a position the model cannot express.
             case ChainStepType::PadRack:
-            case ChainStepType::PadLayer:
                 return nullptr;
             case ChainStepType::Rack: {
                 // Valid at track level, or immediately inside a chain. A Rack
@@ -3248,14 +3242,6 @@ TrackManager::ResolvedPath TrackManager::resolvePath(const ChainNodePath& path) 
                 }
                 break;
             }
-            case ChainStepType::PadLayer: {
-                if (currentChain != nullptr)
-                    if (const auto* layer = findPadLayer(*currentChain, step.id)) {
-                        currentChain = layer;
-                        pathNames.add(layer->displayName());
-                    }
-                break;
-            }
             case ChainStepType::Rack: {
                 // A top-level rack lives in the track's own list, a nested one
                 // in the chain the previous step reached.
@@ -3515,16 +3501,13 @@ void TrackManager::refreshIdCountersFromTracks() {
         if (std::holds_alternative<DeviceInfo>(element)) {
             const auto& device = std::get<DeviceInfo>(element);
             maxFxDeviceId = std::max(maxFxDeviceId, device.id);
-            // A pad device's id comes out of the same counter, so a Drum Grid's
-            // pads have to be scanned or the next device added anywhere on the
-            // project reuses one of theirs (#2207).
+            // A pad's devices and racks come out of the same counters, so a Drum
+            // Grid's pads have to be scanned or the next one added anywhere on
+            // the project reuses one of theirs (#2207).
             if (device.pads)
                 for (const auto& pad : device.pads->chains)
-                    for (const auto& layer : pad.layers)
-                        for (const auto& padElement : layer.elements)
-                            if (magda::isDevice(padElement))
-                                maxFxDeviceId =
-                                    std::max(maxFxDeviceId, magda::getDevice(padElement).id);
+                    for (const auto& padElement : pad.elements)
+                        self(padElement, self);
             scanEmbeddedDeviceIds(device.pluginState, maxFxDeviceId);
         } else if (std::holds_alternative<std::unique_ptr<RackInfo>>(element)) {
             const auto& rackPtr = std::get<std::unique_ptr<RackInfo>>(element);

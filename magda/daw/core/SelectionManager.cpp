@@ -22,6 +22,16 @@ SelectionManager::SelectionManager() = default;
 // Primary-track alignment helper (shared by selectDevice / selectChainNode)
 // ============================================================================
 
+TrackId SelectionManager::ownerTrackOf(const ChainNodePath& path) const {
+    if (!path.isPadOwned())
+        return path.trackId;
+    const auto* selected = TrackManager::getInstance().getTrack(selectedTrackId_);
+    const bool shownByPadChannel = selected != nullptr && selected->padLink &&
+                                   selected->padLink->gridId == path.getPadOwnerDeviceId() &&
+                                   selected->padLink->padId == path.getPadChainId();
+    return shownByPadChannel ? selectedTrackId_ : path.trackId;
+}
+
 bool SelectionManager::alignPrimaryTrackToOwner(TrackId trackId) {
     if (trackId == INVALID_TRACK_ID)
         return false;
@@ -989,7 +999,7 @@ void SelectionManager::selectChainNode(const ChainNodePath& path, const juce::St
     // Align primary track selection with the chain node's owning track; see
     // alignPrimaryTrackToOwner() for the full rationale (collapses multi-
     // track sets, runs auto-monitor, keeps TrackManager in sync).
-    const bool trackChanged = alignPrimaryTrackToOwner(path.trackId);
+    const bool trackChanged = alignPrimaryTrackToOwner(ownerTrackOf(path));
 
     // Sync with managers
     ClipManager::getInstance().clearClipSelection();
@@ -1033,7 +1043,7 @@ void SelectionManager::toggleChainNodeSelection(const ChainNodePath& path) {
     chainNodeDisplayName_.clear();
     chainNodeDisplayType_.clear();
 
-    const bool trackChanged = alignPrimaryTrackToOwner(selectedChainNode_.trackId);
+    const bool trackChanged = alignPrimaryTrackToOwner(ownerTrackOf(selectedChainNode_));
     ClipManager::getInstance().clearClipSelection();
 
     notifySelectionTypeChanged(selectionType_);
@@ -1076,7 +1086,7 @@ void SelectionManager::selectChainNodes(const std::vector<ChainNodePath>& paths)
     chainNodeDisplayName_.clear();
     chainNodeDisplayType_.clear();
 
-    const bool trackChanged = alignPrimaryTrackToOwner(selectedChainNode_.trackId);
+    const bool trackChanged = alignPrimaryTrackToOwner(ownerTrackOf(selectedChainNode_));
     ClipManager::getInstance().clearClipSelection();
 
     if (typeChanged)

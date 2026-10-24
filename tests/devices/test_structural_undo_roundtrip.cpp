@@ -1,6 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "PadLayerTestPaths.hpp"
 #include "StructuralRoundTrip.hpp"
 #include "magda/daw/core/DrumGridPads.hpp"
 #include "magda/daw/core/RackInfo.hpp"
@@ -279,7 +278,7 @@ TEST_CASE("Undoing a wrap inside a pad chain restores the serialized model",
     const auto padChainId = tm.ensurePad(gridPath, 0);
     REQUIRE(padChainId != INVALID_CHAIN_ID);
 
-    const auto padChain = magda::test::firstLayerPath(gridPath, padChainId);
+    const auto padChain = ChainNodePath::padChain(trackId, gridId, padChainId);
     const auto deviceId = tm.addDeviceToPad(gridPath, padChainId, effect("Pad FX"));
     REQUIRE(deviceId != INVALID_DEVICE_ID);
 
@@ -635,7 +634,7 @@ TEST_CASE("Removing a Drum Grid drops a selection standing on one of its pads",
     // its DeviceId is not the grid's, so nothing about the grid's own path
     // reaches it.
     const auto padDevicePath =
-        magda::test::firstLayerPath(gridPath, padChainId).withDevice(padDeviceId);
+        TrackManager::padChainPath(gridPath, padChainId).withDevice(padDeviceId);
     selection.selectChainNode(padDevicePath);
     REQUIRE(selection.getSelectedChainNode() == padDevicePath);
 

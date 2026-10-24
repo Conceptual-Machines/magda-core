@@ -207,6 +207,7 @@ class DeviceCustomUIManager {
     void setSequencerTimeBendShown(bool shown);
     /// The sampler's zone list beside its faceplate (#3098).
     void setSamplerZonesShown(bool shown);
+    void setDrumGridViewsShown(bool panelShown, bool chainShown);
     bool hasSamplerUI() const {
         return samplerUI_ != nullptr;
     }

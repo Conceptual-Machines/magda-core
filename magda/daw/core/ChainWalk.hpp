@@ -155,13 +155,12 @@ bool forEachNode(Elements& elements, const ChainNodePath& parentPath, Pads pads,
                         }
                     } padExit{onRackExit, *device.pads.get(), devicePath};
 
-                    for (auto& pad : device.pads->chains)
-                        for (auto& layer : pad.layers)
-                            if (!forEachNode(layer.elements,
-                                             ChainNodePath::padLayer(parentPath.trackId, device.id,
-                                                                     pad.id, layer.id),
-                                             pads, onDevice, onRack, onRackExit))
-                                return false;
+                    for (auto& pad : device.pads->chains) {
+                        const auto padPath =
+                            ChainNodePath::padChain(parentPath.trackId, device.id, pad.id);
+                        if (!forEachNode(pad.elements, padPath, pads, onDevice, onRack, onRackExit))
+                            return false;
+                    }
                 }
             }
             continue;
@@ -221,7 +220,7 @@ void forEachRack(Elements& elements, const ChainNodePath& parentPath, Pads pads,
 }
 
 /// Every chain with its address: a rack's chains, and a pad-per-chain device's
-/// pads and their layers when asked for.
+/// pads when asked for.
 template <typename Elements, typename Visit>
 void forEachChain(Elements& elements, const ChainNodePath& parentPath, Pads pads, Visit&& visit) {
     for (auto& element : elements) {
@@ -233,11 +232,7 @@ void forEachChain(Elements& elements, const ChainNodePath& parentPath, Pads pads
                         const auto padPath =
                             ChainNodePath::padChain(parentPath.trackId, device.id, pad.id);
                         visit(pad, padPath);
-                        for (auto& layer : pad.layers) {
-                            const auto layerPath = padPath.withPadLayer(layer.id);
-                            visit(layer, layerPath);
-                            forEachChain(layer.elements, layerPath, pads, visit);
-                        }
+                        forEachChain(pad.elements, padPath, pads, visit);
                     }
                 }
             }

@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "core/ControlTarget.hpp"
@@ -85,7 +86,6 @@ DeviceInfo makeDrumGrid(DeviceId id, std::vector<ChainInfo> pads) {
     rack->id = padRackIdFor(id);
     rack->chains = std::move(pads);
     drumGrid.pads.reset(std::move(rack));
-    stampPadRackId(drumGrid);  // each pad's devices become its first layer
 
     return drumGrid;
 }
@@ -433,9 +433,8 @@ TEST_CASE("A pad fader binds by the pad's slot, not by its chain id", "[engine][
     const auto plan = compileWith(std::move(drumGrid));
 
     std::vector<const magda::engine::PlanOp*> padFaders;
-    // A pad's fader carries its grid's id; its layers' faders carry none.
     for (const auto* op : opsOfKind(plan, OpKind::Fader))
-        if (op->key.role == OpRole::RackChainFader && op->key.deviceId != INVALID_DEVICE_ID)
+        if (op->key.role == OpRole::RackChainFader)
             padFaders.push_back(op);
 
     REQUIRE(padFaders.size() == 2);
@@ -595,7 +594,7 @@ TEST_CASE("A modifier on a pad device is collected as a modulation source",
     follower.type = magda::ModType::Follower;
     follower.enabled = true;
     follower.tapPoint = magda::ModTapPoint::PostFader;
-    getDevice(drumGrid.pads->chains[0].layers[0].elements[0]).mods.push_back(follower);
+    getDevice(drumGrid.pads->chains[0].elements[0]).mods.push_back(follower);
 
     auto track = makeTrack(1);
     track.chain.fxChainElements.push_back(std::move(drumGrid));
@@ -633,57 +632,33 @@ TEST_CASE("Each pad's gate is tapped, and the tap goes with the pad",
     CHECK(tappedPads(store) == std::set<ChainId>{0});
 }
 
-TEST_CASE("A pad with one open layer compiles no zone split", "[engine][plan][padrack][3007]") {
-    const auto plan = compileWith(makeDrumGrid(10, {makePad(0, 36, 36, 60, 101)}));
+TEST_CASE("A rack in a pad's chain compiles as the pad's layers", "[engine][plan][padrack][3144]") {
+    // Layering a pad is an ordinary rack in its chain: its chains split the
+    // pad's notes by their zones and sum behind the rack fader.
+    RackInfo layers;
+    layers.id = 7;
+    for (const auto& [chainId, deviceId, velocityLow] :
+         {std::tuple{70, 201, 1}, std::tuple{71, 202, 100}}) {
+        ChainInfo chain;
+        chain.id = chainId;
+        chain.zones.velocityLow = velocityLow;
+        chain.elements.push_back(makePadInstrument(deviceId));
+        layers.chains.push_back(std::move(chain));
+    }
 
-    CHECK(opsOfKind(plan, OpKind::MidiZoneSplit).empty());
+    ChainInfo pad;
+    pad.id = 0;
+    pad.lowNote = pad.highNote = pad.rootNote = 36;
+    pad.elements.push_back(makeRackElement(std::move(layers)));
+
+    std::vector<ChainInfo> pads;
+    pads.push_back(std::move(pad));
+    const auto plan = compileWith(makeDrumGrid(10, std::move(pads)));
+
     CHECK(magda::engine::validatePlan(plan).empty());
-}
-
-TEST_CASE("A layered pad splits its notes across one chain per layer",
-          "[engine][plan][padrack][3007]") {
-    auto drumGrid = makeDrumGrid(10, {makePad(0, 36, 36, 60, 101)});
-    auto& pad = drumGrid.pads->chains[0];
-    auto& second = magda::addPadLayer(*drumGrid.pads.get(), pad);
-    second.elements.push_back(makePadInstrument(102));
-    second.zones.velocityLow = 64;
-    pad.layers[0].zones.velocityHigh = 63;
-
-    const auto plan = compileWith(std::move(drumGrid));
-
-    const auto problems = magda::engine::validatePlan(plan);
-    for (const auto& problem : problems)
-        UNSCOPED_INFO("validate: " << problem);
-    REQUIRE(problems.empty());
-
     const auto splits = opsOfKind(plan, OpKind::MidiZoneSplit);
     REQUIRE(splits.size() == 1);
-    REQUIRE(splits[0]->outputs.size() == 2);
-    CHECK(splits[0]->zoneRoutes[0].velocityHigh == 63);
-    CHECK(splits[0]->zoneRoutes[1].velocityLow == 64);
-
-    // Each layer's fader is keyed by its own id, apart from the pad's.
-    int layerFaders = 0;
-    for (const auto* fader : opsOfKind(plan, OpKind::Fader))
-        if (fader->key.role == OpRole::RackChainFader &&
-            fader->key.deviceId == magda::INVALID_DEVICE_ID)
-            ++layerFaders;
-    CHECK(layerFaders == 2);
-}
-
-TEST_CASE("A bypassed layer is left out of its pad", "[engine][plan][padrack][3007]") {
-    auto drumGrid = makeDrumGrid(10, {makePad(0, 36, 36, 60, 101)});
-    auto& pad = drumGrid.pads->chains[0];
-    auto& second = magda::addPadLayer(*drumGrid.pads.get(), pad);
-    second.elements.push_back(makePadInstrument(102));
-    second.bypassed = true;
-
-    const auto plan = compileWith(std::move(drumGrid));
-
-    CHECK(opsOfKind(plan, OpKind::MidiZoneSplit).empty());
-    int devices = 0;
-    for (const auto* device : opsOfKind(plan, OpKind::Device))
-        if (device->key.deviceId == 102)
-            ++devices;
-    CHECK(devices == 0);
+    CHECK(splits.front()->key.role == OpRole::RackChainSplit);
+    CHECK(splits.front()->key.rackId == 7);
+    CHECK(opsOfKind(plan, OpKind::Device).size() == 2);
 }

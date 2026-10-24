@@ -321,7 +321,6 @@ struct DeviceInfo {
     bool gainPanelOpen = false;   // Gain panel visible
     bool paramPanelOpen = false;  // Parameter panel visible
     bool aiPanelOpen = false;     // AI sound-design panel visible
-    bool padDetailOpen = true;    // A pad device's detail panel visible
     // Which of a faceplate device's two views show; at least one always does.
     bool faceplateShown = true;
     bool paramsShown = true;
@@ -329,6 +328,9 @@ struct DeviceInfo {
     bool timeBendShown = true;
     /// Whether a sampler's faceplate shows its zone list (#3098).
     bool zonesShown = true;
+    /// Whether a Drum Grid shows its pad mix panel and its pad chain (#3144).
+    bool padPanelShown = true;
+    bool padChainShown = true;
 
     // AI panel output text — transient runtime state, NOT serialized to disk.
     // Lives on DeviceInfo so the streamed prompt/result history survives slot

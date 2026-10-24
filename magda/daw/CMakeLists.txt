@@ -128,6 +128,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/midi_editor/v1/me-velocity.svg
     # Track chain icons
     ../../assets/icons/trackchain/icon-mods-boldm.svg
+    ../../assets/icons/trackchain/icon-padpanel-boldm.svg
+    ../../assets/icons/trackchain/icon-padchain-boldm.svg
     ../../assets/icons/trackchain/icon-racks-boldm.svg
     ../../assets/icons/trackchain/icon-treeview-boldm.svg
     ../../assets/icons/trackchain/icon-presets-round-boldm.svg
@@ -232,7 +234,6 @@ juce_add_binary_data(MagdaAssets
     # I/O routing icons
     ../../assets/icons/IO/Input.svg
     ../../assets/icons/IO/Output.svg
-    ../../assets/icons/IO/edit_mix.svg
     ../../assets/icons/IO/multiout.svg
     # Panel open/close icons
     ../../assets/icons/panels/left_open.svg

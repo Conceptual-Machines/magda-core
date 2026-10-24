@@ -3963,6 +3963,12 @@ HandlerResult racksCreate(MagdaApi& api, const juce::var& input, const RequestCo
     }
     if (api.tracks().getTrack(parentPath.trackId) == nullptr)
         return notFound("track", parentPath.trackId);
+    // A pad channel's chain is its pad's (#3144).
+    if (parentPath.steps.empty())
+        if (const auto padPath =
+                TrackManager::getInstance().getPadChannelChainPath(parentPath.trackId);
+            padPath.isValid())
+            parentPath = padPath;
 
     const auto id = runCommandAndRead<AddRackByPathCommand>(
         api, [](const auto& command) { return command.getCreatedRackId(); }, parentPath,
