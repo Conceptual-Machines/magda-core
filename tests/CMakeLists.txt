@@ -163,6 +163,7 @@ set(TEST_SOURCES
     clips/test_recorded_audio_clip_creation.cpp
     devices/test_sidechain_triggers.cpp
     devices/test_sidechain_device.cpp
+    devices/test_spectral_fx.cpp
     automation/test_curve_editor_preview.cpp
     automation/test_automation_curve_simplifier.cpp
     # Bake modulation to automation (issue #162)

@@ -43,6 +43,8 @@ class SpectrumAnalyzerUI;
 class SpectrumTelemetrySource;
 class SamplerUI;
 class SidechainUI;
+class SpectralFxUI;
+class SpectralFxTelemetrySource;
 class StepSequencerUI;
 class ToneGeneratorUI;
 class LevelsTelemetrySource;
@@ -223,7 +225,7 @@ class DeviceCustomUIManager {
     /// updates.
     void updateSamplerUI(const magda::DeviceInfo& device);
     void refreshSequencerState(const magda::DeviceInfo& device);
-    // Hand the oscilloscope / spectrum / levels / Nimbus faceplates their
+    // Hand the oscilloscope / spectrum / levels / Nimbus / Spectral FX faceplates their
     // telemetry source. The device-backed ones re-resolve on every read, so one
     // per UI is built and published once (#2585).
     void bindAnalyzerPlugins();
@@ -271,6 +273,7 @@ class DeviceCustomUIManager {
     std::shared_ptr<SpectrumTelemetrySource> spectrumTelemetry_;
     std::shared_ptr<LevelsTelemetrySource> levelsTelemetry_;
     std::shared_ptr<NimbusTelemetrySource> nimbusTelemetry_;
+    std::shared_ptr<SpectralFxTelemetrySource> spectralFxTelemetry_;
 
     // Custom UI unique_ptrs
     std::unique_ptr<ToneGeneratorUI> toneGeneratorUI_;
@@ -284,6 +287,7 @@ class DeviceCustomUIManager {
     std::unique_ptr<NimbusUI> nimbusUI_;
     std::unique_ptr<StruckInstrumentUI> struckUI_;
     std::unique_ptr<SidechainUI> sidechainUI_;
+    std::unique_ptr<SpectralFxUI> spectralFxUI_;
     std::unique_ptr<ImpulseResponseUI> impulseResponseUI_;
     std::unique_ptr<ChordPanelContent> chordEngineUI_;
     std::unique_ptr<StepSequencerUI> stepSequencerUI_;

@@ -23,6 +23,7 @@ struct DeviceSlotTraits {
     bool isSoundDesignSupported = false;
     bool showsAllControls = false;  // the debug device: every control, whatever its type gates
     const CompiledPresentationSpec* compiledPresentation = nullptr;
+    int mixSlot = -1;  // the device's own dry/wet, on the side strip instead of the grid
 };
 
 DeviceSlotTraits makeDeviceSlotTraits(const juce::String& pluginId);

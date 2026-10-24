@@ -25,6 +25,7 @@
 #include "devices/faust/effects/RingMod.hpp"
 #include "devices/faust/effects/Saturator.hpp"
 #include "devices/faust/effects/Utility.hpp"
+#include "devices/spectral/SpectralFx.hpp"
 #include "devices/tone/ToneGenerator.hpp"
 
 namespace {
@@ -61,6 +62,7 @@ constexpr magda::sdk::abi::DeviceFactory kDevices[] = {
     device<faust::RingMod>(),
     device<faust::Saturator>(),
     device<faust::Utility>(),
+    device<spectral::SpectralFx>(),
 };
 
 }  // namespace

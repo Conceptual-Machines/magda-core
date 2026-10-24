@@ -98,6 +98,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/MateriaUI.cpp
     custom_ui/HaloUI.cpp
     custom_ui/NimbusUI.cpp
+    custom_ui/SpectralFxUI.cpp
     custom_ui/StruckInstrumentUI.cpp
     custom_ui/AdsrGraph.cpp
     custom_ui/SequencerFaceplate.cpp
@@ -212,6 +213,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/LayoutStableTabbedComponent.hpp
     custom_ui/HaloUI.hpp
     custom_ui/NimbusUI.hpp
+    custom_ui/SpectralFxUI.hpp
     custom_ui/DeviceTelemetrySources.hpp
     custom_ui/SequencerFaceplate.hpp
     custom_ui/StepSequencerUI.hpp

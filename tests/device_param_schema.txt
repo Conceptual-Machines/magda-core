@@ -55,6 +55,7 @@ pitchShifter 1 semitones up
 polystepsequencer 6 rate,direction,swing,gatelength,bendAmount,bendCycles
 reverb 6 room size,damping,wet level,dry level,width,mode
 sidechain 4 gain,attack,release,channelMode
+spectralfx 6 gate,contrast,shift,scramble,mix,output
 spectrumanalyzer 0
 stepsequencer 8 rate,direction,swing,gatelength,accentvel,normalvel,bendAmount,bendCycles
 toneGenerator 4 oscType,bandLimit,frequency,level

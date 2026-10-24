@@ -75,7 +75,7 @@ TEST_CASE("The Test Tone's type manifest keeps the saved slot ids", "[devices][a
 
 TEST_CASE("Every portable device renders through the C ABI", "[devices][abi]") {
     const auto* module = linkedModule();
-    REQUIRE(module->device_type_count == 23);
+    REQUIRE(module->device_type_count == 24);
     for (int index = 0; index < module->device_type_count; ++index) {
         const std::string type = module->device_types[index].id;
         INFO(type);

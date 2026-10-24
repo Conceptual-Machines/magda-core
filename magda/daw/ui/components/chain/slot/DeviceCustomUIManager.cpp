@@ -24,6 +24,7 @@
 #include "audio/plugins/OscilloscopePlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "audio/plugins/SidechainPlugin.hpp"
+#include "audio/plugins/SpectralFxPlugin.hpp"
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
@@ -54,6 +55,7 @@
 #include "custom_ui/PolySynthUI.hpp"
 #include "custom_ui/SamplerUI.hpp"
 #include "custom_ui/SidechainUI.hpp"
+#include "custom_ui/SpectralFxUI.hpp"
 #include "custom_ui/SpectrumAnalyzerUI.hpp"
 #include "custom_ui/StepSequencerUI.hpp"
 #include "custom_ui/StruckInstrumentUI.hpp"
@@ -457,6 +459,8 @@ juce::Component* DeviceCustomUIManager::getActiveUI() const {
         return struckUI_.get();
     if (sidechainUI_)
         return sidechainUI_.get();
+    if (spectralFxUI_)
+        return spectralFxUI_.get();
     if (impulseResponseUI_)
         return impulseResponseUI_.get();
     if (chordEngineUI_)
@@ -491,6 +495,8 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
         return toneGeneratorUI_->getLinkableSliders();
     if (sidechainUI_)
         return sidechainUI_->getLinkableSliders();
+    if (spectralFxUI_)
+        return spectralFxUI_->getLinkableSliders();
     if (impulseResponseUI_)
         return impulseResponseUI_->getLinkableSliders();
     if (samplerUI_)
@@ -505,8 +511,8 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
 bool DeviceCustomUIManager::hasAnyUI() const {
     return externalInsertUI_ || toneGeneratorUI_ || samplerUI_ || drumGridUI_ || polySynthUI_ ||
            fmUI_ || materiaUI_ || haloUI_ || nimbusUI_ || struckUI_ || impulseResponseUI_ ||
-           sidechainUI_ || chordEngineUI_ || stepSequencerUI_ || polyStepSequencerUI_ ||
-           oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_;
+           sidechainUI_ || spectralFxUI_ || chordEngineUI_ || stepSequencerUI_ ||
+           polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_;
 }
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
@@ -524,6 +530,8 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
         return struckUI_->preferredContentWidth();  // body panel + EXCITER | RESONATOR
     if (sidechainUI_)
         return 500;  // curve editor + depth/sync/mode/atk/rel control row
+    if (spectralFxUI_)
+        return 520;  // spectrogram + six-control row
     if (impulseResponseUI_)
         return 350;
     if (stepSequencerUI_)
@@ -801,6 +809,9 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         nimbusUI_->updateFromParameters(device.parameters);
     if (sidechainUI_ && device.pluginId.equalsIgnoreCase(daw::audio::SidechainPlugin::xmlTypeName))
         sidechainUI_->updateFromParameters(device.parameters);
+    if (spectralFxUI_ &&
+        device.pluginId.equalsIgnoreCase(daw::audio::SpectralFxPlugin::xmlTypeName))
+        spectralFxUI_->updateFromParameters(device.parameters);
     // Parameters only. The slot's copy of the device is as old as the slot, so
     // its pattern is stale after any edit; the faceplates poll the device for that.
     if (stepSequencerUI_ &&
@@ -1174,6 +1185,15 @@ bool DeviceCustomUIManager::createSimpleEffectUI(const magda::DeviceInfo& device
         // path, so hand through the slot's live path getter.
         sidechainUI_->getNodePath = callbacks.getNodePath;
         parent.addAndMakeVisible(*sidechainUI_);
+        update(device);
+        return true;
+    }
+
+    if (device.pluginId.equalsIgnoreCase(daw::audio::SpectralFxPlugin::xmlTypeName)) {
+        spectralFxUI_ = std::make_unique<SpectralFxUI>();
+        forwardParameterChanges(*spectralFxUI_, callbacks);
+        parent.addAndMakeVisible(*spectralFxUI_);
+        refreshLivePluginBindings();
         update(device);
         return true;
     }
@@ -1948,6 +1968,8 @@ void DeviceCustomUIManager::detachFromLivePlugin() {
         levelsUI_->setTelemetrySource(nullptr);
     if (nimbusUI_ != nullptr)
         nimbusUI_->setTelemetrySource(nullptr);
+    if (spectralFxUI_ != nullptr)
+        spectralFxUI_->setTelemetrySource(nullptr);
     if (polySynthUI_ != nullptr)
         polySynthUI_->setLivePlugin(nullptr);
     if (struckUI_ != nullptr)
@@ -1960,6 +1982,7 @@ void DeviceCustomUIManager::detachFromLivePlugin() {
     spectrumTelemetry_.reset();
     levelsTelemetry_.reset();
     nimbusTelemetry_.reset();
+    spectralFxTelemetry_.reset();
 
     stepSeqPlugin_ = nullptr;
     polyStepSeqPlugin_ = nullptr;
@@ -1971,7 +1994,7 @@ void DeviceCustomUIManager::detachFromLivePlugin() {
 
 void DeviceCustomUIManager::bindAnalyzerPlugins() {
     if (oscilloscopeUI_ == nullptr && spectrumAnalyzerUI_ == nullptr && levelsUI_ == nullptr &&
-        nimbusUI_ == nullptr)
+        nimbusUI_ == nullptr && spectralFxUI_ == nullptr)
         return;
 
     auto publishTelemetrySource = [this](std::shared_ptr<magda::DeviceTelemetrySource> source,
@@ -2026,6 +2049,12 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
             nimbusTelemetry_ = std::make_shared<DeviceNimbusTelemetry>(renderedDevice);
         publishTelemetrySource(nimbusTelemetry_, NimbusTelemetrySource::kKey);
         nimbusUI_->setTelemetrySource(nimbusTelemetry_);
+    }
+    if (spectralFxUI_ != nullptr) {
+        if (spectralFxTelemetry_ == nullptr)
+            spectralFxTelemetry_ = std::make_shared<DeviceSpectralFxTelemetry>(renderedDevice);
+        publishTelemetrySource(spectralFxTelemetry_, SpectralFxTelemetrySource::kKey);
+        spectralFxUI_->setTelemetrySource(spectralFxTelemetry_);
     }
 
     // The controls show what the device holds, and the device arrives after the
@@ -2108,6 +2137,10 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
     if (nimbusUI_ && device.pluginId.equalsIgnoreCase("magda_clouds")) {
         nimbusUI_->updateFromParameters(device.parameters);
     }
+
+    if (spectralFxUI_ &&
+        device.pluginId.equalsIgnoreCase(daw::audio::SpectralFxPlugin::xmlTypeName))
+        spectralFxUI_->updateFromParameters(device.parameters);
 
     if (struckUI_ && StruckInstrumentUI::handles(device.pluginId)) {
         struckUI_->updateFromParameters(device.parameters);

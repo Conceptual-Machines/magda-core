@@ -18,6 +18,7 @@
 #include "plugins/OscilloscopePlugin.hpp"
 #include "plugins/PolyStepSequencerPlugin.hpp"
 #include "plugins/SidechainPlugin.hpp"
+#include "plugins/SpectralFxPlugin.hpp"
 #include "plugins/SpectrumAnalyzerPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
 #include "plugins/ToneGeneratorPlugin.hpp"
@@ -84,6 +85,7 @@ constexpr const char* kStepSequencerTags[] = {"step-sequencer", "midi-generator"
 constexpr const char* kPolyStepSequencerTags[] = {"poly-step-sequencer", "midi-generator",
                                                   "expandable-faceplate"};
 constexpr const char* kSidechainTags[] = {"sidechain"};
+constexpr const char* kSpectralFxTags[] = {"spectral"};
 constexpr const char* kConvolutionTags[] = {"convolution", "impulse-response"};
 
 // Tracktion's retired IR Reverb loads here; see core/LegacyDeviceAliases.hpp.
@@ -246,6 +248,17 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .tagCount = static_cast<int>(std::size(kSidechainTags)),
                    .defaultModulationParamIndex = SidechainPlugin::kGainParamIndex,
                    .createDevice = createDevice<SidechainPlugin>});
+    add(registry, {.pluginId = SpectralFxPlugin::xmlTypeName,
+                   .displayName = SpectralFxPlugin::getPluginName(),
+                   .browserCategory = "Spectral",
+                   .description = "FFT effects in series: spectral gate, contrast, "
+                                  "phase-coherent frequency shift and phase scramble.",
+                   .createMode = InternalPluginCreateMode::SavedStateOrFresh,
+                   .showInBrowser = true,
+                   .tags = kSpectralFxTags,
+                   .tagCount = static_cast<int>(std::size(kSpectralFxTags)),
+                   .mixParamIndex = devices::spectral::SpectralFx::kMixParamIndex,
+                   .createDevice = createDevice<SpectralFxPlugin>});
     add(registry,
         {.pluginId = MagdaConvolutionPlugin::xmlTypeName,
          .displayName = "IR Reverb",

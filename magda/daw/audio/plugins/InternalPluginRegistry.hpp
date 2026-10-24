@@ -33,6 +33,8 @@ struct InternalPluginSpec {
     const char* const* tags = nullptr;  // extensible behavioural classifications
     int tagCount = 0;
     int defaultModulationParamIndex = -1;
+    // The device's own dry/wet slot, which the slot's side-strip mix knob drives.
+    int mixParamIndex = -1;
     // The saved state decides which parameters the device has (a runtime Faust patch), so an
     // instance built from one state cannot stand in for another.
     bool stateDefinesParameters = false;

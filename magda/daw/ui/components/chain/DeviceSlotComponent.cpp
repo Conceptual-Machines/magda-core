@@ -150,10 +150,8 @@ void DeviceSlotComponent::setupGainMeterControls() {
 }
 
 int DeviceSlotComponent::nativeMixSlot() const {
-    const auto* spec = traits_.compiledPresentation;
-    return spec != nullptr && spec->mixSlot >= 0 && device_.findParameterByIndex(spec->mixSlot)
-               ? spec->mixSlot
-               : -1;
+    return traits_.mixSlot >= 0 && device_.findParameterByIndex(traits_.mixSlot) ? traits_.mixSlot
+                                                                                 : -1;
 }
 
 double DeviceSlotComponent::nativeMixPosition() const {
