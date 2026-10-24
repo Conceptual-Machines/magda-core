@@ -574,8 +574,10 @@ void DrumGridUI::resized() {
     }
     layoutFooter(footerArea_.withX(grid.getX()).withWidth(grid.getWidth()));
 
-    padMixPanel_.setBounds(area.removeFromLeft(PadMixPanel::kWidth));
-    chainArea_ = area;
+    padMixPanel_.setVisible(panelShown_);
+    if (panelShown_)
+        padMixPanel_.setBounds(area.removeFromLeft(PadMixPanel::kWidth));
+    chainArea_ = chainShown_ ? area : juce::Rectangle<int>{};
     layoutChain(chainArea_);
 }
 
@@ -584,8 +586,8 @@ void DrumGridUI::layoutChain(juce::Rectangle<int> area) {
     const bool hasChain = padChainView_.isVisible();
     if (hasChain)
         padChainView_.setBounds(area);
-    emptyAddButton_.setVisible(!hasChain);
-    if (!hasChain)
+    emptyAddButton_.setVisible(chainShown_ && !hasChain);
+    if (chainShown_ && !hasChain)
         emptyAddButton_.setBounds(area.reduced(6).removeFromLeft(40));
 }
 
@@ -739,7 +741,7 @@ void DrumGridUI::showPadContextMenu(int padIndex, juce::Point<int> screenPos) {
 }
 
 int DrumGridUI::fixedContentWidth() const {
-    return padsWidthFor(getHeight() - kFooterHeight) + PadMixPanel::kWidth;
+    return padsWidthFor(getHeight() - kFooterHeight) + (panelShown_ ? PadMixPanel::kWidth : 0);
 }
 
 void DrumGridUI::setMaxContentWidth(int maxWidth) {
@@ -750,6 +752,8 @@ void DrumGridUI::setMaxContentWidth(int maxWidth) {
 
 int DrumGridUI::getPreferredContentWidth() const {
     const int width = fixedContentWidth();
+    if (!chainShown_)
+        return width;
     if (!selectedPadHasChain())
         return width + kMinChainWidth;
     int chainWidth = juce::jmax(kMinChainWidth, padChainView_.getContentWidth());
@@ -763,10 +767,20 @@ bool DrumGridUI::selectedPadHasChain() const {
     return padInfos_[static_cast<size_t>(selectedPad_)].chainIndex >= 0;
 }
 
+void DrumGridUI::setViewsShown(bool panelShown, bool chainShown) {
+    if (panelShown_ == panelShown && chainShown_ == chainShown)
+        return;
+    panelShown_ = panelShown;
+    chainShown_ = chainShown;
+    refreshPadChain();
+    if (onLayoutChanged)
+        onLayoutChanged();
+}
+
 void DrumGridUI::refreshPadChain() {
     const auto path = getPadChainPath ? getPadChainPath(selectedPad_) : magda::ChainNodePath{};
-    if (path.isValid()) {
-        if (padChainView_.getChainPath() == path)
+    if (path.isValid() && chainShown_) {
+        if (padChainView_.isVisible() && padChainView_.getChainPath() == path)
             padChainView_.refresh();
         else
             padChainView_.showChain(path);

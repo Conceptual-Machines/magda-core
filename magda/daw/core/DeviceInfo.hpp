@@ -328,6 +328,9 @@ struct DeviceInfo {
     bool timeBendShown = true;
     /// Whether a sampler's faceplate shows its zone list (#3098).
     bool zonesShown = true;
+    /// Whether a Drum Grid shows its pad mix panel and its pad chain (#3144).
+    bool padPanelShown = true;
+    bool padChainShown = true;
 
     // AI panel output text — transient runtime state, NOT serialized to disk.
     // Lives on DeviceInfo so the streamed prompt/result history survives slot

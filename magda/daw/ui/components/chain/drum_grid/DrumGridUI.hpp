@@ -121,6 +121,9 @@ class DrumGridUI : public juce::Component,
     /** Called by the add slot of a pad with no chain yet. (padIndex) */
     std::function<void(int)> onAddDeviceRequested;
 
+    /** @brief Show or hide the pad mix panel and the pad chain, as the device keeps them. */
+    void setViewsShown(bool panelShown, bool chainShown);
+
     /** @brief Show the selected pad's chain again after the model changed it. */
     void refreshPadChain();
 
@@ -238,6 +241,8 @@ class DrumGridUI : public juce::Component,
 
     // Areas laid out in resized() and painted in paint()
     int maxContentWidth_ = 0;
+    bool panelShown_ = true;
+    bool chainShown_ = true;
     juce::Rectangle<int> padsArea_, chainArea_, footerArea_, pageTextArea_;
 
     // Plugin drop highlight

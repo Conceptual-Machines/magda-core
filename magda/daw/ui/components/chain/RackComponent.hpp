@@ -85,8 +85,10 @@ class RackComponent : public NodeComponent, public juce::Timer {
     bool sidePanelsInsideShell() const override {
         return true;
     }
+    // Only a multiband rack has a footer, for its view toggles: the chain select row gave its
+    // height back to the devices at the compact device height (#3144).
     int getShellFooterHeight() const override {
-        return collapsed_ ? 0 : FOOTER_BAR_HEIGHT;
+        return collapsed_ || !multiband_ ? 0 : FOOTER_BAR_HEIGHT;
     }
     void resizedShellFooter(juce::Rectangle<int> footer) override;
     juce::Point<int> getHeaderButtonSize() const override {

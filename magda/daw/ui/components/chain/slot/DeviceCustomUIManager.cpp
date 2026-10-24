@@ -813,6 +813,11 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         impulseResponseUI_->updateFromParameters(device.parameters);
 }
 
+void DeviceCustomUIManager::setDrumGridViewsShown(bool panelShown, bool chainShown) {
+    if (drumGridUI_)
+        drumGridUI_->setViewsShown(panelShown, chainShown);
+}
+
 void DeviceCustomUIManager::setSamplerZonesShown(bool shown) {
     if (samplerUI_)
         samplerUI_->setZonesShown(shown);

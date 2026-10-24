@@ -499,28 +499,20 @@ void RackComponent::resizedShellFooter(juce::Rectangle<int> footer) {
     layoutFooter(footer);
 }
 
-// The chain selector under the chain list.
+// A multiband rack's view toggles; any other rack has no footer.
 void RackComponent::layoutFooter(juce::Rectangle<int> footer) {
     auto area = footer.reduced(12, 0);
     selectorCaption_ = {};
-    bandsToggle_->setVisible(multiband_);
-    faceplateToggle_->setVisible(multiband_);
-    auto selector = area.withWidth(juce::jmin(area.getWidth(), CHAIN_LIST_WIDTH - 24));
-    // Bands are chosen by frequency, never by the selector; the footer toggles the views instead.
-    if (multiband_) {
-        if (selector_)
-            selector_->setVisible(false);
-        const auto size = getHeaderButtonSize();
-        for (auto* toggle : {bandsToggle_.get(), faceplateToggle_.get()}) {
-            toggle->setBounds(area.removeFromLeft(size.x).withSizeKeepingCentre(size.x, size.y));
-            area.removeFromLeft(getHeaderButtonGap());
-        }
+    if (selector_)
+        selector_->setVisible(false);
+    bandsToggle_->setVisible(multiband_ && !footer.isEmpty());
+    faceplateToggle_->setVisible(multiband_ && !footer.isEmpty());
+    if (!multiband_)
         return;
-    }
-    selectorCaption_ = selector.removeFromLeft(88);
-    if (selector_) {
-        selector_->setBounds(selector.withSizeKeepingCentre(selector.getWidth(), 16));
-        selector_->setVisible(true);
+    const auto size = getHeaderButtonSize();
+    for (auto* toggle : {bandsToggle_.get(), faceplateToggle_.get()}) {
+        toggle->setBounds(area.removeFromLeft(size.x).withSizeKeepingCentre(size.x, size.y));
+        area.removeFromLeft(getHeaderButtonGap());
     }
 }
 
