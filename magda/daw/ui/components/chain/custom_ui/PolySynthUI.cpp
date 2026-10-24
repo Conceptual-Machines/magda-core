@@ -17,6 +17,8 @@ namespace {
 constexpr int kPanelGap = 8;
 constexpr int kPanelPadX = 10;
 constexpr int kPanelPadY = 8;
+/// Less under the last tiles than over the header: the footer frames them (#3144).
+constexpr int kPanelPadBottom = 4;
 constexpr int kHeaderH = 22;
 constexpr int kTileGap = 6;
 constexpr int kCaptionH = 14;
@@ -494,7 +496,8 @@ void PolySynthUI::placeTiles(juce::Rectangle<int> area, const std::vector<int>& 
 }
 
 void PolySynthUI::layoutOscPanel() {
-    auto a = oscPanel_.reduced(kPanelPadX, kPanelPadY);
+    auto a =
+        oscPanel_.reduced(kPanelPadX, kPanelPadY).withTrimmedBottom(kPanelPadBottom - kPanelPadY);
     auto header = a.removeFromTop(kHeaderH);
     oscTabs_[0] = takeTab(header, "OSC", false);
     oscTabs_[1] = takeTab(header, "VOICE", false);
@@ -543,7 +546,8 @@ void PolySynthUI::layoutOscPanel() {
 }
 
 void PolySynthUI::layoutFilterPanel() {
-    auto a = filterPanel_.reduced(kPanelPadX, kPanelPadY);
+    auto a = filterPanel_.reduced(kPanelPadX, kPanelPadY)
+                 .withTrimmedBottom(kPanelPadBottom - kPanelPadY);
 
     // Tabs on the left, the shared routing and blend on the right.
     auto header = a.removeFromTop(kHeaderH);
@@ -576,7 +580,8 @@ void PolySynthUI::layoutFilterPanel() {
 }
 
 void PolySynthUI::layoutEnvelopePanel() {
-    auto a = envelopePanel_.reduced(kPanelPadX, kPanelPadY);
+    auto a = envelopePanel_.reduced(kPanelPadX, kPanelPadY)
+                 .withTrimmedBottom(kPanelPadBottom - kPanelPadY);
     auto header = a.removeFromTop(kHeaderH);
     envelopeTabs_[0] = takeTab(header, "AMP ADSR", false);
     envelopeTabs_[1] = takeTab(header, "FILTER ADSR", false);

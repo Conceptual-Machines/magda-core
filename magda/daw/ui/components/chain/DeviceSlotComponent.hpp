@@ -65,7 +65,6 @@ class DeviceSlotComponent : public NodeComponent,
     static constexpr int PARAM_CELL_HEIGHT = 24;
     static constexpr int PAGINATION_HEIGHT = 18;
     static constexpr int HEADER_BAR_HEIGHT = 28;
-    static constexpr int FOOTER_BAR_HEIGHT = 24;
     static constexpr int SIDE_STRIP_WIDTH = 40;
     static constexpr int SIDEBAR_WIDTH = 32;
     /// A faceplate stands beside the parameters at the multiband rack's width.
@@ -112,11 +111,6 @@ class DeviceSlotComponent : public NodeComponent,
     int getHeaderHeight() const override {
         return HEADER_BAR_HEIGHT;
     }
-    /// Only a device with a voice switch has a footer, and it carries just that switch.
-    int getShellFooterHeight() const override {
-        return !collapsed_ && voiceModeParam_ >= 0 ? FOOTER_BAR_HEIGHT : 0;
-    }
-    void resizedShellFooter(juce::Rectangle<int> footer) override;
     bool sidePanelsInsideShell() const override {
         return true;
     }
@@ -273,7 +267,7 @@ class DeviceSlotComponent : public NodeComponent,
 
     // v1 shell rows: sidebar, side strip and header MIDI LED, in this component's coordinates;
     // empty when not shown.
-    juce::Rectangle<int> sidebarArea_, sideStripArea_, footerArea_, midiLedArea_;
+    juce::Rectangle<int> sidebarArea_, sideStripArea_, midiLedArea_;
     std::unique_ptr<juce::ArrowButton> pagePrevButton_, pageNextButton_;
     juce::Label pageLabel_;
     magda::SegmentedChoice voiceModeChoice_;
