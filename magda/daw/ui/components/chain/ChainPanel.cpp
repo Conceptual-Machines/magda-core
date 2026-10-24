@@ -339,8 +339,10 @@ void ChainPanel::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int> bounds,
 }
 
 void ChainPanel::resizedContent(juce::Rectangle<int> /*contentArea*/) {
-    // The base insets content for a bordered frame; the viewport wants its own padding.
-    auto contentArea = getLocalBounds().withTrimmedLeft(1).reduced(PADDING);
+    // The base insets content for a bordered frame; the viewport wants its own padding, at the
+    // sides and below for the scrollbar. None above: a nested device needs the height (#3144).
+    auto contentArea =
+        getLocalBounds().withTrimmedLeft(1).reduced(PADDING, 0).withTrimmedBottom(PADDING);
     elementViewport_->setBounds(contentArea);
 
     // Calculate total width needed for all element slots

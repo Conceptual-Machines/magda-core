@@ -85,7 +85,9 @@ ModKnobComponent::ModKnobComponent(int modIndex) : modIndex_(modIndex) {
     nameLabel_.onTextChange = [this]() { onNameLabelEdited(); };
     // Pass single clicks through to parent for selection (double-click still edits)
     nameLabel_.setInterceptsMouseClicks(false, false);
-    addAndMakeVisible(nameLabel_);
+    // The card shows no name; the label appears only while one is typed.
+    nameLabel_.onEditorHide = [this]() { nameLabel_.setVisible(false); };
+    addChildComponent(nameLabel_);
 
     // Waveform display (don't intercept mouse clicks - pass through to parent)
     waveformDisplay_.setInterceptsMouseClicks(false, false);
@@ -216,14 +218,14 @@ void ModKnobComponent::paint(juce::Graphics& g) {
     const auto bottom = bottomRow();
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
     g.setFont(fonts.getMonoFont(10.5f));
-    g.drawText(timingText(), bottom.withRight(linkButton_->getX() - 2),
-               juce::Justification::centredLeft, true);
+    const auto count = linkButton_->getBounds().translated(-linkButton_->getWidth() - 2, 0);
+    g.drawText(timingText(), bottom.withRight(count.getX() - 2), juce::Justification::centredLeft,
+               true);
     if (currentMod_.isLinked()) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
         g.setFont(fonts.getMonoFont(10.0f));
-        g.drawText(juce::String(static_cast<int>(currentMod_.links.size())),
-                   bottom.withLeft(linkButton_->getRight() + 2), juce::Justification::centredLeft,
-                   false);
+        g.drawText(juce::String(static_cast<int>(currentMod_.links.size())), count,
+                   juce::Justification::centredRight, false);
     }
 
     if (!currentMod_.enabled) {
@@ -237,11 +239,11 @@ void ModKnobComponent::resized() {
     // The name leaves room for the type tag on its right.
     nameLabel_.setBounds(inner.removeFromTop(NAME_LABEL_HEIGHT).withTrimmedRight(40));
 
-    auto bottom = bottomRow();
     const int linkWidth = LINK_BUTTON_HEIGHT + 4;
-    auto linkSlot = bottom.removeFromRight(linkWidth + 12);
-    linkButton_->setBounds(
-        linkSlot.removeFromLeft(linkWidth).withSizeKeepingCentre(linkWidth, LINK_BUTTON_HEIGHT));
+    linkButton_->setBounds(getLocalBounds()
+                               .reduced(4)
+                               .removeFromBottom(LINK_BUTTON_HEIGHT)
+                               .removeFromRight(linkWidth));
 
     inner.removeFromBottom(BOTTOM_ROW_HEIGHT + 4);
     inner.removeFromTop(4);
@@ -498,6 +500,7 @@ void ModKnobComponent::showContextMenu() {
             return;
         }
         if (result == kRenameId) {
+            safeThis->nameLabel_.setVisible(true);
             safeThis->nameLabel_.showEditor();
             return;
         }
