@@ -120,7 +120,8 @@ void showExpandedHeaderControls(const DeviceSlotTraits& traits, const magda::Dev
                             traits.isDrumGrid, device.deviceType,
                             traits.isArpeggiator || traits.isStrum,
                             traits.isStepSequencer || traits.isPolyStepSequencer));
-    setVisibleIfPresent(controls.uiButton, !internalDevice || traits.isAnalysis);
+    setVisibleIfPresent(controls.uiButton,
+                        !internalDevice || traits.isAnalysis || traits.showsAllControls);
     setVisibleIfPresent(controls.powerButton, true);
     setVisibleIfPresent(controls.gainLabel, !isMidiUtility(traits) && !traits.isAnalysis);
 }

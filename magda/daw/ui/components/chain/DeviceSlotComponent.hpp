@@ -65,8 +65,9 @@ class DeviceSlotComponent : public NodeComponent,
     static constexpr int PARAM_CELL_HEIGHT = 24;
     static constexpr int PAGINATION_HEIGHT = 18;
     static constexpr int HEADER_BAR_HEIGHT = 28;
-    static constexpr int SIDE_STRIP_WIDTH = 40;
     static constexpr int FOOTER_BAR_HEIGHT = 24;
+    static constexpr int SIDE_STRIP_WIDTH = 40;
+    static constexpr int SIDEBAR_WIDTH = 32;
     /// A faceplate stands beside the parameters at the multiband rack's width.
     static constexpr int FACEPLATE_WIDTH = 380;
     DeviceSlotComponent(const magda::DeviceInfo& device);
@@ -76,7 +77,8 @@ class DeviceSlotComponent : public NodeComponent,
         return device_.id;
     }
     int getPreferredWidth() const override;
-    HeightRange getHeightRange() const override;
+    void setAvailableWidth(int width) override;
+    int getMinimumWidth() const override;
 
     // Override to update param slots when path is set
     void setNodePath(const magda::ChainNodePath& path) override;
@@ -110,13 +112,14 @@ class DeviceSlotComponent : public NodeComponent,
     int getHeaderHeight() const override {
         return HEADER_BAR_HEIGHT;
     }
+    /// Only a device with a voice switch has a footer, and it carries just that switch.
+    int getShellFooterHeight() const override {
+        return !collapsed_ && voiceModeParam_ >= 0 ? FOOTER_BAR_HEIGHT : 0;
+    }
+    void resizedShellFooter(juce::Rectangle<int> footer) override;
     bool sidePanelsInsideShell() const override {
         return true;
     }
-    int getShellFooterHeight() const override {
-        return collapsed_ ? 0 : FOOTER_BAR_HEIGHT;
-    }
-    void resizedShellFooter(juce::Rectangle<int> footer) override;
     juce::Rectangle<int> getHeaderInnerArea(juce::Rectangle<int> header) const override {
         return header.reduced(10, 0);
     }
@@ -268,28 +271,36 @@ class DeviceSlotComponent : public NodeComponent,
     DeviceSlotHeaderSeparators headerSeparators_;
     void styleDeviceHeaderButtons();
 
-    // v1 shell rows below the header: ID row, side strip and footer, in this
-    // component's coordinates; empty when not shown.
-    juce::Rectangle<int> sideStripArea_, footerArea_;
-    juce::Rectangle<int> footerSeparator_, footerInfoArea_, midiLedArea_;
-    std::unique_ptr<juce::ArrowButton> footerPrevPage_, footerNextPage_;
-    juce::Label footerPageLabel_;
+    // v1 shell rows: sidebar, side strip and header MIDI LED, in this component's coordinates;
+    // empty when not shown.
+    juce::Rectangle<int> sidebarArea_, sideStripArea_, footerArea_, midiLedArea_;
+    std::unique_ptr<juce::ArrowButton> pagePrevButton_, pageNextButton_;
+    juce::Label pageLabel_;
     magda::SegmentedChoice voiceModeChoice_;
     int voiceModeParam_ = -1;  ///< The parameter the footer's voice switch writes, or -1.
     void refreshVoiceModeChoice();
     device_shell::MidiLed midiLed_;
     int sideStripWidth() const;
     void layoutSideStrip(juce::Rectangle<int> strip);
-    void layoutFooter(juce::Rectangle<int> footer);
-    void refreshFooterPageControls();
+    /** @brief Places the MIDI LED against the header's right-hand buttons; returns what is
+     * left for the name (#3141). */
+    juce::Rectangle<int> layoutHeaderControls(juce::Rectangle<int> area);
+    /// The sidebar's buttons, top to bottom; its page nav sits under them.
+    std::vector<juce::Component*> sidebarButtons() const;
+    bool sidebarPaged() const;
+    int sidebarWidth() const;
+    /** @brief Stacks the device's toggles down the body's left edge, or hides them for an
+     * empty @p bar. */
+    void layoutSidebar(juce::Rectangle<int> bar);
+    void refreshPageControls();
 
-    /// The footer's parameters and faceplate toggles, for a device with a faceplate.
+    /// The header's parameters and faceplate toggles, for a device with a faceplate.
     std::unique_ptr<magda::SvgButton> paramsToggle_, faceplateToggle_;
     bool hasFaceplate() const;
     bool faceplateShown() const;
     bool paramsShown() const;
     void toggleDeviceView(bool faceplate);
-    /// A step sequencer's footer switches: its time bend beside the controls, and its faceplate
+    /// A step sequencer's header switches: its time bend beside the controls, and its faceplate
     /// lent to the arrangement's track area (ExpandedFaceplate) with a note left in its place.
     std::unique_ptr<magda::SvgButton> timeBendToggle_, zonesToggle_, expandToggle_;
     juce::Label lentNote_;

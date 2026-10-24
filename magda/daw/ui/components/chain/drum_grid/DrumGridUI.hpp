@@ -146,11 +146,12 @@ class DrumGridUI : public juce::Component,
     void refreshPadChain();
 
     /** Width the panels want: rail, pads, the editor when open, and the chain. */
+    /** @brief Full width, or within the max content width, past which the pad chain scrolls. */
     int getPreferredContentWidth() const;
-
-    /// What the grid needs to fit: the pads' text, or the selected pad's chain
-    /// once its devices need more (#3119).
-    HeightRange getHeightRange() const;
+    /** @brief Rail, pads and editor: everything but the pad chain. */
+    int fixedContentWidth() const;
+    /** @brief The width this grid may take; 0 = no limit. */
+    void setMaxContentWidth(int maxWidth);
 
     //==============================================================================
     // Component overrides
@@ -252,7 +253,7 @@ class DrumGridUI : public juce::Component,
     // Rail
     juce::TextButton editorToggle_{"i"};
     // Switches the editor from the pad's layers to its master out (#3010).
-    magda::SvgButton padOutToggle_{"Out", BinaryData::pad_out_svg, BinaryData::pad_out_svgSize};
+    magda::SvgButton padOutToggle_{"Out", BinaryData::edit_mix_svg, BinaryData::edit_mix_svgSize};
 
     // Pad editor
     // Each tab lists every layer in that view; the pad's own mix is its mixer channel (#3010).
@@ -278,6 +279,7 @@ class DrumGridUI : public juce::Component,
     std::unique_ptr<juce::ArrowButton> nextPageButton_;
 
     // Areas laid out in resized() and painted in paint()
+    int maxContentWidth_ = 0;
     juce::Rectangle<int> railArea_, padsArea_, editorArea_, chainArea_, footerArea_;
     juce::Rectangle<int> editorHeaderArea_, pageTextArea_;
     juce::Rectangle<int> tabsArea_;

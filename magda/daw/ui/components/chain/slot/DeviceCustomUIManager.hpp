@@ -10,7 +10,6 @@
 #include "core/DeviceInfo.hpp"
 #include "core/DeviceUiContext.hpp"
 #include "core/SelectionManager.hpp"
-#include "ui/layout/HeightRange.hpp"
 
 namespace magda::daw::audio {
 class ArpeggiatorPlugin;
@@ -163,9 +162,6 @@ class DeviceCustomUIManager {
 
     /** Preferred content width for layout calculations (matches old per-type if-chains). */
     int getPreferredContentWidth(int drumGridFallback = 0) const;
-
-    /** Instrument faceplate heights (#3119), shared by all instruments. */
-    HeightRange getContentHeightRange() const;
 
     std::shared_ptr<magda::DeviceUiContext> getDeviceUiContext() const {
         return deviceUiContext_;

@@ -374,6 +374,7 @@ set(_magda_neutral_base_device_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/StepSequencerPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SpectrumAnalyzerPlugin.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SpectrumAnalyzerPlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/AllControlsDebugPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ToneGeneratorPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SdkDeviceAdapter.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/CompiledEffectPlugin.hpp"

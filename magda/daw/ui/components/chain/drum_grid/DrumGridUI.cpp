@@ -773,8 +773,10 @@ void DrumGridUI::layoutChain(juce::Rectangle<int> area) {
 /// @p area spans the pad grid, so the arrows sit under its outer columns.
 void DrumGridUI::layoutFooter(juce::Rectangle<int> area) {
     auto nav = area;
-    prevPageButton_->setBounds(nav.removeFromLeft(16).withSizeKeepingCentre(12, 12));
-    nextPageButton_->setBounds(nav.removeFromRight(16).withSizeKeepingCentre(12, 12));
+    prevPageButton_->setBounds(
+        nav.removeFromLeft(16).withSizeKeepingCentre(kNavArrowSize, kNavArrowSize));
+    nextPageButton_->setBounds(
+        nav.removeFromRight(16).withSizeKeepingCentre(kNavArrowSize, kNavArrowSize));
     pageTextArea_ = nav;
 }
 
@@ -920,20 +922,26 @@ void DrumGridUI::showPadContextMenu(int padIndex, juce::Point<int> screenPos) {
                        });
 }
 
-int DrumGridUI::getPreferredContentWidth() const {
-    int width = kRailWidth + padsWidthFor(getHeight() - kFooterHeight);
-    if (!detailCollapsed_)
-        width += kEditorWidth;
-    const int chainWidth = selectedPadHasChain() ? padChainView_.getContentWidth() : 0;
-    return width + juce::jmax(kMinChainWidth, chainWidth);
+int DrumGridUI::fixedContentWidth() const {
+    return kRailWidth + padsWidthFor(getHeight() - kFooterHeight) +
+           (detailCollapsed_ ? 0 : kEditorWidth);
 }
 
-HeightRange DrumGridUI::getHeightRange() const {
-    // The pad text sets the floor, shared with the other compact instruments.
-    const HeightRange pads{238, 244};
-    if (!padChainView_.isVisible() || padChainView_.getHeight() <= 0)
-        return pads;
-    return pads.unite(padChainView_.getHeightRange().plus(getHeight() - padChainView_.getHeight()));
+void DrumGridUI::setMaxContentWidth(int maxWidth) {
+    maxContentWidth_ = maxWidth;
+    padChainView_.setMaxWidth(
+        maxWidth > 0 ? juce::jmax(kMinChainWidth, maxWidth - fixedContentWidth()) : 0);
+}
+
+int DrumGridUI::getPreferredContentWidth() const {
+    const int width = fixedContentWidth();
+    if (!selectedPadHasChain())
+        return width + kMinChainWidth;
+    int chainWidth = juce::jmax(kMinChainWidth, padChainView_.getContentWidth());
+    if (maxContentWidth_ > 0)
+        chainWidth = juce::jlimit(kMinChainWidth,
+                                  juce::jmax(kMinChainWidth, maxContentWidth_ - width), chainWidth);
+    return width + chainWidth;
 }
 
 void DrumGridUI::setDetailCollapsed(bool collapsed) {

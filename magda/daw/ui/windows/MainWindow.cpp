@@ -755,6 +755,11 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         resized();
     };
     bottomPanel->onFullscreenToggleRequested = [this]() { toggleEditorFullscreen(); };
+    // A tab may switch during setup, before the footer and resize handles exist.
+    bottomPanel->onActiveContentChanged = [this]() {
+        if (footerBar != nullptr && bottomResizer != nullptr)
+            resized();
+    };
     bottomPanel->onHeaderDoubleClick = [this]() {
         auto& layout = LayoutConfig::getInstance();
         // Ask the active content for its preferred height. Falls back to
@@ -1497,8 +1502,8 @@ void MainWindow::MainComponent::resized() {
     // Enforce both minimum and maximum so non-collapsed panels stay within valid range
     const int minLeftWidth = leftPanelCollapsed ? 0 : layout.minPanelWidth;
     const int minRightWidth = rightPanelCollapsed ? 0 : layout.minPanelWidth;
-    // The content's own minimum applies to drags only, so adding a device never moves the panel.
-    const int minBottomHeight = bottomPanelCollapsed ? 0 : layout.minBottomPanelHeight;
+    // The active content's minimum is measured once laid out, so the first pass may undershoot.
+    const int minBottomHeight = bottomPanelCollapsed ? 0 : minimumBottomPanelHeight();
 
     leftPanelWidth =
         juce::jlimit(minLeftWidth, std::max(minLeftWidth, maxLeftWidth), leftPanelWidth);
@@ -1527,6 +1532,12 @@ void MainWindow::MainComponent::resized() {
     layoutBottomPanel(bounds);
     layoutSidePanels(bounds);
     layoutContentArea(bounds);
+
+    if (!relayingOut_ && !bottomPanelCollapsed && bottomPanelHeight < minimumBottomPanelHeight() &&
+        bottomPanelHeight < maxBottomHeight) {
+        const juce::ScopedValueSetter<bool> once(relayingOut_, true);
+        resized();
+    }
 }
 
 void MainWindow::MainComponent::toggleCapturePanel() {

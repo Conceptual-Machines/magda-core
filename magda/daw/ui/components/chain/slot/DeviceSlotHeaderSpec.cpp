@@ -42,6 +42,8 @@ bool getExpandedVisibility(HeaderControlId id, const HeaderControlVisibility& vi
             return visibility.learn;
         case HeaderControlId::UI:
             return visibility.ui;
+        case HeaderControlId::Expand:
+            return visibility.expand;
         case HeaderControlId::MultiOut:
             return visibility.multiOut;
         case HeaderControlId::Sidechain:
@@ -76,7 +78,7 @@ bool getCollapsedVisibility(HeaderControlId id, const HeaderControlVisibility& v
         case HeaderControlId::UI:
             return drum_grid_slot::shouldShowCollapsedUiButton(traits.isDrumGrid,
                                                                isInternalDevice) ||
-                   traits.hasAnalyzerPopout;
+                   traits.hasAnalyzerPopout || traits.showsAllControls;
         case HeaderControlId::MultiOut:
             return visibility.multiOut;
         case HeaderControlId::ExportClip:
@@ -85,6 +87,8 @@ bool getCollapsedVisibility(HeaderControlId id, const HeaderControlVisibility& v
             return visibility.delta;
         case HeaderControlId::Sidechain:
             return visibility.sidechain;
+        case HeaderControlId::Expand:
+            return false;
         case HeaderControlId::Learn:
             // MIDI Learn stays expanded-only: it drives a mapping session the
             // user has to see the parameter grid for.
@@ -114,10 +118,20 @@ HeaderControlVisibility getHeaderControlVisibility(const DeviceSlotTraits& trait
     visibility.stepRecord = visibility.random;
     // The Drum Grid plays its pads and emits no MIDI of its own.
     visibility.midiThru = supportsMidiSourceToggle(device) && !traits.isDrumGrid;
+    visibility.expand = traits.expandsFaceplate;
     // A device that only sets level and image (the Utility) has no processing to solo.
     const auto* presentation = traits.compiledPresentation;
     visibility.delta = device.deviceType == magda::DeviceType::Effect &&
                        (presentation == nullptr || !presentation->ownsOutputGain);
+
+    if (traits.showsAllControls) {
+        for (bool* shown : {&visibility.macro, &visibility.mod, &visibility.ai, &visibility.random,
+                            &visibility.stepRecord, &visibility.midiThru, &visibility.learn,
+                            &visibility.ui, &visibility.expand, &visibility.multiOut,
+                            &visibility.sidechain, &visibility.exportClip, &visibility.delta})
+            *shown = true;
+        return visibility;
+    }
 
     if (isMidiUtilityDeviceSlot(traits)) {
         visibility.learn = false;
@@ -156,10 +170,12 @@ std::vector<HeaderControlSpec> buildHeaderControlSpecs(const DeviceSlotTraits& t
         {HeaderControlId::Random, HeaderControlSide::Left, controls.randomButton, 40, 50},
         {HeaderControlId::StepRecord, HeaderControlSide::Left, controls.stepRecordButton, 50, 60},
         {HeaderControlId::MidiThru, HeaderControlSide::Left, controls.midiThruButton, 60, 70},
+        {HeaderControlId::Sidechain, HeaderControlSide::Left, controls.sidechainButton, 62, 7},
+        {HeaderControlId::MultiOut, HeaderControlSide::Left, controls.multiOutButton, 64, 8},
         {HeaderControlId::Learn, HeaderControlSide::Right, controls.learnButton, 80, 0},
         {HeaderControlId::UI, HeaderControlSide::Right, controls.uiButton, 90, 10},
-        {HeaderControlId::MultiOut, HeaderControlSide::Right, controls.multiOutButton, 100, 8},
-        {HeaderControlId::Sidechain, HeaderControlSide::Right, controls.sidechainButton, 110, 7},
+        {HeaderControlId::Expand, HeaderControlSide::Right, controls.expandButton, 95, 13},
+
         {HeaderControlId::ExportClip, HeaderControlSide::Right, controls.exportClipButton, 120, 12},
         {HeaderControlId::Delta, HeaderControlSide::Right, controls.deltaButton, 130, 5},
     };

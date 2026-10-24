@@ -307,10 +307,11 @@ ChainPanel::ChainPanel()
 
     // Viewport for horizontal scrolling of element slots
     elementViewport_->setViewedComponent(elementSlotsContainer_.get(), false);
-    elementViewport_->setScrollBarsShown(false, true);  // Horizontal only
+    // Scrolls horizontally through scrollBar_, which takes no height from the slots.
+    elementViewport_->setScrollBarsShown(false, false, false, true);
     addAndMakeVisible(*elementViewport_);
-
-    elementViewport_->setScrollBarThickness(6);
+    scrollBar_ = std::make_unique<ViewportScrollBar>(*elementViewport_);
+    addAndMakeVisible(*scrollBar_);
 
     // The add slot ends the chain, so an empty chain shows only it.
     addDeviceButton_.setTooltip("Add a device to this chain");
@@ -344,12 +345,9 @@ void ChainPanel::resizedContent(juce::Rectangle<int> /*contentArea*/) {
 
     // Calculate total width needed for all element slots
     int totalWidth = calculateTotalContentWidth();
-    int containerHeight = contentArea.getHeight();
-
-    // Account for horizontal scrollbar if needed
-    if (totalWidth > contentArea.getWidth()) {
-        containerHeight = contentArea.getHeight() - elementViewport_->getScrollBarThickness() - 2;
-    }
+    const int containerHeight = contentArea.getHeight();
+    scrollBar_->setBounds(contentArea.getX(), contentArea.getBottom(), contentArea.getWidth(),
+                          PADDING);
 
     // Set container size and update element slots reference for arrow painting
     elementSlotsContainer_->setSize(totalWidth, containerHeight);
@@ -368,15 +366,7 @@ void ChainPanel::resizedContent(juce::Rectangle<int> /*contentArea*/) {
     }
 
     addDeviceButton_.setBounds(x, 0, getScaledWidth(APPEND_ZONE_WIDTH), containerHeight);
-}
-
-HeightRange ChainPanel::getHeightRange() const {
-    HeightRange range;
-    for (const auto& slot : elementSlots_)
-        range = range.unite(slot->getHeightRange());
-    if (range.isEmpty() || elementSlots_.empty())
-        return range;
-    return range.plus(getHeight() - elementSlots_.front()->getHeight());
+    scrollBar_->sync();
 }
 
 int ChainPanel::calculateTotalContentWidth() const {
@@ -399,6 +389,16 @@ int ChainPanel::getMinimumContentWidth() const {
 
 void ChainPanel::setMaxWidth(int maxWidth) {
     maxWidth_ = maxWidth;
+    applyMaxWidthToSlots();
+}
+
+void ChainPanel::applyMaxWidthToSlots() {
+    // Each element may fill the viewport on its own; past that this panel scrolls.
+    const int chrome =
+        getScaledWidth(ARROW_WIDTH) + getScaledWidth(APPEND_ZONE_WIDTH) + 1 + 2 * PADDING;
+    const int room = maxWidth_ > 0 ? juce::jmax(1, maxWidth_ - chrome) : 0;
+    for (auto& slot : elementSlots_)
+        slot->setAvailableWidth(room);
 }
 
 void ChainPanel::setZoomLevel(float zoom) {
@@ -426,8 +426,9 @@ int ChainPanel::getScaledWidth(int width) const {
 }
 
 void ChainPanel::lookAndFeelChanged() {
-    elementViewport_->getHorizontalScrollBar().setColour(
-        juce::ScrollBar::thumbColourId, ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
+    if (scrollBar_ != nullptr)
+        scrollBar_->setColour(juce::ScrollBar::thumbColourId,
+                              ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
     repaint();
 }
 
@@ -686,6 +687,7 @@ void ChainPanel::rebuildElementSlots() {
             safeThis->elementSlotsContainer_->repaint();
         };
     }
+    applyMaxWidthToSlots();
 }
 
 void ChainPanel::onAddDeviceClicked() {

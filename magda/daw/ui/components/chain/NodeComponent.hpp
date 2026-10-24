@@ -14,7 +14,6 @@
 #include "core/controllers/BindingRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
 #include "ui/components/common/SvgButton.hpp"
-#include "ui/layout/HeightRange.hpp"
 
 namespace magda::daw::ui {
 
@@ -153,6 +152,13 @@ class NodeComponent : public juce::Component,
     // Get total preferred width given a base content width
     int getTotalWidth(int baseContentWidth) const;
 
+    /** @brief The chain width left for this node; one with its own viewport fits itself to it. */
+    virtual void setAvailableWidth(int /*width*/) {}
+    /** @brief The narrowest such a node can fit to; 0 for a node of fixed width. */
+    virtual int getMinimumWidth() const {
+        return 0;
+    }
+
     // Virtual method for subclasses to report their preferred width
     virtual int getPreferredWidth() const {
         if (collapsed_) {
@@ -160,11 +166,6 @@ class NodeComponent : public juce::Component,
             return getLeftPanelsWidth() + COLLAPSED_WIDTH + getRightPanelsWidth();
         }
         return getTotalWidth(200);  // Default base width
-    }
-
-    /** @brief Node-height needs of a faceplate that declares them (#3119); empty otherwise. */
-    virtual HeightRange getHeightRange() const {
-        return {};
     }
 
     // Width when collapsed

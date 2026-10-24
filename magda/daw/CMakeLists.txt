@@ -232,7 +232,7 @@ juce_add_binary_data(MagdaAssets
     # I/O routing icons
     ../../assets/icons/IO/Input.svg
     ../../assets/icons/IO/Output.svg
-    ../../assets/icons/IO/pad_out.svg
+    ../../assets/icons/IO/edit_mix.svg
     ../../assets/icons/IO/multiout.svg
     # Panel open/close icons
     ../../assets/icons/panels/left_open.svg

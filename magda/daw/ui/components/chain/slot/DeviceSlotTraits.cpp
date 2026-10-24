@@ -21,6 +21,7 @@ DeviceSlotTraits makeDeviceSlotTraits(const juce::String& pluginId) {
     traits.isFaustInstrument = audio::internalPluginHasTag(pluginId, "faust-instrument");
     traits.isAnalysis = audio::isInternalAnalysisPlugin(pluginId);
     traits.hasAnalyzerPopout = audio::internalPluginHasTag(pluginId, "analyzer-popout");
+    traits.showsAllControls = audio::internalPluginHasTag(pluginId, "debug-all-controls");
     const auto& agentCapabilities = magda::getInternalPluginCapabilities(pluginId);
     traits.isAISupported = agentCapabilities.supportsDeviceAI();
     traits.isSoundDesignSupported = agentCapabilities.supportsSoundDesign();

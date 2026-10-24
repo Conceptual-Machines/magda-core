@@ -38,8 +38,8 @@ class RackComponent : public NodeComponent, public juce::Timer {
 
     int getPreferredHeight() const;
     int getPreferredWidth() const override;
-    int getMinimumWidth() const;        // Width with the device viewport at its narrowest
-    void setAvailableWidth(int width);  // Set available width for chain panel
+    int getMinimumWidth() const override;  // Width with the device viewport at its narrowest
+    void setAvailableWidth(int width) override;
     magda::RackId getRackId() const {
         return rackId_;
     }

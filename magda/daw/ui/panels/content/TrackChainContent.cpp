@@ -743,8 +743,11 @@ TrackChainContent::TrackChainContent()
     // Viewport for horizontal scrolling of chain content
     DBG("TrackChainContent::ctor - Setting up ZoomableViewport for chain content");
     chainViewport_->setViewedComponent(chainContainer_.get(), false);
-    chainViewport_->setScrollBarsShown(true, true);  // Vertical and horizontal
+    // Scrolls horizontally through scrollBar_, which takes no height from the nodes.
+    chainViewport_->setScrollBarsShown(true, false, false, true);
     addAndMakeVisible(*chainViewport_);
+    scrollBar_ = std::make_unique<ViewportScrollBar>(*chainViewport_);
+    addAndMakeVisible(*scrollBar_);
 
     addDeviceButton_.setButtonText("+");
     addDeviceButton_.setTooltip("Add a device");
@@ -1749,10 +1752,12 @@ void TrackChainContent::resized() {
         // === CONTENT AREA LAYOUT ===
         // Everything flows horizontally: [Device] → [Device] → [Rack] → [Rack] → ...
         // ChainPanel is displayed within the rack when a chain is selected
-        auto contentArea = bounds.reduced(8);
+        auto contentArea = bounds.reduced(CONTENT_INSET);
 
         // Viewport fills the content area
         chainViewport_->setBounds(contentArea);
+        scrollBar_->setBounds(contentArea.getX(), contentArea.getBottom(), contentArea.getWidth(),
+                              CONTENT_INSET);
 
         // Layout chain content inside the container
         layoutChainContent();
@@ -1764,20 +1769,8 @@ void TrackChainContent::layoutChainContent() {
     int viewportHeight = viewportBounds.getHeight();
     int availableWidth = viewportBounds.getWidth();
 
-    // Enforce minimum content height — viewport scrolls vertically if panel is too short
-    int chainHeight = juce::jmax(MIN_CHAIN_HEIGHT, viewportHeight);
-
-    // Calculate total content width (with zoom applied)
-    int totalWidth = calculateTotalContentWidth();
-
-    // Account for scrollbar if needed
-    const int scrollbarHeight = totalWidth > availableWidth ? 8 : 0;
-    chainHeight = juce::jmax(MIN_CHAIN_HEIGHT, chainHeight - scrollbarHeight);
-    chainChrome_ = getHeight() - viewportHeight + scrollbarHeight;
-
-    // Set container size
-    chainContainer_->setSize(juce::jmax(totalWidth, availableWidth), chainHeight);
-    chainContainer_->setNodeComponents(&nodeComponents_);
+    // Below NODE_HEIGHT the viewport scrolls vertically.
+    const int chainHeight = juce::jmax(NODE_HEIGHT, viewportHeight);
 
     // Add left padding during drag/drop to show insertion indicator before first node
     bool isDraggingOrDropping = dragOriginalIndex_ >= 0 || dropInsertIndex_ >= 0;
@@ -1785,27 +1778,25 @@ void TrackChainContent::layoutChainContent() {
     int scaledSlotSpacing = getScaledWidth(SLOT_SPACING);
     int x = isDraggingOrDropping ? getScaledWidth(DRAG_LEFT_PADDING) : 0;
 
+    // A node fits to what is left beside the ones before it, or, short of its minimum there, to a
+    // whole view the chain scrolls to; the append slot stays in view either way.
+    const int visibleWidth = juce::jmax(1, availableWidth - scaledArrowWidth - scaledSlotSpacing -
+                                               getScaledWidth(APPEND_ZONE_WIDTH));
+
     // Layout all node components horizontally (with zoom applied)
     for (auto& node : nodeComponents_) {
-        // Check if it's a RackComponent to set available width
-        if (auto* rack = dynamic_cast<RackComponent*>(node.get())) {
-            int remainingWidth =
-                juce::jmax(0, availableWidth - x - scaledArrowWidth - scaledSlotSpacing);
-            rack->setAvailableWidth(remainingWidth);
-        }
+        const int remaining = visibleWidth - x;
+        node->setAvailableWidth(remaining >= node->getMinimumWidth() ? remaining : visibleWidth);
 
         int nodeWidth = getScaledWidth(node->getPreferredWidth());
         node->setBounds(x, 0, nodeWidth, chainHeight);
         x += nodeWidth + scaledArrowWidth + scaledSlotSpacing;
     }
 
-    // Below a faceplate's minimum the chain keeps that height and the viewport scrolls.
-    if (const int minimum = nodesHeightRange().minimum; minimum > chainHeight) {
-        chainHeight = minimum;
-        chainContainer_->setSize(chainContainer_->getWidth(), chainHeight);
-        for (auto& node : nodeComponents_)
-            node->setSize(node->getWidth(), chainHeight);
-    }
+    // Measured after the loop, once each node has fitted itself to the width left.
+    chainContainer_->setSize(juce::jmax(calculateTotalContentWidth(), availableWidth), chainHeight);
+    chainContainer_->setNodeComponents(&nodeComponents_);
+    scrollBar_->sync();
 
     // An empty chain centres a large drop target; once devices exist it collapses to the
     // append slot pinned at the right edge (see calculateAppendZoneX).
@@ -1824,17 +1815,10 @@ void TrackChainContent::layoutChainContent() {
     chainContainer_->repaint();
 }
 
-HeightRange TrackChainContent::nodesHeightRange() const {
-    HeightRange range;
-    for (const auto& node : nodeComponents_)
-        range = range.unite(node->getHeightRange());
-    return range;
-}
-
 HeightRange TrackChainContent::getHeightRange() const {
-    // Never below the chain's own floor: under it the chain scrolls vertically and
-    // takes a rack's horizontal scrollbar out of view with it.
-    return nodesHeightRange().unite({MIN_CHAIN_HEIGHT, MIN_CHAIN_HEIGHT}).plus(chainChrome_);
+    // One height for every device; the scrollbar sits in the bottom inset.
+    const int height = NODE_HEIGHT + 2 * CONTENT_INSET;
+    return {height, height};
 }
 
 juce::Rectangle<int> TrackChainContent::emptyDropTargetBounds() const {
@@ -1866,24 +1850,6 @@ int TrackChainContent::calculateTotalContentWidth() const {
     totalWidth += getScaledWidth(APPEND_ZONE_WIDTH);
 
     return totalWidth;
-}
-
-int TrackChainContent::getOptimalPanelHeight(int windowHeight) const {
-    // Check whether the currently selected device has a custom UI that
-    // benefits from more vertical space (chord engine, step sequencer,
-    // sampler, etc.). Otherwise use the default 1/3 height.
-    if (selectedDeviceId_ != magda::INVALID_DEVICE_ID &&
-        selectedTrackId_ != magda::INVALID_TRACK_ID) {
-        if (auto* dev =
-                magda::TrackManager::getInstance().getDevice(selectedTrackId_, selectedDeviceId_)) {
-            auto pid = dev->pluginId.toLowerCase();
-            if (pid.contains("chord") || pid.contains("step_seq") || pid.contains("sampler") ||
-                pid.contains("4osc")) {
-                return windowHeight / 2;
-            }
-        }
-    }
-    return juce::jmax(360, windowHeight / 3);
 }
 
 void TrackChainContent::onActivated() {

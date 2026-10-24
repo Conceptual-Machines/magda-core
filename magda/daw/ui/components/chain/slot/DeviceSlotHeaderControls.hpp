@@ -16,6 +16,7 @@ struct DeviceSlotHeaderControls {
     juce::Component* sidechainButton = nullptr;
     juce::Component* multiOutButton = nullptr;
     juce::Component* uiButton = nullptr;
+    juce::Component* expandButton = nullptr;  // lends the faceplate to the arrangement
     juce::Component* deltaButton = nullptr;
     juce::Component* powerButton = nullptr;
     juce::Component* presetButton = nullptr;
@@ -39,13 +40,14 @@ struct DeviceSlotHeaderMetrics {
     int separatorHeight = 14;
 };
 
-/// Where the expanded header's two separators landed; empty when not drawn.
+/// Where the expanded header's separators landed; empty when not drawn. @c routing sits
+/// between the modulation and routing buttons on the left.
 struct DeviceSlotHeaderSeparators {
-    juce::Rectangle<int> left, right;
+    juce::Rectangle<int> left, routing, right;
 };
 
-/// Sidechain, multi-out, MIDI thru and delta keep their visibility here but are
-/// placed by the footer and side strip, not the expanded header.
+/// Delta keeps its visibility here but is placed by the slot's side strip, not the
+/// expanded header.
 DeviceSlotHeaderSeparators layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
                                                           const DeviceSlotTraits& traits,
                                                           const magda::DeviceInfo& device,

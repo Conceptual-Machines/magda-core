@@ -8,17 +8,14 @@ namespace magda::daw::ui::device_shell {
 
 /** @brief The rows a v1 shell paints around its body; an empty rectangle is not drawn. */
 struct ShellRows {
-    juce::Rectangle<int> headerSeparatorLeft, headerSeparatorRight;
-    juce::Rectangle<int> sideStrip, footer;
+    juce::Rectangle<int> headerSeparatorLeft, headerSeparatorRouting, headerSeparatorRight;
+    juce::Rectangle<int> sidebar, sideStrip, footer;
     juce::Rectangle<int> footerSeparator, footerInfo, midiLed;
 };
 
 /** @brief Frame, header band, side strip and footer of a device or rack shell. */
 void paintFrame(juce::Graphics& g, juce::Rectangle<int> bounds, int headerHeight,
                 const ShellRows& rows, const juce::String& footerInfo, bool midiLedLit);
-
-/** @brief Footer info text: "mono" or "stereo", then the interface rate when one is running. */
-juce::String audioInfoText(int outputChannels);
 
 /** @brief The shell's horizontal gain slider: 20px track, gradient fill on the meter scale,
  *  the value centred; @p minDb reads as -inf. */
