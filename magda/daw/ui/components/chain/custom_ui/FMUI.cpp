@@ -21,7 +21,9 @@ constexpr int kCellGap = 4;
 constexpr int kCaptionH = 14;
 constexpr int kColumnCaptionH = 14;
 constexpr int kRowLabelW = 16;
-constexpr int kMinTileH = 30;
+constexpr int kMinTileH = 26;
+/// The shortest value line under a caption; shorter, the two share a line.
+constexpr int kMinValueH = 13;
 constexpr int kMaxTileH = 44;
 constexpr int kDot = 6;
 constexpr float kInactiveAlpha = 0.35f;
@@ -357,10 +359,31 @@ void FMUI::placeTile(int slot, juce::Rectangle<int> bounds, bool withCaption) {
     auto& c = controls_[static_cast<size_t>(slot)];
     c.tile = bounds;
     if (withCaption) {
-        auto inner = bounds.reduced(9, 5);
-        c.label->setBounds(inner.removeFromTop(kCaptionH));
+        // Caption over value while the value fits under it; at the height a rack's chain
+        // leaves, the value shrinks to the room left and, short of that, sits beside the
+        // caption (#3144).
+        auto inner = bounds.reduced(9, 4);
+        const int valueH = inner.getHeight() - kCaptionH;
+        auto& value = c.slider->getSlider();
+        if (valueH >= kMinValueH) {
+            c.label->setFont(captionFont());
+            c.label->setBounds(inner.removeFromTop(kCaptionH));
+            c.slider->setBounds(inner);
+            c.slider->setFont(FontManager::getInstance().getUIFontMedium(
+                juce::jmin(15.0f, static_cast<float>(valueH))));
+            value.setJustification(juce::Justification::centredLeft);
+        } else {
+            // The caption takes its own width, so the value keeps the rest.
+            const auto small = FontManager::getInstance().getUIFont(10.5f);
+            c.label->setFont(small);
+            const int captionW =
+                juce::GlyphArrangement::getStringWidthInt(small, c.label->getText()) + 6;
+            c.label->setBounds(inner.removeFromLeft(juce::jmin(captionW, inner.getWidth() / 2)));
+            c.slider->setBounds(inner);
+            c.slider->setFont(FontManager::getInstance().getUIFontMedium(11.0f));
+            value.setJustification(juce::Justification::centredRight);
+        }
         c.label->setVisible(true);
-        c.slider->setBounds(inner);
     } else {
         c.slider->setBounds(bounds.reduced(4, 2));
     }
@@ -520,7 +543,8 @@ void FMUI::layoutEnvelopePanel() {
 }
 
 void FMUI::resized() {
-    auto b = getLocalBounds().reduced(kPanelGap);
+    // Padded at the sides only: the header and the voice-mode footer already frame the panels.
+    auto b = getLocalBounds().reduced(kPanelGap, 0);
     const int w = b.getWidth() - 3 * kPanelGap;
     opsPanel_ = b.removeFromLeft(w * 27 / 100);
     b.removeFromLeft(kPanelGap);
