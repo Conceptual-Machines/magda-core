@@ -12,7 +12,7 @@ namespace magda::daw::ui {
  * @brief One of a chain's zones as a bar, dragged at its ends; in fade mode, its crossfades.
  *
  * With shoulder fades on, the bar's top corners drag the crossfades without a fade mode.
- * Shared by Drum Grid pad layers and rack chains (#1808, #3007).
+ * Used by the rack chain list's KEY, VEL and FADE views (#1808, #3007).
  */
 class ZoneBar : public juce::Component, public juce::SettableTooltipClient {
   public:

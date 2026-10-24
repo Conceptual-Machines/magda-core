@@ -268,12 +268,10 @@ std::vector<engine::DeviceKey> keysOfDeviceAt(const ChainNodePath& devicePath) {
     std::set<const DeviceInfo*> subtree{target};
     if (target->pads)
         for (const auto& pad : target->pads->chains)
-            for (const auto& layer : pad.layers)
-                chain_walk::forEachDevice(
-                    layer.elements, devicePath, chain_walk::Pads::Enter,
-                    [&subtree](const DeviceInfo& device, const ChainNodePath&) {
-                        subtree.insert(&device);
-                    });
+            chain_walk::forEachDevice(pad.elements, devicePath, chain_walk::Pads::Enter,
+                                      [&subtree](const DeviceInfo& device, const ChainNodePath&) {
+                                          subtree.insert(&device);
+                                      });
 
     return keysOfDevices(subtree);
 }

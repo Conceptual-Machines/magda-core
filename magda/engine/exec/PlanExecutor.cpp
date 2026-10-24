@@ -2191,9 +2191,9 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
         }
 
         case OpKind::MidiZoneSplit: {
-            // One output per pad layer (#3007). A note-on reaches every layer
+            // One output per rack chain (#3007). A note-on reaches every chain
             // whose zones take it, at a velocity scaled by its fade, and one of
-            // the round-robin layers by turn; its note-off follows it.
+            // the round-robin chains by turn; its note-off follows it.
             const auto outputs = static_cast<int>(op.outputs.size());
             for (int port = 0; port < outputs; ++port) {
                 midiOut(id, port).clear();

@@ -86,8 +86,7 @@ void inspectElements(const std::vector<ChainElement>& elements,
             ++unavailable;
         if (device.pads)
             for (const auto& pad : device.pads->chains)
-                for (const auto& layer : pad.layers)
-                    inspectElements(layer.elements, available, unavailable);
+                inspectElements(pad.elements, available, unavailable);
     }
 }
 

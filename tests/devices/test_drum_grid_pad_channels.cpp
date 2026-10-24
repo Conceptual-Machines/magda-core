@@ -271,7 +271,7 @@ TrackInfo legacyGridTrack(TrackId id, DeviceId gridId,
         pad.outputIndex = bus;
         auto voice = padVoice("Voice");
         voice.id = 100 + padIndex;
-        pad.layers.front().elements.push_back(makeDeviceElement(voice));
+        pad.elements.push_back(makeDeviceElement(voice));
     }
     stampPadRackId(grid);
     track.chain.fxChainElements.push_back(makeDeviceElement(grid));
@@ -352,4 +352,22 @@ TEST_CASE("A bus carrying several pads becomes a group their channels route into
     const auto* mainChannel = pad_channels::findChannel(tracks, 10, findPadChain(pads, 2)->id);
     REQUIRE(mainChannel != nullptr);
     CHECK(mainChannel->audioOutputDevice == pad_channels::gridRoute(1));
+}
+
+TEST_CASE("A pad channel's chain is its pad's chain", "[drumgrid][pads][channels][3144]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    const auto grid = makeGrid();
+    REQUIRE(tm.setPadDevice(grid.path, 3, padVoice("Hat")) != INVALID_DEVICE_ID);
+
+    const auto* channel = tm.getPadChannel(grid.path, 3);
+    REQUIRE(channel != nullptr);
+    const auto padPath = TrackManager::padChainPath(grid.path, tm.getPad(grid.path, 3)->id);
+    CHECK(tm.getPadChannelChainPath(channel->id) == padPath);
+    CHECK_FALSE(tm.getPadChannelChainPath(grid.trackId).isValid());
+
+    // What the channel's chain view adds lands on the pad.
+    REQUIRE(tm.addDeviceToChainByPath(padPath, padVoice("Shaker")) != INVALID_DEVICE_ID);
+    CHECK(tm.getPad(grid.path, 3)->elements.size() == 2);
+    CHECK(tm.getTrack(channel->id)->chain.fxChainElements.empty());
 }

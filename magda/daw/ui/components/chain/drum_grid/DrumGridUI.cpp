@@ -26,7 +26,6 @@ constexpr int kPadGap = 6;
 constexpr int kPadPadding = 10;
 constexpr int kMinPadsWidth = 268;
 constexpr int kMaxPadsWidth = 396;
-constexpr int kPanelHeaderHeight = 30;
 
 /// The pads' width for a body this tall: a square grid within the spec's range.
 int padsWidthFor(int bodyHeight) {
@@ -241,33 +240,6 @@ DrumGridUI::DrumGridUI() {
         addAndMakeVisible(pad);
     }
 
-    // Rail
-    editorToggle_.setTooltip("Pad editor");
-    editorToggle_.setClickingTogglesState(true);
-    editorToggle_.setToggleState(!detailCollapsed_, juce::dontSendNotification);
-    editorToggle_.onClick = [this]() { setDetailCollapsed(!editorToggle_.getToggleState()); };
-    addAndMakeVisible(editorToggle_);
-
-    padOutToggle_.setTooltip("Show the pad's master out instead of its layers");
-    padOutToggle_.setClickingTogglesState(true);
-    padOutToggle_.onClick = [this]() {
-        padOutToggle_.setActive(padOutToggle_.getToggleState());
-        layoutEditor(editorArea_);
-        repaint();
-    };
-    addAndMakeVisible(padOutToggle_);
-
-    addLayerButton_.setTooltip("Add a layer to this pad");
-    addLayerButton_.onClick = [this]() {
-        if (onAddLayerRequested)
-            onAddLayerRequested(selectedPad_);
-    };
-    layerListContent_.addAndMakeVisible(addLayerButton_);
-    layerList_.setViewedComponent(&layerListContent_, false);
-    layerList_.setScrollBarsShown(true, false);
-    layerList_.setScrollBarThickness(6);
-    addChildComponent(layerList_);
-
     // Chain: the rack's chain view on the selected pad
     padChainView_.onLayoutChanged = [this]() {
         if (onLayoutChanged)
@@ -281,13 +253,12 @@ DrumGridUI::DrumGridUI() {
     };
     addChildComponent(emptyAddButton_);
 
-    padRow_.setRemovable(false);
-    padRow_.onMixChanged = [this](magda::ChainId, float volume, float pan) {
+    padMixRow_.onMixChanged = [this](float volume, float pan) {
         if (onPadMixChanged)
             onPadMixChanged(selectedPad_, volume, pan);
     };
-    padRow_.onGestureEnd = [this]() { endFaderGesture(); };
-    padRow_.onSwitchesChanged = [this](magda::ChainId, bool mute, bool solo, bool bypassed) {
+    padMixRow_.onGestureEnd = [this]() { endFaderGesture(); };
+    padMixRow_.onSwitchesChanged = [this](bool mute, bool solo, bool bypassed) {
         auto& info = padInfos_[static_cast<size_t>(selectedPad_)];
         info.mute = mute;
         info.solo = solo;
@@ -296,7 +267,7 @@ DrumGridUI::DrumGridUI() {
             onPadSwitchesChanged(selectedPad_, mute, solo, bypassed);
         refreshPadButtons();
     };
-    layerListContent_.addChildComponent(padRow_);
+    addAndMakeVisible(padMixRow_);
 
     // Footer
     prevPageButton_ = makeNavArrowButton("Previous page", 0.5f);
@@ -306,33 +277,12 @@ DrumGridUI::DrumGridUI() {
     addAndMakeVisible(*prevPageButton_);
     addAndMakeVisible(*nextPageButton_);
 
-    styleControls();
     refreshPadButtons();
     refreshDetailPanel();
 }
 
 DrumGridUI::~DrumGridUI() {
     stopTimer();
-    editorToggle_.setLookAndFeel(nullptr);
-}
-
-void DrumGridUI::styleControls() {
-    using node_header::GlyphToggleLookAndFeel;
-    auto& glyph = GlyphToggleLookAndFeel::getInstance();
-    editorToggle_.setLookAndFeel(&glyph);
-    node_header::applyDeviceIconStyle(padOutToggle_, node_header::DeviceIcon::Toggle,
-                                      juce::Colour(0xFFB3B3B3), ActiveTheme::DEVICE_BLUE, 22.0f);
-    editorToggle_.setColour(juce::TextButton::textColourOnId,
-                            ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE));
-}
-
-void DrumGridUI::restoreDetailCollapsed(bool collapsed) {
-    if (detailCollapsed_ == collapsed)
-        return;
-    detailCollapsed_ = collapsed;
-    editorToggle_.setToggleState(!collapsed, juce::dontSendNotification);
-    resized();
-    repaint();
 }
 
 void DrumGridUI::timerCallback() {
@@ -435,8 +385,6 @@ void DrumGridUI::setSelectedPad(int padIndex) {
     if (padIndex < 0 || padIndex >= kTotalPads)
         return;
 
-    if (selectedPad_ != padIndex)
-        selectedLayer_ = magda::INVALID_CHAIN_ID;
     selectedPad_ = padIndex;
 
     // Switch page if needed
@@ -536,21 +484,10 @@ void DrumGridUI::paint(juce::Graphics& g) {
     const auto colour = [](ColourRole role) { return ActiveTheme::getColour(role); };
     const auto line = colour(ActiveTheme::DEVICE_LINE);
 
-    g.setColour(colour(ActiveTheme::DEVICE_HEAD2));
-    g.fillRect(railArea_);
-    g.setColour(line);
-    g.fillRect(railArea_.withLeft(railArea_.getRight() - 1));
-
-    if (!editorArea_.isEmpty()) {
-        g.setColour(colour(ActiveTheme::DEVICE_HEAD2));
-        g.fillRect(editorArea_);
-        g.setColour(line);
-        g.fillRect(editorArea_.withWidth(1));
-        paintEditor(g);
-    }
-
     g.setColour(colour(ActiveTheme::DEVICE_PANEL));
     g.fillRect(chainArea_);
+    g.setColour(colour(ActiveTheme::DEVICE_HEAD2));
+    g.fillRect(padMixRow_.getBounds());
     g.setColour(line);
     g.fillRect(chainArea_.withWidth(1));
     paintEmptyChain(g);
@@ -567,53 +504,6 @@ void DrumGridUI::paint(juce::Graphics& g) {
     }
 }
 
-void DrumGridUI::paintEditor(juce::Graphics& g) {
-    auto& fonts = FontManager::getInstance();
-    const auto colour = [](ColourRole role) { return ActiveTheme::getColour(role); };
-    const auto& info = padInfos_[static_cast<size_t>(selectedPad_)];
-
-    auto header = editorHeaderArea_.reduced(12, 0);
-    g.setColour(device_shell::chainColour(info.chainIndex));
-    g.fillEllipse(header.removeFromLeft(8).withSizeKeepingCentre(8, 8).toFloat());
-    header.removeFromLeft(8);
-    header.removeFromRight(padOutToggle_.getWidth() + 4);
-    // The note sits right after the name, which gives up room before the note does.
-    const auto note = getNoteName(selectedPad_);
-    const auto noteFont = fonts.getMonoFont(11.0f);
-    const int noteWidth = juce::GlyphArrangement::getStringWidthInt(noteFont, note) + 2;
-    const auto name = info.sampleName.isNotEmpty() ? info.sampleName : juce::String("empty");
-    const auto nameFont = fonts.getUIFontMedium(12.0f);
-    const int nameWidth = juce::jmin(header.getWidth() - noteWidth - 8,
-                                     juce::GlyphArrangement::getStringWidthInt(nameFont, name) + 2);
-    g.setColour(colour(ActiveTheme::DEVICE_VALUE_TEXT));
-    g.setFont(nameFont);
-    g.drawText(name, header.removeFromLeft(nameWidth), juce::Justification::centredLeft, true);
-    header.removeFromLeft(8);
-    g.setColour(colour(ActiveTheme::DEVICE_DIM2));
-    g.setFont(noteFont);
-    g.drawText(note, header, juce::Justification::centredLeft, false);
-    g.setColour(colour(ActiveTheme::DEVICE_LINE));
-    g.fillRect(editorHeaderArea_.withTop(editorHeaderArea_.getBottom() - 1));
-
-    if (tabsArea_.isEmpty())
-        return;
-    g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f));
-    for (const auto& [tab, name] :
-         {std::pair{EditorTab::Mix, "MIX"}, std::pair{EditorTab::Velocity, "VEL"},
-          std::pair{EditorTab::Fade, "FADE"}}) {
-        const auto area = tabBounds(tab);
-        const bool active = tab == editorTab_;
-        g.setColour(colour(active ? ActiveTheme::DEVICE_VALUE_TEXT : ActiveTheme::DEVICE_DIM2));
-        g.drawText(name, area, juce::Justification::centred, false);
-        if (active) {
-            g.setColour(colour(ActiveTheme::DEVICE_BLUE));
-            g.fillRect(area.withTop(area.getBottom() - 2));
-        }
-    }
-    g.setColour(colour(ActiveTheme::DEVICE_LINE));
-    g.fillRect(tabsArea_.withTop(tabsArea_.getBottom() - 1));
-}
-
 /// An empty pad's chain says how to fill it. A pad's chain has no header of its
 /// own: like a rack's, it opens straight onto its devices.
 void DrumGridUI::paintEmptyChain(juce::Graphics& g) {
@@ -624,12 +514,13 @@ void DrumGridUI::paintEmptyChain(juce::Graphics& g) {
     const auto colour = [](ColourRole role) { return ActiveTheme::getColour(role); };
     g.setColour(colour(ActiveTheme::DEVICE_DIM));
     g.setFont(fonts.getUIFont(12.0f));
-    g.drawText("Drop a sample or device here", chainArea_.withTrimmedBottom(24),
+    const auto area = chainArea_.withTrimmedTop(PadMixRow::kHeight);
+    g.drawText("Drop a sample or device here", area.withTrimmedBottom(24),
                juce::Justification::centred, false);
     g.setColour(colour(ActiveTheme::DEVICE_DIM2));
     g.setFont(fonts.getMonoFont(11.0f));
-    g.drawText("or press + to build a chain", chainArea_.withTrimmedTop(24),
-               juce::Justification::centred, false);
+    g.drawText("or press + to build a chain", area.withTrimmedTop(24), juce::Justification::centred,
+               false);
 }
 
 void DrumGridUI::paintOverChildren(juce::Graphics& g) {
@@ -672,10 +563,6 @@ void DrumGridUI::resized() {
     auto area = getLocalBounds();
     footerArea_ = area.removeFromBottom(kFooterHeight);
 
-    railArea_ = area.removeFromLeft(kRailWidth);
-    auto rail = railArea_.reduced(5, 8);
-    editorToggle_.setBounds(rail.removeFromTop(26).withSizeKeepingCentre(28, 26));
-
     padsArea_ = area.removeFromLeft(padsWidthFor(area.getHeight()));
     const auto grid = padsArea_.reduced(kPadPadding);
     const int cellW = (grid.getWidth() - 3 * kPadGap) / kGridCols;
@@ -690,81 +577,16 @@ void DrumGridUI::resized() {
     }
     layoutFooter(footerArea_.withX(grid.getX()).withWidth(grid.getWidth()));
 
-    editorArea_ = {};
-    if (!detailCollapsed_)
-        editorArea_ = area.removeFromLeft(kEditorWidth);
-    layoutEditor(editorArea_);
-
     chainArea_ = area;
     layoutChain(chainArea_);
 }
 
-void DrumGridUI::layoutEditor(juce::Rectangle<int> area) {
-    const bool visible = !area.isEmpty();
-    if (!visible) {
-        layerList_.setVisible(false);
-        padOutToggle_.setVisible(false);
-        return;
-    }
-
-    editorHeaderArea_ = area.removeFromTop(kPanelHeaderHeight);
-    padOutToggle_.setBounds(
-        editorHeaderArea_.reduced(8, 0).removeFromRight(26).withSizeKeepingCentre(26, 22));
-    padOutToggle_.setVisible(true);
-    // The master out is one row and has no views to tab between.
-    tabsArea_ = padOutToggle_.getToggleState() ? juce::Rectangle<int>{} : area.removeFromTop(28);
-    layoutLayerList(area);
-}
-
-void DrumGridUI::layoutLayerList(juce::Rectangle<int> area) {
-    // Every layer, then Add layer, scrolling when they outgrow the panel.
-    const bool show = !area.isEmpty();
-    layerList_.setVisible(show);
-    if (!show)
-        return;
-
-    constexpr int kGap = 4;
-    constexpr int kAddHeight = 22;
-    constexpr int kPadding = 8;
-
-    // The master out is the pad's own row, for a pad that has a chain to mix.
-    const bool padTab = padOutToggle_.getToggleState();
-    for (auto& row : layerRows_)
-        row->setVisible(!padTab);
-    addLayerButton_.setVisible(!padTab);
-    padRow_.setVisible(padTab && selectedPadHasChain());
-    if (padTab) {
-        layerList_.setBounds(area);
-        layerListContent_.setSize(area.getWidth(), PadLayerRow::kHeight + 2 * kPadding);
-        padRow_.setView(PadLayerRow::View::Mix);
-        padRow_.setBounds(layerListContent_.getLocalBounds().reduced(kPadding).removeFromTop(
-            PadLayerRow::kHeight));
-        return;
-    }
-
-    const int rows = static_cast<int>(layerRows_.size());
-    const int content = rows * (PadLayerRow::kHeight + kGap) + kAddHeight + 2 * kPadding;
-    layerList_.setBounds(area);
-
-    const int width = area.getWidth() - (content > area.getHeight() ? 8 : 0);
-    layerListContent_.setSize(width, content);
-    auto list = layerListContent_.getLocalBounds().reduced(kPadding);
-    const auto view = editorTab_ == EditorTab::Velocity ? PadLayerRow::View::Velocity
-                      : editorTab_ == EditorTab::Fade   ? PadLayerRow::View::Fade
-                                                        : PadLayerRow::View::Mix;
-    for (auto& row : layerRows_) {
-        row->setView(view);
-        row->setBounds(list.removeFromTop(PadLayerRow::kHeight));
-        row->setVisible(true);
-        list.removeFromTop(kGap);
-    }
-    addLayerButton_.setBounds(list.removeFromTop(kAddHeight));
-}
-
 void DrumGridUI::layoutChain(juce::Rectangle<int> area) {
+    area.removeFromLeft(1);
+    padMixRow_.setBounds(area.removeFromTop(PadMixRow::kHeight));
     const bool hasChain = padChainView_.isVisible();
     if (hasChain)
-        padChainView_.setBounds(area.withTrimmedLeft(1));
+        padChainView_.setBounds(area);
     emptyAddButton_.setVisible(!hasChain);
     if (!hasChain)
         emptyAddButton_.setBounds(area.reduced(6).removeFromLeft(40));
@@ -887,8 +709,8 @@ bool DrumGridUI::dropOnChainArea(juce::Point<int> point, const juce::var& descri
     if (!selectedPadHasChain()) {
         if (onSampleDropped)
             onSampleDropped(selectedPad_, juce::File(*sample));
-    } else if (onDeviceDroppedOnLayer) {
-        onDeviceDroppedOnLayer(selectedPad_, selectedLayer_, *device);
+    } else if (onDeviceDroppedOnPad) {
+        onDeviceDroppedOnPad(selectedPad_, *device);
     }
     return true;
 }
@@ -906,7 +728,6 @@ void DrumGridUI::showPadContextMenu(int padIndex, juce::Point<int> screenPos) {
 
     juce::PopupMenu menu;
     menu.addItem(1, "Analyze pad role");
-    menu.addItem(3, "Add Layer");
     menu.addSeparator();
     menu.addItem(2, "Delete");
 
@@ -917,14 +738,11 @@ void DrumGridUI::showPadContextMenu(int padIndex, juce::Point<int> screenPos) {
                                onAnalyzePadRoleRequested(padIndex);
                            else if (result == 2 && onClearRequested)
                                onClearRequested(padIndex);
-                           else if (result == 3 && onAddLayerRequested)
-                               onAddLayerRequested(padIndex);
                        });
 }
 
 int DrumGridUI::fixedContentWidth() const {
-    return kRailWidth + padsWidthFor(getHeight() - kFooterHeight) +
-           (detailCollapsed_ ? 0 : kEditorWidth);
+    return padsWidthFor(getHeight() - kFooterHeight);
 }
 
 void DrumGridUI::setMaxContentWidth(int maxWidth) {
@@ -944,27 +762,12 @@ int DrumGridUI::getPreferredContentWidth() const {
     return width + chainWidth;
 }
 
-void DrumGridUI::setDetailCollapsed(bool collapsed) {
-    if (detailCollapsed_ == collapsed)
-        return;
-    detailCollapsed_ = collapsed;
-    editorToggle_.setToggleState(!collapsed, juce::dontSendNotification);
-    if (onDetailCollapsedChanged)
-        onDetailCollapsedChanged(collapsed);
-    resized();
-    repaint();
-    if (onLayoutChanged)
-        onLayoutChanged();
-}
-
 bool DrumGridUI::selectedPadHasChain() const {
     return padInfos_[static_cast<size_t>(selectedPad_)].chainIndex >= 0;
 }
 
 void DrumGridUI::refreshPadChain() {
-    refreshLayers();
-    const auto path =
-        getPadChainPath ? getPadChainPath(selectedPad_, selectedLayer_) : magda::ChainNodePath{};
+    const auto path = getPadChainPath ? getPadChainPath(selectedPad_) : magda::ChainNodePath{};
     if (path.isValid()) {
         if (padChainView_.getChainPath() == path)
             padChainView_.refresh();
@@ -1004,83 +807,20 @@ void DrumGridUI::refreshDetailPanel() {
     repaint();
 }
 
-juce::Rectangle<int> DrumGridUI::tabBounds(EditorTab tab) const {
-    const int width = tabsArea_.getWidth() / 3;
-    return tabsArea_.withWidth(width).translated(width * static_cast<int>(tab), 0);
-}
-
-void DrumGridUI::mouseDown(const juce::MouseEvent& event) {
-    if (editorArea_.isEmpty() || !tabsArea_.contains(event.getPosition()))
-        return;
-    for (const auto tab : {EditorTab::Mix, EditorTab::Velocity, EditorTab::Fade})
-        if (tabBounds(tab).contains(event.getPosition()) && tab != editorTab_) {
-            editorTab_ = tab;
-            layoutEditor(editorArea_);
-            repaint();
-        }
-}
-
-const PadLayerView* DrumGridUI::selectedLayer() const {
-    const auto found = std::ranges::find(layers_, selectedLayer_, &PadLayerView::id);
-    return found == layers_.end() ? nullptr : &*found;
-}
-
 void DrumGridUI::refreshPadRow() {
     const auto& info = padInfos_[static_cast<size_t>(selectedPad_)];
-    PadLayerView pad;
-    pad.name = info.sampleName;
-    pad.volume = info.level;
-    pad.pan = info.pan;
-    pad.mute = info.mute;
-    pad.solo = info.solo;
-    pad.bypassed = info.bypassed;
-    padRow_.setLayer(pad, juce::jmax(0, info.chainIndex), false);
-    padRow_.setVisible(padOutToggle_.getToggleState() && info.chainIndex >= 0);
-}
-
-void DrumGridUI::refreshLayers() {
-    layers_ = getPadLayers ? getPadLayers(selectedPad_) : std::vector<PadLayerView>{};
-    if (selectedLayer() == nullptr)
-        selectedLayer_ = layers_.empty() ? magda::INVALID_CHAIN_ID : layers_.front().id;
-
-    // Rows are kept while the count holds, so a fader drag survives a refresh.
-    if (layerRows_.size() != layers_.size()) {
-        layerRows_.clear();
-        for (std::size_t i = 0; i < layers_.size(); ++i) {
-            auto row = std::make_unique<PadLayerRow>();
-            row->onSelect = [this](magda::ChainId id) {
-                selectedLayer_ = id;
-                refreshPadChain();
-            };
-            row->onMixChanged = [this](magda::ChainId id, float volume, float pan) {
-                if (onLayerMixChanged)
-                    onLayerMixChanged(id, volume, pan);
-            };
-            row->onGestureEnd = [this]() { endFaderGesture(); };
-            row->onZonesChanged = [this](magda::ChainId id, const magda::ChainZones& zones) {
-                if (onLayerZonesChanged)
-                    onLayerZonesChanged(id, zones);
-            };
-            row->onSwitchesChanged = [this](magda::ChainId id, bool mute, bool solo,
-                                            bool bypassed) {
-                if (onLayerSwitchesChanged)
-                    onLayerSwitchesChanged(selectedPad_, id, mute, solo, bypassed);
-            };
-            row->onRemove = [this](magda::ChainId id) {
-                if (onRemoveLayerRequested)
-                    onRemoveLayerRequested(selectedPad_, id);
-            };
-            layerListContent_.addAndMakeVisible(*row);
-            layerRows_.push_back(std::move(row));
-        }
-    }
-    for (std::size_t i = 0; i < layers_.size(); ++i)
-        layerRows_[i]->setLayer(layers_[i], static_cast<int>(i), layers_[i].id == selectedLayer_);
-    layoutEditor(editorArea_);
+    padMixRow_.setPad({.name = info.sampleName,
+                       .note = getNoteName(selectedPad_),
+                       .colourIndex = juce::jmax(0, info.chainIndex),
+                       .volume = info.level,
+                       .pan = info.pan,
+                       .mute = info.mute,
+                       .solo = info.solo,
+                       .bypassed = info.bypassed});
+    padMixRow_.setMixable(info.chainIndex >= 0);
 }
 
 void DrumGridUI::lookAndFeelChanged() {
-    styleControls();
     refreshDetailPanel();
     repaint();
 }

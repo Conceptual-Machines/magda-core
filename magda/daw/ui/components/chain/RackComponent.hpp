@@ -119,9 +119,10 @@ class RackComponent : public NodeComponent, public juce::Timer {
     void styleShellControls();
     void layoutChainList(juce::Rectangle<int> list);
 
-    /// The chain list's tabs, as the Drum Grid lists a pad's layers (#1808).
+    /// The chain list's tabs (#1808).
     enum class ChainView { Mix, Key, Velocity, Fade };
-    static constexpr int kNumChainViews = 4;
+    /// The views this rack tabs between: no KEY inside a pad, which plays one note (#3144).
+    std::vector<ChainView> shownChainViews() const;
     juce::Rectangle<int> chainTabBounds(ChainView view) const;
     void setChainView(ChainView view);
     ChainView chainView_ = ChainView::Mix;

@@ -321,7 +321,6 @@ struct DeviceInfo {
     bool gainPanelOpen = false;   // Gain panel visible
     bool paramPanelOpen = false;  // Parameter panel visible
     bool aiPanelOpen = false;     // AI sound-design panel visible
-    bool padDetailOpen = true;    // A pad device's detail panel visible
     // Which of a faceplate device's two views show; at least one always does.
     bool faceplateShown = true;
     bool paramsShown = true;

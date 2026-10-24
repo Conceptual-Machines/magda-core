@@ -93,11 +93,6 @@ struct ChainInfo {
 
     ChainZones zones;
 
-    /// A Drum Grid pad's layers (#3007), which hold its devices; a pad's own
-    /// `elements` stay empty. Layer ids are unique across the grid's pads and
-    /// layers. Empty on any other chain.
-    std::vector<ChainInfo> layers;
-
     /// Compiled at all: not bypassed, and on the main output. Aux-routed chains
     /// are not wired yet.
     bool isActive() const {
@@ -253,7 +248,6 @@ inline ChainInfo::ChainInfo(const ChainInfo& other)
       highNote(other.highNote),
       rootNote(other.rootNote),
       zones(other.zones),
-      layers(other.layers),
       expanded(other.expanded) {
     elements.reserve(other.elements.size());
     for (const auto& element : other.elements) {
@@ -275,7 +269,6 @@ inline ChainInfo& ChainInfo::operator=(const ChainInfo& other) {
         highNote = other.highNote;
         rootNote = other.rootNote;
         zones = other.zones;
-        layers = other.layers;
         expanded = other.expanded;
         elements.clear();
         elements.reserve(other.elements.size());

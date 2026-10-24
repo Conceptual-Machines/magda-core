@@ -531,7 +531,6 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     obj->setProperty("gainPanelOpen", device.gainPanelOpen);
     obj->setProperty("paramPanelOpen", device.paramPanelOpen);
     obj->setProperty("aiPanelOpen", device.aiPanelOpen);
-    obj->setProperty("padDetailOpen", device.padDetailOpen);
     obj->setProperty("faceplateShown", device.faceplateShown);
     obj->setProperty("paramsShown", device.paramsShown);
     obj->setProperty("timeBendShown", device.timeBendShown);
@@ -718,8 +717,6 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     outDevice.paramPanelOpen = obj->getProperty("paramPanelOpen");
     if (obj->hasProperty("aiPanelOpen"))
         outDevice.aiPanelOpen = static_cast<bool>(obj->getProperty("aiPanelOpen"));
-    if (obj->hasProperty("padDetailOpen"))
-        outDevice.padDetailOpen = static_cast<bool>(obj->getProperty("padDetailOpen"));
     if (obj->hasProperty("faceplateShown"))
         outDevice.faceplateShown = static_cast<bool>(obj->getProperty("faceplateShown"));
     if (obj->hasProperty("paramsShown"))
@@ -879,7 +876,6 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
         auto pads = std::make_unique<RackInfo>();
         if (!deserializeRackInfo(padsVar, *pads))
             return false;
-        migratePadLayers(*pads);
         outDevice.pads.reset(std::move(pads));
         stampPadRackId(outDevice);
     } else {
@@ -1144,13 +1140,6 @@ juce::var ProjectSerializer::serializeChainInfo(const ChainInfo& chain) {
     }
     obj->setProperty("elements", juce::var(elementsArray));
 
-    if (!chain.layers.empty()) {
-        juce::Array<juce::var> layersArray;
-        for (const auto& layer : chain.layers)
-            layersArray.add(serializeChainInfo(layer));
-        obj->setProperty("layers", juce::var(layersArray));
-    }
-
     return {obj};
 }
 
@@ -1223,16 +1212,6 @@ bool ProjectSerializer::deserializeChainInfo(const juce::var& json, ChainInfo& o
                 return false;
             }
             outChain.elements.push_back(std::move(element));
-        }
-    }
-
-    if (const auto layersVar = obj->getProperty("layers"); layersVar.isArray()) {
-        outChain.layers.clear();
-        for (const auto& layerVar : *layersVar.getArray()) {
-            ChainInfo layer;
-            if (!deserializeChainInfo(layerVar, layer))
-                return false;
-            outChain.layers.push_back(std::move(layer));
         }
     }
 

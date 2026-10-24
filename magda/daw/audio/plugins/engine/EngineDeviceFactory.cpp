@@ -50,10 +50,8 @@ template <typename Track, typename Record> void walkTrackDevices(Track& track, R
             // every pad address is spelled: a PadRack step names the grid by
             // its DeviceId, so the route to the grid is not part of it.
             for (auto& pad : device.pads->chains)
-                for (auto& layer : pad.layers)
-                    walkTree(layer.elements,
-                             magda::ChainNodePath::padLayer(track.id, device.id, pad.id, layer.id),
-                             segment);
+                walkTree(pad.elements, magda::ChainNodePath::padChain(track.id, device.id, pad.id),
+                         segment);
         }
     };
 

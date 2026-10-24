@@ -255,9 +255,8 @@ void RackComponent::toggleMultibandView(bool faceplate) {
 
 void RackComponent::mouseDown(const juce::MouseEvent& e) {
     if (!collapsed_ && chainTabsArea_.contains(e.getPosition())) {
-        for (int i = 0; i < kNumChainViews; ++i)
-            if (const auto view = static_cast<ChainView>(i);
-                chainTabBounds(view).contains(e.getPosition()))
+        for (const auto view : shownChainViews())
+            if (chainTabBounds(view).contains(e.getPosition()))
                 setChainView(view);
         return;
     }
@@ -265,9 +264,17 @@ void RackComponent::mouseDown(const juce::MouseEvent& e) {
     NodeComponent::mouseDown(e);
 }
 
+std::vector<RackComponent::ChainView> RackComponent::shownChainViews() const {
+    if (getNodePath().isPadOwned())
+        return {ChainView::Mix, ChainView::Velocity, ChainView::Fade};
+    return {ChainView::Mix, ChainView::Key, ChainView::Velocity, ChainView::Fade};
+}
+
 juce::Rectangle<int> RackComponent::chainTabBounds(ChainView view) const {
-    const int width = chainTabsArea_.getWidth() / kNumChainViews;
-    return chainTabsArea_.withWidth(width).translated(width * static_cast<int>(view), 0);
+    const auto views = shownChainViews();
+    const int width = chainTabsArea_.getWidth() / static_cast<int>(views.size());
+    const auto index = static_cast<int>(std::ranges::find(views, view) - views.begin());
+    return chainTabsArea_.withWidth(width).translated(width * index, 0);
 }
 
 void RackComponent::setChainView(ChainView view) {
@@ -328,9 +335,11 @@ void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> /*conte
     auto& fonts = FontManager::getInstance();
     if (!chainTabsArea_.isEmpty()) {
         g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f));
-        for (const auto& [view, name] :
-             {std::pair{ChainView::Mix, "MIX"}, std::pair{ChainView::Key, "KEY"},
-              std::pair{ChainView::Velocity, "VEL"}, std::pair{ChainView::Fade, "FADE"}}) {
+        for (const auto view : shownChainViews()) {
+            const auto* name = view == ChainView::Mix        ? "MIX"
+                               : view == ChainView::Key      ? "KEY"
+                               : view == ChainView::Velocity ? "VEL"
+                                                             : "FADE";
             const auto area = chainTabBounds(view);
             const bool active = view == chainView_;
             g.setColour(ActiveTheme::getColour(active ? ActiveTheme::DEVICE_VALUE_TEXT

@@ -284,7 +284,6 @@ std::unique_ptr<RackInfo> rackFromRoot(const ds::Node& root) {
     if (rack->chains.empty())
         return nullptr;
 
-    migratePadLayers(*rack);
     return rack;
 }
 
@@ -312,10 +311,8 @@ bool isPadRackDevice(const juce::String& pluginId) {
 }
 
 void stampPadRackId(DeviceInfo& device) {
-    if (!device.pads)
-        return;
-    device.pads->id = padRackIdFor(device.id);
-    migratePadLayers(*device.pads.get());
+    if (device.pads)
+        device.pads->id = padRackIdFor(device.id);
 }
 
 RackInfo& ensurePads(DeviceInfo& device) {
@@ -343,68 +340,22 @@ const ChainInfo* findPadChain(const RackInfo& pads, int padIndex) {
 
 ChainId nextPadChainId(const RackInfo& pads) {
     ChainId next = 0;
-    for (const auto& pad : pads.chains) {
+    for (const auto& pad : pads.chains)
         next = std::max(next, pad.id + 1);
-        for (const auto& layer : pad.layers)
-            next = std::max(next, layer.id + 1);
-    }
     return next;
 }
 
 ChainInfo* findPadChainById(RackInfo& pads, ChainId chainId) {
-    for (auto& pad : pads.chains) {
-        if (pad.id == chainId)
-            return &pad;
-        if (auto* layer = findPadLayer(pad, chainId))
-            return layer;
-    }
-    return nullptr;
+    const auto found = std::ranges::find(pads.chains, chainId, &ChainInfo::id);
+    return found == pads.chains.end() ? nullptr : &*found;
 }
 
 const ChainInfo* findPadChainById(const RackInfo& pads, ChainId chainId) {
     return findPadChainById(const_cast<RackInfo&>(pads), chainId);
 }
 
-ChainInfo* findPadLayer(ChainInfo& pad, ChainId layerId) {
-    const auto found = std::ranges::find(pad.layers, layerId, &ChainInfo::id);
-    return found == pad.layers.end() ? nullptr : &*found;
-}
-
-const ChainInfo* findPadLayer(const ChainInfo& pad, ChainId layerId) {
-    return findPadLayer(const_cast<ChainInfo&>(pad), layerId);
-}
-
-ChainInfo* padOfLayer(RackInfo& pads, ChainId layerId) {
-    const auto found = std::ranges::find_if(
-        pads.chains, [layerId](ChainInfo& pad) { return findPadLayer(pad, layerId) != nullptr; });
-    return found == pads.chains.end() ? nullptr : &*found;
-}
-
-const ChainInfo* padOfLayer(const RackInfo& pads, ChainId layerId) {
-    return padOfLayer(const_cast<RackInfo&>(pads), layerId);
-}
-
-ChainInfo& addPadLayer(RackInfo& pads, ChainInfo& pad) {
-    ChainInfo layer;
-    layer.id = nextPadChainId(pads);
-    pad.layers.push_back(std::move(layer));
-    return pad.layers.back();
-}
-
 bool padHasDevices(const ChainInfo& pad) {
-    return std::ranges::any_of(pad.layers,
-                               [](const ChainInfo& layer) { return !layer.elements.empty(); });
-}
-
-void migratePadLayers(RackInfo& pads) {
-    for (auto& pad : pads.chains) {
-        if (!pad.layers.empty() && pad.elements.empty())
-            continue;
-        auto& layer = pad.layers.empty() ? addPadLayer(pads, pad) : pad.layers.front();
-        for (auto& element : pad.elements)
-            layer.elements.push_back(std::move(element));
-        pad.elements.clear();
-    }
+    return !pad.elements.empty();
 }
 
 ChainInfo& ensurePadChain(RackInfo& pads, int padIndex) {
@@ -419,7 +370,6 @@ ChainInfo& ensurePadChain(RackInfo& pads, int padIndex) {
     pad.highNote = note;
     pad.rootNote = note;
     pads.chains.push_back(std::move(pad));
-    addPadLayer(pads, pads.chains.back());
     return pads.chains.back();
 }
 
@@ -447,18 +397,11 @@ DeviceInfo padSamplerDevice(const juce::String& samplePath, int rootNote) {
 }
 
 juce::String padVoiceName(const ChainInfo& pad) {
-    const DeviceInfo* found = nullptr;
-    for (const auto& layer : pad.layers) {
-        const auto first = std::ranges::find_if(layer.elements, isDevice);
-        if (first != layer.elements.end()) {
-            found = &getDevice(*first);
-            break;
-        }
-    }
-    if (found == nullptr)
+    const auto first = std::ranges::find_if(pad.elements, isDevice);
+    if (first == pad.elements.end())
         return {};
 
-    const auto& device = *found;
+    const auto& device = getDevice(*first);
     if (device.pluginId == kSamplerId)
         if (const auto doc = ds::decode(device.pluginState)) {
             const juce::File sample(doc->root.props[kSamplePath].toString());

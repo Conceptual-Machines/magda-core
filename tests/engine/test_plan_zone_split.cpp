@@ -6,7 +6,7 @@
 #include "exec/PlanValues.hpp"
 #include "plan/RenderPlan.hpp"
 
-// The MidiZoneSplit op: a pad's notes across its layers by their zones (#3007).
+// The MidiZoneSplit op: a rack's notes across its chains by their zones (#3007).
 
 using magda::ChainZones;
 using magda::engine::BlockInfo;
@@ -67,13 +67,13 @@ class MidiCapture final : public EngineDevice {
     std::vector<juce::MidiMessage> seen;
 };
 
-/// MidiInput -> MidiZoneSplit -> one Device per layer, the shape a layered pad has.
+/// MidiInput -> MidiZoneSplit -> one Device per chain, the shape a zoned rack has.
 struct SplitHarness {
     RenderPlan plan;
     PlanExecutor executor;
     PlanBindings bindings;
     QueueSource source;
-    std::vector<std::unique_ptr<MidiCapture>> layers;
+    std::vector<std::unique_ptr<MidiCapture>> chains;
 
     explicit SplitHarness(std::vector<ChainZones> zones) {
         PlanOp input;
@@ -89,7 +89,7 @@ struct SplitHarness {
         split.key.rackId = -5;
         split.key.chainId = 0;
         split.key.deviceId = 3;
-        split.key.role = OpRole::PadLayerSplit;
+        split.key.role = OpRole::RackChainSplit;
         split.inputs = {PortRef{0, 0}};
         split.outputs.assign(zones.size(), magda::engine::PortDesc{SignalKind::Midi});
         split.zoneRoutes = zones;
@@ -109,8 +109,8 @@ struct SplitHarness {
             audio.push_back(PortRef{static_cast<int>(plan.ops.size()), 0});
             plan.ops.push_back(device);
 
-            layers.push_back(std::make_unique<MidiCapture>());
-            bindings.devices[DeviceKey{10 + static_cast<int>(i)}] = layers.back().get();
+            chains.push_back(std::make_unique<MidiCapture>());
+            bindings.devices[DeviceKey{10 + static_cast<int>(i)}] = chains.back().get();
         }
 
         PlanOp mix;
@@ -168,27 +168,27 @@ ChainZones velocityZone(int low, int high) {
 
 }  // namespace
 
-TEST_CASE("A zone split sends each note-on to the layers whose velocity zone takes it",
+TEST_CASE("A zone split sends each note-on to the chains whose velocity zone takes it",
           "[engine][exec][zonesplit][3007]") {
     SplitHarness harness({velocityZone(1, 63), velocityZone(64, 127)});
     harness.render({on(36, 40), on(38, 100)});
 
-    CHECK(harness.layers[0]->noteOnVelocities() == std::vector<int>{40});
-    CHECK(harness.layers[1]->noteOnVelocities() == std::vector<int>{100});
+    CHECK(harness.chains[0]->noteOnVelocities() == std::vector<int>{40});
+    CHECK(harness.chains[1]->noteOnVelocities() == std::vector<int>{100});
 }
 
 TEST_CASE("A note-off follows its note-on rather than its own velocity",
           "[engine][exec][zonesplit][3007]") {
     SplitHarness harness({velocityZone(1, 63), velocityZone(64, 127)});
     harness.render({on(36, 100)});
-    // Released with velocity 10, which would land in the soft layer's zone.
+    // Released with velocity 10, which would land in the soft chain's zone.
     harness.render({juce::MidiMessage::noteOff(1, 36, static_cast<juce::uint8>(10))});
 
-    CHECK(harness.layers[0]->noteOffs() == 0);
-    CHECK(harness.layers[1]->noteOffs() == 1);
+    CHECK(harness.chains[0]->noteOffs() == 0);
+    CHECK(harness.chains[1]->noteOffs() == 1);
 }
 
-TEST_CASE("A velocity crossfade scales the note-on into a layer",
+TEST_CASE("A velocity crossfade scales the note-on into a chain",
           "[engine][exec][zonesplit][3007]") {
     auto soft = velocityZone(1, 80);
     soft.velocityFadeHigh = 20;
@@ -196,13 +196,13 @@ TEST_CASE("A velocity crossfade scales the note-on into a layer",
     harness.render({on(36, 80), on(37, 40)});
 
     // At the top edge the fade has one step of twenty-one left.
-    const auto velocities = harness.layers[0]->noteOnVelocities();
+    const auto velocities = harness.chains[0]->noteOnVelocities();
     REQUIRE(velocities.size() == 2);
     CHECK(velocities[0] == 4);
     CHECK(velocities[1] == 40);
 }
 
-TEST_CASE("Round-robin layers take turns while a plain layer plays every hit",
+TEST_CASE("Round-robin chains take turns while a plain chain plays every hit",
           "[engine][exec][zonesplit][3007]") {
     ChainZones turn;
     turn.roundRobin = true;
@@ -211,9 +211,9 @@ TEST_CASE("Round-robin layers take turns while a plain layer plays every hit",
     harness.render({on(36, 100)});
     harness.render({on(36, 100)});
 
-    CHECK(harness.layers[0]->noteOnVelocities().size() == 3);
-    CHECK(harness.layers[1]->noteOnVelocities().size() == 2);
-    CHECK(harness.layers[2]->noteOnVelocities().size() == 1);
+    CHECK(harness.chains[0]->noteOnVelocities().size() == 3);
+    CHECK(harness.chains[1]->noteOnVelocities().size() == 2);
+    CHECK(harness.chains[2]->noteOnVelocities().size() == 1);
 }
 
 TEST_CASE("A key zone gates by note", "[engine][exec][zonesplit][3007]") {
@@ -224,8 +224,8 @@ TEST_CASE("A key zone gates by note", "[engine][exec][zonesplit][3007]") {
     SplitHarness harness({low, high});
     harness.render({on(48, 100), on(72, 100)});
 
-    REQUIRE(harness.layers[0]->seen.size() == 1);
-    CHECK(harness.layers[0]->seen[0].getNoteNumber() == 48);
-    REQUIRE(harness.layers[1]->seen.size() == 1);
-    CHECK(harness.layers[1]->seen[0].getNoteNumber() == 72);
+    REQUIRE(harness.chains[0]->seen.size() == 1);
+    CHECK(harness.chains[0]->seen[0].getNoteNumber() == 48);
+    REQUIRE(harness.chains[1]->seen.size() == 1);
+    CHECK(harness.chains[1]->seen[0].getNoteNumber() == 72);
 }

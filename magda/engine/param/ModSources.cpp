@@ -28,8 +28,7 @@ void collectModulationTaps(const std::vector<magda::ChainElement>& elements,
             // pad rack itself is synthesized and owns no modifiers.
             if (device.pads)
                 for (const auto& pad : device.pads->chains)
-                    for (const auto& layer : pad.layers)
-                        collectModulationTaps(layer.elements, ownTrack, out, notes, nesting);
+                    collectModulationTaps(pad.elements, ownTrack, out, notes, nesting);
         } else if (magda::isRack(element)) {
             const auto& rack = magda::getRack(element);
 

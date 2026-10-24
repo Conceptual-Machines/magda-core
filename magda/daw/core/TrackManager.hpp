@@ -618,20 +618,6 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // The pad chain answering to a pad, mutable. Private because a pad property
     // is set through the setters above, which notify.
     ChainInfo* mutablePad(const ChainNodePath& gridPath, int padIndex);
-    ChainInfo* mutablePadLayer(const ChainNodePath& gridPath, ChainId layerId);
-
-    /** @brief A pad and the layer of it a device edit lands in. */
-    struct PadLayerRef {
-        ChainInfo* pad = nullptr;
-        ChainInfo* layer = nullptr;
-        explicit operator bool() const {
-            return layer != nullptr;
-        }
-    };
-
-    // A layer id, or a pad id standing for that pad's first layer.
-    PadLayerRef resolvePadLayer(const ChainNodePath& gridPath, ChainId chainId);
-    static ChainNodePath padLayerPath(const ChainNodePath& gridPath, const PadLayerRef& ref);
 
     // ========================================================================
     // Pad-per-chain devices (#2207)
@@ -686,10 +672,8 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     /// The pad chain answering to pad @p padIndex, or null.
     const ChainInfo* getPad(const ChainNodePath& gridPath, int padIndex) const;
 
-    /// The pad or pad layer carrying @p padChainId, or null.
+    /// The pad carrying @p padChainId, or null.
     ChainInfo* getPadChain(const ChainNodePath& gridPath, ChainId padChainId);
-
-    // The device calls below take a layer's id, or a pad's id for its first layer.
 
     /// Add @p device to a pad's chain, at @p insertIndex (-1 appends).
     DeviceId addDeviceToPad(const ChainNodePath& gridPath, ChainId padChainId,
@@ -710,26 +694,6 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setPadDeviceGainDb(const ChainNodePath& gridPath, ChainId padChainId, DeviceId deviceId,
                             float gainDb);
 
-    /// Add an empty layer to pad @p padIndex, making the pad if it is empty. Its id, or
-    /// INVALID_CHAIN_ID.
-    ChainId addPadLayer(const ChainNodePath& gridPath, int padIndex);
-
-    /// Remove a layer; removing a pad's only layer empties the pad.
-    bool removePadLayer(const ChainNodePath& gridPath, ChainId layerId);
-
-    /// Move a layer to @p toIndex among its pad's layers.
-    void movePadLayer(const ChainNodePath& gridPath, ChainId layerId, int toIndex);
-
-    /// A layer's zones, clamped so its ranges and fades are well formed.
-    void setPadLayerZones(const ChainNodePath& gridPath, ChainId layerId, const ChainZones& zones);
-
-    /// A layer's fader, pan and switches.
-    void setPadLayerVolume(const ChainNodePath& gridPath, ChainId layerId, float volume);
-    void setPadLayerPan(const ChainNodePath& gridPath, ChainId layerId, float pan);
-    void setPadLayerMuted(const ChainNodePath& gridPath, ChainId layerId, bool muted);
-    void setPadLayerSolo(const ChainNodePath& gridPath, ChainId layerId, bool solo);
-    void setPadLayerBypassed(const ChainNodePath& gridPath, ChainId layerId, bool bypassed);
-
     /// A pad's fader (dB), pan and switches: its channel's once it has one.
     void setPadVolume(const ChainNodePath& gridPath, int padIndex, float volume);
     void setPadPan(const ChainNodePath& gridPath, int padIndex, float pan);
@@ -740,6 +704,10 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     /// The mixer channel pad @p padIndex plays through, or null while it holds
     /// nothing (#3010). Its fader, pan and switches are the pad's.
     const TrackInfo* getPadChannel(const ChainNodePath& gridPath, int padIndex) const;
+
+    /// The pad chain a pad channel shows as its own, or an invalid path for any
+    /// other track: a pad channel has no insert chain of its own (#3144).
+    ChainNodePath getPadChannelChainPath(TrackId trackId) const;
 
     /// Give every pad that holds a device its channel and take the rest away
     /// (`pad_channels::sync()`). Runs on every structural notification.

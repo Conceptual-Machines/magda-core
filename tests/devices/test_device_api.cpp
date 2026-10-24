@@ -793,7 +793,7 @@ TEST_CASE("A pad's nested rack is re-keyed along with the pad itself", "[device-
     REQUIRE(static_cast<bool>(live->pads));
     REQUIRE(live->pads->chains.size() == 1);
 
-    const auto& padElements = live->pads->chains.front().layers.front().elements;
+    const auto& padElements = live->pads->chains.front().elements;
     REQUIRE(padElements.size() == 1);
     REQUIRE(magda::isRack(padElements.front()));
 
@@ -822,7 +822,6 @@ TEST_CASE("A grid's links follow its pads when the grid is placed", "[device-api
     constexpr DeviceId kGridId = 7000;
     constexpr DeviceId kPadDeviceId = 7001;
     constexpr ChainId kPadChainId = 1;
-    constexpr ChainId kPadLayerId = 2;
 
     DeviceInfo padDevice;
     padDevice.name = "Pad effect";
@@ -830,8 +829,7 @@ TEST_CASE("A grid's links follow its pads when the grid is placed", "[device-api
     padDevice.id = kPadDeviceId;
 
     const auto sourcePadDevicePath =
-        ChainNodePath::padLayer(trackId, kGridId, kPadChainId, kPadLayerId)
-            .withDevice(kPadDeviceId);
+        ChainNodePath::padChain(trackId, kGridId, kPadChainId).withDevice(kPadDeviceId);
 
     // The pad device's own macro, pointing at itself: a link that lives inside
     // the subtree and names an id the re-key moves.
@@ -848,8 +846,7 @@ TEST_CASE("A grid's links follow its pads when the grid is placed", "[device-api
     auto& pads = magda::ensurePads(grid);
     auto& pad = magda::ensurePadChain(pads, 0);
     pad.id = kPadChainId;
-    pad.layers.front().id = kPadLayerId;
-    pad.layers.front().elements.push_back(ChainElement{padDevice});
+    pad.elements.push_back(ChainElement{padDevice});
 
     // The grid's macro, pointing down into the pad.
     MacroLink intoPad;
@@ -875,14 +872,14 @@ TEST_CASE("A grid's links follow its pads when the grid is placed", "[device-api
     REQUIRE(static_cast<bool>(live->pads));
     REQUIRE(live->pads->chains.size() == 1);
 
-    const auto& liveElements = live->pads->chains.front().layers.front().elements;
+    const auto& liveElements = live->pads->chains.front().elements;
     REQUIRE(liveElements.size() == 1);
     REQUIRE(magda::isDevice(liveElements.front()));
     const auto& livePadDevice = magda::getDevice(liveElements.front());
     REQUIRE(livePadDevice.id != kPadDeviceId);
 
     const auto livePadDevicePath =
-        ChainNodePath::padLayer(trackId, gridId, live->pads->chains.front().id, kPadLayerId)
+        ChainNodePath::padChain(trackId, gridId, live->pads->chains.front().id)
             .withDevice(livePadDevice.id);
 
     REQUIRE_FALSE(live->macros.front().links.empty());
@@ -1315,14 +1312,13 @@ TEST_CASE("Drum Grid facade edits pads and their device chains as undoable steps
     const auto catalogId = anyCatalogId();
     const auto voiceId = devices.setPadVoice(gridPath, 0, catalogId);
     REQUIRE(voiceId != INVALID_DEVICE_ID);
-    const auto chainPath =
-        ChainNodePath::padLayer(trackId, gridId, chainId, tm.getPad(gridPath, 0)->layers[0].id);
+    const auto chainPath = ChainNodePath::padChain(trackId, gridId, chainId);
     REQUIRE(devices.getDevice(chainPath.withDevice(voiceId)) != nullptr);
     const auto effectId = devices.addDevice(chainPath, catalogId, -1);
     REQUIRE(effectId != INVALID_DEVICE_ID);
     REQUIRE(devices.getDevice(chainPath.withDevice(effectId)) != nullptr);
     REQUIRE(devices.moveDevice(chainPath.withDevice(effectId), 0));
-    REQUIRE(magda::getDevice(tm.getPad(gridPath, 0)->layers[0].elements.front()).id == effectId);
+    REQUIRE(magda::getDevice(tm.getPad(gridPath, 0)->elements.front()).id == effectId);
     REQUIRE(devices.removeDevice(chainPath.withDevice(effectId)));
     REQUIRE(devices.getDevice(chainPath.withDevice(effectId)) == nullptr);
     UndoManager::getInstance().undo();
@@ -1370,10 +1366,8 @@ TEST_CASE("Drum Grid facade edits pads and their device chains as undoable steps
     REQUIRE(sampleFile.appendData(wav, sizeof(wav)));
     const auto sampleId = devices.setPadSample(gridPath, 3, sampleFile.getFullPathName());
     REQUIRE(sampleId != INVALID_DEVICE_ID);
-    const auto* samplePad = tm.getPad(gridPath, 3);
-    REQUIRE(devices.getDevice(
-                ChainNodePath::padLayer(trackId, gridId, samplePad->id, samplePad->layers[0].id)
-                    .withDevice(sampleId)) != nullptr);
+    REQUIRE(devices.getDevice(ChainNodePath::padChain(trackId, gridId, tm.getPad(gridPath, 3)->id)
+                                  .withDevice(sampleId)) != nullptr);
     REQUIRE(sampleFile.deleteFile());
     REQUIRE(devices.setPadSample(gridPath, 4, sampleFile.getFullPathName()) == INVALID_DEVICE_ID);
     REQUIRE(tm.getPad(gridPath, 4) == nullptr);
