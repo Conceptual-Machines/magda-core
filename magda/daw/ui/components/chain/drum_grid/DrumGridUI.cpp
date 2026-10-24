@@ -557,10 +557,10 @@ void DrumGridUI::paintOverChildren(juce::Graphics& g) {
 // =============================================================================
 
 void DrumGridUI::resized() {
+    // The footer sits under the pads only; the panel and the chain run to the bottom.
     auto area = getLocalBounds();
-    footerArea_ = area.removeFromBottom(kFooterHeight);
-
-    padsArea_ = area.removeFromLeft(padsWidthFor(area.getHeight()));
+    padsArea_ = area.removeFromLeft(padsWidthFor(area.getHeight() - kFooterHeight));
+    footerArea_ = padsArea_.removeFromBottom(kFooterHeight);
     const auto grid = padsArea_.reduced(kPadPadding);
     const int cellW = (grid.getWidth() - 3 * kPadGap) / kGridCols;
     const int cellH = (grid.getHeight() - 3 * kPadGap) / kGridRows;
@@ -747,7 +747,14 @@ int DrumGridUI::fixedContentWidth() const {
 void DrumGridUI::setMaxContentWidth(int maxWidth) {
     maxContentWidth_ = maxWidth;
     padChainView_.setMaxWidth(
-        maxWidth > 0 ? juce::jmax(kMinChainWidth, maxWidth - fixedContentWidth()) : 0);
+        maxWidth > 0 ? juce::jmax(minimumChainWidth(), maxWidth - fixedContentWidth()) : 0);
+}
+
+int DrumGridUI::minimumChainWidth() const {
+    // Short of the widest device in the pad's chain, the grid widens and the track chain scrolls.
+    return selectedPadHasChain()
+               ? juce::jmax(kMinChainWidth, padChainView_.getMinimumContentWidth())
+               : kMinChainWidth;
 }
 
 int DrumGridUI::getPreferredContentWidth() const {
@@ -756,10 +763,11 @@ int DrumGridUI::getPreferredContentWidth() const {
         return width;
     if (!selectedPadHasChain())
         return width + kMinChainWidth;
-    int chainWidth = juce::jmax(kMinChainWidth, padChainView_.getContentWidth());
+    const int minimum = minimumChainWidth();
+    int chainWidth = juce::jmax(minimum, padChainView_.getContentWidth());
     if (maxContentWidth_ > 0)
-        chainWidth = juce::jlimit(kMinChainWidth,
-                                  juce::jmax(kMinChainWidth, maxContentWidth_ - width), chainWidth);
+        chainWidth =
+            juce::jlimit(minimum, juce::jmax(minimum, maxContentWidth_ - width), chainWidth);
     return width + chainWidth;
 }
 

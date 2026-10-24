@@ -1438,7 +1438,7 @@ int DeviceSlotComponent::getMinimumWidth() const {
     const auto* drumGrid = customUI_.getDrumGridUI();
     if (drumGrid == nullptr || collapsed_)
         return 0;
-    return getTotalWidth(drumGrid->fixedContentWidth() + DrumGridUI::kMinChainWidth) +
+    return getTotalWidth(drumGrid->fixedContentWidth() + drumGrid->minimumChainWidth()) +
            sideStripWidth() + sidebarWidth();
 }
 

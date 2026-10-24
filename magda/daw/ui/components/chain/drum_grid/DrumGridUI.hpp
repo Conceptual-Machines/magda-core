@@ -131,6 +131,8 @@ class DrumGridUI : public juce::Component,
     int getPreferredContentWidth() const;
     /** @brief The pads and the pad's mix: everything but the pad chain. */
     int fixedContentWidth() const;
+    /** @brief The narrowest the pad chain goes: its widest device whole. */
+    int minimumChainWidth() const;
     /** @brief The width this grid may take; 0 = no limit. */
     void setMaxContentWidth(int maxWidth);
 

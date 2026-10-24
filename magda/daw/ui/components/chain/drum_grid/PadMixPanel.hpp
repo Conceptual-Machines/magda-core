@@ -39,7 +39,7 @@ class PadMixPanel : public juce::Component {
     std::function<void()> onGestureEnd;
     std::function<void(bool mute, bool solo, bool bypassed)> onSwitchesChanged;
 
-    static constexpr int kWidth = 300;
+    static constexpr int kWidth = 200;
 
     void paint(juce::Graphics& g) override;
     void resized() override;

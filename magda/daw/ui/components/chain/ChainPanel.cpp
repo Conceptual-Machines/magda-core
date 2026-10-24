@@ -380,9 +380,13 @@ int ChainPanel::getContentWidth() const {
 }
 
 int ChainPanel::getMinimumContentWidth() const {
+    // A rack's preferred width is already fitted to this panel, so it reports its own minimum.
     int widest = 0;
-    for (const auto& slot : elementSlots_)
-        widest = juce::jmax(widest, getScaledWidth(slot->getPreferredWidth()));
+    for (const auto& slot : elementSlots_) {
+        const int minimum = slot->getMinimumWidth();
+        widest =
+            juce::jmax(widest, getScaledWidth(minimum > 0 ? minimum : slot->getPreferredWidth()));
+    }
     return widest + getScaledWidth(ARROW_WIDTH) + getScaledWidth(APPEND_ZONE_WIDTH) + 1 +
            2 * PADDING;
 }
