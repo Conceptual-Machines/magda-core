@@ -12,7 +12,7 @@
 
 #include "ChainPanel.hpp"
 #include "core/ChainNodePath.hpp"
-#include "drum_grid/PadMixRow.hpp"
+#include "drum_grid/PadMixPanel.hpp"
 #include "layout/DashedAddButton.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -24,7 +24,7 @@ class MagdaSamplerPlugin;
 namespace magda::daw::ui {
 
 /**
- * @brief The Drum Grid's body in the v1 shell: [pads | pad mix over the pad's chain] over a footer.
+ * @brief The Drum Grid's body in the v1 shell: [pads | pad mix | pad chain] over a footer.
  *
  * The selected pad's chain shows in the rack's chain view, the same chain its mixer channel
  * shows (#3144). Pads take sample and plugin drops.
@@ -126,7 +126,7 @@ class DrumGridUI : public juce::Component,
 
     /** @brief Full width, or within the max content width, past which the pad chain scrolls. */
     int getPreferredContentWidth() const;
-    /** @brief The pads: everything but the pad chain. */
+    /** @brief The pads and the pad's mix: everything but the pad chain. */
     int fixedContentWidth() const;
     /** @brief The width this grid may take; 0 = no limit. */
     void setMaxContentWidth(int maxWidth);
@@ -227,8 +227,8 @@ class DrumGridUI : public juce::Component,
     // Pad grid
     std::array<PadButton, kPadsPerPage> padButtons_;
 
-    // Chain, under the selected pad's mix
-    PadMixRow padMixRow_;
+    // The selected pad's mix, beside its chain
+    PadMixPanel padMixPanel_;
     ChainPanel padChainView_;
     DashedAddButton emptyAddButton_;
 

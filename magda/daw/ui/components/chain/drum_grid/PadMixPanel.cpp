@@ -1,4 +1,4 @@
-#include "drum_grid/PadMixRow.hpp"
+#include "drum_grid/PadMixPanel.hpp"
 
 #include "layout/DeviceShellPainter.hpp"
 #include "layout/NodeHeaderStyles.hpp"
@@ -12,15 +12,9 @@ namespace {
 constexpr double kMinGainDb = -60.0;
 constexpr int kButtonWidth = 20;
 constexpr float kButtonHeight = 20.0f;
-constexpr int kGainWidth = 64;
-constexpr int kPanWidth = 36;
-
-int controlsWidth() {
-    return kGainWidth + 4 + kPanWidth + 4 + 3 * kButtonWidth + 2 * 2;
-}
 }  // namespace
 
-PadMixRow::PadMixRow() {
+PadMixPanel::PadMixPanel() {
     gainLabel_.setRange(kMinGainDb, 6.0, 0.0);
     panLabel_.setRange(-1.0, 1.0, 0.0);
     for (auto* value : {&gainLabel_, &panLabel_}) {
@@ -68,7 +62,7 @@ PadMixRow::PadMixRow() {
     styleControls();
 }
 
-void PadMixRow::styleControls() {
+void PadMixPanel::styleControls() {
     using node_header::DeviceIcon;
     for (auto* value : {&gainLabel_, &panLabel_}) {
         value->setDrawBackground(false);
@@ -83,12 +77,12 @@ void PadMixRow::styleControls() {
     powerButton_.setIconPadding((kButtonHeight - 12.0f) / 2.0f);
 }
 
-void PadMixRow::lookAndFeelChanged() {
+void PadMixPanel::lookAndFeelChanged() {
     styleControls();
     repaint();
 }
 
-void PadMixRow::setPad(const PadMixView& pad) {
+void PadMixPanel::setPad(const PadMixView& pad) {
     pad_ = pad;
     if (!dragging_) {
         gainLabel_.setValue(pad.volume, juce::dontSendNotification);
@@ -101,7 +95,7 @@ void PadMixRow::setPad(const PadMixView& pad) {
     repaint();
 }
 
-void PadMixRow::setMixable(bool mixable) {
+void PadMixPanel::setMixable(bool mixable) {
     if (mixable_ == mixable)
         return;
     mixable_ = mixable;
@@ -114,65 +108,67 @@ void PadMixRow::setMixable(bool mixable) {
     repaint();
 }
 
-void PadMixRow::reportSwitches() {
+void PadMixPanel::reportSwitches() {
     if (onSwitchesChanged)
         onSwitchesChanged(pad_.mute, pad_.solo, pad_.bypassed);
 }
 
-void PadMixRow::paint(juce::Graphics& g) {
+void PadMixPanel::paint(juce::Graphics& g) {
     auto& fonts = FontManager::getInstance();
     const auto colour = [](ColourRole role) { return ActiveTheme::getColour(role); };
 
+    g.setColour(colour(ActiveTheme::DEVICE_HEAD2));
+    g.fillAll();
     g.setColour(colour(ActiveTheme::DEVICE_LINE));
-    g.fillRect(getLocalBounds().withTop(getHeight() - 1));
+    g.fillRect(getLocalBounds().withWidth(1));
 
-    auto header = getLocalBounds().reduced(12, 0);
-    if (mixable_)
-        header.removeFromRight(controlsWidth() + 8);
+    auto name = nameArea_;
     g.setColour(device_shell::chainColour(pad_.colourIndex));
-    g.fillEllipse(header.removeFromLeft(8).withSizeKeepingCentre(8, 8).toFloat());
-    header.removeFromLeft(8);
-
-    // The note sits right after the name, which gives up room before the note does.
-    const auto noteFont = fonts.getMonoFont(11.0f);
-    const int noteWidth = juce::GlyphArrangement::getStringWidthInt(noteFont, pad_.note) + 2;
-    const auto name = pad_.name.isNotEmpty() ? pad_.name : juce::String("empty");
-    const auto nameFont = fonts.getUIFontMedium(12.0f);
-    const int nameWidth =
-        juce::jlimit(0, juce::jmax(0, header.getWidth() - noteWidth - 8),
-                     juce::GlyphArrangement::getStringWidthInt(nameFont, name) + 2);
+    g.fillEllipse(name.removeFromLeft(8).withSizeKeepingCentre(8, 8).toFloat());
+    name.removeFromLeft(6);
     g.setColour(colour(ActiveTheme::DEVICE_VALUE_TEXT));
-    g.setFont(nameFont);
-    g.drawText(name, header.removeFromLeft(nameWidth), juce::Justification::centredLeft, true);
-    header.removeFromLeft(8);
+    g.setFont(fonts.getUIFontMedium(12.0f));
+    g.drawText(pad_.name.isNotEmpty() ? pad_.name : juce::String("empty"), name,
+               juce::Justification::centredLeft, true);
     g.setColour(colour(ActiveTheme::DEVICE_DIM2));
-    g.setFont(noteFont);
-    g.drawText(pad_.note, header, juce::Justification::centredLeft, false);
+    g.setFont(fonts.getMonoFont(11.0f));
+    g.drawText(pad_.note, noteArea_, juce::Justification::centredLeft, false);
 
-    if (mixable_) {
-        const float alpha = pad_.bypassed ? 0.55f : 1.0f;
-        g.beginTransparencyLayer(alpha);
-        device_shell::paintGainSlider(g, gainLabel_.getBounds(), gainLabel_.getValue(), kMinGainDb);
-        device_shell::paintPanSlider(g, panLabel_.getBounds(), panLabel_.getValue());
-        g.endTransparencyLayer();
-    }
+    if (!mixable_)
+        return;
+
+    g.setColour(colour(ActiveTheme::DEVICE_DIM2));
+    g.setFont(fonts.getUIFont(10.5f));
+    g.drawText("Gain", gainCaption_, juce::Justification::centredLeft, false);
+    g.drawText("Pan", panCaption_, juce::Justification::centredLeft, false);
+
+    g.beginTransparencyLayer(pad_.bypassed ? 0.55f : 1.0f);
+    device_shell::paintGainSlider(g, gainLabel_.getBounds(), gainLabel_.getValue(), kMinGainDb);
+    device_shell::paintPanSlider(g, panLabel_.getBounds(), panLabel_.getValue());
+    g.endTransparencyLayer();
 }
 
-void PadMixRow::resized() {
-    auto area = getLocalBounds().reduced(10, 0);
-    auto controls = area.removeFromRight(controlsWidth());
+void PadMixPanel::resized() {
+    auto area = getLocalBounds().reduced(10, 10);
+    area.removeFromLeft(1);
+    nameArea_ = area.removeFromTop(18);
+    noteArea_ = area.removeFromTop(16).withTrimmedLeft(14);
+    area.removeFromTop(10);
+
+    gainCaption_ = area.removeFromTop(14);
+    gainLabel_.setBounds(area.removeFromTop(18));
+    area.removeFromTop(8);
+    panCaption_ = area.removeFromTop(14);
+    panLabel_.setBounds(area.removeFromTop(18));
+    area.removeFromTop(10);
+
+    auto buttons = area.removeFromTop(static_cast<int>(kButtonHeight));
     for (juce::Component* button :
-         {static_cast<juce::Component*>(&powerButton_), static_cast<juce::Component*>(&soloButton_),
-          static_cast<juce::Component*>(&muteButton_)}) {
-        button->setBounds(
-            controls.removeFromRight(kButtonWidth)
-                .withSizeKeepingCentre(kButtonWidth, static_cast<int>(kButtonHeight)));
-        controls.removeFromRight(2);
+         {static_cast<juce::Component*>(&muteButton_), static_cast<juce::Component*>(&soloButton_),
+          static_cast<juce::Component*>(&powerButton_)}) {
+        button->setBounds(buttons.removeFromLeft(kButtonWidth));
+        buttons.removeFromLeft(4);
     }
-    controls.removeFromRight(2);
-    panLabel_.setBounds(controls.removeFromRight(kPanWidth).withSizeKeepingCentre(kPanWidth, 16));
-    controls.removeFromRight(4);
-    gainLabel_.setBounds(controls.withSizeKeepingCentre(controls.getWidth(), 16));
 }
 
 }  // namespace magda::daw::ui

@@ -253,12 +253,12 @@ DrumGridUI::DrumGridUI() {
     };
     addChildComponent(emptyAddButton_);
 
-    padMixRow_.onMixChanged = [this](float volume, float pan) {
+    padMixPanel_.onMixChanged = [this](float volume, float pan) {
         if (onPadMixChanged)
             onPadMixChanged(selectedPad_, volume, pan);
     };
-    padMixRow_.onGestureEnd = [this]() { endFaderGesture(); };
-    padMixRow_.onSwitchesChanged = [this](bool mute, bool solo, bool bypassed) {
+    padMixPanel_.onGestureEnd = [this]() { endFaderGesture(); };
+    padMixPanel_.onSwitchesChanged = [this](bool mute, bool solo, bool bypassed) {
         auto& info = padInfos_[static_cast<size_t>(selectedPad_)];
         info.mute = mute;
         info.solo = solo;
@@ -267,7 +267,7 @@ DrumGridUI::DrumGridUI() {
             onPadSwitchesChanged(selectedPad_, mute, solo, bypassed);
         refreshPadButtons();
     };
-    addAndMakeVisible(padMixRow_);
+    addAndMakeVisible(padMixPanel_);
 
     // Footer
     prevPageButton_ = makeNavArrowButton("Previous page", 0.5f);
@@ -486,8 +486,6 @@ void DrumGridUI::paint(juce::Graphics& g) {
 
     g.setColour(colour(ActiveTheme::DEVICE_PANEL));
     g.fillRect(chainArea_);
-    g.setColour(colour(ActiveTheme::DEVICE_HEAD2));
-    g.fillRect(padMixRow_.getBounds());
     g.setColour(line);
     g.fillRect(chainArea_.withWidth(1));
     paintEmptyChain(g);
@@ -514,13 +512,12 @@ void DrumGridUI::paintEmptyChain(juce::Graphics& g) {
     const auto colour = [](ColourRole role) { return ActiveTheme::getColour(role); };
     g.setColour(colour(ActiveTheme::DEVICE_DIM));
     g.setFont(fonts.getUIFont(12.0f));
-    const auto area = chainArea_.withTrimmedTop(PadMixRow::kHeight);
-    g.drawText("Drop a sample or device here", area.withTrimmedBottom(24),
+    g.drawText("Drop a sample or device here", chainArea_.withTrimmedBottom(24),
                juce::Justification::centred, false);
     g.setColour(colour(ActiveTheme::DEVICE_DIM2));
     g.setFont(fonts.getMonoFont(11.0f));
-    g.drawText("or press + to build a chain", area.withTrimmedTop(24), juce::Justification::centred,
-               false);
+    g.drawText("or press + to build a chain", chainArea_.withTrimmedTop(24),
+               juce::Justification::centred, false);
 }
 
 void DrumGridUI::paintOverChildren(juce::Graphics& g) {
@@ -577,13 +574,13 @@ void DrumGridUI::resized() {
     }
     layoutFooter(footerArea_.withX(grid.getX()).withWidth(grid.getWidth()));
 
+    padMixPanel_.setBounds(area.removeFromLeft(PadMixPanel::kWidth));
     chainArea_ = area;
     layoutChain(chainArea_);
 }
 
 void DrumGridUI::layoutChain(juce::Rectangle<int> area) {
     area.removeFromLeft(1);
-    padMixRow_.setBounds(area.removeFromTop(PadMixRow::kHeight));
     const bool hasChain = padChainView_.isVisible();
     if (hasChain)
         padChainView_.setBounds(area);
@@ -742,7 +739,7 @@ void DrumGridUI::showPadContextMenu(int padIndex, juce::Point<int> screenPos) {
 }
 
 int DrumGridUI::fixedContentWidth() const {
-    return padsWidthFor(getHeight() - kFooterHeight);
+    return padsWidthFor(getHeight() - kFooterHeight) + PadMixPanel::kWidth;
 }
 
 void DrumGridUI::setMaxContentWidth(int maxWidth) {
@@ -809,15 +806,15 @@ void DrumGridUI::refreshDetailPanel() {
 
 void DrumGridUI::refreshPadRow() {
     const auto& info = padInfos_[static_cast<size_t>(selectedPad_)];
-    padMixRow_.setPad({.name = info.sampleName,
-                       .note = getNoteName(selectedPad_),
-                       .colourIndex = juce::jmax(0, info.chainIndex),
-                       .volume = info.level,
-                       .pan = info.pan,
-                       .mute = info.mute,
-                       .solo = info.solo,
-                       .bypassed = info.bypassed});
-    padMixRow_.setMixable(info.chainIndex >= 0);
+    padMixPanel_.setPad({.name = info.sampleName,
+                         .note = getNoteName(selectedPad_),
+                         .colourIndex = juce::jmax(0, info.chainIndex),
+                         .volume = info.level,
+                         .pan = info.pan,
+                         .mute = info.mute,
+                         .solo = info.solo,
+                         .bypassed = info.bypassed});
+    padMixPanel_.setMixable(info.chainIndex >= 0);
 }
 
 void DrumGridUI::lookAndFeelChanged() {

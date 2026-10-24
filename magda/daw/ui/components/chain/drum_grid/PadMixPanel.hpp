@@ -10,7 +10,7 @@
 
 namespace magda::daw::ui {
 
-/** @brief The selected pad's mix as the Drum Grid shows it over the pad's chain. */
+/** @brief The selected pad's mix as the Drum Grid shows it beside the pad's chain. */
 struct PadMixView {
     juce::String name;
     juce::String note;
@@ -23,11 +23,12 @@ struct PadMixView {
 };
 
 /**
- * @brief [dot Name Note] then gain, pan, M, S and power: the pad's channel mix (#3144).
+ * @brief A column for the selected pad: its name and note over gain, pan, M, S and power,
+ *        which are its channel's mix (#3144).
  */
-class PadMixRow : public juce::Component {
+class PadMixPanel : public juce::Component {
   public:
-    PadMixRow();
+    PadMixPanel();
 
     void setPad(const PadMixView& pad);
     /// An empty pad shows its name and note only: there is nothing to mix yet.
@@ -38,7 +39,7 @@ class PadMixRow : public juce::Component {
     std::function<void()> onGestureEnd;
     std::function<void(bool mute, bool solo, bool bypassed)> onSwitchesChanged;
 
-    static constexpr int kHeight = 30;
+    static constexpr int kWidth = 112;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -51,6 +52,7 @@ class PadMixRow : public juce::Component {
     PadMixView pad_;
     bool mixable_ = false;
     bool dragging_ = false;
+    juce::Rectangle<int> nameArea_, noteArea_, gainCaption_, panCaption_;
 
     magda::DraggableValueLabel gainLabel_{magda::DraggableValueLabel::Format::Decibels};
     magda::DraggableValueLabel panLabel_{magda::DraggableValueLabel::Format::Pan};
@@ -58,7 +60,7 @@ class PadMixRow : public juce::Component {
     magda::SvgButton soloButton_{"solo", BinaryData::solo_svg, BinaryData::solo_svgSize};
     magda::SvgButton powerButton_{"Power", BinaryData::power_svg, BinaryData::power_svgSize};
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PadMixRow)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PadMixPanel)
 };
 
 }  // namespace magda::daw::ui
