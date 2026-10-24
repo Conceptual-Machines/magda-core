@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "audio/plugins/SavedDeviceState.hpp"
+#include "plugins/AllControlsDebugPlugin.hpp"
 #include "plugins/ArpeggiatorPlugin.hpp"
 #include "plugins/DeviceServices.hpp"
 #include "plugins/FaustInstrumentPlugin.hpp"
@@ -68,6 +69,7 @@ constexpr const char* kSidechainAliases[] = {"duck", "pump", "volumeshaper"};
 constexpr const char* kFaustAliases[] = {"faust"};
 constexpr const char* kFaustInstrumentAliases[] = {"faustinstrument"};
 
+constexpr const char* kDebugAllControlsTags[] = {"debug-all-controls", "expandable-faceplate"};
 constexpr const char* kLegacyTags[] = {"legacy"};
 constexpr const char* kExternalInsertTags[] = {"external-insert"};
 constexpr const char* kDrumGridTags[] = {"drum-grid"};
@@ -117,6 +119,17 @@ void registerUtilityDevices(InternalPluginRegistry& registry) {
          .tags = kToneTags,
          .tagCount = static_cast<int>(std::size(kToneTags)),
          .createDevice = createDevice<ToneGeneratorPlugin>});
+#if JUCE_DEBUG
+    add(registry, {.pluginId = AllControlsDebugPlugin::xmlTypeName,
+                   .displayName = AllControlsDebugDevice::kName,
+                   .browserCategory = "Debug",
+                   .description = "Shows every device slot control, for checking the chrome.",
+                   .createMode = InternalPluginCreateMode::SavedStateOrFresh,
+                   .showInBrowser = true,
+                   .tags = kDebugAllControlsTags,
+                   .tagCount = static_cast<int>(std::size(kDebugAllControlsTags)),
+                   .createDevice = createDevice<AllControlsDebugPlugin>});
+#endif
     add(registry, {
                       .pluginId = "level",
                       .displayName = "Level Meter",

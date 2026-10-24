@@ -490,10 +490,9 @@ void RackComponent::resizedShellFooter(juce::Rectangle<int> footer) {
     layoutFooter(footer);
 }
 
-// The chain selector under the chain list, and the MIDI LED on the right.
+// The chain selector under the chain list.
 void RackComponent::layoutFooter(juce::Rectangle<int> footer) {
     auto area = footer.reduced(12, 0);
-    shellRows_.midiLed = area.removeFromRight(7).withSizeKeepingCentre(7, 7);
     selectorCaption_ = {};
     bandsToggle_->setVisible(multiband_);
     faceplateToggle_->setVisible(multiband_);
@@ -527,6 +526,9 @@ void RackComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
     // The separator carries its own 6px margins in place of the last gap.
     headerArea.setLeft(headerArea.getX() - getHeaderButtonGap());
     shellRows_.headerSeparatorLeft = headerArea.removeFromLeft(13).withSizeKeepingCentre(1, 14);
+    // The MIDI LED sits before the header's own buttons, as on a device.
+    shellRows_.midiLed = headerArea.removeFromRight(7).withSizeKeepingCentre(7, 7);
+    headerArea.removeFromRight(getHeaderButtonGap());
 }
 
 juce::String RackComponent::getCollapsedName() const {

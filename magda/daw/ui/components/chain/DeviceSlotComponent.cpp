@@ -463,7 +463,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     addAndMakeVisible(*deltaButton_);
 
     // Export as MIDI clip button
-    if (traits_.isStepSequencer || traits_.isPolyStepSequencer) {
+    if (traits_.isStepSequencer || traits_.isPolyStepSequencer || traits_.showsAllControls) {
         exportClipButton_ = std::make_unique<magda::SvgButton>("ExportClip", BinaryData::copy_svg,
                                                                BinaryData::copy_svgSize);
         applyHeaderIconStyle(*exportClipButton_,
@@ -480,7 +480,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // Randomize-pattern button in the header (next to the AI button). Lives at
     // the slot level so it sits in the header chrome rather than the step
     // sequencer's body. Shared by the mono and poly step sequencers.
-    if (traits_.isStepSequencer || traits_.isPolyStepSequencer) {
+    if (traits_.isStepSequencer || traits_.isPolyStepSequencer || traits_.showsAllControls) {
         randomButton_ = std::make_unique<magda::SvgButton>("Random", BinaryData::random_svg,
                                                            BinaryData::random_svgSize);
         applyHeaderIconStyle(*randomButton_, ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY),
@@ -577,10 +577,12 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         std::make_unique<ParamHostComponent>(createDeviceSlotParamLayout(traits_, gridExcluded));
     paramGrid_->setFooterPagination(true);
 
-    pagePrevButton_ = makeNavArrowButton("Previous page", 0.5f);
+    // The page label's dim colour, so the sidebar's arrows read as quietly as it does.
+    const auto arrowColour = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2);
+    pagePrevButton_ = std::make_unique<juce::ArrowButton>("Previous page", 0.5f, arrowColour);
     pagePrevButton_->onClick = [this]() { goToPrevPage(); };
     addChildComponent(*pagePrevButton_);
-    pageNextButton_ = makeNavArrowButton("Next page", 0.0f);
+    pageNextButton_ = std::make_unique<juce::ArrowButton>("Next page", 0.0f, arrowColour);
     pageNextButton_->onClick = [this]() { goToNextPage(); };
     addChildComponent(*pageNextButton_);
     pageLabel_.setJustificationType(juce::Justification::centred);
@@ -688,9 +690,11 @@ void DeviceSlotComponent::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int>
                                          int headerHeight) {
     device_shell::paintFrame(g, bounds, headerHeight,
                              {.headerSeparatorLeft = headerSeparators_.left,
+                              .headerSeparatorRouting = headerSeparators_.routing,
                               .headerSeparatorRight = headerSeparators_.right,
                               .sidebar = sidebarArea_,
                               .sideStrip = sideStripArea_,
+                              .footer = footerArea_,
                               .midiLed = midiLedArea_},
                              {}, midiLed_.isLit());
 }
@@ -715,8 +719,9 @@ void DeviceSlotComponent::layoutSideStrip(juce::Rectangle<int> strip) {
     auto area = strip.reduced(5, 6);
     const bool utility = isMidiUtilityDeviceSlot(traits_);
     // Dry/wet only means something on an audio effect.
-    const bool mix = !utility && device_.deviceType == magda::DeviceType::Effect &&
-                     (hasWrapperMixPair() || nativeMixSlot() >= 0);
+    const bool mix =
+        traits_.showsAllControls || (!utility && device_.deviceType == magda::DeviceType::Effect &&
+                                     (hasWrapperMixPair() || nativeMixSlot() >= 0));
     if (mixKnob_) {
         mixKnob_->setVisible(mix);
         if (mix) {
@@ -749,40 +754,38 @@ void DeviceSlotComponent::layoutSideStrip(juce::Rectangle<int> strip) {
     }
 }
 
-// [name] ... [voice][MIDI LED], then the header's own buttons.
+// [name] ... [MIDI LED], then the header's own buttons.
 juce::Rectangle<int> DeviceSlotComponent::layoutHeaderControls(juce::Rectangle<int> area) {
     midiLedArea_ = {};
-    voiceModeChoice_.setVisible(!area.isEmpty() && voiceModeParam_ >= 0);
     if (area.isEmpty())
         return area;
 
-    const int gap = getHeaderButtonGap();
-    if (voiceModeParam_ >= 0) {
-        const int width = voiceModeChoice_.getPreferredWidth();
-        voiceModeChoice_.setBounds(
-            area.removeFromRight(width).withSizeKeepingCentre(width, getHeaderButtonSize().y));
-        area.removeFromRight(gap);
-    }
+    expandToggle_->setToggleState(faceplateLent(), juce::dontSendNotification);
     midiLedArea_ = area.removeFromRight(7).withSizeKeepingCentre(7, 7);
-    area.removeFromRight(gap);
+    area.removeFromRight(getHeaderButtonGap());
     return area;
 }
 
+void DeviceSlotComponent::resizedShellFooter(juce::Rectangle<int> footer) {
+    footerArea_ = footer;
+    voiceModeChoice_.setVisible(!footer.isEmpty());
+    if (footer.isEmpty())
+        return;
+    const int width = voiceModeChoice_.getPreferredWidth();
+    voiceModeChoice_.setBounds(footer.reduced(10, 0).removeFromLeft(width).withSizeKeepingCentre(
+        width, getHeaderButtonSize().y));
+}
+
 std::vector<juce::Component*> DeviceSlotComponent::sidebarButtons() const {
-    const auto visibility = getHeaderControlVisibility(traits_, device_, isInternalDevice());
     std::vector<juce::Component*> buttons;
-    const auto add = [&buttons](juce::Component* button, bool shown) {
-        if (button != nullptr && shown)
+    const auto add = [this, &buttons](juce::Component* button, bool shown) {
+        if (button != nullptr && (shown || traits_.showsAllControls))
             buttons.push_back(button);
     };
     add(paramsToggle_.get(), hasFaceplate());
     add(faceplateToggle_.get(), hasFaceplate());
     add(timeBendToggle_.get(), isSequencerDevice(traits_));
     add(zonesToggle_.get(), customUI_.hasSamplerUI());
-    add(expandToggle_.get(), traits_.expandsFaceplate);
-    add(scButton_.get(), visibility.sidechain);
-    add(midiThruButton_.get(), visibility.midiThru);
-    add(multiOutButton_.get(), visibility.multiOut);
     return buttons;
 }
 
@@ -799,8 +802,8 @@ int DeviceSlotComponent::sidebarWidth() const {
 
 void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
     const bool shown = !bar.isEmpty();
-    for (auto* toggle : {paramsToggle_.get(), faceplateToggle_.get(), timeBendToggle_.get(),
-                         zonesToggle_.get(), expandToggle_.get()})
+    for (auto* toggle :
+         {paramsToggle_.get(), faceplateToggle_.get(), timeBendToggle_.get(), zonesToggle_.get()})
         toggle->setVisible(false);
     const bool paged = shown && sidebarPaged();
     for (auto* arrow : {pagePrevButton_.get(), pageNextButton_.get()})
@@ -814,7 +817,6 @@ void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
     faceplateToggle_->setToggleState(faceplateShown(), juce::dontSendNotification);
     timeBendToggle_->setToggleState(device_.timeBendShown, juce::dontSendNotification);
     zonesToggle_->setToggleState(device_.zonesShown, juce::dontSendNotification);
-    expandToggle_->setToggleState(faceplateLent(), juce::dontSendNotification);
 
     auto area = bar.reduced(0, 6);
     const auto size = getHeaderButtonSize();
@@ -825,9 +827,9 @@ void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
     }
     if (paged) {
         auto arrows = area.removeFromBottom(16);
-        pagePrevButton_->setBounds(
-            arrows.removeFromLeft(bar.getWidth() / 2).withSizeKeepingCentre(12, 12));
-        pageNextButton_->setBounds(arrows.withSizeKeepingCentre(12, 12));
+        pagePrevButton_->setBounds(arrows.removeFromLeft(bar.getWidth() / 2)
+                                       .withSizeKeepingCentre(kNavArrowSize, kNavArrowSize));
+        pageNextButton_->setBounds(arrows.withSizeKeepingCentre(kNavArrowSize, kNavArrowSize));
         pageLabel_.setBounds(area.removeFromBottom(16));
     }
 }
@@ -1751,10 +1753,12 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     juce::ignoreUnused(pluginPresetsAvailable);
     sideStripArea_ = {};
     sidebarArea_ = contentArea.removeFromLeft(sidebarWidth());
-    if (collapsed_)
+    if (collapsed_) {
         layoutHeaderControls({});
-    else if (const int strip = sideStripWidth(); strip > 0)
+        resizedShellFooter({});
+    } else if (const int strip = sideStripWidth(); strip > 0) {
         sideStripArea_ = contentArea.removeFromRight(strip);
+    }
     layoutSidebar(sidebarArea_);
 
     if (!prepareDeviceSlotContentFrame(
@@ -1826,6 +1830,7 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
          .sidechainButton = scButton_.get(),
          .multiOutButton = multiOutButton_.get(),
          .uiButton = uiButton_.get(),
+         .expandButton = expandToggle_.get(),
          .deltaButton = deltaButton_.get(),
          .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get(),
          .presetButton = stripsAnalysisChrome() ? nullptr : presetButton_.get(),
@@ -1865,6 +1870,7 @@ void DeviceSlotComponent::resizedCollapsed(juce::Rectangle<int>& area) {
                             .sidechainButton = scButton_.get(),
                             .multiOutButton = multiOutButton_.get(),
                             .uiButton = uiButton_.get(),
+                            .expandButton = expandToggle_.get(),
                             .deltaButton = deltaButton_.get(),
                             .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get(),
                             .exportClipButton = exportClipButton_.get(),
@@ -2370,7 +2376,9 @@ int DeviceSlotComponent::getDynamicSlotWidth() const {
     const int columns = hasFaceplate() && paramGrid_ != nullptr && paramGrid_->getCellsPerRow() > 0
                             ? paramGrid_->getCellsPerRow()
                             : PARAMS_PER_ROW;
-    return kCell * columns + 6 * (columns - 1) + 2 * 10;
+    // The debug device's header carries every button, so it gets room for its name too.
+    const int debugExtra = traits_.showsAllControls ? 100 : 0;
+    return kCell * columns + 6 * (columns - 1) + 2 * 10 + debugExtra;
 }
 
 // =============================================================================

@@ -7,7 +7,7 @@
 namespace magda::daw::ui {
 
 /** Standard arrow size for all page navigation buttons across the app. */
-static constexpr int kNavArrowSize = 12;
+static constexpr int kNavArrowSize = 9;
 
 /**
  * Creates a left or right ArrowButton with the standard app style.
@@ -16,15 +16,15 @@ static constexpr int kNavArrowSize = 12;
 inline std::unique_ptr<juce::ArrowButton> makeNavArrowButton(const juce::String& name,
                                                              float direction) {
     return std::make_unique<juce::ArrowButton>(name, direction,
-                                               ActiveTheme::getSecondaryTextColour());
+                                               ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
 }
 
 /**
  * Places a nav arrow button centred within a slice removed from the given area.
- * Takes (kNavArrowSize + 4) px from the specified side and centres the arrow within it.
+ * Takes 16 px from the specified side and centres the arrow within it.
  */
 inline void placeNavArrow(juce::ArrowButton& btn, juce::Rectangle<int>& area, bool fromLeft) {
-    constexpr int slot = kNavArrowSize + 4;
+    constexpr int slot = 16;
     auto slice = fromLeft ? area.removeFromLeft(slot) : area.removeFromRight(slot);
     btn.setBounds(slice.withSizeKeepingCentre(kNavArrowSize, kNavArrowSize));
 }

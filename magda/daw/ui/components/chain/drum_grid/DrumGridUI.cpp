@@ -773,8 +773,10 @@ void DrumGridUI::layoutChain(juce::Rectangle<int> area) {
 /// @p area spans the pad grid, so the arrows sit under its outer columns.
 void DrumGridUI::layoutFooter(juce::Rectangle<int> area) {
     auto nav = area;
-    prevPageButton_->setBounds(nav.removeFromLeft(16).withSizeKeepingCentre(12, 12));
-    nextPageButton_->setBounds(nav.removeFromRight(16).withSizeKeepingCentre(12, 12));
+    prevPageButton_->setBounds(
+        nav.removeFromLeft(16).withSizeKeepingCentre(kNavArrowSize, kNavArrowSize));
+    nextPageButton_->setBounds(
+        nav.removeFromRight(16).withSizeKeepingCentre(kNavArrowSize, kNavArrowSize));
     pageTextArea_ = nav;
 }
 

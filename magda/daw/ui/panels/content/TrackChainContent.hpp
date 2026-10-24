@@ -266,8 +266,8 @@ class TrackChainContent : public PanelContent,
     void clearDeviceSelection();
 
     static constexpr int MODS_PANEL_WIDTH = 170;
-    // Every node's height: a Drum Grid's ideal with a scrolling pad chain, as measured (#3141).
-    static constexpr int NODE_HEIGHT = 357;
+    // Every node's height; 47 px under the Drum Grid's measured ideal, to see what gives (#3141).
+    static constexpr int NODE_HEIGHT = 310;
     static constexpr int CONTENT_INSET = 8;
 
     // Horizontal zoom

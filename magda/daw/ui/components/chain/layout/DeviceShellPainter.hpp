@@ -8,7 +8,7 @@ namespace magda::daw::ui::device_shell {
 
 /** @brief The rows a v1 shell paints around its body; an empty rectangle is not drawn. */
 struct ShellRows {
-    juce::Rectangle<int> headerSeparatorLeft, headerSeparatorRight;
+    juce::Rectangle<int> headerSeparatorLeft, headerSeparatorRouting, headerSeparatorRight;
     juce::Rectangle<int> sidebar, sideStrip, footer;
     juce::Rectangle<int> footerSeparator, footerInfo, midiLed;
 };

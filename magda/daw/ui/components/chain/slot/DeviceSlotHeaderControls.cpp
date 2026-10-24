@@ -35,8 +35,12 @@ void placeRight(juce::Rectangle<int>& area, juce::Component* component,
 }
 
 bool livesOutsideExpandedHeader(HeaderControlId id) {
-    return id == HeaderControlId::Sidechain || id == HeaderControlId::MultiOut ||
-           id == HeaderControlId::MidiThru || id == HeaderControlId::Delta;
+    return id == HeaderControlId::Delta;
+}
+
+bool isRoutingControl(HeaderControlId id) {
+    return id == HeaderControlId::MidiThru || id == HeaderControlId::Sidechain ||
+           id == HeaderControlId::MultiOut;
 }
 
 juce::Rectangle<int> takeSeparator(juce::Rectangle<int>& area, bool fromLeft,
@@ -71,6 +75,7 @@ HeaderControlComponents getHeaderControlComponents(DeviceSlotHeaderControls cont
             .sidechainButton = controls.sidechainButton,
             .multiOutButton = controls.multiOutButton,
             .uiButton = controls.uiButton,
+            .expandButton = controls.expandButton,
             .exportClipButton = controls.exportClipButton,
             .randomButton = controls.randomButton,
             .stepRecordButton = controls.stepRecordButton,
@@ -98,11 +103,17 @@ DeviceSlotHeaderSeparators layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& 
     setVisibleIfPresent(controls.presetButton, visibility.preset);
 
     bool placedAnyLeft = false;
+    bool placedRouting = false;
     for (auto& spec : specs) {
         setVisibleIfPresent(spec.component, spec.expandedVisible);
 
         if (spec.side == HeaderControlSide::Left && spec.expandedVisible &&
             !livesOutsideExpandedHeader(spec.id)) {
+            if (isRoutingControl(spec.id) && !placedRouting && placedAnyLeft) {
+                headerArea.setLeft(headerArea.getX() - metrics.gap);
+                separators.routing = takeSeparator(headerArea, true, metrics);
+            }
+            placedRouting = placedRouting || isRoutingControl(spec.id);
             placeLeft(headerArea, spec.component, metrics);
             placedAnyLeft = true;
         }

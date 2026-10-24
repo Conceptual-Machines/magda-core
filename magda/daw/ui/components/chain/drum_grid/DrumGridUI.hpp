@@ -253,7 +253,7 @@ class DrumGridUI : public juce::Component,
     // Rail
     juce::TextButton editorToggle_{"i"};
     // Switches the editor from the pad's layers to its master out (#3010).
-    magda::SvgButton padOutToggle_{"Out", BinaryData::pad_out_svg, BinaryData::pad_out_svgSize};
+    magda::SvgButton padOutToggle_{"Out", BinaryData::edit_mix_svg, BinaryData::edit_mix_svgSize};
 
     // Pad editor
     // Each tab lists every layer in that view; the pad's own mix is its mixer channel (#3010).

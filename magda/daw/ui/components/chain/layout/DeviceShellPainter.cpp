@@ -30,7 +30,8 @@ void paintHeader(juce::Graphics& g, juce::Rectangle<float> frame, int headerHeig
                frame.getWidth(), 1.0f);
 
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
-    for (const auto& separator : {rows.headerSeparatorLeft, rows.headerSeparatorRight})
+    for (const auto& separator :
+         {rows.headerSeparatorLeft, rows.headerSeparatorRouting, rows.headerSeparatorRight})
         if (!separator.isEmpty())
             g.fillRect(separator);
 }
