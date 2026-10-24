@@ -320,7 +320,8 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
     if (internalDevice && hasCustomUI) {
         if (!drum_grid_slot::layoutDrumGridUI(controls.drumGridUI, contentArea) &&
             controls.activeCustomUI != nullptr) {
-            controls.activeCustomUI->setBounds(contentArea.reduced(4));
+            // No inset at the foot: a faceplate's own panels pad under their last row (#3144).
+            controls.activeCustomUI->setBounds(contentArea.reduced(4, 0).withTrimmedTop(4));
             controls.activeCustomUI->setVisible(true);
         }
 

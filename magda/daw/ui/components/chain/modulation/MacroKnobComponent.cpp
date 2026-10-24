@@ -83,7 +83,9 @@ MacroKnobComponent::MacroKnobComponent(int macroIndex) : macroIndex_(macroIndex)
     nameLabel_.onTextChange = [this]() { onNameLabelEdited(); };
     // Pass single clicks through to parent for selection (double-click still edits)
     nameLabel_.setInterceptsMouseClicks(false, false);
-    addAndMakeVisible(nameLabel_);
+    // The card shows no name; the label appears only while one is typed.
+    nameLabel_.onEditorHide = [this]() { nameLabel_.setVisible(false); };
+    addChildComponent(nameLabel_);
 
     // Value slider - visible for macros (unlike mods)
     valueSlider_.setRange(0.0, 1.0, 0.01);
@@ -246,8 +248,7 @@ void MacroKnobComponent::paint(juce::Graphics& g) {
 
     // The knob: a disc with a 300-degree track, lit in the accent once the macro reaches something.
     const auto knobArea = getKnobBounds().toFloat();
-    const float diameter =
-        juce::jmax(10.0f, juce::jmin(28.0f, knobArea.getHeight(), knobArea.getWidth() - 16.0f));
+    const float diameter = juce::jmax(10.0f, juce::jmin(knobArea.getHeight(), knobArea.getWidth()));
     const auto knob = juce::Rectangle<float>(diameter, diameter).withCentre(knobArea.getCentre());
     const float startAngle = juce::MathConstants<float>::pi * (7.0f / 6.0f);
     const float sweep = juce::MathConstants<float>::pi * (5.0f / 3.0f);
@@ -275,21 +276,20 @@ void MacroKnobComponent::paint(juce::Graphics& g) {
                knob.getCentreX() + std::sin(valueAngle) * pointer,
                knob.getCentreY() - std::cos(valueAngle) * pointer, 1.5f);
 
-    // Bottom row: the value (a dash until linked), then the link count beside its button.
-    const auto bottom = bottomRow();
+    // Beside the knob, the value (a dash until linked); the link count left of its corner button.
     auto& fonts = FontManager::getInstance();
     if (!linked) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
         g.setFont(fonts.getMonoFont(10.5f));
-        g.drawText(juce::String::fromUTF8("\xe2\x80\x93"), bottom, juce::Justification::centredLeft,
-                   false);
+        g.drawText(juce::String::fromUTF8("\xe2\x80\x93"), valueArea(),
+                   juce::Justification::centredLeft, false);
     }
     if (linked) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
         g.setFont(fonts.getMonoFont(10.0f));
         g.drawText(juce::String(static_cast<int>(currentMacro_.links.size())),
-                   bottom.withLeft(linkButton_->getRight() + 2), juce::Justification::centredLeft,
-                   false);
+                   linkButton_->getBounds().translated(-linkButton_->getWidth() - 2, 0),
+                   juce::Justification::centredRight, false);
     }
 
     // Binding dot, top right: orange for a MIDI Learn mapping, green for an automap default,
@@ -313,15 +313,14 @@ void MacroKnobComponent::paint(juce::Graphics& g) {
 
 void MacroKnobComponent::resized() {
     auto inner = getLocalBounds().reduced(CARD_PADDING, 6);
-    nameLabel_.setBounds(inner.removeFromTop(NAME_LABEL_HEIGHT));
+    nameLabel_.setBounds(inner.withHeight(NAME_LABEL_HEIGHT));
 
-    auto bottom = bottomRow();
     const int linkWidth = LINK_BUTTON_HEIGHT + 4;
-    // The count sits after the button, so the pair stays right-aligned.
-    auto linkSlot = bottom.removeFromRight(linkWidth + 12);
-    linkButton_->setBounds(
-        linkSlot.removeFromLeft(linkWidth).withSizeKeepingCentre(linkWidth, LINK_BUTTON_HEIGHT));
-    valueSlider_.setBounds(bottom);
+    linkButton_->setBounds(getLocalBounds()
+                               .reduced(4)
+                               .removeFromBottom(LINK_BUTTON_HEIGHT)
+                               .removeFromRight(linkWidth));
+    valueSlider_.setBounds(valueArea());
     valueSlider_.setVisible(currentMacro_.isLinked());
     nameLabel_.setColour(juce::Label::textColourId,
                          ActiveTheme::getColour(currentMacro_.isLinked()
@@ -329,15 +328,16 @@ void MacroKnobComponent::resized() {
                                                     : ActiveTheme::DEVICE_DIM2));
 }
 
-juce::Rectangle<int> MacroKnobComponent::bottomRow() const {
-    return getLocalBounds().reduced(CARD_PADDING, 6).removeFromBottom(VALUE_SLIDER_HEIGHT);
+// The knob takes the card's height on its left; the value sits beside it.
+juce::Rectangle<int> MacroKnobComponent::getKnobBounds() const {
+    auto inner = getLocalBounds().reduced(6);
+    return inner.removeFromLeft(inner.getHeight());
 }
 
-juce::Rectangle<int> MacroKnobComponent::getKnobBounds() const {
-    auto inner = getLocalBounds().reduced(CARD_PADDING, 6);
-    inner.removeFromTop(NAME_LABEL_HEIGHT);
-    inner.removeFromBottom(VALUE_SLIDER_HEIGHT);
-    return inner.reduced(0, 2);
+juce::Rectangle<int> MacroKnobComponent::valueArea() const {
+    auto inner = getLocalBounds().reduced(6);
+    inner.removeFromLeft(inner.getHeight() + 6);
+    return inner.withSizeKeepingCentre(inner.getWidth(), VALUE_SLIDER_HEIGHT);
 }
 
 void MacroKnobComponent::mouseDown(const juce::MouseEvent& e) {
@@ -614,6 +614,7 @@ void MacroKnobComponent::showLinkMenu() {
         }
 
         if (result == kRenameId) {
+            safeThis->nameLabel_.setVisible(true);
             safeThis->nameLabel_.showEditor();
             return;
         }

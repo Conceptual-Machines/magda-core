@@ -162,7 +162,7 @@ class MacroKnobComponent : public juce::Component,
     // Helper to get knob bounds for hit testing
     juce::Rectangle<int> getKnobBounds() const;
 
-    juce::Rectangle<int> bottomRow() const;
+    juce::Rectangle<int> valueArea() const;
 
     static constexpr int CARD_PADDING = 8;
     static constexpr int NAME_LABEL_HEIGHT = 15;

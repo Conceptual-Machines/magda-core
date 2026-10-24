@@ -15,13 +15,15 @@ namespace {
 constexpr int kPanelGap = 8;
 constexpr int kPanelPadX = 10;
 constexpr int kPanelPadY = 8;
+/// Less under the last tiles than over the header: the footer frames them (#3144).
+constexpr int kPanelPadBottom = 4;
 constexpr int kHeaderH = 22;
 constexpr int kTileGap = 6;
 constexpr int kCellGap = 4;
 constexpr int kCaptionH = 14;
 constexpr int kColumnCaptionH = 14;
 constexpr int kRowLabelW = 16;
-constexpr int kMinTileH = 30;
+constexpr int kMinTileH = 26;
 constexpr int kMaxTileH = 44;
 constexpr int kDot = 6;
 constexpr float kInactiveAlpha = 0.35f;
@@ -357,10 +359,9 @@ void FMUI::placeTile(int slot, juce::Rectangle<int> bounds, bool withCaption) {
     auto& c = controls_[static_cast<size_t>(slot)];
     c.tile = bounds;
     if (withCaption) {
-        auto inner = bounds.reduced(9, 5);
-        c.label->setBounds(inner.removeFromTop(kCaptionH));
+        sampler_tiles::layoutCaptioned(*c.label, *c.slider, bounds.reduced(9, 4), captionFont(),
+                                       15.0f);
         c.label->setVisible(true);
-        c.slider->setBounds(inner);
     } else {
         c.slider->setBounds(bounds.reduced(4, 2));
     }
@@ -388,7 +389,7 @@ struct NodeRows {
 
 NodeRows nodeRows(juce::Rectangle<int> panel) {
     NodeRows out;
-    auto a = panel.reduced(kPanelPadX, kPanelPadY);
+    auto a = panel.reduced(kPanelPadX, kPanelPadY).withTrimmedBottom(kPanelPadBottom - kPanelPadY);
     out.header = a.removeFromTop(kHeaderH);
     a.removeFromTop(kTileGap);
     out.captions = a.removeFromTop(kColumnCaptionH);
@@ -466,7 +467,8 @@ void FMUI::layoutMatrixPanel() {
 }
 
 void FMUI::layoutFilterPanel() {
-    auto a = filterPanel_.reduced(kPanelPadX, kPanelPadY);
+    auto a = filterPanel_.reduced(kPanelPadX, kPanelPadY)
+                 .withTrimmedBottom(kPanelPadBottom - kPanelPadY);
     auto header = a.removeFromTop(kHeaderH);
     filterTab_ = takeTab(header, "FILTER", true);
     filterDot_ = filterTab_.withWidth(kDot).withSizeKeepingCentre(kDot + 6, kDot + 6);
@@ -501,7 +503,8 @@ void FMUI::layoutFilterPanel() {
 }
 
 void FMUI::layoutEnvelopePanel() {
-    auto a = envelopePanel_.reduced(kPanelPadX, kPanelPadY);
+    auto a = envelopePanel_.reduced(kPanelPadX, kPanelPadY)
+                 .withTrimmedBottom(kPanelPadBottom - kPanelPadY);
     auto header = a.removeFromTop(kHeaderH);
     envelopeTabs_[0] = takeTab(header, "AMP", false);
     envelopeTabs_[1] = takeTab(header, "FILTER", false);
@@ -520,7 +523,8 @@ void FMUI::layoutEnvelopePanel() {
 }
 
 void FMUI::resized() {
-    auto b = getLocalBounds().reduced(kPanelGap);
+    // Padded at the sides only: the header and the voice-mode footer already frame the panels.
+    auto b = getLocalBounds().reduced(kPanelGap, 0);
     const int w = b.getWidth() - 3 * kPanelGap;
     opsPanel_ = b.removeFromLeft(w * 27 / 100);
     b.removeFromLeft(kPanelGap);

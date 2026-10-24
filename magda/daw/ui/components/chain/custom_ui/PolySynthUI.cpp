@@ -17,10 +17,12 @@ namespace {
 constexpr int kPanelGap = 8;
 constexpr int kPanelPadX = 10;
 constexpr int kPanelPadY = 8;
+/// Less under the last tiles than over the header: the footer frames them (#3144).
+constexpr int kPanelPadBottom = 4;
 constexpr int kHeaderH = 22;
 constexpr int kTileGap = 6;
 constexpr int kCaptionH = 14;
-constexpr int kMinTileH = 32;
+constexpr int kMinTileH = 26;
 constexpr int kMaxTileH = 46;
 constexpr int kDot = 6;
 
@@ -475,9 +477,9 @@ void PolySynthUI::placeTile(int slot, juce::Rectangle<int> bounds) {
     auto& c = controls_[static_cast<size_t>(slot)];
     c.tile = bounds;
     const bool compact = std::ranges::contains(compactSlots(), slot);
-    auto inner = bounds.reduced(compact ? 7 : 9, 5);
-    c.label->setBounds(inner.removeFromTop(kCaptionH));
-    c.slider->setBounds(inner);
+    sampler_tiles::layoutCaptioned(*c.label, *c.slider, bounds.reduced(compact ? 7 : 9, 4),
+                                   compact ? compactCaptionFont() : captionFont(),
+                                   compact ? 13.5f : 15.0f);
     c.label->setVisible(true);
     c.slider->setVisible(true);
 }
@@ -494,7 +496,8 @@ void PolySynthUI::placeTiles(juce::Rectangle<int> area, const std::vector<int>& 
 }
 
 void PolySynthUI::layoutOscPanel() {
-    auto a = oscPanel_.reduced(kPanelPadX, kPanelPadY);
+    auto a =
+        oscPanel_.reduced(kPanelPadX, kPanelPadY).withTrimmedBottom(kPanelPadBottom - kPanelPadY);
     auto header = a.removeFromTop(kHeaderH);
     oscTabs_[0] = takeTab(header, "OSC", false);
     oscTabs_[1] = takeTab(header, "VOICE", false);
@@ -543,7 +546,8 @@ void PolySynthUI::layoutOscPanel() {
 }
 
 void PolySynthUI::layoutFilterPanel() {
-    auto a = filterPanel_.reduced(kPanelPadX, kPanelPadY);
+    auto a = filterPanel_.reduced(kPanelPadX, kPanelPadY)
+                 .withTrimmedBottom(kPanelPadBottom - kPanelPadY);
 
     // Tabs on the left, the shared routing and blend on the right.
     auto header = a.removeFromTop(kHeaderH);
@@ -576,7 +580,8 @@ void PolySynthUI::layoutFilterPanel() {
 }
 
 void PolySynthUI::layoutEnvelopePanel() {
-    auto a = envelopePanel_.reduced(kPanelPadX, kPanelPadY);
+    auto a = envelopePanel_.reduced(kPanelPadX, kPanelPadY)
+                 .withTrimmedBottom(kPanelPadBottom - kPanelPadY);
     auto header = a.removeFromTop(kHeaderH);
     envelopeTabs_[0] = takeTab(header, "AMP ADSR", false);
     envelopeTabs_[1] = takeTab(header, "FILTER ADSR", false);
@@ -592,7 +597,8 @@ void PolySynthUI::layoutEnvelopePanel() {
 }
 
 void PolySynthUI::resized() {
-    auto b = getLocalBounds().reduced(kPanelGap);
+    // Padded at the sides only: the header and the voice-mode footer already frame the panels.
+    auto b = getLocalBounds().reduced(kPanelGap, 0);
     const int oscW = b.getWidth() * 38 / 100;
     const int filterW = b.getWidth() * 36 / 100;
 
