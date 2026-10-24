@@ -485,15 +485,21 @@ void PolySynthUI::placeTile(int slot, juce::Rectangle<int> bounds) {
     const int valueH = inner.getHeight() - kCaptionH;
     auto& value = c.slider->getSlider();
     if (valueH >= kMinValueH) {
+        c.label->setFont(compact ? compactCaptionFont() : captionFont());
         c.label->setBounds(inner.removeFromTop(kCaptionH));
         c.slider->setBounds(inner);
         c.slider->setFont(FontManager::getInstance().getUIFontMedium(
             juce::jmin(baseSize, static_cast<float>(valueH))));
         value.setJustification(juce::Justification::centredLeft);
     } else {
-        c.label->setBounds(inner.removeFromLeft(inner.getWidth() / 2));
+        // The caption takes its own width, so the value keeps the rest.
+        const auto small = FontManager::getInstance().getUIFont(10.5f);
+        c.label->setFont(small);
+        const int captionW =
+            juce::GlyphArrangement::getStringWidthInt(small, c.label->getText()) + 6;
+        c.label->setBounds(inner.removeFromLeft(juce::jmin(captionW, inner.getWidth() / 2)));
         c.slider->setBounds(inner);
-        c.slider->setFont(FontManager::getInstance().getUIFontMedium(12.0f));
+        c.slider->setFont(FontManager::getInstance().getUIFontMedium(11.0f));
         value.setJustification(juce::Justification::centredRight);
     }
     c.label->setVisible(true);
