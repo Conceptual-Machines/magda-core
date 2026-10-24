@@ -36,6 +36,8 @@ add_library(magda_portable_devices STATIC
     faust/effects/RingMod.cpp
     faust/effects/Saturator.cpp
     faust/effects/Utility.cpp
+    spectral/SpectralFx.cpp
+    spectral/Stft.cpp
     tone/ToneGenerator.cpp)
 target_include_directories(magda_portable_devices PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_include_directories(magda_portable_devices SYSTEM PUBLIC

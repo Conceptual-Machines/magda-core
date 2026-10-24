@@ -71,4 +71,17 @@ class NimbusTelemetrySource : public magda::DeviceTelemetrySource {
     virtual size_t readInputEnvelope(float* dest, int numSamples) const = 0;
 };
 
+/// Spectral FX's output spectrogram: whole columns, laid out as SpectrogramTelemetry says.
+class SpectralFxTelemetrySource : public magda::DeviceTelemetrySource {
+  public:
+    static constexpr const char* kKey = "spectrogram";
+
+    juce::String telemetryKey() const override {
+        return kKey;
+    }
+
+    virtual size_t writePosition() const = 0;
+    virtual size_t readLatest(float* dest, int numValues) const = 0;
+};
+
 }  // namespace magda::daw::ui

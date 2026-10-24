@@ -370,6 +370,7 @@ set(_magda_neutral_base_device_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SidechainPlugin.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SidechainPlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SpectralFxPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/StepSequencerPlugin.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/StepSequencerPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/SpectrumAnalyzerPlugin.cpp"

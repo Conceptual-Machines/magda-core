@@ -8,6 +8,7 @@
 #include "audio/plugins/AnalysisTelemetry.hpp"
 #include "audio/plugins/MagdaDevice.hpp"
 #include "custom_ui/TelemetrySources.hpp"
+#include "devices/spectral/SpectrogramTelemetry.hpp"
 
 /**
  * @file DeviceTelemetrySources.hpp
@@ -218,6 +219,29 @@ class DeviceNimbusTelemetry final : public NimbusTelemetrySource {
   private:
     std::shared_ptr<audio::GrainEnvelopeTelemetry> envelope() const {
         return detail::telemetryFrom<audio::GrainEnvelopeTelemetry>(device_);
+    }
+
+    RenderedDeviceQuery device_;
+};
+
+/** @brief Spectral FX's spectrogram, off the device computing it. */
+class DeviceSpectralFxTelemetry final : public SpectralFxTelemetrySource {
+  public:
+    explicit DeviceSpectralFxTelemetry(RenderedDeviceQuery device) : device_(std::move(device)) {}
+
+    size_t writePosition() const override {
+        auto ring = spectrogram();
+        return ring != nullptr ? ring->writePosition() : 0;
+    }
+
+    size_t readLatest(float* dest, int numValues) const override {
+        auto ring = spectrogram();
+        return ring != nullptr ? ring->readLatest(dest, numValues) : 0;
+    }
+
+  private:
+    std::shared_ptr<devices::spectral::SpectrogramTelemetry> spectrogram() const {
+        return detail::telemetryFrom<devices::spectral::SpectrogramTelemetry>(device_);
     }
 
     RenderedDeviceQuery device_;
