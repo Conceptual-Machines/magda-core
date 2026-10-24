@@ -12,7 +12,7 @@
 
 #include "ChainPanel.hpp"
 #include "core/ChainNodePath.hpp"
-#include "drum_grid/PadLayerRow.hpp"
+#include "drum_grid/PadMixPanel.hpp"
 #include "layout/DashedAddButton.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -24,11 +24,10 @@ class MagdaSamplerPlugin;
 namespace magda::daw::ui {
 
 /**
- * @brief The Drum Grid's body in the v1 shell: [rail | pads | pad editor | chain] over a footer.
+ * @brief The Drum Grid's body in the v1 shell: [pads | pad mix | pad chain] over a footer.
  *
- * The selected pad's chain shows in the rack's chain view. Pads take sample and plugin drops;
- * the rail toggles the editor and swaps the pads for the pad list. The editor lists the pad's
- * layers in a mix, velocity or crossfade view; the chain view shows the selected one (#3007).
+ * The selected pad's chain shows in the rack's chain view, the same chain its mixer channel
+ * shows (#3144). Pads take sample and plugin drops.
  */
 class DrumGridUI : public juce::Component,
                    public juce::FileDragAndDropTarget,
@@ -42,8 +41,6 @@ class DrumGridUI : public juce::Component,
     static constexpr int kNumPages = kTotalPads / kPadsPerPage;
     static constexpr int kPluginParamSlots = 16;
 
-    static constexpr int kRailWidth = 38;
-    static constexpr int kEditorWidth = 300;
     static constexpr int kMinChainWidth = 264;
     static constexpr int kFooterHeight = 24;
 
@@ -74,7 +71,7 @@ class DrumGridUI : public juce::Component,
     /** Called when Clear button is clicked for the selected pad. (padIndex) */
     std::function<void(int)> onClearRequested;
 
-    /** Which fader drag the layer level and pan callbacks currently belong to.
+    /** Which fader drag the pad level and pan callbacks currently belong to.
         Bumped when a drag ends, so consecutive gestures on the same fader are
         separate undo steps rather than one merged run (#2211). */
     int getFaderGesture() const {
@@ -108,48 +105,34 @@ class DrumGridUI : public juce::Component,
     /// Whether a pad has sounded since it was last asked. Read at the poll rate.
     std::function<bool(int padIndex)> consumePadTrigger;
 
-    /// Where a change to the detail panel's collapsed state is kept.
-    std::function<void(bool collapsed)> onDetailCollapsedChanged;
-
-    /** @brief Show the detail panel as the model keeps it, without reporting a change. */
-    void restoreDetailCollapsed(bool collapsed);
-
     /** Called when layout changes (e.g., chains panel toggled) so parent can resize. */
     std::function<void()> onLayoutChanged;
 
-    /// The path of a pad's layer, its first for an invalid id; invalid while the pad has none.
-    std::function<magda::ChainNodePath(int padIndex, magda::ChainId layerId)> getPadChainPath;
+    /// The path of a pad's chain; invalid while the pad has none.
+    std::function<magda::ChainNodePath(int padIndex)> getPadChainPath;
 
-    /// A pad's layers as the model holds them, read whenever the pad is shown.
-    std::function<std::vector<PadLayerView>(int padIndex)> getPadLayers;
+    /// A device dropped on the chain area of a pad that has a chain.
+    std::function<void(int padIndex, const magda::DeviceInfo& device)> onDeviceDroppedOnPad;
 
-    std::function<void(int padIndex)> onAddLayerRequested;
-    /// A device dropped on the chain area of a pad that has one, for the layer it shows.
-    std::function<void(int padIndex, magda::ChainId layerId, const magda::DeviceInfo& device)>
-        onDeviceDroppedOnLayer;
-    std::function<void(int padIndex, magda::ChainId layerId)> onRemoveLayerRequested;
-    std::function<void(int padIndex, magda::ChainId layerId, bool mute, bool solo, bool bypassed)>
-        onLayerSwitchesChanged;
-    /// Live, per move; coalesces into one undo step per fader gesture.
-    std::function<void(magda::ChainId layerId, float volumeDb, float pan)> onLayerMixChanged;
-
-    /// The master-out row: the pad's channel fader and switches, and its power (#3010).
+    /// The mix row: the pad's channel fader and switches, and its power (#3010).
     std::function<void(int padIndex, float volumeDb, float pan)> onPadMixChanged;
     std::function<void(int padIndex, bool mute, bool solo, bool bypassed)> onPadSwitchesChanged;
-    /// Once per drag: a zone change recompiles the pad.
-    std::function<void(magda::ChainId layerId, const magda::ChainZones& zones)> onLayerZonesChanged;
 
     /** Called by the add slot of a pad with no chain yet. (padIndex) */
     std::function<void(int)> onAddDeviceRequested;
 
+    /** @brief Show or hide the pad mix panel and the pad chain, as the device keeps them. */
+    void setViewsShown(bool panelShown, bool chainShown);
+
     /** @brief Show the selected pad's chain again after the model changed it. */
     void refreshPadChain();
 
-    /** Width the panels want: rail, pads, the editor when open, and the chain. */
     /** @brief Full width, or within the max content width, past which the pad chain scrolls. */
     int getPreferredContentWidth() const;
-    /** @brief Rail, pads and editor: everything but the pad chain. */
+    /** @brief The pads and the pad's mix: everything but the pad chain. */
     int fixedContentWidth() const;
+    /** @brief The narrowest the pad chain goes: its widest device whole. */
+    int minimumChainWidth() const;
     /** @brief The width this grid may take; 0 = no limit. */
     void setMaxContentWidth(int maxWidth);
 
@@ -160,7 +143,6 @@ class DrumGridUI : public juce::Component,
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
     void timerCallback() override;
-    void mouseDown(const juce::MouseEvent& event) override;
 
     // FileDragAndDropTarget
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
@@ -250,29 +232,10 @@ class DrumGridUI : public juce::Component,
     // Pad grid
     std::array<PadButton, kPadsPerPage> padButtons_;
 
-    // Rail
-    juce::TextButton editorToggle_{"i"};
-    // Switches the editor from the pad's layers to its master out (#3010).
-    magda::SvgButton padOutToggle_{"Out", BinaryData::edit_mix_svg, BinaryData::edit_mix_svgSize};
-
-    // Pad editor
-    // Each tab lists every layer in that view; the pad's own mix is its mixer channel (#3010).
-    enum class EditorTab { Mix, Velocity, Fade };
-    EditorTab editorTab_ = EditorTab::Mix;
-    bool detailCollapsed_ = false;
-
-    // Layers of the selected pad, and which one the chain view shows
-    std::vector<PadLayerView> layers_;
-    magda::ChainId selectedLayer_ = magda::INVALID_CHAIN_ID;
-    std::vector<std::unique_ptr<PadLayerRow>> layerRows_;
-    DashedAddButton addLayerButton_{"Add layer"};
-    juce::Viewport layerList_;
-    juce::Component layerListContent_;
-
-    // Chain
+    // The selected pad's mix, beside its chain
+    PadMixPanel padMixPanel_;
     ChainPanel padChainView_;
     DashedAddButton emptyAddButton_;
-    PadLayerRow padRow_;
 
     // Footer
     std::unique_ptr<juce::ArrowButton> prevPageButton_;
@@ -280,9 +243,9 @@ class DrumGridUI : public juce::Component,
 
     // Areas laid out in resized() and painted in paint()
     int maxContentWidth_ = 0;
-    juce::Rectangle<int> railArea_, padsArea_, editorArea_, chainArea_, footerArea_;
-    juce::Rectangle<int> editorHeaderArea_, pageTextArea_;
-    juce::Rectangle<int> tabsArea_;
+    bool panelShown_ = true;
+    bool chainShown_ = true;
+    juce::Rectangle<int> padsArea_, chainArea_, footerArea_, pageTextArea_;
 
     // Plugin drop highlight
     int dropHighlightPad_ = -1;
@@ -292,21 +255,12 @@ class DrumGridUI : public juce::Component,
     int fileDropCount_ = 0;
 
     //==============================================================================
-    void setDetailCollapsed(bool collapsed);
     void refreshPadButtons();
-    void styleControls();
-    void layoutEditor(juce::Rectangle<int> area);
     void layoutChain(juce::Rectangle<int> area);
     void layoutFooter(juce::Rectangle<int> area);
-    void paintEditor(juce::Graphics& g);
     void paintEmptyChain(juce::Graphics& g);
     bool selectedPadHasChain() const;
     void refreshPadRow();
-
-    const PadLayerView* selectedLayer() const;
-    void refreshLayers();
-    void layoutLayerList(juce::Rectangle<int> area);
-    juce::Rectangle<int> tabBounds(EditorTab tab) const;
 
     /// Close the current fader gesture, so the next edit is a new undo step.
     void endFaderGesture();

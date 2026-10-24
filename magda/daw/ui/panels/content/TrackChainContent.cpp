@@ -746,6 +746,8 @@ TrackChainContent::TrackChainContent()
     // Scrolls horizontally through scrollBar_, which takes no height from the nodes.
     chainViewport_->setScrollBarsShown(true, false, false, true);
     addAndMakeVisible(*chainViewport_);
+    padChainPanel_.onLayoutChanged = [this]() { resized(); };
+    addChildComponent(padChainPanel_);
     scrollBar_ = std::make_unique<ViewportScrollBar>(*chainViewport_);
     addAndMakeVisible(*scrollBar_);
 
@@ -814,9 +816,10 @@ TrackChainContent::TrackChainContent()
     applyChainHeaderIconStyle(*addRackButton_, false);
     addRackButton_->setTooltip("Add rack");
     addRackButton_->onClick = [this]() {
-        if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
+        if (showsPadChain())
+            magda::TrackManager::getInstance().addRackToChainByPath(padChainPath_);
+        else if (selectedTrackId_ != magda::INVALID_TRACK_ID)
             magda::TrackManager::getInstance().addRackToTrack(selectedTrackId_);
-        }
     };
     addChildComponent(*addRackButton_);
 
@@ -1754,6 +1757,11 @@ void TrackChainContent::resized() {
         // ChainPanel is displayed within the rack when a chain is selected
         auto contentArea = bounds.reduced(CONTENT_INSET);
 
+        if (showsPadChain()) {
+            padChainPanel_.setBounds(contentArea);
+            return;
+        }
+
         // Viewport fills the content area
         chainViewport_->setBounds(contentArea);
         scrollBar_->setBounds(contentArea.getX(), contentArea.getBottom(), contentArea.getWidth(),
@@ -1899,6 +1907,12 @@ void TrackChainContent::trackSelectionChanged(magda::TrackId trackId) {
 }
 
 void TrackChainContent::trackDevicesChanged(magda::TrackId trackId) {
+    // A pad's chain belongs to its grid's track, so that is the one announcing it.
+    if (showsPadChain() && trackId == padChainPath_.trackId) {
+        showPadChain();
+        return;
+    }
+
     if (trackId == selectedTrackId_) {
         // Resync the chain power button — setChainEnabled notifies through
         // this callback, so the inspector's enable switch and this button
@@ -2276,6 +2290,8 @@ void TrackChainContent::showAiReasoning(const juce::String& text) {
 }
 
 void TrackChainContent::updateFromSelectedTrack() {
+    padChainPath_ = {};
+    padChainPanel_.setVisible(false);
     if (selectedTrackId_ == magda::INVALID_TRACK_ID) {
         hideHeaderControls();
         noSelectionLabel_.setVisible(true);
@@ -2318,6 +2334,9 @@ void TrackChainContent::updateFromSelectedTrack() {
 
             const bool isMaster = track->type == magda::TrackType::Master;
             const bool isChord = track->type == magda::TrackType::Chord;
+            padChainPath_ =
+                magda::TrackManager::getInstance().getPadChannelChainPath(selectedTrackId_);
+            const bool isPad = showsPadChain();
 
             // Chord audition control mirrors the chord track header; it folds in
             // monitoring, so there's no separate monitor button to sync here.
@@ -2329,9 +2348,9 @@ void TrackChainContent::updateFromSelectedTrack() {
             globalModsButton_->setVisible(showChainTools);
             macroButton_->setVisible(showChainTools);
             addRackButton_->setVisible(showChainTools);
-            addMultibandRackButton_->setVisible(showChainTools);
-            presetButton_->setVisible(showChainTools);
-            gainStagingButton_->setVisible(showChainTools);
+            addMultibandRackButton_->setVisible(showChainTools && !isPad);
+            presetButton_->setVisible(showChainTools && !isPad);
+            gainStagingButton_->setVisible(showChainTools && !isPad);
             postFxPanelButton_->setVisible(showChainTools);
             oscToggleButton_->setVisible(showChainTools);
             specToggleButton_->setVisible(showChainTools);
@@ -2346,7 +2365,7 @@ void TrackChainContent::updateFromSelectedTrack() {
             soloButton_.setVisible(!isMaster && !isChord);
             gainField_.setVisible(true);
             panField_.setVisible(!isMaster && !isChord);
-            chainBypassButton_->setVisible(!isMaster && !isChord);
+            chainBypassButton_->setVisible(!isMaster && !isChord && !isPad);
 
             muteButton_.setVisible(!isChord);
             chordSpeakerButton_->setVisible(isChord);
@@ -2596,6 +2615,15 @@ void TrackChainContent::rebuildNodeComponents() {
         return;
     }
 
+    const bool pad = showsPadChain();
+    chainViewport_->setVisible(!pad);
+    scrollBar_->setVisible(!pad);
+    padChainPanel_.setVisible(pad);
+    if (pad) {
+        showPadChain();
+        return;
+    }
+
     const auto& elements = magda::TrackManager::getInstance().getChainElements(selectedTrackId_);
 
     // Reuse the component already standing for an element, keyed by its id, and
@@ -2815,6 +2843,19 @@ void TrackChainContent::onChainSelected(magda::TrackId trackId, magda::RackId ra
     repaint();
 }
 
+void TrackChainContent::showPadChain() {
+    if (nodeComponents_.size() > 0) {
+        unfocusAllComponents();
+        nodeComponents_.clear();
+    }
+    if (padChainPanel_.getChainPath() == padChainPath_)
+        padChainPanel_.refresh();
+    else
+        padChainPanel_.showChain(padChainPath_);
+    resized();
+    repaint();
+}
+
 bool TrackChainContent::hasSelectedTrack() const {
     return selectedTrackId_ != magda::INVALID_TRACK_ID;
 }
@@ -2909,6 +2950,10 @@ void TrackChainContent::onAddDeviceClicked() {
 
 void TrackChainContent::addDeviceToSelectedTrack(const magda::DeviceInfo& device) {
     if (!hasSelectedTrack()) {
+        return;
+    }
+    if (showsPadChain()) {
+        magda::TrackManager::getInstance().addDeviceToChainByPath(padChainPath_, device);
         return;
     }
     scrollToEndAfterNextDeviceChange_ = true;

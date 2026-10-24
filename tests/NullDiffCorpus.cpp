@@ -2855,8 +2855,7 @@ void forEachExternalDevice(const Case& value, const std::function<void(const Dev
 
                 if (element.device.pads)
                     for (const auto& pad : element.device.pads->chains)
-                        for (const auto& layer : pad.layers)
-                            walk(layer.elements, track.id);
+                        walk(pad.elements, track.id);
             }
     };
 

@@ -167,7 +167,7 @@ enum class OpKind : std::uint8_t {
     /// its input through; deterministic itself, so it renders with its producer.
     Handoff,
 
-    /// Notes routed to one output per pad layer by that layer's zones (#3007).
+    /// Notes routed to one output per rack chain by that chain's zones (#3007).
     MidiZoneSplit,
     /// A multiband rack's input split into its bands, one audio output per band, low to high.
     BandSplit,
@@ -257,7 +257,6 @@ enum class OpRole : std::uint8_t {
     /// A handoff, keyed at its producer's location; OpKey::index orders the handoffs there.
     Handoff,
 
-    PadLayerSplit,   ///< one pad's notes, split across its layers by their zones
     RackChainSplit,  ///< a rack's notes, split across its chains by their zones
     RackBandSplit,   ///< a multiband rack's input, split into its bands
 };

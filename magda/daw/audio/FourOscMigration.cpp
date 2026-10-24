@@ -77,11 +77,9 @@ int convertIn(std::vector<ChainElement>& elements, const ChainNodePath& parentPa
 
         if (device.pads)
             for (auto& pad : device.pads->chains)
-                for (auto& layer : pad.layers)
-                    converted += convertIn(
-                        layer.elements,
-                        ChainNodePath::padLayer(parentPath.trackId, device.id, pad.id, layer.id),
-                        tracks, replaced);
+                converted += convertIn(
+                    pad.elements, ChainNodePath::padChain(parentPath.trackId, device.id, pad.id),
+                    tracks, replaced);
 
         if (!isFourOscDevice(device))
             continue;

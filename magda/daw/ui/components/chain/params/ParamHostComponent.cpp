@@ -470,14 +470,16 @@ void ParamHostComponent::applyControlStyle() {
         paramSlots_[i]->setControlStyle(style);
     layout_->setControlStyle(style);
 
-    // Plug-ins: 8 columns in Text and Knobs (4 and 3 rows), 6 in Sliders.
-    // Curated native layouts: balanced rows of at most the layout's columns, sized as those rows.
+    // Plug-ins: 8 columns in Text and Knobs (3 and 2 rows, so a value fits under its name at the
+    // compact device height, #3144), 6 in Sliders. Curated native layouts: balanced rows of at
+    // most the layout's columns, sized as those rows.
     const bool sliders = style == ParamControlStyle::Sliders;
     const int styleRows = style == ParamControlStyle::Knobs ? 3 : 4;
+    const int plugInRows = style == ParamControlStyle::Knobs ? 2 : 3;
     const int previousCount = cellCount_;
     const int previousColumns = cellsPerRow_;
     minRows_ = layout_->minRowsForStyle(styleRows);
-    if (layout_->setShape(sliders ? 6 : 8, styleRows)) {
+    if (layout_->setShape(sliders ? 6 : 8, plugInRows)) {
         cellCount_ = layout_->cellCount();
         cellsPerRow_ = layout_->cellsPerRow();
     } else if (layout_->reflowsForControlStyle() && cellCount_ > 0) {

@@ -531,11 +531,12 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     obj->setProperty("gainPanelOpen", device.gainPanelOpen);
     obj->setProperty("paramPanelOpen", device.paramPanelOpen);
     obj->setProperty("aiPanelOpen", device.aiPanelOpen);
-    obj->setProperty("padDetailOpen", device.padDetailOpen);
     obj->setProperty("faceplateShown", device.faceplateShown);
     obj->setProperty("paramsShown", device.paramsShown);
     obj->setProperty("timeBendShown", device.timeBendShown);
     obj->setProperty("zonesShown", device.zonesShown);
+    obj->setProperty("padPanelShown", device.padPanelShown);
+    obj->setProperty("padChainShown", device.padChainShown);
 
     // Parameters
     juce::Array<juce::var> paramsArray;
@@ -718,8 +719,6 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     outDevice.paramPanelOpen = obj->getProperty("paramPanelOpen");
     if (obj->hasProperty("aiPanelOpen"))
         outDevice.aiPanelOpen = static_cast<bool>(obj->getProperty("aiPanelOpen"));
-    if (obj->hasProperty("padDetailOpen"))
-        outDevice.padDetailOpen = static_cast<bool>(obj->getProperty("padDetailOpen"));
     if (obj->hasProperty("faceplateShown"))
         outDevice.faceplateShown = static_cast<bool>(obj->getProperty("faceplateShown"));
     if (obj->hasProperty("paramsShown"))
@@ -730,6 +729,10 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
         outDevice.timeBendShown = static_cast<bool>(obj->getProperty("timeBendShown"));
     if (obj->hasProperty("zonesShown"))
         outDevice.zonesShown = static_cast<bool>(obj->getProperty("zonesShown"));
+    if (obj->hasProperty("padPanelShown"))
+        outDevice.padPanelShown = static_cast<bool>(obj->getProperty("padPanelShown"));
+    if (obj->hasProperty("padChainShown"))
+        outDevice.padChainShown = static_cast<bool>(obj->getProperty("padChainShown"));
 
     // Parameters
     auto paramsVar = obj->getProperty("parameters");
@@ -879,7 +882,6 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
         auto pads = std::make_unique<RackInfo>();
         if (!deserializeRackInfo(padsVar, *pads))
             return false;
-        migratePadLayers(*pads);
         outDevice.pads.reset(std::move(pads));
         stampPadRackId(outDevice);
     } else {
@@ -960,8 +962,9 @@ juce::var ProjectSerializer::serializeRackInfo(const RackInfo& rack) {
         }
         obj->setProperty("crossovers", juce::var(crossovers));
         obj->setProperty("faceplateShown", rack.faceplateShown);
-        obj->setProperty("bandsShown", rack.bandsShown);
     }
+    obj->setProperty("bandsShown", rack.bandsShown);
+    obj->setProperty("chainShown", rack.chainShown);
 
     // Chains
     juce::Array<juce::var> chainsArray;
@@ -1081,6 +1084,8 @@ bool ProjectSerializer::deserializeRackInfo(const juce::var& json, RackInfo& out
         !outRack.faceplateShown ||
         static_cast<bool>(obj->getProperty("bandsShown").isVoid() ? juce::var(true)
                                                                   : obj->getProperty("bandsShown"));
+    if (const auto chainShown = obj->getProperty("chainShown"); !chainShown.isVoid())
+        outRack.chainShown = static_cast<bool>(chainShown);
     normaliseMultiband(outRack);
 
     // Sidechain
@@ -1143,13 +1148,6 @@ juce::var ProjectSerializer::serializeChainInfo(const ChainInfo& chain) {
         elementsArray.add(serializeChainElement(element));
     }
     obj->setProperty("elements", juce::var(elementsArray));
-
-    if (!chain.layers.empty()) {
-        juce::Array<juce::var> layersArray;
-        for (const auto& layer : chain.layers)
-            layersArray.add(serializeChainInfo(layer));
-        obj->setProperty("layers", juce::var(layersArray));
-    }
 
     return {obj};
 }
@@ -1223,16 +1221,6 @@ bool ProjectSerializer::deserializeChainInfo(const juce::var& json, ChainInfo& o
                 return false;
             }
             outChain.elements.push_back(std::move(element));
-        }
-    }
-
-    if (const auto layersVar = obj->getProperty("layers"); layersVar.isArray()) {
-        outChain.layers.clear();
-        for (const auto& layerVar : *layersVar.getArray()) {
-            ChainInfo layer;
-            if (!deserializeChainInfo(layerVar, layer))
-                return false;
-            outChain.layers.push_back(std::move(layer));
         }
     }
 

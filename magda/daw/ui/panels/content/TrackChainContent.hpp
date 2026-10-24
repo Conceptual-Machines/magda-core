@@ -13,6 +13,7 @@
 #include "core/DeviceInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
+#include "ui/components/chain/ChainPanel.hpp"
 #include "ui/components/common/ChordAuditionControl.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/MidiActivityLed.hpp"
@@ -251,6 +252,14 @@ class TrackChainContent : public PanelContent,
 
     // All node components in signal flow order (devices and racks unified)
     std::vector<std::unique_ptr<NodeComponent>> nodeComponents_;
+
+    // A pad channel shows its pad's chain in place of an insert chain of its own (#3144).
+    ChainPanel padChainPanel_;
+    magda::ChainNodePath padChainPath_;
+    bool showsPadChain() const {
+        return padChainPath_.isValid();
+    }
+    void showPadChain();
 
     static constexpr int ARROW_WIDTH = 4;  // Small gap between device slots
     static constexpr int SLOT_SPACING = 8;

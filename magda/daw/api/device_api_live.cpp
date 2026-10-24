@@ -761,24 +761,32 @@ ReplaceDeviceResult DeviceApiLive::replaceDevice(const ChainNodePath& devicePath
     return {ReplaceDeviceStatus::Replaced, newPath, std::move(preflight.impact)};
 }
 
-DeviceId DeviceApiLive::addDevice(const ChainNodePath& parentPath, const juce::String& catalogId,
+DeviceId DeviceApiLive::addDevice(const ChainNodePath& requestedPath, const juce::String& catalogId,
                                   int index) {
     const auto device = deviceFromCatalogId(catalogId);
     if (!device.has_value())
         return INVALID_DEVICE_ID;
 
-    if (parentPath.isPadOwned() && parentPath.steps.size() == parentPath.padChainDepth() &&
+    // A pad channel's chain is its pad's (#3144).
+    auto parentPath = requestedPath;
+    if (parentPath.getType() == ChainNodeType::Track)
+        if (const auto padPath =
+                TrackManager::getInstance().getPadChannelChainPath(parentPath.trackId);
+            padPath.isValid())
+            parentPath = padPath;
+
+    if (parentPath.isPadOwned() && parentPath.steps.size() == 2 &&
         parentPath.getType() == ChainNodeType::Chain) {
         const auto gridPath = owningGridPath(parentPath);
         auto& tm = TrackManager::getInstance();
-        if (!gridPath || tm.getPadChain(*gridPath, parentPath.getPadDeviceChainId()) == nullptr)
+        if (!gridPath || tm.getPadChain(*gridPath, parentPath.getPadChainId()) == nullptr)
             return INVALID_DEVICE_ID;
         const auto* track = tm.getTrack(parentPath.trackId);
         if (track == nullptr || (device->isInstrument && !track->canHostInstrument()))
             return INVALID_DEVICE_ID;
         DeviceId id = INVALID_DEVICE_ID;
         editPads(*gridPath, "Add Pad Device", [&] {
-            id = tm.addDeviceToPad(*gridPath, parentPath.getPadDeviceChainId(), *device, index);
+            id = tm.addDeviceToPad(*gridPath, parentPath.getPadChainId(), *device, index);
         });
         return id;
     }
@@ -964,13 +972,13 @@ bool DeviceApiLive::removeDevice(const ChainNodePath& devicePath) {
     if (getDevice(devicePath) == nullptr)
         return false;
 
-    if (devicePath.isPadOwned() && devicePath.steps.size() == devicePath.padChainDepth() + 1) {
+    if (devicePath.isPadOwned() && devicePath.steps.size() == 3) {
         const auto gridPath = owningGridPath(devicePath);
         if (!gridPath)
             return false;
         editPads(*gridPath, "Remove Pad Device", [&] {
-            TrackManager::getInstance().removeDeviceFromPad(
-                *gridPath, devicePath.getPadDeviceChainId(), devicePath.getDeviceId());
+            TrackManager::getInstance().removeDeviceFromPad(*gridPath, devicePath.getPadChainId(),
+                                                            devicePath.getDeviceId());
         });
         return true;
     }
@@ -985,14 +993,11 @@ bool DeviceApiLive::moveDevice(const ChainNodePath& devicePath, int toIndex) {
     if (toIndex < 0 || getDevice(devicePath) == nullptr)
         return false;
 
-    if (devicePath.isPadOwned() && devicePath.steps.size() == devicePath.padChainDepth() + 1) {
+    if (devicePath.isPadOwned() && devicePath.steps.size() == 3) {
         const auto gridPath = owningGridPath(devicePath);
-        auto* pad = gridPath ? TrackManager::getInstance().getPadChain(
-                                   *gridPath, devicePath.getPadDeviceChainId())
+        auto* pad = gridPath ? TrackManager::getInstance().getPadChain(*gridPath,
+                                                                       devicePath.getPadChainId())
                              : nullptr;
-        // A pad's own id names its first layer.
-        if (pad != nullptr && !pad->layers.empty())
-            pad = &pad->layers.front();
         if (pad == nullptr || toIndex >= static_cast<int>(pad->elements.size()))
             return false;
         const auto found = std::ranges::find_if(pad->elements, [&](const ChainElement& element) {
@@ -1004,7 +1009,7 @@ bool DeviceApiLive::moveDevice(const ChainNodePath& devicePath, int toIndex) {
         if (fromIndex == toIndex)
             return true;
         editPads(*gridPath, "Move Pad Device", [&] {
-            TrackManager::getInstance().moveDeviceInPad(*gridPath, devicePath.getPadDeviceChainId(),
+            TrackManager::getInstance().moveDeviceInPad(*gridPath, devicePath.getPadChainId(),
                                                         fromIndex, toIndex);
         });
         return true;
