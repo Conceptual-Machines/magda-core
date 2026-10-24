@@ -25,7 +25,7 @@ void AddModButton::setPrimary(bool primary) {
 }
 
 juce::Rectangle<int> AddModButton::shortcutBounds(int index) const {
-    auto row = getLocalBounds().reduced(6, 8).removeFromBottom(14);
+    auto row = getLocalBounds().reduced(6, 4).removeFromBottom(14);
     const int width = row.getWidth() / static_cast<int>(kShortcutNames.size());
     return row.withWidth(width).translated(width * index, 0);
 }
@@ -36,16 +36,15 @@ void AddModButton::paint(juce::Graphics& g) {
     if (!primary_ && !hovered)
         return;
 
-    auto bounds = getLocalBounds();
     const auto dim = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2);
     const auto text = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM);
-    auto label = bounds.withSizeKeepingCentre(bounds.getWidth(), 36).translated(0, -8);
+    // One line over the shortcut row, so the two fit a compact card.
+    auto label = getLocalBounds().reduced(6, 4);
+    if (primary_)
+        label.removeFromBottom(14);
     g.setColour(hovered ? text : dim);
-    g.setFont(fonts.getUIFont(16.0f));
-    g.drawText("+", label.removeFromTop(18), juce::Justification::centred);
-    g.setColour(text);
     g.setFont(fonts.getUIFont(12.0f));
-    g.drawText("Add mod", label, juce::Justification::centred);
+    g.drawText("+ Add mod", label, juce::Justification::centred);
 
     if (!primary_)
         return;

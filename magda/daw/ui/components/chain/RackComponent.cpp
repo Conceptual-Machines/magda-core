@@ -523,7 +523,9 @@ void RackComponent::layoutSidebar(juce::Rectangle<int> bar) {
     // Bands are chosen by frequency, never by the selector.
     if (selector_) {
         selector_->setVisible(!multiband_);
-        selector_->setBounds(area.removeFromBottom(16).reduced(3, 0));
+        // Centred on the strip as painted: it fills 2px left of the bar, and ends in a 1px rule.
+        const auto strip = bar.withLeft(bar.getX() - 2).withTrimmedRight(1);
+        selector_->setBounds(strip.reduced(4, 0).withY(area.getBottom() - 16).withHeight(16));
     }
 }
 

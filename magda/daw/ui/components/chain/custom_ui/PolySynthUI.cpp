@@ -20,7 +20,9 @@ constexpr int kPanelPadY = 8;
 constexpr int kHeaderH = 22;
 constexpr int kTileGap = 6;
 constexpr int kCaptionH = 14;
-constexpr int kMinTileH = 32;
+constexpr int kMinTileH = 26;
+/// The shortest value line under a caption; shorter, the two share a line.
+constexpr int kMinValueH = 13;
 constexpr int kMaxTileH = 46;
 constexpr int kDot = 6;
 
@@ -475,9 +477,25 @@ void PolySynthUI::placeTile(int slot, juce::Rectangle<int> bounds) {
     auto& c = controls_[static_cast<size_t>(slot)];
     c.tile = bounds;
     const bool compact = std::ranges::contains(compactSlots(), slot);
-    auto inner = bounds.reduced(compact ? 7 : 9, 5);
-    c.label->setBounds(inner.removeFromTop(kCaptionH));
-    c.slider->setBounds(inner);
+    auto inner = bounds.reduced(compact ? 7 : 9, 4);
+
+    // Caption over value while the value fits under it; at the height a rack's chain leaves,
+    // the value shrinks to the room left and, short of that, sits beside the caption (#3144).
+    const float baseSize = compact ? 13.5f : 15.0f;
+    const int valueH = inner.getHeight() - kCaptionH;
+    auto& value = c.slider->getSlider();
+    if (valueH >= kMinValueH) {
+        c.label->setBounds(inner.removeFromTop(kCaptionH));
+        c.slider->setBounds(inner);
+        c.slider->setFont(FontManager::getInstance().getUIFontMedium(
+            juce::jmin(baseSize, static_cast<float>(valueH))));
+        value.setJustification(juce::Justification::centredLeft);
+    } else {
+        c.label->setBounds(inner.removeFromLeft(inner.getWidth() / 2));
+        c.slider->setBounds(inner);
+        c.slider->setFont(FontManager::getInstance().getUIFontMedium(12.0f));
+        value.setJustification(juce::Justification::centredRight);
+    }
     c.label->setVisible(true);
     c.slider->setVisible(true);
 }
@@ -592,7 +610,8 @@ void PolySynthUI::layoutEnvelopePanel() {
 }
 
 void PolySynthUI::resized() {
-    auto b = getLocalBounds().reduced(kPanelGap);
+    // Padded at the sides only: the header and the voice-mode footer already frame the panels.
+    auto b = getLocalBounds().reduced(kPanelGap, 0);
     const int oscW = b.getWidth() * 38 / 100;
     const int filterW = b.getWidth() * 36 / 100;
 
