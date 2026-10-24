@@ -15,6 +15,8 @@ namespace {
 constexpr int kPanelGap = 8;
 constexpr int kPanelPadX = 10;
 constexpr int kPanelPadY = 8;
+/// Less under the last tiles than over the header: the footer frames them (#3144).
+constexpr int kPanelPadBottom = 4;
 constexpr int kHeaderH = 22;
 constexpr int kTileGap = 6;
 constexpr int kCellGap = 4;
@@ -387,7 +389,7 @@ struct NodeRows {
 
 NodeRows nodeRows(juce::Rectangle<int> panel) {
     NodeRows out;
-    auto a = panel.reduced(kPanelPadX, kPanelPadY);
+    auto a = panel.reduced(kPanelPadX, kPanelPadY).withTrimmedBottom(kPanelPadBottom - kPanelPadY);
     out.header = a.removeFromTop(kHeaderH);
     a.removeFromTop(kTileGap);
     out.captions = a.removeFromTop(kColumnCaptionH);
@@ -465,7 +467,8 @@ void FMUI::layoutMatrixPanel() {
 }
 
 void FMUI::layoutFilterPanel() {
-    auto a = filterPanel_.reduced(kPanelPadX, kPanelPadY);
+    auto a = filterPanel_.reduced(kPanelPadX, kPanelPadY)
+                 .withTrimmedBottom(kPanelPadBottom - kPanelPadY);
     auto header = a.removeFromTop(kHeaderH);
     filterTab_ = takeTab(header, "FILTER", true);
     filterDot_ = filterTab_.withWidth(kDot).withSizeKeepingCentre(kDot + 6, kDot + 6);
@@ -500,7 +503,8 @@ void FMUI::layoutFilterPanel() {
 }
 
 void FMUI::layoutEnvelopePanel() {
-    auto a = envelopePanel_.reduced(kPanelPadX, kPanelPadY);
+    auto a = envelopePanel_.reduced(kPanelPadX, kPanelPadY)
+                 .withTrimmedBottom(kPanelPadBottom - kPanelPadY);
     auto header = a.removeFromTop(kHeaderH);
     envelopeTabs_[0] = takeTab(header, "AMP", false);
     envelopeTabs_[1] = takeTab(header, "FILTER", false);

@@ -704,7 +704,6 @@ void DeviceSlotComponent::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int>
                               .headerSeparatorRight = headerSeparators_.right,
                               .sidebar = sidebarArea_,
                               .sideStrip = sideStripArea_,
-                              .footer = footerArea_,
                               .midiLed = midiLedArea_},
                              {}, midiLed_.isLit());
 }
@@ -773,17 +772,18 @@ juce::Rectangle<int> DeviceSlotComponent::layoutHeaderControls(juce::Rectangle<i
     expandToggle_->setToggleState(faceplateLent(), juce::dontSendNotification);
     midiLedArea_ = area.removeFromRight(7).withSizeKeepingCentre(7, 7);
     area.removeFromRight(getHeaderButtonGap());
-    return area;
-}
 
-void DeviceSlotComponent::resizedShellFooter(juce::Rectangle<int> footer) {
-    footerArea_ = footer;
-    voiceModeChoice_.setVisible(!footer.isEmpty());
-    if (footer.isEmpty())
-        return;
+    // The voice switch follows the modulation group on the left, in the header rather than a
+    // footer, so the body keeps its height (#3144). Left out when the name would have no room.
     const int width = voiceModeChoice_.getPreferredWidth();
-    voiceModeChoice_.setBounds(footer.reduced(10, 0).removeFromLeft(width).withSizeKeepingCentre(
-        width, getHeaderButtonSize().y));
+    const bool voice = voiceModeParam_ >= 0 && area.getWidth() > width + 80;
+    voiceModeChoice_.setVisible(voice);
+    if (voice) {
+        voiceModeChoice_.setBounds(
+            area.removeFromLeft(width).withSizeKeepingCentre(width, getHeaderButtonSize().y));
+        area.removeFromLeft(getHeaderButtonGap() * 2);
+    }
+    return area;
 }
 
 std::vector<juce::Component*> DeviceSlotComponent::sidebarButtons() const {
@@ -1785,7 +1785,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     sidebarArea_ = contentArea.removeFromLeft(sidebarWidth());
     if (collapsed_) {
         layoutHeaderControls({});
-        resizedShellFooter({});
+        voiceModeChoice_.setVisible(false);
     } else if (const int strip = sideStripWidth(); strip > 0) {
         sideStripArea_ = contentArea.removeFromRight(strip);
     }
