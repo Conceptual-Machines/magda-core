@@ -105,8 +105,8 @@ bool padHasDevices(const ChainInfo& pad);
 /// re-derived after a save and reload.
 DeviceInfo padSamplerDevice(const juce::String& samplePath, int rootNote);
 
-/// What @p pad's first device is called: a sampler by the sample it plays.
-/// Empty for a pad with no device.
+/// What @p pad's first device is called, inside a rack too: a sampler by the
+/// sample it plays. Empty for a pad with no device.
 juce::String padVoiceName(const ChainInfo& pad);
 
 /// The notes @p pad answers to that started, given the notes its devices were

@@ -568,3 +568,19 @@ TEST_CASE("Clamped zones keep each range and its fades inside MIDI", "[racks][zo
     CHECK(clamped.velocityLow == 1);
     CHECK(clamped.selectorFadeLow == 10);
 }
+
+TEST_CASE("A pad is named by the first device inside a rack in its chain",
+          "[drumgrid][pads][3144]") {
+    magda::ChainInfo pad;
+    magda::RackInfo rack;
+    rack.chains.emplace_back();
+    pad.elements.push_back(magda::makeRackElement(rack));
+    CHECK(magda::padVoiceName(pad).isEmpty());
+
+    magda::DeviceInfo kick;
+    kick.name = "Kick";
+    magda::getRack(pad.elements.front())
+        .chains.front()
+        .elements.push_back(magda::makeDeviceElement(kick));
+    CHECK(magda::padVoiceName(pad) == "Kick");
+}

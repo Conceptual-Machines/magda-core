@@ -371,3 +371,25 @@ TEST_CASE("A pad channel's chain is its pad's chain", "[drumgrid][pads][channels
     CHECK(tm.getPad(grid.path, 3)->elements.size() == 2);
     CHECK(tm.getTrack(channel->id)->chain.fxChainElements.empty());
 }
+
+TEST_CASE("Selecting a device in a pad channel's chain keeps the channel selected",
+          "[drumgrid][pads][channels][3144]") {
+    resetState();
+    auto& tm = TrackManager::getInstance();
+    auto& selection = SelectionManager::getInstance();
+    const auto grid = makeGrid();
+    const auto voiceId = tm.setPadDevice(grid.path, 3, padVoice("Hat"));
+    REQUIRE(voiceId != INVALID_DEVICE_ID);
+    const auto* channel = tm.getPadChannel(grid.path, 3);
+    REQUIRE(channel != nullptr);
+    const auto padPath = tm.getPadChannelChainPath(channel->id);
+
+    selection.selectTrack(channel->id);
+    selection.selectChainNode(padPath.withDevice(voiceId));
+    CHECK(selection.getSelectedTrack() == channel->id);
+
+    // From anywhere else the device still takes the selection to its grid's track.
+    selection.selectTrack(grid.trackId);
+    selection.selectChainNode(padPath.withDevice(voiceId));
+    CHECK(selection.getSelectedTrack() == grid.trackId);
+}

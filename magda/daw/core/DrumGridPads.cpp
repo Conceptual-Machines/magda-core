@@ -396,12 +396,28 @@ DeviceInfo padSamplerDevice(const juce::String& samplePath, int rootNote) {
     return device;
 }
 
+namespace {
+
+/// The first device under @p elements, through racks in chain order.
+const DeviceInfo* firstDeviceIn(const std::vector<ChainElement>& elements) {
+    for (const auto& element : elements) {
+        if (isDevice(element))
+            return &getDevice(element);
+        for (const auto& chain : getRack(element).chains)
+            if (const auto* found = firstDeviceIn(chain.elements))
+                return found;
+    }
+    return nullptr;
+}
+
+}  // namespace
+
 juce::String padVoiceName(const ChainInfo& pad) {
-    const auto first = std::ranges::find_if(pad.elements, isDevice);
-    if (first == pad.elements.end())
+    const auto* found = firstDeviceIn(pad.elements);
+    if (found == nullptr)
         return {};
 
-    const auto& device = getDevice(*first);
+    const auto& device = *found;
     if (device.pluginId == kSamplerId)
         if (const auto doc = ds::decode(device.pluginState)) {
             const juce::File sample(doc->root.props[kSamplePath].toString());

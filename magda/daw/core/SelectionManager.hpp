@@ -1034,6 +1034,10 @@ class SelectionManager {
     // notifyTrackSelectionChanged). No-op for INVALID_TRACK_ID.
     bool alignPrimaryTrackToOwner(TrackId trackId);
 
+    // The track a chain node's selection belongs to: its own, unless the selected
+    // track is the pad channel showing the pad chain it lies in (#3144).
+    TrackId ownerTrackOf(const ChainNodePath& path) const;
+
     SelectionType selectionType_ = SelectionType::None;
     TrackId selectedTrackId_ = INVALID_TRACK_ID;
     std::unordered_set<TrackId> selectedTrackIds_;  // For multi-track selection
