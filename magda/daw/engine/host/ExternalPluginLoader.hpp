@@ -101,6 +101,9 @@ class ExternalPluginLoader final : private juce::AsyncUpdater {
     /// bound to its document, which has to come first (#1579). Message thread.
     void onExternalLoaded(ExternalLoaded loaded);
 
+    /// Told once per assignment that a load gave up, after the reason is logged (#3150).
+    void onFailed(std::function<void(engine::DeviceKey key, const juce::String& reason)> failed);
+
     /**
      * @brief The instance for @p key, or nothing yet.
      *
@@ -172,6 +175,7 @@ class ExternalPluginLoader final : private juce::AsyncUpdater {
     PluginEdit pluginEdit_;
     std::function<void()> woken_;
     ExternalLoaded externalLoaded_;
+    std::function<void(engine::DeviceKey, const juce::String&)> failed_;
 
     std::shared_ptr<Wake> wake_;
     std::map<engine::DeviceKey, EditSource> editSources_;

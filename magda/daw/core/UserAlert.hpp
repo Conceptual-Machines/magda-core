@@ -21,4 +21,13 @@ void setUserAlertHandler(UserAlertHandler handler);
  *  UI (e.g. an exception caught during teardown). No-op with no handler. */
 void notifyUserAlert(const juce::String& message);
 
+using PluginLoadFailureHandler =
+    std::function<void(const juce::String& plugin, const juce::String& reason)>;
+
+/// Registered by the UI, which warns with a dialog; unset in headless targets (#3150).
+void setPluginLoadFailureHandler(PluginLoadFailureHandler handler);
+
+/// A plugin that could not be instantiated, with the host's or the plugin's reason.
+void notifyPluginLoadFailure(const juce::String& plugin, const juce::String& reason);
+
 }  // namespace magda
