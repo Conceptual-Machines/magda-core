@@ -1382,14 +1382,18 @@ void MainWindow::MainComponent::setupLoadingOverlay() {
 
 void MainWindow::MainComponent::warnAboutLoadFailures() {
     const auto failures = std::exchange(pendingLoadFailures_, {});
-    juce::AlertWindow::showAsync(juce::MessageBoxOptions()
-                                     .withIconType(juce::MessageBoxIconType::WarningIcon)
-                                     .withTitle(tr("plugin_settings.dialog.load_failed_title"))
-                                     .withMessage(tr("plugin_settings.dialog.load_failed_message") +
-                                                  "\n\n" + failures.joinIntoString("\n"))
-                                     .withButton(tr("dialogs.ok"))
-                                     .withAssociatedComponent(this),
-                                 nullptr);
+    const auto single = failures.size() == 1;
+    juce::AlertWindow::showAsync(
+        juce::MessageBoxOptions()
+            .withIconType(juce::MessageBoxIconType::WarningIcon)
+            .withTitle(tr(single ? "plugin_settings.dialog.load_failed_title"
+                                 : "plugin_settings.dialog.load_failed_title_other"))
+            .withMessage(tr(single ? "plugin_settings.dialog.load_failed_message"
+                                   : "plugin_settings.dialog.load_failed_message_other") +
+                         "\n\n" + failures.joinIntoString("\n"))
+            .withButton(tr("dialogs.ok"))
+            .withAssociatedComponent(this),
+        nullptr);
 }
 
 MainWindow::MainComponent::~MainComponent() {
