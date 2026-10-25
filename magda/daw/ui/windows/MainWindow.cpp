@@ -1775,7 +1775,8 @@ void MainWindow::setupMenuBar() {
 
 #if JUCE_MAC
     // On macOS, use the native menu bar
-    juce::MenuBarModel::setMacMainMenu(MenuManager::getInstance().getMenuBarModel());
+    const auto appleMenu = MenuManager::getInstance().getAppleMenuItems();
+    juce::MenuBarModel::setMacMainMenu(MenuManager::getInstance().getMenuBarModel(), &appleMenu);
 #else
     // On other platforms, show menu bar in window
     setMenuBar(MenuManager::getInstance().getMenuBarModel());

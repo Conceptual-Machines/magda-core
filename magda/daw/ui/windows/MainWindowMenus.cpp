@@ -1034,8 +1034,6 @@ void MainWindow::setupMenuCallbacks() {
 
     callbacks.onProjectSettings = [this]() { ProjectSettingsDialog::showDialog(this); };
 
-    callbacks.onAISettings = [] { SettingsWindow::show(SettingsSectionId::AI); };
-
     callbacks.onAudioSettings = [] { SettingsWindow::show(SettingsSectionId::AudioMidi); };
 
     // View menu callbacks
@@ -1353,13 +1351,6 @@ void MainWindow::setupMenuCallbacks() {
         auto* engine = mainComponent ? mainComponent->getAudioEngine() : nullptr;
         AboutDialog::show(engine != nullptr ? engine->engineName() : juce::String());
     };
-
-    // Settings menu callbacks
-    callbacks.onControllerSettings = [] { SettingsWindow::show(SettingsSectionId::Controllers); };
-
-    callbacks.onConnectionSettings = [] { SettingsWindow::show(SettingsSectionId::Connections); };
-
-    callbacks.onPluginSettings = [] { SettingsWindow::show(SettingsSectionId::Plugins); };
 
     // Initialize the menu manager with callbacks
     MenuManager::getInstance().initialize(callbacks);

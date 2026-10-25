@@ -60,13 +60,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         std::function<void()> onPasteRipple;
         std::function<void()> onSelectAll;
         std::function<void()> onPreferences;
-
-        // Settings menu
-        std::function<void()> onAISettings;
         std::function<void()> onAudioSettings;
-        std::function<void()> onPluginSettings;
-        std::function<void()> onControllerSettings;
-        std::function<void()> onConnectionSettings;
 
         // View menu
         std::function<void(bool)> onToggleLeftPanel;
@@ -148,6 +142,9 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         return this;
     }
 
+    /** @brief The macOS app menu's extra items: Settings, where Mac apps keep it (#3162). */
+    juce::PopupMenu getAppleMenuItems() const;
+
     // UndoManagerListener
     void undoStateChanged() override {
         // Force menu to rebuild when undo state changes
@@ -166,6 +163,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
     // Tab-prefixed shortcut hint for a command's current key (platform-correct
     // via getTextDescriptionWithIcons), or "" if unbound / no command manager.
     juce::String keyHint(juce::CommandID commandID) const;
+    juce::String settingsItemText() const;
 
     juce::ApplicationCommandManager* commandManager_ = nullptr;
 
@@ -216,13 +214,6 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         DuplicateClipAsGhost = 235,
         MakeClipUnique,
         Preferences = 299,
-
-        // Settings menu (800-899)
-        AISettings = 800,
-        AudioSettings = 801,
-        PluginSettings = 810,
-        ControllerSettings = 811,
-        ConnectionSettings = 812,
 
         // View menu (300-399)
         ToggleLeftPanel = 300,

@@ -122,9 +122,19 @@ void MenuManager::updateMenuStates(bool canUndo, bool canRedo, bool hasSelection
     menuItemsChanged();
 }
 
+juce::String MenuManager::settingsItemText() const {
+    return trEllipsis("settings.title") + keyHint(CommandIDs::openPreferences);
+}
+
+juce::PopupMenu MenuManager::getAppleMenuItems() const {
+    juce::PopupMenu menu;
+    menu.addItem(Preferences, settingsItemText(), true, false);
+    return menu;
+}
+
 juce::StringArray MenuManager::getMenuBarNames() {
-    return {tr("menu.file"),  tr("menu.edit"),     tr("menu.view"),   tr("menu.transport"),
-            tr("menu.track"), tr("menu.settings"), tr("menu.window"), tr("menu.help")};
+    return {tr("menu.file"),  tr("menu.edit"),   tr("menu.view"), tr("menu.transport"),
+            tr("menu.track"), tr("menu.window"), tr("menu.help")};
 }
 
 juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
@@ -323,10 +333,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
                          true, false);
 #if !JUCE_MAC
             menu.addSeparator();
-            menu.addItem(Preferences,
-                         trEllipsis("menu.settings.preferences") +
-                             keyHint(CommandIDs::openPreferences),
-                         true, false);
+            menu.addItem(Preferences, settingsItemText(), true, false);
 #endif
             break;
         }
@@ -408,31 +415,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
             break;
         }
 
-        case 5:  // Settings
-        {
-            menu.addItem(Preferences,
-                         trEllipsis("menu.settings.preferences") +
-                             keyHint(CommandIDs::openPreferences),
-                         true, false);
-            menu.addSeparator();
-            menu.addItem(AISettings, trEllipsis("menu.settings.ai"), true, false);
-            menu.addSeparator();
-            menu.addItem(
-                AudioSettings,
-                trEllipsis("menu.settings.audio_midi")
-                        .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Audio))
-                        .replace("{1}", magda::technicalText(magda::TechnicalTextToken::Midi)) +
-                    keyHint(CommandIDs::openAudioSettings),
-                true, false);
-            menu.addSeparator();
-            menu.addItem(ControllerSettings, trEllipsis("menu.settings.controllers"), true, false);
-            menu.addItem(ConnectionSettings, trEllipsis("menu.settings.connections"), true, false);
-            menu.addSeparator();
-            menu.addItem(PluginSettings, trEllipsis("menu.settings.plugins"), true, false);
-            break;
-        }
-
-        case 6:  // Window
+        case 5:  // Window
         {
             menu.addItem(Minimize, tr("menu.window.minimize"), true, false);
             menu.addItem(Zoom, tr("menu.window.zoom"), true, false);
@@ -441,7 +424,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
             break;
         }
 
-        case 7:  // Help
+        case 6:  // Help
         {
             menu.addItem(OpenManual, tr("menu.help.manual"), true, false);
             menu.addItem(CheckForUpdates, trEllipsis("menu.help.check_updates"), true, false);
@@ -619,26 +602,6 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
             break;
         case Preferences:
             invokeApplicationCommand(CommandIDs::openPreferences);
-            break;
-        // Settings menu
-        case AISettings:
-            if (callbacks_.onAISettings)
-                callbacks_.onAISettings();
-            break;
-        case AudioSettings:
-            invokeApplicationCommand(CommandIDs::openAudioSettings);
-            break;
-        case PluginSettings:
-            if (callbacks_.onPluginSettings)
-                callbacks_.onPluginSettings();
-            break;
-        case ControllerSettings:
-            if (callbacks_.onControllerSettings)
-                callbacks_.onControllerSettings();
-            break;
-        case ConnectionSettings:
-            if (callbacks_.onConnectionSettings)
-                callbacks_.onConnectionSettings();
             break;
 
         // View menu
