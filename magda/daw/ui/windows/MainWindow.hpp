@@ -291,6 +291,10 @@ class MainWindow::MainComponent : public juce::Component,
     // Outlines the panel that context commands act on (#3157)
     std::unique_ptr<daw::ui::PanelFocusTracker> focusTracker_;
 
+    // Plugin load failures that arrived in the same turn, warned about in one dialog (#3150).
+    juce::StringArray pendingLoadFailures_;
+    void warnAboutLoadFailures();
+
     // Setup helpers
     void setupResizeHandles();
     void setupViewModeListener();
