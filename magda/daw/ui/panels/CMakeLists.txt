@@ -10,6 +10,7 @@ target_sources(magda_daw_app PRIVATE
     FooterBar.cpp
     PanelTabBar.cpp
     TabbedPanel.cpp
+    PanelFocusTracker.cpp
     TransportPanel.hpp
     CapturePanel.hpp
     TransportLayout.hpp
@@ -21,6 +22,7 @@ target_sources(magda_daw_app PRIVATE
     FooterBar.hpp
     PanelTabBar.hpp
     TabbedPanel.hpp
+    PanelFocusTracker.hpp
 )
 
 add_subdirectory(state)
