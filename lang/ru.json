@@ -306,7 +306,11 @@
     "status.failed_short": "с ошибкой",
     "status.plugins_available": "плагинов доступно",
     "status.excluded": "исключено",
-    "status.none_scanned": "Плагины ещё не сканировались"
+    "status.none_scanned": "Плагины ещё не сканировались",
+    "dialog.load_failed_title": "",
+    "dialog.load_failed_title_other": "",
+    "dialog.load_failed_message": "",
+    "dialog.load_failed_message_other": ""
   },
   "footer": {
     "tooltip.session": "Сессия",
@@ -605,19 +609,21 @@
     "label.interface": "Интерфейс:",
     "label.input_interface": "Интерфейс входа:",
     "label.output_interface": "Интерфейс выхода:",
+    "tooltip.control_panel": "",
     "tooltip.refreshing": "Обновление аудиоустройств",
     "status.refreshing": "Обновление устройств",
     "toggle.set_preferred": "Сделать предпочтительными (автовыбор при запуске)",
-    "label.engine": "Аудиодвижок:",
-    "engine.magda_beta": "Движок MAGDA (бета)",
-    "engine.env_override": "В текущем запуске этот параметр переопределён переменной MAGDA_AUDIO_ENGINE",
-    "engine.restart": "Вступит в силу после перезапуска",
+    "label.engine": "",
+    "engine.magda_beta": "",
+    "engine.env_override": "",
+    "engine.restart": "",
     "label.sample_rate": "Частота дискретизации:",
     "label.buffer_size": "Размер буфера:",
     "label.midi_inputs": "MIDI-входы:",
     "label.midi_output": "MIDI-выход:",
     "midi_output.none": "<< нет >>",
     "button.bluetooth_midi": "Bluetooth MIDI",
+    "button.control_panel": "",
     "button.close": "Закрыть",
     "what.sample_rate": "частота дискретизации",
     "what.buffer_size": "размер буфера",
@@ -629,13 +635,16 @@
     "error.open": "Не удалось открыть «{0}».\n\nОшибка: {1}",
     "error.set": "Не удалось изменить параметр «{0}» на {1}.\n\nОшибка: {2}",
     "error.not_initialized_title": "Настройки аудио",
-    "error.not_initialized": "Аудиодвижок не инициализирован. Невозможно открыть настройки аудио."
+    "error.not_initialized": "Аудиодвижок не инициализирован. Невозможно открыть настройки аудио.",
+    "crash_recovery.title": "",
+    "crash_recovery.message": "",
+    "crash_recovery.default": ""
   },
   "engine_prompt": {
-    "title": "Попробовать движок MAGDA?",
-    "message": "У MAGDA есть собственный аудиодвижок, сейчас в бета-версии. Хотите использовать его?\n\nДвижок можно сменить в любой момент в настройках аудио/MIDI.",
-    "dont_show_again": "Больше не показывать",
-    "yes": "Да",
-    "no": "Нет"
+    "title": "",
+    "message": "",
+    "dont_show_again": "",
+    "yes": "",
+    "no": ""
   }
 }

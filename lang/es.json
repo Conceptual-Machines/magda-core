@@ -306,7 +306,11 @@
     "status.failed_short": "fallido",
     "status.plugins_available": "plugins disponibles",
     "status.excluded": "excluido",
-    "status.none_scanned": "Ningún plugin escaneado aún"
+    "status.none_scanned": "Ningún plugin escaneado aún",
+    "dialog.load_failed_title": "",
+    "dialog.load_failed_title_other": "",
+    "dialog.load_failed_message": "",
+    "dialog.load_failed_message_other": ""
   },
   "footer": {
     "tooltip.session": "Sesión",
@@ -605,19 +609,21 @@
     "label.interface": "Interfaz:",
     "label.input_interface": "Interfase de entrada:",
     "label.output_interface": "Interfaz de salida:",
+    "tooltip.control_panel": "",
     "tooltip.refreshing": "Actualizar dispositivos de audio",
     "status.refreshing": "Actualizar dispositivos",
     "toggle.set_preferred": "Elegir predeterminado (al inicio)",
-    "label.engine": "Motor audio:",
-    "engine.magda_beta": "Motor MAGDA (beta)",
-    "engine.env_override": "MAGDA_MOTOR_AUDIO reemplaza esto para la ejecución actual",
-    "engine.restart": "Tiene efecto después de reiniciar",
+    "label.engine": "",
+    "engine.magda_beta": "",
+    "engine.env_override": "",
+    "engine.restart": "",
     "label.sample_rate": "Frecuencia de muestreo:",
     "label.buffer_size": "Tamaño búfer:",
     "label.midi_inputs": "Entradas MIDI:",
     "label.midi_output": "Salidas MIDI:",
     "midi_output.none": "<< ninguno >>",
     "button.bluetooth_midi": "Bluetooth MIDI",
+    "button.control_panel": "",
     "button.close": "Cerrar",
     "what.sample_rate": "frecuencia de muestreo",
     "what.buffer_size": "tamaño de búfer",
@@ -629,13 +635,16 @@
     "error.open": "No se pudo abrir \"{0}\".\n\nError: {1}",
     "error.set": "No se pudo establecer el {0} a {1}.\n\nError: {2}",
     "error.not_initialized_title": "Ajustes de audio",
-    "error.not_initialized": "Audio no iniciado. No se puede abrir los ajustes."
+    "error.not_initialized": "Audio no iniciado. No se puede abrir los ajustes.",
+    "crash_recovery.title": "",
+    "crash_recovery.message": "",
+    "crash_recovery.default": ""
   },
   "engine_prompt": {
-    "title": "¿Probar el motor MAGDA?",
-    "message": "MAGDA tiene su propio motor de audio, ahora en fase beta. ¿Quieres usarlo?\n\nPuedes cambiar de motor en cualquier momento en Ajustes de Audio/MIDI.",
-    "dont_show_again": "No volver a mostrar",
-    "yes": "Si",
-    "no": "No"
+    "title": "",
+    "message": "",
+    "dont_show_again": "",
+    "yes": "",
+    "no": ""
   }
 }
