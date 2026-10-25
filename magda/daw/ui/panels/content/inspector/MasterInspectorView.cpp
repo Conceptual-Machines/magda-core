@@ -10,6 +10,7 @@
 #include "audio/TrackMeters.hpp"
 #include "audio/io/AudioIOControl.hpp"
 #include "core/RackInfo.hpp"
+#include "core/StringTable.hpp"
 #include "core/TrackManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
@@ -63,7 +64,7 @@ MasterInspectorView::MasterInspectorView() {
     };
     addAndMakeVisible(*muteButton_);
 
-    for (auto* header : {&outputHeader_, &latencyHeader_}) {
+    for (auto* header : {&outputHeader_, &fxHeader_, &latencyHeader_}) {
         header->onCollapsedChanged = [this]() { layoutSections(); };
         addAndMakeVisible(*header);
     }
@@ -93,6 +94,17 @@ MasterInspectorView::MasterInspectorView() {
     peakLabel_.addMouseListener(this, false);
     addAndMakeVisible(peakLabel_);
 
+    fxHeader_.setText(tr("inspector.fx"));
+    noFxLabel_.setText(tr("inspector.no_fx"), juce::dontSendNotification);
+    noFxLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+    noFxLabel_.setBorderSize({});
+    addChildComponent(noFxLabel_);
+    fxViewport_.setViewedComponent(&fxList_, false);
+    fxViewport_.setScrollBarsShown(true, false);
+    fxViewport_.setScrollBarThickness(6);
+    addChildComponent(fxViewport_);
+    fxList_.onHeightChanged = [this]() { layoutSections(); };
+
     applyColours();
 }
 
@@ -101,7 +113,7 @@ void MasterInspectorView::applyColours() {
     summaryLabel_.setColour(juce::Label::textColourId,
                             ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
     peakLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    for (auto* label : {&volumeCaption_})
+    for (auto* label : {&volumeCaption_, &noFxLabel_})
         label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 }
 
@@ -131,8 +143,10 @@ void MasterInspectorView::refresh() {
     muteButton_->setToggleState(master.muted, juce::dontSendNotification);
 
     int devices = 0;
-    if (const auto* track = tm.getTrack(magda::MASTER_TRACK_ID))
+    if (const auto* track = tm.getTrack(magda::MASTER_TRACK_ID)) {
         devices = static_cast<int>(track->chain.fxChainElements.size());
+        fxList_.sync(*track, audioEngine_);
+    }
     const auto dot = juce::String::fromUTF8(" \xc2\xb7 ");
     summaryLabel_.setText("Master" + dot + "stereo" + dot + juce::String(devices) +
                               (devices == 1 ? " device" : " devices"),
@@ -345,6 +359,40 @@ void MasterInspectorView::layoutSections() {
         peakLabel_.setBounds(
             scale.withSizeKeepingCentre(juce::jmin(160, scale.getWidth() / 2), scale.getHeight()));
         output.removeFromTop(kRowGap + 4);
+    } else {
+        output.removeFromTop(6);
+    }
+    separatorYs_.push_back(output.getY());
+
+    // FX: the list takes what Latency leaves, at least three rows, and scrolls past that.
+    output.removeFromTop(6);
+    fxHeader_.setBounds(output.removeFromTop(CollapsibleSectionHeader::kHeight));
+    const bool fxOpen = !fxHeader_.isCollapsed();
+    noFxLabel_.setVisible(fxOpen && fxList_.isEmpty());
+    fxViewport_.setVisible(fxOpen && !fxList_.isEmpty());
+    if (fxOpen) {
+        output.removeFromTop(4);
+        if (fxList_.isEmpty()) {
+            noFxLabel_.setBounds(output.removeFromTop(kCaption));
+        } else {
+            const int latencyHeight =
+                6 + CollapsibleSectionHeader::kHeight +
+                (latencyHeader_.isCollapsed()
+                     ? 0
+                     : 6 + 34 + kRowGap +
+                           juce::jmax(1, static_cast<int>(contributors_.size())) * kContributorRow +
+                           2);
+            const int preferred = fxList_.preferredHeight();
+            const int least = std::min(preferred, 3 * (magda::MiniChainRow::kCollapsedHeight +
+                                                       magda::MiniChainList::kRowGap));
+            const int height =
+                std::clamp(output.getHeight() - kRowGap - latencyHeight, least, preferred);
+            fxViewport_.setBounds(output.removeFromTop(height));
+            fxList_.setSize(fxViewport_.getWidth() -
+                                (height < preferred ? fxViewport_.getScrollBarThickness() + 2 : 0),
+                            preferred);
+        }
+        output.removeFromTop(kRowGap);
     } else {
         output.removeFromTop(6);
     }

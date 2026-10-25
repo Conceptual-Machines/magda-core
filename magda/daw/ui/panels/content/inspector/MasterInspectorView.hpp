@@ -9,6 +9,7 @@
 #include "../../../components/common/DraggableValueLabel.hpp"
 #include "../../../components/common/SvgButton.hpp"
 #include "../../../components/mixer/LevelMeter.hpp"
+#include "../../../components/mixer/MiniChainList.hpp"
 
 namespace magda {
 class AudioEngine;
@@ -17,8 +18,9 @@ class AudioEngine;
 namespace magda::daw::ui {
 
 /**
- * @brief The inspector for the master track: header, Output (volume and live peak meter)
- *        and Latency (the master chain's total and its largest contributors).
+ * @brief The inspector for the master track: header, Output (volume and live peak meter),
+ *        FX (the compact master chain) and Latency (the chain's total and its largest
+ *        contributors).
  *
  * Shown by TrackInspector over its own controls while the master is selected.
  */
@@ -33,6 +35,11 @@ class MasterInspectorView : public juce::Component, private juce::Timer {
 
     /// Re-read the master channel and chain: after any master or device change.
     void refresh();
+
+    /// Re-entrant from an FX row's own bypass toggle: repaints, never rebuilds.
+    void syncBypass(magda::DeviceId deviceId, bool bypassed) {
+        fxList_.syncBypass(deviceId, bypassed);
+    }
 
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
@@ -63,6 +70,11 @@ class MasterInspectorView : public juce::Component, private juce::Timer {
     std::unique_ptr<magda::DraggableValueLabel> volume_;
     magda::LevelMeter meter_;
     juce::Label peakLabel_;
+
+    CollapsibleSectionHeader fxHeader_{"FX", "master.fx"};
+    juce::Label noFxLabel_;
+    juce::Viewport fxViewport_;
+    magda::MiniChainList fxList_;
 
     CollapsibleSectionHeader latencyHeader_{"Latency", "master.latency"};
     double totalMs_ = 0.0;

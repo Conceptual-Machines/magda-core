@@ -10,6 +10,7 @@
 #include "../../common/MonitorControl.hpp"
 #include "../../common/SvgButton.hpp"
 #include "../../mixer/InputTypeSelector.hpp"
+#include "../../mixer/MiniChainList.hpp"
 #include "../../mixer/RoutingSelector.hpp"
 #include "BaseInspector.hpp"
 #include "MasterInspectorView.hpp"
@@ -17,6 +18,7 @@
 #include "audio/io/AudioIOControl.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/TrackManager.hpp"
+#include "ui/components/common/CollapsibleSectionHeader.hpp"
 
 namespace magda::daw::ui {
 
@@ -116,7 +118,6 @@ class TrackInspector : public BaseInspector,
     juce::Label automatedParamsLabel_;
 
     // Routing section (unified input type toggle + selectors)
-    juce::Label routingSectionLabel_;
     std::unique_ptr<magda::InputTypeSelector> inputTypeSelector_;   // Hidden, internal state
     std::unique_ptr<magda::RoutingSelector> audioInputSelector_;    // Audio input
     std::unique_ptr<magda::RoutingSelector> inputSelector_;         // MIDI input
@@ -128,7 +129,6 @@ class TrackInspector : public BaseInspector,
     std::unique_ptr<juce::Component> outputIcon_;  // Opens the MIDI Out channel menu
 
     // Send/Receive section
-    juce::Label sendReceiveSectionLabel_;
     std::unique_ptr<SvgButton> addSendButton_;
     std::vector<std::unique_ptr<juce::Label>> sendDestLabels_;
     std::vector<std::unique_ptr<magda::DraggableValueLabel>> sendLevelLabels_;
@@ -136,12 +136,18 @@ class TrackInspector : public BaseInspector,
     juce::Label noSendsLabel_;
 
     // Clips section
-    juce::Label clipsSectionLabel_;
     juce::Label clipCountLabel_;
 
-    // Latency display
-    juce::Label latencyLabel_;
-    juce::Label latencyValue_;
+    // FX section: the compact chain, with the track's latency in its header
+    CollapsibleSectionHeader fxHeader_{"FX", "trackInspector.fx"};
+    juce::Label noFxLabel_;
+    juce::Viewport fxViewport_;
+    magda::MiniChainList fxList_;
+
+    CollapsibleSectionHeader routingHeader_{"Routing", "trackInspector.routing"};
+    CollapsibleSectionHeader sendsHeader_{"Sends", "trackInspector.sends"};
+    CollapsibleSectionHeader clipsHeader_{"Clips", "trackInspector.clips"};
+    bool controlsShown_ = false;
 
     /// The master's own layout, shown over everything above while it is selected.
     MasterInspectorView masterView_;
@@ -177,6 +183,12 @@ class TrackInspector : public BaseInspector,
     void updateAutomatedParametersSummary();
     void showTrackControls(bool show);
     void rebuildSendsUI();
+    void syncFxList();
+    void updateLatency();
+
+    /** Lays out every section with the FX list given @p fxListHeight; returns the height
+     *  left over below the last one. */
+    int layoutSections(int fxListHeight);
 
     /// Greys the add-send button on a track that is already at the aux limit.
     void updateAddSendEnabled();

@@ -2,6 +2,7 @@ target_sources(magda_daw_app PRIVATE
     HardwareInputLevels.cpp
     MasterChannelStrip.cpp
     InputTypeSelector.cpp
+    MiniChainList.cpp
     MiniChainRow.cpp
     MixAnalysisModal.cpp
     MixerToggleRail.cpp
@@ -13,6 +14,7 @@ target_sources(magda_daw_app PRIVATE
     LevelMeterClock.hpp
     LevelMeterScale.hpp
     MidiNoteStrip.hpp
+    MiniChainList.hpp
     MiniChainRow.hpp
     MixAnalysisModal.hpp
     MixerToggleRail.hpp
