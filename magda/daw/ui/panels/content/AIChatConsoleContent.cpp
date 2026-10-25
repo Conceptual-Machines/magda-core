@@ -46,7 +46,7 @@
 #include "../../../project/ProjectManager.hpp"
 #include "../../code/SyntaxTheme.hpp"
 #include "../../components/common/SvgButton.hpp"
-#include "../../dialogs/AISettingsDialog.hpp"
+#include "../../dialogs/settings/SettingsLink.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -2234,7 +2234,7 @@ bool AIChatConsoleContent::isLocalPreset() {
 
 void AIChatConsoleContent::mouseUp(const juce::MouseEvent& event) {
     if (event.originalComponent == &configStatusLabel_) {
-        magda::AISettingsDialog::showDialog(this);
+        magda::openSettings(magda::SettingsSectionId::AI);
         return;
     }
     if (event.originalComponent == &contextLabel_) {

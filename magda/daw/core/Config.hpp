@@ -6,6 +6,7 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -1565,6 +1566,16 @@ class Config {
     //   Linux  ~/.config/MAGDA/config.json
     void save();
     void load();
+
+    /** @brief Every saved setting, as written to config.json. */
+    juce::var toVar() const;
+    /** @brief Read settings from a toVar() tree. */
+    void fromVar(const juce::var& tree);
+
+    /** @brief A default-valued instance with no listeners, never saved (#3162). */
+    static std::unique_ptr<Config> createDetached();
+    /** @brief A detached copy of these settings. */
+    std::unique_ptr<Config> clone() const;
 
   private:
     Config() = default;

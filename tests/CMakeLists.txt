@@ -234,6 +234,9 @@ set(TEST_SOURCES
     ui/test_panel_tab_persistence.cpp
     ../magda/daw/ui/panels/state/PanelController.cpp
     ../magda/daw/ui/panels/content/PanelContent.cpp
+    # The Settings window's change count and Restore defaults (#3162)
+    ui/test_settings_section.cpp
+    ../magda/daw/ui/dialogs/settings/SettingsSection.cpp
     # Keep test runs out of the developer's real config.json. The redirect must
     # be linked into every test binary, and the guard test proves it took.
     TestConfigRedirect.cpp
@@ -954,7 +957,7 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/components/automation/AutomationClipComponent.cpp
     ../magda/daw/ui/components/waveform/ClipWaveformPainter.cpp
     ../magda/daw/ui/components/common/Toast.cpp
-    ../magda/daw/ui/dialogs/AISettingsDialog.cpp
+    ../magda/daw/ui/dialogs/settings/SettingsLink.cpp
     ../magda/daw/ui/interaction/ArrangementCursorMap.cpp
     ../magda/daw/ui/panels/state/PanelController.cpp
     # PanelController persists its tab layout by content-type id, which lives here

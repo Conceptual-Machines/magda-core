@@ -30,6 +30,8 @@ class MagdaAlertWindow : public juce::AlertWindow {
     void visibilityChanged() override;
 
     static ButtonRole roleOf(const juce::Button& button);
+    /** @brief Give a button outside an alert one of the alert roles, for the same paint. */
+    static void setRole(juce::Button& button, ButtonRole role);
 
     /// Gives each button, in the order added, its role and keys: Return never on a
     /// destructive button, Cmd+D on Don't Save, Cmd+Backspace on a destructive one.
@@ -60,6 +62,10 @@ class MagdaAlertWindow : public juce::AlertWindow {
     juce::Rectangle<int> chipArea_, titleArea_, messageArea_, footerArea_;
     bool laying_ = false;
 };
+
+/** @brief The alert buttons' paint, for any window that uses the same buttons. */
+void drawAlertButtonBackground(juce::Graphics& g, juce::Button& button, bool over, bool down);
+void drawAlertButtonText(juce::Graphics& g, juce::TextButton& button);
 
 /// Builds the alert JUCE's message boxes show; the look-and-feels' createAlertWindow call this.
 juce::AlertWindow* createMagdaAlertWindow(const juce::String& title, const juce::String& message,

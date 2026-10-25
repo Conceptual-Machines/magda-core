@@ -3,7 +3,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "../../audio/io/AudioIOControl.hpp"
+#include "../../../audio/io/AudioIOControl.hpp"
 
 namespace magda {
 
@@ -20,6 +20,7 @@ class MidiInputList final : public juce::Component {
     explicit MidiInputList(AudioIOControl& audio);
 
     void resized() override;
+    void paintOverChildren(juce::Graphics& g) override;
 
     /** @brief Re-read the devices present and what Config says about them. */
     void refresh();
@@ -49,10 +50,13 @@ class CustomChannelSelector : public juce::Component {
     ~CustomChannelSelector() override;
 
     void resized() final;
-    void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
 
     /** @brief List the chosen interface's channels, ticked where they are chosen. */
     void refresh();
+
+    /** @brief The header and every row, unscrolled. */
+    int preferredHeight() const;
 
   private:
     void onChannelToggled(int channelIndex, bool isStereo);
@@ -71,14 +75,11 @@ class CustomChannelSelector : public juce::Component {
     juce::String interfaceName_;
     juce::StringArray driverNames_;
 
-    static void onPreviewToggled(int startChannel);
-
     struct ChannelToggle {
         std::unique_ptr<juce::ToggleButton> button;
-        std::unique_ptr<juce::ToggleButton> previewButton;  // Only for output stereo pairs
-        std::unique_ptr<juce::Label> name;                  // Double-click renames (#2259)
-        int startChannel;                                   // 0-indexed
-        bool isStereo;  // true = pair (e.g., 0-1), false = mono (e.g., 0)
+        std::unique_ptr<juce::Label> name;  // Double-click renames (#2259)
+        int startChannel;                   // 0-indexed
+        bool isStereo;                      // true = pair (e.g., 0-1), false = mono (e.g., 0)
     };
 
     /// Positions the rows inside @ref list_ across @p width.
@@ -102,13 +103,13 @@ class CustomChannelSelector : public juce::Component {
 };
 
 /**
- * Dialog for configuring audio and MIDI device settings.
+ * The Audio & MIDI settings page: devices, channels and MIDI ports.
  * Uses custom channel selectors for fine-grained control.
  */
-class AudioSettingsDialog : public juce::Component, private HardwareChannels::Listener {
+class AudioSettingsPage : public juce::Component, private HardwareChannels::Listener {
   public:
-    explicit AudioSettingsDialog(AudioEngine* audioEngine);
-    ~AudioSettingsDialog() override;
+    explicit AudioSettingsPage(AudioEngine* audioEngine);
+    ~AudioSettingsPage() override;
 
     void resized() override;
     void paint(juce::Graphics& g) override;
@@ -123,8 +124,11 @@ class AudioSettingsDialog : public juce::Component, private HardwareChannels::Li
     /// The row renamed already shows its new name.
     void hardwareChannelNamesChanged() override {}
 
-    // Static method to show as modal dialog
-    static void showDialog(juce::Component* parent, AudioEngine* audioEngine);
+    /** @brief The height the page lays out in at @p width. */
+    int getPreferredHeight(int width);
+
+    /** @brief Save the open interface as the preferred one, when the box is ticked. */
+    void savePreferencesIfNeeded();
 
   private:
     void populateDeviceLists();
@@ -152,7 +156,9 @@ class AudioSettingsDialog : public juce::Component, private HardwareChannels::Li
     /** @brief Relist the interfaces and their channels, after the backend or an interface moved. */
     void refreshChosenInterface();
     void showOpenInterface();
-    void savePreferencesIfNeeded();
+    void populatePreviewOutputs();
+    /** @brief Place the controls at @p width, or only measure; returns the height used. */
+    int layOut(int width, bool apply);
 
     std::unique_ptr<MidiInputList> midiInputList_;
     std::unique_ptr<CustomChannelSelector> inputChannelSelector_;
@@ -191,15 +197,21 @@ class AudioSettingsDialog : public juce::Component, private HardwareChannels::Li
     // Which engine renders. Here because it is an audio-device-level choice and
     // this is where a user already comes to change one (#2559).
 
-    juce::TextButton closeButton_;
     juce::Label deviceNameLabel_;
+    juce::Label deviceDetailsLabel_;
+    juce::Label deviceHeader_;
+    juce::Label previewHeader_;
+    juce::Label previewLabel_;
+    juce::ComboBox previewComboBox_;
+    juce::Rectangle<int> statusBounds_;
+    std::vector<juce::Rectangle<int>> rowLines_;
     AudioEngine* audioEngine_;
     AudioIOControl* audio_;
 
     /// The backend and interfaces the lists show, so a channel toggle does not rebuild them.
     AudioIOSettings listed_;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioSettingsDialog)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioSettingsPage)
 };
 
 }  // namespace magda

@@ -9,7 +9,7 @@
 #include <ranges>
 #include <unordered_set>
 
-#include "../../dialogs/AISettingsDialog.hpp"
+#include "../../dialogs/settings/SettingsLink.hpp"
 #include "../../panels/state/PanelController.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../state/TimelineEvents.hpp"
@@ -4109,7 +4109,7 @@ void ClipComponent::showContextMenu() {
                 if (!stemService.isEngineAvailable(engine)) {
                     // Weights not downloaded yet: deep-link to the page that
                     // installs them instead of failing.
-                    AISettingsDialog::showDialog(getTopLevelComponent(), "Stems");
+                    openSettings(SettingsSectionId::AI, "Stems");
                     break;
                 }
                 stemService.splitClipIntoStems(

@@ -14,13 +14,9 @@
 #include "../components/common/ResizeSeam.hpp"
 #include "../debug/DebugDialog.hpp"
 #include "../debug/DebugSettings.hpp"
-#include "../dialogs/AISettingsDialog.hpp"
-#include "../dialogs/AudioSettingsDialog.hpp"
-#include "../dialogs/ConnectionsDialog.hpp"
-#include "../dialogs/ControllersDialog.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
-#include "../dialogs/PreferencesDialog.hpp"
 #include "../dialogs/TrackManagerDialog.hpp"
+#include "../dialogs/settings/SettingsWindow.hpp"
 #include "../layout/LayoutConfig.hpp"
 #include "../panels/BottomPanel.hpp"
 #include "../panels/CapturePanel.hpp"
@@ -36,6 +32,7 @@
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FileBrowserLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
+#include "../themes/SettingsLookAndFeel.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
 #include "../themes/SmallComboBoxLookAndFeel.hpp"
 #include "../themes/ThemeFileWatcher.hpp"
@@ -384,8 +381,8 @@ void MainWindow::timerCallback() {
                                              request.client, request.scopes, result == 1);
                                      safeThis->permissionPromptActive_ = false;
                                      if (result == 3)
-                                         ConnectionsDialog::showDialog(safeThis.getComponent(),
-                                                                       true);
+                                         SettingsWindow::show(SettingsSectionId::Connections,
+                                                              "Clients");
                                  });
 }
 
@@ -498,6 +495,7 @@ void MainWindow::refreshThemedLookAndFeels() {
         ActiveTheme::applyToLookAndFeel(*lookAndFeel);
     }
     ActiveTheme::applyToLookAndFeel(daw::ui::DialogLookAndFeel::getInstance());
+    ActiveTheme::applyToLookAndFeel(daw::ui::SettingsLookAndFeel::getInstance());
     ActiveTheme::applyToLookAndFeel(daw::ui::SmallButtonLookAndFeel::getInstance());
     ActiveTheme::applyToLookAndFeel(daw::ui::FlatTabButtonLookAndFeel::getInstance());
     ActiveTheme::applyToLookAndFeel(daw::ui::SmallComboBoxLookAndFeel::getInstance());
@@ -793,8 +791,8 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         footerBar->setBottomPanelCollapsed(bottomPanelCollapsed);
         resized();
     };
-    footerBar->onControllersClicked = [this]() { ControllersDialog::showDialog(this); };
-    footerBar->onLocalModelsClicked = [this]() { AISettingsDialog::showDialog(this); };
+    footerBar->onControllersClicked = [] { SettingsWindow::show(SettingsSectionId::Controllers); };
+    footerBar->onLocalModelsClicked = [] { SettingsWindow::show(SettingsSectionId::AI, "Local"); };
     addAndMakeVisible(*footerBar);
 
     // Create views (now audioEngine is valid - use externalEngine which points to either external
@@ -819,6 +817,9 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     mixerView = std::make_unique<MixerView>(externalEngine);
     addChildComponent(*mixerView);
     juce::Logger::writeToLog("[MainComponent] MixerView created");
+
+    SettingsWindow::setContext(&commandManager, getAudioEngine());
+    setSettingsOpener(&SettingsWindow::show);
 
     focusTracker_ = std::make_unique<daw::ui::PanelFocusTracker>(*this);
     focusTracker_->addRegion(*mainView, daw::ui::FocusRegion::Content);
@@ -1413,6 +1414,9 @@ void MainWindow::MainComponent::warnAboutLoadFailures() {
 
 MainWindow::MainComponent::~MainComponent() {
     DBG("    [5d] MainComponent::~MainComponent start");
+    setSettingsOpener({});
+    SettingsWindow::closeIfOpen();
+    SettingsWindow::setContext(nullptr, nullptr);
     focusTracker_.reset();
 
     // The stem service outlives us (static singleton); drop its reference to
@@ -1811,7 +1815,8 @@ void MainWindow::setupMenuBar() {
 
 #if JUCE_MAC
     // On macOS, use the native menu bar
-    juce::MenuBarModel::setMacMainMenu(MenuManager::getInstance().getMenuBarModel());
+    const auto appleMenu = MenuManager::getInstance().getAppleMenuItems();
+    juce::MenuBarModel::setMacMainMenu(MenuManager::getInstance().getMenuBarModel(), &appleMenu);
 #else
     // On other platforms, show menu bar in window
     setMenuBar(MenuManager::getInstance().getMenuBarModel());

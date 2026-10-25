@@ -142,7 +142,7 @@ void Config::addRecentProject(const std::string& path) {
 // Save
 // ---------------------------------------------------------------------------
 
-void Config::save() {
+juce::var Config::toVar() const {
     auto root = juce::DynamicObject::Ptr(new juce::DynamicObject());
 
     // Timeline (bars)
@@ -520,11 +520,14 @@ void Config::save() {
         root->setProperty("analysisDefaults", juce::var(adObj));
     }
 
-    // Write to disk
+    return juce::var(root.get());
+}
+
+void Config::save() {
     auto configFile = magda::paths::configFile();
     configFile.getParentDirectory().createDirectory();
 
-    auto json = juce::JSON::toString(juce::var(root.get()));
+    auto json = juce::JSON::toString(toVar());
     if (!configFile.replaceWithText(json))
         DBG("Config::save - failed to write " + configFile.getFullPathName());
     else
@@ -556,11 +559,18 @@ void Config::load() {
         return;
     }
 
-    auto* obj = parsed.getDynamicObject();
-    if (obj == nullptr) {
+    if (parsed.getDynamicObject() == nullptr) {
         DBG("Config::load - unexpected JSON root type");
         return;
     }
+    fromVar(parsed);
+    DBG("Config::load - " + configFile.getFullPathName());
+}
+
+void Config::fromVar(const juce::var& parsed) {
+    auto* obj = parsed.getDynamicObject();
+    if (obj == nullptr)
+        return;
 
     auto getDouble = [&](const char* key, double fallback) -> double {
         if (!obj->hasProperty(key))
@@ -1073,8 +1083,16 @@ void Config::load() {
             }
         }
     }
+}
 
-    DBG("Config::load - " + configFile.getFullPathName());
+std::unique_ptr<Config> Config::createDetached() {
+    return std::unique_ptr<Config>(new Config());
+}
+
+std::unique_ptr<Config> Config::clone() const {
+    auto copy = createDetached();
+    copy->fromVar(toVar());
+    return copy;
 }
 
 }  // namespace magda

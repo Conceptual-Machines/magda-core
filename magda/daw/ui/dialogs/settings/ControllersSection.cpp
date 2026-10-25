@@ -1,19 +1,25 @@
-#include "ControllersDialog.hpp"
+#include <juce_audio_devices/juce_audio_devices.h>
+#include <juce_gui_basics/juce_gui_basics.h>
 
 #include <algorithm>
 #include <map>
 
-#include "../themes/ActiveTheme.hpp"
-#include "../themes/DialogLookAndFeel.hpp"
-#include "../themes/FontManager.hpp"
+#include "../../themes/ActiveTheme.hpp"
+#include "../../themes/DialogLookAndFeel.hpp"
+#include "../../themes/FontManager.hpp"
+#include "SettingsSections.hpp"
+#include "SettingsToolbar.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
 #include "core/controllers/BindingRegistry.hpp"
+#include "core/controllers/Controller.hpp"
 #include "core/controllers/ControllerActivation.hpp"
+#include "core/controllers/ControllerProfile.hpp"
 #include "core/controllers/ControllerProfileRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
 #include "scripting_app.hpp"
+#include "ui/components/common/MagdaAlertWindow.hpp"
 
 namespace magda {
 
@@ -21,13 +27,63 @@ namespace {
 
 constexpr int kPollIntervalMs = 2000;
 constexpr int kProfilePortOutWidth = 170;
-constexpr int kScriptPortOutWidth = 170;
-constexpr int kScriptPortInWidth = 170;
+constexpr int kScriptPortOutWidth = 150;
+constexpr int kScriptPortInWidth = 150;
+constexpr int kListRowHeight = 44;
+constexpr int kSwitchWidth = 34;
+constexpr int kRowPad = 8;
 
 void styleListBox(juce::ListBox& lb) {
-    lb.setColour(juce::ListBox::backgroundColourId, ActiveTheme::getColour(ActiveTheme::SURFACE));
-    lb.setColour(juce::ListBox::outlineColourId, ActiveTheme::getBorderColour());
-    lb.setOutlineThickness(1);
+    lb.setColour(juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
+    lb.setColour(juce::ListBox::outlineColourId, juce::Colours::transparentBlack);
+    lb.setOutlineThickness(0);
+    lb.setRowHeight(kListRowHeight);
+}
+
+/// The switch at a row's right edge, as SettingsLookAndFeel draws toggles.
+juce::Rectangle<float> rowSwitchBounds(int width, int height) {
+    return juce::Rectangle<float>(static_cast<float>(width - kRowPad - kSwitchWidth), 0.0f,
+                                  static_cast<float>(kSwitchWidth), static_cast<float>(height))
+        .withSizeKeepingCentre(static_cast<float>(kSwitchWidth), 18.0f);
+}
+
+void paintRowSwitch(juce::Graphics& g, juce::Rectangle<float> track, bool on) {
+    g.setColour(on ? ActiveTheme::getAccentColour()
+                   : ActiveTheme::getColour(ActiveTheme::SURFACE_HOVER));
+    g.fillRoundedRectangle(track, track.getHeight() * 0.5f);
+    const float knob = track.getHeight() - 4.0f;
+    g.setColour(juce::Colours::white.withAlpha(on ? 0.95f : 0.7f));
+    g.fillEllipse(on ? track.getRight() - knob - 2.0f : track.getX() + 2.0f, track.getY() + 2.0f,
+                  knob, knob);
+}
+
+void paintRowBase(juce::Graphics& g, int width, int height, bool selected) {
+    if (selected) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE).withAlpha(0.6f));
+        g.fillRect(0, 0, width, height);
+    }
+    g.setColour(ActiveTheme::getBorderColour().withMultipliedAlpha(0.6f));
+    g.fillRect(0, height - 1, width, 1);
+}
+
+/// The dashed box a list shows when it has nothing in it.
+void paintEmptyState(juce::Graphics& g, juce::Rectangle<int> area, const juce::String& title,
+                     const juce::String& body) {
+    juce::Path outline;
+    outline.addRoundedRectangle(area.toFloat().reduced(0.5f), 6.0f);
+    juce::Path dashed;
+    const float dashes[] = {4.0f, 4.0f};
+    juce::PathStrokeType(1.0f).createDashedStroke(dashed, outline, dashes, 2);
+    g.setColour(ActiveTheme::getBorderColour());
+    g.fillPath(dashed);
+
+    auto text = area.withSizeKeepingCentre(juce::jmin(420, area.getWidth() - 40), 90);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+    g.setFont(FontManager::getInstance().getUIFontMedium(14.0f));
+    g.drawText(title, text.removeFromTop(26), juce::Justification::centred);
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    g.setFont(FontManager::getInstance().getUIFont(12.5f));
+    g.drawFittedText(body, text, juce::Justification::centredTop, 4);
 }
 
 juce::String displayNameForDevice(const juce::Array<juce::MidiDeviceInfo>& devices,
@@ -61,17 +117,18 @@ class ControllerProfilesPage : public juce::Component,
                                private juce::Timer {
   public:
     ControllerProfilesPage() {
-        openFolderButton_.setButtonText(tr("controllers.open_profiles_folder"));
-        openFolderButton_.onClick = [this]() { onOpenFolderClicked(); };
-        addAndMakeVisible(openFolderButton_);
+        addButton_.setButtonText(tr("controllers.add_profile"));
+        addButton_.onClick = [this]() { onAddClicked(); };
+        MagdaAlertWindow::setRole(addButton_, MagdaAlertWindow::ButtonRole::Primary);
+        toolbar_.addButton(addButton_);
 
         uploadButton_.setButtonText(trEllipsis("controllers.upload_profile"));
         uploadButton_.onClick = [this]() { onUploadClicked(); };
-        addAndMakeVisible(uploadButton_);
+        toolbar_.addButton(uploadButton_);
 
-        addButton_.setButtonText(tr("controllers.add_profile"));
-        addButton_.onClick = [this]() { onAddClicked(); };
-        addAndMakeVisible(addButton_);
+        openFolderButton_.setButtonText(tr("controllers.open_profiles_folder"));
+        openFolderButton_.onClick = [this]() { onOpenFolderClicked(); };
+        toolbar_.addButton(openFolderButton_);
 
         listModel_.controllers = &controllers_;
         listModel_.liveInputs = &liveInputs_;
@@ -85,7 +142,6 @@ class ControllerProfilesPage : public juce::Component,
 
         list_ = std::make_unique<juce::ListBox>("profiles", &listModel_);
         styleListBox(*list_);
-        list_->setRowHeight(42);
         addAndMakeVisible(*list_);
 
         refreshLiveDevices();
@@ -104,24 +160,18 @@ class ControllerProfilesPage : public juce::Component,
             list_->setModel(nullptr);
     }
 
+    juce::Component& getToolbar() {
+        return toolbar_;
+    }
+
     void resized() override {
-        auto bounds = getLocalBounds().reduced(16);
-        const int rowH = 28;
-        const int btnGap = 6;
-        const int openW = 170;
-        const int uploadW = 140;
-        const int addW = 120;
+        list_->setBounds(getLocalBounds().reduced(0, 4));
+    }
 
-        // Left-to-right: Open Folder | Upload | + Add. Same shape as Scripts.
-        auto buttonRow = bounds.removeFromTop(rowH);
-        openFolderButton_.setBounds(buttonRow.removeFromLeft(openW));
-        buttonRow.removeFromLeft(btnGap);
-        uploadButton_.setBounds(buttonRow.removeFromLeft(uploadW));
-        buttonRow.removeFromLeft(btnGap);
-        addButton_.setBounds(buttonRow.removeFromLeft(addW));
-        bounds.removeFromTop(8);
-
-        list_->setBounds(bounds);
+    void paint(juce::Graphics& g) override {
+        if (controllers_.empty())
+            paintEmptyState(g, getLocalBounds().reduced(0, 8).withHeight(240),
+                            tr("controllers.no_profiles"), tr("controllers.no_profiles_hint"));
     }
 
   private:
@@ -206,6 +256,7 @@ class ControllerProfilesPage : public juce::Component,
     std::vector<Controller> controllers_;
     juce::Array<juce::MidiDeviceInfo> liveInputs_;
 
+    SettingsToolbar toolbar_;
     juce::TextButton openFolderButton_;
     juce::TextButton uploadButton_;
     juce::TextButton addButton_;
@@ -224,59 +275,42 @@ void ControllerProfilesPage::ControllerListModel::paintListBoxItem(int rowNumber
     const bool connected = isConnected ? isConnected(c) : false;
     const bool enabled = isEnabled ? isEnabled(c) : true;
     const bool active = enabled && connected;
+    paintRowBase(g, width, height, rowIsSelected);
 
-    if (rowIsSelected) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.20f));
-        g.fillRect(0, 0, width, height);
-    }
+    const auto track = rowSwitchBounds(width, height);
+    paintRowSwitch(g, track, enabled);
 
-    const int pad = 6;
-    const int dotSize = 8;
-    const int dotX = pad;
-    const int textX = dotX + dotSize + 8;
-    const int portX = width - kProfilePortOutWidth - pad;
-    const int nameW = juce::jmax(40, portX - textX - 8);
-    const int lineH = (height - 2 * pad) / 2;
-
-    const int dotY = (height - dotSize) / 2;
-    g.setColour(active ? ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE)
-                       : ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-    g.fillEllipse(static_cast<float>(dotX), static_cast<float>(dotY), static_cast<float>(dotSize),
-                  static_cast<float>(dotSize));
-
-    juce::String line1 = c.vendor.isEmpty() ? c.name : c.vendor + "  \xc2\xb7  " + c.name;
-    g.setColour(active ? ActiveTheme::getTextColour()
-                       : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-    g.setFont(FontManager::getInstance().getUIFontBold(12.0f));
-    g.drawText(line1, textX, pad, nameW, lineH, juce::Justification::centredLeft, true);
-
-    juce::String status;
-    if (!enabled)
-        status = tr("controllers.disabled");
-    else if (connected)
-        status = tr("controllers.connected");
-    else
-        status = tr("controllers.not_connected");
-
-    juce::String line2 = status;
-    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-    g.setFont(FontManager::getInstance().getUIFont(10.0f));
-    g.drawText(line2, textX, pad + lineH, nameW, lineH, juce::Justification::centredLeft, true);
-
+    // The port, clicked to change it.
     auto portText =
         liveInputs != nullptr ? displayNameForDevice(*liveInputs, c.inputPort) : c.inputPort;
     if (portText.isEmpty())
         portText = tr("controllers.port.none");
-
-    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-    g.setFont(FontManager::getInstance().getUIFont(9.0f));
-    g.drawText(tr("controllers.port.port_out"), portX, 4, kProfilePortOutWidth, 12,
-               juce::Justification::centredLeft, true);
-
+    const auto portArea =
+        juce::Rectangle<int>(static_cast<int>(track.getX()) - 12 - kProfilePortOutWidth, 0,
+                             kProfilePortOutWidth, height);
     g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    g.setFont(FontManager::getInstance().getMonoFont(11.0f));
+    g.drawText(portText, portArea, juce::Justification::centredRight, true);
+
+    const float dot = 7.0f;
+    g.setColour(active ? ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE)
+                       : ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+    g.fillEllipse(kRowPad + 2.0f, (static_cast<float>(height) - dot) * 0.5f, dot, dot);
+
+    const int textX = kRowPad + 20;
+    const int textW = juce::jmax(40, portArea.getX() - textX - 8);
+    juce::String name = c.vendor.isEmpty() ? c.name : c.vendor + "  \xc2\xb7  " + c.name;
+    g.setColour(active ? ActiveTheme::getTextColour()
+                       : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    g.setFont(FontManager::getInstance().getUIFont(13.0f));
+    g.drawText(name, textX, 5, textW, 20, juce::Justification::centredLeft, true);
+
+    const auto status = !enabled    ? tr("controllers.disabled")
+                        : connected ? tr("controllers.connected")
+                                    : tr("controllers.not_connected");
+    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
     g.setFont(FontManager::getInstance().getUIFont(11.0f));
-    g.drawText(portText, portX, 18, kProfilePortOutWidth, 18, juce::Justification::centredLeft,
-               true);
+    g.drawText(status, textX, 23, textW, 16, juce::Justification::centredLeft, true);
 }
 
 // -- Profiles page handlers ---------------------------------------------------
@@ -442,12 +476,14 @@ void ControllerProfilesPage::onRowClicked(int row, const juce::MouseEvent& e) {
         onRowRemoveRequested(row);
         return;
     }
-    const int portX = list_ ? list_->getWidth() - kProfilePortOutWidth - 6 : 0;
-    if (e.x >= portX) {
-        onRowPortRequested(row);
+    const int width = list_ != nullptr ? list_->getWidth() : 0;
+    const auto track = rowSwitchBounds(width, kListRowHeight);
+    if (e.x >= static_cast<int>(track.getX()) - 4) {
+        onRowToggled(row);
         return;
     }
-    onRowToggled(row);
+    if (e.x >= static_cast<int>(track.getX()) - 12 - kProfilePortOutWidth)
+        onRowPortRequested(row);
 }
 
 void ControllerProfilesPage::onRowPortRequested(int row) {
@@ -574,19 +610,20 @@ class LuaScriptsPage : public juce::Component {
     LuaScriptsPage() {
         addScriptButton_.setButtonText(tr("controllers.scripts.add"));
         addScriptButton_.onClick = [this]() { onAddScriptClicked(); };
-        addAndMakeVisible(addScriptButton_);
-
-        openScriptsFolderButton_.setButtonText(tr("controllers.scripts.open_folder"));
-        openScriptsFolderButton_.onClick = [this]() { onOpenScriptsFolderClicked(); };
-        addAndMakeVisible(openScriptsFolderButton_);
+        MagdaAlertWindow::setRole(addScriptButton_, MagdaAlertWindow::ButtonRole::Primary);
+        toolbar_.addButton(addScriptButton_);
 
         importButton_.setButtonText(trEllipsis("controllers.scripts.import"));
         importButton_.onClick = [this]() { onImportClicked(); };
-        addAndMakeVisible(importButton_);
+        toolbar_.addButton(importButton_);
+
+        openScriptsFolderButton_.setButtonText(tr("controllers.scripts.open_folder"));
+        openScriptsFolderButton_.onClick = [this]() { onOpenScriptsFolderClicked(); };
+        toolbar_.addButton(openScriptsFolderButton_);
 
         reloadLuaButton_.setButtonText(tr("controllers.scripts.reload"));
         reloadLuaButton_.onClick = [this]() { onReloadLuaClicked(); };
-        addAndMakeVisible(reloadLuaButton_);
+        toolbar_.addButton(reloadLuaButton_);
 
         listModel_.scripts = &scripts_;
         listModel_.activeScriptName = []() { return scripting_app::activeLuaScriptName(); };
@@ -601,7 +638,6 @@ class LuaScriptsPage : public juce::Component {
 
         list_ = std::make_unique<juce::ListBox>("scripts", &listModel_);
         styleListBox(*list_);
-        list_->setRowHeight(42);
         addAndMakeVisible(*list_);
 
         rebuildScripts();
@@ -612,26 +648,19 @@ class LuaScriptsPage : public juce::Component {
             list_->setModel(nullptr);
     }
 
+    juce::Component& getToolbar() {
+        return toolbar_;
+    }
+
     void resized() override {
-        auto bounds = getLocalBounds().reduced(16);
-        const int rowH = 28;
-        const int btnGap = 6;
-        const int rowGap = 4;
+        list_->setBounds(getLocalBounds().reduced(0, 4));
+    }
 
-        auto layoutRow = [&](juce::Button& left, juce::Button& right) {
-            auto row = bounds.removeFromTop(rowH);
-            const int half = (row.getWidth() - btnGap) / 2;
-            left.setBounds(row.removeFromLeft(half));
-            row.removeFromLeft(btnGap);
-            right.setBounds(row.removeFromLeft(half));
-        };
-
-        layoutRow(addScriptButton_, importButton_);
-        bounds.removeFromTop(rowGap);
-        layoutRow(openScriptsFolderButton_, reloadLuaButton_);
-        bounds.removeFromTop(8);
-
-        list_->setBounds(bounds);
+    void paint(juce::Graphics& g) override {
+        if (scripts_.empty())
+            paintEmptyState(g, getLocalBounds().reduced(0, 8).withHeight(240),
+                            tr("controllers.scripts.empty_title"),
+                            tr("controllers.scripts.empty_body"));
     }
 
   private:
@@ -878,6 +907,7 @@ class LuaScriptsPage : public juce::Component {
     juce::Array<juce::MidiDeviceInfo> liveInputs_;
     juce::Array<juce::MidiDeviceInfo> liveOutputs_;
 
+    SettingsToolbar toolbar_;
     juce::TextButton addScriptButton_;
     juce::TextButton openScriptsFolderButton_;
     juce::TextButton importButton_;
@@ -897,13 +927,10 @@ void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Grap
     const juce::String active = activeScriptName ? activeScriptName() : juce::String{};
     const bool isActive = name == active && active.isNotEmpty();
 
-    if (rowIsSelected) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.20f));
-        g.fillRect(0, 0, width, height);
-    }
+    paintRowBase(g, width, height, rowIsSelected);
 
-    const int pad = 6;
-    const int dotSize = 8;
+    const int pad = kRowPad;
+    const int dotSize = 7;
     const int dotX = pad;
     const int textX = dotX + dotSize + 8;
     const int dotY = (height - dotSize) / 2;
@@ -923,14 +950,13 @@ void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Grap
 
     g.setColour(isActive ? ActiveTheme::getTextColour()
                          : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-    g.setFont(isActive ? FontManager::getInstance().getUIFontBold(12.0f)
-                       : FontManager::getInstance().getUIFont(12.0f));
-    g.drawText(name, textX, 5, nameW, 18, juce::Justification::centredLeft, true);
+    g.setFont(FontManager::getInstance().getUIFont(13.0f));
+    g.drawText(name, textX, 5, nameW, 20, juce::Justification::centredLeft, true);
 
     if (isActive) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-        g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        g.drawText(tr("controllers.scripts.active"), textX, 22, nameW, 14,
+        g.setFont(FontManager::getInstance().getUIFont(11.0f));
+        g.drawText(tr("controllers.scripts.active"), textX, 23, nameW, 16,
                    juce::Justification::centredLeft, true);
     }
 
@@ -961,68 +987,44 @@ void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Grap
 }
 
 // =============================================================================
-// ControllersDialog
-// =============================================================================
-
-ControllersDialog::ControllersDialog() {
-    setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
-
-    profilesPage_ = std::make_unique<ControllerProfilesPage>();
-    scriptsPage_ = std::make_unique<LuaScriptsPage>();
-
-    auto tabBg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
-    tabbedComponent_.addTab(
-        tr("controllers.tab.profiles")
-            .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
-        tabBg, profilesPage_.get(), false);
-    tabbedComponent_.addTab(
-        tr("controllers.tab.scripts")
-            .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Lua)),
-        tabBg, scriptsPage_.get(), false);
-    addAndMakeVisible(tabbedComponent_);
-
-    setSize(560, 512);
-}
-
-ControllersDialog::~ControllersDialog() {
-    setLookAndFeel(nullptr);
-}
-
-void ControllersDialog::paint(juce::Graphics& g) {
-    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
-}
-
-void ControllersDialog::resized() {
-    tabbedComponent_.setBounds(getLocalBounds().reduced(8));
-}
-
-// =============================================================================
-// showDialog
+// Controllers section (#3162)
 // =============================================================================
 
 namespace {
-class SelfClosingDialogWindow : public juce::DialogWindow {
-  public:
-    SelfClosingDialogWindow(const juce::String& title, juce::Colour bg)
-        : juce::DialogWindow(title, bg, false, true) {}
 
-    void closeButtonPressed() override {
-        juce::MessageManager::callAsync([self = this]() { delete self; });
+/** @brief MIDI profiles and Lua scripts; each edit is committed as it is made. */
+class ControllersSection : public SettingsSection {
+  public:
+    ControllersSection() : SettingsSection(SettingsSectionId::Controllers) {}
+
+    juce::String getTitle() const override {
+        return tr("settings.section.controllers");
     }
+    std::vector<Tab> getTabs() override {
+        return {{tr("controllers.tab.profiles")
+                     .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
+                 &profilesPage_,
+                 {},
+                 &profilesPage_.getToolbar()},
+                {tr("controllers.tab.scripts")
+                     .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Lua)),
+                 &scriptsPage_,
+                 {},
+                 &scriptsPage_.getToolbar()}};
+    }
+    bool appliesImmediately() const override {
+        return true;
+    }
+
+  private:
+    ControllerProfilesPage profilesPage_;
+    LuaScriptsPage scriptsPage_;
 };
+
 }  // namespace
 
-void ControllersDialog::showDialog(juce::Component* /*parent*/) {
-    auto* dialog = new ControllersDialog();
-    auto bg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
-
-    auto* window = new SelfClosingDialogWindow(tr("controllers.title"), bg);
-    window->setContentOwned(dialog, true);
-    window->setUsingNativeTitleBar(true);
-    window->setResizable(true, false);
-    window->setAlwaysOnTop(true);
-    window->centreWithSize(dialog->getWidth(), dialog->getHeight());
-    window->setVisible(true);
+std::unique_ptr<SettingsSection> createControllersSection() {
+    return std::make_unique<ControllersSection>();
 }
 
 }  // namespace magda

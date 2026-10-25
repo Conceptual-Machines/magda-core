@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -248,6 +249,9 @@ class GestureRouter {
 
     /** Persist the current override diff into Config and save it. */
     void saveToConfig() const;
+
+    /** A router holding only the defaults, for editing bindings off the live set (#3162). */
+    static std::unique_ptr<GestureRouter> createDetached();
 
     static uint64_t makeKey(GestureContext context, const GestureInput& input);
 
