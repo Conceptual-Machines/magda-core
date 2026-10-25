@@ -8,8 +8,8 @@
 #include "../../../core/TrackManager.hpp"
 #include "../../../engine/AudioEngine.hpp"
 #include "../../themes/ActiveTheme.hpp"
-#include "../../themes/DialogLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../../themes/SettingsLookAndFeel.hpp"
 #include "../../utils/ChannelLabels.hpp"
 #include "SettingsSections.hpp"
 
@@ -102,11 +102,10 @@ class ChannelNameLabel final : public juce::Label {
 
 CustomChannelSelector::CustomChannelSelector(AudioIOControl& audio, bool isInput)
     : audio_(audio), isInput_(isInput) {
-    setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
     titleLabel_.setText(isInput ? tr("audio_settings.label.audio_inputs")
                                 : tr("audio_settings.label.audio_outputs"),
                         juce::dontSendNotification);
-    titleLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
+    daw::ui::SettingsLookAndFeel::markSectionHeader(titleLabel_);
     addAndMakeVisible(titleLabel_);
 
     viewport_.setViewedComponent(&list_, false);
@@ -116,9 +115,7 @@ CustomChannelSelector::CustomChannelSelector(AudioIOControl& audio, bool isInput
     refresh();
 }
 
-CustomChannelSelector::~CustomChannelSelector() {
-    setLookAndFeel(nullptr);
-}
+CustomChannelSelector::~CustomChannelSelector() {}
 
 void CustomChannelSelector::refresh() {
     channelToggles_.clear();
@@ -516,11 +513,9 @@ AudioSettingsPage::AudioSettingsPage(AudioEngine* audioEngine)
     : deviceRefreshSpinner_(deviceRefreshProgress_),
       audioEngine_(audioEngine),
       audio_(audioEngine != nullptr ? audioEngine->getAudioIO() : nullptr) {
-    setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
-
     // Driver first: it decides which interfaces the pickers below list.
     driverLabel_.setText(tr("audio_settings.label.driver"), juce::dontSendNotification);
-    driverLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
+    driverLabel_.setFont(FontManager::getInstance().getUIFont(13.0f));
     addAndMakeVisible(driverLabel_);
 
     driverComboBox_.onChange = [this]() { onDriverSelected(); };
@@ -529,7 +524,7 @@ AudioSettingsPage::AudioSettingsPage(AudioEngine* audioEngine)
     // Input device selection dropdown
     inputDeviceLabel_.setText(tr("audio_settings.label.input_interface"),
                               juce::dontSendNotification);
-    inputDeviceLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
+    inputDeviceLabel_.setFont(FontManager::getInstance().getUIFont(13.0f));
     addAndMakeVisible(inputDeviceLabel_);
 
     inputDeviceComboBox_.onChange = [this]() { onInputDeviceSelected(); };
@@ -538,7 +533,7 @@ AudioSettingsPage::AudioSettingsPage(AudioEngine* audioEngine)
     // Output device selection dropdown
     outputDeviceLabel_.setText(tr("audio_settings.label.output_interface"),
                                juce::dontSendNotification);
-    outputDeviceLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
+    outputDeviceLabel_.setFont(FontManager::getInstance().getUIFont(13.0f));
     addAndMakeVisible(outputDeviceLabel_);
 
     outputDeviceComboBox_.onChange = [this]() { onOutputDeviceSelected(); };
@@ -584,20 +579,20 @@ AudioSettingsPage::AudioSettingsPage(AudioEngine* audioEngine)
     // The stream the chosen interface runs at. Both apply through the choice, so what is
     // picked is what opens rather than something read back off the device afterwards.
     sampleRateLabel_.setText(tr("audio_settings.label.sample_rate"), juce::dontSendNotification);
-    sampleRateLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
+    sampleRateLabel_.setFont(FontManager::getInstance().getUIFont(13.0f));
     addAndMakeVisible(sampleRateLabel_);
     sampleRateComboBox_.onChange = [this]() { onSampleRateSelected(); };
     addAndMakeVisible(sampleRateComboBox_);
 
     bufferSizeLabel_.setText(tr("audio_settings.label.buffer_size"), juce::dontSendNotification);
-    bufferSizeLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
+    bufferSizeLabel_.setFont(FontManager::getInstance().getUIFont(13.0f));
     addAndMakeVisible(bufferSizeLabel_);
     bufferSizeComboBox_.onChange = [this]() { onBufferSizeSelected(); };
     addAndMakeVisible(bufferSizeComboBox_);
 
     // MAGDA's own MIDI section, over the Config-backed choice (#2755).
     midiInputsLabel_.setText(tr("audio_settings.label.midi_inputs"), juce::dontSendNotification);
-    midiInputsLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
+    daw::ui::SettingsLookAndFeel::markSectionHeader(midiInputsLabel_);
     addAndMakeVisible(midiInputsLabel_);
 
     if (audio_ != nullptr) {
@@ -606,7 +601,7 @@ AudioSettingsPage::AudioSettingsPage(AudioEngine* audioEngine)
     }
 
     midiOutputLabel_.setText(tr("audio_settings.label.midi_output"), juce::dontSendNotification);
-    midiOutputLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
+    midiOutputLabel_.setFont(FontManager::getInstance().getUIFont(13.0f));
     addAndMakeVisible(midiOutputLabel_);
     midiOutputComboBox_.onChange = [this]() {
         if (audio_ == nullptr)
@@ -649,7 +644,6 @@ AudioSettingsPage::AudioSettingsPage(AudioEngine* audioEngine)
 AudioSettingsPage::~AudioSettingsPage() {
     if (audio_ != nullptr)
         audio_->removeListener(this);
-    setLookAndFeel(nullptr);
 }
 
 void AudioSettingsPage::hardwareChannelsChanged() {

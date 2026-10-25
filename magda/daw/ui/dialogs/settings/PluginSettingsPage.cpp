@@ -3,8 +3,8 @@
 #include <algorithm>
 
 #include "../../themes/ActiveTheme.hpp"
-#include "../../themes/DialogLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
+#include "../../themes/SettingsLookAndFeel.hpp"
 #include "SettingsSections.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
@@ -98,7 +98,6 @@ juce::Component* PluginSettingsPage::ExcludedTableModel::refreshComponentForCell
 // =============================================================================
 
 PluginSettingsPage::PluginSettingsPage() : scanProgressBar_(scanProgress_) {
-    setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
     // Load current data
     customPaths_ = Config::getInstance().getCustomPluginPaths();
 
@@ -429,7 +428,6 @@ PluginSettingsPage::PluginSettingsPage() : scanProgressBar_(scanProgress_) {
 }
 
 PluginSettingsPage::~PluginSettingsPage() {
-    setLookAndFeel(nullptr);
     systemDirsList_.setModel(nullptr);
     directoriesList_.setModel(nullptr);
     excludedTable_.setModel(nullptr);
@@ -589,10 +587,7 @@ void PluginSettingsPage::updatePluginCountLabel() {
 
 void PluginSettingsPage::setupSectionHeader(juce::Label& header, const juce::String& text) {
     header.setText(text, juce::dontSendNotification);
-    header.setColour(juce::Label::textColourId,
-                     ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-    header.setFont(FontManager::getInstance().getUIFontBold(14.0f));
-    header.setJustificationType(juce::Justification::centredLeft);
+    daw::ui::SettingsLookAndFeel::markSectionHeader(header);
     addAndMakeVisible(header);
 }
 

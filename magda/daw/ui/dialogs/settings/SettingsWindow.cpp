@@ -6,8 +6,8 @@
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
 #include "ui/themes/ActiveTheme.hpp"
-#include "ui/themes/DialogLookAndFeel.hpp"
 #include "ui/themes/FontManager.hpp"
+#include "ui/themes/SettingsLookAndFeel.hpp"
 
 namespace magda {
 
@@ -147,7 +147,7 @@ class TabStrip : public juce::Component {
 class SettingsWindow::Panel : public juce::Component, private juce::Timer {
   public:
     explicit Panel(std::function<void()> close) : close_(std::move(close)) {
-        setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
+        setLookAndFeel(&daw::ui::SettingsLookAndFeel::getInstance());
         setWantsKeyboardFocus(true);
 
         for (auto& section : createPreferencesSections(contextCommandManager))
@@ -212,6 +212,7 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
         addAndMakeVisible(changesLabel_);
 
         restoreButton_.setButtonText(tr("settings.restore_defaults"));
+        daw::ui::SettingsLookAndFeel::markLinkButton(restoreButton_);
         restoreButton_.onClick = [this] {
             if (auto* section = currentSection())
                 section->restoreDefaults();
@@ -220,6 +221,7 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
         addAndMakeVisible(restoreButton_);
 
         cancelButton_.setButtonText(tr("dialogs.cancel"));
+        cancelButton_.addShortcut(juce::KeyPress(juce::KeyPress::escapeKey));
         cancelButton_.onClick = [this] { close_(); };
         addAndMakeVisible(cancelButton_);
 
@@ -228,6 +230,8 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
         addAndMakeVisible(applyButton_);
 
         okButton_.setButtonText(tr("dialogs.ok"));
+        okButton_.addShortcut(juce::KeyPress(juce::KeyPress::returnKey));
+        MagdaAlertWindow::setRole(okButton_, MagdaAlertWindow::ButtonRole::Primary);
         okButton_.onClick = [this] {
             applyAll();
             close_();
@@ -277,7 +281,7 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
         g.setColour(ActiveTheme::getBackgroundColour());
         g.fillRect(sidebarBounds_);
         g.setColour(ActiveTheme::getBorderColour());
-        g.fillRect(sidebarBounds_.getRight(), 0, 1, getHeight());
+        g.fillRect(sidebarBounds_.getRight(), 0, 1, sidebarBounds_.getHeight());
         g.fillRect(footerBounds_.withHeight(1));
         if (pendingTotal_ > 0) {
             g.setColour(ActiveTheme::getAccentColour());
@@ -288,7 +292,7 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
 
     void resized() override {
         auto bounds = getLocalBounds();
-        footerBounds_ = bounds.removeFromBottom(52);
+        footerBounds_ = bounds.removeFromBottom(58);
         sidebarBounds_ = bounds.removeFromLeft(kSidebarWidth);
 
         auto side = sidebarBounds_.reduced(10, 12);
@@ -313,13 +317,20 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
         layoutPage();
 
         auto footer = footerBounds_.reduced(20, 12);
-        okButton_.setBounds(footer.removeFromRight(80));
+        okButton_.setBounds(footer.removeFromRight(72));
         footer.removeFromRight(8);
         applyButton_.setBounds(footer.removeFromRight(80));
         footer.removeFromRight(8);
-        cancelButton_.setBounds(footer.removeFromRight(80));
-        footer.removeFromLeft(10);
-        changesLabel_.setBounds(footer.removeFromLeft(90));
+        cancelButton_.setBounds(footer.removeFromRight(108));
+        if (pendingTotal_ > 0) {
+            footer.removeFromLeft(10);  // the dot
+            const int width = juce::GlyphArrangement::getStringWidthInt(changesLabel_.getFont(),
+                                                                        changesLabel_.getText());
+            changesLabel_.setBounds(footer.removeFromLeft(width + 8));
+            footer.removeFromLeft(16);
+        } else {
+            changesLabel_.setBounds({});
+        }
         restoreButton_.setBounds(footer.removeFromLeft(130));
     }
 
@@ -490,6 +501,7 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
                                       ? tr("settings.one_change")
                                       : tr("settings.changes").replace("{0}", juce::String(total)),
                                   juce::dontSendNotification);
+            resized();
             repaint();
         }
         applyButton_.setEnabled(total > 0);

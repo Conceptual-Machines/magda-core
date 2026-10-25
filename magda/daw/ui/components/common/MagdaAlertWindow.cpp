@@ -62,34 +62,64 @@ int preferredButtonWidth(juce::Button& button) {
     return width + 28 + 4;
 }
 
+}  // namespace
+
+void drawAlertButtonBackground(juce::Graphics& g, juce::Button& button, bool over, bool down) {
+    const auto role = MagdaAlertWindow::roleOf(button);
+    const auto body = button.getLocalBounds().toFloat().reduced(2.0f);
+    auto fill = ActiveTheme::getColour(ActiveTheme::DEVICE_HEAD);
+    auto border = ActiveTheme::getColour(ActiveTheme::DEVICE_LINE);
+    if (role == MagdaAlertWindow::ButtonRole::Primary ||
+        role == MagdaAlertWindow::ButtonRole::Destructive) {
+        const auto tone = ActiveTheme::getColour(role == MagdaAlertWindow::ButtonRole::Primary
+                                                     ? ActiveTheme::DEVICE_BLUE
+                                                     : ActiveTheme::DEVICE_RED);
+        fill = ActiveTheme::getColour(ActiveTheme::DEVICE_BG).interpolatedWith(tone, 0.22f);
+        border = tone.withAlpha(0.45f);
+    }
+    if (down)
+        fill = fill.darker(0.15f);
+    else if (over)
+        fill = fill.brighter(0.08f);
+    g.setColour(fill);
+    g.fillRoundedRectangle(body, 6.0f);
+    g.setColour(border);
+    g.drawRoundedRectangle(body.reduced(0.5f), 6.0f, 1.0f);
+    if (role == MagdaAlertWindow::ButtonRole::Primary) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE).withAlpha(0.7f));
+        g.drawRoundedRectangle(button.getLocalBounds().toFloat().reduced(0.75f), 7.5f, 1.5f);
+    }
+}
+
+void drawAlertButtonText(juce::Graphics& g, juce::TextButton& button) {
+    const auto role = MagdaAlertWindow::roleOf(button);
+    const auto hint = MagdaAlertWindow::keyHintFor(button);
+    const auto& label = button.getButtonText();
+    const int labelWidth = juce::GlyphArrangement::getStringWidthInt(buttonFont(), label);
+    const int hintWidth =
+        hint.isEmpty() ? 0 : 7 + juce::GlyphArrangement::getStringWidthInt(hintFont(), hint);
+    auto area = button.getLocalBounds();
+    area = area.withSizeKeepingCentre(labelWidth + hintWidth, area.getHeight());
+
+    g.setFont(buttonFont());
+    g.setColour(role == MagdaAlertWindow::ButtonRole::Discard
+                    ? ActiveTheme::getColour(ActiveTheme::DEVICE_RED)
+                    : ActiveTheme::getColour(ActiveTheme::DEVICE_TITLE));
+    g.drawText(label, area.removeFromLeft(labelWidth), juce::Justification::centred, false);
+    if (hint.isNotEmpty()) {
+        g.setFont(hintFont());
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM).withAlpha(0.8f));
+        g.drawText(hint, area.withTrimmedLeft(7), juce::Justification::centredLeft, false);
+    }
+}
+
+namespace {
+
 class AlertControlsLookAndFeel : public juce::LookAndFeel_V4 {
   public:
     void drawButtonBackground(juce::Graphics& g, juce::Button& button, const juce::Colour&,
                               bool over, bool down) override {
-        const auto role = MagdaAlertWindow::roleOf(button);
-        const auto body = button.getLocalBounds().toFloat().reduced(2.0f);
-        auto fill = ActiveTheme::getColour(ActiveTheme::DEVICE_HEAD);
-        auto border = ActiveTheme::getColour(ActiveTheme::DEVICE_LINE);
-        if (role == MagdaAlertWindow::ButtonRole::Primary ||
-            role == MagdaAlertWindow::ButtonRole::Destructive) {
-            const auto tone = ActiveTheme::getColour(role == MagdaAlertWindow::ButtonRole::Primary
-                                                         ? ActiveTheme::DEVICE_BLUE
-                                                         : ActiveTheme::DEVICE_RED);
-            fill = ActiveTheme::getColour(ActiveTheme::DEVICE_BG).interpolatedWith(tone, 0.22f);
-            border = tone.withAlpha(0.45f);
-        }
-        if (down)
-            fill = fill.darker(0.15f);
-        else if (over)
-            fill = fill.brighter(0.08f);
-        g.setColour(fill);
-        g.fillRoundedRectangle(body, 6.0f);
-        g.setColour(border);
-        g.drawRoundedRectangle(body.reduced(0.5f), 6.0f, 1.0f);
-        if (role == MagdaAlertWindow::ButtonRole::Primary) {
-            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE).withAlpha(0.7f));
-            g.drawRoundedRectangle(button.getLocalBounds().toFloat().reduced(0.75f), 7.5f, 1.5f);
-        }
+        drawAlertButtonBackground(g, button, over, down);
     }
 
     void fillTextEditorBackground(juce::Graphics& g, int width, int height,
@@ -108,25 +138,7 @@ class AlertControlsLookAndFeel : public juce::LookAndFeel_V4 {
     }
 
     void drawButtonText(juce::Graphics& g, juce::TextButton& button, bool, bool) override {
-        const auto role = MagdaAlertWindow::roleOf(button);
-        const auto hint = MagdaAlertWindow::keyHintFor(button);
-        const auto& label = button.getButtonText();
-        const int labelWidth = juce::GlyphArrangement::getStringWidthInt(buttonFont(), label);
-        const int hintWidth =
-            hint.isEmpty() ? 0 : 7 + juce::GlyphArrangement::getStringWidthInt(hintFont(), hint);
-        auto area = button.getLocalBounds();
-        area = area.withSizeKeepingCentre(labelWidth + hintWidth, area.getHeight());
-
-        g.setFont(buttonFont());
-        g.setColour(role == MagdaAlertWindow::ButtonRole::Discard
-                        ? ActiveTheme::getColour(ActiveTheme::DEVICE_RED)
-                        : ActiveTheme::getColour(ActiveTheme::DEVICE_TITLE));
-        g.drawText(label, area.removeFromLeft(labelWidth), juce::Justification::centred, false);
-        if (hint.isNotEmpty()) {
-            g.setFont(hintFont());
-            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM).withAlpha(0.8f));
-            g.drawText(hint, area.withTrimmedLeft(7), juce::Justification::centredLeft, false);
-        }
+        drawAlertButtonText(g, button);
     }
 };
 
@@ -168,6 +180,10 @@ MagdaAlertWindow::~MagdaAlertWindow() {
 
 MagdaAlertWindow::ButtonRole MagdaAlertWindow::roleOf(const juce::Button& button) {
     return static_cast<ButtonRole>(static_cast<int>(button.getProperties()[kRoleProperty]));
+}
+
+void MagdaAlertWindow::setRole(juce::Button& button, ButtonRole role) {
+    button.getProperties().set(kRoleProperty, static_cast<int>(role));
 }
 
 juce::String MagdaAlertWindow::keyHintFor(const juce::Button& button) {

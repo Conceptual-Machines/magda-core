@@ -30,6 +30,7 @@
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FileBrowserLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
+#include "../themes/SettingsLookAndFeel.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
 #include "../themes/SmallComboBoxLookAndFeel.hpp"
 #include "../themes/ThemeFileWatcher.hpp"
@@ -492,6 +493,7 @@ void MainWindow::refreshThemedLookAndFeels() {
         ActiveTheme::applyToLookAndFeel(*lookAndFeel);
     }
     ActiveTheme::applyToLookAndFeel(daw::ui::DialogLookAndFeel::getInstance());
+    ActiveTheme::applyToLookAndFeel(daw::ui::SettingsLookAndFeel::getInstance());
     ActiveTheme::applyToLookAndFeel(daw::ui::SmallButtonLookAndFeel::getInstance());
     ActiveTheme::applyToLookAndFeel(daw::ui::FlatTabButtonLookAndFeel::getInstance());
     ActiveTheme::applyToLookAndFeel(daw::ui::SmallComboBoxLookAndFeel::getInstance());

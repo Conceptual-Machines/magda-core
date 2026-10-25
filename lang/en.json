@@ -414,9 +414,9 @@
     "section.scale": "Display Scale",
     "section.theme": "Theme",
     "theme.label": "Application Theme",
-    "button.get_template": "Download Theme Template",
-    "button.load_theme": "Load Theme",
-    "button.open_themes_folder": "Open Themes Folder",
+    "button.get_template": "Get template",
+    "button.load_theme": "Load theme",
+    "button.open_themes_folder": "Show folder",
     "section.density": "Density",
     "density.label": "Spacing",
     "section.track_colour_palette": "New-Project Track Palette",
@@ -506,7 +506,9 @@
     "paths.migration.button.dont_copy": "Don't copy",
     "paths.migration.button.cancel": "Cancel",
     "paths.migration.fail_title": "Migration failed",
-    "paths.migration.fail_message": "Could not copy all files from\n{0}\nto\n{1}\n\nFiles in the old location are untouched. You can copy them manually and restart."
+    "paths.migration.fail_message": "Could not copy all files from\n{0}\nto\n{1}\n\nFiles in the old location are untouched. You can copy them manually and restart.",
+    "section.controls": "Controls",
+    "button.remove": "Remove"
   },
   "controllers": {
     "tab.profiles": "{0} Profiles",
