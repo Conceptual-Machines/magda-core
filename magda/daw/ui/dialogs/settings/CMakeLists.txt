@@ -14,5 +14,6 @@ target_sources(magda_daw_app PRIVATE
     SettingsLink.hpp
     SettingsSection.hpp
     SettingsSections.hpp
+    SettingsToolbar.hpp
     SettingsWindow.hpp
 )

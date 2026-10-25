@@ -169,7 +169,7 @@
     "one_change": "1 change",
     "changes": "{0} changes",
     "restore_defaults": "Restore defaults",
-    "applies_immediately": "Changes here apply immediately.",
+    "applies_immediately": "{0} changes apply immediately",
     "section.audio_midi": "Audio & MIDI",
     "section.controllers": "Controllers",
     "section.connections": "Connections",
@@ -200,7 +200,8 @@
     "updates.up_to_date": "You're running the latest version of {1} ({0}).",
     "updates.available_body": "A new version of {2} is available: {0} (current: {1}).",
     "updates.view_release": "View release",
-    "updates.error": "Could not check for updates: {0}"
+    "updates.error": "Could not check for updates: {0}",
+    "done": "Done"
   },
   "about": {
     "version_prefix": "Version "
@@ -281,15 +282,11 @@
     "button.start": "Start"
   },
   "plugin_settings": {
-    "section.system_directories": "System Plugin Directories",
-    "section.custom_directories": "Custom Plugin Directories",
-    "section.excluded": "Excluded Plugins",
-    "button.add": "Add",
+    "section.excluded": "Excluded",
     "button.remove": "Remove",
-    "button.scan": "Scan All Plugins",
-    "button.scan_new": "Scan New Plugins",
-    "button.view_report": "View Scan Report",
-    "button.remove_selected": "Remove Selected",
+    "button.scan": "Rescan all",
+    "button.scan_new": "Scan for new",
+    "button.view_report": "View report",
     "button.reset_all": "Reset All",
     "toggle.scan_on_startup": "Scan for new plugins on startup",
     "label.external_format_preference": "When a plugin exists in several formats:",
@@ -314,7 +311,13 @@
     "status.failed_short": "failed",
     "status.plugins_available": "plugins available",
     "status.excluded": "excluded",
-    "status.none_scanned": "No plugins scanned yet"
+    "status.none_scanned": "No plugins scanned yet",
+    "section.folders": "Plugin folders",
+    "section.scanning": "Scanning",
+    "button.add_folder": "+ Add folder",
+    "button.stop_scan": "Stop scan",
+    "label.system": "System",
+    "excluded_none": "None. A plugin that crashes or fails to load during a scan is listed here, and later scans skip it."
   },
   "footer": {
     "tooltip.session": "Session",
@@ -556,7 +559,10 @@
     "upload_overwrite": "A profile with id \"{0}\" already exists. Replace it?",
     "upload_copy_failed": "Couldn't copy the profile into your controllers folder.",
     "upload_create_dir_failed": "Couldn't create the controllers folder:\n{0}",
-    "upload_success": "Imported profile \"{0}\"."
+    "upload_success": "Imported profile \"{0}\".",
+    "no_profiles_hint": "A profile maps a controller’s knobs, faders and pads to MAGDA. Add one from the library or import your own.",
+    "scripts.empty_title": "No scripts yet",
+    "scripts.empty_body": "Lua scripts handle controller logic that a profile can’t, like modes, LED feedback and custom displays. One script runs at a time: click a script to make it active."
   },
   "connections": {
     "tab.clients": "Clients",
@@ -572,7 +578,6 @@
     "rotate_cancel": "Cancel",
     "mcp.blurb": "Lets an AI host inspect and control this session over {0}. It listens on this machine only, on its own port and with its own token. Turn it off and no {0} endpoint is listening.",
     "mcp.enable": "Enable the {0} endpoint",
-    "mcp.status_listening": "Listening on port {0}",
     "mcp.status_enabled": "Enabled, but not listening. The port may be in use",
     "mcp.status_off": "Not listening",
     "mcp.field_caption": "{0} host configuration",
@@ -580,12 +585,10 @@
     "mcp.bridge_missing": "{1} could not find {0}. Reinstalling {1} puts it back; otherwise replace the path below with wherever you have it. It finds {1} on its own, so it works from anywhere.",
     "ws.blurb": "Lets a script, a control surface, or any other program drive this session over a {0}, and pushes changes back as they happen. It listens on this machine only, on its own port and with its own token.",
     "ws.enable": "Enable the {0} {1}",
-    "ws.status_listening": "Listening on port {0}",
     "ws.status_enabled": "Enabled, but not listening. The port may be in use",
     "ws.status_off": "Not listening",
     "ws.field_caption": "Connect to",
     "ws.url_pending": "Nothing is listening yet.",
-    "ws.token_file": "Bearer token, and this port, are in:\n{0}",
     "ws.hint": "Name your client in the query string so it gets its own row and its own permissions on the Clients tab. The token is regenerated every run and written to the file above, which is readable only by you, so read it from there rather than copying it.",
     "clients.blurb": "A client that connects for the first time can only read. Tick what you want it to be able to do; changes apply to its next request, with nothing to restart.",
     "clients.none": "No client has connected yet.",
@@ -609,7 +612,6 @@
     "osc.receive_port": "Receive port",
     "osc.feedback_port": "Feedback port",
     "osc.status_off": "Not listening.",
-    "osc.status_listening": "Listening on {0}:{1}.",
     "osc.status_bind_failed": "Couldn't open the port. Another application may be using it.",
     "osc.status_received": "{0} messages received.",
     "osc.surfaces": "Surfaces",
@@ -617,7 +619,12 @@
     "osc.surface_line": "{0} - {1} in, {2} out, last heard {3}",
     "osc.seen_now": "just now",
     "osc.seen_seconds": "{0}s ago",
-    "osc.seen_minutes": "{0} min ago"
+    "osc.seen_minutes": "{0} min ago",
+    "reveal": "Reveal",
+    "copy_path": "Copy path",
+    "ws.token_caption": "Token & port file",
+    "clients.forget_disconnected": "Forget all disconnected",
+    "clients.client": "Client"
   },
   "audio_settings": {
     "label.audio_inputs": "Audio Inputs:",
@@ -646,7 +653,6 @@
     "unit.samples": "{0} samples",
     "status.changing": "Changing {0} to {1}",
     "status.no_interface": "No audio interface open",
-    "status.current": "Current Interface: {0} ({1} in, {2} out)",
     "error.title": "Audio Interface Error",
     "error.open": "Could not open \"{0}\".\n\nError: {1}",
     "error.set": "Could not set the {0} to {1}.\n\nError: {2}",
@@ -654,6 +660,9 @@
     "error.not_initialized": "Audio engine not initialized. Cannot open audio settings.",
     "crash_recovery.title": "Audio Driver Skipped",
     "crash_recovery.message": "MAGDA closed unexpectedly last time while opening {0}, so it started with the default audio driver instead.\n\nYou can choose a driver again in Audio/MIDI Settings.",
-    "crash_recovery.default": "the audio driver"
+    "crash_recovery.default": "the audio driver",
+    "section.device": "Device",
+    "label.preview_output": "Audition browser files on",
+    "status.channels": "{0} in · {1} out"
   }
 }

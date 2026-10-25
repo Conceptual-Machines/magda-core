@@ -2,7 +2,9 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <array>
 #include <functional>
+#include <memory>
 #include <vector>
 
 #include "core/PluginPreferences.hpp"
@@ -24,8 +26,13 @@ class PluginSettingsPage : public juce::Component {
     void resized() override;
     void paint(juce::Graphics& g) override;
 
-    /** @brief Height the page lays out in; it is shown inside a scrolling Settings tab. */
-    static constexpr int kPreferredHeight = 640;
+    /** @brief The height the page lays out in at @p width. */
+    int getPreferredHeight(int width);
+
+    /** @brief The plugin count and scan actions, shown in the tab row. */
+    juce::Component& getToolbar() {
+        return toolbar_;
+    }
 
     /** Returns true if a plugin scan is currently in progress. */
     bool isScanRunning() const;
@@ -45,43 +52,31 @@ class PluginSettingsPage : public juce::Component {
     void applySettings();
     void setScanningUIEnabled(bool enabled);
 
-    // Inner model for custom directories ListBox
-    class DirectoryListModel : public juce::ListBoxModel {
+    /** @brief A holder that tells the page when it is resized, for the tab-row toolbar. */
+    class Toolbar : public juce::Component {
       public:
-        std::vector<std::string>* paths = nullptr;
-        int getNumRows() override;
-        void paintListBoxItem(int rowNumber, juce::Graphics& g, int width, int height,
-                              bool rowIsSelected) override;
+        std::function<void()> onResize;
+        void resized() override {
+            if (onResize)
+                onResize();
+        }
     };
 
-    // Inner model for excluded plugins TableListBox
-    class ExcludedTableModel : public juce::TableListBoxModel {
-      public:
-        std::vector<ExcludedPlugin>* entries = nullptr;
-        int getNumRows() override;
-        void paintRowBackground(juce::Graphics& g, int rowNumber, int width, int height,
-                                bool rowIsSelected) override;
-        void paintCell(juce::Graphics& g, int rowNumber, int columnId, int width, int height,
-                       bool rowIsSelected) override;
-        juce::Component* refreshComponentForCell(
-            int rowNumber, int columnId, bool isRowSelected,
-            juce::Component* existingComponentToUpdate) override;
-    };
-
-    DirectoryListModel systemDirListModel_;
-    DirectoryListModel dirListModel_;
-    ExcludedTableModel excludedTableModel_;
-
-    // System directories section (read-only)
-    juce::Label systemDirsHeader_;
-    juce::ListBox systemDirsList_;
+    Toolbar toolbar_;
+    juce::Label foldersHeader_;
+    juce::Label scanningHeader_;
     std::vector<std::string> systemPaths_;
+    std::vector<juce::Rectangle<int>> rowLines_;
+    std::vector<juce::Rectangle<int>> folderRows_;
+    std::vector<juce::Rectangle<int>> exclusionRows_;
+    std::array<juce::Rectangle<int>, 3> excludedColumns_;
+    std::vector<std::unique_ptr<juce::TextButton>> folderRemoveButtons_;
+    std::vector<std::unique_ptr<juce::TextButton>> exclusionRemoveButtons_;
+    juce::TextButton stopScanButton_;
+    juce::Label excludedEmpty_;
 
     // Custom directories section
-    juce::Label directoriesHeader_;
-    juce::ListBox directoriesList_;
     juce::TextButton addDirButton_;
-    juce::TextButton removeDirButton_;
     std::vector<std::string> customPaths_;
     std::unique_ptr<juce::FileChooser> fileChooser_;
 
@@ -102,8 +97,6 @@ class PluginSettingsPage : public juce::Component {
 
     // Excluded plugins section
     juce::Label excludedHeader_;
-    juce::TableListBox excludedTable_;
-    juce::TextButton removeSelectedButton_;
     juce::TextButton resetAllButton_;
     std::vector<ExcludedPlugin> excludedPlugins_;
 
@@ -111,6 +104,11 @@ class PluginSettingsPage : public juce::Component {
     juce::StringArray committedExclusions_;
 
     void updatePluginCountLabel();
+    int layOut(int width, bool apply);
+    void layoutToolbar();
+    void rebuildFolderRows();
+    void rebuildExclusionRows();
+    void relayout();
     void setupSectionHeader(juce::Label& header, const juce::String& text);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginSettingsPage)

@@ -21,10 +21,18 @@ namespace magda {
 
 namespace {
 
-constexpr int kToggleHeight = 24;
-constexpr int kRowSpacing = 4;
-/// The tick DialogLookAndFeel draws, and the gap it leaves before a toggle's text.
-constexpr int kTickWidth = 31;
+constexpr int kRowHeight = 36;
+constexpr int kHeaderHeight = 30;
+constexpr int kSwitchWidth = 36;
+
+void paintRowRules(juce::Graphics& g, juce::Component& parent,
+                   const std::vector<juce::Component*>& rows) {
+    g.setColour(ActiveTheme::getBorderColour().withMultipliedAlpha(0.6f));
+    for (auto* row : rows) {
+        const auto r = parent.getLocalArea(row->getParentComponent(), row->getBounds());
+        g.fillRect(0, r.getBottom() - 1, parent.getWidth(), 1);
+    }
+}
 
 /// Debug builds only: a click-by-click trace has no place in a user's log.
 void log([[maybe_unused]] const juce::String& message) {
@@ -133,9 +141,6 @@ void CustomChannelSelector::refresh() {
 
     int numChannels = driverNames_.size();
 
-    // Read current preview output channel from Config (only relevant for output)
-    int previewOffset = magda::Config::getInstance().getPreviewOutputChannel();
-
     // Create stereo pair toggles first
     for (int i = 0; i < numChannels; i += 2) {
         if (i + 1 < numChannels) {
@@ -153,24 +158,6 @@ void CustomChannelSelector::refresh() {
             toggle.button->onClick = [this, i]() { onChannelToggled(i, true); };
             list_.addAndMakeVisible(*toggle.button);
             list_.addAndMakeVisible(*toggle.name);
-
-            // For output channels, add a "Preview" toggle next to each stereo pair
-            if (!isInput_) {
-                toggle.previewButton =
-                    std::make_unique<juce::ToggleButton>(tr("audio_settings.toggle.preview"));
-                toggle.previewButton->setToggleState(i == previewOffset,
-                                                     juce::dontSendNotification);
-                toggle.previewButton->setRadioGroupId(9999);  // Mutual exclusion
-                toggle.previewButton->onClick = [button = toggle.previewButton.get(), i]() {
-                    // Prevent unchecking — always keep one preview destination selected
-                    if (!button->getToggleState()) {
-                        button->setToggleState(true, juce::dontSendNotification);
-                        return;
-                    }
-                    onPreviewToggled(i);
-                };
-                list_.addAndMakeVisible(*toggle.previewButton);
-            }
 
             channelToggles_.push_back(std::move(toggle));
         }
@@ -269,7 +256,7 @@ std::unique_ptr<juce::Label> CustomChannelSelector::makeNameLabel(int startChann
     auto label = std::make_unique<ChannelNameLabel>();
     label->setText(rowLabel(startChannel, isStereo), juce::dontSendNotification);
     label->setTooltip(label->getText() + "\n" + tr("audio_settings.tooltip.rename_channel"));
-    label->setFont(FontManager::getInstance().getUIFont(15.0f));
+    label->setFont(FontManager::getInstance().getUIFont(13.0f));
     label->setBorderSize({});
     label->setEditable(false, true);
     label->setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
@@ -343,12 +330,6 @@ void CustomChannelSelector::refreshChannelStates() {
     }
 }
 
-void CustomChannelSelector::onPreviewToggled(int startChannel) {
-    magda::Config::getInstance().setPreviewOutputChannel(startChannel);
-    magda::Config::getInstance().save();
-    DBG("Preview output changed to channels " << (startChannel + 1) << "-" << (startChannel + 2));
-}
-
 void CustomChannelSelector::applyTicks() {
     auto settings = audio_.chosen();
     auto& channels = isInput_ ? settings.inputChannels : settings.outputChannels;
@@ -372,58 +353,37 @@ void CustomChannelSelector::applyTicks() {
         channelList(open) + (error.isNotEmpty() ? ", error: " + error : juce::String()));
 }
 
-void CustomChannelSelector::paint(juce::Graphics& g) {
-    g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE));
+void CustomChannelSelector::paintOverChildren(juce::Graphics& g) {
+    std::vector<juce::Component*> rows;
+    for (const auto& toggle : channelToggles_)
+        rows.push_back(toggle.name.get());
+    paintRowRules(g, *this, rows);
 }
 
 int CustomChannelSelector::rowsHeight() const {
-    return static_cast<int>(channelToggles_.size()) * (kToggleHeight + kRowSpacing);
+    return static_cast<int>(channelToggles_.size()) * kRowHeight;
+}
+
+int CustomChannelSelector::preferredHeight() const {
+    return kHeaderHeight + rowsHeight();
 }
 
 void CustomChannelSelector::layOutRows(int width) {
-    constexpr auto toggleHeight = kToggleHeight;
-
     auto top = 0;
     for (auto& toggle : channelToggles_) {
-        auto row = juce::Rectangle<int>(0, top, std::max(0, width), toggleHeight);
-        if (toggle.previewButton != nullptr) {
-            // Measured rather than left at a round number, which is what cut the
-            // label off: the tick is drawn at the row's height and the text
-            // follows it, so both have to be paid for.
-            const auto text = juce::GlyphArrangement::getStringWidthInt(
-                FontManager::getInstance().getUIFont(static_cast<float>(toggleHeight) * 0.6f),
-                tr("audio_settings.toggle.preview"));
-            toggle.previewButton->setBounds(row.removeFromRight(text + toggleHeight + 8));
-            row.removeFromRight(4);
-        }
-        toggle.button->setBounds(row.removeFromLeft(kTickWidth));
+        auto row = juce::Rectangle<int>(0, top, std::max(0, width), kRowHeight);
+        toggle.button->setBounds(row.removeFromRight(kSwitchWidth).reduced(0, 8));
         toggle.name->setBounds(row);
-        top += toggleHeight + kRowSpacing;
+        top += kRowHeight;
     }
 }
 
 void CustomChannelSelector::resized() {
-    auto bounds = getLocalBounds().reduced(10);
-
-    titleLabel_.setBounds(bounds.removeFromTop(20));
-    bounds.removeFromTop(5);
+    auto bounds = getLocalBounds();
+    titleLabel_.setBounds(bounds.removeFromTop(kHeaderHeight));
     viewport_.setBounds(bounds);
-
-    // Height first, then width, and in that order for a reason: sizing the list
-    // is what brings the scrollbar in, and the scrollbar takes width away from
-    // the rows. Measuring first lays them out for a column that is about to get
-    // narrower, which puts the Preview control underneath it on any device with
-    // more channels than the column can show.
-    //
-    // Two sizes rather than a loop because the height does not depend on the
-    // width: the first settles whether there is a scrollbar at all, so the
-    // width read after it is final.
-    const auto height = rowsHeight();
-    list_.setSize(bounds.getWidth(), height);
-
-    const auto width = std::max(0, viewport_.getMaximumVisibleWidth());
-    list_.setSize(width, height);
-    layOutRows(width);
+    list_.setSize(bounds.getWidth(), rowsHeight());
+    layOutRows(bounds.getWidth());
 }
 
 // ============================================================================
@@ -449,15 +409,22 @@ void MidiInputList::resized() {
 
     auto top = 0;
     for (auto& toggle : toggles_) {
-        toggle->setBounds(0, top, width, kToggleHeight);
-        top += kToggleHeight + kRowSpacing;
+        toggle->setBounds(0, top, width, kRowHeight);
+        top += kRowHeight;
     }
+}
+
+void MidiInputList::paintOverChildren(juce::Graphics& g) {
+    std::vector<juce::Component*> rows;
+    for (auto& toggle : toggles_)
+        rows.push_back(toggle.get());
+    paintRowRules(g, *this, rows);
 }
 
 int MidiInputList::preferredHeight() const {
     // One row when there is nothing, so the section keeps its shape on a machine with no
     // MIDI at all rather than collapsing the label onto the button below it.
-    return std::max<int>(1, toggles_.size()) * (kToggleHeight + kRowSpacing);
+    return std::max<int>(1, toggles_.size()) * kRowHeight;
 }
 
 void MidiInputList::refresh() {
@@ -513,6 +480,10 @@ AudioSettingsPage::AudioSettingsPage(AudioEngine* audioEngine)
     : deviceRefreshSpinner_(deviceRefreshProgress_),
       audioEngine_(audioEngine),
       audio_(audioEngine != nullptr ? audioEngine->getAudioIO() : nullptr) {
+    deviceHeader_.setText(tr("audio_settings.section.device"), juce::dontSendNotification);
+    daw::ui::SettingsLookAndFeel::markSectionHeader(deviceHeader_);
+    addAndMakeVisible(deviceHeader_);
+
     // Driver first: it decides which interfaces the pickers below list.
     driverLabel_.setText(tr("audio_settings.label.driver"), juce::dontSendNotification);
     driverLabel_.setFont(FontManager::getInstance().getUIFont(13.0f));
@@ -633,12 +604,32 @@ AudioSettingsPage::AudioSettingsPage(AudioEngine* audioEngine)
     outputChannelSelector_ = std::make_unique<CustomChannelSelector>(*audio_, false);
     addAndMakeVisible(*outputChannelSelector_);
 
-    deviceNameLabel_.setFont(FontManager::getInstance().getUIFontBold(16.0f));
-    deviceNameLabel_.setJustificationType(juce::Justification::centred);
+    deviceNameLabel_.setFont(FontManager::getInstance().getUIFontMedium(14.0f));
+    deviceNameLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(deviceNameLabel_);
+    deviceDetailsLabel_.setFont(FontManager::getInstance().getMonoFont(12.0f));
+    deviceDetailsLabel_.setColour(juce::Label::textColourId,
+                                  ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    deviceDetailsLabel_.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(deviceDetailsLabel_);
+
+    // Where the browser auditions files: one of the output pairs.
+    previewHeader_.setText(tr("audio_settings.toggle.preview"), juce::dontSendNotification);
+    daw::ui::SettingsLookAndFeel::markSectionHeader(previewHeader_);
+    addAndMakeVisible(previewHeader_);
+    previewLabel_.setText(tr("audio_settings.label.preview_output"), juce::dontSendNotification);
+    previewLabel_.setFont(FontManager::getInstance().getUIFont(13.0f));
+    addAndMakeVisible(previewLabel_);
+    previewComboBox_.onChange = [this] {
+        if (const auto id = previewComboBox_.getSelectedId(); id > 0) {
+            Config::getInstance().setPreviewOutputChannel(id - 1);
+            Config::getInstance().save();
+        }
+    };
+    addAndMakeVisible(previewComboBox_);
     refreshChosenInterface();
 
-    setSize(700, kPreferredHeight);
+    setSize(700, getPreferredHeight(700));
 }
 
 AudioSettingsPage::~AudioSettingsPage() {
@@ -668,109 +659,119 @@ void AudioSettingsPage::hardwareChannelsChanged() {
     hideDeviceRefreshIndicator();
 }
 
-void AudioSettingsPage::paint(juce::Graphics& g) {
-    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
-}
-
 void AudioSettingsPage::lookAndFeelChanged() {
     refreshHostWindowBackground(*this);
 }
 
 void AudioSettingsPage::resized() {
-    auto bounds = getLocalBounds().reduced(10);
+    layOut(getWidth(), true);
+}
 
-    // Device name label at top
-    auto deviceNameArea = bounds.removeFromTop(30);
-    if (deviceRefreshSpinner_.isVisible()) {
-        auto refreshArea = deviceNameArea.removeFromRight(170);
-        deviceRefreshSpinner_.setBounds(
-            refreshArea.removeFromRight(22).withSizeKeepingCentre(18, 18));
-        refreshArea.removeFromRight(6);
-        deviceRefreshLabel_.setBounds(refreshArea);
-    } else {
-        deviceRefreshSpinner_.setBounds({});
-        deviceRefreshLabel_.setBounds({});
+int AudioSettingsPage::getPreferredHeight(int width) {
+    return layOut(width, false);
+}
+
+int AudioSettingsPage::layOut(int width, bool apply) {
+    constexpr int pad = 16;
+    constexpr int columnGap = 32;
+    constexpr int sectionGap = 22;
+    const auto place = [apply](juce::Component& c, juce::Rectangle<int> r) {
+        if (apply)
+            c.setBounds(r);
+    };
+    if (apply)
+        rowLines_.clear();
+    const auto takeRow = [this, apply](juce::Rectangle<int>& b, int height = kRowHeight) {
+        auto row = b.removeFromTop(height);
+        if (apply)
+            rowLines_.push_back(row.withTop(row.getBottom() - 1));
+        return row;
+    };
+    const auto comboRow = [&](juce::Rectangle<int>& b, juce::Label& label, juce::Component& combo) {
+        auto row = takeRow(b);
+        place(combo, row.removeFromRight(juce::jlimit(150, 230, row.getWidth() / 2)).reduced(0, 5));
+        place(label, row);
+    };
+
+    auto bounds = juce::Rectangle<int>(0, 0, width, 100000).reduced(pad);
+
+    // The open interface, its stream and the driver's own panel.
+    statusBounds_ = bounds.removeFromTop(44);
+    {
+        auto bar = statusBounds_.reduced(14, 0).withTrimmedLeft(16);
+        if (controlPanelButton_.isVisible()) {
+            place(controlPanelButton_, bar.removeFromRight(140).reduced(0, 6));
+            bar.removeFromRight(10);
+        }
+        if (deviceRefreshSpinner_.isVisible()) {
+            place(deviceRefreshSpinner_, bar.removeFromRight(22).withSizeKeepingCentre(18, 18));
+            bar.removeFromRight(6);
+            place(deviceRefreshLabel_, bar.removeFromRight(130));
+        }
+        const int nameW = juce::GlyphArrangement::getStringWidthInt(deviceNameLabel_.getFont(),
+                                                                    deviceNameLabel_.getText()) +
+                          12;
+        place(deviceNameLabel_, bar.removeFromLeft(juce::jmin(nameW, bar.getWidth() / 2)));
+        place(deviceDetailsLabel_, bar);
     }
-    deviceNameLabel_.setBounds(deviceNameArea);
-    bounds.removeFromTop(10);  // spacing
+    bounds.removeFromTop(sectionGap);
 
-    // Driver above the interfaces, which it decides the contents of
-    auto driverArea = bounds.removeFromTop(28);
-    driverLabel_.setBounds(driverArea.removeFromLeft(120));
-    driverArea.removeFromLeft(10);  // spacing
-    driverComboBox_.setBounds(driverArea);
-    bounds.removeFromTop(5);  // spacing
+    const bool twoColumns = width >= 700;
+    auto left = twoColumns ? bounds.removeFromLeft((bounds.getWidth() - columnGap) / 2) : bounds;
+    if (twoColumns)
+        bounds.removeFromLeft(columnGap);
 
-    // Input device selection dropdown
-    auto inputDeviceArea = bounds.removeFromTop(28);
-    inputDeviceLabel_.setBounds(inputDeviceArea.removeFromLeft(120));
-    inputDeviceArea.removeFromLeft(10);  // spacing
-    if (controlPanelButton_.isVisible()) {
-        controlPanelButton_.setBounds(inputDeviceArea.removeFromRight(130));
-        inputDeviceArea.removeFromRight(10);  // spacing
-    }
-    inputDeviceComboBox_.setBounds(inputDeviceArea);
-    bounds.removeFromTop(5);  // spacing
+    place(deviceHeader_, left.removeFromTop(kHeaderHeight));
+    comboRow(left, driverLabel_, driverComboBox_);
+    comboRow(left, inputDeviceLabel_, inputDeviceComboBox_);
+    if (outputDeviceComboBox_.isVisible())
+        comboRow(left, outputDeviceLabel_, outputDeviceComboBox_);
+    place(setAsPreferredCheckbox_, takeRow(left).reduced(0, 6));
+    comboRow(left, sampleRateLabel_, sampleRateComboBox_);
+    comboRow(left, bufferSizeLabel_, bufferSizeComboBox_);
 
-    if (outputDeviceComboBox_.isVisible()) {
-        // Output device selection dropdown
-        auto outputDeviceArea = bounds.removeFromTop(28);
-        outputDeviceLabel_.setBounds(outputDeviceArea.removeFromLeft(120));
-        outputDeviceArea.removeFromLeft(10);  // spacing
-        outputDeviceComboBox_.setBounds(outputDeviceArea);
-        bounds.removeFromTop(5);  // spacing
-    }
-
-    // "Set as preferred" checkbox
-    setAsPreferredCheckbox_.setBounds(bounds.removeFromTop(24));
-    bounds.removeFromTop(5);  // spacing
-
-    // Rate and block size share a row: both are short, and both describe the open stream
-    // rather than which box it runs on.
-    auto streamArea = bounds.removeFromTop(28);
-    sampleRateLabel_.setBounds(streamArea.removeFromLeft(120));
-    streamArea.removeFromLeft(10);  // spacing
-    sampleRateComboBox_.setBounds(streamArea.removeFromLeft(110));
-    streamArea.removeFromLeft(20);  // spacing
-    bufferSizeLabel_.setBounds(streamArea.removeFromLeft(90));
-    streamArea.removeFromLeft(10);  // spacing
-    bufferSizeComboBox_.setBounds(streamArea.removeFromLeft(110));
-    bounds.removeFromTop(5);  // spacing
-
-    // Split remaining space: MIDI on the left where the JUCE selector was, channels right
-    auto midiArea = bounds.removeFromLeft(bounds.getWidth() / 2);
-    bounds.removeFromLeft(10);  // spacing
-
-    // Packed top-down: the list takes what its rows need and the rest of the column is
-    // left empty, rather than stretching it and stranding the picker at the bottom.
-    midiInputsLabel_.setBounds(midiArea.removeFromTop(22));
-
-    if (midiInputList_ != nullptr) {
-        // Capped so a machine with many inputs scrolls instead of pushing the rows below
-        // it out of the dialog.
-        const auto below = (bluetoothMidiButton_.isVisible() ? 26 + 8 : 0) + 28 + 8;
-        const auto listHeight =
-            juce::jmin(midiInputList_->preferredHeight(), midiArea.getHeight() - below);
-        midiInputList_->setBounds(midiArea.removeFromTop(juce::jmax(22, listHeight)));
-        midiArea.removeFromTop(8);  // spacing
-    }
-
+    left.removeFromTop(sectionGap);
+    place(midiInputsLabel_, left.removeFromTop(kHeaderHeight));
+    if (midiInputList_ != nullptr)
+        place(*midiInputList_, left.removeFromTop(midiInputList_->preferredHeight()));
+    comboRow(left, midiOutputLabel_, midiOutputComboBox_);
     if (bluetoothMidiButton_.isVisible()) {
-        bluetoothMidiButton_.setBounds(midiArea.removeFromTop(26).removeFromLeft(140));
-        midiArea.removeFromTop(8);  // spacing
+        auto row = takeRow(left, 44).reduced(0, 6);
+        const int w =
+            juce::GlyphArrangement::getStringWidthInt(FontManager::getInstance().getUIFont(13.5f),
+                                                      bluetoothMidiButton_.getButtonText()) +
+            36;
+        place(bluetoothMidiButton_, row.removeFromLeft(w));
     }
 
-    auto midiOutputArea = midiArea.removeFromTop(28);
-    midiOutputLabel_.setBounds(midiOutputArea.removeFromLeft(90));
-    midiOutputArea.removeFromLeft(10);  // spacing
-    midiOutputComboBox_.setBounds(midiOutputArea);
+    auto right = twoColumns ? bounds : left;
+    if (!twoColumns)
+        right.removeFromTop(sectionGap);
+    place(*inputChannelSelector_, right.removeFromTop(inputChannelSelector_->preferredHeight()));
+    right.removeFromTop(sectionGap);
+    place(*outputChannelSelector_, right.removeFromTop(outputChannelSelector_->preferredHeight()));
+    right.removeFromTop(sectionGap);
+    place(previewHeader_, right.removeFromTop(kHeaderHeight));
+    comboRow(right, previewLabel_, previewComboBox_);
 
-    // Channel selectors on the right, split vertically
-    auto inputArea = bounds.removeFromTop(bounds.getHeight() / 2);
-    bounds.removeFromTop(10);  // spacing
+    return juce::jmax(left.getY(), right.getY()) + pad;
+}
 
-    inputChannelSelector_->setBounds(inputArea);
-    outputChannelSelector_->setBounds(bounds);
+void AudioSettingsPage::paint(juce::Graphics& g) {
+    g.setColour(ActiveTheme::getBorderColour().withMultipliedAlpha(0.6f));
+    for (const auto& line : rowLines_)
+        g.fillRect(line);
+
+    const auto bar = statusBounds_.toFloat();
+    g.setColour(ActiveTheme::getBackgroundColour());
+    g.fillRoundedRectangle(bar, 6.0f);
+    g.setColour(ActiveTheme::getBorderColour());
+    g.drawRoundedRectangle(bar.reduced(0.5f), 6.0f, 1.0f);
+    const bool open = audio_ != nullptr && audio_->status().deviceOpen;
+    g.setColour(open ? ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE)
+                     : ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+    g.fillEllipse(
+        juce::Rectangle<float>(8.0f, 8.0f).withCentre({bar.getX() + 20.0f, bar.getCentreY()}));
 }
 
 void AudioSettingsPage::populateDeviceLists() {
@@ -1068,6 +1069,7 @@ void AudioSettingsPage::refreshChosenInterface() {
     populateMidiOutputs();
     inputChannelSelector_->refresh();
     outputChannelSelector_->refresh();
+    populatePreviewOutputs();
     showOpenInterface();
     resized();
 }
@@ -1082,17 +1084,42 @@ void AudioSettingsPage::showOpenInterface() {
     if (status.interfaceName.isEmpty()) {
         deviceNameLabel_.setText(tr("audio_settings.status.no_interface"),
                                  juce::dontSendNotification);
+        deviceDetailsLabel_.setText({}, juce::dontSendNotification);
+        repaint();
         return;
     }
 
     const auto chosen = audio_->chosen();
     const auto ins = audio_->channelNames(chosen.backend, chosen.inputInterface, true).size();
     const auto outs = audio_->channelNames(chosen.backend, chosen.outputInterface, false).size();
-    deviceNameLabel_.setText(tr("audio_settings.status.current")
-                                 .replace("{0}", status.interfaceName)
-                                 .replace("{1}", juce::String(ins))
-                                 .replace("{2}", juce::String(outs)),
-                             juce::dontSendNotification);
+    juce::StringArray details;
+    details.add(tr("audio_settings.status.channels")
+                    .replace("{0}", juce::String(ins))
+                    .replace("{1}", juce::String(outs)));
+    if (status.sampleRate > 0.0) {
+        details.add(juce::String(status.sampleRate / 1000.0, 1).trimCharactersAtEnd(".0") + " " +
+                    technicalText(TechnicalTextToken::Kilohertz));
+        details.add(juce::String(status.bufferSize));
+        details.add(juce::String(1000.0 * status.bufferSize / status.sampleRate, 1) + " " +
+                    technicalText(TechnicalTextToken::Milliseconds));
+    }
+    deviceNameLabel_.setText(status.interfaceName, juce::dontSendNotification);
+    deviceDetailsLabel_.setText(
+        details.joinIntoString(juce::String(juce::CharPointer_UTF8(" \xc2\xb7 "))),
+        juce::dontSendNotification);
+    resized();
+    repaint();
+}
+
+void AudioSettingsPage::populatePreviewOutputs() {
+    const auto chosen = audio_->chosen();
+    const auto names = audio_->channelNames(chosen.backend, chosen.outputInterface, false);
+    const auto& user = Config::getInstance().getChannelNames(chosen.outputInterface, false);
+    previewComboBox_.clear(juce::dontSendNotification);
+    for (int i = 0; i + 1 < names.size(); i += 2)
+        previewComboBox_.addItem(ChannelLabels::pair(names, i, i + 1, user), i + 1);
+    previewComboBox_.setSelectedId(Config::getInstance().getPreviewOutputChannel() + 1,
+                                   juce::dontSendNotification);
 }
 
 void AudioSettingsPage::savePreferencesIfNeeded() {
@@ -1154,7 +1181,8 @@ class AudioMidiSection : public SettingsSection {
     std::vector<Tab> getTabs() override {
         if (page_ == nullptr)
             return {{getTitle(), &unavailable_, {}}};
-        return {{getTitle(), page_.get(), [](int) { return AudioSettingsPage::kPreferredHeight; }}};
+        return {{getTitle(), page_.get(),
+                 [this](int width) { return page_->getPreferredHeight(width); }}};
     }
     bool appliesImmediately() const override {
         return true;

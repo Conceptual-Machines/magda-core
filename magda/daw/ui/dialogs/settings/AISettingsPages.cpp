@@ -23,7 +23,11 @@
 #include "../../themes/DialogLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
 #include "SettingsSections.hpp"
+#include "SettingsToolbar.hpp"
 #include "magda/agents/command_model_downloader.hpp"
+#include "ui/components/common/MagdaAlertWindow.hpp"
+#include "ui/components/common/PillSegments.hpp"
+#include "ui/themes/SettingsLookAndFeel.hpp"
 
 namespace magda {
 
@@ -56,6 +60,65 @@ void styleCombo(juce::ComboBox& combo) {
     combo.setColour(juce::ComboBox::textColourId,
                     ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
     combo.setColour(juce::ComboBox::outlineColourId, ActiveTheme::getColour(ActiveTheme::BORDER));
+}
+
+/// Segments that show a combo box's items; the combo stays the state and keeps its onChange.
+class ComboSegments : public daw::ui::PillSegments, private juce::Timer {
+  public:
+    explicit ComboSegments(juce::ComboBox& combo) : combo_(combo) {
+        onChange = [this](int index) {
+            if (juce::isPositiveAndBelow(index, ids_.size()))
+                combo_.setSelectedId(ids_[index], juce::sendNotificationSync);
+        };
+        sync();
+        startTimerHz(10);
+    }
+
+    // Polled: the combo's items and visibility change from many places.
+    void sync() {
+        juce::StringArray options;
+        juce::Array<int> ids;
+        for (int i = 0; i < combo_.getNumItems(); ++i) {
+            options.add(combo_.getItemText(i));
+            ids.add(combo_.getItemId(i));
+        }
+        if (options != options_) {
+            options_ = options;
+            setOptions(options);
+        }
+        ids_ = ids;
+        setSelectedIndex(ids_.indexOf(combo_.getSelectedId()));
+        setVisible(combo_.isVisible());
+    }
+
+  private:
+    void timerCallback() override {
+        sync();
+    }
+
+    juce::ComboBox& combo_;
+    juce::StringArray options_;
+    juce::Array<int> ids_;
+};
+
+/// Whether npx can be found where a GUI-launched process would look for it.
+bool npxAvailable() {
+#if JUCE_WINDOWS
+    const juce::StringArray names{"npx.cmd", "npx.exe"};
+    const auto separator = ";";
+#else
+    const juce::StringArray names{"npx"};
+    const auto separator = ":";
+#endif
+    auto dirs = juce::StringArray::fromTokens(juce::SystemStats::getEnvironmentVariable("PATH", {}),
+                                              separator, {});
+    // A macOS app gets a short PATH; Homebrew and the Node installer live here.
+    dirs.addArray({"/opt/homebrew/bin", "/usr/local/bin"});
+    for (const auto& dir : dirs)
+        for (const auto& name : names)
+            if (dir.isNotEmpty() && juce::File(dir).getChildFile(name).existsAsFile())
+                return true;
+    return false;
 }
 
 // Known cloud providers
@@ -227,10 +290,10 @@ class AISettingsPages::CloudPage : public juce::Component {
 
         // API key input
         keyLabel_.setText("API Key", juce::dontSendNotification);
-        styleLabel(keyLabel_);
-        addAndMakeVisible(keyLabel_);
+        providerLabel_.setVisible(false);
 
-        styleEditor(keyEditor_, "Enter API key...", true);
+        styleEditor(keyEditor_, "Paste API key", true);
+        keyEditor_.setIndents(8, 6);
         addAndMakeVisible(keyEditor_);
 
         // Test button
@@ -247,76 +310,67 @@ class AISettingsPages::CloudPage : public juce::Component {
         // Add/Save button
         addBtn_.setButtonText("Add");
         addBtn_.onClick = [this]() { addCurrentProvider(); };
+        MagdaAlertWindow::setRole(addBtn_, MagdaAlertWindow::ButtonRole::Primary);
         addAndMakeVisible(addBtn_);
 
-        // Registered providers header
-        registeredLabel_.setText("Registered Providers", juce::dontSendNotification);
-        styleLabel(registeredLabel_, 11.0f);
-        registeredLabel_.setColour(juce::Label::textColourId,
-                                   ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+        registeredLabel_.setText("API keys", juce::dontSendNotification);
+        daw::ui::SettingsLookAndFeel::markSectionHeader(registeredLabel_);
         addAndMakeVisible(registeredLabel_);
+
+        footnoteLabel_.setText("Keys are saved in MAGDA's settings file. Test sends one small "
+                               "request to the provider to check that the key works.",
+                               juce::dontSendNotification);
+        styleLabel(footnoteLabel_, 11.5f);
+        footnoteLabel_.setColour(juce::Label::textColourId,
+                                 ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        footnoteLabel_.setJustificationType(juce::Justification::topLeft);
+        footnoteLabel_.setBorderSize({});
+        addAndMakeVisible(footnoteLabel_);
 
         addAndMakeVisible(listContainer_);
     }
 
+    juce::Component& getToolbar() {
+        return badge_;
+    }
+
     void resized() override {
-        auto bounds = getLocalBounds().reduced(12);
-        const int labelW = 70;
-        const int rowH = 28;
+        auto bounds = getLocalBounds().reduced(0, 8);
+        registeredLabel_.setBounds(bounds.removeFromTop(30));
 
-        // Provider combo row
-        auto row = bounds.removeFromTop(rowH);
-        providerLabel_.setBounds(row.removeFromLeft(labelW));
-        providerCombo_.setBounds(row.reduced(0, 2));
-        bounds.removeFromTop(4);
-
-        // API key row
-        row = bounds.removeFromTop(rowH);
-        keyLabel_.setBounds(row.removeFromLeft(labelW));
-        testBtn_.setBounds(row.removeFromRight(50).reduced(2, 2));
-        row.removeFromRight(4);
-        addBtn_.setBounds(row.removeFromRight(50).reduced(2, 2));
-        row.removeFromRight(4);
-        keyEditor_.setBounds(row.reduced(0, 1));
-        bounds.removeFromTop(2);
-
-        // Status
-        statusLabel_.setBounds(bounds.removeFromTop(18).withTrimmedLeft(labelW));
-        bounds.removeFromTop(8);
-
-        // Registered providers list
-        registeredLabel_.setBounds(bounds.removeFromTop(18));
-        bounds.removeFromTop(4);
-
-        int totalH = static_cast<int>(entries_.size()) * kListRowHeight;
-        listContainer_.setBounds(bounds.removeFromTop(totalH));
-
+        listContainer_.setBounds(
+            bounds.removeFromTop(static_cast<int>(entries_.size()) * kListRowHeight));
         auto listBounds = listContainer_.getLocalBounds();
-        for (auto& entry : entries_) {
+        for (auto& entry : entries_)
             entry.layout(listBounds.removeFromTop(kListRowHeight));
-        }
+
+        // The add row: provider, key, Test, Add.
+        addRow_ = bounds.removeFromTop(46);
+        auto row = addRow_.reduced(0, 8);
+        addBtn_.setBounds(row.removeFromRight(60));
+        row.removeFromRight(6);
+        testBtn_.setBounds(row.removeFromRight(60));
+        row.removeFromRight(8);
+        providerCombo_.setBounds(row.removeFromLeft(150));
+        row.removeFromLeft(8);
+        keyEditor_.setBounds(row);
+        statusLabel_.setBounds(bounds.removeFromTop(20));
+        bounds.removeFromTop(6);
+        footnoteLabel_.setBounds(bounds.removeFromTop(40));
+
+        const auto count = static_cast<int>(entries_.size());
+        badge_.setStatus(count == 0   ? juce::String("No keys added")
+                         : count == 1 ? juce::String("1 key added")
+                                      : juce::String(count) + " keys added",
+                         count > 0);
     }
 
     void paint(juce::Graphics& g) override {
-        auto borderColour = ActiveTheme::getColour(ActiveTheme::BORDER);
-        float left = 12.0f;
-        auto right = static_cast<float>(getWidth() - 12);
-
-        // Separator above registered list
-        if (registeredLabel_.isVisible()) {
-            g.setColour(borderColour);
-            g.drawHorizontalLine(registeredLabel_.getY() - 4, left, right);
-        }
-
-        // Row separators between list entries
-        if (!entries_.empty()) {
-            g.setColour(borderColour.withAlpha(0.5f));
-            auto listTop = listContainer_.getY();
-            for (size_t i = 1; i < entries_.size(); ++i) {
-                auto y = listTop + static_cast<int>(i) * kListRowHeight;
-                g.drawHorizontalLine(y, left, right);
-            }
-        }
+        g.setColour(ActiveTheme::getBorderColour().withMultipliedAlpha(0.6f));
+        const auto top = listContainer_.getY();
+        for (size_t i = 1; i <= entries_.size(); ++i)
+            g.fillRect(0, top + static_cast<int>(i) * kListRowHeight - 1, getWidth(), 1);
+        g.fillRect(0, addRow_.getBottom() - 1, getWidth(), 1);
     }
 
     void load(const Config& config) {
@@ -366,26 +420,34 @@ class AISettingsPages::CloudPage : public juce::Component {
     }
 
   private:
-    static constexpr int kListRowHeight = 24;
+    static constexpr int kListRowHeight = 48;
 
     struct ListEntry {
         std::string providerId;
         juce::DrawableComponent* iconComp = nullptr;
         juce::Label* nameLabel = nullptr;
-        juce::Label* statusLabel = nullptr;
+        juce::Label* statusLabel = nullptr;  // the masked key, under the name
+        juce::Label* resultLabel = nullptr;  // what the last Test said
+        juce::TextButton* testBtn = nullptr;
         juce::TextButton* removeBtn = nullptr;
 
         void layout(juce::Rectangle<int> bounds) {
+            auto right = bounds.removeFromRight(200);
             if (removeBtn)
-                removeBtn->setBounds(bounds.removeFromRight(24).reduced(2, 1));
-            if (statusLabel)
-                statusLabel->setBounds(bounds.removeFromRight(80));
+                removeBtn->setBounds(right.removeFromRight(60).reduced(0, 12));
+            right.removeFromRight(4);
+            if (testBtn)
+                testBtn->setBounds(right.removeFromRight(60).reduced(0, 9));
+            if (resultLabel)
+                resultLabel->setBounds(bounds.removeFromRight(160));
             if (iconComp)
-                iconComp->setTransformToFit(bounds.removeFromLeft(20).reduced(2, 4).toFloat(),
+                iconComp->setTransformToFit(bounds.removeFromLeft(28).reduced(4, 12).toFloat(),
                                             juce::RectanglePlacement::centred);
-            bounds.removeFromLeft(4);
+            bounds.removeFromLeft(8);
             if (nameLabel)
-                nameLabel->setBounds(bounds);
+                nameLabel->setBounds(bounds.removeFromTop(26).withTrimmedTop(7));
+            if (statusLabel)
+                statusLabel->setBounds(bounds.removeFromTop(16));
         }
     };
 
@@ -419,8 +481,8 @@ class AISettingsPages::CloudPage : public juce::Component {
         credentials_[providerId] = key;
 
         if (auto entry = findListEntry(providerId); entry != entries_.end()) {
-            entry->statusLabel->setText("Updated", juce::dontSendNotification);
-            entry->statusLabel->setColour(juce::Label::textColourId, juce::Colours::yellow);
+            entry->resultLabel->setText("Updated", juce::dontSendNotification);
+            entry->resultLabel->setColour(juce::Label::textColourId, juce::Colours::yellow);
         } else {
             addListEntry(providerId);
         }
@@ -440,6 +502,8 @@ class AISettingsPages::CloudPage : public juce::Component {
             listContainer_.removeChildComponent(entry->nameLabel);
             listContainer_.removeChildComponent(entry->statusLabel);
             listContainer_.removeChildComponent(entry->removeBtn);
+            listContainer_.removeChildComponent(entry->testBtn);
+            listContainer_.removeChildComponent(entry->resultLabel);
             entries_.erase(entry);
             updateProviderComboState();
         }
@@ -466,7 +530,7 @@ class AISettingsPages::CloudPage : public juce::Component {
         // Name label
         auto nameLabel = std::make_unique<juce::Label>();
         nameLabel->setText(info->displayName, juce::dontSendNotification);
-        styleLabel(*nameLabel, 12.0f);
+        styleLabel(*nameLabel, 13.0f);
         listContainer_.addAndMakeVisible(*nameLabel);
         entry.nameLabel = nameLabel.get();
         ownedLabels_.push_back(std::move(nameLabel));
@@ -476,18 +540,29 @@ class AISettingsPages::CloudPage : public juce::Component {
         auto key = credentials_[providerId];
         juce::String masked = key.substring(0, 4) + "..." + key.substring(key.length() - 4);
         statusLabel->setText(masked, juce::dontSendNotification);
-        styleLabel(*statusLabel, 11.0f);
+        statusLabel->setFont(FontManager::getInstance().getMonoFont(11.0f));
         statusLabel->setColour(juce::Label::textColourId,
                                ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-        statusLabel->setJustificationType(juce::Justification::centredRight);
         listContainer_.addAndMakeVisible(*statusLabel);
         entry.statusLabel = statusLabel.get();
         ownedLabels_.push_back(std::move(statusLabel));
 
-        // Remove button
-        auto removeBtn =
-            std::make_unique<juce::TextButton>(juce::String::charToString(0x2715));  // ✕
+        auto resultLabel = std::make_unique<juce::Label>();
+        styleLabel(*resultLabel, 11.5f);
+        resultLabel->setJustificationType(juce::Justification::centredRight);
+        listContainer_.addAndMakeVisible(*resultLabel);
+        entry.resultLabel = resultLabel.get();
+        ownedLabels_.push_back(std::move(resultLabel));
+
+        auto testBtn = std::make_unique<juce::TextButton>("Test");
         const auto& pid = providerId;
+        testBtn->onClick = [this, pid]() { testStoredKey(pid); };
+        listContainer_.addAndMakeVisible(*testBtn);
+        entry.testBtn = testBtn.get();
+        ownedButtons_.push_back(std::move(testBtn));
+
+        auto removeBtn = std::make_unique<juce::TextButton>("Remove");
+        daw::ui::SettingsLookAndFeel::markLinkButton(*removeBtn);
         removeBtn->onClick = [this, pid]() { removeProvider(pid); };
         listContainer_.addAndMakeVisible(*removeBtn);
         entry.removeBtn = removeBtn.get();
@@ -524,22 +599,37 @@ class AISettingsPages::CloudPage : public juce::Component {
             statusLabel_.setColour(juce::Label::textColourId, juce::Colours::orange);
             return;
         }
+        runTest(providerId, key, testBtn_, statusLabel_);
+    }
 
+    void testStoredKey(const std::string& providerId) {
+        auto entry = findListEntry(providerId);
+        if (entry == entries_.end() || credentials_.count(providerId) == 0)
+            return;
+        runTest(providerId, credentials_[providerId], *entry->testBtn, *entry->resultLabel);
+    }
+
+    /// One small request with @p key; the result lands in @p result.
+    void runTest(const std::string& providerId, const juce::String& key, juce::TextButton& button,
+                 juce::Label& result) {
         const auto* info = findProviderInfo(providerId);
         if (!info)
             return;
 
-        testBtn_.setEnabled(false);
-        statusLabel_.setText("Testing...", juce::dontSendNotification);
-        statusLabel_.setColour(juce::Label::textColourId,
-                               ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        button.setEnabled(false);
+        result.setText("Testing...", juce::dontSendNotification);
+        result.setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        auto safeButton = juce::Component::SafePointer<juce::TextButton>(&button);
+        auto safeResult = juce::Component::SafePointer<juce::Label>(&result);
 
         auto testProvider = std::string(info->testProvider);
         auto testBaseUrl = std::string(info->testBaseUrl);
         auto testModel = std::string(info->testModel);
         auto safeThis = juce::Component::SafePointer<CloudPage>(this);
 
-        juce::Thread::launch([safeThis, key, testProvider, testBaseUrl, testModel]() {
+        juce::Thread::launch([safeThis, safeButton, safeResult, key, testProvider, testBaseUrl,
+                              testModel]() {
             Config::AgentLLMConfig cfg;
             cfg.provider = testProvider;
             cfg.baseUrl = testBaseUrl;
@@ -564,14 +654,16 @@ class AISettingsPages::CloudPage : public juce::Component {
                 result = resp.error.substring(0, 50);
             }
 
-            juce::MessageManager::callAsync([safeThis, ok, result]() {
-                if (!safeThis)
+            juce::MessageManager::callAsync([safeThis, safeButton, safeResult, ok, result]() {
+                if (!safeThis || !safeButton || !safeResult)
                     return;
-                safeThis->testBtn_.setEnabled(true);
-                safeThis->statusLabel_.setText(result, juce::dontSendNotification);
-                safeThis->statusLabel_.setColour(juce::Label::textColourId,
-                                                 ok ? juce::Colours::limegreen
-                                                    : juce::Colours::orange);
+                safeButton->setEnabled(true);
+                safeResult->setText(
+                    ok ? "Verified " + result.fromFirstOccurrenceOf("OK ", false, false) : result,
+                    juce::dontSendNotification);
+                safeResult->setColour(juce::Label::textColourId,
+                                      ok ? ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE)
+                                         : juce::Colours::orange);
             });
         });
     }
@@ -585,6 +677,9 @@ class AISettingsPages::CloudPage : public juce::Component {
 
     // Registered providers list
     juce::Label registeredLabel_;
+    juce::Label footnoteLabel_;
+    juce::Rectangle<int> addRow_;
+    SettingsStatusBadge badge_;
     juce::Component listContainer_;
     std::vector<ListEntry> entries_;
     std::vector<std::unique_ptr<ProviderIcon>> ownedDrawables_;
@@ -603,25 +698,26 @@ class AISettingsPages::LocalPage : public juce::Component {
   public:
     LocalPage() {
         // Download model button
-        downloadButton_.setButtonText("Download Model");
+        downloadButton_.setButtonText(
+            juce::String(juce::CharPointer_UTF8("Download a model\xe2\x80\xa6")));
         downloadButton_.onClick = [this]() { startDownload(); };
         addAndMakeVisible(downloadButton_);
 
         // Model file
-        modelLabel_.setText("Model (.gguf)", juce::dontSendNotification);
-        styleLabel(modelLabel_);
+        modelLabel_.setText("File (.gguf)", juce::dontSendNotification);
+        styleLabel(modelLabel_, 13.0f);
         addAndMakeVisible(modelLabel_);
 
         styleEditor(modelEditor_, "/path/to/model.gguf");
         addAndMakeVisible(modelEditor_);
 
-        browseButton_.setButtonText("...");
+        browseButton_.setButtonText(juce::String(juce::CharPointer_UTF8("Choose\xe2\x80\xa6")));
         browseButton_.onClick = [this]() { browseModel(); };
         addAndMakeVisible(browseButton_);
 
         // GPU layers
-        gpuLabel_.setText("GPU Layers", juce::dontSendNotification);
-        styleLabel(gpuLabel_);
+        gpuLabel_.setText("GPU layers", juce::dontSendNotification);
+        styleLabel(gpuLabel_, 13.0f);
         addAndMakeVisible(gpuLabel_);
 
         gpuCombo_.addItem("Auto (GPU)", 1);
@@ -637,17 +733,25 @@ class AISettingsPages::LocalPage : public juce::Component {
         addAndMakeVisible(gpuCustomEditor_);
 
         // Context size
-        ctxLabel_.setText("Context", juce::dontSendNotification);
-        styleLabel(ctxLabel_);
+        ctxLabel_.setText("Context length", juce::dontSendNotification);
+        styleLabel(ctxLabel_, 13.0f);
+        tokensLabel_.setText("tokens", juce::dontSendNotification);
+        styleLabel(tokensLabel_, 11.5f);
+        tokensLabel_.setColour(juce::Label::textColourId,
+                               ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+        addAndMakeVisible(tokensLabel_);
         addAndMakeVisible(ctxLabel_);
 
         styleEditor(ctxEditor_, "4096");
+        ctxEditor_.setJustification(juce::Justification::centredRight);
+        ctxEditor_.setIndents(8, 6);
         ctxEditor_.setInputRestrictions(6, "0123456789");
         addAndMakeVisible(ctxEditor_);
 
         // Load/Unload button
-        loadButton_.setButtonText("Load Model");
+        loadButton_.setButtonText("Load model");
         loadButton_.onClick = [this]() { toggleModel(); };
+        MagdaAlertWindow::setRole(loadButton_, MagdaAlertWindow::ButtonRole::Primary);
         addAndMakeVisible(loadButton_);
 
         // Status
@@ -659,48 +763,71 @@ class AISettingsPages::LocalPage : public juce::Component {
         // Load on startup toggle
         loadOnStartupToggle_.setButtonText("Load model on startup");
         loadOnStartupToggle_.setColour(juce::ToggleButton::textColourId,
-                                       ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+                                       ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         addAndMakeVisible(loadOnStartupToggle_);
+
+        runtimeHeader_.setText("Runtime", juce::dontSendNotification);
+        daw::ui::SettingsLookAndFeel::markSectionHeader(runtimeHeader_);
+        addAndMakeVisible(runtimeHeader_);
 
         updateStatus();
     }
 
+    juce::Component& getBadge() {
+        return badge_;
+    }
+
     void resized() override {
-        auto bounds = getLocalBounds().reduced(12);
-        const int labelW = 90;
-        const int rowH = 26;
+        rowLines_.clear();
+        auto bounds = getLocalBounds();
+        constexpr int rowH = 36;
+        const auto takeRow = [this](juce::Rectangle<int>& b, int h) {
+            auto row = b.removeFromTop(h);
+            rowLines_.push_back(row.withTop(row.getBottom() - 1));
+            return row;
+        };
+        const auto textWidth = [](juce::Button& button) {
+            return juce::GlyphArrangement::getStringWidthInt(
+                       FontManager::getInstance().getUIFont(13.5f), button.getButtonText()) +
+                   32;
+        };
 
-        // Model path row
-        auto row = bounds.removeFromTop(rowH);
-        modelLabel_.setBounds(row.removeFromLeft(labelW));
-        browseButton_.setBounds(row.removeFromRight(32).reduced(2, 1));
-        row.removeFromRight(2);
-        modelEditor_.setBounds(row.reduced(0, 1));
-        bounds.removeFromTop(2);
+        auto row = takeRow(bounds, rowH);
+        browseButton_.setBounds(row.removeFromRight(textWidth(browseButton_)).reduced(0, 5));
+        row.removeFromRight(8);
+        modelLabel_.setBounds(row.removeFromLeft(120));
+        modelEditor_.setBounds(row.reduced(0, 5));
 
-        // GPU + Context on one row
-        row = bounds.removeFromTop(rowH);
-        gpuLabel_.setBounds(row.removeFromLeft(labelW));
-        gpuCombo_.setBounds(row.removeFromLeft(100).reduced(0, 1));
-        if (gpuCustomEditor_.isVisible()) {
-            row.removeFromLeft(4);
-            gpuCustomEditor_.setBounds(row.removeFromLeft(40).reduced(0, 1));
-        }
+        row = bounds.removeFromTop(46).reduced(0, 8);
+        loadButton_.setBounds(row.removeFromLeft(textWidth(loadButton_) + 8));
+        row.removeFromLeft(8);
+        downloadButton_.setBounds(row.removeFromLeft(textWidth(downloadButton_)));
         row.removeFromLeft(12);
-        ctxLabel_.setBounds(row.removeFromLeft(56));
-        ctxEditor_.setBounds(row.removeFromLeft(60).reduced(0, 1));
-        bounds.removeFromTop(6);
-
-        // Load/Unload + Download + Status
-        row = bounds.removeFromTop(rowH);
-        loadButton_.setBounds(row.removeFromLeft(100).reduced(0, 1));
-        row.removeFromLeft(8);
-        downloadButton_.setBounds(row.removeFromLeft(120).reduced(0, 1));
-        row.removeFromLeft(8);
         statusLabel_.setBounds(row);
 
-        bounds.removeFromTop(4);
-        loadOnStartupToggle_.setBounds(bounds.removeFromTop(22));
+        bounds.removeFromTop(18);
+        runtimeHeader_.setBounds(bounds.removeFromTop(30));
+
+        row = takeRow(bounds, rowH);
+        gpuCombo_.setBounds(row.removeFromRight(150).reduced(0, 5));
+        if (gpuCustomEditor_.isVisible()) {
+            row.removeFromRight(6);
+            gpuCustomEditor_.setBounds(row.removeFromRight(56).reduced(0, 5));
+        }
+        gpuLabel_.setBounds(row);
+
+        row = takeRow(bounds, rowH);
+        tokensLabel_.setBounds(row.removeFromRight(46));
+        ctxEditor_.setBounds(row.removeFromRight(80).reduced(0, 5));
+        ctxLabel_.setBounds(row);
+
+        loadOnStartupToggle_.setBounds(takeRow(bounds, rowH).reduced(0, 7));
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.setColour(ActiveTheme::getBorderColour().withMultipliedAlpha(0.6f));
+        for (const auto& line : rowLines_)
+            g.fillRect(line);
     }
 
     void load(const Config& config) {
@@ -781,7 +908,8 @@ class AISettingsPages::LocalPage : public juce::Component {
                     [this](bool success, const juce::String& modelPath) {
                         juce::MessageManager::callAsync([this, success, modelPath]() {
                             downloadButton_.setEnabled(true);
-                            downloadButton_.setButtonText("Download Model");
+                            downloadButton_.setButtonText(juce::String(
+                                juce::CharPointer_UTF8("Download a model\xe2\x80\xa6")));
 
                             if (success) {
                                 modelEditor_.setText(modelPath, juce::dontSendNotification);
@@ -843,14 +971,13 @@ class AISettingsPages::LocalPage : public juce::Component {
         if (mgr.isLoaded()) {
             loadButton_.setButtonText("Unload");
             auto path = juce::File(mgr.getLoadedModelPath()).getFileName();
-            statusLabel_.setText("Loaded: " + path, juce::dontSendNotification);
-            statusLabel_.setColour(juce::Label::textColourId, juce::Colours::limegreen);
+            badge_.setStatus("Loaded: " + path, true);
         } else {
-            loadButton_.setButtonText("Load Model");
-            statusLabel_.setText("No model loaded", juce::dontSendNotification);
-            statusLabel_.setColour(juce::Label::textColourId,
-                                   ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+            loadButton_.setButtonText("Load model");
+            badge_.setStatus("No model loaded", false);
         }
+        statusLabel_.setText({}, juce::dontSendNotification);
+        resized();
     }
 
     void gpuComboChanged() {
@@ -887,6 +1014,10 @@ class AISettingsPages::LocalPage : public juce::Component {
     juce::TextEditor modelEditor_, gpuCustomEditor_, ctxEditor_;
     juce::ComboBox gpuCombo_;
     juce::TextButton browseButton_, downloadButton_, loadButton_;
+    juce::Label runtimeHeader_;
+    juce::Label tokensLabel_;
+    SettingsStatusBadge badge_;
+    std::vector<juce::Rectangle<int>> rowLines_;
     juce::ToggleButton loadOnStartupToggle_;
     juce::Label statusLabel_;
     std::unique_ptr<juce::FileChooser> chooser_;
@@ -932,7 +1063,7 @@ class AISettingsPages::ConfigPage : public juce::Component {
         addAndMakeVisible(setupCombo_);
 
         // Mode selector: Local / Cloud / Hybrid
-        modeLabel_.setText("Mode", juce::dontSendNotification);
+        modeLabel_.setText("Run on", juce::dontSendNotification);
         styleLabel(modeLabel_);
         addAndMakeVisible(modeLabel_);
 
@@ -948,10 +1079,11 @@ class AISettingsPages::ConfigPage : public juce::Component {
         styleLabel(providerLabel_);
         addAndMakeVisible(providerLabel_);
         styleCombo(providerCombo_);
+        providerCombo_.onChange = [this] { refreshBadge(); };
         addAndMakeVisible(providerCombo_);
 
         // Optimize selector (cloud/hybrid)
-        optimizeLabel_.setText("Optimize", juce::dontSendNotification);
+        optimizeLabel_.setText("Optimize for", juce::dontSendNotification);
         styleLabel(optimizeLabel_);
         addAndMakeVisible(optimizeLabel_);
         styleCombo(optimizeCombo_);
@@ -998,46 +1130,55 @@ class AISettingsPages::ConfigPage : public juce::Component {
         modeCombo_.setSelectedId(1, juce::dontSendNotification);
         updateModeUI();
 
-        // MCP Tools section
-        mcpSectionLabel_.setText("MCP Tools", juce::dontSendNotification);
-        mcpSectionLabel_.setFont(FontManager::getInstance().getUIFont(13.0f));
-        mcpSectionLabel_.setColour(juce::Label::textColourId,
-                                   ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        modelHeader_.setText("Model", juce::dontSendNotification);
+        daw::ui::SettingsLookAndFeel::markSectionHeader(modelHeader_);
+        addAndMakeVisible(modelHeader_);
+        for (auto* segments :
+             {&setupSegments_, &modeSegments_, &optimizeSegments_, &sourceSegments_})
+            addAndMakeVisible(*segments);
+
+        mcpSectionLabel_.setText("Tools", juce::dontSendNotification);
+        daw::ui::SettingsLookAndFeel::markSectionHeader(mcpSectionLabel_);
         addAndMakeVisible(mcpSectionLabel_);
 
-        faustMcpToggle_.setButtonText("Faust DSP");
-        faustMcpToggle_.setColour(juce::ToggleButton::textColourId,
-                                  ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-        faustMcpToggle_.setColour(juce::ToggleButton::tickColourId,
-                                  ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        faustTitle_.setText("Faust DSP", juce::dontSendNotification);
+        styleLabel(faustTitle_, 13.0f);
+        addAndMakeVisible(faustTitle_);
         addAndMakeVisible(faustMcpToggle_);
 
-        faustMcpHint_.setText("Validates AI-generated Faust code before loading. Requires npx "
-                              "(Node.js):",
-                              juce::dontSendNotification);
-        faustMcpHint_.setFont(FontManager::getInstance().getUIFont(10.5f));
+        faustMcpHint_.setText(
+            "Checks AI-written Faust code before loading it. Needs Node.js (npx).",
+            juce::dontSendNotification);
+        faustMcpHint_.setFont(FontManager::getInstance().getUIFont(11.5f));
         faustMcpHint_.setColour(juce::Label::textColourId,
-                                ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+                                ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        faustMcpHint_.setBorderSize({});
         addAndMakeVisible(faustMcpHint_);
+
+        const bool npx = npxAvailable();
+        npxStatus_.setText(npx ? "npx found" : "npx not found", juce::dontSendNotification);
+        styleLabel(npxStatus_, 11.5f);
+        npxStatus_.setJustificationType(juce::Justification::centredRight);
+        npxStatus_.setColour(juce::Label::textColourId,
+                             npx ? ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE)
+                                 : ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+        addAndMakeVisible(npxStatus_);
 
         // One link rather than three sets of per-OS steps: the official
         // download page already offers the macOS, Windows and Linux installers
         // and stays current on its own.
         nodeDownloadLink_.setURL(juce::URL("https://nodejs.org/en/download"));
-        nodeDownloadLink_.setButtonText("nodejs.org/en/download");
-        nodeDownloadLink_.setFont(FontManager::getInstance().getUIFont(10.5f), false,
+        nodeDownloadLink_.setButtonText("Get Node.js");
+        nodeDownloadLink_.setFont(FontManager::getInstance().getUIFont(11.5f), false,
                                   juce::Justification::centredLeft);
         nodeDownloadLink_.setColour(juce::HyperlinkButton::textColourId,
                                     ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         addAndMakeVisible(nodeDownloadLink_);
 
         // Advanced per-agent grid: one row per agent role.
-        advancedHintLabel_.setText("Each agent uses its own provider and model. "
-                                   "Providers come from the Cloud and Local tabs.",
-                                   juce::dontSendNotification);
-        advancedHintLabel_.setFont(FontManager::getInstance().getUIFont(10.5f));
+        advancedHintLabel_.setFont(FontManager::getInstance().getUIFont(11.5f));
         advancedHintLabel_.setColour(juce::Label::textColourId,
-                                     ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+                                     ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         addAndMakeVisible(advancedHintLabel_);
 
         static constexpr std::array<std::pair<const char*, const char*>, 6> kRoles = {{
@@ -1048,6 +1189,9 @@ class AISettingsPages::ConfigPage : public juce::Component {
             {magda::role::CONTROLLER, "Controller"},
             {magda::role::THEME, "Theme"},
         }};
+        advancedHintLabel_.setText("Each agent uses its own provider and model. Providers come "
+                                   "from the Providers and Local models tabs.",
+                                   juce::dontSendNotification);
         for (size_t i = 0; i < agentRows_.size(); ++i) {
             auto& r = agentRows_[i];
             r.role = kRoles[i].first;
@@ -1068,88 +1212,128 @@ class AISettingsPages::ConfigPage : public juce::Component {
         updateSetupUI();
     }
 
-    void resized() final {
-        auto bounds = getLocalBounds().reduced(12);
-        const int rowH = 28;
-        const int labelW = 80;
+    juce::Component& getToolbar() {
+        return badge_;
+    }
 
-        // Setup row (always visible)
-        auto row = bounds.removeFromTop(rowH);
-        setupLabel_.setBounds(row.removeFromLeft(labelW));
-        setupCombo_.setBounds(row.removeFromLeft(160).reduced(0, 2));
-        bounds.removeFromTop(8);
+    void resized() final {
+        rowLines_.clear();
+        auto bounds = getLocalBounds().reduced(0, 8);
+
+        modelHeader_.setBounds(bounds.removeFromTop(kHeaderH));
+        segmentRow(takeRow(bounds), setupLabel_, setupSegments_);
+        setupCombo_.setBounds({});
 
         if (setupCombo_.getSelectedId() == 2)
             layoutAdvanced(bounds);
         else
-            layoutSimple(bounds, rowH, labelW);
+            layoutSimple(bounds);
 
-        // MCP Tools section
-        bounds.removeFromTop(16);
-        mcpSectionLabel_.setBounds(bounds.removeFromTop(22));
-        bounds.removeFromTop(4);
-        faustMcpToggle_.setBounds(bounds.removeFromTop(24));
-        faustMcpHint_.setBounds(bounds.removeFromTop(18).withTrimmedLeft(24));
-        nodeDownloadLink_.setBounds(bounds.removeFromTop(16).withTrimmedLeft(24));
+        bounds.removeFromTop(22);
+        mcpSectionLabel_.setBounds(bounds.removeFromTop(kHeaderH));
+        auto row = takeRow(bounds, 52);
+        faustMcpToggle_.setBounds(row.removeFromRight(36).withSizeKeepingCentre(36, 22));
+        row.removeFromRight(10);
+        npxStatus_.setBounds(row.removeFromRight(110));
+        faustTitle_.setBounds(row.removeFromTop(26).withTrimmedTop(6));
+        const int hintW = juce::GlyphArrangement::getStringWidthInt(faustMcpHint_.getFont(),
+                                                                    faustMcpHint_.getText()) +
+                          6;
+        auto hintRow = row.removeFromTop(18);
+        faustMcpHint_.setBounds(hintRow.removeFromLeft(juce::jmin(hintW, hintRow.getWidth() - 80)));
+        nodeDownloadLink_.setBounds(hintRow.removeFromLeft(80));
+        refreshBadge();
     }
 
-    void layoutSimple(juce::Rectangle<int>& bounds, int rowH, int labelW) {
-        // Mode row
-        auto row = bounds.removeFromTop(rowH);
-        modeLabel_.setBounds(row.removeFromLeft(labelW));
-        modeCombo_.setBounds(row.reduced(0, 2));
-        bounds.removeFromTop(8);
+    void paint(juce::Graphics& g) override {
+        g.setColour(ActiveTheme::getBorderColour().withMultipliedAlpha(0.6f));
+        for (const auto& line : rowLines_)
+            g.fillRect(line);
+    }
 
-        int mode = modeCombo_.getSelectedId();
+    void layoutSimple(juce::Rectangle<int>& bounds) {
+        segmentRow(takeRow(bounds), modeLabel_, modeSegments_);
+        modeCombo_.setBounds({});
 
-        if (mode == 1) {
-            // Local: source selector, then either the embedded GGUF summary or
-            // the local-server model picker.
-            row = bounds.removeFromTop(rowH);
-            localSourceLabel_.setBounds(row.removeFromLeft(labelW));
-            localSourceCombo_.setBounds(row.reduced(0, 2));
-            bounds.removeFromTop(4);
-
+        if (modeCombo_.getSelectedId() == 1) {
+            // Local: source, then either the embedded GGUF or the server's model picker.
+            segmentRow(takeRow(bounds), localSourceLabel_, sourceSegments_);
+            localSourceCombo_.setBounds({});
             if (localSourceCombo_.getSelectedId() == 2) {
-                // Model + Refresh row
-                row = bounds.removeFromTop(rowH);
-                serverModelLabel_.setBounds(row.removeFromLeft(labelW));
-                serverRefreshBtn_.setBounds(row.removeFromRight(70).reduced(2, 2));
-                row.removeFromRight(4);
-                serverModelCombo_.setBounds(row.reduced(0, 2));
-                bounds.removeFromTop(2);
-                serverStatusLabel_.setBounds(bounds.removeFromTop(18).withTrimmedLeft(labelW));
+                auto row = takeRow(bounds);
+                serverRefreshBtn_.setBounds(row.removeFromRight(80).reduced(0, 5));
+                row.removeFromRight(6);
+                serverModelCombo_.setBounds(
+                    row.removeFromRight(juce::jlimit(150, 240, row.getWidth() / 2)).reduced(0, 5));
+                serverModelLabel_.setBounds(row);
+                serverStatusLabel_.setBounds(bounds.removeFromTop(20));
             } else {
-                modelNameLabel_.setBounds(bounds.removeFromTop(rowH).withTrimmedLeft(labelW));
+                auto row = takeRow(bounds);
+                modelNameLabel_.setJustificationType(juce::Justification::centredRight);
+                modelNameLabel_.setBounds(row.removeFromRight(row.getWidth() / 2));
+                serverModelLabel_.setBounds({});
             }
         } else {
-            // Cloud/Hybrid: provider + optimize
-            row = bounds.removeFromTop(rowH);
-            providerLabel_.setBounds(row.removeFromLeft(labelW));
-            providerCombo_.setBounds(row.reduced(0, 2));
-            bounds.removeFromTop(4);
-
-            row = bounds.removeFromTop(rowH);
-            optimizeLabel_.setBounds(row.removeFromLeft(labelW));
-            optimizeCombo_.setBounds(row.reduced(0, 2));
+            auto row = takeRow(bounds);
+            providerCombo_.setBounds(
+                row.removeFromRight(juce::jlimit(150, 220, row.getWidth() / 2)).reduced(0, 5));
+            providerLabel_.setBounds(row);
+            segmentRow(takeRow(bounds), optimizeLabel_, optimizeSegments_);
+            optimizeCombo_.setBounds({});
         }
     }
 
     void layoutAdvanced(juce::Rectangle<int>& bounds) {
-        const int rowH = 28;
-        const int nameW = 84;
-        const int providerW = 150;
+        constexpr int nameW = 100;
+        constexpr int providerW = 160;
 
-        advancedHintLabel_.setBounds(bounds.removeFromTop(18));
-        bounds.removeFromTop(4);
-
+        advancedHintLabel_.setBounds(bounds.removeFromTop(28));
         for (auto& r : agentRows_) {
-            auto row = bounds.removeFromTop(rowH);
+            auto row = takeRow(bounds);
             r.nameLabel.setBounds(row.removeFromLeft(nameW));
-            r.providerCombo.setBounds(row.removeFromLeft(providerW).reduced(0, 2));
-            row.removeFromLeft(6);
-            r.modelCombo.setBounds(row.reduced(0, 2));
-            bounds.removeFromTop(4);
+            r.providerCombo.setBounds(row.removeFromLeft(providerW).reduced(0, 5));
+            row.removeFromLeft(8);
+            r.modelCombo.setBounds(row.reduced(0, 5));
+        }
+    }
+
+    static constexpr int kHeaderH = 30;
+    static constexpr int kRowH = 36;
+
+    juce::Rectangle<int> takeRow(juce::Rectangle<int>& bounds, int height = kRowH) {
+        auto row = bounds.removeFromTop(height);
+        rowLines_.push_back(row.withTop(row.getBottom() - 1));
+        return row;
+    }
+
+    static void segmentRow(juce::Rectangle<int> row, juce::Label& label, ComboSegments& segments) {
+        segments.sync();
+        const int w = juce::jmin(segments.getIdealWidth(), row.getWidth() / 2 + 40);
+        segments.setBounds(row.removeFromRight(w).reduced(0, 6));
+        label.setBounds(row);
+    }
+
+    // What the assistant runs on now, at the right of the tab row.
+    void refreshBadge() {
+        if (setupCombo_.getSelectedId() == 2) {
+            badge_.setStatus("Advanced", true);
+            return;
+        }
+        switch (modeCombo_.getSelectedId()) {
+            case 1:
+                badge_.setStatus(localSourceCombo_.getSelectedId() == 2 ? "Local server" : "Local",
+                                 true);
+                break;
+            case 3:
+                badge_.setStatus(providerCombo_.getText() + " \xc2\xb7 hybrid",
+                                 providerCombo_.getNumItems() > 0);
+                break;
+            default:
+                badge_.setStatus(providerCombo_.getNumItems() > 0
+                                     ? providerCombo_.getText() + " \xc2\xb7 cloud"
+                                     : juce::String("No provider"),
+                                 providerCombo_.getNumItems() > 0);
+                break;
         }
     }
 
@@ -1726,9 +1910,19 @@ class AISettingsPages::ConfigPage : public juce::Component {
 
     // MCP Tools
     juce::Label mcpSectionLabel_;
+    juce::Label faustTitle_;
+    juce::Label npxStatus_;
     juce::ToggleButton faustMcpToggle_;
     juce::Label faustMcpHint_;
     juce::HyperlinkButton nodeDownloadLink_;
+
+    juce::Label modelHeader_;
+    ComboSegments setupSegments_{setupCombo_};
+    ComboSegments modeSegments_{modeCombo_};
+    ComboSegments optimizeSegments_{optimizeCombo_};
+    ComboSegments sourceSegments_{localSourceCombo_};
+    SettingsStatusBadge badge_;
+    std::vector<juce::Rectangle<int>> rowLines_;
 };
 
 // ============================================================================
@@ -2529,8 +2723,12 @@ class AISettingsPages::ModelDownloadsPage : public juce::Component {
           beatPage_(beatPage),
           stemsPage_(stemsPage),
           commandPage_(commandPage) {
-        categoryLabel_.setText("Category", juce::dontSendNotification);
-        styleLabel(categoryLabel_);
+        modelHeader_.setText("Model", juce::dontSendNotification);
+        daw::ui::SettingsLookAndFeel::markSectionHeader(modelHeader_);
+        addAndMakeVisible(modelHeader_);
+
+        categoryLabel_.setText("Type", juce::dontSendNotification);
+        styleLabel(categoryLabel_, 13.0f);
         addAndMakeVisible(categoryLabel_);
 
         categoryCombo_.addItem("Local LLM", kLocal);
@@ -2559,12 +2757,17 @@ class AISettingsPages::ModelDownloadsPage : public juce::Component {
         updateVisiblePage();
     }
 
+    juce::Component& getToolbar() {
+        return localPage_.getBadge();
+    }
+
     void resized() final {
-        auto bounds = getLocalBounds().reduced(12);
-        auto categoryRow = bounds.removeFromTop(28);
-        categoryLabel_.setBounds(categoryRow.removeFromLeft(80));
-        categoryCombo_.setBounds(categoryRow.removeFromLeft(190).reduced(0, 1));
-        bounds.removeFromTop(4);
+        auto bounds = getLocalBounds().reduced(0, 8);
+        modelHeader_.setBounds(bounds.removeFromTop(30));
+        categoryRow_ = bounds.removeFromTop(36);
+        auto categoryRow = categoryRow_;
+        categoryCombo_.setBounds(categoryRow.removeFromRight(190).reduced(0, 5));
+        categoryLabel_.setBounds(categoryRow);
 
         localPage_.setBounds(bounds);
         if (samplePage_ != nullptr)
@@ -2611,7 +2814,14 @@ class AISettingsPages::ModelDownloadsPage : public juce::Component {
         resized();
     }
 
+    void paint(juce::Graphics& g) override {
+        g.setColour(ActiveTheme::getBorderColour().withMultipliedAlpha(0.6f));
+        g.fillRect(0, categoryRow_.getBottom() - 1, getWidth(), 1);
+    }
+
     LocalPage& localPage_;
+    juce::Label modelHeader_;
+    juce::Rectangle<int> categoryRow_;
     SampleTaggerPage* samplePage_;
     BeatTrackerPage* beatPage_;
     StemSeparationPage* stemsPage_;
@@ -2662,6 +2872,18 @@ juce::Component& AISettingsPages::modelsPage() {
     return *modelDownloadsPage_;
 }
 
+juce::Component& AISettingsPages::cloudToolbar() {
+    return cloudPage_->getToolbar();
+}
+
+juce::Component& AISettingsPages::configToolbar() {
+    return configPage_->getToolbar();
+}
+
+juce::Component& AISettingsPages::modelsToolbar() {
+    return modelDownloadsPage_->getToolbar();
+}
+
 void AISettingsPages::configShown() {
     configPage_->refreshOnShow();
 }
@@ -2704,10 +2926,11 @@ class AISection : public SettingsSection {
     juce::String getTitle() const override {
         return tr("settings.section.ai");
     }
+    // The page changed most comes first.
     std::vector<Tab> getTabs() override {
-        return {{"Cloud", &pages_.cloudPage(), {}},
-                {"Config", &pages_.configPage(), {}},
-                {"Models", &pages_.modelsPage(), {}}};
+        return {{"Assistant", &pages_.configPage(), {}, &pages_.configToolbar()},
+                {"Providers", &pages_.cloudPage(), {}, &pages_.cloudToolbar()},
+                {"Local models", &pages_.modelsPage(), {}, &pages_.modelsToolbar()}};
     }
     void load(Config& config) override {
         pages_.load(config);
@@ -2719,12 +2942,20 @@ class AISection : public SettingsSection {
         if (tab == kConfigTab)
             pages_.configShown();
     }
+    // The old tab names, and the Models categories that used to be tabs.
     int findTab(const juce::String& name) override {
+        if (name == "Config")
+            return kConfigTab;
+        if (name == "Cloud")
+            return kProvidersTab;
+        if (name == "Models")
+            return kModelsTab;
         return pages_.selectLegacyCategory(name) ? kModelsTab : -1;
     }
 
   private:
-    static constexpr int kConfigTab = 1;
+    static constexpr int kConfigTab = 0;
+    static constexpr int kProvidersTab = 1;
     static constexpr int kModelsTab = 2;
     AISettingsPages pages_;
 };

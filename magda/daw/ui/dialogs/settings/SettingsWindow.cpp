@@ -5,6 +5,7 @@
 #include "SettingsSections.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
+#include "ui/components/common/PillSegments.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SettingsLookAndFeel.hpp"
@@ -91,53 +92,6 @@ class SidebarRow : public juce::Component {
     int count_ = 0;
 };
 
-/** @brief The tabs of the current section, underlined when selected. */
-class TabStrip : public juce::Component {
-  public:
-    std::function<void(int)> onSelect;
-
-    void setTabs(juce::StringArray titles, int selected) {
-        titles_ = std::move(titles);
-        selected_ = selected;
-        repaint();
-    }
-
-    void paint(juce::Graphics& g) override {
-        g.setColour(ActiveTheme::getBorderColour());
-        g.fillRect(getLocalBounds().removeFromBottom(1));
-
-        const auto font = FontManager::getInstance().getUIFont(13.0f);
-        g.setFont(font);
-        rects_.clear();
-        int x = 0;
-        for (int i = 0; i < titles_.size(); ++i) {
-            const int w = juce::GlyphArrangement::getStringWidthInt(font, titles_[i]) + 24;
-            juce::Rectangle<int> r(x, 0, w, getHeight());
-            rects_.push_back(r);
-            const bool on = i == selected_;
-            g.setColour(ActiveTheme::getColour(on ? ActiveTheme::TEXT_PRIMARY
-                                                  : ActiveTheme::TEXT_SECONDARY));
-            g.drawText(titles_[i], r, juce::Justification::centred);
-            if (on) {
-                g.setColour(ActiveTheme::getAccentColour());
-                g.fillRect(r.removeFromBottom(2).reduced(8, 0));
-            }
-            x += w;
-        }
-    }
-
-    void mouseUp(const juce::MouseEvent& e) override {
-        for (size_t i = 0; i < rects_.size(); ++i)
-            if (rects_[i].contains(e.getPosition()) && onSelect)
-                onSelect(static_cast<int>(i));
-    }
-
-  private:
-    juce::StringArray titles_;
-    int selected_ = 0;
-    std::vector<juce::Rectangle<int>> rects_;
-};
-
 }  // namespace
 
 // ============================================================================
@@ -162,6 +116,9 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
         auto& config = Config::getInstance();
         for (auto& section : sections_) {
             tabs_.push_back(section->getTabs());
+            for (const auto& tab : tabs_.back())
+                if (tab.toolbar != nullptr)
+                    addChildComponent(*tab.toolbar);
             section->load(config);
             section->captureBaseline();
 
@@ -184,7 +141,7 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
         };
         addAndMakeVisible(searchBox_);
 
-        tabStrip_.onSelect = [this](int visibleIndex) {
+        tabStrip_.onChange = [this](int visibleIndex) {
             if (visibleIndex >= 0 && visibleIndex < static_cast<int>(visibleTabs_.size()))
                 showTab(visibleTabs_[static_cast<size_t>(visibleIndex)]);
         };
@@ -194,8 +151,7 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
         viewport_.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::never);
         addAndMakeVisible(viewport_);
 
-        liveNote_.setText(tr("settings.applies_immediately"), juce::dontSendNotification);
-        liveNote_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        liveNote_.setFont(FontManager::getInstance().getUIFont(13.0f));
         liveNote_.setColour(juce::Label::textColourId,
                             ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         addChildComponent(liveNote_);
@@ -305,19 +261,22 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
         }
 
         auto content = bounds.reduced(20, 0);
-        const bool hasTabs = tabStrip_.isVisible();
-        if (hasTabs)
-            tabStrip_.setBounds(content.removeFromTop(40).withTrimmedTop(8));
-        else
+        if (tabStrip_.isVisible() || currentToolbar_ != nullptr) {
+            auto row = content.removeFromTop(52).withTrimmedTop(12).withTrimmedBottom(8);
+            if (tabStrip_.isVisible())
+                tabStrip_.setBounds(row.removeFromLeft(tabStrip_.getIdealWidth()).reduced(0, 2));
+            if (currentToolbar_ != nullptr)
+                currentToolbar_->setBounds(row.withTrimmedLeft(12));
+        } else {
             content.removeFromTop(12);
-        if (liveNote_.isVisible())
-            liveNote_.setBounds(content.removeFromTop(28));
+        }
         viewport_.setBounds(content.withTrimmedRight(-20));
         noMatches_.setBounds(content);
         layoutPage();
 
         auto footer = footerBounds_.reduced(20, 12);
-        okButton_.setBounds(footer.removeFromRight(72));
+        okButton_.setBounds(
+            footer.removeFromRight(okButton_.getButtonText() == tr("dialogs.ok") ? 72 : 88));
         footer.removeFromRight(8);
         applyButton_.setBounds(footer.removeFromRight(80));
         footer.removeFromRight(8);
@@ -332,6 +291,7 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
             changesLabel_.setBounds({});
         }
         restoreButton_.setBounds(footer.removeFromLeft(130));
+        liveNote_.setBounds(footerBounds_.reduced(20, 12).withTrimmedRight(320));
     }
 
     bool keyPressed(const juce::KeyPress& key) override {
@@ -364,7 +324,8 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
     int pendingTotal_ = 0;
 
     juce::TextEditor searchBox_;
-    TabStrip tabStrip_;
+    daw::ui::PillSegments tabStrip_;
+    juce::Component* currentToolbar_ = nullptr;
     juce::Viewport viewport_;
     juce::Label liveNote_;
     juce::Label noMatches_;
@@ -439,8 +400,15 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
 
         auto& section = *sections_[static_cast<size_t>(index)];
         visibleTabs_ = matchingTabs(static_cast<size_t>(index));
+        liveNote_.setText(tr("settings.applies_immediately").replace("{0}", section.getTitle()),
+                          juce::dontSendNotification);
         liveNote_.setVisible(section.appliesImmediately());
-        restoreButton_.setEnabled(!section.appliesImmediately());
+        restoreButton_.setVisible(!section.appliesImmediately());
+        // A live section has nothing to apply or cancel, only Done.
+        cancelButton_.setVisible(!section.appliesImmediately());
+        applyButton_.setVisible(!section.appliesImmediately());
+        okButton_.setButtonText(section.appliesImmediately() ? tr("dialogs.done")
+                                                             : tr("dialogs.ok"));
 
         const bool keepTab = std::ranges::find(visibleTabs_, currentTab_) != visibleTabs_.end();
         showTab(keepTab ? currentTab_ : (visibleTabs_.empty() ? 0 : visibleTabs_.front()));
@@ -456,8 +424,17 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
             if (visibleTabs_[i] == tab)
                 selected = static_cast<int>(i);
         }
-        tabStrip_.setTabs(titles, selected);
+        tabStrip_.setOptions(titles);
+        tabStrip_.setSelectedIndex(selected);
         tabStrip_.setVisible(titles.size() > 1);
+
+        if (currentToolbar_ != nullptr)
+            currentToolbar_->setVisible(false);
+        currentToolbar_ = juce::isPositiveAndBelow(tab, static_cast<int>(tabs.size()))
+                              ? tabs[static_cast<size_t>(tab)].toolbar
+                              : nullptr;
+        if (currentToolbar_ != nullptr)
+            currentToolbar_->setVisible(true);
 
         if (tab >= 0 && tab < static_cast<int>(tabs.size())) {
             viewport_.setViewedComponent(tabs[static_cast<size_t>(tab)].component, false);

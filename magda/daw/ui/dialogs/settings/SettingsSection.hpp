@@ -26,6 +26,8 @@ class SettingsSection {
         juce::Component* component = nullptr;
         /// Height the tab needs at a width; empty fills the page without scrolling.
         std::function<int(int)> preferredHeight;
+        /// The tab's actions, shown at the right of the tab row.
+        juce::Component* toolbar = nullptr;
     };
 
     explicit SettingsSection(SettingsSectionId id);

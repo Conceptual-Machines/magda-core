@@ -15,6 +15,7 @@ class SettingsLookAndFeel : public DialogLookAndFeel {
   public:
     static inline const juce::Identifier kSectionHeader{"settingsSectionHeader"};
     static inline const juce::Identifier kLinkButton{"settingsLinkButton"};
+    static inline const juce::Identifier kCheckBox{"settingsCheckBox"};
 
     /** @brief Draw @p label as a section header. */
     static void markSectionHeader(juce::Label& label) {
@@ -25,6 +26,11 @@ class SettingsLookAndFeel : public DialogLookAndFeel {
         label.setJustificationType(juce::Justification::bottomLeft);
     }
 
+    /** @brief Draw @p toggle as a tick box rather than a switch, for a grid of them. */
+    static void markCheckBox(juce::ToggleButton& toggle) {
+        toggle.getProperties().set(kCheckBox, true);
+    }
+
     /** @brief Draw @p button as plain text, like a link. */
     static void markLinkButton(juce::Button& button) {
         button.getProperties().set(kLinkButton, true);
@@ -32,6 +38,10 @@ class SettingsLookAndFeel : public DialogLookAndFeel {
 
     void drawToggleButton(juce::Graphics& g, juce::ToggleButton& button, bool over,
                           bool /*down*/) override {
+        if (button.getProperties()[kCheckBox]) {
+            drawCheckBox(g, button, over);
+            return;
+        }
         auto bounds = button.getLocalBounds().toFloat();
         const float alpha = button.isEnabled() ? 1.0f : 0.4f;
 
@@ -61,6 +71,26 @@ class SettingsLookAndFeel : public DialogLookAndFeel {
             drawLocalizedFittedText(g, button.getButtonText(),
                                     bounds.toNearestInt().withTrimmedRight(12),
                                     juce::Justification::centredLeft, 2, textColour);
+        }
+    }
+
+    static void drawCheckBox(juce::Graphics& g, juce::ToggleButton& button, bool over) {
+        const float alpha = button.isEnabled() ? 1.0f : 0.45f;
+        const auto box = button.getLocalBounds().toFloat().withSizeKeepingCentre(15.0f, 15.0f);
+        if (button.getToggleState()) {
+            g.setColour(ActiveTheme::getAccentColour().withMultipliedAlpha(alpha));
+            g.fillRoundedRectangle(box, 3.0f);
+            juce::Path tick;
+            tick.startNewSubPath(box.getX() + 3.5f, box.getCentreY());
+            tick.lineTo(box.getX() + 6.5f, box.getBottom() - 4.0f);
+            tick.lineTo(box.getRight() - 3.5f, box.getY() + 4.0f);
+            g.setColour(juce::Colours::white.withAlpha(alpha));
+            g.strokePath(tick, juce::PathStrokeType(1.6f));
+        } else {
+            g.setColour(ActiveTheme::getBorderColour()
+                            .brighter(over ? 0.3f : 0.0f)
+                            .withMultipliedAlpha(alpha));
+            g.drawRoundedRectangle(box.reduced(0.5f), 3.0f, 1.0f);
         }
     }
 

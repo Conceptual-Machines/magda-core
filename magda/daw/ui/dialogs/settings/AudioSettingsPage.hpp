@@ -20,6 +20,7 @@ class MidiInputList final : public juce::Component {
     explicit MidiInputList(AudioIOControl& audio);
 
     void resized() override;
+    void paintOverChildren(juce::Graphics& g) override;
 
     /** @brief Re-read the devices present and what Config says about them. */
     void refresh();
@@ -49,10 +50,13 @@ class CustomChannelSelector : public juce::Component {
     ~CustomChannelSelector() override;
 
     void resized() final;
-    void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
 
     /** @brief List the chosen interface's channels, ticked where they are chosen. */
     void refresh();
+
+    /** @brief The header and every row, unscrolled. */
+    int preferredHeight() const;
 
   private:
     void onChannelToggled(int channelIndex, bool isStereo);
@@ -71,14 +75,11 @@ class CustomChannelSelector : public juce::Component {
     juce::String interfaceName_;
     juce::StringArray driverNames_;
 
-    static void onPreviewToggled(int startChannel);
-
     struct ChannelToggle {
         std::unique_ptr<juce::ToggleButton> button;
-        std::unique_ptr<juce::ToggleButton> previewButton;  // Only for output stereo pairs
-        std::unique_ptr<juce::Label> name;                  // Double-click renames (#2259)
-        int startChannel;                                   // 0-indexed
-        bool isStereo;  // true = pair (e.g., 0-1), false = mono (e.g., 0)
+        std::unique_ptr<juce::Label> name;  // Double-click renames (#2259)
+        int startChannel;                   // 0-indexed
+        bool isStereo;                      // true = pair (e.g., 0-1), false = mono (e.g., 0)
     };
 
     /// Positions the rows inside @ref list_ across @p width.
@@ -123,8 +124,8 @@ class AudioSettingsPage : public juce::Component, private HardwareChannels::List
     /// The row renamed already shows its new name.
     void hardwareChannelNamesChanged() override {}
 
-    /** @brief Height the page lays out in; it is shown inside a scrolling Settings tab. */
-    static constexpr int kPreferredHeight = 640;
+    /** @brief The height the page lays out in at @p width. */
+    int getPreferredHeight(int width);
 
     /** @brief Save the open interface as the preferred one, when the box is ticked. */
     void savePreferencesIfNeeded();
@@ -155,6 +156,9 @@ class AudioSettingsPage : public juce::Component, private HardwareChannels::List
     /** @brief Relist the interfaces and their channels, after the backend or an interface moved. */
     void refreshChosenInterface();
     void showOpenInterface();
+    void populatePreviewOutputs();
+    /** @brief Place the controls at @p width, or only measure; returns the height used. */
+    int layOut(int width, bool apply);
 
     std::unique_ptr<MidiInputList> midiInputList_;
     std::unique_ptr<CustomChannelSelector> inputChannelSelector_;
@@ -194,6 +198,13 @@ class AudioSettingsPage : public juce::Component, private HardwareChannels::List
     // this is where a user already comes to change one (#2559).
 
     juce::Label deviceNameLabel_;
+    juce::Label deviceDetailsLabel_;
+    juce::Label deviceHeader_;
+    juce::Label previewHeader_;
+    juce::Label previewLabel_;
+    juce::ComboBox previewComboBox_;
+    juce::Rectangle<int> statusBounds_;
+    std::vector<juce::Rectangle<int>> rowLines_;
     AudioEngine* audioEngine_;
     AudioIOControl* audio_;
 

@@ -10,8 +10,8 @@ namespace magda {
 class Config;
 
 /**
- * @brief The AI section's pages (#3162): Cloud provider keys, the Config of
- * presets or per-agent providers, and the Models downloads.
+ * @brief The AI section's pages (#3162): the Assistant's presets or per-agent
+ * providers, the Providers' API keys, and the Local models downloads.
  *
  * The remote API listener and its client grants live in the Connections section
  * (#2142): they govern every remote client, not just AI ones.
@@ -24,6 +24,10 @@ class AISettingsPages {
     juce::Component& cloudPage();
     juce::Component& configPage();
     juce::Component& modelsPage();
+    /** @brief Each page's status, shown at the right of the tab row. */
+    juce::Component& cloudToolbar();
+    juce::Component& configToolbar();
+    juce::Component& modelsToolbar();
 
     void load(Config& config);
     void apply(Config& config);

@@ -1,5 +1,6 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <memory>
 #include <utility>
@@ -17,11 +18,13 @@
 #include "../../themes/DialogLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
 #include "SettingsSections.hpp"
+#include "SettingsToolbar.hpp"
 #include "core/AppPaths.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
 #include "osc_app.hpp"
+#include "ui/themes/SettingsLookAndFeel.hpp"
 
 namespace magda {
 
@@ -64,12 +67,79 @@ juce::String commentBlock(const juce::String& sentence) {
     return out;
 }
 
-void styleReadOnlyEditor(juce::TextEditor& ed) {
-    ed.setFont(FontManager::getInstance().getUIFont(12.0f));
-    ed.setColour(juce::TextEditor::backgroundColourId,
-                 ActiveTheme::getColour(ActiveTheme::SURFACE));
-    ed.setColour(juce::TextEditor::textColourId, ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-    ed.setColour(juce::TextEditor::outlineColourId, ActiveTheme::getColour(ActiveTheme::BORDER));
+/** @brief A boxed, read-only block of text with its caption and buttons in a header. */
+class CodeBox : public juce::Component {
+  public:
+    static constexpr int kHeaderHeight = 34;
+
+    CodeBox() {
+        caption_.setFont(FontManager::getInstance().getUIFont(12.5f));
+        caption_.setColour(juce::Label::textColourId,
+                           ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        addAndMakeVisible(caption_);
+
+        text_.setMultiLine(true, true);
+        text_.setReadOnly(true);
+        text_.setScrollbarsShown(false);
+        text_.setCaretVisible(false);
+        text_.setFont(FontManager::getInstance().getMonoFont(11.5f));
+        text_.setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+        text_.setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+        text_.setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
+        text_.setColour(juce::TextEditor::textColourId,
+                        ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        addAndMakeVisible(text_);
+    }
+
+    void setCaption(const juce::String& caption) {
+        caption_.setText(caption, juce::dontSendNotification);
+    }
+    void setText(const juce::String& text) {
+        if (text != text_.getText())
+            text_.setText(text, juce::dontSendNotification);
+    }
+    juce::String getText() const {
+        return text_.getText();
+    }
+    void addButton(juce::TextButton& button) {
+        buttons_.push_back(&button);
+        addAndMakeVisible(button);
+    }
+
+    void paint(juce::Graphics& g) override {
+        const auto box = getLocalBounds().toFloat().reduced(0.5f);
+        g.setColour(ActiveTheme::getBackgroundColour());
+        g.fillRoundedRectangle(box, 6.0f);
+        g.setColour(ActiveTheme::getBorderColour());
+        g.drawRoundedRectangle(box, 6.0f, 1.0f);
+        g.fillRect(1, kHeaderHeight, getWidth() - 2, 1);
+    }
+
+    void resized() override {
+        auto header = getLocalBounds().removeFromTop(kHeaderHeight).reduced(8, 3);
+        for (auto it = buttons_.rbegin(); it != buttons_.rend(); ++it) {
+            const int w = juce::GlyphArrangement::getStringWidthInt(
+                              FontManager::getInstance().getUIFont(13.5f), (*it)->getButtonText()) +
+                          28;
+            (*it)->setBounds(header.removeFromRight(w));
+            header.removeFromRight(4);
+        }
+        caption_.setBounds(header.withTrimmedLeft(2));
+        text_.setBounds(getLocalBounds().withTrimmedTop(kHeaderHeight + 1).reduced(8, 6));
+    }
+
+  private:
+    juce::Label caption_;
+    juce::TextEditor text_;
+    std::vector<juce::TextButton*> buttons_;
+};
+
+/// A home-relative path, as the mock shows it: ~/Library/... rather than /Users/name/...
+juce::String shortenedPath(const juce::File& file) {
+    const auto home =
+        juce::File::getSpecialLocation(juce::File::userHomeDirectory).getFullPathName();
+    const auto path = file.getFullPathName();
+    return path.startsWith(home) ? "~" + path.substring(home.length()) : path;
 }
 
 }  // namespace
@@ -93,27 +163,26 @@ class TransportPage : public juce::Component, private juce::Timer {
   public:
     TransportPage(magda::remote::Transport transport, juce::String keyPrefix)
         : transport_(transport), keyPrefix_(std::move(keyPrefix)) {
-        blurbLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-        blurbLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
+        titleLabel_.setText(
+            named("enable").replace("{1}", magda::technicalText(magda::TechnicalTextToken::Api)),
+            juce::dontSendNotification);
+        styleLabel(titleLabel_, 13.0f);
+        addAndMakeVisible(titleLabel_);
+
+        blurbLabel_.setFont(FontManager::getInstance().getUIFont(11.5f));
+        blurbLabel_.setColour(juce::Label::textColourId,
+                              ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         blurbLabel_.setJustificationType(juce::Justification::topLeft);
+        blurbLabel_.setBorderSize({});
         blurbLabel_.setText(named("blurb"), juce::dontSendNotification);
         addAndMakeVisible(blurbLabel_);
 
-        enableToggle_.setButtonText(
-            named("enable").replace("{1}", magda::technicalText(magda::TechnicalTextToken::Api)));
-        enableToggle_.setColour(juce::ToggleButton::textColourId,
-                                ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-        enableToggle_.setColour(juce::ToggleButton::tickColourId,
-                                ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
         // Applied on the spot: this toggle owns a socket, and one that leaves it
         // in the opposite state to what the checkbox shows is worse than no
         // feedback at all. Only this transport is touched — the other one keeps
         // listening, and its clients never notice.
         enableToggle_.onClick = [this]() { applyEnabled(enableToggle_.getToggleState()); };
         addAndMakeVisible(enableToggle_);
-
-        styleLabel(statusLabel_, 11.0f);
-        addAndMakeVisible(statusLabel_);
 
         // Rotation is not a routine action, so it asks first and says what it
         // costs. Every client connected over *this* transport was admitted by
@@ -125,15 +194,8 @@ class TransportPage : public juce::Component, private juce::Timer {
         rotateButton_.onClick = [this]() { confirmRotate(); };
         addAndMakeVisible(rotateButton_);
 
-        fieldCaption_.setText(named("field_caption"), juce::dontSendNotification);
-        styleLabel(fieldCaption_);
-        addAndMakeVisible(fieldCaption_);
-
-        field_.setMultiLine(true, false);
-        field_.setReadOnly(true);
-        field_.setFont(juce::Font(juce::FontOptions(juce::Font::getDefaultMonospacedFontName(),
-                                                    11.0f, juce::Font::plain)));
-        styleReadOnlyEditor(field_);
+        field_.setCaption(named("field_caption"));
+        field_.addButton(copyButton_);
         addAndMakeVisible(field_);
 
         copyButton_.setButtonText(tr("connections.copy"));
@@ -144,12 +206,12 @@ class TransportPage : public juce::Component, private juce::Timer {
             // visible without a second timer to manage.
             copiedAt_ = juce::Time::getCurrentTime();
         };
-        addAndMakeVisible(copyButton_);
 
-        hintLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+        hintLabel_.setFont(FontManager::getInstance().getUIFont(11.5f));
         hintLabel_.setColour(juce::Label::textColourId,
-                             ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+                             ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         hintLabel_.setJustificationType(juce::Justification::topLeft);
+        hintLabel_.setBorderSize({});
         hintLabel_.setText(
             named("hint").replace("{1}", magda::technicalText(magda::TechnicalTextToken::Magda)),
             juce::dontSendNotification);
@@ -162,28 +224,39 @@ class TransportPage : public juce::Component, private juce::Timer {
         stopTimer();
     }
 
+    juce::Component& getToolbar() {
+        return status_;
+    }
+
     void resized() override {
-        auto bounds = getLocalBounds().reduced(12);
-        const int rowH = 24;
+        auto bounds = getLocalBounds().reduced(0, 8);
 
-        blurbLabel_.setBounds(bounds.removeFromTop(56));
-        bounds.removeFromTop(8);
+        auto row = bounds.removeFromTop(58);
+        rowRule_ = row.getBottom() - 1;
+        enableToggle_.setBounds(row.removeFromRight(36).withSizeKeepingCentre(36, 22));
+        row.removeFromRight(10);
+        const int rotateW =
+            juce::GlyphArrangement::getStringWidthInt(FontManager::getInstance().getUIFont(13.5f),
+                                                      rotateButton_.getButtonText()) +
+            28;
+        rotateButton_.setBounds(row.removeFromRight(rotateW).withSizeKeepingCentre(rotateW, 30));
+        row.removeFromRight(16);
+        titleLabel_.setBounds(row.removeFromTop(26).withTrimmedTop(6));
+        blurbLabel_.setBounds(row);
+        bounds.removeFromTop(14);
 
-        auto toggleRow = bounds.removeFromTop(rowH);
-        rotateButton_.setBounds(toggleRow.removeFromRight(110).reduced(0, 1));
-        enableToggle_.setBounds(toggleRow);
-        bounds.removeFromTop(2);
-        statusLabel_.setBounds(bounds.removeFromTop(18));
-        bounds.removeFromTop(12);
+        field_.setBounds(bounds.removeFromTop(fieldHeight()));
+        bounds.removeFromTop(10);
+        if (auto* second = secondBox()) {
+            second->setBounds(bounds.removeFromTop(CodeBox::kHeaderHeight + 34));
+            bounds.removeFromTop(10);
+        }
+        hintLabel_.setBounds(bounds.removeFromTop(56));
+    }
 
-        auto captionRow = bounds.removeFromTop(rowH);
-        copyButton_.setBounds(captionRow.removeFromRight(70).reduced(0, 1));
-        fieldCaption_.setBounds(captionRow);
-        bounds.removeFromTop(4);
-
-        hintLabel_.setBounds(bounds.removeFromBottom(48));
-        bounds.removeFromBottom(6);
-        field_.setBounds(bounds);
+    void paint(juce::Graphics& g) override {
+        g.setColour(ActiveTheme::getBorderColour().withMultipliedAlpha(0.6f));
+        g.fillRect(0, rowRule_, getWidth(), 1);
     }
 
   protected:
@@ -203,6 +276,21 @@ class TransportPage : public juce::Component, private juce::Timer {
     /// copying — false greys the button out rather than handing over a
     /// placeholder.
     virtual juce::String fieldText(bool running, bool& copyable) const = 0;
+
+    /// The field's height: a config snippet needs lines, a URL one.
+    virtual int fieldHeight() const {
+        return CodeBox::kHeaderHeight + 34;
+    }
+
+    /// A second box under the field, or nothing.
+    virtual CodeBox* secondBox() {
+        return nullptr;
+    }
+
+    /// Called on each refresh tick, for whatever a subclass shows besides the field.
+    virtual void refreshExtra(bool running) {
+        juce::ignoreUnused(running);
+    }
 
     /// This transport's port, or 0.
     int port() const {
@@ -336,29 +424,18 @@ class TransportPage : public juce::Component, private juce::Timer {
         const auto running = isRunning();
         const auto enabled = enabledInConfig();
 
-        if (running) {
-            statusLabel_.setText(key("status_listening").replace("{0}", juce::String(port())),
-                                 juce::dontSendNotification);
-            statusLabel_.setColour(juce::Label::textColourId,
-                                   ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-        } else if (enabled) {
-            // Enabled and not listening. At startup that means "not up yet"; a
-            // second later it means the port was taken, which is the one failure
-            // a user can act on and the one they cannot otherwise see.
-            statusLabel_.setText(key("status_enabled"), juce::dontSendNotification);
-            statusLabel_.setColour(juce::Label::textColourId,
-                                   ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-        } else {
-            statusLabel_.setText(key("status_off"), juce::dontSendNotification);
-            statusLabel_.setColour(juce::Label::textColourId,
-                                   ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-        }
+        // Enabled and not listening: at startup "not up yet", a second later a
+        // taken port, the one failure a user can act on.
+        if (running)
+            status_.setStatus("127.0.0.1:" + juce::String(port()), true);
+        else
+            status_.setStatus(key(enabled ? "status_enabled" : "status_off"), false);
 
         bool copyable = false;
         const auto text = fieldText(running, copyable);
-        if (text != field_.getText())
-            field_.setText(text, juce::dontSendNotification);
+        field_.setText(text);
         copyButton_.setEnabled(copyable);
+        refreshExtra(running);
 
         // Nothing to rotate when nothing is listening: there is no live
         // credential, and minting one would publish a record for a closed port.
@@ -368,15 +445,16 @@ class TransportPage : public juce::Component, private juce::Timer {
     const magda::remote::Transport transport_;
     const juce::String keyPrefix_;
 
+    SettingsStatusBadge status_;
+    juce::Label titleLabel_;
     juce::Label blurbLabel_;
     juce::ToggleButton enableToggle_;
     juce::TextButton rotateButton_;
-    juce::Label statusLabel_;
-    juce::Label fieldCaption_;
-    juce::TextEditor field_;
+    CodeBox field_;
     juce::TextButton copyButton_;
     juce::Label hintLabel_;
     juce::Time copiedAt_;
+    int rowRule_ = 0;
 };
 
 // ============================================================================
@@ -394,6 +472,10 @@ class McpPage : public TransportPage {
     }
 
   private:
+    int fieldHeight() const override {
+        return CodeBox::kHeaderHeight + 150;
+    }
+
     /**
      * @brief Where this install's bridge lives.
      *
@@ -609,6 +691,7 @@ class McpPage : public TransportPage {
 class WebSocketPage : public TransportPage {
   public:
     WebSocketPage() : TransportPage(magda::remote::Transport::WebSocket, "ws") {
+        setUpTokenBox();
         beginRefreshing();
     }
 
@@ -620,15 +703,41 @@ class WebSocketPage : public TransportPage {
         }
 
         copyable = true;
-        juce::String text;
-        text << "ws://127.0.0.1:" << juce::String(port()) << "/rpc?client=my-tool"
-             << "\n\n";
-        // The record, not the token: it is regenerated every run, so the path is
-        // the durable thing and the credential inside it is not.
-        if (auto* host = magda::remote::activeHost())
-            text << key("token_file").replace("{0}", host->tokenFile().getFullPathName());
-        return text;
+        return "ws://127.0.0.1:" + juce::String(port()) + "/rpc?client=my-tool";
     }
+
+    // The record, not the token: it is regenerated every run, so the path is
+    // the durable thing and the credential inside it is not.
+    CodeBox* secondBox() override {
+        return &tokenBox_;
+    }
+
+    void refreshExtra(bool running) override {
+        auto* host = magda::remote::activeHost();
+        tokenFile_ = running && host != nullptr ? host->tokenFile() : juce::File();
+        tokenBox_.setText(tokenFile_ == juce::File() ? key("url_pending")
+                                                     : shortenedPath(tokenFile_));
+        revealButton_.setEnabled(tokenFile_.existsAsFile());
+        copyPathButton_.setEnabled(tokenFile_ != juce::File());
+    }
+
+    void setUpTokenBox() {
+        tokenBox_.setCaption(key("token_caption"));
+        revealButton_.setButtonText(tr("connections.reveal"));
+        revealButton_.onClick = [this] { tokenFile_.revealToUser(); };
+        tokenBox_.addButton(revealButton_);
+        copyPathButton_.setButtonText(tr("connections.copy_path"));
+        copyPathButton_.onClick = [this] {
+            juce::SystemClipboard::copyTextToClipboard(tokenFile_.getFullPathName());
+        };
+        tokenBox_.addButton(copyPathButton_);
+        addAndMakeVisible(tokenBox_);
+    }
+
+    CodeBox tokenBox_;
+    juce::TextButton revealButton_;
+    juce::TextButton copyPathButton_;
+    juce::File tokenFile_;
 };
 
 // ============================================================================
@@ -646,11 +755,80 @@ class WebSocketPage : public TransportPage {
 // event for no benefit at one second's resolution.
 // ============================================================================
 
+/// The client grid's columns: the name takes what the scopes and actions leave.
+struct ClientColumns {
+    static constexpr int kScopeWidth = 72;
+    static constexpr int kActionsWidth = 130;
+
+    static juce::Rectangle<int> scope(juce::Rectangle<int> row, std::size_t index) {
+        const auto count = static_cast<int>(magda::remote::allScopeValues().size());
+        const int scopesX = row.getRight() - kActionsWidth - count * kScopeWidth;
+        return {scopesX + static_cast<int>(index) * kScopeWidth, row.getY(), kScopeWidth,
+                row.getHeight()};
+    }
+    static juce::Rectangle<int> name(juce::Rectangle<int> row) {
+        return row.withRight(scope(row, 0).getX() - 8);
+    }
+    static juce::Rectangle<int> actions(juce::Rectangle<int> row) {
+        return row.removeFromRight(kActionsWidth);
+    }
+};
+
+/// The audit tail, newest first, as rows of time, client and what happened.
+class ActivityList : public juce::Component {
+  public:
+    static constexpr int kRowHeight = 24;
+
+    void setEntries(std::vector<magda::remote::AuditEntry> entries) {
+        entries_ = std::move(entries);
+        setSize(getWidth(), static_cast<int>(entries_.size()) * kRowHeight);
+        repaint();
+    }
+
+    void paint(juce::Graphics& g) override {
+        int y = 0;
+        for (const auto& entry : entries_) {
+            auto row = juce::Rectangle<int>(0, y, getWidth(), kRowHeight);
+            g.setColour(ActiveTheme::getBorderColour().withMultipliedAlpha(0.6f));
+            g.fillRect(row.removeFromBottom(1));
+            g.setFont(FontManager::getInstance().getMonoFont(11.0f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+            g.drawText(juce::Time(entry.timestampMs).toString(false, true, true, true),
+                       row.removeFromLeft(80), juce::Justification::centredLeft);
+            g.setFont(FontManager::getInstance().getUIFont(12.0f));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+            g.drawText(entry.client, row.removeFromLeft(juce::jmin(220, row.getWidth() / 3)),
+                       juce::Justification::centredLeft, true);
+            auto what = entry.operation;
+            if (entry.outcome != magda::remote::AuditOutcome::Ok)
+                what << "  " << magda::remote::toString(entry.outcome);
+            if (entry.detail.isNotEmpty())
+                what << " (" << entry.detail << ")";
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+            g.drawText(what, row, juce::Justification::centredLeft, true);
+            y += kRowHeight;
+        }
+    }
+
+  private:
+    std::vector<magda::remote::AuditEntry> entries_;
+};
+
 class RemoteClientsPage : public juce::Component, private juce::Timer {
   public:
     RemoteClientsPage() {
+        forgetDisconnectedButton_.setButtonText(tr("connections.clients.forget_disconnected"));
+        forgetDisconnectedButton_.onClick = [this] { forgetDisconnected(); };
+        toolbar_.addButton(forgetDisconnectedButton_);
+
+        clientsHeader_.setText(tr("connections.clients.client"), juce::dontSendNotification);
+        daw::ui::SettingsLookAndFeel::markSectionHeader(clientsHeader_);
+        addAndMakeVisible(clientsHeader_);
+
         blurbLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-        blurbLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
+        blurbLabel_.setColour(juce::Label::textColourId,
+                              ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        blurbLabel_.setBorderSize({});
         blurbLabel_.setJustificationType(juce::Justification::topLeft);
         blurbLabel_.setText(tr("connections.clients.blurb"), juce::dontSendNotification);
         addAndMakeVisible(blurbLabel_);
@@ -667,15 +845,12 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
         addAndMakeVisible(emptyLabel_);
 
         activityCaption_.setText(tr("connections.clients.activity"), juce::dontSendNotification);
-        styleLabel(activityCaption_);
+        daw::ui::SettingsLookAndFeel::markSectionHeader(activityCaption_);
         addAndMakeVisible(activityCaption_);
 
-        activityView_.setMultiLine(true, false);
-        activityView_.setReadOnly(true);
-        activityView_.setFont(juce::Font(juce::FontOptions(
-            juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain)));
-        styleReadOnlyEditor(activityView_);
-        addAndMakeVisible(activityView_);
+        activityViewport_.setViewedComponent(&activityList_, false);
+        activityViewport_.setScrollBarsShown(true, false);
+        addAndMakeVisible(activityViewport_);
 
         rebuild();
         startTimer(1000);
@@ -685,38 +860,59 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
         stopTimer();
     }
 
+    juce::Component& getToolbar() {
+        return toolbar_;
+    }
+
     void resized() override {
-        auto bounds = getLocalBounds().reduced(12);
-        blurbLabel_.setBounds(bounds.removeFromTop(40));
+        auto bounds = getLocalBounds().reduced(0, 8);
+        blurbLabel_.setBounds(bounds.removeFromTop(34));
         bounds.removeFromTop(8);
 
         // The activity tail takes a fixed share off the bottom; the client list
         // gets whatever is left, which is the part that grows with use.
-        auto activity = bounds.removeFromBottom(juce::jmin(140, bounds.getHeight() / 2));
-        activityView_.setBounds(activity);
-        bounds.removeFromBottom(4);
-        activityCaption_.setBounds(bounds.removeFromBottom(20));
-        bounds.removeFromBottom(8);
+        auto activity = bounds.removeFromBottom(juce::jmin(150, bounds.getHeight() / 2));
+        activityViewport_.setBounds(activity);
+        activityList_.setSize(activity.getWidth() - activityViewport_.getScrollBarThickness(),
+                              activityList_.getHeight());
+        activityCaption_.setBounds(bounds.removeFromBottom(30));
+        bounds.removeFromBottom(12);
 
+        headerRow_ = bounds.removeFromTop(30);
+        clientsHeader_.setBounds(headerRow_);
         clientsViewport_.setBounds(bounds);
         emptyLabel_.setBounds(bounds);
         layoutRows();
+    }
+
+    // The scope names over their columns, on the header's rule.
+    void paintOverChildren(juce::Graphics& g) override {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        g.setFont(FontManager::getInstance().getUIFontMedium(11.0f).withExtraKerningFactor(0.08f));
+        const auto row = headerRow_.withTrimmedRight(clientsViewport_.getScrollBarThickness())
+                             .withTrimmedBottom(6);
+        const auto& scopes = magda::remote::allScopeValues();
+        for (std::size_t i = 0; i < scopes.size(); ++i)
+            g.drawText(magda::remote::scopeName(scopes[i]).toUpperCase(),
+                       ClientColumns::scope(row, i), juce::Justification::centredBottom, false);
     }
 
   private:
     /// One client: its name, whether it is connected, and a checkbox per scope.
     class ClientRow : public juce::Component {
       public:
-        static constexpr int HEIGHT = 48;
+        static constexpr int HEIGHT = 46;
 
         explicit ClientRow(juce::String clientName) : name_(std::move(clientName)) {
             nameLabel_.setText(name_, juce::dontSendNotification);
-            nameLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+            nameLabel_.setFont(FontManager::getInstance().getUIFont(13.0f));
+            nameLabel_.setBorderSize({});
             nameLabel_.setColour(juce::Label::textColourId,
                                  ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
             addAndMakeVisible(nameLabel_);
 
-            statusLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
+            statusLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+            statusLabel_.setBorderSize({});
             statusLabel_.setColour(juce::Label::textColourId,
                                    ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
             addAndMakeVisible(statusLabel_);
@@ -728,11 +924,9 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
                 // handling, and in the activity tail below as `tracks.create
                 // denied (edit)`. A translated checkbox beside an untranslated
                 // refusal would break the one link this page exists to make.
-                toggle->setButtonText(magda::remote::scopeName(scope));
-                toggle->setColour(juce::ToggleButton::textColourId,
-                                  ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-                toggle->setColour(juce::ToggleButton::tickColourId,
-                                  ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+                // The name is the column header; the wire name stays the tooltip.
+                toggle->setTooltip(magda::remote::scopeName(scope));
+                daw::ui::SettingsLookAndFeel::markCheckBox(*toggle);
                 // `read` is what being admitted means, so it is shown ticked
                 // and cannot be cleared — a row granting nothing at all would
                 // be indistinguishable from a client that was never granted,
@@ -748,6 +942,7 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
             }
 
             disconnectButton_.setButtonText(tr("connections.clients.disconnect"));
+            daw::ui::SettingsLookAndFeel::markLinkButton(disconnectButton_);
             disconnectButton_.onClick = [this]() {
                 if (auto* host = magda::remote::activeHost())
                     host->clients().disconnectClient(name_);
@@ -755,6 +950,7 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
             addAndMakeVisible(disconnectButton_);
 
             forgetButton_.setButtonText(tr("connections.clients.forget"));
+            daw::ui::SettingsLookAndFeel::markLinkButton(forgetButton_);
             forgetButton_.onClick = [this]() {
                 if (auto* host = magda::remote::activeHost())
                     host->clients().forget(name_);
@@ -783,41 +979,32 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
                           : tr("connections.clients.not_connected"),
                 juce::dontSendNotification);
             statusLabel_.setColour(juce::Label::textColourId,
-                                   connected ? ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY)
-                                             : ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-            disconnectButton_.setEnabled(connected);
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+            connected_ = connected;
+            disconnectButton_.setVisible(connected);
+            repaint();
         }
 
         void resized() override {
-            auto bounds = getLocalBounds().reduced(6, 4);
-
-            auto header = bounds.removeFromTop(18);
-            forgetButton_.setBounds(header.removeFromRight(64).reduced(0, 1));
-            header.removeFromRight(4);
-            disconnectButton_.setBounds(header.removeFromRight(84).reduced(0, 1));
-            header.removeFromRight(8);
-            nameLabel_.setBounds(header.removeFromLeft(juce::jmin(160, header.getWidth() / 2)));
-            statusLabel_.setBounds(header);
-
-            bounds.removeFromTop(2);
-            auto row = bounds.removeFromTop(18);
-            const auto each =
-                toggles_.empty() ? 0 : row.getWidth() / static_cast<int>(toggles_.size());
-            for (auto& toggle : toggles_)
-                toggle->setBounds(row.removeFromLeft(each));
+            auto row = getLocalBounds();
+            auto name = ClientColumns::name(row).withTrimmedLeft(4);
+            nameLabel_.setBounds(name.removeFromTop(24).withTrimmedTop(6));
+            statusLabel_.setBounds(name.withTrimmedLeft(12).removeFromTop(16));
+            for (std::size_t i = 0; i < toggles_.size(); ++i)
+                toggles_[i]->setBounds(ClientColumns::scope(row, i).reduced(0, 8));
+            auto actions = ClientColumns::actions(row).reduced(0, 10);
+            forgetButton_.setBounds(actions.removeFromRight(52));
+            disconnectButton_.setBounds(actions.removeFromRight(76));
         }
 
         void paint(juce::Graphics& g) override {
-            const auto card = getLocalBounds().toFloat().reduced(1.0f);
-            g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND_ALT));
-            g.fillRoundedRectangle(card, 3.0f);
-            // Outlined, not just tinted (#2142). A name sits directly above its
-            // own checkboxes and the next name directly below them, so with only
-            // a fill to separate them a list scrolled to mid-row reads as a row
-            // of checkboxes belonging to the name underneath. The border says
-            // where one client ends.
-            g.setColour(ActiveTheme::getBorderColour());
-            g.drawRoundedRectangle(card, 3.0f, 1.0f);
+            g.setColour(ActiveTheme::getBorderColour().withMultipliedAlpha(0.6f));
+            g.fillRect(0, getHeight() - 1, getWidth(), 1);
+            const auto status = statusLabel_.getBounds().toFloat();
+            g.setColour(connected_ ? ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE)
+                                   : ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+            g.fillEllipse(juce::Rectangle<float>(6.0f, 6.0f)
+                              .withCentre({status.getX() - 7.0f, status.getCentreY()}));
         }
 
       private:
@@ -842,6 +1029,7 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
         std::vector<std::unique_ptr<juce::ToggleButton>> toggles_;
         juce::TextButton disconnectButton_;
         juce::TextButton forgetButton_;
+        bool connected_ = false;
     };
 
     void timerCallback() override {
@@ -943,7 +1131,7 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
         int y = 0;
         for (auto& row : rows_) {
             row->setBounds(0, y, width, ClientRow::HEIGHT);
-            y += ClientRow::HEIGHT + 4;
+            y += ClientRow::HEIGHT;
         }
         clientsHolder_.setSize(width, y);
     }
@@ -956,23 +1144,33 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
             return;
         shownActivity_ = recorded;
 
-        juce::StringArray lines;
-        for (const auto& entry : log.recent(kActivityLines)) {
-            const auto time = juce::Time(entry.timestampMs).toString(false, true, false, true);
-            auto line = time + "  " + entry.client + "  " + entry.operation + "  " +
-                        magda::remote::toString(entry.outcome);
-            if (entry.detail.isNotEmpty())
-                line += " (" + entry.detail + ")";
-            lines.add(line);
-        }
+        // Newest first.
+        auto entries = log.recent(kActivityLines);
+        std::reverse(entries.begin(), entries.end());
+        activityList_.setEntries(std::move(entries));
+    }
 
-        activityView_.setText(lines.joinIntoString("\n"), juce::dontSendNotification);
-        // Newest last, so show the end.
-        activityView_.moveCaretToEnd();
+    void forgetDisconnected() {
+        auto* host = magda::remote::activeHost();
+        if (host == nullptr)
+            return;
+        const auto connections = host->clients().connections();
+        for (const auto& grant : host->clients().grants()) {
+            const bool connected = std::any_of(
+                connections.begin(), connections.end(),
+                [&grant](const auto& connection) { return connection.name == grant.name; });
+            if (!connected)
+                host->clients().forget(grant.name);
+        }
+        rebuild();
     }
 
     static constexpr std::size_t kActivityLines = 200;
 
+    SettingsToolbar toolbar_;
+    juce::TextButton forgetDisconnectedButton_;
+    juce::Label clientsHeader_;
+    juce::Rectangle<int> headerRow_;
     juce::Label blurbLabel_;
     juce::Viewport clientsViewport_;
     juce::Component clientsHolder_;
@@ -981,7 +1179,8 @@ class RemoteClientsPage : public juce::Component, private juce::Timer {
     juce::StringArray rowNames_;
 
     juce::Label activityCaption_;
-    juce::TextEditor activityView_;
+    juce::Viewport activityViewport_;
+    ActivityList activityList_;
     std::uint64_t shownActivity_ = 0;
 };  // =============================================================================
 // OscSurfacesPage (#1757 §4, #2091, #2096)
@@ -1016,6 +1215,7 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
         enable_.onClick = [this] {
             Config::getInstance().setOscEnabled(enable_.getToggleState());
             commit();
+            dimWhenOff();
         };
         addAndMakeVisible(enable_);
 
@@ -1061,10 +1261,21 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
                        [](int port) { Config::getInstance().setOscFeedbackPort(port); });
         addLabel(feedbackPortLabel_, tr("connections.osc.feedback_port"));
 
+        surfacesHeader_.setText(tr("connections.osc.surfaces"), juce::dontSendNotification);
+        daw::ui::SettingsLookAndFeel::markSectionHeader(surfacesHeader_);
+        addAndMakeVisible(surfacesHeader_);
+
         status_.setJustificationType(juce::Justification::topLeft);
+        status_.setBorderSize({});
         addAndMakeVisible(status_);
 
+        for (auto* field : {&receivePort_, &feedbackPort_}) {
+            field->setJustification(juce::Justification::centredRight);
+            field->setIndents(8, 4);
+        }
+
         applyTheme();
+        dimWhenOff();
         refreshStatus();
         startTimer(kStatusIntervalMs);
     }
@@ -1080,26 +1291,37 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
         applyTheme();
     }
 
+    juce::Component& getToolbar() {
+        return badge_;
+    }
+
     void resized() override {
-        auto area = getLocalBounds().reduced(12);
+        rowLines_.clear();
+        auto area = getLocalBounds().reduced(0, 8);
 
-        enable_.setBounds(area.removeFromTop(kRowHeight));
-        area.removeFromTop(kGap);
+        auto enableRow = takeRow(area);
+        enable_.setBounds(enableRow.reduced(0, 7));
 
-        layoutRow(area, bindLabel_, bindAddress_);
-        layoutRow(area, receiveLabel_, receivePort_);
-        area.removeFromTop(kGap);
-        layoutRow(area, feedbackPortLabel_, feedbackPort_);
+        // The port settings sit under the switch, indented: they belong to it.
+        layoutRow(area, bindLabel_, bindAddress_, 230);
+        layoutRow(area, receiveLabel_, receivePort_, 80);
+        layoutRow(area, feedbackPortLabel_, feedbackPort_, 80);
 
-        area.removeFromTop(kGap * 2);
+        area.removeFromTop(22);
+        surfacesHeader_.setBounds(area.removeFromTop(30));
+        area.removeFromTop(8);
         status_.setBounds(area);
     }
 
+    void paint(juce::Graphics& g) override {
+        g.setColour(ActiveTheme::getBorderColour().withMultipliedAlpha(0.6f));
+        for (const auto& line : rowLines_)
+            g.fillRect(line);
+    }
+
   private:
-    static constexpr int kRowHeight = 24;
-    static constexpr int kGap = 8;
-    static constexpr int kLabelWidth = 150;
-    static constexpr int kFieldWidth = 200;
+    static constexpr int kRowHeight = 36;
+    static constexpr int kIndent = 16;
     static constexpr int kStatusIntervalMs = 1000;
 
     /// The size `DialogLookAndFeel` gives a combo box and a button, so the
@@ -1158,11 +1380,25 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
         addAndMakeVisible(label);
     }
 
-    static void layoutRow(juce::Rectangle<int>& area, juce::Label& label, juce::Component& field) {
+    juce::Rectangle<int> takeRow(juce::Rectangle<int>& area) {
         auto row = area.removeFromTop(kRowHeight);
-        label.setBounds(row.removeFromLeft(kLabelWidth));
-        field.setBounds(row.removeFromLeft(kFieldWidth));
-        area.removeFromTop(4);
+        rowLines_.push_back(row.withTop(row.getBottom() - 1));
+        return row;
+    }
+
+    void layoutRow(juce::Rectangle<int>& area, juce::Label& label, juce::Component& field,
+                   int fieldWidth) {
+        auto row = takeRow(area).withTrimmedLeft(kIndent);
+        field.setBounds(row.removeFromRight(fieldWidth).reduced(0, 5));
+        label.setBounds(row);
+    }
+
+    void dimWhenOff() {
+        const float alpha = Config::getInstance().getOscEnabled() ? 1.0f : 0.45f;
+        for (juce::Component* c : std::initializer_list<juce::Component*>{
+                 &bindLabel_, &bindAddress_, &receiveLabel_, &receivePort_, &feedbackPortLabel_,
+                 &feedbackPort_})
+            c->setAlpha(alpha);
     }
 
     /// A port field, with the same rule at both: a number the OS could bind, or
@@ -1205,23 +1441,20 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
 
     void refreshStatus() {
         juce::String text;
-
         if (osc_app::isListening()) {
-            text << tr("connections.osc.status_listening")
-                        .replace("{0}", osc_app::boundAddress())
-                        .replace("{1}", juce::String(osc_app::boundPort()))
-                 << "\n"
-                 << tr("connections.osc.status_received")
-                        .replace("{0}", juce::String(osc_app::acceptedMessageCount()));
+            badge_.setStatus(osc_app::boundAddress() + ":" + juce::String(osc_app::boundPort()),
+                             true);
+            text << tr("connections.osc.status_received")
+                        .replace("{0}", juce::String(osc_app::acceptedMessageCount()))
+                 << "\n\n";
         } else if (Config::getInstance().getOscEnabled()) {
             // Enabled and not listening means the port was taken, which is the
             // one failure a user can act on and the one they cannot see.
-            text << tr("connections.osc.status_bind_failed");
+            badge_.setStatus(tr("connections.osc.status_off").trimCharactersAtEnd("."), false);
+            text << tr("connections.osc.status_bind_failed") << "\n\n";
         } else {
-            text << tr("connections.osc.status_off");
+            badge_.setStatus(tr("connections.osc.status_off").trimCharactersAtEnd("."), false);
         }
-
-        text << "\n\n" << tr("connections.osc.surfaces") << "\n";
 
         const auto surfaces = osc_app::surfaces();
         if (surfaces.empty()) {
@@ -1255,11 +1488,14 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
         return tr("connections.osc.seen_minutes").replace("{0}", juce::String(ageMs / 60000));
     }
 
+    SettingsStatusBadge badge_;
     juce::ToggleButton enable_;
     juce::Label bindLabel_, receiveLabel_, feedbackPortLabel_;
     juce::ComboBox bindAddress_;
     juce::TextEditor receivePort_, feedbackPort_;
+    juce::Label surfacesHeader_;
     juce::Label status_;
+    std::vector<juce::Rectangle<int>> rowLines_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OscSurfacesPage)
 };
@@ -1284,10 +1520,22 @@ class ConnectionsSection : public SettingsSection {
     }
     // Transports first, then the grants that apply to whichever was used.
     std::vector<Tab> getTabs() override {
-        return {{magda::technicalText(magda::TechnicalTextToken::Mcp), &mcpPage_, {}},
-                {magda::technicalText(magda::TechnicalTextToken::WebSocket), &webSocketPage_, {}},
-                {magda::technicalText(magda::TechnicalTextToken::Osc), &oscPage_, {}},
-                {tr("connections.tab.clients"), &remoteClientsPage_, {}}};
+        return {{magda::technicalText(magda::TechnicalTextToken::Mcp),
+                 &mcpPage_,
+                 {},
+                 &mcpPage_.getToolbar()},
+                {magda::technicalText(magda::TechnicalTextToken::WebSocket),
+                 &webSocketPage_,
+                 {},
+                 &webSocketPage_.getToolbar()},
+                {magda::technicalText(magda::TechnicalTextToken::Osc),
+                 &oscPage_,
+                 {},
+                 &oscPage_.getToolbar()},
+                {tr("connections.tab.clients"),
+                 &remoteClientsPage_,
+                 {},
+                 &remoteClientsPage_.getToolbar()}};
     }
     bool appliesImmediately() const override {
         return true;
