@@ -11,12 +11,10 @@
 namespace magda::daw::ui {
 
 /**
- * @brief Custom UI for the native convolution device (IR Reverb)
+ * @brief Custom UI for the native convolution device (Convolution)
  *
- * Layout:
- *   Top: [IR name label] [LOAD button]
- *   Row 1: Low Cut, High Cut, Q
- *   Row 2: Gain, Mix, (empty)
+ * The loaded IR's waveform on top, which takes a click or a drop to load one; below it the
+ * filter's response over Low Cut, High Cut and Q, and the Gain and Mix tiles.
  */
 class ImpulseResponseUI : public juce::Component,
                           public juce::FileDragAndDropTarget,
@@ -27,6 +25,8 @@ class ImpulseResponseUI : public juce::Component,
 
     void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
     void setIRName(const juce::String& name);
+    /// The encoded IR the device holds (empty for none); decoded only when it changes.
+    void setImpulseResponse(const juce::MemoryBlock& encoded);
 
     std::function<void(int paramIndex, float value)> onParameterChanged;
     std::function<void()> onLoadIRRequested;
@@ -36,10 +36,15 @@ class ImpulseResponseUI : public juce::Component,
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void lookAndFeelChanged() override;
+    void mouseDown(const juce::MouseEvent& e) override;
+    void mouseMove(const juce::MouseEvent& e) override;
 
     // FileDragAndDropTarget — IRs dropped from the OS file manager.
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
     void filesDropped(const juce::StringArray& files, int x, int y) override;
+    void fileDragEnter(const juce::StringArray& files, int x, int y) override;
+    void fileDragExit(const juce::StringArray& files) override;
 
     // DragAndDropTarget — IRs dragged from MAGDA's own browser arrive as an
     // internal {type:"files"} payload; these forward it to the handlers above.
@@ -54,14 +59,22 @@ class ImpulseResponseUI : public juce::Component,
     struct SliderWithLabel {
         juce::Label label;
         LinkableTextSlider slider;
+        juce::Rectangle<int> tile;  ///< The painted cell behind the caption and value.
 
         explicit SliderWithLabel(TextSlider::Format fmt = TextSlider::Format::Decimal)
             : slider(fmt) {}
     };
 
-    // IR file controls
-    juce::Label irNameLabel_;
     std::unique_ptr<magda::SvgButton> loadButton_;
+    juce::String irName_;
+    juce::MemoryBlock encodedIR_;
+    std::vector<float> peaks_;  ///< Per-column peak of the IR, normalised to its loudest.
+    double irSeconds_ = 0.0;
+    int irChannels_ = 0;
+    bool dragOver_ = false;
+
+    juce::Rectangle<int> irPanel_, filterPanel_, outputPanel_;
+    juce::Rectangle<int> irTitle_, waveArea_, filterTitle_, curveArea_, outputTitle_;
 
     SliderWithLabel gain_{TextSlider::Format::Decibels};
     SliderWithLabel lowCut_;
@@ -70,6 +83,8 @@ class ImpulseResponseUI : public juce::Component,
     SliderWithLabel filterQ_;
 
     void setupSlider(SliderWithLabel& s, const juce::String& labelText);
+    void paintWaveform(juce::Graphics& g) const;
+    void paintResponse(juce::Graphics& g) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ImpulseResponseUI)
 };

@@ -362,6 +362,24 @@ sdk::RestoreResult MagdaConvolutionPlugin::restoreState(const sdk::StateNode& st
     return sdk::RestoreResult::success();
 }
 
+bool MagdaConvolutionPlugin::decodeImpulseResponse(const juce::MemoryBlock& encoded,
+                                                   juce::AudioBuffer<float>& out,
+                                                   double& sampleRate) {
+    if (encoded.getSize() == 0)
+        return false;
+    // Read through a format manager rather than assuming FLAC: the blob is
+    // whatever encoded the IR when it was stored.
+    auto stream = std::make_unique<juce::MemoryInputStream>(encoded, false);
+    std::unique_ptr<juce::AudioFormatReader> reader(irFormats().createReaderFor(std::move(stream)));
+    if (reader == nullptr || reader->numChannels == 0 || reader->lengthInSamples == 0)
+        return false;
+
+    out.setSize(static_cast<int>(reader->numChannels), static_cast<int>(reader->lengthInSamples));
+    reader->read(&out, 0, out.getNumSamples(), 0, true, true);
+    sampleRate = reader->sampleRate;
+    return true;
+}
+
 void MagdaConvolutionPlugin::loadImpulseResponseFromData() {
     if (irData_.getSize() == 0) {
         irLengthSeconds_.store(0.0, std::memory_order_relaxed);
@@ -378,26 +396,18 @@ void MagdaConvolutionPlugin::loadImpulseResponseFromData() {
         return;
     }
 
-    // Read through a format manager rather than assuming FLAC: the blob is
-    // whatever encoded the IR when it was stored.
-    auto stream = std::make_unique<juce::MemoryInputStream>(irData_, false);
-    std::unique_ptr<juce::AudioFormatReader> reader(irFormats().createReaderFor(std::move(stream)));
-    if (reader == nullptr || reader->numChannels == 0 || reader->lengthInSamples == 0)
+    juce::AudioBuffer<float> buffer;
+    double rate = 0.0;
+    if (!decodeImpulseResponse(irData_, buffer, rate))
         return;
 
-    juce::AudioBuffer<float> buffer(static_cast<int>(reader->numChannels),
-                                    static_cast<int>(reader->lengthInSamples));
-    reader->read(&buffer, 0, buffer.getNumSamples(), 0, true, true);
-
-    irLengthSeconds_.store(reader->sampleRate > 0.0
-                               ? static_cast<double>(reader->lengthInSamples) / reader->sampleRate
-                               : 0.0,
+    irLengthSeconds_.store(rate > 0.0 ? buffer.getNumSamples() / rate : 0.0,
                            std::memory_order_relaxed);
 
+    const bool stereo = buffer.getNumChannels() > 1;
     chain_.get<kConvolution>().loadImpulseResponse(
-        std::move(buffer), reader->sampleRate,
-        reader->numChannels > 1 ? juce::dsp::Convolution::Stereo::yes
-                                : juce::dsp::Convolution::Stereo::no,
+        std::move(buffer), rate,
+        stereo ? juce::dsp::Convolution::Stereo::yes : juce::dsp::Convolution::Stereo::no,
         trimSilence_ ? juce::dsp::Convolution::Trim::yes : juce::dsp::Convolution::Trim::no,
         normalise_ ? juce::dsp::Convolution::Normalise::yes
                    : juce::dsp::Convolution::Normalise::no);

@@ -464,7 +464,7 @@ constexpr RetiredDevice kRetiredDevices[] = {
     {"magda_pitch", "Pitch", kPitchTypes, kPitchNames, kPitchSlots, kPitchProperties},
     {"magda_filter", "Filter", kFilterTypes, kFilterNames, kFilterSlots, kFilterProperties},
     {"magda_utility", "Utility", kUtilityTypes, kUtilityNames, kUtilitySlots, kUtilityProperties},
-    {"magda_convolution", "IR Reverb", kConvolutionTypes, kConvolutionNames, kConvolutionSlots,
+    {"magda_convolution", "Convolution", kConvolutionTypes, kConvolutionNames, kConvolutionSlots,
      kConvolutionProperties, kConvolutionCarried, true},
 };
 
