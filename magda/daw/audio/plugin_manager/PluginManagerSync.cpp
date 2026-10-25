@@ -11,6 +11,7 @@
 #include "../../core/RackInfo.hpp"
 #include "../../core/RangesHelpers.hpp"
 #include "../../core/TrackManager.hpp"
+#include "../../core/UserAlert.hpp"
 #include "../../core/aliases/AutoAliasGenerator.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
 #include "../PluginWindowBridge.hpp"
@@ -1390,6 +1391,7 @@ void PluginManager::reportLoadFailure(TrackId trackId, te::ExternalPlugin& plugi
                              "\" failed to load: " + plugin.getLoadError());
     if (device != nullptr)
         device->loadState = DeviceLoadState::Failed;
+    notifyPluginLoadFailure(plugin.getName(), plugin.getLoadError());
 
     // Deferred: this runs mid-sync, before the caller records the device as synced.
     juce::MessageManager::callAsync([weakThis = juce::WeakReference<PluginManager>(this), trackId] {

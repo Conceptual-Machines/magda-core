@@ -4429,7 +4429,8 @@ TEST_CASE("A plugin that refuses its instance is reported once", "[engine][exter
                                          const std::vector<magda::RestoredParameter>&) {});
 
     std::vector<magda::engine::DeviceKey> failed;
-    loader.onFailed([&failed](magda::engine::DeviceKey key) { failed.push_back(key); });
+    loader.onFailed(
+        [&failed](magda::engine::DeviceKey key, const juce::String&) { failed.push_back(key); });
 
     loader.setServices(&slot.formats, &slot.known);
     loader.setContext(contextFor());
