@@ -4,7 +4,6 @@ target_sources(magda_daw_app PRIVATE
     ConnectionsDialog.cpp
     AISettingsDialog.cpp
     AudioSettingsDialog.cpp
-    ChainTreeDialog.cpp
     ExportAudioDialog.cpp
     ExportMidiDialog.cpp
     GainStagingDialog.cpp
@@ -18,7 +17,6 @@ target_sources(magda_daw_app PRIVATE
     AISettingsDialog.hpp
     ConnectionsDialog.hpp
     AudioSettingsDialog.hpp
-    ChainTreeDialog.hpp
     ExportAudioDialog.hpp
     ExportMidiDialog.hpp
     GainStagingDialog.hpp

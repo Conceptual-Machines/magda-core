@@ -344,6 +344,11 @@ MixerView::ChannelStrip::ChannelStrip(const TrackInfo& track, AudioEngine* audio
       trackName_(track.name),
       audioEngine_(audioEngine) {
     setOpaque(true);
+    addChildComponent(miniChain_);
+    miniChain_.onHeightChanged = [this]() {
+        if (auto* parent = findParentComponentOfClass<MixerView>())
+            parent->relayoutAllStrips();
+    };
     setupControls();
     updateFromTrack(track, true);
 }
@@ -401,7 +406,7 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncM
     // Sync mini FX chain rows only when the device list may have changed. Mixer
     // property updates are frequent and should not rebuild chain signatures.
     if (syncMiniChain && !isMaster_)
-        syncMiniChainRows(track);
+        miniChain_.sync(track, audioEngine_);
 
     // Sync send slots
     if (!isMaster_) {
@@ -973,67 +978,6 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
     };
 }
 
-std::vector<MixerView::ChannelStrip::MiniChainRowSignatureEntry>
-MixerView::ChannelStrip::buildMiniChainSignature(const TrackInfo& track) {
-    std::vector<MiniChainRowSignatureEntry> signature;
-    signature.reserve(track.chain.fxChainElements.size());
-    for (const auto& element : track.chain.fxChainElements) {
-        if (isDevice(element)) {
-            const auto& device = getDevice(element);
-            signature.push_back({false, device.id, device.name, device.miniMixerParameters});
-        } else if (isRack(element)) {
-            const auto& rack = getRack(element);
-            signature.push_back({true, rack.id, rack.name, {}});
-        }
-    }
-    return signature;
-}
-
-void MixerView::ChannelStrip::syncMiniChainRows(const TrackInfo& track) {
-    auto signature = buildMiniChainSignature(track);
-    if (signature == miniChainSignature_)
-        return;
-
-    rebuildMiniChainRows(track, std::move(signature));
-}
-
-void MixerView::ChannelStrip::rebuildMiniChainRows(
-    const TrackInfo& track, std::vector<MiniChainRowSignatureEntry> signature) {
-    miniChainRows_.clear();
-    miniChainSignature_ = std::move(signature);
-    for (const auto& element : track.chain.fxChainElements) {
-        if (isDevice(element)) {
-            const auto& device = getDevice(element);
-            auto row = std::make_unique<MiniChainRow>();
-            row->setDevice(ChainNodePath::topLevelDevice(trackId_, device.id), audioEngine_,
-                           device.name, device.bypassed);
-            row->onExpandChanged = [this]() {
-                if (auto* parent = findParentComponentOfClass<MixerView>())
-                    parent->relayoutAllStrips();
-            };
-            addAndMakeVisible(*row);
-            miniChainRows_.push_back(std::move(row));
-        } else if (isRack(element)) {
-            const auto& rack = getRack(element);
-            auto row = std::make_unique<MiniChainRow>();
-            row->setDevice({}, audioEngine_, rack.name, false);
-            addAndMakeVisible(*row);
-            miniChainRows_.push_back(std::move(row));
-        }
-    }
-}
-
-void MixerView::ChannelStrip::syncMiniChainRowState(DeviceId deviceId, bool bypassed) {
-    if (deviceId == INVALID_DEVICE_ID)
-        return;
-    for (auto& row : miniChainRows_) {
-        if (row->deviceId() == deviceId) {
-            row->setBypassedState(bypassed);
-            return;
-        }
-    }
-}
-
 void MixerView::ChannelStrip::refreshMiniAnalyzers() {
     // One source per faceplate, over a query that finds the mixer-analysis
     // device again on every read: whichever engine renders it answers, and a
@@ -1459,33 +1403,21 @@ void MixerView::ChannelStrip::resized() {
         // block height (sum of preferred heights, accounting for expanded
         // rows) of any visible strip.
         if (cfg.getMixerShowFxChain()) {
-            auto chainBlockHeight = [](const ChannelStrip& s) {
-                int h = 0;
-                for (const auto& r : s.miniChainRows_)
-                    h += r->preferredHeight() + 1;
-                return h;
-            };
             int maxChainHeight = 0;
             if (auto* parent = findParentComponentOfClass<MixerView>()) {
                 for (const auto& s : parent->channelStrips)
-                    maxChainHeight = std::max(maxChainHeight, chainBlockHeight(*s));
+                    maxChainHeight = std::max(maxChainHeight, s->miniChain_.preferredHeight());
             }
-            int myHeight = 0;
-            for (auto& row : miniChainRows_) {
-                const int h = row->preferredHeight();
-                row->setBounds(bounds.removeFromTop(h));
-                row->setVisible(true);
-                bounds.removeFromTop(1);
-                myHeight += h + 1;
-            }
+            const int myHeight = miniChain_.preferredHeight();
+            miniChain_.setBounds(bounds.removeFromTop(myHeight));
+            miniChain_.setVisible(true);
             const int pad = maxChainHeight - myHeight;
             if (pad > 0)
                 bounds.removeFromTop(pad);
             if (maxChainHeight > 0)
                 bounds.removeFromTop(4);
         } else {
-            for (auto& row : miniChainRows_)
-                row->setVisible(false);
+            miniChain_.setVisible(false);
         }
 
         bounds.removeFromTop(faderTopInset());
@@ -2242,13 +2174,13 @@ void MixerView::devicePropertyChanged(const ChainNodePath& devicePath) {
 
     for (auto& strip : channelStrips) {
         if (strip->getTrackId() == trackId) {
-            strip->syncMiniChainRowState(deviceId, device->bypassed);
+            strip->miniChain_.syncBypass(deviceId, device->bypassed);
             return;
         }
     }
     for (auto& strip : auxChannelStrips) {
         if (strip->getTrackId() == trackId) {
-            strip->syncMiniChainRowState(deviceId, device->bypassed);
+            strip->miniChain_.syncBypass(deviceId, device->bypassed);
             return;
         }
     }

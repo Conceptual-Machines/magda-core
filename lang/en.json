@@ -165,7 +165,9 @@
     "clip_count.other": "{0} clips",
     "automated": "Automated",
     "automated_empty": "No automated parameters",
-    "latency": "Latency"
+    "latency": "Latency",
+    "fx": "FX",
+    "no_fx": "No devices"
   },
   "dialogs": {
     "open_project": "Open Project",

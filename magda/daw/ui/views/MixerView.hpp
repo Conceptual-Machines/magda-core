@@ -17,7 +17,7 @@
 #include "../components/common/TextSlider.hpp"
 #include "../components/mixer/ClickableLabel.hpp"
 #include "../components/mixer/MasterChannelStrip.hpp"
-#include "../components/mixer/MiniChainRow.hpp"
+#include "../components/mixer/MiniChainList.hpp"
 #include "../components/mixer/MixerToggleRail.hpp"
 #include "../components/mixer/RoutingSelector.hpp"
 #include "../components/navigation/MainViewScrollContainer.hpp"
@@ -243,33 +243,8 @@ class MixerView : public juce::Component,
         /// the model's notification comes before the plan that holds it (#2663).
         void refreshAnalyserSettings();
 
-        // Mini FX chain: one MiniChainRow per top-level fx device on this
-        // track. Built from TrackInfo::chain.fxChainElements; nested racks
-        // collapse to a single row labelled with the rack name.
-        struct MiniChainRowSignatureEntry {
-            bool isRack = false;
-            int id = INVALID_DEVICE_ID;
-            juce::String name;
-            std::vector<int> miniMixerParameters;
-
-            bool operator==(const MiniChainRowSignatureEntry& other) const {
-                return isRack == other.isRack && id == other.id && name == other.name &&
-                       miniMixerParameters == other.miniMixerParameters;
-            }
-        };
-
-        std::vector<std::unique_ptr<MiniChainRow>> miniChainRows_;
-        std::vector<MiniChainRowSignatureEntry> miniChainSignature_;
-        static std::vector<MiniChainRowSignatureEntry> buildMiniChainSignature(
-            const TrackInfo& track);
-        void syncMiniChainRows(const TrackInfo& track);
-        void rebuildMiniChainRows(const TrackInfo& track,
-                                  std::vector<MiniChainRowSignatureEntry> signature);
-
-        // Sync the bypass dot of the row bound to deviceId to its authoritative
-        // state without rebuilding (safe under the synchronous devicePropertyChanged
-        // that a row's own bypass toggle fires). No-op if no row matches.
-        void syncMiniChainRowState(DeviceId deviceId, bool bypassed);
+        // Mini FX chain: one row per top-level fx element on this track.
+        MiniChainList miniChain_;
 
         // Send area resize handle
         class SendResizeHandle;

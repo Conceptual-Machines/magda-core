@@ -346,12 +346,18 @@ TrackInspector::TrackInspector() {
     automatedParamsLabel_.setJustificationType(juce::Justification::topLeft);
     addAndMakeVisible(automatedParamsLabel_);
 
-    // Routing section
-    routingSectionLabel_.setText(tr("inspector.routing"), juce::dontSendNotification);
-    routingSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    routingSectionLabel_.setColour(juce::Label::textColourId,
-                                   ActiveTheme::getSecondaryTextColour());
-    addAndMakeVisible(routingSectionLabel_);
+    // Section headers fold their section, like the clip inspector's
+    for (auto* header : {&routingHeader_, &sendsHeader_, &fxHeader_, &clipsHeader_}) {
+        header->onCollapsedChanged = [this]() {
+            showTrackControls(controlsShown_);
+            repaint();
+        };
+        addChildComponent(*header);
+    }
+    routingHeader_.setText(tr("inspector.routing"));
+    sendsHeader_.setText(tr("inspector.sends"));
+    fxHeader_.setText(tr("inspector.fx"));
+    clipsHeader_.setText(tr("inspector.clips"));
 
     // Input type selector (hidden, kept for internal state)
     inputTypeSelector_ = std::make_unique<magda::InputTypeSelector>();
@@ -405,12 +411,6 @@ TrackInspector::TrackInspector() {
     addAndMakeVisible(*outputIcon_);
 
     // Send/Receive section
-    sendReceiveSectionLabel_.setText(tr("inspector.sends"), juce::dontSendNotification);
-    sendReceiveSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    sendReceiveSectionLabel_.setColour(juce::Label::textColourId,
-                                       ActiveTheme::getSecondaryTextColour());
-    addAndMakeVisible(sendReceiveSectionLabel_);
-
     addSendButton_ =
         std::make_unique<SvgButton>("AddSend", BinaryData::add_svg, BinaryData::add_svgSize);
     addSendButton_->setTooltip(tr("inspector.add_send"));
@@ -419,7 +419,7 @@ TrackInspector::TrackInspector() {
     addSendButton_->setBorderColor(ActiveTheme::BORDER);
     addSendButton_->setOriginalColor(ActiveTheme::getSecondaryTextColour());
     addSendButton_->onClick = [this]() { showAddSendMenu(); };
-    addAndMakeVisible(*addSendButton_);
+    sendsHeader_.setAccessory(addSendButton_.get(), 22);
 
     noSendsLabel_.setText(tr("inspector.no_sends"), juce::dontSendNotification);
     noSendsLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
@@ -427,31 +427,25 @@ TrackInspector::TrackInspector() {
     addAndMakeVisible(noSendsLabel_);
 
     // Clips section
-    clipsSectionLabel_.setText(tr("inspector.clips"), juce::dontSendNotification);
-    clipsSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    clipsSectionLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    addAndMakeVisible(clipsSectionLabel_);
-
     clipCountLabel_.setText(tr("inspector.clip_count.other").replace("{0}", "0"),
                             juce::dontSendNotification);
     clipCountLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
     clipCountLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
     addAndMakeVisible(clipCountLabel_);
 
-    // Latency display
-    latencyLabel_.setText(tr("inspector.latency"), juce::dontSendNotification);
-    latencyLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    latencyLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    addAndMakeVisible(latencyLabel_);
+    // FX section; the track's latency is the header's caption
+    noFxLabel_.setText(tr("inspector.no_fx"), juce::dontSendNotification);
+    noFxLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
+    addChildComponent(noFxLabel_);
 
-    latencyValue_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    latencyValue_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
-    addAndMakeVisible(latencyValue_);
+    fxViewport_.setViewedComponent(&fxList_, false);
+    fxViewport_.setScrollBarsShown(true, false);
+    fxViewport_.setScrollBarThickness(6);
+    addChildComponent(fxViewport_);
+    fxList_.onHeightChanged = [this]() { resized(); };
 
-    for (auto* label :
-         {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &sendReceiveSectionLabel_,
-          &noSendsLabel_, &clipsSectionLabel_, &clipCountLabel_, &automatedSectionLabel_,
-          &automatedParamsLabel_, &latencyLabel_, &latencyValue_}) {
+    for (auto* label : {&trackNameLabel_, &trackNameValue_, &noSendsLabel_, &clipCountLabel_,
+                        &automatedSectionLabel_, &automatedParamsLabel_, &noFxLabel_}) {
         useLocalizedLabelPainter(*label);
     }
 
@@ -554,12 +548,10 @@ void TrackInspector::applyThemeColours() {
     const auto surface = ActiveTheme::getColour(ActiveTheme::SURFACE);
     const auto border = ActiveTheme::getBorderColour();
 
-    for (auto* label :
-         {&trackNameLabel_, &routingSectionLabel_, &sendReceiveSectionLabel_, &noSendsLabel_,
-          &clipsSectionLabel_, &automatedSectionLabel_, &latencyLabel_})
+    for (auto* label : {&trackNameLabel_, &noSendsLabel_, &automatedSectionLabel_, &noFxLabel_})
         label->setColour(juce::Label::textColourId, secondary);
 
-    for (auto* label : {&automatedParamsLabel_, &clipCountLabel_, &latencyValue_})
+    for (auto* label : {&automatedParamsLabel_, &clipCountLabel_})
         label->setColour(juce::Label::textColourId, primary);
 
     trackNameValue_.setColour(juce::Label::textColourId, primary);
@@ -648,10 +640,8 @@ void TrackInspector::hardwareChannelsChanged() {
 }
 
 TrackInspector::~TrackInspector() {
-    for (auto* label :
-         {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &sendReceiveSectionLabel_,
-          &noSendsLabel_, &clipsSectionLabel_, &clipCountLabel_, &automatedSectionLabel_,
-          &automatedParamsLabel_, &latencyLabel_, &latencyValue_}) {
+    for (auto* label : {&trackNameLabel_, &trackNameValue_, &noSendsLabel_, &clipCountLabel_,
+                        &automatedSectionLabel_, &automatedParamsLabel_, &noFxLabel_}) {
         clearLocalizedLabelPainter(*label);
     }
     for (auto& label : sendDestLabels_)
@@ -724,6 +714,16 @@ void TrackInspector::paint(juce::Graphics& g) {
 
 void TrackInspector::resized() {
     masterView_.setBounds(getLocalBounds());
+
+    // The FX list takes what the other sections leave, and scrolls past that.
+    const int fxPreferred = fxList_.preferredHeight();
+    const int fxLeast = std::min(
+        fxPreferred, 3 * (magda::MiniChainRow::kCollapsedHeight + magda::MiniChainList::kRowGap));
+    const int leftover = layoutSections(0);
+    layoutSections(std::clamp(leftover, fxLeast, fxPreferred));
+}
+
+int TrackInspector::layoutSections(int fxListHeight) {
     auto bounds = getLocalBounds().reduced(8);
     sectionSeparatorYs_.clear();
     const int separatorPadding = 6;
@@ -753,6 +753,7 @@ void TrackInspector::resized() {
             colourSwatch_->setBounds({});  // Full bar: the name field is the colour.
     }
     trackNameValue_.setBounds(nameRow);
+
     bounds.removeFromTop(separatorPadding);
     sectionSeparatorYs_.push_back(bounds.getY());
     bounds.removeFromTop(separatorPadding);
@@ -809,6 +810,16 @@ void TrackInspector::resized() {
     // Routing section — column labels above, then the input/output rows. Row
     // composition comes from the policy; the shared routing-row layout splits
     // the width between whichever dropdowns exist.
+    // A folded section keeps its header and a tighter separator.
+    const auto endSection = [&](bool open) {
+        const int pad = open ? separatorPadding : 2;
+        bounds.removeFromTop(pad);
+        sectionSeparatorYs_.push_back(bounds.getY());
+        bounds.removeFromTop(pad);
+    };
+    if (routingHeader_.isVisible())
+        routingHeader_.setBounds(bounds.removeFromTop(CollapsibleSectionHeader::kHeight));
+
     if (p.anyRouting()) {
         const int selectorHeight = 22;
         const int columnHeaderHeight = 14;
@@ -839,23 +850,34 @@ void TrackInspector::resized() {
                 outputRow, p.audioOut ? outputSelector_.get() : nullptr,
                 p.midiOut ? midiOutputSelector_.get() : nullptr, outputIcon_.get(), m);
         }
-        bounds.removeFromTop(separatorPadding);
-        sectionSeparatorYs_.push_back(bounds.getY());
-        bounds.removeFromTop(separatorPadding);
+    }
+    if (routingHeader_.isVisible())
+        endSection(!routingHeader_.isCollapsed());
+
+    if (fxHeader_.isVisible()) {
+        fxHeader_.setBounds(bounds.removeFromTop(CollapsibleSectionHeader::kHeight));
+        const bool open = !fxHeader_.isCollapsed();
+        if (open && fxList_.isEmpty()) {
+            noFxLabel_.setBounds(bounds.removeFromTop(16));
+        } else if (open) {
+            fxViewport_.setBounds(bounds.removeFromTop(fxListHeight));
+            const bool scrolls = fxListHeight < fxList_.preferredHeight();
+            fxList_.setSize(fxViewport_.getWidth() -
+                                (scrolls ? fxViewport_.getScrollBarThickness() + 2 : 0),
+                            fxList_.preferredHeight());
+        }
+        endSection(open);
     }
 
     // Send/Receive section — only lay out if visible
-    if (sendReceiveSectionLabel_.isVisible()) {
-        auto sendHeaderRow = bounds.removeFromTop(22);
-        sendReceiveSectionLabel_.setBounds(
-            sendHeaderRow.removeFromLeft(100).withSizeKeepingCentre(100, 16));
-        addSendButton_->setBounds(sendHeaderRow.removeFromRight(22).withSizeKeepingCentre(22, 22));
-        bounds.removeFromTop(4);
+    if (sendsHeader_.isVisible()) {
+        sendsHeader_.setBounds(bounds.removeFromTop(CollapsibleSectionHeader::kHeight));
+        const bool open = !sendsHeader_.isCollapsed();
 
-        if (sendDestLabels_.empty()) {
+        if (open && sendDestLabels_.empty()) {
             noSendsLabel_.setBounds(bounds.removeFromTop(16));
             noSendsLabel_.setVisible(true);
-        } else {
+        } else if (open) {
             noSendsLabel_.setVisible(false);
 
             // Two columns rather than one long one. A track is capped at
@@ -896,28 +918,17 @@ void TrackInspector::resized() {
                 bounds.removeFromTop(4);
             }
         }
-
-        bounds.removeFromTop(separatorPadding);
-        sectionSeparatorYs_.push_back(bounds.getY());
-        bounds.removeFromTop(separatorPadding);
+        endSection(open);
     }
 
     // Clips section — only lay out if visible
-    if (clipsSectionLabel_.isVisible()) {
-        clipsSectionLabel_.setBounds(bounds.removeFromTop(16));
-        bounds.removeFromTop(4);
-        clipCountLabel_.setBounds(bounds.removeFromTop(20));
+    if (clipsHeader_.isVisible()) {
+        clipsHeader_.setBounds(bounds.removeFromTop(CollapsibleSectionHeader::kHeight));
+        if (!clipsHeader_.isCollapsed())
+            clipCountLabel_.setBounds(bounds.removeFromTop(20));
     }
 
-    // Latency — only lay out if visible
-    if (latencyLabel_.isVisible()) {
-        bounds.removeFromTop(separatorPadding);
-        sectionSeparatorYs_.push_back(bounds.getY());
-        bounds.removeFromTop(separatorPadding);
-        latencyLabel_.setBounds(bounds.removeFromTop(16));
-        bounds.removeFromTop(4);
-        latencyValue_.setBounds(bounds.removeFromTop(20));
-    }
+    return bounds.getHeight();
 }
 
 void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
@@ -1082,30 +1093,32 @@ void TrackInspector::trackDevicesChanged(magda::TrackId trackId) {
             magda::TrackManager::getInstance().isChainEnabled(selectedTrackId_),
             juce::dontSendNotification);
 
+        syncFxList();
+        updateLatency();
+
         // Adding/removing/editing an External Instrument insert changes the
         // read-only mirror on the track MIDI-out / audio-in, so re-apply it.
         if (!isMultiTrackMode_)
             showTrackControls(true);
-
-        // Refresh latency (devices added/removed/loaded)
-        if (latencyLabel_.isVisible()) {
-            double latency =
-                magda::TrackManager::getInstance().getTrackLatencySeconds(selectedTrackId_);
-            auto latencyMs = latency * 1000.0;
-            latencyValue_.setText(
-                (latency > 0.0 ? juce::String(latencyMs, 1) : juce::String("0")) +
-                    magda::technicalTextSuffix(magda::TechnicalTextToken::Milliseconds),
-                juce::dontSendNotification);
-            latencyValue_.repaint();
-        }
     }
 }
 
 void TrackInspector::devicePropertyChanged(const magda::ChainNodePath& devicePath) {
+    if (isMultiTrackMode_ || devicePath.trackId != selectedTrackId_)
+        return;
+
+    // Fires from a row's own bypass toggle, so the row is synced, not rebuilt.
+    if (const auto* device =
+            magda::TrackManager::getInstance().getDeviceInChainByPath(devicePath)) {
+        if (selectedTrackId_ == magda::MASTER_TRACK_ID)
+            masterView_.syncBypass(devicePath.getDeviceId(), device->bypassed);
+        else
+            fxList_.syncBypass(devicePath.getDeviceId(), device->bypassed);
+    }
+
     // An External Instrument's send/return picker changed: re-apply the
     // read-only mirror on this track's MIDI-out / audio-in.
-    if (!isMultiTrackMode_ && devicePath.trackId == selectedTrackId_)
-        showTrackControls(true);
+    showTrackControls(true);
 }
 
 void TrackInspector::trackSelectionChanged(magda::TrackId trackId) {
@@ -1276,18 +1289,8 @@ void TrackInspector::updateFromSelectedTrack() {
                 .replace("{0}", juce::String(clipCount));
         clipCountLabel_.setText(clipText, juce::dontSendNotification);
 
-        // Update track latency
-        double latency =
-            magda::TrackManager::getInstance().getTrackLatencySeconds(selectedTrackId_);
-        const juce::String msSuffix =
-            magda::technicalTextSuffix(magda::TechnicalTextToken::Milliseconds);
-        if (latency > 0.0) {
-            auto latencyMs = latency * 1000.0;
-            latencyValue_.setText(juce::String(latencyMs, 1) + msSuffix,
-                                  juce::dontSendNotification);
-        } else {
-            latencyValue_.setText("0" + msSuffix, juce::dontSendNotification);
-        }
+        syncFxList();
+        updateLatency();
 
         // Update routing selectors to match track state
         updateRoutingSelectorsFromTrack();
@@ -1501,10 +1504,20 @@ void TrackInspector::showTrackControls(bool show) {
             policy_ = magda::TrackControlsPolicy::forTrack(*track);
         }
     }
+    // A folded section keeps its header but none of its controls.
+    routingHeader_.setVisible(policy_.anyRouting());
+    sendsHeader_.setVisible(policy_.sends);
+    addSendButton_->setVisible(policy_.sends);
+    if (routingHeader_.isCollapsed())
+        policy_.audioIn = policy_.midiIn = policy_.audioOut = policy_.midiOut = false;
+    if (sendsHeader_.isCollapsed())
+        policy_.sends = false;
+
     const auto& p = policy_;
     using MuteStyle = magda::TrackControlsPolicy::MuteStyle;
     const bool isMaster = p.muteStyle == MuteStyle::MasterSpeaker;
     isChordTrack_ = p.muteStyle == MuteStyle::ChordAudition;
+    controlsShown_ = show;
 
     trackNameLabel_.setVisible(show);
     trackNameValue_.setVisible(show);
@@ -1526,7 +1539,6 @@ void TrackInspector::showTrackControls(bool show) {
     if (!p.automation)
         automationIndicator_->setVisible(false);
 
-    routingSectionLabel_.setVisible(false);
     audioInputSelector_->setVisible(p.audioIn);
     audioColumnLabel_.setVisible(p.audioIn);
     inputSelector_->setVisible(p.midiIn);
@@ -1549,8 +1561,6 @@ void TrackInspector::showTrackControls(bool show) {
     midiOutputSelector_->setReadOnly(extRouting.present, extRouting.midiOut);
     audioInputSelector_->setReadOnly(extRouting.present, extRouting.audioReturn);
 
-    sendReceiveSectionLabel_.setVisible(p.sends);
-    addSendButton_->setVisible(p.sends);
     updateAddSendEnabled();
     noSendsLabel_.setVisible(p.sends);
     for (auto& l : sendDestLabels_)
@@ -1560,11 +1570,15 @@ void TrackInspector::showTrackControls(bool show) {
     for (auto& b : sendDeleteButtons_)
         b->setVisible(p.sends);
 
-    // Clips / latency are inspector-only extras, not per-type track controls.
-    clipsSectionLabel_.setVisible(show && !isMaster && !isMultiTrackMode_);
-    clipCountLabel_.setVisible(show && !isMaster && !isMultiTrackMode_);
-    latencyLabel_.setVisible(show && !isMultiTrackMode_);
-    latencyValue_.setVisible(show && !isMultiTrackMode_);
+    // Clips / FX are inspector-only extras, not per-type track controls.
+    const bool singleTrack = show && !isMaster && !isMultiTrackMode_;
+    clipsHeader_.setVisible(singleTrack);
+    clipCountLabel_.setVisible(singleTrack && !clipsHeader_.isCollapsed());
+
+    fxHeader_.setVisible(singleTrack);
+    const bool fxOpen = singleTrack && !fxHeader_.isCollapsed();
+    noFxLabel_.setVisible(fxOpen && fxList_.isEmpty());
+    fxViewport_.setVisible(fxOpen && !fxList_.isEmpty());
     if (!show || isMultiTrackMode_) {
         automatedSectionLabel_.setVisible(false);
         automatedParamsLabel_.setVisible(false);
@@ -1578,6 +1592,19 @@ void TrackInspector::showTrackControls(bool show) {
     // receives and clips text, and stayed there until the panel was resized by
     // hand, which is what ran the layout again.
     resized();
+}
+
+void TrackInspector::syncFxList() {
+    if (const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_))
+        fxList_.sync(*track, audioEngine_);
+}
+
+void TrackInspector::updateLatency() {
+    const double latency =
+        magda::TrackManager::getInstance().getTrackLatencySeconds(selectedTrackId_);
+    fxHeader_.setCaption(tr("inspector.latency") + " " +
+                         (latency > 0.0 ? juce::String(latency * 1000.0, 1) : juce::String("0")) +
+                         magda::technicalTextSuffix(magda::TechnicalTextToken::Milliseconds));
 }
 
 void TrackInspector::updateAddSendEnabled() {
