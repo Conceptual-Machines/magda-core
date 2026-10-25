@@ -284,6 +284,10 @@ class MainWindow::MainComponent : public juce::Component,
     // Toast notification overlay (top-right corner)
     std::unique_ptr<daw::ui::Toast> toast_;
 
+    // Plugin load failures that arrived in the same turn, warned about in one dialog (#3150).
+    juce::StringArray pendingLoadFailures_;
+    void warnAboutLoadFailures();
+
     // Setup helpers
     void setupResizeHandles();
     void setupViewModeListener();
