@@ -104,7 +104,7 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
         setLookAndFeel(&daw::ui::SettingsLookAndFeel::getInstance());
         setWantsKeyboardFocus(true);
 
-        for (auto& section : createPreferencesSections(contextCommandManager))
+        for (auto& section : createPreferencesSections(contextCommandManager, contextAudioEngine))
             sections_.push_back(std::move(section));
         sections_.push_back(createAudioMidiSection(contextAudioEngine));
         sections_.push_back(createControllersSection());

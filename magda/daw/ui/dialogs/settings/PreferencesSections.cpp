@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <vector>
 
+#include "../../../audio/io/AudioIOControl.hpp"
 #include "../../../media_db/MediaDatabase.hpp"
 #include "../../../media_db/MediaDbContext.hpp"
 #include "../../../media_db/MediaDbQuery.hpp"
@@ -22,6 +23,7 @@
 #include "../../themes/UserTheme.hpp"
 #include "../../windows/MainWindow.hpp"
 #include "../ProjectFormatChoices.hpp"
+#include "SettingsLink.hpp"
 #include "SettingsSections.hpp"
 #include "core/AppPaths.hpp"
 #include "core/ClipManager.hpp"
@@ -30,6 +32,8 @@
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
 #include "core/UIScale.hpp"
+#include "engine/AudioEngine.hpp"
+#include "ui/components/common/MagdaAlertWindow.hpp"
 
 // ---------------------------------------------------------------------------
 // Setup helpers — internal linkage, shared by all page classes
@@ -1453,7 +1457,7 @@ class AppearancePage : public juce::Component {
 
 class DefaultsPage : public juce::Component {
   public:
-    DefaultsPage() {
+    explicit DefaultsPage(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
         setupSectionHeader(*this, formatHeader, tr("preferences.section.new_project_defaults"));
         setupSectionHeader(*this, creditsHeader, tr("preferences.section.credit_defaults"));
 
@@ -1469,7 +1473,18 @@ class DefaultsPage : public juce::Component {
             row->field = &field;
             setupComboLabel(row->label, tr("project_settings.metadata." + juce::String(field.key)));
 
-            row->editor.setFont(FontManager::getInstance().getUIFont(12.0f));
+            row->label.setFont(FontManager::getInstance().getUIFont(12.0f));
+            row->label.setColour(juce::Label::textColourId,
+                                 ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+            row->label.setBorderSize({});
+            if (field.key == std::string("genre"))
+                row->editor.setTextToShowWhenEmpty(tr("preferences.credits.genre_hint"),
+                                                   ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+            else if (field.key == std::string("website"))
+                row->editor.setTextToShowWhenEmpty("https://",
+                                                   ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+            row->editor.setIndents(8, 6);
+            row->editor.setFont(FontManager::getInstance().getUIFont(13.0f));
             row->editor.setColour(juce::TextEditor::backgroundColourId,
                                   ActiveTheme::getColour(ActiveTheme::SURFACE));
             row->editor.setColour(juce::TextEditor::textColourId,
@@ -1493,52 +1508,69 @@ class DefaultsPage : public juce::Component {
         magda::daw::ui::fillBitDepthCombo(bounceBitCombo);
         for (auto* combo : {&sampleRateCombo, &renderBitCombo, &bounceBitCombo}) {
             styleCombo(*combo);
+            combo->onChange = [this] { updateNotes(); };
             addAndMakeVisible(*combo);
         }
+
+        for (auto* note : {&sampleRateNote, &bounceBitNote, &creditsNote}) {
+            note->setFont(FontManager::getInstance().getUIFont(11.5f));
+            note->setColour(juce::Label::textColourId,
+                            ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+            note->setBorderSize({});
+            addAndMakeVisible(*note);
+        }
+        creditsNote.setText(tr("preferences.credits.note"), juce::dontSendNotification);
     }
 
     int getPreferredHeight(int) const {
-        constexpr int padding = 16;
-        constexpr int rowH = 32;
-        constexpr int headerH = 28;
-        constexpr int secGap = 12;
-
-        const int credits = headerH + 4 + (rowH * static_cast<int>(creditRows_.size())) +
-                            (4 * juce::jmax(0, static_cast<int>(creditRows_.size()) - 1));
-
-        return padding + headerH + 4 + rowH + 4 + rowH + 4 + rowH + 4 + rowH  // Format
-               + secGap + credits                                             // Credits
-               + padding;
+        const int pairs = (static_cast<int>(creditRows_.size()) + 1) / 2;
+        return 16 + 30 + 4 * kRowH + 22 + 30 + 30 + pairs * kCreditH + 16;
     }
 
     void resized() override {
-        auto bounds = getLocalBounds().reduced(16);
-        const int rowH = 32;
-        const int sliderH = 24;
-        const int headerH = 28;
-        const int secGap = 12;
-        const int labelW = 140;
+        rowLines_.clear();
+        auto bounds = getLocalBounds().reduced(0, 16);
+        // Label over an optional note on the left, the control on the right.
+        const auto row = [&](juce::Label& label, juce::Component& control, juce::Label* note,
+                             int controlW) {
+            auto r = bounds.removeFromTop(kRowH);
+            rowLines_.push_back(r.withTop(r.getBottom() - 1));
+            control.setBounds(r.removeFromRight(controlW).withSizeKeepingCentre(controlW, 26));
+            const bool hasNote = note != nullptr && note->getText().isNotEmpty();
+            if (note != nullptr)
+                note->setVisible(hasNote);
+            label.setBounds(hasNote ? r.removeFromTop(kRowH / 2 + 2).withTrimmedTop(4) : r);
+            if (hasNote)
+                note->setBounds(r.removeFromTop(16));
+        };
 
-        formatHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        layoutTextSliderRow(bounds, lengthLabel, lengthSlider, rowH, sliderH);
-        bounds.removeFromTop(4);
-        layoutComboRow(bounds, sampleRateLabel, sampleRateCombo, rowH);
-        bounds.removeFromTop(4);
-        layoutComboRow(bounds, renderBitLabel, renderBitCombo, rowH);
-        bounds.removeFromTop(4);
-        layoutComboRow(bounds, bounceBitLabel, bounceBitCombo, rowH);
-        bounds.removeFromTop(secGap);
+        formatHeader.setBounds(bounds.removeFromTop(30));
+        row(lengthLabel, lengthSlider, nullptr, 96);
+        row(sampleRateLabel, sampleRateCombo, &sampleRateNote, 160);
+        row(renderBitLabel, renderBitCombo, nullptr, 160);
+        row(bounceBitLabel, bounceBitCombo, &bounceBitNote, 160);
 
-        creditsHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        for (size_t i = 0; i < creditRows_.size(); ++i) {
-            auto row = bounds.removeFromTop(rowH);
-            creditRows_[i]->label.setBounds(row.removeFromLeft(labelW));
-            creditRows_[i]->editor.setBounds(row.reduced(0, 4));
-            if (i + 1 < creditRows_.size())
-                bounds.removeFromTop(4);
+        bounds.removeFromTop(22);
+        creditsHeader.setBounds(bounds.removeFromTop(30));
+        creditsNote.setBounds(bounds.removeFromTop(30).withTrimmedBottom(8));
+
+        // Two columns, label over field.
+        constexpr int gap = 16;
+        const int colW = (bounds.getWidth() - gap) / 2;
+        for (size_t i = 0; i < creditRows_.size(); i += 2) {
+            auto pair = bounds.removeFromTop(kCreditH);
+            for (size_t j = i; j < juce::jmin(i + 2, creditRows_.size()); ++j) {
+                auto cell = (j == i) ? pair.removeFromLeft(colW) : pair.withTrimmedLeft(gap);
+                creditRows_[j]->label.setBounds(cell.removeFromTop(20));
+                creditRows_[j]->editor.setBounds(cell.removeFromTop(30));
+            }
         }
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.setColour(ActiveTheme::getBorderColour().withMultipliedAlpha(0.6f));
+        for (const auto& line : rowLines_)
+            g.fillRect(line);
     }
 
     void loadSettings(Config& config) {
@@ -1550,6 +1582,7 @@ class DefaultsPage : public juce::Component {
                                      juce::dontSendNotification);
         bounceBitCombo.setSelectedId(magda::daw::ui::bitDepthItemId(config.getBounceBitDepth()),
                                      juce::dontSendNotification);
+        updateNotes();
 
         const auto& credits = config.getProjectMetadataDefaults();
         for (auto& row : creditRows_) {
@@ -1591,177 +1624,392 @@ class DefaultsPage : public juce::Component {
         juce::TextEditor editor;
     };
 
+    // The device mismatch in amber, and why float is offered for bounces.
+    void updateNotes() {
+        juce::String rateNote;
+        if (auto* io = audioEngine_ != nullptr ? audioEngine_->getAudioIO() : nullptr) {
+            const double device = io->status().sampleRate;
+            const double chosen =
+                magda::daw::ui::sampleRateForItemId(sampleRateCombo.getSelectedId());
+            if (device > 0.0 && std::abs(device - chosen) > 0.5)
+                rateNote = tr("preferences.note.device_rate")
+                               .replace("{0}", juce::String(static_cast<int>(device)) + " Hz");
+        }
+        sampleRateNote.setText(rateNote, juce::dontSendNotification);
+        sampleRateNote.setColour(juce::Label::textColourId,
+                                 ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+        bounceBitNote.setText(bounceBitCombo.getSelectedId() == 3
+                                  ? tr("preferences.note.float_bounce")
+                                  : juce::String(),
+                              juce::dontSendNotification);
+        resized();
+    }
+
+    static constexpr int kRowH = 44;
+    static constexpr int kCreditH = 58;
+
+    AudioEngine* audioEngine_ = nullptr;
     juce::Label formatHeader, creditsHeader;
     juce::Label lengthLabel, sampleRateLabel, renderBitLabel, bounceBitLabel;
+    juce::Label sampleRateNote, bounceBitNote, creditsNote;
     magda::daw::ui::TextSlider lengthSlider;
     juce::ComboBox sampleRateCombo, renderBitCombo, bounceBitCombo;
     std::vector<std::unique_ptr<CreditRow>> creditRows_;
+    std::vector<juce::Rectangle<int>> rowLines_;
 };
 
 // ---- Rendering tab --------------------------------------------------------
 
+// The tokens a file-name pattern can hold; the expansion lives in ClipCommands and
+// MainWindowExport.
+const juce::StringArray kPatternTokens{"clip-name", "track-name", "project-name", "date-time"};
+
+/**
+ * @brief A file-name pattern as chips and literal text (#3162).
+ *
+ * Tokens are whole chips, so a typo cannot break one: typing adds literal text,
+ * Backspace removes the last character or chip, and clicking a chip removes it.
+ */
+class PatternField : public juce::Component {
+  public:
+    std::function<void()> onChange;
+    std::function<void()> onFocus;
+
+    PatternField() {
+        setWantsKeyboardFocus(true);
+        setMouseCursor(juce::MouseCursor::IBeamCursor);
+    }
+
+    void setPattern(const juce::String& pattern) {
+        segments_.clear();
+        auto rest = pattern;
+        while (rest.isNotEmpty()) {
+            const int open = rest.indexOfChar('<');
+            const int close = open >= 0 ? rest.indexOfChar(open, '>') : -1;
+            const auto name = close > open ? rest.substring(open + 1, close) : juce::String();
+            if (open < 0 || close < 0 || !kPatternTokens.contains(name)) {
+                appendLiteral(rest);
+                break;
+            }
+            appendLiteral(rest.substring(0, open));
+            segments_.push_back({true, name});
+            rest = rest.substring(close + 1);
+        }
+        repaint();
+    }
+
+    juce::String getPattern() const {
+        juce::String out;
+        for (const auto& segment : segments_)
+            out << (segment.token ? "<" + segment.text + ">" : segment.text);
+        return out;
+    }
+
+    void insertToken(const juce::String& name) {
+        segments_.push_back({true, name});
+        changed();
+    }
+
+    void paint(juce::Graphics& g) override {
+        const auto box = getLocalBounds().toFloat().reduced(0.5f);
+        g.setColour(ActiveTheme::getBackgroundColour());
+        g.fillRoundedRectangle(box, 5.0f);
+        g.setColour(hasKeyboardFocus(false) ? ActiveTheme::getAccentColour()
+                                            : ActiveTheme::getBorderColour());
+        g.drawRoundedRectangle(box, 5.0f, hasKeyboardFocus(false) ? 1.5f : 1.0f);
+
+        const auto mono = FontManager::getInstance().getMonoFont(12.0f);
+        g.setFont(mono);
+        chips_.clear();
+        float x = 8.0f;
+        const float h = static_cast<float>(getHeight());
+        for (std::size_t i = 0; i < segments_.size(); ++i) {
+            const auto& segment = segments_[i];
+            const float w =
+                static_cast<float>(juce::GlyphArrangement::getStringWidthInt(mono, segment.text));
+            if (segment.token) {
+                const auto chip = juce::Rectangle<float>(x, 0.0f, w + 16.0f, h)
+                                      .withSizeKeepingCentre(w + 16.0f, h - 12.0f);
+                g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
+                g.fillRoundedRectangle(chip, 4.0f);
+                g.setColour(ActiveTheme::getBorderColour().brighter(0.2f));
+                g.drawRoundedRectangle(chip.reduced(0.5f), 4.0f, 1.0f);
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+                g.drawText(segment.text, chip, juce::Justification::centred, false);
+                chips_.push_back({i, chip});
+                x += chip.getWidth() + 3.0f;
+            } else {
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+                g.drawText(segment.text, juce::Rectangle<float>(x, 0.0f, w + 2.0f, h),
+                           juce::Justification::centredLeft, false);
+                x += w + 3.0f;
+            }
+        }
+        if (hasKeyboardFocus(false)) {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+            g.fillRect(x, h * 0.3f, 1.0f, h * 0.4f);
+        }
+    }
+
+    void mouseUp(const juce::MouseEvent& e) override {
+        for (const auto& [index, chip] : chips_) {
+            if (chip.contains(e.position)) {
+                segments_.erase(segments_.begin() + static_cast<std::ptrdiff_t>(index));
+                changed();
+                return;
+            }
+        }
+        grabKeyboardFocus();
+    }
+
+    bool keyPressed(const juce::KeyPress& key) override {
+        if (key == juce::KeyPress::backspaceKey) {
+            if (segments_.empty())
+                return true;
+            auto& last = segments_.back();
+            if (last.token || last.text.length() <= 1)
+                segments_.pop_back();
+            else
+                last.text = last.text.dropLastCharacters(1);
+            changed();
+            return true;
+        }
+        const auto c = key.getTextCharacter();
+        // The characters the expansion replaces, and the token brackets.
+        if (c >= ' ' && !juce::String("<>/\\:").containsChar(c) &&
+            !key.getModifiers().isCommandDown()) {
+            appendLiteral(juce::String::charToString(c));
+            changed();
+            return true;
+        }
+        return false;
+    }
+
+    void focusGained(FocusChangeType) override {
+        if (onFocus)
+            onFocus();
+        repaint();
+    }
+    void focusLost(FocusChangeType) override {
+        repaint();
+    }
+
+  private:
+    struct Segment {
+        bool token;
+        juce::String text;
+    };
+
+    void appendLiteral(const juce::String& text) {
+        if (text.isEmpty())
+            return;
+        if (!segments_.empty() && !segments_.back().token)
+            segments_.back().text << text;
+        else
+            segments_.push_back({false, text});
+    }
+
+    void changed() {
+        repaint();
+        if (onChange)
+            onChange();
+    }
+
+    std::vector<Segment> segments_;
+    std::vector<std::pair<std::size_t, juce::Rectangle<float>>> chips_;
+};
+
+/** @brief A dashed "+ token" chip that inserts its token into the focused pattern. */
+class InsertChip : public juce::Component {
+  public:
+    std::function<void()> onClick;
+
+    explicit InsertChip(juce::String token) : token_(std::move(token)) {
+        setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    }
+
+    int getIdealWidth() const {
+        return juce::GlyphArrangement::getStringWidthInt(
+                   FontManager::getInstance().getMonoFont(12.0f), "+ " + token_) +
+               18;
+    }
+
+    void paint(juce::Graphics& g) override {
+        juce::Path outline;
+        outline.addRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 4.0f);
+        juce::Path dashed;
+        const float dashes[] = {3.0f, 3.0f};
+        juce::PathStrokeType(1.0f).createDashedStroke(dashed, outline, dashes, 2);
+        g.setColour(isMouseOver() ? ActiveTheme::getAccentColour()
+                                  : ActiveTheme::getBorderColour());
+        g.fillPath(dashed);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        g.setFont(FontManager::getInstance().getMonoFont(12.0f));
+        g.drawText("+ " + token_, getLocalBounds(), juce::Justification::centred, false);
+    }
+
+    void mouseEnter(const juce::MouseEvent&) override {
+        repaint();
+    }
+    void mouseExit(const juce::MouseEvent&) override {
+        repaint();
+    }
+    void mouseUp(const juce::MouseEvent& e) override {
+        if (onClick && getLocalBounds().contains(e.getPosition()))
+            onClick();
+    }
+
+  private:
+    juce::String token_;
+};
+
+/// A pattern expanded as the export and bounce code expand it, for the preview line.
+juce::String previewPattern(juce::String pattern, const juce::String& clip,
+                            const juce::String& track) {
+    auto project = ProjectManager::getInstance().getProjectName();
+    if (project.isEmpty())
+        project = "untitled";
+    project = project.replaceCharacters(" /\\:", "____");
+    const auto timestamp = juce::Time::getCurrentTime().formatted("%Y%m%d_%H%M%S");
+    pattern = pattern.replace("<clip-name>", clip.isEmpty() ? project : clip);
+    pattern = pattern.replace("<track-name>", track);
+    pattern = pattern.replace("<project-name>", project);
+    pattern = pattern.replace("<date-time>", timestamp);
+    return pattern.replaceCharacters("/\\:", "___");
+}
+
 class RenderingPage : public juce::Component {
   public:
     RenderingPage() {
-        // --- Output Folder ---
         setupSectionHeader(*this, renderHeader, tr("preferences.section.output"));
 
-        renderFolderLabel.setText(tr("preferences.label.render_output_folder"),
-                                  juce::dontSendNotification);
-        renderFolderLabel.setFont(FontManager::getInstance().getUIFont(12.0f));
-        renderFolderLabel.setColour(juce::Label::textColourId,
-                                    ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-        renderFolderLabel.setJustificationType(juce::Justification::centredLeft);
-        addAndMakeVisible(renderFolderLabel);
+        setupComboLabel(renderFolderLabel, tr("preferences.label.export_folder"));
+        renderFolderNote.setText(tr("preferences.note.export_folder"), juce::dontSendNotification);
+        renderFolderNote.setFont(FontManager::getInstance().getUIFont(11.5f));
+        renderFolderNote.setColour(juce::Label::textColourId,
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        renderFolderNote.setBorderSize({});
+        addAndMakeVisible(renderFolderNote);
 
-        renderFolderValue.setText(tr("preferences.label.default_beside_source"),
-                                  juce::dontSendNotification);
-        renderFolderValue.setFont(FontManager::getInstance().getUIFont(12.0f));
+        folderChoice.setOptions(
+            {tr("preferences.option.documents_folder"), tr("preferences.option.custom_folder")});
+        folderChoice.onChange = [this](int index) {
+            if (index == 0) {
+                renderFolderPath_.clear();
+                showFolder();
+            } else {
+                chooseFolder();
+            }
+        };
+        addAndMakeVisible(folderChoice);
+
+        renderFolderValue.setFont(FontManager::getInstance().getMonoFont(12.0f));
         renderFolderValue.setColour(juce::Label::textColourId,
-                                    ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-        renderFolderValue.setJustificationType(juce::Justification::centredLeft);
+                                    ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         addAndMakeVisible(renderFolderValue);
 
-        renderFolderBrowseButton.setButtonText(trEllipsis("preferences.button.browse"));
-        renderFolderBrowseButton.onClick = [this]() {
-            fileChooser_ = std::make_unique<juce::FileChooser>(
-                tr("preferences.dialog.select_render_output_folder"));
-            fileChooser_->launchAsync(juce::FileBrowserComponent::openMode |
-                                          juce::FileBrowserComponent::canSelectDirectories,
-                                      [this](const juce::FileChooser& fc) {
-                                          auto result = fc.getResult();
-                                          if (result.exists()) {
-                                              renderFolderPath_ =
-                                                  result.getFullPathName().toStdString();
-                                              renderFolderValue.setText(result.getFullPathName(),
-                                                                        juce::dontSendNotification);
-                                          }
-                                      });
-        };
+        renderFolderBrowseButton.setButtonText(trEllipsis("preferences.button.choose"));
+        renderFolderBrowseButton.onClick = [this] { chooseFolder(); };
         addAndMakeVisible(renderFolderBrowseButton);
 
-        renderFolderClearButton.setButtonText(tr("preferences.button.clear"));
-        renderFolderClearButton.onClick = [this]() {
-            renderFolderPath_.clear();
-            renderFolderValue.setText(tr("preferences.label.default_beside_source"),
-                                      juce::dontSendNotification);
-        };
-        addAndMakeVisible(renderFolderClearButton);
-
-        // A project's own length, sample rate and bit depths are per-project (File
-        // > Project Settings), and the values a new project starts from are on
-        // the Defaults tab. Neither belongs here, which is only about where
-        // rendered files go and what they are called.
-
-        // --- File Naming ---
         setupSectionHeader(*this, namingHeader, tr("preferences.section.file_naming"));
-
         setupComboLabel(patternLabel, tr("preferences.label.export_pattern"));
-        patternEditor.setFont(FontManager::getInstance().getUIFont(12.0f));
-        patternEditor.setColour(juce::TextEditor::backgroundColourId,
-                                ActiveTheme::getColour(ActiveTheme::SURFACE));
-        patternEditor.setColour(juce::TextEditor::textColourId,
-                                ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-        patternEditor.setColour(juce::TextEditor::outlineColourId,
-                                ActiveTheme::getColour(ActiveTheme::BORDER));
-        addAndMakeVisible(patternEditor);
-
         setupComboLabel(bouncePatternLabel, tr("preferences.label.bounce_pattern"));
-        bouncePatternEditor.setFont(FontManager::getInstance().getUIFont(12.0f));
-        bouncePatternEditor.setColour(juce::TextEditor::backgroundColourId,
-                                      ActiveTheme::getColour(ActiveTheme::SURFACE));
-        bouncePatternEditor.setColour(juce::TextEditor::textColourId,
-                                      ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-        bouncePatternEditor.setColour(juce::TextEditor::outlineColourId,
-                                      ActiveTheme::getColour(ActiveTheme::BORDER));
-        addAndMakeVisible(bouncePatternEditor);
+        for (auto* field : {&patternField, &bouncePatternField}) {
+            field->onChange = [this] { updatePreviews(); };
+            field->onFocus = [this, field] { focusedField_ = field; };
+            addAndMakeVisible(*field);
+        }
+        for (auto* preview : {&patternPreview, &bouncePreview}) {
+            preview->setFont(FontManager::getInstance().getMonoFont(12.0f));
+            preview->setColour(juce::Label::textColourId,
+                               ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+            addAndMakeVisible(*preview);
+        }
 
-        patternHint.setText(tr("preferences.label.pattern_tokens_hint"),
-                            juce::dontSendNotification);
-        patternHint.setFont(FontManager::getInstance().getUIFont(10.0f));
-        patternHint.setColour(juce::Label::textColourId,
-                              ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-        patternHint.setJustificationType(juce::Justification::centredLeft);
-        addAndMakeVisible(patternHint);
+        insertLabel.setText(tr("preferences.label.insert"), juce::dontSendNotification);
+        insertLabel.setFont(FontManager::getInstance().getUIFont(12.5f));
+        insertLabel.setColour(juce::Label::textColourId,
+                              ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        addAndMakeVisible(insertLabel);
+        for (const auto& token : kPatternTokens) {
+            auto chip = std::make_unique<InsertChip>(token);
+            chip->onClick = [this, token] { focusedField_->insertToken(token); };
+            addAndMakeVisible(*chip);
+            insertChips_.push_back(std::move(chip));
+        }
     }
 
-    static int getPreferredHeight(int) {
-        constexpr int padding = 16;
-        constexpr int rowH = 32;
-        constexpr int headerH = 28;
-        constexpr int secGap = 12;
-
-        return padding + headerH + 4 + rowH + 4 + rowH            // Output folder
-               + secGap + headerH + 4 + rowH + 4 + rowH + 2 + 18  // File naming
-               + padding;
+    int getPreferredHeight(int) const {
+        return 16 + 30 + 52 + 40 + 22 + 30 + 2 * 72 + 44 + 16;
     }
 
     void resized() override {
-        auto bounds = getLocalBounds().reduced(16);
-        const int rowH = 32;
-        const int headerH = 28;
-        const int labelW = 140;
-        const int secGap = 12;
+        rowLines_.clear();
+        auto bounds = getLocalBounds().reduced(0, 16);
+        const auto takeRow = [this](juce::Rectangle<int>& b, int h) {
+            auto row = b.removeFromTop(h);
+            rowLines_.push_back(row.withTop(row.getBottom() - 1));
+            return row;
+        };
 
-        // Output folder
-        renderHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        renderFolderLabel.setBounds(bounds.removeFromTop(rowH));
-        bounds.removeFromTop(4);
+        renderHeader.setBounds(bounds.removeFromTop(30));
         {
-            auto row = bounds.removeFromTop(rowH);
-            auto buttonsArea = row.removeFromRight(140);
+            auto row = takeRow(bounds, 52);
+            folderChoice.setBounds(row.removeFromRight(folderChoice.getIdealWidth())
+                                       .withSizeKeepingCentre(folderChoice.getIdealWidth(), 28));
+            renderFolderLabel.setBounds(row.removeFromTop(26).withTrimmedTop(6));
+            renderFolderNote.setBounds(row.removeFromTop(18));
+        }
+        {
+            auto row = takeRow(bounds, 40).reduced(0, 5);
+            renderFolderBrowseButton.setBounds(row.removeFromRight(100));
+            row.removeFromRight(8);
             renderFolderValue.setBounds(row);
-            renderFolderClearButton.setBounds(buttonsArea.removeFromRight(60).reduced(0, 2));
-            buttonsArea.removeFromRight(4);
-            renderFolderBrowseButton.setBounds(buttonsArea.reduced(0, 2));
         }
-        bounds.removeFromTop(secGap);
 
-        // File naming
-        namingHeader.setBounds(bounds.removeFromTop(headerH));
-        bounds.removeFromTop(4);
-        {
-            auto row = bounds.removeFromTop(rowH);
-            patternLabel.setBounds(row.removeFromLeft(labelW));
-            patternEditor.setBounds(row.reduced(0, 4));
+        bounds.removeFromTop(22);
+        namingHeader.setBounds(bounds.removeFromTop(30));
+        for (auto [label, field, preview] :
+             {std::tuple{&patternLabel, &patternField, &patternPreview},
+              std::tuple{&bouncePatternLabel, &bouncePatternField, &bouncePreview}}) {
+            auto row = takeRow(bounds, 72);
+            auto top = row.removeFromTop(48).withTrimmedTop(8);
+            label->setBounds(top.removeFromLeft(140));
+            field->setBounds(top);
+            preview->setBounds(row.withTrimmedLeft(140).withTrimmedBottom(4));
         }
-        bounds.removeFromTop(4);
-        {
-            auto row = bounds.removeFromTop(rowH);
-            bouncePatternLabel.setBounds(row.removeFromLeft(labelW));
-            bouncePatternEditor.setBounds(row.reduced(0, 4));
+        auto row = bounds.removeFromTop(44).reduced(0, 9);
+        insertLabel.setBounds(row.removeFromLeft(56));
+        for (auto& chip : insertChips_) {
+            chip->setBounds(row.removeFromLeft(chip->getIdealWidth()));
+            row.removeFromLeft(8);
         }
-        bounds.removeFromTop(2);
-        patternHint.setBounds(bounds.removeFromTop(18).withTrimmedLeft(labelW));
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.setColour(ActiveTheme::getBorderColour().withMultipliedAlpha(0.6f));
+        for (const auto& line : rowLines_)
+            g.fillRect(line);
     }
 
     void loadSettings(Config& config) {
-        // Folder
         renderFolderPath_ = config.getRenderFolder();
-        if (renderFolderPath_.empty()) {
-            renderFolderValue.setText(tr("preferences.label.default_beside_source"),
-                                      juce::dontSendNotification);
-        } else {
-            renderFolderValue.setText(juce::String(renderFolderPath_), juce::dontSendNotification);
-        }
-
-        // File patterns
-        patternEditor.setText(juce::String(config.getRenderFilePattern()),
-                              juce::dontSendNotification);
-        bouncePatternEditor.setText(juce::String(config.getBounceFilePattern()),
-                                    juce::dontSendNotification);
+        showFolder();
+        patternField.setPattern(juce::String(config.getRenderFilePattern()));
+        bouncePatternField.setPattern(juce::String(config.getBounceFilePattern()));
+        updatePreviews();
     }
 
     void applySettings(Config& config) {
         config.setRenderFolder(renderFolderPath_);
 
-        auto pattern = patternEditor.getText().toStdString();
+        auto pattern = patternField.getPattern().toStdString();
         if (pattern.empty())
             pattern = "<project-name>_<date-time>";
         config.setRenderFilePattern(pattern);
 
-        auto bouncePattern = bouncePatternEditor.getText().toStdString();
+        auto bouncePattern = bouncePatternField.getPattern().toStdString();
         if (bouncePattern.empty())
             bouncePattern = "<clip-name>_<date-time>";
         config.setBounceFilePattern(bouncePattern);
@@ -1770,22 +2018,59 @@ class RenderingPage : public juce::Component {
   private:
     void setupComboLabel(juce::Label& label, const juce::String& text) {
         label.setText(text, juce::dontSendNotification);
-        label.setFont(FontManager::getInstance().getUIFont(12.0f));
+        label.setFont(FontManager::getInstance().getUIFont(13.0f));
         label.setColour(juce::Label::textColourId,
                         ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         label.setJustificationType(juce::Justification::centredLeft);
+        label.setBorderSize({});
         addAndMakeVisible(label);
     }
 
+    // Export's dialog opens in Documents unless a folder is set (MainWindowExport).
+    void showFolder() {
+        const bool custom = !renderFolderPath_.empty();
+        folderChoice.setSelectedIndex(custom ? 1 : 0);
+        renderFolderValue.setText(
+            custom ? juce::String(renderFolderPath_)
+                   : juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                         .getFullPathName(),
+            juce::dontSendNotification);
+        renderFolderValue.setAlpha(custom ? 1.0f : 0.5f);
+    }
+
+    void chooseFolder() {
+        fileChooser_ = std::make_unique<juce::FileChooser>(
+            tr("preferences.dialog.select_render_output_folder"));
+        fileChooser_->launchAsync(
+            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+            [this](const juce::FileChooser& fc) {
+                if (const auto result = fc.getResult(); result.exists())
+                    renderFolderPath_ = result.getFullPathName().toStdString();
+                showFolder();
+            });
+    }
+
+    void updatePreviews() {
+        const auto arrow = juce::String(juce::CharPointer_UTF8("\xe2\x86\x92 "));
+        patternPreview.setText(arrow + previewPattern(patternField.getPattern(), {}, "master"),
+                               juce::dontSendNotification);
+        bouncePreview.setText(arrow +
+                                  previewPattern(bouncePatternField.getPattern(), "clip", "track"),
+                              juce::dontSendNotification);
+    }
+
     juce::Label renderHeader, namingHeader;
-    juce::Label renderFolderLabel;
+    juce::Label renderFolderLabel, renderFolderNote;
+    magda::daw::ui::PillSegments folderChoice;
     juce::Label renderFolderValue;
     juce::TextButton renderFolderBrowseButton;
-    juce::TextButton renderFolderClearButton;
     std::string renderFolderPath_;
 
-    juce::Label patternLabel, bouncePatternLabel, patternHint;
-    juce::TextEditor patternEditor, bouncePatternEditor;
+    juce::Label patternLabel, bouncePatternLabel, patternPreview, bouncePreview, insertLabel;
+    PatternField patternField, bouncePatternField;
+    PatternField* focusedField_ = &patternField;
+    std::vector<std::unique_ptr<InsertChip>> insertChips_;
+    std::vector<juce::Rectangle<int>> rowLines_;
 
     std::unique_ptr<juce::FileChooser> fileChooser_;
 };
@@ -1973,115 +2258,165 @@ class PathsPage : public juce::Component {
         };
         addAndMakeVisible(captureReset_);
         refreshCaptureFolder();
+        restyle();
     }
 
     static int getPreferredHeight(int) {
-        constexpr int padding = 20;
-        constexpr int rowH = 28;
-        constexpr int gap = 6;
-        constexpr int sectionGap = 18;
-
-        return padding + rowH + gap + rowH + gap + rowH + gap + rowH + sectionGap + rowH + gap +
-               rowH + gap + rowH + gap + rowH + sectionGap + rowH + gap + rowH + sectionGap + rowH +
-               gap + rowH + gap + rowH + gap + rowH + sectionGap + rowH + gap + rowH + sectionGap +
-               rowH + padding;
+        return 16 + 3 * 30 + 2 * 22 + 4 * kRowH + kLinkRowH + 2 * kRowH + kRowH + 16;
     }
 
     void resized() override {
-        auto bounds = getLocalBounds().reduced(20);
-        const int rowH = 28;
-        const int gap = 6;
-        const int sectionGap = 18;
-        const int revealW = 130;
-        const int browseW = 100;
-        const int resetW = 80;
-        const int labelW = 120;
+        rows_.clear();
+        auto bounds = getLocalBounds().reduced(0, 16);
+        const auto buttonW = [](juce::Button& button) {
+            return juce::GlyphArrangement::getStringWidthInt(
+                       FontManager::getInstance().getUIFont(13.5f), button.getButtonText()) +
+                   28;
+        };
+        // One shape per row: name and note over the path, actions on the right.
+        const auto row = [&](Row::Kind kind, int height,
+                             std::initializer_list<juce::Button*> buttons) {
+            auto r = bounds.removeFromTop(height);
+            rows_.push_back({kind, r});
+            auto actions = r.reduced(0, (height - 30) / 2);
+            for (auto it = std::rbegin(buttons); it != std::rend(buttons); ++it) {
+                auto* button = *it;
+                if (!button->isVisible())
+                    continue;
+                button->setBounds(actions.removeFromRight(buttonW(*button)));
+                actions.removeFromRight(6);
+            }
+        };
 
-        // Data section: header → button row (Reveal + Browse + Reset, left-
-        // aligned) → path row (Folder: <value>) → note.
-        dataHeader_.setBounds(bounds.removeFromTop(rowH));
-        bounds.removeFromTop(gap);
-        auto dataButtons = bounds.removeFromTop(rowH);
-        dataReveal_.setBounds(dataButtons.removeFromLeft(revealW));
-        dataButtons.removeFromLeft(gap);
-        dataBrowse_.setBounds(dataButtons.removeFromLeft(browseW));
-        dataButtons.removeFromLeft(gap);
-        dataReset_.setBounds(dataButtons.removeFromLeft(resetW));
-        bounds.removeFromTop(gap);
-        auto dataPathRow = bounds.removeFromTop(rowH);
-        dataLabel_.setBounds(dataPathRow.removeFromLeft(60));
-        dataValue_.setBounds(dataPathRow);
-        bounds.removeFromTop(gap);
-        dataNote_.setBounds(bounds.removeFromTop(rowH));
+        dataHeader_.setBounds(bounds.removeFromTop(30));
+        row(Row::Kind::Data, kRowH, {&dataReset_, &dataReveal_, &dataBrowse_});
+        row(Row::Kind::Presets, kRowH, {&presetsReset_, &presetsReveal_, &presetsBrowse_});
+        row(Row::Kind::Capture, kRowH, {&captureReset_, &captureReveal_, &captureBrowse_});
+        row(Row::Kind::Render, kLinkRowH, {&renderLink_});
 
-        bounds.removeFromTop(sectionGap);
+        bounds.removeFromTop(22);
+        dbHeader_.setBounds(bounds.removeFromTop(30));
+        row(Row::Kind::Database, kRowH, {&dbReset_, &dbReveal_, &dbBrowse_});
+        row(Row::Kind::Index, kRowH, {&indexPresetsButton_, &wipeButton_});
 
-        // Presets section
-        presetsHeader_.setBounds(bounds.removeFromTop(rowH));
-        bounds.removeFromTop(gap);
-        auto presetsButtons = bounds.removeFromTop(rowH);
-        presetsReveal_.setBounds(presetsButtons.removeFromLeft(revealW));
-        presetsButtons.removeFromLeft(gap);
-        presetsBrowse_.setBounds(presetsButtons.removeFromLeft(browseW));
-        presetsButtons.removeFromLeft(gap);
-        presetsReset_.setBounds(presetsButtons.removeFromLeft(resetW));
-        bounds.removeFromTop(gap);
-        auto presetsPathRow = bounds.removeFromTop(rowH);
-        presetsLabel_.setBounds(presetsPathRow.removeFromLeft(60));
-        presetsValue_.setBounds(presetsPathRow);
-        bounds.removeFromTop(gap);
-        presetsNote_.setBounds(bounds.removeFromTop(rowH));
+        bounds.removeFromTop(22);
+        editorHeader_.setBounds(bounds.removeFromTop(30));
+        row(Row::Kind::Editor, kRowH, {&editorReset_, &editorBrowse_});
+    }
 
-        bounds.removeFromTop(sectionGap);
+    void paint(juce::Graphics& g) override {
+        const auto home =
+            juce::File::getSpecialLocation(juce::File::userHomeDirectory).getFullPathName();
+        const auto shorten = [&home](const juce::String& path) {
+            return path.startsWith(home) ? "~" + path.substring(home.length()) : path;
+        };
+        for (const auto& r : rows_) {
+            g.setColour(ActiveTheme::getBorderColour().withMultipliedAlpha(0.6f));
+            g.fillRect(r.bounds.withTop(r.bounds.getBottom() - 1));
 
-        // External editor section
-        editorHeader_.setBounds(bounds.removeFromTop(rowH));
-        bounds.removeFromTop(gap);
-        auto editorRow = bounds.removeFromTop(rowH);
-        editorLocationCaption_.setBounds(editorRow.removeFromLeft(labelW));
-        editorReset_.setBounds(editorRow.removeFromRight(70).reduced(0, 1));
-        editorRow.removeFromRight(4);
-        editorBrowse_.setBounds(editorRow.removeFromRight(90).reduced(0, 1));
-        editorRow.removeFromRight(4);
-        editorLocationField_.setBounds(editorRow.reduced(0, 1));
+            juce::String title, note, path, state;
+            bool restart = false;
+            switch (r.kind) {
+                case Row::Kind::Data:
+                    title = tr("preferences.paths.row.data");
+                    note = tr("preferences.paths.desc.data");
+                    path = dataPath_.empty() ? magda::paths::alwaysOSDefault().getFullPathName()
+                                             : juce::String(dataPath_);
+                    state = stateText(!dataPath_.empty());
+                    restart = dataDirChanged();
+                    break;
+                case Row::Kind::Presets:
+                    title = tr("preferences.paths.row.presets");
+                    note = tr("preferences.paths.desc.presets");
+                    path = presetsPath_.empty() ? presetsDefaultDir().getFullPathName()
+                                                : juce::String(presetsPath_);
+                    state = stateText(!presetsPath_.empty());
+                    break;
+                case Row::Kind::Capture:
+                    title = tr("preferences.paths.row.capture");
+                    note = tr("preferences.paths.desc.capture");
+                    path = captureDir_.empty() ? tr("preferences.paths.system_temp")
+                                               : juce::String(captureDir_);
+                    state = stateText(!captureDir_.empty());
+                    break;
+                case Row::Kind::Render:
+                    title = tr("preferences.paths.row.render");
+                    break;
+                case Row::Kind::Database:
+                    title = tr("preferences.paths.row.location");
+                    path = dbLocationField_.getText();
+                    state = stateText(!dbDir_.empty());
+                    break;
+                case Row::Kind::Index:
+                    title =
+                        tr("preferences.paths.files_indexed").replace("{0}", juce::String(files_));
+                    note = tr("preferences.paths.embeddings")
+                               .replace("{0}", juce::String(embeddings_));
+                    break;
+                case Row::Kind::Editor:
+                    title = tr("preferences.paths.row.editor");
+                    path = editorPath_.empty() ? tr("preferences.paths.not_set")
+                                               : juce::String(editorPath_);
+                    break;
+            }
 
-        bounds.removeFromTop(sectionGap);
-
-        // Media database section
-        dbHeader_.setBounds(bounds.removeFromTop(rowH));
-        bounds.removeFromTop(gap);
-        auto dbLocRow = bounds.removeFromTop(rowH);
-        dbLocationCaption_.setBounds(dbLocRow.removeFromLeft(labelW));
-        dbReset_.setBounds(dbLocRow.removeFromRight(70).reduced(0, 1));
-        dbLocRow.removeFromRight(4);
-        dbBrowse_.setBounds(dbLocRow.removeFromRight(90).reduced(0, 1));
-        dbLocRow.removeFromRight(4);
-        dbLocationField_.setBounds(dbLocRow.reduced(0, 1));
-        bounds.removeFromTop(gap);
-
-        dbStats_.setBounds(bounds.removeFromTop(20));
-        bounds.removeFromTop(gap);
-
-        auto dbActionRow = bounds.removeFromTop(rowH);
-        wipeButton_.setBounds(dbActionRow.removeFromLeft(180));
-        dbActionRow.removeFromLeft(gap);
-        indexPresetsButton_.setBounds(dbActionRow.removeFromLeft(160));
-
-        bounds.removeFromTop(sectionGap);
-
-        captureHeader_.setBounds(bounds.removeFromTop(rowH));
-        bounds.removeFromTop(gap);
-        auto captureRow = bounds.removeFromTop(rowH);
-        captureLocationCaption_.setBounds(captureRow.removeFromLeft(labelW));
-        captureReset_.setBounds(captureRow.removeFromRight(70).reduced(0, 1));
-        captureRow.removeFromRight(4);
-        captureBrowse_.setBounds(captureRow.removeFromRight(90).reduced(0, 1));
-        captureRow.removeFromRight(4);
-        captureLocationField_.setBounds(captureRow.reduced(0, 1));
-
-        bounds.removeFromTop(sectionGap);
-
-        renderHint_.setBounds(bounds.removeFromTop(rowH));
+            auto text = r.bounds.withTrimmedRight(300);
+            const bool twoLines = path.isNotEmpty() || r.kind == Row::Kind::Index;
+            auto top =
+                twoLines ? text.removeFromTop(r.bounds.getHeight() / 2).withTrimmedTop(4) : text;
+            const auto titleFont = FontManager::getInstance().getUIFont(13.0f);
+            g.setFont(titleFont);
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+            const int titleW = juce::GlyphArrangement::getStringWidthInt(titleFont, title) + 10;
+            g.drawText(title, top.removeFromLeft(titleW),
+                       twoLines ? juce::Justification::bottomLeft
+                                : juce::Justification::centredLeft,
+                       true);
+            const auto small = FontManager::getInstance().getUIFont(11.5f);
+            if (r.kind != Row::Kind::Index && note.isNotEmpty()) {
+                g.setFont(small);
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+                const int noteW = juce::GlyphArrangement::getStringWidthInt(small, note) + 10;
+                g.drawText(note, top.removeFromLeft(noteW), juce::Justification::bottomLeft, true);
+            }
+            if (restart) {
+                const auto badgeText = tr("preferences.paths.restart_to_apply");
+                const int w = juce::GlyphArrangement::getStringWidthInt(small, badgeText) + 14;
+                const auto badge = top.removeFromLeft(w)
+                                       .withTrimmedBottom(1)
+                                       .withHeight(18)
+                                       .withY(top.getBottom() - 19)
+                                       .toFloat();
+                const auto amber = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
+                g.setColour(amber.withAlpha(0.12f));
+                g.fillRoundedRectangle(badge, 3.0f);
+                g.setColour(amber);
+                g.drawRoundedRectangle(badge.reduced(0.5f), 3.0f, 1.0f);
+                g.setFont(small);
+                g.drawText(badgeText, badge, juce::Justification::centred, false);
+            }
+            if (!twoLines)
+                continue;
+            if (r.kind == Row::Kind::Index) {
+                g.setFont(small);
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+                g.drawText(note, text.withTrimmedBottom(4), juce::Justification::topLeft, true);
+                continue;
+            }
+            const auto mono = FontManager::getInstance().getMonoFont(12.0f);
+            g.setFont(mono);
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+            const auto shown = shorten(path);
+            const int pathW = juce::jmin(
+                text.getWidth() - 70, juce::GlyphArrangement::getStringWidthInt(mono, shown) + 10);
+            auto line = text.withTrimmedBottom(4);
+            g.drawText(shown, line.removeFromLeft(pathW), juce::Justification::topLeft, true);
+            if (state.isNotEmpty()) {
+                g.setFont(small);
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+                g.drawText(state, line, juce::Justification::topLeft, true);
+            }
+        }
     }
 
     enum class Kind { Data, Presets };
@@ -2264,6 +2599,7 @@ class PathsPage : public juce::Component {
     }
 
     void updateDisplay() {
+        showStates();
         if (dataPath_.empty()) {
             dataValue_.setText("default: " + magda::paths::alwaysOSDefault().getFullPathName(),
                                juce::dontSendNotification);
@@ -2300,13 +2636,14 @@ class PathsPage : public juce::Component {
             files = probe.totalFiles();
             embeddings = probe.totalEmbeddings();
         }
-        dbStats_.setText(juce::String(files) + " indexed files, " + juce::String(embeddings) +
-                             " audio embeddings",
-                         juce::dontSendNotification);
+        files_ = files;
+        embeddings_ = embeddings;
+        showStates();
         wipeButton_.setEnabled(files > 0);
     }
 
     void refreshCaptureFolder() {
+        showStates();
         const juce::String folder(captureDir_);
         captureLocationField_.setText(folder.isEmpty() ? juce::String("System temp folder")
                                                        : folder,
@@ -2483,6 +2820,75 @@ class PathsPage : public juce::Component {
     juce::TextButton captureReset_;
 
     std::unique_ptr<juce::FileChooser> fileChooser_;
+
+    struct Row {
+        enum class Kind { Data, Presets, Capture, Render, Database, Index, Editor };
+        Kind kind;
+        juce::Rectangle<int> bounds;
+    };
+    static constexpr int kRowH = 54;
+    static constexpr int kLinkRowH = 40;
+    std::vector<Row> rows_;
+    juce::TextButton captureReveal_, dbReveal_, renderLink_;
+    int files_ = 0;
+    int embeddings_ = 0;
+
+    static juce::String stateText(bool custom) {
+        return tr(custom ? "preferences.paths.custom" : "preferences.paths.default");
+    }
+
+    // The old one-line captions and notes; the rows now paint their own text.
+    void restyle() {
+        for (juce::Component* c : std::initializer_list<juce::Component*>{
+                 &dataLabel_, &dataValue_, &dataNote_, &presetsHeader_, &presetsLabel_,
+                 &presetsValue_, &presetsNote_, &renderHint_, &editorLocationCaption_,
+                 &editorLocationField_, &dbLocationCaption_, &dbLocationField_, &dbStats_,
+                 &captureHeader_, &captureLocationCaption_, &captureLocationField_})
+            c->setVisible(false);
+
+        dataHeader_.setText(tr("preferences.paths.section.folders"), juce::dontSendNotification);
+        dbHeader_.setText(tr("preferences.paths.section.media_db"), juce::dontSendNotification);
+        editorHeader_.setText(tr("preferences.paths.section.apps"), juce::dontSendNotification);
+
+        for (auto* reveal : {&dataReveal_, &presetsReveal_, &captureReveal_, &dbReveal_})
+            reveal->setButtonText(tr("preferences.button.reveal"));
+        for (auto* change : {&dataBrowse_, &presetsBrowse_, &captureBrowse_, &dbBrowse_})
+            change->setButtonText(trEllipsis("preferences.button.change"));
+        for (auto* reset : {&dataReset_, &presetsReset_, &captureReset_, &dbReset_}) {
+            reset->setButtonText(tr("preferences.button.use_default"));
+            magda::daw::ui::SettingsLookAndFeel::markLinkButton(*reset);
+        }
+        editorBrowse_.setButtonText(trEllipsis("preferences.button.choose_app"));
+        editorReset_.setButtonText(tr("preferences.button.remove"));
+        magda::daw::ui::SettingsLookAndFeel::markLinkButton(editorReset_);
+        wipeButton_.setButtonText(trEllipsis("preferences.button.wipe_database"));
+        MagdaAlertWindow::setRole(wipeButton_, MagdaAlertWindow::ButtonRole::Destructive);
+        indexPresetsButton_.setButtonText(tr("preferences.button.index_presets"));
+
+        captureReveal_.onClick = [this] {
+            revealConfigured(captureDir_,
+                             juce::File::getSpecialLocation(juce::File::tempDirectory));
+        };
+        addAndMakeVisible(captureReveal_);
+        dbReveal_.onClick = [this] { juce::File(dbLocationField_.getText()).revealToUser(); };
+        addAndMakeVisible(dbReveal_);
+
+        renderLink_.setButtonText(tr("preferences.paths.set_in_rendering"));
+        magda::daw::ui::SettingsLookAndFeel::markLinkButton(renderLink_);
+        renderLink_.onClick = [] { openSettings(SettingsSectionId::Rendering); };
+        addAndMakeVisible(renderLink_);
+    }
+
+    // Use default only where there is something to reset; refresh the painted rows.
+    void showStates() {
+        dataReset_.setVisible(!dataPath_.empty());
+        presetsReset_.setVisible(!presetsPath_.empty());
+        captureReset_.setVisible(!captureDir_.empty());
+        dbReset_.setVisible(!dbDir_.empty());
+        editorReset_.setVisible(!editorPath_.empty());
+        resized();
+        repaint();
+    }
 };
 
 // ---- Shortcuts tab ---------------------------------------------------------
@@ -3363,8 +3769,11 @@ MainWindow* findMainWindow() {
 /** @brief A Preferences page shown as a section with one scrolling tab. */
 template <typename Page> class PageSection : public SettingsSection {
   public:
-    PageSection(SettingsSectionId id, juce::String title)
-        : SettingsSection(id), title_(std::move(title)) {}
+    template <typename... PageArgs>
+    PageSection(SettingsSectionId id, juce::String title, PageArgs&&... pageArgs)
+        : SettingsSection(id),
+          page_(std::forward<PageArgs>(pageArgs)...),
+          title_(std::move(title)) {}
 
     juce::String getTitle() const override {
         return title_;
@@ -3521,15 +3930,15 @@ class ShortcutsSection : public SettingsSection {
 }  // namespace
 
 std::vector<std::unique_ptr<SettingsSection>> createPreferencesSections(
-    juce::ApplicationCommandManager* commandManager) {
+    juce::ApplicationCommandManager* commandManager, AudioEngine* audioEngine) {
     std::vector<std::unique_ptr<SettingsSection>> sections;
     sections.push_back(std::make_unique<GeneralSection>());
     sections.push_back(std::make_unique<AppearanceSection>());
     sections.push_back(std::make_unique<PageSection<RenderingPage>>(
         SettingsSectionId::Rendering, tr("preferences.tab.rendering")));
     sections.push_back(std::make_unique<PathsSection>());
-    sections.push_back(std::make_unique<PageSection<DefaultsPage>>(SettingsSectionId::Defaults,
-                                                                   tr("preferences.tab.defaults")));
+    sections.push_back(std::make_unique<PageSection<DefaultsPage>>(
+        SettingsSectionId::Defaults, tr("preferences.tab.defaults"), audioEngine));
     sections.push_back(std::make_unique<ShortcutsSection>(commandManager));
     return sections;
 }

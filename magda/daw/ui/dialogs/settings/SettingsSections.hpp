@@ -15,7 +15,7 @@ class AudioEngine;
 
 /** @brief General, Appearance, Rendering, Paths, Defaults and Shortcuts. */
 std::vector<std::unique_ptr<SettingsSection>> createPreferencesSections(
-    juce::ApplicationCommandManager* commandManager);
+    juce::ApplicationCommandManager* commandManager, AudioEngine* audioEngine);
 std::unique_ptr<SettingsSection> createAudioMidiSection(AudioEngine* audioEngine);
 std::unique_ptr<SettingsSection> createControllersSection();
 std::unique_ptr<SettingsSection> createConnectionsSection();
