@@ -1299,10 +1299,11 @@ void PluginManager::pollAsyncPluginLoad(const ChainNodePath& devicePath,
                 sdIt->second.isPendingLoad = false;
         }
 
-        bool loaded = ext->getLoadError().isEmpty();
-        if (auto* devInfo = getDeviceInfoForPath(devicePath)) {
-            devInfo->loadState = loaded ? DeviceLoadState::Loaded : DeviceLoadState::Failed;
-        }
+        const bool loaded = ext->getLoadError().isEmpty();
+        if (!loaded)
+            self.reportLoadFailure(trackId, *ext, getDeviceInfoForPath(devicePath));
+        else if (auto* devInfo = getDeviceInfoForPath(devicePath))
+            devInfo->loadState = DeviceLoadState::Loaded;
 
         if (loaded) {
             // Apply bypass state (device flag gated by the track chain power)
@@ -1380,6 +1381,20 @@ void PluginManager::pollAsyncPluginLoad(const ChainNodePath& devicePath,
         // Notify so AudioBridge re-syncs infrastructure and UI rebuilds
         if (self.onAsyncPluginLoaded)
             self.onAsyncPluginLoaded(trackId);
+    });
+}
+
+void PluginManager::reportLoadFailure(TrackId trackId, te::ExternalPlugin& plugin,
+                                      DeviceInfo* device) {
+    juce::Logger::writeToLog("Plugin \"" + plugin.getName() +
+                             "\" failed to load: " + plugin.getLoadError());
+    if (device != nullptr)
+        device->loadState = DeviceLoadState::Failed;
+
+    // Deferred: this runs mid-sync, before the caller records the device as synced.
+    juce::MessageManager::callAsync([weakThis = juce::WeakReference<PluginManager>(this), trackId] {
+        if (weakThis != nullptr && weakThis->onAsyncPluginLoaded)
+            weakThis->onAsyncPluginLoaded(trackId);
     });
 }
 
@@ -2201,6 +2216,11 @@ void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
     if (!plugin)
         return;
 
+    if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get()); ext && ext->isMissing()) {
+        reportLoadFailure(devicePath.trackId, *ext, canonical);
+        return;
+    }
+
     // What the plugin reports, onto the canonical DeviceInfo. Before the
     // processor below, since this has to run even when no processor could be
     // made: the counts come off the plugin, not off the processor. Every
@@ -2341,6 +2361,11 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
                 if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
                     if (ext->isInitialisingAsync()) {
                         return plugin;  // Return bare wrapper; async poll handles the rest
+                    }
+                    // Kept as synced, so the next sync doesn't ask the plugin again.
+                    if (ext->isMissing()) {
+                        reportLoadFailure(trackId, *ext, getDeviceInfoForPath(devicePath));
+                        return plugin;
                     }
                     // Sync plugin already created — re-apply state now. (The
                     // authoritative restore + param-cache refresh happens after

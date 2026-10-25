@@ -421,6 +421,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // A device that applied edits wakes the same drain (#2651).
         loader_.onWoken([this] { plane_.settleParameterEdits(); });
 
+        loader_.onFailed([this](engine::DeviceKey key) { markLoadFailed(key); });
+
         // A tap read late loses nothing, since the peak is held until
         // something takes it, so this is how smooth a meter looks.
         startTimer(kMeterIntervalMs);
@@ -3101,6 +3103,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return;
 
         *device = resolved;
+        device->loadState = DeviceLoadState::Loaded;
         applyRestoredParameters(*device, restored);
 
         // Asked with the segment, because a DeviceId is section-local and on
@@ -3129,6 +3132,18 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // Last, so the plan that binds the loader's instance is compiled from
         // the model as corrected above.
         wantPlan();
+    }
+
+    /// The slot shows "Failed to load"; the loader has logged the reason (#3150).
+    void markLoadFailed(engine::DeviceKey key) {
+        auto* device = modelDevice(key);
+        if (device == nullptr)
+            return;
+
+        device->loadState = DeviceLoadState::Failed;
+        const auto path = TrackManager::getInstance().findDevicePath(key.deviceId, key.segment);
+        if (path.isValid())
+            TrackManager::getInstance().notifyTrackDevicesChanged(path.trackId);
     }
 
     // ===== What the plugins hold =====

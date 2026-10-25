@@ -590,10 +590,17 @@ class StubFormat final : public juce::AudioPluginFormat {
 
     juce::PluginDescription requested;
 
+    /// What a plugin that won't open another instance answers (#3150); empty opens one.
+    juce::String refusal;
+
   private:
     void createPluginInstance(const juce::PluginDescription& description, double, int,
                               PluginCreationCallback callback) override {
         requested = description;
+        if (refusal.isNotEmpty()) {
+            callback(nullptr, refusal);
+            return;
+        }
         auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
         created = plugin.get();
         callback(std::move(plugin), {});
@@ -4408,6 +4415,36 @@ TEST_CASE("An external plugin a live plan names is loaded and handed over",
 
     CHECK(loader.device(slot.key(), slot.model) != nullptr);
     CHECK(loader.held() == 0);
+}
+
+TEST_CASE("A plugin that refuses its instance is reported once", "[engine][external][host][3150]") {
+    juce::ScopedJuceInitialiser_GUI juce;
+
+    LiveSlot slot;
+    slot.install();
+    slot.format->refusal = "only one instance allowed";
+
+    host::ExternalPluginLoader loader([&slot](magda::engine::DeviceKey) { return &slot.model; },
+                                      [](magda::engine::DeviceKey, const magda::DeviceInfo&,
+                                         const std::vector<magda::RestoredParameter>&) {});
+
+    std::vector<magda::engine::DeviceKey> failed;
+    loader.onFailed([&failed](magda::engine::DeviceKey key) { failed.push_back(key); });
+
+    loader.setServices(&slot.formats, &slot.known);
+    loader.setContext(contextFor());
+    loader.syncAssignments({{slot.key(), slot.model}});
+    CHECK(loader.device(slot.key(), slot.model) == nullptr);
+    dispatchPendingLoads();
+
+    REQUIRE(failed.size() == 1);
+    CHECK(failed.front() == slot.key());
+
+    // Spent: a later publish neither asks the plugin again nor reports again.
+    CHECK(loader.device(slot.key(), slot.model) == nullptr);
+    dispatchPendingLoads();
+    CHECK(failed.size() == 1);
+    CHECK(loader.loading() == 0);
 }
 
 TEST_CASE("A loaded plugin's own edits reach the sink through the loader's drain",
