@@ -73,6 +73,13 @@ inline void layoutCaptioned(juce::Label& caption, LinkableTextSlider& value,
     }
 }
 
+/// A tile's caption and value inside its painted cell at @p tile, with FM's insets and fonts.
+inline void layoutTile(juce::Label& caption, LinkableTextSlider& value, juce::Rectangle<int> tile,
+                       int insetX = 9) {
+    layoutCaptioned(caption, value, tile.reduced(insetX, 4),
+                    FontManager::getInstance().getUIFont(12.0f), 15.0f);
+}
+
 /// The cell behind a tile's caption and value: the grid cell's fill and border.
 inline void paint(juce::Graphics& g, juce::Rectangle<int> tile, float corner = 5.0f) {
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));

@@ -12,7 +12,7 @@ namespace magda::daw::audio {
 
 //==============================================================================
 /**
- * @brief MAGDA's native convolution device (IR Reverb).
+ * @brief MAGDA's native convolution device (Convolution, formerly IR Reverb).
  *
  * Loads a user-supplied impulse response and convolves the track signal with
  * it, followed by a high pass / low pass pair and an output trim, mixed back
@@ -69,7 +69,7 @@ class MagdaConvolutionPlugin : public MagdaDevice {
     };
 
     static const char* getPluginName() {
-        return "IR Reverb";
+        return "Convolution";
     }
     static const char* xmlTypeName;
 
@@ -89,6 +89,10 @@ class MagdaConvolutionPlugin : public MagdaDevice {
 
     /** Loads an impulse response from an encoded audio file held in memory. */
     bool loadImpulseResponse(const void* sourceData, size_t sourceDataSize);
+
+    /// Decode an encoded IR, as irData() holds it, into @p out at its own @p sampleRate.
+    static bool decodeImpulseResponse(const juce::MemoryBlock& encoded,
+                                      juce::AudioBuffer<float>& out, double& sampleRate);
 
     /// The loaded IR's display name. Not used by the DSP; the custom UI shows it.
     /// The encoded impulse response the device holds; empty when it holds none.

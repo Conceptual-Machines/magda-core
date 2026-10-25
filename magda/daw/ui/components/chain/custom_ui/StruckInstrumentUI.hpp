@@ -58,6 +58,7 @@ class StruckInstrumentUI : public juce::Component, private juce::Timer {
     struct Control {
         std::unique_ptr<juce::Label> label;
         std::unique_ptr<LinkableTextSlider> slider;
+        juce::Rectangle<int> tile;  ///< The painted cell behind the caption and value.
     };
 
     void timerCallback() override;

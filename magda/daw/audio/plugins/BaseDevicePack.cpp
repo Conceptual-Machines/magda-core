@@ -92,7 +92,8 @@ constexpr const char* kConvolutionTags[] = {"convolution", "impulse-response"};
 // The other eight retired devices declare theirs on their compiled specs.
 // One spelling only: lookup is case-insensitive, and registerPlugin rejects a
 // spec whose own aliases collide that way.
-constexpr const char* kConvolutionLoadAliases[] = {"impulseResponse"};
+// "IR Reverb" is the device's name before it became Convolution, kept so agents still find it.
+constexpr const char* kConvolutionLoadAliases[] = {"impulseResponse", "IR Reverb"};
 constexpr const char* kFaustTags[] = {"faust"};
 constexpr const char* kFaustInstrumentTags[] = {"faust-instrument"};
 constexpr const char* kOscilloscopeTags[] = {"analysis", "analyzer-popout", "post-fx-analysis-0"};
@@ -261,11 +262,11 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .createDevice = createDevice<SpectralFxPlugin>});
     add(registry,
         {.pluginId = MagdaConvolutionPlugin::xmlTypeName,
-         .displayName = "IR Reverb",
+         .displayName = "Convolution",
          .browserCategory = "Reverb",
          .description =
-             "Convolution reverb: loads an impulse response of a room, a plate or a resonant "
-             "body and plays the signal through it, with cutoff filters and a dry/wet mix.",
+             "Plays the signal through a loaded impulse response: a room, a plate, a cabinet or a "
+             "resonant body, with cutoff filters and a dry/wet mix.",
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
          .loadAliases = kConvolutionLoadAliases,
          .loadAliasCount = static_cast<int>(std::size(kConvolutionLoadAliases)),

@@ -64,6 +64,7 @@ class HaloUI : public juce::Component {
     struct Control {
         std::unique_ptr<juce::Label> label;
         std::unique_ptr<LinkableTextSlider> slider;
+        juce::Rectangle<int> tile;  ///< The painted cell behind the caption and value.
     };
 
     void layoutRow(juce::Rectangle<int> row, const std::vector<int>& indices);

@@ -533,7 +533,7 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     if (spectralFxUI_)
         return 520;  // spectrogram + six-control row
     if (impulseResponseUI_)
-        return 350;
+        return 520;  // IR waveform + FILTER response | OUTPUT
     if (stepSequencerUI_)
         return stepSequencerUI_->preferredWidth();
     if (polyStepSequencerUI_)
@@ -2150,8 +2150,10 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
         impulseResponseUI_->updateFromParameters(device.parameters);
 
         auto rendered = liveDevice();
-        if (const auto* ir = dynamic_cast<daw::audio::MagdaConvolutionPlugin*>(rendered.get()))
+        if (const auto* ir = dynamic_cast<daw::audio::MagdaConvolutionPlugin*>(rendered.get())) {
             impulseResponseUI_->setIRName(ir->irName());
+            impulseResponseUI_->setImpulseResponse(ir->irData());
+        }
     }
 }
 

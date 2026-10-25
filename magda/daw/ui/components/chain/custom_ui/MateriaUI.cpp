@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "custom_ui/SamplerTiles.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -17,6 +18,15 @@ const juce::Colour cBow{0xffc9c9d0};
 const juce::Colour cBlow{0xffe0556f};
 const juce::Colour cStrike{0xff45c8d0};
 const juce::Colour kReso{0xff5b8fd0};
+
+constexpr int kPanelGap = 8;
+constexpr int kPanelPadY = 8;
+/// Less under the last row than over the title: the slot's edge frames it (#3144).
+constexpr int kPanelPadBottom = 4;
+constexpr int kTitleH = 18;
+constexpr int kVoiceH = 74;
+
+constexpr int kTileGap = 6;
 
 bool isPitch(int i) {
     return i == 15;
@@ -45,10 +55,10 @@ MateriaUI::MateriaUI() {
         c.label = std::make_unique<juce::Label>();
         c.label->setText(name, juce::dontSendNotification);
         c.label->setColour(juce::Label::textColourId, kDim);
-        c.label->setFont(FontManager::getInstance().getUIFont(11.0f));
         addAndMakeVisible(*c.label);
 
         c.slider = std::make_unique<LinkableTextSlider>(TextSlider::Format::Decimal);
+        sampler_tiles::styleValue(*c.slider);
         c.slider->setParamIndex(idx);
         c.slider->setTextColour(accent);
         if (isPitch(idx)) {
@@ -140,7 +150,7 @@ void MateriaUI::paint(juce::Graphics& g) {
 
     panel(voiceArea_);
     {
-        auto t = voiceArea_.reduced(14, 8);
+        auto t = voiceArea_.reduced(14, kPanelPadY);
         g.setColour(kText);
         g.setFont(FontManager::getInstance().getUIFontBold(10.5f));
         g.drawText("VOICE", t.removeFromTop(14), juce::Justification::topLeft);
@@ -165,7 +175,7 @@ void MateriaUI::paint(juce::Graphics& g) {
         caption("OUTPUT", 4, 2);
     }
     panel(exciterArea_);
-    titleStrip(g, exciterArea_.reduced(14, 10), "EXCITER", "");
+    titleStrip(g, exciterArea_.reduced(14, kPanelPadY), "EXCITER", "");
     {
         // Label the bow / blow / strike columns in their accent colours, with
         // vertical dividers between them.
@@ -185,7 +195,11 @@ void MateriaUI::paint(juce::Graphics& g) {
         cap("STRIKE", 2, cStrike);
     }
     panel(resonatorArea_);
-    titleStrip(g, resonatorArea_.reduced(14, 10), "RESONATOR", "modal - 64 partials");
+    titleStrip(g, resonatorArea_.reduced(14, kPanelPadY), "RESONATOR", "modal - 64 partials");
+
+    for (const auto& c : controls_)
+        if (c.slider != nullptr && !c.tile.isEmpty())
+            sampler_tiles::paint(g, c.tile, 4.0f);
 
     // Excitation-blend triangle: the dot is the barycentre of the live
     // bow/blow/strike levels; drag it to set the three at once.
@@ -319,45 +333,43 @@ void MateriaUI::mouseDrag(const juce::MouseEvent& e) {
 void MateriaUI::layoutRows(juce::Rectangle<int> area, const std::vector<int>& indices, int rowH,
                            int gap) {
     for (int idx : indices) {
-        auto row = area.removeFromTop(rowH);
         auto& c = controls_[static_cast<size_t>(idx)];
-        c.label->setBounds(row.removeFromTop(14));
-        c.slider->setBounds(row.reduced(0, 1));
+        c.tile = area.removeFromTop(rowH);
+        sampler_tiles::layoutTile(*c.label, *c.slider, c.tile, 7);
         area.removeFromTop(gap);
     }
 }
 
 void MateriaUI::resized() {
-    // The chain row stretches us to the full panel height, so the layout is
-    // height-elastic: the two visualisations absorb the slack while the control
-    // stacks sit centred in their columns, shrinking only when the panel is short.
+    // The visualisations absorb the slack while the control stacks sit centred in their
+    // columns, shrinking only when the panel is short.
     constexpr int kRowH = 44;
-    constexpr int kGap = 8;
+    constexpr int kGap = 6;
 
-    auto r = getLocalBounds().reduced(8);
+    // Padded at the sides only: the header above and the slot's edge below frame the panels.
+    auto r = getLocalBounds().reduced(kPanelGap, 0);
 
-    voiceArea_ = r.removeFromTop(78);
-    r.removeFromTop(8);
+    voiceArea_ = r.removeFromTop(kVoiceH);
+    r.removeFromTop(kPanelGap);
 
     auto body = r;
-    exciterArea_ = body.removeFromLeft(body.getWidth() / 2 - 4);
-    body.removeFromLeft(8);
+    exciterArea_ = body.removeFromLeft(body.getWidth() / 2 - kPanelGap / 2);
+    body.removeFromLeft(kPanelGap);
     resonatorArea_ = body;
 
     // VOICE: zone-captioned value boxes in a row (caption strip + boxes form the
     // segmented band painted with dividers).
     {
-        auto a = voiceArea_.reduced(14, 8);
+        auto a = voiceArea_.reduced(14, kPanelPadY);
         a.removeFromTop(14);  // title strip
         voiceZonesArea_ = a;
         a.removeFromTop(13);  // zone-caption strip
         const std::array<int, 6> order{kContour, kSignature, kPitch, kFine, kLevel, kVelAmp};
         int cellW = a.getWidth() / 6;
         for (int k = 0; k < 6; ++k) {
-            auto cell = a.removeFromLeft(cellW).reduced(6, 0);
             auto& c = controls_[static_cast<size_t>(order[static_cast<size_t>(k)])];
-            c.label->setBounds(cell.removeFromTop(12));
-            c.slider->setBounds(cell.removeFromTop(26));
+            c.tile = a.removeFromLeft(cellW).reduced(kTileGap / 2, 0);
+            sampler_tiles::layoutTile(*c.label, *c.slider, c.tile);
         }
     }
 
@@ -369,12 +381,18 @@ void MateriaUI::resized() {
         return juce::Rectangle<int>(col.getX(), top, col.getWidth(), stackH);
     };
 
+    auto bodyPanel = [](juce::Rectangle<int> panel) {
+        auto a = panel.reduced(12, kPanelPadY).withTrimmedBottom(kPanelPadBottom - kPanelPadY);
+        a.removeFromTop(kTitleH);
+        return a;
+    };
+
     // EXCITER: blend pad on the LEFT, Bow/Blow/Strike columns beside it. The pad
     // fills the full height; the columns centre their rows against a 3-row grid.
+    int rowH = kRowH;
     {
-        auto a = exciterArea_.reduced(12, 10);
-        a.removeFromTop(22);
-        blendArea_ = a.removeFromLeft(juce::jmax(120, a.getWidth() * 4 / 9));
+        auto a = bodyPanel(exciterArea_);
+        blendArea_ = a.removeFromLeft(juce::jmax(110, a.getWidth() * 3 / 8));
         a.removeFromLeft(10);
         exciterColsArea_ = a;  // caption strip + the three columns
         a.removeFromTop(15);   // column-label strip
@@ -383,7 +401,7 @@ void MateriaUI::resized() {
         blowCol_ = a.removeFromLeft(colW).reduced(3, 0);
         strikeCol_ = a.reduced(3, 0);
         // Three rows shrink to the column rather than spill under the panel.
-        const int rowH = juce::jlimit(32, kRowH, (strikeCol_.getHeight() - 2 * kGap) / 3);
+        rowH = juce::jmin(kRowH, (strikeCol_.getHeight() - 2 * kGap) / 3);
         layoutRows(rowStack(bowCol_, 3, rowH), {kBow, kBowTimbre}, rowH, kGap);
         layoutRows(rowStack(blowCol_, 3, rowH), {kBlow, kBlowFlow, kBlowTimbre}, rowH, kGap);
         layoutRows(rowStack(strikeCol_, 3, rowH), {kStrike, kStrikeMallet, kStrikeTimbre}, rowH,
@@ -391,23 +409,20 @@ void MateriaUI::resized() {
     }
 
     // RESONATOR: modal-response viz on top (absorbs the slack), five sliders as
-    // a 3-then-2 grid below (always visible).
+    // a 3-then-2 grid below (always visible), rows as tall as the exciter's.
     {
-        auto a = resonatorArea_.reduced(12, 10);
-        a.removeFromTop(22);
-        const int controlsH = 2 * kRowH + kGap;
-        auto ctrl = a.removeFromBottom(controlsH);
-        a.removeFromBottom(10);
-        modalVizArea_ = a;  // whatever is left on top; the viz flexes with panel height
+        auto a = bodyPanel(resonatorArea_);
+        auto ctrl = a.removeFromBottom(2 * rowH + kGap);
+        a.removeFromBottom(kGap);
+        modalVizArea_ = a;
 
         const int colW = ctrl.getWidth() / 3;
         auto cell = [&](juce::Rectangle<int> row, int col, int idx) {
-            auto box = row.withX(row.getX() + col * colW).withWidth(colW).reduced(4, 0);
             auto& c = controls_[static_cast<size_t>(idx)];
-            c.label->setBounds(box.removeFromTop(16));
-            c.slider->setBounds(box.removeFromTop(30));
+            c.tile = row.withX(row.getX() + col * colW).withWidth(colW).reduced(kTileGap / 2, 0);
+            sampler_tiles::layoutTile(*c.label, *c.slider, c.tile);
         };
-        auto row1 = ctrl.removeFromTop(kRowH);
+        auto row1 = ctrl.removeFromTop(rowH);
         ctrl.removeFromTop(kGap);
         auto row2 = ctrl;
         cell(row1, 0, kGeometry);

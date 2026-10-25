@@ -75,6 +75,7 @@ class MateriaUI : public juce::Component {
     struct Control {
         std::unique_ptr<juce::Label> label;
         std::unique_ptr<LinkableTextSlider> slider;
+        juce::Rectangle<int> tile;  ///< The painted cell behind the caption and value.
     };
 
     // Lay a vertical stack of [label + slider] rows into `area`, top-aligned.
