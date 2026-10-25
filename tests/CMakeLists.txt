@@ -981,6 +981,9 @@ target_sources(magda_juce_tests PRIVATE
     # Audio Settings' Active MIDI inputs, saved in Config
     audio/test_active_midi_inputs_juce.cpp
     ../magda/daw/ui/components/chain/slot/StepSequencerClipExport.cpp
+    # The focused-panel outline (#3157)
+    ui/test_panel_focus_tracker_juce.cpp
+    ../magda/daw/ui/panels/PanelFocusTracker.cpp
 )
 
 # Native waveform expectations and host integration regressions.

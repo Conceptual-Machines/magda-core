@@ -26,6 +26,7 @@
 #include "../panels/CapturePanel.hpp"
 #include "../panels/FooterBar.hpp"
 #include "../panels/LeftPanel.hpp"
+#include "../panels/PanelFocusTracker.hpp"
 #include "../panels/RightPanel.hpp"
 #include "../panels/TransportPanel.hpp"
 #include "../state/KeyMappingStore.hpp"
@@ -819,6 +820,14 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     addChildComponent(*mixerView);
     juce::Logger::writeToLog("[MainComponent] MixerView created");
 
+    focusTracker_ = std::make_unique<daw::ui::PanelFocusTracker>(*this);
+    focusTracker_->addRegion(*mainView, daw::ui::FocusRegion::Content);
+    focusTracker_->addRegion(*sessionView, daw::ui::FocusRegion::Content);
+    focusTracker_->addRegion(*mixerView, daw::ui::FocusRegion::Content);
+    focusTracker_->addRegion(*bottomPanel, daw::ui::FocusRegion::Bottom);
+    focusTracker_->addRegion(*leftPanel, daw::ui::FocusRegion::Left);
+    focusTracker_->addRegion(*rightPanel, daw::ui::FocusRegion::Right);
+
     // Wire up callbacks between views and transport
     mainView->onLoopRegionChanged = [this](double start, double end, bool enabled) {
         transportPanel->setLoopRegion(start, end, enabled);
@@ -1404,6 +1413,7 @@ void MainWindow::MainComponent::warnAboutLoadFailures() {
 
 MainWindow::MainComponent::~MainComponent() {
     DBG("    [5d] MainComponent::~MainComponent start");
+    focusTracker_.reset();
 
     // The stem service outlives us (static singleton); drop its reference to
     // this before members die.

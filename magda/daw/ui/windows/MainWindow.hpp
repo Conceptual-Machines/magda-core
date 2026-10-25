@@ -38,6 +38,10 @@ class QwertyMidiKeyboard;
 class PlaybackPositionTimer;
 class KeyMappingStore;
 
+namespace daw::ui {
+class PanelFocusTracker;
+}
+
 class MainWindow : public juce::DocumentWindow,
                    public ProjectManagerListener,
                    private ConfigListener,
@@ -283,6 +287,9 @@ class MainWindow::MainComponent : public juce::Component,
 
     // Toast notification overlay (top-right corner)
     std::unique_ptr<daw::ui::Toast> toast_;
+
+    // Outlines the panel that context commands act on (#3157)
+    std::unique_ptr<daw::ui::PanelFocusTracker> focusTracker_;
 
     // Plugin load failures that arrived in the same turn, warned about in one dialog (#3150).
     juce::StringArray pendingLoadFailures_;

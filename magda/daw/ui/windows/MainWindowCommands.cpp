@@ -17,6 +17,7 @@
 #include "../../core/UIScale.hpp"
 #include "../../core/UndoManager.hpp"
 #include "../panels/BottomPanel.hpp"
+#include "../panels/PanelFocusTracker.hpp"
 #include "../panels/TransportPanel.hpp"
 #include "../panels/content/MidiEditorContent.hpp"
 #include "../state/MarkerRippleCommand.hpp"
@@ -1536,8 +1537,14 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         }
 
         case selectAll: {
+            // Act on the outlined panel (#3157); side panels have nothing to select.
+            using daw::ui::FocusRegion;
+            const auto region =
+                focusTracker_ ? focusTracker_->getActiveRegion() : FocusRegion::None;
+            if (region == FocusRegion::Left || region == FocusRegion::Right)
+                return true;
             // If a note selection is active, select all notes in that clip
-            if (selectionManager.hasNoteSelection()) {
+            if (region != FocusRegion::Content && selectionManager.hasNoteSelection()) {
                 auto clipId = selectionManager.getNoteSelection().clipId;
                 const auto* clip = clipManager.getClip(clipId);
                 if (clip && clip->isMidi()) {
@@ -1549,6 +1556,8 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                     return true;
                 }
             }
+            if (region == FocusRegion::Bottom)
+                return true;
             // Fallback: select all arrangement clips
             const auto& allClips = clipManager.getArrangementClips();
             std::unordered_set<ClipId> allClipIds;
