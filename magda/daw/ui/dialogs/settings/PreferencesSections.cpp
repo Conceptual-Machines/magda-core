@@ -25,6 +25,7 @@
 #include "../ProjectFormatChoices.hpp"
 #include "SettingsLink.hpp"
 #include "SettingsSections.hpp"
+#include "SettingsToolbar.hpp"
 #include "core/AppPaths.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
@@ -2905,6 +2906,12 @@ class ShortcutsPage {
     juce::Component& getGesturesPage() {
         return *gesturesPage_;
     }
+    juce::Component& getKeyboardToolbar() {
+        return keyboardPage_->getToolbar();
+    }
+    juce::Component& getGesturesToolbar() {
+        return gesturesPage_->getToolbar();
+    }
 
     void commit() {
         keyboardPage_->commit();
@@ -2922,19 +2929,301 @@ class ShortcutsPage {
     }
 
   private:
+    /**
+     * @brief Every bindable command by category, its keys drawn as caps (#3162).
+     *
+     * Click a cap to re-record it, "Not set" to add one, right-click a cap to clear
+     * it. A key two commands share is shown on both in amber.
+     */
+    class KeyList : public juce::Component, private juce::ChangeListener {
+      public:
+        KeyList(juce::ApplicationCommandManager& commands, juce::KeyPressMappingSet& mappings)
+            : commands_(commands), mappings_(mappings) {
+            setWantsKeyboardFocus(true);
+            mappings_.addChangeListener(this);
+            rebuild();
+        }
+
+        ~KeyList() override {
+            mappings_.removeChangeListener(this);
+        }
+
+        void setFilter(const juce::String& text, const juce::KeyPress& key) {
+            filterText_ = text;
+            filterKey_ = key;
+            rebuild();
+        }
+
+        int getContentHeight() const {
+            return static_cast<int>(rows_.size()) * kRowH;
+        }
+
+        void paint(juce::Graphics& g) override {
+            const auto font = FontManager::getInstance().getUIFont(13.0f);
+            const auto capFont = FontManager::getInstance().getMonoFont(12.0f);
+            caps_.clear();
+            int y = 0;
+            for (const auto& row : rows_) {
+                auto r = juce::Rectangle<int>(0, y, getWidth(), kRowH);
+                y += kRowH;
+                g.setColour(ActiveTheme::getBorderColour().withMultipliedAlpha(0.5f));
+                g.fillRect(r.removeFromBottom(1));
+
+                if (row.command == 0) {
+                    const bool open = !collapsed_.contains(row.category);
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+                    g.setFont(FontManager::getInstance().getUIFont(10.0f));
+                    g.drawText(open ? juce::String(juce::CharPointer_UTF8("\xe2\x96\xbe"))
+                                    : juce::String(juce::CharPointer_UTF8("\xe2\x96\xb8")),
+                               r.removeFromLeft(18), juce::Justification::centred);
+                    g.setFont(FontManager::getInstance().getUIFontMedium(13.0f));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+                    const int w =
+                        juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), row.category);
+                    g.drawText(row.category, r.removeFromLeft(w + 8),
+                               juce::Justification::centredLeft);
+                    g.setFont(FontManager::getInstance().getUIFont(11.0f));
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+                    g.drawText(juce::String(row.count), r, juce::Justification::centredLeft);
+                    continue;
+                }
+
+                g.setFont(font);
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+                g.drawText(commands_.getNameOfCommand(row.command), r.withTrimmedLeft(18),
+                           juce::Justification::centredLeft, true);
+
+                auto right = r.reduced(0, 6);
+                if (recording_ == row.command) {
+                    cancelArea_ = right.removeFromRight(20);
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+                    g.drawText(juce::String(juce::CharPointer_UTF8("\xc3\x97")), cancelArea_,
+                               juce::Justification::centred);
+                    right.removeFromRight(6);
+                    const auto prompt = tr("preferences.shortcuts.recording");
+                    const int w = juce::GlyphArrangement::getStringWidthInt(capFont, prompt) + 20;
+                    const auto box = right.removeFromRight(w).toFloat();
+                    g.setColour(ActiveTheme::getAccentColour().withAlpha(0.12f));
+                    g.fillRoundedRectangle(box, 4.0f);
+                    g.setColour(ActiveTheme::getAccentColour());
+                    g.drawRoundedRectangle(box.reduced(0.5f), 4.0f, 1.0f);
+                    g.setFont(capFont);
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+                    g.drawText(prompt, box, juce::Justification::centred);
+                    continue;
+                }
+
+                const auto keys = mappings_.getKeyPressesAssignedToCommand(row.command);
+                if (keys.isEmpty()) {
+                    const auto text = tr("preferences.shortcuts.not_set");
+                    const int w = juce::GlyphArrangement::getStringWidthInt(font, text) + 8;
+                    const auto area = right.removeFromRight(w);
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+                    g.setFont(FontManager::getInstance().getUIFont(12.0f));
+                    g.drawText(text, area, juce::Justification::centredRight);
+                    caps_.push_back({row.command, -1, area});
+                    continue;
+                }
+                juce::String conflict;
+                for (int k = keys.size(); --k >= 0;) {
+                    const auto text = keys[k].getTextDescriptionWithIcons();
+                    const int w = juce::GlyphArrangement::getStringWidthInt(capFont, text) + 16;
+                    const auto cap = right.removeFromRight(w);
+                    right.removeFromRight(6);
+                    const auto other = otherCommandFor(keys[k], row.command);
+                    if (other != 0)
+                        conflict = commands_.getNameOfCommand(other);
+                    const auto colour = other != 0
+                                            ? ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION)
+                                            : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
+                    g.setColour(ActiveTheme::getBackgroundColour());
+                    g.fillRoundedRectangle(cap.toFloat(), 4.0f);
+                    g.setColour(other != 0 ? colour
+                                           : ActiveTheme::getBorderColour().brighter(0.2f));
+                    g.drawRoundedRectangle(cap.toFloat().reduced(0.5f), 4.0f, 1.0f);
+                    g.setColour(colour);
+                    g.setFont(capFont);
+                    g.drawText(text, cap, juce::Justification::centred);
+                    caps_.push_back({row.command, k, cap});
+                }
+                if (conflict.isNotEmpty()) {
+                    g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+                    g.setFont(FontManager::getInstance().getUIFont(12.0f));
+                    g.drawText(tr("preferences.shortcuts.also_used_by").replace("{0}", conflict),
+                               right.removeFromRight(260), juce::Justification::centredRight, true);
+                }
+            }
+        }
+
+        void mouseUp(const juce::MouseEvent& e) override {
+            grabKeyboardFocus();
+            if (recording_ != 0 && cancelArea_.contains(e.getPosition())) {
+                stopRecording();
+                return;
+            }
+            for (const auto& cap : caps_) {
+                if (!cap.bounds.contains(e.getPosition()))
+                    continue;
+                if (e.mods.isPopupMenu() && cap.index >= 0) {
+                    mappings_.removeKeyPress(cap.command, cap.index);
+                    return;
+                }
+                recording_ = cap.command;
+                replacing_ = cap.index;
+                repaint();
+                return;
+            }
+            const int index = e.getPosition().y / kRowH;
+            if (juce::isPositiveAndBelow(index, static_cast<int>(rows_.size())) &&
+                rows_[static_cast<size_t>(index)].command == 0) {
+                const auto& category = rows_[static_cast<size_t>(index)].category;
+                if (collapsed_.contains(category))
+                    collapsed_.removeString(category);
+                else
+                    collapsed_.add(category);
+                rebuild();
+            }
+        }
+
+        bool keyPressed(const juce::KeyPress& key) override {
+            if (recording_ == 0)
+                return false;
+            if (key == juce::KeyPress::escapeKey) {
+                stopRecording();
+                return true;
+            }
+            if (replacing_ >= 0)
+                mappings_.removeKeyPress(recording_, replacing_);
+            mappings_.addKeyPress(recording_, key);
+            stopRecording();
+            return true;
+        }
+
+      private:
+        static constexpr int kRowH = 32;
+
+        struct Row {
+            juce::CommandID command;  // 0 for a category header
+            juce::String category;
+            int count = 0;
+        };
+        struct Cap {
+            juce::CommandID command;
+            int index;  // -1 for "Not set"
+            juce::Rectangle<int> bounds;
+        };
+
+        void changeListenerCallback(juce::ChangeBroadcaster*) override {
+            rebuild();
+        }
+
+        void stopRecording() {
+            recording_ = 0;
+            replacing_ = -1;
+            repaint();
+        }
+
+        juce::CommandID otherCommandFor(const juce::KeyPress& key, juce::CommandID self) const {
+            for (const auto& category : commands_.getCommandCategories())
+                for (const auto id : commands_.getCommandsInCategory(category))
+                    if (id != self && mappings_.getKeyPressesAssignedToCommand(id).contains(key))
+                        return id;
+            return 0;
+        }
+
+        bool matches(juce::CommandID id) const {
+            if (filterKey_.isValid())
+                return mappings_.getKeyPressesAssignedToCommand(id).contains(filterKey_);
+            return filterText_.isEmpty() ||
+                   commands_.getNameOfCommand(id).containsIgnoreCase(filterText_);
+        }
+
+        void rebuild() {
+            rows_.clear();
+            for (const auto& category : commands_.getCommandCategories()) {
+                std::vector<juce::CommandID> ids;
+                for (const auto id : commands_.getCommandsInCategory(category)) {
+                    const auto* info = commands_.getCommandForID(id);
+                    if (info != nullptr &&
+                        (info->flags & juce::ApplicationCommandInfo::hiddenFromKeyEditor) == 0 &&
+                        matches(id))
+                        ids.push_back(id);
+                }
+                if (ids.empty())
+                    continue;
+                rows_.push_back({0, category, static_cast<int>(ids.size())});
+                if (collapsed_.contains(category) && filterText_.isEmpty() && !filterKey_.isValid())
+                    continue;
+                for (const auto id : ids)
+                    rows_.push_back({id, category});
+            }
+            setSize(getWidth(), getContentHeight());
+            repaint();
+        }
+
+        juce::ApplicationCommandManager& commands_;
+        juce::KeyPressMappingSet& mappings_;
+        std::vector<Row> rows_;
+        std::vector<Cap> caps_;
+        juce::StringArray collapsed_;
+        juce::String filterText_;
+        juce::KeyPress filterKey_;
+        juce::CommandID recording_ = 0;
+        int replacing_ = -1;
+        juce::Rectangle<int> cancelArea_;
+    };
+
+    /// Typing filters by name; a shortcut pressed here filters by key instead.
+    class KeyFilter : public juce::TextEditor {
+      public:
+        std::function<void(const juce::KeyPress&)> onKey;
+
+        bool keyPressed(const juce::KeyPress& key) override {
+            const auto mods = key.getModifiers();
+            if ((mods.isCommandDown() || mods.isCtrlDown() || mods.isAltDown()) &&
+                key != juce::KeyPress('a', juce::ModifierKeys::commandModifier, 0)) {
+                setText(key.getTextDescriptionWithIcons(), juce::dontSendNotification);
+                if (onKey)
+                    onKey(key);
+                return true;
+            }
+            return juce::TextEditor::keyPressed(key);
+        }
+    };
+
     class KeyboardShortcutsPage : public juce::Component {
       public:
         explicit KeyboardShortcutsPage(juce::ApplicationCommandManager* commandManager) {
-            setupSectionHeader(*this, header_, tr("preferences.section.keyboard_shortcuts"));
-
             if (commandManager != nullptr) {
                 // Edits go to a copy, so they wait for Apply like every other setting.
                 live_ = commandManager->getKeyMappings();
                 mappings_ = std::make_unique<juce::KeyPressMappingSet>(*live_);
-                keyEditor_ = std::make_unique<juce::KeyMappingEditorComponent>(*mappings_, true);
-                keyEditor_->setColours(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND),
-                                       ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-                addAndMakeVisible(*keyEditor_);
+                list_ = std::make_unique<KeyList>(*commandManager, *mappings_);
+                viewport_.setViewedComponent(list_.get(), false);
+                viewport_.setScrollBarsShown(true, false);
+                addAndMakeVisible(viewport_);
+
+                filter_.setTextToShowWhenEmpty(tr("preferences.shortcuts.filter"),
+                                               ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+                filter_.setFont(FontManager::getInstance().getUIFont(12.5f));
+                filter_.setIndents(8, 6);
+                filter_.onTextChange = [this] { list_->setFilter(filter_.getText(), {}); };
+                filter_.onKey = [this](const juce::KeyPress& key) { list_->setFilter({}, key); };
+                toolbar_.addAndMakeVisible(filter_);
+
+                resetButton_.setButtonText(tr("preferences.shortcuts.reset_all"));
+                resetButton_.onClick = [this] { mappings_->resetToDefaultMappings(); };
+                toolbar_.addAndMakeVisible(resetButton_);
+                toolbar_.onResize = [this] {
+                    auto bar = toolbar_.getLocalBounds();
+                    resetButton_.setBounds(
+                        bar.removeFromRight(juce::GlyphArrangement::getStringWidthInt(
+                                                FontManager::getInstance().getUIFont(13.5f),
+                                                resetButton_.getButtonText()) +
+                                            28));
+                    bar.removeFromRight(8);
+                    filter_.setBounds(bar.withTrimmedLeft(juce::jmax(0, bar.getWidth() - 420)));
+                };
             } else {
                 missingLabel_.setText("Keyboard shortcuts are available from the main window.",
                                       juce::dontSendNotification);
@@ -2946,15 +3235,18 @@ class ShortcutsPage {
             }
         }
 
-        void resized() override {
-            auto bounds = getLocalBounds().reduced(16);
-            header_.setBounds(bounds.removeFromTop(28));
-            bounds.removeFromTop(6);
+        juce::Component& getToolbar() {
+            return toolbar_;
+        }
 
-            if (keyEditor_)
-                keyEditor_->setBounds(bounds);
-            else
+        void resized() override {
+            auto bounds = getLocalBounds().reduced(0, 8);
+            if (list_ == nullptr) {
                 missingLabel_.setBounds(bounds.removeFromTop(28));
+                return;
+            }
+            viewport_.setBounds(bounds);
+            list_->setSize(viewport_.getMaximumVisibleWidth(), list_->getContentHeight());
         }
 
         void loadSettings(Config& config) {
@@ -2982,30 +3274,35 @@ class ShortcutsPage {
         }
 
       private:
-        juce::Label header_;
+        /// A holder that lays out its children when the window resizes it.
+        class Toolbar : public juce::Component {
+          public:
+            std::function<void()> onResize;
+            void resized() override {
+                if (onResize)
+                    onResize();
+            }
+        };
+
         juce::Label missingLabel_;
         juce::KeyPressMappingSet* live_ = nullptr;
         std::unique_ptr<juce::KeyPressMappingSet> mappings_;
-        std::unique_ptr<juce::KeyMappingEditorComponent> keyEditor_;
+        std::unique_ptr<KeyList> list_;
+        juce::Viewport viewport_;
+        Toolbar toolbar_;
+        KeyFilter filter_;
+        juce::TextButton resetButton_;
     };
 
     class GestureBindingsPage : public juce::Component {
       public:
         GestureBindingsPage() {
-            setupSectionHeader(*this, header_, "Mouse gestures");
-
-            resetButton_.setButtonText("Reset");
+            resetButton_.setButtonText(tr("preferences.shortcuts.reset_all"));
             resetButton_.onClick = [this] {
                 capturingRow_ = nullptr;
                 loadFromRouter(*GestureRouter::createDetached());
             };
-            addAndMakeVisible(resetButton_);
-
-            setupHeaderLabel(contextHeader_, "Gesture");
-            setupHeaderLabel(axisHeader_, "Area");
-            setupHeaderLabel(modifierHeader_, "Input");
-            setupHeaderLabel(sensitivityHeader_, "Sensitivity");
-            setupHeaderLabel(invertHeader_, "Invert");
+            toolbar_.addButton(resetButton_);
 
             viewport_.setViewedComponent(&content_, false);
             viewport_.setScrollBarsShown(true, false);
@@ -3047,19 +3344,53 @@ class ShortcutsPage {
             }
         }
 
+        juce::Component& getToolbar() {
+            return toolbar_;
+        }
+
         void resized() override {
-            auto bounds = getLocalBounds().reduced(16);
-            auto headerRow = bounds.removeFromTop(28);
-            header_.setBounds(headerRow.removeFromLeft(juce::jmax(220, headerRow.getWidth() - 88)));
-            resetButton_.setBounds(headerRow.removeFromRight(72).reduced(0, 2));
-            bounds.removeFromTop(6);
-
-            auto columns = bounds.removeFromTop(20);
-            layoutColumnHeaders(columns);
-            bounds.removeFromTop(4);
-
+            auto bounds = getLocalBounds().reduced(0, 8);
+            columnHeader_ = bounds.removeFromTop(28);
             viewport_.setBounds(bounds);
             layoutRows(viewport_.getMaximumVisibleWidth());
+        }
+
+        void paint(juce::Graphics& g) override {
+            const auto columns =
+                columnsFor(columnHeader_.withTrimmedRight(viewport_.getScrollBarThickness()));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+            g.setFont(
+                FontManager::getInstance().getUIFontMedium(11.0f).withExtraKerningFactor(0.08f));
+            const char* titles[] = {"preferences.gestures.action", "preferences.gestures.input",
+                                    "preferences.gestures.sensitivity",
+                                    "preferences.gestures.invert"};
+            for (size_t i = 0; i < 4; ++i)
+                g.drawText(tr(titles[i]).toUpperCase(), columns[i],
+                           i == 2 ? juce::Justification::centredRight
+                                  : juce::Justification::centredLeft,
+                           false);
+            g.setColour(ActiveTheme::getBorderColour());
+            g.fillRect(columnHeader_.withTop(columnHeader_.getBottom() - 1));
+        }
+
+        void mouseMove(const juce::MouseEvent& e) override {
+            const auto y = e.getEventRelativeTo(&content_).getPosition().y;
+            GestureRow* hovered = nullptr;
+            for (auto& row : rows_)
+                if (row->contextLabel.isVisible() && row->contextLabel.getY() <= y &&
+                    y < row->contextLabel.getBottom())
+                    hovered = row.get();
+            if (hovered != hoveredRow_) {
+                hoveredRow_ = hovered;
+                updateLearnButtons();
+            }
+        }
+
+        void mouseExit(const juce::MouseEvent& e) override {
+            if (!getLocalBounds().contains(e.getEventRelativeTo(this).getPosition())) {
+                hoveredRow_ = nullptr;
+                updateLearnButtons();
+            }
         }
 
         void mouseWheelMove(const juce::MouseEvent& e,
@@ -3378,17 +3709,28 @@ class ShortcutsPage {
             return "Learning...";
         }
 
+        // The input as a chip: modifier glyphs, then the wheel or drag.
         static juce::String inputLabelName(const GestureInput& input) {
-            if (input.kind == GestureInputKind::Wheel ||
-                input.kind == GestureInputKind::SmoothWheel)
-                return "wheel: " + inputName(input);
-
-            juce::String dragText;
-            if (input.modifiers == GestureMod_None)
-                dragText = "drag";
+            juce::String base;
+            if (input.kind == GestureInputKind::Drag)
+                base = "drag";
+            else if (input.kind == GestureInputKind::SmoothWheel)
+                base = input.axis == GestureAxis::Vertical ? "smooth wheel" : "smooth tilt";
             else
-                dragText = modifierName(input.modifiers) + "+drag";
-            return "drag: " + dragText;
+                base = input.axis == GestureAxis::Vertical ? "wheel" : "tilt wheel";
+            juce::String mods;
+#if JUCE_MAC
+            if ((input.modifiers & GestureMod_Shift) != 0)
+                mods << juce::String(juce::CharPointer_UTF8("\xe2\x87\xa7"));
+            if ((input.modifiers & GestureMod_Alt) != 0)
+                mods << juce::String(juce::CharPointer_UTF8("\xe2\x8c\xa5"));
+            if ((input.modifiers & GestureMod_Command) != 0)
+                mods << juce::String(juce::CharPointer_UTF8("\xe2\x8c\x98"));
+#else
+            if (input.modifiers != GestureMod_None)
+                mods = modifierName(input.modifiers) + "+";
+#endif
+            return mods.isEmpty() ? base : mods + " " + base;
         }
 
         static juce::String modifierName(uint8_t modifiers) {
@@ -3408,6 +3750,13 @@ class ShortcutsPage {
             if ((modifiers & GestureMod_Alt) != 0)
                 parts.add("Alt");
             return parts.joinIntoString("+");
+        }
+
+        static juce::String actionName(GestureActionType action) {
+            auto name = gestureName(action);
+            if (name.endsWith(" gesture"))
+                name = name.dropLastCharacters(8);
+            return name;
         }
 
         static juce::String gestureName(GestureActionType action) {
@@ -3519,7 +3868,7 @@ class ShortcutsPage {
                 row->defaultBinding = *binding;
 
             row->action = row->defaultBinding.action;
-            setupBodyLabel(row->contextLabel, gestureName(row->action));
+            setupBodyLabel(row->contextLabel, actionName(row->action));
             setupBodyLabel(row->axisLabel, areaName(context, input.area));
             setupBodyLabel(row->inputLabel, inputLabelName(row->currentInput));
 
@@ -3533,13 +3882,15 @@ class ShortcutsPage {
                 [](double value) { return juce::String(value, value < 10.0 ? 2 : 0); });
 
             row->invert.setButtonText({});
-            row->invert.setColour(juce::ToggleButton::tickColourId,
-                                  ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-            row->invert.setColour(juce::ToggleButton::tickDisabledColourId,
-                                  ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+            magda::daw::ui::SettingsLookAndFeel::markCheckBox(row->invert);
+            row->inputLabel.setFont(FontManager::getInstance().getMonoFont(12.0f));
+            row->inputLabel.setJustificationType(juce::Justification::centred);
+            row->inputLabel.setColour(juce::Label::outlineColourId,
+                                      ActiveTheme::getBorderColour().brighter(0.2f));
+            row->contextLabel.setFont(FontManager::getInstance().getUIFont(13.0f));
+            addToGroup(*row);
 
             content_.addAndMakeVisible(row->contextLabel);
-            content_.addAndMakeVisible(row->axisLabel);
             content_.addAndMakeVisible(row->inputLabel);
             content_.addAndMakeVisible(row->learnButton);
             content_.addAndMakeVisible(row->sensitivity);
@@ -3589,7 +3940,7 @@ class ShortcutsPage {
 
                 const bool visible = binding.action != GestureActionType::None;
                 const bool hasMagnitude = actionHasMagnitude(binding.action);
-                row->contextLabel.setText(gestureName(binding.action), juce::dontSendNotification);
+                row->contextLabel.setText(actionName(binding.action), juce::dontSendNotification);
                 row->contextLabel.setVisible(visible);
                 row->axisLabel.setVisible(visible);
                 row->inputLabel.setVisible(visible);
@@ -3599,6 +3950,7 @@ class ShortcutsPage {
             }
 
             setCapturingRow(nullptr);
+            layoutRows(viewport_.getMaximumVisibleWidth());
         }
 
         static void setRowInput(GestureRow& row, GestureInput input) {
@@ -3634,55 +3986,148 @@ class ShortcutsPage {
                 captureDragStart_ = {};
                 grabKeyboardFocus();
             }
+            updateLearnButtons();
         }
 
-        void layoutColumnHeaders(juce::Rectangle<int> bounds) {
-            auto widths = getColumnWidths(bounds.getWidth());
-            contextHeader_.setBounds(bounds.removeFromLeft(widths[0]));
-            axisHeader_.setBounds(bounds.removeFromLeft(widths[1]));
-            modifierHeader_.setBounds(bounds.removeFromLeft(widths[2]));
-            sensitivityHeader_.setBounds(bounds.removeFromLeft(widths[3]));
-            invertHeader_.setBounds(bounds);
+        // Learn shows on the row under the pointer, and stays while it listens.
+        void updateLearnButtons() {
+            for (auto& row : rows_)
+                row->learnButton.setVisible(
+                    row->contextLabel.isVisible() &&
+                    (row.get() == hoveredRow_ || row.get() == capturingRow_));
+        }
+
+        /// Action, input, sensitivity and invert across @p row.
+        static std::array<juce::Rectangle<int>, 4> columnsFor(juce::Rectangle<int> row) {
+            auto r = row.withTrimmedLeft(20);
+            const auto invert = r.removeFromRight(56);
+            r.removeFromRight(16);
+            const auto sensitivity = r.removeFromRight(80);
+            r.removeFromRight(24);
+            const auto input = r.removeFromRight(juce::jlimit(170, 240, r.getWidth() / 3));
+            return {r, input, sensitivity, invert.withTrimmedLeft(12)};
+        }
+
+        /// A header that folds its group of gesture rows.
+        class GroupHeader : public juce::Component {
+          public:
+            std::function<void()> onToggle;
+            juce::String title;
+            bool collapsed = false;
+
+            void paint(juce::Graphics& g) override {
+                auto r = getLocalBounds();
+                g.setColour(ActiveTheme::getBorderColour().withMultipliedAlpha(0.6f));
+                g.fillRect(r.removeFromBottom(1));
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+                g.setFont(FontManager::getInstance().getUIFont(10.0f));
+                g.drawText(collapsed ? juce::String(juce::CharPointer_UTF8("\xe2\x96\xb8"))
+                                     : juce::String(juce::CharPointer_UTF8("\xe2\x96\xbe")),
+                           r.removeFromLeft(18), juce::Justification::centred);
+                g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+                g.setFont(FontManager::getInstance().getUIFontMedium(13.0f));
+                g.drawText(title, r, juce::Justification::centredLeft, true);
+            }
+            void mouseUp(const juce::MouseEvent&) override {
+                collapsed = !collapsed;
+                repaint();
+                if (onToggle)
+                    onToggle();
+            }
+        };
+
+        struct Group {
+            juce::String title;
+            std::vector<GestureRow*> rows;
+            std::unique_ptr<GroupHeader> header;
+        };
+
+        static juce::String groupTitle(GestureContext context, GestureArea area) {
+            switch (area) {
+                case GestureArea::Main:
+                    return contextName(context);
+                case GestureArea::Ruler:
+                    return contextName(context) + " \xc2\xb7 ruler";
+                case GestureArea::Body:
+                    return contextName(context) + " \xc2\xb7 body";
+                case GestureArea::Header:
+                    return contextName(context) + " \xc2\xb7 header";
+                case GestureArea::Keyboard:
+                    return contextName(context) + " \xc2\xb7 keyboard";
+                case GestureArea::ZoomStrip:
+                    return contextName(context) + " \xc2\xb7 zoom strip";
+            }
+            return contextName(context);
+        }
+
+        void addToGroup(GestureRow& row) {
+            const auto title = groupTitle(row.context, row.input.area);
+            for (auto& group : groups_) {
+                if (group.title == title) {
+                    group.rows.push_back(&row);
+                    return;
+                }
+            }
+            Group group;
+            group.title = title;
+            group.rows.push_back(&row);
+            group.header = std::make_unique<GroupHeader>();
+            group.header->title = title;
+            group.header->onToggle = [this] { layoutRows(viewport_.getMaximumVisibleWidth()); };
+            content_.addAndMakeVisible(*group.header);
+            groups_.push_back(std::move(group));
         }
 
         void layoutRows(int width) {
-            const int rowH = 28;
-            const int gap = 3;
-            auto widths = getColumnWidths(width);
+            constexpr int rowH = 32;
             int y = 0;
-
-            for (auto& row : rows_) {
-                if (!row->contextLabel.isVisible())
+            for (auto& group : groups_) {
+                const bool any = std::ranges::any_of(group.rows, [](const GestureRow* row) {
+                    return row->contextLabel.isVisible();
+                });
+                group.header->setVisible(any);
+                if (!any)
                     continue;
-
-                auto bounds = juce::Rectangle<int>(0, y, width, rowH);
-                row->contextLabel.setBounds(bounds.removeFromLeft(widths[0]).reduced(0, 2));
-                row->axisLabel.setBounds(bounds.removeFromLeft(widths[1]).reduced(0, 2));
-                auto inputArea = bounds.removeFromLeft(widths[2]);
-                row->learnButton.setBounds(inputArea.removeFromRight(96).reduced(3, 3));
-                row->inputLabel.setBounds(inputArea.reduced(0, 2));
-                row->sensitivity.setBounds(bounds.removeFromLeft(widths[3] - gap).reduced(0, 4));
-                bounds.removeFromLeft(gap);
-                row->invert.setBounds(bounds.reduced(0, 2));
+                group.header->setBounds(0, y, width, rowH);
                 y += rowH;
+                for (auto* row : group.rows) {
+                    if (!row->contextLabel.isVisible())
+                        continue;
+                    const bool shown = !group.header->collapsed;
+                    for (juce::Component* c : std::initializer_list<juce::Component*>{
+                             &row->contextLabel, &row->inputLabel, &row->sensitivity, &row->invert})
+                        c->setAlpha(shown ? 1.0f : 0.0f);
+                    if (!shown) {
+                        for (juce::Component* c : std::initializer_list<juce::Component*>{
+                                 &row->contextLabel, &row->inputLabel, &row->learnButton,
+                                 &row->sensitivity, &row->invert})
+                            c->setBounds({});
+                        continue;
+                    }
+                    const auto columns = columnsFor({0, y, width, rowH});
+                    row->contextLabel.setBounds(columns[0]);
+                    const int chipW = juce::GlyphArrangement::getStringWidthInt(
+                                          row->inputLabel.getFont(), row->inputLabel.getText()) +
+                                      18;
+                    row->inputLabel.setBounds(
+                        columns[1]
+                            .withWidth(juce::jmin(chipW, columns[1].getWidth()))
+                            .reduced(0, 6));
+                    row->learnButton.setBounds(
+                        columns[1].withTrimmedLeft(chipW + 8).withWidth(76).reduced(0, 4));
+                    row->sensitivity.setBounds(columns[2].reduced(0, 5));
+                    row->invert.setBounds(columns[3].withWidth(24));
+                    y += rowH;
+                }
             }
-
             content_.setSize(width, y + 8);
         }
 
-        static std::array<int, 5> getColumnWidths(int width) {
-            const int invertW = 56;
-            const int sensitivityW = 104;
-            const int inputW = juce::jlimit(300, 400, width / 3);
-            const int areaW = 116;
-            const int gestureW = juce::jmax(160, width - invertW - sensitivityW - inputW - areaW);
-            return {gestureW, areaW, inputW, sensitivityW, invertW};
-        }
-
-        juce::Label header_;
+        SettingsToolbar toolbar_;
         juce::TextButton resetButton_;
-        juce::Label contextHeader_, axisHeader_, modifierHeader_;
-        juce::Label sensitivityHeader_, invertHeader_;
+        juce::Rectangle<int> columnHeader_;
+        std::vector<Group> groups_;
+        GestureRow* hoveredRow_ = nullptr;
         CaptureViewport viewport_{*this};
         juce::Component content_;
         std::vector<std::unique_ptr<GestureRow>> rows_;
@@ -3910,8 +4355,8 @@ class ShortcutsSection : public SettingsSection {
         return tr("preferences.tab.shortcuts");
     }
     std::vector<Tab> getTabs() override {
-        return {{"Keyboard", &page_.getKeyboardPage(), {}},
-                {"Gestures", &page_.getGesturesPage(), {}}};
+        return {{"Keyboard", &page_.getKeyboardPage(), {}, &page_.getKeyboardToolbar()},
+                {"Gestures", &page_.getGesturesPage(), {}, &page_.getGesturesToolbar()}};
     }
     void load(Config& config) override {
         page_.loadSettings(config);

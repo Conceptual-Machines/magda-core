@@ -543,7 +543,16 @@
     "note.device_rate": "Your audio device runs at {0}",
     "note.float_bounce": "Float keeps headroom for re-processing",
     "credits.note": "Filled into every new project; each project can change its own in Project Settings. Artist and genre also go into the tags of rendered files.",
-    "credits.genre_hint": "e.g. Electronic"
+    "credits.genre_hint": "e.g. Electronic",
+    "shortcuts.recording": "Press keys… esc cancels",
+    "shortcuts.not_set": "Not set",
+    "shortcuts.also_used_by": "Also used by {0}",
+    "shortcuts.filter": "Filter by name, or press a shortcut to find it",
+    "shortcuts.reset_all": "Reset all",
+    "gestures.action": "Action",
+    "gestures.input": "Input",
+    "gestures.sensitivity": "Sensitivity",
+    "gestures.invert": "Invert"
   },
   "controllers": {
     "tab.profiles": "{0} Profiles",
