@@ -1,5 +1,6 @@
 #include "MainWindow.hpp"
 
+#include <utility>
 #include <vector>
 
 #include "../../api/magda_api_live.hpp"
@@ -21,6 +22,7 @@
 #include "../panels/CapturePanel.hpp"
 #include "../panels/FooterBar.hpp"
 #include "../panels/LeftPanel.hpp"
+#include "../panels/PanelFocusTracker.hpp"
 #include "../panels/RightPanel.hpp"
 #include "../panels/TransportPanel.hpp"
 #include "../state/KeyMappingStore.hpp"
@@ -819,6 +821,14 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     SettingsWindow::setContext(&commandManager, getAudioEngine());
     setSettingsOpener(&SettingsWindow::show);
 
+    focusTracker_ = std::make_unique<daw::ui::PanelFocusTracker>(*this);
+    focusTracker_->addRegion(*mainView, daw::ui::FocusRegion::Content);
+    focusTracker_->addRegion(*sessionView, daw::ui::FocusRegion::Content);
+    focusTracker_->addRegion(*mixerView, daw::ui::FocusRegion::Content);
+    focusTracker_->addRegion(*bottomPanel, daw::ui::FocusRegion::Bottom);
+    focusTracker_->addRegion(*leftPanel, daw::ui::FocusRegion::Left);
+    focusTracker_->addRegion(*rightPanel, daw::ui::FocusRegion::Right);
+
     // Wire up callbacks between views and transport
     mainView->onLoopRegionChanged = [this](double start, double end, bool enabled) {
         transportPanel->setLoopRegion(start, end, enabled);
@@ -1069,6 +1079,16 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     // core/engine/audio a link-time dependency on the UI layer (#2395).
     magda::setUserAlertHandler(
         [](const juce::String& message) { daw::ui::Toast::showGlobal(message, 5000); });
+    magda::setPluginLoadFailureHandler(
+        [this](const juce::String& plugin, const juce::String& reason) {
+            if (pendingLoadFailures_.isEmpty())
+                juce::MessageManager::callAsync(
+                    [safe = juce::Component::SafePointer<MainComponent>(this)] {
+                        if (safe != nullptr)
+                            safe->warnAboutLoadFailures();
+                    });
+            pendingLoadFailures_.add(plugin + ": " + reason);
+        });
 
     // Listen for MIDI Learn events to show toast notifications
     magda::MidiLearnCoordinator::getInstance().addListener(this);
@@ -1376,11 +1396,28 @@ void MainWindow::MainComponent::setupLoadingOverlay() {
         });
 }
 
+void MainWindow::MainComponent::warnAboutLoadFailures() {
+    const auto failures = std::exchange(pendingLoadFailures_, {});
+    const auto single = failures.size() == 1;
+    juce::AlertWindow::showAsync(
+        juce::MessageBoxOptions()
+            .withIconType(juce::MessageBoxIconType::WarningIcon)
+            .withTitle(tr(single ? "plugin_settings.dialog.load_failed_title"
+                                 : "plugin_settings.dialog.load_failed_title_other"))
+            .withMessage(tr(single ? "plugin_settings.dialog.load_failed_message"
+                                   : "plugin_settings.dialog.load_failed_message_other") +
+                         "\n\n" + failures.joinIntoString("\n"))
+            .withButton(tr("dialogs.ok"))
+            .withAssociatedComponent(this),
+        nullptr);
+}
+
 MainWindow::MainComponent::~MainComponent() {
     DBG("    [5d] MainComponent::~MainComponent start");
     setSettingsOpener({});
     SettingsWindow::closeIfOpen();
     SettingsWindow::setContext(nullptr, nullptr);
+    focusTracker_.reset();
 
     // The stem service outlives us (static singleton); drop its reference to
     // this before members die.
@@ -1438,6 +1475,7 @@ MainWindow::MainComponent::~MainComponent() {
 
     // Clear Toast global host before destroying
     magda::setUserAlertHandler(nullptr);
+    magda::setPluginLoadFailureHandler(nullptr);
     daw::ui::Toast::setGlobalHost(nullptr);
     toast_.reset();
 

@@ -844,6 +844,7 @@ juce_add_console_app(magda_juce_tests
 # Add JUCE test sources
 target_sources(magda_juce_tests PRIVATE
     juce_tests_main.cpp
+    plugins/test_debug_plugin_hosting_juce.cpp
     windows_no_dialogs.cpp
     utilities/test_zoom_simple.cpp
     engine/test_assertion_watch_juce.cpp
@@ -983,10 +984,14 @@ target_sources(magda_juce_tests PRIVATE
     # Audio Settings' Active MIDI inputs, saved in Config
     audio/test_active_midi_inputs_juce.cpp
     ../magda/daw/ui/components/chain/slot/StepSequencerClipExport.cpp
+    # The focused-panel outline (#3157)
+    ui/test_panel_focus_tracker_juce.cpp
+    ../magda/daw/ui/panels/PanelFocusTracker.cpp
 )
 
 # Native waveform expectations and host integration regressions.
     target_sources(magda_juce_tests PRIVATE
+        plugins/test_debug_plugin_native_juce.cpp
         NullDiffMaterial.cpp
         NullDiffCompare.cpp
         NullDiffCorpus.cpp
@@ -1144,6 +1149,17 @@ add_test(NAME arrange_beat_native_juce
 
 add_test(NAME runtime_theme_juce
          COMMAND magda_juce_tests "Runtime Theme Tests")
+
+# A VST3 that fails on request, loaded from the build tree by the hosting tests (#3155).
+add_subdirectory(debug_plugin)
+add_dependencies(magda_juce_tests magda_debug_plugin_VST3)
+target_compile_definitions(magda_juce_tests PRIVATE
+    MAGDA_DEBUG_PLUGIN_PATH="$<TARGET_GENEX_EVAL:magda_debug_plugin_VST3,$<TARGET_PROPERTY:magda_debug_plugin_VST3,JUCE_PLUGIN_ARTEFACT_FILE>>")
+
+add_test(NAME debug_plugin_hosting_juce
+         COMMAND magda_juce_tests "Debug Plugin Hosting Tests")
+add_test(NAME debug_plugin_native_juce
+         COMMAND magda_juce_tests "Debug Plugin Native Engine Tests")
 
 add_test(NAME user_theme_juce
          COMMAND magda_juce_tests "User Theme Tests")

@@ -51,6 +51,12 @@ void Toast::show(const juce::String& text, int durationMs) {
     textW = juce::jmax(120, textW);
     setSize(textW, h + vPad * 2);
 
+    // Re-anchored here: the host placed it at its old width, so a wider toast ran off the edge.
+    if (auto* parent = getParentComponent()) {
+        const int edgePad = 12;
+        setTopRightPosition(parent->getWidth() - edgePad, edgePad);
+    }
+
     setVisible(true);
     toFront(false);
     repaint();

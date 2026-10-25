@@ -29,13 +29,29 @@ Every track provides the following controls. They render identically in the trac
 - **Mute** (M) — Silence the track. Shortcut: select the track and press ++m++
 - **Solo** (S) — Solo the track. Shortcut: select the track and press ++shift+s++
 - **Record arm** (R) — Arm the track for recording
-- **Input monitor** — Monitor the live input signal through the track
+- **Input monitor** — Monitor the live input signal through the track (see [Input Monitoring](#input-monitoring))
 - **Automation** — Toggle automation read/write for the track
 - **Sends** - Level to each aux / return the track feeds
 - **Routing** - Input and output routing for the track (see [Track-to-Track Routing](#track-to-track-routing))
 - **Meter** - Peak level meter for the track
 
 The **Automation** button lights purple when the track holds automation.
+
+### Input Monitoring
+
+The input monitor button has three modes:
+
+| Mode | Colour | Behavior |
+|------|--------|----------|
+| **Off** | Grey | The live input is not monitored |
+| **In** | Green | The live input is always monitored, whether or not the track is record armed |
+| **Auto** | Blue | The live input is monitored only while the track is record armed |
+
+Click the button to cycle Off → In → Auto, or right-click it to pick a mode from a menu.
+
+To play an instrument without arming its track, for example to practise before recording, set its monitor to **In**.
+
+With **Auto-monitor selected track** enabled (Preferences → General → Behavior), selecting a track sets its monitor to Auto and turns the previously selected track's monitor Off. This overrides a mode you set by hand. The option is off by default.
 
 ## Multi-Output Plugins
 

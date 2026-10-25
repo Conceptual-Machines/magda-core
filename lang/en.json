@@ -317,7 +317,11 @@
     "button.add_folder": "+ Add folder",
     "button.stop_scan": "Stop scan",
     "label.system": "System",
-    "excluded_none": "None. A plugin that crashes or fails to load during a scan is listed here, and later scans skip it."
+    "excluded_none": "None. A plugin that crashes or fails to load during a scan is listed here, and later scans skip it.",
+    "dialog.load_failed_title": "Plugin failed to load",
+    "dialog.load_failed_title_other": "Plugins failed to load",
+    "dialog.load_failed_message": "This plugin could not be loaded:",
+    "dialog.load_failed_message_other": "These plugins could not be loaded:"
   },
   "footer": {
     "tooltip.session": "Session",
