@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "custom_ui/SamplerTiles.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -19,6 +20,17 @@ const juce::Colour kAccentFill{0xff2f6fb8};
 const char* const kModelNames[6] = {"Modal", "Sympathetic", "String",
                                     "FM",    "Sym Quant",   "String+Verb"};
 const char* const kPolyLabels[3] = {"1", "2", "4"};
+
+constexpr int kPanelGap = 8;
+constexpr int kPanelPadY = 8;
+/// Less under the last row than over the title: the slot's edge frames it (#3144).
+constexpr int kPanelPadBottom = 4;
+constexpr int kTitleH = 18;
+constexpr int kRowGap = 6;
+constexpr int kTileGap = 6;
+constexpr int kMaxRowH = 44;
+/// The bottom panels' height; the spectrum above takes the rest.
+constexpr int kBottomH = 150;
 
 bool isChord(int i) {
     return i == 6;
@@ -50,10 +62,10 @@ HaloUI::HaloUI() {
         c.label = std::make_unique<juce::Label>();
         c.label->setText(name, juce::dontSendNotification);
         c.label->setColour(juce::Label::textColourId, kDim);
-        c.label->setFont(FontManager::getInstance().getUIFont(11.0f));
         addAndMakeVisible(*c.label);
 
         c.slider = std::make_unique<LinkableTextSlider>(TextSlider::Format::Decimal);
+        sampler_tiles::styleValue(*c.slider);
         c.slider->setParamIndex(idx);
         c.slider->setTextColour(kText);
         if (isChord(idx)) {
@@ -142,12 +154,17 @@ void HaloUI::paint(juce::Graphics& g) {
     };
 
     panel(resonatorArea_);
-    titleStrip(g, resonatorArea_.reduced(14, 10), "RESONATOR", "modal - 64 partials - polyphonic");
+    titleStrip(g, resonatorArea_.reduced(14, kPanelPadY), "RESONATOR",
+               "modal - 64 partials - polyphonic");
     panel(paramsArea_);
-    titleStrip(g, paramsArea_.reduced(14, 10), "PARAMETERS", "drag a value to set");
+    titleStrip(g, paramsArea_.reduced(14, kPanelPadY), "PARAMETERS", "drag a value to set");
     panel(modelArea_);
-    titleStrip(g, modelArea_.reduced(14, 10), "RESONATOR MODEL",
+    titleStrip(g, modelArea_.reduced(14, kPanelPadY), "RESONATOR MODEL",
                juce::String(kModelNames[curModel_]).toUpperCase());
+
+    for (const auto& c : controls_)
+        if (c.slider != nullptr && !c.tile.isEmpty())
+            sampler_tiles::paint(g, c.tile, 4.0f);
 
     // Modal response: partial amplitudes shaped by the resonator controls.
     if (modalVizArea_.getHeight() >= 40) {
@@ -246,47 +263,50 @@ void HaloUI::mouseDown(const juce::MouseEvent& e) {
 void HaloUI::layoutRow(juce::Rectangle<int> row, const std::vector<int>& indices) {
     const int cellW = row.getWidth() / static_cast<int>(indices.size());
     for (int idx : indices) {
-        auto cell = row.removeFromLeft(cellW).reduced(6, 0);
         auto& c = controls_[static_cast<size_t>(idx)];
-        c.label->setBounds(cell.removeFromTop(14));
-        c.slider->setBounds(cell.removeFromTop(30));
+        c.tile = row.removeFromLeft(cellW).reduced(kTileGap / 2, 0);
+        sampler_tiles::layoutTile(*c.label, *c.slider, c.tile);
     }
 }
 
 void HaloUI::resized() {
-    auto r = getLocalBounds().reduced(8);
+    // Padded at the sides only: the header above and the slot's edge below frame the panels.
+    auto r = getLocalBounds().reduced(kPanelGap, 0);
 
-    // RESONATOR spectrum on top (absorbs vertical slack).
-    const int bottomH = 200;
-    resonatorArea_ = r.removeFromTop(juce::jmax(140, r.getHeight() - bottomH - 8));
-    r.removeFromTop(8);
+    // RESONATOR spectrum on top, absorbing what the bottom panels leave.
+    resonatorArea_ = r.removeFromTop(juce::jmax(0, r.getHeight() - kBottomH - kPanelGap));
+    r.removeFromTop(kPanelGap);
 
     // Bottom split: PARAMETERS (left) | RESONATOR MODEL (right).
-    paramsArea_ = r.removeFromLeft(r.getWidth() * 3 / 5 - 4);
-    r.removeFromLeft(8);
+    paramsArea_ = r.removeFromLeft(r.getWidth() * 3 / 5 - kPanelGap / 2);
+    r.removeFromLeft(kPanelGap);
     modelArea_ = r;
 
     {
-        auto a = resonatorArea_.reduced(12, 10);
-        a.removeFromTop(22);
+        auto a = resonatorArea_.reduced(12, kPanelPadY);
+        a.removeFromTop(kTitleH);
         modalVizArea_ = a;
     }
 
+    auto bottomPanel = [](juce::Rectangle<int> panel) {
+        auto a = panel.reduced(12, kPanelPadY).withTrimmedBottom(kPanelPadBottom - kPanelPadY);
+        a.removeFromTop(kTitleH);
+        return a;
+    };
+
     // PARAMETERS: two rows of four value boxes.
     {
-        auto a = paramsArea_.reduced(12, 10);
-        a.removeFromTop(22);
-        const int rowH = 48;
+        auto a = bottomPanel(paramsArea_);
+        const int rowH = juce::jmin(kMaxRowH, (a.getHeight() - kRowGap) / 2);
         layoutRow(a.removeFromTop(rowH), {kStructure, kBrightness, kDamping, kPosition});
-        a.removeFromTop(8);
+        a.removeFromTop(kRowGap);
         layoutRow(a.removeFromTop(rowH), {kChord, kPitch, kFine, kLevel});
     }
 
-    // RESONATOR MODEL: 2x3 model buttons, then polyphony row.
+    // RESONATOR MODEL: 2x3 model buttons, then the polyphony row in what is left.
     {
-        auto a = modelArea_.reduced(12, 10);
-        a.removeFromTop(22);
-        auto modelGrid = a.removeFromTop(64);
+        auto a = bottomPanel(modelArea_);
+        auto modelGrid = a.removeFromTop(54);
         const int cols = 3, rows = 2;
         const int gx = 6, gy = 6;
         const int cw = (modelGrid.getWidth() - (cols - 1) * gx) / cols;
@@ -297,10 +317,10 @@ void HaloUI::resized() {
                 modelGrid.getX() + col * (cw + gx), modelGrid.getY() + row * (ch + gy), cw, ch);
         }
 
-        a.removeFromTop(12);
-        polyLabelRect_ = a.removeFromTop(16);
+        a.removeFromTop(8);
+        polyLabelRect_ = a.removeFromTop(14);
         a.removeFromTop(4);
-        auto polyRow = a.removeFromTop(40);
+        auto polyRow = a.removeFromTop(juce::jmin(40, a.getHeight()));
         const int pw = (polyRow.getWidth() - 2 * gx) / kNumPoly;
         for (int i = 0; i < kNumPoly; ++i)
             polyBtn_[static_cast<size_t>(i)] = juce::Rectangle<int>(

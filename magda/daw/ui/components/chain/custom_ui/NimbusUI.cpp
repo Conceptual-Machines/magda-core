@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "custom_ui/SamplerTiles.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -26,6 +27,16 @@ const ModeDesc kModes[4] = {{"GRANULAR", "classic grains"},
                             {"STRETCH", "pitch - time"},
                             {"DELAY", "looping echo"},
                             {"SPECTRAL", "fft clouds"}};
+
+constexpr int kPanelGap = 8;
+constexpr int kPanelPadY = 8;
+/// Less under the last row than over the title: the slot's edge frames it (#3144).
+constexpr int kPanelPadBottom = 4;
+constexpr int kTitleH = 18;
+constexpr int kTileGap = 6;
+constexpr int kMaxRowH = 42;
+/// PARAMETERS' most height; the cloud and controls above take the rest.
+constexpr int kMaxParamsH = 126;
 
 bool isPitch(int i) {
     return i == 2;
@@ -54,10 +65,10 @@ NimbusUI::NimbusUI() {
         c.label = std::make_unique<juce::Label>();
         c.label->setText(name, juce::dontSendNotification);
         c.label->setColour(juce::Label::textColourId, kDim);
-        c.label->setFont(FontManager::getInstance().getUIFont(11.0f));
         addAndMakeVisible(*c.label);
 
         c.slider = std::make_unique<LinkableTextSlider>(TextSlider::Format::Decimal);
+        sampler_tiles::styleValue(*c.slider);
         c.slider->setParamIndex(idx);
         c.slider->setTextColour(kText);
         if (isPitch(idx)) {
@@ -234,11 +245,15 @@ void NimbusUI::paint(juce::Graphics& g) {
     };
 
     panel(grainArea_);
-    titleStrip(g, grainArea_.reduced(14, 10), "GRAIN CLOUD", "granular texture");
+    titleStrip(g, grainArea_.reduced(14, kPanelPadY), "GRAIN CLOUD", "granular texture");
     paintBuffer(g);
 
     panel(paramsArea_);
-    titleStrip(g, paramsArea_.reduced(14, 10), "PARAMETERS", "drag a value to set");
+    titleStrip(g, paramsArea_.reduced(14, kPanelPadY), "PARAMETERS", "drag a value to set");
+
+    for (const auto& c : controls_)
+        if (c.slider != nullptr && !c.tile.isEmpty())
+            sampler_tiles::paint(g, c.tile, 4.0f);
 
     panel(ctrlArea_);
 
@@ -322,44 +337,40 @@ void NimbusUI::mouseDown(const juce::MouseEvent& e) {
 void NimbusUI::layoutRow(juce::Rectangle<int> row, const std::vector<int>& indices) {
     const int cellW = row.getWidth() / static_cast<int>(indices.size());
     for (int idx : indices) {
-        auto cell = row.removeFromLeft(cellW).reduced(6, 0);
         auto& c = controls_[static_cast<size_t>(idx)];
-        c.label->setBounds(cell.removeFromTop(13));
-        c.slider->setBounds(cell.removeFromTop(24));
+        c.tile = row.removeFromLeft(cellW).reduced(kTileGap / 2, 0);
+        sampler_tiles::layoutTile(*c.label, *c.slider, c.tile);
     }
 }
 
 void NimbusUI::resized() {
-    auto r = getLocalBounds().reduced(8);
+    // Padded at the sides only: the header above and the slot's edge below frame the panels.
+    auto r = getLocalBounds().reduced(kPanelGap, 0);
 
-    // Split the height evenly so the top row (cloud + controls) and the
-    // PARAMETERS panel stretch together as the slot grows.
-    auto top = r.removeFromTop((r.getHeight() - 8) / 2);
-    r.removeFromTop(8);
-    paramsArea_ = r;
+    paramsArea_ = r.removeFromBottom(juce::jmin(kMaxParamsH, (r.getHeight() - kPanelGap) / 2));
+    r.removeFromBottom(kPanelGap);
+    auto top = r;
 
     // Top row: GRAIN CLOUD (left) | FREEZE + PLAYBACK MODE controls (right).
-    grainArea_ = top.removeFromLeft(top.getWidth() / 2 - 4);
-    top.removeFromLeft(8);
+    grainArea_ = top.removeFromLeft(top.getWidth() / 2 - kPanelGap / 2);
+    top.removeFromLeft(kPanelGap);
     ctrlArea_ = top;
 
     {
-        auto a = grainArea_.reduced(12, 10);
-        a.removeFromTop(22);
+        auto a = grainArea_.reduced(12, kPanelPadY);
+        a.removeFromTop(kTitleH);
         bufferVizArea_ = a;
     }
 
     // PARAMETERS: Position/Size/Pitch/Density/Texture, then the blend routes.
     {
-        auto a = paramsArea_.reduced(12, 8);
-        a.removeFromTop(18);  // title strip
-        const int rowH = 38;
-        // Centre the two control rows in the panel body so extra height reads as
-        // balanced margin rather than dead space at the bottom.
-        const int blockH = rowH + 8 + 12 + 2 + rowH;
-        a.removeFromTop(juce::jmax(0, (a.getHeight() - blockH) / 2));
+        auto a =
+            paramsArea_.reduced(12, kPanelPadY).withTrimmedBottom(kPanelPadBottom - kPanelPadY);
+        a.removeFromTop(kTitleH);
+        constexpr int kBlendLabelH = 12 + 2;
+        const int rowH = juce::jmin(kMaxRowH, (a.getHeight() - 4 - kBlendLabelH) / 2);
         layoutRow(a.removeFromTop(rowH), {kPosition, kDensity, kSize, kTexture, kPitch});
-        a.removeFromTop(8);
+        a.removeFromTop(4);
         blendLabelRect_ = a.removeFromTop(12);
         a.removeFromTop(2);
         layoutRow(a.removeFromTop(rowH), {kDryWet, kSpread, kFeedback, kReverb});
@@ -367,12 +378,12 @@ void NimbusUI::resized() {
 
     // Top-right controls: FREEZE, then PLAYBACK MODE (2x2) filling the rest.
     {
-        auto a = ctrlArea_.reduced(12, 10);
-        freezeBtn_ = a.removeFromTop(28);
-        a.removeFromTop(10);
+        auto a = ctrlArea_.reduced(12, kPanelPadY);
+        freezeBtn_ = a.removeFromTop(26);
+        a.removeFromTop(6);
 
         modeLabelRect_ = a.removeFromTop(13);
-        a.removeFromTop(6);
+        a.removeFromTop(4);
         auto modeGrid = a;  // fill the remaining panel height
         const int gx = 6, gy = 6;
         const int cw = (modeGrid.getWidth() - gx) / 2;

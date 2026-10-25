@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaCompiledPolyInstrument.hpp"
+#include "custom_ui/SamplerTiles.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -20,7 +21,10 @@ const juce::Colour kReso{0xff5b8fd0};  // resonator accent (blue)
 
 constexpr int kTitleH = 18;
 constexpr int kRowH = 44;
-constexpr int kGap = 8;
+constexpr int kGap = 6;
+constexpr int kPanelGap = 8;
+/// Less under the last row than over the section title: the slot's edge frames it (#3144).
+constexpr int kPanelPadBottom = 4;
 
 struct StruckDevice {
     const char* pluginId;
@@ -83,9 +87,12 @@ StruckInstrumentUI::~StruckInstrumentUI() {
 }
 
 void StruckInstrumentUI::lookAndFeelChanged() {
-    for (auto& control : controls_)
+    for (auto& control : controls_) {
         if (control.label)
             control.label->setColour(juce::Label::textColourId, kDim);
+        if (control.slider)
+            control.slider->setTextColour(ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
+    }
     repaint();
 }
 
@@ -94,12 +101,12 @@ void StruckInstrumentUI::ensureControls(int count) {
         const int idx = static_cast<int>(controls_.size());
         Control c;
         c.label = std::make_unique<juce::Label>();
-        c.label->setFont(FontManager::getInstance().getUIFont(11.0f));
         c.label->setColour(juce::Label::textColourId, kDim);
         c.label->setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(*c.label);
 
         c.slider = std::make_unique<LinkableTextSlider>();
+        sampler_tiles::styleValue(*c.slider);
         c.slider->setParamIndex(idx);
         c.slider->onValueChanged = [this, idx](double v) {
             if (onParameterChanged)
@@ -369,6 +376,10 @@ void StruckInstrumentUI::paint(juce::Graphics& g) {
     sectionTitle(exciterArea_, "EXCITER", kExc);
     sectionTitle(resonatorArea_, "RESONATOR", kReso);
 
+    for (const auto& c : controls_)
+        if (c.slider != nullptr && !c.tile.isEmpty())
+            sampler_tiles::paint(g, c.tile, 4.0f);
+
     paintBody(g);
 }
 
@@ -378,41 +389,41 @@ void StruckInstrumentUI::layoutColumn(juce::Rectangle<int> area, const std::vect
     if (rows == 0)
         return;
     // A column with more rows than the body has room for shrinks them rather than spilling out.
-    rowH = juce::jlimit(30, rowH, (area.getHeight() - (rows - 1) * gap) / rows);
+    rowH = juce::jmin(rowH, (area.getHeight() - (rows - 1) * gap) / rows);
     const int stackH = rows * rowH + (rows - 1) * gap;
     const int top = area.getY() + juce::jmax(0, (area.getHeight() - stackH) / 2);
     juce::Rectangle<int> stack(area.getX(), top, area.getWidth(), stackH);
     for (int slot : slots) {
         if (slot < 0 || slot >= static_cast<int>(controls_.size()))
             continue;
-        auto row = stack.removeFromTop(rowH);
         auto& c = controls_[static_cast<size_t>(slot)];
-        c.label->setBounds(row.removeFromTop(14));
-        c.slider->setBounds(row.reduced(0, 1));
+        c.tile = stack.removeFromTop(rowH);
+        sampler_tiles::layoutTile(*c.label, *c.slider, c.tile);
         stack.removeFromTop(gap);
     }
 }
 
 void StruckInstrumentUI::resized() {
-    auto r = getLocalBounds().reduced(8);
+    // Padded at the sides only: the header above and the slot's edge below frame the panels.
+    auto r = getLocalBounds().reduced(kPanelGap, 0);
     r.removeFromTop(kTitleH);  // title strip (painted)
 
     bodyArea_ = r.removeFromLeft(juce::jmax(180, r.getWidth() * 42 / 100));
-    r.removeFromLeft(8);
-    exciterArea_ = r.removeFromLeft(r.getWidth() / 2 - 4);
-    r.removeFromLeft(8);
+    r.removeFromLeft(kPanelGap);
+    exciterArea_ = r.removeFromLeft(r.getWidth() / 2 - kPanelGap / 2);
+    r.removeFromLeft(kPanelGap);
     resonatorArea_ = r;
 
+    auto column = [](juce::Rectangle<int> panel) {
+        auto a = panel.reduced(12, 8).withTrimmedBottom(kPanelPadBottom - 8);
+        a.removeFromTop(18);  // section title
+        return a;
+    };
     // EXCITER column.
-    {
-        auto a = exciterArea_.reduced(12, 10);
-        a.removeFromTop(20);  // section title
-        layoutColumn(a, exciterSlots_, kRowH, kGap);
-    }
+    layoutColumn(column(exciterArea_), exciterSlots_, kRowH, kGap);
     // RESONATOR column (+ Gain pinned underneath the resonator knobs).
     {
-        auto a = resonatorArea_.reduced(12, 10);
-        a.removeFromTop(20);
+        auto a = column(resonatorArea_);
         std::vector<int> slots = resonatorSlots_;
         if (gainSlot_ >= 0)
             slots.push_back(gainSlot_);
