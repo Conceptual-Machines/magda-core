@@ -169,6 +169,20 @@
     "fx": "FX",
     "no_fx": "No devices"
   },
+  "settings": {
+    "title": "Settings",
+    "search": "Search",
+    "no_matches": "No settings match",
+    "one_change": "1 change",
+    "changes": "{0} changes",
+    "restore_defaults": "Restore defaults",
+    "applies_immediately": "Changes here apply immediately.",
+    "section.audio_midi": "Audio & MIDI",
+    "section.controllers": "Controllers",
+    "section.connections": "Connections",
+    "section.plugins": "Plugins",
+    "section.ai": "AI"
+  },
   "dialogs": {
     "open_project": "Open Project",
     "new_project": "New Project",

@@ -1,16 +1,17 @@
-#include "AudioSettingsDialog.hpp"
+#include "AudioSettingsPage.hpp"
 
-#include "../../audio/AudioDriverUtils.hpp"
-#include "../../audio/MidiBridge.hpp"
-#include "../../audio/io/AudioIOControl.hpp"
-#include "../../core/Config.hpp"
-#include "../../core/StringTable.hpp"
-#include "../../core/TrackManager.hpp"
-#include "../../engine/AudioEngine.hpp"
-#include "../themes/ActiveTheme.hpp"
-#include "../themes/DialogLookAndFeel.hpp"
-#include "../themes/FontManager.hpp"
-#include "../utils/ChannelLabels.hpp"
+#include "../../../audio/AudioDriverUtils.hpp"
+#include "../../../audio/MidiBridge.hpp"
+#include "../../../audio/io/AudioIOControl.hpp"
+#include "../../../core/Config.hpp"
+#include "../../../core/StringTable.hpp"
+#include "../../../core/TrackManager.hpp"
+#include "../../../engine/AudioEngine.hpp"
+#include "../../themes/ActiveTheme.hpp"
+#include "../../themes/DialogLookAndFeel.hpp"
+#include "../../themes/FontManager.hpp"
+#include "../../utils/ChannelLabels.hpp"
+#include "SettingsSections.hpp"
 
 namespace magda {
 
@@ -429,7 +430,7 @@ void CustomChannelSelector::resized() {
 }
 
 // ============================================================================
-// AudioSettingsDialog Implementation
+// AudioSettingsPage Implementation
 // ============================================================================
 
 // =============================================================================
@@ -511,7 +512,7 @@ void MidiInputList::toggle(int index) {
     MidiBridge::getInstance().activeInputsChanged();
 }
 
-AudioSettingsDialog::AudioSettingsDialog(AudioEngine* audioEngine)
+AudioSettingsPage::AudioSettingsPage(AudioEngine* audioEngine)
     : deviceRefreshSpinner_(deviceRefreshProgress_),
       audioEngine_(audioEngine),
       audio_(audioEngine != nullptr ? audioEngine->getAudioIO() : nullptr) {
@@ -642,27 +643,16 @@ AudioSettingsDialog::AudioSettingsDialog(AudioEngine* audioEngine)
     addAndMakeVisible(deviceNameLabel_);
     refreshChosenInterface();
 
-    // Setup close button
-    closeButton_.setButtonText(tr("audio_settings.button.close"));
-    closeButton_.onClick = [this]() {
-        savePreferencesIfNeeded();
-        if (auto* dw = findParentComponentOfClass<juce::DialogWindow>()) {
-            dw->exitModalState(0);
-        }
-    };
-    addAndMakeVisible(closeButton_);
-
-    // Set preferred size
-    setSize(700, 700);
+    setSize(700, kPreferredHeight);
 }
 
-AudioSettingsDialog::~AudioSettingsDialog() {
+AudioSettingsPage::~AudioSettingsPage() {
     if (audio_ != nullptr)
         audio_->removeListener(this);
     setLookAndFeel(nullptr);
 }
 
-void AudioSettingsDialog::hardwareChannelsChanged() {
+void AudioSettingsPage::hardwareChannelsChanged() {
     // Deliberately not the MIDI controls. Rebuilding the input list reapplies every
     // Config-active port, and JUCE broadcasts a manager change after attempting the open
     // whether or not it succeeded -- so a busy port never reaches the state asked for, and
@@ -684,15 +674,15 @@ void AudioSettingsDialog::hardwareChannelsChanged() {
     hideDeviceRefreshIndicator();
 }
 
-void AudioSettingsDialog::paint(juce::Graphics& g) {
+void AudioSettingsPage::paint(juce::Graphics& g) {
     g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 }
 
-void AudioSettingsDialog::lookAndFeelChanged() {
+void AudioSettingsPage::lookAndFeelChanged() {
     refreshHostWindowBackground(*this);
 }
 
-void AudioSettingsDialog::resized() {
+void AudioSettingsPage::resized() {
     auto bounds = getLocalBounds().reduced(10);
 
     // Device name label at top
@@ -753,13 +743,6 @@ void AudioSettingsDialog::resized() {
     bufferSizeComboBox_.setBounds(streamArea.removeFromLeft(110));
     bounds.removeFromTop(5);  // spacing
 
-    // Close button at bottom
-    const int buttonHeight = 28;
-    const int buttonWidth = 80;
-    auto buttonArea = bounds.removeFromBottom(buttonHeight);
-    bounds.removeFromBottom(10);  // spacing
-    closeButton_.setBounds(buttonArea.withSizeKeepingCentre(buttonWidth, buttonHeight));
-
     // Split remaining space: MIDI on the left where the JUCE selector was, channels right
     auto midiArea = bounds.removeFromLeft(bounds.getWidth() / 2);
     bounds.removeFromLeft(10);  // spacing
@@ -796,7 +779,7 @@ void AudioSettingsDialog::resized() {
     outputChannelSelector_->setBounds(bounds);
 }
 
-void AudioSettingsDialog::populateDeviceLists() {
+void AudioSettingsPage::populateDeviceLists() {
     // clear() defaults to sendNotificationAsync: on a re-list (every device
     // change notification lands here) the queued onChange fires after the
     // current device is re-selected below and re-applies the device setup,
@@ -850,7 +833,7 @@ void AudioSettingsDialog::populateDeviceLists() {
     }
 }
 
-void AudioSettingsDialog::updateDevicePickerMode() {
+void AudioSettingsPage::updateDevicePickerMode() {
     const bool singleDeviceDriver =
         audio_ != nullptr && audio_->isSingleInterfaceBackend(audio_->chosen().backend);
 
@@ -861,7 +844,7 @@ void AudioSettingsDialog::updateDevicePickerMode() {
     outputDeviceComboBox_.setVisible(!singleDeviceDriver);
 }
 
-void AudioSettingsDialog::showDeviceRefreshIndicator(bool flushRepaint) {
+void AudioSettingsPage::showDeviceRefreshIndicator(bool flushRepaint) {
     if (!deviceRefreshSpinner_.isVisible()) {
         deviceRefreshSpinner_.setVisible(true);
         deviceRefreshLabel_.setVisible(true);
@@ -876,7 +859,7 @@ void AudioSettingsDialog::showDeviceRefreshIndicator(bool flushRepaint) {
         juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
 }
 
-void AudioSettingsDialog::hideDeviceRefreshIndicator() {
+void AudioSettingsPage::hideDeviceRefreshIndicator() {
     if (!deviceRefreshSpinner_.isVisible())
         return;
     deviceRefreshSpinner_.setVisible(false);
@@ -884,12 +867,12 @@ void AudioSettingsDialog::hideDeviceRefreshIndicator() {
     resized();
 }
 
-void AudioSettingsDialog::onInputDeviceSelected() {
+void AudioSettingsPage::onInputDeviceSelected() {
     if (const auto id = inputDeviceComboBox_.getSelectedId(); id > 0)
         chooseInterface(inputDeviceComboBox_.getItemText(id - 1), true);
 }
 
-void AudioSettingsDialog::onOutputDeviceSelected() {
+void AudioSettingsPage::onOutputDeviceSelected() {
     if (audio_->isSingleInterfaceBackend(audio_->chosen().backend))
         return;
     if (const auto id = outputDeviceComboBox_.getSelectedId(); id > 0)
@@ -918,7 +901,7 @@ void keepChannelsTheyHave(AudioIOControl& audio, AudioIOSettings& settings, bool
 
 }  // namespace
 
-void AudioSettingsDialog::chooseInterface(const juce::String& interfaceName, bool inputs) {
+void AudioSettingsPage::chooseInterface(const juce::String& interfaceName, bool inputs) {
     const auto single = audio_->isSingleInterfaceBackend(audio_->chosen().backend);
     auto settings = audio_->chosen();
     if (single || inputs)
@@ -946,7 +929,7 @@ void AudioSettingsDialog::chooseInterface(const juce::String& interfaceName, boo
     hideDeviceRefreshIndicator();
 }
 
-void AudioSettingsDialog::onDriverSelected() {
+void AudioSettingsPage::onDriverSelected() {
     const auto id = driverComboBox_.getSelectedId();
     if (id <= 0 || audio_ == nullptr)
         return;
@@ -973,7 +956,7 @@ void AudioSettingsDialog::onDriverSelected() {
     hideDeviceRefreshIndicator();
 }
 
-void AudioSettingsDialog::onSampleRateSelected() {
+void AudioSettingsPage::onSampleRateSelected() {
     const auto id = sampleRateComboBox_.getSelectedId();
     if (id <= 0 || audio_ == nullptr)
         return;
@@ -987,7 +970,7 @@ void AudioSettingsDialog::onSampleRateSelected() {
                       juce::String(rate, 0) + " Hz");
 }
 
-void AudioSettingsDialog::onBufferSizeSelected() {
+void AudioSettingsPage::onBufferSizeSelected() {
     const auto id = bufferSizeComboBox_.getSelectedId();
     if (id <= 0 || audio_ == nullptr)
         return;
@@ -1001,8 +984,8 @@ void AudioSettingsDialog::onBufferSizeSelected() {
                       tr("audio_settings.unit.samples").replace("{0}", juce::String(size)));
 }
 
-void AudioSettingsDialog::applyStreamChange(const AudioIOSettings& settings,
-                                            const juce::String& what, const juce::String& asked) {
+void AudioSettingsPage::applyStreamChange(const AudioIOSettings& settings, const juce::String& what,
+                                          const juce::String& asked) {
     deviceRefreshLabel_.setText(
         trEllipsis("audio_settings.status.changing").replace("{0}", what).replace("{1}", asked),
         juce::dontSendNotification);
@@ -1035,7 +1018,7 @@ void AudioSettingsDialog::applyStreamChange(const AudioIOSettings& settings,
     });
 }
 
-void AudioSettingsDialog::populateStreamLists() {
+void AudioSettingsPage::populateStreamLists() {
     if (audio_ == nullptr)
         return;
 
@@ -1058,7 +1041,7 @@ void AudioSettingsDialog::populateStreamLists() {
     }
 }
 
-void AudioSettingsDialog::populateMidiOutputs() {
+void AudioSettingsPage::populateMidiOutputs() {
     if (audio_ == nullptr)
         return;
 
@@ -1078,13 +1061,13 @@ void AudioSettingsDialog::populateMidiOutputs() {
         midiOutputComboBox_.setSelectedId(1, juce::dontSendNotification);
 }
 
-void AudioSettingsDialog::refreshMidiControls() {
+void AudioSettingsPage::refreshMidiControls() {
     if (midiInputList_ != nullptr)
         midiInputList_->refresh();
     populateMidiOutputs();
 }
 
-void AudioSettingsDialog::refreshChosenInterface() {
+void AudioSettingsPage::refreshChosenInterface() {
     listed_ = audio_->chosen();
     populateDeviceLists();
     populateStreamLists();
@@ -1095,7 +1078,7 @@ void AudioSettingsDialog::refreshChosenInterface() {
     resized();
 }
 
-void AudioSettingsDialog::showOpenInterface() {
+void AudioSettingsPage::showOpenInterface() {
     const auto status = audio_->status();
     if (const auto panel = audio_->hasControlPanel(); panel != controlPanelButton_.isVisible()) {
         controlPanelButton_.setVisible(panel);
@@ -1118,7 +1101,7 @@ void AudioSettingsDialog::showOpenInterface() {
                              juce::dontSendNotification);
 }
 
-void AudioSettingsDialog::savePreferencesIfNeeded() {
+void AudioSettingsPage::savePreferencesIfNeeded() {
     if (!setAsPreferredCheckbox_.getToggleState())
         return;
 
@@ -1148,32 +1131,54 @@ void AudioSettingsDialog::savePreferencesIfNeeded() {
     config.setPreferredOutputDevice(preferredOutputDevice.toStdString());
     config.setPreferredInputChannels(inputChannelCount);
     config.setPreferredOutputChannels(outputChannelCount);
+    config.save();
 
     DBG("Saved preferred devices: Input=" << preferredInputDevice << " (" << inputChannelCount
                                           << " ch), Output=" << preferredOutputDevice << " ("
                                           << outputChannelCount << " ch)");
 }
 
-void AudioSettingsDialog::showDialog(juce::Component* parent, AudioEngine* audioEngine) {
-    juce::ignoreUnused(parent);
-    if (audioEngine == nullptr || audioEngine->getAudioIO() == nullptr) {
-        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
-                                               tr("audio_settings.error.not_initialized_title"),
-                                               tr("audio_settings.error.not_initialized"));
-        return;
+namespace {
+
+/** @brief Devices, channels and MIDI ports; every edit reopens the interface at once. */
+class AudioMidiSection : public SettingsSection {
+  public:
+    explicit AudioMidiSection(AudioEngine* audioEngine)
+        : SettingsSection(SettingsSectionId::AudioMidi) {
+        if (audioEngine != nullptr && audioEngine->getAudioIO() != nullptr) {
+            page_ = std::make_unique<AudioSettingsPage>(audioEngine);
+        } else {
+            unavailable_.setText(tr("audio_settings.error.not_initialized"),
+                                 juce::dontSendNotification);
+            unavailable_.setJustificationType(juce::Justification::centredTop);
+        }
     }
 
-    auto* dialog = new AudioSettingsDialog(audioEngine);
+    juce::String getTitle() const override {
+        return tr("settings.section.audio_midi");
+    }
+    std::vector<Tab> getTabs() override {
+        if (page_ == nullptr)
+            return {{getTitle(), &unavailable_, {}}};
+        return {{getTitle(), page_.get(), [](int) { return AudioSettingsPage::kPreferredHeight; }}};
+    }
+    bool appliesImmediately() const override {
+        return true;
+    }
+    void windowClosing() override {
+        if (page_ != nullptr)
+            page_->savePreferencesIfNeeded();
+    }
 
-    juce::DialogWindow::LaunchOptions options;
-    options.dialogTitle = tr("audio_settings.title");
-    options.dialogBackgroundColour = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
-    options.content.setOwned(dialog);
-    options.escapeKeyTriggersCloseButton = true;
-    options.useNativeTitleBar = true;
-    options.resizable = true;
+  private:
+    std::unique_ptr<AudioSettingsPage> page_;
+    juce::Label unavailable_;
+};
 
-    options.launchAsync();
+}  // namespace
+
+std::unique_ptr<SettingsSection> createAudioMidiSection(AudioEngine* audioEngine) {
+    return std::make_unique<AudioMidiSection>(audioEngine);
 }
 
 }  // namespace magda

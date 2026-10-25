@@ -33,7 +33,7 @@ class PreviewOutputCallback : public juce::AudioIODeviceCallback {
             return;
         }
 
-        // Read offset from Config so changes in AudioSettingsDialog take effect immediately.
+        // Read offset from Config so changes in the Audio & MIDI settings take effect immediately.
         // Config::getPreviewOutputChannel() is a plain member read — no locks or allocations.
         int offset = Config::getInstance().getPreviewOutputChannel();
         offset = std::max(offset, 0);

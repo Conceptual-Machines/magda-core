@@ -1,16 +1,20 @@
-#include "ControllersDialog.hpp"
+#include <juce_audio_devices/juce_audio_devices.h>
+#include <juce_gui_basics/juce_gui_basics.h>
 
 #include <algorithm>
 #include <map>
 
-#include "../themes/ActiveTheme.hpp"
-#include "../themes/DialogLookAndFeel.hpp"
-#include "../themes/FontManager.hpp"
+#include "../../themes/ActiveTheme.hpp"
+#include "../../themes/DialogLookAndFeel.hpp"
+#include "../../themes/FontManager.hpp"
+#include "SettingsSections.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
 #include "core/controllers/BindingRegistry.hpp"
+#include "core/controllers/Controller.hpp"
 #include "core/controllers/ControllerActivation.hpp"
+#include "core/controllers/ControllerProfile.hpp"
 #include "core/controllers/ControllerProfileRegistry.hpp"
 #include "core/controllers/ControllerRegistry.hpp"
 #include "scripting_app.hpp"
@@ -961,68 +965,42 @@ void LuaScriptsPage::ScriptListModel::paintListBoxItem(int rowNumber, juce::Grap
 }
 
 // =============================================================================
-// ControllersDialog
-// =============================================================================
-
-ControllersDialog::ControllersDialog() {
-    setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
-
-    profilesPage_ = std::make_unique<ControllerProfilesPage>();
-    scriptsPage_ = std::make_unique<LuaScriptsPage>();
-
-    auto tabBg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
-    tabbedComponent_.addTab(
-        tr("controllers.tab.profiles")
-            .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
-        tabBg, profilesPage_.get(), false);
-    tabbedComponent_.addTab(
-        tr("controllers.tab.scripts")
-            .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Lua)),
-        tabBg, scriptsPage_.get(), false);
-    addAndMakeVisible(tabbedComponent_);
-
-    setSize(560, 512);
-}
-
-ControllersDialog::~ControllersDialog() {
-    setLookAndFeel(nullptr);
-}
-
-void ControllersDialog::paint(juce::Graphics& g) {
-    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
-}
-
-void ControllersDialog::resized() {
-    tabbedComponent_.setBounds(getLocalBounds().reduced(8));
-}
-
-// =============================================================================
-// showDialog
+// Controllers section (#3162)
 // =============================================================================
 
 namespace {
-class SelfClosingDialogWindow : public juce::DialogWindow {
-  public:
-    SelfClosingDialogWindow(const juce::String& title, juce::Colour bg)
-        : juce::DialogWindow(title, bg, false, true) {}
 
-    void closeButtonPressed() override {
-        juce::MessageManager::callAsync([self = this]() { delete self; });
+/** @brief MIDI profiles and Lua scripts; each edit is committed as it is made. */
+class ControllersSection : public SettingsSection {
+  public:
+    ControllersSection() : SettingsSection(SettingsSectionId::Controllers) {}
+
+    juce::String getTitle() const override {
+        return tr("settings.section.controllers");
     }
+    std::vector<Tab> getTabs() override {
+        return {{tr("controllers.tab.profiles")
+                     .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Midi)),
+                 &profilesPage_,
+                 {}},
+                {tr("controllers.tab.scripts")
+                     .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Lua)),
+                 &scriptsPage_,
+                 {}}};
+    }
+    bool appliesImmediately() const override {
+        return true;
+    }
+
+  private:
+    ControllerProfilesPage profilesPage_;
+    LuaScriptsPage scriptsPage_;
 };
+
 }  // namespace
 
-void ControllersDialog::showDialog(juce::Component* /*parent*/) {
-    auto* dialog = new ControllersDialog();
-    auto bg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
-
-    auto* window = new SelfClosingDialogWindow(tr("controllers.title"), bg);
-    window->setContentOwned(dialog, true);
-    window->setUsingNativeTitleBar(true);
-    window->setResizable(true, false);
-    window->setAlwaysOnTop(true);
-    window->centreWithSize(dialog->getWidth(), dialog->getHeight());
-    window->setVisible(true);
+std::unique_ptr<SettingsSection> createControllersSection() {
+    return std::make_unique<ControllersSection>();
 }
 
 }  // namespace magda

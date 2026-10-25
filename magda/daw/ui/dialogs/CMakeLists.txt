@@ -1,30 +1,21 @@
 target_sources(magda_daw_app PRIVATE
-    ControllersDialog.cpp
     FourOscConversionPrompt.cpp
-    ConnectionsDialog.cpp
-    AISettingsDialog.cpp
-    AudioSettingsDialog.cpp
     ExportAudioDialog.cpp
     ExportMidiDialog.cpp
     GainStagingDialog.cpp
     ParameterConfigDialog.cpp
-    PluginSettingsDialog.cpp
-    PreferencesDialog.cpp
     ProjectSettingsDialog.cpp
     TrackManagerDialog.cpp
     AboutDialog.cpp
     SplashScreen.cpp
-    AISettingsDialog.hpp
-    ConnectionsDialog.hpp
-    AudioSettingsDialog.hpp
     ExportAudioDialog.hpp
     ExportMidiDialog.hpp
     GainStagingDialog.hpp
     ParameterConfigDialog.hpp
-    PluginSettingsDialog.hpp
-    PreferencesDialog.hpp
     ProjectSettingsDialog.hpp
     TrackManagerDialog.hpp
     AboutDialog.hpp
     SplashScreen.hpp
 )
+
+add_subdirectory(settings)

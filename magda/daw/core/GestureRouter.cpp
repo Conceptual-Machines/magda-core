@@ -127,6 +127,10 @@ GestureRouter::GestureRouter() {
     installDefaults();
 }
 
+std::unique_ptr<GestureRouter> GestureRouter::createDetached() {
+    return std::unique_ptr<GestureRouter>(new GestureRouter());
+}
+
 uint64_t GestureRouter::makeKey(GestureContext context, const GestureInput& input) {
     auto normalized = input;
     if (normalized.kind == GestureInputKind::Drag)

@@ -1,5 +1,3 @@
-#include "PreferencesDialog.hpp"
-
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include <algorithm>
@@ -8,20 +6,21 @@
 #include <filesystem>
 #include <vector>
 
-#include "../../media_db/MediaDatabase.hpp"
-#include "../../media_db/MediaDbContext.hpp"
-#include "../../media_db/MediaDbQuery.hpp"
-#include "../../media_db/PresetDbIndexer.hpp"
-#include "../../project/ProjectManager.hpp"
-#include "../components/chain/params/ParamControlStyle.hpp"
-#include "../components/common/TextSlider.hpp"
-#include "../panels/TransportLayout.hpp"
-#include "../themes/ActiveTheme.hpp"
-#include "../themes/DialogLookAndFeel.hpp"
-#include "../themes/FontManager.hpp"
-#include "../themes/UserTheme.hpp"
-#include "../windows/MainWindow.hpp"
-#include "ProjectFormatChoices.hpp"
+#include "../../../media_db/MediaDatabase.hpp"
+#include "../../../media_db/MediaDbContext.hpp"
+#include "../../../media_db/MediaDbQuery.hpp"
+#include "../../../media_db/PresetDbIndexer.hpp"
+#include "../../../project/ProjectManager.hpp"
+#include "../../components/chain/params/ParamControlStyle.hpp"
+#include "../../components/common/TextSlider.hpp"
+#include "../../panels/TransportLayout.hpp"
+#include "../../themes/ActiveTheme.hpp"
+#include "../../themes/DialogLookAndFeel.hpp"
+#include "../../themes/FontManager.hpp"
+#include "../../themes/UserTheme.hpp"
+#include "../../windows/MainWindow.hpp"
+#include "../ProjectFormatChoices.hpp"
+#include "SettingsSections.hpp"
 #include "core/AppPaths.hpp"
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
@@ -152,22 +151,6 @@ void setupPathTextEditor(juce::Component& owner, juce::TextEditor& editor) {
     editor.setColour(juce::TextEditor::outlineColourId,
                      magda::ActiveTheme::getColour(magda::ActiveTheme::BORDER));
     owner.addAndMakeVisible(editor);
-}
-
-juce::Rectangle<int> getPreferencesDialogContentSize() {
-    constexpr int preferredW = 760;
-    constexpr int preferredH = 620;
-    constexpr int minW = 520;
-    constexpr int minH = 380;
-
-    if (const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()) {
-        const int maxW = display->userBounds.toNearestInt().getWidth() - 48;
-        const int maxH = display->userBounds.toNearestInt().getHeight() - 96;
-        return {juce::jmax(minW, juce::jmin(preferredW, maxW)),
-                juce::jmax(minH, juce::jmin(preferredH, maxH))};
-    }
-
-    return {preferredW, preferredH};
 }
 
 }  // namespace
@@ -453,17 +436,15 @@ class GeneralPage : public juce::Component {
         int selIdx = languageCombo.getSelectedId() - 1;
         if (selIdx >= 0 && selIdx < static_cast<int>(availableLanguages_.size())) {
             auto newLang = availableLanguages_[selIdx];
-            if (newLang != juce::String(config.getLanguage())) {
-                config.setLanguage(newLang.toStdString());
-                StringTable::getInstance().loadLanguage(newLang);
-            }
+            config.setLanguage(newLang.toStdString());
         }
 
         config.setLocalizedUIFontScale(localizedFontScaleSlider.getValue() / 100.0);
     }
 
   private:
-    static constexpr int kTwoColumnMinWidth = 720;
+    static constexpr int kTwoColumnMinWidth =
+        1100;  // one column in a default-sized Settings window (#3162)
 
     static bool shouldUseSingleColumnLayout(int width) {
         return width < kTwoColumnMinWidth;
@@ -1043,14 +1024,7 @@ class AppearancePage : public juce::Component {
             daw::ui::controlStyleKey(static_cast<daw::ui::ParamControlStyle>(
                 juce::jmax(0, deviceControlStyleCombo.getSelectedId() - 1))));
 
-        const double newScale = scaleValueForId(scaleCombo.getSelectedId());
-        if (newScale > 0.0) {
-            applyUIScale(newScale);
-        } else {
-            applyUIScale(dpiOnlyAutoScale(), /*persist=*/false);
-            config.setUIScale(0.0);
-            config.save();
-        }
+        config.setUIScale(juce::jmax(0.0, scaleValueForId(scaleCombo.getSelectedId())));
         config.setUIFontFamily(fontFamilyValueForId(fontFamilyCombo.getSelectedId()));
         config.setUIFontScale(fontScaleSlider.getValue() / 100.0);
 
@@ -1081,7 +1055,8 @@ class AppearancePage : public juce::Component {
     // Two-column layout metrics. Below kTwoColumnMinWidth the page stacks into a
     // single column; at or above it, the tall colour block sits beside the
     // shorter sizing controls. Matches GeneralPage's responsive threshold.
-    static constexpr int kTwoColumnMinWidth = 720;
+    static constexpr int kTwoColumnMinWidth =
+        1100;  // one column in a default-sized Settings window (#3162)
     static constexpr int kHeaderH = 28;
     static constexpr int kRowH = 32;
     static constexpr int kSliderH = 24;
@@ -1921,10 +1896,9 @@ class RenderingPage : public juce::Component {
 // UX: when the user picks a new folder via Browse, immediately surface a
 // migration prompt (Copy / Don't copy / Cancel). The user's answer is
 // remembered as `pendingCopyData_` / `pendingCopyPresets_`. Cancel reverts
-// the pick entirely. When the user clicks OK / Apply on the dialog,
-// PreferencesDialog::applySettings persists the new path(s) to Config,
-// runs any pending copy, and (for the data folder) quits so the app
-// restarts at the new path.
+// the pick entirely. On Apply, the Paths section persists the new path(s)
+// to Config, runs any pending copy, and (for the data folder) quits so the
+// app restarts at the new path.
 
 class PathsPage : public juce::Component {
   public:
@@ -2046,8 +2020,7 @@ class PathsPage : public juce::Component {
 
         editorReset_.setButtonText("Reset");
         editorReset_.onClick = [this]() {
-            magda::Config::getInstance().setExternalAudioEditorPath(std::string{});
-            magda::Config::getInstance().save();
+            editorPath_.clear();
             refreshMediaLibrarySettings();
         };
         addAndMakeVisible(editorReset_);
@@ -2062,9 +2035,7 @@ class PathsPage : public juce::Component {
 
         dbReset_.setButtonText("Reset");
         dbReset_.onClick = [this]() {
-            magda::Config::getInstance().setMediaDbDir(std::string{});
-            magda::Config::getInstance().save();
-            magda::media::MediaDbContext::getInstance().resetForReopen();
+            dbDir_.clear();
             refreshMediaLibrarySettings();
         };
         addAndMakeVisible(dbReset_);
@@ -2094,8 +2065,7 @@ class PathsPage : public juce::Component {
 
         captureReset_.setButtonText("Reset");
         captureReset_.onClick = [this]() {
-            magda::Config::getInstance().setCaptureDir(std::string{});
-            magda::Config::getInstance().save();
+            captureDir_.clear();
             refreshCaptureFolder();
         };
         addAndMakeVisible(captureReset_);
@@ -2214,21 +2184,35 @@ class PathsPage : public juce::Component {
     enum class Kind { Data, Presets };
 
     void loadSettings(Config& config) {
+        // The originals are what is in use, so a restored default shows as a change.
+        originalDataPath_ = Config::getInstance().getDataDir();
+        originalPresetsPath_ = Config::getInstance().getPresetsDir();
         dataPath_ = config.getDataDir();
         presetsPath_ = config.getPresetsDir();
+        pendingCopyData_ = false;
+        pendingCopyPresets_ = false;
+        editorPath_ = config.getExternalAudioEditorPath();
+        dbDir_ = config.getMediaDbDir();
+        captureDir_ = config.getCaptureDir();
+        updateDisplay();
+        refreshMediaLibrarySettings();
+        refreshCaptureFolder();
+    }
+
+    // The data and presets folders are committed by the section, after the
+    // migration prompts the user answered at Browse time.
+    void applySettings(Config& config) {
+        config.setExternalAudioEditorPath(editorPath_);
+        config.setMediaDbDir(dbDir_);
+        config.setCaptureDir(captureDir_);
+    }
+
+    void markPathsCommitted() {
         originalDataPath_ = dataPath_;
         originalPresetsPath_ = presetsPath_;
         pendingCopyData_ = false;
         pendingCopyPresets_ = false;
-        updateDisplay();
         refreshMediaLibrarySettings();
-    }
-
-    void applySettings(Config& /*config*/) {
-        // Path commits run from PreferencesDialog::applySettings — it knows
-        // the order in which to commit and how to handle the data-folder
-        // restart. Migration prompts already happened at Browse time; this
-        // page only carries the user's answers forward.
     }
 
     bool dataDirChanged() const {
@@ -2397,13 +2381,13 @@ class PathsPage : public juce::Component {
     void refreshMediaLibrarySettings() {
         auto& ctx = magda::media::MediaDbContext::getInstance();
 
-        const auto editorPath =
-            juce::String(magda::Config::getInstance().getExternalAudioEditorPath());
+        const auto editorPath = juce::String(editorPath_);
         editorLocationField_.setText(editorPath.isEmpty() ? juce::String("Not configured")
                                                           : editorPath,
                                      juce::dontSendNotification);
 
-        dbLocationField_.setText(juce::String(ctx.dbPath().parent_path().string()),
+        dbLocationField_.setText(dbDir_.empty() ? juce::String(ctx.dbPath().parent_path().string())
+                                                : juce::String(dbDir_),
                                  juce::dontSendNotification);
 
         int files = 0;
@@ -2420,34 +2404,31 @@ class PathsPage : public juce::Component {
     }
 
     void refreshCaptureFolder() {
-        const juce::String folder(magda::Config::getInstance().getCaptureDir());
+        const juce::String folder(captureDir_);
         captureLocationField_.setText(folder.isEmpty() ? juce::String("System temp folder")
                                                        : folder,
                                       juce::dontSendNotification);
     }
 
     void browseForCaptureLocation() {
-        const juce::File current(
-            juce::File::isAbsolutePath(magda::Config::getInstance().getCaptureDir())
-                ? juce::String(magda::Config::getInstance().getCaptureDir())
-                : juce::String());
+        const juce::File current(juce::File::isAbsolutePath(captureDir_) ? juce::String(captureDir_)
+                                                                         : juce::String());
         fileChooser_ = std::make_unique<juce::FileChooser>(
             "Choose a folder for the capture history",
             current.isDirectory() ? current
                                   : juce::File::getSpecialLocation(juce::File::userHomeDirectory));
 
         juce::Component::SafePointer<PathsPage> self(this);
-        fileChooser_->launchAsync(
-            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
-            [self](const juce::FileChooser& fc) {
-                const auto picked = fc.getResult();
-                if (!picked.isDirectory())
-                    return;
-                magda::Config::getInstance().setCaptureDir(picked.getFullPathName().toStdString());
-                magda::Config::getInstance().save();
-                if (auto* page = self.getComponent())
-                    page->refreshCaptureFolder();
-            });
+        fileChooser_->launchAsync(juce::FileBrowserComponent::openMode |
+                                      juce::FileBrowserComponent::canSelectDirectories,
+                                  [self](const juce::FileChooser& fc) {
+                                      const auto picked = fc.getResult();
+                                      auto* page = self.getComponent();
+                                      if (!picked.isDirectory() || page == nullptr)
+                                          return;
+                                      page->captureDir_ = picked.getFullPathName().toStdString();
+                                      page->refreshCaptureFolder();
+                                  });
     }
 
     void browseForDbLocation() {
@@ -2463,20 +2444,15 @@ class PathsPage : public juce::Component {
             juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
             [self](const juce::FileChooser& fc) {
                 const auto picked = fc.getResult();
-                if (picked.isDirectory()) {
-                    magda::Config::getInstance().setMediaDbDir(
-                        picked.getFullPathName().toStdString());
-                    magda::Config::getInstance().save();
-                    magda::media::MediaDbContext::getInstance().resetForReopen();
-                    if (auto* page = self.getComponent())
-                        page->refreshMediaLibrarySettings();
+                if (auto* page = self.getComponent(); page != nullptr && picked.isDirectory()) {
+                    page->dbDir_ = picked.getFullPathName().toStdString();
+                    page->refreshMediaLibrarySettings();
                 }
             });
     }
 
     void browseForExternalEditor() {
-        const auto configured =
-            juce::String(magda::Config::getInstance().getExternalAudioEditorPath());
+        const auto configured = juce::String(editorPath_);
         juce::File initial = configured.isNotEmpty()
                                  ? juce::File(configured)
                                  : juce::File::getSpecialLocation(juce::File::userHomeDirectory);
@@ -2507,11 +2483,10 @@ class PathsPage : public juce::Component {
                 return;
             }
 #endif
-            magda::Config::getInstance().setExternalAudioEditorPath(
-                picked.getFullPathName().toStdString());
-            magda::Config::getInstance().save();
-            if (auto* page = self.getComponent())
+            if (auto* page = self.getComponent()) {
+                page->editorPath_ = picked.getFullPathName().toStdString();
                 page->refreshMediaLibrarySettings();
+            }
         });
     }
 
@@ -2579,6 +2554,10 @@ class PathsPage : public juce::Component {
 
     juce::Label renderHint_;
 
+    std::string editorPath_;
+    std::string dbDir_;
+    std::string captureDir_;
+
     juce::Label editorHeader_;
     juce::Label editorLocationCaption_;
     juce::TextEditor editorLocationField_;
@@ -2605,21 +2584,22 @@ class PathsPage : public juce::Component {
 
 // ---- Shortcuts tab ---------------------------------------------------------
 
-class ShortcutsPage : public juce::Component {
+class ShortcutsPage {
   public:
     explicit ShortcutsPage(juce::ApplicationCommandManager* commandManager)
-        : tabbedComponent_(juce::TabbedButtonBar::TabsAtTop) {
-        auto tabBg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
-        keyboardPage_ = std::make_unique<KeyboardShortcutsPage>(commandManager);
-        gesturesPage_ = std::make_unique<GestureBindingsPage>();
-        tabbedComponent_.addTab("Keyboard", tabBg, keyboardPage_.get(), false);
-        tabbedComponent_.addTab("Gestures", tabBg, gesturesPage_.get(), false);
-        tabbedComponent_.setTabBarDepth(32);
-        addAndMakeVisible(tabbedComponent_);
+        : keyboardPage_(std::make_unique<KeyboardShortcutsPage>(commandManager)),
+          gesturesPage_(std::make_unique<GestureBindingsPage>()) {}
+
+    juce::Component& getKeyboardPage() {
+        return *keyboardPage_;
+    }
+    juce::Component& getGesturesPage() {
+        return *gesturesPage_;
     }
 
-    void resized() override {
-        tabbedComponent_.setBounds(getLocalBounds());
+    void commit() {
+        keyboardPage_->commit();
+        GestureRouter::getInstance().loadFromConfig();
     }
 
     void loadSettings(Config& config) {
@@ -2639,8 +2619,10 @@ class ShortcutsPage : public juce::Component {
             setupSectionHeader(*this, header_, tr("preferences.section.keyboard_shortcuts"));
 
             if (commandManager != nullptr) {
-                keyEditor_ = std::make_unique<juce::KeyMappingEditorComponent>(
-                    *commandManager->getKeyMappings(), true);
+                // Edits go to a copy, so they wait for Apply like every other setting.
+                live_ = commandManager->getKeyMappings();
+                mappings_ = std::make_unique<juce::KeyPressMappingSet>(*live_);
+                keyEditor_ = std::make_unique<juce::KeyMappingEditorComponent>(*mappings_, true);
                 keyEditor_->setColours(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND),
                                        ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
                 addAndMakeVisible(*keyEditor_);
@@ -2666,12 +2648,35 @@ class ShortcutsPage : public juce::Component {
                 missingLabel_.setBounds(bounds.removeFromTop(28));
         }
 
-        void loadSettings(Config&) {}
-        void applySettings(Config&) {}
+        void loadSettings(Config& config) {
+            if (mappings_ == nullptr)
+                return;
+            mappings_->resetToDefaultMappings();
+            if (auto xml = juce::parseXML(config.getKeyboardBindings().toString()))
+                mappings_->restoreFromXml(*xml);
+        }
+
+        void applySettings(Config& config) {
+            if (mappings_ == nullptr)
+                return;
+            // The same diff-from-defaults form KeyMappingStore saves.
+            if (auto xml = mappings_->createXml(true))
+                config.setKeyboardBindings(xml->toString());
+            else
+                config.setKeyboardBindings(juce::var());
+        }
+
+        void commit() {
+            if (mappings_ != nullptr)
+                if (auto xml = mappings_->createXml(true))
+                    live_->restoreFromXml(*xml);
+        }
 
       private:
         juce::Label header_;
         juce::Label missingLabel_;
+        juce::KeyPressMappingSet* live_ = nullptr;
+        std::unique_ptr<juce::KeyPressMappingSet> mappings_;
         std::unique_ptr<juce::KeyMappingEditorComponent> keyEditor_;
     };
 
@@ -2682,11 +2687,8 @@ class ShortcutsPage : public juce::Component {
 
             resetButton_.setButtonText("Reset");
             resetButton_.onClick = [this] {
-                auto& router = GestureRouter::getInstance();
-                router.resetToDefaults();
-                router.saveToConfig();
                 capturingRow_ = nullptr;
-                loadFromRouter();
+                loadFromRouter(*GestureRouter::createDetached());
             };
             addAndMakeVisible(resetButton_);
 
@@ -2809,12 +2811,13 @@ class ShortcutsPage : public juce::Component {
             return false;
         }
 
-        void loadSettings(Config&) {
-            loadFromRouter();
+        void loadSettings(Config& config) {
+            loadFromRouter(*routerFor(config));
         }
 
-        void applySettings(Config&) {
-            auto& router = GestureRouter::getInstance();
+        void applySettings(Config& config) {
+            const auto edited = routerFor(config);
+            auto& router = *edited;
 
             for (const auto& row : rows_) {
                 if (!row->contextLabel.isVisible())
@@ -2841,7 +2844,13 @@ class ShortcutsPage : public juce::Component {
                                    row->invert.getToggleState()});
             }
 
-            router.saveToConfig();
+            config.setGestureBindings(router.toVar());
+        }
+
+        static std::unique_ptr<GestureRouter> routerFor(const Config& config) {
+            auto router = GestureRouter::createDetached();
+            router->loadFromVar(config.getGestureBindings());
+            return router;
         }
 
       private:
@@ -3229,8 +3238,7 @@ class ShortcutsPage : public juce::Component {
             rows_.push_back(std::move(row));
         }
 
-        void loadFromRouter() {
-            auto& router = GestureRouter::getInstance();
+        void loadFromRouter(const GestureRouter& router) {
             for (auto& row : rows_) {
                 GestureBinding binding;
                 GestureInput displayedInput = row->input;
@@ -3373,163 +3381,13 @@ class ShortcutsPage : public juce::Component {
         juce::Point<int> captureDragStart_;
     };
 
-    juce::TabbedComponent tabbedComponent_;
     std::unique_ptr<KeyboardShortcutsPage> keyboardPage_;
     std::unique_ptr<GestureBindingsPage> gesturesPage_;
 };
 
 // ---------------------------------------------------------------------------
-// PreferencesDialog
+// Settings sections (#3162)
 // ---------------------------------------------------------------------------
-
-PreferencesDialog::PreferencesDialog(juce::ApplicationCommandManager* commandManager) {
-    setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
-
-    generalPage = std::make_unique<GeneralPage>();
-    appearancePage = std::make_unique<AppearancePage>();
-    renderingPage = std::make_unique<RenderingPage>();
-    pathsPage = std::make_unique<PathsPage>();
-    defaultsPage = std::make_unique<DefaultsPage>();
-    shortcutsPage = std::make_unique<ShortcutsPage>(commandManager);
-
-    auto setupPageViewport = [](juce::Viewport& viewport, juce::Component& page) {
-        viewport.setViewedComponent(&page, false);
-        viewport.setScrollBarsShown(true, false, true, false);
-        viewport.setScrollOnDragMode(juce::Viewport::ScrollOnDragMode::never);
-        page.setViewportIgnoreDragFlag(true);
-    };
-    setupPageViewport(generalPageViewport, *generalPage);
-    setupPageViewport(appearancePageViewport, *appearancePage);
-    setupPageViewport(renderingPageViewport, *renderingPage);
-    setupPageViewport(pathsPageViewport, *pathsPage);
-    setupPageViewport(defaultsPageViewport, *defaultsPage);
-
-    auto tabBg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
-    tabbedComponent.addTab(tr("preferences.tab.general"), tabBg, &generalPageViewport, false);
-    tabbedComponent.addTab(trOr("preferences.tab.appearance", "Appearance"), tabBg,
-                           &appearancePageViewport, false);
-    tabbedComponent.addTab(tr("preferences.tab.rendering"), tabBg, &renderingPageViewport, false);
-    tabbedComponent.addTab(tr("preferences.tab.paths"), tabBg, &pathsPageViewport, false);
-    tabbedComponent.addTab(tr("preferences.tab.defaults"), tabBg, &defaultsPageViewport, false);
-    tabbedComponent.addTab(tr("preferences.tab.shortcuts"), tabBg, shortcutsPage.get(), false);
-    tabbedComponent.setTabBarDepth(36);
-    addAndMakeVisible(tabbedComponent);
-
-    okButton.setButtonText(tr("dialogs.ok"));
-    okButton.onClick = [this]() {
-        applySettings();
-        if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
-            dw->exitModalState(1);
-    };
-    addAndMakeVisible(okButton);
-
-    cancelButton.setButtonText(tr("dialogs.cancel"));
-    cancelButton.onClick = [this]() {
-        if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
-            dw->exitModalState(0);
-    };
-    addAndMakeVisible(cancelButton);
-
-    applyButton.setButtonText(tr("dialogs.apply"));
-    applyButton.onClick = [this]() { applySettings(); };
-    addAndMakeVisible(applyButton);
-
-    loadCurrentSettings();
-    const auto contentSize = getPreferencesDialogContentSize();
-    setSize(contentSize.getWidth(), contentSize.getHeight());
-}
-
-PreferencesDialog::~PreferencesDialog() {
-    setLookAndFeel(nullptr);
-}
-
-void PreferencesDialog::paint(juce::Graphics& g) {
-    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
-}
-
-void PreferencesDialog::lookAndFeelChanged() {
-    const auto background = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
-    for (int i = 0; i < tabbedComponent.getNumTabs(); ++i)
-        tabbedComponent.setTabBackgroundColour(i, background);
-
-    refreshHostWindowBackground(*this);
-
-    repaint();
-}
-
-void PreferencesDialog::resized() {
-    const int buttonH = 28;
-    const int buttonW = 80;
-    const int buttonSpacing = 10;
-    const int margin = 16;
-
-    auto bounds = getLocalBounds();
-
-    // Reserve bottom strip for the button row
-    auto bottomStrip = bounds.removeFromBottom(buttonH + (margin * 2));
-    tabbedComponent.setBounds(bounds);
-    updatePageViewports();
-
-    // Right-align buttons within the bottom strip
-    bottomStrip.reduce(margin, margin);
-    const int totalBtnW = (buttonW * 3) + (buttonSpacing * 2);
-    bottomStrip.removeFromLeft(bottomStrip.getWidth() - totalBtnW);
-
-    cancelButton.setBounds(bottomStrip.removeFromLeft(buttonW));
-    bottomStrip.removeFromLeft(buttonSpacing);
-    applyButton.setBounds(bottomStrip.removeFromLeft(buttonW));
-    bottomStrip.removeFromLeft(buttonSpacing);
-    okButton.setBounds(bottomStrip.removeFromLeft(buttonW));
-}
-
-void PreferencesDialog::updatePageViewports() {
-    auto updateContentSize = [](juce::Viewport& viewport, juce::Component& page,
-                                int preferredHeight) {
-        const int viewW = juce::jmax(1, viewport.getMaximumVisibleWidth());
-        const int viewH = juce::jmax(1, viewport.getMaximumVisibleHeight());
-        page.setSize(viewW, juce::jmax(viewH, preferredHeight));
-    };
-
-    const auto updateAll = [this, &updateContentSize] {
-        if (generalPage) {
-            const int viewW = juce::jmax(1, generalPageViewport.getMaximumVisibleWidth());
-            updateContentSize(generalPageViewport, *generalPage,
-                              generalPage->getPreferredHeight(viewW));
-        }
-        if (appearancePage) {
-            const int viewW = juce::jmax(1, appearancePageViewport.getMaximumVisibleWidth());
-            updateContentSize(appearancePageViewport, *appearancePage,
-                              appearancePage->getPreferredHeight(viewW));
-        }
-        if (renderingPage) {
-            const int viewW = juce::jmax(1, renderingPageViewport.getMaximumVisibleWidth());
-            updateContentSize(renderingPageViewport, *renderingPage,
-                              renderingPage->getPreferredHeight(viewW));
-        }
-        if (pathsPage) {
-            const int viewW = juce::jmax(1, pathsPageViewport.getMaximumVisibleWidth());
-            updateContentSize(pathsPageViewport, *pathsPage, pathsPage->getPreferredHeight(viewW));
-        }
-        if (defaultsPage) {
-            const int viewW = juce::jmax(1, defaultsPageViewport.getMaximumVisibleWidth());
-            updateContentSize(defaultsPageViewport, *defaultsPage,
-                              defaultsPage->getPreferredHeight(viewW));
-        }
-    };
-
-    updateAll();
-    updateAll();
-}
-
-void PreferencesDialog::loadCurrentSettings() {
-    auto& config = Config::getInstance();
-    generalPage->loadSettings(config);
-    appearancePage->loadSettings(config);
-    renderingPage->loadSettings(config);
-    pathsPage->loadSettings(config);
-    defaultsPage->loadSettings(config);
-    shortcutsPage->loadSettings(config);
-}
 
 namespace {
 
@@ -3592,110 +3450,185 @@ void refreshFontScaleForOpenWindows(double oldScale, double newScale) {
     }
 }
 
-}  // namespace
-
-void PreferencesDialog::applySettings() {
-    auto& config = Config::getInstance();
-    const double oldFontScale = config.getUIFontScale();
-
-    // Snapshot the path changes the user committed at Browse time. Capture
-    // these before applying pages so the values don't shift mid-flight.
-    const bool dataChanged = pathsPage->dataDirChanged();
-    const bool presetsChanged = pathsPage->presetsDirChanged();
-    const bool copyData = pathsPage->shouldCopyData();
-    const bool copyPresets = pathsPage->shouldCopyPresets();
-    const juce::File dataFrom(juce::String(pathsPage->getOriginalDataPath()).isEmpty()
-                                  ? magda::paths::alwaysOSDefault().getFullPathName()
-                                  : juce::String(pathsPage->getOriginalDataPath()));
-    const juce::File dataTo(juce::String(pathsPage->getNewDataPath()));
-    const juce::File presetsFrom(
-        juce::String(pathsPage->getOriginalPresetsPath()).isEmpty()
-            ? juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
-                  .getChildFile("MAGDA")
-                  .getChildFile("Presets")
-                  .getFullPathName()
-            : juce::String(pathsPage->getOriginalPresetsPath()));
-    const juce::File presetsTo(juce::String(pathsPage->getNewPresetsPath()));
-
-    // Apply non-path pages and persist.
-    generalPage->applySettings(config);
-    appearancePage->applySettings(config);
-    if (appearancePage->shouldApplyPaletteToCurrentProject()) {
-        ProjectManager::getInstance().applyConfigPaletteToCurrentProject();
-        appearancePage->clearApplyPaletteToCurrentProject();
-    }
-    renderingPage->applySettings(config);
-    shortcutsPage->applySettings(config);
-    pathsPage->applySettings(config);  // no-op for path values
-    defaultsPage->applySettings(config);
-    config.save();
-
-    const double newFontScale = config.getUIFontScale();
-    refreshFontScaleForOpenWindows(oldFontScale, newFontScale);
-
-    // Apply auto-save settings
-    ProjectManager::getInstance().setAutoSaveEnabled(config.getAutoSaveEnabled(),
-                                                     config.getAutoSaveIntervalSeconds());
-
-    // Apply panel visibility and layout to live session
-    for (int i = juce::TopLevelWindow::getNumTopLevelWindows(); --i >= 0;) {
-        if (auto* mw = dynamic_cast<MainWindow*>(juce::TopLevelWindow::getTopLevelWindow(i))) {
-            mw->applyPanelVisibilityFromConfig();
-            mw->applyLayoutFromConfig();
-            break;
-        }
-    }
-
-    // Presets path: hot-apply (no restart needed). The user already chose
-    // copy / don't-copy at Browse time; here we just commit.
-    if (presetsChanged) {
-        config.setPresetsDir(pathsPage->getNewPresetsPath());
-        config.save();
-        magda::paths::resolve();
-        if (copyPresets && !copyFolderIfNeeded(presetsFrom, presetsTo))
-            showMigrationFailureAsync(presetsFrom, presetsTo);
-    }
-
-    // Data path: needs a restart so the logger / plugin scanner / etc.
-    // re-open at the new location. Persist Config, copy if requested, quit.
-    if (dataChanged) {
-        auto& projectManager = ProjectManager::getInstance();
-        if (projectManager.isDirty() && !projectManager.showUnsavedChangesDialog())
-            return;
-
-        if (copyData && !copyFolderIfNeeded(dataFrom, dataTo)) {
-            showMigrationFailureAsync(dataFrom, dataTo);
-            return;  // Don't quit if the copy failed — let the user investigate.
-        }
-
-        // Mark this session clean in both locations if the data was copied.
-        projectManager.prepareForCleanShutdown(copyData ? dataTo : juce::File());
-        config.setDataDir(pathsPage->getNewDataPath());
-        config.save();
-        magda::paths::resolve();
-        juce::JUCEApplication::quit();
-    }
+MainWindow* findMainWindow() {
+    for (int i = juce::TopLevelWindow::getNumTopLevelWindows(); --i >= 0;)
+        if (auto* mw = dynamic_cast<MainWindow*>(juce::TopLevelWindow::getTopLevelWindow(i)))
+            return mw;
+    return nullptr;
 }
 
-void PreferencesDialog::showDialog(juce::Component* parent) {
-    juce::ApplicationCommandManager* commandManager = nullptr;
-    if (auto* mainWindow = dynamic_cast<MainWindow*>(parent))
-        commandManager = &mainWindow->getCommandManager();
-    else if (auto* mainWindow =
-                 parent != nullptr ? parent->findParentComponentOfClass<MainWindow>() : nullptr)
-        commandManager = &mainWindow->getCommandManager();
+/** @brief A Preferences page shown as a section with one scrolling tab. */
+template <typename Page> class PageSection : public SettingsSection {
+  public:
+    PageSection(SettingsSectionId id, juce::String title)
+        : SettingsSection(id), title_(std::move(title)) {}
 
-    auto* dialog = new PreferencesDialog(commandManager);
+    juce::String getTitle() const override {
+        return title_;
+    }
+    std::vector<Tab> getTabs() override {
+        return {{title_, &page_, [this](int width) { return page_.getPreferredHeight(width); }}};
+    }
+    void load(Config& config) override {
+        page_.loadSettings(config);
+    }
+    void writeTo(Config& config) override {
+        page_.applySettings(config);
+    }
 
-    juce::DialogWindow::LaunchOptions options;
-    options.dialogTitle = tr("dialogs.preferences");
-    options.dialogBackgroundColour = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
-    options.content.setOwned(dialog);
-    options.escapeKeyTriggersCloseButton = true;
-    options.useNativeTitleBar = true;
-    options.resizable = false;
+  protected:
+    Page page_;
 
-    options.launchAsync();
+  private:
+    juce::String title_;
+};
+
+class GeneralSection : public PageSection<GeneralPage> {
+  public:
+    GeneralSection() : PageSection(SettingsSectionId::General, tr("preferences.tab.general")) {}
+
+    void commit(const Config& before) override {
+        auto& config = Config::getInstance();
+        if (before.getLanguage() != config.getLanguage())
+            StringTable::getInstance().loadLanguage(juce::String(config.getLanguage()));
+        ProjectManager::getInstance().setAutoSaveEnabled(config.getAutoSaveEnabled(),
+                                                         config.getAutoSaveIntervalSeconds());
+        if (auto* mw = findMainWindow()) {
+            mw->applyPanelVisibilityFromConfig();
+            mw->applyLayoutFromConfig();
+        }
+    }
+};
+
+class AppearanceSection : public PageSection<AppearancePage> {
+  public:
+    AppearanceSection()
+        : PageSection(SettingsSectionId::Appearance,
+                      trOr("preferences.tab.appearance", "Appearance")) {}
+
+    int countChanges() override {
+        return PageSection::countChanges() + (page_.shouldApplyPaletteToCurrentProject() ? 1 : 0);
+    }
+
+    void commit(const Config& before) override {
+        auto& config = Config::getInstance();
+        if (before.getUIScale() != config.getUIScale()) {
+            if (config.getUIScale() > 0.0)
+                applyUIScale(config.getUIScale());
+            else
+                applyUIScale(dpiOnlyAutoScale(), /*persist=*/false);
+        }
+        refreshFontScaleForOpenWindows(before.getUIFontScale(), config.getUIFontScale());
+        if (page_.shouldApplyPaletteToCurrentProject()) {
+            ProjectManager::getInstance().applyConfigPaletteToCurrentProject();
+            page_.clearApplyPaletteToCurrentProject();
+        }
+    }
+};
+
+class PathsSection : public PageSection<PathsPage> {
+  public:
+    PathsSection() : PageSection(SettingsSectionId::Paths, tr("preferences.tab.paths")) {}
+
+    int countChanges() override {
+        return PageSection::countChanges() + (page_.dataDirChanged() ? 1 : 0) +
+               (page_.presetsDirChanged() ? 1 : 0);
+    }
+
+    void commit(const Config& before) override {
+        auto& config = Config::getInstance();
+        if (before.getMediaDbDir() != config.getMediaDbDir())
+            magda::media::MediaDbContext::getInstance().resetForReopen();
+
+        const bool dataChanged = page_.dataDirChanged();
+        const bool presetsChanged = page_.presetsDirChanged();
+        const bool copyData = page_.shouldCopyData();
+        const bool copyPresets = page_.shouldCopyPresets();
+        const juce::File dataFrom(juce::String(page_.getOriginalDataPath()).isEmpty()
+                                      ? magda::paths::alwaysOSDefault().getFullPathName()
+                                      : juce::String(page_.getOriginalDataPath()));
+        const juce::File dataTo(juce::String(page_.getNewDataPath()));
+        const juce::File presetsFrom(
+            juce::String(page_.getOriginalPresetsPath()).isEmpty()
+                ? juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+                      .getChildFile("MAGDA")
+                      .getChildFile("Presets")
+                      .getFullPathName()
+                : juce::String(page_.getOriginalPresetsPath()));
+        const juce::File presetsTo(juce::String(page_.getNewPresetsPath()));
+        const auto newDataPath = page_.getNewDataPath();
+        page_.markPathsCommitted();
+
+        // Presets path: hot-apply. The copy / don't-copy answer came at Browse time.
+        if (presetsChanged) {
+            config.setPresetsDir(page_.getNewPresetsPath());
+            config.save();
+            magda::paths::resolve();
+            if (copyPresets && !copyFolderIfNeeded(presetsFrom, presetsTo))
+                showMigrationFailureAsync(presetsFrom, presetsTo);
+        }
+
+        // Data path: needs a restart so the logger, plugin scanner and the rest
+        // re-open at the new location. Persist Config, copy if requested, quit.
+        if (dataChanged) {
+            auto& projectManager = ProjectManager::getInstance();
+            if (projectManager.isDirty() && !projectManager.showUnsavedChangesDialog())
+                return;
+
+            if (copyData && !copyFolderIfNeeded(dataFrom, dataTo)) {
+                showMigrationFailureAsync(dataFrom, dataTo);
+                return;  // Don't quit if the copy failed — let the user investigate.
+            }
+
+            projectManager.prepareForCleanShutdown(copyData ? dataTo : juce::File());
+            config.setDataDir(newDataPath);
+            config.save();
+            magda::paths::resolve();
+            juce::JUCEApplication::quit();
+        }
+    }
+};
+
+class ShortcutsSection : public SettingsSection {
+  public:
+    explicit ShortcutsSection(juce::ApplicationCommandManager* commandManager)
+        : SettingsSection(SettingsSectionId::Shortcuts), page_(commandManager) {}
+
+    juce::String getTitle() const override {
+        return tr("preferences.tab.shortcuts");
+    }
+    std::vector<Tab> getTabs() override {
+        return {{"Keyboard", &page_.getKeyboardPage(), {}},
+                {"Gestures", &page_.getGesturesPage(), {}}};
+    }
+    void load(Config& config) override {
+        page_.loadSettings(config);
+    }
+    void writeTo(Config& config) override {
+        page_.applySettings(config);
+    }
+    void commit(const Config&) override {
+        page_.commit();
+    }
+
+  private:
+    ShortcutsPage page_;
+};
+
+}  // namespace
+
+std::vector<std::unique_ptr<SettingsSection>> createPreferencesSections(
+    juce::ApplicationCommandManager* commandManager) {
+    std::vector<std::unique_ptr<SettingsSection>> sections;
+    sections.push_back(std::make_unique<GeneralSection>());
+    sections.push_back(std::make_unique<AppearanceSection>());
+    sections.push_back(std::make_unique<PageSection<RenderingPage>>(
+        SettingsSectionId::Rendering, tr("preferences.tab.rendering")));
+    sections.push_back(std::make_unique<PathsSection>());
+    sections.push_back(std::make_unique<PageSection<DefaultsPage>>(SettingsSectionId::Defaults,
+                                                                   tr("preferences.tab.defaults")));
+    sections.push_back(std::make_unique<ShortcutsSection>(commandManager));
+    return sections;
 }
 
 }  // namespace magda

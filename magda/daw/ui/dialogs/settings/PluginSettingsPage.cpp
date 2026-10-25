@@ -1,10 +1,11 @@
-#include "PluginSettingsDialog.hpp"
+#include "PluginSettingsPage.hpp"
 
 #include <algorithm>
 
-#include "../themes/ActiveTheme.hpp"
-#include "../themes/DialogLookAndFeel.hpp"
-#include "../themes/FontManager.hpp"
+#include "../../themes/ActiveTheme.hpp"
+#include "../../themes/DialogLookAndFeel.hpp"
+#include "../../themes/FontManager.hpp"
+#include "SettingsSections.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
@@ -17,13 +18,13 @@ namespace magda {
 // DirectoryListModel
 // =============================================================================
 
-int PluginSettingsDialog::DirectoryListModel::getNumRows() {
+int PluginSettingsPage::DirectoryListModel::getNumRows() {
     return paths ? static_cast<int>(paths->size()) : 0;
 }
 
-void PluginSettingsDialog::DirectoryListModel::paintListBoxItem(int rowNumber, juce::Graphics& g,
-                                                                int width, int height,
-                                                                bool rowIsSelected) {
+void PluginSettingsPage::DirectoryListModel::paintListBoxItem(int rowNumber, juce::Graphics& g,
+                                                              int width, int height,
+                                                              bool rowIsSelected) {
     if (!paths || rowNumber < 0 || rowNumber >= static_cast<int>(paths->size()))
         return;
 
@@ -42,13 +43,13 @@ void PluginSettingsDialog::DirectoryListModel::paintListBoxItem(int rowNumber, j
 // ExcludedTableModel
 // =============================================================================
 
-int PluginSettingsDialog::ExcludedTableModel::getNumRows() {
+int PluginSettingsPage::ExcludedTableModel::getNumRows() {
     return entries ? static_cast<int>(entries->size()) : 0;
 }
 
-void PluginSettingsDialog::ExcludedTableModel::paintRowBackground(juce::Graphics& g,
-                                                                  int /*rowNumber*/, int width,
-                                                                  int height, bool rowIsSelected) {
+void PluginSettingsPage::ExcludedTableModel::paintRowBackground(juce::Graphics& g,
+                                                                int /*rowNumber*/, int width,
+                                                                int height, bool rowIsSelected) {
     if (rowIsSelected) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.3f));
     } else {
@@ -57,9 +58,9 @@ void PluginSettingsDialog::ExcludedTableModel::paintRowBackground(juce::Graphics
     g.fillRect(0, 0, width, height);
 }
 
-void PluginSettingsDialog::ExcludedTableModel::paintCell(juce::Graphics& g, int rowNumber,
-                                                         int columnId, int width, int height,
-                                                         bool /*rowIsSelected*/) {
+void PluginSettingsPage::ExcludedTableModel::paintCell(juce::Graphics& g, int rowNumber,
+                                                       int columnId, int width, int height,
+                                                       bool /*rowIsSelected*/) {
     if (!entries || rowNumber < 0 || rowNumber >= static_cast<int>(entries->size()))
         return;
 
@@ -87,16 +88,16 @@ void PluginSettingsDialog::ExcludedTableModel::paintCell(juce::Graphics& g, int 
     g.drawText(text, 4, 0, width - 8, height, juce::Justification::centredLeft);
 }
 
-juce::Component* PluginSettingsDialog::ExcludedTableModel::refreshComponentForCell(
-    int, int, bool, juce::Component*) {
+juce::Component* PluginSettingsPage::ExcludedTableModel::refreshComponentForCell(int, int, bool,
+                                                                                 juce::Component*) {
     return nullptr;
 }
 
 // =============================================================================
-// PluginSettingsDialog
+// PluginSettingsPage
 // =============================================================================
 
-PluginSettingsDialog::PluginSettingsDialog() : scanProgressBar_(scanProgress_) {
+PluginSettingsPage::PluginSettingsPage() : scanProgressBar_(scanProgress_) {
     setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
     // Load current data
     customPaths_ = Config::getInstance().getCustomPluginPaths();
@@ -172,7 +173,7 @@ PluginSettingsDialog::PluginSettingsDialog() : scanProgressBar_(scanProgress_) {
         scanProgressBar_.setVisible(true);
         scanStatusLabel_.setVisible(true);
 
-        auto safeThis = juce::Component::SafePointer<PluginSettingsDialog>(this);
+        auto safeThis = juce::Component::SafePointer<PluginSettingsPage>(this);
 
         PluginService::getInstance().startScan(
             [safeThis](float progress, const juce::String& pluginName) {
@@ -218,6 +219,7 @@ PluginSettingsDialog::PluginSettingsDialog() : scanProgressBar_(scanProgress_) {
 
                     // Refresh excluded plugins list
                     safeThis->excludedPlugins_ = PluginService::getInstance().excludedPlugins();
+                    safeThis->markCommitted();
                     safeThis->excludedTable_.updateContent();
                     safeThis->excludedTable_.repaint();
                 });
@@ -236,7 +238,7 @@ PluginSettingsDialog::PluginSettingsDialog() : scanProgressBar_(scanProgress_) {
         scanProgressBar_.setVisible(true);
         scanStatusLabel_.setVisible(true);
 
-        auto safeThis = juce::Component::SafePointer<PluginSettingsDialog>(this);
+        auto safeThis = juce::Component::SafePointer<PluginSettingsPage>(this);
 
         PluginService::getInstance().detectNewPlugins(
             [safeThis](PluginScanPhase phase, const juce::String& currentPlugin) {
@@ -300,6 +302,7 @@ PluginSettingsDialog::PluginSettingsDialog() : scanProgressBar_(scanProgress_) {
                     safeThis->updatePluginCountLabel();
 
                     safeThis->excludedPlugins_ = PluginService::getInstance().excludedPlugins();
+                    safeThis->markCommitted();
                     safeThis->excludedTable_.updateContent();
                     safeThis->excludedTable_.repaint();
                 });
@@ -422,41 +425,21 @@ PluginSettingsDialog::PluginSettingsDialog() : scanProgressBar_(scanProgress_) {
     };
     addAndMakeVisible(resetAllButton_);
 
-    // OK / Cancel
-    okButton_.setButtonText(tr("dialogs.ok"));
-    okButton_.onClick = [this]() {
-        if (isScanRunning())
-            return;
-        applySettings();
-        if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
-            juce::MessageManager::callAsync([dw]() { delete dw; });
-    };
-    addAndMakeVisible(okButton_);
-
-    cancelButton_.setButtonText(tr("dialogs.cancel"));
-    cancelButton_.onClick = [this]() {
-        if (isScanRunning())
-            return;
-        if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
-            juce::MessageManager::callAsync([dw]() { delete dw; });
-    };
-    addAndMakeVisible(cancelButton_);
-
-    setSize(550, 680);
+    setSize(550, kPreferredHeight);
 }
 
-PluginSettingsDialog::~PluginSettingsDialog() {
+PluginSettingsPage::~PluginSettingsPage() {
     setLookAndFeel(nullptr);
     systemDirsList_.setModel(nullptr);
     directoriesList_.setModel(nullptr);
     excludedTable_.setModel(nullptr);
 }
 
-void PluginSettingsDialog::paint(juce::Graphics& g) {
+void PluginSettingsPage::paint(juce::Graphics& g) {
     g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
 }
 
-void PluginSettingsDialog::resized() {
+void PluginSettingsPage::resized() {
     auto bounds = getLocalBounds().reduced(16);
     const int headerHeight = 24;
     const int buttonHeight = 28;
@@ -511,10 +494,6 @@ void PluginSettingsDialog::resized() {
     excludedHeader_.setBounds(bounds.removeFromTop(headerHeight));
     bounds.removeFromTop(4);
 
-    // Reserve space for bottom buttons
-    auto bottomArea = bounds.removeFromBottom(buttonHeight);
-    bounds.removeFromBottom(spacing);
-
     // Excluded buttons row
     auto excludedButtonRow = bounds.removeFromBottom(buttonHeight);
     bounds.removeFromBottom(4);
@@ -529,17 +508,9 @@ void PluginSettingsDialog::resized() {
         btnArea.removeFromRight(4);
         removeSelectedButton_.setBounds(btnArea.removeFromRight(120));
     }
-
-    // Bottom OK/Cancel buttons
-    {
-        auto btnArea = bottomArea;
-        okButton_.setBounds(btnArea.removeFromRight(buttonWidth));
-        btnArea.removeFromRight(4);
-        cancelButton_.setBounds(btnArea.removeFromRight(buttonWidth));
-    }
 }
 
-void PluginSettingsDialog::setScanningUIEnabled(bool enabled) {
+void PluginSettingsPage::setScanningUIEnabled(bool enabled) {
     addDirButton_.setEnabled(enabled);
     removeDirButton_.setEnabled(enabled);
     scanButton_.setEnabled(enabled);
@@ -549,56 +520,58 @@ void PluginSettingsDialog::setScanningUIEnabled(bool enabled) {
     resetAllButton_.setEnabled(enabled);
     scanOnStartupToggle_.setEnabled(enabled);
     formatPreferenceSelector_.setEnabled(enabled);
-    okButton_.setEnabled(enabled);
-    cancelButton_.setEnabled(enabled);
 }
 
-void PluginSettingsDialog::applySettings() {
-    Config::getInstance().setCustomPluginPaths(customPaths_);
-    Config::getInstance().setScanPluginsOnStartup(scanOnStartupToggle_.getToggleState());
-    Config::getInstance().save();
+void PluginSettingsPage::load(const Config& config) {
+    customPaths_ = config.getCustomPluginPaths();
+    scanOnStartupToggle_.setToggleState(config.getScanPluginsOnStartup(),
+                                        juce::dontSendNotification);
+    directoriesList_.updateContent();
+    directoriesList_.repaint();
+}
+
+void PluginSettingsPage::writeTo(Config& config) const {
+    config.setCustomPluginPaths(customPaths_);
+    config.setScanPluginsOnStartup(scanOnStartupToggle_.getToggleState());
+}
+
+void PluginSettingsPage::markCommitted() {
+    committedFormat_ = formatPreferenceSelector_.getSelectedId();
+    committedExclusions_.clear();
+    for (const auto& entry : excludedPlugins_)
+        committedExclusions_.add(entry.path);
+}
+
+int PluginSettingsPage::countChangesOutsideConfig() const {
+    juce::StringArray exclusions;
+    for (const auto& entry : excludedPlugins_)
+        exclusions.add(entry.path);
+    return (formatPreferenceSelector_.getSelectedId() != committedFormat_ ? 1 : 0) +
+           (exclusions != committedExclusions_ ? 1 : 0);
+}
+
+void PluginSettingsPage::commitOutsideConfig() {
     if (const int selected = formatPreferenceSelector_.getSelectedId(); selected > 0)
         PluginPreferences::getInstance().setExternalPluginFormatPreference(
             static_cast<PluginFormat>(selected - 1));
-
     PluginService::getInstance().setExcludedPlugins(excludedPlugins_);
+    markCommitted();
 }
 
-bool PluginSettingsDialog::isScanRunning() const {
+void PluginSettingsPage::applySettings() {
+    auto& config = Config::getInstance();
+    writeTo(config);
+    config.save();
+    commitOutsideConfig();
+    if (onAppliedForScan)
+        onAppliedForScan();
+}
+
+bool PluginSettingsPage::isScanRunning() const {
     return PluginService::getInstance().isScanRunning();
 }
 
-// DialogWindow subclass that prevents closing while a scan is in progress
-class PluginSettingsDialogWindow : public juce::DialogWindow {
-  public:
-    PluginSettingsDialogWindow(const juce::String& title, juce::Colour bg, bool escapeCloses,
-                               PluginSettingsDialog* content)
-        : juce::DialogWindow(title, bg, escapeCloses, true), content_(content) {}
-
-    void closeButtonPressed() override {
-        if (content_ && content_->isScanRunning())
-            return;  // Block close while scanning
-        juce::MessageManager::callAsync([this]() { delete this; });
-    }
-
-  private:
-    PluginSettingsDialog* content_;
-};
-
-void PluginSettingsDialog::showDialog(juce::Component* /*parent*/) {
-    auto* dialog = new PluginSettingsDialog();
-    auto bg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
-
-    auto* window = new PluginSettingsDialogWindow(tr("dialogs.plugin_settings"), bg, false, dialog);
-    window->setContentOwned(dialog, true);
-    window->setUsingNativeTitleBar(true);
-    window->setResizable(false, false);
-    window->setAlwaysOnTop(true);
-    window->centreWithSize(dialog->getWidth(), dialog->getHeight());
-    window->setVisible(true);
-}
-
-void PluginSettingsDialog::updatePluginCountLabel() {
+void PluginSettingsPage::updatePluginCountLabel() {
     int count = Config::getInstance().getTotalPluginCount();
     int excluded = static_cast<int>(excludedPlugins_.size());
 
@@ -614,13 +587,53 @@ void PluginSettingsDialog::updatePluginCountLabel() {
     }
 }
 
-void PluginSettingsDialog::setupSectionHeader(juce::Label& header, const juce::String& text) {
+void PluginSettingsPage::setupSectionHeader(juce::Label& header, const juce::String& text) {
     header.setText(text, juce::dontSendNotification);
     header.setColour(juce::Label::textColourId,
                      ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
     header.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     header.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(header);
+}
+
+namespace {
+
+/** @brief Plugin folders, scanning and exclusions; Apply commits them. */
+class PluginsSection : public SettingsSection {
+  public:
+    PluginsSection() : SettingsSection(SettingsSectionId::Plugins) {
+        page_.markCommitted();
+        // A scan applies the folders first, so they are no longer pending.
+        page_.onAppliedForScan = [this] { captureBaseline(); };
+    }
+
+    juce::String getTitle() const override {
+        return tr("settings.section.plugins");
+    }
+    std::vector<Tab> getTabs() override {
+        return {{getTitle(), &page_, [](int) { return PluginSettingsPage::kPreferredHeight; }}};
+    }
+    void load(Config& config) override {
+        page_.load(config);
+    }
+    void writeTo(Config& config) override {
+        page_.writeTo(config);
+    }
+    void commit(const Config&) override {
+        page_.commitOutsideConfig();
+    }
+    int countChanges() override {
+        return SettingsSection::countChanges() + page_.countChangesOutsideConfig();
+    }
+
+  private:
+    PluginSettingsPage page_;
+};
+
+}  // namespace
+
+std::unique_ptr<SettingsSection> createPluginsSection() {
+    return std::make_unique<PluginsSection>();
 }
 
 }  // namespace magda

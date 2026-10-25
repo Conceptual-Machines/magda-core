@@ -1,4 +1,4 @@
-#include "ConnectionsDialog.hpp"
+#include <juce_gui_basics/juce_gui_basics.h>
 
 #include <cstdlib>
 #include <memory>
@@ -10,12 +10,13 @@
     #include <unistd.h>
 #endif
 
-#include "../../api/remote_api_host.hpp"
-#include "../../api/remote_audit.hpp"
-#include "../../api/remote_clients.hpp"
-#include "../themes/ActiveTheme.hpp"
-#include "../themes/DialogLookAndFeel.hpp"
-#include "../themes/FontManager.hpp"
+#include "../../../api/remote_api_host.hpp"
+#include "../../../api/remote_audit.hpp"
+#include "../../../api/remote_clients.hpp"
+#include "../../themes/ActiveTheme.hpp"
+#include "../../themes/DialogLookAndFeel.hpp"
+#include "../../themes/FontManager.hpp"
+#include "SettingsSections.hpp"
 #include "core/AppPaths.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
@@ -1263,76 +1264,49 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OscSurfacesPage)
 };
 // =============================================================================
-// ConnectionsDialog
-// =============================================================================
-
-ConnectionsDialog::ConnectionsDialog() {
-    setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
-
-    mcpPage_ = std::make_unique<McpPage>();
-    webSocketPage_ = std::make_unique<WebSocketPage>();
-    oscPage_ = std::make_unique<OscSurfacesPage>();
-    remoteClientsPage_ = std::make_unique<RemoteClientsPage>();
-
-    auto tabBg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
-    // Transports first, in the order most users meet them, then the grants that
-    // apply to whichever they used. Clients is last rather than beside a
-    // transport because it belongs to both: turning an endpoint on and saying
-    // what a client may do are separate decisions, made at different times, and
-    // the second grows a row per client while the first stays one switch.
-    tabbedComponent_.addTab(magda::technicalText(magda::TechnicalTextToken::Mcp), tabBg,
-                            mcpPage_.get(), false);
-    tabbedComponent_.addTab(magda::technicalText(magda::TechnicalTextToken::WebSocket), tabBg,
-                            webSocketPage_.get(), false);
-    tabbedComponent_.addTab(magda::technicalText(magda::TechnicalTextToken::Osc), tabBg,
-                            oscPage_.get(), false);
-    tabbedComponent_.addTab(tr("connections.tab.clients"), tabBg, remoteClientsPage_.get(), false);
-    addAndMakeVisible(tabbedComponent_);
-
-    setSize(560, 512);
-}
-
-ConnectionsDialog::~ConnectionsDialog() {
-    setLookAndFeel(nullptr);
-}
-
-void ConnectionsDialog::paint(juce::Graphics& g) {
-    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
-}
-
-void ConnectionsDialog::resized() {
-    tabbedComponent_.setBounds(getLocalBounds().reduced(8));
-}
-
-// =============================================================================
-// showDialog
+// Connections section (#3162)
 // =============================================================================
 
 namespace {
-class SelfClosingDialogWindow : public juce::DialogWindow {
-  public:
-    SelfClosingDialogWindow(const juce::String& title, juce::Colour bg)
-        : juce::DialogWindow(title, bg, false, true) {}
 
-    void closeButtonPressed() override {
-        juce::MessageManager::callAsync([self = this]() { delete self; });
+/**
+ * @brief MCP, WebSocket, OSC and remote clients.
+ *
+ * Commit-on-change: every control owns a socket or a live grant, and a switch
+ * whose result needs OK to show is one nobody trusts.
+ */
+class ConnectionsSection : public SettingsSection {
+  public:
+    ConnectionsSection() : SettingsSection(SettingsSectionId::Connections) {}
+
+    juce::String getTitle() const override {
+        return tr("settings.section.connections");
     }
+    // Transports first, then the grants that apply to whichever was used.
+    std::vector<Tab> getTabs() override {
+        return {{magda::technicalText(magda::TechnicalTextToken::Mcp), &mcpPage_, {}},
+                {magda::technicalText(magda::TechnicalTextToken::WebSocket), &webSocketPage_, {}},
+                {magda::technicalText(magda::TechnicalTextToken::Osc), &oscPage_, {}},
+                {tr("connections.tab.clients"), &remoteClientsPage_, {}}};
+    }
+    bool appliesImmediately() const override {
+        return true;
+    }
+    int findTab(const juce::String& name) override {
+        return name == "Clients" ? 3 : -1;
+    }
+
+  private:
+    McpPage mcpPage_;
+    WebSocketPage webSocketPage_;
+    OscSurfacesPage oscPage_;
+    RemoteClientsPage remoteClientsPage_;
 };
+
 }  // namespace
 
-void ConnectionsDialog::showDialog(juce::Component* /*parent*/, bool showClientsTab) {
-    auto* dialog = new ConnectionsDialog();
-    if (showClientsTab)
-        dialog->tabbedComponent_.setCurrentTabIndex(3);
-    auto bg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
-
-    auto* window = new SelfClosingDialogWindow(tr("connections.title"), bg);
-    window->setContentOwned(dialog, true);
-    window->setUsingNativeTitleBar(true);
-    window->setResizable(true, false);
-    window->setAlwaysOnTop(true);
-    window->centreWithSize(dialog->getWidth(), dialog->getHeight());
-    window->setVisible(true);
+std::unique_ptr<SettingsSection> createConnectionsSection() {
+    return std::make_unique<ConnectionsSection>();
 }
 
 }  // namespace magda

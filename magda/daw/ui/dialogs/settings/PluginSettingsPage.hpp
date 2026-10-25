@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
 #include <vector>
 
 #include "core/PluginPreferences.hpp"
@@ -9,22 +10,36 @@
 
 namespace magda {
 
+class Config;
+
 /**
- * Plugin Settings dialog for managing custom plugin directories
+ * The Plugins settings page: custom plugin directories, scanning
  * and the excluded plugins list.
  */
-class PluginSettingsDialog : public juce::Component {
+class PluginSettingsPage : public juce::Component {
   public:
-    PluginSettingsDialog();
-    ~PluginSettingsDialog() override;
+    PluginSettingsPage();
+    ~PluginSettingsPage() override;
 
     void resized() override;
     void paint(juce::Graphics& g) override;
 
-    static void showDialog(juce::Component* parent);
+    /** @brief Height the page lays out in; it is shown inside a scrolling Settings tab. */
+    static constexpr int kPreferredHeight = 640;
 
     /** Returns true if a plugin scan is currently in progress. */
     bool isScanRunning() const;
+
+    void load(const Config& config);
+    /** @brief The folders and startup scan; the format and exclusions live outside Config. */
+    void writeTo(Config& config) const;
+    void commitOutsideConfig();
+    int countChangesOutsideConfig() const;
+    /** @brief Take the shown format and exclusions as the committed ones. */
+    void markCommitted();
+
+    /** @brief A scan just applied every pending edit. */
+    std::function<void()> onAppliedForScan;
 
   private:
     void applySettings();
@@ -92,14 +107,13 @@ class PluginSettingsDialog : public juce::Component {
     juce::TextButton resetAllButton_;
     std::vector<ExcludedPlugin> excludedPlugins_;
 
-    // Buttons
-    juce::TextButton okButton_;
-    juce::TextButton cancelButton_;
+    int committedFormat_ = 0;
+    juce::StringArray committedExclusions_;
 
     void updatePluginCountLabel();
     void setupSectionHeader(juce::Label& header, const juce::String& text);
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginSettingsDialog)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginSettingsPage)
 };
 
 }  // namespace magda

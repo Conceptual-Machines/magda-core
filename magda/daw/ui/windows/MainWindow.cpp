@@ -13,13 +13,9 @@
 #include "../components/common/ResizeSeam.hpp"
 #include "../debug/DebugDialog.hpp"
 #include "../debug/DebugSettings.hpp"
-#include "../dialogs/AISettingsDialog.hpp"
-#include "../dialogs/AudioSettingsDialog.hpp"
-#include "../dialogs/ConnectionsDialog.hpp"
-#include "../dialogs/ControllersDialog.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
-#include "../dialogs/PreferencesDialog.hpp"
 #include "../dialogs/TrackManagerDialog.hpp"
+#include "../dialogs/settings/SettingsWindow.hpp"
 #include "../layout/LayoutConfig.hpp"
 #include "../panels/BottomPanel.hpp"
 #include "../panels/CapturePanel.hpp"
@@ -382,8 +378,8 @@ void MainWindow::timerCallback() {
                                              request.client, request.scopes, result == 1);
                                      safeThis->permissionPromptActive_ = false;
                                      if (result == 3)
-                                         ConnectionsDialog::showDialog(safeThis.getComponent(),
-                                                                       true);
+                                         SettingsWindow::show(SettingsSectionId::Connections,
+                                                              "Clients");
                                  });
 }
 
@@ -791,8 +787,8 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         footerBar->setBottomPanelCollapsed(bottomPanelCollapsed);
         resized();
     };
-    footerBar->onControllersClicked = [this]() { ControllersDialog::showDialog(this); };
-    footerBar->onLocalModelsClicked = [this]() { AISettingsDialog::showDialog(this); };
+    footerBar->onControllersClicked = [] { SettingsWindow::show(SettingsSectionId::Controllers); };
+    footerBar->onLocalModelsClicked = [] { SettingsWindow::show(SettingsSectionId::AI, "Local"); };
     addAndMakeVisible(*footerBar);
 
     // Create views (now audioEngine is valid - use externalEngine which points to either external
@@ -817,6 +813,9 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     mixerView = std::make_unique<MixerView>(externalEngine);
     addChildComponent(*mixerView);
     juce::Logger::writeToLog("[MainComponent] MixerView created");
+
+    SettingsWindow::setContext(&commandManager, getAudioEngine());
+    setSettingsOpener(&SettingsWindow::show);
 
     // Wire up callbacks between views and transport
     mainView->onLoopRegionChanged = [this](double start, double end, bool enabled) {
@@ -1377,6 +1376,9 @@ void MainWindow::MainComponent::setupLoadingOverlay() {
 
 MainWindow::MainComponent::~MainComponent() {
     DBG("    [5d] MainComponent::~MainComponent start");
+    setSettingsOpener({});
+    SettingsWindow::closeIfOpen();
+    SettingsWindow::setContext(nullptr, nullptr);
 
     // The stem service outlives us (static singleton); drop its reference to
     // this before members die.

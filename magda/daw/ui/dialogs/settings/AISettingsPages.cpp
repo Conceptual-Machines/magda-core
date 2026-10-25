@@ -1,4 +1,4 @@
-#include "AISettingsDialog.hpp"
+#include "AISettingsPages.hpp"
 
 #include <juce_llm/juce_llm.h>
 
@@ -7,20 +7,22 @@
 #include <ranges>
 #include <utility>
 
-#include "../../../agents/llama_model_manager.hpp"
-#include "../../../agents/llm_config_utils.hpp"
-#include "../../../agents/llm_presets.hpp"
-#include "../../../agents/model_downloader.hpp"
-#include "../../../agents/openai_url.hpp"
-#include "../../core/AppPaths.hpp"
-#include "../../core/Config.hpp"
-#include "../../media_db/MediaDbContext.hpp"
-#include "../../media_db/MediaModelDownloader.hpp"
-#include "../../stem_separation/DemucsSeparator.hpp"
-#include "../../stem_separation/StemModelDownloader.hpp"
-#include "../themes/ActiveTheme.hpp"
-#include "../themes/DialogLookAndFeel.hpp"
-#include "../themes/FontManager.hpp"
+#include "../../../../agents/llama_model_manager.hpp"
+#include "../../../../agents/llm_config_utils.hpp"
+#include "../../../../agents/llm_presets.hpp"
+#include "../../../../agents/model_downloader.hpp"
+#include "../../../../agents/openai_url.hpp"
+#include "../../../core/AppPaths.hpp"
+#include "../../../core/Config.hpp"
+#include "../../../core/StringTable.hpp"
+#include "../../../media_db/MediaDbContext.hpp"
+#include "../../../media_db/MediaModelDownloader.hpp"
+#include "../../../stem_separation/DemucsSeparator.hpp"
+#include "../../../stem_separation/StemModelDownloader.hpp"
+#include "../../themes/ActiveTheme.hpp"
+#include "../../themes/DialogLookAndFeel.hpp"
+#include "../../themes/FontManager.hpp"
+#include "SettingsSections.hpp"
 #include "magda/agents/command_model_downloader.hpp"
 
 namespace magda {
@@ -199,7 +201,7 @@ ModelProbeResult probeLocalServerModels(const juce::String& rawBaseUrl,
 // Bottom: compact list of registered providers with remove buttons
 // ============================================================================
 
-class AISettingsDialog::CloudPage : public juce::Component {
+class AISettingsPages::CloudPage : public juce::Component {
   public:
     CloudPage() {
         // Provider selector
@@ -597,7 +599,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
 // LocalPage — embedded model configuration
 // ============================================================================
 
-class AISettingsDialog::LocalPage : public juce::Component {
+class AISettingsPages::LocalPage : public juce::Component {
   public:
     LocalPage() {
         // Download model button
@@ -898,7 +900,7 @@ class AISettingsDialog::LocalPage : public juce::Component {
 // so there is no duplication of provider selection.
 // ============================================================================
 
-class AISettingsDialog::ConfigPage : public juce::Component {
+class AISettingsPages::ConfigPage : public juce::Component {
   public:
     CloudPage* cloudPage = nullptr;
     LocalPage* localPage = nullptr;
@@ -1734,7 +1736,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
 // that power the media DB's semantic search (issue #768).
 // ============================================================================
 
-class AISettingsDialog::SampleTaggerPage : public juce::Component {
+class AISettingsPages::SampleTaggerPage : public juce::Component {
   public:
     SampleTaggerPage() {
         statusLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
@@ -1789,11 +1791,6 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
         loadOnStartupToggle_.setButtonText("Load on startup");
         loadOnStartupToggle_.setColour(juce::ToggleButton::textColourId,
                                        ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-        loadOnStartupToggle_.onClick = [this]() {
-            magda::Config::getInstance().setLoadSampleTaggerOnStartup(
-                loadOnStartupToggle_.getToggleState());
-            magda::Config::getInstance().save();
-        };
         addAndMakeVisible(loadOnStartupToggle_);
 
         refreshStatus();
@@ -1832,9 +1829,10 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
                                             juce::dontSendNotification);
         refreshStatus();
     }
-    // apply is a no-op: the load-on-startup toggle persists on click; the
-    // location path persists on Browse/Reset. Nothing batches up here.
-    void apply(magda::Config&) const {}
+    // The models folder persists on Browse/Reset: downloads go there at once.
+    void apply(magda::Config& config) const {
+        config.setLoadSampleTaggerOnStartup(loadOnStartupToggle_.getToggleState());
+    }
 
   private:
     void refreshStatus() {
@@ -2009,7 +2007,7 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
 // BeatTrackerPage — the model behind the measured BPM tier (issue #2674)
 // ============================================================================
 
-class AISettingsDialog::BeatTrackerPage : public juce::Component {
+class AISettingsPages::BeatTrackerPage : public juce::Component {
   public:
     using Bundle = magda::media::MediaModelDownloader::Bundle;
 
@@ -2142,7 +2140,7 @@ class AISettingsDialog::BeatTrackerPage : public juce::Component {
 // StemSeparationPage — stem separation model weights (issue #1288)
 // ============================================================================
 
-class AISettingsDialog::StemSeparationPage : public juce::Component {
+class AISettingsPages::StemSeparationPage : public juce::Component {
   public:
     StemSeparationPage() {
         statusLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
@@ -2322,7 +2320,7 @@ class AISettingsDialog::StemSeparationPage : public juce::Component {
 // Inference (Command)" provider, taking held-out accuracy from 46.5% to 91.5%.
 // ============================================================================
 
-class AISettingsDialog::CommandModelPage : public juce::Component {
+class AISettingsPages::CommandModelPage : public juce::Component {
   public:
     CommandModelPage() {
         blurbLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
@@ -2521,7 +2519,7 @@ class AISettingsDialog::CommandModelPage : public juce::Component {
 // avoiding separate top-level tabs as new model families are added.
 // ============================================================================
 
-class AISettingsDialog::ModelDownloadsPage : public juce::Component {
+class AISettingsPages::ModelDownloadsPage : public juce::Component {
   public:
     ModelDownloadsPage(LocalPage& localPage, SampleTaggerPage* samplePage,
                        BeatTrackerPage* beatPage, StemSeparationPage* stemsPage,
@@ -2623,12 +2621,10 @@ class AISettingsDialog::ModelDownloadsPage : public juce::Component {
 };
 
 // ============================================================================
-// AISettingsDialog
+// AISettingsPages
 // ============================================================================
 
-AISettingsDialog::AISettingsDialog() {
-    setLookAndFeel(&daw::ui::DialogLookAndFeel::getInstance());
-
+AISettingsPages::AISettingsPages() {
     cloudPage_ = std::make_unique<CloudPage>();
     localPage_ = std::make_unique<LocalPage>();
     configPage_ = std::make_unique<ConfigPage>();
@@ -2648,121 +2644,95 @@ AISettingsDialog::AISettingsDialog() {
         std::make_unique<ModelDownloadsPage>(*localPage_, samplePage_.get(), beatTrackerPage_.get(),
                                              stemsPage_.get(), commandModelPage_.get());
 
-    // Wire config page to sibling pages
     configPage_->cloudPage = cloudPage_.get();
     configPage_->localPage = localPage_.get();
-
-    auto tabBg = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
-    tabbedComponent_.addTab("Cloud", tabBg, cloudPage_.get(), false);
-    tabbedComponent_.addTab("Config", tabBg, configPage_.get(), false);
-    tabbedComponent_.addTab("Models", tabBg, modelDownloadsPage_.get(), false);
-
-    // Refresh config combos when switching to Config tab
-    tabbedComponent_.onTabChanged = [this](int tabIndex) {
-        if (tabbedComponent_.getTabNames()[tabIndex] == "Config")
-            configPage_->refreshOnShow();
-    };
-
-    addAndMakeVisible(tabbedComponent_);
-
-    okBtn_.onClick = [this]() {
-        applySettings();
-        if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
-            dw->closeButtonPressed();
-    };
-    addAndMakeVisible(okBtn_);
-
-    cancelBtn_.onClick = [this]() {
-        if (auto* dw = findParentComponentOfClass<juce::DialogWindow>())
-            dw->closeButtonPressed();
-    };
-    addAndMakeVisible(cancelBtn_);
-
-    loadSettings();
-
-    setSize(540, 480);
 }
 
-AISettingsDialog::~AISettingsDialog() {
-    setLookAndFeel(nullptr);
+AISettingsPages::~AISettingsPages() = default;
+
+juce::Component& AISettingsPages::cloudPage() {
+    return *cloudPage_;
 }
 
-void AISettingsDialog::paint(juce::Graphics& g) {
-    g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
+juce::Component& AISettingsPages::configPage() {
+    return *configPage_;
 }
 
-void AISettingsDialog::lookAndFeelChanged() {
-    refreshHostWindowBackground(*this);
+juce::Component& AISettingsPages::modelsPage() {
+    return *modelDownloadsPage_;
 }
 
-void AISettingsDialog::resized() {
-    auto bounds = getLocalBounds().reduced(8);
-
-    auto buttonRow = bounds.removeFromBottom(36);
-    cancelBtn_.setBounds(buttonRow.removeFromRight(80).reduced(0, 4));
-    buttonRow.removeFromRight(8);
-    okBtn_.setBounds(buttonRow.removeFromRight(80).reduced(0, 4));
-    bounds.removeFromBottom(4);
-
-    tabbedComponent_.setBounds(bounds);
+void AISettingsPages::configShown() {
+    configPage_->refreshOnShow();
 }
 
-void AISettingsDialog::loadSettings() {
-    auto& config = Config::getInstance();
+bool AISettingsPages::selectLegacyCategory(const juce::String& name) {
+    return modelDownloadsPage_->selectLegacyCategory(name);
+}
+
+void AISettingsPages::load(Config& config) {
     cloudPage_->load(config);
     localPage_->load(config);
     configPage_->load(config);
-    if (samplePage_) {
+    if (samplePage_)
         samplePage_->load(config);
-    }
-    if (stemsPage_) {
+    if (stemsPage_)
         stemsPage_->load(config);
-    }
-    if (commandModelPage_) {
+    if (commandModelPage_)
         commandModelPage_->load(config);
-    }
 }
 
-void AISettingsDialog::applySettings() {
-    auto& config = Config::getInstance();
+void AISettingsPages::apply(Config& config) {
     cloudPage_->apply(config);
     localPage_->apply(config);
     configPage_->apply(config);
-    if (samplePage_) {
+    if (samplePage_)
         samplePage_->apply(config);
-    }
-    if (stemsPage_) {
+    if (stemsPage_)
         stemsPage_->apply(config);
-    }
-    if (commandModelPage_) {
+    if (commandModelPage_)
         commandModelPage_->apply(config);
-    }
-    config.save();
 }
 
-void AISettingsDialog::showDialog(juce::Component* parent, const juce::String& initialTabName) {
-    (void)parent;
-    auto* dialog = new AISettingsDialog();
+namespace {
 
-    if (initialTabName.isNotEmpty()) {
-        const auto names = dialog->tabbedComponent_.getTabNames();
-        const int idx = names.indexOf(initialTabName);
-        if (idx >= 0) {
-            dialog->tabbedComponent_.setCurrentTabIndex(idx);
-        } else if (dialog->modelDownloadsPage_->selectLegacyCategory(initialTabName)) {
-            dialog->tabbedComponent_.setCurrentTabIndex(names.indexOf("Models"));
-        }
+/** @brief Cloud providers, agent mapping and local models; Apply commits them. */
+class AISection : public SettingsSection {
+  public:
+    AISection() : SettingsSection(SettingsSectionId::AI) {}
+
+    juce::String getTitle() const override {
+        return tr("settings.section.ai");
+    }
+    std::vector<Tab> getTabs() override {
+        return {{"Cloud", &pages_.cloudPage(), {}},
+                {"Config", &pages_.configPage(), {}},
+                {"Models", &pages_.modelsPage(), {}}};
+    }
+    void load(Config& config) override {
+        pages_.load(config);
+    }
+    void writeTo(Config& config) override {
+        pages_.apply(config);
+    }
+    void tabShown(int tab) override {
+        if (tab == kConfigTab)
+            pages_.configShown();
+    }
+    int findTab(const juce::String& name) override {
+        return pages_.selectLegacyCategory(name) ? kModelsTab : -1;
     }
 
-    juce::DialogWindow::LaunchOptions options;
-    options.dialogTitle = "AI Settings";
-    options.dialogBackgroundColour = ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND);
-    options.content.setOwned(dialog);
-    options.escapeKeyTriggersCloseButton = true;
-    options.useNativeTitleBar = true;
-    options.resizable = false;
+  private:
+    static constexpr int kConfigTab = 1;
+    static constexpr int kModelsTab = 2;
+    AISettingsPages pages_;
+};
 
-    options.launchAsync();
+}  // namespace
+
+std::unique_ptr<SettingsSection> createAISection() {
+    return std::make_unique<AISection>();
 }
 
 }  // namespace magda

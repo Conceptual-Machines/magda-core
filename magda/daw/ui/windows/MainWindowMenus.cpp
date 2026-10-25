@@ -5,18 +5,13 @@
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/UpdateChecker.hpp"
-#include "../dialogs/AISettingsDialog.hpp"
 #include "../dialogs/AboutDialog.hpp"
-#include "../dialogs/AudioSettingsDialog.hpp"
-#include "../dialogs/ConnectionsDialog.hpp"
-#include "../dialogs/ControllersDialog.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
 #include "../dialogs/ExportMidiDialog.hpp"
 #include "../dialogs/FourOscConversionPrompt.hpp"
-#include "../dialogs/PluginSettingsDialog.hpp"
-#include "../dialogs/PreferencesDialog.hpp"
 #include "../dialogs/ProjectSettingsDialog.hpp"
 #include "../dialogs/TrackManagerDialog.hpp"
+#include "../dialogs/settings/SettingsWindow.hpp"
 #include "../state/TimelineController.hpp"
 #include "../state/TimelineEvents.hpp"
 #include "../views/MainView.hpp"
@@ -1035,29 +1030,13 @@ void MainWindow::setupMenuCallbacks() {
         mainComponent->getCommandManager().invokeDirectly(CommandIDs::selectAll, false);
     };
 
-    callbacks.onPreferences = [this]() { PreferencesDialog::showDialog(this); };
+    callbacks.onPreferences = [] { SettingsWindow::show(SettingsSectionId::General); };
 
     callbacks.onProjectSettings = [this]() { ProjectSettingsDialog::showDialog(this); };
 
-    callbacks.onAISettings = [this]() { AISettingsDialog::showDialog(this); };
+    callbacks.onAISettings = [] { SettingsWindow::show(SettingsSectionId::AI); };
 
-    callbacks.onAudioSettings = [this]() {
-        DBG("onAudioSettings called");
-        if (!mainComponent) {
-            DBG("ERROR: mainComponent is null");
-            return;
-        }
-        DBG("mainComponent valid");
-
-        auto* engine = mainComponent->getAudioEngine();
-        if (!engine) {
-            DBG("ERROR: engine is null");
-            return;
-        }
-        DBG("engine valid");
-
-        AudioSettingsDialog::showDialog(this, engine);
-    };
+    callbacks.onAudioSettings = [] { SettingsWindow::show(SettingsSectionId::AudioMidi); };
 
     // View menu callbacks
     callbacks.onToggleLeftPanel = [this](bool show) {
@@ -1376,11 +1355,11 @@ void MainWindow::setupMenuCallbacks() {
     };
 
     // Settings menu callbacks
-    callbacks.onControllerSettings = [this]() { ControllersDialog::showDialog(this); };
+    callbacks.onControllerSettings = [] { SettingsWindow::show(SettingsSectionId::Controllers); };
 
-    callbacks.onConnectionSettings = [this]() { ConnectionsDialog::showDialog(this); };
+    callbacks.onConnectionSettings = [] { SettingsWindow::show(SettingsSectionId::Connections); };
 
-    callbacks.onPluginSettings = [this]() { PluginSettingsDialog::showDialog(this); };
+    callbacks.onPluginSettings = [] { SettingsWindow::show(SettingsSectionId::Plugins); };
 
     // Initialize the menu manager with callbacks
     MenuManager::getInstance().initialize(callbacks);

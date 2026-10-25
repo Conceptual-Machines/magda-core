@@ -1,0 +1,18 @@
+target_sources(magda_daw_app PRIVATE
+    AISettingsPages.cpp
+    AudioSettingsPage.cpp
+    ConnectionsSection.cpp
+    ControllersSection.cpp
+    PluginSettingsPage.cpp
+    PreferencesSections.cpp
+    SettingsLink.cpp
+    SettingsSection.cpp
+    SettingsWindow.cpp
+    AISettingsPages.hpp
+    AudioSettingsPage.hpp
+    PluginSettingsPage.hpp
+    SettingsLink.hpp
+    SettingsSection.hpp
+    SettingsSections.hpp
+    SettingsWindow.hpp
+)
