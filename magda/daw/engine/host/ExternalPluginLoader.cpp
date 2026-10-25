@@ -88,6 +88,11 @@ void ExternalPluginLoader::drainPluginEdits() {
     }
 }
 
+void ExternalPluginLoader::onFailed(
+    std::function<void(engine::DeviceKey key, const juce::String& reason)> failed) {
+    failed_ = std::move(failed);
+}
+
 void ExternalPluginLoader::setServices(juce::AudioPluginFormatManager* formats,
                                        const juce::KnownPluginList* knownPlugins) {
     services_.formats = formats;
@@ -228,8 +233,11 @@ void ExternalPluginLoader::complete(engine::DeviceKey key, std::uint64_t generat
     if (result.device == nullptr) {
         slot.spent = true;
 
-        if (!std::exchange(slot.reported, true))
+        if (!std::exchange(slot.reported, true)) {
             juce::Logger::writeToLog("[engine] " + result.failure);
+            if (failed_)
+                failed_(key, result.failure);
+        }
 
         return;
     }

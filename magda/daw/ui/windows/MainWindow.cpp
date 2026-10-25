@@ -1,5 +1,6 @@
 #include "MainWindow.hpp"
 
+#include <utility>
 #include <vector>
 
 #include "../../api/magda_api_live.hpp"
@@ -1063,6 +1064,16 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     // core/engine/audio a link-time dependency on the UI layer (#2395).
     magda::setUserAlertHandler(
         [](const juce::String& message) { daw::ui::Toast::showGlobal(message, 5000); });
+    magda::setPluginLoadFailureHandler(
+        [this](const juce::String& plugin, const juce::String& reason) {
+            if (pendingLoadFailures_.isEmpty())
+                juce::MessageManager::callAsync(
+                    [safe = juce::Component::SafePointer<MainComponent>(this)] {
+                        if (safe != nullptr)
+                            safe->warnAboutLoadFailures();
+                    });
+            pendingLoadFailures_.add(plugin + ": " + reason);
+        });
 
     // Listen for MIDI Learn events to show toast notifications
     magda::MidiLearnCoordinator::getInstance().addListener(this);
@@ -1369,6 +1380,18 @@ void MainWindow::MainComponent::setupLoadingOverlay() {
         });
 }
 
+void MainWindow::MainComponent::warnAboutLoadFailures() {
+    const auto failures = std::exchange(pendingLoadFailures_, {});
+    juce::AlertWindow::showAsync(juce::MessageBoxOptions()
+                                     .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                     .withTitle(tr("plugin_settings.dialog.load_failed_title"))
+                                     .withMessage(tr("plugin_settings.dialog.load_failed_message") +
+                                                  "\n\n" + failures.joinIntoString("\n"))
+                                     .withButton(tr("dialogs.ok"))
+                                     .withAssociatedComponent(this),
+                                 nullptr);
+}
+
 MainWindow::MainComponent::~MainComponent() {
     DBG("    [5d] MainComponent::~MainComponent start");
 
@@ -1430,6 +1453,7 @@ MainWindow::MainComponent::~MainComponent() {
 
     // Clear Toast global host before destroying
     magda::setUserAlertHandler(nullptr);
+    magda::setPluginLoadFailureHandler(nullptr);
     daw::ui::Toast::setGlobalHost(nullptr);
     toast_.reset();
 

@@ -306,7 +306,9 @@
     "status.failed_short": "failed",
     "status.plugins_available": "plugins available",
     "status.excluded": "excluded",
-    "status.none_scanned": "No plugins scanned yet"
+    "status.none_scanned": "No plugins scanned yet",
+    "dialog.load_failed_title": "Plugin failed to load",
+    "dialog.load_failed_message": "These plugins could not be loaded. Their slots stay in the chain but make no sound:"
   },
   "footer": {
     "tooltip.session": "Session",

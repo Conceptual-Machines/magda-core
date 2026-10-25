@@ -663,6 +663,10 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener,
     // Poll for async plugin load completion (TE's background thread instantiation)
     void pollAsyncPluginLoad(const ChainNodePath& devicePath, const te::Plugin::Ptr& plugin);
 
+    // A plugin that refused its instance leaves TE an empty wrapper: the slot shows
+    // "Failed to load" and the plugin's own reason goes to the log (#3150).
+    void reportLoadFailure(TrackId trackId, te::ExternalPlugin& plugin, DeviceInfo* device);
+
     // Create a TE internal plugin, restoring saved ValueTree state if available.
     // Falls back to creating a fresh plugin from xmlTypeName when no saved state exists.
     te::Plugin::Ptr createInternalPlugin(const juce::String& xmlTypeName,

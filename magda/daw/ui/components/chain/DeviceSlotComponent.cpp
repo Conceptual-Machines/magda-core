@@ -944,6 +944,9 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
         }
     }
 
+    // The body is shown or hidden by layout, which a same-size slot never reruns (#3150).
+    const bool loadStateChanged = device.loadState != device_.loadState;
+
     device_ = device;
     adoptParameterList();
     refreshDeviceTraits(device);
@@ -991,6 +994,8 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     updateParameterSlots();
 
     updateParamModulation();
+    if (loadStateChanged)
+        resized();
     repaint();
 }
 
