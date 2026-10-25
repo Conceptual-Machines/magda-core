@@ -92,6 +92,58 @@ class SidebarRow : public juce::Component {
     int count_ = 0;
 };
 
+/** @brief The sidebar's search field: a rounded box with its Cmd+F hint. */
+class SearchBox : public juce::TextEditor {
+  public:
+    SearchBox() {
+        setColour(juce::TextEditor::backgroundColourId, juce::Colours::transparentBlack);
+        setColour(juce::TextEditor::outlineColourId, juce::Colours::transparentBlack);
+        setColour(juce::TextEditor::focusedOutlineColourId, juce::Colours::transparentBlack);
+        setFont(FontManager::getInstance().getUIFont(12.5f));
+        setIndents(10, 0);
+        setJustification(juce::Justification::centredLeft);
+    }
+
+    void paint(juce::Graphics& g) override {
+        const auto box = getLocalBounds().toFloat().reduced(0.5f);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
+        g.fillRoundedRectangle(box, 6.0f);
+        juce::TextEditor::paint(g);
+    }
+
+    void paintOverChildren(juce::Graphics& g) override {
+        juce::TextEditor::paintOverChildren(g);
+        const auto box = getLocalBounds().toFloat().reduced(0.5f);
+        const bool focused = hasKeyboardFocus(true);
+        g.setColour(focused ? ActiveTheme::getAccentColour() : ActiveTheme::getBorderColour());
+        g.drawRoundedRectangle(box, 6.0f, focused ? 1.5f : 1.0f);
+        if (isEmpty() && !focused) {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+            g.setFont(FontManager::getInstance().getMonoFont(10.5f));
+            g.drawText(hint(), getLocalBounds().withTrimmedRight(10),
+                       juce::Justification::centredRight, false);
+        }
+    }
+
+    void focusGained(FocusChangeType cause) override {
+        juce::TextEditor::focusGained(cause);
+        repaint();
+    }
+    void focusLost(FocusChangeType cause) override {
+        juce::TextEditor::focusLost(cause);
+        repaint();
+    }
+
+  private:
+    static juce::String hint() {
+#if JUCE_MAC
+        return juce::String(juce::CharPointer_UTF8("\xe2\x8c\x98")) + "F";
+#else
+        return "Ctrl+F";
+#endif
+    }
+};
+
 }  // namespace
 
 // ============================================================================
@@ -130,7 +182,7 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
         }
 
         searchBox_.setTextToShowWhenEmpty(tr("settings.search"),
-                                          ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+                                          ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         searchBox_.onTextChange = [this] { applyFilter(); };
         searchBox_.onEscapeKey = [this] {
             if (searchBox_.isEmpty())
@@ -252,7 +304,7 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
         sidebarBounds_ = bounds.removeFromLeft(kSidebarWidth);
 
         auto side = sidebarBounds_.reduced(10, 12);
-        searchBox_.setBounds(side.removeFromTop(28));
+        searchBox_.setBounds(side.removeFromTop(30));
         side.removeFromTop(10);
         for (auto& row : rows_) {
             if (!row->isVisible())
@@ -323,7 +375,7 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
     int currentTab_ = -1;
     int pendingTotal_ = 0;
 
-    juce::TextEditor searchBox_;
+    SearchBox searchBox_;
     daw::ui::PillSegments tabStrip_;
     juce::Component* currentToolbar_ = nullptr;
     juce::Viewport viewport_;
