@@ -49,6 +49,28 @@ body:
     validations:
       required: true
 
+  - type: dropdown
+    id: plugin
+    attributes:
+      label: Third-party plugin
+      description: If the bug involves a plugin, does the same thing happen in another DAW?
+      options:
+        - No plugin involved
+        - Plugin works in another DAW
+        - Plugin fails in another DAW too
+        - Not tried in another DAW
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-details
+    attributes:
+      label: Plugin and DAW tested
+      description: Plugin name, format (VST3/AU) and the other DAW you tried it in.
+      placeholder: "Korg M1 Le (VST3), works in Reaper 7"
+    validations:
+      required: false
+
   - type: textarea
     id: crash-log
     attributes:

@@ -729,7 +729,6 @@ target_compile_definitions(magda_daw_app
     JUCE_PLUGINHOST_LV2=1
     JUCE_PLUGINHOST_ARA=1
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
-    $<$<PLATFORM_ID:Linux>:JUCE_JACK=1>
 )
 
 if(APPLE)
@@ -851,7 +850,6 @@ target_compile_definitions(magda_cli
     JUCE_PLUGINHOST_ARA=1
     JUCE_WEB_BROWSER=0
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
-    $<$<PLATFORM_ID:Linux>:JUCE_JACK=1>
 )
 
 target_include_directories(magda_cli
