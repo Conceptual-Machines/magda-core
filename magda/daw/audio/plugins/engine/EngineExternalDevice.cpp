@@ -121,7 +121,9 @@ class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
         : juce::DocumentWindow(plugin.getName(), juce::Colours::black,
                                juce::DocumentWindow::closeButton),
           closed_(std::move(closed)) {
-        setUsingNativeTitleBar(true);
+        // A native title bar stops the main window repainting on Windows while the
+        // editor is open (#3150).
+        setUsingNativeTitleBar(false);
         setContentOwned(plugin.createEditorIfNeeded(), true);
         if (auto* editor = getContentComponent())
             editor->addKeyListener(&shortcuts_);
