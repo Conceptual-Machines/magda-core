@@ -165,17 +165,22 @@ class AIChatConsoleContent : public PanelContent,
     std::unique_ptr<juce::Drawable> trackIconDrawable_;
     std::unique_ptr<juce::Drawable> clipIconDrawable_;
     std::unique_ptr<juce::Drawable> drumIconDrawable_;
-    // View-context routing (#1402): the bottom-left glyph reflects the active
-    // view (session / arrangement / mixer), which scopes the console's agent.
-    std::unique_ptr<juce::Drawable> sessionIconDrawable_;
-    std::unique_ptr<juce::Drawable> arrangeIconDrawable_;
-    std::unique_ptr<juce::Drawable> mixIconDrawable_;
+    // The active view scopes the console's agent (#1402).
     magda::ViewMode currentViewMode_ = magda::ViewMode::Arrange;
     // True when the selected track's primary instrument carries a kit with at
     // least one role-tagged row. Drives the drummer auto-route in
     // RequestThread::run and the drum context icon below the chat.
     bool drummerModeActive_ = false;
-    juce::Label contextLabel_;
+    /** @brief Target chip text: a dim lead-in ("on"), the target name, then a caret. */
+    class ContextLabel : public juce::Label {
+      public:
+        juce::String prefix;
+        int getIdealWidth() const;
+        void paint(juce::Graphics& g) override;
+    };
+    ContextLabel contextLabel_;
+    // Track whose colour fills the chip's square; invalid for multi-track targets.
+    magda::TrackId contextTrackId_ = magda::INVALID_TRACK_ID;
     juce::DrawableButton sendButton_{"send", juce::DrawableButton::ImageFitted};
     juce::DrawableButton clearButton_{"clear", juce::DrawableButton::ImageFitted};
     juce::DrawableButton copyButton_{"copy", juce::DrawableButton::ImageFitted};

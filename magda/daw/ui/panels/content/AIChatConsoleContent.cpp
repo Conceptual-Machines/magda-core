@@ -944,18 +944,11 @@ AIChatConsoleContent::AIChatConsoleContent() {
         juce::Drawable::createFromImageData(BinaryData::clip_svg, BinaryData::clip_svgSize);
     drumIconDrawable_ = juce::Drawable::createFromImageData(BinaryData::drum_grid_svg,
                                                             BinaryData::drum_grid_svgSize);
-    // View-context glyphs (#1402), matching the footer view switcher.
-    sessionIconDrawable_ = juce::Drawable::createFromImageData(
-        BinaryData::iconsessionboldm_svg, BinaryData::iconsessionboldm_svgSize);
-    arrangeIconDrawable_ = juce::Drawable::createFromImageData(
-        BinaryData::iconarrangementboldm_svg, BinaryData::iconarrangementboldm_svgSize);
-    mixIconDrawable_ = juce::Drawable::createFromImageData(BinaryData::iconmixboldm_svg,
-                                                           BinaryData::iconmixboldm_svgSize);
     currentViewMode_ = magda::ViewModeController::getInstance().getViewMode();
     magda::ViewModeController::getInstance().addListener(this);
 
     // Context label (always visible, inside bottom bar)
-    contextLabel_.setFont(FontManager::getInstance().getMonoFont(11.0f));
+    contextLabel_.setFont(FontManager::getInstance().getUIFont(12.5f));
     contextLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     contextLabel_.setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     contextLabel_.setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
@@ -1356,7 +1349,10 @@ void AIChatConsoleContent::lookAndFeelChanged() {
         // construction, so the @plugin / /command colours need re-installing.
         inputBox_->setColourScheme(inputTokeniser_.getDefaultColourScheme());
     }
-    contextLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
+    contextLabel_.setColour(juce::Label::textColourId,
+                            contextEnabled_
+                                ? ActiveTheme::getTextColour()
+                                : ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
     analysisChip_.setColour(juce::Label::textColourId,
                             ActiveTheme::getColour(ActiveTheme::ACCENT_INFO));
     updateConfigStatus();
@@ -1447,30 +1443,15 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
         g.drawRoundedRectangle(chip.reduced(0.5f), 5.0f, 1.0f);
     }
 
-    // #1402: the context glyph reflects the active view, not selection.
-    juce::Drawable* icon = nullptr;
-    switch (currentViewMode_) {
-        case magda::ViewMode::Live:
-            icon = sessionIconDrawable_.get();
-            break;
-        case magda::ViewMode::Arrange:
-            icon = arrangeIconDrawable_.get();
-            break;
-        case magda::ViewMode::Mix:
-        case magda::ViewMode::Master:
-            icon = mixIconDrawable_.get();
-            break;
-    }
-    if (icon != nullptr) {
-        const auto colour = contextEnabled_ ? ActiveTheme::getAccentColour()
-                                            : ActiveTheme::getSecondaryTextColour().withAlpha(0.3f);
-        auto iconCopy = icon->createCopy();
-        iconCopy->replaceColour(juce::Colour(0xFFB3B3B3), colour);
-        iconCopy->replaceColour(juce::Colours::white, colour);
-        // The footer view glyphs use fill="currentColor", which JUCE resolves to black.
-        iconCopy->replaceColour(juce::Colours::black, colour);
-        iconCopy->drawWithin(g, contextIconBounds_.toFloat().reduced(5.0f),
-                             juce::RectanglePlacement::centred, 1.0f);
+    // The chip's square carries the target track's colour; dimmed while context is off.
+    if (!contextIconBounds_.isEmpty()) {
+        const auto* track = magda::TrackManager::getInstance().getTrack(contextTrackId_);
+        auto colour = track != nullptr ? track->colour : ActiveTheme::getAccentColour();
+        if (!contextEnabled_)
+            colour = colour.withAlpha(0.3f);
+        g.setColour(colour);
+        g.fillRoundedRectangle(contextIconBounds_.toFloat().withSizeKeepingCentre(10.0f, 10.0f),
+                               2.0f);
     }
 
     // Send: a filled accent square once there is something to send.
@@ -1497,11 +1478,17 @@ void AIChatConsoleContent::paintKeyHints(juce::Graphics& g) const {
         {shift + enter, "newline"}, {"@", "plugin"}, {"/", "command"}};
     constexpr int kKeyGap = 5;
     constexpr int kHintGap = 14;
-    auto widthOf = [&](const juce::String& text) {
-        return juce::roundToInt(juce::GlyphArrangement::getStringWidth(font, text));
+    // Arrow glyphs (⇧↵) render large in the mono face, so their key box uses a smaller size.
+    const auto glyphFont = FontManager::getInstance().getMonoFont(8.5f);
+    auto keyFontFor = [&](const juce::String& key) {
+        return key.containsOnly("@/") ? font : glyphFont;
+    };
+    auto widthOf = [&](const juce::String& text, const juce::Font& f) {
+        return juce::roundToInt(juce::GlyphArrangement::getStringWidth(f, text));
     };
     auto hintWidth = [&](const auto& hint) {
-        return widthOf(hint.first) + 8 + kKeyGap + widthOf(hint.second) + 2;
+        return widthOf(hint.first, keyFontFor(hint.first)) + 8 + kKeyGap +
+               widthOf(hint.second, font) + 2;
     };
     auto totalWidth = [&] {
         int w = 0;
@@ -1520,12 +1507,15 @@ void AIChatConsoleContent::paintKeyHints(juce::Graphics& g) const {
         const auto& [key, label] = hint;
         auto slot = row.removeFromLeft(hintWidth(hint));
         row.removeFromLeft(kHintGap);
-        const int keyW = widthOf(key) + 8;
+        const auto keyFont = keyFontFor(key);
+        const int keyW = widthOf(key, keyFont) + 8;
         const auto keyBox = slot.removeFromLeft(keyW).withSizeKeepingCentre(keyW, 15).toFloat();
         g.setColour(ActiveTheme::getBorderColour());
         g.drawRoundedRectangle(keyBox.reduced(0.5f), 3.0f, 1.0f);
         g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+        g.setFont(keyFont);
         g.drawText(key, keyBox, juce::Justification::centred, false);
+        g.setFont(font);
         slot.removeFromLeft(kKeyGap);
         g.drawText(label, slot, juce::Justification::centredLeft, false);
     }
@@ -1574,14 +1564,11 @@ void AIChatConsoleContent::resized() {
         controls.removeFromRight(8);
     }
 
-    const auto contextFont = contextLabel_.getFont();
     const int contextWidth = juce::jlimit(60, juce::jmax(60, controls.getWidth() / 2),
-                                          juce::roundToInt(juce::GlyphArrangement::getStringWidth(
-                                              contextFont, contextLabel_.getText())) +
-                                              34);
+                                          contextLabel_.getIdealWidth() + 30);
     contextChipBounds_ = controls.removeFromLeft(contextWidth);
     auto chip = contextChipBounds_;
-    contextIconBounds_ = chip.removeFromLeft(24);
+    contextIconBounds_ = chip.removeFromLeft(26);
     contextLabel_.setBounds(chip.withTrimmedRight(4));
     hintsBounds_ = controls.withTrimmedLeft(12);
 
@@ -1838,6 +1825,7 @@ juce::String formatSelectedClipsAsDrummerContext() {
 void AIChatConsoleContent::trackSelectionChanged(magda::TrackId trackId) {
     auto* track = magda::TrackManager::getInstance().getTrack(trackId);
     auto trackName = track != nullptr ? track->name : juce::String(trackId);
+    contextTrackId_ = trackId;
     drummerModeActive_ = isDrummerTrack(trackId);
     if (drummerModeActive_) {
         contextText_ = juce::String::fromUTF8("Drummer \xc2\xb7 ") + trackName;
@@ -1852,6 +1840,7 @@ void AIChatConsoleContent::trackSelectionChanged(magda::TrackId trackId) {
 void AIChatConsoleContent::multiTrackSelectionChanged(
     const std::unordered_set<magda::TrackId>& trackIds) {
     drummerModeActive_ = false;
+    contextTrackId_ = magda::INVALID_TRACK_ID;
     contextText_ = juce::String(static_cast<int>(trackIds.size())) + " Tracks";
     contextIcon_ = ContextIcon::Track;
     updateContextBar();
@@ -1869,6 +1858,7 @@ void AIChatConsoleContent::clipSelectionChanged(magda::ClipId clipId) {
     } else {
         contextText_ = juce::String(clipId);
     }
+    contextTrackId_ = trackId;
     drummerModeActive_ = isDrummerTrack(trackId);
     if (drummerModeActive_) {
         if (clip != nullptr)
@@ -1885,11 +1875,13 @@ void AIChatConsoleContent::multiClipSelectionChanged(
     const std::unordered_set<magda::ClipId>& clipIds) {
     auto contextClipIds = getSelectedDrummerContextClipIds();
     drummerModeActive_ = !contextClipIds.empty();
+    contextTrackId_ = magda::INVALID_TRACK_ID;
 
     if (!contextClipIds.empty()) {
         const auto* firstClip = magda::ClipManager::getInstance().getClip(contextClipIds.front());
         juce::String trackName;
         if (firstClip != nullptr) {
+            contextTrackId_ = firstClip->trackId;
             auto* track = magda::TrackManager::getInstance().getTrack(firstClip->trackId);
             trackName = track != nullptr ? track->name : juce::String(firstClip->trackId);
         }
@@ -1906,6 +1898,7 @@ void AIChatConsoleContent::multiClipSelectionChanged(
 }
 
 void AIChatConsoleContent::chainNodeSelectionChanged(const magda::ChainNodePath& path) {
+    contextTrackId_ = path.trackId;
     auto* track = magda::TrackManager::getInstance().getTrack(path.trackId);
     juce::String trackName = track != nullptr ? track->name : juce::String(path.trackId);
 
@@ -2074,16 +2067,50 @@ juce::String AIChatConsoleContent::getMidiContextSummary() const {
            " tracks";
 }
 
+int AIChatConsoleContent::ContextLabel::getIdealWidth() const {
+    const auto font = getFont();
+    const auto lead = FontManager::getInstance().getMonoFont(11.0f);
+    return juce::roundToInt(juce::GlyphArrangement::getStringWidth(font, getText())) +
+           (prefix.isNotEmpty()
+                ? juce::roundToInt(juce::GlyphArrangement::getStringWidth(lead, prefix)) + 6
+                : 0) +
+           18;  // caret
+}
+
+void AIChatConsoleContent::ContextLabel::paint(juce::Graphics& g) {
+    auto area = getLocalBounds();
+    const auto textColour = findColour(juce::Label::textColourId);
+    const auto caretArea = area.removeFromRight(14).toFloat();
+    if (prefix.isNotEmpty()) {
+        const auto lead = FontManager::getInstance().getMonoFont(11.0f);
+        const int leadW = juce::roundToInt(juce::GlyphArrangement::getStringWidth(lead, prefix));
+        g.setFont(lead);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+        g.drawText(prefix, area.removeFromLeft(leadW), juce::Justification::centredLeft, false);
+        area.removeFromLeft(6);
+    }
+    g.setFont(getFont());
+    g.setColour(textColour);
+    g.drawText(getText(), area, juce::Justification::centredLeft, true);
+
+    const auto c = caretArea.getCentre();
+    juce::Path caret;
+    caret.addTriangle(c.x - 3.5f, c.y - 1.5f, c.x + 3.5f, c.y - 1.5f, c.x, c.y + 2.5f);
+    g.setColour(ActiveTheme::getSecondaryTextColour());
+    g.fillPath(caret);
+}
+
 void AIChatConsoleContent::updateContextBar() {
     pruneMidiContextSelection();
     auto displayText = getMidiContextSummary();
     if (displayText.isEmpty())
-        displayText = contextText_.isNotEmpty() ? contextText_ : "Add MIDI context";
-    displayText += "  " + juce::String::charToString(0x25BE);
-    contextLabel_.setText(displayText, juce::dontSendNotification);
+        displayText = contextText_;
+    contextLabel_.prefix = displayText.isNotEmpty() ? "on" : "";
+    contextLabel_.setText(displayText.isNotEmpty() ? displayText : "Add MIDI context",
+                          juce::dontSendNotification);
     contextLabel_.setColour(juce::Label::textColourId,
                             contextEnabled_
-                                ? ActiveTheme::getAccentColour()
+                                ? ActiveTheme::getTextColour()
                                 : ActiveTheme::getSecondaryTextColour().withAlpha(0.3f));
     resized();
     repaint();

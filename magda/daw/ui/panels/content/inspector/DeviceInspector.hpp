@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "../../themes/StyledText.hpp"
 #include "BaseInspector.hpp"
 #include "core/SelectionManager.hpp"
@@ -10,10 +12,8 @@ namespace magda::daw::ui {
 /**
  * @brief Inspector for device/plugin properties
  *
- * Displays properties of selected chain nodes (devices/plugins):
- * - Node type (e.g. "VST3 Effect", "AU Instrument")
- * - Node name
- * - Plugin latency
+ * A header with the node's type and name, a strip of facts (category, latency,
+ * sidechain) and, for catalogued devices, an About section with the description.
  */
 class DeviceInspector : public BaseInspector, public magda::TrackManagerListener {
   public:
@@ -39,29 +39,25 @@ class DeviceInspector : public BaseInspector, public magda::TrackManagerListener
     void setSelectedChainNode(const magda::ChainNodePath& path);
 
   private:
-    // Current selection
+    struct Fact {
+        juce::String label;
+        juce::String value;
+        bool mono = false;
+    };
+
     magda::ChainNodePath selectedChainNode_;
 
-    // Chain node properties
-    juce::Label chainNodeTypeLabel_;
-    juce::Label chainNodeNameLabel_;
-    juce::Label chainNodeNameValue_;
-
-    // Latency display
-    juce::Label latencyLabel_;
-    juce::Label latencyValue_;
-
-    // Internal device metadata
-    juce::Label categoryLabel_;
-    juce::Label categoryValue_;
-    juce::Label codenameLabel_;
-    juce::Label codenameValue_;
-    juce::Label descriptionLabel_;
+    juce::String kicker_;
+    juce::String name_;
+    std::vector<Fact> facts_;
     magda::StyledTextDisplay descriptionValue_;
 
-    // Update methods
+    // Painted chrome placed by resized().
+    juce::Rectangle<int> headerBounds_;
+    juce::Rectangle<int> factsBounds_;
+    juce::Rectangle<int> aboutLabelBounds_;
+
     void updateFromSelectedChainNode();
-    void showDeviceControls(bool show);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DeviceInspector)
 };

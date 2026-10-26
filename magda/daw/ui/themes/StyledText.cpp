@@ -162,6 +162,12 @@ void StyledTextDisplay::rebuildAttributed() {
     }
 }
 
+int StyledTextDisplay::getHeightForWidth(int width) const {
+    juce::TextLayout layout;
+    layout.createLayout(attributed_, static_cast<float>(juce::jmax(1, width)));
+    return static_cast<int>(std::ceil(layout.getHeight()));
+}
+
 void StyledTextDisplay::paint(juce::Graphics& g) {
     attributed_.draw(g, getLocalBounds().toFloat());
 }
