@@ -9,6 +9,7 @@
 #include "../audio/controllers/ControllerRouter.hpp"
 #include "../audio/insert_capture/InsertRenderCaptureService.hpp"
 #include "../audio/io/AudioDeviceOpenMark.hpp"
+#include "../audio/io/JackAudioBackend.hpp"
 #include "../audio/session/SessionClipScheduler.hpp"
 #include "../audio/session/SessionRecorder.hpp"
 #include "../core/AppPaths.hpp"
@@ -152,6 +153,7 @@ void TracktionEngineWrapper::initializePluginFormats() {
 void TracktionEngineWrapper::initializeDeviceManager() {
     auto& dm = engine_->getDeviceManager();
     auto& juceDeviceManager = dm.deviceManager;
+    magda::jack::addBackend(juceDeviceManager);
 
     // Log available audio device types
     DBG("Available audio device types:");

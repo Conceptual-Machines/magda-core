@@ -9,6 +9,7 @@
 #include "CoreAudioRate.hpp"
 #include "DriverControlPanel.hpp"
 #include "HardwareRouteNames.hpp"
+#include "JackAudioBackend.hpp"
 #include "TracktionAudioSettings.hpp"
 
 namespace magda {
@@ -46,7 +47,9 @@ void log(const juce::String& message) {
 }  // namespace
 
 AudioIOService::AudioIOService()
-    : AudioIOService({}, tracktionSettingsFile(), paths::audioDeviceOpenMarkFile()) {}
+    : AudioIOService({}, tracktionSettingsFile(), paths::audioDeviceOpenMarkFile()) {
+    jack::addBackend(manager_);
+}
 
 AudioIOService::AudioIOService(std::vector<std::unique_ptr<juce::AudioIODeviceType>> backends,
                                juce::File tracktionSettings, juce::File openMark)

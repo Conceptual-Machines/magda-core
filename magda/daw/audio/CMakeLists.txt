@@ -490,6 +490,8 @@ target_sources(magda_daw PRIVATE
     io/DriverControlPanel.hpp
     io/HardwareRouteNames.cpp
     io/HardwareRouteNames.hpp
+    io/JackAudioBackend.cpp
+    io/JackAudioBackend.hpp
     io/TracktionAudioSettings.cpp
     io/TracktionAudioSettings.hpp
     AudioThumbnailManager.cpp
