@@ -1,90 +1,95 @@
 #include "custom_ui/ToneGeneratorUI.hpp"
 
-#include "ui/themes/ActiveTheme.hpp"
-
 namespace magda::daw::ui {
 
+using Tone = devices::ToneGenerator;
+
 ToneGeneratorUI::ToneGeneratorUI() {
-    // Waveform selector - IDs are oscType + 1 so (selectedId - 1) is the enum value.
-    // oscType: 0=Sine, 1=Triangle, 2=Saw Up, 3=Saw Down, 4=Square, 5=Noise
-    waveformSelector_.addItem("Sine", 1);
-    waveformSelector_.addItem("Triangle", 2);
-    waveformSelector_.addItem("Saw Up", 3);
-    waveformSelector_.addItem("Saw Down", 4);
-    waveformSelector_.addItem("Square", 5);
-    waveformSelector_.addItem("Noise", 6);
-    waveformSelector_.setSelectedId(1, juce::dontSendNotification);
-    waveformSelector_.onChange = [this]() {
-        // Param 0 = oscType, stored as the combo id minus one
-        int oscType = waveformSelector_.getSelectedId() - 1;
-        if (onParameterChanged) {
-            onParameterChanged(0, static_cast<float>(oscType));
-        }
+    waveform_.setOptions({"Sine", "Triangle", "Saw Up", "Saw Down", "Square", "Noise"});
+    waveform_.setSelectedIndex(0);
+    waveform_.onChange = [this](int index) {
+        writeParameter(Tone::kWaveformParamIndex, static_cast<float>(index));
+        refreshNoiseColor();
     };
-    addAndMakeVisible(waveformSelector_);
+    addAndMakeVisible(waveform_);
 
-    // Frequency slider — range, skew, and Hz/kHz format/parse are populated by
-    // DeviceSlotComponent via setParameterInfo() from the processor's ParameterInfo
-    // (unit="Hz", scale=Logarithmic, scaleAnchor=1000). Param index 2.
-    frequencySlider_.setParamIndex(2);
-    frequencySlider_.onValueChanged = [this](double value) {
-        if (onParameterChanged) {
-            onParameterChanged(2, static_cast<float>(value));
-        }
+    noiseColor_.setOptions({"White", "Pink", "Brown"});
+    noiseColor_.setSelectedIndex(0);
+    noiseColor_.onChange = [this](int index) {
+        writeParameter(Tone::kNoiseColorParamIndex, static_cast<float>(index));
     };
-    addAndMakeVisible(frequencySlider_);
+    addAndMakeVisible(noiseColor_);
 
-    // Level slider — range and dB formatting come from the processor's ParameterInfo
-    // via setParameterInfo(). Param index 3.
-    levelSlider_.setParamIndex(3);
-    levelSlider_.onValueChanged = [this](double value) {
-        if (onParameterChanged) {
-            onParameterChanged(3, static_cast<float>(value));
-        }
+    transportOnly_.setToggle("Transport only");
+    transportOnly_.setSelectedIndex(0);
+    transportOnly_.onChange = [this](int index) {
+        writeParameter(Tone::kTransportOnlyParamIndex, static_cast<float>(index));
     };
-    addAndMakeVisible(levelSlider_);
+    addAndMakeVisible(transportOnly_);
+    style_ = resolveControlStyle({});
+    magda::Config::getInstance().addListener(this);
 }
 
-void ToneGeneratorUI::updateParameters(float frequency, float level, int waveform) {
-    // waveform is the oscType value (0-5); combo IDs are value + 1
-    int oscType = juce::jlimit(0, 5, waveform);
-    waveformSelector_.setSelectedId(oscType + 1, juce::dontSendNotification);
-
-    frequencySlider_.setValue(frequency, juce::dontSendNotification);
-    levelSlider_.setValue(level, juce::dontSendNotification);
+ToneGeneratorUI::~ToneGeneratorUI() {
+    magda::Config::getInstance().removeListener(this);
 }
 
-void ToneGeneratorUI::paint(juce::Graphics& g) {
-    // Draw subtle border
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-    g.drawRect(getLocalBounds(), 1);
+void ToneGeneratorUI::configChanged() {
+    if (const auto style = resolveControlStyle(snapshot_.controlStyle); style != style_) {
+        style_ = style;
+        resized();
+    }
+}
 
-    // Draw background
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
-    g.fillRect(getLocalBounds().reduced(1));
+void ToneGeneratorUI::updateFromDevice(const magda::DeviceInfo& device) {
+    snapshot_ = device;
+    if (const auto* param = device.findParameterByIndex(Tone::kWaveformParamIndex))
+        waveform_.setSelectedIndex(
+            juce::jlimit(0, Tone::kWaveformCount - 1, juce::roundToInt(param->currentValue)));
+    if (const auto* param = device.findParameterByIndex(Tone::kNoiseColorParamIndex))
+        noiseColor_.setSelectedIndex(
+            juce::jlimit(0, Tone::kNoiseColorCount - 1, juce::roundToInt(param->currentValue)));
+    if (const auto* param = device.findParameterByIndex(Tone::kTransportOnlyParamIndex))
+        transportOnly_.setSelectedIndex(param->currentValue >= 0.5f ? 1 : 0);
+    refreshNoiseColor();
+    configChanged();
+}
+
+void ToneGeneratorUI::writeParameter(int slot, float value) {
+    if (auto* param = snapshot_.findParameterByIndex(slot))
+        param->currentValue = value;
+    if (onParameterChanged_)
+        onParameterChanged_(slot, value);
+}
+
+void ToneGeneratorUI::refreshNoiseColor() {
+    // Only noise has a colour, so it dims for the rest, the way Frequency dims for noise.
+    const bool noise = waveform_.getSelectedIndex() == static_cast<int>(Tone::Waveform::Noise);
+    noiseColor_.setEnabled(noise);
+    noiseColor_.setAlpha(noise ? 1.0f : 0.4f);
 }
 
 void ToneGeneratorUI::resized() {
-    auto area = getLocalBounds().reduced(8);
-
-    // Row 1: Waveform selector
-    auto waveformArea = area.removeFromTop(24);
-    waveformSelector_.setBounds(waveformArea);
-    area.removeFromTop(4);
-
-    // Row 2: Frequency slider
-    auto freqArea = area.removeFromTop(24);
-    frequencySlider_.setBounds(freqArea);
-    area.removeFromTop(4);
-
-    // Row 3: Level slider
-    auto levelArea = area.removeFromTop(24);
-    levelSlider_.setBounds(levelArea);
+    const auto geometry = ToneGeneratorGeometry::of(getLocalBounds(), style_);
+    waveform_.setBounds(geometry.waveform);
+    noiseColor_.setBounds(geometry.noiseColor);
+    transportOnly_.setBounds(geometry.transportOnly);
 }
 
-std::vector<LinkableTextSlider*> ToneGeneratorUI::getLinkableSliders() {
-    // Sliders carry their param index via setParamIndex (2 = frequency, 3 = level).
-    return {&frequencySlider_, &levelSlider_};
+const CompiledPresentationSpec& getToneGeneratorPresentation() {
+    static const CompiledPresentationSpec kSpec{
+        .pluginId = Tone::kDeviceType,
+        .layoutCellCount = 0,
+        .layoutCellsPerRow = 0,
+        .createPanel = [](juce::String) -> std::unique_ptr<CompiledDevicePanel> {
+            return std::make_unique<ToneGeneratorUI>();
+        },
+        .preferredSlotWidth = 260,
+        .createLayout = []() -> std::unique_ptr<DeviceParamLayout> {
+            return std::make_unique<ToneGeneratorLayout>();
+        },
+    };
+    return kSpec;
 }
 
 }  // namespace magda::daw::ui

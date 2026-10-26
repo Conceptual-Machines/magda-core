@@ -85,7 +85,13 @@ plugin or hardware goes in `requires` and becomes the optional tier.
 - `project.saveAs` is a job; poll `jobs.get` until it completes. Save As wraps the file in a folder
   named after it, and the job result reports the path actually written.
 
+`external-instrument` sends to the run's own MIDI port, `MAGDA Smoke` (`requires.hardware:
+["virtual-midi"]`), and its `midi` block checks what arrived: notes moved onto the insert's
+channel, an automated CC knob's ramp, and a knob the scenario turns. The insert has no return, so
+nothing sounds. `devices.setInsert` routes an insert and sets its knobs; `external_fx` and
+`external_instrument` are its catalogue ids.
+
 ## Not buildable yet
 
-Hardware inserts are left to the hands-on checklist: a loopback run is too fragile for a smoke
-project.
+An insert's audio round trip is left to the hands-on checklist: a loopback run is too fragile
+for a smoke project.

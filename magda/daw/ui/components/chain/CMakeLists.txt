@@ -127,6 +127,8 @@ target_sources(magda_daw_app PRIVATE
     DeviceSlotComponent.hpp
     ai/AIPanelComponent.hpp
     slot/DeviceCustomUIManager.hpp
+    slot/ExternalInsertLayout.hpp
+    slot/ExternalInsertUI.hpp
     slot/DeviceSlotAnalyzerContextActions.hpp
     slot/DeviceSlotAutomationControls.hpp
     slot/DeviceSlotContentLayout.hpp
@@ -197,6 +199,7 @@ target_sources(magda_daw_app PRIVATE
     compiled/StrumOnsetsPanel.hpp
     compiled/CompiledPluginPresentation.hpp
     compiled/MagdaDriveCurveView.hpp
+    custom_ui/ToneGeneratorLayout.hpp
     custom_ui/ToneGeneratorUI.hpp
     custom_ui/SamplerEnvelopeView.hpp
     custom_ui/SamplerTiles.hpp

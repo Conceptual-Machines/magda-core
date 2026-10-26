@@ -128,6 +128,7 @@ HandlerResult devicesAdd(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesRemove(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesMove(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesSetBypassed(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult devicesSetInsert(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesListParameters(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesSetParameter(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesSetParameterConfig(MagdaApi&, const juce::var&, const RequestContext&);

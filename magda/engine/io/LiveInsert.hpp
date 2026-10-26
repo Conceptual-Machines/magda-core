@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <bitset>
+#include <utility>
 #include <vector>
 
 #include "exec/EngineDevice.hpp"
@@ -36,6 +37,14 @@ struct LiveInsertRoute {
 
     /// The round trip, device buffering and the manual correction included.
     int latencySamples = 0;
+
+    /// Where the CC knobs go: the MIDI send for an instrument, a port of their own for an
+    /// effect. Null sends none (#3164).
+    LiveMidiOutput* control = nullptr;
+    /// The channel the CCs go out on, 1 to 16.
+    int channel = 1;
+    /// Each knob as (parameter index, CC number).
+    std::vector<std::pair<int, int>> ccs;
 };
 
 class LiveInsert final : public EngineInsert {
@@ -57,6 +66,9 @@ class LiveInsert final : public EngineInsert {
 
     void releaseNotes(const BlockInfo& block) override;
 
+    /// Sends each CC knob whose value moved to another of the 128 steps since it last went out.
+    void sendControls(const BlockInfo& block, const DeviceParams& params) override;
+
     /// Blocks whose send found no output channel it named. Read from any thread.
     std::uint32_t missingSendBlocks() const {
         return missingSend_.load(std::memory_order_relaxed);
@@ -72,6 +84,9 @@ class LiveInsert final : public EngineInsert {
     /// Notes sent and not yet ended, by channel. Audio thread, and the destructor
     /// once nothing renders through this.
     std::array<std::bitset<128>, 16> held_{};
+
+    /// The value each of route_.ccs last sent, -1 before the first. Audio thread.
+    std::vector<int> lastSent_;
 
     std::atomic<std::uint32_t> missingSend_{0};
 };

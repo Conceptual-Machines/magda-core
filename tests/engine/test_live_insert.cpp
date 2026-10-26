@@ -3,6 +3,7 @@
 #include <limits>
 #include <map>
 #include <mutex>
+#include <tuple>
 #include <vector>
 
 #include "clip/ClipSnapshotFeed.hpp"
@@ -499,4 +500,76 @@ TEST_CASE("A track's MIDI Out is opened again when it names another port",
     CHECK(factory.trackMidiOutsToRebuild().contains(1));
     CHECK(factory.createTrackMidiOut(1) != nullptr);
     CHECK(factory.trackMidiOutsToRebuild().empty());
+}
+
+namespace {
+
+/// CC knobs' values for one block: (parameter index, start, end), normalised over 0 to 127.
+struct CcKnobs {
+    explicit CcKnobs(std::vector<std::tuple<int, float, float>> knobs) {
+        for (const auto& [slot, start, end] : knobs) {
+            segments.push_back({.startSample = 0, .startValue = start, .endValue = end});
+            counts.push_back(1);
+            domains.push_back(
+                {.scale = magda::ParameterScale::Linear, .minValue = 0.0f, .maxValue = 127.0f});
+            slots.push_back(slot);
+            driven.push_back(0);
+        }
+    }
+
+    magda::engine::DeviceParams params() const {
+        return {segments, counts, domains, slots, driven, 1, kBlock};
+    }
+
+    std::vector<magda::engine::ParamSegment> segments;
+    std::vector<int> counts;
+    std::vector<magda::ParameterUtils::ParameterDomain> domains;
+    std::vector<int> slots;
+    std::vector<std::uint8_t> driven;
+};
+
+}  // namespace
+
+TEST_CASE("An insert sends each CC knob on its channel when its value moves",
+          "[engine][io][insert][3164]") {
+    Device device;
+    RecordingMidiOutput port;
+    LiveInsert insert(device.inputs, device.outputs,
+                      {.control = &port, .channel = 3, .ccs = {{4, 74}, {7, 71}}});
+
+    device.begin();
+    insert.sendControls(
+        playingBlock(),
+        CcKnobs({{4, 64.0f / 127.0f, 64.0f / 127.0f}, {7, 1.0f, 1.0f}, {9, 0.5f, 0.5f}}).params());
+    device.end();
+
+    // Parameter 9 is no knob, so it sends nothing.
+    REQUIRE(port.sent.size() == 2);
+    CHECK(port.sent[0].sample == kBlock);
+    CHECK(port.sent[0].bytes == std::vector<std::uint8_t>{0xb2, 74, 64});
+    CHECK(port.sent[1].bytes == std::vector<std::uint8_t>{0xb2, 71, 127});
+
+    // The same values again send nothing; a move to another step does.
+    port.sent.clear();
+    device.begin();
+    insert.sendControls(playingBlock(), CcKnobs({{4, 64.2f / 127.0f, 64.2f / 127.0f},
+                                                 {7, 100.0f / 127.0f, 100.0f / 127.0f}})
+                                            .params());
+    device.end();
+    REQUIRE(port.sent.size() == 1);
+    CHECK(port.sent[0].bytes == std::vector<std::uint8_t>{0xb2, 71, 100});
+}
+
+TEST_CASE("A ramping CC knob is sent through the block, in order", "[engine][io][insert][3164]") {
+    Device device;
+    RecordingMidiOutput port;
+    LiveInsert insert(device.inputs, device.outputs, {.control = &port, .ccs = {{0, 1}}});
+
+    device.begin();
+    insert.sendControls(playingBlock(), CcKnobs({{0, 0.0f, 1.0f}}).params());
+    device.end();
+
+    // A block shorter than the ramp stride is read once, at its start.
+    REQUIRE(port.sent.size() == 1);
+    CHECK(port.sent[0].bytes == std::vector<std::uint8_t>{0xb0, 1, 0});
 }

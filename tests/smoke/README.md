@@ -48,7 +48,7 @@ Each project is the folder MAGDA saves, `<name>/<name>.mgd`, with a
 | `range` | The beats to play, `startBeat` < `endBeat`. |
 | `range.seconds` | Optional. How long the range takes to render, within 1%; what catches a tempo map that ignores its automation. |
 | `requires.plugins` | Plugin names the machine must have scanned. Empty for the core set. |
-| `requires.hardware` | Hardware the run needs: `insert` (an external insert with a loopback cable) or `loopback`. Empty for the core set. |
+| `requires.hardware` | Hardware the run needs: `insert` (an external insert with a loopback cable), `loopback`, or `virtual-midi` (the run's own MIDI port, below). Empty for the core set. |
 | `tracks` | Tracks checked by name. A track not listed is not checked. |
 | `tracks[].sound` | `true`: the track must sound in the range. `false`: it must stay silent. Meters read before a track's mute, so a muted track cannot be checked this way. |
 | `tracks[].peakDb` | Bounds on the track meter's peak over the range, in dBFS. Required when `sound` is `true`. A silent track's peak must stay below -90 dBFS unless it gives its own `max`. |
@@ -56,7 +56,16 @@ Each project is the folder MAGDA saves, `<name>/<name>.mgd`, with a
 | `setup` | Optional. Remote API calls made after the project opens and before playback, each `{ "call", "input" }`; a call that starts a job is waited on. What a project needs that should not be committed, such as a freeze render. |
 | `compare` | Optional, default `true`. `false` skips comparing the live capture with the offline render, for a project whose live output differs from a render by design (a frozen track bypassed after its freeze). |
 | `scenario` | Optional. Remote API calls made during playback, each `{ "beat", "call", "input" }` with the beat inside `range`, such as launching a scene. |
+| `midi` | Optional; needs `virtual-midi`. What MAGDA must send to the `MAGDA Smoke` port over the range. `channels` lists the only channels channel messages may arrive on. Each `expect` entry is `{ "kind": "note" \| "cc", "channel", "number", "atLeast" }`: note-ons or CCs of that number on that channel, at least that many times, and with `spans: [low, high]`, values reaching down to `low` and up to `high`. |
 | `listen` | One line on what a listener would check, printed in the report. |
+
+## The MIDI port
+
+A project that sends MIDI out of MAGDA (an External Instrument, its CC knobs) points it at a port
+named `MAGDA Smoke`. `scripts/smoke.py` opens that port before MAGDA starts and records what
+arrives on it, using `python-rtmidi` (`pip install python-rtmidi`). On macOS and Linux the port is
+virtual and made by the run; Windows has no virtual ports, so make one named `MAGDA Smoke` in
+loopMIDI first. Without either, those projects are skipped.
 
 `tests/project/test_smoke_expectations.cpp` loads every expectation file and
 fails on a missing key, a wrong type, a project that does not load, a track

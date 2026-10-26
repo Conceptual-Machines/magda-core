@@ -573,6 +573,7 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         case OpRole::ModulationTap:
         case OpRole::HardwareOutput:
         case OpRole::MidiOutChannel:
+        case OpRole::InsertMidiChannel:
         // Delay and crossfade roles never reach here: they return above.
         case OpRole::MixInputDelay:
         case OpRole::MergeInputDelay:

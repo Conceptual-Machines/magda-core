@@ -99,7 +99,7 @@ std::vector<ParamId> paramsReadBy(const PlanOp& op, const ParamTable& table) {
             params.push_back(id);
     };
 
-    if (op.kind == OpKind::Device) {
+    if (op.kind == OpKind::Device || readsInsertControls(op)) {
         const auto window = table.windowFor(op.key.deviceKey());
         for (int k = 0; k < window.count; ++k)
             params.push_back(window.first + k);

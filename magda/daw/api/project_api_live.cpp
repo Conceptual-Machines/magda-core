@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <set>
 
+#include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../project/ProjectManager.hpp"
 #include "../project/serialization/ProjectSerializer.hpp"
 
@@ -82,7 +83,10 @@ void inspectElements(const std::vector<ChainElement>& elements,
         }
 
         const auto& device = getDevice(element);
-        if (device.pluginId.isNotEmpty() && !std::ranges::contains(available, device.pluginId))
+        // An External Insert is the host's own wiring, listed under its two variants' ids.
+        const bool insert = daw::audio::internalPluginHasTag(device.pluginId, "external-insert");
+        if (device.pluginId.isNotEmpty() && !insert &&
+            !std::ranges::contains(available, device.pluginId))
             ++unavailable;
         if (device.pads)
             for (const auto& pad : device.pads->chains)

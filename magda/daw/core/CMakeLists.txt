@@ -8,6 +8,7 @@ target_sources(magda_daw PRIVATE
     UserAlert.cpp
     ChainNodePath.cpp
     DeviceInfo.cpp
+    InsertCcKnobs.cpp
     DrumGridPads.cpp
     PadChannels.cpp
     ControlTarget.cpp

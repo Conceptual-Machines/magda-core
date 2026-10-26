@@ -418,6 +418,7 @@ set(TEST_SOURCES
     core/test_addressed_parameters.cpp
     core/test_device_parameter_list.cpp
     core/test_device_info_predicates.cpp
+    core/test_insert_cc_knobs.cpp
     core/test_four_osc_translation.cpp
     core/test_ranges_helpers.cpp
 )

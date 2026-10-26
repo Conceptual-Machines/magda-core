@@ -182,6 +182,8 @@ const char* toString(OpRole role) {
             return "trackMidiOut";
         case OpRole::MidiOutChannel:
             return "midiOutChannel";
+        case OpRole::InsertMidiChannel:
+            return "insertMidiChannel";
         case OpRole::MidiOutRoute:
             return "midiOutRoute";
         case OpRole::FeedbackSend:

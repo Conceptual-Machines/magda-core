@@ -222,6 +222,25 @@ def midi_thru(magda):
 LOOP = SMOKE_DIR / "assets" / "loop-100bpm.wav"
 
 
+def external_instrument(magda):
+    """An External Instrument sending to the smoke run's MIDI port (#3164).
+
+    Notes in the clip are on channel 1 and must leave on the insert's channel 5. CC 74 rides
+    an automation ramp; CC 71 stays put until the expectation's scenario turns it.
+    """
+    track, (insert,) = add_track(magda, "Hardware Synth", "external_instrument")
+    magda.call("devices.setInsert", {"devicePath": insert, "sendDevice": "MAGDA Smoke",
+                                     "midiChannel": 5, "ccKnobs": [74, 71]})
+    midi_clip(magda, track, 8, beats(8, 1, 60, 100))
+    lane = magda.call("automation.createLane", {"type": "absolute", "target": {
+        "kind": "plugin_param", "devicePath": insert,
+        "parameterIndex": parameter_index(magda, insert, "CC 74"), "modId": -1,
+        "modParameterIndex": -1, "sendBusIndex": -1}})["id"]
+    magda.call("automation.setPoints", {"laneId": lane, "points": [
+        {"beatPosition": 0, "value": 0.0, "curve": "linear"},
+        {"beatPosition": 8, "value": 1.0, "curve": "linear"}]})
+
+
 def load_sample(magda, project, track, start=0.0):
     """The test loop, copied into the project's own media first so the save points inside it."""
     local = SMOKE_DIR / project / f"{project}_Media" / "imported" / LOOP.name
@@ -289,6 +308,7 @@ PROJECTS = {
     "multi-out": multi_out,
     "freeze": freeze,
     "midi-thru": midi_thru,
+    "external-instrument": external_instrument,
 }
 
 

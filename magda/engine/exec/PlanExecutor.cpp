@@ -572,7 +572,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
         for (std::size_t i = 0; i < numOps; ++i) {
             const auto& op = plan.ops[i];
-            if (op.kind == OpKind::Device) {
+            if (op.kind == OpKind::Device || readsInsertControls(op)) {
                 paramWindowForOp_[i] = params->windowFor(op.key.deviceKey());
                 continue;
             }
@@ -2549,6 +2549,9 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
 
             if (value.silent)
                 break;
+
+            if (const auto& window = paramWindowForOp_[i]; window.count > 0)
+                insert->sendControls(block, deviceParams(i, window));
 
             static const juce::MidiBuffer kNoMidi;
 

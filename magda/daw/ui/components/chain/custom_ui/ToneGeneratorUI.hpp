@@ -2,56 +2,51 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "ui/components/common/LinkableTextSlider.hpp"
+#include <functional>
+#include <memory>
+
+#include "compiled/CompiledPluginPresentation.hpp"
+#include "core/Config.hpp"
+#include "custom_ui/ToneGeneratorLayout.hpp"
+#include "ui/components/common/SegmentedChoice.hpp"
 
 namespace magda::daw::ui {
 
-/**
- * @brief Custom minimal UI for the internal Tone Generator device
- *
- * Displays essential controls in a compact layout:
- * - Waveform selector (Sine/Noise)
- * - Frequency slider with Hz/kHz formatting
- * - Level slider in dB
- *
- * Note: Test Tone is always transport-synced (plays when transport plays)
- */
-class ToneGeneratorUI : public juce::Component {
+/// The Test Tone's faceplate: its waveform as a row of glyphs, the noise colour and Transport Only,
+/// over the Frequency and Level cells the param grid draws in the Device controls style (#3164).
+class ToneGeneratorUI final : public juce::Component,
+                              public CompiledDevicePanel,
+                              private magda::ConfigListener {
   public:
     ToneGeneratorUI();
-    ~ToneGeneratorUI() override = default;
+    ~ToneGeneratorUI() override;
 
-    /**
-     * @brief Update UI from device parameters
-     * @param frequency Frequency in Hz (20-20000)
-     * @param level Level in dB (-60 to 0)
-     * @param waveform oscType enum (0=Sine, 1=Triangle, 2=Saw Up, 3=Saw Down, 4=Square, 5=Noise)
-     */
-    void updateParameters(float frequency, float level, int waveform);
+    juce::Component& component() override {
+        return *this;
+    }
+    void updateFromDevice(const magda::DeviceInfo& device) override;
+    void bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice>) override {}
+    void setOnParameterChanged(std::function<void(int, float)> cb) override {
+        onParameterChanged_ = std::move(cb);
+    }
+    int preferredHeight() const override {
+        return 200;
+    }
 
-    /**
-     * @brief Callback when a parameter changes (paramIndex, actualValue)
-     * ParamIndex matches ToneGeneratorProcessor ordering:
-     *   0=oscType (enum 0-5), 2=frequency (Hz), 3=level (dB)
-     * bandLimit (index 1) is not exposed in this UI.
-     */
-    std::function<void(int paramIndex, float actualValue)> onParameterChanged;
-
-    // Get all linkable sliders for mod/macro wiring (in parameter-index order)
-    std::vector<LinkableTextSlider*> getLinkableSliders();
-
-    void paint(juce::Graphics& g) override;
     void resized() override;
 
   private:
-    // Waveform selector
-    juce::ComboBox waveformSelector_;
+    void configChanged() override;
+    void writeParameter(int slot, float value);
+    void refreshNoiseColor();
 
-    // Frequency slider (20 Hz - 20 kHz, logarithmic)
-    LinkableTextSlider frequencySlider_{TextSlider::Format::Decimal};
+    magda::DeviceInfo snapshot_;
+    std::function<void(int, float)> onParameterChanged_;
+    ParamControlStyle style_ = ParamControlStyle::Text;
 
-    // Level slider (-60 to 0 dB)
-    LinkableTextSlider levelSlider_{TextSlider::Format::Decibels};
+    magda::SegmentedChoice waveform_;
+    magda::SegmentedChoice noiseColor_;
+    magda::SegmentedChoice transportOnly_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ToneGeneratorUI)
 };

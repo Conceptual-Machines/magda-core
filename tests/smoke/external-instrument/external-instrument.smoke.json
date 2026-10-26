@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "project": "external-instrument.mgd",
+  "cluster": "external instrument MIDI",
+  "range": { "startBeat": 0, "endBeat": 8 },
+  "requires": { "plugins": [], "hardware": ["virtual-midi"] },
+  "compare": false,
+  "scenario": [
+    { "beat": 4, "call": "devices.setParameter", "input": { "devicePath": { "trackId": 1, "section": "fx", "trackLevel": false, "topLevelDeviceId": 1, "steps": [] }, "parameterIndex": 1, "value": 100 } }
+  ],
+  "tracks": [
+    { "name": "Hardware Synth", "sound": false }
+  ],
+  "midi": {
+    "channels": [5],
+    "expect": [
+      { "kind": "note", "channel": 5, "number": 60, "atLeast": 7 },
+      { "kind": "cc", "channel": 5, "number": 74, "atLeast": 8, "spans": [16, 112] },
+      { "kind": "cc", "channel": 5, "number": 71, "atLeast": 1, "spans": [100, 100] }
+    ]
+  },
+  "listen": "Nothing to hear: the insert has no return. On the MAGDA Smoke port, middle C every beat on channel 5 though the clip is on channel 1, CC 74 rising with its automation, and CC 71 jumping to 100 halfway."
+}

@@ -20,6 +20,7 @@
 #include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/DeviceState.hpp"
 #include "magda/daw/core/DrumGridPads.hpp"
+#include "magda/daw/core/InsertCcKnobs.hpp"
 #include "magda/daw/core/MidiFileWriter.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/core/TrackPropertyCommands.hpp"
@@ -4121,6 +4122,51 @@ TEST_CASE("A hardware insert's send and return roundtrip", "[project][serializat
     CHECK(restored.returnDevice == "In 3-4");
     CHECK(restored.manualAdjustMs == Approx(-2.5));
     CHECK(restored.isActive());
+}
+
+TEST_CASE("An insert's channel, CC port and CC knobs roundtrip, routed or not",
+          "[project][serialization][insert][3164]") {
+    ProjectTestFixture fixture;
+
+    auto trackId = TrackManager::getInstance().createTrack("Outboard", TrackType::Media);
+
+    // Nothing routed yet: the knobs are still the insert's.
+    DeviceInfo device;
+    device.id = 1;
+    device.name = "External FX";
+    device.pluginId = "insert";
+    device.deviceType = DeviceType::Effect;
+    device.format = PluginFormat::Internal;
+    device.insert.midiChannel = 3;
+    device.insert.ccDevice = "Analog Heat";
+    const int drive = insert_cc::addKnob(device);
+    const int removed = insert_cc::addKnob(device);
+    insert_cc::removeKnob(device, removed);
+    insert_cc::setKnobCc(device, drive, 9);
+    device.parameters.front().currentValue = 72.0f;
+    TrackManager::getInstance().addDeviceToTrack(trackId, device);
+
+    ProjectInfo info;
+    info.name = "CC knobs";
+    info.tempo = 120.0;
+    auto json = ProjectSerializer::serializeProject(info);
+    ProjectInfo loaded;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
+
+    const auto* track = TrackManager::getInstance().getTrack(trackId);
+    REQUIRE(track != nullptr);
+    REQUIRE(track->chain.fxChainElements.size() == 1);
+    const auto& restored = magda::getDevice(track->chain.fxChainElements.front());
+    CHECK(restored.insert.midiChannel == 3);
+    CHECK(restored.insert.ccDevice == "Analog Heat");
+    REQUIRE(restored.insert.ccSlots.size() == 1);
+    CHECK(restored.insert.ccSlots.front().paramIndex == drive);
+    CHECK(restored.insert.ccSlots.front().ccNumber == 9);
+    CHECK(restored.insert.nextCcParamIndex == removed + 1);
+    const auto* param = restored.findParameterByIndex(drive);
+    REQUIRE(param != nullptr);
+    CHECK(param->name == "CC 9");
+    CHECK(param->currentValue == Approx(72.0f));
 }
 
 TEST_CASE("A device that is not an insert writes no insert block",

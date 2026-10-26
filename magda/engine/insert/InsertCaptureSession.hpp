@@ -49,6 +49,7 @@ class InsertCaptureSession final : public EngineInsert {
     void receive(const BlockInfo& block, juce::dsp::AudioBlock<float> audio,
                  juce::MidiBuffer& midi) override;
     void releaseNotes(const BlockInfo& block) override;
+    void sendControls(const BlockInfo& block, const DeviceParams& params) override;
 
     /** @brief What the pass wrote. Off the audio thread, after the pass. */
     InsertCapture take() const;

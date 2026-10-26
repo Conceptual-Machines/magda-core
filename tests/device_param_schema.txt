@@ -58,5 +58,5 @@ sidechain 4 gain,attack,release,channelMode
 spectralfx 6 gate,contrast,shift,scramble,mix,output
 spectrumanalyzer 0
 stepsequencer 8 rate,direction,swing,gatelength,accentvel,normalvel,bendAmount,bendCycles
-toneGenerator 4 oscType,bandLimit,frequency,level
+toneGenerator 6 oscType,bandLimit,frequency,level,noiseColor,transportOnly
 volume 2 volume,pan

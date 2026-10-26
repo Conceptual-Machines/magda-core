@@ -5,7 +5,10 @@
 namespace magda::engine {
 
 LiveInsert::LiveInsert(const LiveInputFeed& inputs, LiveOutputFeed& outputs, LiveInsertRoute route)
-    : outputs_(outputs), route_(std::move(route)), return_(inputs, route_.returnChannels) {}
+    : outputs_(outputs),
+      route_(std::move(route)),
+      return_(inputs, route_.returnChannels),
+      lastSent_(route_.ccs.size(), -1) {}
 
 LiveInsert::~LiveInsert() {
     if (route_.midi == nullptr)
@@ -64,6 +67,39 @@ void LiveInsert::releaseNotes(const BlockInfo& /*block*/) {
             route_.midi->send(outputs_.segmentStart(), off, 3);
         }
         notes.reset();
+    }
+}
+
+void LiveInsert::sendControls(const BlockInfo& block, const DeviceParams& params) {
+    if (route_.control == nullptr || route_.ccs.empty())
+        return;
+
+    // A ramp is read every this many samples; a CC has only 128 steps to show it.
+    constexpr int kRampStride = 64;
+    const auto status = static_cast<std::uint8_t>(0xb0 | (juce::jlimit(1, 16, route_.channel) - 1));
+
+    for (int entry = 0; entry < params.size(); ++entry) {
+        const int slot = params.slotAt(entry);
+        const auto found = std::find_if(route_.ccs.begin(), route_.ccs.end(),
+                                        [slot](const auto& cc) { return cc.first == slot; });
+        if (found == route_.ccs.end())
+            continue;
+
+        const auto values = params.valuesAt(entry);
+        if (values.empty())
+            continue;
+
+        auto& last = lastSent_[static_cast<std::size_t>(found - route_.ccs.begin())];
+        const int step = values.isConstant() ? block.numSamples : kRampStride;
+        for (int offset = 0; offset < block.numSamples; offset += step) {
+            const int value = juce::jlimit(0, 127, juce::roundToInt(values.valueAt(offset)));
+            if (value == last)
+                continue;
+            last = value;
+            const std::uint8_t message[] = {status, static_cast<std::uint8_t>(found->second & 0x7f),
+                                            static_cast<std::uint8_t>(value)};
+            route_.control->send(outputs_.segmentStart() + offset, message, 3);
+        }
     }
 }
 

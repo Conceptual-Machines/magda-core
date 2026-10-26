@@ -30,12 +30,21 @@ juce::String deviceIdentityOf(const DeviceInfo& device) {
     return identity;
 }
 
+/// Each CC knob as parameter:CC, which the live insert's route holds.
+juce::String ccNumbers(const InsertConfig& insert) {
+    juce::String numbers;
+    for (const auto& slot : insert.ccSlots)
+        numbers << slot.paramIndex << ":" << slot.ccNumber << ",";
+    return numbers;
+}
+
 /// What an insert's live instance is built from. The types are part of it: the same
 /// name can be an audio port or nothing, depending on what this machine has.
 juce::String insertIdentityOf(const InsertConfig& insert) {
     return juce::String(static_cast<int>(insert.sendType)) + "|" + insert.sendDevice + "|" +
            juce::String(static_cast<int>(insert.returnType)) + "|" + insert.returnDevice + "|" +
-           juce::String(insert.manualAdjustMs);
+           juce::String(insert.manualAdjustMs) + "|" + juce::String(insert.midiChannel) + "|" +
+           insert.ccDevice + "|" + ccNumbers(insert);
 }
 
 }  // namespace

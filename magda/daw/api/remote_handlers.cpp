@@ -3367,6 +3367,35 @@ HandlerResult devicesSetBypassed(MagdaApi& api, const juce::var& input, const Re
     return HandlerResult::ok(acceptedResult());
 }
 
+HandlerResult devicesSetInsert(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = toChainNodePath(devicePathFromJson(input["devicePath"]));
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    if (api.devices().getDevice(*path) == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
+
+    InsertUpdate update;
+    if (has(input, "sendDevice"))
+        update.sendDevice = input["sendDevice"].toString();
+    if (has(input, "returnDevice"))
+        update.returnDevice = input["returnDevice"].toString();
+    if (has(input, "midiChannel"))
+        update.midiChannel = readInt(input, "midiChannel");
+    if (has(input, "ccDevice"))
+        update.ccDevice = input["ccDevice"].toString();
+    if (has(input, "manualAdjustMs"))
+        update.manualAdjustMs = readDouble(input, "manualAdjustMs");
+    if (const auto* knobs = input["ccKnobs"].getArray()) {
+        std::vector<int> numbers;
+        for (const auto& knob : *knobs)
+            numbers.push_back(static_cast<int>(knob));
+        update.ccKnobs = std::move(numbers);
+    }
+    if (!api.devices().updateInsert(*path, update))
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "device is not an External Insert");
+    return HandlerResult::ok(acceptedResult());
+}
+
 HandlerResult devicesListParameters(MagdaApi& api, const juce::var& input, const RequestContext&) {
     const auto path = toChainNodePath(devicePathFromJson(input["devicePath"]));
     if (!path)

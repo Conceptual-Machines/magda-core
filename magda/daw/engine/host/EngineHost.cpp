@@ -988,8 +988,23 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return unresolved("MIDI return", insert.returnDevice);
         }
 
+        // The CC knobs: an unplugged CC port leaves them silent rather than the insert unrun.
+        route.control = insert.sendType == Endpoint::MIDI ? route.midi
+                        : insert.ccDevice.isNotEmpty()    ? midiOutputs_.open(insert.ccDevice)
+                                                          : nullptr;
+        if (route.control == nullptr && insert.ccDevice.isNotEmpty() &&
+            insert.sendType != Endpoint::MIDI &&
+            unresolvedInsertEnds_.insert("cc:" + insert.ccDevice).second)
+            juce::Logger::writeToLog("[engine] insert CC port \"" + insert.ccDevice +
+                                     "\" is not on this interface, its CCs are not sent");
+        route.channel = insert.midiChannel;
+        for (const auto& slot : insert.ccSlots)
+            route.ccs.emplace_back(slot.paramIndex, slot.ccNumber);
+
         unresolvedInsertEnds_.erase("send:" + insert.sendDevice);
         unresolvedInsertEnds_.erase("return:" + insert.returnDevice);
+        if (route.control != nullptr)
+            unresolvedInsertEnds_.erase("cc:" + insert.ccDevice);
         route.latencySamples = static_cast<int>(std::max(0LL, latency));
         return route;
     }

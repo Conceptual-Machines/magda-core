@@ -1066,7 +1066,16 @@ ChainSignal Compiler::emitInsert(const DeviceInfo& device, const ChainSite& site
     // configuration rather than about the op.
     const auto audioOut =
         config.sendType == InsertConfig::Endpoint::Audio ? signal.audio : noInput();
-    const auto midiOut = config.sendType == InsertConfig::Endpoint::MIDI ? signal.midi : noInput();
+    auto midiOut = config.sendType == InsertConfig::Endpoint::MIDI ? signal.midi : noInput();
+    if (midiOut.valid()) {
+        // The instrument listens on one channel, so its notes are moved onto it (#3164).
+        key.role = OpRole::InsertMidiChannel;
+        const auto gate = addOp(OpKind::MidiNoteGate, key, {midiOut}, {SignalKind::Midi});
+        plan_.ops[static_cast<std::size_t>(gate)].noteGateChannel =
+            static_cast<std::uint8_t>(juce::jlimit(1, 16, config.midiChannel));
+        midiOut = PortRef{gate, 0};
+        key.role = OpRole::InsertSend;
+    }
     addOp(OpKind::InsertSend, key, alignInputs(key, OpKind::InsertSend, {audioOut, midiOut}), {});
 
     // And the return, which is a source. Its ports are declared from what the

@@ -1091,6 +1091,51 @@ TEST_CASE("Bypass is applied and reported through the facade", "[device-api][mut
     TrackManager::getInstance().clearAllTracks();
 }
 
+TEST_CASE("An External Insert is routed and given CC knobs in one undoable step",
+          "[device-api][mutation][3164]") {
+    const auto trackId = freshTrack("Synth");
+    DeviceApiLive devices;
+    REQUIRE(std::ranges::contains(devices.getCatalog(), juce::String("external_instrument"),
+                                  &DeviceCatalogEntry::catalogId));
+    const auto deviceId =
+        devices.addDevice(ChainNodePath::trackLevel(trackId), "external_instrument", -1);
+    const auto path = TrackManager::getInstance().findDevicePath(deviceId);
+    REQUIRE(devices.getDevice(path)->isInstrument);
+
+    REQUIRE(devices.updateInsert(
+        path, {.sendDevice = "Smoke Port", .midiChannel = 5, .ccKnobs = std::vector<int>{74, 71}}));
+    const auto& insert = devices.getDevice(path)->insert;
+    CHECK(insert.sendType == InsertConfig::Endpoint::MIDI);
+    CHECK(insert.sendDevice == "Smoke Port");
+    CHECK(insert.midiChannel == 5);
+    REQUIRE(insert.ccSlots.size() == 2);
+    const int first = insert.ccSlots[0].paramIndex;
+    CHECK(devices.getDevice(path)->findParameterByIndex(first)->name == "CC 74");
+
+    // A shorter list keeps the first knob, and so whatever addresses it.
+    REQUIRE(devices.updateInsert(path, {.ccKnobs = std::vector<int>{10}}));
+    REQUIRE(devices.getDevice(path)->insert.ccSlots.size() == 1);
+    CHECK(devices.getDevice(path)->insert.ccSlots[0].paramIndex == first);
+    CHECK(devices.getDevice(path)->insert.sendDevice == "Smoke Port");
+
+    REQUIRE(UndoManager::getInstance().undo());
+    CHECK(devices.getDevice(path)->insert.ccSlots.size() == 2);
+    REQUIRE(UndoManager::getInstance().undo());
+    CHECK(devices.getDevice(path)->insert.sendDevice.isEmpty());
+    CHECK(devices.getDevice(path)->parameters.empty());
+
+    TrackManager::getInstance().clearAllTracks();
+}
+
+TEST_CASE("Only an External Insert takes insert routing", "[device-api][mutation][3164]") {
+    const auto trackId = freshTrack("Bass");
+    DeviceApiLive devices;
+    const auto deviceId = devices.addDevice(ChainNodePath::trackLevel(trackId), anyCatalogId(), -1);
+    const auto path = TrackManager::getInstance().findDevicePath(deviceId);
+    CHECK_FALSE(devices.updateInsert(path, {.sendDevice = "Out 3-4"}));
+    TrackManager::getInstance().clearAllTracks();
+}
+
 TEST_CASE("The AI opt-in gate names slots", "[device-api][mutation][2638]") {
     auto& tracks = TrackManager::getInstance();
     const auto trackId = freshTrack("Synth");

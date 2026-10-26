@@ -26,7 +26,6 @@ namespace magda::daw::ui {
 
 class ChordPanelContent;
 class DrumGridUI;
-class ExternalInsertUI;
 class ImpulseResponseUI;
 class LevelsUI;
 class LinkableTextSlider;
@@ -46,7 +45,6 @@ class SidechainUI;
 class SpectralFxUI;
 class SpectralFxTelemetrySource;
 class StepSequencerUI;
-class ToneGeneratorUI;
 class LevelsTelemetrySource;
 class NimbusTelemetrySource;
 
@@ -235,8 +233,6 @@ class DeviceCustomUIManager {
     // The MAGDA device the rendering engine holds for this slot, or the one
     // inside the slot's own plugin override. Empty for a hosted external plugin.
     std::shared_ptr<daw::audio::MagdaDevice> liveDevice() const;
-    void createToneGeneratorUI(const magda::DeviceInfo& device, juce::Component& parent,
-                               const Callbacks& callbacks);
     bool createSamplerUI(const magda::DeviceInfo& device, juce::Component& parent,
                          const Callbacks& callbacks);
     /// Show @p pad, the model's chain for @p padIndex, on the Drum Grid faceplate. Null clears it.
@@ -246,7 +242,6 @@ class DeviceCustomUIManager {
     bool createAnalyzerUI(const magda::DeviceInfo& device, juce::Component& parent);
     bool createMidiUtilityUI(const magda::DeviceInfo& device, juce::Component& parent,
                              const Callbacks& callbacks);
-    void createExternalInsertUI(const magda::DeviceInfo& device, juce::Component& parent);
     bool createCustomInstrumentUI(const magda::DeviceInfo& device, juce::Component& parent,
                                   const Callbacks& callbacks);
     bool createSimpleEffectUI(const magda::DeviceInfo& device, juce::Component& parent,
@@ -276,8 +271,6 @@ class DeviceCustomUIManager {
     std::shared_ptr<SpectralFxTelemetrySource> spectralFxTelemetry_;
 
     // Custom UI unique_ptrs
-    std::unique_ptr<ToneGeneratorUI> toneGeneratorUI_;
-    std::unique_ptr<ExternalInsertUI> externalInsertUI_;
     std::unique_ptr<SamplerUI> samplerUI_;
     std::unique_ptr<DrumGridUI> drumGridUI_;
     std::unique_ptr<PolySynthUI> polySynthUI_;
