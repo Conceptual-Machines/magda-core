@@ -22,7 +22,9 @@ concurrency:
 
 jobs:
   juce-tests-linux:
-    runs-on: ubuntu-latest
+    # Pinned: the null-diff calibration list is measured on 24.04, and 26.04 nulls
+    # session.launch.sustained, failing the suite as "now holds".
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
 
