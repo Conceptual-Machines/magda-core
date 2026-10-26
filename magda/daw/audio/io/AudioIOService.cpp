@@ -9,6 +9,7 @@
 #include "CoreAudioRate.hpp"
 #include "DriverControlPanel.hpp"
 #include "HardwareRouteNames.hpp"
+#include "JackAudioBackend.hpp"
 #include "LegacyAudioSettings.hpp"
 
 namespace magda {
@@ -46,7 +47,9 @@ void log(const juce::String& message) {
 }  // namespace
 
 AudioIOService::AudioIOService()
-    : AudioIOService({}, legacySettingsFile(), paths::audioDeviceOpenMarkFile()) {}
+    : AudioIOService({}, legacySettingsFile(), paths::audioDeviceOpenMarkFile()) {
+    jack::addBackend(manager_);
+}
 
 AudioIOService::AudioIOService(std::vector<std::unique_ptr<juce::AudioIODeviceType>> backends,
                                juce::File legacySettings, juce::File openMark)
@@ -204,7 +207,12 @@ juce::StringArray AudioIOService::getChannelNames(const juce::String& backend,
     if (auto* device = manager_.getCurrentAudioDevice();
         device != nullptr && device->getTypeName() == backend) {
         const auto setup = manager_.getAudioDeviceSetup();
-        if ((inputs ? setup.inputDeviceName : setup.outputDeviceName) == interfaceName)
+        const auto& sameSide = inputs ? setup.inputDeviceName : setup.outputDeviceName;
+        const auto& otherSide = inputs ? setup.outputDeviceName : setup.inputDeviceName;
+        // An ASIO interface opened with no inputs names none, and a second instance of its
+        // driver leaves the open one silent (#3151).
+        if (sameSide == interfaceName ||
+            (isSingleInterfaceBackend(backend) && otherSide == interfaceName))
             return inputs ? device->getInputChannelNames() : device->getOutputChannelNames();
     }
 
