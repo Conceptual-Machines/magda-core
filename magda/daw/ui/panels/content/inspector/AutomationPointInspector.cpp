@@ -5,6 +5,7 @@
 #include "../../state/TimelineController.hpp"
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "clip/ClipInspectorStyle.hpp"
 #include "core/AutomationCommands.hpp"
 #include "core/AutomationInfo.hpp"
 #include "core/ControlTarget.hpp"
@@ -13,24 +14,22 @@
 
 namespace magda::daw::ui {
 
-namespace {
-void styleLabel(juce::Label& label, const juce::String& text) {
-    label.setText(text, juce::dontSendNotification);
-    label.setFont(FontManager::getInstance().getUIFont(11.0f));
-    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-}
-
-}  // namespace
-
 AutomationPointInspector::AutomationPointInspector() {
-    countLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    countLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
-    addAndMakeVisible(countLabel_);
+    headerName_.setFont(FontManager::getInstance().getUIFont(14.0f));
+    headerName_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
+    headerName_.setBorderSize({});
+    addChildComponent(headerName_);
+    headerSubline_.setFont(FontManager::getInstance().getMonoFont(10.0f));
+    headerSubline_.setColour(juce::Label::textColourId,
+                             ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+    headerSubline_.setBorderSize({});
+    addChildComponent(headerSubline_);
 
-    styleLabel(valueLabel_, "Value");
+    clip_style::caption(valueLabel_, "Value");
     addChildComponent(valueLabel_);
     valueValue_ =
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Raw);
+    clip_style::field(*valueValue_);
     valueValue_->onValueChange = [this]() {
         if (!selection_.isValid())
             return;
@@ -57,11 +56,12 @@ AutomationPointInspector::AutomationPointInspector() {
     };
     addChildComponent(*valueValue_);
 
-    styleLabel(posLabel_, "Pos");
+    clip_style::caption(posLabel_, "Position");
     addChildComponent(posLabel_);
     posValue_ =
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::BarsBeats);
     posValue_->setBarsBeatsIsPosition(true);
+    clip_style::field(*posValue_);
     posValue_->setRange(0.0, 100000.0, 0.0);
     posValue_->onValueChange = [this]() {
         if (!selection_.isSinglePoint())
@@ -148,10 +148,10 @@ void AutomationPointInspector::updateFromSelection() {
     }
     info_ = magda::getParameterInfoForTarget(lane->target);
 
-    juce::String title = magda::getDisplayNameForTarget(lane->target);
-    if (!selection_.isSinglePoint())
-        title += " (" + juce::String(selection_.pointIds.size()) + " points)";
-    countLabel_.setText(title, juce::dontSendNotification);
+    headerName_.setText(magda::getDisplayNameForTarget(lane->target), juce::dontSendNotification);
+    const auto count = static_cast<int>(selection_.pointIds.size());
+    headerSubline_.setText(juce::String(count) + (count == 1 ? " point" : " points"),
+                           juce::dontSendNotification);
 
     using F = magda::DraggableValueLabel::Format;
     if (info_.scale == magda::ParameterScale::FaderDB ||
@@ -220,7 +220,8 @@ void AutomationPointInspector::refreshDisplay() {
 }
 
 void AutomationPointInspector::showControls(bool show) {
-    countLabel_.setVisible(show);
+    headerName_.setVisible(show);
+    headerSubline_.setVisible(show);
     valueLabel_.setVisible(show);
     valueValue_->setVisible(show);
     const bool single = show && selection_.isSinglePoint();
@@ -229,33 +230,27 @@ void AutomationPointInspector::showControls(bool show) {
 }
 
 void AutomationPointInspector::resized() {
-    auto bounds = getLocalBounds().reduced(10);
+    auto bounds = getLocalBounds().reduced(10, 8);
     if (!selection_.isValid())
         return;
 
-    constexpr int LABEL_H = 16;
-    constexpr int VALUE_H = 24;
-    constexpr int ROW_GAP = 8;
-    constexpr int COL_GAP = 8;
+    constexpr int kHeaderHeight = 40;
+    constexpr int kRowLabelWidth = 62;
+    auto header = bounds.removeFromTop(kHeaderHeight).reduced(0, 2);
+    headerName_.setBounds(header.removeFromTop(20));
+    headerSubline_.setBounds(header.removeFromTop(14));
+    bounds.removeFromTop(6);
 
-    countLabel_.setBounds(bounds.removeFromTop(24));
-    bounds.removeFromTop(ROW_GAP);
-
-    // Value | Pos
-    {
-        auto row = bounds.removeFromTop(LABEL_H);
-        int halfW = (row.getWidth() - COL_GAP) / 2;
-        valueLabel_.setBounds(row.removeFromLeft(halfW));
-        row.removeFromLeft(COL_GAP);
-        posLabel_.setBounds(row);
-    }
-    {
-        auto row = bounds.removeFromTop(VALUE_H);
-        int halfW = (row.getWidth() - COL_GAP) / 2;
-        valueValue_->setBounds(row.removeFromLeft(halfW));
-        row.removeFromLeft(COL_GAP);
-        posValue_->setBounds(row);
-    }
+    auto row = [&](juce::Label& caption, juce::Component& value) {
+        auto r = bounds.removeFromTop(clip_style::kFieldHeight);
+        caption.setBounds(r.removeFromLeft(kRowLabelWidth));
+        r.removeFromLeft(4);
+        value.setBounds(r);
+        bounds.removeFromTop(clip_style::kGap);
+    };
+    row(valueLabel_, *valueValue_);
+    if (posValue_->isVisible())
+        row(posLabel_, *posValue_);
 }
 
 }  // namespace magda::daw::ui

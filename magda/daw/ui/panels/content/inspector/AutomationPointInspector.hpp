@@ -11,12 +11,9 @@ namespace magda::daw::ui {
 /**
  * @brief Inspector for automation curve points
  *
- * Edits the selected automation point(s) for the current
- * AutomationPointSelection:
- *   - Value  : keyboard / drag, shown in the lane's real units
- *   - Pos    : beat position (single point only)
- *   - Curve  : Linear / Curve / Step for the segment after the point
- *   - Corner : "Straighten" clears the segment bend (sharp Linear corner)
+ * A header naming the lane's target over the point count, then captioned rows:
+ *   - Value    : keyboard / drag, shown in the lane's real units
+ *   - Position : beat position (single point only)
  *
  * Multi-selection edits the value by delta (like NoteInspector). All edits go
  * through UndoManager. Selection is pushed in by InspectorContainer; the
@@ -39,7 +36,8 @@ class AutomationPointInspector : public BaseInspector, private magda::Automation
     magda::AutomationPointSelection selection_;
     magda::ParameterInfo info_;  // for the selected lane's target
 
-    juce::Label countLabel_;
+    juce::Label headerName_;
+    juce::Label headerSubline_;
     juce::Label valueLabel_;
     std::unique_ptr<magda::DraggableValueLabel> valueValue_;
     juce::Label posLabel_;

@@ -2,48 +2,22 @@
 
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
-#include "BinaryData.h"
+#include "clip/ClipInspectorStyle.hpp"
 #include "core/AutomationCommands.hpp"
+#include "core/AutomationInfo.hpp"
 #include "core/UndoManager.hpp"
 #include "project/ProjectManager.hpp"
-#include "ui/components/common/ToggleChips.hpp"
 
 namespace magda::daw::ui {
 
 namespace {
 constexpr double kMinClipLength = 0.1;
-
-void styleLabel(juce::Label& label, const juce::String& text) {
-    label.setText(text, juce::dontSendNotification);
-    label.setFont(FontManager::getInstance().getUIFont(11.0f));
-    label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-}
+constexpr int kHeaderHeight = 40;
+constexpr int kRowLabelWidth = 62;
+constexpr int kHeadingHeight = 14;
 }  // namespace
 
 AutomationClipInspector::AutomationClipInspector() {
-    // View icon (arrangement — automation clips are arrangement-only). The
-    // bold view icons fill with "currentColor" (JUCE renders that black), so
-    // recolor from black, matching the clip inspector.
-    viewIcon_ = std::make_unique<magda::SvgButton>("View", BinaryData::iconarrangementboldm_svg,
-                                                   BinaryData::iconarrangementboldm_svgSize);
-    viewIcon_->setOriginalColor(juce::Colour(0xFF000000));
-    viewIcon_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-    viewIcon_->setIconPadding(1.0f);
-    viewIcon_->setInterceptsMouseClicks(false, false);
-    viewIcon_->setTooltip("Arrangement clip");
-    addChildComponent(*viewIcon_);
-
-    // Clip type icon: the app-wide automation glyph (track header / track
-    // inspector use the same one).
-    typeIcon_ = std::make_unique<magda::SvgButton>("Type", BinaryData::automation_svg,
-                                                   BinaryData::automation_svgSize);
-    typeIcon_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    typeIcon_->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-    typeIcon_->setIconPadding(1.0f);
-    typeIcon_->setInterceptsMouseClicks(false, false);
-    typeIcon_->setTooltip("Automation clip");
-    addChildComponent(*typeIcon_);
-
     // Colour swatch: same menu as the clip inspector (None / Inherit from
     // Track / palettes); sets the clip colour via an undoable command.
     colourSwatch_ = std::make_unique<magda::ColourSwatch>();
@@ -105,13 +79,11 @@ AutomationClipInspector::AutomationClipInspector() {
     };
     addChildComponent(*colourSwatch_);
 
-    // Editable clip name, MIDI-clip-inspector style. The lane target stays
-    // visible in the editor panel's title.
+    // Clip name (double-click to rename) over the lane target and length, as on the clip inspector.
     titleLabel_.setFont(FontManager::getInstance().getUIFont(14.0f));
     titleLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
-    titleLabel_.setColour(juce::Label::backgroundColourId,
-                          ActiveTheme::getColour(ActiveTheme::SURFACE));
-    titleLabel_.setEditable(true);
+    titleLabel_.setBorderSize({});
+    titleLabel_.setEditable(false, true);
     titleLabel_.onTextChange = [this]() {
         const auto* clip = getClip();
         const auto newName = titleLabel_.getText().trim();
@@ -121,12 +93,23 @@ AutomationClipInspector::AutomationClipInspector() {
             std::make_unique<magda::RenameAutomationClipCommand>(clip->id, newName));
     };
     addAndMakeVisible(titleLabel_);
+    subline_.setFont(FontManager::getInstance().getMonoFont(10.0f));
+    subline_.setColour(juce::Label::textColourId, ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+    subline_.setBorderSize({});
+    addChildComponent(subline_);
+
+    clip_style::columnHeading(startLabel_, "Start");
+    clip_style::columnHeading(endLabel_, "End");
+    clip_style::columnHeading(lengthLabel_, "Length");
+    clip_style::caption(clipRowLabel_, "Clip");
+    clip_style::caption(loopLabel_, "Loop");
+    for (auto* label : {&startLabel_, &endLabel_, &lengthLabel_, &clipRowLabel_, &loopLabel_})
+        addChildComponent(*label);
 
     using F = magda::DraggableValueLabel::Format;
 
-    styleLabel(startLabel_, "Start");
-    addChildComponent(startLabel_);
     startValue_ = std::make_unique<magda::DraggableValueLabel>(F::BarsBeats);
+    clip_style::field(*startValue_);
     startValue_->setBarsBeatsIsPosition(true);
     startValue_->setRange(0.0, 100000.0, 0.0);
     startValue_->onValueChange = [this]() {
@@ -139,9 +122,8 @@ AutomationClipInspector::AutomationClipInspector() {
     };
     addChildComponent(*startValue_);
 
-    styleLabel(endLabel_, "End");
-    addChildComponent(endLabel_);
     endValue_ = std::make_unique<magda::DraggableValueLabel>(F::BarsBeats);
+    clip_style::field(*endValue_);
     endValue_->setBarsBeatsIsPosition(true);
     endValue_->setRange(0.0, 100000.0, 0.0);
     endValue_->onValueChange = [this]() {
@@ -156,9 +138,8 @@ AutomationClipInspector::AutomationClipInspector() {
     };
     addChildComponent(*endValue_);
 
-    styleLabel(lengthLabel_, "Length");
-    addChildComponent(lengthLabel_);
     lengthValue_ = std::make_unique<magda::DraggableValueLabel>(F::BarsBeats);
+    clip_style::field(*lengthValue_);
     // Duration, not position: 4 bars must read 4.0.000, not 5.1.000.
     lengthValue_->setBarsBeatsIsPosition(false);
     lengthValue_->setRange(kMinClipLength, 100000.0, 4.0);
@@ -173,21 +154,17 @@ AutomationClipInspector::AutomationClipInspector() {
     };
     addChildComponent(*lengthValue_);
 
-    // Loop toggle: the loop chip, as on the clip inspector.
-    styleLabel(loopLabel_, "Loop");
-    addChildComponent(loopLabel_);
-    loopToggle_ = std::make_unique<magda::SvgButton>("Loop", BinaryData::loop_icon_svg,
-                                                     BinaryData::loop_icon_svgSize);
-    applyLoopChip(*loopToggle_, juce::Colour(0xFFBCBCBC));
-    loopToggle_->onClick = [this]() {
+    loopSwitch_.setTooltip("Loop");
+    loopSwitch_.onClick = [this]() {
         if (const auto* clip = getClip())
             magda::AutomationManager::getInstance().setClipLooping(clip->id, !clip->looping);
     };
-    addChildComponent(*loopToggle_);
+    addChildComponent(loopSwitch_);
 
-    styleLabel(loopLengthLabel_, "Loop Len");
-    addChildComponent(loopLengthLabel_);
+    // Loop length sits under the LENGTH heading, in the Loop row.
     loopLengthValue_ = std::make_unique<magda::DraggableValueLabel>(F::BarsBeats);
+    clip_style::field(*loopLengthValue_);
+    loopLengthValue_->setTooltip("Loop length");
     // Duration, not position (see Length above).
     loopLengthValue_->setBarsBeatsIsPosition(false);
     loopLengthValue_->setRange(kMinClipLength, 100000.0, 4.0);
@@ -250,101 +227,89 @@ void AutomationClipInspector::refreshDisplay() {
 
     if (!titleLabel_.isBeingEdited())
         titleLabel_.setText(clip->name, juce::dontSendNotification);
-    colourSwatch_->setColour(clip->colour);
+    if (clip->colour == juce::Colour(0xFF444444))
+        colourSwatch_->clearColour();
+    else
+        colourSwatch_->setColour(clip->colour);
     const auto& project = magda::ProjectManager::getInstance().getCurrentProjectInfo();
+
+    juce::StringArray parts{"Automation"};
+    if (const auto* lane = magda::AutomationManager::getInstance().getLane(selection_.laneId))
+        parts.add(magda::getDisplayNameForTarget(lane->target));
+    const double bars = clip->lengthBeats / juce::jmax(1, project.timeSignatureNumerator);
+    const bool wholeBars = std::abs(bars - std::round(bars)) < 0.01;
+    parts.add((wholeBars ? juce::String(juce::roundToInt(bars)) : juce::String(bars, 2)) +
+              (wholeBars && juce::roundToInt(bars) == 1 ? " bar" : " bars"));
+    subline_.setText(parts.joinIntoString(juce::String::fromUTF8(" \xc2\xb7 ")),
+                     juce::dontSendNotification);
+
     for (auto* label :
          {startValue_.get(), endValue_.get(), lengthValue_.get(), loopLengthValue_.get()})
         label->setTimeSignature(project.timeSignatureNumerator, project.timeSignatureDenominator);
     startValue_->setValue(clip->startBeats, juce::dontSendNotification);
     endValue_->setValue(clip->getEndBeats(), juce::dontSendNotification);
     lengthValue_->setValue(clip->lengthBeats, juce::dontSendNotification);
-    loopToggle_->setActive(clip->looping);
+    loopSwitch_.setOn(clip->looping);
     loopLengthValue_->setValue(clip->loopLengthBeats, juce::dontSendNotification);
     loopLengthValue_->setEnabled(clip->looping);
     loopLengthValue_->setAlpha(clip->looping ? 1.0f : 0.4f);
 }
 
 void AutomationClipInspector::showControls(bool show) {
-    viewIcon_->setVisible(show);
-    typeIcon_->setVisible(show);
-    colourSwatch_->setVisible(show);
-    titleLabel_.setVisible(show);
-    startLabel_.setVisible(show);
-    startValue_->setVisible(show);
-    endLabel_.setVisible(show);
-    endValue_->setVisible(show);
-    lengthLabel_.setVisible(show);
-    lengthValue_->setVisible(show);
-    loopLabel_.setVisible(show);
-    loopToggle_->setVisible(show);
-    loopLengthLabel_.setVisible(show);
-    loopLengthValue_->setVisible(show);
+    for (juce::Component* c : std::initializer_list<juce::Component*>{
+             colourSwatch_.get(), &titleLabel_, &subline_, &startLabel_, &endLabel_, &lengthLabel_,
+             &clipRowLabel_, startValue_.get(), endValue_.get(), lengthValue_.get(), &loopLabel_,
+             &loopSwitch_, loopLengthValue_.get()})
+        c->setVisible(show);
 }
 
 void AutomationClipInspector::resized() {
-    auto bounds = getLocalBounds().reduced(10);
+    auto bounds = getLocalBounds().reduced(10, 8);
     if (getClip() == nullptr)
         return;
 
-    constexpr int LABEL_H = 16;
-    constexpr int VALUE_H = 24;
-    constexpr int ROW_GAP = 8;
-    constexpr int COL_GAP = 8;
+    // Header: colour spine | name over summary.
+    {
+        auto row = bounds.removeFromTop(kHeaderHeight);
+        colourSwatch_->setBounds(row.removeFromLeft(4).reduced(0, 3));
+        row.removeFromLeft(10);
+        auto text = row.reduced(0, 2);
+        titleLabel_.setBounds(text.removeFromTop(20));
+        subline_.setBounds(text.removeFromTop(14));
+    }
+    bounds.removeFromTop(6);
 
-    // Header: view icon + type icon + title (same row layout as the clip
-    // inspector).
-    {
-        constexpr int ICON_SIZE = 20;
-        constexpr int ICON_GAP = 6;
-        auto headerRow = bounds.removeFromTop(24);
-        viewIcon_->setBounds(
-            headerRow.removeFromLeft(ICON_SIZE).withSizeKeepingCentre(ICON_SIZE, ICON_SIZE));
-        headerRow.removeFromLeft(ICON_GAP);
-        typeIcon_->setBounds(
-            headerRow.removeFromLeft(ICON_SIZE).withSizeKeepingCentre(ICON_SIZE, ICON_SIZE));
-        headerRow.removeFromLeft(ICON_GAP);
-        colourSwatch_->setBounds(headerRow.removeFromRight(ICON_SIZE));
-        headerRow.removeFromRight(4);
-        titleLabel_.setBounds(headerRow);
-    }
-    bounds.removeFromTop(ROW_GAP);
+    const int fieldW = (bounds.getWidth() - kRowLabelWidth - 4 * 3) / 3;
+    auto cells = [&](juce::Rectangle<int> row) {
+        row.removeFromLeft(kRowLabelWidth);
+        std::array<juce::Rectangle<int>, 3> out{};
+        for (auto& cell : out) {
+            row.removeFromLeft(4);
+            cell = row.removeFromLeft(fieldW);
+        }
+        return out;
+    };
 
-    // Start | End | Length
-    {
-        auto row = bounds.removeFromTop(LABEL_H);
-        const int colW = (row.getWidth() - 2 * COL_GAP) / 3;
-        startLabel_.setBounds(row.removeFromLeft(colW));
-        row.removeFromLeft(COL_GAP);
-        endLabel_.setBounds(row.removeFromLeft(colW));
-        row.removeFromLeft(COL_GAP);
-        lengthLabel_.setBounds(row);
-    }
-    {
-        auto row = bounds.removeFromTop(VALUE_H);
-        const int colW = (row.getWidth() - 2 * COL_GAP) / 3;
-        startValue_->setBounds(row.removeFromLeft(colW));
-        row.removeFromLeft(COL_GAP);
-        endValue_->setBounds(row.removeFromLeft(colW));
-        row.removeFromLeft(COL_GAP);
-        lengthValue_->setBounds(row);
-    }
-    bounds.removeFromTop(ROW_GAP);
+    auto headings = cells(bounds.removeFromTop(kHeadingHeight));
+    startLabel_.setBounds(headings[0]);
+    endLabel_.setBounds(headings[1]);
+    lengthLabel_.setBounds(headings[2]);
+    bounds.removeFromTop(2);
 
-    // Loop | Loop Len
-    {
-        auto row = bounds.removeFromTop(LABEL_H);
-        const int colW = (row.getWidth() - COL_GAP) / 2;
-        loopLabel_.setBounds(row.removeFromLeft(colW));
-        row.removeFromLeft(COL_GAP);
-        loopLengthLabel_.setBounds(row);
-    }
-    {
-        auto row = bounds.removeFromTop(VALUE_H);
-        const int colW = (row.getWidth() - COL_GAP) / 2;
-        loopToggle_->setBounds(row.removeFromLeft(colW).withWidth(VALUE_H));
-        row.removeFromLeft(COL_GAP);
-        loopLengthValue_->setBounds(row);
-    }
+    auto clipRow = bounds.removeFromTop(clip_style::kFieldHeight);
+    clipRowLabel_.setBounds(clipRow.withWidth(kRowLabelWidth));
+    auto clipCells = cells(clipRow);
+    startValue_->setBounds(clipCells[0]);
+    endValue_->setBounds(clipCells[1]);
+    lengthValue_->setBounds(clipCells[2]);
+    bounds.removeFromTop(clip_style::kGap);
+
+    auto loopRow = bounds.removeFromTop(clip_style::kFieldHeight);
+    auto label = loopRow.withWidth(kRowLabelWidth);
+    loopSwitch_.setBounds(label.removeFromLeft(ToggleSwitch::kWidth));
+    label.removeFromLeft(6);
+    loopLabel_.setBounds(label);
+    loopLengthValue_->setBounds(cells(loopRow)[2]);
 }
 
 }  // namespace magda::daw::ui
