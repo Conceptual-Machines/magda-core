@@ -2,7 +2,7 @@
 
 #include "../../common/ColourSwatch.hpp"
 #include "../../common/DraggableValueLabel.hpp"
-#include "../../common/SvgButton.hpp"
+#include "../../common/ToggleSwitch.hpp"
 #include "BaseInspector.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/SelectionManager.hpp"
@@ -12,12 +12,11 @@ namespace magda::daw::ui {
 /**
  * @brief Inspector for automation clips (issue #1087).
  *
- * Edits the selected clip's fundamental properties:
- *   - Start / End / Length : timeline position in bars.beats
- *   - Loop                 : on/off + loop length in beats
+ * Laid out like the clip inspector: a colour spine and name over a summary line,
+ * then a Clip row (start, end, length) and a Loop row (switch, loop length).
  *
  * Start/End/Length edits go through the undoable clip commands; the loop
- * toggle and loop length are property setters (same convention as the lane
+ * switch and loop length are property setters (same convention as the lane
  * header toggles). Selection is pushed in by InspectorContainer; the
  * inspector listens to AutomationManager for live refreshes.
  */
@@ -37,19 +36,17 @@ class AutomationClipInspector : public BaseInspector, private magda::AutomationM
   private:
     magda::AutomationClipSelection selection_;
 
-    // Header icons, matching the clip inspector: view (arrangement) + type
-    // (automation clip). Non-interactive.
-    std::unique_ptr<magda::SvgButton> viewIcon_;
-    std::unique_ptr<magda::SvgButton> typeIcon_;
     std::unique_ptr<magda::ColourSwatch> colourSwatch_;
     juce::Label titleLabel_;
-    juce::Label startLabel_, endLabel_, lengthLabel_;
+    juce::Label subline_;
+    juce::Label startLabel_, endLabel_, lengthLabel_;  // column headings
+    juce::Label clipRowLabel_;
     std::unique_ptr<magda::DraggableValueLabel> startValue_;
     std::unique_ptr<magda::DraggableValueLabel> endValue_;
     std::unique_ptr<magda::DraggableValueLabel> lengthValue_;
 
-    juce::Label loopLabel_, loopLengthLabel_;
-    std::unique_ptr<magda::SvgButton> loopToggle_;
+    juce::Label loopLabel_;
+    ToggleSwitch loopSwitch_;
     std::unique_ptr<magda::DraggableValueLabel> loopLengthValue_;
 
     const magda::AutomationClipInfo* getClip() const;

@@ -31,6 +31,8 @@ class StyledTextDisplay : public juce::Component, public juce::SettableTooltipCl
     void setStyledText(const juce::String& sourceWithTags);
     void setBaseFont(const juce::Font& font);
     void setBaseColour(juce::Colour colour);
+    /** @brief Height the wrapped text needs at the given width. */
+    int getHeightForWidth(int width) const;
 
     void paint(juce::Graphics& g) override;
 

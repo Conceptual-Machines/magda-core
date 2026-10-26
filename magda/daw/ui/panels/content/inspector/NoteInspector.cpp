@@ -5,6 +5,7 @@
 #include "../../state/TimelineController.hpp"
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "clip/ClipInspectorStyle.hpp"
 #include "core/ClipManager.hpp"
 #include "core/MidiNoteCommands.hpp"
 #include "core/UndoManager.hpp"
@@ -12,23 +13,27 @@
 namespace magda::daw::ui {
 
 NoteInspector::NoteInspector() {
-    // Note count (shown when multiple notes selected)
-    noteCountLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
-    noteCountLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
-    addAndMakeVisible(noteCountLabel_);
+    headerName_.setFont(FontManager::getInstance().getUIFont(14.0f));
+    headerName_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
+    headerName_.setBorderSize({});
+    addChildComponent(headerName_);
+    headerSubline_.setFont(FontManager::getInstance().getMonoFont(10.0f));
+    headerSubline_.setColour(juce::Label::textColourId,
+                             ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+    headerSubline_.setBorderSize({});
+    addChildComponent(headerSubline_);
 
-    // ========================================================================
-    // Row 1: Pitch | Velocity
-    // ========================================================================
-
-    notePitchLabel_.setText("Pitch", juce::dontSendNotification);
-    notePitchLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    notePitchLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    addChildComponent(notePitchLabel_);
+    clip_style::caption(notePitchLabel_, "Pitch");
+    clip_style::caption(noteVelocityLabel_, "Velocity");
+    clip_style::caption(noteStartLabel_, "Start");
+    clip_style::caption(noteLengthLabel_, "Length");
+    for (auto* label : {&notePitchLabel_, &noteVelocityLabel_, &noteStartLabel_, &noteLengthLabel_})
+        addChildComponent(*label);
 
     notePitchValue_ =
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::MidiNote);
     notePitchValue_->setRange(0.0, 127.0, 60.0);
+    clip_style::field(*notePitchValue_);
     notePitchValue_->onValueChange = [this]() {
         if (!noteSelection_.isValid())
             return;
@@ -63,14 +68,10 @@ NoteInspector::NoteInspector() {
     };
     addChildComponent(*notePitchValue_);
 
-    noteVelocityLabel_.setText("Velocity", juce::dontSendNotification);
-    noteVelocityLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    noteVelocityLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    addChildComponent(noteVelocityLabel_);
-
     noteVelocityValue_ =
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::Integer);
     noteVelocityValue_->setRange(1.0, 127.0, 100.0);
+    clip_style::field(*noteVelocityValue_);
     noteVelocityValue_->onValueChange = [this]() {
         if (!noteSelection_.isValid())
             return;
@@ -104,19 +105,11 @@ NoteInspector::NoteInspector() {
     };
     addChildComponent(*noteVelocityValue_);
 
-    // ========================================================================
-    // Row 2: Start | Length
-    // ========================================================================
-
-    noteStartLabel_.setText("Start", juce::dontSendNotification);
-    noteStartLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    noteStartLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    addChildComponent(noteStartLabel_);
-
     noteStartValue_ =
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::BarsBeats);
     noteStartValue_->setRange(0.0, 256.0, 0.0);
     noteStartValue_->setBarsBeatsIsPosition(true);
+    clip_style::field(*noteStartValue_);
     noteStartValue_->onValueChange = [this]() {
         if (!noteSelection_.isValid())
             return;
@@ -151,15 +144,11 @@ NoteInspector::NoteInspector() {
     };
     addChildComponent(*noteStartValue_);
 
-    noteLengthLabel_.setText("Length", juce::dontSendNotification);
-    noteLengthLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    noteLengthLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    addChildComponent(noteLengthLabel_);
-
     noteLengthValue_ =
         std::make_unique<magda::DraggableValueLabel>(magda::DraggableValueLabel::Format::BarsBeats);
     noteLengthValue_->setRange(0.0625, 16.0, 1.0);
     noteLengthValue_->setBarsBeatsIsPosition(false);
+    clip_style::field(*noteLengthValue_);
     noteLengthValue_->onValueChange = [this]() {
         if (!noteSelection_.isValid())
             return;
@@ -212,54 +201,28 @@ void NoteInspector::paint(juce::Graphics& g) {
 }
 
 void NoteInspector::resized() {
-    auto bounds = getLocalBounds().reduced(10);
-
-    if (!noteSelection_.isValid()) {
+    auto bounds = getLocalBounds().reduced(10, 8);
+    if (!noteSelection_.isValid())
         return;
-    }
 
-    constexpr int LABEL_H = 16;
-    constexpr int VALUE_H = 24;
-    constexpr int ROW_GAP = 8;
-    constexpr int COL_GAP = 8;
+    constexpr int kHeaderHeight = 40;
+    constexpr int kRowLabelWidth = 62;
+    auto header = bounds.removeFromTop(kHeaderHeight).reduced(0, 2);
+    headerName_.setBounds(header.removeFromTop(20));
+    headerSubline_.setBounds(header.removeFromTop(14));
+    bounds.removeFromTop(6);
 
-    if (noteSelection_.getCount() > 1) {
-        noteCountLabel_.setBounds(bounds.removeFromTop(24));
-        bounds.removeFromTop(ROW_GAP);
-    }
-
-    // Row 1: Pitch | Velocity
-    {
-        auto row = bounds.removeFromTop(LABEL_H);
-        int halfW = (row.getWidth() - COL_GAP) / 2;
-        notePitchLabel_.setBounds(row.removeFromLeft(halfW));
-        row.removeFromLeft(COL_GAP);
-        noteVelocityLabel_.setBounds(row);
-    }
-    {
-        auto row = bounds.removeFromTop(VALUE_H);
-        int halfW = (row.getWidth() - COL_GAP) / 2;
-        notePitchValue_->setBounds(row.removeFromLeft(halfW));
-        row.removeFromLeft(COL_GAP);
-        noteVelocityValue_->setBounds(row);
-    }
-    bounds.removeFromTop(ROW_GAP);
-
-    // Row 2: Start | Length
-    {
-        auto row = bounds.removeFromTop(LABEL_H);
-        int halfW = (row.getWidth() - COL_GAP) / 2;
-        noteStartLabel_.setBounds(row.removeFromLeft(halfW));
-        row.removeFromLeft(COL_GAP);
-        noteLengthLabel_.setBounds(row);
-    }
-    {
-        auto row = bounds.removeFromTop(VALUE_H);
-        int halfW = (row.getWidth() - COL_GAP) / 2;
-        noteStartValue_->setBounds(row.removeFromLeft(halfW));
-        row.removeFromLeft(COL_GAP);
-        noteLengthValue_->setBounds(row);
-    }
+    auto row = [&](juce::Label& caption, juce::Component& value) {
+        auto r = bounds.removeFromTop(clip_style::kFieldHeight);
+        caption.setBounds(r.removeFromLeft(kRowLabelWidth));
+        r.removeFromLeft(4);
+        value.setBounds(r);
+        bounds.removeFromTop(clip_style::kGap);
+    };
+    row(notePitchLabel_, *notePitchValue_);
+    row(noteVelocityLabel_, *noteVelocityValue_);
+    row(noteStartLabel_, *noteStartValue_);
+    row(noteLengthLabel_, *noteLengthValue_);
 }
 
 void NoteInspector::setSelectedNotes(const magda::NoteSelection& selection) {
@@ -277,14 +240,17 @@ void NoteInspector::updateFromSelectedNotes() {
     }
 
     // Show note count for multi-selection
-    if (noteSelection_.getCount() > 1) {
-        noteCountLabel_.setText(juce::String(noteSelection_.noteIndices.size()) + " notes selected",
-                                juce::dontSendNotification);
-    }
-
     computeMultiRange();
     if (!multiRange_.valid)
         return;
+
+    const auto count = noteSelection_.getCount();
+    headerName_.setText(count > 1 ? juce::String(static_cast<int>(count)) + " notes"
+                                  : midiNoteToName(multiRange_.minPitch),
+                        juce::dontSendNotification);
+    const auto* clip = magda::ClipManager::getInstance().getClip(noteSelection_.clipId);
+    headerSubline_.setText(clip != nullptr ? clip->name : juce::String(),
+                           juce::dontSendNotification);
 
     if (auto* controller = magda::TimelineController::getCurrent()) {
         const auto& tempo = controller->getState().tempo;
@@ -426,7 +392,8 @@ void NoteInspector::showNoteControls(bool show) {
     noteLengthLabel_.setVisible(show && hasNotes);
     noteLengthValue_->setVisible(show && hasNotes);
 
-    noteCountLabel_.setVisible(show && noteSelection_.getCount() > 1);
+    headerName_.setVisible(show && hasNotes);
+    headerSubline_.setVisible(show && hasNotes);
 }
 
 juce::String NoteInspector::midiNoteToName(int noteNumber) {

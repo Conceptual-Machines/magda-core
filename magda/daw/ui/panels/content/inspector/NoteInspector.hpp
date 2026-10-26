@@ -10,9 +10,8 @@ namespace magda::daw::ui {
 /**
  * @brief Inspector for MIDI note properties
  *
- * Displays and edits properties of selected MIDI notes in a 2-column layout:
- *   Pitch | Velocity
- *   Start | Length
+ * A header naming the pitch (or the note count) over the owning clip, then
+ * captioned rows for Pitch, Velocity, Start and Length.
  *
  * All four properties are draggable. For multi-selection, shows property
  * ranges and allows relative delta-based adjustments via dragging.
@@ -41,8 +40,11 @@ class NoteInspector : public BaseInspector, private magda::ClipManagerListener {
     // Current selection
     magda::NoteSelection noteSelection_;
 
+    // Header: pitch or note count over the clip's name
+    juce::Label headerName_;
+    juce::Label headerSubline_;
+
     // Note properties
-    juce::Label noteCountLabel_;
     juce::Label notePitchLabel_;
     std::unique_ptr<magda::DraggableValueLabel> notePitchValue_;
     juce::Label noteVelocityLabel_;

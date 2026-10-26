@@ -469,6 +469,7 @@
     "toggle.post_fx_post_fader_default": "New projects: post-FX after fader",
     "toggle.apply_palette_to_project": "Apply palette to current project too",
     "toggle.show_tooltips": "Show tooltips",
+    "toggle.show_info_line": "Show info line in the footer",
     "button.add_colour": "+ Add Colour",
     "button.browse": "Browse",
     "button.reset": "Reset",

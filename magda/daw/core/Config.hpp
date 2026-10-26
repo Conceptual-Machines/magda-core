@@ -1270,6 +1270,13 @@ class Config {
     void setShowTooltips(bool show) {
         showTooltips = show;
     }
+    // Footer line naming the control under the mouse (#2055)
+    bool getShowInfoLine() const {
+        return showInfoLine;
+    }
+    void setShowInfoLine(bool show) {
+        showInfoLine = show;
+    }
 
     // Render ahead (#1898): the deterministic side of the mix rendered ahead of the callback
     bool getRenderAheadEnabled() const {
@@ -1633,6 +1640,7 @@ class Config {
 
     // Tooltip settings
     bool showTooltips = true;  // Enabled by default — disable via config
+    bool showInfoLine = true;
 
     // Auto-monitor settings
     bool autoMonitorSelectedTrack = false;  // Auto-enable input monitor on selected track

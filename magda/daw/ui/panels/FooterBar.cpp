@@ -15,6 +15,7 @@
 #include "media_db/MediaDbContext.hpp"
 #include "media_db/MediaModelDownloader.hpp"
 #include "ui/state/ModeContent.hpp"
+#include "ui/windows/CommandIDs.hpp"
 
 namespace magda {
 
@@ -30,7 +31,8 @@ constexpr int kLocalModelGap = 5;
 constexpr int kLocalModelRightGap = 10;
 }  // namespace
 
-FooterBar::FooterBar() {
+FooterBar::FooterBar(juce::ApplicationCommandManager* commands) : infoLine_(commands) {
+    addChildComponent(infoLine_);
     setupButtons();
     setupLocalModelButtons();
     setupBottomCollapseButton();
@@ -154,7 +156,7 @@ void FooterBar::paint(juce::Graphics& g) {
         g.drawVerticalLine(registeredModesDividerX_, top, top + BUTTON_SIZE - 12);
     }
 
-    // Enabled-controller badges on the left.
+    // Enabled-controller badges, left of the local models.
     auto font = FontManager::getInstance().getUIFont(11.0f);
     g.setFont(font);
     for (const auto& b : controllerBadges_) {
@@ -233,6 +235,7 @@ void FooterBar::resized() {
         buttonX += BUTTON_SIZE + BUTTON_SPACING;
     }
 
+    int centreRight = buttonX - BUTTON_SPACING;
     if (exitModeButton_ != nullptr && dynamic_cast<SvgButton*>(exitModeButton_.get()) != nullptr) {
         exitModeButton_->setBounds(buttonX, buttonY, BUTTON_SIZE, BUTTON_SIZE);
     } else if (exitModeButton_ != nullptr) {
@@ -241,6 +244,11 @@ void FooterBar::resized() {
         exitModeButton_->setBounds(buttonX, (bounds.getHeight() - kExitButtonHeight) / 2,
                                    kExitButtonWidth, kExitButtonHeight);
     }
+    if (exitModeButton_ != nullptr && exitModeButton_->isVisible())
+        centreRight = exitModeButton_->getRight();
+
+    infoLine_.setBounds(kStripLeftMargin, 0, juce::jmax(0, startX - 12 - kStripLeftMargin),
+                        bounds.getHeight());
 
     // Bottom panel collapse button on the right side
     if (bottomCollapseButton_) {
@@ -256,7 +264,7 @@ void FooterBar::resized() {
         bottomCollapseButton_ != nullptr ? bottomCollapseButton_->getX() : bounds.getRight();
     int modelX = collapseLeft - kLocalModelRightGap - modelStripWidth;
     const int modelY = (bounds.getHeight() - kLocalModelButtonSize) / 2;
-    const int minModelX = startX + totalButtonsWidth + 12;
+    const int minModelX = centreRight + 12;
     const bool hasModelRoom = modelX >= minModelX;
     localModelStripArea_ =
         hasModelRoom ? juce::Rectangle<int>(modelX, modelY, modelStripWidth, kLocalModelButtonSize)
@@ -275,27 +283,35 @@ void FooterBar::resized() {
         }
     }
 
-    // Lay out controller badges on the left. Each pill is a small rounded box
-    // with a connection dot + label; cap text width so a long controller name
-    // can't push past the centred view-mode buttons.
+    // Controller badges end just left of the local models. Each pill is a small
+    // rounded box with a connection dot + label; badges that would reach the
+    // centred view-mode buttons are dropped, last first.
     auto font = FontManager::getInstance().getUIFont(11.0f);
-    int x = kStripLeftMargin;
-    int badgeY = (bounds.getHeight() - kBadgeHeight) / 2;
-    const int maxRight = startX - 12;  // keep badges clear of the centre buttons
-    for (auto& b : controllerBadges_) {
+    const int badgeY = (bounds.getHeight() - kBadgeHeight) / 2;
+    const int stripRight = (hasModelRoom ? localModelStripArea_.getX() : collapseLeft) - 12;
+    const int stripLeftLimit = centreRight + 12;
+    std::vector<int> badgeWidths;
+    int stripWidth = 0;
+    for (const auto& b : controllerBadges_) {
         int textW = juce::jmax(40, juce::GlyphArrangement::getStringWidthInt(font, b.label));
         int badgeW = kBadgeDotPad + kBadgeDotSize + 4 + textW + (kBadgePadX / 2);
-        if (x + badgeW > maxRight) {
-            // No room for this one — collapse remaining badges with an empty
-            // hit area so they don't get clicked off-screen.
-            b.hitArea = {};
+        const int grown = stripWidth + (badgeWidths.empty() ? 0 : kBadgeGap) + badgeW;
+        if (stripRight - grown < stripLeftLimit)
+            break;
+        stripWidth = grown;
+        badgeWidths.push_back(badgeW);
+    }
+    int x = stripRight - stripWidth;
+    controllerStripArea_ = juce::Rectangle<int>(x, badgeY, stripWidth, kBadgeHeight);
+    for (size_t i = 0; i < controllerBadges_.size(); ++i) {
+        auto& b = controllerBadges_[i];
+        if (i >= badgeWidths.size()) {
+            b.hitArea = {};  // no room: nothing to draw or click
             continue;
         }
-        b.hitArea = juce::Rectangle<int>(x, badgeY, badgeW, kBadgeHeight);
-        x += badgeW + kBadgeGap;
+        b.hitArea = juce::Rectangle<int>(x, badgeY, badgeWidths[i], kBadgeHeight);
+        x += badgeWidths[i] + kBadgeGap;
     }
-    controllerStripArea_ = juce::Rectangle<int>(kStripLeftMargin, badgeY,
-                                                juce::jmax(0, x - kStripLeftMargin), kBadgeHeight);
 }
 
 void FooterBar::viewModeChanged(ViewMode /*mode*/, const AudioEngineProfile& /*profile*/) {
@@ -311,16 +327,19 @@ void FooterBar::setupButtons() {
         const char* name;
         const char* tooltipKey;
         juce::Colour accent;
+        int commandId;
     };
 
     const std::array<IconData, NUM_MODES> icons = {{
         {BinaryData::iconsessionboldm_svg, BinaryData::iconsessionboldm_svgSize, ViewMode::Live,
-         "Session", "footer.tooltip.session", ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE)},
+         "Session", "footer.tooltip.session", ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE),
+         CommandIDs::showLiveView},
         {BinaryData::iconarrangementboldm_svg, BinaryData::iconarrangementboldm_svgSize,
          ViewMode::Arrange, "Arrangement", "footer.tooltip.arrangement",
-         ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION)},
+         ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION), CommandIDs::showArrangeView},
         {BinaryData::iconmixboldm_svg, BinaryData::iconmixboldm_svgSize, ViewMode::Mix, "Mix",
-         "footer.tooltip.mix", ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION)},
+         "footer.tooltip.mix", ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION),
+         CommandIDs::showMixView},
     }};
 
     for (size_t i = 0; i < NUM_MODES; ++i) {
@@ -329,6 +348,7 @@ void FooterBar::setupButtons() {
                                                                 static_cast<size_t>(icons[i].size));
 
         modeButtons[i]->setTooltip(tr(icons[i].tooltipKey));
+        InfoLine::setCommand(*modeButtons[i], icons[i].commandId);
         modeButtons[i]->setClickingTogglesState(false);
         modeButtons[i]->onClick = [mode = icons[i].mode]() {
             ViewModeController::getInstance().setViewMode(mode);

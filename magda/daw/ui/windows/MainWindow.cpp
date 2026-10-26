@@ -390,6 +390,15 @@ void MainWindow::configChanged() {
     applyThemeFromConfig();
     applyDensityFromConfig();
     applyFontFromConfig();
+
+    if (mainComponent != nullptr)
+        mainComponent->applyTooltipsFromConfig();
+}
+
+void MainWindow::MainComponent::applyTooltipsFromConfig() {
+    if (const bool show = Config::getInstance().getShowTooltips();
+        show != (tooltipWindow_ != nullptr))
+        tooltipWindow_ = show ? std::make_unique<juce::TooltipWindow>(this) : nullptr;
 }
 
 namespace {
@@ -617,10 +626,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     juce::Logger::writeToLog("[MainComponent] Constructor started");
     setWantsKeyboardFocus(true);
 
-    // Enable tooltips if configured
-    if (Config::getInstance().getShowTooltips()) {
-        tooltipWindow_ = std::make_unique<juce::TooltipWindow>(this);
-    }
+    applyTooltipsFromConfig();
 
     // Register this component as a command target for keyboard shortcuts
     commandManager.registerAllCommandsForTarget(this);
@@ -784,7 +790,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     addAndMakeVisible(*bottomPanel);
 
     juce::Logger::writeToLog("[MainComponent] Creating FooterBar...");
-    footerBar = std::make_unique<FooterBar>();
+    footerBar = std::make_unique<FooterBar>(&commandManager);
     footerBar->onBottomPanelCollapseToggle = [this]() {
         bottomPanelCollapsed = !bottomPanelCollapsed;
         bottomPanel->setCollapsed(bottomPanelCollapsed);

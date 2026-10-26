@@ -1639,7 +1639,8 @@ void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
     // Loop toggle sits on the far left of the header, centred in the sidebar
     // column (in every clip editor).
     if (loopButton_ && loopButton_->isVisible()) {
-        const int sz = h - vPad * 2;
+        // Same size as in the v1 toolbar, so the glyph matches the MIDI and audio editors.
+        const int sz = edit_toolbar::kButton;
         loopButton_->setBounds(headerBounds.getX() + (SIDEBAR_WIDTH - sz) / 2, y + (h - sz) / 2, sz,
                                sz);
     }

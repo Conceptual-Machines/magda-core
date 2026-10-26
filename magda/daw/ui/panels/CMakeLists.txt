@@ -8,6 +8,7 @@ target_sources(magda_daw_app PRIVATE
     RightPanel.cpp
     BottomPanel.cpp
     FooterBar.cpp
+    InfoLine.cpp
     PanelTabBar.cpp
     TabbedPanel.cpp
     PanelFocusTracker.cpp
@@ -20,6 +21,7 @@ target_sources(magda_daw_app PRIVATE
     RightPanel.hpp
     BottomPanel.hpp
     FooterBar.hpp
+    InfoLine.hpp
     PanelTabBar.hpp
     TabbedPanel.hpp
     PanelFocusTracker.hpp

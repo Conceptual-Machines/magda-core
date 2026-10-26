@@ -8,9 +8,11 @@
 #include "../themes/FontManager.hpp"
 #include "../themes/SmallButtonLookAndFeel.hpp"
 #include "BinaryData.h"
+#include "InfoLine.hpp"
 #include "TransportTextWidths.hpp"
 #include "core/StringTable.hpp"
 #include "core/TempoUtils.hpp"
+#include "ui/windows/CommandIDs.hpp"
 
 namespace magda {
 
@@ -139,6 +141,20 @@ TransportPanel::TransportPanel() {
     addChildComponent(*overflowButton);
 
     applyThemedLabelFonts();
+
+    const std::pair<juce::Component*, int> commandButtons[] = {
+        {playButton.get(), CommandIDs::play},
+        {stopButton.get(), CommandIDs::stop},
+        {recordButton.get(), CommandIDs::record},
+        {homeButton.get(), CommandIDs::goToStart},
+        {prevButton.get(), CommandIDs::goToStart},
+        {nextButton.get(), CommandIDs::goToEnd},
+        {metronomeButton.get(), CommandIDs::toggleMetronome},
+        {captureButton.get(), CommandIDs::captureRecentAudio},
+    };
+    for (const auto& [button, commandId] : commandButtons)
+        if (button != nullptr)
+            InfoLine::setCommand(*button, commandId);
 }
 
 TransportPanel::~TransportPanel() {
