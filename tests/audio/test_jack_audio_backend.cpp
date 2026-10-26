@@ -4,6 +4,7 @@
 
 /// @file JACK devices listing a card's own ports, not PipeWire's monitors (#3107).
 
+using magda::jack::channelNames;
 using magda::jack::groupDevices;
 using magda::jack::Port;
 
@@ -51,4 +52,18 @@ TEST_CASE("Clients become devices in the order JACK lists them", "[audio-io][jac
     CHECK(devices[0].name == "system");
     CHECK(devices[0].ports == juce::StringArray{"system:capture_0", "system:capture_1"});
     CHECK(devices[1].name == "Ardour");
+}
+
+TEST_CASE("A card's channels are numbered as ALSA numbers them", "[audio-io][jack][3107]") {
+    const auto card = groupDevices({{"Built-in Audio Analog Stereo:capture_FL", true},
+                                    {"Built-in Audio Analog Stereo:capture_FR", true}});
+    CHECK(channelNames(card[0]) == juce::StringArray{"channel 1", "channel 2"});
+
+    const auto tascam = groupDevices(ports("TASCAM US-16x08 Pro", "capture_AUX", 16, true));
+    CHECK(channelNames(tascam[0])[15] == "channel 16");
+}
+
+TEST_CASE("An app's client keeps its port names", "[audio-io][jack][3107]") {
+    const auto app = groupDevices(ports("Ardour", "out_", 2, false));
+    CHECK(channelNames(app[0]) == juce::StringArray{"out_0", "out_1"});
 }

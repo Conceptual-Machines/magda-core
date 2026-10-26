@@ -126,18 +126,11 @@ std::vector<Device> listDevices(const Api& jack, jack_client_t* client, unsigned
     return groupDevices(ports);
 }
 
-juce::StringArray portsOf(const std::vector<Device>& devices, const juce::String& name) {
+Device find(const std::vector<Device>& devices, const juce::String& name) {
     for (const auto& device : devices)
         if (device.name == name)
-            return device.ports;
+            return device;
     return {};
-}
-
-juce::StringArray channelNames(const juce::StringArray& ports) {
-    juce::StringArray names;
-    for (const auto& port : ports)
-        names.add(port.fromFirstOccurrenceOf(":", false, false));
-    return names;
 }
 
 class JackDevice final : public juce::AudioIODevice {
@@ -152,8 +145,12 @@ class JackDevice final : public juce::AudioIODevice {
             return;
 
         // A device's inputs are the JACK ports it sends from, its outputs those it receives on.
-        sources_ = portsOf(listDevices(jack_, client_, JackPortIsOutput), inputName_);
-        destinations_ = portsOf(listDevices(jack_, client_, JackPortIsInput), outputName_);
+        const auto input = find(listDevices(jack_, client_, JackPortIsOutput), inputName_);
+        const auto output = find(listDevices(jack_, client_, JackPortIsInput), outputName_);
+        sources_ = input.ports;
+        destinations_ = output.ports;
+        inputChannelNames_ = channelNames(input);
+        outputChannelNames_ = channelNames(output);
     }
 
     ~JackDevice() override {
@@ -163,10 +160,10 @@ class JackDevice final : public juce::AudioIODevice {
     }
 
     juce::StringArray getOutputChannelNames() override {
-        return channelNames(destinations_);
+        return outputChannelNames_;
     }
     juce::StringArray getInputChannelNames() override {
-        return channelNames(sources_);
+        return inputChannelNames_;
     }
 
     juce::Array<double> getAvailableSampleRates() override {
@@ -366,6 +363,7 @@ class JackDevice final : public juce::AudioIODevice {
     const Api& jack_;
     jack_client_t* client_ = nullptr;
     juce::StringArray sources_, destinations_;
+    juce::StringArray inputChannelNames_, outputChannelNames_;
     std::vector<jack_port_t*> inputPorts_, outputPorts_;
     std::vector<const float*> inputBuffers_;
     std::vector<float*> outputBuffers_;
@@ -476,6 +474,14 @@ std::vector<Device> groupDevices(const std::vector<Port>& ports) {
                 (port.physical || !device.physical))
                 device.ports.add(port.name);
     return devices;
+}
+
+juce::StringArray channelNames(const Device& device) {
+    juce::StringArray names;
+    for (int i = 0; i < device.ports.size(); ++i)
+        names.add(device.physical ? "channel " + juce::String(i + 1)
+                                  : device.ports[i].fromFirstOccurrenceOf(":", false, false));
+    return names;
 }
 
 void addBackend(juce::AudioDeviceManager& manager) {

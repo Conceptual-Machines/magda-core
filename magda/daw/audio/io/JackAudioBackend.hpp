@@ -31,6 +31,12 @@ struct Device {
  */
 std::vector<Device> groupDevices(const std::vector<Port>& ports);
 
+/**
+ * @brief @p device's channels as JUCE's ALSA backend names a card's, "channel 1" onwards, in place
+ *        of PipeWire's capture_FL or capture_AUX0. An app's client keeps its own port names.
+ */
+juce::StringArray channelNames(const Device& device);
+
 /** @brief The JACK backend, listing audio ports grouped by groupDevices(), or nullptr off Linux. */
 std::unique_ptr<juce::AudioIODeviceType> createBackend();
 
