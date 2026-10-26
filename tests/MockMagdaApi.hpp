@@ -1790,6 +1790,9 @@ class MockDeviceApi : public DeviceApi {
         bypassed.emplace_back(devicePath, value);
         return true;
     }
+    bool updateInsert(const ChainNodePath& devicePath, const InsertUpdate&) override {
+        return devices.contains(devicePath);
+    }
     std::optional<SidechainView> getSidechain(const ChainNodePath& ownerPath) const override {
         const auto found = sidechains.find(ownerPath);
         return found == sidechains.end() ? std::nullopt

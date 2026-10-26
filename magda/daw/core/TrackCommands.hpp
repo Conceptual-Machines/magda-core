@@ -588,6 +588,31 @@ class ApplyDevicePresetCommand : public UndoableCommand {
     bool executed_ = false;
 };
 
+/** An edit to an External Insert: its routing, its CC knobs and the parameters holding their
+ *  values, which undo puts back as they were (#3164). */
+class EditInsertCommand : public UndoableCommand {
+  public:
+    EditInsertCommand(ChainNodePath devicePath, juce::String description,
+                      std::function<void(DeviceInfo&)> edit);
+
+    void execute() override;
+    void undo() override;
+    juce::String getDescription() const override {
+        return description_;
+    }
+
+  private:
+    void apply(const DeviceInfo& state);
+
+    ChainNodePath devicePath_;
+    juce::String description_;
+    std::function<void(DeviceInfo&)> edit_;
+    DeviceInfo previousState_;
+    DeviceInfo editedState_;
+    bool captured_ = false;
+    bool executed_ = false;
+};
+
 /** Replace a track's preset-owned chain state while preserving the track itself. */
 class ApplyTrackPresetCommand : public UndoableCommand {
   public:

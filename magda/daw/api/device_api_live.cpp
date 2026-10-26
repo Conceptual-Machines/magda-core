@@ -17,6 +17,7 @@
 #include "../core/AutomationManager.hpp"
 #include "../core/ChainWalk.hpp"
 #include "../core/DrumGridPads.hpp"
+#include "../core/InsertCcKnobs.hpp"
 #include "../core/PadCommands.hpp"
 #include "../core/ParameterUtils.hpp"
 #include "../core/PluginCapabilities.hpp"
@@ -228,6 +229,27 @@ DeviceCatalogEntry entryFromInternalSpec(const daw::audio::InternalPluginSpec& s
     return entry;
 }
 
+/// The External Insert's two variants, as the browser lists them: one device id, told apart by
+/// whether it is an instrument (#3164).
+constexpr std::pair<const char*, bool> kInsertVariants[] = {{"external_fx", false},
+                                                            {"external_instrument", true}};
+
+std::vector<DeviceCatalogEntry> insertEntries() {
+    std::vector<DeviceCatalogEntry> entries;
+    const auto* spec = daw::audio::findInternalPluginSpecWithTag("external-insert");
+    if (spec == nullptr)
+        return entries;
+    for (const auto& [catalogId, isInstrument] : kInsertVariants) {
+        auto entry = entryFromInternalSpec(*spec);
+        entry.catalogId = catalogId;
+        entry.name = isInstrument ? "External Instrument" : "External FX";
+        entry.isInstrument = isInstrument;
+        entry.type = isInstrument ? DeviceType::Instrument : DeviceType::Effect;
+        entries.push_back(entry);
+    }
+    return entries;
+}
+
 // External plugins arrive as DeviceInfo from the scan. Only the identifying and
 // descriptive fields cross into the catalogue; fileOrIdentifier deliberately
 // does not, so a caller can name a plugin without learning where it lives.
@@ -266,6 +288,15 @@ std::optional<DeviceInfo> deviceFromCatalogId(const juce::String& catalogId) {
 
     if (const auto* spec = daw::audio::compiled::findCompiledPluginSpec(catalogId))
         return fromSpec(spec->displayName, spec->isInstrument);
+
+    for (const auto& [variantId, isInstrument] : kInsertVariants)
+        if (catalogId == variantId)
+            if (const auto* spec = daw::audio::findInternalPluginSpecWithTag("external-insert")) {
+                auto device =
+                    fromSpec(isInstrument ? "External Instrument" : "External FX", isInstrument);
+                device.pluginId = spec->pluginId;
+                return device;
+            }
 
     if (const auto* spec = daw::audio::findInternalPluginSpec(catalogId);
         spec != nullptr && spec->showInBrowser)
@@ -557,6 +588,8 @@ std::vector<DeviceCatalogEntry> DeviceApiLive::getCatalog() const {
         if (spec != nullptr && spec->showInBrowser)
             catalog.push_back(entryFromInternalSpec(*spec));
     }
+    for (auto& entry : insertEntries())
+        catalog.push_back(std::move(entry));
 
     PluginApiLive plugins;
     for (const auto& device : plugins.getExternalPlugins())
@@ -1036,6 +1069,40 @@ bool DeviceApiLive::setDeviceBypassed(const ChainNodePath& devicePath, bool bypa
     auto* raw = command.get();
     UndoManager::getInstance().executeCommand(std::move(command));
     return raw->didSet();
+}
+
+bool DeviceApiLive::updateInsert(const ChainNodePath& devicePath, const InsertUpdate& update) {
+    const auto* device = getDevice(devicePath);
+    if (device == nullptr ||
+        !daw::audio::internalPluginHasTag(device->pluginId, "external-insert") ||
+        (update.ccKnobs && static_cast<int>(update.ccKnobs->size()) > insert_cc::kMaxKnobs))
+        return false;
+
+    UndoManager::getInstance().executeCommand(std::make_unique<EditInsertCommand>(
+        devicePath, "Edit External Insert", [update](DeviceInfo& edited) {
+            using Endpoint = InsertConfig::Endpoint;
+            auto& insert = edited.insert;
+            if (update.sendDevice) {
+                insert.sendDevice = *update.sendDevice;
+                insert.sendType = insert.sendDevice.isEmpty() ? Endpoint::None
+                                  : edited.isInstrument       ? Endpoint::MIDI
+                                                              : Endpoint::Audio;
+            }
+            if (update.returnDevice) {
+                insert.returnDevice = *update.returnDevice;
+                insert.returnType =
+                    insert.returnDevice.isEmpty() ? Endpoint::None : Endpoint::Audio;
+            }
+            if (update.midiChannel)
+                insert.midiChannel = juce::jlimit(1, 16, *update.midiChannel);
+            if (update.ccDevice)
+                insert.ccDevice = *update.ccDevice;
+            if (update.manualAdjustMs)
+                insert.manualAdjustMs = *update.manualAdjustMs;
+            if (update.ccKnobs)
+                insert_cc::setKnobs(edited, *update.ccKnobs);
+        }));
+    return true;
 }
 
 std::optional<SidechainView> DeviceApiLive::getSidechain(const ChainNodePath& ownerPath) const {

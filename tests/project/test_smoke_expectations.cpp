@@ -58,8 +58,45 @@ juce::StringArray problemsWith(const juce::File& expectationFile) {
     }
     if (const auto* hardware = requires_["hardware"].getArray())
         for (const auto& item : *hardware)
-            if (item.toString() != "insert" && item.toString() != "loopback")
+            if (item.toString() != "insert" && item.toString() != "loopback" &&
+                item.toString() != "virtual-midi")
                 problems.add("requires.hardware: unknown '" + item.toString() + "'");
+
+    if (json.hasProperty("midi")) {
+        const auto& midi = json["midi"];
+        const bool hasPort = requires_["hardware"].getArray() != nullptr &&
+                             requires_["hardware"].getArray()->contains("virtual-midi");
+        if (!hasPort)
+            problems.add("midi needs requires.hardware to name virtual-midi");
+        const auto inRange = [](const juce::var& v, int low, int high) {
+            return v.isInt() && static_cast<int>(v) >= low && static_cast<int>(v) <= high;
+        };
+        if (midi.hasProperty("channels")) {
+            const auto* channels = midi["channels"].getArray();
+            if (channels == nullptr || channels->isEmpty() ||
+                !std::ranges::all_of(*channels,
+                                     [&](const juce::var& c) { return inRange(c, 1, 16); }))
+                problems.add("midi.channels must list channels 1..16");
+        }
+        const auto* expects = midi["expect"].getArray();
+        if (expects == nullptr || expects->isEmpty())
+            problems.add("midi.expect must be a non-empty array");
+        for (const auto& expect : expects != nullptr ? *expects : juce::Array<juce::var>{}) {
+            const auto kind = expect["kind"].toString();
+            if (kind != "note" && kind != "cc")
+                problems.add("midi.expect: kind must be note or cc");
+            if (!inRange(expect["channel"], 1, 16) || !inRange(expect["number"], 0, 127) ||
+                !inRange(expect["atLeast"], 1, 1 << 20))
+                problems.add("midi.expect: needs channel 1..16, number 0..127, atLeast >= 1");
+            if (expect.hasProperty("spans")) {
+                const auto* span = expect["spans"].getArray();
+                if (span == nullptr || span->size() != 2 || !inRange((*span)[0], 0, 127) ||
+                    !inRange((*span)[1], 0, 127) ||
+                    static_cast<int>((*span)[0]) > static_cast<int>((*span)[1]))
+                    problems.add("midi.expect: spans must be [low, high] within 0..127");
+            }
+        }
+    }
 
     if (json.hasProperty("scenario")) {
         const auto* steps = json["scenario"].getArray();

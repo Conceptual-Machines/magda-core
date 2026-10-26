@@ -35,6 +35,8 @@ const CompiledPresentationSpec& getMagdaSnarePresentation();
 const CompiledPresentationSpec& getMagdaClapPresentation();
 const CompiledPresentationSpec& getMagdaHatPresentation();
 const CompiledPresentationSpec& getMagdaTomPresentation();
+const CompiledPresentationSpec& getToneGeneratorPresentation();
+const CompiledPresentationSpec& getExternalInsertPresentation();
 
 namespace {
 
@@ -53,7 +55,8 @@ const CompiledPresentationSpec* const kAllPresentations[] = {
     &getArpeggiatorPresentation(),    &getStrumPresentation(),
     &getMagdaKickPresentation(),      &getMagdaSnarePresentation(),
     &getMagdaClapPresentation(),      &getMagdaHatPresentation(),
-    &getMagdaTomPresentation(),
+    &getMagdaTomPresentation(),       &getToneGeneratorPresentation(),
+    &getExternalInsertPresentation(),
 };
 
 }  // namespace

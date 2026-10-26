@@ -223,6 +223,26 @@ struct InsertConfig {
 
     double manualAdjustMs = 0.0;
 
+    /// The MIDI channel the insert sends on, 1 to 16: an instrument's notes are moved onto it,
+    /// and the CC knobs go out on it (#3164).
+    int midiChannel = 1;
+
+    /// The MIDI port an effect's CC knobs go to, since its send is audio. An instrument's go
+    /// to its MIDI send.
+    juce::String ccDevice;
+
+    /// One CC knob: the device parameter that holds its value, 0 to 127, and the CC it sends.
+    struct CcSlot {
+        int paramIndex = 0;
+        int ccNumber = 0;
+
+        bool operator==(const CcSlot&) const = default;
+    };
+    std::vector<CcSlot> ccSlots;
+    /// The parameter index the next knob takes. Never handed out twice, so a lane or link left
+    /// on a removed knob cannot reach a later one.
+    int nextCcParamIndex = 0;
+
     /// Whether this device is an insert at all. False for every ordinary
     /// device, which is what keeps the compiler from having to know a plugin id
     /// to recognise one.

@@ -147,6 +147,14 @@ class StubInsert final : public EngineInsert {
         ++releases;
     }
 
+    void sendControls(const BlockInfo&, const magda::engine::DeviceParams& params) override {
+        controls.clear();
+        for (int entry = 0; entry < params.size(); ++entry)
+            controls[params.slotAt(entry)] = params.valuesAt(entry).value();
+    }
+
+    std::map<int, float> controls;
+
     int sends = 0;
     int receives = 0;
     int releases = 0;
@@ -718,4 +726,73 @@ TEST_CASE("A track's MIDI Out sends on its channel, to a track and to a port",
         receiver.inputMonitor = InputMonitorMode::In;
         CHECK(channelsReaching({receiver, sender}) == std::vector<int>{4});
     }
+}
+
+TEST_CASE("An external instrument's notes go out on its channel", "[engine][plan][insert][3164]") {
+    auto track = makeTrack(1);
+    track.midiInputDevice = "all";
+    auto instrument = makeExternalInstrument(7);
+    instrument.insert.midiChannel = 5;
+    track.chain.fxChainElements.push_back(makeDeviceElement(instrument));
+
+    std::vector<TrackInfo> tracks{track};
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    INFO(magda::engine::dumpPlan(plan));
+
+    const auto gates = opsWithRole(plan, OpRole::InsertMidiChannel);
+    const auto sends = opsWithRole(plan, OpRole::InsertSend);
+    REQUIRE(gates.size() == 1);
+    REQUIRE(sends.size() == 1);
+    const auto& gate = plan.ops[static_cast<std::size_t>(gates.front())];
+    CHECK(gate.kind == OpKind::MidiNoteGate);
+    CHECK(gate.noteGateChannel == 5);
+    CHECK(plan.ops[static_cast<std::size_t>(sends.front())].inputs[1].op == gates.front());
+
+    // An effect sends no MIDI, so it has nothing to move.
+    auto fxTrack = makeTrack(1);
+    fxTrack.chain.fxChainElements.push_back(makeDeviceElement(makeExternalFx(7)));
+    std::vector<TrackInfo> fxTracks{fxTrack};
+    const auto fxPlan = magda::engine::compileRenderPlan(fxTracks, makeMaster());
+    CHECK(opsWithRole(fxPlan, OpRole::InsertMidiChannel).empty());
+}
+
+TEST_CASE("An insert's send is handed its CC knobs each block", "[engine][exec][insert][3164]") {
+    auto track = makeTrack(1);
+    auto fx = makeExternalFx(7);
+    ParameterInfo knob;
+    knob.paramIndex = 0;
+    knob.name = "CC 74";
+    knob.minValue = 0.0f;
+    knob.maxValue = 127.0f;
+    knob.currentValue = 96.0f;
+    fx.parameters.push_back(knob);
+    fx.insert.ccSlots.push_back({.paramIndex = 0, .ccNumber = 74});
+    track.chain.fxChainElements.push_back(makeDeviceElement(fx));
+
+    std::vector<TrackInfo> tracks{track};
+    auto master = makeMaster();
+    const auto plan = magda::engine::compileRenderPlan(tracks, master);
+    INFO(magda::engine::dumpPlan(plan));
+
+    StubInsert insert;
+    PlanBindings bindings;
+    bindings.inserts[DeviceKey{ChainSegment::Fx, 7}] = &insert;
+
+    PlanValues values;
+    magda::engine::resolvePlanValues(plan, tracks, master, values);
+
+    const RenderContext context{44100.0, kBlockSize, 2};
+    PlanExecutor executor;
+    executor.prepare(plan, bindings, context, nullptr, &values);
+    REQUIRE(executor.isPrepared());
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    BlockInfo block;
+    block.numSamples = kBlockSize;
+    block.playing = true;
+    block.continuous = true;
+    executor.process(values, block, output);
+
+    REQUIRE(insert.controls.count(0) == 1);
+    CHECK(insert.controls[0] == Catch::Approx(96.0f));
 }

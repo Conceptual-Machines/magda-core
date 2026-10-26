@@ -647,13 +647,27 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     }
 
     // Sidechain
-    if (device.insert.isActive()) {
+    // An insert routed nowhere yet still keeps its CC knobs (#3164).
+    if (device.insert.isActive() || !device.insert.ccSlots.empty() ||
+        device.insert.ccDevice.isNotEmpty() || device.insert.midiChannel != 1 ||
+        device.insert.nextCcParamIndex != 0) {
         auto* insertObj = new juce::DynamicObject();
         insertObj->setProperty("sendType", static_cast<int>(device.insert.sendType));
         insertObj->setProperty("returnType", static_cast<int>(device.insert.returnType));
         insertObj->setProperty("sendDevice", device.insert.sendDevice);
         insertObj->setProperty("returnDevice", device.insert.returnDevice);
         insertObj->setProperty("manualAdjustMs", device.insert.manualAdjustMs);
+        insertObj->setProperty("midiChannel", device.insert.midiChannel);
+        insertObj->setProperty("ccDevice", device.insert.ccDevice);
+        juce::Array<juce::var> ccSlots;
+        for (const auto& slot : device.insert.ccSlots) {
+            auto* slotObj = new juce::DynamicObject();
+            slotObj->setProperty("paramIndex", slot.paramIndex);
+            slotObj->setProperty("ccNumber", slot.ccNumber);
+            ccSlots.add(juce::var(slotObj));
+        }
+        insertObj->setProperty("ccSlots", ccSlots);
+        insertObj->setProperty("nextCcParamIndex", device.insert.nextCcParamIndex);
         obj->setProperty("insert", juce::var(insertObj));
     }
 
@@ -914,6 +928,18 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
         outDevice.insert.sendDevice = insertObj->getProperty("sendDevice").toString();
         outDevice.insert.returnDevice = insertObj->getProperty("returnDevice").toString();
         outDevice.insert.manualAdjustMs = insertObj->getProperty("manualAdjustMs");
+        // Saved before #3164 there is no channel, so the default's.
+        const int channel = insertObj->getProperty("midiChannel");
+        outDevice.insert.midiChannel = channel >= 1 && channel <= 16 ? channel : 1;
+        outDevice.insert.ccDevice = insertObj->getProperty("ccDevice").toString();
+        outDevice.insert.nextCcParamIndex = insertObj->getProperty("nextCcParamIndex");
+        outDevice.insert.ccSlots.clear();
+        if (const auto* ccSlots = insertObj->getProperty("ccSlots").getArray())
+            for (const auto& slotVar : *ccSlots)
+                outDevice.insert.ccSlots.push_back(
+                    {.paramIndex = slotVar.getProperty("paramIndex", 0),
+                     .ccNumber = juce::jlimit(
+                         0, 127, static_cast<int>(slotVar.getProperty("ccNumber", 0)))});
     }
 
     auto sidechainVar = obj->getProperty("sidechain");

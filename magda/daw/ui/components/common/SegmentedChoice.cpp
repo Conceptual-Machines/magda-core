@@ -87,6 +87,23 @@ std::optional<juce::Path> iconFor(const juce::String& option) {
         path.lineTo(0.25f, 0.05f);
         path.lineTo(0.75f, 0.95f);
         path.lineTo(1.0f, 0.5f);
+    } else if (name == "saw up" || name == "saw down") {
+        const bool up = name == "saw up";
+        path.startNewSubPath(0.0f, up ? 0.95f : 0.05f);
+        path.lineTo(0.5f, up ? 0.05f : 0.95f);
+        path.lineTo(0.5f, up ? 0.95f : 0.05f);
+        path.lineTo(1.0f, up ? 0.05f : 0.95f);
+    } else if (name == "noise") {
+        // A fixed scribble, so the glyph does not change between paints.
+        static constexpr float kHeights[] = {0.5f, 0.2f, 0.75f, 0.35f, 0.9f, 0.1f, 0.6f,
+                                             0.3f, 0.8f, 0.15f, 0.65f, 0.4f, 0.5f};
+        for (size_t i = 0; i < std::size(kHeights); ++i) {
+            const float x = static_cast<float>(i) / static_cast<float>(std::size(kHeights) - 1);
+            if (i == 0)
+                path.startNewSubPath(x, kHeights[i]);
+            else
+                path.lineTo(x, kHeights[i]);
+        }
     } else if (name == "square") {
         path.startNewSubPath(0.0f, 0.95f);
         path.lineTo(0.0f, 0.05f);

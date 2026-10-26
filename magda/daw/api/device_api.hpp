@@ -160,6 +160,17 @@ struct PadUpdate {
     std::optional<bool> bypassed;
 };
 
+/** An External Insert's routing and CC knobs; an unset field is left as it is (#3164). */
+struct InsertUpdate {
+    std::optional<juce::String> sendDevice;
+    std::optional<juce::String> returnDevice;
+    std::optional<int> midiChannel;
+    std::optional<juce::String> ccDevice;
+    std::optional<double> manualAdjustMs;
+    /// Every knob's CC number, in order.
+    std::optional<std::vector<int>> ccKnobs;
+};
+
 enum class SidechainOwnerKind { Device, Rack };
 
 /** Capabilities are derived from the live owner and are safe to expose remotely. */
@@ -288,6 +299,9 @@ class DeviceApi {
     virtual bool updatePad(const ChainNodePath&, int, const PadUpdate&) = 0;
 
     virtual bool setDeviceBypassed(const ChainNodePath& devicePath, bool bypassed) = 0;
+
+    /** Edit an External Insert as one undoable step. False for a device that is not one. */
+    virtual bool updateInsert(const ChainNodePath& devicePath, const InsertUpdate& update) = 0;
 
     /** Inspect or atomically update a device/rack sidechain by exact owner path. */
     virtual std::vector<SidechainView> getSidechains(

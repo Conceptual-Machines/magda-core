@@ -212,6 +212,46 @@ class RemoteServiceLiveTest final : public juce::UnitTest {
             source.deleteFile();
         }
 
+        beginTest("A project holding an External Insert opens when devices must be available");
+        {
+            // The insert is listed by its variants' ids, never its own (#3164).
+            Fixture fixture;
+            auto& projects = ProjectManager::getInstance();
+            expect(projects.newProject(ProjectManager::UnsavedChangesPolicy::Discard));
+            const auto trackId = TrackManager::getInstance().createTrack("Synth", TrackType::Media);
+            DeviceInfo insert;
+            insert.name = "External Instrument";
+            insert.pluginId = "insert";
+            insert.format = PluginFormat::Internal;
+            insert.isInstrument = true;
+            insert.deviceType = DeviceType::Instrument;
+            TrackManager::getInstance().addDeviceToTrack(trackId, insert);
+
+            const auto source = juce::File::createTempFile(".mgd");
+            ProjectInfo saved;
+            saved.name = "Outboard";
+            expect(ProjectSerializer::saveToFile(source, saved));
+            expect(projects.newProject(ProjectManager::UnsavedChangesPolicy::Discard));
+
+            auto request = fullyGrantedContext();
+            request.clientId = "live-file-client";
+            request.clientName = "live-file-client";
+            const auto accepted = fixture.run("project.open",
+                                              object({{"path", source.getFullPathName()},
+                                                      {"dirtyPolicy", "discard"},
+                                                      {"autosavePolicy", "ignore"},
+                                                      {"missingMediaPolicy", "fail"},
+                                                      {"unavailableDevicePolicy", "fail"}}),
+                                              request);
+            expect(accepted.ok);
+            const auto completed = fixture.waitForJob(accepted.result["id"].toString(), request);
+            expect(completed.has_value() && completed->state == RemoteJobState::Completed);
+            expectEquals(projects.getCurrentProjectInfo().name, juce::String("Outboard"));
+
+            expect(projects.newProject(ProjectManager::UnsavedChangesPolicy::Discard));
+            source.deleteFile();
+        }
+
         beginTest("A failed project open leaves the active project untouched");
         {
             Fixture fixture;

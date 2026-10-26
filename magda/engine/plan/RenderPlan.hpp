@@ -257,8 +257,9 @@ enum class OpRole : std::uint8_t {
     /// A handoff, keyed at its producer's location; OpKey::index orders the handoffs there.
     Handoff,
 
-    RackChainSplit,  ///< a rack's notes, split across its chains by their zones
-    RackBandSplit,   ///< a multiband rack's input, split into its bands
+    RackChainSplit,     ///< a rack's notes, split across its chains by their zones
+    RackBandSplit,      ///< a multiband rack's input, split into its bands
+    InsertMidiChannel,  ///< the channel an external instrument's MIDI send goes out on (#3164)
 };
 
 // The four things that identify a fade, packed into OpKey::index, low bits
@@ -509,6 +510,11 @@ struct PlanOp {
     /// zone when the rack's chain selector is modulated (#1808).
     ChainZones chainZones;
 };
+
+/** @brief An insert's send, which reads the insert's CC knobs (#3164). Not a track's MIDI Out. */
+inline bool readsInsertControls(const PlanOp& op) {
+    return op.kind == OpKind::InsertSend && op.key.role == OpRole::InsertSend;
+}
 
 /** @brief Producer ops an op waits on, each counted once however many slots it feeds. */
 inline std::vector<OpId> distinctProducers(const PlanOp& op) {

@@ -34,6 +34,7 @@ class DeviceApiLive : public DeviceApi {
     bool swapPads(const ChainNodePath& gridPath, int padA, int padB) override;
     bool updatePad(const ChainNodePath& gridPath, int padIndex, const PadUpdate& update) override;
     bool setDeviceBypassed(const ChainNodePath& devicePath, bool bypassed) override;
+    bool updateInsert(const ChainNodePath& devicePath, const InsertUpdate& update) override;
     std::vector<SidechainView> getSidechains(
         std::optional<TrackId> trackId = std::nullopt) const override;
     std::optional<SidechainView> getSidechain(const ChainNodePath& ownerPath) const override;

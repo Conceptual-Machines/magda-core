@@ -59,7 +59,6 @@
 #include "custom_ui/SpectrumAnalyzerUI.hpp"
 #include "custom_ui/StepSequencerUI.hpp"
 #include "custom_ui/StruckInstrumentUI.hpp"
-#include "custom_ui/ToneGeneratorUI.hpp"
 #include "drum_grid/DrumGridUI.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/PluginService.hpp"
@@ -68,7 +67,6 @@
 #include "media_db/MediaDbContext.hpp"
 #include "media_db/RobertaTokenizer.hpp"
 #include "project/ProjectManager.hpp"
-#include "slot/ExternalInsertUI.hpp"
 #include "slot/StepSequencerClipExport.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/Toast.hpp"
@@ -437,10 +435,6 @@ DeviceCustomUIManager::~DeviceCustomUIManager() {
 // =============================================================================
 
 juce::Component* DeviceCustomUIManager::getActiveUI() const {
-    if (toneGeneratorUI_)
-        return toneGeneratorUI_.get();
-    if (externalInsertUI_)
-        return externalInsertUI_.get();
     if (samplerUI_)
         return samplerUI_.get();
     if (drumGridUI_)
@@ -491,8 +485,6 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
         return nimbusUI_->getLinkableSliders();
     if (struckUI_)
         return struckUI_->getLinkableSliders();
-    if (toneGeneratorUI_)
-        return toneGeneratorUI_->getLinkableSliders();
     if (sidechainUI_)
         return sidechainUI_->getLinkableSliders();
     if (spectralFxUI_)
@@ -509,10 +501,10 @@ std::vector<LinkableTextSlider*> DeviceCustomUIManager::getLinkableSliders() con
 }
 
 bool DeviceCustomUIManager::hasAnyUI() const {
-    return externalInsertUI_ || toneGeneratorUI_ || samplerUI_ || drumGridUI_ || polySynthUI_ ||
-           fmUI_ || materiaUI_ || haloUI_ || nimbusUI_ || struckUI_ || impulseResponseUI_ ||
-           sidechainUI_ || spectralFxUI_ || chordEngineUI_ || stepSequencerUI_ ||
-           polyStepSequencerUI_ || oscilloscopeUI_ || spectrumAnalyzerUI_ || levelsUI_;
+    return samplerUI_ || drumGridUI_ || polySynthUI_ || fmUI_ || materiaUI_ || haloUI_ ||
+           nimbusUI_ || struckUI_ || impulseResponseUI_ || sidechainUI_ || spectralFxUI_ ||
+           chordEngineUI_ || stepSequencerUI_ || polyStepSequencerUI_ || oscilloscopeUI_ ||
+           spectrumAnalyzerUI_ || levelsUI_;
 }
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
@@ -550,8 +542,6 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
         return samplerUI_->preferredWidth();
     if (drumGridUI_)
         return drumGridFallback;
-    if (externalInsertUI_)
-        return 360;  // two device pickers + manual-latency field
     return 0;
 }
 
@@ -857,15 +847,6 @@ void DeviceCustomUIManager::refreshSequencerState(const magda::DeviceInfo& devic
 // =============================================================================
 // create
 // =============================================================================
-
-void DeviceCustomUIManager::createToneGeneratorUI(const magda::DeviceInfo& device,
-                                                  juce::Component& parent,
-                                                  const Callbacks& callbacks) {
-    toneGeneratorUI_ = std::make_unique<ToneGeneratorUI>();
-    forwardParameterChanges(*toneGeneratorUI_, callbacks);
-    parent.addAndMakeVisible(*toneGeneratorUI_);
-    update(device);
-}
 
 namespace {
 
@@ -1842,9 +1823,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
     auto uiCallbacks = callbacks;
     uiCallbacks.deviceUiContext = deviceUiContext_;
 
-    if (device.pluginId.containsIgnoreCase("tone")) {
-        createToneGeneratorUI(device, *parent, uiCallbacks);
-    } else if (createSamplerUI(device, *parent, uiCallbacks)) {
+    if (createSamplerUI(device, *parent, uiCallbacks)) {
         // handled by helper
     } else if (createDrumGridUI(device, *parent, uiCallbacks)) {
         // handled by helper
@@ -1854,21 +1833,9 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         // handled by helper
     } else if (createImpulseResponseUI(device, *parent, uiCallbacks)) {
         // handled by helper
-    } else if (daw::audio::internalPluginHasTag(device.pluginId, "external-insert")) {
-        createExternalInsertUI(device, *parent);
     } else if (!createMidiUtilityUI(device, *parent, uiCallbacks)) {
         createAnalyzerUI(device, *parent);
     }
-}
-
-void DeviceCustomUIManager::createExternalInsertUI(const magda::DeviceInfo& device,
-                                                   juce::Component& parent) {
-    externalInsertUI_ = std::make_unique<ExternalInsertUI>(device.isInstrument);
-    parent.addAndMakeVisible(*externalInsertUI_);
-    // create() may run before the slot's path is valid; setDevicePath() rebinds
-    // the pickers once it is.
-    if (devicePath_.isValid())
-        externalInsertUI_->setDevicePath(devicePath_);
 }
 
 void DeviceCustomUIManager::setDevicePath(const magda::ChainNodePath& path) {
@@ -1888,9 +1855,6 @@ void DeviceCustomUIManager::setDevicePath(const magda::ChainNodePath& path) {
 
 void DeviceCustomUIManager::refreshLivePluginBindings() {
     bindAnalyzerPlugins();
-
-    if (externalInsertUI_ != nullptr)
-        externalInsertUI_->setDevicePath(devicePath_);
 
     // The poly sequencer's drum-lane view finds its lanes by walking the live
     // chain from the device's path, so it needs the path once it is valid.
@@ -2089,22 +2053,6 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
 
     if (sidechainUI_ && device.pluginId.equalsIgnoreCase(daw::audio::SidechainPlugin::xmlTypeName))
         sidechainUI_->updateFromDevice(device);
-
-    if (toneGeneratorUI_ && device.pluginId.containsIgnoreCase("tone")) {
-        float frequency = 440.0f;
-        float level = -12.0f;
-        int waveform = 0;
-
-        // ToneGeneratorProcessor exposes params in this order: 0=oscType, 1=bandLimit,
-        // 2=frequency, 3=level. Match that here.
-        if (device.parameters.size() >= 4) {
-            waveform = static_cast<int>(device.parameters[0].currentValue);
-            frequency = device.parameters[2].currentValue;
-            level = device.parameters[3].currentValue;
-        }
-
-        toneGeneratorUI_->updateParameters(frequency, level, waveform);
-    }
 
     if (samplerUI_ &&
         device.pluginId.containsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName))

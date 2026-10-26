@@ -4,7 +4,8 @@
 Launches the installed MAGDA (or attaches to one already running), drives it over the
 WebSocket Remote API, and for each project: opens it, captures the master output while it
 plays the expectation's range, renders the same range offline, then checks the track meters,
-compares capture against render, and reads the engine's health. Standard library only.
+compares capture against render, and reads the engine's health. Standard library only, except
+python-rtmidi for the projects that check what MAGDA sends to a MIDI port (`virtual-midi`).
 
 Usage:
   python3 scripts/smoke.py                          # the installed app, every project
@@ -57,6 +58,9 @@ SILENCE_MARGIN = 64
 DURATION_TOLERANCE = 0.01
 PARAMETER_TOLERANCE = 0.005
 POLL_SECONDS = 0.08
+MIDI_PORT = "MAGDA Smoke"
+# What arrives on the port after the range ends: the last messages still in flight.
+MIDI_SETTLE_SECONDS = 0.5
 
 
 class SmokeError(Exception):
@@ -241,6 +245,80 @@ def connect(args):
     process.terminate()
     raise SmokeError("MAGDA published no WebSocket within two minutes: switch on "
                      "Settings -> Connections -> WebSocket, then run again")
+
+
+# --- MIDI -------------------------------------------------------------------------------
+
+
+class MidiSink:
+    """The port MAGDA's MIDI sends go to, and every message that arrived on it.
+
+    A virtual port where the OS can make one (macOS, Linux); on Windows, a loopMIDI port of
+    the same name made beforehand.
+    """
+
+    def __init__(self, name):
+        import rtmidi  # noqa: PLC0415 -- only the MIDI projects need it
+        self.messages = []
+        self.port = rtmidi.MidiIn()
+        if platform.system() == "Windows":
+            names = self.port.get_ports()
+            found = next((i for i, n in enumerate(names) if n.startswith(name)), None)
+            if found is None:
+                raise SmokeError("no MIDI port named %s: make one in loopMIDI" % name)
+            self.port.open_port(found)
+        else:
+            self.port.open_virtual_port(name)
+        self.port.set_callback(lambda event, _: self.messages.append(event[0]))
+
+    def clear(self):
+        self.messages = []
+
+    def close(self):
+        self.port.close_port()
+
+
+def open_midi_sink(projects):
+    """The sink, when a project needs one and this machine can make it; else the reason not."""
+    if not any("virtual-midi" in spec.get("requires", {}).get("hardware", [])
+               for _, _, spec in projects):
+        return None, None
+    try:
+        return MidiSink(MIDI_PORT), None
+    except ImportError:
+        return None, "needs python-rtmidi: pip install python-rtmidi"
+    except Exception as error:  # rtmidi raises its own error types per backend
+        return None, "no MIDI port %s: %s" % (MIDI_PORT, error)
+
+
+def check_midi(spec, messages):
+    """The messages a project's `midi` block wants, against what arrived."""
+    wanted = spec.get("midi")
+    if wanted is None:
+        return []
+    failures = []
+    channel_messages = [m for m in messages if m and 0x80 <= m[0] < 0xF0]
+    channels = set(wanted.get("channels", []))
+    strays = sorted({(m[0] & 0x0F) + 1 for m in channel_messages} - channels) if channels else []
+    if strays:
+        failures.append("MIDI arrived on channel(s) %s, wanted only %s" % (
+            ", ".join(map(str, strays)), ", ".join(map(str, sorted(channels)))))
+    for expect in wanted["expect"]:
+        status = 0x90 if expect["kind"] == "note" else 0xB0
+        values = [m[2] for m in channel_messages
+                  if len(m) == 3 and m[0] == status | (expect["channel"] - 1)
+                  and m[1] == expect["number"] and (status != 0x90 or m[2] > 0)]
+        label = "%s %d on channel %d" % ("note" if status == 0x90 else "CC", expect["number"],
+                                         expect["channel"])
+        if len(values) < expect["atLeast"]:
+            failures.append("%s arrived %d time(s), wanted at least %d" % (
+                label, len(values), expect["atLeast"]))
+            continue
+        span = expect.get("spans")
+        if span and (min(values) > span[0] or max(values) < span[1]):
+            failures.append("%s ranged %d..%d, wanted it to cover %d..%d" % (
+                label, min(values), max(values), span[0], span[1]))
+    return failures
 
 
 # --- audio files ------------------------------------------------------------------------
@@ -531,7 +609,7 @@ def check_meters(spec, track_ids, peaks):
     return failures
 
 
-def run_project(magda, name, mgd, spec, out_dir):
+def run_project(magda, name, mgd, spec, out_dir, midi=None):
     result = {"project": name, "status": "pass", "failures": [], "listen": spec.get("listen", "")}
     started = time.monotonic()
     # A copy, so a run never writes into the repository (a freeze render, an autosave),
@@ -564,12 +642,18 @@ def run_project(magda, name, mgd, spec, out_dir):
         time.sleep(0.05)
     # The request is live; the audio thread picks it up on its next callback.
     time.sleep(0.2)
+    if midi is not None:
+        midi.clear()
     try:
         peaks, loads = play_range(magda, spec, list(track_ids.values()))
     finally:
         magda.job(magda.call("engine.masterCapture.stop", {"jobId": capture["id"]}))
         magda.call("transport.stop")
     after = magda.call("engine.health")
+    if midi is not None:
+        time.sleep(MIDI_SETTLE_SECONDS)
+        result["midiMessages"] = len(midi.messages)
+        result["failures"] += check_midi(spec, midi.messages)
 
     result["failures"] += check_meters(spec, track_ids, peaks)
     xruns = (after["xrunCount"] or 0) - (before["xrunCount"] or 0)
@@ -676,7 +760,8 @@ def main():
                         help="use the MAGDA already running and leave it running")
     parser.add_argument("--set", default=str(ROOT / "tests" / "smoke"), dest="smoke_dir")
     parser.add_argument("--hardware", default="",
-                        help="hardware this machine has, comma separated: insert,loopback")
+                        help="hardware this machine has, comma separated: insert,loopback "
+                             "(virtual-midi is found by itself)")
     parser.add_argument("--history-dir", help="default: $MAGDA_SMOKE_HISTORY or ~/.magda-smoke")
     parser.add_argument("--timeout", type=float, default=30.0)
     args = parser.parse_args()
@@ -685,6 +770,8 @@ def main():
     machine = describe_machine()
     root = history_root(args, machine)
 
+    # Before MAGDA starts, so the port is there when a project names it.
+    midi, midi_missing = open_midi_sink(projects)
     magda = connect(args)
     quit_app = magda.process is not None
     results = []
@@ -699,19 +786,26 @@ def main():
             raise SmokeError("MAGDA is running %s: switch it to the magda engine in "
                              "Settings -> Audio, or run without --attach" % engine)
         hardware = {h for h in args.hardware.split(",") if h}
+        if midi is not None:
+            hardware.add("virtual-midi")
         for name, mgd, spec in projects:
             reason = unmet_requirement(magda, spec, hardware)
+            if reason and "virtual-midi" in reason and midi_missing:
+                reason = midi_missing
             if reason:
                 results.append({"project": name, "status": "skip", "reason": reason})
                 continue
             print("%s ..." % name, flush=True)
             try:
-                results.append(run_project(magda, name, mgd, spec, out_dir))
+                results.append(run_project(magda, name, mgd, spec, out_dir,
+                                           midi if "midi" in spec else None))
             except (SmokeError, OSError, TimeoutError) as error:
                 results.append({"project": name, "status": "fail",
                                 "failures": ["%s: %s" % (type(error).__name__, error)]})
     finally:
         magda.close(quit_app)
+        if midi is not None:
+            midi.close()
 
     earlier = previous_run(root)
     commit, dirty = git_state()

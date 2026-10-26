@@ -3818,6 +3818,24 @@ OperationRegistry::OperationRegistry() {
         okResult);
     operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
         "devicePath", devicePathSchema());
+    add("devices.setInsert", "Route an External Insert and set its MIDI CC knobs",
+        OperationAccess::Write, &handlers::devicesSetInsert, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "devicePath":{},
+                "sendDevice":{"type":"string"},
+                "returnDevice":{"type":"string"},
+                "midiChannel":{"type":"integer","minimum":1,"maximum":16},
+                "ccDevice":{"type":"string"},
+                "manualAdjustMs":{"type":"number"},
+                "ccKnobs":{"type":"array","maxItems":32,
+                           "items":{"type":"integer","minimum":0,"maximum":127}}
+            },
+            "required":["devicePath"],"additionalProperties":false
+        })json"),
+        okResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
     add("devices.move", "Move a device within its chain", OperationAccess::Write,
         &handlers::devicesMove, operationInputSchema(R"json({
             "type":"object",
@@ -4672,6 +4690,7 @@ OperationRegistry::OperationRegistry() {
         {"devices.remove", Scope::Edit},
         {"devices.move", Scope::Edit},
         {"devices.setBypassed", Scope::Edit},
+        {"devices.setInsert", Scope::Edit},
         {"devices.setParameter", Scope::Edit},
         {"devices.setParameterConfig", Scope::Edit},
         {"mods.create", Scope::Edit},

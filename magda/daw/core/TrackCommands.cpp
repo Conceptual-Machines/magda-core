@@ -1578,6 +1578,51 @@ void SetSidechainConfigCommand::undo() {
     executed_ = false;
 }
 
+EditInsertCommand::EditInsertCommand(ChainNodePath devicePath, juce::String description,
+                                     std::function<void(DeviceInfo&)> edit)
+    : devicePath_(std::move(devicePath)),
+      description_(std::move(description)),
+      edit_(std::move(edit)) {}
+
+void EditInsertCommand::execute() {
+    const auto* live = TrackManager::getInstance().getDeviceInChainByPath(devicePath_);
+    if (live == nullptr) {
+        executed_ = false;
+        return;
+    }
+    // Edited once, so a redo lands the same parameter indices the first run handed out.
+    if (!captured_) {
+        previousState_ = *live;
+        editedState_ = *live;
+        edit_(editedState_);
+        captured_ = true;
+    }
+    apply(editedState_);
+    executed_ = true;
+}
+
+void EditInsertCommand::undo() {
+    if (!executed_)
+        return;
+    apply(previousState_);
+    executed_ = false;
+}
+
+void EditInsertCommand::apply(const DeviceInfo& state) {
+    auto& tracks = TrackManager::getInstance();
+    auto* live = tracks.getDeviceInChainByPath(devicePath_);
+    if (live == nullptr)
+        return;
+    // A knob turned since keeps where it was turned to; only what the edit changed goes back.
+    auto restored = state;
+    for (auto& param : restored.parameters)
+        if (const auto* current = live->findParameterByIndex(param.paramIndex))
+            param.currentValue = current->currentValue;
+    live->parameters = std::move(restored.parameters);
+    live->insert = state.insert;
+    tracks.notifyDevicePropertyChanged(devicePath_);
+}
+
 ApplyDevicePresetCommand::ApplyDevicePresetCommand(ChainNodePath devicePath, DeviceInfo presetState,
                                                    std::vector<std::pair<int, int>> parameterRemaps)
     : devicePath_(std::move(devicePath)),

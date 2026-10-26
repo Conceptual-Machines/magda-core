@@ -60,6 +60,9 @@ class EngineInsertCapture::Capturing final : public engine::EngineInsert {
     void releaseNotes(const engine::BlockInfo& block) override {
         session_.releaseNotes(block);
     }
+    void sendControls(const engine::BlockInfo& block, const engine::DeviceParams& params) override {
+        session_.sendControls(block, params);
+    }
 
     const engine::InsertCaptureSession& session() const {
         return session_;

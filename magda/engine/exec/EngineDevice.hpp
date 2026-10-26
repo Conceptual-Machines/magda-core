@@ -361,6 +361,10 @@ class EngineInsert {
      * the port feeding the send, or the chain falling silent. Audio thread.
      */
     virtual void releaseNotes(const BlockInfo&) {}
+
+    /// The insert's own parameters this block, the CC knobs that go out beside the send (#3164).
+    /// Audio thread; not asked while the chain is silent.
+    virtual void sendControls(const BlockInfo&, const DeviceParams&) {}
 };
 
 }  // namespace magda::engine
