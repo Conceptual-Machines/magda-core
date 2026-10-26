@@ -115,8 +115,9 @@ void DeviceInspector::paint(juce::Graphics& g) {
     }
 
     if (!aboutLabelBounds_.isEmpty()) {
+        // Same face and colour as the clip and track inspectors' section headings.
         g.setFont(kickerFont());
-        g.setColour(dim);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
         g.drawText("ABOUT", aboutLabelBounds_, juce::Justification::centredLeft, false);
     }
 }
