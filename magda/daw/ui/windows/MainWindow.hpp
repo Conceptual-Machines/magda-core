@@ -194,6 +194,8 @@ class MainWindow::MainComponent : public juce::Component,
         return commandManager;
     }
 
+    void applyTooltipsFromConfig();
+
     // Make these public so MainWindow can access them
     bool leftPanelVisible = true;
     bool rightPanelVisible = true;

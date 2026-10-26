@@ -9,6 +9,7 @@
 
 #include "../components/common/SvgButton.hpp"
 #include "../utils/ComponentManager.hpp"
+#include "InfoLine.hpp"
 #include "core/ViewModeController.hpp"
 #include "core/ViewModeState.hpp"
 #include "core/controllers/BindingRegistry.hpp"
@@ -20,7 +21,8 @@ namespace magda {
  * @brief Footer bar with view mode buttons
  *
  * Displays three icon buttons (Live/Arrange/Mix) to switch between
- * different view modes. The active mode is highlighted.
+ * different view modes. The active mode is highlighted. The info line sits on
+ * the left; controller badges and local-model pills on the right.
  */
 class FooterBar : public juce::Component,
                   public ViewModeListener,
@@ -29,7 +31,7 @@ class FooterBar : public juce::Component,
                   private juce::Timer,
                   private juce::ChangeListener {
   public:
-    FooterBar();
+    explicit FooterBar(juce::ApplicationCommandManager* commands = nullptr);
     ~FooterBar() override;
 
     void paint(juce::Graphics& g) override;
@@ -82,7 +84,9 @@ class FooterBar : public juce::Component,
     bool refreshLocalModelStatus();
     void setupLocalModelButtons();
 
-    // ----- Enabled-controllers strip on the left -----
+    InfoLine infoLine_;
+
+    // ----- Enabled-controllers strip, left of the local models -----
     struct ControllerBadge {
         juce::String label;
         bool connected = false;  // live MIDI port currently available

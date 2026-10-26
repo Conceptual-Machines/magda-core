@@ -224,6 +224,7 @@ juce::var Config::toVar() const {
     root->setProperty("confirmTrackDelete", confirmTrackDelete);
     root->setProperty("duplicateLoopGrows", duplicateLoopGrows);
     root->setProperty("showTooltips", showTooltips);
+    root->setProperty("showInfoLine", showInfoLine);
     root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     root->setProperty("renderAheadEnabled", renderAheadEnabled);
     root->setProperty("renderAheadMs", renderAheadMs);
@@ -680,6 +681,7 @@ void Config::fromVar(const juce::var& parsed) {
     confirmTrackDelete = getBool("confirmTrackDelete", confirmTrackDelete);
     duplicateLoopGrows = getBool("duplicateLoopGrows", duplicateLoopGrows);
     showTooltips = getBool("showTooltips", showTooltips);
+    showInfoLine = getBool("showInfoLine", showInfoLine);
     autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
     renderAheadEnabled = getBool("renderAheadEnabled", renderAheadEnabled);
     setRenderAheadMs(getInt("renderAheadMs", renderAheadMs));

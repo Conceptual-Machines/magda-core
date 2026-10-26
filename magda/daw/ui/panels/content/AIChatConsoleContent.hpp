@@ -24,7 +24,6 @@
 #include "../../../core/ViewModeController.hpp"
 #include "../../../project/ProjectManager.hpp"
 #include "../../code/ChatPromptTokeniser.hpp"
-#include "../../components/common/PillSegments.hpp"
 #include "ConsoleTranscript.hpp"
 #include "PanelContent.hpp"
 #include "SlashCommands.hpp"
@@ -107,13 +106,11 @@ class AIChatConsoleContent : public PanelContent,
     void chainNodeSelectionChanged(const magda::ChainNodePath& path) override;
 
   private:
-    enum class MidiOutputMode { NewClip, ReviseLast };
-
     // Background thread for AI requests
     class RequestThread : public juce::Thread {
       public:
         RequestThread(AIChatConsoleContent& owner, juce::String message, juce::String midiContext,
-                      juce::String drummerContext, magda::ClipId reviseTargetClipId);
+                      juce::String drummerContext);
         void run() override;
 
       private:
@@ -121,7 +118,6 @@ class AIChatConsoleContent : public PanelContent,
         juce::String message_;
         juce::String midiContext_;
         juce::String drummerContext_;
-        magda::ClipId reviseTargetClipId_ = magda::INVALID_CLIP_ID;
     };
 
     void sendMessage(const juce::String& text);
@@ -140,11 +136,8 @@ class AIChatConsoleContent : public PanelContent,
     void pruneMidiContextSelection();
     juce::String getMidiContextSummary() const;
     bool isMidiContextClipSelected(magda::ClipId clipId) const;
-    void updateOutputModeButton();
     void paintKeyHints(juce::Graphics& g) const;
     void updateSendState();
-    bool isLastGeneratedMidiClipValid() const;
-    void rememberGeneratedMidiClip(magda::ClipId clipId);
 
     // Timer callback for "Thinking..." animation
     void timerCallback() override;
@@ -183,11 +176,9 @@ class AIChatConsoleContent : public PanelContent,
     // RequestThread::run and the drum context icon below the chat.
     bool drummerModeActive_ = false;
     juce::Label contextLabel_;
-    PillSegments outputMode_;
     juce::DrawableButton sendButton_{"send", juce::DrawableButton::ImageFitted};
     juce::DrawableButton clearButton_{"clear", juce::DrawableButton::ImageFitted};
     juce::DrawableButton copyButton_{"copy", juce::DrawableButton::ImageFitted};
-    juce::Rectangle<int> bottomBarBounds_;
     // Painted chrome placed by resized().
     juce::Rectangle<int> headerBounds_;
     juce::Rectangle<int> modelChipBounds_;
@@ -200,8 +191,6 @@ class AIChatConsoleContent : public PanelContent,
     juce::Rectangle<int> contextIconBounds_;
     juce::String contextText_;
     bool contextEnabled_ = true;
-    MidiOutputMode midiOutputMode_ = MidiOutputMode::NewClip;
-    magda::ClipId lastGeneratedMidiClipId_ = magda::INVALID_CLIP_ID;
     // Explicit clip context chosen from the footer picker. This is deliberately
     // independent of the editor selection so users can move around the project
     // without silently changing what the next request will see.
