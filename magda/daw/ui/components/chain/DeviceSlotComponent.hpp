@@ -82,6 +82,11 @@ class DeviceSlotComponent : public NodeComponent,
     // Override to update param slots when path is set
     void setNodePath(const magda::ChainNodePath& path) override;
 
+    /// Whether the slot sits at the shorter height of a rack or the drum grid (#3165).
+    void setCompactParamRows(bool compact) {
+        paramGrid_->setCompactRows(compact);
+    }
+
     // Update device data
     void updateFromDevice(const magda::DeviceInfo& device);
 

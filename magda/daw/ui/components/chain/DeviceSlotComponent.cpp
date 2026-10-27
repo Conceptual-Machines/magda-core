@@ -59,6 +59,7 @@
 #include "slot/DeviceSlotSidechainControls.hpp"
 #include "slot/DeviceSlotTraits.hpp"
 #include "slot/SequencerDeviceControls.hpp"
+#include "ui/components/common/MidiActivityLed.hpp"
 #include "ui/components/mixer/LevelMeterScale.hpp"
 #include "ui/state/ExpandedFaceplate.hpp"
 #include "ui/themes/ActiveTheme.hpp"
@@ -1218,8 +1219,11 @@ void DeviceSlotComponent::timerCallback() {
     if (!engine)
         return;
 
-    // The header LED holds for a few frames after the track's MIDI activity moves.
-    if (midiLed_.update(engine->meters().midiActivity.getActivityCounter(nodePath_.trackId)))
+    // The header LED holds for a few frames after the track's MIDI activity moves, when the
+    // track monitors its input (#3175).
+    const auto* track = magda::TrackManager::getInstance().getTrack(nodePath_.trackId);
+    if (midiLed_.update(engine->meters().midiActivity.getActivityCounter(nodePath_.trackId),
+                        track != nullptr && showsLiveMidiActivity(*track, engine->isPlaying())))
         repaint(midiLedArea_.expanded(4));
 
     // A faceplate bound to anything but the device rendering now rebinds here:
