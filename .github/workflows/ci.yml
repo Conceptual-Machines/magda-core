@@ -670,11 +670,13 @@ jobs:
         lfs: true
 
     # Over HTTPS: tracktion_engine names its JUCE submodule by an SSH URL, and a
-    # GitHub-hosted fallback runner has no SSH key.
+    # GitHub-hosted fallback runner has no SSH key. --force, as actions/checkout does: the
+    # self-hosted workspace persists, and a build on another branch can leave a submodule
+    # edited (main's configure-time JUCE patch), which blocks the checkout.
     - name: Init submodules
       run: |
         git config --global url."https://github.com/".insteadOf "git@github.com:"
-        git submodule update --init --recursive
+        git submodule update --init --recursive --force
 
     # Faust/Mutable prebuilt artifacts (#1669), self-hosted variant. This
     # runner's workspace persistence isn't reliable to depend on for these
