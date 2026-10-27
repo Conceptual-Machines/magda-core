@@ -1005,7 +1005,9 @@ jobs:
         Remove-Item -Recurse -Force (Join-Path $env:RUNNER_TEMP "magda-installer-stage") -ErrorAction SilentlyContinue
 
   build-linux:
-    runs-on: ubuntu-latest
+    # Pinned: the AppImage needs the build host's glibc, and ubuntu-latest moving to
+    # 26.04 (glibc 2.43) broke it on Debian 13 (#3181).
+    runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v7
       with:
@@ -1246,6 +1248,19 @@ jobs:
         chmod +x "MAGDA-${VERSION}-Linux-x86_64.AppImage"
         echo "AppImage created:"
         ls -lh "MAGDA-${VERSION}-Linux-x86_64.AppImage"
+
+    - name: Check glibc ceiling
+      run: |
+        # 2.39 is Ubuntu 24.04's glibc; Debian 13 ships 2.41 (#3181).
+        MAX_GLIBC=GLIBC_2.39
+        # objdump fails on the AppDir's non-ELF files; only its output matters.
+        NEEDED=$( { find MAGDA.AppDir -type f -exec objdump -T {} + 2>/dev/null || true; } \
+          | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)
+        echo "Highest glibc symbol needed: $NEEDED"
+        if [ "$(printf '%s\n' "$MAX_GLIBC" "$NEEDED" | sort -V | tail -1)" != "$MAX_GLIBC" ]; then
+          echo "::error::The AppImage needs $NEEDED, above $MAX_GLIBC, so it will not run on Debian 13"
+          exit 1
+        fi
 
     - name: Generate checksum
       env:
