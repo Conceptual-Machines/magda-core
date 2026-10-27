@@ -41,6 +41,15 @@ smoo = msm.polySmooth(gate, ba.tau2pole(0.01));
 bendRange = hslider("Bend Range [unit:st] [idx:30]", 2, 0, 24, 1);
 bendSemis = (bend * bendRange) : smoo;
 
+// Per-note MPE inputs (#1569), driven per voice from the note's own channel: bend in
+// semitones at the wire's fixed range, timbre (CC74, resting at 64) and pressure. At rest
+// they change nothing. Timbre moves the cutoffs +/- 3 octaves; pressure lifts the level
+// up to 6 dB, before the voice's soft-clip.
+timbreRest = 64.0 / 127.0;
+noteBend = hslider("mpe_bend", 0, -48, 48, 0.001) : smoo;
+timbreOct = (hslider("timbre", 0.5039, 0, 1, 0.0001) - timbreRest) * 6.0 : smoo;
+pressureGain = 1.0 + hslider("pressure", 0, 0, 1, 0.0001) : smoo;
+
 // Portamento: glide the base pitch toward the played note over `glide` seconds.
 // 0 = instant. The wrapper forces this zone to 0 on the poly voices, so only the
 // Mono/Legato voice glides; poly patches are unaffected.
@@ -94,7 +103,7 @@ oscBank(skip, wave, level, coarse, fine, rstOn, en, cents, ph) =
     skipping(skip, oscShape(wave, f, ph, (rstOn > 0) * gateRise), gain > 0.0) * gain
 with {
     gain = ((level > -60.0) * ba.db2linear(level) : smoo) * (en : smoo);
-    f = freqG * pow(2.0, (coarse + (fine + cents) / 100.0 + bendSemis) / 12.0);
+    f = freqG * pow(2.0, (coarse + (fine + cents) / 100.0 + bendSemis + noteBend) / 12.0);
 };
 
 // Oscillator 1 (idx 0..3)
@@ -229,7 +238,7 @@ with {
     pole = select2(ugate, rate(rel), select2(attPhase, rate(dec), rate(att)));
 };
 filterEnv = adsre(fAtt, fDec, fSus, fRel, gate);
-fcOf(cut, envAmt) = (cut * pow(2.0, envAmt * filterEnv + velFilt * gain)) : max(20.0) : min(20000.0) : smoo;
+fcOf(cut, envAmt) = (cut * pow(2.0, envAmt * filterEnv + velFilt * gain + timbreOct)) : max(20.0) : min(20000.0) : smoo;
 
 // A single stage is fi.svf exactly (k = 1/Q, unscaled band-pass).
 svfPoles(type, poles, fc, q) = mf.svfPoles(m, poles, tan(fc * ma.PI / ma.SR), 1.0 / q)
@@ -262,7 +271,7 @@ with {
     y1 = filter1(x);
 };
 
-voice(x) = ((x : filters) * ampEnv * ampVel : ma.tanh) * outGain;
+voice(x) = ((x : filters) * ampEnv * ampVel * pressureGain : ma.tanh) * outGain;
 
 // The right channel gets its own filters only once unison can pan.
 stereo = uCount > 1;

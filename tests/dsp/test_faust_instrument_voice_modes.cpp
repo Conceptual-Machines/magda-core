@@ -7,6 +7,7 @@
 #include "DeviceTestBlock.hpp"
 #include "TestDeviceMidiBuffer.hpp"
 #include "core/DeviceState.hpp"
+#include "core/MpeWire.hpp"
 #include "core/ParameterUtils.hpp"
 #include "magda/daw/audio/plugins/DeviceStateHydration.hpp"
 #include "magda/daw/audio/plugins/FaustInstrumentPlugin.hpp"
@@ -41,6 +42,18 @@ constexpr const char* kSampleRateDsp = R"FAUST(
 gate = button("gate");
 SR = fconstant(int fSamplingFreq, <math.h>);
 process = (SR / 96000.0) * gate <: _, _;
+)FAUST";
+
+// Reports a voice's own timbre and pressure controls, which opt the patch into MPE (#1569).
+constexpr const char* kExpressionDsp = R"FAUST(
+// stdfaust.lib
+freq = hslider("freq", 440, 20, 20000, 1);
+gate = button("gate");
+timbre = hslider("timbre", 0.5, 0, 1, 0.001);
+pressure = hslider("pressure", 0, 0, 1, 0.001);
+
+voice = (timbre * 0.5 + pressure * 0.25) * gate;
+process = voice <: _, _;
 )FAUST";
 
 constexpr int kBlockSize = 64;
@@ -113,6 +126,21 @@ magda::test::DeviceMidiBuffer pitchWheel(float normalised) {
                           ? 8192 + static_cast<int>(std::lround(normalised * 8192.0f))
                           : 8192 + static_cast<int>(std::lround(normalised * 8191.0f));
     return midiOf(juce::MidiMessage::pitchWheel(1, value));
+}
+
+magda::test::DeviceMidiBuffer midiOf(std::initializer_list<juce::MidiMessage> messages) {
+    magda::test::DeviceMidiBuffer midi;
+    for (const auto& m : messages)
+        midi.events.push_back({m.withTimeStamp(0.0), 0});
+    return midi;
+}
+
+juce::MidiMessage noteOnAt(int channel, int note) {
+    return juce::MidiMessage::noteOn(channel, note, static_cast<juce::uint8>(127));
+}
+
+juce::MidiMessage noteBend(int channel, double semitones) {
+    return juce::MidiMessage::pitchWheel(channel, magda::mpe::wheelForSemitones(semitones));
 }
 
 }  // namespace
@@ -339,4 +367,63 @@ TEST_CASE("Voice Mode, Glide and Bend Range under their released names fill the 
 
     // Hydrating again adds nothing: the entries are the model's now.
     CHECK_FALSE(magda::daw::audio::device_state_hydration::hydrateParametersFromDeviceState(model));
+}
+
+TEST_CASE("A member channel's bend moves only its own note, at the wire's range",
+          "[faust][mpe][1569]") {
+    auto instrument = makeInstrument(kVoiceModeDsp);
+    instrument->setParameterValue(kVoiceMode, kPoly);
+    instrument->setParameterValue(kBendRange, 2.0f / kMaxBend);
+    instrument->reset();
+
+    renderBlock(*instrument, 3.0, midiOf({noteOnAt(2, 69), noteOnAt(3, 60)}));
+    const float bent = renderBlock(*instrument, 3.1, midiOf({noteBend(2, 12.0)}));
+    CHECK(std::abs(bent - (expectedLevelForBentNote(69, 12.0f) + expectedLevelForNote(60))) <=
+          0.004f);
+
+    // A note struck on a bent channel starts bent.
+    const float preBent =
+        renderBlock(*instrument, 3.2, midiOf({noteBend(4, -12.0), noteOnAt(4, 72)}));
+    CHECK(std::abs(preBent - (expectedLevelForBentNote(69, 12.0f) + expectedLevelForNote(60) +
+                              expectedLevelForBentNote(72, -12.0f))) <= 0.006f);
+}
+
+TEST_CASE("Mono follows its note's channel bend", "[faust][mpe][1569]") {
+    auto instrument = makeInstrument(kVoiceModeDsp);
+    instrument->setParameterValue(kVoiceMode, kMono);
+    instrument->setParameterValue(kGlide, 0.0f);
+    instrument->reset();
+
+    renderBlock(*instrument, 4.0, midiOf({noteOnAt(2, 69)}));
+    const float bent = renderBlock(*instrument, 4.1, midiOf({noteBend(2, 7.0)}));
+    CHECK(std::abs(bent - expectedLevelForBentNote(69, 7.0f)) <= 0.002f);
+
+    const float otherChannel = renderBlock(*instrument, 4.2, midiOf({noteBend(3, -7.0)}));
+    CHECK(std::abs(otherChannel - expectedLevelForBentNote(69, 7.0f)) <= 0.002f);
+}
+
+TEST_CASE("A patch's timbre and pressure controls follow each note's channel",
+          "[faust][mpe][1569]") {
+    auto instrument = makeInstrument(kExpressionDsp);
+    instrument->setParameterValue(kVoiceMode, kPoly);
+    instrument->reset();
+
+    // Neither control lands in the pool: they are driven per voice.
+    CHECK(instrument->getPool().activeCount() == 0);
+
+    const auto timbre = [](int channel, int value) {
+        return juce::MidiMessage::controllerEvent(channel, magda::mpe::kTimbreController, value);
+    };
+    const auto pressure = [](int channel, int value) {
+        return juce::MidiMessage::channelPressureChange(channel, value);
+    };
+
+    const float bright = renderBlock(*instrument, 5.0, midiOf({timbre(2, 127), noteOnAt(2, 60)}));
+    CHECK(std::abs(bright - 0.5f) <= 0.002f);
+
+    const float otherChannel = renderBlock(*instrument, 5.1, midiOf({pressure(3, 127)}));
+    CHECK(std::abs(otherChannel - 0.5f) <= 0.002f);
+
+    const float pressed = renderBlock(*instrument, 5.2, midiOf({pressure(2, 127)}));
+    CHECK(std::abs(pressed - 0.75f) <= 0.002f);
 }

@@ -1109,7 +1109,9 @@ void DeviceSlotComponent::reclaimExpandedFaceplate() {
 }
 
 void DeviceSlotComponent::refreshVoiceModeChoice() {
-    const auto* param = isInternalDevice() ? findVoiceModeParameter(device_) : nullptr;
+    const auto* param = isInternalDevice() && !faceplateShowsVoiceMode(device_.pluginId)
+                            ? findVoiceModeParameter(device_)
+                            : nullptr;
     const int index = param != nullptr ? param->paramIndex : -1;
     if (param != nullptr)
         voiceModeChoice_.setSelectedIndex(juce::roundToInt(param->currentValue));

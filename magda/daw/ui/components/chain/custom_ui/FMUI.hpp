@@ -18,10 +18,10 @@ namespace magda::daw::ui {
 /**
  * @brief Custom UI for the compiled FM synth (magda_fm), in the v1 faceplate style.
  *
- * Four panels: OPERATORS (a row per operator, and the filter node's level), the
- * MATRIX (row = source, column = destination, the filter a fifth node), the
- * FILTER, and the amp and filter envelopes as tabs. The operator rows and the
- * matrix rows line up. Every slot keeps a LinkableTextSlider, hidden where a
+ * Four panels: OPERATORS (a row per operator, and the filter node's level) with
+ * VOICE (the performance controls and Voice Mode) as tabs, the MATRIX (row = source, column =
+ * destination, the filter a fifth node), the FILTER, and the amp and filter envelopes as tabs. The
+ * operator rows and the matrix rows line up. Every slot keeps a LinkableTextSlider, hidden where a
  * segmented choice, combo or toggle shows it, so linking reaches all of them.
  */
 class FMUI : public juce::Component {
@@ -70,7 +70,8 @@ class FMUI : public juce::Component {
     static constexpr int kFilterReturnBase = 63;  // 63..66, F > Op n
     static constexpr int kFilterLevelSlot = 67;
     static constexpr int kFilterPositionSlot = 68;
-    static constexpr int kNumParams = 69;
+    static constexpr int kBendRangeSlot = 69;
+    static constexpr int kNumParams = 70;
 
     struct Control {
         std::unique_ptr<juce::Label> label;
@@ -109,6 +110,8 @@ class FMUI : public juce::Component {
     void syncFromParam(int slot, float value);
     void syncGraphFromParam(int slot, float value);
     void refreshOperatorRows();
+    // Show the selected OPERATORS/VOICE tab's controls.
+    void refreshOperatorTab();
     void refreshFilterPanel();
     void refreshEnvelopePanel();
 
@@ -121,10 +124,12 @@ class FMUI : public juce::Component {
     std::unique_ptr<AdsrGraph> ampGraph_;
     std::unique_ptr<AdsrGraph> filterGraph_;
     bool showFilterEnvelope_ = false;
+    bool showVoiceTab_ = false;
 
     FilterState filter_;
     std::unique_ptr<CompiledFilterCurveView> filterCurve_;
-    magda::SegmentedChoice positionChoice_, engineChoice_, typeChoice_, combChoice_, polesChoice_;
+    magda::SegmentedChoice positionChoice_, engineChoice_, typeChoice_, combChoice_, polesChoice_,
+        voiceModeChoice_;
 
     // Painted parts, kept for paint and hit-testing.
     juce::Rectangle<int> opsPanel_, matrixPanel_, filterPanel_, envelopePanel_;
@@ -132,7 +137,8 @@ class FMUI : public juce::Component {
     std::array<juce::Rectangle<int>, kNodes> opRowLabels_, matrixRowLabels_, matrixColLabels_;
     std::array<juce::Rectangle<int>, 4> opColumnCaptions_;
     juce::Rectangle<int> filterRowTile_, filterTab_, filterDot_, sendsCaption_;
-    std::array<juce::Rectangle<int>, 2> envelopeTabs_;
+    std::array<juce::Rectangle<int>, 2> envelopeTabs_, opsTabs_;
+    juce::Rectangle<int> voiceModeTile_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FMUI)
 };

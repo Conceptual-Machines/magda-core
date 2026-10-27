@@ -29,6 +29,7 @@ namespace magda::daw::audio::compiled {
  *   42, 43 Gain, Voice Mode (wrapper)
  *   44..58 filter (#3120)
  *   59..68 filter as a matrix node (#3121): sends, returns, F Level, Position
+ *   69     Bend Range (#1569)
  */
 class MagdaFMCompiledPlugin : public MagdaCompiledPolyInstrument {
   public:
@@ -50,7 +51,8 @@ class MagdaFMCompiledPlugin : public MagdaCompiledPolyInstrument {
     static constexpr int kFilterReturnBaseSlot = 63;  // 63..66, F > Op n
     static constexpr int kFilterLevelSlot = 67;
     static constexpr int kFilterPositionSlot = 68;
-    static constexpr int kHostSlotCount = 69;
+    static constexpr int kBendRangeSlot = 69;
+    static constexpr int kHostSlotCount = 70;
 
     MagdaFMCompiledPlugin();
 

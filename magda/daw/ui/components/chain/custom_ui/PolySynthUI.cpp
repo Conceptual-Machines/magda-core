@@ -166,7 +166,10 @@ PolySynthUI::PolySynthUI() {
     };
     voicesChoice_.setOptions({"1", "2", "4", "8"});
     voicesChoice_.onChange = [this](int index) { setChoiceSlot(kUnisonVoicesSlot, index); };
-    for (auto* choice : {&routingChoice_, &typeChoice_, &polesChoice_, &voicesChoice_})
+    voiceModeChoice_.setOptions({"Poly", "Mono", "Legato"});
+    voiceModeChoice_.onChange = [this](int index) { setChoiceSlot(kVoiceModeSlot, index); };
+    for (auto* choice :
+         {&routingChoice_, &typeChoice_, &polesChoice_, &voicesChoice_, &voiceModeChoice_})
         addAndMakeVisible(*choice);
 
     styleControls();
@@ -269,6 +272,9 @@ void PolySynthUI::refreshOscPanel() {
         c.label->setVisible(showVoiceTab_ && !c.tile.isEmpty());
     }
     voicesChoice_.setVisible(showVoiceTab_);
+    voiceModeChoice_.setVisible(showVoiceTab_);
+    voiceModeChoice_.setSelectedIndex(
+        juce::roundToInt(controls_[kVoiceModeSlot].slider->getValue()));
 
     // Detune and spread act once there is more than one voice.
     const int voices = juce::roundToInt(controls_[kUnisonVoicesSlot].slider->getValue());
@@ -383,7 +389,7 @@ void PolySynthUI::syncChoiceFromParam(int paramIndex, float value) {
         refreshFilterPanel();
         return;
     }
-    if (paramIndex == kUnisonVoicesSlot) {
+    if (paramIndex == kUnisonVoicesSlot || paramIndex == kVoiceModeSlot) {
         refreshOscPanel();
         return;
     }
@@ -503,7 +509,7 @@ void PolySynthUI::layoutOscPanel() {
     oscTabs_[1] = takeTab(header, "VOICE", false);
     a.removeFromTop(kTileGap);
 
-    // VOICE: the unison stack, then the performance controls, three across.
+    // VOICE: the unison stack, the performance controls three across, Voice Mode at the foot.
     const int tileH = juce::jlimit(kMinTileH, kMaxTileH, (a.getHeight() - 3 * kTileGap) / 4);
     auto voice = a;
     auto unison = voice.removeFromTop(tileH);
@@ -520,6 +526,12 @@ void PolySynthUI::layoutOscPanel() {
               unison.withX(unison.getX() + 2 * (tileW + kTileGap)).withWidth(tileW));
     placeTiles(voice.removeFromTop(2 * tileH + kTileGap),
                {kGlideSlot, kBendRangeSlot, kOutputGainSlot, kVelAmpSlot, kVelFilterSlot}, 3);
+    voiceModeTile_ = voice.removeFromBottom(tileH);
+    auto voiceModeInner = voiceModeTile_.reduced(9, 5);
+    voiceModeInner.removeFromTop(kCaptionH);
+    voiceModeChoice_.setBounds(voiceModeInner.withSizeKeepingCentre(
+        juce::jmin(voiceModeInner.getWidth(), voiceModeChoice_.getPreferredWidth()),
+        juce::jmin(voiceModeInner.getHeight(), 20)));
 
     // OSC: a row per oscillator, Wave | Level | Coarse | Fine | Reset, as the mock's columns.
     static constexpr float kColumns[] = {0.28f, 0.22f, 0.16f, 0.17f};
@@ -688,6 +700,10 @@ void PolySynthUI::paint(juce::Graphics& g) {
         g.setFont(captionFont());
         g.setColour(colour(ActiveTheme::DEVICE_DIM));
         g.drawText("Voices", voicesTile_.reduced(9, 5).removeFromTop(kCaptionH),
+                   juce::Justification::centredLeft, true);
+        field(voiceModeTile_, 1.0f);
+        g.setColour(colour(ActiveTheme::DEVICE_DIM));
+        g.drawText("Voice Mode", voiceModeTile_.reduced(9, 5).removeFromTop(kCaptionH),
                    juce::Justification::centredLeft, true);
     }
 

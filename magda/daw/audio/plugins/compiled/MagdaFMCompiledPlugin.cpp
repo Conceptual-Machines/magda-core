@@ -202,6 +202,12 @@ std::vector<MagdaFMCompiledPlugin::HostSlotInfo> MagdaFMCompiledPlugin::slotInfo
                                .maxValue = 6.0f,
                                .defaultValue = 0.0f};
     infos[kFilterPositionSlot] = choice("Filter Position", 0.0f, {"Output", "Matrix"});
+    infos[kBendRangeSlot] = {.name = "Bend Range",
+                             .unit = magda::technicalText(magda::TechnicalTextToken::Semitones),
+                             .scale = ParameterScale::Linear,
+                             .minValue = 0.0f,
+                             .maxValue = 24.0f,
+                             .defaultValue = 2.0f};
     return infos;
 }
 

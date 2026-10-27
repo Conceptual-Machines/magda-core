@@ -83,6 +83,8 @@ set(TEST_SOURCES
     devices/test_polysynth_filters.cpp
     devices/test_polysynth_unison.cpp
     devices/test_fm_filter.cpp
+    # Per-voice MPE on the compiled synths (#1569)
+    devices/test_mpe_per_voice.cpp
     # An idle instrument skips its render, exactly (#2786)
     devices/test_instrument_idle.cpp
     devices/test_device_sdk_handles.cpp

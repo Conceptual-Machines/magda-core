@@ -48,7 +48,7 @@ constexpr float kGlideDoneRatio = 1.0006f;  // ~1 cent
 // user-editable pool parameters.
 bool isReservedVoiceControl(const juce::String& cleanLabel) {
     const auto l = cleanLabel.trim().toLowerCase();
-    return l == "freq" || l == "gain" || l == "gate";
+    return l == "freq" || l == "gain" || l == "gate" || l == "timbre" || l == "pressure";
 }
 
 // Default polyphonic synth used when a fresh instrument is created without a
@@ -294,6 +294,13 @@ std::shared_ptr<FaustInstrumentPlugin::FaustState> FaustInstrumentPlugin::compil
     {
         auto* impl = static_cast<mydsp_poly*>(state->poly.get());
         state->voiceFreqZones.reserve(impl->fVoiceTable.size());
+        const auto zonesNamed = [](dsp_voice* voice, const std::string& name) {
+            std::vector<FAUSTFLOAT*> zones;
+            for (const auto& [path, zone] : voice->getFullpathMap())
+                if (path.size() > name.size() && path.ends_with("/" + name))
+                    zones.push_back(zone);
+            return zones;
+        };
         for (auto* voice : impl->fVoiceTable) {
             std::vector<FAUSTFLOAT*> zones;
             if (voice != nullptr) {
@@ -303,6 +310,10 @@ std::shared_ptr<FaustInstrumentPlugin::FaustState> FaustInstrumentPlugin::compil
                 }
             }
             state->voiceFreqZones.push_back(std::move(zones));
+            state->voiceTimbreZones.push_back(voice ? zonesNamed(voice, "timbre")
+                                                    : std::vector<FAUSTFLOAT*>{});
+            state->voicePressureZones.push_back(voice ? zonesNamed(voice, "pressure")
+                                                      : std::vector<FAUSTFLOAT*>{});
         }
     }
 
@@ -417,6 +428,8 @@ std::shared_ptr<FaustInstrumentPlugin::FaustState> FaustInstrumentPlugin::compil
         state->monoFreqZone = findMono("freq");
         state->monoGainZone = findMono("gain");
         state->monoGateZone = findMono("gate");
+        state->monoTimbreZone = findMono("timbre");
+        state->monoPressureZone = findMono("pressure");
 
         // Slot zones are matched by label, the same key the poly path groups
         // its per-voice occurrences under, so the two stay in step by
@@ -468,6 +481,7 @@ void FaustInstrumentPlugin::resetAllVoices(const std::shared_ptr<FaustState>& st
     // note played afterwards with nothing on screen to explain it.
     bendNormalised_ = 0.0f;
     lastPolyBendRatio_ = 1.0f;
+    mpeChannels_.reset();
 }
 
 float FaustInstrumentPlugin::readBendRatio() const {
@@ -481,23 +495,82 @@ void FaustInstrumentPlugin::applyBendToPolyVoices(const std::shared_ptr<FaustSta
                                                   float ratio) {
     if (!state || !state->poly)
         return;
+    for (size_t i = 0; i < state->voiceFreqZones.size(); ++i)
+        bendPolyVoice(state, i, ratio);
+}
+
+void FaustInstrumentPlugin::bendPolyVoice(const std::shared_ptr<FaustState>& state, size_t voice,
+                                          float ratio) {
     auto* impl = static_cast<mydsp_poly*>(state->poly.get());
-    const size_t count =
-        std::min(state->voiceFreqZones.size(), static_cast<size_t>(impl->fVoiceTable.size()));
-    for (size_t i = 0; i < count; ++i) {
-        auto* voice = impl->fVoiceTable[i];
-        if (voice == nullptr)
-            continue;
-        // fCurNote is a real pitch only while the voice is sounding; the free
-        // and legato states are negative sentinels. In legato the voice is
-        // already committed to fNextNote, so bend that instead.
-        const int note = voice->fCurNote >= 0 ? voice->fCurNote : voice->fNextNote;
-        if (note < 0)
-            continue;
-        const auto hz = static_cast<FAUSTFLOAT>(midiNoteToHz(note) * ratio);
-        for (auto* zone : state->voiceFreqZones[i])
-            *zone = hz;
+    if (voice >= std::min(state->voiceFreqZones.size(), impl->fVoiceTable.size()) ||
+        voice >= voiceChannel_.size() || impl->fVoiceTable[voice] == nullptr)
+        return;
+    const auto* v = impl->fVoiceTable[voice];
+    // fCurNote is a real pitch only while the voice is sounding; the free
+    // and legato states are negative sentinels. In legato the voice is
+    // already committed to fNextNote, so bend that instead.
+    const int note = v->fCurNote >= 0 ? v->fCurNote : v->fNextNote;
+    if (note < 0)
+        return;
+    const float semitones = mpeChannels_[voiceChannel_[voice]].semitones;
+    const float noteRatio = semitones == 0.0f ? 1.0f : std::pow(2.0f, semitones / 12.0f);
+    const auto hz = static_cast<FAUSTFLOAT>(midiNoteToHz(note) * ratio * noteRatio);
+    for (auto* zone : state->voiceFreqZones[voice])
+        *zone = hz;
+}
+
+void FaustInstrumentPlugin::strikePolyVoice(const std::shared_ptr<FaustState>& state, int channel,
+                                            int pitch, int velocity) {
+    auto* impl = static_cast<mydsp_poly*>(state->poly.get());
+    auto* struck = impl->keyOn(channel, pitch, velocity);
+    for (size_t i = 0; i < std::min(voiceChannel_.size(), impl->fVoiceTable.size()); ++i)
+        if (static_cast<MapUI*>(impl->fVoiceTable[i]) == struck) {
+            voiceChannel_[i] = channel;
+            const auto& dims = mpeChannels_[channel];
+            for (auto* zone : state->voiceTimbreZones[i])
+                *zone = dims.timbre;
+            for (auto* zone : state->voicePressureZones[i])
+                *zone = dims.pressure;
+            // keyOn writes an unbent freq, so a note started while the wheel is
+            // held, or on a bent channel, would otherwise sound at concert pitch.
+            bendPolyVoice(state, i, lastPolyBendRatio_);
+            break;
+        }
+}
+
+void FaustInstrumentPlugin::followMpeChannel(const std::shared_ptr<FaustState>& state,
+                                             int channel) {
+    if (state->poly) {
+        auto* impl = static_cast<mydsp_poly*>(state->poly.get());
+        const auto& dims = mpeChannels_[channel];
+        const auto voices = std::min(voiceChannel_.size(), impl->fVoiceTable.size());
+        // A releasing voice keeps what it had: its channel may already carry the next note.
+        for (size_t i = 0; i < voices; ++i) {
+            const int note = impl->fVoiceTable[i]->fCurNote;
+            if (voiceChannel_[i] != channel || (note < 0 && note != kLegatoVoice))
+                continue;
+            for (auto* zone : state->voiceTimbreZones[i])
+                *zone = dims.timbre;
+            for (auto* zone : state->voicePressureZones[i])
+                *zone = dims.pressure;
+            bendPolyVoice(state, i, lastPolyBendRatio_);
+        }
     }
+    if (monoChannel_ == channel && !heldNotes_.empty())
+        writeMonoExpression(state);
+}
+
+void FaustInstrumentPlugin::writeMonoExpression(const std::shared_ptr<FaustState>& state) const {
+    const auto& dims = mpeChannels_[monoChannel_];
+    if (state->monoTimbreZone)
+        *state->monoTimbreZone = dims.timbre;
+    if (state->monoPressureZone)
+        *state->monoPressureZone = dims.pressure;
+}
+
+float FaustInstrumentPlugin::monoNoteBendRatio() const {
+    const float semitones = mpeChannels_[monoChannel_].semitones;
+    return semitones == 0.0f ? 1.0f : std::pow(2.0f, semitones / 12.0f);
 }
 
 void FaustInstrumentPlugin::releasePolyVoicesForPitch(const std::shared_ptr<FaustState>& state,
@@ -532,7 +605,7 @@ void FaustInstrumentPlugin::releaseAllVoices(const std::shared_ptr<FaustState>& 
 }
 
 bool FaustInstrumentPlugin::handleMonoNoteOn(const std::shared_ptr<FaustState>& state, int note,
-                                             int velocity, int mode) {
+                                             int velocity, int channel, int mode) {
     const float g = static_cast<float>(velocity) / 127.0f;
     const bool wasEmpty = heldNotes_.empty();
 
@@ -543,7 +616,9 @@ bool FaustInstrumentPlugin::handleMonoNoteOn(const std::shared_ptr<FaustState>& 
             heldNotes_.erase(it);
             break;
         }
-    heldNotes_.push_back({note, g});
+    heldNotes_.push_back({note, g, channel});
+    monoChannel_ = channel;
+    writeMonoExpression(state);
 
     glideTargetHz_ = midiNoteToHz(note);
     // From silence there is nothing to glide from, so land on the note. This is
@@ -579,6 +654,8 @@ void FaustInstrumentPlugin::handleMonoNoteOff(const std::shared_ptr<FaustState>&
             *state->monoGateZone = 0.0f;  // last note up -> envelope release
     } else {
         glideTargetHz_ = midiNoteToHz(heldNotes_.back().note);  // legato return
+        monoChannel_ = heldNotes_.back().channel;
+        writeMonoExpression(state);
     }
 }
 
@@ -877,8 +954,8 @@ void FaustInstrumentPlugin::process(DeviceProcessContext& context) {
                 // is heading. The block is split at each MIDI event, so this
                 // picks up a wheel move at the sample it arrived on.
                 if (glideCurrentHz_ > 0.0f)
-                    *active->monoFreqZone =
-                        static_cast<FAUSTFLOAT>(glideCurrentHz_ * readBendRatio());
+                    *active->monoFreqZone = static_cast<FAUSTFLOAT>(
+                        glideCurrentHz_ * readBendRatio() * monoNoteBendRatio());
             }
 
             for (int ch = 0; ch < dspOut; ++ch)
@@ -914,16 +991,18 @@ void FaustInstrumentPlugin::process(DeviceProcessContext& context) {
             renderSegment(cursor, evSample - cursor);
             cursor = evSample;
 
+            if (const int channel = mpeChannels_.apply(m); channel > 0)
+                followMpeChannel(active, channel);
+            // A member channel's wheel is its note's own bend, which followMpeChannel just took.
+            if (m.isPitchWheel() && mpe::isMemberChannel(m.getChannel()))
+                continue;
+
             if (!monophonic) {
                 if (m.isNoteOn()) {
                     // Release anything still sounding this pitch first, so the
                     // allocator never accumulates orphans that hang.
                     releasePolyVoicesForPitch(active, m.getNoteNumber());
-                    active->poly->keyOn(m.getChannel(), m.getNoteNumber(), m.getVelocity());
-                    // keyOn writes an unbent freq, so a note started while the
-                    // wheel is held would otherwise sound at concert pitch.
-                    if (lastPolyBendRatio_ != 1.0f)
-                        applyBendToPolyVoices(active, lastPolyBendRatio_);
+                    strikePolyVoice(active, m.getChannel(), m.getNoteNumber(), m.getVelocity());
                 } else if (m.isNoteOff()) {
                     releasePolyVoicesForPitch(active, m.getNoteNumber());
                 } else if (m.isPitchWheel()) {
@@ -942,7 +1021,8 @@ void FaustInstrumentPlugin::process(DeviceProcessContext& context) {
                 }
             } else {
                 if (m.isNoteOn()) {
-                    if (handleMonoNoteOn(active, m.getNoteNumber(), m.getVelocity(), mode)) {
+                    if (handleMonoNoteOn(active, m.getNoteNumber(), m.getVelocity(), m.getChannel(),
+                                         mode)) {
                         // One sample of gate-low renders the falling edge;
                         // raising it again gives the rising edge that
                         // retriggers the envelope.

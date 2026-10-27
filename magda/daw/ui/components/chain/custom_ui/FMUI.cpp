@@ -76,6 +76,7 @@ FMUI::FMUI() {
         captions[static_cast<size_t>(base + 3)] = "Release";
     }
     captions[kGlideSlot] = "Glide";
+    captions[kBendRangeSlot] = "Bend";
     captions[kVelAmtSlot] = "Vel>Amp";
     captions[kGainSlot] = "Gain";
     captions[kFilterCutoffSlot] = "Cutoff";
@@ -148,8 +149,10 @@ FMUI::FMUI() {
     combChoice_.onChange = [this](int index) { setChoiceSlot(kFilterCombModeSlot, index); };
     polesChoice_.setOptions({"2", "4", "6"});
     polesChoice_.onChange = [this](int index) { setChoiceSlot(kFilterPolesSlot, index); };
-    for (auto* choice :
-         {&positionChoice_, &engineChoice_, &typeChoice_, &combChoice_, &polesChoice_})
+    voiceModeChoice_.setOptions({"Poly", "Mono", "Legato"});
+    voiceModeChoice_.onChange = [this](int index) { setChoiceSlot(kVoiceModeSlot, index); };
+    for (auto* choice : {&positionChoice_, &engineChoice_, &typeChoice_, &combChoice_,
+                         &polesChoice_, &voiceModeChoice_})
         addAndMakeVisible(*choice);
 
     styleControls();
@@ -217,6 +220,8 @@ void FMUI::syncFromParam(int slot, float value) {
     }
     if (slot >= kFilterSendBase && slot < kFilterSendBase + kNumOps)
         return repaint();  // the FILTER panel lists the sends
+    if (slot == kVoiceModeSlot)
+        return voiceModeChoice_.setSelectedIndex(juce::jlimit(0, 2, choice));
 
     switch (slot) {
         case kFilterEnableSlot:
@@ -275,6 +280,22 @@ void FMUI::refreshOperatorRows() {
             controls_[static_cast<size_t>(slot)].slider->setAlpha(alpha);
         }
     }
+    repaint();
+}
+
+void FMUI::refreshOperatorTab() {
+    for (auto& box : waveBoxes_)
+        box.setVisible(!showVoiceTab_);
+    for (int op = 0; op < kNumOps; ++op)
+        for (int slot : {kRatioBase + op, kLevelBase + op})
+            controls_[static_cast<size_t>(slot)].slider->setVisible(!showVoiceTab_);
+    controls_[kFilterLevelSlot].slider->setVisible(!showVoiceTab_);
+    for (int slot : {kGlideSlot, kBendRangeSlot, kVelAmtSlot, kGainSlot}) {
+        auto& c = controls_[static_cast<size_t>(slot)];
+        c.slider->setVisible(showVoiceTab_ && !c.tile.isEmpty());
+        c.label->setVisible(showVoiceTab_ && !c.tile.isEmpty());
+    }
+    voiceModeChoice_.setVisible(showVoiceTab_);
     repaint();
 }
 
@@ -405,6 +426,23 @@ NodeRows nodeRows(juce::Rectangle<int> panel) {
 
 void FMUI::layoutOperatorPanel() {
     const auto rows = nodeRows(opsPanel_);
+    auto header = rows.header;
+    opsTabs_[0] = takeTab(header, "OPERATORS", false);
+    opsTabs_[1] = takeTab(header, "VOICE", false);
+
+    // VOICE: the performance controls two across, then Voice Mode at the foot.
+    auto voice = opsPanel_.reduced(kPanelPadX, kPanelPadY)
+                     .withTrimmedBottom(kPanelPadBottom - kPanelPadY)
+                     .withTrimmedTop(kHeaderH + kTileGap);
+    const int tileH = juce::jlimit(kMinTileH, kMaxTileH, (voice.getHeight() - 2 * kTileGap) / 3);
+    placeTiles(voice.removeFromTop(2 * tileH + kTileGap),
+               {kGlideSlot, kBendRangeSlot, kVelAmtSlot, kGainSlot}, 2);
+    voiceModeTile_ = voice.removeFromBottom(tileH);
+    auto voiceModeInner = voiceModeTile_.reduced(9, 4);
+    voiceModeInner.removeFromTop(kCaptionH);
+    voiceModeChoice_.setBounds(voiceModeInner.withSizeKeepingCentre(
+        juce::jmin(voiceModeInner.getWidth(), voiceModeChoice_.getPreferredWidth()),
+        juce::jmin(voiceModeInner.getHeight(), 20)));
 
     // Columns: Wave | Ratio | Level | Rst, after the row labels.
     static constexpr float kColumns[] = {0.40f, 0.21f, 0.27f};
@@ -510,10 +548,8 @@ void FMUI::layoutEnvelopePanel() {
     envelopeTabs_[1] = takeTab(header, "FILTER", false);
     a.removeFromTop(kTileGap);
 
-    // Graph, the A/D/S/R tiles, then Glide / Vel / Gain.
+    // Graph, then the A/D/S/R tiles.
     const int tileH = juce::jlimit(kMinTileH, kMaxTileH, a.getHeight() / 6);
-    placeTiles(a.removeFromBottom(tileH), {kGlideSlot, kVelAmtSlot, kGainSlot}, 3);
-    a.removeFromBottom(kTileGap);
     auto grid = a.removeFromBottom(2 * tileH + kTileGap);
     a.removeFromBottom(kTileGap);
     ampGraph_->setBounds(a);
@@ -538,8 +574,9 @@ void FMUI::resized() {
     layoutMatrixPanel();
     layoutFilterPanel();
     layoutEnvelopePanel();
-    // Placing tiles shows every one; the tab then hides the other envelope's.
+    // Placing tiles shows every one; the tabs then hide the other side's.
     refreshEnvelopePanel();
+    refreshOperatorTab();
 }
 
 // =============================================================================
@@ -548,7 +585,12 @@ void FMUI::resized() {
 
 void FMUI::mouseDown(const juce::MouseEvent& e) {
     const auto p = e.getPosition();
-    for (int op = 0; op < kNumOps; ++op) {
+    for (int tab = 0; tab < 2; ++tab)
+        if (opsTabs_[static_cast<size_t>(tab)].contains(p) && (tab == 1) != showVoiceTab_) {
+            showVoiceTab_ = tab == 1;
+            return refreshOperatorTab();
+        }
+    for (int op = 0; op < kNumOps && !showVoiceTab_; ++op) {
         const auto i = static_cast<size_t>(op);
         if (enableDots_[i].contains(p))
             return setChoiceSlot(kEnableBase + op, opEnabled_[i] ? 0 : 1);
@@ -596,8 +638,16 @@ void FMUI::paint(juce::Graphics& g) {
         if (c.slider->isVisible())
             field(c.tile, c.slider->getAlpha());
 
+    if (showVoiceTab_) {
+        field(voiceModeTile_, 1.0f);
+        g.setFont(captionFont());
+        g.setColour(colour(ActiveTheme::DEVICE_DIM));
+        g.drawText("Voice Mode", voiceModeTile_.reduced(9, 4).removeFromTop(kCaptionH),
+                   juce::Justification::centredLeft, true);
+    }
+
     // Operator rows: wave tile with its enable dot, and the reset checkbox.
-    for (int op = 0; op < kNumOps; ++op) {
+    for (int op = 0; op < kNumOps && !showVoiceTab_; ++op) {
         const auto i = static_cast<size_t>(op);
         const float alpha = opEnabled_[i] ? 1.0f : kInactiveAlpha;
         field(waveTiles_[i], alpha);
@@ -614,21 +664,23 @@ void FMUI::paint(juce::Graphics& g) {
     }
     g.setFont(captionFont());
     g.setColour(colour(ActiveTheme::DEVICE_DIM));
-    g.drawText("Filter node", filterRowTile_.reduced(6, 0), juce::Justification::centredRight,
-               true);
+    if (!showVoiceTab_)
+        g.drawText("Filter node", filterRowTile_.reduced(6, 0), juce::Justification::centredRight,
+                   true);
 
     // Column captions and row labels; the filter node in blue.
     g.setFont(titleFont());
     static const juce::String kOpColumns[] = {"WAVE", "RATIO", "LEVEL", "RST"};
     g.setColour(colour(ActiveTheme::DEVICE_DIM));
-    for (int col = 0; col < 4; ++col)
+    for (int col = 0; col < 4 && !showVoiceTab_; ++col)
         g.drawText(kOpColumns[col], opColumnCaptions_[static_cast<size_t>(col)],
                    col == 3 ? juce::Justification::centred : juce::Justification::centredLeft,
                    false);
     for (int node = 0; node < kNodes; ++node) {
         const auto i = static_cast<size_t>(node);
         g.setColour(colour(node < kNumOps ? ActiveTheme::DEVICE_TITLE : ActiveTheme::DEVICE_BLUE));
-        g.drawText(nodeName(node), opRowLabels_[i], juce::Justification::centredLeft, false);
+        if (!showVoiceTab_)
+            g.drawText(nodeName(node), opRowLabels_[i], juce::Justification::centredLeft, false);
         g.drawText(nodeName(node) + juce::String::fromUTF8("→"), matrixRowLabels_[i],
                    juce::Justification::centredLeft, false);
         g.drawText(juce::String::fromUTF8("→") + nodeName(node), matrixColLabels_[i],
@@ -646,11 +698,10 @@ void FMUI::paint(juce::Graphics& g) {
             g.fillRect(area.withTop(area.getBottom() - 2));
         }
     };
-    for (auto [panel, title] :
-         {std::pair{opsPanel_, "OPERATORS"}, std::pair{matrixPanel_, "MATRIX"}}) {
-        auto header = nodeRows(panel).header;
-        tab(takeTab(header, title, false), title, true, false);
-    }
+    tab(opsTabs_[0], "OPERATORS", !showVoiceTab_, false);
+    tab(opsTabs_[1], "VOICE", showVoiceTab_, false);
+    auto matrixHeader = nodeRows(matrixPanel_).header;
+    tab(takeTab(matrixHeader, "MATRIX", false), "MATRIX", true, false);
     tab(filterTab_, "FILTER", true, true);
     dot(filterDot_, filter_.on);
     tab(envelopeTabs_[0], "AMP", !showFilterEnvelope_, false);
