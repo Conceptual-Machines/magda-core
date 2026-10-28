@@ -36,17 +36,47 @@ void setOwner(juce::Component& window, juce::Component* newOwner) {
         reinterpret_cast<LONG_PTR>(ownerPeer != nullptr ? ownerPeer->getNativeHandle() : nullptr));
 }
 #elif JUCE_MAC
-/// A floating-level window otherwise stays over other apps while MAGDA is in the background.
-void hideWhenAppInactive(juce::Component& window) {
-    auto* peer = window.getPeer();
-    if (peer == nullptr)
-        return;
-    auto* view = static_cast<id>(peer->getNativeHandle());
-    auto* nsWindow =
-        reinterpret_cast<id (*)(id, SEL)>(objc_msgSend)(view, sel_registerName("window"));
-    if (nsWindow != nil)
-        reinterpret_cast<void (*)(id, SEL, BOOL)>(objc_msgSend)(
-            nsWindow, sel_registerName("setHidesOnDeactivate:"), YES);
+id sendMessage(id target, const char* selector) {
+    return reinterpret_cast<id (*)(id, SEL)>(objc_msgSend)(target, sel_registerName(selector));
+}
+
+std::vector<id> activationObservers;
+
+/// A floating-level window otherwise stays over other apps while MAGDA is in the background, and
+/// hiding it instead keeps it out of reach of Finder drags.
+void observeAppActivation() {
+    auto* centre =
+        sendMessage(reinterpret_cast<id>(objc_getClass("NSNotificationCenter")), "defaultCenter");
+    auto* queue = sendMessage(reinterpret_cast<id>(objc_getClass("NSOperationQueue")), "mainQueue");
+    auto observe = [&](const char* name, bool active) {
+        auto* nsName = reinterpret_cast<id (*)(id, SEL, const char*)>(objc_msgSend)(
+            reinterpret_cast<id>(objc_getClass("NSString")),
+            sel_registerName("stringWithUTF8String:"), name);
+        auto* observer = reinterpret_cast<id (*)(id, SEL, id, id, id, void (^)(id))>(objc_msgSend)(
+            centre, sel_registerName("addObserverForName:object:queue:usingBlock:"), nsName, nil,
+            queue, ^(id) {
+              // Peer-level: Component::setAlwaysOnTop would order in windows hidden while
+              // minimised.
+              forEachFloatingWindow([active](juce::Component& window) {
+                  if (auto* peer = window.getPeer())
+                      peer->setAlwaysOnTop(active);
+              });
+            });
+        activationObservers.push_back(sendMessage(observer, "retain"));
+    };
+    observe("NSApplicationDidBecomeActiveNotification", true);
+    observe("NSApplicationDidResignActiveNotification", false);
+}
+
+void stopObservingAppActivation() {
+    auto* centre =
+        sendMessage(reinterpret_cast<id>(objc_getClass("NSNotificationCenter")), "defaultCenter");
+    for (auto* observer : activationObservers) {
+        reinterpret_cast<void (*)(id, SEL, id)>(objc_msgSend)(
+            centre, sel_registerName("removeObserver:"), observer);
+        sendMessage(observer, "release");
+    }
+    activationObservers.clear();
 }
 #endif
 
@@ -56,9 +86,6 @@ void floatWindow(juce::Component& window) {
     setOwner(window, owner);
 #else
     window.setAlwaysOnTop(true);
-    #if JUCE_MAC
-    hideWhenAppInactive(window);
-    #endif
 #endif
 }
 
@@ -83,6 +110,10 @@ void setFloatingWindowOwner(juce::Component* mainWindow) {
     // Destroying an owner destroys its owned windows, plugin editors included.
     if (mainWindow == nullptr)
         forEachFloatingWindow([](juce::Component& window) { setOwner(window, nullptr); });
+#elif JUCE_MAC
+    stopObservingAppActivation();
+    if (mainWindow != nullptr)
+        observeAppActivation();
 #endif
 }
 
