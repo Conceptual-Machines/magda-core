@@ -42,6 +42,9 @@ class PlaybackPositionTimer : private juce::Timer {
     /** Callback fired periodically with CPU usage (0.0 to 1.0), xrun count, and device info. */
     std::function<void(float, int, const juce::String&, double, int)> onCpuUsageUpdate;
 
+    /** Callback fired when a start begins or ends waiting for Ableton Link's downbeat (#3188). */
+    std::function<void(bool)> onPhaseWaitChanged;
+
     /** Callback fired a few times a second with the recent-audio buffer (#2311). */
     std::function<void(const RecentCaptureMeter&)> onMemoryUpdate;
 
@@ -53,7 +56,8 @@ class PlaybackPositionTimer : private juce::Timer {
 
     bool wasPlaying_ = false;    // Track engine playing state for change detection
     bool wasRecording_ = false;  // Track engine recording state for change detection
-    int cpuUpdateCounter_ = 0;   // Throttle CPU updates
+    bool wasWaitingForPhase_ = false;
+    int cpuUpdateCounter_ = 0;  // Throttle CPU updates
     int memoryUpdateCounter_ = 0;
 
     static constexpr int UPDATE_INTERVAL_MS = 30;  // ~33fps for smooth playhead

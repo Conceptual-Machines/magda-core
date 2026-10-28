@@ -1359,6 +1359,10 @@ void TransportPanel::styleTransportButton(SvgButton& button, ColourRole accentRo
                                      activeGlyphRole);
 }
 
+void TransportPanel::setAbletonLinkWaiting(bool waiting) {
+    linkChip->setWaiting(waiting);
+}
+
 void TransportPanel::setAbletonLink(bool enabled) {
     linkChip->setOn(enabled);
 }

@@ -43,6 +43,8 @@ AbletonLinkSession::AbletonLinkSession(Hooks hooks)
 AbletonLinkSession::~AbletonLinkSession() {
     ProjectManager::getInstance().removeListener(this);
     Config::getInstance().removeListener(this);
+    if (enabled_ && hooks_.setPhaseSource)
+        hooks_.setPhaseSource(nullptr);
 
     impl_->link.enable(false);
     impl_->link.setNumPeersCallback([](std::size_t) {});
@@ -71,6 +73,8 @@ void AbletonLinkSession::applyEnabled(bool enabled) {
 
     if (hooks_.followTempoLane)
         hooks_.followTempoLane(!enabled);
+    if (hooks_.setPhaseSource)
+        hooks_.setPhaseSource(enabled ? this : nullptr);
     if (onStateChanged)
         onStateChanged();
 }
@@ -106,6 +110,14 @@ void AbletonLinkSession::handleAsyncUpdate() {
     }
     if (!replacingProject_)
         takeSessionTempo();
+}
+
+std::optional<double> AbletonLinkSession::beatAfter(std::chrono::microseconds ahead,
+                                                    double quantum) {
+    if (peers_.load(std::memory_order_relaxed) == 0)
+        return std::nullopt;
+    const auto state = impl_->link.captureAudioSessionState();
+    return state.beatAtTime(impl_->link.clock().micros() + ahead, quantum);
 }
 
 void AbletonLinkSession::sendProjectTempo() {

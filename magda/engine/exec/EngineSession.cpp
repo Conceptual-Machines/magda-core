@@ -401,7 +401,7 @@ void EngineSession::publishClips(std::shared_ptr<const ClipSnapshot> clips) {
 }
 
 void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
-                            const LiveInputBlock& input) {
+                            const LiveInputBlock& input, const PhaseReference* phase) {
     // The executor asserts on a block longer than the plan was prepared for.
     // Here the same number also says how much buffer there is to write into, so
     // it is held to what the caller actually provided rather than trusted: the
@@ -465,7 +465,8 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
     // separate blocks so that nothing downstream has to know a wrap can happen
     // in the middle of a buffer. Everything below the plan is block-size
     // independent already, which is what makes cutting a callback free.
-    const auto segments = clock_.advance(*transport, (*render)->context.sampleRate, numSamples);
+    const auto segments =
+        clock_.advance(*transport, (*render)->context.sampleRate, numSamples, phase);
     const auto callbackEnd = clock_.syncPoint();
     const std::span<const TrackId> renderedAhead =
         renderAhead_ != nullptr
@@ -531,7 +532,10 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
                 : SlotRunBoundary{.at = segment.block.monotonicSamples.end,
                                   .timelineBeat = callbackEnd.beat,
                                   .monotonicBeat = callbackEnd.monotonicBeat};
-        advanceLaunchHandles(handles_, requests_, segment.block, &runs_, clips_.live(), &boundary);
+        // A launch from stopped is due at once; held for the phase, it is due on the downbeat.
+        if (!segment.waitingForPhase)
+            advanceLaunchHandles(handles_, requests_, segment.block, &runs_, clips_.live(),
+                                 &boundary);
 
         if (transport->punch.recordingRequested && afterPunch && takes)
             for (const auto& entry : *takes.get())

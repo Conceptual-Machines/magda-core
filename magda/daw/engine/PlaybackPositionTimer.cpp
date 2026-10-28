@@ -39,6 +39,12 @@ void PlaybackPositionTimer::timerCallback() {
 
     const bool isPlaying = engine_.isPlaying();
 
+    if (const bool waiting = engine_.isWaitingForPhase(); waiting != wasWaitingForPhase_) {
+        wasWaitingForPhase_ = waiting;
+        if (onPhaseWaitChanged)
+            onPhaseWaitChanged(waiting);
+    }
+
     // Establish the per-clip half of this tick before dispatching any timeline event. Timeline
     // listeners update synchronous UI such as the ruler, while grids may repaint later; both must
     // observe the same Session positions rather than opposite sides of this timer callback.

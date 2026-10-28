@@ -70,6 +70,8 @@ class MagdaAudioEngine final : public AudioEngine,
     void setTempo(double bpm) override;
     double getTempo() const override;
     void setTempoLaneFollowed(bool followed) override;
+    void setPhaseSource(PhaseSource* source) override;
+    bool isWaitingForPhase() const override;
     void setTimeSignature(int numerator, int denominator) override;
     void getTimeSignature(int& numerator, int& denominator) const override;
     const TempoMap* tempoMap() const override;

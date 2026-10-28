@@ -125,6 +125,8 @@ class TransportPanel : public juce::Component,
 
     /** @brief Light the Ableton Link chip while Link is on. */
     void setAbletonLink(bool enabled);
+    /** @brief Blink the chip's LED while a start waits for the session's downbeat. */
+    void setAbletonLinkWaiting(bool waiting);
 
     // CPU usage display (0.0 to 1.0)
     void setCpuUsage(float usage);

@@ -12,6 +12,7 @@ namespace {
 using namespace transport::link_chip;
 
 constexpr float kCornerRadius = 4.0f;
+constexpr int kBlinkIntervalMs = 150;
 
 }  // namespace
 
@@ -21,6 +22,27 @@ AbletonLinkChip::AbletonLinkChip() : juce::Button("AbletonLink") {
         lettering_ = svg->getOutlineAsPath();
     setTooltip(magda::technicalText(magda::TechnicalTextToken::AbletonLink));
     setWantsKeyboardFocus(false);
+}
+
+AbletonLinkChip::~AbletonLinkChip() {
+    stopTimer();
+}
+
+void AbletonLinkChip::setWaiting(bool waiting) {
+    if (waiting) {
+        startTimer(kBlinkIntervalMs);
+        return;
+    }
+    stopTimer();
+    if (ledDim_) {
+        ledDim_ = false;
+        repaint();
+    }
+}
+
+void AbletonLinkChip::timerCallback() {
+    ledDim_ = !ledDim_;
+    repaint();
 }
 
 void AbletonLinkChip::setOn(bool on) {
@@ -49,11 +71,12 @@ void AbletonLinkChip::paintButton(juce::Graphics& g, bool highlighted, bool down
     const float led = h * kLedShare;
     const auto ledBounds = juce::Rectangle<float>(bounds.getX() + (h * kPadShare),
                                                   bounds.getCentreY() - (led / 2), led, led);
-    if (on_) {
+    const bool lit = on_ && !ledDim_;
+    if (lit) {
         g.setColour(accent.withAlpha(0.25f));
         g.fillEllipse(ledBounds.expanded(led * 0.4f));
     }
-    g.setColour(on_ ? accent : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.5f));
+    g.setColour(lit ? accent : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.5f));
     g.fillEllipse(ledBounds);
 
     const float letterH = h * kLetteringShare;

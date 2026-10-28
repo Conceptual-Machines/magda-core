@@ -27,6 +27,7 @@ class String;
 }  // namespace juce
 
 namespace magda {
+class PhaseSource;
 class InsertRenderCapture;
 class OfflineRenderSession;
 class TempoMap;
@@ -365,6 +366,16 @@ class EngineHost {
     double tempo() const;
     /** @brief Whether the tempo lane's curve drives the map; off leaves the tempo flat. */
     void setTempoLaneFollowed(bool followed);
+
+    /**
+     * @brief Follow @p source's phase: a start waits for it and drift is nudged out (#3188).
+     *
+     * Null stops following. Message thread; returns once the audio thread has let go of the
+     * previous source, so it can be destroyed.
+     */
+    void setPhaseSource(PhaseSource* source);
+    /** @brief Whether a start is held for the phase source's downbeat. */
+    bool isWaitingForPhase() const;
     void setTimeSignature(int numerator, int denominator);
     void getTimeSignature(int& numerator, int& denominator) const;
     void setLoop(bool enabled, double startBeat, double endBeat);

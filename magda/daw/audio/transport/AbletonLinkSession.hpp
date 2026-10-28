@@ -8,6 +8,7 @@
 #include <memory>
 
 #include "../../core/Config.hpp"
+#include "../../engine/PhaseSource.hpp"
 #include "../../project/ProjectManager.hpp"
 
 /**
@@ -25,7 +26,8 @@ namespace magda {
  * for who wins a tempo follow Ableton's TEST-PLAN.md: a session being joined, or a project
  * being loaded into one, keeps the session's tempo.
  */
-class AbletonLinkSession : private ConfigListener,
+class AbletonLinkSession : public PhaseSource,
+                           private ConfigListener,
                            private ProjectManagerListener,
                            private juce::AsyncUpdater {
   public:
@@ -34,6 +36,8 @@ class AbletonLinkSession : private ConfigListener,
         std::function<void(double)> setProjectTempo;
         /// Whether tempo automation drives the engine's tempo.
         std::function<void(bool)> followTempoLane;
+        /// The engine's phase source: this session while on, null while off.
+        std::function<void(PhaseSource*)> setPhaseSource;
     };
 
     explicit AbletonLinkSession(Hooks hooks);
@@ -49,6 +53,8 @@ class AbletonLinkSession : private ConfigListener,
     std::size_t numPeers() const {
         return shownPeers_;
     }
+
+    std::optional<double> beatAfter(std::chrono::microseconds ahead, double quantum) override;
 
     /// Called when Link is switched on or off, or the peer count changes.
     std::function<void()> onStateChanged;

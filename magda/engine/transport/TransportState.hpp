@@ -117,6 +117,14 @@ struct TransportRequest {
     double countInBeats = 0.0;
 };
 
+/** @brief Where an external session (Ableton Link) has the beat as a block is heard (#3188). */
+struct PhaseReference {
+    /// The session's beat when the block's first sample leaves the device.
+    double beat = 0.0;
+    /// Beats in the cycle whose phase the session shares: one bar.
+    double quantum = 4.0;
+};
+
 /** Tempo, loop, metronome and the play request, as one published value. */
 struct TransportSnapshot {
     TempoMap tempo;
