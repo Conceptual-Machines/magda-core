@@ -10,6 +10,7 @@
 #include "IFaustEditorModel.hpp"
 #include "core/ParameterUtils.hpp"
 #include "plugins/MagdaDevice.hpp"
+#include "plugins/MpeChannelState.hpp"
 
 // libfaust types are forward-declared so consumers don't need the Faust
 // runtime headers on their include path. Implementation pulls them in.
@@ -151,6 +152,9 @@ class FaustInstrumentPlugin : public MagdaDevice, public IFaustEditorModel {
         FAUSTFLOAT* monoFreqZone = nullptr;
         FAUSTFLOAT* monoGainZone = nullptr;
         FAUSTFLOAT* monoGateZone = nullptr;
+        // A patch's own `timbre` and `pressure` controls, which it opts into MPE with (#1569).
+        FAUSTFLOAT* monoTimbreZone = nullptr;
+        FAUSTFLOAT* monoPressureZone = nullptr;
         // The mono voice's own copy of each pool slot's zone, so user params
         // reach it as well as the poly voices. One zone per slot, not a vector:
         // there is only ever one mono voice.
@@ -162,6 +166,8 @@ class FaustInstrumentPlugin : public MagdaDevice, public IFaustEditorModel {
         // by string - a map lookup we cannot afford on the audio thread.
         // Inner vector because a patch may declare `freq` more than once.
         std::vector<std::vector<FAUSTFLOAT*>> voiceFreqZones;
+        std::vector<std::vector<FAUSTFLOAT*>> voiceTimbreZones;
+        std::vector<std::vector<FAUSTFLOAT*>> voicePressureZones;
 
         ~FaustState();
     };
@@ -207,7 +213,18 @@ class FaustInstrumentPlugin : public MagdaDevice, public IFaustEditorModel {
     // Rewrite every sounding poly voice's freq zone for `ratio`. The allocator
     // writes an unbent freq on keyOn, so this also has to run after a note
     // starts, not only when the wheel moves.
-    static void applyBendToPolyVoices(const std::shared_ptr<FaustState>& state, float ratio);
+    void applyBendToPolyVoices(const std::shared_ptr<FaustState>& state, float ratio);
+    /// One voice's freq for the wheel's @p ratio and its own channel's note bend.
+    void bendPolyVoice(const std::shared_ptr<FaustState>& state, size_t voice, float ratio);
+    /// keyOn, then the struck voice takes its channel and that channel's MPE dimensions.
+    void strikePolyVoice(const std::shared_ptr<FaustState>& state, int channel, int pitch,
+                         int velocity);
+    /// Hands the voices on @p channel, and the mono voice when it plays from it, their
+    /// channel's dimensions.
+    void followMpeChannel(const std::shared_ptr<FaustState>& state, int channel);
+    void writeMonoExpression(const std::shared_ptr<FaustState>& state) const;
+    /// The mono voice's note bend as a frequency ratio.
+    float monoNoteBendRatio() const;
     // Silence everything: poly voices, the mono voice, and the held-note stack.
     void resetAllVoices(const std::shared_ptr<FaustState>& state);
     // Release EVERY poly voice sounding (or legato-targeting) this pitch.
@@ -224,12 +241,13 @@ class FaustInstrumentPlugin : public MagdaDevice, public IFaustEditorModel {
     // Returns true when the caller must render one sample of gate-low before
     // raising the gate again, which is how Mono retriggers an envelope.
     bool handleMonoNoteOn(const std::shared_ptr<FaustState>& state, int note, int velocity,
-                          int mode);
+                          int channel, int mode);
     void handleMonoNoteOff(const std::shared_ptr<FaustState>& state, int note);
 
     struct HeldNote {
         int note = 0;
         float gain = 0.0f;
+        int channel = 1;
     };
     // Mono/Legato note stack. Releasing a note returns to the one under it,
     // which is what makes trills and legato lines behave.
@@ -245,6 +263,9 @@ class FaustInstrumentPlugin : public MagdaDevice, public IFaustEditorModel {
     float bendNormalised_ = 0.0f;
     // Last ratio written to the poly voices, so a centred wheel costs nothing.
     float lastPolyBendRatio_ = 1.0f;
+
+    MpeChannelState mpeChannels_;
+    int monoChannel_ = 1;
 
     int lastVoiceMode_ = Poly;
     bool wasPlaying_ = false;
@@ -283,6 +304,8 @@ class FaustInstrumentPlugin : public MagdaDevice, public IFaustEditorModel {
 
     // Number of voices the poly allocator preallocates.
     static constexpr int kNumVoices = 16;
+    /// The channel each voice was struck on, parallel to the allocator's voice table.
+    std::array<int, kNumVoices> voiceChannel_{};
 
     // Scratch output for the poly compute(). Faust writes (overwrites) its
     // output buffers, so we render into scratch and then add into destBuffer

@@ -13,6 +13,14 @@ mf = library("magda_filters.lib");
 freq = nentry("freq", 440, 20, 20000, 0.01);
 gain = nentry("gain", 0.8, 0, 1, 0.01);
 gate = button("gate");
+// The wheel, -1..1, driven by the wrapper and scaled by Bend Range (idx:69, after the
+// filter node so every slot keeps its index).
+bend = hslider("bend", 0, -1, 1, 0.001);
+// Per-note MPE inputs (#1569), driven per voice from the note's own channel: bend in
+// semitones at the wire's fixed range, timbre (CC74, resting at 64) and pressure.
+mpeBend = hslider("mpe_bend", 0, -48, 48, 0.001);
+timbre = hslider("timbre", 0.5039, 0, 1, 0.0001);
+pressure = hslider("pressure", 0, 0, 1, 0.0001);
 
 // ============================================================================
 // Host macro controls
@@ -143,6 +151,7 @@ fRet(2)  = hslider("M F>3 [idx:65]", 0.0, 0.0, 8.0, 0.001);
 fRet(3)  = hslider("M F>4 [idx:66]", 0.0, 0.0, 8.0, 0.001);
 fLvl     = hslider("F Level [unit:dB] [idx:67]", 0.0, -60.0, 6.0, 0.1);
 fPos     = nentry("Filter Position [idx:68] [style:menu{'Output':0;'Matrix':1}]", 0, 0, 1, 1);
+bendRange = hslider("Bend Range [unit:st] [idx:69]", 2, 0, 24, 1);
 
 // Smooth the continuous controls so dragging a matrix amount / ratio / level
 // glides instead of stepping per block (the stepped values were the zipper noise
@@ -151,6 +160,12 @@ fPos     = nentry("Filter Position [idx:68] [style:menu{'Output':0;'Matrix':1}]"
 // Gate-keyed: see magda_polysynth. freqG and gainG stay time-smoothed -
 // glide is the point of one and the other is already half a millisecond.
 sm(x) = x : msm.polySmoo(gate);
+
+// Wheel and note bend move every operator together, ratios intact. Timbre scales the
+// modulation, x0.5 to x2 about its rest; pressure lifts the level up to 6 dB.
+pitchRatio = pow(2.0, sm(bend * bendRange + mpeBend) / 12.0);
+modScale = pow(2.0, sm((timbre - 64.0 / 127.0) * 2.0));
+pressureGain = 1.0 + sm(pressure);
 
 // ============================================================================
 // Filter
@@ -198,11 +213,11 @@ lvl(i) = dbGain(outLvl(i));
 // run away.
 operators(y0, y1, y2, y3, yf) = op(0), op(1), op(2), op(3), node, out
 with {
-    pm(i) = sm(m(0, i)) * y0 + sm(m(1, i)) * y1 + sm(m(2, i)) * y2 + sm(m(3, i)) * y3
-          + enable(sm(fRet(i)) * yf, matrixOn);
+    pm(i) = (sm(m(0, i)) * y0 + sm(m(1, i)) * y1 + sm(m(2, i)) * y2 + sm(m(3, i)) * y3
+          + enable(sm(fRet(i)) * yf, matrixOn)) * modScale;
     // Resettable phasor (os.hs_phasor) so Phase Reset restarts the op at 0 on
     // note-on; glide-smoothed pitch (freqG) carries portamento.
-    mphase(i) = os.hs_phasor(1.0, freqG * sm(ratio(i)), (reset(i) > 0) * phaseResetRise) +
+    mphase(i) = os.hs_phasor(1.0, freqG * pitchRatio * sm(ratio(i)), (reset(i) > 0) * phaseResetRise) +
                 pm(i) / (2.0 * ma.PI);
     p(i) = mphase(i) - floor(mphase(i));  // wrap to [0,1)
     sine(x) = sin(2.0 * ma.PI * x);
@@ -219,7 +234,7 @@ with {
     out = select2(inMatrix, node, ops + enable(node * dbGain(fLvl), matrixOn));
 };
 
-voice = (operators ~ si.bus(5)) : (si.block(5), _) : *(env) : *(velGain);
+voice = (operators ~ si.bus(5)) : (si.block(5), _) : *(env) : *(velGain) : *(pressureGain);
 
 // Mono voice fanned to a stereo pair (the poly allocator sums all voices).
 process = voice <: _, _;

@@ -8,6 +8,7 @@
 
 #include "core/ParameterInfo.hpp"
 #include "core/ParameterUtils.hpp"
+#include "plugins/MpeChannelState.hpp"
 #include "plugins/compiled/CompiledFaustInterface.hpp"
 
 // mydsp_poly (Faust's polyphonic voice allocator) and the single-voice dsp are
@@ -192,7 +193,7 @@ class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
     void resetAllVoices();
     // Mono/Legato note handling on the dedicated single voice. Returns true when
     // a one-sample gate edge is needed to retrigger (Mono only).
-    bool handleMonoNoteOn(int note, int velocity, int mode);
+    bool handleMonoNoteOn(int note, int velocity, int channel, int mode);
     void handleMonoNoteOff(int note);
     // Releases EVERY poly voice currently sounding (or legato-targeting) the
     // given pitch. Used both before a re-trigger (one voice per pitch) and on
@@ -204,6 +205,8 @@ class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
     // still-monitored live input that fed it), so unbalanced deliveries must
     // never strand a sounding voice.
     void releasePolyVoicesForPitch(int pitch);
+    /// keyOn, then the struck voice takes its channel and that channel's MPE dimensions.
+    void strikePolyVoice(int channel, int pitch, int velocity);
 
     /// Let go of everything, in either voice mode. What an all-notes-off has
     /// to do: the note-offs for what is sounding are not coming.
@@ -271,9 +274,29 @@ class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
     std::vector<float*> voiceBendZones_;
     float* monoBendZone_ = nullptr;
     float currentBend_ = 0.0f;
+
+    /// One voice's per-note MPE inputs (`mpe_bend` in semitones, `timbre`, `pressure`), any of
+    /// them null when the dsp declares none (#1569).
+    struct ExpressionZones {
+        float* bend = nullptr;
+        float* timbre = nullptr;
+        float* pressure = nullptr;
+        void write(const MpeChannelState::Dimensions& dims) const;
+    };
+    /// Hands the voices on @p channel, and the mono voice when it plays from it, their
+    /// channel's dimensions.
+    void followMpeChannel(int channel);
+    MpeChannelState mpeChannels_;
+    /// Parallel to the allocator's voice table, with the channel each voice was struck on.
+    std::vector<ExpressionZones> voiceExpression_;
+    std::vector<int> voiceChannel_;
+    ExpressionZones monoExpression_;
+    int monoChannel_ = 1;
+
     struct HeldNote {
         int note = 0;
         float gain = 0.0f;
+        int channel = 1;
     };
     std::vector<HeldNote> heldNotes_;
     // reset() may be called from the message thread (e.g. AudioBridge::

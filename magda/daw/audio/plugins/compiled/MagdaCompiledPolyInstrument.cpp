@@ -109,7 +109,8 @@ class PolyVoiceHarvester : public ::UI {
             zonesByIdx[merged.slotIndex].push_back(zone);
         } else {
             const auto name = juce::String(parsed.cleanLabel).toLowerCase();
-            if (name == "freq" || name == "gain" || name == "gate" || name == "bend")
+            if (name == "freq" || name == "gain" || name == "gate" || name == "bend" ||
+                name == "mpe_bend" || name == "timbre" || name == "pressure")
                 reservedByName[name].push_back(zone);
         }
     }
@@ -122,6 +123,12 @@ constexpr float kCeiling = 0.9f;  // hard output ceiling
 
 inline float midiNoteToHz(int note) {
     return 440.0f * std::pow(2.0f, (static_cast<float>(note) - 69.0f) / 12.0f);
+}
+
+FAUSTFLOAT* firstReserved(const PolyVoiceHarvester& harvester, const char* name) {
+    auto it = harvester.reservedByName.find(name);
+    return (it != harvester.reservedByName.end() && !it->second.empty()) ? it->second.front()
+                                                                         : nullptr;
 }
 
 }  // namespace
@@ -252,11 +259,26 @@ void MagdaCompiledPolyInstrument::rebuildEngineState(int sampleRate) {
     if (auto it = harvester.reservedByName.find("bend"); it != harvester.reservedByName.end())
         voiceBendZones_ = it->second;
 
+    // Harvested voice by voice, so each entry is the voice at that index in the table.
+    auto* impl = static_cast<mydsp_poly*>(poly_.get());
+    voiceExpression_.assign(impl->fVoiceTable.size(), {});
+    voiceChannel_.assign(impl->fVoiceTable.size(), 1);
+    for (size_t i = 0; i < impl->fVoiceTable.size(); ++i) {
+        PolyVoiceHarvester voiceHarvester;
+        impl->fVoiceTable[i]->buildUserInterface(&voiceHarvester);
+        voiceExpression_[i] = {firstReserved(voiceHarvester, "mpe_bend"),
+                               firstReserved(voiceHarvester, "timbre"),
+                               firstReserved(voiceHarvester, "pressure")};
+    }
+    mpeChannels_.reset();
+
     // Dedicated mono voice (driven directly; the poly allocator skips idle
     // voices). Harvest its reserved freq/gain/gate plus its copy of each voice
     // macro zone.
     monoZonesBySlot_.assign(static_cast<size_t>(hostSlotCountValue()), nullptr);
     monoFreqZone_ = monoGainZone_ = monoGateZone_ = monoBendZone_ = nullptr;
+    monoExpression_ = {};
+    monoChannel_ = 1;
     if (hasVoiceModes()) {
         monoVoice_.reset(createVoiceDsp());
         monoVoice_->init(sampleRate);
@@ -275,6 +297,9 @@ void MagdaCompiledPolyInstrument::rebuildEngineState(int sampleRate) {
         monoGainZone_ = first(monoH.reservedByName, "gain");
         monoGateZone_ = first(monoH.reservedByName, "gate");
         monoBendZone_ = first(monoH.reservedByName, "bend");
+        monoExpression_ = {first(monoH.reservedByName, "mpe_bend"),
+                           first(monoH.reservedByName, "timbre"),
+                           first(monoH.reservedByName, "pressure")};
     } else {
         monoVoice_.reset();
     }
@@ -361,6 +386,42 @@ void MagdaCompiledPolyInstrument::resetAllVoices() {
     heldNotes_.clear();
     if (monoGateZone_)
         *monoGateZone_ = 0.0f;
+    mpeChannels_.reset();
+}
+
+void MagdaCompiledPolyInstrument::ExpressionZones::write(
+    const MpeChannelState::Dimensions& dims) const {
+    if (bend)
+        *bend = dims.semitones;
+    if (timbre)
+        *timbre = dims.timbre;
+    if (pressure)
+        *pressure = dims.pressure;
+}
+
+void MagdaCompiledPolyInstrument::followMpeChannel(int channel) {
+    const auto& dims = mpeChannels_[channel];
+    auto* impl = static_cast<mydsp_poly*>(poly_.get());
+    const auto voices = std::min(voiceExpression_.size(), impl->fVoiceTable.size());
+    // A releasing voice keeps what it had: its channel may already carry the next note.
+    for (size_t i = 0; i < voices; ++i) {
+        const int note = impl->fVoiceTable[i]->fCurNote;
+        if (voiceChannel_[i] == channel && (note >= 0 || note == kLegatoVoice))
+            voiceExpression_[i].write(dims);
+    }
+    if (monoChannel_ == channel && !heldNotes_.empty())
+        monoExpression_.write(dims);
+}
+
+void MagdaCompiledPolyInstrument::strikePolyVoice(int channel, int pitch, int velocity) {
+    auto* impl = static_cast<mydsp_poly*>(poly_.get());
+    auto* struck = impl->keyOn(channel, pitch, velocity);
+    for (size_t i = 0; i < std::min(voiceExpression_.size(), impl->fVoiceTable.size()); ++i)
+        if (static_cast<MapUI*>(impl->fVoiceTable[i]) == struck) {
+            voiceChannel_[i] = channel;
+            voiceExpression_[i].write(mpeChannels_[channel]);
+            break;
+        }
 }
 
 void MagdaCompiledPolyInstrument::releasePolyVoicesForPitch(int pitch) {
@@ -466,7 +527,7 @@ void MagdaCompiledPolyInstrument::closeVoiceLevelWindow() {
     }
 }
 
-bool MagdaCompiledPolyInstrument::handleMonoNoteOn(int note, int velocity, int mode) {
+bool MagdaCompiledPolyInstrument::handleMonoNoteOn(int note, int velocity, int channel, int mode) {
     const float g = static_cast<float>(velocity) / 127.0f;
     const bool wasEmpty = heldNotes_.empty();
 
@@ -486,7 +547,9 @@ bool MagdaCompiledPolyInstrument::handleMonoNoteOn(int note, int velocity, int m
             heldNotes_.erase(it);
             break;
         }
-    heldNotes_.push_back({note, g});
+    heldNotes_.push_back({note, g, channel});
+    monoChannel_ = channel;
+    monoExpression_.write(mpeChannels_[channel]);
     if (monoFreqZone_)
         *monoFreqZone_ = midiNoteToHz(note);
     if (monoGainZone_)
@@ -513,8 +576,11 @@ void MagdaCompiledPolyInstrument::handleMonoNoteOff(int note) {
     if (heldNotes_.empty()) {
         if (monoGateZone_)
             *monoGateZone_ = 0.0f;  // last note released -> envelope release
-    } else if (monoFreqZone_) {
-        *monoFreqZone_ = midiNoteToHz(heldNotes_.back().note);  // legato return
+    } else {
+        monoChannel_ = heldNotes_.back().channel;
+        monoExpression_.write(mpeChannels_[monoChannel_]);
+        if (monoFreqZone_)
+            *monoFreqZone_ = midiNoteToHz(heldNotes_.back().note);  // legato return
     }
 }
 
@@ -677,21 +743,26 @@ void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
             renderSegment(cursor, evSample - cursor);
             cursor = evSample;
 
+            if (const int channel = mpeChannels_.apply(m); channel > 0)
+                followMpeChannel(channel);
+
             if (m.isPitchWheel()) {
-                currentBend_ = static_cast<float>(m.getPitchWheelValue() - 8192) / 8192.0f;
-                fannedBend_ = currentBend_;
-                for (FAUSTFLOAT* zone : voiceBendZones_)
-                    if (zone)
-                        *zone = currentBend_;
-                if (monoBendZone_)
-                    *monoBendZone_ = currentBend_;
+                if (!mpe::isMemberChannel(m.getChannel())) {
+                    currentBend_ = static_cast<float>(m.getPitchWheelValue() - 8192) / 8192.0f;
+                    fannedBend_ = currentBend_;
+                    for (FAUSTFLOAT* zone : voiceBendZones_)
+                        if (zone)
+                            *zone = currentBend_;
+                    if (monoBendZone_)
+                        *monoBendZone_ = currentBend_;
+                }
             } else if (mode == Poly) {
                 if (m.isNoteOn()) {
                     // Release any voice still sounding this pitch before
                     // re-triggering, so the allocator never accumulates orphan
                     // voices that would hang (one voice per pitch).
                     releasePolyVoicesForPitch(m.getNoteNumber());
-                    poly_->keyOn(m.getChannel(), m.getNoteNumber(), m.getVelocity());
+                    strikePolyVoice(m.getChannel(), m.getNoteNumber(), m.getVelocity());
                     strikePulse_.fetch_add(1, std::memory_order_relaxed);
                 } else if (m.isNoteOff()) {
                     // Release ALL voices of this pitch (not just the oldest):
@@ -707,7 +778,8 @@ void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
             } else {
                 if (m.isNoteOn()) {
                     strikePulse_.fetch_add(1, std::memory_order_relaxed);
-                    if (handleMonoNoteOn(m.getNoteNumber(), m.getVelocity(), mode)) {
+                    if (handleMonoNoteOn(m.getNoteNumber(), m.getVelocity(), m.getChannel(),
+                                         mode)) {
                         // One-sample gate-low renders the falling edge; raising it
                         // again gives the rising edge that retriggers.
                         const int low = std::min(1, n - cursor);
