@@ -1,5 +1,7 @@
 #include "AbletonLinkChip.hpp"
 
+#include <cmath>
+
 #include "../themes/ActiveTheme.hpp"
 #include "BinaryData.h"
 #include "TransportLayout.hpp"
@@ -12,7 +14,9 @@ namespace {
 using namespace transport::link_chip;
 
 constexpr float kCornerRadius = 4.0f;
-constexpr int kBlinkIntervalMs = 150;
+constexpr int kFrameHz = 30;
+/// How much of a beat the LED stays lit for.
+constexpr double kFlashShare = 0.2;
 
 }  // namespace
 
@@ -29,27 +33,39 @@ AbletonLinkChip::~AbletonLinkChip() {
 }
 
 void AbletonLinkChip::setWaiting(bool waiting) {
-    if (waiting) {
-        startTimer(kBlinkIntervalMs);
-        return;
-    }
-    stopTimer();
-    if (ledDim_) {
-        ledDim_ = false;
-        repaint();
-    }
-}
-
-void AbletonLinkChip::timerCallback() {
-    ledDim_ = !ledDim_;
-    repaint();
+    waiting_ = waiting;
 }
 
 void AbletonLinkChip::setOn(bool on) {
     if (on_ == on)
         return;
     on_ = on;
+    if (on)
+        startTimerHz(kFrameHz);
+    else
+        stopTimer();
+    led_ = Led::Steady;
     repaint();
+}
+
+AbletonLinkChip::Led AbletonLinkChip::ledNow() const {
+    if (waiting_)
+        return (juce::Time::getMillisecondCounter() / kBlinkIntervalMs) % 2 == 0 ? Led::Steady
+                                                                                 : Led::Dim;
+    const auto phase = barPhase ? barPhase() : std::nullopt;
+    if (!phase)
+        return Led::Steady;
+    const auto beat = std::floor(*phase);
+    if (*phase - beat >= kFlashShare)
+        return Led::Dim;
+    return beat == 0.0 ? Led::Downbeat : Led::Beat;
+}
+
+void AbletonLinkChip::timerCallback() {
+    if (const auto led = ledNow(); led != led_) {
+        led_ = led;
+        repaint();
+    }
 }
 
 void AbletonLinkChip::paintButton(juce::Graphics& g, bool highlighted, bool down) {
@@ -71,12 +87,15 @@ void AbletonLinkChip::paintButton(juce::Graphics& g, bool highlighted, bool down
     const float led = h * kLedShare;
     const auto ledBounds = juce::Rectangle<float>(bounds.getX() + (h * kPadShare),
                                                   bounds.getCentreY() - (led / 2), led, led);
-    const bool lit = on_ && !ledDim_;
-    if (lit) {
-        g.setColour(accent.withAlpha(0.25f));
-        g.fillEllipse(ledBounds.expanded(led * 0.4f));
+    if (on_ && led_ != Led::Dim) {
+        const bool downbeat = led_ == Led::Downbeat;
+        g.setColour(accent.withAlpha(downbeat ? 0.45f : 0.25f));
+        g.fillEllipse(ledBounds.expanded(led * (downbeat ? 0.7f : 0.4f)));
+        g.setColour(downbeat ? accent.brighter(0.5f) : accent);
+    } else {
+        g.setColour(on_ ? accent.withAlpha(0.35f)
+                        : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.5f));
     }
-    g.setColour(lit ? accent : ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withAlpha(0.5f));
     g.fillEllipse(ledBounds);
 
     const float letterH = h * kLetteringShare;

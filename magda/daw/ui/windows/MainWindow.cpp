@@ -1334,6 +1334,9 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         footerBar->setAbletonLink(linkSession_->isEnabled(), linkSession_->numPeers());
     };
     linkSession_->onStateChanged();
+    transportPanel->setAbletonLinkPhase([this]() -> std::optional<double> {
+        return linkSession_ ? linkSession_->barPhase() : std::nullopt;
+    });
 
     transportPanel->onTimeSignatureChange = [this](int numerator, int denominator) {
         mainView->getTimelineController().dispatch(SetTimeSignatureEvent{numerator, denominator});

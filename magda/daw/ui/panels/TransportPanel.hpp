@@ -127,6 +127,8 @@ class TransportPanel : public juce::Component,
     void setAbletonLink(bool enabled);
     /** @brief Blink the chip's LED while a start waits for the session's downbeat. */
     void setAbletonLinkWaiting(bool waiting);
+    /** @brief Where the session is in its bar, which the chip's LED flashes in time with. */
+    void setAbletonLinkPhase(std::function<std::optional<double>()> barPhase);
 
     // CPU usage display (0.0 to 1.0)
     void setCpuUsage(float usage);
@@ -220,6 +222,8 @@ class TransportPanel : public juce::Component,
     std::unique_ptr<SvgButton> metronomeButton;
     /// Switches Ableton Link through Config, which the session follows (#929).
     std::unique_ptr<daw::ui::AbletonLinkChip> linkChip;
+    /// Blinks Play while a start waits for the Link session's downbeat (#3188).
+    juce::TimedCallback playWaitBlink_{[this] { playButton->setActive(!playButton->isActive()); }};
     // Count-in gets its own icon above the metronome rather than living behind
     // a right-click on it. The menu sets when recording starts, not how the
     // metronome clicks, and hiding it on the metronome invited that reading.

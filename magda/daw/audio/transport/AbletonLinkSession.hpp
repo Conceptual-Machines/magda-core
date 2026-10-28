@@ -56,6 +56,10 @@ class AbletonLinkSession : public PhaseSource,
 
     std::optional<double> beatAfter(std::chrono::microseconds ahead, double quantum) override;
 
+    /** @brief Where the session is in a bar of the project's signature, in beats; nothing while
+     *         off. Message thread. */
+    std::optional<double> barPhase() const;
+
     /// Called when Link is switched on or off, or the peer count changes.
     std::function<void()> onStateChanged;
 

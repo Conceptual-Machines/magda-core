@@ -120,6 +120,14 @@ std::optional<double> AbletonLinkSession::beatAfter(std::chrono::microseconds ah
     return state.beatAtTime(impl_->link.clock().micros() + ahead, quantum);
 }
 
+std::optional<double> AbletonLinkSession::barPhase() const {
+    if (!enabled_)
+        return std::nullopt;
+    const auto& info = ProjectManager::getInstance().getCurrentProjectInfo();
+    const auto quantum = info.timeSignatureNumerator * 4.0 / info.timeSignatureDenominator;
+    return impl_->link.captureAppSessionState().phaseAtTime(impl_->link.clock().micros(), quantum);
+}
+
 void AbletonLinkSession::sendProjectTempo() {
     const double bpm = projectTempo();
     auto state = impl_->link.captureAppSessionState();
