@@ -612,6 +612,9 @@
   },
   "connections": {
     "tab.clients": "Clients",
+    "link.enabled": "Enabled",
+    "link.disabled": "Disabled",
+    "link.blurb": "Plays in time with other apps on this network that have {0} switched on. While it is on, every app shares one tempo and tempo automation is ignored.",
     "copy": "Copy",
     "copied": "Copied",
     "rotate": "Rotate token",

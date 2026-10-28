@@ -69,6 +69,7 @@ class MagdaAudioEngine final : public AudioEngine,
     void launchSessionScene(const std::vector<TrackId>& trackIds, int sceneIndex) override;
     void setTempo(double bpm) override;
     double getTempo() const override;
+    void setTempoLaneFollowed(bool followed) override;
     void setTimeSignature(int numerator, int denominator) override;
     void getTimeSignature(int& numerator, int& denominator) const override;
     const TempoMap* tempoMap() const override;

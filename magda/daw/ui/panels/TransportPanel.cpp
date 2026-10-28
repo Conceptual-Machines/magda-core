@@ -597,6 +597,7 @@ void TransportPanel::resized() {
     pauseButton->setBounds(0, 0, 0, 0);
     pauseButton->setVisible(false);
 
+    linkChip->setBounds(l.link);
     tempoLabel->setBounds(l.tempo);
     timeSigNumeratorLabel->setBounds(l.timeSigNumerator);
     timeSigDenominatorLabel->setBounds(l.timeSigDenominator);
@@ -1270,6 +1271,14 @@ void TransportPanel::setupTempoAndQuantize() {
     metronomeButton->onClick = [this]() { toggleMetronome(); };
     addAndMakeVisible(*metronomeButton);
 
+    linkChip = std::make_unique<daw::ui::AbletonLinkChip>();
+    linkChip->onClick = [this]() {
+        auto& config = Config::getInstance();
+        config.setAbletonLinkEnabled(!linkChip->isOn());
+        config.save();
+    };
+    addAndMakeVisible(*linkChip);
+
     // Count-in button. Left-click opens the length menu; there is no toggle,
     // since "off" is one of the menu's own choices.
     countInButton = std::make_unique<SvgButton>("CountIn", BinaryData::record_circle_svg,
@@ -1348,6 +1357,10 @@ void TransportPanel::styleTransportButton(SvgButton& button, ColourRole accentRo
                                      activeGlyphRole);
     button.setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
                                      activeGlyphRole);
+}
+
+void TransportPanel::setAbletonLink(bool enabled) {
+    linkChip->setOn(enabled);
 }
 
 void TransportPanel::setPlayheadPosition(double positionInSeconds) {

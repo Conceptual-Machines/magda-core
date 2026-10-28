@@ -489,6 +489,7 @@ target_sources(magda_daw PRIVATE
     midi/QwertyMidiKeyboard.cpp
     # Phase 1: Pure data managers
     transport/TransportStateManager.cpp
+    transport/AbletonLinkSession.cpp
     midi/MidiActivityMonitor.cpp
     params/ParameterManager.cpp
     # Phase 2: Independent features
@@ -514,11 +515,14 @@ target_sources(magda_daw PRIVATE
     session/SessionClipStateQueue.hpp
     TrackMeters.hpp
     transport/TransportStateManager.hpp
+    transport/AbletonLinkSession.hpp
     midi/MidiActivityMonitor.hpp
     params/ParameterManager.hpp
     WarpMarkerManager.hpp
     analysis/AudioTapBuffer.hpp
 )
+
+target_link_libraries(magda_daw PRIVATE Ableton::Link)
 
 # The base pack is compiled separately against magda::device_sdk. Enforce both
 # the movable SDK include boundary and complete independence from Tracktion.

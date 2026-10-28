@@ -2,6 +2,7 @@ target_sources(magda_daw_app PRIVATE
     TransportPanel.cpp
     CapturePanel.cpp
     TransportLayout.cpp
+    AbletonLinkChip.cpp
     TransportTextWidths.cpp
     TimelineHeaderPanel.cpp
     LeftPanel.cpp

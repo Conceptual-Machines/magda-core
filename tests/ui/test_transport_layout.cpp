@@ -352,3 +352,12 @@ TEST_CASE("Spacing density moves the layout with it", "[ui][transport-layout]") 
     REQUIRE(framePad(compact) < framePad(normal));
     REQUIRE(framePad(normal) < framePad(spacious));
 }
+
+TEST_CASE("The Link chip leads the tempo group", "[ui][transport-layout]") {
+    const auto style = GENERATE(Style::Anchored, Style::MemoryFill, Style::Justified);
+    const auto l = compute(kWide, defaultTransportHeight(), nominalText(), 1.0f, style);
+
+    REQUIRE_FALSE(l.link.isEmpty());
+    REQUIRE(l.tempoFrame.contains(l.link));
+    REQUIRE(l.link.getRight() < l.tempo.getX());
+}

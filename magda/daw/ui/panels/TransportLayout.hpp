@@ -102,6 +102,7 @@ struct Layout {
     juce::Rectangle<int> play, stop, record, automationWrite;
     juce::Rectangle<int> loop, backToArrangement;
     juce::Rectangle<int> punchStart, punchEnd, punchIn, punchOut;
+    juce::Rectangle<int> link;  // the Ableton Link chip
     juce::Rectangle<int> tempo, countIn, timeSigNumerator, timeSigDenominator, metronome, key;
     int keyDividerX = 0;
     juce::Rectangle<int> selChip, loopChip;
@@ -115,6 +116,21 @@ struct Layout {
     juce::Rectangle<int> automationWriteLabel;
     juce::Rectangle<int> cpu, cpuTitle, cpuValue;
 };
+
+/** Proportions of the Ableton Link chip, shared by the layout and the chip's paint. */
+namespace link_chip {
+inline constexpr float kLetteringShare = 0.6f;  // of the chip's height
+inline constexpr float kLedShare = 0.24f;
+inline constexpr float kPadShare = 0.2f;
+inline constexpr float kGapShare = 0.25f;                   // between LED and lettering
+inline constexpr float kLetteringAspect = 432.0f / 230.0f;  // Ableton's artwork
+
+inline int widthForHeight(int height) {
+    const auto h = static_cast<float>(height);
+    return juce::roundToInt((h * kPadShare * 2) + (h * kLedShare) + (h * kGapShare) +
+                            (h * kLetteringShare * kLetteringAspect));
+}
+}  // namespace link_chip
 
 /** Resolves the whole bar: measures every group from the same code that
  *  places it, drops sections in kDropOrder until the survivors fit, then

@@ -11,6 +11,7 @@
 #include "audio/midi/MidiDeviceMatch.hpp"
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
+#include "core/TechnicalText.hpp"
 #include "core/controllers/ControllerActivation.hpp"
 #include "media_db/MediaDbContext.hpp"
 #include "media_db/MediaModelDownloader.hpp"
@@ -142,6 +143,21 @@ void FooterBar::mouseUp(const juce::MouseEvent& e) {
         onControllersClicked();
     if (localModelStripArea_.contains(e.getPosition()) && onLocalModelsClicked)
         onLocalModelsClicked();
+    if (linkBadge_ && linkBadge_->hitArea.contains(e.getPosition()) && onAbletonLinkClicked)
+        onAbletonLinkClicked();
+}
+
+void FooterBar::setAbletonLink(bool on, std::size_t peers) {
+    if (!on) {
+        linkBadge_.reset();
+    } else {
+        linkBadge_ = ControllerBadge{
+            .label = magda::technicalText(magda::TechnicalTextToken::AbletonLink) +
+                     juce::String::fromUTF8(" · ") + juce::String(static_cast<int>(peers)),
+            .connected = peers > 0};
+    }
+    resized();
+    repaint();
 }
 
 void FooterBar::paint(juce::Graphics& g) {
@@ -159,7 +175,15 @@ void FooterBar::paint(juce::Graphics& g) {
     // Enabled-controller badges, left of the local models.
     auto font = FontManager::getInstance().getUIFont(11.0f);
     g.setFont(font);
-    for (const auto& b : controllerBadges_) {
+    std::vector<const ControllerBadge*> badges;
+    for (const auto& b : controllerBadges_)
+        badges.push_back(&b);
+    if (linkBadge_)
+        badges.push_back(&*linkBadge_);
+    for (const auto* badge : badges) {
+        const auto& b = *badge;
+        if (b.hitArea.isEmpty())
+            continue;
         // Pill background.
         g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
         g.fillRoundedRectangle(b.hitArea.toFloat(), 4.0f);
@@ -311,6 +335,15 @@ void FooterBar::resized() {
         }
         b.hitArea = juce::Rectangle<int>(x, badgeY, badgeWidths[i], kBadgeHeight);
         x += badgeWidths[i] + kBadgeGap;
+    }
+
+    if (linkBadge_) {
+        const int textW = juce::GlyphArrangement::getStringWidthInt(font, linkBadge_->label);
+        const int badgeW = kBadgeDotPad + kBadgeDotSize + 4 + textW + (kBadgePadX / 2);
+        const int linkX = stripRight - stripWidth - (stripWidth > 0 ? kBadgeGap : 0) - badgeW;
+        linkBadge_->hitArea = linkX < stripLeftLimit
+                                  ? juce::Rectangle<int>()
+                                  : juce::Rectangle<int>(linkX, badgeY, badgeW, kBadgeHeight);
     }
 }
 

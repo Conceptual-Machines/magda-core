@@ -45,6 +45,7 @@ enum class TechnicalTextToken {
     Mcp,
     MagdaMcp,
     WebSocket,
+    AbletonLink,
 };
 
 inline juce::String technicalText(TechnicalTextToken token) {
@@ -128,6 +129,9 @@ inline juce::String technicalText(TechnicalTextToken token) {
             return "magda-mcp";
         case TechnicalTextToken::WebSocket:
             return "WebSocket";
+        // Spelled as Ableton's integration guidelines require.
+        case TechnicalTextToken::AbletonLink:
+            return "Ableton Link";
     }
 
     return {};

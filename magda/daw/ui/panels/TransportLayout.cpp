@@ -112,6 +112,8 @@ struct Metrics {
     int headlineBox = 0;
     int captionColumn = 0;
     int tempoCell = 0;
+    int linkChipHeight = 0;
+    int linkChip = 0;
     int timeSigNum = 0;
     int timeSigDen = 0;
     int key = 0;
@@ -174,6 +176,8 @@ Metrics metricsFor(int width, int height, const TextWidths& text, float densityS
     m.captionColumn = text.timecodeCaption;
 
     m.tempoCell = text.tempo + (2 * cellPad);
+    m.linkChipHeight = m.rowHeight;
+    m.linkChip = link_chip::widthForHeight(m.linkChipHeight);
     m.timeSigNum = text.timeSigNumerator + (2 * cellPad);
     m.timeSigDen = text.timeSigDenominator + (2 * cellPad);
     m.keyRoot = text.keyRoot;
@@ -246,12 +250,15 @@ int buildPunch(Layout& l, const Metrics& m, int x) {
     return width;
 }
 
-// BPM, count-in, meter and metronome on one line, then the key past a divider.
+// The Link chip, then BPM, count-in, meter and metronome on one line,
+// then the key past a divider.
 int buildTempo(Layout& l, const Metrics& m, int x) {
     const int x0 = x;
     const int iconY = m.frameY + ((m.frameHeight - m.icon) / 2);
     x += m.framePad;
 
+    l.link = {x, m.frameY + ((m.frameHeight - m.linkChipHeight) / 2), m.linkChip, m.linkChipHeight};
+    x += m.linkChip + m.itemGap;
     l.tempo = {x, m.frameY, m.tempoCell, m.frameHeight};
     x += m.tempoCell + m.itemGap;
     l.countIn = {x, m.frameY + ((m.frameHeight - m.countInIcon) / 2), m.countInIcon, m.countInIcon};

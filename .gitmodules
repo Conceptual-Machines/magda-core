@@ -31,3 +31,6 @@
 [submodule "third_party/ara_sdk/ARA_Library"]
 	path = third_party/ara_sdk/ARA_Library
 	url = https://github.com/Celemony/ARA_Library.git
+[submodule "third_party/link"]
+	path = third_party/link
+	url = https://github.com/Ableton/link.git

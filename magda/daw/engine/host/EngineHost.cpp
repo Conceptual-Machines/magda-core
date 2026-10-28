@@ -3439,7 +3439,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     /** @brief Bake the map again, after anything it is baked from moves. */
     void refreshTempoMap() {
-        map_ = tempoMapFor(laneChanges_, bpm_, numerator_, denominator_);
+        map_ = tempoMapFor(laneFollowed_ ? laneChanges_ : std::vector<engine::TempoChange>{}, bpm_,
+                           numerator_, denominator_);
     }
 
     /** @brief Follow the tempo lane, re-placing clips when its curve moved. */
@@ -4020,6 +4021,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// published with a tempo reads it, and so does the app through @ref view_.
     /// The tempo lane's curve; empty leaves bpm_ in charge.
     std::vector<engine::TempoChange> laneChanges_;
+    /// Off while an Ableton Link session sets one tempo for every peer (#929).
+    bool laneFollowed_ = true;
     engine::TempoMap map_ = tempoMapAt(bpm_, numerator_, denominator_);
     TempoMapView view_{map_};
 
@@ -4404,6 +4407,20 @@ void EngineHost::setTempo(double bpm) {
 
 double EngineHost::tempo() const {
     return impl_->bpm_;
+}
+
+void EngineHost::setTempoLaneFollowed(bool followed) {
+    if (impl_->laneFollowed_ == followed)
+        return;
+
+    const auto resumeRecording = impl_->arrangementRecording_;
+    impl_->stopRecording();
+    impl_->laneFollowed_ = followed;
+    impl_->refreshTempoMap();
+    impl_->publishTransport();
+    impl_->publishClips();
+    if (resumeRecording)
+        impl_->resumeRecording();
 }
 
 void EngineHost::setTimeSignature(int numerator, int denominator) {

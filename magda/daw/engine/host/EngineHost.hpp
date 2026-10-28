@@ -363,6 +363,8 @@ class EngineHost {
 
     void setTempo(double bpm);
     double tempo() const;
+    /** @brief Whether the tempo lane's curve drives the map; off leaves the tempo flat. */
+    void setTempoLaneFollowed(bool followed);
     void setTimeSignature(int numerator, int denominator);
     void getTimeSignature(int& numerator, int& denominator) const;
     void setLoop(bool enabled, double startBeat, double endBeat);

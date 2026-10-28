@@ -1511,6 +1511,83 @@ namespace {
  * Commit-on-change: every control owns a socket or a live grant, and a switch
  * whose result needs OK to show is one nobody trusts.
  */
+/**
+ * @brief The Ableton Link switch (#929), worded as Ableton's integration guidelines ask:
+ *        "Ableton Link", then Enabled or Disabled.
+ */
+class AbletonLinkPage : public juce::Component, private ConfigListener {
+  public:
+    AbletonLinkPage() {
+        title_.setText(magda::technicalText(magda::TechnicalTextToken::AbletonLink),
+                       juce::dontSendNotification);
+        addAndMakeVisible(title_);
+
+        enable_.onClick = [this] {
+            Config::getInstance().setAbletonLinkEnabled(enable_.getToggleState());
+            Config::getInstance().save();
+        };
+        addAndMakeVisible(enable_);
+
+        blurb_.setJustificationType(juce::Justification::topLeft);
+        blurb_.setBorderSize({});
+        blurb_.setText(
+            tr("connections.link.blurb")
+                .replace("{0}", magda::technicalText(magda::TechnicalTextToken::AbletonLink)),
+            juce::dontSendNotification);
+        addAndMakeVisible(blurb_);
+
+        applyTheme();
+        configChanged();
+        Config::getInstance().addListener(this);
+    }
+
+    ~AbletonLinkPage() override {
+        Config::getInstance().removeListener(this);
+    }
+
+    void lookAndFeelChanged() override {
+        applyTheme();
+    }
+
+    void resized() override {
+        auto area = getLocalBounds().reduced(0, 8);
+        auto row = area.removeFromTop(kRowHeight);
+        line_ = row.withTop(row.getBottom() - 1);
+        enable_.setBounds(row.removeFromRight(kToggleWidth).reduced(0, 7));
+        title_.setBounds(row);
+        area.removeFromTop(10);
+        blurb_.setBounds(area.removeFromTop(60));
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.setColour(ActiveTheme::getBorderColour().withMultipliedAlpha(0.6f));
+        g.fillRect(line_);
+    }
+
+  private:
+    static constexpr int kRowHeight = 36;
+    static constexpr int kToggleWidth = 120;
+
+    void configChanged() override {
+        const bool enabled = Config::getInstance().getAbletonLinkEnabled();
+        enable_.setToggleState(enabled, juce::dontSendNotification);
+        enable_.setButtonText(
+            tr(enabled ? "connections.link.enabled" : "connections.link.disabled"));
+    }
+
+    void applyTheme() {
+        styleLabel(title_, 13.0f);
+        blurb_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        blurb_.setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+    }
+
+    juce::Label title_;
+    juce::ToggleButton enable_;
+    juce::Label blurb_;
+    juce::Rectangle<int> line_;
+};
+
 class ConnectionsSection : public SettingsSection {
   public:
     ConnectionsSection() : SettingsSection(SettingsSectionId::Connections) {}
@@ -1535,7 +1612,8 @@ class ConnectionsSection : public SettingsSection {
                 {tr("connections.tab.clients"),
                  &remoteClientsPage_,
                  {},
-                 &remoteClientsPage_.getToolbar()}};
+                 &remoteClientsPage_.getToolbar()},
+                {magda::technicalText(magda::TechnicalTextToken::AbletonLink), &linkPage_}};
     }
     bool appliesImmediately() const override {
         return true;
@@ -1549,6 +1627,7 @@ class ConnectionsSection : public SettingsSection {
     WebSocketPage webSocketPage_;
     OscSurfacesPage oscPage_;
     RemoteClientsPage remoteClientsPage_;
+    AbletonLinkPage linkPage_;
 };
 
 }  // namespace

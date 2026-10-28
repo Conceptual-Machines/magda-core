@@ -45,6 +45,7 @@
 #include "audio/MidiBridge.hpp"
 #include "audio/midi/QwertyMidiKeyboard.hpp"
 #include "audio/plugins/engine/EngineExternalDevice.hpp"
+#include "audio/transport/AbletonLinkSession.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/Config.hpp"
 #include "core/LinkModeManager.hpp"
@@ -799,6 +800,10 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     };
     footerBar->onControllersClicked = [] { SettingsWindow::show(SettingsSectionId::Controllers); };
     footerBar->onLocalModelsClicked = [] { SettingsWindow::show(SettingsSectionId::AI, "Local"); };
+    footerBar->onAbletonLinkClicked = [] {
+        SettingsWindow::show(SettingsSectionId::Connections,
+                             magda::technicalText(magda::TechnicalTextToken::AbletonLink));
+    };
     addAndMakeVisible(*footerBar);
 
     // Create views (now audioEngine is valid - use externalEngine which points to either external
@@ -1313,6 +1318,17 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         mainView->getTimelineController().dispatch(SetTempoEvent{bpm});
     };
 
+    linkSession_ = std::make_unique<AbletonLinkSession>(AbletonLinkSession::Hooks{
+        .setProjectTempo =
+            [this](double bpm) { mainView->getTimelineController().dispatch(SetTempoEvent{bpm}); },
+        .followTempoLane = [engine](bool followed) { engine->setTempoLaneFollowed(followed); },
+    });
+    linkSession_->onStateChanged = [this] {
+        transportPanel->setAbletonLink(linkSession_->isEnabled());
+        footerBar->setAbletonLink(linkSession_->isEnabled(), linkSession_->numPeers());
+    };
+    linkSession_->onStateChanged();
+
     transportPanel->onTimeSignatureChange = [this](int numerator, int denominator) {
         mainView->getTimelineController().dispatch(SetTimeSignatureEvent{numerator, denominator});
     };
@@ -1420,6 +1436,7 @@ void MainWindow::MainComponent::warnAboutLoadFailures() {
 
 MainWindow::MainComponent::~MainComponent() {
     DBG("    [5d] MainComponent::~MainComponent start");
+    linkSession_.reset();
     setSettingsOpener({});
     SettingsWindow::closeIfOpen();
     SettingsWindow::setContext(nullptr, nullptr);
