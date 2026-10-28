@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // peakMagnitude() replaces the scalar `peak = max(peak, fabs(x))` reduction in
 // the clipper, compressor and follower push (#2151). That form does not
 // vectorise, because reassociating a float reduction needs -ffast-math, which

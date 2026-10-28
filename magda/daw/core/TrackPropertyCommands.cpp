@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "TrackPropertyCommands.hpp"
 
 // All command implementations are inline in the header (simple getter/setter pattern).

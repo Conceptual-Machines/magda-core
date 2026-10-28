@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The v1 device icon buttons draw their state in the glyph alone: grey at rest,
 // green for power when on, red for close on hover, and never a filled backdrop.
 // Set MAGDA_ICON_SNAPSHOT_DIR to also write each rendering as a PNG.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Subscriptions, revisioned events, and backpressure (#1857).
 //
 // Everything here is hub behaviour with no socket involved: what a subscriber

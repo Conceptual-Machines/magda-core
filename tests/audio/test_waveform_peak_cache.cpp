@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include <juce_audio_formats/juce_audio_formats.h>
 
 #include <catch2/catch_test_macros.hpp>

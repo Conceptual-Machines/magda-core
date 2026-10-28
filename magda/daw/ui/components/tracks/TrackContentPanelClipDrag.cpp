@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // TrackContentPanel — Multi-clip drag, time selection clip handling, and clip ghost methods.
 // Split from TrackContentPanel.cpp for file-size compliance.
 

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Tests for restoring a persisted panel tab layout (#2103). The panel's tab
 // order and front tab are saved as stable content-type ids, so the restore has
 // to survive a config written by a build whose tab set differs from this one.

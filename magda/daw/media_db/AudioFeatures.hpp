@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Deterministic per-file audio features (issue #768).
 //
 // Mirrors prototypes/media_db/.../features/audio_features.py — same fields,

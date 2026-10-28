@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "MediaModelDownloader.hpp"
 
 #include <juce_cryptography/juce_cryptography.h>

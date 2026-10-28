@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The shared_ptr atomic free functions used below are deprecated in C++20, but
 // Apple's libc++ does not ship the std::atomic<std::shared_ptr> replacement, so
 // they remain the only portable option. Silence MSVC's STL4029 deprecation

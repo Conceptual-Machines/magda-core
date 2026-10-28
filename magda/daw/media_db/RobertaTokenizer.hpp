@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // RoBERTa BPE tokenizer for CLAP's text encoder (issue #768).
 //
 // CLAP's text path uses laion/clap-htsat-unfused's RoBERTa-base tokenizer.

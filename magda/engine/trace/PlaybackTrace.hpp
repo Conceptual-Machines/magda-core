@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Where a playing slot's audio is at, from the audio thread (#2674). A wrap
 // heard early has two possible sources -- the handle's pass and the voice's
 // source loop -- and neither is visible from the message thread after the

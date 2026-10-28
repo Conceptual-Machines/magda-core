@@ -59,6 +59,14 @@ repos:
         files: \.(cpp|hpp|h|c|cc|cxx)$
         pass_filenames: true
 
+      # Every first-party source names its copyright holder and license.
+      - id: spdx-headers
+        name: SPDX License Headers
+        entry: .pre-commit-hooks/spdx_headers.py --fix
+        language: system
+        files: ^(magda|tests|tools)/.*\.(c|h|hpp|cpp|mm)$
+        pass_filenames: true
+
       # Check that build still works after formatting
       - id: build-check
         name: Build Check

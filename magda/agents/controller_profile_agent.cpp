@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "controller_profile_agent.hpp"
 
 #include <juce_llm/juce_llm.h>

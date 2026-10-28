@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The measured BPM tier (#2674).
 //
 // Two kinds of case. The synthetic ones pin the algorithm against signals whose

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The bridge's SSE framing, tested where the invariant actually lives.
 //
 // An earlier attempt asserted on the bridge process's resident set size after

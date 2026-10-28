@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Issue #1319 tests — CLAP zero-shot tagger.
 //
 // Pure-function paths (familyForLabel, familyFromTopLabels, label list

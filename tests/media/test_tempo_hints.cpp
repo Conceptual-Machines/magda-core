@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The arbiter between what the audio measured and what a file claims (#2674).
 //
 // Pure functions over a measurement and a pair of claims: no decoding, no FFT.

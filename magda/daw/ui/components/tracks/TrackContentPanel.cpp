@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "TrackContentPanel.hpp"
 
 #include <juce_audio_formats/juce_audio_formats.h>

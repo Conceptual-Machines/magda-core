@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Downloads stem-separation model weights from HuggingFace into the app's
 // data dir (issue #1288), mirroring media_db/MediaModelDownloader.
 //

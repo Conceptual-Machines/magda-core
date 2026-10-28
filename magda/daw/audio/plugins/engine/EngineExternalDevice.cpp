@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "plugins/engine/EngineExternalDevice.hpp"
 
 #include <juce_gui_basics/juce_gui_basics.h>

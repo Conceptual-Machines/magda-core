@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Tests for the Phase A SQLite skeleton (issue #768).
 //
 // Mirrors the Python prototype's tests/test_db.py — schema creation, blob

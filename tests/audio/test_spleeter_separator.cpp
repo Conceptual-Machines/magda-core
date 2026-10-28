@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Spleeter ONNX backend (issue #1288): gate-free geometry tests plus an
 // env-gated integration test against the real sherpa-onnx 2-stem models.
 // Set MAGDA_STEM_SPLEETER_DIR to a directory holding vocals.onnx and

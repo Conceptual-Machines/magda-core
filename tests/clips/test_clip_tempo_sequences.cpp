@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Phase 1 of the clip tempo ownership work (#2674): sequences that define done.
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

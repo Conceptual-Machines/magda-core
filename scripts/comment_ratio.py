@@ -38,6 +38,8 @@ def classify_lines(text: str) -> tuple[int, int]:
                     code_lines += 1
             continue
 
+        if line.startswith("// SPDX-"):
+            continue
         if line.startswith("//"):
             comment_lines += 1
         elif line.startswith("/*"):

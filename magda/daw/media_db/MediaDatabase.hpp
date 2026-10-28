@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // MediaDatabase — RAII wrapper around a SQLite connection for the media
 // catalogue (issue #768). Opens the DB at the given path, applying the
 // embedded schema on first creation. Designed to be used from a single

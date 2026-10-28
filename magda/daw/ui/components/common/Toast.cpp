@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "Toast.hpp"
 
 #include "ui/themes/ActiveTheme.hpp"

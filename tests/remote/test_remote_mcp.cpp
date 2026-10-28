@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The MCP protocol layer (#1858), with no sockets involved. What a request
 // becomes on the wire — headers, status codes, SSE — belongs to
 // test_remote_mcp_server.cpp; this is the mapping from MAGDA's shared operation

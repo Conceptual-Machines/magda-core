@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Demucs ONNX backend for stem separation (issue #1288).
 //
 // Wraps Meta's htdemucs v4 (hybrid transformer, 4 stems) via the StemSplitio

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "poly_step_sequencer_apply.hpp"
 
 #include "api/plugin_api.hpp"

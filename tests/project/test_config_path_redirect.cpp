@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The guard that keeps a test run from replacing the developer's settings.
 //
 // Config::save() writes the whole singleton, and no test loads it first, so any

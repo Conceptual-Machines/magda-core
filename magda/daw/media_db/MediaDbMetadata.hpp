@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Two-way binding between the media DB and clips for
 // user-editable per-file metadata (issue #768).
 //

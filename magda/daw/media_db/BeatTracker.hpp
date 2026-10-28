@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Beats and downbeats from a learned model (issue #2674).
 //
 // The autocorrelation tier this replaces measures periodicity in an onset

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "clip_api_live.hpp"
 
 #include "../audio/AudioThumbnailManager.hpp"

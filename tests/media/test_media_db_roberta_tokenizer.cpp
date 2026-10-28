@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Phase D3 tests — RoBERTa BPE tokenizer (issue #768).
 //
 // Splits the tokenizer into pieces that can be tested without the 1.4 MB

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #pragma once
 
 // The single place that knows which libfaust factory flavour this build uses.

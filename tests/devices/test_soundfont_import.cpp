@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // SoundFont presets into the sampler's zone map (#2210).
 
 #include <juce_audio_formats/juce_audio_formats.h>

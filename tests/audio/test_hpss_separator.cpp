@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // HPSS stem separation (issue #1288): model-level tests for the pure-DSP
 // harmonic/percussive separator. A steady sine must land almost entirely in
 // the harmonic stem, a click train in the percussive stem, and the two stems

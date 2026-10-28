@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Embedded SQL schema for the media database (issue #768).
 //
 // The source of truth is prototypes/media_db/src/media_db/schema.sql; this

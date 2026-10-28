@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Spleeter ONNX backend for stem separation (issue #1288).
 //
 // Wraps Deezer's Spleeter 2-stem release via the sherpa-onnx conversion:

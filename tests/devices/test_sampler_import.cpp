@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // SFZ and DecentSampler instruments into the sampler's zone map (#3099).
 
 #include <algorithm>

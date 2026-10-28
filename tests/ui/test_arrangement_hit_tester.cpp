@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Tests for the arrangement pointer hit tester (#1718, #1719): the pure zone
 // model shared by the cursor chooser and (eventually) mouseDown dispatch.
 // Everything here runs headless on plain-data snapshots.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Basic Pitch ONNX backend for audio-to-MIDI transcription (issue #1168).
 //
 // Wraps the ICASSP-2022 Basic Pitch model (Spotify, Apache-2.0) exported to

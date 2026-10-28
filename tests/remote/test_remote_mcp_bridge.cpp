@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The stdio-to-HTTP bridge (#1858), driven as a real child process against a
 // real MCP endpoint.
 //

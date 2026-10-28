@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The magda_tests half of this guard lives in test_config_path_redirect.cpp.
 // It is Catch2, so it cannot run here, and this target is the one that most
 // needs it: the shared-engine tests live here, where a stray Config::save() is

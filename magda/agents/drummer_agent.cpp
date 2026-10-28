@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "drummer_agent.hpp"
 
 #include "../daw/audio/plugins/DrumGridRoles.hpp"

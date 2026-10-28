@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "ParameterConfigDialog.hpp"
 
 #include <juce_audio_processors/juce_audio_processors.h>

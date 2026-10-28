@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "remote_mcp_server.hpp"
 
 // httplib pulls in <windows.h>, which defines min/max as macros and drags in

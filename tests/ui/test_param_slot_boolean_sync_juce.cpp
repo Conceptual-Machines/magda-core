@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // A boolean parameter's checkbox must follow value-only refreshes, not just
 // full widget rebuilds (#2072 follow-up). The EQ writes Band N Enabled from
 // its own curve view on double-click; the grid cell for that parameter is

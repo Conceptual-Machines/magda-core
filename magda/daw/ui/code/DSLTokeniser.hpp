@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #pragma once
 
 #include <juce_gui_extra/juce_gui_extra.h>

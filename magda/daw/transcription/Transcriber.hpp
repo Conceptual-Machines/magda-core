@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Audio-to-MIDI transcription (issue #1168).
 //
 // Backend-agnostic interface. A Transcriber turns a mono PCM buffer into a

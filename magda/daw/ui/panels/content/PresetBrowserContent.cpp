@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "PresetBrowserContent.hpp"
 
 #include "../../themes/ActiveTheme.hpp"

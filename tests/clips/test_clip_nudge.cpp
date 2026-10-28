@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Tests for the keyboard clip-nudge model (#1957): the pure delta rules behind
 // Shift+arrow clip moves. Everything here runs headless on plain data.
 

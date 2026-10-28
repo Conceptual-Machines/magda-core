@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Transport bar layout (#2071 / #2074). The decision about what fits is pure
 // arithmetic over (width, height, measured text, spacing density, style), so it
 // can be asserted without a window. The companion test_transport_layout_juce.cpp

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "unigram_tokenizer.hpp"
 
 #include <juce_core/juce_core.h>

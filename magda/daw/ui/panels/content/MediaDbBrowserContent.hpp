@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Media database browser content (issue #768 — Phase F2).
 //
 // Replaces the F1 placeholder when MediaExplorerContent's library icon is

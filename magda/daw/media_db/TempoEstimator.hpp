@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Tempo from the audio itself (issue #2674).
 //
 // The tempo source. What a file says about itself -- the filename token, then

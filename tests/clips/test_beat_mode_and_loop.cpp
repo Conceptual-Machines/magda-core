@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Beat mode follows the tempo and may play once; only beat mode loops (#3060).
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

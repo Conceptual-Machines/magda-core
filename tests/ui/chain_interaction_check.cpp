@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Full component regression check. Run with run_chain_interaction_check.py.
 #include <array>
 #include <functional>
