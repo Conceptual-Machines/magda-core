@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Tests for the Phase C audio feature extractor (issue #768).
 // Mirrors prototypes/media_db/tests/test_features.py — synthetic 440 Hz sine
 // and silence — and adds end-to-end coverage of where a key and a tempo come

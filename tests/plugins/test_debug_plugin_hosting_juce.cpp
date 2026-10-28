@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The debug plugin through JUCE's real VST3 hosting (#3155).
 
 #include <juce_audio_processors/juce_audio_processors.h>

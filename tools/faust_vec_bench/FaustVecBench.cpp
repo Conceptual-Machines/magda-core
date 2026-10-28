@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Scalar vs vectorized throughput for the compiled Faust devices (issue #1397).
 //
 // Every device is generated twice by this tool's CMakeLists: once the way the

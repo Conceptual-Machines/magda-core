@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Stem separation orchestration (issue #1288).
 //
 // The entry point the UI calls. Owns a single-worker thread pool, so splits

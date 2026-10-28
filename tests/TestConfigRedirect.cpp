@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Keep the test binaries away from the developer's real settings file.
 //
 // Config::save() persists the WHOLE singleton, and no test loads it, so a

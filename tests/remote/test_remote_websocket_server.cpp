@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The WebSocket transport for the remote API (#1856), end to end over a real
 // loopback socket. cpp-httplib ships the client, so these are genuine
 // connections rather than a hand-driven handler.

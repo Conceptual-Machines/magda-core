@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // A discrete parameter's dropdown must not write the parameter when the cell
 // is rebuilt, and must show / write the choice the parameter's value actually
 // selects.

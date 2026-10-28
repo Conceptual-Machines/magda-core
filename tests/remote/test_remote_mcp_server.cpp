@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The MCP Streamable HTTP transport (#1858), end to end over a real loopback
 // socket. cpp-httplib ships the client, so these are genuine HTTP requests
 // rather than a hand-driven handler.

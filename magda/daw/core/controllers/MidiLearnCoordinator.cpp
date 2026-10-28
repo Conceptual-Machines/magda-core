@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "MidiLearnCoordinator.hpp"
 
 #include "../../audio/controllers/ControllerRouter.hpp"

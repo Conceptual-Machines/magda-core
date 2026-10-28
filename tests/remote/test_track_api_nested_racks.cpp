@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Racks and chains at depth, through the facade (#1993).
 //
 // `TrackApi` addressed racks and chains by a `(trackId, rackId, chainId)`

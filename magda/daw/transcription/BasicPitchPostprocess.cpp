@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // See BasicPitchPostprocess.hpp. Faithful port of basic_pitch/note_creation.py
 // (Apache-2.0, Copyright 2022-2024 Spotify AB).
 

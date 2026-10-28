@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include <juce_events/juce_events.h>
 
 #include <catch2/catch_test_macros.hpp>

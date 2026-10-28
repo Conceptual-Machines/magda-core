@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Only one faceplate is ever out in the arrangement: lending a second gives the first back, and a
 // slot rebuilt while its faceplate is out is asked to lend it again.
 

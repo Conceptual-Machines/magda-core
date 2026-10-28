@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Mel spectrogram preprocessing for CLAP (issue #768).
 //
 // CLAP's ONNX audio encoder takes a (batch, 1, time_frames, n_mels) tensor of

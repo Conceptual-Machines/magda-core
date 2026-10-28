@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Basic Pitch posteriorgram -> note decoding (issue #1168).
 //
 // A dependency-free C++ port of the note-creation postprocessing from

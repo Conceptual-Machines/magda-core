@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Hybrid search over the media DB (issue #768).
 //
 // Pulls together everything Phases A-E1 produced:

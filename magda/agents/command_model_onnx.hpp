@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Pretrained-encoder command model, ONNX Runtime backend (#1847).
 //
 // Same job as CommandModel — natural language → validated MAGDA DSL — with the

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // CLAP zero-shot tagging for the media DB indexer (issue #1319).
 //
 // Mirrors prototypes/media_db/src/media_db/tags.py — a curated list of

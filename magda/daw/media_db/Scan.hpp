@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // File system walker + extension-based kind classification (issue #768).
 //
 // Mirrors prototypes/media_db/src/media_db/scan.py. The C++ runtime keeps

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The permission model (#1860): scopes, grants, revocation, and the audit log.
 //
 // Three layers, tested where each one lives:

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The half of the transport layout that needs a graphics context: the widths
 // the shipped fonts actually produce. test_transport_layout.cpp asserts the
 // arithmetic; this one asserts that the strings really do fit inside it at the

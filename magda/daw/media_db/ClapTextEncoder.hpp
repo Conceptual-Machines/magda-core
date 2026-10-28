@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // CLAP text encoder (issue #768).
 //
 // Loads the laion/clap-htsat-unfused text encoder exported to ONNX by the

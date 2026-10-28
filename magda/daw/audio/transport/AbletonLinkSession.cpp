@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // clang-format off
 // First: asio needs winsock2.h ahead of any windows.h a JUCE header brings in.
 #include <ableton/Link.hpp>

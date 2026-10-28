@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include <juce_data_structures/juce_data_structures.h>
 
 #include <catch2/catch_test_macros.hpp>

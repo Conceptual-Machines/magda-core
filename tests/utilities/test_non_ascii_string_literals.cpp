@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Guards a bug class that is invisible until someone looks at the screen.
 //
 // `juce::String(const char*)` decodes through `CharPointer_ASCII`, one byte to

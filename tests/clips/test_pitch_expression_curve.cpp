@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Tests for the MPE pitch glide curve (#2198): the shape a note's per-note
 // pitch expression takes between two authored points, and the inverse a drag
 // uses to bend it. Headless — plain points in, semitones out.

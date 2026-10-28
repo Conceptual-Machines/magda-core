@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The worked examples inside the Faust system prompts have to satisfy the same
 // validator the agent enforces on the model's output.
 //

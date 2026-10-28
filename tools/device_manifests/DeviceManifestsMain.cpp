@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 /**
  * @file DeviceManifestsMain.cpp
  * @brief Writes the parameter manifest of every base-pack device (#2939).

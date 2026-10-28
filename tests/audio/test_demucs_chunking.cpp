@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Demucs OLA geometry (issue #1288): the trapezoid window and chunk grid
 // must match the StemSplitio export's reference inference (infer.py), since
 // the weights were validated against exactly that stitching. These constants

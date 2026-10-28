@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "AboutDialog.hpp"
 
 #include "BinaryData.h"
@@ -67,6 +70,14 @@ class AboutDialog::ContentComponent : public juce::Component {
             std::make_unique<juce::HyperlinkButton>("", kConceptualMachinesUrl);
         conceptualMachinesLink_->setTooltip("Conceptual Machines");
         addAndMakeVisible(*conceptualMachinesLink_);
+
+        const auto& edition = extensions::currentEdition();
+        licenseLink_ =
+            std::make_unique<juce::HyperlinkButton>(edition.licenseNotice, edition.licenseUrl);
+        licenseLink_->setFont(FontManager::getInstance().getUIFont(9.0f), false);
+        licenseLink_->setColour(juce::HyperlinkButton::textColourId,
+                                ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+        addAndMakeVisible(*licenseLink_);
 
         setSize(500, 440);
     }
@@ -199,6 +210,9 @@ class AboutDialog::ContentComponent : public juce::Component {
             conceptualMachinesLink_->setBounds(
                 creditsArea.removeFromTop(58).withSizeKeepingCentre(170, 58));
         }
+        if (licenseLink_)
+            licenseLink_->setBounds(
+                getLocalBounds().withTop(384).withHeight(16));  // under the copyright
     }
 
     void mouseDown(const juce::MouseEvent&) override {
@@ -223,6 +237,7 @@ class AboutDialog::ContentComponent : public juce::Component {
     std::unique_ptr<juce::Drawable> faustLogo_;
     std::unique_ptr<juce::HyperlinkButton> titleLink_;
     std::unique_ptr<juce::HyperlinkButton> conceptualMachinesLink_;
+    std::unique_ptr<juce::HyperlinkButton> licenseLink_;
 };
 
 // =============================================================================

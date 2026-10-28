@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The value axis an automation lane header paints: which ticks a parameter
 // gets, and which of them survive a lane too short to label them all.
 //

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Measures the BPM tier against a real sample library (#2674). Hidden: it
 // reads whatever library this machine has and is a measurement, not a pass/fail
 // assertion. Run it with

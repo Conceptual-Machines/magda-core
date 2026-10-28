@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Lifecycle and credential handling for the remote API (#1856): what MAGDA
 // opens, what it publishes, and what it leaves behind.
 

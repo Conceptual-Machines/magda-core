@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Phase 1 of the clip tempo ownership work (#2674): sequences that define done.
 // Detection answers on the message thread, so each case runs a dispatch loop.
 #include <juce_audio_formats/juce_audio_formats.h>

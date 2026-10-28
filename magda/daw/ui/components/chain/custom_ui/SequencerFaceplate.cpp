@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "custom_ui/SequencerFaceplate.hpp"
 
 #include "magda/sdk/sequencer/StepPattern.hpp"

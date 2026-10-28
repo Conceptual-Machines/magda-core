@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // A measurement for #2682, hidden: how loud is a launched loop's first hit?
 //
 //   ./magda_tests "[.launch-probe]" --success

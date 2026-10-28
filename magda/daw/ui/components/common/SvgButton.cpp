@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "SvgButton.hpp"
 
 #include <juce_graphics/juce_graphics.h>

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Tests for the Phase B path-derived metadata helpers (issue #768).
 // Mirrors prototypes/media_db/tests/test_derive.py and test_parse_key.py.
 

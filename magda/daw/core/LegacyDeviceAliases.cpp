@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "LegacyDeviceAliases.hpp"
 
 #include <juce_data_structures/juce_data_structures.h>

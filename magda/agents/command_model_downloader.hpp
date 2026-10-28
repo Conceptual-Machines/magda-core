@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Downloads the encoder command model from HuggingFace into the app's data
 // dir (#1847), mirroring stem_separation/StemModelDownloader.
 //

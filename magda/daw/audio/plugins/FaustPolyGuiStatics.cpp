@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Single owner of Faust's GUI base statics.
 //
 // faust/dsp/poly-dsp.h pulls in faust/gui/GUI.h (GroupUI : public GUI), which

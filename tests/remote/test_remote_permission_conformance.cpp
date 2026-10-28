@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Cross-transport conformance (#1860).
 //
 // The acceptance criterion this file exists for is "WebSocket and MCP pass the

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Audio source separation (issue #1288).
 //
 // Backend-agnostic interface. A StemSeparator turns an audio buffer into named

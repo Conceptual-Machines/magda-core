@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Phase D2 tests — CLAP text encoder (issue #768).
 //
 // Same pattern as test_media_db_clap_encoder.cpp: most assertions exercise

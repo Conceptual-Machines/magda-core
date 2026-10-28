@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Tests for the clip-drag destination model (#2179): the pure rules that turn a
 // pointer position into a lane the drag can actually land on. Everything here
 // runs headless on plain integers; the panel driving them is covered in

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // PresetDbIndexer — walks MAGDA's on-disk presets folder and mirrors
 // each .mps file into the media DB as a kind='preset' row. Used both
 // for the "Index presets" Preferences action (indexAll) and for

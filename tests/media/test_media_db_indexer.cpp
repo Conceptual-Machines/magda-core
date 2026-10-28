@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Phase E1 tests — MediaDbIndexer (issue #768).
 //
 // Spins up a temp dir with a few tiny WAVs, indexes against an in-memory DB,

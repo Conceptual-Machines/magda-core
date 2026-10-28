@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Harmonic / percussive source separation (issue #1288).
 //
 // Pure DSP, no ML model: median filtering of the STFT magnitude (Fitzgerald

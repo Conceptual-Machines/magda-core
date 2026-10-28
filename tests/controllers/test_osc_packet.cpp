@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The OSC 1.0 reader MAGDA owns because JUCE's is private to its own receive
 // loop (#2096).
 //

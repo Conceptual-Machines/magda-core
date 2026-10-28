@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 /**
  * @file plugin_scanner_main.cpp
  * @brief Out-of-process plugin scanner executable

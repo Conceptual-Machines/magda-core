@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // A device built from the Sampler's parts rather than a copy of it (#3100): its own voice, its own
 // plugin id and its own parameter slots.
 

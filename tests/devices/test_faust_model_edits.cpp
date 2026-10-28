@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // A Faust patch load lands on the model: its source and the controls it declares (#2659).
 //
 // No audio engine in this binary, so TrackManager skips the projection and what is under test is

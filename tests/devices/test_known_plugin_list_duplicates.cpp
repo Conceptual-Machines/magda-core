@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Investigative tests for issue #1005's "duplicate VST3 entries" follow-up.
 //
 // These don't assert the *desired* behaviour — they document what JUCE's

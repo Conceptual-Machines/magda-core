@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // JUCE's VST3 wrapper always answers initialize() with kResultTrue, so the one place a
 // JUCE plugin can refuse an instance the way a host sees it is the factory (#3155).
 

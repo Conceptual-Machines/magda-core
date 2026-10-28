@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 /**
  * @file Extension.hpp
  * @brief App-level extensions linked in at build time.
@@ -25,6 +28,8 @@ namespace magda::extensions {
 /** @brief The product name shown in the title bar, splash and About box. */
 struct Edition {
     juce::String productName = "MAGDA";
+    juce::String licenseNotice = "Free software under the GNU GPL v3. Get the source code";
+    juce::URL licenseUrl{"https://github.com/Conceptual-Machines/magda-core"};
 };
 
 /** @brief What an extension can reach once the main window exists. */

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // App-wide owner of the media database state (issue #768).
 //
 // Lazily opens the SQLite file under MAGDA's data dir on first access,

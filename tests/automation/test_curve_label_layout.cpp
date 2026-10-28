@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Tests for the curve-view label clamp (#2072): readouts that track a dot or a
 // handle must stay inside the plot instead of hanging over the border once the
 // tracked point nears either end. Pure geometry, runs headless.

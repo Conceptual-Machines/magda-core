@@ -415,6 +415,9 @@ jobs:
           exit 1
         fi
 
+    - name: Check SPDX license headers
+      run: python3 .pre-commit-hooks/spdx_headers.py
+
   security-checks:
     name: Security Validation
     runs-on: ubuntu-latest

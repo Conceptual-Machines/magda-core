@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Orchestrator that walks a directory and populates the media DB
 // (issue #768). One indexer per scan; caller owns threading.
 //

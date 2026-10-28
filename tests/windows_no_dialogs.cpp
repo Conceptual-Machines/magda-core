@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Keeps the Windows test binaries from ever blocking on a modal dialog.
 //
 // A Debug build links the debug CRT, whose diagnostics (failed assert, invalid

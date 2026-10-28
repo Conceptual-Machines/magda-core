@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "drum_grid/DrumGridUI.hpp"
 
 #include <BinaryData.h>

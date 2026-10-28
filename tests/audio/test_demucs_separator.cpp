@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Demucs ONNX backend (issue #1288): integration test against the real
 // htdemucs.onnx. Needs the ~316 MB weights, so it is env-gated like the CLAP
 // [needs-model] tests: set MAGDA_STEM_DEMUCS_MODEL to an htdemucs.onnx path.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The Settings window's pending-change count and Restore defaults (#3162),
 // both built on a section writing its edits to a scratch Config.
 

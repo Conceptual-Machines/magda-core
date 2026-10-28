@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // A sampler's faceplate edits land on the model, not on the runtime (#2379).
 //
 // No audio engine in this binary: TrackManager skips the projection, so what is

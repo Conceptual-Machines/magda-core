@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // SentencePiece Unigram tokenizer for the encoder command model (#1847).
 //
 // DeBERTa-v3 tokenizes with Unigram, not the byte-level BPE that

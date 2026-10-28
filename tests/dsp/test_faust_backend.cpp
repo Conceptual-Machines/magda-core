@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Covers the runtime Faust execution backend (issue #1382): the factory that
 // FaustPlugin / FaustInstrumentPlugin compile user- and AI-authored DSP with.
 //

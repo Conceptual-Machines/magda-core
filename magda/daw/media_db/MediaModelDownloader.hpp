@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Downloads the media DB's ONNX model bundles from HuggingFace into the app's
 // data dir (issues #768, #2674).
 //

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Phase E2 tests — MediaDbQuery (issue #768).
 //
 // Uses the indexer to populate an in-memory DB from synthetic WAVs, then

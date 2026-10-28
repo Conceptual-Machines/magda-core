@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // Phase D tests — CLAP audio encoder + mel preprocessing (issue #768).
 //
 // The encoder needs a real ONNX file on disk to actually run inference, so

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 /**
  * @file ModeContent.hpp
  * @brief Content a view mode shows in place of the arrangement's track headers and lanes.

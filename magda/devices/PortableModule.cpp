@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // The devices MAGDA exposes through the SDK's C ABI: the JUCE plugins, the wasm module and the
 // parity renderer are built from this list (#2940).
 

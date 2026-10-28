@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Conceptual Machines
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 // magda-mcp — a stdio-to-HTTP bridge for MAGDA's MCP endpoint (#1858).
 //
 // An MCP host is configured once and expects that configuration to keep working.
