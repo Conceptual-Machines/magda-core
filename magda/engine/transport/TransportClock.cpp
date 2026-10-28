@@ -85,6 +85,7 @@ void ClockCore::countSegment(const TempoMap& tempo, std::int64_t samples, int of
     segment.startSample = offset;
     segment.countingIn = true;
     segment.insidePunch = true;
+    segment.waitingForPhase = false;
 
     samplesCounted_ += samples;
     continuous_ = true;
@@ -172,6 +173,80 @@ void ClockCore::applyRequest(const TransportSnapshot& snapshot) {
     // doing.
     if (playing_ && !wasPlaying)
         continuous_ = false;
+
+    startedNow_ = playing_ && !wasPlaying;
+    if (!playing_)
+        phaseWaitLeft_ = 0;
+}
+
+void ClockCore::followPhase(const TempoMap& tempo, const PhaseReference& phase) {
+    const auto quantum = phase.quantum;
+    if (quantum <= 0.0)
+        return;
+
+    const auto wrap = [quantum](double beats) {
+        return beats - quantum * std::floor(beats / quantum);
+    };
+    const auto secondsPerBeat = 60.0 / tempo.bpmAt(positionBeat_);
+
+    // A start rolls when the session reaches the phase the cursor stands at, never more than a
+    // bar later. A count-in keeps its own start, and drift from it is caught below.
+    if (startedNow_ && !countingIn_) {
+        const auto wait = wrap(wrap(positionBeat_) - wrap(phase.beat));
+        const auto samples = std::llround(wait * secondsPerBeat * sampleRate_);
+        const auto bar = std::llround(quantum * secondsPerBeat * sampleRate_);
+        phaseWaitLeft_ = samples >= bar ? 0 : samples;
+        phaseError_ = std::numeric_limits<double>::quiet_NaN();
+        return;
+    }
+
+    if (!playing_ || countingIn_ || phaseWaitLeft_ > 0) {
+        phaseError_ = std::numeric_limits<double>::quiet_NaN();
+        return;
+    }
+
+    // Positive when the session is ahead, within half a bar either way.
+    auto error = wrap(phase.beat - positionBeat_);
+    if (error >= quantum / 2.0)
+        error -= quantum;
+
+    if (std::abs(error) * secondsPerBeat > kPhaseJumpSeconds) {
+        anchorTo(tempo, positionBeat_ + error);
+        continuous_ = false;
+        error = 0.0;
+    }
+    phaseError_ = error;
+}
+
+void ClockCore::waitSegment(const TempoMap& tempo, std::int64_t samples, int offset) {
+    auto& segment = segments_[static_cast<std::size_t>(segmentCount_++)];
+    const auto beat = beatAfter(tempo, samplesSinceAnchor_);
+    const auto seconds = secondsAfter(samplesSinceAnchor_);
+    auto& block = segment.block;
+    block.numSamples = static_cast<int>(samples);
+    block.playing = false;
+    block.beats = {beat, beat};
+    block.seconds = {seconds, seconds};
+    block.monotonicBeats = {monotonicBeat_, monotonicBeat_};
+    block.monotonicSeconds.start = monotonicSeconds_;
+    monotonicSeconds_ += static_cast<double>(samples) / sampleRate_;
+    block.monotonicSeconds.end = monotonicSeconds_;
+    block.monotonicSamples.start = monotonicSamples_;
+    monotonicSamples_ += SampleDuration{samples};
+    block.monotonicSamples.end = monotonicSamples_;
+    block.sampleRate = sampleRate_;
+    block.continuous = continuous_;
+    block.started = false;
+    block.tempo = &tempo;
+
+    segment.startSample = offset;
+    segment.countingIn = false;
+    segment.insidePunch = true;
+    segment.waitingForPhase = true;
+
+    phaseWaitLeft_ -= samples;
+    continuous_ = true;
+    rolledLast_ = false;
 }
 
 void ClockCore::followTempo(const TempoMap& tempo) {
@@ -186,7 +261,8 @@ void ClockCore::followTempo(const TempoMap& tempo) {
 }
 
 std::span<const ClockCore::Segment> ClockCore::advance(const TransportSnapshot& snapshot,
-                                                       double sampleRate, int numSamples) {
+                                                       double sampleRate, int numSamples,
+                                                       const PhaseReference* phase) {
     segmentCount_ = 0;
     overflowedLoop_ = false;
 
@@ -200,6 +276,11 @@ std::span<const ClockCore::Segment> ClockCore::advance(const TransportSnapshot& 
 
     applyRequest(snapshot);
     followTempo(tempo);
+    if (phase != nullptr)
+        followPhase(tempo, *phase);
+    else
+        phaseError_ = std::numeric_limits<double>::quiet_NaN();
+    startedNow_ = false;
 
     if (numSamples <= 0)
         return {};
@@ -229,6 +310,7 @@ std::span<const ClockCore::Segment> ClockCore::advance(const TransportSnapshot& 
         segment.startSample = 0;
         segment.countingIn = false;
         segment.insidePunch = true;
+        segment.waitingForPhase = false;
 
         segmentCount_ = 1;
         continuous_ = true;
@@ -241,6 +323,16 @@ std::span<const ClockCore::Segment> ClockCore::advance(const TransportSnapshot& 
     auto offset = 0;
 
     while (remaining > 0) {
+        if (phaseWaitLeft_ > 0) {
+            const auto samples = std::min(static_cast<std::int64_t>(remaining), phaseWaitLeft_);
+            waitSegment(tempo, samples, offset);
+            offset += static_cast<int>(samples);
+            remaining -= static_cast<int>(samples);
+            if (phaseWaitLeft_ == 0)
+                continuous_ = false;
+            continue;
+        }
+
         // The callback is cut where the count-in ends, and the timeline starts
         // from there: a start, not a continuation of the count.
         if (countingIn_) {
@@ -358,6 +450,7 @@ std::span<const ClockCore::Segment> ClockCore::advance(const TransportSnapshot& 
         segment.block.tempo = &tempo;
         segment.startSample = offset;
         segment.countingIn = false;
+        segment.waitingForPhase = false;
         rolledLast_ = true;
         segment.insidePunch = !beforePunch && !afterPunch;
 
@@ -383,12 +476,14 @@ std::span<const ClockCore::Segment> ClockCore::advance(const TransportSnapshot& 
 }
 
 std::span<const TransportClock::Segment> TransportClock::advance(const TransportSnapshot& snapshot,
-                                                                 double sampleRate,
-                                                                 int numSamples) {
-    const auto segments = core_.advance(snapshot, sampleRate, numSamples);
+                                                                 double sampleRate, int numSamples,
+                                                                 const PhaseReference* phase) {
+    const auto segments = core_.advance(snapshot, sampleRate, numSamples, phase);
 
     positionBeats_.store(core_.positionBeat(), std::memory_order_relaxed);
     playingPublic_.store(core_.playing(), std::memory_order_relaxed);
+    waitingForPhase_.store(core_.waitingForPhase(), std::memory_order_relaxed);
+    phaseError_.store(core_.phaseError(), std::memory_order_relaxed);
     if (core_.overflowedLoop())
         loopWrapOverflows_.fetch_add(1, std::memory_order_relaxed);
     publishSyncPoint(core_.positionBeat());

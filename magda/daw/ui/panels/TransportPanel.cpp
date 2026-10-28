@@ -1359,6 +1359,20 @@ void TransportPanel::styleTransportButton(SvgButton& button, ColourRole accentRo
                                      activeGlyphRole);
 }
 
+void TransportPanel::setAbletonLinkPhase(std::function<std::optional<double>()> barPhase) {
+    linkChip->barPhase = std::move(barPhase);
+}
+
+void TransportPanel::setAbletonLinkWaiting(bool waiting) {
+    linkChip->setWaiting(waiting);
+    if (waiting) {
+        playWaitBlink_.startTimer(daw::ui::AbletonLinkChip::kBlinkIntervalMs);
+    } else {
+        playWaitBlink_.stopTimer();
+        playButton->setActive(isPlaying);
+    }
+}
+
 void TransportPanel::setAbletonLink(bool enabled) {
     linkChip->setOn(enabled);
 }

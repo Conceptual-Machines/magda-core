@@ -848,7 +848,9 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         transportPanel->setPlayheadPosition(position);
         // Follow the tempo curve: show the BPM at the playhead, not a static
         // scalar. Walks the tempo map (constant tempo -> unchanged readout).
-        if (const auto* tm = mainView->getTimelineController().tempoMap())
+        // Not under Ableton Link: the tempo is flat, and the map carries its phase nudges.
+        const auto* tm = mainView->getTimelineController().tempoMap();
+        if (tm != nullptr && !(linkSession_ && linkSession_->isEnabled()))
             transportPanel->setLiveTempoDisplay(tm->bpmAt(tm->timeToBeat(position)));
     };
     mainView->onTimeSelectionChanged = [this](double start, double end, bool hasTimeSelection) {
@@ -1215,6 +1217,9 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         if (transportPanel)
             transportPanel->setPlaybackState(playing);
     };
+    positionTimer_->onPhaseWaitChanged = [this](bool waiting) {
+        transportPanel->setAbletonLinkWaiting(waiting);
+    };
     positionTimer_->onRecordStateChanged = [this](bool recording) {
         if (transportPanel)
             transportPanel->setRecordingState(recording);
@@ -1322,12 +1327,16 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         .setProjectTempo =
             [this](double bpm) { mainView->getTimelineController().dispatch(SetTempoEvent{bpm}); },
         .followTempoLane = [engine](bool followed) { engine->setTempoLaneFollowed(followed); },
+        .setPhaseSource = [engine](PhaseSource* source) { engine->setPhaseSource(source); },
     });
     linkSession_->onStateChanged = [this] {
         transportPanel->setAbletonLink(linkSession_->isEnabled());
         footerBar->setAbletonLink(linkSession_->isEnabled(), linkSession_->numPeers());
     };
     linkSession_->onStateChanged();
+    transportPanel->setAbletonLinkPhase([this]() -> std::optional<double> {
+        return linkSession_ ? linkSession_->barPhase() : std::nullopt;
+    });
 
     transportPanel->onTimeSignatureChange = [this](int numerator, int denominator) {
         mainView->getTimelineController().dispatch(SetTimeSignatureEvent{numerator, denominator});

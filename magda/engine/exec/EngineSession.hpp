@@ -290,9 +290,11 @@ class EngineSession {
      *
      * @p output must include the context channels and every callback channel
      * named by the published plan; a narrower buffer is cleared and refused.
+     *
+     * @p phase is an external session's beat for this block, which the clock follows (#3188).
      */
-    void process(int numSamples, juce::AudioBuffer<float>& output,
-                 const LiveInputBlock& input = {});
+    void process(int numSamples, juce::AudioBuffer<float>& output, const LiveInputBlock& input = {},
+                 const PhaseReference* phase = nullptr);
 
     /**
      * @brief The feed a live source reads its block from.
@@ -394,6 +396,16 @@ class EngineSession {
     /// playhead is drawn from.
     double positionBeats() const {
         return clock_.positionBeats();
+    }
+
+    /// Whether a start is held for an external session's phase. Any thread.
+    bool isWaitingForPhase() const {
+        return clock_.isWaitingForPhase();
+    }
+
+    /// Beats an external session is ahead of the cursor, NaN when not measured. Any thread.
+    double phaseError() const {
+        return clock_.phaseError();
     }
 
     /// The generation of the last transport request the callback applied. Any thread.

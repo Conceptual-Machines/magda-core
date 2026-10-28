@@ -970,3 +970,100 @@ TEST_CASE("A copy of the clock's core predicts its blocks and publishes nothing"
     }
     CHECK(clock.positionBeats() == approx(ahead.positionBeat()));
 }
+
+// ---------------------------------------------------------------------------
+// Following an external session's phase: Ableton Link (#3188).
+// ---------------------------------------------------------------------------
+
+namespace {
+
+using magda::engine::PhaseReference;
+
+Rendered advance(TransportClock& clock, const TransportSnapshot& snapshot, int numSamples,
+                 const PhaseReference& phase) {
+    Rendered rendered;
+    for (const auto& segment : clock.advance(snapshot, kSampleRate, numSamples, &phase))
+        rendered.segments.push_back(segment);
+    return rendered;
+}
+
+}  // namespace
+
+TEST_CASE("A start waits for the session to reach the cursor's phase",
+          "[engine][transport][clock][link]") {
+    TransportClock clock;
+
+    // The session is a beat into its bar and the cursor is on a downbeat: three beats to wait.
+    const auto rendered = advance(clock, playing(0.0), 70000, {.beat = 1.0, .quantum = 4.0});
+    requireCovers(rendered, 70000);
+    REQUIRE(rendered.segments.size() == 2);
+
+    const auto& wait = rendered.segments[0];
+    CHECK(wait.waitingForPhase);
+    CHECK(!wait.block.playing);
+    CHECK(wait.block.numSamples == static_cast<int>(3 * kSamplesPerBeat));
+    CHECK(wait.block.beats.start == approx(0.0));
+    CHECK(wait.block.beats.end == approx(0.0));
+
+    const auto& start = rendered.segments[1];
+    CHECK(!start.waitingForPhase);
+    CHECK(start.block.playing);
+    CHECK(start.block.started);
+    CHECK(!start.block.continuous);
+    CHECK(start.block.beats.start == approx(0.0));
+}
+
+TEST_CASE("A start already in phase rolls at once", "[engine][transport][clock][link]") {
+    TransportClock clock;
+    const auto rendered = advance(clock, playing(6.0), 512, {.beat = 10.0, .quantum = 4.0});
+    REQUIRE(rendered.segments.size() == 1);
+    CHECK(rendered.segments[0].block.playing);
+    CHECK(!clock.isWaitingForPhase());
+}
+
+TEST_CASE("Stopping while waiting gives the wait up", "[engine][transport][clock][link]") {
+    TransportClock clock;
+    advance(clock, playing(0.0), 512, {.beat = 1.0, .quantum = 4.0});
+    REQUIRE(clock.isWaitingForPhase());
+
+    advance(clock, halt(2), 512, {.beat = 1.1, .quantum = 4.0});
+    CHECK(!clock.isWaitingForPhase());
+    CHECK(!clock.isPlaying());
+}
+
+TEST_CASE("Drift is measured, small drift left for the tempo map, a large one jumped",
+          "[engine][transport][clock][link]") {
+    TransportClock clock;
+    const auto start = playing(0.0);
+    advance(clock, start, 512, {.beat = 0.0, .quantum = 4.0});
+    const auto at = clock.positionBeats();
+
+    SECTION("a few milliseconds is reported and the cursor carries on") {
+        // 0.01 beat at 120 bpm is 5 ms, inside the jump threshold.
+        const auto rendered = advance(clock, start, 512, {.beat = at + 0.01, .quantum = 4.0});
+        CHECK(clock.phaseError() == Catch::Approx(0.01).margin(1e-6));
+        CHECK(rendered.segments[0].block.beats.start == approx(at));
+        CHECK(rendered.segments[0].block.continuous);
+    }
+
+    SECTION("further out, the cursor jumps into phase") {
+        const auto rendered = advance(clock, start, 512, {.beat = at + 0.2, .quantum = 4.0});
+        CHECK(rendered.segments[0].block.beats.start == approx(at + 0.2));
+        CHECK(!rendered.segments[0].block.continuous);
+        CHECK(clock.phaseError() == approx(0.0));
+    }
+
+    SECTION("across the bar line, the short way round") {
+        const auto rendered =
+            advance(clock, start, 512, {.beat = at - 0.005 + 4.0, .quantum = 4.0});
+        CHECK(clock.phaseError() == Catch::Approx(-0.005).margin(1e-6));
+        CHECK(rendered.segments[0].block.beats.start == approx(at));
+    }
+}
+
+TEST_CASE("Without a session there is nothing to measure", "[engine][transport][clock][link]") {
+    TransportClock clock;
+    advance(clock, playing(0.0), 512);
+    CHECK(std::isnan(clock.phaseError()));
+    CHECK(!clock.isWaitingForPhase());
+}

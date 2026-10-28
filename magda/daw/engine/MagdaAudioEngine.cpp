@@ -343,6 +343,12 @@ double MagdaAudioEngine::getTempo() const {
 void MagdaAudioEngine::setTempoLaneFollowed(bool followed) {
     host_->setTempoLaneFollowed(followed);
 }
+void MagdaAudioEngine::setPhaseSource(PhaseSource* source) {
+    host_->setPhaseSource(source);
+}
+bool MagdaAudioEngine::isWaitingForPhase() const {
+    return host_->isWaitingForPhase();
+}
 void MagdaAudioEngine::setTimeSignature(int numerator, int denominator) {
     host_->setTimeSignature(numerator, denominator);
 }

@@ -31,6 +31,8 @@ class TrackMeasurementTap;
 
 namespace magda {
 
+class PhaseSource;
+
 struct SessionRecordingCapabilities {
     bool slotRecording = false;
     bool performanceCapture = false;
@@ -317,6 +319,12 @@ class AudioEngine : public AudioEngineListener {
     virtual void getTimeSignature(int& numerator, int& denominator) const = 0;
     /** Whether tempo automation drives the tempo; off plays the project tempo flat. */
     virtual void setTempoLaneFollowed(bool /*followed*/) {}
+    /** Follow an external session's phase (#3188); null stops. Returns once it is let go of. */
+    virtual void setPhaseSource(PhaseSource* /*source*/) {}
+    /** Whether a start is held for the phase source's downbeat. */
+    virtual bool isWaitingForPhase() const {
+        return false;
+    }
 
     /** Position-aware beats<->seconds facade backed by the engine's tempo
         sequence (the single source of truth). */

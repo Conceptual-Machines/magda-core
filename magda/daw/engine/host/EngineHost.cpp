@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -15,6 +16,7 @@
 #include <ranges>
 #include <set>
 #include <span>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -44,6 +46,7 @@
 #include "../../core/UserAlert.hpp"
 #include "../../core/controllers/BindingRegistry.hpp"
 #include "../../project/ProjectManager.hpp"
+#include "../PhaseSource.hpp"
 #include "AraTrackEditing.hpp"
 #include "EngineInsertCapture.hpp"
 #include "EngineOfflineRender.hpp"
@@ -89,6 +92,13 @@ constexpr int kChannels = 2;
 
 /// 30 fps, fast enough for a smooth meter.
 constexpr int kMeterIntervalMs = 33;
+
+// Following a phase source (#3188): drift under the tolerance is left alone, the rest is
+// closed over about a second, never faster than the cap, in steps that keep republishes rare.
+constexpr double kPhaseToleranceSeconds = 0.0005;
+constexpr double kPhaseCatchUpSeconds = 1.0;
+constexpr double kMaxTempoNudge = 0.01;
+constexpr double kTempoNudgeStep = 0.0005;
 
 /// Per live MIDI pass. Fixed before the audio thread sees the tap.
 constexpr std::size_t kRecordingPreviewNotes = 2048;
@@ -507,6 +517,34 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             EngineTrace::print(line);
 
         traceDroppedLiveMidi();
+        followPhaseError();
+    }
+
+    /**
+     * @brief Nudge the tempo map toward the phase source, and back to exact once in phase.
+     *
+     * The map rather than the clock: every block converts beats through it, so a nudge
+     * anywhere else would move notes off their samples. Not while recording an arrangement,
+     * where a tempo change ends the take.
+     */
+    void followPhaseError() {
+        auto nudge = 1.0;
+        const auto error =
+            session_ != nullptr ? session_->phaseError() : std::numeric_limits<double>::quiet_NaN();
+        if (std::isfinite(error) && !arrangementRecording_) {
+            const auto errorSeconds = error * 60.0 / bpm_;
+            if (std::abs(errorSeconds) > kPhaseToleranceSeconds)
+                nudge = 1.0 + std::clamp(errorSeconds / kPhaseCatchUpSeconds, -kMaxTempoNudge,
+                                         kMaxTempoNudge);
+            nudge = 1.0 + (std::round((nudge - 1.0) / kTempoNudgeStep) * kTempoNudgeStep);
+        }
+        if (nudge == tempoNudge_)
+            return;
+
+        tempoNudge_ = nudge;
+        refreshTempoMap();
+        publishTransport();
+        publishClips();
     }
 
     /// Live MIDI that never reached the callback. Only when the count moved,
@@ -3339,6 +3377,23 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         triggerAsyncUpdate();
     }
 
+    /** @brief The phase source's beat when the sample @p samplesAhead from now is heard. */
+    std::optional<engine::PhaseReference> phaseFor(int samplesAhead, double rate) {
+        if (rate <= 0.0)
+            return std::nullopt;
+
+        phaseReaders_.fetch_add(1);
+        std::optional<engine::PhaseReference> phase;
+        if (auto* source = phaseSource_.load()) {
+            const auto quantum = phaseQuantum_.load(std::memory_order_relaxed);
+            const auto ahead = std::chrono::microseconds(std::llround(samplesAhead * 1.0e6 / rate));
+            if (const auto beat = source->beatAfter(ahead, quantum))
+                phase = engine::PhaseReference{.beat = *beat, .quantum = quantum};
+        }
+        phaseReaders_.fetch_sub(1);
+        return phase;
+    }
+
     void audioDeviceIOCallbackWithContext(const float* const* input, int numInputChannels,
                                           float* const* output, int numOutputChannels,
                                           int numSamples,
@@ -3384,9 +3439,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                      : juce::dsp::AudioBlock<const float>{};
             midiOutputs_.beginBlock(rate > 0.0 ? startedMs + 1000.0 * done / rate : startedMs, rate,
                                     outputLatency);
+            const auto phase = phaseFor(done + outputLatency, rate);
             session_->process(piece, scratch_,
                               done == 0 ? engine::LiveInputBlock{pieceIn, streams}
-                                        : engine::LiveInputBlock{pieceIn, {}});
+                                        : engine::LiveInputBlock{pieceIn, {}},
+                              phase ? &*phase : nullptr);
 
             if (session_->takeCompletionPending())
                 triggerAsyncUpdate();
@@ -3439,8 +3496,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     /** @brief Bake the map again, after anything it is baked from moves. */
     void refreshTempoMap() {
-        map_ = tempoMapFor(laneFollowed_ ? laneChanges_ : std::vector<engine::TempoChange>{}, bpm_,
-                           numerator_, denominator_);
+        map_ = tempoMapFor(laneFollowed_ ? laneChanges_ : std::vector<engine::TempoChange>{},
+                           bpm_ * tempoNudge_, numerator_, denominator_);
+        phaseQuantum_.store(numerator_ * 4.0 / denominator_, std::memory_order_relaxed);
     }
 
     /** @brief Follow the tempo lane, re-placing clips when its curve moved. */
@@ -3956,6 +4014,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// The portion a MIDI arrival shares with a simultaneously recorded audio
     /// input: playback through the active interface.
     std::atomic<int> deviceOutputAdjustmentSamples_{0};
+
+    /// The timeline the callback follows (#3188), and how many callbacks are reading it, so a
+    /// source being taken away can wait for them.
+    std::atomic<PhaseSource*> phaseSource_{nullptr};
+    std::atomic<int> phaseReaders_{0};
+    /// Beats in a bar of the map's signature: the cycle whose phase is shared.
+    std::atomic<double> phaseQuantum_{4.0};
     std::atomic<std::uint64_t> inputGeneration_{0};
 
     // Declared so that destruction unwinds inwards: the session lets go of the
@@ -4013,6 +4078,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     std::optional<MasterInput> masterInput_;
 
     double bpm_ = 120.0;
+    /// What bpm_ is scaled by while a phase source's drift is being caught up (#3188).
+    double tempoNudge_ = 1.0;
     int numerator_ = 4;
     int denominator_ = 4;
     int countInMode_ = 0;
@@ -4407,6 +4474,22 @@ void EngineHost::setTempo(double bpm) {
 
 double EngineHost::tempo() const {
     return impl_->bpm_;
+}
+
+void EngineHost::setPhaseSource(PhaseSource* source) {
+    impl_->phaseSource_.store(source);
+    while (impl_->phaseReaders_.load() > 0)
+        std::this_thread::yield();
+    if (source == nullptr && impl_->tempoNudge_ != 1.0) {
+        impl_->tempoNudge_ = 1.0;
+        impl_->refreshTempoMap();
+        impl_->publishTransport();
+        impl_->publishClips();
+    }
+}
+
+bool EngineHost::isWaitingForPhase() const {
+    return impl_->session_ != nullptr && impl_->session_->isWaitingForPhase();
 }
 
 void EngineHost::setTempoLaneFollowed(bool followed) {

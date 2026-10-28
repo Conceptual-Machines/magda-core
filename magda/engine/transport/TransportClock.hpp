@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <limits>
 #include <span>
 
 #include "exec/RenderContext.hpp"
@@ -57,11 +58,18 @@ class ClockCore {
 
         /// Whether Arrangement takes may consume this segment.
         bool insidePunch = true;
+
+        /// A start held until the session's phase comes round (#3188). The timeline stands
+        /// still, as it does stopped.
+        bool waitingForPhase = false;
     };
+
+    /// Further out than this, the clock jumps into phase rather than waiting to be nudged.
+    static constexpr double kPhaseJumpSeconds = 0.025;
 
     /// @copydoc TransportClock::advance
     std::span<const Segment> advance(const TransportSnapshot& snapshot, double sampleRate,
-                                     int numSamples);
+                                     int numSamples, const PhaseReference* phase = nullptr);
 
     /// Where the cursor is, in beats.
     double positionBeat() const {
@@ -77,6 +85,13 @@ class ClockCore {
     /// Whether the last advance found a loop too short to be honoured.
     bool overflowedLoop() const {
         return overflowedLoop_;
+    }
+    bool waitingForPhase() const {
+        return phaseWaitLeft_ > 0;
+    }
+    /// Beats the session is ahead of the cursor at the last measured block; NaN when none was.
+    double phaseError() const {
+        return phaseError_;
     }
     /// @copydoc TransportClock::monotonicBeat
     double monotonicBeat() const {
@@ -124,6 +139,8 @@ class ClockCore {
     void countSegment(const TempoMap& tempo, std::int64_t samples, int offset);
 
     void applyRequest(const TransportSnapshot& snapshot);
+    void followPhase(const TempoMap& tempo, const PhaseReference& phase);
+    void waitSegment(const TempoMap& tempo, std::int64_t samples, int offset);
     void followTempo(const TempoMap& tempo);
 
     double sampleRate_ = 44100.0;
@@ -178,6 +195,11 @@ class ClockCore {
     SamplePosition monotonicSamples_;
 
     bool overflowedLoop_ = false;
+
+    /// Set by a request that starts the transport, for the phase to act on once.
+    bool startedNow_ = false;
+    std::int64_t phaseWaitLeft_ = 0;
+    double phaseError_ = std::numeric_limits<double>::quiet_NaN();
 };
 
 /**
@@ -204,9 +226,12 @@ class TransportClock {
      *
      * The span points at storage owned by the clock and is valid until the next
      * call.
+     *
+     * With @p phase, a start waits for the session's phase and a cursor far out of it jumps in
+     * (#3188); the small drift left is the tempo map's to nudge, read off @ref phaseError.
      */
     std::span<const Segment> advance(const TransportSnapshot& snapshot, double sampleRate,
-                                     int numSamples);
+                                     int numSamples, const PhaseReference* phase = nullptr);
 
     /// Where the cursor is, in beats. Written on the audio thread, readable
     /// from anywhere: this is what a playhead is drawn from.
@@ -217,6 +242,16 @@ class TransportClock {
     /// Whether the transport is rolling, as the clock currently has it.
     bool isPlaying() const {
         return playingPublic_.load(std::memory_order_relaxed);
+    }
+
+    /// Whether a start is held for the session's phase. Any thread.
+    bool isWaitingForPhase() const {
+        return waitingForPhase_.load(std::memory_order_relaxed);
+    }
+
+    /// Beats the session is ahead of the cursor, NaN when not measured. Any thread.
+    double phaseError() const {
+        return phaseError_.load(std::memory_order_relaxed);
     }
 
     /// The generation of the last request the clock applied. Any thread: a publisher reads it to
@@ -283,6 +318,8 @@ class TransportClock {
 
     std::atomic<double> positionBeats_{0.0};
     std::atomic<bool> playingPublic_{false};
+    std::atomic<bool> waitingForPhase_{false};
+    std::atomic<double> phaseError_{std::numeric_limits<double>::quiet_NaN()};
     std::atomic<std::uint64_t> appliedGeneration_{0};
     std::atomic<int> loopWrapOverflows_{0};
 
