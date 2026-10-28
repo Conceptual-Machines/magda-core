@@ -40,6 +40,24 @@ id sendMessage(id target, const char* selector) {
     return reinterpret_cast<id (*)(id, SEL)>(objc_msgSend)(target, sel_registerName(selector));
 }
 
+id nsWindowOf(juce::Component* component) {
+    auto* peer = component != nullptr ? component->getPeer() : nullptr;
+    return peer != nullptr ? sendMessage(static_cast<id>(peer->getNativeHandle()), "window") : nil;
+}
+
+/// Dropping to the normal level otherwise leaves the window behind the main window, out of sight.
+void orderAboveOwner(juce::Component& window) {
+    auto* nsWindow = nsWindowOf(&window);
+    auto* ownerWindow = nsWindowOf(owner);
+    if (nsWindow == nil || ownerWindow == nil ||
+        !reinterpret_cast<BOOL (*)(id, SEL)>(objc_msgSend)(nsWindow, sel_registerName("isVisible")))
+        return;
+    auto ownerNumber = reinterpret_cast<long (*)(id, SEL)>(objc_msgSend)(
+        ownerWindow, sel_registerName("windowNumber"));
+    reinterpret_cast<void (*)(id, SEL, long, long)>(objc_msgSend)(
+        nsWindow, sel_registerName("orderWindow:relativeTo:"), 1 /* NSWindowAbove */, ownerNumber);
+}
+
 std::vector<id> activationObservers;
 
 /// A floating-level window otherwise stays over other apps while MAGDA is in the background, and
@@ -60,6 +78,8 @@ void observeAppActivation() {
               forEachFloatingWindow([active](juce::Component& window) {
                   if (auto* peer = window.getPeer())
                       peer->setAlwaysOnTop(active);
+                  if (!active)
+                      orderAboveOwner(window);
               });
             });
         activationObservers.push_back(sendMessage(observer, "retain"));
