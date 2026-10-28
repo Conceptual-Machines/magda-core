@@ -204,6 +204,20 @@ int main() {
             applyDeviceSlotParamSelectionChange(firstPath, {}, grid, {});
             for (int i = 0; i < grid.getSlotCount(); ++i)
                 check(!grid.getSlot(i)->isSelected(), "cleared selection left a cell highlighted");
+
+            // Full rows at the top of a chain, one fewer inside a rack or the drum grid (#3165).
+            const int fullRows = resolveControlStyle({}) == ParamControlStyle::Knobs ? 3 : 4;
+            const auto pagesCoverEveryParameter = [&] {
+                return grid.getLayout().totalPages(parameterModel) * grid.getSlotCount() >=
+                       static_cast<int>(parameterModel.parameters.size());
+            };
+            check(grid.getRowCount() == fullRows, "top-of-chain plug-in grid lost a row");
+            check(pagesCoverEveryParameter(), "full plug-in grid pages missed parameters");
+            grid.setCompactRows(true);
+            check(grid.getRowCount() == fullRows - 1, "compact plug-in grid kept its full rows");
+            check(pagesCoverEveryParameter(), "compact plug-in grid pages missed parameters");
+            grid.setCompactRows(false);
+            check(grid.getRowCount() == fullRows, "plug-in grid did not return to full rows");
         }
         {
             // A faceplate reads its links afresh: a chain rebuild frees the arrays a
@@ -317,8 +331,8 @@ int main() {
             for (int cell = 0; cell < 4; ++cell) {
                 const auto knob = layout.cellBounds(cell, body, true);
                 check(geometry.editor.contains(knob) && !knob.intersects(geometry.plot) &&
-                          !knob.intersects(geometry.chips) &&
-                          !knob.intersects(geometry.editorControls),
+                          !knob.intersects(geometry.chips) && !knob.intersects(geometry.types) &&
+                          !knob.intersects(geometry.slope),
                       "an EQ knob left the band editor");
             }
         }

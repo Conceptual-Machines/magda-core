@@ -18,6 +18,7 @@
 #include "engine/AudioEngine.hpp"
 #include "layout/NodeHeaderStyles.hpp"
 #include "ui/components/common/MagdaAlertWindow.hpp"
+#include "ui/components/common/MidiActivityLed.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -182,6 +183,7 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
 
     // Create chain panel (initially hidden)
     chainPanel_ = std::make_unique<ChainPanel>();
+    chainPanel_->setCompactDevices(true);
     chainPanel_->onClose = [this]() { hideChainPanel(); };
     chainPanel_->onDeviceSelected = [this](magda::DeviceId deviceId) {
         // Forward device selection to parent
@@ -236,7 +238,10 @@ void RackComponent::timerCallback() {
     if (!audioEngine)
         return;
 
-    if (midiLed_.update(audioEngine->meters().midiActivity.getActivityCounter(trackId_)))
+    const auto* track = magda::TrackManager::getInstance().getTrack(trackId_);
+    if (midiLed_.update(audioEngine->meters().midiActivity.getActivityCounter(trackId_),
+                        track != nullptr &&
+                            showsLiveMidiActivity(*track, audioEngine->isPlaying())))
         repaint(shellRows_.midiLed.expanded(4));
 
     // The engine's own meters (#2570).

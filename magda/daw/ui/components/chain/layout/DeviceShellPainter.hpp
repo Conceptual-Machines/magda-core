@@ -35,12 +35,16 @@ struct MidiLed {
     uint32_t lastCounter = 0;
     int framesLeft = 0;
 
-    /** Returns true when the LED changed state and needs a repaint. */
-    bool update(uint32_t counter) {
+    /** Returns true when the LED changed state and needs a repaint. Activity while not
+     *  @p shown is consumed without lighting it. */
+    bool update(uint32_t counter, bool shown) {
         if (counter != lastCounter) {
             lastCounter = counter;
-            framesLeft = 4;
-            return true;
+            if (shown) {
+                const bool wasLit = isLit();
+                framesLeft = 4;
+                return !wasLit;
+            }
         }
         if (framesLeft == 0)
             return false;

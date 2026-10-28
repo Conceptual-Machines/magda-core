@@ -245,6 +245,7 @@ DrumGridUI::DrumGridUI() {
         if (onLayoutChanged)
             onLayoutChanged();
     };
+    padChainView_.setCompactDevices(true);
     addChildComponent(padChainView_);
     emptyAddButton_.setTooltip("Add a device to this pad");
     emptyAddButton_.onClick = [this]() {

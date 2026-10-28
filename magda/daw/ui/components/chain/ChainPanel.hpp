@@ -46,6 +46,8 @@ class ChainPanel : public NodeComponent, private juce::Timer {
     /// The width that shows its widest device whole, with the add slot beside it.
     int getMinimumContentWidth() const;
     void setMaxWidth(int maxWidth);  // Set maximum width before scrolling kicks in
+    /// A panel inside a rack or the drum grid, whose devices get compact parameter rows (#3165).
+    void setCompactDevices(bool compact);
 
     // Horizontal zoom (Cmd/Ctrl + scroll wheel)
     void setZoomLevel(float zoom);
@@ -93,6 +95,7 @@ class ChainPanel : public NodeComponent, private juce::Timer {
     magda::RackId rackId_;
     magda::ChainId chainId_;
     bool hasChain_ = false;
+    bool compactDevices_ = false;
     int maxWidth_ = 0;  // 0 = no limit, otherwise constrain width and scroll
     void applyMaxWidthToSlots();
 

@@ -393,6 +393,13 @@ int ChainPanel::getMinimumContentWidth() const {
            2 * PADDING;
 }
 
+void ChainPanel::setCompactDevices(bool compact) {
+    compactDevices_ = compact;
+    for (auto& slot : elementSlots_)
+        if (auto* deviceSlot = dynamic_cast<DeviceSlotComponent*>(slot.get()))
+            deviceSlot->setCompactParamRows(compact);
+}
+
 void ChainPanel::setMaxWidth(int maxWidth) {
     maxWidth_ = maxWidth;
     applyMaxWidthToSlots();
@@ -585,12 +592,14 @@ void ChainPanel::rebuildElementSlots() {
             if (existing != elementSlots_.end()) {
                 auto* existingDeviceSlot = static_cast<DeviceSlotComponent*>(existing->get());
                 existingDeviceSlot->updateFromDevice(device);
+                existingDeviceSlot->setCompactParamRows(compactDevices_);
                 existingDeviceSlot->setNodePath(chainPath_.withDevice(device.id));
                 newSlots.push_back(std::move(*existing));
                 elementSlots_.erase(existing);
             } else {
                 // Create new slot for new device
                 auto slot = std::make_unique<DeviceSlotComponent>(device);
+                slot->setCompactParamRows(compactDevices_);
                 // Set the full path - this is used by all path-based operations
                 slot->setNodePath(chainPath_.withDevice(device.id));
                 // Wire up device-specific callbacks

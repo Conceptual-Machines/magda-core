@@ -381,6 +381,14 @@ void ParamHostComponent::setRowHeight(int rowHeight) {
     rowHeight_ = std::max(0, rowHeight);
 }
 
+void ParamHostComponent::setCompactRows(bool compact) {
+    if (compactRows_ == compact)
+        return;
+    compactRows_ = compact;
+    if (controlStyleApplied_)
+        applyControlStyle();
+}
+
 void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::Font& valueFont) {
     lastLabelFont_ = labelFont;
     lastValueFont_ = valueFont;
@@ -470,12 +478,12 @@ void ParamHostComponent::applyControlStyle() {
         paramSlots_[i]->setControlStyle(style);
     layout_->setControlStyle(style);
 
-    // Plug-ins: 8 columns in Text and Knobs (3 and 2 rows, so a value fits under its name at the
-    // compact device height, #3144), 6 in Sliders. Curated native layouts: balanced rows of at
-    // most the layout's columns, sized as those rows.
+    // Plug-ins: 8 columns in Text and Knobs, 6 in Sliders; one row fewer inside a rack or the drum
+    // grid, so a value fits under its name at that height (#3144, #3165). Curated native layouts:
+    // balanced rows of at most the layout's columns, sized as those rows.
     const bool sliders = style == ParamControlStyle::Sliders;
     const int styleRows = style == ParamControlStyle::Knobs ? 3 : 4;
-    const int plugInRows = style == ParamControlStyle::Knobs ? 2 : 3;
+    const int plugInRows = compactRows_ ? styleRows - 1 : styleRows;
     const int previousCount = cellCount_;
     const int previousColumns = cellsPerRow_;
     minRows_ = layout_->minRowsForStyle(styleRows);
