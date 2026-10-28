@@ -35,6 +35,7 @@ class BottomPanel;
 class FooterBar;
 class AudioEngine;
 class QwertyMidiKeyboard;
+class AbletonLinkSession;
 class PlaybackPositionTimer;
 class KeyMappingStore;
 
@@ -254,6 +255,8 @@ class MainWindow::MainComponent : public juce::Component,
     AudioEngine* externalAudioEngine_ = nullptr;  // Non-owning pointer to external engine
     std::unique_ptr<PlaybackPositionTimer> positionTimer_;
     std::unique_ptr<QwertyMidiKeyboard> qwertyKeyboard_;
+    /// Reset first in the destructor: its hooks reach the timeline and the engine.
+    std::unique_ptr<AbletonLinkSession> linkSession_;
 
     // Main layout panels
     std::unique_ptr<LeftPanel> leftPanel;

@@ -340,6 +340,9 @@ void MagdaAudioEngine::setTempo(double bpm) {
 double MagdaAudioEngine::getTempo() const {
     return host_->tempo();
 }
+void MagdaAudioEngine::setTempoLaneFollowed(bool followed) {
+    host_->setTempoLaneFollowed(followed);
+}
 void MagdaAudioEngine::setTimeSignature(int numerator, int denominator) {
     host_->setTimeSignature(numerator, denominator);
 }

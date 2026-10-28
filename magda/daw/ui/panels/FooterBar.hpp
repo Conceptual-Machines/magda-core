@@ -4,7 +4,9 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <array>
+#include <cstddef>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "../components/common/SvgButton.hpp"
@@ -51,6 +53,10 @@ class FooterBar : public juce::Component,
     // Click on a local-model pill in the footer opens AI Settings.
     std::function<void()> onLocalModelsClicked;
 
+    /** @brief Show the Ableton Link pill while Link is on, with its peer count (#929). */
+    void setAbletonLink(bool on, std::size_t peers);
+    std::function<void()> onAbletonLinkClicked;
+
   private:
     static constexpr int NUM_MODES = 3;
     static constexpr int NUM_LOCAL_MODELS = 2;
@@ -93,6 +99,8 @@ class FooterBar : public juce::Component,
         juce::Rectangle<int> hitArea;
     };
     std::vector<ControllerBadge> controllerBadges_;
+    /// Shown left of the controllers while Link is on; connected means at least one peer.
+    std::optional<ControllerBadge> linkBadge_;
     juce::Rectangle<int> controllerStripArea_;  // overall strip bounds for click hit-testing
 
     void refreshControllerBadges();

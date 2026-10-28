@@ -315,6 +315,8 @@ class AudioEngine : public AudioEngineListener {
     virtual double getTempo() const = 0;
     virtual void setTimeSignature(int numerator, int denominator) = 0;
     virtual void getTimeSignature(int& numerator, int& denominator) const = 0;
+    /** Whether tempo automation drives the tempo; off plays the project tempo flat. */
+    virtual void setTempoLaneFollowed(bool /*followed*/) {}
 
     /** Position-aware beats<->seconds facade backed by the engine's tempo
         sequence (the single source of truth). */

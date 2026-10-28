@@ -10,6 +10,7 @@
 #include "../components/common/DraggableValueLabel.hpp"
 #include "../components/common/GridDivisionMenu.hpp"
 #include "../components/common/SvgButton.hpp"
+#include "AbletonLinkChip.hpp"
 #include "TransportLayout.hpp"
 #include "core/Config.hpp"
 #include "core/MixAnalysisService.hpp"
@@ -122,6 +123,9 @@ class TransportPanel : public juce::Component,
     // Update arrangement button state based on whether any track is in session mode
     void setAnyTrackInSessionMode(bool anyInSession);
 
+    /** @brief Light the Ableton Link chip while Link is on. */
+    void setAbletonLink(bool enabled);
+
     // CPU usage display (0.0 to 1.0)
     void setCpuUsage(float usage);
     void setXrunCount(int count);
@@ -212,6 +216,8 @@ class TransportPanel : public juce::Component,
 
     // Metronome, snap, time signature
     std::unique_ptr<SvgButton> metronomeButton;
+    /// Switches Ableton Link through Config, which the session follows (#929).
+    std::unique_ptr<daw::ui::AbletonLinkChip> linkChip;
     // Count-in gets its own icon above the metronome rather than living behind
     // a right-click on it. The menu sets when recording starts, not how the
     // metronome clicks, and hiding it on the metronome invited that reading.

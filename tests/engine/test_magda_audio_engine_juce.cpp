@@ -7,6 +7,9 @@
 #include "magda/daw/api/magda_api.hpp"
 #include "magda/daw/api/project_api.hpp"
 #include "magda/daw/audio/insert_capture/InsertRenderCapture.hpp"
+#include "magda/daw/core/AutomationManager.hpp"
+#include "magda/daw/core/ControlTarget.hpp"
+#include "magda/daw/core/TempoLane.hpp"
 #include "magda/daw/core/TempoMap.hpp"
 #include "magda/daw/engine/MagdaAudioEngine.hpp"
 #include "magda/daw/engine/PluginService.hpp"
@@ -45,11 +48,47 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
         }
         magda::test::runWithCleanJuceState([this] { testAnswersWithoutAnEdit(); });
         magda::test::runWithCleanJuceState([this] { testSessionRecordingCapabilities(); });
+        magda::test::runWithCleanJuceState([this] { testTempoLaneCanBeIgnored(); });
         magda::test::runWithCleanJuceState([this] { testUnwiredMethodsNameThemselves(); });
         magda::test::runWithCleanJuceState([this] { testDestructionRunsTheShutdown(); });
     }
 
   private:
+    /** @brief Ableton Link plays one flat tempo over a project's tempo automation (#929). */
+    void testTempoLaneCanBeIgnored() {
+        beginTest("The tempo lane can be ignored and followed again");
+
+        auto& automation = magda::AutomationManager::getInstance();
+        automation.clearAll();
+        magda::MagdaAudioEngine engine{magda::AudioEngineOptions{.headless = true}};
+        expect(engine.initialize(), "The engine comes up headless");
+        engine.setTempo(120.0);
+
+        const auto point = [](double beat, double bpm) {
+            magda::AutomationPoint p;
+            p.beatPosition = beat;
+            p.value = magda::tempo_lane::bpmToNormalized(bpm);
+            return p;
+        };
+        const auto lane = automation.createLane(magda::ControlTarget::tempo(),
+                                                magda::AutomationLaneType::Absolute);
+        automation.replaceLanePoints(lane, {point(0.0, 100.0), point(8.0, 140.0)});
+
+        const auto bpmAtBar4 = [&engine] { return engine.tempoMap()->bpmAt(12.0); };
+        expect(std::abs(bpmAtBar4() - 140.0) < 0.01, "The lane drives the tempo");
+
+        engine.setTempoLaneFollowed(false);
+        expect(std::abs(bpmAtBar4() - 120.0) < kTolerance, "Ignored, the project tempo is flat");
+        engine.setTempo(130.0);
+        expect(std::abs(bpmAtBar4() - 130.0) < kTolerance, "and still follows a tempo edit");
+
+        engine.setTempoLaneFollowed(true);
+        expect(std::abs(bpmAtBar4() - 140.0) < 0.01, "Followed again, the curve is back");
+
+        engine.shutdown();
+        automation.clearAll();
+    }
+
     void testSessionRecordingCapabilities() {
         beginTest("Native engine advertises the Session recording contract");
         magda::MagdaAudioEngine engine{magda::AudioEngineOptions{.headless = true}};

@@ -197,6 +197,11 @@ juce_set_ara_sdk_path(${CMAKE_CURRENT_SOURCE_DIR}/third_party/ara_sdk)
 # Signalsmith Stretch sits beside it and is header-only, so it needs no target.
 add_subdirectory(third_party/soundtouch)
 
+# Ableton Link 4.1.1 (#929). Its AbletonLinkConfig.cmake sets CMAKE_CXX_STANDARD 17 in the
+# includer's scope, so the function it wraps is called directly.
+include(third_party/link/cmake_include/ConfigureAbletonLink.cmake)
+ConfigureAbletonLink(${CMAKE_CURRENT_SOURCE_DIR}/third_party/link)
+
 # magda-sdk: the JUCE-free core shared with other hosts (#2239).
 add_subdirectory(third_party/magda-sdk)
 add_subdirectory(magda/devices)

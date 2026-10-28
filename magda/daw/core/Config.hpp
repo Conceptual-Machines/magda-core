@@ -721,6 +721,14 @@ class Config {
         remoteApiClients = std::move(clients);
     }
 
+    // Ableton Link (#929): per user, off until switched on.
+    bool getAbletonLinkEnabled() const {
+        return abletonLinkEnabled;
+    }
+    void setAbletonLinkEnabled(bool enabled) {
+        abletonLinkEnabled = enabled;
+    }
+
     // OSC control surfaces (issue #1757). Off by default, for the same reason
     // the remote API is: a DAW should not start listening because it was
     // installed. Unlike the remote API there is no token to check — OSC is
@@ -1816,6 +1824,8 @@ class Config {
     // switched on — see the accessors for why the bind default is not loopback.
     bool oscEnabled = false;
     int oscReceivePort = 9000;
+
+    bool abletonLinkEnabled = false;
     std::string oscBindAddress = "0.0.0.0";
     int oscFeedbackPort = 9001;
 

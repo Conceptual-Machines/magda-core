@@ -415,6 +415,12 @@ juce::var Config::toVar() const {
         root->setProperty("osc", juce::var(oscObj));
     }
 
+    {
+        auto* linkObj = new juce::DynamicObject();
+        linkObj->setProperty("enabled", abletonLinkEnabled);
+        root->setProperty("abletonLink", juce::var(linkObj));
+    }
+
     // Recent projects
     juce::Array<juce::var> recentArray;
     for (const auto& r : recentProjects)
@@ -963,6 +969,9 @@ void Config::fromVar(const juce::var& parsed) {
             remoteApiClients = remoteObj->getProperty("clients");
         }
     }
+
+    if (auto* linkObj = obj->getProperty("abletonLink").getDynamicObject())
+        abletonLinkEnabled = linkObj->getProperty("enabled");
 
     // OSC — absent means the defaults, which open no socket.
     if (obj->hasProperty("osc")) {
