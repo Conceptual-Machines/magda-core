@@ -95,15 +95,8 @@ juce::Rectangle<int> PagedControlPanel::headerArea() const {
     return getLocalBounds().removeFromTop(HEADER_HEIGHT);
 }
 
-juce::Rectangle<int> PagedControlPanel::footerArea() const {
-    return getLocalBounds().removeFromBottom(FOOTER_HEIGHT);
-}
-
 juce::Rectangle<int> PagedControlPanel::gridArea() const {
-    return getLocalBounds()
-        .withTrimmedTop(HEADER_HEIGHT)
-        .withTrimmedBottom(FOOTER_HEIGHT)
-        .reduced(GRID_PADDING);
+    return getLocalBounds().withTrimmedTop(HEADER_HEIGHT).reduced(GRID_PADDING);
 }
 
 juce::Rectangle<int> PagedControlPanel::addBounds() const {
@@ -164,14 +157,6 @@ void PagedControlPanel::paint(juce::Graphics& g) {
     }
     g.setColour(line);
     g.fillRect(header.withTop(header.getBottom() - 1));
-
-    const auto footer = footerArea();
-    g.fillRect(footer.withHeight(1));
-    if (const auto text = getFooterText(); text.isNotEmpty()) {
-        g.setColour(dim);
-        g.setFont(mono);
-        g.drawText(text, footer.reduced(12, 0), juce::Justification::centredLeft, false);
-    }
 }
 
 void PagedControlPanel::resized() {

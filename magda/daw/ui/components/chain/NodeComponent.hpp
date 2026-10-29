@@ -120,7 +120,6 @@ class NodeComponent : public juce::Component,
 
     // Callbacks
     std::function<void(bool)> onBypassChanged;
-    std::function<void()> onDeleteClicked;
     std::function<void(bool)> onModPanelToggled;
     std::function<void(bool)> onParamPanelToggled;
     std::function<void(bool)> onGainPanelToggled;
@@ -193,13 +192,7 @@ class NodeComponent : public juce::Component,
     virtual int getHeaderButtonGap() const {
         return 4;
     }
-    virtual juce::Component* getHeaderDeleteButton() {
-        return deleteButton_.get();
-    }
-    void styleHeaderPowerAndClose();
-    void hideBaseDeleteButton() {
-        deleteButton_->setVisible(false);
-    }
+    void styleHeaderPower();
     virtual void resizedContent(juce::Rectangle<int> contentArea);
 
     /// True for a v1 shell, whose side panels sit between its header and its footer, inside
@@ -212,24 +205,17 @@ class NodeComponent : public juce::Component,
         return 0;
     }
     virtual void resizedShellFooter(juce::Rectangle<int> /*footer*/) {}
+    /// A shell's strip down its right edge, header row included; the base puts power at its top.
+    virtual int getShellStripWidth() const {
+        return 0;
+    }
+    virtual void resizedShellStrip(juce::Rectangle<int> /*strip*/) {}
 
-    // Override to add extra header buttons (between name and delete)
+    // Override to add extra header buttons (left of the name, or at the header's right)
     virtual void resizedHeaderExtra(juce::Rectangle<int>& headerArea);
 
-    /**
-     * Override to expose a preset menu button. The base class reserves a
-     * slot for it between the power button and whatever resizedHeaderExtra
-     * positions, locking the right-side icon order to:
-     *
-     *     [...subclass extras...][preset][power][delete]
-     *
-     * Subclasses MUST NOT position this button themselves — the base
-     * owns its bounds. Returning nullptr (default) means no preset slot.
-     *
-     * Existed to fix a recurring class of bugs where new buttons added
-     * inside resizedHeaderExtra ended up to the right of the preset
-     * button, breaking the [preset][power][delete] right-edge contract.
-     */
+    /** Override to expose a preset menu button. The base owns its bounds, just right of the name
+     *  and subtitle; nullptr (default) means none. */
     virtual juce::Component* getHeaderPresetButton() {
         return nullptr;
     }
@@ -240,9 +226,8 @@ class NodeComponent : public juce::Component,
      * button (e.g. DeviceSlotComponent's red/green SvgButton onButton_)
      * return their own and hide bypassButton_ via setBypassButtonVisible.
      *
-     * The base reserves the slot to the LEFT of [delete], so the right
-     * edge is always [preset][power][delete] regardless of which subclass
-     * supplied the buttons.
+     * The base puts it at the header's right edge, or the top of the shell
+     * strip when there is one, whichever subclass supplied it.
      */
     virtual juce::Component* getHeaderPowerButton() {
         return bypassButton_.get();
@@ -273,12 +258,12 @@ class NodeComponent : public juce::Component,
     virtual void resizedExtraRightPanel(juce::Rectangle<int> panelArea);  // After macros
     virtual void resizedAIPanel(juce::Rectangle<int> panelArea);          // After mod editor
 
-    // Override to add extra buttons when collapsed (area is below bypass/delete)
+    // Override to add extra buttons when collapsed (area is below bypass)
     virtual void resizedCollapsed(juce::Rectangle<int>& area);
 
     // Override to provide custom panel widths
     virtual int getModPanelWidth() const {
-        return DEFAULT_PANEL_WIDTH;  // Mod panel uses 2-column layout
+        return DEFAULT_PANEL_WIDTH;
     }
     // Extra left panel (between mods and params) - returns modulator editor width when visible
     virtual int getExtraLeftPanelWidth() const;
@@ -314,7 +299,6 @@ class NodeComponent : public juce::Component,
 
     // Control header button visibility (for custom header layouts)
     void setBypassButtonVisible(bool visible);
-    void setDeleteButtonVisible(bool visible);
 
     // Panel visibility state (accessible to subclasses)
     bool modPanelVisible_ = false;
@@ -365,7 +349,7 @@ class NodeComponent : public juce::Component,
     // Layout constants
     static constexpr int HEADER_HEIGHT = 24;
     static constexpr int BUTTON_SIZE = 18;
-    static constexpr int DEFAULT_PANEL_WIDTH = 170;  // Two columns of macro or mod cards
+    static constexpr int DEFAULT_PANEL_WIDTH = 280;  // Four columns of macro or mod cards
     static constexpr int AI_PANEL_WIDTH = 200;       // Width for AI sound-design panel
     static constexpr int GAIN_PANEL_WIDTH = 32;      // Width for gain panel (right side)
 
@@ -532,7 +516,6 @@ class NodeComponent : public juce::Component,
     std::unique_ptr<magda::SvgButton> bypassButton_;
     juce::Label nameLabel_;
     juce::Label headerSubtitle_;
-    std::unique_ptr<magda::SvgButton> deleteButton_;
 
     // Mod panel controls (3 modulator slots)
     std::unique_ptr<juce::TextButton> modSlotButtons_[3];

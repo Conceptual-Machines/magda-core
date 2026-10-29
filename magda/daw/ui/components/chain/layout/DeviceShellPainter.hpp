@@ -14,6 +14,8 @@ struct ShellRows {
     juce::Rectangle<int> headerSeparatorLeft, headerSeparatorRouting, headerSeparatorRight;
     juce::Rectangle<int> sidebar, sideStrip, footer;
     juce::Rectangle<int> footerSeparator, footerInfo, midiLed;
+    /// The header band's width; 0 spans the frame (a rack's stops at its chain's devices).
+    int headerWidth = 0;
 };
 
 /** @brief Frame, header band, side strip and footer of a device or rack shell. */

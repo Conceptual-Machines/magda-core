@@ -1,4 +1,5 @@
 target_sources(magda_daw_app PRIVATE
+    ChainNodeDeletion.cpp
     ChainNodePathDrag.cpp
     PluginDrop.cpp
     NodeComponent.cpp

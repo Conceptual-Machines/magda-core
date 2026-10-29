@@ -213,10 +213,12 @@ void ModKnobComponent::paint(juce::Graphics& g) {
     }
 
     auto& fonts = FontManager::getInstance();
-    const auto top = getLocalBounds().reduced(CARD_PADDING, 6).removeFromTop(NAME_LABEL_HEIGHT);
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
-    g.setFont(fonts.getMonoFont(9.0f).withExtraKerningFactor(0.06f));
-    g.drawText(typeTag(), top, juce::Justification::centredRight, false);
+    if (showsTypeTag()) {
+        const auto top = getLocalBounds().reduced(CARD_PADDING, 6).removeFromTop(NAME_LABEL_HEIGHT);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+        g.setFont(fonts.getMonoFont(9.0f).withExtraKerningFactor(0.06f));
+        g.drawText(typeTag(), top, juce::Justification::centredRight, false);
+    }
 
     const auto bottom = bottomRow();
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
@@ -239,8 +241,9 @@ void ModKnobComponent::paint(juce::Graphics& g) {
 
 void ModKnobComponent::resized() {
     auto inner = getLocalBounds().reduced(CARD_PADDING, 6);
-    // The name leaves room for the type tag on its right.
-    nameLabel_.setBounds(inner.removeFromTop(NAME_LABEL_HEIGHT).withTrimmedRight(40));
+    // The name leaves room for the type tag on its right, when the card is wide enough for one.
+    nameLabel_.setBounds(
+        inner.removeFromTop(NAME_LABEL_HEIGHT).withTrimmedRight(showsTypeTag() ? 40 : 0));
 
     const int linkWidth = LINK_BUTTON_HEIGHT + 4;
     linkButton_->setBounds(getLocalBounds()

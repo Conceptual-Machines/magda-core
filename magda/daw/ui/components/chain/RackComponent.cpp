@@ -9,6 +9,7 @@
 #include <functional>
 #include <ranges>
 
+#include "ChainNodeDeletion.hpp"
 #include "ChainPanel.hpp"
 #include "ChainRowComponent.hpp"
 #include "audio/DeviceMeters.hpp"
@@ -27,34 +28,15 @@
 
 namespace magda::daw::ui {
 
-namespace {
-
-/// Delete the rack at @p rackPath, undoably and after this component has gone.
-///
-/// Deferred because removing the rack notifies synchronously, and the rebuild
-/// that follows destroys the button whose click is still on the stack; the path
-/// is taken by value for the same reason. Both constructors below share this,
-/// so the top-level and nested X do the same thing (#2232).
-void requestRackDeletion(const magda::ChainNodePath& rackPath) {
-    juce::MessageManager::callAsync([rackPath]() {
-        magda::UndoManager::getInstance().executeCommand(
-            std::make_unique<magda::RemoveRackByPathCommand>(rackPath));
-    });
-}
-
-}  // namespace
-
 // Constructor for top-level rack (in track)
 RackComponent::RackComponent(magda::TrackId trackId, const magda::RackInfo& rack)
     : rackPath_(magda::ChainNodePath::rack(trackId, rack.id)), trackId_(trackId), rackId_(rack.id) {
-    onDeleteClicked = [this]() { requestRackDeletion(rackPath_); };
     initializeCommon(rack);
 }
 
 // Constructor for nested rack (in chain) - with full path context
 RackComponent::RackComponent(const magda::ChainNodePath& rackPath, const magda::RackInfo& rack)
     : rackPath_(rackPath), trackId_(rackPath.trackId), rackId_(rack.id) {
-    onDeleteClicked = [this]() { requestRackDeletion(rackPath_); };
     initializeCommon(rack);
 }
 
@@ -124,9 +106,8 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
     };
     addAndMakeVisible(*macroButton_);
 
-    presetButton_ =
-        std::make_unique<magda::SvgButton>("Presets", BinaryData::iconpresetsroundboldm_svg,
-                                           BinaryData::iconpresetsroundboldm_svgSize);
+    presetButton_ = std::make_unique<magda::SvgButton>("Presets", BinaryData::chevron_down_svg,
+                                                       BinaryData::chevron_down_svgSize);
     presetButton_->setTooltip("MAGDA Rack Presets");
     presetButton_->onClick = [this]() { showPresetMenu(); };
     addAndMakeVisible(*presetButton_);
@@ -186,7 +167,6 @@ void RackComponent::initializeCommon(const magda::RackInfo& rack) {
 
     // Create chain panel (initially hidden)
     chainPanel_ = std::make_unique<ChainPanel>();
-    chainPanel_->setCompactDevices(true);
     chainPanel_->onClose = [this]() { hideChainPanel(); };
     chainPanel_->onDeviceSelected = [this](magda::DeviceId deviceId) {
         // Forward device selection to parent
@@ -279,6 +259,10 @@ void RackComponent::toggleChainView() {
 }
 
 void RackComponent::mouseDown(const juce::MouseEvent& e) {
+    if (e.mods.isPopupMenu()) {
+        showContextMenu();
+        return;
+    }
     if (!collapsed_ && chainTabsArea_.contains(e.getPosition())) {
         for (const auto view : shownChainViews())
             if (chainTabBounds(view).contains(e.getPosition()))
@@ -329,11 +313,11 @@ void RackComponent::styleShellControls() {
             node_header::applyDeviceIconStyle(*toggle, DeviceIcon::Toggle, key,
                                               ActiveTheme::DEVICE_BLUE,
                                               static_cast<float>(getHeaderButtonSize().y));
-    node_header::applyDeviceIconStyle(*presetButton_, DeviceIcon::Action, key,
+    node_header::applyDeviceIconStyle(*presetButton_, DeviceIcon::Chevron, key,
                                       ActiveTheme::PRESET_INDIGO,
                                       static_cast<float>(getHeaderButtonSize().y));
     presetButton_->setHoverColor(ActiveTheme::PRESET_INDIGO);
-    styleHeaderPowerAndClose();
+    styleHeaderPower();
     chainViewport_.getVerticalScrollBar().setColour(
         juce::ScrollBar::thumbColourId, ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
 
@@ -348,9 +332,39 @@ void RackComponent::lookAndFeelChanged() {
     repaint();
 }
 
+void RackComponent::showContextMenu() {
+    juce::PopupMenu menu;
+    menu.addItem(1, "Delete");
+    auto paths = chainNodesToDelete(rackPath_);
+    menu.showMenuAsync(juce::PopupMenu::Options(), [paths](int result) {
+        if (result == 1)
+            deleteChainNodes(paths);
+    });
+}
+
+int RackComponent::headerWidth() const {
+    // Content padding: NodeComponent insets the content 2px each side.
+    if (collapsed_ || !chainShown_)
+        return 0;
+    const bool faceplate = multiband_ && faceplateShown_;
+    return 2 + getLeftPanelsWidth() + SIDEBAR_WIDTH + (bandsShown_ ? CHAIN_LIST_WIDTH : 0) +
+           (faceplate ? FACEPLATE_WIDTH : 0);
+}
+
+juce::Rectangle<int> RackComponent::getHeaderInnerArea(juce::Rectangle<int> header) const {
+    if (const int width = headerWidth(); width > 0)
+        header.setWidth(width);
+    return header.reduced(10, 0);
+}
+
 void RackComponent::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int> bounds,
                                    int headerHeight) {
     device_shell::paintFrame(g, bounds, headerHeight, shellRows_, {}, midiLed_.isLit());
+}
+
+void RackComponent::resizedShellStrip(juce::Rectangle<int> strip) {
+    shellRows_.sideStrip = strip;
+    layoutSideStrip(strip.withTrimmedTop(getHeaderHeight()));
 }
 
 void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> /*contentArea*/) {
@@ -379,18 +393,6 @@ void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> /*conte
         g.fillRect(chainTabsArea_.withTop(chainTabsArea_.getBottom() - 1));
     }
 
-    if (!columnHeaderArea_.isEmpty()) {
-        const auto columns = ChainRowComponent::columnsFor(columnHeaderArea_);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
-        g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f));
-        g.drawText(multiband_ ? "BAND" : "CHAIN", columns.name, juce::Justification::centredLeft,
-                   false);
-        if (chainView_ == ChainView::Mix) {
-            g.drawText("GAIN", columns.gain, juce::Justification::centredLeft, false);
-            g.drawText("PAN", columns.pan, juce::Justification::centredLeft, false);
-        }
-    }
-
     if (!viewportArea_.isEmpty()) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_WELL));
         g.fillRect(viewportArea_);
@@ -400,13 +402,13 @@ void RackComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> /*conte
 }
 
 void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
-    shellRows_.sideStrip = {};
-    columnHeaderArea_ = viewportArea_ = chainTabsArea_ = {};
+    viewportArea_ = chainTabsArea_ = {};
+    shellRows_.headerWidth = headerWidth();
 
     // When collapsed, hide content controls only (buttons handled by resizedCollapsed)
     // NOTE: Side panels (macro/mods) visibility is managed by base class
     if (collapsed_) {
-        shellRows_.footer = shellRows_.midiLed = shellRows_.sidebar = {};
+        shellRows_.footer = shellRows_.midiLed = shellRows_.sidebar = shellRows_.sideStrip = {};
         for (auto* toggle : {listToggle_.get(), chainToggle_.get(), faceplateToggle_.get()})
             toggle->setVisible(false);
         if (crossoverDisplay_)
@@ -435,8 +437,6 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
         presetButton_->setVisible(true);
     levelMeter_.setVisible(true);
 
-    shellRows_.sideStrip = contentArea.removeFromRight(SIDE_STRIP_WIDTH);
-    layoutSideStrip(shellRows_.sideStrip);
     shellRows_.sidebar = contentArea.removeFromLeft(SIDEBAR_WIDTH);
     layoutSidebar(shellRows_.sidebar);
     if (bandsShown)
@@ -457,7 +457,11 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
         }
     }
 
-    viewportArea_ = chainShown_ ? contentArea : juce::Rectangle<int>{};
+    // The chain's devices take the rack's full height, their headers on the rack header's row,
+    // from the chain list to the strip.
+    if (chainShown_)
+        viewportArea_ = juce::Rectangle<int>(contentArea.getX(), 1, contentArea.getWidth() + 2,
+                                             getHeight() - 2);
     if (chainPanel_ && !chainShown_)
         chainPanel_->setVisible(false);
     if (chainPanel_ && chainPanel_->isVisible())
@@ -468,8 +472,6 @@ void RackComponent::layoutChainList(juce::Rectangle<int> list) {
     auto area = list.withTrimmedTop(4).reduced(12, 0).withTrimmedBottom(12);
     if (!multiband_)
         chainTabsArea_ = area.removeFromTop(CHAIN_TABS_HEIGHT);
-    area.removeFromTop(ROW_GAP);
-    columnHeaderArea_ = area.removeFromTop(COLUMN_HEADER_HEIGHT);
 
     const auto rowView = static_cast<ChainRowComponent::View>(static_cast<int>(chainView_));
     for (auto& row : chainRows_)
@@ -590,7 +592,7 @@ int RackComponent::stackedChainRowsHeight() const {
 int RackComponent::getPreferredHeight() const {
     // Content padding: NodeComponent insets the content 1px top and bottom.
     const int top = multiband_ ? 0 : CHAIN_TABS_HEIGHT;
-    const int list = 4 + top + ROW_GAP + COLUMN_HEADER_HEIGHT + ROW_GAP + stackedChainRowsHeight();
+    const int list = 4 + top + ROW_GAP + stackedChainRowsHeight();
     const int faceplate = 8 + FACEPLATE_MIN_HEIGHT;
     const int body = !multiband_       ? list
                      : !bandsShown_    ? faceplate
@@ -756,13 +758,6 @@ void RackComponent::rebuildChainRows() {
     for (size_t i = 0; i < chainRows_.size(); ++i)
         chainRows_[i]->setColourIndex(static_cast<int>(i));
     syncMultiband(*rack);
-    const int chains = static_cast<int>(chainRows_.size());
-    if (multiband_)
-        setHeaderSubtitle(juce::String::fromUTF8("Multiband Rack \xc2\xb7 ") +
-                          juce::String(chains) + " bands");
-    else
-        setHeaderSubtitle(juce::String::fromUTF8("Rack \xc2\xb7 ") + juce::String(chains) +
-                          (chains == 1 ? " chain" : " chains"));
 
     resized();
     repaint();

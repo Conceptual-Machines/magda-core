@@ -22,15 +22,15 @@ constexpr float kRadius = 7.0f;
 void paintHeader(juce::Graphics& g, juce::Rectangle<float> frame, int headerHeight,
                  const ShellRows& rows) {
     // The header band keeps the frame's top corners and squares its bottom.
+    const bool full = rows.headerWidth <= 0;
+    const float width = full ? frame.getWidth() : static_cast<float>(rows.headerWidth);
     juce::Path header;
-    header.addRoundedRectangle(frame.getX(), frame.getY(), frame.getWidth(),
-                               static_cast<float>(headerHeight), kRadius, kRadius, true, true,
-                               false, false);
+    header.addRoundedRectangle(frame.getX(), frame.getY(), width, static_cast<float>(headerHeight),
+                               kRadius, kRadius, true, full, false, false);
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_HEAD));
     g.fillPath(header);
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
-    g.fillRect(frame.getX(), frame.getY() + static_cast<float>(headerHeight) - 1.0f,
-               frame.getWidth(), 1.0f);
+    g.fillRect(frame.getX(), frame.getY() + static_cast<float>(headerHeight) - 1.0f, width, 1.0f);
 
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
     for (const auto& separator :
@@ -51,15 +51,16 @@ void paintSideStrip(juce::Graphics& g, juce::Rectangle<float> frame, const Shell
         g.fillRect(bar.getRight() - 1.0f, bar.getY(), 1.0f, bar.getHeight());
     }
 
+    // The strip runs the frame's full height, so it keeps the frame's right corners.
     if (!rows.sideStrip.isEmpty()) {
-        const juce::Rectangle<float> strip(
-            static_cast<float>(rows.sideStrip.getX()), static_cast<float>(rows.sideStrip.getY()),
-            frame.getRight() - static_cast<float>(rows.sideStrip.getX()),
-            static_cast<float>(rows.sideStrip.getHeight()));
+        const auto x = static_cast<float>(rows.sideStrip.getX());
+        juce::Path strip;
+        strip.addRoundedRectangle(x, frame.getY(), frame.getRight() - x, frame.getHeight(), kRadius,
+                                  kRadius, false, true, false, true);
         g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_HEAD2));
-        g.fillRect(strip);
+        g.fillPath(strip);
         g.setColour(line);
-        g.fillRect(strip.getX(), strip.getY(), 1.0f, strip.getHeight());
+        g.fillRect(x, frame.getY(), 1.0f, frame.getHeight());
     }
 }
 
@@ -110,9 +111,9 @@ void paintFrame(juce::Graphics& g, juce::Rectangle<int> bounds, int headerHeight
 
     if (headerHeight > 0)
         paintHeader(g, frame, headerHeight, rows);
-    paintSideStrip(g, frame, rows);
     if (!rows.footer.isEmpty())
         paintFooter(g, frame, rows, footerInfo);
+    paintSideStrip(g, frame, rows);
     if (!rows.midiLed.isEmpty())
         paintMidiLed(g, rows.midiLed, midiLedLit);
 

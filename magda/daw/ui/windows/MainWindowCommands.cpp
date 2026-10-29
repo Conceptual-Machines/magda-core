@@ -19,6 +19,7 @@
 #include "../../core/TrackPropertyCommands.hpp"
 #include "../../core/UIScale.hpp"
 #include "../../core/UndoManager.hpp"
+#include "../components/chain/ChainNodeDeletion.hpp"
 #include "../panels/BottomPanel.hpp"
 #include "../panels/PanelFocusTracker.hpp"
 #include "../panels/TransportPanel.hpp"
@@ -1125,7 +1126,14 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         }
 
         case deleteCmd: {
-            // Automation-point selection takes priority — the user is editing a
+            // Selected devices and racks come first: a stale note or point selection can linger.
+            // Nodes have no delete button of their own.
+            if (selectionManager.hasChainNodeSelection()) {
+                daw::ui::deleteChainNodes(selectionManager.getSelectedChainNodes());
+                selectionManager.clearChainNodeSelection();
+                return true;
+            }
+            // Automation points next — the user is editing a
             // curve. Routing it through this command (rather than the curve
             // editor's keyPressed) is robust: selecting a point publishes to the
             // SelectionManager, but the editor loses keyboard focus when the

@@ -64,6 +64,11 @@ class ParamSlotComponent : public juce::Component,
     /** Text keeps the bordered value field; Knobs and Sliders paint a tile with
      *  a knob or a bar, the value slider still taking every drag. */
     void setControlStyle(ParamControlStyle style);
+    /// The shortest cell that still shows its name, value and mod row in @p style: 13px name over
+    /// a 14px value in Text and Sliders, a 24px knob in Knobs, each in 10px of padding (#3201).
+    static constexpr int minimumHeight(ParamControlStyle style) {
+        return style == ParamControlStyle::Knobs ? 70 : 46;
+    }
     void setLinkOverlayVertical(bool vertical) {
         linkOverlayVertical_ = vertical;
     }

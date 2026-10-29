@@ -100,11 +100,10 @@ int main() {
             RackComponent rack(track, *tracks.getRack(track, rackId));
             rack.setSize(0, 0);
             rack.setSize(rack.getPreferredWidth(), rack.getPreferredHeight());
-            for (const auto* name : {"Power", "Close"})
-                for (auto* child : rack.getChildren())
-                    if (child->getName() == name)
-                        check(child->isVisible() && !child->getBounds().isEmpty(),
-                              "rack header power/close lost after an empty layout");
+            for (auto* child : rack.getChildren())
+                if (child->getName() == "Power")
+                    check(child->isVisible() && !child->getBounds().isEmpty(),
+                          "rack power lost after an empty layout");
             for (auto* node :
                  {static_cast<NodeComponent*>(&first), static_cast<NodeComponent*>(&second),
                   static_cast<NodeComponent*>(&rack)}) {
@@ -208,19 +207,27 @@ int main() {
             for (int i = 0; i < grid.getSlotCount(); ++i)
                 check(!grid.getSlot(i)->isSelected(), "cleared selection left a cell highlighted");
 
-            // Full rows at the top of a chain, one fewer inside a rack or the drum grid (#3165).
-            const int fullRows = resolveControlStyle({}) == ParamControlStyle::Knobs ? 3 : 4;
+            // As many rows as the body holds, up to 4 in Text and 3 in Knobs (#3201).
+            const bool knobs = resolveControlStyle({}) == ParamControlStyle::Knobs;
             const auto pagesCoverEveryParameter = [&] {
                 return grid.getLayout().totalPages(parameterModel) * grid.getSlotCount() >=
                        static_cast<int>(parameterModel.parameters.size());
             };
-            check(grid.getRowCount() == fullRows, "top-of-chain plug-in grid lost a row");
+            const auto layOutAt = [&grid](int height) {
+                grid.setSize(560, height);
+                const juce::Font font{juce::FontOptions{}};
+                grid.layoutContent(font, font);
+            };
+            layOutAt(320);
+            check(grid.getRowCount() == (knobs ? 3 : 4), "tall plug-in grid lost a row");
             check(pagesCoverEveryParameter(), "full plug-in grid pages missed parameters");
-            grid.setCompactRows(true);
-            check(grid.getRowCount() == fullRows - 1, "compact plug-in grid kept its full rows");
-            check(pagesCoverEveryParameter(), "compact plug-in grid pages missed parameters");
-            grid.setCompactRows(false);
-            check(grid.getRowCount() == fullRows, "plug-in grid did not return to full rows");
+            layOutAt(168);
+            check(grid.getRowCount() == (knobs ? 2 : 3),
+                  "200px device grid kept rows it can't fit");
+            check(pagesCoverEveryParameter(), "short plug-in grid pages missed parameters");
+            layOutAt(320);
+            check(grid.getRowCount() == (knobs ? 3 : 4),
+                  "plug-in grid did not return to full rows");
         }
         {
             // A faceplate reads its links afresh: a chain rebuild frees the arrays a

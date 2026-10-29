@@ -80,9 +80,6 @@ void MacroPanelComponent::setMacros(const magda::MacroArray& macros) {
     for (size_t i = 0; i < macros.size() && i < knobs_.size(); ++i) {
         knobs_[i]->setMacroInfo(macros[i]);
     }
-    macroCount_ = static_cast<int>(macros.size());
-    mappedCount_ = static_cast<int>(
-        std::ranges::count_if(macros, [](const magda::MacroInfo& m) { return m.isLinked(); }));
 
     resized();
     repaint();
@@ -144,10 +141,6 @@ juce::Component* MacroPanelComponent::getItemComponent(int index) {
 
 juce::Colour MacroPanelComponent::getTitleColour() const {
     return ActiveTheme::getColour(ActiveTheme::ACCENT_MODULATION);
-}
-
-juce::String MacroPanelComponent::getFooterText() const {
-    return juce::String(mappedCount_) + " of " + juce::String(macroCount_) + " mapped";
 }
 
 }  // namespace magda::daw::ui

@@ -27,10 +27,11 @@ class MagdaSamplerPlugin;
 namespace magda::daw::ui {
 
 /**
- * @brief The Drum Grid's body in the v1 shell: [pads | pad mix | pad chain] over a footer.
+ * @brief The Drum Grid's body in the v1 shell: [pads | pad mix | pad chain].
  *
  * The selected pad's chain shows in the rack's chain view, the same chain its mixer channel
- * shows (#3144). Pads take sample and plugin drops.
+ * shows (#3144). Like a rack's, it takes the device's full height, its devices' headers on the
+ * Drum Grid header's row (#3201). Pads take sample and plugin drops.
  */
 class DrumGridUI : public juce::Component,
                    public juce::FileDragAndDropTarget,
@@ -45,7 +46,6 @@ class DrumGridUI : public juce::Component,
     static constexpr int kPluginParamSlots = 16;
 
     static constexpr int kMinChainWidth = 264;
-    static constexpr int kFooterHeight = 24;
 
     DrumGridUI();
     ~DrumGridUI() override;
@@ -139,12 +139,29 @@ class DrumGridUI : public juce::Component,
     /** @brief The width this grid may take; 0 = no limit. */
     void setMaxContentWidth(int maxWidth);
 
+    /** @brief The device header's height over the pads and pad mix, which start under it; the
+     *  pad chain runs from the top. Clicks there reach the header. */
+    void setHeaderInset(int inset);
+    /** @brief Where the pad chain starts, or the full width while it is hidden. */
+    int getChainX() const {
+        return chainArea_.isEmpty() ? getWidth() : chainArea_.getX();
+    }
+
+    /** @brief The page of 16 pads shown; the device's sidebar turns it. */
+    int getCurrentPage() const {
+        return currentPage_;
+    }
+    void goToPrevPage();
+    void goToNextPage();
+    std::function<void()> onPageChanged;
+
     //==============================================================================
     // Component overrides
     void lookAndFeelChanged() override;
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
+    bool hitTest(int x, int y) override;
     void timerCallback() override;
 
     // FileDragAndDropTarget
@@ -240,15 +257,12 @@ class DrumGridUI : public juce::Component,
     ChainPanel padChainView_;
     DashedAddButton emptyAddButton_;
 
-    // Footer
-    std::unique_ptr<juce::ArrowButton> prevPageButton_;
-    std::unique_ptr<juce::ArrowButton> nextPageButton_;
-
     // Areas laid out in resized() and painted in paint()
     int maxContentWidth_ = 0;
+    int headerInset_ = 0;
     bool panelShown_ = true;
     bool chainShown_ = true;
-    juce::Rectangle<int> padsArea_, chainArea_, footerArea_, pageTextArea_;
+    juce::Rectangle<int> padsArea_, chainArea_;
 
     // Plugin drop highlight
     int dropHighlightPad_ = -1;
@@ -260,7 +274,6 @@ class DrumGridUI : public juce::Component,
     //==============================================================================
     void refreshPadButtons();
     void layoutChain(juce::Rectangle<int> area);
-    void layoutFooter(juce::Rectangle<int> area);
     void paintEmptyChain(juce::Graphics& g);
     bool selectedPadHasChain() const;
     void refreshPadRow();
@@ -268,8 +281,6 @@ class DrumGridUI : public juce::Component,
     /// Close the current fader gesture, so the next edit is a new undo step.
     void endFaderGesture();
     void refreshDetailPanel();
-    void goToPrevPage();
-    void goToNextPage();
 
     /** Get MIDI note name for a pad index (pad 0 = note 36 = C2). */
     static juce::String getNoteName(int padIndex);

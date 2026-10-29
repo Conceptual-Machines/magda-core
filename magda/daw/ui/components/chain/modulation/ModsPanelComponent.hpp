@@ -113,12 +113,8 @@ class ModsPanelComponent : public PagedControlPanel {
         return "MODS";
     }
     juce::Colour getTitleColour() const override;
-    juce::String getFooterText() const override;
     void onAddPage() override;
     void onRemovePage() override;
-    int getGridColumns() const override {
-        return 2;  // Two columns for mods (2x4 grid)
-    }
 
   private:
     std::vector<std::unique_ptr<ModKnobComponent>> knobs_;
@@ -128,7 +124,6 @@ class ModsPanelComponent : public PagedControlPanel {
     std::vector<std::pair<magda::ModId, juce::String>> availableModifiers_;
     magda::ChainNodePath parentPath_;
     int currentModCount_ = 0;  // Track how many actual mods exist
-    int targetCount_ = 0;      // Distinct parameters the mods reach
     int allocatedPages_ = 1;   // Track how many pages of slots are allocated (UI only)
 
     void ensureKnobCount(int count);

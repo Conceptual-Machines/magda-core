@@ -1369,11 +1369,13 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         DBG("DrumGridUI: Plugin not found in KnownPluginList: " + fileOrId);
     };
 
-    // Layout change notification (e.g., chains panel toggled)
+    // Layout change notification (e.g., chains panel toggled, or a page turned under the
+    // slot's sidebar arrows)
     drumGridUI_->onLayoutChanged = [cb = callbacks]() {
         if (cb.onLayoutChanged)
             cb.onLayoutChanged();
     };
+    drumGridUI_->onPageChanged = drumGridUI_->onLayoutChanged;
 
     drumGridUI_->onAnalyzePadRoleRequested = [this, cb = callbacks, gridPath](int padIndex) {
         if (!cb.getNodePath)

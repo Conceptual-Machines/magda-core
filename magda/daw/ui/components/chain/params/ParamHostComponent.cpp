@@ -384,14 +384,6 @@ void ParamHostComponent::setRowHeight(int rowHeight) {
     rowHeight_ = std::max(0, rowHeight);
 }
 
-void ParamHostComponent::setCompactRows(bool compact) {
-    if (compactRows_ == compact)
-        return;
-    compactRows_ = compact;
-    if (controlStyleApplied_)
-        applyControlStyle();
-}
-
 void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::Font& valueFont) {
     lastLabelFont_ = labelFont;
     lastValueFont_ = valueFont;
@@ -433,25 +425,39 @@ void ParamHostComponent::layoutContent(const juce::Font& labelFont, const juce::
     }
 
     // The spec's 14px padding and 8px gaps, scaled to a slot about half the
-    // spec's 1000px width.
+    // spec's 1000px width; rows sit closer, so three fit a 200px device (#3201).
     constexpr int kPadding = 10;
     constexpr int kGap = 6;
-    area = area.reduced(kPadding, kPadding - 2);
+    constexpr int kRowGap = 4;
+    area = area.reduced(kPadding, kPadding - 4);
+
+    // The shape follows the rows this height holds; the owner relays out once it reshapes.
+    if (rowHeight_ <= 0) {
+        const auto style = resolveControlStyle(controlStyleOverride_);
+        const int fitting = std::max(1, (area.getHeight() + kRowGap) /
+                                            (ParamSlotComponent::minimumHeight(style) + kRowGap));
+        if (fitting != fittingRows_) {
+            fittingRows_ = fitting;
+            applyControlStyle();
+        }
+    }
+
     const int usedRows = (cellCount_ + cellsPerRow_ - 1) / cellsPerRow_;
     const int numRows = std::max(usedRows, minRows_);
     const int cellWidth = (area.getWidth() - kGap * (cellsPerRow_ - 1)) / cellsPerRow_;
     const int cellHeight = rowHeight_ > 0 ? rowHeight_
-                           : numRows > 0  ? (area.getHeight() - kGap * (numRows - 1)) / numRows
+                           : numRows > 0  ? (area.getHeight() - kRowGap * (numRows - 1)) / numRows
                                           : area.getHeight();
     // A grid shorter than the rows it is sized for stands centred in the body.
     if (rowHeight_ <= 0 && usedRows < numRows)
-        area.removeFromTop((area.getHeight() - usedRows * cellHeight - kGap * (usedRows - 1)) / 2);
+        area.removeFromTop((area.getHeight() - usedRows * cellHeight - kRowGap * (usedRows - 1)) /
+                           2);
 
     for (int i = 0; i < cellCount_; ++i) {
         const int row = i / cellsPerRow_;
         const int col = i % cellsPerRow_;
         const int x = area.getX() + col * (cellWidth + kGap);
-        const int y = area.getY() + row * (cellHeight + kGap);
+        const int y = area.getY() + row * (cellHeight + kRowGap);
 
         // A spanning cell keeps the gutters of a single one, so a wide control
         // lines up with its narrow neighbours instead of gaining extra padding
@@ -481,22 +487,23 @@ void ParamHostComponent::applyControlStyle() {
         paramSlots_[i]->setControlStyle(style);
     layout_->setControlStyle(style);
 
-    // Plug-ins: 8 columns in Text and Knobs, 6 in Sliders; one row fewer inside a rack or the drum
-    // grid, so a value fits under its name at that height (#3144, #3165). Curated native layouts:
-    // balanced rows of at most the layout's columns, sized as those rows.
+    // Plug-ins: 8 columns in Text and Knobs, 6 in Sliders, in as many rows as the height holds up
+    // to the style's 4 or 3 (#3201). Curated native layouts: balanced rows of at most the layout's
+    // columns, sized as those rows, and wider rather than taller than the height holds.
     const bool sliders = style == ParamControlStyle::Sliders;
     const int styleRows = style == ParamControlStyle::Knobs ? 3 : 4;
-    const int plugInRows = compactRows_ ? styleRows - 1 : styleRows;
+    const int rows = fittingRows_ > 0 ? std::min(styleRows, fittingRows_) : styleRows;
     const int previousCount = cellCount_;
     const int previousColumns = cellsPerRow_;
-    minRows_ = layout_->minRowsForStyle(styleRows);
-    if (layout_->setShape(sliders ? 6 : 8, plugInRows)) {
+    minRows_ = layout_->minRowsForStyle(rows);
+    if (layout_->setShape(sliders ? 6 : 8, rows)) {
         cellCount_ = layout_->cellCount();
         cellsPerRow_ = layout_->cellsPerRow();
     } else if (layout_->reflowsForControlStyle() && cellCount_ > 0) {
         const int maxColumns = std::max(1, layout_->maxColumns());
-        const int rows = (cellCount_ + maxColumns - 1) / maxColumns;
-        cellsPerRow_ = (cellCount_ + rows - 1) / rows;
+        const int balancedRows = (cellCount_ + maxColumns - 1) / maxColumns;
+        const int shownRows = fittingRows_ > 0 ? std::min(rows, balancedRows) : balancedRows;
+        cellsPerRow_ = (cellCount_ + shownRows - 1) / shownRows;
     }
     const bool styleChanged = !lastAppliedStyle_.has_value() || *lastAppliedStyle_ != style;
     lastAppliedStyle_ = style;

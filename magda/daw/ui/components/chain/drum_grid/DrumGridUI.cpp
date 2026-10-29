@@ -13,7 +13,6 @@
 #include "core/TrackManager.hpp"
 #include "layout/DeviceShellPainter.hpp"
 #include "layout/NodeHeaderStyles.hpp"
-#include "ui/components/chain/layout/DeviceSlotHeaderLayout.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/components/common/MasterSpeakerButton.hpp"
 #include "ui/themes/ActiveTheme.hpp"
@@ -26,7 +25,7 @@ std::atomic<int> DrumGridUI::nextFaderGesture_{0};
 
 namespace {
 constexpr int kPadGap = 6;
-constexpr int kPadPadding = 10;
+constexpr int kPadPadding = 0;  // none: at 200px every row counts (#3201)
 constexpr int kMinPadsWidth = 268;
 constexpr int kMaxPadsWidth = 396;
 
@@ -164,20 +163,24 @@ void DrumGridUI::PadButton::paint(juce::Graphics& g) {
     g.fillRect(juce::Rectangle<float>(bounds.getX() + 1.0f, bounds.getY() + 5.0f, 2.0f,
                                       bounds.getHeight() - 10.0f));
 
-    auto text = getLocalBounds().reduced(10, 7);
+    // A pad of a 200px device is about 33px tall: its two lines close up to fit (#3201).
+    const bool tight = getHeight() < 44;
+    const int noteRow = tight ? 11 : 14;
+    auto text = getLocalBounds().reduced(10, tight ? 4 : 7);
     g.setColour(colour(ActiveTheme::DEVICE_ICON_INACTIVE));
     g.setFont(fonts.getMonoFont(9.5f));
-    g.drawText(noteName_, text.removeFromTop(14), juce::Justification::topLeft, false);
+    g.drawText(noteName_, text.removeFromTop(noteRow), juce::Justification::topLeft, false);
     if (soloed_ || muted_) {
         g.setColour(colour(soloed_ ? ActiveTheme::DEVICE_AMBER : ActiveTheme::DEVICE_RED));
         g.setFont(fonts.getMonoFont(8.5f).boldened());
-        g.drawText(soloed_ ? "S" : "M", text.withHeight(14).translated(0, -14),
+        g.drawText(soloed_ ? "S" : "M", text.withHeight(noteRow).translated(0, -noteRow),
                    juce::Justification::topRight, false);
     }
 
     g.setColour(colour(ActiveTheme::DEVICE_VALUE_TEXT));
     g.setFont(fonts.getUIFontMedium(11.5f));
-    g.drawText(sampleName_, text.removeFromBottom(16), juce::Justification::bottomLeft, true);
+    g.drawText(sampleName_, text.removeFromBottom(tight ? 14 : 16), juce::Justification::bottomLeft,
+               true);
 }
 
 void DrumGridUI::PadButton::mouseDown(const juce::MouseEvent& e) {
@@ -248,7 +251,6 @@ DrumGridUI::DrumGridUI() {
         if (onLayoutChanged)
             onLayoutChanged();
     };
-    padChainView_.setCompactDevices(true);
     addChildComponent(padChainView_);
     emptyAddButton_.setTooltip("Add a device to this pad");
     emptyAddButton_.onClick = [this]() {
@@ -272,14 +274,6 @@ DrumGridUI::DrumGridUI() {
         refreshPadButtons();
     };
     addAndMakeVisible(padMixPanel_);
-
-    // Footer
-    prevPageButton_ = makeNavArrowButton("Previous page", 0.5f);
-    nextPageButton_ = makeNavArrowButton("Next page", 0.0f);
-    prevPageButton_->onClick = [this]() { goToPrevPage(); };
-    nextPageButton_->onClick = [this]() { goToNextPage(); };
-    addAndMakeVisible(*prevPageButton_);
-    addAndMakeVisible(*nextPageButton_);
 
     refreshPadButtons();
     refreshDetailPanel();
@@ -493,17 +487,6 @@ void DrumGridUI::paint(juce::Graphics& g) {
     g.setColour(line);
     g.fillRect(chainArea_.withWidth(1));
     paintEmptyChain(g);
-
-    if (!pageTextArea_.isEmpty()) {
-        const int first = currentPage_ * kPadsPerPage;
-        g.setColour(colour(ActiveTheme::DEVICE_DIM2));
-        g.setFont(FontManager::getInstance().getMonoFont(11.0f));
-        g.drawText("Page " + juce::String(currentPage_ + 1) + "/" + juce::String(kNumPages) +
-                       juce::String::fromUTF8(" \xc2\xb7 ") + getNoteName(first) +
-                       juce::String::fromUTF8("\xe2\x80\x93") +
-                       getNoteName(first + kPadsPerPage - 1),
-                   pageTextArea_, juce::Justification::centred, false);
-    }
 }
 
 /// An empty pad's chain says how to fill it. A pad's chain has no header of its
@@ -561,10 +544,10 @@ void DrumGridUI::paintOverChildren(juce::Graphics& g) {
 // =============================================================================
 
 void DrumGridUI::resized() {
-    // The footer sits under the pads only; the panel and the chain run to the bottom.
+    // The pads and the panel sit under the device header; the chain runs from the top.
     auto area = getLocalBounds();
-    padsArea_ = area.removeFromLeft(padsWidthFor(area.getHeight() - kFooterHeight));
-    footerArea_ = padsArea_.removeFromBottom(kFooterHeight);
+    padsArea_ = area.removeFromLeft(padsWidthFor(area.getHeight() - headerInset_))
+                    .withTrimmedTop(headerInset_);
     const auto grid = padsArea_.reduced(kPadPadding);
     const int cellW = (grid.getWidth() - 3 * kPadGap) / kGridCols;
     const int cellH = (grid.getHeight() - 3 * kPadGap) / kGridRows;
@@ -576,11 +559,11 @@ void DrumGridUI::resized() {
         pad.setBounds(grid.getX() + col * (cellW + kPadGap), grid.getY() + row * (cellH + kPadGap),
                       cellW, cellH);
     }
-    layoutFooter(footerArea_.withX(grid.getX()).withWidth(grid.getWidth()));
 
     padMixPanel_.setVisible(panelShown_);
     if (panelShown_)
-        padMixPanel_.setBounds(area.removeFromLeft(PadMixPanel::kWidth));
+        padMixPanel_.setBounds(
+            area.removeFromLeft(PadMixPanel::kWidth).withTrimmedTop(headerInset_));
     chainArea_ = chainShown_ ? area : juce::Rectangle<int>{};
     layoutChain(chainArea_);
 }
@@ -595,14 +578,16 @@ void DrumGridUI::layoutChain(juce::Rectangle<int> area) {
         emptyAddButton_.setBounds(area.reduced(6).removeFromLeft(40));
 }
 
-/// @p area spans the pad grid, so the arrows sit under its outer columns.
-void DrumGridUI::layoutFooter(juce::Rectangle<int> area) {
-    auto nav = area;
-    prevPageButton_->setBounds(
-        nav.removeFromLeft(16).withSizeKeepingCentre(kNavArrowSize, kNavArrowSize));
-    nextPageButton_->setBounds(
-        nav.removeFromRight(16).withSizeKeepingCentre(kNavArrowSize, kNavArrowSize));
-    pageTextArea_ = nav;
+void DrumGridUI::setHeaderInset(int inset) {
+    if (inset == headerInset_)
+        return;
+    headerInset_ = inset;
+    resized();
+    repaint();
+}
+
+bool DrumGridUI::hitTest(int x, int y) {
+    return y >= headerInset_ || x >= getChainX();
 }
 
 // =============================================================================
@@ -745,7 +730,7 @@ void DrumGridUI::showPadContextMenu(int padIndex, juce::Point<int> screenPos) {
 }
 
 int DrumGridUI::fixedContentWidth() const {
-    return padsWidthFor(getHeight() - kFooterHeight) + (panelShown_ ? PadMixPanel::kWidth : 0);
+    return padsWidthFor(getHeight() - headerInset_) + (panelShown_ ? PadMixPanel::kWidth : 0);
 }
 
 void DrumGridUI::setMaxContentWidth(int maxWidth) {
@@ -820,9 +805,8 @@ void DrumGridUI::refreshPadButtons() {
         btn.setSoloed(info.solo);
         btn.setStripeColour(device_shell::chainColour(info.chainIndex));
     }
-    prevPageButton_->setEnabled(currentPage_ > 0);
-    nextPageButton_->setEnabled(currentPage_ < kNumPages - 1);
-    repaint(footerArea_);
+    if (onPageChanged)
+        onPageChanged();
 }
 
 void DrumGridUI::refreshDetailPanel() {

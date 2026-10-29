@@ -3,6 +3,7 @@
 
 #include "slot/DeviceSlotAnalyzerContextActions.hpp"
 
+#include "ChainNodeDeletion.hpp"
 #include "audio/plugins/AnalysisTelemetry.hpp"
 #include "core/DeviceStateCommands.hpp"
 #include "core/SelectionManager.hpp"
@@ -107,17 +108,9 @@ void showDeviceSlotContextMenu(juce::Component& owner, const magda::ChainNodePat
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::WrapChainElementsInRackCommand>(selectedPaths));
             } else if (result == 100) {
-                juce::MessageManager::callAsync([path, callback]() {
-                    // Every depth through the same undoable command, the way
-                    // the slot's own X does. This used to fall through to a
-                    // direct model call for anything but a top-level device,
-                    // so right-click Delete on a nested, post-fader or
-                    // mixer-analysis device could not be undone (#2232).
-                    magda::UndoManager::getInstance().executeCommand(
-                        std::make_unique<magda::RemoveDeviceByPathCommand>(path));
-                    if (callback)
-                        callback();
-                });
+                deleteChainNodes(chainNodesToDelete(path));
+                if (callback)
+                    juce::MessageManager::callAsync(callback);
             }
         });
 }

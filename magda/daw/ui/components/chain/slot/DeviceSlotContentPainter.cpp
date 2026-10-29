@@ -86,30 +86,15 @@ DeviceSlotSubtitle deviceSlotSubtitle(const DeviceSlotContentPaintState& state) 
     if (skipsContentHeader(state))
         return {};
 
-    const auto dim = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2);
-    const auto shade = state.bypassed ? dim.withAlpha(0.5f) : dim;
+    // Only live status: the vendor line cost header room for nothing (#3201).
     const auto& traits = state.traits;
-
     if ((traits.isStepSequencer || traits.isPolyStepSequencer) && state.stepRecording.active) {
         const int maxSteps = juce::jmax(1, state.stepRecording.maxSteps);
         const int position = juce::jlimit(0, maxSteps - 1, state.stepRecording.position);
         return {"STEP RECORDING " + juce::String(position + 1) + "/" + juce::String(maxSteps),
                 ActiveTheme::getColour(ActiveTheme::STEP_RECORD)};
     }
-
-    if (traits.isDrumGrid)
-        return {"MAGDA / Drum Grid", shade};
-    if (traits.isChordEngine)
-        return {"MAGDA / Chord Engine", shade};
-    if (traits.isArpeggiator)
-        return {"MAGDA / Arpeggiator", shade};
-    if (traits.isStrum)
-        return {"MAGDA / Strum", shade};
-    if (traits.isPolyStepSequencer)
-        return {"MAGDA / Poly Sequencer", shade};
-    if (traits.isStepSequencer)
-        return {"MAGDA / Step Sequencer", shade};
-    return {state.manufacturer, shade};
+    return {};
 }
 
 }  // namespace magda::daw::ui

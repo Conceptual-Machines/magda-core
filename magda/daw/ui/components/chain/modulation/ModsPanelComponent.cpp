@@ -15,6 +15,7 @@ AddModButton::AddModButton() = default;
 
 namespace {
 constexpr std::array<const char*, 4> kShortcutNames{"LFO", "ENV", "RND", "FOL"};
+constexpr int kLabelHeight = 14;
 constexpr std::array<magda::ModType, 4> kShortcutTypes{
     magda::ModType::LFO, magda::ModType::Envelope, magda::ModType::Random,
     magda::ModType::Follower};
@@ -27,10 +28,12 @@ void AddModButton::setPrimary(bool primary) {
     }
 }
 
+// Two by two under the label, to fit a card a quarter of the panel wide (#3201).
 juce::Rectangle<int> AddModButton::shortcutBounds(int index) const {
-    auto row = getLocalBounds().reduced(6, 4).removeFromBottom(14);
-    const int width = row.getWidth() / static_cast<int>(kShortcutNames.size());
-    return row.withWidth(width).translated(width * index, 0);
+    auto grid = getLocalBounds().reduced(4, 4).withTrimmedTop(kLabelHeight);
+    const int width = grid.getWidth() / 2;
+    const int height = grid.getHeight() / 2;
+    return {grid.getX() + (index % 2) * width, grid.getY() + (index / 2) * height, width, height};
 }
 
 void AddModButton::paint(juce::Graphics& g) {
@@ -41,12 +44,11 @@ void AddModButton::paint(juce::Graphics& g) {
 
     const auto dim = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2);
     const auto text = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM);
-    // One line over the shortcut row, so the two fit a compact card.
-    auto label = getLocalBounds().reduced(6, 4);
+    auto label = getLocalBounds().reduced(4, 4);
     if (primary_)
-        label.removeFromBottom(14);
+        label = label.withHeight(kLabelHeight);
     g.setColour(hovered ? text : dim);
-    g.setFont(fonts.getUIFont(12.0f));
+    g.setFont(fonts.getUIFont(10.5f));
     g.drawText("+ Add mod", label, juce::Justification::centred);
 
     if (!primary_)
@@ -275,12 +277,6 @@ void ModsPanelComponent::setMods(const magda::ModArray& mods) {
             setCurrentPage(juce::jmax(0, allocatedPages_ - 1));
     }
 
-    std::vector<magda::ControlTarget> targets;
-    for (const auto& mod : mods)
-        for (const auto& link : mod.links)
-            if (std::ranges::find(targets, link.target) == targets.end())
-                targets.push_back(link.target);
-    targetCount_ = static_cast<int>(targets.size());
     markPrimarySlot();
 
     // Update existing mods
@@ -372,12 +368,6 @@ juce::Component* ModsPanelComponent::getItemComponent(int index) {
 
 juce::Colour ModsPanelComponent::getTitleColour() const {
     return ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
-}
-
-juce::String ModsPanelComponent::getFooterText() const {
-    return juce::String(currentModCount_) + (currentModCount_ == 1 ? " mod" : " mods") +
-           juce::String::fromUTF8(" \xc2\xb7 ") + juce::String(targetCount_) +
-           (targetCount_ == 1 ? " target" : " targets");
 }
 
 }  // namespace magda::daw::ui

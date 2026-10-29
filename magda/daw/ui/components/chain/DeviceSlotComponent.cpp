@@ -227,24 +227,6 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     addAndMakeVisible(midiNoteStrip_);
 
     // Set up NodeComponent callbacks
-    onDeleteClicked = [this]() {
-        // IMPORTANT: Defer deletion to avoid crash - the UI rebuild destroys this component.
-        // Capture values by copy before 'this' is destroyed.
-        auto pathToDelete = nodePath_;
-        auto callback = onDeviceDeleted;
-        detachInlineUiFromLivePlugin();
-        juce::MessageManager::callAsync([pathToDelete, callback]() {
-            // Every depth through the same undoable command. A nested device
-            // used to fall back to a direct model call, so deleting one out of
-            // a rack chain could not be undone (#2232).
-            magda::UndoManager::getInstance().executeCommand(
-                std::make_unique<magda::RemoveDeviceByPathCommand>(pathToDelete));
-            if (callback) {
-                callback();
-            }
-        });
-    };
-
     onModPanelToggled = [this](bool visible) {
         if (auto* dev = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
             dev->modPanelOpen = visible;
@@ -332,9 +314,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     setupGainMeterControls();
 
     // ----- MOCK UI (no wiring): MAGDA preset menu button (top header) -----
-    presetButton_ =
-        std::make_unique<magda::SvgButton>("Presets", BinaryData::iconpresetsroundboldm_svg,
-                                           BinaryData::iconpresetsroundboldm_svgSize);
+    presetButton_ = std::make_unique<magda::SvgButton>("Presets", BinaryData::chevron_down_svg,
+                                                       BinaryData::chevron_down_svgSize);
     presetButton_->setTooltip("Presets");
     presetButton_->onClick = [this]() {
         // Lit while its menu is open.
@@ -528,15 +509,6 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         addChildComponent(*midiThruButton_);
     }
 
-    closeButton_ = std::make_unique<magda::SvgButton>("Close", BinaryData::close_svg,
-                                                      BinaryData::close_svgSize);
-    closeButton_->setTooltip("Remove device");
-    closeButton_->onClick = [this]() {
-        if (onDeleteClicked)
-            onDeleteClicked();
-    };
-    addAndMakeVisible(*closeButton_);
-    hideBaseDeleteButton();
     paramsToggle_ = std::make_unique<magda::SvgButton>("Parameters", BinaryData::deviceparams_svg,
                                                        BinaryData::deviceparams_svgSize);
     paramsToggle_->setTooltip("Show the parameters");
@@ -592,10 +564,20 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     // The page label's dim colour, so the sidebar's arrows read as quietly as it does.
     const auto arrowColour = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2);
     pagePrevButton_ = std::make_unique<juce::ArrowButton>("Previous page", 0.5f, arrowColour);
-    pagePrevButton_->onClick = [this]() { goToPrevPage(); };
+    pagePrevButton_->onClick = [this]() {
+        if (auto* drumGrid = customUI_.getDrumGridUI())
+            drumGrid->goToPrevPage();
+        else
+            goToPrevPage();
+    };
     addChildComponent(*pagePrevButton_);
     pageNextButton_ = std::make_unique<juce::ArrowButton>("Next page", 0.0f, arrowColour);
-    pageNextButton_->onClick = [this]() { goToNextPage(); };
+    pageNextButton_->onClick = [this]() {
+        if (auto* drumGrid = customUI_.getDrumGridUI())
+            drumGrid->goToNextPage();
+        else
+            goToNextPage();
+    };
     addChildComponent(*pageNextButton_);
     pageLabel_.setJustificationType(juce::Justification::centred);
     pageLabel_.setInterceptsMouseClicks(false, false);
@@ -706,26 +688,41 @@ void DeviceSlotComponent::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int>
                               .headerSeparatorRight = headerSeparators_.right,
                               .sidebar = sidebarArea_,
                               .sideStrip = sideStripArea_,
-                              .midiLed = midiLedArea_},
+                              .midiLed = midiLedArea_,
+                              .headerWidth = drumGridHeaderWidth_},
                              {}, midiLed_.isLit());
 }
 
-int DeviceSlotComponent::sideStripWidth() const {
+bool DeviceSlotComponent::hasMeterStrip() const {
     const auto* track = magda::TrackManager::getInstance().getTrack(nodePath_.trackId);
     const bool onChordTrack = track != nullptr && track->type == magda::TrackType::Chord;
     if (stripsAnalysisChrome() || onChordTrack)
-        return 0;
-    // MIDI devices emit no audio; only the note-strip utilities keep a strip.
+        return false;
+    // MIDI devices emit no audio; only the note-strip utilities keep a meter.
     const bool midiDevice = device_.deviceType == magda::DeviceType::MIDI || traits_.isChordEngine;
-    if (midiDevice && !isMidiUtilityDeviceSlot(traits_))
-        return 0;
-    return SIDE_STRIP_WIDTH;
+    return !midiDevice || isMidiUtilityDeviceSlot(traits_);
+}
+
+int DeviceSlotComponent::sideStripWidth() const {
+    // Without a meter the strip still carries power, narrower.
+    if (hasMeterStrip())
+        return SIDE_STRIP_WIDTH;
+    return stripsAnalysisChrome() ? 0 : POWER_STRIP_WIDTH;
 }
 
 // Mix box on top, Δ at the foot, the 12px fader over the meter between them.
 void DeviceSlotComponent::layoutSideStrip(juce::Rectangle<int> strip) {
     if (strip.isEmpty())
         return;
+    if (!hasMeterStrip()) {
+        for (juce::Component* c : {static_cast<juce::Component*>(mixKnob_.get()),
+                                   static_cast<juce::Component*>(gainSlider_.get()),
+                                   static_cast<juce::Component*>(&levelMeter_),
+                                   static_cast<juce::Component*>(&midiNoteStrip_)})
+            if (c != nullptr)
+                c->setVisible(false);
+        return;
+    }
 
     auto area = strip.reduced(5, 6);
     const bool utility = isMidiUtilityDeviceSlot(traits_);
@@ -804,6 +801,9 @@ std::vector<juce::Component*> DeviceSlotComponent::sidebarButtons() const {
 }
 
 bool DeviceSlotComponent::sidebarPaged() const {
+    // A Drum Grid's arrows turn its pads' pages (#3201).
+    if (customUI_.getDrumGridUI() != nullptr)
+        return true;
     // A custom faceplate takes the body in place of the grid, so its pages have nothing to turn.
     const bool gridHidden = isInternalDevice() && customUI_.hasAnyUI();
     return paramGrid_ != nullptr && paramGrid_->paginates() && !paramGrid_->showsOwnPagination() &&
@@ -823,7 +823,8 @@ void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
     for (auto* arrow : {pagePrevButton_.get(), pageNextButton_.get()})
         if (arrow != nullptr)
             arrow->setVisible(paged);
-    pageLabel_.setVisible(paged);
+    const auto* drumGrid = customUI_.getDrumGridUI();
+    pageLabel_.setVisible(paged && drumGrid == nullptr);
     if (!shown)
         return;
 
@@ -847,6 +848,10 @@ void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
                                        .withSizeKeepingCentre(kNavArrowSize, kNavArrowSize));
         pageNextButton_->setBounds(arrows.withSizeKeepingCentre(kNavArrowSize, kNavArrowSize));
         pageLabel_.setBounds(area.removeFromBottom(16));
+        if (drumGrid != nullptr) {
+            pagePrevButton_->setEnabled(drumGrid->getCurrentPage() > 0);
+            pageNextButton_->setEnabled(drumGrid->getCurrentPage() < DrumGridUI::kNumPages - 1);
+        }
     }
 }
 
@@ -1155,7 +1160,7 @@ void DeviceSlotComponent::styleDeviceHeaderButtons() {
     style(modButton_.get(), DeviceIcon::Toggle, ActiveTheme::ACCENT_ATTENTION);
     style(aiButton_.get(), DeviceIcon::Toggle, ActiveTheme::ACCENT_PRIMARY);
     style(learnButton_.get(), DeviceIcon::Toggle, ActiveTheme::ACCENT_ATTENTION);
-    style(presetButton_.get(), DeviceIcon::Action, ActiveTheme::PRESET_INDIGO);
+    style(presetButton_.get(), DeviceIcon::Chevron, ActiveTheme::PRESET_INDIGO);
     if (presetButton_)
         presetButton_->setHoverColor(ActiveTheme::PRESET_INDIGO);
     style(multiOutButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_PRIMARY);
@@ -1178,9 +1183,6 @@ void DeviceSlotComponent::styleDeviceHeaderButtons() {
     style(uiButton_.get(), DeviceIcon::Window, ActiveTheme::ACCENT_PRIMARY);
     if (onButton_)
         applyDeviceIconStyle(*onButton_, DeviceIcon::Power, juce::Colour(0xFFE6E6E6),
-                             ActiveTheme::DEVICE_BLUE, height);
-    if (closeButton_)
-        applyDeviceIconStyle(*closeButton_, DeviceIcon::Close, juce::Colour(0xFFB3B3B3),
                              ActiveTheme::DEVICE_BLUE, height);
 
     auto& title = getNameLabel();
@@ -1402,12 +1404,11 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
 
     refreshDeviceTraits(device_);
 
-    // Hide power / preset / delete for post-FX analysis devices (the getters
-    // return nullptr too, so the header layout skips placing them).
+    // Hide power / preset for post-FX analysis devices (the getters return
+    // nullptr too, so the header layout skips placing them).
     const bool strip = stripsAnalysisChrome();
     onButton_->setVisible(!strip);
     presetButton_->setVisible(!strip);
-    setDeleteButtonVisible(!strip);
     levelMeter_.setVisible(!strip);  // peak meter is redundant on an analyzer
 
     syncModMacroControlsAvailability();
@@ -1759,8 +1760,6 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
                                             .bypassed = isBypassed(),
                                             .internalDevice = isInternalDevice(),
                                             .hasCustomUI = customUI_.hasAnyUI(),
-                                            .manufacturer = device_.manufacturer,
-                                            .deviceName = device_.name,
                                             .stepRecording = stepRecording};
     const auto subtitle = deviceSlotSubtitle(state);
     setHeaderSubtitle(subtitle.text, subtitle.colour);
@@ -1793,13 +1792,13 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     const auto* slotTrack = magda::TrackManager::getInstance().getTrack(nodePath_.trackId);
     const bool onChordTrack = slotTrack && slotTrack->type == magda::TrackType::Chord;
     juce::ignoreUnused(pluginPresetsAvailable);
-    sideStripArea_ = {};
+    // The base hands the strip over before this pass, but not when there is none.
+    if (getShellStripWidth() == 0)
+        sideStripArea_ = {};
     sidebarArea_ = contentArea.removeFromLeft(sidebarWidth());
     if (collapsed_) {
         layoutHeaderControls({});
         voiceModeChoice_.setVisible(false);
-    } else if (const int strip = sideStripWidth(); strip > 0) {
-        sideStripArea_ = contentArea.removeFromRight(strip);
     }
     layoutSidebar(sidebarArea_);
 
@@ -1826,7 +1825,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
         return;
     }
     juce::ignoreUnused(onChordTrack);
-    layoutSideStrip(sideStripArea_);
+    layoutSideStrip(sideStripArea_.withTrimmedTop(getHeaderHeight()));
     if (lent) {
         lentNote_.setBounds(contentArea);
         lentNote_.setVisible(true);
@@ -1858,7 +1857,27 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
          .activeCustomUI = activeCustomUI,
          .paramGrid = paramGrid_.get()},
         faustHeaderHeight());
+    layoutDrumGridChainColumn();
     layoutFaceplateSlotControls();
+}
+
+// The pad chain takes the slot's full height inside its frame, and the header stops where it
+// starts; a changed header width lays the slot out once more.
+void DeviceSlotComponent::layoutDrumGridChainColumn() {
+    auto* drumGrid = customUI_.getDrumGridUI();
+    int headerWidth = 0;
+    if (drumGrid != nullptr && drumGrid->isVisible() && !collapsed_) {
+        const auto body = drumGrid->getBounds();
+        drumGrid->setHeaderInset(body.getY() - 1);
+        drumGrid->setBounds(body.withTop(1));
+        if (drumGrid->getChainX() < drumGrid->getWidth())
+            headerWidth = drumGrid->getX() + drumGrid->getChainX();
+    }
+    if (headerWidth != drumGridHeaderWidth_) {
+        drumGridHeaderWidth_ = headerWidth;
+        resized();
+        repaint();
+    }
 }
 
 void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
