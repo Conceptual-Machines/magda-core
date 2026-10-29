@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 #include "AnalyzerColours.hpp"
 #include "AnalyzerWindow.hpp"
@@ -300,9 +301,9 @@ void OscilloscopeUI::updateTimeReadout() {
 void OscilloscopeUI::applyTimebase() {
     const double sr = (telemetry_ != nullptr) ? telemetry_->sampleRate() : 44100.0;
     const float ms = (telemetry_ != nullptr) ? telemetry_->timebaseMs() : 10.0f;
-    const int samples = static_cast<int>(static_cast<double>(ms) * 0.001 * sr);
-    displaySamples_ = juce::jlimit(64, kMaxWindow - kTriggerSearch, samples);
-    readCount_ = juce::jmin(displaySamples_ + kTriggerSearch, kMaxWindow);
+    span_ = audio::scopeSpan(sr, ms, kMaxWindow);
+    trigger_ = 0.0;
+    lastTapWritePosition_ = 0;  // re-read at the new span on the next tick
 }
 
 int OscilloscopeUI::compactExtraHeight() const {
@@ -385,7 +386,10 @@ void OscilloscopeUI::timerCallback() {
     if (telemetry_ != nullptr) {
         const auto writePosition = telemetry_->writePosition();
         if (writePosition != lastTapWritePosition_) {
-            lastTapWritePosition_ = telemetry_->readLatest(window_.data(), readCount_);
+            lastTapWritePosition_ = telemetry_->readLatest(window_.data(), span_.readCount);
+            const double trigger =
+                audio::findRisingTrigger(window_.data(), span_.readCount, span_.searchSamples);
+            trigger_ = trigger >= 0.0 ? trigger : 0.5 * span_.searchSamples;  // free-run
             needsRepaint = true;
         }
     }
@@ -438,63 +442,7 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
     g.setColour(ActiveTheme::getColour(ActiveTheme::GRID_LINE));
     g.drawHorizontalLine(static_cast<int>(midY), area.getX(), area.getRight());
 
-    if (static_cast<int>(window_.size()) < readCount_ || displaySamples_ < 2)
-        return;
-
-    // Rising zero-crossing trigger, searched in the head of the read so a full
-    // displaySamples_ span is available after it.
-    int trigger = 0;
-    const int searchEnd = readCount_ - displaySamples_;
-    for (int i = 1; i <= searchEnd; ++i) {
-        if (window_[static_cast<size_t>(i - 1)] < 0.0f && window_[static_cast<size_t>(i)] >= 0.0f) {
-            trigger = i;
-            break;
-        }
-    }
-
-    g.setColour(analyzerTraceColour(telemetry_ != nullptr ? telemetry_->traceColourIndex() : 0));
-
-    const float w = area.getWidth();
-    const int cols = juce::jmax(1, static_cast<int>(w));
-    auto yOf = [&](float s) { return midY - juce::jlimit(-1.0f, 1.0f, s) * halfH * 0.9f; };
-
-    if (displaySamples_ <= cols) {
-        // Zoomed in (<= 1 sample per pixel): smooth interpolated line.
-        juce::Path path;
-        for (int i = 0; i < displaySamples_; ++i) {
-            const float x =
-                area.getX() + w * (static_cast<float>(i) / static_cast<float>(displaySamples_ - 1));
-            const float y = yOf(window_[static_cast<size_t>(trigger) + i]);
-            if (i == 0)
-                path.startNewSubPath(x, y);
-            else
-                path.lineTo(x, y);
-        }
-        g.strokePath(path, juce::PathStrokeType(1.5f));
-    } else {
-        // Zoomed out (many samples per pixel): draw a min/max envelope per column.
-        // This stays stable frame to frame instead of crawling/aliasing the way a
-        // per-sample line does when far more samples than pixels are drawn.
-        for (int x = 0; x < cols; ++x) {
-            const long long i0 = trigger + static_cast<long long>(x) * displaySamples_ / cols;
-            long long i1 = trigger + static_cast<long long>(x + 1) * displaySamples_ / cols;
-            if (i1 <= i0)
-                i1 = i0 + 1;
-            float mn = 1.0f;
-            float mx = -1.0f;
-            for (long long i = i0; i < i1; ++i) {
-                const float s = window_[static_cast<size_t>(i)];
-                mn = std::min(mn, s);
-                mx = std::max(mx, s);
-            }
-            const float xPos = area.getX() + static_cast<float>(x);
-            float yTop = yOf(mx);
-            float yBot = yOf(mn);
-            if (yBot - yTop < 1.0f)
-                yBot = yTop + 1.0f;
-            g.drawLine(xPos, yTop, xPos, yBot, 1.0f);
-        }
-    }
+    drawTrace(g, area);
 
     // Chevron/pop-out strip directly below the waveform.
     if (compact_) {
@@ -511,6 +459,64 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
                                   ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         // Pop-out is the SvgButton (open_in_new) positioned in the strip.
     }
+}
+
+void OscilloscopeUI::drawTrace(juce::Graphics& g, juce::Rectangle<float> area) {
+    const int n = span_.readCount;
+    if (static_cast<int>(window_.size()) < n || span_.displaySamples < 2)
+        return;
+
+    const float* samples = window_.data();
+    const float midY = area.getCentreY();
+    const float scale = area.getHeight() * 0.5f * 0.9f;
+    auto yOf = [&](float s) { return midY - juce::jlimit(-1.0f, 1.0f, s) * scale; };
+    const float w = area.getWidth();
+    const int cols = juce::jmax(1, static_cast<int>(w));
+    const double samplesPerPixel = static_cast<double>(span_.displaySamples) / w;
+
+    g.setColour(analyzerTraceColour(telemetry_ != nullptr ? telemetry_->traceColourIndex() : 0));
+
+    if (samplesPerPixel <= 1.0) {
+        // Two points a pixel, so the curve between samples draws without corners.
+        juce::Path path;
+        const int points = 2 * cols;
+        for (int i = 0; i <= points; ++i) {
+            const float x = w * static_cast<float>(i) / static_cast<float>(points);
+            const float y = yOf(audio::sincSample(samples, n, trigger_ + x * samplesPerPixel));
+            if (i == 0)
+                path.startNewSubPath(area.getX(), y);
+            else
+                path.lineTo(area.getX() + x, y);
+        }
+        g.strokePath(path, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved,
+                                                juce::PathStrokeType::rounded));
+        return;
+    }
+
+    audio::envelopeColumns(samples, n, trigger_, samplesPerPixel, cols, columnMins_, columnMaxs_);
+    // At least a pixel thick, so a quiet stretch still draws.
+    auto edges = [&](int c) {
+        float top = yOf(columnMaxs_[static_cast<size_t>(c)]);
+        float bottom = yOf(columnMins_[static_cast<size_t>(c)]);
+        if (bottom - top < 1.0f) {
+            const float mid = 0.5f * (top + bottom);
+            top = mid - 0.5f;
+            bottom = mid + 0.5f;
+        }
+        return std::pair{top, bottom};
+    };
+    juce::Path envelope;
+    for (int c = 0; c < cols; ++c) {
+        const float x = area.getX() + static_cast<float>(c) + 0.5f;
+        if (c == 0)
+            envelope.startNewSubPath(x, edges(c).first);
+        else
+            envelope.lineTo(x, edges(c).first);
+    }
+    for (int c = cols - 1; c >= 0; --c)
+        envelope.lineTo(area.getX() + static_cast<float>(c) + 0.5f, edges(c).second);
+    envelope.closeSubPath();
+    g.fillPath(envelope);
 }
 
 }  // namespace magda::daw::ui

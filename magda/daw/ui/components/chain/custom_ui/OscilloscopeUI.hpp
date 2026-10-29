@@ -9,6 +9,7 @@
 #include <memory>
 #include <vector>
 
+#include "audio/analysis/ScopeAnalysis.hpp"
 #include "custom_ui/TelemetrySources.hpp"
 
 namespace magda {
@@ -23,8 +24,9 @@ class AnalyzerWindow;
  * @brief Waveform display for the Oscilloscope analysis device.
  *
  * Polls the plugin's lock-free AudioTapBuffer on a timer and draws the most
- * recent samples. A rising zero-crossing trigger stabilises the display. A Time
- * slider sets the visible window (timebase, 1-1000 ms), persisted on the plugin.
+ * recent samples from a hysteresis trigger (#3186): a band-limited curve when
+ * zoomed in, a min/max envelope when zoomed out. A Time slider sets the visible
+ * window (timebase, 1-5000 ms), persisted on the plugin.
  */
 class OscilloscopeUI : public juce::Component, private juce::Timer {
   public:
@@ -77,13 +79,14 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
 
     void timerCallback() override;
     void updateTimerState();
-    void applyTimebase();      // recompute displaySamples_ / readCount_ from timebase + sample rate
+    void applyTimebase();      // recompute span_ from timebase + sample rate
     void updateTimeReadout();  // format the slider value into the themed value label
     void updateControlVisibility();
     void startControlsFade(bool expanding);
     void advanceControlsFade();
     void applyControlsAlpha();
     void openPopout();  // open/re-show the full analyzer in a floating window
+    void drawTrace(juce::Graphics& g, juce::Rectangle<float> area);
     bool showControls() const {
         return !compact_ || controlsExpanded_ || controlsFadeActive_;
     }
@@ -98,14 +101,15 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     bool persistGlobalDefaults_ = true;
     std::shared_ptr<OscilloscopeTelemetrySource> telemetry_;
 
-    // window_ holds the whole tap ring; each frame we read readCount_ samples
-    // (the drawn span plus trigger-search headroom) from the latest history.
+    // window_ holds the whole tap ring; each new block reads span_.readCount
+    // samples from the latest history and finds the trigger in them.
     static constexpr int kMaxWindow = 262144;  // matches the plugin's tap ring (~5.4 s at 48k)
-    static constexpr int kTriggerSearch = 2048;
     std::vector<float> window_;
-    int displaySamples_ = 1024;
-    int readCount_ = 1024 + kTriggerSearch;
+    audio::ScopeSpan span_ = audio::scopeSpan(44100.0, 10.0, kMaxWindow);
+    double trigger_ = 0.0;
     size_t lastTapWritePosition_ = 0;
+    std::vector<float> columnMins_;
+    std::vector<float> columnMaxs_;
 
     juce::Slider timeSlider_;
     juce::Label timeLabel_;

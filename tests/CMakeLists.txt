@@ -390,6 +390,8 @@ set(TEST_SOURCES
     audio/test_band_spectrum.cpp
     # Spectrum Analyzer overlap, columns and note readout (#3185)
     audio/test_spectrum_analysis.cpp
+    # Oscilloscope trigger, interpolation and envelope (#3186)
+    audio/test_scope_analysis.cpp
     # Media database (issue #768) — Phase A: SQLite skeleton
     media/test_media_database.cpp
     # Media database (issue #768) — Phase B: scanner + path rules

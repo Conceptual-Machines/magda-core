@@ -339,6 +339,8 @@ set(_magda_base_device_support_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis/AudioTapBuffer.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis/BandSpectrum.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis/BandSpectrum.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/analysis/ScopeAnalysis.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/analysis/ScopeAnalysis.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis/SpectrumAnalysis.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis/SpectrumAnalysis.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis/MaskingDetector.hpp"
