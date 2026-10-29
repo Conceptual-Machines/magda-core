@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <iterator>
 #include <limits>
 
@@ -31,6 +32,8 @@ constexpr int kStackLabelW = 34;    // label column width in the stacked layout
 constexpr int kChevronStripH = 16;  // dedicated strip below the plot for the chevron
 constexpr float kSlopeOptions[] = {0.0f, 3.0f, 4.5f, 6.0f};  // dB/oct
 constexpr float kSpeedOptions[] = {0.15f, 0.4f, 0.8f};       // smoothing (Slow/Med/Fast)
+constexpr int kTapReadSamples = 32768;                       // the device's tap ring
+constexpr int kOverlayReadSamples = 16384;  // the track tap's spectrum ring (magda-sdk)
 
 template <typename Range> int nearestId(const Range& options, float value) {
     int bestId = 1;
@@ -63,6 +66,14 @@ void persistSpectrumDefaults(const std::shared_ptr<SpectrumTelemetrySource>& tel
     Config::getInstance().setSpectrumDefaults(d);
     Config::getInstance().save();
 }
+/// The v1 dropdown, as on the sequencer faceplate (#3092).
+void applyComboColours(juce::ComboBox& c) {
+    c.setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
+    c.setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
+    c.setColour(juce::ComboBox::textColourId,
+                ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
+    c.setColour(juce::ComboBox::arrowColourId, ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+}
 }  // namespace
 
 SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
@@ -75,18 +86,16 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     };
     auto styleCombo = [this](juce::ComboBox& c) {
         c.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
-        c.setColour(juce::ComboBox::backgroundColourId,
-                    ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
-        c.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
-        c.setColour(juce::ComboBox::outlineColourId, ActiveTheme::getColour(ActiveTheme::BORDER));
+        applyComboColours(c);
         addAndMakeVisible(c);
     };
 
     styleLabel(fftLabel_, "FFT");
     fftCombo_.addItem("2048", 1);
     fftCombo_.addItem("4096", 2);
+    fftCombo_.addItem("8192", 3);
     fftCombo_.onChange = [this] {
-        const int order = fftCombo_.getSelectedId() == 2 ? 12 : 11;
+        const int order = 10 + fftCombo_.getSelectedId();
         if (telemetry_ != nullptr)
             telemetry_->setFftOrder(order);
         rebuildFft(order);
@@ -185,13 +194,8 @@ void SpectrumAnalyzerUI::lookAndFeelChanged() {
     for (auto* label : {&fftLabel_, &slopeLabel_, &speedLabel_, &colourLabel_, &overlayLabel_})
         label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
 
-    for (auto* combo : {&fftCombo_, &slopeCombo_, &speedCombo_, &colourCombo_, &overlayCombo_}) {
-        combo->setColour(juce::ComboBox::backgroundColourId,
-                         ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
-        combo->setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
-        combo->setColour(juce::ComboBox::outlineColourId,
-                         ActiveTheme::getColour(ActiveTheme::BORDER));
-    }
+    for (auto* combo : {&fftCombo_, &slopeCombo_, &speedCombo_, &colourCombo_, &overlayCombo_})
+        applyComboColours(*combo);
 
     if (popoutButton_)
         daw::ui::node_header::applyHeaderIconStyle(
@@ -201,18 +205,64 @@ void SpectrumAnalyzerUI::lookAndFeelChanged() {
 }
 
 void SpectrumAnalyzerUI::rebuildFft(int order) {
-    fftOrder_ = juce::jlimit(11, 12, order);
-    fftSize_ = 1 << fftOrder_;
-    numBins_ = fftSize_ / 2;
-    fft_ = std::make_unique<juce::dsp::FFT>(fftOrder_);
-    window_ = std::make_unique<juce::dsp::WindowingFunction<float>>(
-        static_cast<size_t>(fftSize_), juce::dsp::WindowingFunction<float>::hann);
-    readBuf_.assign(static_cast<size_t>(fftSize_), 0.0f);
-    fftData_.assign(static_cast<size_t>(fftSize_) * 2, 0.0f);
-    smoothedDb_.assign(static_cast<size_t>(numBins_), kMinDb);
-    peakDb_.assign(static_cast<size_t>(numBins_), kMinDb);
-    overlayScratch_.assign(static_cast<size_t>(fftSize_) * 2, 0.0f);
-    overlaySmoothedDb_.assign(static_cast<size_t>(numBins_), kMinDb);
+    spectrum_.prepare(order);
+    overlaySpectrum_.prepare(order);
+    const auto numBins = static_cast<size_t>(spectrum_.numBins());
+    readBuf_.assign(static_cast<size_t>(kTapReadSamples), 0.0f);
+    smoothedDb_.assign(numBins, kMinDb);
+    peakDb_.assign(numBins, kMinDb);
+    overlaySmoothedDb_.assign(numBins, kMinDb);
+}
+
+double SpectrumAnalyzerUI::binHz() const {
+    const double sr = (telemetry_ != nullptr) ? telemetry_->sampleRate() : 44100.0;
+    return sr / static_cast<double>(spectrum_.fftSize());
+}
+
+bool SpectrumAnalyzerUI::analyseLatest(audio::OverlappedSpectrum& spectrum,
+                                       const std::function<std::size_t(float*, int)>& readLatest,
+                                       int capacity) {
+    const auto written = readLatest(readBuf_.data(), capacity);
+    const int fresh = spectrum.samplesToRead(written, capacity);
+    if (fresh == 0)
+        return false;
+    spectrum.analyse(readBuf_.data() + (capacity - fresh), fresh, written, frameDb_);
+    return true;
+}
+
+void SpectrumAnalyzerUI::foldFrame(double sampleRate, std::vector<float>& smoothed,
+                                   std::vector<float>* peak) const {
+    const auto hz = static_cast<float>(sampleRate / static_cast<double>(spectrum_.fftSize()));
+    for (size_t i = 0; i < frameDb_.size(); ++i) {
+        float db = frameDb_[i];
+        // Display slope (tilt) pivoted at 1 kHz so music reads roughly flat.
+        if (i > 0)
+            db += slopeDbPerOct_ * std::log2(static_cast<float>(i) * hz / 1000.0f);
+        db = juce::jlimit(kMinDb, kMaxDb, db);
+
+        float& sm = smoothed[i];
+        sm += smoothing_ * (db - sm);
+        if (peak != nullptr) {
+            float& pk = (*peak)[i];
+            pk = sm > pk ? sm : juce::jmax(kMinDb, pk - kPeakDecayDb);
+        }
+    }
+}
+
+juce::Path SpectrumAnalyzerUI::columnPath(const std::vector<float>& binDb,
+                                          juce::Rectangle<float> area) {
+    columnDb_.resize(static_cast<size_t>(juce::jmax(1, static_cast<int>(area.getWidth()))));
+    audio::spectrumColumns(binDb, binHz(), kMinHz, kMaxHz, columnDb_);
+    juce::Path p;
+    for (size_t c = 0; c < columnDb_.size(); ++c) {
+        const float x = area.getX() + static_cast<float>(c) + 0.5f;
+        const float y = dbToY(columnDb_[c], area);
+        if (c == 0)
+            p.startNewSubPath(x, y);
+        else
+            p.lineTo(x, y);
+    }
+    return p;
 }
 
 void SpectrumAnalyzerUI::setTelemetrySource(std::shared_ptr<SpectrumTelemetrySource> telemetry) {
@@ -220,7 +270,7 @@ void SpectrumAnalyzerUI::setTelemetrySource(std::shared_ptr<SpectrumTelemetrySou
         return;
 
     telemetry_ = std::move(telemetry);
-    lastTapWritePosition_ = 0;
+    spectrum_.reset();
     if (popoutUI_ != nullptr)
         popoutUI_->setTelemetrySource(telemetry_);  // keep the popped-out window live
     refreshSettingsFromSource();
@@ -232,7 +282,8 @@ void SpectrumAnalyzerUI::refreshSettingsFromSource() {
 
     slopeDbPerOct_ = telemetry_->slopeDbPerOct();
     smoothing_ = telemetry_->smoothing();
-    fftCombo_.setSelectedId(telemetry_->fftOrder() >= 12 ? 2 : 1, juce::dontSendNotification);
+    fftCombo_.setSelectedId(juce::jlimit(1, 3, telemetry_->fftOrder() - 10),
+                            juce::dontSendNotification);
     slopeCombo_.setSelectedId(nearestId(kSlopeOptions, slopeDbPerOct_), juce::dontSendNotification);
     speedCombo_.setSelectedId(nearestId(kSpeedOptions, smoothing_), juce::dontSendNotification);
     colourCombo_.setSelectedId(telemetry_->traceColourIndex() + 1, juce::dontSendNotification);
@@ -247,7 +298,7 @@ void SpectrumAnalyzerUI::commitSettings() {
         return;
 
     juce::NamedValueSet settings;
-    settings.set("fftOrder", fftCombo_.getSelectedId() == 2 ? 12 : 11);
+    settings.set("fftOrder", 10 + fftCombo_.getSelectedId());
     settings.set("slopeDbPerOct", slopeDbPerOct_);
     settings.set("smoothing", smoothing_);
     settings.set("traceColour", colourCombo_.getSelectedId() - 1);
@@ -297,6 +348,7 @@ void SpectrumAnalyzerUI::selectOverlayTrack(magda::TrackId target) {
     releaseMeasurementArming();
     overlayTrackId_ = target;
     overlayValid_ = false;
+    overlaySpectrum_.reset();
     maskingFindings_.clear();
 
     if (overlayTrackId_ != magda::INVALID_TRACK_ID && trackId_ != magda::INVALID_TRACK_ID) {
@@ -338,8 +390,7 @@ void SpectrumAnalyzerUI::releaseMeasurementArming() {
 }
 
 void SpectrumAnalyzerUI::pollOverlayData() {
-    if (overlayTrackId_ == magda::INVALID_TRACK_ID || trackId_ == magda::INVALID_TRACK_ID ||
-        fft_ == nullptr) {
+    if (overlayTrackId_ == magda::INVALID_TRACK_ID || trackId_ == magda::INVALID_TRACK_ID) {
         overlayValid_ = false;
         maskingFindings_.clear();
         return;
@@ -353,32 +404,17 @@ void SpectrumAnalyzerUI::pollOverlayData() {
             (f.trackA == overlayTrackId_ && f.trackB == trackId_))
             maskingFindings_.push_back(f);
 
-    // The overlay trace runs the exact same Hann + FFT + slope + temporal-
-    // smoothing pipeline as this track's trace, on the overlaid track's captured
-    // samples, so the two are visually comparable (not the coarse band spectrum).
+    // The overlay trace runs this track's pipeline on the overlaid track's
+    // captured samples, so the two are visually comparable (not the coarse band spectrum).
     double sr = 44100.0;
-    const size_t writePos =
-        tmm.readTrackSpectrumSamples(overlayTrackId_, overlayScratch_.data(), fftSize_, sr);
-    if (writePos == 0) {
-        overlayValid_ = false;  // no live tap / no audio captured yet
-        return;
+    const auto readOverlay = [this, &sr](float* dest, int numSamples) {
+        return magda::TrackMeasurementManager::readTrackSpectrumSamples(overlayTrackId_, dest,
+                                                                        numSamples, sr);
+    };
+    if (analyseLatest(overlaySpectrum_, readOverlay, kOverlayReadSamples)) {
+        foldFrame(sr, overlaySmoothedDb_, nullptr);
+        overlayValid_ = true;
     }
-    std::fill(overlayScratch_.begin() + fftSize_, overlayScratch_.end(), 0.0f);
-    window_->multiplyWithWindowingTable(overlayScratch_.data(), static_cast<size_t>(fftSize_));
-    fft_->performFrequencyOnlyForwardTransform(overlayScratch_.data());
-
-    const float norm = 2.0f / static_cast<float>(fftSize_);
-    const auto binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
-    for (int i = 0; i < numBins_; ++i) {
-        const float mag = overlayScratch_[static_cast<size_t>(i)] * norm;
-        float db = 20.0f * std::log10(std::max(mag, 1.0e-6f));
-        if (i > 0)
-            db += slopeDbPerOct_ * std::log2(static_cast<float>(i) * binHz / 1000.0f);
-        db = juce::jlimit(kMinDb, kMaxDb, db);
-        float& sm = overlaySmoothedDb_[static_cast<size_t>(i)];
-        sm += smoothing_ * (db - sm);
-    }
-    overlayValid_ = true;
 }
 
 void SpectrumAnalyzerUI::visibilityChanged() {
@@ -608,47 +644,21 @@ void SpectrumAnalyzerUI::timerCallback() {
         needsRepaint = true;
     }
 
-    if (telemetry_ == nullptr || fft_ == nullptr) {
+    if (telemetry_ == nullptr) {
         if (needsRepaint)
             repaint();
         return;
     }
 
-    const auto writePosition = telemetry_->writePosition();
-    if (writePosition == lastTapWritePosition_) {
-        if (needsRepaint)
-            repaint();
-        return;
+    const auto readTap = [this](float* dest, int numSamples) {
+        return telemetry_->readLatest(dest, numSamples);
+    };
+    if (analyseLatest(spectrum_, readTap, kTapReadSamples)) {
+        foldFrame(telemetry_->sampleRate(), smoothedDb_, &peakDb_);
+        needsRepaint = true;
     }
-
-    lastTapWritePosition_ = telemetry_->readLatest(readBuf_.data(), fftSize_);
-    if (lastTapWritePosition_ == 0) {
+    if (needsRepaint)
         repaint();
-        return;
-    }
-
-    std::copy(readBuf_.begin(), readBuf_.end(), fftData_.begin());
-    std::fill(fftData_.begin() + fftSize_, fftData_.end(), 0.0f);
-    window_->multiplyWithWindowingTable(fftData_.data(), static_cast<size_t>(fftSize_));
-    fft_->performFrequencyOnlyForwardTransform(fftData_.data());
-
-    const float norm = 2.0f / static_cast<float>(fftSize_);
-    const double sr = telemetry_->sampleRate();
-    const auto binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
-    for (int i = 0; i < numBins_; ++i) {
-        const float mag = fftData_[static_cast<size_t>(i)] * norm;
-        float db = 20.0f * std::log10(std::max(mag, 1.0e-6f));
-        // Display slope (tilt) pivoted at 1 kHz so music reads roughly flat.
-        if (i > 0)
-            db += slopeDbPerOct_ * std::log2(static_cast<float>(i) * binHz / 1000.0f);
-        db = juce::jlimit(kMinDb, kMaxDb, db);
-
-        float& sm = smoothedDb_[static_cast<size_t>(i)];
-        sm += smoothing_ * (db - sm);
-        float& pk = peakDb_[static_cast<size_t>(i)];
-        pk = sm > pk ? sm : juce::jmax(kMinDb, pk - kPeakDecayDb);
-    }
-    repaint();
 }
 
 void SpectrumAnalyzerUI::updateTimerState() {
@@ -741,20 +751,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         // this track's trace (see pollOverlayData), so it matches in resolution
         // and smoothing. Drawn in a neutral colour, secondary to this track.
         if (overlayValid_ && !overlaySmoothedDb_.empty()) {
-            const double sr = (telemetry_ != nullptr) ? telemetry_->sampleRate() : 44100.0;
-            const auto binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
-            juce::Path op;
-            bool started = false;
-            for (int i = 1; i < numBins_; ++i) {  // skip DC
-                const float x = freqToX(static_cast<float>(i) * binHz, plot);
-                const float y = dbToY(overlaySmoothedDb_[static_cast<size_t>(i)], plot);
-                if (!started) {
-                    op.startNewSubPath(x, y);
-                    started = true;
-                } else {
-                    op.lineTo(x, y);
-                }
-            }
+            const auto op = columnPath(overlaySmoothedDb_, plot);
             g.setColour(ActiveTheme::getColour(ActiveTheme::SPECTRUM_OVERLAY).withAlpha(0.7f));
             g.strokePath(op, juce::PathStrokeType(1.5f));
         }
@@ -783,31 +780,12 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         return;
     }
 
-    const double sr = (telemetry_ != nullptr) ? telemetry_->sampleRate() : 44100.0;
-    const auto binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
-
-    auto buildPath = [&](const std::vector<float>& db) {
-        juce::Path p;
-        bool started = false;
-        for (int i = 1; i < numBins_; ++i) {  // skip DC
-            const float x = freqToX(static_cast<float>(i) * binHz, plot);
-            const float y = dbToY(db[static_cast<size_t>(i)], plot);
-            if (!started) {
-                p.startNewSubPath(x, y);
-                started = true;
-            } else {
-                p.lineTo(x, y);
-            }
-        }
-        return p;
-    };
-
     const juce::Colour trace =
         analyzerTraceColour(telemetry_ != nullptr ? telemetry_->traceColourIndex() : 0);
     g.setColour(trace.withAlpha(0.4f));  // peak-hold
-    g.strokePath(buildPath(peakDb_), juce::PathStrokeType(1.0f));
-    g.setColour(trace);  // live spectrum
-    g.strokePath(buildPath(smoothedDb_), juce::PathStrokeType(1.5f));
+    g.strokePath(columnPath(peakDb_, plot), juce::PathStrokeType(1.0f));
+    g.setColour(trace);  // live spectrum, last so columnDb_ holds it for the readout
+    g.strokePath(columnPath(smoothedDb_, plot), juce::PathStrokeType(1.5f));
 
     // Hover readout: a vertical cursor plus the frequency and spectrum level at it.
     if (mouseOver_) {
@@ -815,8 +793,9 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
             juce::jlimit(plot.getX(), plot.getRight(), static_cast<float>(mousePos_.x));
         const float t = (mx - plot.getX()) / plot.getWidth();
         const float freq = kMinHz * std::pow(kMaxHz / kMinHz, juce::jlimit(0.0f, 1.0f, t));
-        const int bin = juce::jlimit(1, numBins_ - 1, juce::roundToInt(freq / binHz));
-        const float db = smoothedDb_[static_cast<size_t>(bin)];
+        const auto column = static_cast<size_t>(juce::jlimit(
+            0, static_cast<int>(columnDb_.size()) - 1, static_cast<int>(mx - plot.getX())));
+        const float db = columnDb_[column];
 
         g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withAlpha(0.6f));
         g.drawVerticalLine(static_cast<int>(mx), plot.getY(), plot.getBottom());
@@ -826,8 +805,9 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         const juce::String fTxt =
             freq >= 1000.0f ? juce::String(freq / 1000.0f, freq >= 10000.0f ? 1 : 2) + " kHz"
                             : juce::String(juce::roundToInt(freq)) + " Hz";
-        const juce::String txt = fTxt + "   " + juce::String(db, 1) + " dB";
-        auto box = plot.reduced(6.0f, 4.0f).removeFromTop(14.0f).withWidth(150.0f);
+        const juce::String txt =
+            fTxt + "   " + audio::nearestNoteLabel(freq) + "   " + juce::String(db, 1) + " dB";
+        auto box = plot.reduced(6.0f, 4.0f).removeFromTop(14.0f).withWidth(210.0f);
         g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).withAlpha(0.75f));
         g.fillRect(box);
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
