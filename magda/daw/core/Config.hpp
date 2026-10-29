@@ -1427,7 +1427,7 @@ class Config {
         int traceColour = 0;
     };
     struct SpectrumDefaults {
-        int fftOrder = 11;  // 11 = 2048, 12 = 4096
+        int fftOrder = 11;  // 11 = 2048, 12 = 4096, 13 = 8192
         float slopeDbPerOct = 4.5f;
         float smoothing = 0.5f;
         int traceColour = 0;

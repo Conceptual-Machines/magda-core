@@ -16,23 +16,23 @@ namespace magda::daw::audio {
 class SpectrumAnalyzerPlugin : public AnalysisTapPlugin, public SpectrumTelemetry {
   public:
     explicit SpectrumAnalyzerPlugin(const DevicePluginDefaults::Spectrum& defaults)
-        : AnalysisTapPlugin(8192, defaults.traceColour),
+        : AnalysisTapPlugin(32768, defaults.traceColour),
           fftOrder_(defaults.fftOrder),
           slopeDbPerOct_(defaults.slopeDbPerOct),
-          smoothing_(defaults.smoothing) {}  // one FFT frame (max 4096) + headroom
+          smoothing_(defaults.smoothing) {}  // an 8192 frame plus the hops of a late tick (#3185)
 
     static const char* getPluginName() {
         return "Spectrum Analyzer";
     }
     static const char* xmlTypeName;
 
-    // Display settings (message thread). FFT order is 11 (2048) or 12 (4096);
+    // Display settings (message thread). FFT order is 11 (2048) to 13 (8192);
     // slope is the display tilt in dB/octave; smoothing is the response speed (0..1).
     int getFftOrder() const {
-        return juce::jlimit(11, 12, fftOrder_.load(std::memory_order_relaxed));
+        return juce::jlimit(11, 13, fftOrder_.load(std::memory_order_relaxed));
     }
     void setFftOrder(int order) override {
-        fftOrder_.store(juce::jlimit(11, 12, order), std::memory_order_relaxed);
+        fftOrder_.store(juce::jlimit(11, 13, order), std::memory_order_relaxed);
     }
     float getSlopeDbPerOct() const {
         return slopeDbPerOct_.load(std::memory_order_relaxed);

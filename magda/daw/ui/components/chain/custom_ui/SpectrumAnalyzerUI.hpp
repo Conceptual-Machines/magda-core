@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "audio/analysis/MaskingDetector.hpp"
+#include "audio/analysis/SpectrumAnalysis.hpp"
 #include "core/TypeIds.hpp"
 #include "custom_ui/TelemetrySources.hpp"
 
@@ -26,9 +27,10 @@ class AnalyzerWindow;
 /**
  * @brief FFT spectrum display for the Spectrum Analyzer analysis device.
  *
- * Polls the plugin's AudioTapBuffer on a timer, runs a Hann-windowed FFT, maps
- * magnitudes to a log-frequency / dB plot with temporal smoothing and a
- * decaying peak-hold trace. FFT size, display slope (tilt) and response speed
+ * Polls the plugin's AudioTapBuffer on a timer, power-averages the overlapped
+ * Hann frames written since the last tick, and draws one value per pixel column
+ * of a log-frequency / dB plot with temporal smoothing and a decaying peak-hold
+ * trace. FFT size, display slope (tilt) and response speed
  * are user controls, persisted on the plugin.
  */
 class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
@@ -89,6 +91,14 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     void releaseMeasurementArming();                 // undo only what this UI armed
     void pollOverlayData();      // fetch overlay band spectrum + pair-filtered findings
     void rebuildFft(int order);  // (re)allocate FFT + buffers for a 2^order transform
+    /// Read up to @p capacity of the latest samples (the source ring's depth) and average
+    /// the frames not yet analysed into frameDb_. False when nothing new was written.
+    bool analyseLatest(audio::OverlappedSpectrum& spectrum,
+                       const std::function<std::size_t(float*, int)>& readLatest, int capacity);
+    /// Tilt frameDb_ by the slope and ease @p smoothed (and @p peak) towards it.
+    void foldFrame(double sampleRate, std::vector<float>& smoothed, std::vector<float>* peak) const;
+    juce::Path columnPath(const std::vector<float>& binDb, juce::Rectangle<float> area);
+    double binHz() const;
     static float freqToX(float hz, juce::Rectangle<float> area);
     static float dbToY(float db, juce::Rectangle<float> area);
     juce::Rectangle<float> plotArea() const;  // plot region (excludes the control row)
@@ -111,16 +121,12 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     bool persistGlobalDefaults_ = true;
     std::shared_ptr<SpectrumTelemetrySource> telemetry_;
 
-    int fftOrder_ = 11;
-    int fftSize_ = 1 << 11;
-    int numBins_ = (1 << 11) / 2;
-    std::unique_ptr<juce::dsp::FFT> fft_;
-    std::unique_ptr<juce::dsp::WindowingFunction<float>> window_;
+    audio::OverlappedSpectrum spectrum_;
     std::vector<float> readBuf_;
-    std::vector<float> fftData_;
+    std::vector<float> frameDb_;
+    std::vector<float> columnDb_;
     std::vector<float> smoothedDb_;
     std::vector<float> peakDb_;
-    size_t lastTapWritePosition_ = 0;
 
     float slopeDbPerOct_ = 4.5f;
     float smoothing_ = 0.5f;
@@ -152,7 +158,7 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     // trace runs the same FFT pipeline as this track's trace on the overlaid
     // track's captured samples, so the two match in resolution and smoothing.
     bool overlayValid_ = false;
-    std::vector<float> overlayScratch_;     // FFT scratch for the overlaid track
+    audio::OverlappedSpectrum overlaySpectrum_;
     std::vector<float> overlaySmoothedDb_;  // temporally smoothed overlay spectrum
     std::vector<magda::daw::audio::MaskingFinding> maskingFindings_;  // clash zones (band-based)
 

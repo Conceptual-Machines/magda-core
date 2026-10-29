@@ -388,6 +388,8 @@ set(TEST_SOURCES
     audio/test_masking_detector.cpp
     # Mixing pt2 (issue #1390) - per-track band spectrum (FFT bin -> band mapping)
     audio/test_band_spectrum.cpp
+    # Spectrum Analyzer overlap, columns and note readout (#3185)
+    audio/test_spectrum_analysis.cpp
     # Media database (issue #768) — Phase A: SQLite skeleton
     media/test_media_database.cpp
     # Media database (issue #768) — Phase B: scanner + path rules
