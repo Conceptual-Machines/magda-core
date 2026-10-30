@@ -24,7 +24,7 @@ namespace magda::daw::ui {
 
 namespace {
 constexpr int kSpace = 8;
-constexpr int kNameRowH = 24;
+constexpr int kSampleStripH = 22;
 constexpr int kTitleH = 22;
 constexpr int kTileW = sampler_tiles::kWidth;
 constexpr int kTileGap = sampler_tiles::kGap;
@@ -450,15 +450,21 @@ SamplerUI::SamplerUI() {
     sampler_tiles::styleValue(glideSlider_);
     addAndMakeVisible(glideSlider_);
 
-    // --- Voice Mode (param 12): the slot footer shows it; this carries its links ---
+    // --- Voice Mode (param 12): the VOICE column's switch; this carries its links ---
     voiceModeSlider_.setRange(0.0, 2.0, 1.0);
     voiceModeSlider_.setValue(0.0, juce::dontSendNotification);
     voiceModeSlider_.setParamIndex(12);
     voiceModeSlider_.onValueChanged = [this](double value) {
+        voiceModeChoice_.setSelectedIndex(juce::roundToInt(value));
         if (onParameterChanged)
             onParameterChanged(12, static_cast<float>(value));
     };
     addChildComponent(voiceModeSlider_);
+    voiceModeChoice_.setOptions({"Poly", "Mono", "Legato"});
+    voiceModeChoice_.onChange = [this](int index) {
+        voiceModeSlider_.setValue(index, juce::sendNotificationSync);
+    };
+    addChildComponent(voiceModeChoice_);
 
     // --- The slice in frames: boxes drive the marker sliders, which stay as the link carriers.
     static constexpr const char* kFrameCaptions[] = {"START", "END", "LOOP IN", "LOOP OUT"};
@@ -502,6 +508,7 @@ SamplerUI::SamplerUI() {
     setupLabel(levelLabel_, "Level");
     setupLabel(velAmountLabel_, "Velocity");
     setupLabel(glideLabel_, "Glide");
+    setupLabel(voiceModeLabel_, "Voice Mode");
     setupLabel(pitchEnvAmountLabel_, "Env");
     setupLabel(filterModeLabel_, "Mode");
     setupLabel(filterPolesLabel_, "Poles");
@@ -687,10 +694,10 @@ std::vector<juce::Component*> SamplerUI::controlsFor(View view) {
             return controls;
         }
         case View::Pitch:
-            return {&pitchSlider_,          &fineSlider_,          &glideSlider_,
-                    &pitchEnvAmountSlider_, &pitchLabel_,          &fineLabel_,
-                    &glideLabel_,           &pitchEnvAmountLabel_, &pitchAttackSlider_,
-                    &pitchDecaySlider_,     &pitchSustainSlider_,  &pitchReleaseSlider_};
+            return {&pitchSlider_,       &fineSlider_,       &pitchEnvAmountSlider_,
+                    &pitchLabel_,        &fineLabel_,        &pitchEnvAmountLabel_,
+                    &pitchAttackSlider_, &pitchDecaySlider_, &pitchSustainSlider_,
+                    &pitchReleaseSlider_};
         case View::Filter:
             return {&filterTypeBox_,        &filterModeChoice_,      &filterPolesChoice_,
                     &filterCutoffSlider_,   &filterResonanceSlider_, &filterKeyTrackSlider_,
@@ -731,7 +738,7 @@ SamplerUI::~SamplerUI() {
 
 void SamplerUI::setupLabel(juce::Label& label, const juce::String& text) {
     label.setText(text, juce::dontSendNotification);
-    label.setFont(FontManager::getInstance().getUIFont(12.5f));
+    label.setFont(FontManager::getInstance().getUIFont(10.5f));
     label.setColour(juce::Label::textColourId, ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
     label.setJustificationType(juce::Justification::centredLeft);
     label.setInterceptsMouseClicks(false, false);
@@ -780,6 +787,7 @@ void SamplerUI::updateParameters(float attack, float decay, float sustain, float
 
     glideSlider_.setValue(glide, juce::dontSendNotification);
     voiceModeSlider_.setValue(std::round(voiceMode), juce::dontSendNotification);
+    voiceModeChoice_.setSelectedIndex(juce::roundToInt(voiceMode));
 
     // A zone of a list has its own name, root, markers and loop; showSelectedZone() sets them.
     if (zoneList_) {
@@ -867,6 +875,7 @@ void SamplerUI::setWaveformData(const juce::AudioBuffer<float>* buffer, double s
     if (buffer == nullptr || buffer->getNumSamples() == 0) {
         waveformPane_.setAudio(nullptr, 0.0);
         stopTimer();
+        resized();
         repaint();
         return;
     }
@@ -887,6 +896,7 @@ void SamplerUI::setWaveformData(const juce::AudioBuffer<float>* buffer, double s
         startTimerHz(30);
 
     syncFrameBoxes();
+    resized();
     repaint();
 }
 
@@ -1053,16 +1063,71 @@ void SamplerUI::timerCallback() {
 // Paint
 // =============================================================================
 
+// The zone's name, root and load button over the waveform once it has a sample; an empty well is
+// its own load button.
+void SamplerUI::layoutSampleStrip() {
+    const bool shown = view_ == View::Sample && hasWaveform();
+    sampleStrip_ = shown ? waveArea_.withHeight(kSampleStripH) : juce::Rectangle<int>();
+    rootChip_ = {};
+    for (auto* control : std::initializer_list<juce::Component*>{
+             &sampleNameLabel_, &rootNoteLabel_, &rootNoteSlider_, loadButton_.get()})
+        control->setVisible(shown);
+    if (!shown)
+        return;
+    auto row = sampleStrip_.reduced(8, 0);
+    loadButton_->setBounds(row.removeFromRight(22).withSizeKeepingCentre(22, 18));
+    row.removeFromRight(6);
+    rootChip_ = row.removeFromRight(48).withSizeKeepingCentre(48, 18);
+    rootNoteSlider_.setBounds(rootChip_.reduced(6, 1));
+    row.removeFromRight(4);
+    rootNoteLabel_.setBounds(row.removeFromRight(34));
+    sampleNameLabel_.setBounds(row);
+}
+
+void SamplerUI::mouseDown(const juce::MouseEvent& e) {
+    for (size_t i = 0; i < panelTabs_.size(); ++i)
+        if (panelTabs_[i].contains(e.getPosition()) && (i == 1) != voiceShown_) {
+            voiceShown_ = i == 1;
+            resized();
+            repaint();
+        }
+}
+
 void SamplerUI::paint(juce::Graphics& g) {
     auto& fonts = FontManager::getInstance();
 
     // Tiles behind the value boxes: the grid cell's fill and border.
     for (const auto& tile : tiles_)
         sampler_tiles::paint(g, tile);
+    // The sample's strip tops the well, ruled off from the waveform under it.
+    if (!sampleStrip_.isEmpty()) {
+        juce::Path strip;
+        const auto area = sampleStrip_.toFloat();
+        strip.addRoundedRectangle(area.getX(), area.getY(), area.getWidth(), area.getHeight(), 4.0f,
+                                  4.0f, true, true, false, false);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG));
+        g.fillPath(strip);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
+        g.fillRect(area.withTop(area.getBottom() - 1.0f));
+    }
     if (!rootChip_.isEmpty())
         sampler_tiles::paint(g, rootChip_, 4.0f);
 
     g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.12f));
+    // ZONES / VOICE over the left panel: the shown one lit and underlined, as Poly Synth's tabs.
+    for (size_t i = 0; i < panelTabs_.size(); ++i) {
+        if (panelTabs_[i].isEmpty())
+            continue;
+        const bool selected = (i == 1) == voiceShown_;
+        g.setColour(
+            ActiveTheme::getColour(selected ? ActiveTheme::DEVICE_TITLE : ActiveTheme::DEVICE_DIM));
+        g.drawText(i == 0 ? "ZONES" : "VOICE", panelTabs_[i], juce::Justification::centredLeft,
+                   false);
+        if (selected) {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE));
+            g.fillRect(panelTabs_[i].withTop(panelTabs_[i].getBottom() - 2));
+        }
+    }
     // The envelope column is lit, as the plot beside it draws that envelope.
     const std::array<const char*, 2> titles = [this]() -> std::array<const char*, 2> {
         switch (view_) {
@@ -1144,23 +1209,26 @@ void SamplerUI::resized() {
 
     auto area = getLocalBounds().reduced(kSpace);
 
-    // The zone list down the left, as a rack's chains.
-    zoneListPanel_.setVisible(zonesShown_);
-    zoneListPanel_.setBounds(zonesShown_ ? area.removeFromLeft(kZonePanelW)
-                                         : juce::Rectangle<int>());
-    if (zonesShown_)
+    // The zone list down the left, as a rack's chains, or the voice under its own tab.
+    juce::Rectangle<int> voiceArea;
+    panelTabs_ = {};
+    if (zonesShown_) {
+        auto panel = area.removeFromLeft(kZonePanelW);
         area.removeFromLeft(kSpace);
-
-    // Name row: the sample, its root and the load button.
-    auto nameRow = area.removeFromTop(kNameRowH);
-    loadButton_->setBounds(nameRow.removeFromRight(26).withSizeKeepingCentre(26, 22));
-    nameRow.removeFromRight(kSpace);
-    rootChip_ = nameRow.removeFromRight(54).withSizeKeepingCentre(54, 22);
-    rootNoteSlider_.setBounds(rootChip_.reduced(6, 1));
-    nameRow.removeFromRight(6);
-    rootNoteLabel_.setBounds(nameRow.removeFromRight(40));
-    sampleNameLabel_.setBounds(nameRow);
-    area.removeFromTop(6);
+        auto tabs = panel.removeFromTop(kTitleH);
+        const auto font =
+            FontManager::getInstance().getMonoFont(10.0f).withExtraKerningFactor(0.12f);
+        for (size_t i = 0; i < panelTabs_.size(); ++i) {
+            panelTabs_[i] = tabs.removeFromLeft(
+                juce::GlyphArrangement::getStringWidthInt(font, i == 0 ? "ZONES" : "VOICE"));
+            tabs.removeFromLeft(18);
+        }
+        panel.removeFromTop(4);
+        zoneListPanel_.setBounds(panel);
+        if (voiceShown_)
+            voiceArea = panel;
+    }
+    zoneListPanel_.setVisible(zonesShown_ && !voiceShown_);
 
     // The tab's columns on the right, the plot takes the rest. A module tab is its own column
     // and its envelope's; Sample and Amp are one column each.
@@ -1175,6 +1243,7 @@ void SamplerUI::resized() {
     loopButton_->setBounds(viewRow.removeFromLeft(24).withSizeKeepingCentre(24, 24));
     area.removeFromTop(4);
     waveArea_ = area;
+    layoutSampleStrip();
 
     const int tileH = std::min(kMaxTileH, (columns.getHeight() - kTitleH - 2 * kTileGap) / 3);
     tiles_.clear();
@@ -1207,6 +1276,19 @@ void SamplerUI::resized() {
         place(tile(column[1], 1, 1), releaseLabel_, release);
     };
 
+    // The VOICE tab's two tiles, in the panel the zone list leaves.
+    const bool voice = voiceShown_ && !voiceArea.isEmpty();
+    for (auto* control : std::initializer_list<juce::Component*>{
+             &voiceModeChoice_, &voiceModeLabel_, &glideSlider_, &glideLabel_})
+        control->setVisible(voice);
+    if (voice) {
+        const int voiceTileH = std::min(kMaxTileH, (voiceArea.getHeight() - kTileGap) / 2);
+        place(voiceArea.removeFromTop(voiceTileH), voiceModeLabel_, voiceModeChoice_);
+        voiceArea.removeFromTop(kTileGap);
+        place(voiceArea.removeFromTop(voiceTileH).withWidth(kTileW * 2 + kTileGap), glideLabel_,
+              glideSlider_);
+    }
+
     switch (view_) {
         case View::Sample: {
             // A caption, a frame box and its arrows per marker.
@@ -1222,8 +1304,7 @@ void SamplerUI::resized() {
         case View::Pitch:
             place(tile(column[0], 0, 0), pitchLabel_, pitchSlider_);
             place(tile(column[0], 1, 0), fineLabel_, fineSlider_);
-            place(tile(column[0], 0, 1), glideLabel_, glideSlider_);
-            place(tile(column[0], 1, 1), pitchEnvAmountLabel_, pitchEnvAmountSlider_);
+            place(tile(column[0], 0, 1), pitchEnvAmountLabel_, pitchEnvAmountSlider_);
             placeStages(pitchAttackSlider_, pitchDecaySlider_, pitchSustainSlider_,
                         pitchReleaseSlider_);
             break;
@@ -1249,8 +1330,8 @@ void SamplerUI::resized() {
             break;
     }
 
-    // One plot in the well: the sample, or the tab's envelope.
-    waveformPane_.setBounds(waveArea_);
+    // One plot in the well: the sample under its strip, or the tab's envelope.
+    waveformPane_.setBounds(waveArea_.withTrimmedTop(sampleStrip_.getHeight()));
     envelopeView_.setBounds(waveArea_);
     waveformPane_.setVisible(!showsEnvelope());
     envelopeView_.setVisible(showsEnvelope());

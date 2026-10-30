@@ -15,7 +15,8 @@ inline bool isVoiceModeParameter(const magda::ParameterInfo& param) {
 
 /// Instruments whose faceplate carries the switch in its VOICE tab, so the header leaves it out.
 inline bool faceplateShowsVoiceMode(const juce::String& pluginId) {
-    return pluginId.equalsIgnoreCase("magda_polysynth") || pluginId.equalsIgnoreCase("magda_fm");
+    return pluginId.equalsIgnoreCase("magda_polysynth") || pluginId.equalsIgnoreCase("magda_fm") ||
+           pluginId.equalsIgnoreCase("magdasampler");
 }
 
 /// The device's voice-mode parameter, or nullptr when it has none.

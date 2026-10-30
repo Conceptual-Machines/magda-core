@@ -169,10 +169,20 @@ void SamplerWaveformPane::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG));
     g.fillRoundedRectangle(bounds.toFloat(), 4.0f);
+    // Empty, the well is a load button: a + over the hint (#3201).
     if (!hasAudio()) {
+        auto& fonts = FontManager::getInstance();
+        const auto plus = bounds.withSizeKeepingCentre(28, 28).translated(0, -10).toFloat();
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
+        g.drawRoundedRectangle(plus.reduced(0.5f), 5.0f, 1.0f);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+        g.setFont(fonts.getUIFont(18.0f));
+        g.drawText("+", plus, juce::Justification::centred);
         g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
-        g.setFont(FontManager::getInstance().getMonoFont(11.0f));
-        g.drawText("Drop a sample or click to load", bounds, juce::Justification::centred);
+        g.setFont(fonts.getMonoFont(11.0f));
+        g.drawText("Drop a sample or click to load",
+                   bounds.withTop(juce::roundToInt(plus.getBottom()) + 6).withHeight(16),
+                   juce::Justification::centred);
         return;
     }
     pullMarkers();

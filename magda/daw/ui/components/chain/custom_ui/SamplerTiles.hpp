@@ -50,7 +50,7 @@ inline void layoutCaptioned(juce::Label& caption, LinkableTextSlider& value,
     constexpr int kMinValueH = 13;
     constexpr int kMinOneLineW = 72;
     auto& fonts = FontManager::getInstance();
-    const auto small = fonts.getUIFont(9.5f);
+    const auto small = fonts.getUIFont(8.5f);
 
     if (inner.getHeight() - kCaptionH >= kMinValueH) {
         caption.setFont(captionFont);
@@ -80,7 +80,7 @@ inline void layoutCaptioned(juce::Label& caption, LinkableTextSlider& value,
 inline void layoutTile(juce::Label& caption, LinkableTextSlider& value, juce::Rectangle<int> tile,
                        int insetX = 9) {
     layoutCaptioned(caption, value, tile.reduced(insetX, 4),
-                    FontManager::getInstance().getUIFont(12.0f), 15.0f);
+                    FontManager::getInstance().getUIFont(10.5f), 15.0f);
 }
 
 /// The cell behind a tile's caption and value: the grid cell's fill and border.

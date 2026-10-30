@@ -169,6 +169,8 @@ class PolySynthUI : public juce::Component, private juce::Timer {
     std::array<juce::Rectangle<int>, kNumOscillators> waveTiles_, enableDots_, resetTiles_;
     std::array<juce::Rectangle<int>, kNumFilters> filterTabs_, filterDots_;
     std::array<juce::Rectangle<int>, 2> oscTabs_, envelopeTabs_;
+    /// LVL, CRS, FINE and RST over the oscillator columns, in the OSC tab's header row.
+    std::array<juce::Rectangle<int>, kOscSlotCount> oscColumnHeads_;
     juce::Rectangle<int> polesCaption_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PolySynthUI)

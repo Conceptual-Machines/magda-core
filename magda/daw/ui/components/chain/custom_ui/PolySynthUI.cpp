@@ -38,10 +38,6 @@ juce::Font titleFont() {
 }
 
 juce::Font captionFont() {
-    return FontManager::getInstance().getUIFont(12.0f);
-}
-
-juce::Font compactCaptionFont() {
     return FontManager::getInstance().getUIFont(10.5f);
 }
 
@@ -196,11 +192,9 @@ void PolySynthUI::styleControls() {
         sampler_tiles::styleValue(*c.slider);
     }
     // The oscillator rows' tiles are narrow: the v1 text cell's sizes fit "-60.0 dB".
-    for (int slot : compactSlots()) {
-        auto& c = controls_[static_cast<size_t>(slot)];
-        c.slider->setFont(FontManager::getInstance().getUIFontMedium(13.5f));
-        c.label->setFont(compactCaptionFont());
-    }
+    for (int slot : compactSlots())
+        controls_[static_cast<size_t>(slot)].slider->setFont(
+            FontManager::getInstance().getUIFontMedium(13.5f));
 
     for (auto& box : waveBoxes_) {
         box.setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
@@ -265,7 +259,7 @@ void PolySynthUI::refreshOscPanel() {
         for (int p = 1; p < kOscSlotCount; ++p) {
             auto& c = controls_[static_cast<size_t>(osc * kOscSlotCount + p)];
             c.slider->setVisible(!showVoiceTab_ && !c.tile.isEmpty());
-            c.label->setVisible(!showVoiceTab_ && !c.tile.isEmpty());
+            c.label->setVisible(false);
         }
     }
     for (int slot : {kUnisonDetuneSlot, kUnisonSpreadSlot, kGlideSlot, kBendRangeSlot,
@@ -485,10 +479,16 @@ std::vector<LinkableTextSlider*> PolySynthUI::getLinkableSliders() {
 void PolySynthUI::placeTile(int slot, juce::Rectangle<int> bounds) {
     auto& c = controls_[static_cast<size_t>(slot)];
     c.tile = bounds;
-    const bool compact = std::ranges::contains(compactSlots(), slot);
-    sampler_tiles::layoutCaptioned(*c.label, *c.slider, bounds.reduced(compact ? 7 : 9, 4),
-                                   compact ? compactCaptionFont() : captionFont(),
-                                   compact ? 13.5f : 15.0f);
+    // An oscillator's tiles carry the value alone; the header row names their columns (#3201).
+    if (std::ranges::contains(compactSlots(), slot)) {
+        c.slider->setBounds(bounds.reduced(7, 3));
+        c.slider->setFont(FontManager::getInstance().getUIFontMedium(13.5f));
+        c.slider->getSlider().setJustification(juce::Justification::centredLeft);
+        c.label->setVisible(false);
+        c.slider->setVisible(true);
+        return;
+    }
+    sampler_tiles::layoutCaptioned(*c.label, *c.slider, bounds.reduced(9, 4), captionFont(), 15.0f);
     c.label->setVisible(true);
     c.slider->setVisible(true);
 }
@@ -536,27 +536,34 @@ void PolySynthUI::layoutOscPanel() {
         juce::jmin(voiceModeInner.getWidth(), voiceModeChoice_.getPreferredWidth()),
         juce::jmin(voiceModeInner.getHeight(), 20)));
 
-    // OSC: a row per oscillator, Wave | Level | Coarse | Fine | Reset, as the mock's columns.
+    // OSC: a row per oscillator, Wave | Level | Coarse | Fine | Reset, as the mock's columns. The
+    // tabs stand over Wave, and the other columns' names beside them in the header row.
     static constexpr float kColumns[] = {0.28f, 0.22f, 0.16f, 0.17f};
     const int rowH = juce::jmin(kMaxTileH + 8, (a.getHeight() - 3 * kTileGap) / kNumOscillators);
     const int usableW = a.getWidth() - 4 * kTileGap;
-    for (int osc = 0; osc < kNumOscillators; ++osc) {
-        auto row = a.removeFromTop(rowH);
-        a.removeFromTop(kTileGap);
-        const auto take = [&](float share) {
-            auto tile = row.removeFromLeft(juce::roundToInt(usableW * share));
+    const auto columnsOf = [&](juce::Rectangle<int> row) {
+        std::array<juce::Rectangle<int>, kOscSlotCount + 1> columns;
+        for (size_t col = 0; col < kOscSlotCount; ++col) {
+            columns[col] = row.removeFromLeft(juce::roundToInt(usableW * kColumns[col]));
             row.removeFromLeft(kTileGap);
-            return tile;
-        };
+        }
+        columns[kOscSlotCount] = row;
+        return columns;
+    };
+    const auto heads = columnsOf(header.withX(a.getX()).withWidth(a.getWidth()));
+    for (size_t col = 1; col < heads.size(); ++col)
+        oscColumnHeads_[col - 1] = heads[col].withTrimmedLeft(7);
+    for (int osc = 0; osc < kNumOscillators; ++osc) {
+        const auto columns = columnsOf(a.removeFromTop(rowH));
+        a.removeFromTop(kTileGap);
         const auto i = static_cast<size_t>(osc);
-        waveTiles_[i] = take(kColumns[0]);
-        auto waveInner = waveTiles_[i].reduced(7, 5);
-        auto caption = waveInner.removeFromTop(kCaptionH);
-        enableDots_[i] = caption.removeFromRight(kDot).withSizeKeepingCentre(kDot + 6, kDot + 6);
-        waveBoxes_[i].setBounds(waveInner.withTrimmedLeft(-4));
+        waveTiles_[i] = columns[0];
+        auto waveInner = waveTiles_[i].reduced(7, 3);
+        enableDots_[i] = waveInner.removeFromLeft(kDot).withSizeKeepingCentre(kDot + 6, kDot + 6);
+        waveBoxes_[i].setBounds(waveInner.withTrimmedLeft(2));
         for (int p = 1; p < kOscSlotCount; ++p)
-            placeTile(osc * kOscSlotCount + p, take(kColumns[p]));
-        resetTiles_[i] = row;
+            placeTile(osc * kOscSlotCount + p, columns[static_cast<size_t>(p)]);
+        resetTiles_[i] = columns[kOscSlotCount];
     }
 }
 
@@ -582,11 +589,11 @@ void PolySynthUI::layoutFilterPanel() {
     polesCaption_ = choiceRow.removeFromRight(46);
     a.removeFromTop(kTileGap);
 
-    // Both filters' tiles share the 2x2 grid; only the selected tab's show.
-    const int tileH = juce::jlimit(kMinTileH, kMaxTileH, a.getHeight() / 5);
-    auto grid = a.removeFromBottom(2 * tileH + kTileGap);
-    a.removeFromBottom(kTileGap);
-    filterCurve_->setBounds(a);
+    // The curve beside the tiles, as tall as they are (#3201). Both filters' tiles share the 2x2
+    // grid; only the selected tab's show.
+    filterCurve_->setBounds(a.removeFromRight(a.getWidth() * 2 / 5));
+    a.removeFromRight(kTileGap);
+    auto grid = a;
     // Blend mixes the two filters, so it stands beside either tab's grid.
     placeTile(kFilterBlendSlot, grid.removeFromRight(grid.getWidth() / 4));
     grid.removeFromRight(kTileGap);
@@ -602,7 +609,8 @@ void PolySynthUI::layoutEnvelopePanel() {
     envelopeTabs_[1] = takeTab(header, "FILTER ADSR", false);
     a.removeFromTop(kTileGap);
 
-    const int tileH = juce::jlimit(kMinTileH, kMaxTileH, a.getHeight() / 5);
+    // Short one-line tiles, so the graph keeps most of the height (#3201).
+    const int tileH = juce::jlimit(20, kMaxTileH, a.getHeight() / 6);
     auto grid = a.removeFromBottom(2 * tileH + kTileGap);
     a.removeFromBottom(kTileGap);
     ampGraph_->setBounds(a);
@@ -710,20 +718,22 @@ void PolySynthUI::paint(juce::Graphics& g) {
                    juce::Justification::centredLeft, true);
     }
 
-    // Oscillator rows: the wave tile with its enable dot, and the reset checkbox.
-    g.setFont(compactCaptionFont());
+    // Oscillator rows: the wave tile with its enable dot, and the reset checkbox, under their
+    // columns' names.
+    if (!showVoiceTab_) {
+        g.setFont(titleFont());
+        g.setColour(colour(ActiveTheme::DEVICE_DIM));
+        static constexpr const char* kHeads[] = {"LVL", "CRS", "FINE", "RST"};
+        for (size_t col = 0; col < oscColumnHeads_.size(); ++col)
+            g.drawText(kHeads[col], oscColumnHeads_[col], juce::Justification::centredLeft, false);
+    }
     for (int osc = 0; osc < kNumOscillators && !showVoiceTab_; ++osc) {
         const auto i = static_cast<size_t>(osc);
         const float alpha = oscEnabled_[i] ? 1.0f : 0.35f;
         field(waveTiles_[i], alpha);
         field(resetTiles_[i], alpha);
-        g.setColour(colour(ActiveTheme::DEVICE_DIM).withMultipliedAlpha(alpha));
-        g.drawText(oscPrefix(osc) + "Wave", waveTiles_[i].reduced(7, 5).removeFromTop(kCaptionH),
-                   juce::Justification::centredLeft, true);
-        auto resetInner = resetTiles_[i].reduced(7, 5);
-        g.drawText("Rst", resetInner.removeFromTop(kCaptionH), juce::Justification::centredLeft,
-                   true);
-        const auto box = resetInner.withWidth(12).withSizeKeepingCentre(12, 12).toFloat();
+        const auto box =
+            resetTiles_[i].reduced(7, 0).withWidth(12).withSizeKeepingCentre(12, 12).toFloat();
         if (oscReset_[i]) {
             g.setColour(colour(ActiveTheme::DEVICE_BLUE).withMultipliedAlpha(alpha));
             g.fillRoundedRectangle(box, 2.0f);
