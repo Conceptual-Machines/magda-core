@@ -544,6 +544,11 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     vizToggle_->setTooltip("Show the resonator spectrum");
     vizToggle_->onClick = [this]() { toggleViz(); };
     addChildComponent(*vizToggle_);
+    outputToggle_ = std::make_unique<magda::SvgButton>("Output", BinaryData::speaker_simple_svg,
+                                                       BinaryData::speaker_simple_svgSize);
+    outputToggle_->setTooltip("Show the output");
+    outputToggle_->onClick = [this]() { toggleOutput(); };
+    addChildComponent(*outputToggle_);
     padPanelToggle_ = std::make_unique<magda::SvgButton>(
         "PadPanel", BinaryData::iconpadpanelboldm_svg, BinaryData::iconpadpanelboldm_svgSize);
     padPanelToggle_->setTooltip("Show the pad panel");
@@ -814,6 +819,7 @@ std::vector<juce::Component*> DeviceSlotComponent::sidebarButtons() const {
     add(matrixToggle_.get(), customUI_.hasFMUI());
     add(vizToggle_.get(),
         customUI_.hasHaloUI() || customUI_.hasNimbusUI() || customUI_.hasMateriaUI());
+    add(outputToggle_.get(), customUI_.hasImpulseResponseUI());
     add(padPanelToggle_.get(), customUI_.getDrumGridUI() != nullptr);
     add(padChainToggle_.get(), customUI_.getDrumGridUI() != nullptr);
     return buttons;
@@ -835,9 +841,10 @@ int DeviceSlotComponent::sidebarWidth() const {
 
 void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
     const bool shown = !bar.isEmpty();
-    for (auto* toggle : {paramsToggle_.get(), faceplateToggle_.get(), timeBendToggle_.get(),
-                         zonesToggle_.get(), oscPanelToggle_.get(), matrixToggle_.get(),
-                         vizToggle_.get(), padPanelToggle_.get(), padChainToggle_.get()})
+    for (auto* toggle :
+         {paramsToggle_.get(), faceplateToggle_.get(), timeBendToggle_.get(), zonesToggle_.get(),
+          oscPanelToggle_.get(), matrixToggle_.get(), vizToggle_.get(), outputToggle_.get(),
+          padPanelToggle_.get(), padChainToggle_.get()})
         toggle->setVisible(false);
     const bool paged = shown && sidebarPaged();
     for (auto* arrow : {pagePrevButton_.get(), pageNextButton_.get()})
@@ -858,6 +865,7 @@ void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
                                                            : "Show the oscillators");
     matrixToggle_->setToggleState(device_.matrixShown, juce::dontSendNotification);
     vizToggle_->setToggleState(device_.vizShown, juce::dontSendNotification);
+    outputToggle_->setToggleState(device_.outputShown, juce::dontSendNotification);
     vizToggle_->setTooltip(customUI_.hasHaloUI()     ? "Show the resonator spectrum"
                            : customUI_.hasNimbusUI() ? "Show the grain cloud"
                                                      : "Show the modal response");
@@ -1101,6 +1109,16 @@ void DeviceSlotComponent::toggleSynthPanel(bool oscPanel) {
         onDeviceLayoutChanged();
 }
 
+void DeviceSlotComponent::toggleOutput() {
+    device_.outputShown = !device_.outputShown;
+    if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_))
+        live->outputShown = device_.outputShown;
+    customUI_.setFaceplatePanelsShown(device_);
+    resized();
+    if (onDeviceLayoutChanged)
+        onDeviceLayoutChanged();
+}
+
 void DeviceSlotComponent::toggleViz() {
     device_.vizShown = !device_.vizShown;
     if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_))
@@ -1227,6 +1245,7 @@ void DeviceSlotComponent::styleDeviceHeaderButtons() {
     style(oscPanelToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(matrixToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(vizToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
+    style(outputToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(padPanelToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(padChainToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(expandToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);

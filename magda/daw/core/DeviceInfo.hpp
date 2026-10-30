@@ -358,6 +358,8 @@ struct DeviceInfo {
     /// Whether a faceplate shows its visualisation panel: Halo's spectrum, Nimbus's grain cloud
     /// (#3201).
     bool vizShown = true;
+    /// Whether the Convolution faceplate shows its OUTPUT panel (#3201).
+    bool outputShown = true;
     /// Whether a Drum Grid shows its pad mix panel and its pad chain (#3144).
     bool padPanelShown = true;
     bool padChainShown = true;

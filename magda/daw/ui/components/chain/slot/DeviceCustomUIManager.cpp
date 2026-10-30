@@ -528,7 +528,7 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     if (spectralFxUI_)
         return 520;  // spectrogram + six-control row
     if (impulseResponseUI_)
-        return 520;  // IR waveform + FILTER response | OUTPUT
+        return impulseResponseUI_->preferredWidth();
     if (stepSequencerUI_)
         return stepSequencerUI_->preferredWidth();
     if (polyStepSequencerUI_)
@@ -838,6 +838,8 @@ void DeviceCustomUIManager::setFaceplatePanelsShown(const magda::DeviceInfo& dev
         haloUI_->setSpectrumShown(device.vizShown);
     if (nimbusUI_)
         nimbusUI_->setCloudShown(device.vizShown);
+    if (impulseResponseUI_)
+        impulseResponseUI_->setOutputShown(device.outputShown);
 }
 
 void DeviceCustomUIManager::setSequencerTimeBendShown(bool shown) {

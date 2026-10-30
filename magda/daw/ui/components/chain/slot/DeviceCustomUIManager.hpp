@@ -212,7 +212,7 @@ class DeviceCustomUIManager {
     void setSamplerZonesShown(bool shown);
     /// The faceplate panels the sidebar hides (#3201): the first panel (FM's OPS, Poly Synth's
     /// OSC, Materia's VOICE), FM's matrix, and the visualisation (Halo's spectrum, Nimbus's grain
-    /// cloud, Materia's modal response).
+    /// cloud, Materia's modal response), and Convolution's OUTPUT.
     void setFaceplatePanelsShown(const magda::DeviceInfo& device);
     void setDrumGridViewsShown(bool panelShown, bool chainShown);
     bool hasSamplerUI() const {
@@ -232,6 +232,9 @@ class DeviceCustomUIManager {
     }
     bool hasMateriaUI() const {
         return materiaUI_ != nullptr;
+    }
+    bool hasImpulseResponseUI() const {
+        return impulseResponseUI_ != nullptr;
     }
     StepSequencerUI* getStepSequencerUI() const {
         return stepSequencerUI_.get();

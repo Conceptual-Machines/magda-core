@@ -16,8 +16,9 @@ namespace magda::daw::ui {
 /**
  * @brief Custom UI for the native convolution device (Convolution)
  *
- * The loaded IR's waveform on top, which takes a click or a drop to load one; below it the
- * filter's response over Low Cut, High Cut and Q, and the Gain and Mix tiles.
+ * Three full-height panels (#3201): the loaded IR's waveform, which takes a click or a drop to
+ * load one; the filter's response over Low Cut, High Cut and Q; and Gain over Mix, which the
+ * sidebar can hide.
  */
 class ImpulseResponseUI : public juce::Component,
                           public juce::FileDragAndDropTarget,
@@ -36,6 +37,10 @@ class ImpulseResponseUI : public juce::Component,
     std::function<void(const juce::File&)> onFileDropped;
 
     std::vector<LinkableTextSlider*> getLinkableSliders();
+
+    /// Show or hide OUTPUT; the device's width follows preferredWidth().
+    void setOutputShown(bool shown);
+    int preferredWidth() const;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -77,6 +82,7 @@ class ImpulseResponseUI : public juce::Component,
     bool dragOver_ = false;
 
     juce::Rectangle<int> irPanel_, filterPanel_, outputPanel_;
+    bool outputShown_ = true;
     juce::Rectangle<int> irTitle_, waveArea_, filterTitle_, curveArea_, outputTitle_;
 
     SliderWithLabel gain_{TextSlider::Format::Decibels};
