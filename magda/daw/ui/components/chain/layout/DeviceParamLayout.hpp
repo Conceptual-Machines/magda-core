@@ -37,6 +37,8 @@ struct ParamCell {
     int span = 1;
     /// Shown in place of the parameter's own name, where context already says the rest.
     juce::String label;
+    /// Drawn as a small value chip nested in another cell, such as a decay's curve (#3201).
+    bool chip = false;
 };
 
 /**
@@ -85,6 +87,10 @@ class DeviceParamLayout {
     }
     /// The style the cells draw in, for a layout that sizes its own cells to it.
     virtual void setControlStyle(ParamControlStyle /*style*/) {}
+    /// Whether text cells use the smaller fonts, for layouts of narrow cells (#3201).
+    virtual bool compactText() const {
+        return false;
+    }
     /// Most columns a reflowing grid wraps at.
     virtual int maxColumns() const {
         return 2;

@@ -22,22 +22,15 @@ const ThemedColour kDim{ActiveTheme::INSTRUMENT_TEXT_DIM};
 const juce::Colour kExc{0xffd6a24c};   // exciter accent (amber)
 const juce::Colour kReso{0xff5b8fd0};  // resonator accent (blue)
 
-constexpr int kTitleH = 18;
+constexpr int kColumnPanelW = 150;
+constexpr int kBodyPanelW = 240;
 constexpr int kRowH = 44;
 constexpr int kGap = 6;
 constexpr int kPanelGap = 8;
 /// Less under the last row than over the section title: the slot's edge frames it (#3144).
 constexpr int kPanelPadBottom = 4;
 
-struct StruckDevice {
-    const char* pluginId;
-    const char* title;
-};
-constexpr StruckDevice kDevices[] = {
-    {"magda_marimba", "Marimba"},
-    {"magda_djembe", "Djembe"},
-    {"magda_bell", "Bell"},
-};
+constexpr const char* kDevices[] = {"magda_marimba", "magda_djembe", "magda_bell"};
 
 // UI label from the host slot name ("strike_position" -> "Position",
 // "decay" -> "Decay", "inharmonicity" -> "Inharmonicity").
@@ -54,8 +47,8 @@ juce::String displayLabel(const juce::String& hostName) {
 }  // namespace
 
 bool StruckInstrumentUI::handles(const juce::String& pluginId) {
-    const auto matchesPluginId = [&pluginId](const auto& d) {
-        return pluginId.equalsIgnoreCase(d.pluginId);
+    const auto matchesPluginId = [&pluginId](const char* id) {
+        return pluginId.equalsIgnoreCase(id);
     };
     return std::ranges::any_of(kDevices, matchesPluginId);
 }
@@ -64,13 +57,6 @@ StruckInstrumentUI::StruckInstrumentUI(const juce::String& pluginId)
     : kind_(pluginId.equalsIgnoreCase("magda_djembe") ? Kind::Djembe
             : pluginId.equalsIgnoreCase("magda_bell") ? Kind::Bell
                                                       : Kind::Marimba) {
-    const auto matchesPluginId = [&pluginId](const auto& d) {
-        return pluginId.equalsIgnoreCase(d.pluginId);
-    };
-    const auto device = std::ranges::find_if(kDevices, matchesPluginId);
-    if (device != std::ranges::end(kDevices))
-        title_ = device->title;
-
     // Slot membership matches each device's voiceSlotInfos() order, with Gain
     // appended by MagdaCompiledPolyInstrument.
     if (kind_ == Kind::Djembe) {
@@ -146,8 +132,18 @@ std::vector<LinkableTextSlider*> StruckInstrumentUI::getLinkableSliders() {
     return out;
 }
 
-int StruckInstrumentUI::preferredContentWidth() {
-    return 560;  // body panel + EXCITER | RESONATOR columns
+int StruckInstrumentUI::preferredContentWidth() const {
+    return kPanelGap + (controlsShown_ ? 2 * (kColumnPanelW + kPanelGap) : 0) +
+           (bodyShown_ ? kBodyPanelW + kPanelGap : 0);
+}
+
+void StruckInstrumentUI::setPanelsShown(bool controlsShown, bool bodyShown) {
+    if (controlsShown == controlsShown_ && bodyShown == bodyShown_)
+        return;
+    controlsShown_ = controlsShown;
+    bodyShown_ = bodyShown;
+    resized();
+    repaint();
 }
 
 void StruckInstrumentUI::setLivePlugin(
@@ -362,28 +358,26 @@ void StruckInstrumentUI::paint(juce::Graphics& g) {
         g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 6.0f, 1.0f);
     };
 
-    g.setColour(kText);
-    g.setFont(FontManager::getInstance().getUIFontBold(11.5f));
-    g.drawText(title_, getLocalBounds().removeFromTop(kTitleH).reduced(8, 0),
-               juce::Justification::centredLeft, false);
-
-    panel(bodyArea_);
-    panel(exciterArea_);
-    panel(resonatorArea_);
+    for (const auto& area : {bodyArea_, exciterArea_, resonatorArea_})
+        if (!area.isEmpty())
+            panel(area);
 
     auto sectionTitle = [&](juce::Rectangle<int> a, const juce::String& s, juce::Colour c) {
         g.setColour(c);
         g.setFont(FontManager::getInstance().getUIFontBold(9.5f));
         g.drawText(s, a.reduced(12, 8).removeFromTop(13), juce::Justification::topLeft, false);
     };
-    sectionTitle(exciterArea_, "EXCITER", kExc);
-    sectionTitle(resonatorArea_, "RESONATOR", kReso);
+    if (controlsShown_) {
+        sectionTitle(exciterArea_, "EXCITER", kExc);
+        sectionTitle(resonatorArea_, "RESONATOR", kReso);
+    }
 
     for (const auto& c : controls_)
         if (c.slider != nullptr && !c.tile.isEmpty())
             sampler_tiles::paint(g, c.tile, 4.0f);
 
-    paintBody(g);
+    if (bodyShown_)
+        paintBody(g);
 }
 
 void StruckInstrumentUI::layoutColumn(juce::Rectangle<int> area, const std::vector<int>& slots,
@@ -402,6 +396,8 @@ void StruckInstrumentUI::layoutColumn(juce::Rectangle<int> area, const std::vect
         auto& c = controls_[static_cast<size_t>(slot)];
         c.tile = stack.removeFromTop(rowH);
         sampler_tiles::layoutTile(*c.label, *c.slider, c.tile);
+        c.label->setVisible(true);
+        c.slider->setVisible(true);
         stack.removeFromTop(gap);
     }
 }
@@ -409,29 +405,31 @@ void StruckInstrumentUI::layoutColumn(juce::Rectangle<int> area, const std::vect
 void StruckInstrumentUI::resized() {
     // Padded at the sides only: the header above and the slot's edge below frame the panels.
     auto r = getLocalBounds().reduced(kPanelGap, 0);
-    r.removeFromTop(kTitleH);  // title strip (painted)
+    exciterArea_ = resonatorArea_ = bodyArea_ = {};
+    if (controlsShown_) {
+        exciterArea_ = r.removeFromLeft(kColumnPanelW);
+        r.removeFromLeft(kPanelGap);
+        resonatorArea_ = r.removeFromLeft(kColumnPanelW);
+        r.removeFromLeft(kPanelGap);
+    }
+    if (bodyShown_)
+        bodyArea_ = r;
 
-    bodyArea_ = r.removeFromLeft(juce::jmax(180, r.getWidth() * 42 / 100));
-    r.removeFromLeft(kPanelGap);
-    exciterArea_ = r.removeFromLeft(r.getWidth() / 2 - kPanelGap / 2);
-    r.removeFromLeft(kPanelGap);
-    resonatorArea_ = r;
+    for (auto& c : controls_) {
+        c.tile = {};
+        c.label->setVisible(false);
+        c.slider->setVisible(false);
+    }
+    if (!controlsShown_)
+        return;
 
     auto column = [](juce::Rectangle<int> panel) {
         auto a = panel.reduced(12, 8).withTrimmedBottom(kPanelPadBottom - 8);
         a.removeFromTop(18);  // section title
         return a;
     };
-    // EXCITER column.
     layoutColumn(column(exciterArea_), exciterSlots_, kRowH, kGap);
-    // RESONATOR column (+ Gain pinned underneath the resonator knobs).
-    {
-        auto a = column(resonatorArea_);
-        std::vector<int> slots = resonatorSlots_;
-        if (gainSlot_ >= 0)
-            slots.push_back(gainSlot_);
-        layoutColumn(a, slots, kRowH, kGap);
-    }
+    layoutColumn(column(resonatorArea_), resonatorSlots_, kRowH, kGap);
 }
 
 void StruckInstrumentUI::mouseDown(const juce::MouseEvent& e) {

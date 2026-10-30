@@ -17,11 +17,12 @@
 namespace magda::daw::ui {
 
 /**
- * @brief A drum voice's faceplate under its cells: one rendered hit, with each layer's envelope
- *        drawn over it on the same time axis.
+ * @brief A drum voice's faceplate beside its cells: one rendered hit, with each layer's envelope
+ *        drawn over it on the same time axis. The sidebar can hide it (#3201).
  *
  * Drag a layer's peak or end handle to set its attack or decay; scroll near a layer's curve to
- * bend it. The section titles above the cells are painted here, in their layer's colour.
+ * bend it. The layer tabs above the cells are painted here, in their layer's colour; a click
+ * turns the cells' page, and the selected layer's envelope is drawn over the others.
  */
 class DrumVoicePanel final : public juce::Component,
                              public CompiledDevicePanel,
@@ -38,6 +39,9 @@ class DrumVoicePanel final : public juce::Component,
     void setOnParameterChanged(std::function<void(int, float)> cb) override {
         onParameterChanged_ = std::move(cb);
     }
+    void setOnPageRequested(std::function<void(int page)> cb) override {
+        onPageRequested_ = std::move(cb);
+    }
     int preferredHeight() const override {
         return 240;
     }
@@ -53,6 +57,10 @@ class DrumVoicePanel final : public juce::Component,
     enum class Handle { None, Attack, Decay };
 
     void configChanged() override;
+    /// The cells beside the plot, unless the sidebar hid them; one of the two always shows.
+    bool cellsShown() const {
+        return snapshot_.paramsShown || !snapshot_.vizShown;
+    }
     float value(int slot, float fallback = 0.0f) const;
     void writeParameter(int slot, float value);
     void requestRender();
@@ -69,6 +77,7 @@ class DrumVoicePanel final : public juce::Component,
     magda::DeviceInfo snapshot_;
     std::shared_ptr<DrumHitPreview::Instrument> instrument_;
     std::function<void(int, float)> onParameterChanged_;
+    std::function<void(int page)> onPageRequested_;
     ParamControlStyle style_ = ParamControlStyle::Text;
     DrumVoiceGeometry geometry_;
 

@@ -117,6 +117,7 @@ void applyFilled(ParamSlotComponent& slot, const magda::ParameterInfo& param, co
     slot.setParamIndex(cell.targetParamIndex);
     slot.setParameterInfo(param);
     slot.setParamName(cell.label.isNotEmpty() ? cell.label : param.name);
+    slot.setChip(cell.chip);
     slot.setParamValue(param.currentValue);
     slot.setShowEmptyText(false);
     slot.setEnabled(cell.enabled);
@@ -483,8 +484,10 @@ void ParamHostComponent::configChanged() {
 void ParamHostComponent::applyControlStyle() {
     controlStyleApplied_ = true;
     const auto style = resolveControlStyle(controlStyleOverride_);
-    for (int i = 0; i < allocatedCells_; ++i)
+    for (int i = 0; i < allocatedCells_; ++i) {
+        paramSlots_[i]->setCompactText(layout_->compactText());
         paramSlots_[i]->setControlStyle(style);
+    }
     layout_->setControlStyle(style);
 
     // Plug-ins: 8 columns in Text and Knobs, 6 in Sliders, in as many rows as the height holds up

@@ -279,6 +279,7 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
             controls.compiledPanel->setVisible(true);
             controls.compiledPanel->setBounds(contentArea);
             layoutParamGrid(controls.paramGrid, contentArea);
+            controls.paramGrid->setVisible(controls.paramGridShown);
             controls.paramGrid->toFront(false);
             return;
         }

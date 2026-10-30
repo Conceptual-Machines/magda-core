@@ -319,6 +319,10 @@ class DeviceSlotComponent : public NodeComponent,
     /// A synth's first panel (@p oscPanel) or FM's matrix, on or off (#3201).
     void toggleSynthPanel(bool oscPanel);
     void toggleViz();
+    /// A device whose controls the sidebar can hide behind its visualisation (#3201): a compiled
+    /// one that asks for it, or a struck instrument.
+    bool hidesControls() const;
+    void toggleControls();
     void toggleOutput();
     /// The Drum Grid's pad mix panel (@p panel) or its pad chain, on or off (#3144).
     void togglePadView(bool panel);

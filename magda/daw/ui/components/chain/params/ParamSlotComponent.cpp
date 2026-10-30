@@ -614,6 +614,39 @@ void ParamSlotComponent::setOverlayOnly(bool overlayOnly) {
     repaint();
 }
 
+void ParamSlotComponent::setCompactText(bool compact) {
+    if (compactText_ == compact)
+        return;
+    compactText_ = compact;
+    applyControlStyleToWidgets();
+    repaint();
+}
+
+void ParamSlotComponent::setChip(bool chip) {
+    if (chip_ == chip)
+        return;
+    chip_ = chip;
+    if (chip_)
+        applyChipFormatter();
+    else
+        configureSliderFormatting(valueSlider_, paramInfo_);
+    applyControlStyleToWidgets();
+    resized();
+    repaint();
+}
+
+void ParamSlotComponent::applyChipFormatter() {
+    const auto unit = paramInfo_.unit;
+    valueSlider_.setValueFormatter([unit](double value) {
+        const auto number = juce::String(juce::roundToInt(value));
+        return unit.isEmpty() ? number : number + " " + unit;
+    });
+}
+
+juce::Font ParamSlotComponent::textValueFont() const {
+    return FontManager::getInstance().getUIFontMedium(compactText_ ? 12.0f : 13.5f);
+}
+
 void ParamSlotComponent::setControlStyle(ParamControlStyle style) {
     if (style_ == style)
         return;
@@ -633,11 +666,15 @@ void ParamSlotComponent::applyControlStyleToWidgets() {
     valueSlider_.setJustification(knobs     ? juce::Justification::centred
                                   : sliders ? juce::Justification::centredRight
                                             : juce::Justification::centredLeft);
-    valueSlider_.setFont(style_ == ParamControlStyle::Text ? fonts.getUIFontMedium(13.5f)
-                                                           : fonts.getMonoFont(11.0f));
+    valueSlider_.setFont(chip_                               ? fonts.getUIFontMedium(10.5f)
+                         : style_ == ParamControlStyle::Text ? textValueFont()
+                                                             : fonts.getMonoFont(11.0f));
+    if (chip_)
+        valueSlider_.setJustification(juce::Justification::centredLeft);
+    nameLabel_.setVisible(!chip_);
     valueSlider_.setTextColour(ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
 
-    nameLabel_.setFont(fonts.getUIFont(knobs ? 10.0f : 10.5f));
+    nameLabel_.setFont(fonts.getUIFont(knobs ? 10.0f : compactText_ ? 9.5f : 10.5f));
     nameLabel_.setColour(juce::Label::textColourId,
                          ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
     nameLabel_.setBorderSize({});
@@ -758,6 +795,8 @@ void ParamSlotComponent::setParameterInfo(const magda::ParameterInfo& info) {
     } else {
         valueSlider_.setVisible(true);
         configureSliderFormatting(valueSlider_, info);
+        if (chip_)
+            applyChipFormatter();
     }
 
     applyTooltip(info.tooltip);
@@ -856,6 +895,34 @@ void ParamSlotComponent::lookAndFeelChanged() {
 void ParamSlotComponent::paint(juce::Graphics& g) {
     if (overlayOnly_)
         return;
+
+    if (chip_) {
+        // The chip: the decay's shape at this curve before the value, on a panel darker than the
+        // cell it sits in. A bipolar curve bends the fall as the drum voices do, by 8^-bend.
+        const auto chip = getLocalBounds().toFloat();
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG));
+        g.fillRoundedRectangle(chip, 4.0f);
+        const auto glyph = chip.withWidth(chip.getHeight()).reduced(4.5f);
+        const float normalised = magda::ParameterUtils::realToNormalized(
+            static_cast<float>(valueSlider_.getValue()), paramInfo_);
+        const float exponent =
+            std::pow(8.0f, -(juce::jlimit(0.0f, 1.0f, normalised) * 2.0f - 1.0f));
+        juce::Path curve;
+        constexpr int kPoints = 12;
+        for (int i = 0; i <= kPoints; ++i) {
+            const float t = static_cast<float>(i) / kPoints;
+            const juce::Point<float> point{glyph.getX() + t * glyph.getWidth(),
+                                           glyph.getBottom() -
+                                               std::pow(1.0f - t, exponent) * glyph.getHeight()};
+            if (i == 0)
+                curve.startNewSubPath(point);
+            else
+                curve.lineTo(point);
+        }
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
+        g.strokePath(curve, juce::PathStrokeType(1.2f));
+        return;
+    }
 
     if (!tileArea_.isEmpty()) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));
@@ -1028,6 +1095,14 @@ bool ParamSlotComponent::layoutStyled(juce::Rectangle<int> bounds) {
     const bool momentary = momentaryButton_ != nullptr && momentaryButton_->isVisible();
     const bool choices = !choiceButtons_.empty() && choiceButtons_.front()->isVisible();
 
+    if (chip_ && continuous) {
+        tileArea_ = knobArea_ = barArea_ = modRowArea_ = {};
+        valueArea_ = bounds.withTrimmedLeft(bounds.getHeight()).withTrimmedRight(4);
+        valueSlider_.setBounds(bounds);
+        valueSlider_.setTextArea(valueArea_);
+        return true;
+    }
+
     tileArea_ = bounds;
     auto inner = tileArea_.reduced(8, 5);
     knobArea_ = barArea_ = modRowArea_ = {};
@@ -1163,7 +1238,7 @@ void ParamSlotComponent::paintBooleanValue(juce::Graphics& g) const {
     auto& fonts = FontManager::getInstance();
     const bool text = style_ == ParamControlStyle::Text;
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
-    g.setFont(text ? fonts.getUIFontMedium(13.5f) : fonts.getMonoFont(11.0f));
+    g.setFont(text ? textValueFont() : fonts.getMonoFont(11.0f));
     const auto value =
         boolToggle_->getToggleState() ? juce::String("on") : juce::String::fromUTF8("\xe2\x80\x93");
     g.drawText(value, valueArea_,

@@ -522,7 +522,7 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     if (nimbusUI_)
         return nimbusUI_->preferredWidth();
     if (struckUI_)
-        return struckUI_->preferredContentWidth();  // body panel + EXCITER | RESONATOR
+        return struckUI_->preferredContentWidth();
     if (sidechainUI_)
         return 500;  // curve editor + depth/sync/mode/atk/rel control row
     if (spectralFxUI_)
@@ -840,6 +840,8 @@ void DeviceCustomUIManager::setFaceplatePanelsShown(const magda::DeviceInfo& dev
         nimbusUI_->setCloudShown(device.vizShown);
     if (impulseResponseUI_)
         impulseResponseUI_->setOutputShown(device.outputShown);
+    if (struckUI_)
+        struckUI_->setPanelsShown(device.paramsShown || !device.vizShown, device.vizShown);
 }
 
 void DeviceCustomUIManager::setSequencerTimeBendShown(bool shown) {

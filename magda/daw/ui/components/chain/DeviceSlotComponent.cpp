@@ -512,7 +512,12 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     paramsToggle_ = std::make_unique<magda::SvgButton>("Parameters", BinaryData::deviceparams_svg,
                                                        BinaryData::deviceparams_svgSize);
     paramsToggle_->setTooltip("Show the parameters");
-    paramsToggle_->onClick = [this]() { toggleDeviceView(false); };
+    paramsToggle_->onClick = [this]() {
+        if (hidesControls())
+            toggleControls();
+        else
+            toggleDeviceView(false);
+    };
     addChildComponent(*paramsToggle_);
     faceplateToggle_ = std::make_unique<magda::SvgButton>(
         "Faceplate", BinaryData::devicefaceplate_svg, BinaryData::devicefaceplate_svgSize);
@@ -810,7 +815,7 @@ std::vector<juce::Component*> DeviceSlotComponent::sidebarButtons() const {
         if (button != nullptr && (shown || traits_.showsAllControls))
             buttons.push_back(button);
     };
-    add(paramsToggle_.get(), hasFaceplate());
+    add(paramsToggle_.get(), hasFaceplate() || hidesControls());
     add(faceplateToggle_.get(), hasFaceplate());
     add(timeBendToggle_.get(), isSequencerDevice(traits_));
     add(zonesToggle_.get(), customUI_.hasSamplerUI());
@@ -818,7 +823,7 @@ std::vector<juce::Component*> DeviceSlotComponent::sidebarButtons() const {
         customUI_.hasFMUI() || customUI_.hasPolySynthUI() || customUI_.hasMateriaUI());
     add(matrixToggle_.get(), customUI_.hasFMUI());
     add(vizToggle_.get(), customUI_.hasHaloUI() || customUI_.hasNimbusUI() ||
-                              customUI_.hasMateriaUI() ||
+                              customUI_.hasMateriaUI() || customUI_.hasStruckUI() ||
                               (traits_.compiledPresentation != nullptr &&
                                traits_.compiledPresentation->vizSlotWidth > 0));
     add(outputToggle_.get(), customUI_.hasImpulseResponseUI());
@@ -871,6 +876,7 @@ void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
     vizToggle_->setTooltip(customUI_.hasHaloUI()      ? "Show the resonator spectrum"
                            : customUI_.hasNimbusUI()  ? "Show the grain cloud"
                            : customUI_.hasMateriaUI() ? "Show the modal response"
+                           : customUI_.hasStruckUI()  ? "Show the body"
                                                       : "Show the stereo field");
     padPanelToggle_->setToggleState(device_.padPanelShown, juce::dontSendNotification);
     padChainToggle_->setToggleState(device_.padChainShown, juce::dontSendNotification);
@@ -909,7 +915,28 @@ bool DeviceSlotComponent::faceplateShown() const {
 }
 
 bool DeviceSlotComponent::paramsShown() const {
+    if (hidesControls())
+        return device_.paramsShown || !device_.vizShown;
     return !hasFaceplate() || device_.paramsShown || !device_.faceplateShown;
+}
+
+bool DeviceSlotComponent::hidesControls() const {
+    return customUI_.hasStruckUI() || (traits_.compiledPresentation != nullptr &&
+                                       traits_.compiledPresentation->controlsSlotWidth > 0);
+}
+
+void DeviceSlotComponent::toggleControls() {
+    if (device_.paramsShown && !device_.vizShown)
+        return;  // One of the two always shows.
+    device_.paramsShown = !device_.paramsShown;
+    if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_))
+        live->paramsShown = device_.paramsShown;
+    if (compiledPanel_ != nullptr)
+        compiledPanel_->updateFromDevice(device_);
+    customUI_.setFaceplatePanelsShown(device_);
+    resized();
+    if (onDeviceLayoutChanged)
+        onDeviceLayoutChanged();
 }
 
 std::vector<int> DeviceSlotComponent::resolveFaceplateStripSlots() const {
@@ -1123,6 +1150,8 @@ void DeviceSlotComponent::toggleOutput() {
 }
 
 void DeviceSlotComponent::toggleViz() {
+    if (hidesControls() && device_.vizShown && !device_.paramsShown)
+        return;  // One of the two always shows.
     device_.vizShown = !device_.vizShown;
     if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_))
         live->vizShown = device_.vizShown;
@@ -2462,6 +2491,8 @@ void DeviceSlotComponent::setupCustomUILinking() {
         compiledPanel_->setOnPageRequested([this](int page) {
             if (paramGrid_ != nullptr && paramGrid_->onPageSelected)
                 paramGrid_->onPageSelected(page);
+            if (compiledPanel_ != nullptr)
+                compiledPanel_->updateFromDevice(device_);
         });
     }
 
@@ -2508,7 +2539,8 @@ int DeviceSlotComponent::getDynamicSlotWidth() const {
     // grid at PARAM_CELL_WIDTH truncates labels.
     if (traits_.compiledPresentation != nullptr &&
         traits_.compiledPresentation->preferredSlotWidth > 0)
-        return traits_.compiledPresentation->preferredSlotWidth +
+        return traits_.compiledPresentation->preferredSlotWidth -
+               (paramsShown() ? 0 : traits_.compiledPresentation->controlsSlotWidth) +
                (device_.vizShown ? traits_.compiledPresentation->vizSlotWidth : 0);
     // 64px cells with the grid's 6px gaps and 10px padding: a curated grid's own columns beside
     // its faceplate, else eight; a faceplate that takes the whole body keeps the eight.

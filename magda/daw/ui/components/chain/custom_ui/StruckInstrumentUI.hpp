@@ -21,13 +21,13 @@ namespace magda::daw::ui {
  * @brief Shared faceplate for the struck-modal instruments (Marimba / Djembe /
  *        Bell), all of which are exciter -> modal-resonator devices.
  *
- * Layout mirrors the Materia (Elements) faceplate: an instrument-specific body
- * graphic on the left (a tone bar, a membrane, or a bell cross-section) whose
- * strike point you drag to set Strike Position, and EXCITER | RESONATOR knob
- * columns on the right. Every knob is a LinkableTextSlider carrying its host slot
- * via setParamIndex(), so mod / macro / automation / MIDI-Learn linking is wired
- * by the standard DeviceSlotComponent::setupCustomUILinking() path. The Position
- * knob and the body share the same slot, so dragging either keeps both in sync.
+ * EXCITER | RESONATOR columns, then an instrument-specific body graphic on the right (a tone
+ * bar, a membrane, or a bell cross-section) whose strike point you drag to set Strike Position.
+ * The sidebar hides the columns or the body, one always showing (#3201); Gain stays off the
+ * faceplate, the side strip's fader setting the level. Every knob is a LinkableTextSlider carrying
+ * its host slot via setParamIndex(), so mod / macro / automation / MIDI-Learn linking is wired by
+ * the standard DeviceSlotComponent::setupCustomUILinking() path. The Position knob and the body
+ * share the same slot, so dragging either keeps both in sync.
  *
  * Binding the live plugin (setLivePlugin) lets the body flash on each note-on,
  * polled from the plugin's strikePulse() counter on a timer.
@@ -42,7 +42,9 @@ class StruckInstrumentUI : public juce::Component, private juce::Timer {
 
     void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
     std::vector<LinkableTextSlider*> getLinkableSliders();
-    static int preferredContentWidth();
+    int preferredContentWidth() const;
+    /// Show the columns and the body; the device's width follows preferredContentWidth().
+    void setPanelsShown(bool controlsShown, bool bodyShown);
 
     /// Bind the live plugin so the body can flash on note-on (nullptr unbinds).
     void setLivePlugin(magda::daw::audio::compiled::MagdaCompiledPolyInstrument* plugin);
@@ -78,7 +80,6 @@ class StruckInstrumentUI : public juce::Component, private juce::Timer {
     float decayNorm() const;      // Decay slot normalised 0..1 (for the body glow)
 
     const Kind kind_;
-    juce::String title_;
     std::vector<int> exciterSlots_, resonatorSlots_;
     int gainSlot_ = -1;
     static constexpr int kPositionSlot = 0;
@@ -87,6 +88,8 @@ class StruckInstrumentUI : public juce::Component, private juce::Timer {
     std::vector<float> slotMin_, slotMax_;
 
     juce::Rectangle<int> bodyArea_, exciterArea_, resonatorArea_;
+    bool controlsShown_ = true;
+    bool bodyShown_ = true;
 
     magda::daw::audio::compiled::MagdaCompiledPolyInstrument* plugin_ = nullptr;
     std::uint32_t lastStrikePulse_ = 0;
