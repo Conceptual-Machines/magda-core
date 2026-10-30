@@ -540,6 +540,7 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     obj->setProperty("zonesShown", device.zonesShown);
     obj->setProperty("oscPanelShown", device.oscPanelShown);
     obj->setProperty("matrixShown", device.matrixShown);
+    obj->setProperty("spectrumShown", device.spectrumShown);
     obj->setProperty("padPanelShown", device.padPanelShown);
     obj->setProperty("padChainShown", device.padChainShown);
 
@@ -752,6 +753,8 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
         outDevice.oscPanelShown = static_cast<bool>(obj->getProperty("oscPanelShown"));
     if (obj->hasProperty("matrixShown"))
         outDevice.matrixShown = static_cast<bool>(obj->getProperty("matrixShown"));
+    if (obj->hasProperty("spectrumShown"))
+        outDevice.spectrumShown = static_cast<bool>(obj->getProperty("spectrumShown"));
     if (obj->hasProperty("padPanelShown"))
         outDevice.padPanelShown = static_cast<bool>(obj->getProperty("padPanelShown"));
     if (obj->hasProperty("padChainShown"))

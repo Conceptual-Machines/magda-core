@@ -518,7 +518,7 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     if (materiaUI_)
         return 960;  // VOICE | EXCITER | RESONATOR
     if (haloUI_)
-        return 760;  // modal-response spectrum + PARAMETERS | RESONATOR MODEL
+        return haloUI_->preferredWidth();
     if (nimbusUI_)
         return 720;  // grain cloud + PARAMETERS | mode controls
     if (struckUI_)
@@ -825,6 +825,11 @@ void DeviceCustomUIManager::setDrumGridViewsShown(bool panelShown, bool chainSho
 void DeviceCustomUIManager::setSamplerZonesShown(bool shown) {
     if (samplerUI_)
         samplerUI_->setZonesShown(shown);
+}
+
+void DeviceCustomUIManager::setHaloSpectrumShown(bool shown) {
+    if (haloUI_)
+        haloUI_->setSpectrumShown(shown);
 }
 
 void DeviceCustomUIManager::setSynthPanelsShown(bool oscPanelShown, bool matrixShown) {

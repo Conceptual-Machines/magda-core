@@ -212,6 +212,8 @@ class DeviceCustomUIManager {
     void setSamplerZonesShown(bool shown);
     /// A synth's first panel (FM's OPS, Poly Synth's OSC) and FM's matrix (#3201).
     void setSynthPanelsShown(bool oscPanelShown, bool matrixShown);
+    /// Halo's RESONATOR spectrum (#3201).
+    void setHaloSpectrumShown(bool shown);
     void setDrumGridViewsShown(bool panelShown, bool chainShown);
     bool hasSamplerUI() const {
         return samplerUI_ != nullptr;
@@ -221,6 +223,9 @@ class DeviceCustomUIManager {
     }
     bool hasPolySynthUI() const {
         return polySynthUI_ != nullptr;
+    }
+    bool hasHaloUI() const {
+        return haloUI_ != nullptr;
     }
     StepSequencerUI* getStepSequencerUI() const {
         return stepSequencerUI_.get();
