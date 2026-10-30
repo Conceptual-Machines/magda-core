@@ -210,9 +210,17 @@ class DeviceCustomUIManager {
     void setSequencerTimeBendShown(bool shown);
     /// The sampler's zone list beside its faceplate (#3098).
     void setSamplerZonesShown(bool shown);
+    /// A synth's first panel (FM's OPS, Poly Synth's OSC) and FM's matrix (#3201).
+    void setSynthPanelsShown(bool oscPanelShown, bool matrixShown);
     void setDrumGridViewsShown(bool panelShown, bool chainShown);
     bool hasSamplerUI() const {
         return samplerUI_ != nullptr;
+    }
+    bool hasFMUI() const {
+        return fmUI_ != nullptr;
+    }
+    bool hasPolySynthUI() const {
+        return polySynthUI_ != nullptr;
     }
     StepSequencerUI* getStepSequencerUI() const {
         return stepSequencerUI_.get();

@@ -46,7 +46,7 @@ struct DeviceSlotHeaderMetrics {
 /// Where the expanded header's separators landed; empty when not drawn. @c routing sits
 /// between the modulation and routing buttons on the left.
 struct DeviceSlotHeaderSeparators {
-    juce::Rectangle<int> left, routing, right;
+    juce::Rectangle<int> left, routing;
 };
 
 /// Delta keeps its visibility here but is placed by the slot's side strip, not the

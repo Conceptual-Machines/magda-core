@@ -351,6 +351,10 @@ struct DeviceInfo {
     bool timeBendShown = true;
     /// Whether a sampler's faceplate shows its zone list (#3098).
     bool zonesShown = true;
+    /// Whether a synth's faceplate shows its first panel (FM's OPS, Poly Synth's OSC) and FM's
+    /// modulation matrix (#3201).
+    bool oscPanelShown = true;
+    bool matrixShown = true;
     /// Whether a Drum Grid shows its pad mix panel and its pad chain (#3144).
     bool padPanelShown = true;
     bool padChainShown = true;

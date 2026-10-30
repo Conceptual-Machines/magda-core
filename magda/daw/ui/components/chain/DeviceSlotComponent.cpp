@@ -529,6 +529,16 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     zonesToggle_->setTooltip("Show the zones");
     zonesToggle_->onClick = [this]() { toggleZones(); };
     addChildComponent(*zonesToggle_);
+    oscPanelToggle_ = std::make_unique<magda::SvgButton>("Operators", BinaryData::fadmodsine_svg,
+                                                         BinaryData::fadmodsine_svgSize);
+    oscPanelToggle_->setTooltip("Show the operators");
+    oscPanelToggle_->onClick = [this]() { toggleSynthPanel(true); };
+    addChildComponent(*oscPanelToggle_);
+    matrixToggle_ = std::make_unique<magda::SvgButton>("Matrix", BinaryData::drum_grid_svg,
+                                                       BinaryData::drum_grid_svgSize);
+    matrixToggle_->setTooltip("Show the matrix");
+    matrixToggle_->onClick = [this]() { toggleSynthPanel(false); };
+    addChildComponent(*matrixToggle_);
     padPanelToggle_ = std::make_unique<magda::SvgButton>(
         "PadPanel", BinaryData::iconpadpanelboldm_svg, BinaryData::iconpadpanelboldm_svgSize);
     padPanelToggle_->setTooltip("Show the pad panel");
@@ -685,7 +695,6 @@ void DeviceSlotComponent::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int>
     device_shell::paintFrame(g, bounds, headerHeight,
                              {.headerSeparatorLeft = headerSeparators_.left,
                               .headerSeparatorRouting = headerSeparators_.routing,
-                              .headerSeparatorRight = headerSeparators_.right,
                               .sidebar = sidebarArea_,
                               .sideStrip = sideStripArea_,
                               .midiLed = midiLedArea_,
@@ -795,6 +804,8 @@ std::vector<juce::Component*> DeviceSlotComponent::sidebarButtons() const {
     add(faceplateToggle_.get(), hasFaceplate());
     add(timeBendToggle_.get(), isSequencerDevice(traits_));
     add(zonesToggle_.get(), customUI_.hasSamplerUI());
+    add(oscPanelToggle_.get(), customUI_.hasFMUI() || customUI_.hasPolySynthUI());
+    add(matrixToggle_.get(), customUI_.hasFMUI());
     add(padPanelToggle_.get(), customUI_.getDrumGridUI() != nullptr);
     add(padChainToggle_.get(), customUI_.getDrumGridUI() != nullptr);
     return buttons;
@@ -816,8 +827,9 @@ int DeviceSlotComponent::sidebarWidth() const {
 
 void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
     const bool shown = !bar.isEmpty();
-    for (auto* toggle : {paramsToggle_.get(), faceplateToggle_.get(), timeBendToggle_.get(),
-                         zonesToggle_.get(), padPanelToggle_.get(), padChainToggle_.get()})
+    for (auto* toggle :
+         {paramsToggle_.get(), faceplateToggle_.get(), timeBendToggle_.get(), zonesToggle_.get(),
+          oscPanelToggle_.get(), matrixToggle_.get(), padPanelToggle_.get(), padChainToggle_.get()})
         toggle->setVisible(false);
     const bool paged = shown && sidebarPaged();
     for (auto* arrow : {pagePrevButton_.get(), pageNextButton_.get()})
@@ -832,6 +844,10 @@ void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
     faceplateToggle_->setToggleState(faceplateShown(), juce::dontSendNotification);
     timeBendToggle_->setToggleState(device_.timeBendShown, juce::dontSendNotification);
     zonesToggle_->setToggleState(device_.zonesShown, juce::dontSendNotification);
+    oscPanelToggle_->setToggleState(device_.oscPanelShown, juce::dontSendNotification);
+    oscPanelToggle_->setTooltip(customUI_.hasFMUI() ? "Show the operators"
+                                                    : "Show the oscillators");
+    matrixToggle_->setToggleState(device_.matrixShown, juce::dontSendNotification);
     padPanelToggle_->setToggleState(device_.padPanelShown, juce::dontSendNotification);
     padChainToggle_->setToggleState(device_.padChainShown, juce::dontSendNotification);
 
@@ -1059,6 +1075,19 @@ void DeviceSlotComponent::toggleZones() {
         onDeviceLayoutChanged();
 }
 
+void DeviceSlotComponent::toggleSynthPanel(bool oscPanel) {
+    auto& shown = oscPanel ? device_.oscPanelShown : device_.matrixShown;
+    shown = !shown;
+    if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
+        live->oscPanelShown = device_.oscPanelShown;
+        live->matrixShown = device_.matrixShown;
+    }
+    customUI_.setSynthPanelsShown(device_.oscPanelShown, device_.matrixShown);
+    resized();
+    if (onDeviceLayoutChanged)
+        onDeviceLayoutChanged();
+}
+
 void DeviceSlotComponent::togglePadView(bool panel) {
     auto& shown = panel ? device_.padPanelShown : device_.padChainShown;
     shown = !shown;
@@ -1172,6 +1201,8 @@ void DeviceSlotComponent::styleDeviceHeaderButtons() {
     style(faceplateToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(timeBendToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(zonesToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
+    style(oscPanelToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
+    style(matrixToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(padPanelToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(padChainToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(expandToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
@@ -1594,6 +1625,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
         updateDeviceSlotInlineUi(device_, compiledPanel_.get(), customUI_);
         customUI_.setSequencerTimeBendShown(device_.timeBendShown);
         customUI_.setSamplerZonesShown(device_.zonesShown);
+        customUI_.setSynthPanelsShown(device_.oscPanelShown, device_.matrixShown);
         customUI_.setDrumGridViewsShown(device_.padPanelShown, device_.padChainShown);
         reclaimExpandedFaceplate();
     }

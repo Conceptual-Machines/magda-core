@@ -311,10 +311,13 @@ class DeviceSlotComponent : public NodeComponent,
     /// A step sequencer's header switches: its time bend beside the controls, and its faceplate
     /// lent to the arrangement's track area (ExpandedFaceplate) with a note left in its place.
     std::unique_ptr<magda::SvgButton> timeBendToggle_, zonesToggle_, expandToggle_;
+    std::unique_ptr<magda::SvgButton> oscPanelToggle_, matrixToggle_;
     std::unique_ptr<magda::SvgButton> padPanelToggle_, padChainToggle_;
     juce::Label lentNote_;
     void toggleTimeBend();
     void toggleZones();
+    /// A synth's first panel (@p oscPanel) or FM's matrix, on or off (#3201).
+    void toggleSynthPanel(bool oscPanel);
     /// The Drum Grid's pad mix panel (@p panel) or its pad chain, on or off (#3144).
     void togglePadView(bool panel);
     void toggleFaceplateExpanded();

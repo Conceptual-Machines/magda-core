@@ -11,7 +11,7 @@ namespace magda::daw::ui::device_shell {
 
 /** @brief The rows a v1 shell paints around its body; an empty rectangle is not drawn. */
 struct ShellRows {
-    juce::Rectangle<int> headerSeparatorLeft, headerSeparatorRouting, headerSeparatorRight;
+    juce::Rectangle<int> headerSeparatorLeft, headerSeparatorRouting;
     juce::Rectangle<int> sidebar, sideStrip, footer;
     juce::Rectangle<int> footerSeparator, footerInfo, midiLed;
     /// The header band's width; 0 spans the frame (a rack's stops at its chain's devices).

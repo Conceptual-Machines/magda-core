@@ -512,9 +512,9 @@ bool DeviceCustomUIManager::hasAnyUI() const {
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
     if (polySynthUI_)
-        return 960;  // OSC rows | filter tabs | envelope tabs
+        return polySynthUI_->preferredWidth();
     if (fmUI_)
-        return 1100;  // OPERATORS | MATRIX | FILTER | envelope tabs
+        return fmUI_->preferredWidth();
     if (materiaUI_)
         return 720;  // VOICE row + EXCITER | RESONATOR two-column faceplate
     if (haloUI_)
@@ -825,6 +825,13 @@ void DeviceCustomUIManager::setDrumGridViewsShown(bool panelShown, bool chainSho
 void DeviceCustomUIManager::setSamplerZonesShown(bool shown) {
     if (samplerUI_)
         samplerUI_->setZonesShown(shown);
+}
+
+void DeviceCustomUIManager::setSynthPanelsShown(bool oscPanelShown, bool matrixShown) {
+    if (fmUI_)
+        fmUI_->setPanelsShown(oscPanelShown, matrixShown);
+    if (polySynthUI_)
+        polySynthUI_->setOscPanelShown(oscPanelShown);
 }
 
 void DeviceCustomUIManager::setSequencerTimeBendShown(bool shown) {

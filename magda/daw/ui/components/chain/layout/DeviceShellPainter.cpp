@@ -33,8 +33,7 @@ void paintHeader(juce::Graphics& g, juce::Rectangle<float> frame, int headerHeig
     g.fillRect(frame.getX(), frame.getY() + static_cast<float>(headerHeight) - 1.0f, width, 1.0f);
 
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
-    for (const auto& separator :
-         {rows.headerSeparatorLeft, rows.headerSeparatorRouting, rows.headerSeparatorRight})
+    for (const auto& separator : {rows.headerSeparatorLeft, rows.headerSeparatorRouting})
         if (!separator.isEmpty())
             g.fillRect(separator);
 }
