@@ -27,7 +27,9 @@ constexpr int kPanelPadY = 8;
 /// Less under the last row than over the title: the slot's edge frames it (#3144).
 constexpr int kPanelPadBottom = 4;
 constexpr int kTitleH = 18;
-constexpr int kVoiceH = 74;
+// VOICE and EXCITER at their content's widths; RESONATOR takes the rest (#3201).
+constexpr int kVoicePanelW = 200;
+constexpr int kExciterPanelW = 420;
 
 constexpr int kTileGap = 6;
 
@@ -152,31 +154,7 @@ void MateriaUI::paint(juce::Graphics& g) {
     };
 
     panel(voiceArea_);
-    {
-        auto t = voiceArea_.reduced(14, kPanelPadY);
-        g.setColour(kText);
-        g.setFont(FontManager::getInstance().getUIFontBold(10.5f));
-        g.drawText("VOICE", t.removeFromTop(14), juce::Justification::topLeft);
-
-        // Segment the value boxes into named zones with vertical dividers.
-        // Groups: [Contour, Signature] | [Coarse, Fine] | [Level].
-        const auto z = voiceZonesArea_;
-        const int cellW = z.getWidth() / 6;
-        g.setColour(kBorder);
-        g.fillRect(z.getX() + 2 * cellW, z.getY(), 1, z.getHeight());
-        g.fillRect(z.getX() + 4 * cellW, z.getY(), 1, z.getHeight());
-
-        g.setColour(kDim);
-        g.setFont(FontManager::getInstance().getUIFontBold(9.0f));
-        auto caption = [&](const juce::String& s, int startCell, int cells) {
-            g.drawText(
-                s, juce::Rectangle<int>(z.getX() + startCell * cellW, z.getY(), cells * cellW, 13),
-                juce::Justification::centred);
-        };
-        caption("EXCITATION CONTOUR", 0, 2);
-        caption("PITCH", 2, 2);
-        caption("OUTPUT", 4, 2);
-    }
+    titleStrip(g, voiceArea_.reduced(14, kPanelPadY), "VOICE", "");
     panel(exciterArea_);
     titleStrip(g, exciterArea_.reduced(14, kPanelPadY), "EXCITER", "");
     {
@@ -350,31 +328,12 @@ void MateriaUI::resized() {
     constexpr int kGap = 6;
 
     // Padded at the sides only: the header above and the slot's edge below frame the panels.
-    auto r = getLocalBounds().reduced(kPanelGap, 0);
-
-    voiceArea_ = r.removeFromTop(kVoiceH);
-    r.removeFromTop(kPanelGap);
-
-    auto body = r;
-    exciterArea_ = body.removeFromLeft(body.getWidth() / 2 - kPanelGap / 2);
+    auto body = getLocalBounds().reduced(kPanelGap, 0);
+    voiceArea_ = body.removeFromLeft(kVoicePanelW);
+    body.removeFromLeft(kPanelGap);
+    exciterArea_ = body.removeFromLeft(kExciterPanelW);
     body.removeFromLeft(kPanelGap);
     resonatorArea_ = body;
-
-    // VOICE: zone-captioned value boxes in a row (caption strip + boxes form the
-    // segmented band painted with dividers).
-    {
-        auto a = voiceArea_.reduced(14, kPanelPadY);
-        a.removeFromTop(14);  // title strip
-        voiceZonesArea_ = a;
-        a.removeFromTop(13);  // zone-caption strip
-        const std::array<int, 6> order{kContour, kSignature, kPitch, kFine, kLevel, kVelAmp};
-        int cellW = a.getWidth() / 6;
-        for (int k = 0; k < 6; ++k) {
-            auto& c = controls_[static_cast<size_t>(order[static_cast<size_t>(k)])];
-            c.tile = a.removeFromLeft(cellW).reduced(kTileGap / 2, 0);
-            sampler_tiles::layoutTile(*c.label, *c.slider, c.tile);
-        }
-    }
 
     // Centre a stack of `rows` rows (rowH + gap each) within `col`, keeping a
     // common top across columns so the grid stays aligned.
@@ -389,6 +348,26 @@ void MateriaUI::resized() {
         a.removeFromTop(kTitleH);
         return a;
     };
+
+    // VOICE: the boxes in pairs, a row each for the contour, the pitch and the output.
+    {
+        auto a = bodyPanel(voiceArea_);
+        const int rowH = juce::jmin(kRowH, (a.getHeight() - 2 * kGap) / 3);
+        const int colW = (a.getWidth() - kTileGap) / 2;
+        const std::array<std::array<int, 2>, 3> rows{
+            {{kContour, kSignature}, {kPitch, kFine}, {kLevel, kVelAmp}}};
+        auto stack = rowStack(a, 3, rowH);
+        for (const auto& row : rows) {
+            auto line = stack.removeFromTop(rowH);
+            stack.removeFromTop(kGap);
+            for (int idx : row) {
+                auto& c = controls_[static_cast<size_t>(idx)];
+                c.tile = line.removeFromLeft(colW);
+                line.removeFromLeft(kTileGap);
+                sampler_tiles::layoutTile(*c.label, *c.slider, c.tile, 7);
+            }
+        }
+    }
 
     // EXCITER: blend pad on the LEFT, Bow/Blow/Strike columns beside it. The pad
     // fills the full height; the columns centre their rows against a 3-row grid.

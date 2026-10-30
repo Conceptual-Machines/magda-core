@@ -19,11 +19,9 @@ namespace magda::daw::ui {
  * @brief Custom faceplate for Materia (magda_elements), the modal-synthesis
  *        voice ported from Mutable Instruments Elements.
  *
- * Layout follows the design mockup:
- *
- *   VOICE     Contour | Signature | Coarse | Fine | Level   (value boxes)
- *   EXCITER   [blend pad placeholder]  Bow / Blow / Strike columns
- *   RESONATOR [modal-response placeholder]  Geometry/Brightness/Damping/Position/Space
+ * Three full-height panels side by side (#3201): VOICE, its six value boxes in pairs (contour,
+ * pitch, output); EXCITER, the blend pad beside the Bow / Blow / Strike columns; RESONATOR, the
+ * modal response over Geometry / Brightness / Damping / Position / Space.
  *
  * Every control is a LinkableTextSlider carrying its param index via
  * setParamIndex(), so mod/macro/automation/MIDI-Learn linking is wired by the
@@ -95,7 +93,7 @@ class MateriaUI : public juce::Component {
     // Section rectangles, cached in resized() for painted titles/placeholders.
     juce::Rectangle<int> voiceArea_, exciterArea_, resonatorArea_;
     // Zone bands (captions + controls) for segment dividers + labels.
-    juce::Rectangle<int> voiceZonesArea_, exciterColsArea_;
+    juce::Rectangle<int> exciterColsArea_;
     juce::Rectangle<int> blendArea_, bowCol_, blowCol_, strikeCol_;
     juce::Rectangle<int> modalVizArea_;
 

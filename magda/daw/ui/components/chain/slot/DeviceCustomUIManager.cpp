@@ -516,7 +516,7 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     if (fmUI_)
         return fmUI_->preferredWidth();
     if (materiaUI_)
-        return 720;  // VOICE row + EXCITER | RESONATOR two-column faceplate
+        return 960;  // VOICE | EXCITER | RESONATOR
     if (haloUI_)
         return 760;  // modal-response spectrum + PARAMETERS | RESONATOR MODEL
     if (nimbusUI_)
