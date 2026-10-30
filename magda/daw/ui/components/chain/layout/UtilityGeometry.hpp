@@ -12,22 +12,23 @@
 namespace magda::daw::ui {
 
 /**
- * @brief The Utility's body: the stereo field on top, then Pan, Width and Low mono, the toggles,
- * and Gain across the foot in a cell of its own.
+ * @brief The Utility's body: Pan, Width, Low mono and Gain in a row over the toggles, and the
+ * stereo field beside them in what width is left (#3201).
  *
- * Rows are sized for the control style, so Gain's knob draws larger than the three above it.
- * The faceplate and the param grid both place from this, over the same bounds.
+ * Rows are sized for the control style. The faceplate and the param grid both place from this,
+ * over the same bounds, so the field shows when the slot is widened for it.
  */
 struct UtilityGeometry {
-    juce::Rectangle<int> field;  ///< Empty when the body is too short to draw it.
-    std::array<juce::Rectangle<int>, 3> cells;
+    juce::Rectangle<int> field;  ///< Empty when there is no width beside the controls.
+    std::array<juce::Rectangle<int>, 4> cells;
     std::array<juce::Rectangle<int>, 5> toggles;
-    juce::Rectangle<int> gain;
 
     static constexpr int kSpace = 8;
     static constexpr int kToggleGap = 4;
     static constexpr int kToggleHeight = 24;
-    static constexpr int kMinFieldHeight = 24;
+    /// The controls' width: the slot's 270 less its padding.
+    static constexpr int kControlsWidth = 254;
+    static constexpr int kMinFieldWidth = 60;
     /// Low mono's label is the long one; the others share what is left.
     static constexpr float kLowMonoToggleWeight = 1.7f;
 
@@ -43,23 +44,21 @@ struct UtilityGeometry {
         return 48;  // ParamSlotComponent's text tile at its minimum.
     }
 
-    static int gainHeight(ParamControlStyle style) {
-        return style == ParamControlStyle::Knobs ? 88 : cellHeight(style);
-    }
-
     static UtilityGeometry of(juce::Rectangle<int> bounds, ParamControlStyle style) {
         UtilityGeometry g;
         auto area = bounds.reduced(kSpace);
-        g.gain = area.removeFromBottom(gainHeight(style));
-        area.removeFromBottom(kSpace);
-        auto toggles = area.removeFromBottom(kToggleHeight);
-        area.removeFromBottom(kSpace);
-        auto cells = area.removeFromBottom(cellHeight(style));
-        area.removeFromBottom(kSpace);
-        if (area.getHeight() >= kMinFieldHeight)
+        auto controls = area.removeFromLeft(juce::jmin(area.getWidth(), kControlsWidth));
+        area.removeFromLeft(kSpace);
+        if (area.getWidth() >= kMinFieldWidth)
             g.field = area;
 
-        const int cellWidth = (cells.getWidth() - 2 * kSpace) / 3;
+        controls = controls.withSizeKeepingCentre(controls.getWidth(),
+                                                  cellHeight(style) + kSpace + kToggleHeight);
+        auto cells = controls.removeFromTop(cellHeight(style));
+        controls.removeFromTop(kSpace);
+        auto toggles = controls;
+
+        const int cellWidth = (cells.getWidth() - 3 * kSpace) / 4;
         for (auto& cell : g.cells) {
             cell = cells.removeFromLeft(&cell == &g.cells.back() ? cells.getWidth() : cellWidth);
             cells.removeFromLeft(kSpace);
@@ -77,9 +76,9 @@ struct UtilityGeometry {
         return g;
     }
 
-    /** @brief Cell @p index: Pan, Width and Low mono, then Gain. */
+    /** @brief Cell @p index: Pan, Width, Low mono, Gain. */
     juce::Rectangle<int> cell(int index) const {
-        return index >= 3 ? gain : cells[static_cast<size_t>(index)];
+        return cells[static_cast<size_t>(juce::jlimit(0, 3, index))];
     }
 };
 

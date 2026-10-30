@@ -544,8 +544,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     vizToggle_->setTooltip("Show the resonator spectrum");
     vizToggle_->onClick = [this]() { toggleViz(); };
     addChildComponent(*vizToggle_);
-    outputToggle_ = std::make_unique<magda::SvgButton>("Output", BinaryData::speaker_simple_svg,
-                                                       BinaryData::speaker_simple_svgSize);
+    outputToggle_ = std::make_unique<magda::SvgButton>("Output", BinaryData::Output_svg,
+                                                       BinaryData::Output_svgSize);
     outputToggle_->setTooltip("Show the output");
     outputToggle_->onClick = [this]() { toggleOutput(); };
     addChildComponent(*outputToggle_);
@@ -817,8 +817,10 @@ std::vector<juce::Component*> DeviceSlotComponent::sidebarButtons() const {
     add(oscPanelToggle_.get(),
         customUI_.hasFMUI() || customUI_.hasPolySynthUI() || customUI_.hasMateriaUI());
     add(matrixToggle_.get(), customUI_.hasFMUI());
-    add(vizToggle_.get(),
-        customUI_.hasHaloUI() || customUI_.hasNimbusUI() || customUI_.hasMateriaUI());
+    add(vizToggle_.get(), customUI_.hasHaloUI() || customUI_.hasNimbusUI() ||
+                              customUI_.hasMateriaUI() ||
+                              (traits_.compiledPresentation != nullptr &&
+                               traits_.compiledPresentation->vizSlotWidth > 0));
     add(outputToggle_.get(), customUI_.hasImpulseResponseUI());
     add(padPanelToggle_.get(), customUI_.getDrumGridUI() != nullptr);
     add(padChainToggle_.get(), customUI_.getDrumGridUI() != nullptr);
@@ -866,9 +868,10 @@ void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
     matrixToggle_->setToggleState(device_.matrixShown, juce::dontSendNotification);
     vizToggle_->setToggleState(device_.vizShown, juce::dontSendNotification);
     outputToggle_->setToggleState(device_.outputShown, juce::dontSendNotification);
-    vizToggle_->setTooltip(customUI_.hasHaloUI()     ? "Show the resonator spectrum"
-                           : customUI_.hasNimbusUI() ? "Show the grain cloud"
-                                                     : "Show the modal response");
+    vizToggle_->setTooltip(customUI_.hasHaloUI()      ? "Show the resonator spectrum"
+                           : customUI_.hasNimbusUI()  ? "Show the grain cloud"
+                           : customUI_.hasMateriaUI() ? "Show the modal response"
+                                                      : "Show the stereo field");
     padPanelToggle_->setToggleState(device_.padPanelShown, juce::dontSendNotification);
     padChainToggle_->setToggleState(device_.padChainShown, juce::dontSendNotification);
 
@@ -2505,7 +2508,8 @@ int DeviceSlotComponent::getDynamicSlotWidth() const {
     // grid at PARAM_CELL_WIDTH truncates labels.
     if (traits_.compiledPresentation != nullptr &&
         traits_.compiledPresentation->preferredSlotWidth > 0)
-        return traits_.compiledPresentation->preferredSlotWidth;
+        return traits_.compiledPresentation->preferredSlotWidth +
+               (device_.vizShown ? traits_.compiledPresentation->vizSlotWidth : 0);
     // 64px cells with the grid's 6px gaps and 10px padding: a curated grid's own columns beside
     // its faceplate, else eight; a faceplate that takes the whole body keeps the eight.
     constexpr int kCell = 64;

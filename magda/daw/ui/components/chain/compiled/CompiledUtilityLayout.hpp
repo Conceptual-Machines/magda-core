@@ -9,8 +9,8 @@
 
 namespace magda::daw::ui {
 
-/// The Utility's continuous controls, placed around its stereo field: Pan, Width and the Low
-/// mono crossover in a row, Gain across the foot. The faceplate draws the field and the toggles.
+/// The Utility's continuous controls beside its stereo field: Pan, Width, the Low mono crossover
+/// and Gain in a row. The faceplate draws the field and the toggles.
 class CompiledUtilityLayout final : public DeviceParamLayout {
   public:
     using Plugin = magda::daw::audio::compiled::MagdaUtilityCompiledPlugin;

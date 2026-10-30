@@ -217,6 +217,7 @@ const CompiledPresentationSpec& getMagdaUtilityPresentation() {
             return std::make_unique<CompiledUtilityView>(pluginId);
         },
         .preferredSlotWidth = 270,
+        .vizSlotWidth = 170,
         .ownsOutputGain = true,
         .createLayout = []() -> std::unique_ptr<DeviceParamLayout> {
             return std::make_unique<CompiledUtilityLayout>();
