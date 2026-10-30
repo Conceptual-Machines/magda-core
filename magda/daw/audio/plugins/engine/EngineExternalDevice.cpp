@@ -609,13 +609,17 @@ void EngineExternalDevice::prepare(const magda::engine::RenderContext& context) 
     instance_->setNonRealtime(offlineRender_);
     instance_->setPlayHead(playHead_.get());
 
-    instance_->setRateAndBufferSizeDetails(context.sampleRate, context.maxBlockSize);
+    // First prepare only: JUCE's VST3 prepareToPlay returns early when the details
+    // already match, leaving the plugin at the live rate and block size in a render.
+    if (!prepared_)
+        instance_->setRateAndBufferSizeDetails(context.sampleRate, context.maxBlockSize);
 
     // Re-prepared only when the rate or block size moved, and never through
     // releaseResources(): on VST3 that shuts down the MIDI input buses for good.
     if (!prepared_ || context.sampleRate != sampleRate_ ||
         context.maxBlockSize != preparedBlockSize_) {
         instance_->prepareToPlay(context.sampleRate, context.maxBlockSize);
+        instance_->setRateAndBufferSizeDetails(context.sampleRate, context.maxBlockSize);
     }
 
     prepared_ = true;
