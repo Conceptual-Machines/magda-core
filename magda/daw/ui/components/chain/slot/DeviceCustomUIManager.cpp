@@ -512,23 +512,23 @@ bool DeviceCustomUIManager::hasAnyUI() const {
 
 int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const {
     if (polySynthUI_)
-        return 960;  // OSC rows | filter tabs | envelope tabs
+        return polySynthUI_->preferredWidth();
     if (fmUI_)
-        return 1100;  // OPERATORS | MATRIX | FILTER | envelope tabs
+        return fmUI_->preferredWidth();
     if (materiaUI_)
-        return 720;  // VOICE row + EXCITER | RESONATOR two-column faceplate
+        return materiaUI_->preferredWidth();
     if (haloUI_)
-        return 760;  // modal-response spectrum + PARAMETERS | RESONATOR MODEL
+        return haloUI_->preferredWidth();
     if (nimbusUI_)
-        return 720;  // grain cloud + PARAMETERS | mode controls
+        return nimbusUI_->preferredWidth();
     if (struckUI_)
-        return struckUI_->preferredContentWidth();  // body panel + EXCITER | RESONATOR
+        return struckUI_->preferredContentWidth();
     if (sidechainUI_)
         return 500;  // curve editor + depth/sync/mode/atk/rel control row
     if (spectralFxUI_)
         return 520;  // spectrogram + six-control row
     if (impulseResponseUI_)
-        return 520;  // IR waveform + FILTER response | OUTPUT
+        return impulseResponseUI_->preferredWidth();
     if (stepSequencerUI_)
         return stepSequencerUI_->preferredWidth();
     if (polyStepSequencerUI_)
@@ -825,6 +825,23 @@ void DeviceCustomUIManager::setDrumGridViewsShown(bool panelShown, bool chainSho
 void DeviceCustomUIManager::setSamplerZonesShown(bool shown) {
     if (samplerUI_)
         samplerUI_->setZonesShown(shown);
+}
+
+void DeviceCustomUIManager::setFaceplatePanelsShown(const magda::DeviceInfo& device) {
+    if (fmUI_)
+        fmUI_->setPanelsShown(device.oscPanelShown, device.matrixShown);
+    if (polySynthUI_)
+        polySynthUI_->setOscPanelShown(device.oscPanelShown);
+    if (materiaUI_)
+        materiaUI_->setPanelsShown(device.oscPanelShown, device.vizShown);
+    if (haloUI_)
+        haloUI_->setSpectrumShown(device.vizShown);
+    if (nimbusUI_)
+        nimbusUI_->setCloudShown(device.vizShown);
+    if (impulseResponseUI_)
+        impulseResponseUI_->setOutputShown(device.outputShown);
+    if (struckUI_)
+        struckUI_->setPanelsShown(device.paramsShown || !device.vizShown, device.vizShown);
 }
 
 void DeviceCustomUIManager::setSequencerTimeBendShown(bool shown) {
@@ -1369,11 +1386,13 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         DBG("DrumGridUI: Plugin not found in KnownPluginList: " + fileOrId);
     };
 
-    // Layout change notification (e.g., chains panel toggled)
+    // Layout change notification (e.g., chains panel toggled, or a page turned under the
+    // slot's sidebar arrows)
     drumGridUI_->onLayoutChanged = [cb = callbacks]() {
         if (cb.onLayoutChanged)
             cb.onLayoutChanged();
     };
+    drumGridUI_->onPageChanged = drumGridUI_->onLayoutChanged;
 
     drumGridUI_->onAnalyzePadRoleRequested = [this, cb = callbacks, gridPath](int padIndex) {
         if (!cb.getNodePath)

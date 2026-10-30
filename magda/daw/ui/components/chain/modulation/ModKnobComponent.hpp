@@ -309,6 +309,10 @@ class ModKnobComponent : public juce::Component, public magda::LinkModeManagerLi
 
     /// SINE, ADSR, S&H and so on: what kind of mod this is, top right of the card.
     juce::String typeTag() const;
+    /// A card a quarter of the panel wide drops its tag; the waveform already shows the type.
+    bool showsTypeTag() const {
+        return getWidth() >= 90;
+    }
     /// The rate, division or time the card shows bottom left.
     juce::String timingText() const;
     juce::Rectangle<int> bottomRow() const;

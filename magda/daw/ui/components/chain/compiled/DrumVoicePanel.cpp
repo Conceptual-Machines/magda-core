@@ -51,8 +51,11 @@ void DrumVoicePanel::configChanged() {
 }
 
 void DrumVoicePanel::updateFromDevice(const magda::DeviceInfo& device) {
+    const bool cellsWere = cellsShown();
     snapshot_ = device;
     configChanged();
+    if (cellsShown() != cellsWere)
+        resized();
     // Held while a handle is dragged, so the axis does not rescale under the pointer.
     if (dragSection_ < 0)
         axisMs_ = axisMsFor();
@@ -156,13 +159,18 @@ juce::Point<float> DrumVoicePanel::handlePoint(const DrumVoiceSection& section,
 void DrumVoicePanel::paint(juce::Graphics& g) {
     auto& fonts = FontManager::getInstance();
 
-    // Layer titles over their cell columns, in the colour their envelope is drawn in.
+    // Layer tabs, in the colour their envelope is drawn in: the selected one lit and underlined.
+    const auto selected = static_cast<size_t>(snapshot_.currentParameterPage);
     g.setFont(fonts.getMonoFont(10.0f).withExtraKerningFactor(0.12f));
     for (size_t i = 0; i < sections_.size() && i < geometry_.titles.size(); ++i) {
         const bool layer = sections_[i].decaySlot >= 0;
-        g.setColour(layer ? layerColour(i) : ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+        const auto colour =
+            layer ? layerColour(i) : ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT);
+        g.setColour(i == selected ? colour : colour.withAlpha(0.45f));
         g.drawText(juce::String(sections_[i].title).toUpperCase(), geometry_.titles[i],
                    juce::Justification::centredLeft, false);
+        if (i == selected)
+            g.fillRect(geometry_.titles[i].withTop(geometry_.titles[i].getBottom() - 2));
     }
 
     if (geometry_.plot.isEmpty())
@@ -213,11 +221,18 @@ void DrumVoicePanel::paint(juce::Graphics& g) {
 
     // Each layer's envelope traces the hit's upper contour, with its handles.
     const float envelopeHalfHeight = envelopeHeight();
-    for (size_t i = 0; i < sections_.size(); ++i) {
+    // The selected layer last, so it draws over the dimmed others.
+    std::vector<size_t> order;
+    for (size_t i = 0; i < sections_.size(); ++i)
+        if (i != selected)
+            order.push_back(i);
+    if (selected < sections_.size())
+        order.push_back(selected);
+    for (const size_t i : order) {
         const auto& section = sections_[i];
         if (section.decaySlot < 0)
             continue;
-        const auto colour = layerColour(i);
+        const auto colour = layerColour(i).withMultipliedAlpha(i == selected ? 1.0f : 0.4f);
         juce::Path path;
         constexpr int kSteps = 96;
         for (int step = 0; step <= kSteps; ++step) {
@@ -258,12 +273,20 @@ void DrumVoicePanel::paint(juce::Graphics& g) {
 }
 
 void DrumVoicePanel::resized() {
-    geometry_ = DrumVoiceGeometry::of(getLocalBounds(), style_, sections_);
+    geometry_ = DrumVoiceGeometry::of(getLocalBounds(), style_, sections_, cellsShown());
 }
 
 void DrumVoicePanel::mouseDown(const juce::MouseEvent& e) {
     dragSection_ = -1;
     dragHandle_ = Handle::None;
+    for (size_t i = 0; i < geometry_.titles.size(); ++i)
+        if (geometry_.titles[i].expanded(0, 4).contains(e.getPosition())) {
+            if (onPageRequested_)
+                onPageRequested_(static_cast<int>(i));
+            return;
+        }
+    if (geometry_.plot.isEmpty())
+        return;
     for (size_t i = 0; i < sections_.size(); ++i) {
         const auto& section = sections_[i];
         if (section.decaySlot < 0)
@@ -343,9 +366,11 @@ template <size_t Voice> const CompiledPresentationSpec& drumVoicePresentation() 
         .createPanel = [](juce::String pluginId) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<DrumVoicePanel>(pluginId);
         },
-        // The plot at its minimum beside the cell columns, plus the side strip.
+        // The cell columns plus the side strip; the plot widens it when shown.
         .preferredSlotWidth =
-            DrumVoiceGeometry::kMinPlotWidth + 64 +
+            64 + DrumVoiceGeometry::columnsWidth(drumVoiceSections(kDrumVoicePluginIds[Voice])),
+        .vizSlotWidth = DrumVoiceGeometry::kPlotWidth,
+        .controlsSlotWidth =
             DrumVoiceGeometry::columnsWidth(drumVoiceSections(kDrumVoicePluginIds[Voice])),
         .createLayout = []() -> std::unique_ptr<DeviceParamLayout> {
             return std::make_unique<DrumVoiceLayout>(kDrumVoicePluginIds[Voice]);

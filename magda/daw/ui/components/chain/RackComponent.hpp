@@ -27,7 +27,8 @@ class ChainPanel;
 /**
  * @brief A rack of parallel chains in the v1 device shell.
  *
- * Header, ID row, [chain list | selected chain's devices | side strip], footer.
+ * [header over sidebar and chain list | selected chain's devices | strip]: the devices take the
+ * full height, so their headers share the rack header's row (#3201).
  * Works recursively: a chain's devices can include a nested rack, located by ChainNodePath.
  */
 class RackComponent : public NodeComponent, public juce::Timer {
@@ -82,9 +83,11 @@ class RackComponent : public NodeComponent, public juce::Timer {
     int getHeaderHeight() const override {
         return HEADER_BAR_HEIGHT;
     }
-    juce::Rectangle<int> getHeaderInnerArea(juce::Rectangle<int> header) const override {
-        return header.reduced(10, 0);
+    juce::Rectangle<int> getHeaderInnerArea(juce::Rectangle<int> header) const override;
+    int getShellStripWidth() const override {
+        return collapsed_ ? 0 : SIDE_STRIP_WIDTH;
     }
+    void resizedShellStrip(juce::Rectangle<int> strip) override;
     bool sidePanelsInsideShell() const override {
         return true;
     }
@@ -116,6 +119,10 @@ class RackComponent : public NodeComponent, public juce::Timer {
     /// Width of everything but the device viewport.
     int fixedWidth() const;
     void styleShellControls();
+    void showContextMenu();
+    /// The header band's width: the rack's own panel when its chain's devices stand beside it,
+    /// else 0 for the full width.
+    int headerWidth() const;
     void layoutChainList(juce::Rectangle<int> list);
 
     /// The chain list's tabs (#1808).
@@ -162,7 +169,7 @@ class RackComponent : public NodeComponent, public juce::Timer {
 
     // Shell rows in this component's coordinates; empty when not shown.
     device_shell::ShellRows shellRows_;
-    juce::Rectangle<int> columnHeaderArea_, viewportArea_;
+    juce::Rectangle<int> viewportArea_;
     device_shell::MidiLed midiLed_;
 
     // Viewport for chain rows
@@ -243,8 +250,7 @@ class RackComponent : public NodeComponent, public juce::Timer {
     static constexpr int SIDEBAR_WIDTH = 32;
     static constexpr int SIDE_STRIP_WIDTH = 40;
     static constexpr int CHAIN_LIST_WIDTH = 300;
-    static constexpr int COLUMN_HEADER_HEIGHT = 16;
-    static constexpr int CHAIN_TABS_HEIGHT = 28;
+    static constexpr int CHAIN_TABS_HEIGHT = 20;
     static constexpr int ROW_GAP = 6;
     static constexpr int ADD_CHAIN_HEIGHT = 34;
     static constexpr int FACEPLATE_WIDTH = 380;

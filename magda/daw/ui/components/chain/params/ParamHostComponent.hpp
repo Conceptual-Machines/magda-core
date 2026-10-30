@@ -123,9 +123,6 @@ class ParamHostComponent : public juce::Component, private magda::ConfigListener
     /// restores the default, which is to divide.
     void setRowHeight(int rowHeight);
 
-    /// Fewer plug-in rows, for the shorter device inside a rack or the drum grid (#3165).
-    void setCompactRows(bool compact);
-
     void setSlotFonts(int slotIndex, const juce::Font& labelFont, const juce::Font& valueFont);
 
     void setAllSlotsSelected(bool selected);
@@ -181,7 +178,8 @@ class ParamHostComponent : public juce::Component, private magda::ConfigListener
     // Rows a curated grid is sized for, so a short grid keeps the plug-in grid's row height.
     int minRows_ = 0;
     bool faceplateBelowShown_ = true;
-    bool compactRows_ = false;
+    /// Rows of the style's shortest cell the last layout's height held; 0 before a layout.
+    int fittingRows_ = 0;
     bool footerPagination_ = false;
     int allocatedCells_ = 0;
     std::optional<ParamControlStyle> lastAppliedStyle_;

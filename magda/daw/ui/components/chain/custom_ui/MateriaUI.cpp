@@ -27,7 +27,10 @@ constexpr int kPanelPadY = 8;
 /// Less under the last row than over the title: the slot's edge frames it (#3144).
 constexpr int kPanelPadBottom = 4;
 constexpr int kTitleH = 18;
-constexpr int kVoiceH = 74;
+constexpr int kVoicePanelW = 200;
+constexpr int kExciterPanelW = 420;
+constexpr int kResonatorPanelW = 200;
+constexpr int kResponsePanelW = 300;
 
 constexpr int kTileGap = 6;
 
@@ -151,31 +154,9 @@ void MateriaUI::paint(juce::Graphics& g) {
         g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 6.0f, 1.0f);
     };
 
-    panel(voiceArea_);
-    {
-        auto t = voiceArea_.reduced(14, kPanelPadY);
-        g.setColour(kText);
-        g.setFont(FontManager::getInstance().getUIFontBold(10.5f));
-        g.drawText("VOICE", t.removeFromTop(14), juce::Justification::topLeft);
-
-        // Segment the value boxes into named zones with vertical dividers.
-        // Groups: [Contour, Signature] | [Coarse, Fine] | [Level].
-        const auto z = voiceZonesArea_;
-        const int cellW = z.getWidth() / 6;
-        g.setColour(kBorder);
-        g.fillRect(z.getX() + 2 * cellW, z.getY(), 1, z.getHeight());
-        g.fillRect(z.getX() + 4 * cellW, z.getY(), 1, z.getHeight());
-
-        g.setColour(kDim);
-        g.setFont(FontManager::getInstance().getUIFontBold(9.0f));
-        auto caption = [&](const juce::String& s, int startCell, int cells) {
-            g.drawText(
-                s, juce::Rectangle<int>(z.getX() + startCell * cellW, z.getY(), cells * cellW, 13),
-                juce::Justification::centred);
-        };
-        caption("EXCITATION CONTOUR", 0, 2);
-        caption("PITCH", 2, 2);
-        caption("OUTPUT", 4, 2);
+    if (voiceShown_) {
+        panel(voiceArea_);
+        titleStrip(g, voiceArea_.reduced(14, kPanelPadY), "VOICE", "");
     }
     panel(exciterArea_);
     titleStrip(g, exciterArea_.reduced(14, kPanelPadY), "EXCITER", "");
@@ -198,7 +179,11 @@ void MateriaUI::paint(juce::Graphics& g) {
         cap("STRIKE", 2, cStrike);
     }
     panel(resonatorArea_);
-    titleStrip(g, resonatorArea_.reduced(14, kPanelPadY), "RESONATOR", "modal - 64 partials");
+    titleStrip(g, resonatorArea_.reduced(14, kPanelPadY), "RESONATOR", "");
+    if (responseShown_) {
+        panel(responseArea_);
+        titleStrip(g, responseArea_.reduced(14, kPanelPadY), "MODAL RESPONSE", "64 partials");
+    }
 
     for (const auto& c : controls_)
         if (c.slider != nullptr && !c.tile.isEmpty())
@@ -250,7 +235,7 @@ void MateriaUI::paint(juce::Graphics& g) {
     // Modal response: partial amplitudes shaped by the resonator controls.
     // Brightness tilts the spectrum, Position combs it, Geometry adds the
     // inharmonic structure, Damping sets the overall level.
-    if (modalVizArea_.getHeight() >= 40) {
+    if (responseShown_ && modalVizArea_.getHeight() >= 40) {
         g.setColour(kBorder);
         g.drawRoundedRectangle(modalVizArea_.toFloat().reduced(0.5f), 4.0f, 1.0f);
         auto b = modalVizArea_.reduced(12, 16);
@@ -276,7 +261,6 @@ void MateriaUI::paint(juce::Graphics& g) {
         }
         g.setColour(kDim);
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        g.drawText("modal response", modalVizArea_.reduced(10, 8), juce::Justification::topRight);
     }
 }
 
@@ -343,6 +327,21 @@ void MateriaUI::layoutRows(juce::Rectangle<int> area, const std::vector<int>& in
     }
 }
 
+void MateriaUI::setPanelsShown(bool voiceShown, bool responseShown) {
+    if (voiceShown == voiceShown_ && responseShown == responseShown_)
+        return;
+    voiceShown_ = voiceShown;
+    responseShown_ = responseShown;
+    resized();
+    repaint();
+}
+
+int MateriaUI::preferredWidth() const {
+    return 2 * kPanelGap + kExciterPanelW + kPanelGap + kResonatorPanelW +
+           (voiceShown_ ? kVoicePanelW + kPanelGap : 0) +
+           (responseShown_ ? kPanelGap + kResponsePanelW : 0);
+}
+
 void MateriaUI::resized() {
     // The visualisations absorb the slack while the control stacks sit centred in their
     // columns, shrinking only when the panel is short.
@@ -350,31 +349,18 @@ void MateriaUI::resized() {
     constexpr int kGap = 6;
 
     // Padded at the sides only: the header above and the slot's edge below frame the panels.
-    auto r = getLocalBounds().reduced(kPanelGap, 0);
-
-    voiceArea_ = r.removeFromTop(kVoiceH);
-    r.removeFromTop(kPanelGap);
-
-    auto body = r;
-    exciterArea_ = body.removeFromLeft(body.getWidth() / 2 - kPanelGap / 2);
-    body.removeFromLeft(kPanelGap);
-    resonatorArea_ = body;
-
-    // VOICE: zone-captioned value boxes in a row (caption strip + boxes form the
-    // segmented band painted with dividers).
-    {
-        auto a = voiceArea_.reduced(14, kPanelPadY);
-        a.removeFromTop(14);  // title strip
-        voiceZonesArea_ = a;
-        a.removeFromTop(13);  // zone-caption strip
-        const std::array<int, 6> order{kContour, kSignature, kPitch, kFine, kLevel, kVelAmp};
-        int cellW = a.getWidth() / 6;
-        for (int k = 0; k < 6; ++k) {
-            auto& c = controls_[static_cast<size_t>(order[static_cast<size_t>(k)])];
-            c.tile = a.removeFromLeft(cellW).reduced(kTileGap / 2, 0);
-            sampler_tiles::layoutTile(*c.label, *c.slider, c.tile);
-        }
-    }
+    auto body = getLocalBounds().reduced(kPanelGap, 0);
+    const auto take = [&body](bool shown, int width) {
+        if (!shown)
+            return juce::Rectangle<int>();
+        auto panel = body.removeFromLeft(width);
+        body.removeFromLeft(kPanelGap);
+        return panel;
+    };
+    voiceArea_ = take(voiceShown_, kVoicePanelW);
+    exciterArea_ = take(true, kExciterPanelW);
+    resonatorArea_ = take(true, kResonatorPanelW);
+    responseArea_ = responseShown_ ? body : juce::Rectangle<int>();
 
     // Centre a stack of `rows` rows (rowH + gap each) within `col`, keeping a
     // common top across columns so the grid stays aligned.
@@ -390,9 +376,40 @@ void MateriaUI::resized() {
         return a;
     };
 
+    // Value boxes in pairs, three rows centred in @p panel; -1 leaves a cell empty.
+    const auto pairGrid = [&](juce::Rectangle<int> panel,
+                              const std::array<std::array<int, 2>, 3>& rows) {
+        auto a = bodyPanel(panel);
+        const int rowH = juce::jmin(kRowH, (a.getHeight() - 2 * kGap) / 3);
+        const int colW = (a.getWidth() - kTileGap) / 2;
+        auto stack = rowStack(a, 3, rowH);
+        for (const auto& row : rows) {
+            auto line = stack.removeFromTop(rowH);
+            stack.removeFromTop(kGap);
+            for (int idx : row) {
+                auto cell = line.removeFromLeft(colW);
+                line.removeFromLeft(kTileGap);
+                if (idx < 0)
+                    continue;
+                auto& c = controls_[static_cast<size_t>(idx)];
+                c.tile = cell;
+                sampler_tiles::layoutTile(*c.label, *c.slider, c.tile, 7);
+            }
+        }
+    };
+
+    // VOICE: a row each for the contour, the pitch and the output.
+    for (int idx : {kContour, kSignature, kPitch, kFine, kLevel, kVelAmp}) {
+        auto& c = controls_[static_cast<size_t>(idx)];
+        c.label->setVisible(voiceShown_);
+        c.slider->setVisible(voiceShown_);
+        c.tile = {};
+    }
+    if (voiceShown_)
+        pairGrid(voiceArea_, {{{kContour, kSignature}, {kPitch, kFine}, {kLevel, kVelAmp}}});
+
     // EXCITER: blend pad on the LEFT, Bow/Blow/Strike columns beside it. The pad
     // fills the full height; the columns centre their rows against a 3-row grid.
-    int rowH = kRowH;
     {
         auto a = bodyPanel(exciterArea_);
         blendArea_ = a.removeFromLeft(juce::jmax(110, a.getWidth() * 3 / 8));
@@ -404,36 +421,18 @@ void MateriaUI::resized() {
         blowCol_ = a.removeFromLeft(colW).reduced(3, 0);
         strikeCol_ = a.reduced(3, 0);
         // Three rows shrink to the column rather than spill under the panel.
-        rowH = juce::jmin(kRowH, (strikeCol_.getHeight() - 2 * kGap) / 3);
+        const int rowH = juce::jmin(kRowH, (strikeCol_.getHeight() - 2 * kGap) / 3);
         layoutRows(rowStack(bowCol_, 3, rowH), {kBow, kBowTimbre}, rowH, kGap);
         layoutRows(rowStack(blowCol_, 3, rowH), {kBlow, kBlowFlow, kBlowTimbre}, rowH, kGap);
         layoutRows(rowStack(strikeCol_, 3, rowH), {kStrike, kStrikeMallet, kStrikeTimbre}, rowH,
                    kGap);
     }
 
-    // RESONATOR: modal-response viz on top (absorbs the slack), five sliders as
-    // a 3-then-2 grid below (always visible), rows as tall as the exciter's.
-    {
-        auto a = bodyPanel(resonatorArea_);
-        auto ctrl = a.removeFromBottom(2 * rowH + kGap);
-        a.removeFromBottom(kGap);
-        modalVizArea_ = a;
+    pairGrid(resonatorArea_, {{{kGeometry, kBrightness}, {kDamping, kPosition}, {kSpace, -1}}});
 
-        const int colW = ctrl.getWidth() / 3;
-        auto cell = [&](juce::Rectangle<int> row, int col, int idx) {
-            auto& c = controls_[static_cast<size_t>(idx)];
-            c.tile = row.withX(row.getX() + col * colW).withWidth(colW).reduced(kTileGap / 2, 0);
-            sampler_tiles::layoutTile(*c.label, *c.slider, c.tile);
-        };
-        auto row1 = ctrl.removeFromTop(rowH);
-        ctrl.removeFromTop(kGap);
-        auto row2 = ctrl;
-        cell(row1, 0, kGeometry);
-        cell(row1, 1, kBrightness);
-        cell(row1, 2, kDamping);
-        cell(row2, 0, kPosition);
-        cell(row2, 1, kSpace);
-    }
+    modalVizArea_ = {};
+    if (responseShown_)
+        modalVizArea_ = bodyPanel(responseArea_);
 }
 
 }  // namespace magda::daw::ui

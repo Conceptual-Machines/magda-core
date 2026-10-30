@@ -23,8 +23,6 @@ struct DeviceSlotContentPaintState {
     bool bypassed = false;
     bool internalDevice = false;
     bool hasCustomUI = false;
-    juce::String manufacturer;
-    juce::String deviceName;
     DeviceSlotStepRecordingPaintState stepRecording;
 };
 

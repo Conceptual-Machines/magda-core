@@ -238,17 +238,7 @@ NodeComponent::NodeComponent() {
     headerSubtitle_.setJustificationType(juce::Justification::centredLeft);
     headerSubtitle_.setInterceptsMouseClicks(false, false);
     addChildComponent(headerSubtitle_);
-
-    // Delete: a close icon, grey at rest and red on hover.
-    deleteButton_ = std::make_unique<magda::SvgButton>("Close", BinaryData::close_svg,
-                                                       BinaryData::close_svgSize);
-    deleteButton_->onClick = [this]() {
-        if (onDeleteClicked) {
-            onDeleteClicked();
-        }
-    };
-    addAndMakeVisible(*deleteButton_);
-    styleHeaderPowerAndClose();
+    styleHeaderPower();
 
     // === MOD PANEL CONTROLS ===
     for (auto& modSlotButton : modSlotButtons_) {
@@ -295,20 +285,16 @@ NodeComponent::~NodeComponent() {
     magda::ControllerRegistry::getInstance().removeListener(this);
 }
 
-void NodeComponent::styleHeaderPowerAndClose() {
+void NodeComponent::styleHeaderPower() {
     using node_header::DeviceIcon;
-    // The collapsed strip stacks them at BUTTON_SIZE; expanded they take the header's size.
+    // The collapsed strip stacks it at BUTTON_SIZE; expanded it takes the header's size.
     const auto height = static_cast<float>(collapsed_ ? BUTTON_SIZE : getHeaderButtonSize().y);
     node_header::applyDeviceIconStyle(*bypassButton_, DeviceIcon::Power, juce::Colour(0xFFE6E6E6),
                                       ActiveTheme::DEVICE_GREEN, height);
-    if (deleteButton_)
-        node_header::applyDeviceIconStyle(*deleteButton_, DeviceIcon::Close,
-                                          juce::Colour(0xFFB3B3B3), ActiveTheme::DEVICE_BLUE,
-                                          height);
 }
 
 void NodeComponent::lookAndFeelChanged() {
-    styleHeaderPowerAndClose();
+    styleHeaderPower();
     nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
 
     for (auto& button : modSlotButtons_) {
@@ -644,15 +630,7 @@ void NodeComponent::resized() {
         // Arrange buttons vertically at top of collapsed strip
         int buttonSize = juce::jmin(BUTTON_SIZE, area.getWidth() - 4);
 
-        // Delete button at top (always visible)
-        if (auto* close = getHeaderDeleteButton()) {
-            close->setBounds(
-                area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
-            close->setVisible(true);
-        }
-        area.removeFromTop(4);
-
-        // Bypass button below delete (only if it was visible - devices use their own)
+        // Bypass at the top (only if it was visible - devices use their own)
         if (bypassButton_->isVisible()) {
             bypassButton_->setBounds(
                 area.removeFromTop(buttonSize).withSizeKeepingCentre(buttonSize, buttonSize));
@@ -670,12 +648,21 @@ void NodeComponent::resized() {
         return;
     }
 
-    // Shell-hosted panels sit under the full-width header and over the footer.
+    // Shell-hosted panels sit under the header and over the footer, left of the full-height strip.
     if (sidePanelsInsideShell()) {
         if (gainPanelVisible_)
             resizedGainPanel(bounds.removeFromRight(getGainPanelWidth()));
         if (const int meterWidth = getMeterWidth(); meterWidth > 0)
             bounds.removeFromRight(meterWidth);
+        if (const int stripWidth = getShellStripWidth(); stripWidth > 0) {
+            const auto strip = bounds.removeFromRight(stripWidth);
+            if (auto* power = getHeaderPowerButton(); power != nullptr && power->isVisible()) {
+                const auto size = getHeaderButtonSize();
+                power->setBounds(
+                    strip.withHeight(getHeaderHeight()).withSizeKeepingCentre(size.x, size.y));
+            }
+            resizedShellStrip(strip);
+        }
         layoutHeader(bounds.removeFromTop(getHeaderHeight()));
         const auto footer = bounds.removeFromBottom(getShellFooterHeight());
         layoutSidePanels(bounds);
@@ -801,46 +788,40 @@ void NodeComponent::layoutHeader(juce::Rectangle<int> headerStrip) {
             headerArea.removeFromRight(gap);
         };
 
-        // Delete button on far right (if visible)
-        if (auto* close = getHeaderDeleteButton(); close != nullptr && close->isVisible())
-            placeRight(*close);
-
         // Power slot — defaults to base's bypassButton_, but subclasses can
-        // substitute a custom-styled button via getHeaderPowerButton().
-        if (auto* power = getHeaderPowerButton(); power != nullptr && power->isVisible())
+        // substitute a custom-styled button via getHeaderPowerButton(). A shell strip holds it.
+        if (auto* power = getHeaderPowerButton();
+            power != nullptr && power->isVisible() && getShellStripWidth() == 0)
             placeRight(*power);
-
-        // Preset slot — base class reserves the position so the right-edge
-        // icon order is locked to [preset][power][delete] and a subclass
-        // can't accidentally tuck a button between them in
-        // resizedHeaderExtra.
-        if (auto* preset = getHeaderPresetButton(); preset != nullptr && preset->isVisible())
-            placeRight(*preset);
 
         // Let subclass add extra header buttons
         resizedHeaderExtra(headerArea);
 
-        // The name keeps its text width, up to most of the header; the subtitle takes the rest.
-        if (headerSubtitle_.getText().isNotEmpty()) {
-            const auto border = nameLabel_.getBorderSize().getLeftAndRight();
-            const int nameWidth = juce::roundToInt(juce::GlyphArrangement::getStringWidth(
-                                      nameLabel_.getFont(), nameLabel_.getText())) +
-                                  border + 2;
-            nameLabel_.setBounds(
-                headerArea.removeFromLeft(juce::jmin(nameWidth, headerArea.getWidth() * 3 / 5)));
-            headerSubtitle_.setBounds(headerArea);
-            headerSubtitle_.setVisible(!headerArea.isEmpty());
-        } else {
-            nameLabel_.setBounds(headerArea);
-            headerSubtitle_.setVisible(false);
-        }
+        // The name and then the subtitle keep their text widths, the name up to most of the
+        // header; the preset chevron follows whichever ends the text (#3201).
+        auto* preset = getHeaderPresetButton();
+        const int presetWidth = preset != nullptr && preset->isVisible() ? buttonSize.x : 0;
+        const bool subtitled = headerSubtitle_.getText().isNotEmpty();
+        const auto textWidth = [](const juce::Label& label) {
+            return juce::roundToInt(
+                       juce::GlyphArrangement::getStringWidth(label.getFont(), label.getText())) +
+                   label.getBorderSize().getLeftAndRight() + 2;
+        };
+        const int room = headerArea.getWidth() - presetWidth;
+        nameLabel_.setBounds(headerArea.removeFromLeft(
+            juce::jmin(textWidth(nameLabel_), subtitled ? room * 3 / 5 : room)));
+        if (subtitled)
+            headerSubtitle_.setBounds(headerArea.removeFromLeft(juce::jmin(
+                textWidth(headerSubtitle_), juce::jmax(0, headerArea.getWidth() - presetWidth))));
+        headerSubtitle_.setVisible(subtitled && !headerSubtitle_.getBounds().isEmpty());
+        if (presetWidth > 0)
+            preset->setBounds(headerArea.removeFromLeft(presetWidth)
+                                  .withSizeKeepingCentre(presetWidth, buttonSize.y));
         nameLabel_.setVisible(true);
     } else {
         // Visibility says whether a subclass wants the button, so an empty header only clears
         // bounds.
         bypassButton_->setBounds({});
-        if (auto* close = getHeaderDeleteButton())
-            close->setBounds({});
         nameLabel_.setVisible(false);
         headerSubtitle_.setVisible(false);
     }
@@ -1006,11 +987,6 @@ void NodeComponent::setAIPanelVisible(bool visible) {
 
 void NodeComponent::setBypassButtonVisible(bool visible) {
     bypassButton_->setVisible(visible);
-}
-
-void NodeComponent::setDeleteButtonVisible(bool visible) {
-    if (auto* close = getHeaderDeleteButton())
-        close->setVisible(visible);
 }
 
 void NodeComponent::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int> bounds,
@@ -1269,7 +1245,7 @@ void NodeComponent::setSelected(bool selected) {
 void NodeComponent::setCollapsed(bool collapsed) {
     if (collapsed_ != collapsed) {
         collapsed_ = collapsed;
-        styleHeaderPowerAndClose();
+        styleHeaderPower();
         resized();
         repaint();
         if (onCollapsedChanged) {

@@ -30,10 +30,11 @@ namespace magda::daw::ui {
 /**
  * @brief Custom inline UI for the Magda Sampler plugin
  *
- * The zone list on the left, as a rack lists its chains (#3098), then the selected zone's
- * name, root and load button over four tabs, each a plot and its controls: Sample is
- * the recording with its start, end and loop markers, the playhead and the slice as frame boxes;
- * Pitch, Filter and Amp are that module's envelope with draggable handles beside its tiles.
+ * The zone list on the left, as a rack lists its chains (#3098), or under its VOICE tab the
+ * voice mode and glide (#3201); then four tabs, each a plot and its controls: Sample is the
+ * recording with its start, end and loop markers and the playhead, the zone's name, root and
+ * load button in a strip over it, beside the slice as frame boxes; Pitch, Filter and Amp are
+ * that module's envelope with draggable handles beside its tiles.
  * Expanded into the arrangement, it is the zone map over the waveform and the loop switch.
  *
  * With a list of zones (#3098) the name, root, markers and loop are the selected zone's and
@@ -147,6 +148,7 @@ class SamplerUI : public juce::Component,
     std::function<int()> getPlaybackZone;
 
     void lookAndFeelChanged() override;
+    void mouseDown(const juce::MouseEvent& e) override;
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
@@ -283,7 +285,12 @@ class SamplerUI : public juce::Component,
     /// What a tab shows beside its plot.
     std::vector<juce::Component*> controlsFor(View view);
 
-    // Voice mode (param 12) lives in the slot footer; this hidden slider carries its links.
+    // The left panel's ZONES / VOICE tabs. Voice mode (param 12) is picked on the switch; its
+    // hidden slider carries the links.
+    bool voiceShown_ = false;
+    std::array<juce::Rectangle<int>, 2> panelTabs_;
+    magda::SegmentedChoice voiceModeChoice_;
+    juce::Label voiceModeLabel_;
     LinkableTextSlider voiceModeSlider_{TextSlider::Format::Decimal};
     LinkableTextSlider glideSlider_{TextSlider::Format::Decimal};
     juce::Label glideLabel_;
@@ -324,6 +331,8 @@ class SamplerUI : public juce::Component,
 
     // Areas resized() lays out and paint() draws into.
     juce::Rectangle<int> waveArea_;
+    juce::Rectangle<int> sampleStrip_;  ///< Over the waveform once a sample is in.
+    void layoutSampleStrip();
     std::array<juce::Rectangle<int>, 2> sectionTitles_;
     std::vector<juce::Rectangle<int>> tiles_;
     juce::Rectangle<int> rootChip_;

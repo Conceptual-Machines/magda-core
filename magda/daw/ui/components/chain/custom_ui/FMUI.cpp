@@ -3,6 +3,8 @@
 
 #include "custom_ui/FMUI.hpp"
 
+#include <BinaryData.h>
+
 #include <cmath>
 #include <ranges>
 
@@ -10,7 +12,6 @@
 #include "custom_ui/SamplerTiles.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
-#include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
@@ -24,11 +25,20 @@ constexpr int kHeaderH = 22;
 constexpr int kTileGap = 6;
 constexpr int kCellGap = 4;
 constexpr int kCaptionH = 14;
-constexpr int kColumnCaptionH = 14;
-constexpr int kRowLabelW = 16;
 constexpr int kMinTileH = 26;
 constexpr int kMaxTileH = 44;
 constexpr int kDot = 6;
+// The operator table's columns, each as wide as its values: Wave (dot and icon), Ratio, Level
+// ("-12.0 dB") and Rst (#3201).
+constexpr std::array<int, 4> kOpColumnW{44, 46, 62, 26};
+constexpr int kSendW = 40;
+constexpr int kRowLabelW = 14;
+constexpr int kColumnNamesH = 14;
+constexpr int kOpsPanelW =
+    2 * kPanelPadX + kOpColumnW[0] + kOpColumnW[1] + kOpColumnW[2] + kOpColumnW[3] + 3 * kCellGap;
+// A row label then a send cell per node.
+constexpr int kMatrixPanelW = 2 * kPanelPadX + kRowLabelW + 5 * (kCellGap + kSendW);
+constexpr int kFilterPanelW = 404;
 constexpr float kInactiveAlpha = 0.35f;
 
 juce::Colour colour(magda::ColourRole role) {
@@ -129,18 +139,15 @@ FMUI::FMUI() {
     filterCurve_ = std::make_unique<CompiledFilterCurveView>("magda_fm");
     addAndMakeVisible(*filterCurve_);
 
-    for (int op = 0; op < kNumOps; ++op) {
-        auto& box = waveBoxes_[static_cast<size_t>(op)];
-        box.addItemList({"Sine", "Triangle", "Saw", "Square", "Noise"}, 1);
-        box.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
-        box.setJustificationType(juce::Justification::centredLeft);
-        box.onChange = [this, op] {
-            const int wave = waveBoxes_[static_cast<size_t>(op)].getSelectedId() - 1;
-            if (wave >= 0)
-                setChoiceSlot(kWaveBase + op, wave);
-        };
-        addAndMakeVisible(box);
-    }
+    const std::array<std::pair<const char*, int>, 5> icons{
+        {{BinaryData::fadmodsine_svg, BinaryData::fadmodsine_svgSize},
+         {BinaryData::fadmodtri_svg, BinaryData::fadmodtri_svgSize},
+         {BinaryData::fadmodsawup_svg, BinaryData::fadmodsawup_svgSize},
+         {BinaryData::fadmodsquare_svg, BinaryData::fadmodsquare_svgSize},
+         {BinaryData::fadmodrandom_svg, BinaryData::fadmodrandom_svgSize}}};
+    for (size_t wave = 0; wave < icons.size(); ++wave)
+        waveIcons_[wave] = juce::Drawable::createFromImageData(
+            icons[wave].first, static_cast<size_t>(icons[wave].second));
 
     positionChoice_.setOptions({"Output", "Matrix"});
     positionChoice_.onChange = [this](int index) { setChoiceSlot(kFilterPositionSlot, index); };
@@ -160,14 +167,12 @@ FMUI::FMUI() {
 
     styleControls();
     refreshOperatorRows();
+    refreshFirstPanel();
+    refreshMatrix();
     refreshFilterPanel();
-    refreshEnvelopePanel();
 }
 
-FMUI::~FMUI() {
-    for (auto& box : waveBoxes_)
-        box.setLookAndFeel(nullptr);
-}
+FMUI::~FMUI() = default;
 
 void FMUI::styleControls() {
     for (auto& c : controls_) {
@@ -187,12 +192,6 @@ void FMUI::styleControls() {
                 FontManager::getInstance().getUIFontMedium(13.5f));
     controls_[kFilterLevelSlot].slider->setFont(FontManager::getInstance().getUIFontMedium(13.5f));
 
-    for (auto& box : waveBoxes_) {
-        box.setColour(juce::ComboBox::backgroundColourId, juce::Colours::transparentBlack);
-        box.setColour(juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
-        box.setColour(juce::ComboBox::textColourId, colour(ActiveTheme::DEVICE_VALUE_TEXT));
-        box.setColour(juce::ComboBox::arrowColourId, colour(ActiveTheme::DEVICE_DIM));
-    }
     filterCurve_->setCurveColour(colour(ActiveTheme::DEVICE_BLUE));
     for (auto* graph : {ampGraph_.get(), filterGraph_.get()})
         graph->setColours(colour(ActiveTheme::DEVICE_GRAPH_BG), colour(ActiveTheme::DEVICE_BLUE));
@@ -272,12 +271,10 @@ void FMUI::refreshOperatorRows() {
         const auto i = static_cast<size_t>(op);
         const int wave = juce::jlimit(
             0, 4, static_cast<int>(std::round(controls_[kWaveBase + i].slider->getValue())));
-        waveBoxes_[i].setSelectedId(wave + 1, juce::dontSendNotification);
+        opWave_[i] = wave;
 
         // A disabled operator's row greys out; its dot stays live to turn it back on.
         const float alpha = opEnabled_[i] ? 1.0f : kInactiveAlpha;
-        waveBoxes_[i].setEnabled(opEnabled_[i]);
-        waveBoxes_[i].setAlpha(alpha);
         for (int slot : {kRatioBase + op, kLevelBase + op}) {
             controls_[static_cast<size_t>(slot)].slider->setEnabled(opEnabled_[i]);
             controls_[static_cast<size_t>(slot)].slider->setAlpha(alpha);
@@ -286,19 +283,33 @@ void FMUI::refreshOperatorRows() {
     repaint();
 }
 
-void FMUI::refreshOperatorTab() {
-    for (auto& box : waveBoxes_)
-        box.setVisible(!showVoiceTab_);
+void FMUI::showSlot(int slot, bool shown, bool withLabel) {
+    auto& c = controls_[static_cast<size_t>(slot)];
+    c.slider->setVisible(shown && !c.tile.isEmpty());
+    c.label->setVisible(withLabel && shown && !c.tile.isEmpty());
+}
+
+void FMUI::refreshFirstPanel() {
+    const bool ops = shows(FirstTab::Ops);
+    const bool voice = shows(FirstTab::Voice);
     for (int op = 0; op < kNumOps; ++op)
         for (int slot : {kRatioBase + op, kLevelBase + op})
-            controls_[static_cast<size_t>(slot)].slider->setVisible(!showVoiceTab_);
-    controls_[kFilterLevelSlot].slider->setVisible(!showVoiceTab_);
-    for (int slot : {kGlideSlot, kBendRangeSlot, kVelAmtSlot, kGainSlot}) {
-        auto& c = controls_[static_cast<size_t>(slot)];
-        c.slider->setVisible(showVoiceTab_ && !c.tile.isEmpty());
-        c.label->setVisible(showVoiceTab_ && !c.tile.isEmpty());
-    }
-    voiceModeChoice_.setVisible(showVoiceTab_);
+            showSlot(slot, ops, false);
+    showSlot(kFilterLevelSlot, ops, false);
+    ampGraph_->setVisible(shows(FirstTab::AmpEnv));
+    for (int stage = 0; stage < AdsrGraph::kNumStages; ++stage)
+        showSlot(kAmpAdsrBase + stage, shows(FirstTab::AmpEnv), true);
+    for (int slot : {kGlideSlot, kBendRangeSlot, kVelAmtSlot, kGainSlot})
+        showSlot(slot, voice, true);
+    voiceModeChoice_.setVisible(voice);
+    repaint();
+}
+
+void FMUI::refreshMatrix() {
+    for (int src = 0; src < kNodes; ++src)
+        for (int dst = 0; dst < kNodes; ++dst)
+            if (const int slot = matrixSlot(src, dst); slot >= 0)
+                showSlot(slot, matrixShown_, false);
     repaint();
 }
 
@@ -308,10 +319,21 @@ void FMUI::refreshFilterPanel() {
     typeChoice_.setSelectedIndex(filter_.type);
     combChoice_.setSelectedIndex(filter_.combMode);
     polesChoice_.setSelectedIndex(filter_.poles);
+
     // Type and poles are the SVF's, the +/- the comb's; the ladder has neither.
-    typeChoice_.setVisible(filter_.engine == 0);
-    polesChoice_.setVisible(filter_.engine == 0);
-    combChoice_.setVisible(filter_.engine == 2);
+    const bool filterTab = !showFilterEnvelope_;
+    positionChoice_.setVisible(filterTab);
+    engineChoice_.setVisible(filterTab);
+    filterCurve_->setVisible(filterTab);
+    typeChoice_.setVisible(filterTab && filter_.engine == 0);
+    polesChoice_.setVisible(filterTab && filter_.engine == 0);
+    combChoice_.setVisible(filterTab && filter_.engine == 2);
+    for (int slot : {kFilterCutoffSlot, kFilterResonanceSlot, kFilterDriveSlot, kFilterKeyTrackSlot,
+                     kFilterEnvSlot, kFilterVelSlot})
+        showSlot(slot, filterTab, true);
+    filterGraph_->setVisible(!filterTab);
+    for (int stage = 0; stage < AdsrGraph::kNumStages; ++stage)
+        showSlot(kFilterAdsrBase + stage, !filterTab, true);
 
     const float alpha = filter_.on ? 1.0f : 0.4f;
     for (juce::Component* c :
@@ -329,20 +351,6 @@ void FMUI::refreshFilterPanel() {
     const int mode = filter_.engine == 2 ? filter_.combMode : kTypeToViewMode[filter_.type];
     filterCurve_->setRawState(kEngineToView[filter_.engine], mode, filter_.cutoffHz,
                               filter_.resonance, filter_.drive, filter_.poles + 1);
-    repaint();
-}
-
-void FMUI::refreshEnvelopePanel() {
-    ampGraph_->setVisible(!showFilterEnvelope_);
-    filterGraph_->setVisible(showFilterEnvelope_);
-    for (int stage = 0; stage < AdsrGraph::kNumStages; ++stage) {
-        for (auto [base, shown] : {std::pair{kAmpAdsrBase, !showFilterEnvelope_},
-                                   std::pair{kFilterAdsrBase, showFilterEnvelope_}}) {
-            auto& c = controls_[static_cast<size_t>(base + stage)];
-            c.slider->setVisible(shown && !c.tile.isEmpty());
-            c.label->setVisible(shown && !c.tile.isEmpty());
-        }
-    }
     repaint();
 }
 
@@ -403,119 +411,123 @@ void FMUI::placeTiles(juce::Rectangle<int> area, const std::vector<int>& slots, 
                    area.getY() + (i / cols) * (tileH + kTileGap), tileW, tileH});
 }
 
-namespace {
-// The operator and matrix panels share their rows: a column-caption strip, then one
-// row per node, so operator n's row lines up with matrix row n.
-struct NodeRows {
-    juce::Rectangle<int> header, captions;
-    std::array<juce::Rectangle<int>, 5> rows;
-};
-
-NodeRows nodeRows(juce::Rectangle<int> panel) {
-    NodeRows out;
-    auto a = panel.reduced(kPanelPadX, kPanelPadY).withTrimmedBottom(kPanelPadBottom - kPanelPadY);
-    out.header = a.removeFromTop(kHeaderH);
-    a.removeFromTop(kTileGap);
-    out.captions = a.removeFromTop(kColumnCaptionH);
+// A row per operator, its Wave | Ratio | Level | Rst, then the filter's level; the columns'
+// names head it.
+void FMUI::layoutOperators(juce::Rectangle<int> a) {
+    const auto names = a.removeFromTop(kColumnNamesH);
     a.removeFromTop(kCellGap);
-    const int rowH = (a.getHeight() - 4 * kCellGap) / 5;
-    for (auto& row : out.rows) {
-        row = a.removeFromTop(rowH);
-        a.removeFromTop(kCellGap);
-    }
-    return out;
-}
-}  // namespace
+    const int rowH = (a.getHeight() - (kNodes - 1) * kCellGap) / kNodes;
 
-void FMUI::layoutOperatorPanel() {
-    const auto rows = nodeRows(opsPanel_);
-    auto header = rows.header;
-    opsTabs_[0] = takeTab(header, "OPERATORS", false);
-    opsTabs_[1] = takeTab(header, "VOICE", false);
-
-    // VOICE: the performance controls two across, then Voice Mode at the foot.
-    auto voice = opsPanel_.reduced(kPanelPadX, kPanelPadY)
-                     .withTrimmedBottom(kPanelPadBottom - kPanelPadY)
-                     .withTrimmedTop(kHeaderH + kTileGap);
-    const int tileH = juce::jlimit(kMinTileH, kMaxTileH, (voice.getHeight() - 2 * kTileGap) / 3);
-    placeTiles(voice.removeFromTop(2 * tileH + kTileGap),
-               {kGlideSlot, kBendRangeSlot, kVelAmtSlot, kGainSlot}, 2);
-    voiceModeTile_ = voice.removeFromBottom(tileH);
-    auto voiceModeInner = voiceModeTile_.reduced(9, 4);
-    voiceModeInner.removeFromTop(kCaptionH);
-    voiceModeChoice_.setBounds(voiceModeInner.withSizeKeepingCentre(
-        juce::jmin(voiceModeInner.getWidth(), voiceModeChoice_.getPreferredWidth()),
-        juce::jmin(voiceModeInner.getHeight(), 20)));
-
-    // Columns: Wave | Ratio | Level | Rst, after the row labels.
-    static constexpr float kColumns[] = {0.40f, 0.21f, 0.27f};
-    const int usableW = rows.captions.getWidth() - kRowLabelW - 3 * kCellGap;
-    const auto columns = [&](juce::Rectangle<int> row) {
-        std::array<juce::Rectangle<int>, 5> cells;
-        cells[0] = row.removeFromLeft(kRowLabelW);
-        for (int col = 0; col < 3; ++col) {
-            cells[static_cast<size_t>(col + 1)] =
-                row.removeFromLeft(juce::roundToInt(usableW * kColumns[col]));
+    const auto columns = [](juce::Rectangle<int> row) {
+        std::array<juce::Rectangle<int>, 4> cells;
+        for (size_t col = 0; col < cells.size(); ++col) {
+            cells[col] = row.removeFromLeft(kOpColumnW[col]);
             row.removeFromLeft(kCellGap);
         }
-        cells[4] = row;
         return cells;
     };
 
-    const auto captions = columns(rows.captions);
-    for (int col = 0; col < 4; ++col)
-        opColumnCaptions_[static_cast<size_t>(col)] = captions[static_cast<size_t>(col + 1)];
-
+    opColumnCaptions_ = columns(names);
     for (int node = 0; node < kNodes; ++node) {
-        const auto cells = columns(rows.rows[static_cast<size_t>(node)]);
-        opRowLabels_[static_cast<size_t>(node)] = cells[0];
+        const auto cells = columns(a.withY(a.getY() + node * (rowH + kCellGap)).withHeight(rowH));
         if (node == kNumOps) {
             // The filter node: its level stands in the operators' level column.
-            filterRowTile_ = cells[1].getUnion(cells[2]);
-            placeTile(kFilterLevelSlot, cells[3], false);
+            filterRowTile_ = cells[0].getUnion(cells[1]);
+            placeTile(kFilterLevelSlot, cells[2], false);
             continue;
         }
         const auto i = static_cast<size_t>(node);
-        waveTiles_[i] = cells[1];
-        auto waveInner = cells[1].reduced(6, 2);
+        waveTiles_[i] = cells[0];
+        auto waveInner = cells[0].reduced(4, 2);
         enableDots_[i] =
             waveInner.removeFromLeft(kDot + 6).withSizeKeepingCentre(kDot + 6, kDot + 6);
-        waveBoxes_[i].setBounds(waveInner.withSizeKeepingCentre(
-            waveInner.getWidth(), juce::jmin(waveInner.getHeight(), 22)));
-        placeTile(kRatioBase + node, cells[2], false);
-        placeTile(kLevelBase + node, cells[3], false);
-        resetTiles_[i] = cells[4];
+        waveIconAreas_[i] = waveInner;
+        placeTile(kRatioBase + node, cells[1], false);
+        placeTile(kLevelBase + node, cells[2], false);
+        resetTiles_[i] = cells[3];
     }
 }
 
-void FMUI::layoutMatrixPanel() {
-    const auto rows = nodeRows(matrixPanel_);
-    auto captions = rows.captions;
-    captions.removeFromLeft(kRowLabelW);
-    const int cellW = (captions.getWidth() - (kNodes - 1) * kCellGap) / kNodes;
-    for (int dst = 0; dst < kNodes; ++dst)
-        matrixColLabels_[static_cast<size_t>(dst)] =
-            captions.withX(captions.getX() + dst * (cellW + kCellGap)).withWidth(cellW);
+// The sends, a row per source node under a column per destination.
+void FMUI::layoutMatrix() {
+    auto area = matrixPanel_.reduced(kPanelPadX, kPanelPadY)
+                    .withTrimmedBottom(kPanelPadBottom - kPanelPadY);
+    const auto columns = [](juce::Rectangle<int> row) {
+        std::array<juce::Rectangle<int>, 1 + kNodes> cells;
+        cells[0] = row.removeFromLeft(kRowLabelW);
+        for (int dst = 0; dst < kNodes; ++dst) {
+            row.removeFromLeft(kCellGap);
+            cells[static_cast<size_t>(1 + dst)] = row.removeFromLeft(kSendW);
+        }
+        return cells;
+    };
 
+    const auto heads = columns(area.removeFromTop(kColumnNamesH));
+    for (int dst = 0; dst < kNodes; ++dst)
+        matrixColLabels_[static_cast<size_t>(dst)] = heads[static_cast<size_t>(1 + dst)];
+    area.removeFromTop(kCellGap);
+    const int rowH = (area.getHeight() - (kNodes - 1) * kCellGap) / kNodes;
     for (int src = 0; src < kNodes; ++src) {
-        auto row = rows.rows[static_cast<size_t>(src)];
-        matrixRowLabels_[static_cast<size_t>(src)] = row.removeFromLeft(kRowLabelW);
+        const auto cells =
+            columns(area.withY(area.getY() + src * (rowH + kCellGap)).withHeight(rowH));
+        matrixRowLabels_[static_cast<size_t>(src)] = cells[0];
         for (int dst = 0; dst < kNodes; ++dst)
             if (const int slot = matrixSlot(src, dst); slot >= 0)
-                placeTile(slot, row.withX(row.getX() + dst * (cellW + kCellGap)).withWidth(cellW),
-                          false);
+                placeTile(slot, cells[static_cast<size_t>(1 + dst)], false);
     }
+}
+
+// The graph, then the A/D/S/R tiles.
+void FMUI::layoutEnvelope(juce::Rectangle<int> area, AdsrGraph& graph, int adsrBase) {
+    const int tileH = juce::jlimit(kMinTileH, kMaxTileH, area.getHeight() / 6);
+    auto grid = area.removeFromBottom(2 * tileH + kTileGap);
+    area.removeFromBottom(kTileGap);
+    graph.setBounds(area);
+    placeTiles(grid, {adsrBase, adsrBase + 1, adsrBase + 2, adsrBase + 3}, 2);
+}
+
+// OPS, AMP ENV and VOICE share the first panel as tabs.
+void FMUI::layoutFirstPanel() {
+    auto a =
+        firstPanel_.reduced(kPanelPadX, kPanelPadY).withTrimmedBottom(kPanelPadBottom - kPanelPadY);
+    auto header = a.removeFromTop(kHeaderH);
+    firstTabs_[0] = takeTab(header, "OPS", false);
+    firstTabs_[1] = takeTab(header, "AMP ENV", false);
+    firstTabs_[2] = takeTab(header, "VOICE", false);
+    a.removeFromTop(kTileGap);
+    layoutOperators(a);
+    layoutEnvelope(a, *ampGraph_, kAmpAdsrBase);
+    layoutVoice(a);
+}
+
+void FMUI::showWaveMenu(int op) {
+    static constexpr const char* kNames[] = {"Sine", "Triangle", "Saw", "Square", "Noise"};
+    juce::PopupMenu menu;
+    for (int wave = 0; wave < 5; ++wave) {
+        auto icon = waveIcons_[static_cast<size_t>(wave)]->createCopy();
+        icon->replaceColour(juce::Colours::black, colour(ActiveTheme::DEVICE_TEXT));
+        menu.addItem(wave + 1, kNames[wave], true, wave == opWave_[static_cast<size_t>(op)],
+                     std::move(icon));
+    }
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
+                           localAreaToGlobal(waveIconAreas_[static_cast<size_t>(op)])),
+                       [safe = juce::Component::SafePointer(this), op](int result) {
+                           if (safe != nullptr && result > 0)
+                               safe->setChoiceSlot(kWaveBase + op, result - 1);
+                       });
 }
 
 void FMUI::layoutFilterPanel() {
     auto a = filterPanel_.reduced(kPanelPadX, kPanelPadY)
                  .withTrimmedBottom(kPanelPadBottom - kPanelPadY);
     auto header = a.removeFromTop(kHeaderH);
-    filterTab_ = takeTab(header, "FILTER", true);
-    filterDot_ = filterTab_.withWidth(kDot).withSizeKeepingCentre(kDot + 6, kDot + 6);
+    filterTabs_[0] = takeTab(header, "FILTER", true);
+    filterTabs_[1] = takeTab(header, "FILTER ENV", false);
+    filterDot_ = filterTabs_[0].withWidth(kDot).withSizeKeepingCentre(kDot + 6, kDot + 6);
     positionChoice_.setBounds(
         header.removeFromRight(juce::jmin(header.getWidth(), positionChoice_.getPreferredWidth())));
     a.removeFromTop(kTileGap);
+    layoutEnvelope(a, *filterGraph_, kFilterAdsrBase);
 
     // Engine, then the SVF's poles on the right.
     auto engineRow = a.removeFromTop(kHeaderH);
@@ -533,53 +545,67 @@ void FMUI::layoutFilterPanel() {
         juce::jmax(0, typeRow.getWidth() - typeChoice_.getPreferredWidth() - kTileGap));
     a.removeFromTop(kTileGap);
 
-    const int tileH = juce::jlimit(kMinTileH, kMaxTileH, a.getHeight() / 4);
-    auto grid = a.removeFromBottom(2 * tileH + kTileGap);
-    a.removeFromBottom(kTileGap);
-    filterCurve_->setBounds(a);
-    placeTiles(grid,
+    // The curve beside the tiles, as tall as they are (#3201).
+    filterCurve_->setBounds(a.removeFromRight(a.getWidth() * 2 / 5));
+    a.removeFromRight(kTileGap);
+    placeTiles(a,
                {kFilterCutoffSlot, kFilterResonanceSlot, kFilterDriveSlot, kFilterKeyTrackSlot,
                 kFilterEnvSlot, kFilterVelSlot},
-               3);
+               2);
 }
 
-void FMUI::layoutEnvelopePanel() {
-    auto a = envelopePanel_.reduced(kPanelPadX, kPanelPadY)
-                 .withTrimmedBottom(kPanelPadBottom - kPanelPadY);
-    auto header = a.removeFromTop(kHeaderH);
-    envelopeTabs_[0] = takeTab(header, "AMP", false);
-    envelopeTabs_[1] = takeTab(header, "FILTER", false);
+// Voice Mode across, then Glide and Bend, then Gain and Velocity.
+void FMUI::layoutVoice(juce::Rectangle<int> a) {
+    const int tileH = juce::jlimit(kMinTileH, kMaxTileH, (a.getHeight() - 2 * kTileGap) / 3);
+    voiceModeTile_ = a.removeFromTop(tileH);
+    auto voiceModeInner = voiceModeTile_.reduced(9, 4);
+    voiceModeInner.removeFromTop(kCaptionH);
+    voiceModeChoice_.setBounds(voiceModeInner.withSizeKeepingCentre(
+        juce::jmin(voiceModeInner.getWidth(), voiceModeChoice_.getPreferredWidth()),
+        juce::jmin(voiceModeInner.getHeight(), 20)));
     a.removeFromTop(kTileGap);
+    placeTiles(a.removeFromTop(2 * tileH + kTileGap),
+               {kGlideSlot, kBendRangeSlot, kGainSlot, kVelAmtSlot}, 2);
+}
 
-    // Graph, then the A/D/S/R tiles.
-    const int tileH = juce::jlimit(kMinTileH, kMaxTileH, a.getHeight() / 6);
-    auto grid = a.removeFromBottom(2 * tileH + kTileGap);
-    a.removeFromBottom(kTileGap);
-    ampGraph_->setBounds(a);
-    filterGraph_->setBounds(a);
-    for (int base : {kAmpAdsrBase, kFilterAdsrBase})
-        placeTiles(grid, {base, base + 1, base + 2, base + 3}, 2);
+void FMUI::setPanelsShown(bool opsShown, bool matrixShown) {
+    if (opsShown == opsShown_ && matrixShown == matrixShown_)
+        return;
+    opsShown_ = opsShown;
+    matrixShown_ = matrixShown;
+    resized();
+}
+
+int FMUI::preferredWidth() const {
+    return 2 * kPanelGap + kFilterPanelW + (opsShown_ ? kOpsPanelW + kPanelGap : 0) +
+           (matrixShown_ ? kMatrixPanelW + kPanelGap : 0);
 }
 
 void FMUI::resized() {
     // Padded at the sides only: the header and the voice-mode footer already frame the panels.
     auto b = getLocalBounds().reduced(kPanelGap, 0);
-    const int w = b.getWidth() - 3 * kPanelGap;
-    opsPanel_ = b.removeFromLeft(w * 27 / 100);
-    b.removeFromLeft(kPanelGap);
-    matrixPanel_ = b.removeFromLeft(w * 25 / 100);
-    b.removeFromLeft(kPanelGap);
-    filterPanel_ = b.removeFromLeft(w * 26 / 100);
-    b.removeFromLeft(kPanelGap);
-    envelopePanel_ = b;
+    firstPanel_ = {};
+    firstTabs_ = {};
+    if (opsShown_) {
+        firstPanel_ = b.removeFromLeft(kOpsPanelW);
+        b.removeFromLeft(kPanelGap);
+    }
+    matrixPanel_ = {};
+    if (matrixShown_) {
+        matrixPanel_ = b.removeFromLeft(kMatrixPanelW);
+        b.removeFromLeft(kPanelGap);
+    }
+    filterPanel_ = b;
 
-    layoutOperatorPanel();
-    layoutMatrixPanel();
+    if (opsShown_)
+        layoutFirstPanel();
+    if (matrixShown_)
+        layoutMatrix();
     layoutFilterPanel();
-    layoutEnvelopePanel();
-    // Placing tiles shows every one; the tabs then hide the other side's.
-    refreshEnvelopePanel();
-    refreshOperatorTab();
+    // Placing tiles shows every one; the tabs then hide the others.
+    refreshFirstPanel();
+    refreshMatrix();
+    refreshFilterPanel();
 }
 
 // =============================================================================
@@ -588,26 +614,29 @@ void FMUI::resized() {
 
 void FMUI::mouseDown(const juce::MouseEvent& e) {
     const auto p = e.getPosition();
-    for (int tab = 0; tab < 2; ++tab)
-        if (opsTabs_[static_cast<size_t>(tab)].contains(p) && (tab == 1) != showVoiceTab_) {
-            showVoiceTab_ = tab == 1;
-            return refreshOperatorTab();
-        }
-    for (int op = 0; op < kNumOps && !showVoiceTab_; ++op) {
+    for (int op = 0; op < kNumOps && shows(FirstTab::Ops); ++op) {
         const auto i = static_cast<size_t>(op);
         if (enableDots_[i].contains(p))
             return setChoiceSlot(kEnableBase + op, opEnabled_[i] ? 0 : 1);
+        if (waveIconAreas_[i].contains(p) && opEnabled_[i])
+            return showWaveMenu(op);
         if (resetTiles_[i].contains(p) && opEnabled_[i])
             return setChoiceSlot(kResetBase + op, opReset_[i] ? 0 : 1);
     }
     if (filterDot_.contains(p))
         return setChoiceSlot(kFilterEnableSlot, filter_.on ? 0 : 1);
-    for (int tab = 0; tab < 2; ++tab)
-        if (envelopeTabs_[static_cast<size_t>(tab)].contains(p) &&
-            (tab == 1) != showFilterEnvelope_) {
-            showFilterEnvelope_ = tab == 1;
-            return refreshEnvelopePanel();
+    for (int tab = 0; tab < 3; ++tab)
+        if (firstTabs_[static_cast<size_t>(tab)].contains(p)) {
+            firstTab_ = static_cast<FirstTab>(tab);
+            return refreshFirstPanel();
         }
+    for (int tab = 0; tab < 2; ++tab) {
+        const bool second = tab == 1;
+        if (filterTabs_[static_cast<size_t>(tab)].contains(p) && second != showFilterEnvelope_) {
+            showFilterEnvelope_ = second;
+            return refreshFilterPanel();
+        }
+    }
 }
 
 void FMUI::lookAndFeelChanged() {
@@ -618,7 +647,9 @@ void FMUI::lookAndFeelChanged() {
 void FMUI::paint(juce::Graphics& g) {
     g.fillAll(colour(ActiveTheme::DEVICE_BG));
 
-    for (const auto& panel : {opsPanel_, matrixPanel_, filterPanel_, envelopePanel_}) {
+    for (const auto& panel : {firstPanel_, matrixPanel_, filterPanel_}) {
+        if (panel.isEmpty())
+            continue;
         g.setColour(colour(ActiveTheme::DEVICE_PANEL));
         g.fillRoundedRectangle(panel.toFloat(), 6.0f);
         g.setColour(colour(ActiveTheme::DEVICE_LINE));
@@ -641,7 +672,8 @@ void FMUI::paint(juce::Graphics& g) {
         if (c.slider->isVisible())
             field(c.tile, c.slider->getAlpha());
 
-    if (showVoiceTab_) {
+    const bool ops = shows(FirstTab::Ops);
+    if (shows(FirstTab::Voice)) {
         field(voiceModeTile_, 1.0f);
         g.setFont(captionFont());
         g.setColour(colour(ActiveTheme::DEVICE_DIM));
@@ -650,11 +682,17 @@ void FMUI::paint(juce::Graphics& g) {
     }
 
     // Operator rows: wave tile with its enable dot, and the reset checkbox.
-    for (int op = 0; op < kNumOps && !showVoiceTab_; ++op) {
+    for (int op = 0; op < kNumOps && ops; ++op) {
         const auto i = static_cast<size_t>(op);
         const float alpha = opEnabled_[i] ? 1.0f : kInactiveAlpha;
         field(waveTiles_[i], alpha);
         field(resetTiles_[i], alpha);
+        if (const auto& icon = waveIcons_[static_cast<size_t>(opWave_[i])]) {
+            auto tinted = icon->createCopy();
+            tinted->replaceColour(juce::Colours::black, colour(ActiveTheme::DEVICE_VALUE_TEXT));
+            tinted->drawWithin(g, waveIconAreas_[i].toFloat().withSizeKeepingCentre(16.0f, 16.0f),
+                               juce::RectanglePlacement::centred, alpha);
+        }
         const auto box = resetTiles_[i].toFloat().withSizeKeepingCentre(12.0f, 12.0f);
         if (opReset_[i]) {
             g.setColour(colour(ActiveTheme::DEVICE_BLUE).withMultipliedAlpha(alpha));
@@ -667,27 +705,29 @@ void FMUI::paint(juce::Graphics& g) {
     }
     g.setFont(captionFont());
     g.setColour(colour(ActiveTheme::DEVICE_DIM));
-    if (!showVoiceTab_)
-        g.drawText("Filter node", filterRowTile_.reduced(6, 0), juce::Justification::centredRight,
-                   true);
+    if (ops)
+        g.drawText("Filter", filterRowTile_.reduced(6, 0), juce::Justification::centredLeft, true);
 
-    // Column captions and row labels; the filter node in blue.
+    // The table's column names, and the matrix's node names with the filter in blue.
     g.setFont(titleFont());
-    static const juce::String kOpColumns[] = {"WAVE", "RATIO", "LEVEL", "RST"};
-    g.setColour(colour(ActiveTheme::DEVICE_DIM));
-    for (int col = 0; col < 4 && !showVoiceTab_; ++col)
-        g.drawText(kOpColumns[col], opColumnCaptions_[static_cast<size_t>(col)],
-                   col == 3 ? juce::Justification::centred : juce::Justification::centredLeft,
-                   false);
-    for (int node = 0; node < kNodes; ++node) {
-        const auto i = static_cast<size_t>(node);
-        g.setColour(colour(node < kNumOps ? ActiveTheme::DEVICE_TITLE : ActiveTheme::DEVICE_BLUE));
-        if (!showVoiceTab_)
-            g.drawText(nodeName(node), opRowLabels_[i], juce::Justification::centredLeft, false);
-        g.drawText(nodeName(node) + juce::String::fromUTF8("→"), matrixRowLabels_[i],
-                   juce::Justification::centredLeft, false);
-        g.drawText(juce::String::fromUTF8("→") + nodeName(node), matrixColLabels_[i],
-                   juce::Justification::centred, false);
+    if (ops) {
+        static const juce::String kOpColumns[] = {"WAVE", "RATIO", "LEVEL", "RST"};
+        g.setColour(colour(ActiveTheme::DEVICE_DIM));
+        for (size_t col = 0; col < opColumnCaptions_.size(); ++col)
+            g.drawText(kOpColumns[col], opColumnCaptions_[col],
+                       col == 3 ? juce::Justification::centred : juce::Justification::centredLeft,
+                       false);
+    }
+    if (matrixShown_) {
+        for (int node = 0; node < kNodes; ++node) {
+            const auto i = static_cast<size_t>(node);
+            g.setColour(
+                colour(node < kNumOps ? ActiveTheme::DEVICE_TITLE : ActiveTheme::DEVICE_BLUE));
+            g.drawText(juce::String::fromUTF8("→") + nodeName(node), matrixColLabels_[i],
+                       juce::Justification::centred, false);
+            g.drawText(nodeName(node), matrixRowLabels_[i], juce::Justification::centredLeft,
+                       false);
+        }
     }
 
     // Titles and tabs: the selected tab lit and underlined.
@@ -701,18 +741,16 @@ void FMUI::paint(juce::Graphics& g) {
             g.fillRect(area.withTop(area.getBottom() - 2));
         }
     };
-    tab(opsTabs_[0], "OPERATORS", !showVoiceTab_, false);
-    tab(opsTabs_[1], "VOICE", showVoiceTab_, false);
-    auto matrixHeader = nodeRows(matrixPanel_).header;
-    tab(takeTab(matrixHeader, "MATRIX", false), "MATRIX", true, false);
-    tab(filterTab_, "FILTER", true, true);
+    tab(firstTabs_[0], "OPS", ops, false);
+    tab(firstTabs_[1], "AMP ENV", shows(FirstTab::AmpEnv), false);
+    tab(firstTabs_[2], "VOICE", shows(FirstTab::Voice), false);
+    tab(filterTabs_[0], "FILTER", !showFilterEnvelope_, true);
+    tab(filterTabs_[1], "FILTER ENV", showFilterEnvelope_, false);
     dot(filterDot_, filter_.on);
-    tab(envelopeTabs_[0], "AMP", !showFilterEnvelope_, false);
-    tab(envelopeTabs_[1], "FILTER", showFilterEnvelope_, false);
 
     const float filterAlpha = filter_.on ? 1.0f : 0.4f;
     g.setColour(colour(ActiveTheme::DEVICE_DIM).withMultipliedAlpha(filterAlpha));
-    if (filter_.inMatrix) {
+    if (filter_.inMatrix && !showFilterEnvelope_) {
         juce::StringArray sends;
         for (int op = 0; op < kNumOps; ++op)
             if (controls_[static_cast<size_t>(kFilterSendBase + op)].slider->getValue() > 0.0)

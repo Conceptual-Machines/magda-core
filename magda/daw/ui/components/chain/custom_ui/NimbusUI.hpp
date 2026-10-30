@@ -20,11 +20,9 @@ namespace magda::daw::ui {
  * @brief Custom faceplate for Nimbus (magda_clouds), the granular texture
  *        processor ported from Mutable Instruments Clouds.
  *
- * Layout follows the design mockup:
- *
- *   GRAIN BUFFER  [animated record-buffer view with the grain window + cloud]
- *   PARAMETERS    Position Size Pitch / Density Texture          (value boxes)
- *   <controls>    FREEZE toggle, PLAYBACK MODE (4), BLEND ROUTES (4 values)
+ * Three full-height panels side by side (#3201): PARAMETERS, Position Density Size Texture
+ * Pitch over the blend routes; FREEZE and PLAYBACK MODE; and the GRAIN CLOUD, an animated
+ * record-buffer view with the grain window and cloud, which the sidebar can hide.
  *
  * The grain-buffer view is decorative for this first iteration (no signal-in
  * tap yet): a synthetic waveform with the grain window driven by Position/Size
@@ -43,6 +41,10 @@ class NimbusUI : public juce::Component, private juce::Timer {
     void setTelemetrySource(std::shared_ptr<NimbusTelemetrySource> telemetry);
 
     std::function<void(int paramIndex, float value)> onParameterChanged;
+
+    /// Show or hide the GRAIN CLOUD; the device's width follows preferredWidth().
+    void setCloudShown(bool shown);
+    int preferredWidth() const;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -86,6 +88,7 @@ class NimbusUI : public juce::Component, private juce::Timer {
     float animPhase_ = 0.0f;
 
     juce::Rectangle<int> grainArea_, bufferVizArea_, paramsArea_, ctrlArea_;
+    bool cloudShown_ = true;
     juce::Rectangle<int> freezeBtn_, modeLabelRect_, blendLabelRect_;
     std::array<juce::Rectangle<int>, kNumModes> modeBtn_;
 

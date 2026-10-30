@@ -27,7 +27,9 @@ constexpr int kPanelPadBottom = 4;
 constexpr int kTitleH = 18;
 constexpr int kTileGap = 6;
 constexpr int kTileH = 42;
-constexpr int kCurveH = 44;
+constexpr int kIrPanelW = 260;
+constexpr int kFilterPanelW = 260;
+constexpr int kOutputPanelW = 108;
 constexpr int kPeakColumns = 400;
 /// The waveform's floor: an IR decays exponentially, so it is drawn in dB to show the tail.
 constexpr float kFloorDb = -60.0f;
@@ -212,7 +214,8 @@ void ImpulseResponseUI::updateFromParameters(const std::vector<magda::ParameterI
 void ImpulseResponseUI::paint(juce::Graphics& g) {
     paintPanel(g, irPanel_);
     paintPanel(g, filterPanel_);
-    paintPanel(g, outputPanel_);
+    if (outputShown_)
+        paintPanel(g, outputPanel_);
 
     const auto detail = irChannels_ == 0 ? juce::String()
                                          : juce::String(irSeconds_, 2) + " s" +
@@ -221,7 +224,8 @@ void ImpulseResponseUI::paint(juce::Graphics& g) {
     paintTitle(g, irTitle_.withTrimmedRight(loadButton_->getWidth() + 6),
                irName_.isEmpty() ? juce::String("IMPULSE RESPONSE") : irName_, detail);
     paintTitle(g, filterTitle_, "FILTER");
-    paintTitle(g, outputTitle_, "OUTPUT");
+    if (outputShown_)
+        paintTitle(g, outputTitle_, "OUTPUT");
 
     paintWaveform(g);
     paintResponse(g);
@@ -330,17 +334,28 @@ void ImpulseResponseUI::paintResponse(juce::Graphics& g) const {
     g.strokePath(curve, juce::PathStrokeType(1.5f));
 }
 
+void ImpulseResponseUI::setOutputShown(bool shown) {
+    if (shown == outputShown_)
+        return;
+    outputShown_ = shown;
+    resized();
+    repaint();
+}
+
+int ImpulseResponseUI::preferredWidth() const {
+    return 2 * kPanelGap + kIrPanelW + kPanelGap + kFilterPanelW +
+           (outputShown_ ? kPanelGap + kOutputPanelW : 0);
+}
+
 void ImpulseResponseUI::resized() {
     // Padded at the sides only: the header above and the slot's edge below frame the panels.
     auto r = getLocalBounds().reduced(kPanelGap, 0);
 
-    const int bottomH = 2 * kPanelPadY + kTitleH + kCurveH + kTileGap + kTileH;
-    auto bottom = r.removeFromBottom(juce::jmin(bottomH, r.getHeight() / 2));
-    r.removeFromBottom(kPanelGap);
-    irPanel_ = r;
-    filterPanel_ = bottom.removeFromLeft(bottom.getWidth() * 64 / 100);
-    bottom.removeFromLeft(kPanelGap);
-    outputPanel_ = bottom;
+    irPanel_ = r.removeFromLeft(kIrPanelW);
+    r.removeFromLeft(kPanelGap);
+    filterPanel_ = r.removeFromLeft(kFilterPanelW);
+    r.removeFromLeft(kPanelGap);
+    outputPanel_ = outputShown_ ? r : juce::Rectangle<int>();
 
     waveArea_ = panelBody(irPanel_, irTitle_, false);
     loadButton_->setBounds(irTitle_.removeFromRight(16).withHeight(16).translated(0, -2));
@@ -359,7 +374,12 @@ void ImpulseResponseUI::resized() {
     }
 
     // OUTPUT: Gain over Mix.
-    {
+    for (auto* s : {&gain_, &mix_}) {
+        s->label.setVisible(outputShown_);
+        s->slider.setVisible(outputShown_);
+        s->tile = {};
+    }
+    if (outputShown_) {
         auto a = panelBody(outputPanel_, outputTitle_, true);
         const int tileH = juce::jmin(kTileH, (a.getHeight() - kTileGap) / 2);
         a.removeFromTop(a.getHeight() - 2 * tileH - kTileGap);

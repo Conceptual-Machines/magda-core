@@ -210,9 +210,35 @@ class DeviceCustomUIManager {
     void setSequencerTimeBendShown(bool shown);
     /// The sampler's zone list beside its faceplate (#3098).
     void setSamplerZonesShown(bool shown);
+    /// The faceplate panels the sidebar hides (#3201): the first panel (FM's OPS, Poly Synth's
+    /// OSC, Materia's VOICE), FM's matrix, and the visualisation (Halo's spectrum, Nimbus's grain
+    /// cloud, Materia's modal response, a struck instrument's body), Convolution's OUTPUT, and a
+    /// struck instrument's columns.
+    void setFaceplatePanelsShown(const magda::DeviceInfo& device);
     void setDrumGridViewsShown(bool panelShown, bool chainShown);
     bool hasSamplerUI() const {
         return samplerUI_ != nullptr;
+    }
+    bool hasFMUI() const {
+        return fmUI_ != nullptr;
+    }
+    bool hasPolySynthUI() const {
+        return polySynthUI_ != nullptr;
+    }
+    bool hasHaloUI() const {
+        return haloUI_ != nullptr;
+    }
+    bool hasNimbusUI() const {
+        return nimbusUI_ != nullptr;
+    }
+    bool hasMateriaUI() const {
+        return materiaUI_ != nullptr;
+    }
+    bool hasImpulseResponseUI() const {
+        return impulseResponseUI_ != nullptr;
+    }
+    bool hasStruckUI() const {
+        return struckUI_ != nullptr;
     }
     StepSequencerUI* getStepSequencerUI() const {
         return stepSequencerUI_.get();

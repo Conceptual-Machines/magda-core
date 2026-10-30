@@ -64,6 +64,13 @@ class ParamSlotComponent : public juce::Component,
     /** Text keeps the bordered value field; Knobs and Sliders paint a tile with
      *  a knob or a bar, the value slider still taking every drag. */
     void setControlStyle(ParamControlStyle style);
+    /// Smaller name and value fonts in the Text style, for narrow cells (#3201).
+    void setCompactText(bool compact);
+    /// The shortest cell that still shows its name, value and mod row in @p style: 13px name over
+    /// a 14px value in Text and Sliders, a 24px knob in Knobs, each in 10px of padding (#3201).
+    static constexpr int minimumHeight(ParamControlStyle style) {
+        return style == ParamControlStyle::Knobs ? 70 : 46;
+    }
     void setLinkOverlayVertical(bool vertical) {
         linkOverlayVertical_ = vertical;
     }
@@ -319,6 +326,9 @@ class ParamSlotComponent : public juce::Component,
     bool hasMidiBinding_ = false;  // Persistent badge for already-mapped params
     bool overlayOnly_ = false;
     ParamControlStyle style_ = ParamControlStyle::Text;
+    bool compactText_ = false;
+    /// The Text style's value font, compact or not.
+    juce::Font textValueFont() const;
     juce::Rectangle<int> tileArea_, knobArea_, barArea_, valueArea_;
     // The row at the foot of the cell that holds the macro and mod bars.
     juce::Rectangle<int> modRowArea_;

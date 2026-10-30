@@ -28,34 +28,37 @@ struct DrumVoiceSection {
     int attackSlot = -1;
     int decaySlot = -1;
     int curveSlot = -1;
-    int columns = 2;
-    /// Under the plot instead of a column of its own (the Output section).
-    bool underPlot = false;
+    int columns = 3;
 };
 
-/// The layers of @p pluginId, then an Output section under the plot for the trailing Gain.
+/// The layers of @p pluginId.
 std::vector<DrumVoiceSection> drumVoiceSections(const juce::String& pluginId);
 
 /**
- * @brief The voice's body: the rendered hit on the left, a titled column of cells per layer
- *        on the right, sized for the control style.
+ * @brief The voice's body: the layers as tabs over the selected one's cells, sized for the
+ *        control style, and the rendered hit beside them in what width is left (#3201).
  */
 struct DrumVoiceGeometry {
-    juce::Rectangle<int> plot;
-    std::vector<juce::Rectangle<int>> titles;  ///< One per section; empty under the plot.
-    std::vector<juce::Rectangle<int>> cells;   ///< One per slot, sections in order.
+    juce::Rectangle<int> plot;                 ///< Empty when there is no width beside the cells.
+    std::vector<juce::Rectangle<int>> titles;  ///< One tab per section, in a row.
+    /// One per slot, sections in order, each section's in the same area under the tabs.
+    std::vector<juce::Rectangle<int>> cells;
 
     static constexpr int kSpace = 8;
     static constexpr int kTitleHeight = 22;
-    static constexpr int kCellWidth = 64;
+    static constexpr int kCellWidth = 88;
     static constexpr int kCellGap = 4;
-    static constexpr int kMinPlotWidth = 240;
+    /// The plot's width when shown: the slot widens by this for it.
+    static constexpr int kPlotWidth = 240;
+    static constexpr int kMinPlotWidth = 60;
 
     static int cellHeight(ParamControlStyle style);
-    /// Width of the cell columns, before the plot takes the rest.
+    /// Width of the widest section's cells, with the space before them.
     static int columnsWidth(const std::vector<DrumVoiceSection>& sections);
+    /// Without @p cellsShown the plot takes the body.
     static DrumVoiceGeometry of(juce::Rectangle<int> bounds, ParamControlStyle style,
-                                const std::vector<DrumVoiceSection>& sections);
+                                const std::vector<DrumVoiceSection>& sections,
+                                bool cellsShown = true);
 };
 
 /// The voice's cells, placed around the plot: each layer's slots under its title.
@@ -70,8 +73,9 @@ class DrumVoiceLayout final : public DeviceParamLayout {
     bool wantsPagination() const override {
         return false;
     }
+    /// A page per layer: the faceplate's tabs turn them.
     int totalPages(const magda::DeviceInfo&) const override {
-        return 1;
+        return static_cast<int>(sections_.size());
     }
     bool placesOwnCells() const override {
         return true;
@@ -81,10 +85,14 @@ class DrumVoiceLayout final : public DeviceParamLayout {
         style_ = style;
     }
     ParamCell cellFor(const magda::DeviceInfo& device, int cellIndex, int) const override;
+    bool compactText() const override {
+        return true;
+    }
 
   private:
     std::vector<DrumVoiceSection> sections_;
     std::vector<int> slots_;
+    std::vector<int> sectionOfCell_;
     ParamControlStyle style_ = ParamControlStyle::Text;
 };
 

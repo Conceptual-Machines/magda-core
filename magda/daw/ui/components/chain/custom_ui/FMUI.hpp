@@ -21,11 +21,10 @@ namespace magda::daw::ui {
 /**
  * @brief Custom UI for the compiled FM synth (magda_fm), in the v1 faceplate style.
  *
- * Four panels: OPERATORS (a row per operator, and the filter node's level) with
- * VOICE (the performance controls and Voice Mode) as tabs, the MATRIX (row = source, column =
- * destination, the filter a fifth node), the FILTER, and the amp and filter envelopes as tabs. The
- * operator rows and the matrix rows line up. Every slot keeps a LinkableTextSlider, hidden where a
- * segmented choice, combo or toggle shows it, so linking reaches all of them.
+ * Three panels: OPS (wave, ratio, level and reset per operator, and the filter's level), AMP ENV
+ * and VOICE as tabs; the MATRIX; and the FILTER and the FILTER ENV as
+ * tabs (#3201). The sidebar can hide the first two. Every slot keeps a LinkableTextSlider, hidden
+ * where a segmented choice, combo or toggle shows it, so linking reaches all of them.
  */
 class FMUI : public juce::Component {
   public:
@@ -41,6 +40,10 @@ class FMUI : public juce::Component {
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
+
+    /// Show or hide the OPS and MATRIX panels; the device's width follows preferredWidth().
+    void setPanelsShown(bool opsShown, bool matrixShown);
+    int preferredWidth() const;
 
   private:
     // Host slot layout - must match magda_fm.dsp / the C++ wrapper.
@@ -101,10 +104,12 @@ class FMUI : public juce::Component {
     // A tile at @p bounds: slot @p slot's caption above its value, or the value alone.
     void placeTile(int slot, juce::Rectangle<int> bounds, bool withCaption = true);
     void placeTiles(juce::Rectangle<int> area, const std::vector<int>& slots, int cols);
-    void layoutOperatorPanel();
-    void layoutMatrixPanel();
+    void layoutFirstPanel();
+    void layoutOperators(juce::Rectangle<int> area);
+    void layoutVoice(juce::Rectangle<int> area);
+    void layoutMatrix();
     void layoutFilterPanel();
-    void layoutEnvelopePanel();
+    void layoutEnvelope(juce::Rectangle<int> area, AdsrGraph& graph, int adsrBase);
     void styleControls();
 
     // Write a choice slot from its segment, combo or toggle.
@@ -113,21 +118,34 @@ class FMUI : public juce::Component {
     void syncFromParam(int slot, float value);
     void syncGraphFromParam(int slot, float value);
     void refreshOperatorRows();
-    // Show the selected OPERATORS/VOICE tab's controls.
-    void refreshOperatorTab();
+    // Show the selected tabs' controls.
+    void refreshFirstPanel();
+    void refreshMatrix();
     void refreshFilterPanel();
-    void refreshEnvelopePanel();
+    // Show or hide a placed slot's value, and its caption with @p withLabel.
+    void showSlot(int slot, bool shown, bool withLabel);
 
     std::array<Control, kNumParams> controls_;
 
-    std::array<juce::ComboBox, kNumOps> waveBoxes_;
+    /// Each operator's wave, drawn as its icon; a click picks another from a menu (#3201).
+    std::array<int, kNumOps> opWave_{};
+    std::array<std::unique_ptr<juce::Drawable>, 5> waveIcons_;
+    std::array<juce::Rectangle<int>, kNumOps> waveIconAreas_;
+    void showWaveMenu(int op);
     std::array<bool, kNumOps> opEnabled_{true, true, true, true};
     std::array<bool, kNumOps> opReset_{};
 
     std::unique_ptr<AdsrGraph> ampGraph_;
     std::unique_ptr<AdsrGraph> filterGraph_;
+    enum class FirstTab { Ops, AmpEnv, Voice };
+    FirstTab firstTab_ = FirstTab::Ops;
+    /// Whether the first panel is shown on @p tab.
+    bool shows(FirstTab tab) const {
+        return opsShown_ && firstTab_ == tab;
+    }
     bool showFilterEnvelope_ = false;
-    bool showVoiceTab_ = false;
+    bool opsShown_ = true;
+    bool matrixShown_ = true;
 
     FilterState filter_;
     std::unique_ptr<CompiledFilterCurveView> filterCurve_;
@@ -135,12 +153,15 @@ class FMUI : public juce::Component {
         voiceModeChoice_;
 
     // Painted parts, kept for paint and hit-testing.
-    juce::Rectangle<int> opsPanel_, matrixPanel_, filterPanel_, envelopePanel_;
+    juce::Rectangle<int> firstPanel_, matrixPanel_, filterPanel_;
     std::array<juce::Rectangle<int>, kNumOps> waveTiles_, enableDots_, resetTiles_;
-    std::array<juce::Rectangle<int>, kNodes> opRowLabels_, matrixRowLabels_, matrixColLabels_;
+    std::array<juce::Rectangle<int>, kNodes> matrixColLabels_, matrixRowLabels_;
+    /// WAVE, RATIO, LEVEL and RST over the operator columns.
     std::array<juce::Rectangle<int>, 4> opColumnCaptions_;
-    juce::Rectangle<int> filterRowTile_, filterTab_, filterDot_, sendsCaption_;
-    std::array<juce::Rectangle<int>, 2> envelopeTabs_, opsTabs_;
+    juce::Rectangle<int> filterRowTile_, filterDot_, sendsCaption_;
+    /// OPS | AMP ENV | VOICE, and FILTER | FILTER ENV; the FILTER tab carries the enable dot.
+    std::array<juce::Rectangle<int>, 3> firstTabs_;
+    std::array<juce::Rectangle<int>, 2> filterTabs_;
     juce::Rectangle<int> voiceModeTile_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FMUI)

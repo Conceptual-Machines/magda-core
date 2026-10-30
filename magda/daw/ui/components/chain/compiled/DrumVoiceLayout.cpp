@@ -5,6 +5,8 @@
 
 #include <algorithm>
 
+#include "ui/themes/FontManager.hpp"
+
 namespace magda::daw::ui {
 
 namespace {
@@ -16,9 +18,8 @@ std::vector<DrumVoiceSection> voiceLayers(const juce::String& pluginId) {
                  .slots = {4, 5, 6, 7, 8, 9, 12},
                  .attackSlot = 7,
                  .decaySlot = 8,
-                 .curveSlot = 12,
-                 .columns = 3},
-                {.title = "Click", .slots = {10, 11}, .columns = 1}};
+                 .curveSlot = 12},
+                {.title = "Click", .slots = {10, 11}}};
     if (pluginId.equalsIgnoreCase("magda_snare"))
         return {
             {.title = "Transient", .slots = {0, 1, 2, 3, 4, 17}, .decaySlot = 3, .curveSlot = 17},
@@ -30,11 +31,10 @@ std::vector<DrumVoiceSection> voiceLayers(const juce::String& pluginId) {
             {.title = "Rattle",
              .slots = {10, 11, 12, 13, 14, 15, 18},
              .decaySlot = 14,
-             .curveSlot = 18,
-             .columns = 3}};
+             .curveSlot = 18}};
     if (pluginId.equalsIgnoreCase("magda_clap"))
         return {{.title = "Flam", .slots = {0, 1, 2, 3, 7}, .decaySlot = 2, .curveSlot = 7},
-                {.title = "Shape", .slots = {4, 5, 6}, .columns = 1}};
+                {.title = "Shape", .slots = {4, 5, 6}}};
     if (pluginId.equalsIgnoreCase("magda_hat"))
         return {{.title = "Ring", .slots = {0, 1, 2, 3, 7}, .decaySlot = 3, .curveSlot = 7},
                 {.title = "Noise", .slots = {4, 5, 9, 10, 6, 8}, .decaySlot = 6, .curveSlot = 8}};
@@ -65,17 +65,9 @@ juce::String roleLabel(const juce::String& hostName) {
 
 }  // namespace
 
+// The wrapper's trailing Gain stays off the faceplate; the side strip's fader sets the level.
 std::vector<DrumVoiceSection> drumVoiceSections(const juce::String& pluginId) {
-    auto sections = voiceLayers(pluginId);
-    if (sections.empty())
-        return sections;
-    // Gain is the wrapper's slot after the voice's own, so it follows the highest pinned one.
-    int last = 0;
-    for (const auto& section : sections)
-        for (const int slot : section.slots)
-            last = std::max(last, slot);
-    sections.push_back({.title = "Output", .slots = {last + 1}, .columns = 1, .underPlot = true});
-    return sections;
+    return voiceLayers(pluginId);
 }
 
 int DrumVoiceGeometry::cellHeight(ParamControlStyle style) {
@@ -93,48 +85,45 @@ int DrumVoiceGeometry::cellHeight(ParamControlStyle style) {
 int DrumVoiceGeometry::columnsWidth(const std::vector<DrumVoiceSection>& sections) {
     int width = 0;
     for (const auto& section : sections)
-        if (!section.underPlot)
-            width += section.columns * kCellWidth + (section.columns - 1) * kCellGap + kSpace;
-    return width;
+        width = std::max(width, section.columns * kCellWidth + (section.columns - 1) * kCellGap);
+    return width + kSpace;
 }
 
 DrumVoiceGeometry DrumVoiceGeometry::of(juce::Rectangle<int> bounds, ParamControlStyle style,
-                                        const std::vector<DrumVoiceSection>& sections) {
+                                        const std::vector<DrumVoiceSection>& sections,
+                                        bool cellsShown) {
     DrumVoiceGeometry g;
-    auto area = bounds.reduced(kSpace);
-    auto columns = area.removeFromRight(
-        std::min(columnsWidth(sections), std::max(0, area.getWidth() - kMinPlotWidth)));
-    area.removeFromRight(kSpace);
+    if (!cellsShown) {
+        g.plot = bounds.reduced(kSpace);
+        return g;
+    }
+    // The columns' own leading space stands in for the body's left padding.
+    auto area = bounds.reduced(kSpace).withTrimmedLeft(-kSpace);
+    auto columns = area.removeFromLeft(std::min(columnsWidth(sections), area.getWidth()));
+    area.removeFromLeft(kSpace);
+    if (area.getWidth() >= kMinPlotWidth)
+        g.plot = area;
 
-    int rows = 1;
-    for (const auto& section : sections)
-        if (!section.underPlot)
-            rows = std::max(rows, rowsOf(section));
-    const int available = columns.getHeight() - kTitleHeight - (rows - 1) * kCellGap;
-    const int cellH = std::min(cellHeight(style), std::max(24, available / rows));
-
-    // Sections under the plot sit in a row along its foot; the plot takes what is left above.
-    auto foot = area.removeFromBottom(cellH);
-    area.removeFromBottom(kSpace);
-    g.plot = area;
+    columns.removeFromLeft(kSpace);
+    auto tabs = columns.removeFromTop(kTitleHeight);
+    const auto font = FontManager::getInstance().getMonoFont(10.0f).withExtraKerningFactor(0.12f);
+    for (const auto& section : sections) {
+        const auto title = juce::String(section.title).toUpperCase();
+        g.titles.push_back(
+            tabs.removeFromLeft(juce::GlyphArrangement::getStringWidthInt(font, title)));
+        tabs.removeFromLeft(14);
+    }
+    columns.removeFromTop(kCellGap);
 
     for (const auto& section : sections) {
-        if (section.underPlot) {
-            g.titles.emplace_back();
-            for (size_t i = 0; i < section.slots.size(); ++i) {
-                g.cells.push_back(foot.removeFromLeft(kCellWidth));
-                foot.removeFromLeft(kCellGap);
-            }
-            continue;
-        }
-        const int width = section.columns * kCellWidth + (section.columns - 1) * kCellGap;
-        auto column = columns.removeFromLeft(width + kSpace).withTrimmedLeft(kSpace);
-        g.titles.push_back(column.removeFromTop(kTitleHeight));
-        for (size_t i = 0; i < section.slots.size(); ++i) {
-            const int col = static_cast<int>(i) % section.columns;
-            const int row = static_cast<int>(i) / section.columns;
-            g.cells.emplace_back(column.getX() + col * (kCellWidth + kCellGap),
-                                 column.getY() + row * (cellH + kCellGap), kCellWidth, cellH);
+        const int rows = rowsOf(section);
+        const int available = columns.getHeight() - (rows - 1) * kCellGap;
+        const int cellH = std::min(cellHeight(style), std::max(24, available / rows));
+        for (int i = 0; i < static_cast<int>(section.slots.size()); ++i) {
+            const int col = i % section.columns;
+            const int row = i / section.columns;
+            g.cells.emplace_back(columns.getX() + col * (kCellWidth + kCellGap),
+                                 columns.getY() + row * (cellH + kCellGap), kCellWidth, cellH);
         }
     }
     return g;
@@ -142,8 +131,11 @@ DrumVoiceGeometry DrumVoiceGeometry::of(juce::Rectangle<int> bounds, ParamContro
 
 DrumVoiceLayout::DrumVoiceLayout(const juce::String& pluginId)
     : sections_(drumVoiceSections(pluginId)) {
-    for (const auto& section : sections_)
+    for (size_t i = 0; i < sections_.size(); ++i) {
+        const auto& section = sections_[i];
         slots_.insert(slots_.end(), section.slots.begin(), section.slots.end());
+        sectionOfCell_.insert(sectionOfCell_.end(), section.slots.size(), static_cast<int>(i));
+    }
 }
 
 int DrumVoiceLayout::cellCount() const {
@@ -157,9 +149,11 @@ juce::Rectangle<int> DrumVoiceLayout::cellBounds(int cell, juce::Rectangle<int> 
                : juce::Rectangle<int>();
 }
 
-ParamCell DrumVoiceLayout::cellFor(const magda::DeviceInfo& device, int cellIndex, int) const {
+ParamCell DrumVoiceLayout::cellFor(const magda::DeviceInfo& device, int cellIndex, int page) const {
     ParamCell cell;
-    if (cellIndex < 0 || cellIndex >= cellCount())
+    // Only the selected layer's cells show.
+    if (cellIndex < 0 || cellIndex >= cellCount() ||
+        sectionOfCell_[static_cast<size_t>(cellIndex)] != page)
         return cell;
     const int slot = slots_[static_cast<size_t>(cellIndex)];
     for (int k = 0; k < static_cast<int>(device.parameters.size()); ++k) {
@@ -169,7 +163,8 @@ ParamCell DrumVoiceLayout::cellFor(const magda::DeviceInfo& device, int cellInde
         cell.mode = ParamCell::Mode::Filled;
         cell.paramArrayIndex = k;
         cell.targetParamIndex = slot;
-        cell.label = roleLabel(param.name);
+        const auto& section = sections_[static_cast<size_t>(page)];
+        cell.label = slot == section.curveSlot ? juce::String("Curve") : roleLabel(param.name);
         return cell;
     }
     return cell;

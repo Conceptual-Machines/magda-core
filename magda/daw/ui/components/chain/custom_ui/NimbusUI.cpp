@@ -38,8 +38,9 @@ constexpr int kPanelPadBottom = 4;
 constexpr int kTitleH = 18;
 constexpr int kTileGap = 6;
 constexpr int kMaxRowH = 42;
-/// PARAMETERS' most height; the cloud and controls above take the rest.
-constexpr int kMaxParamsH = 126;
+constexpr int kParamsPanelW = 400;
+constexpr int kCtrlPanelW = 220;
+constexpr int kCloudPanelW = 300;
 
 bool isPitch(int i) {
     return i == 2;
@@ -247,9 +248,11 @@ void NimbusUI::paint(juce::Graphics& g) {
         g.drawRoundedRectangle(r.toFloat().reduced(0.5f), 6.0f, 1.0f);
     };
 
-    panel(grainArea_);
-    titleStrip(g, grainArea_.reduced(14, kPanelPadY), "GRAIN CLOUD", "granular texture");
-    paintBuffer(g);
+    if (cloudShown_) {
+        panel(grainArea_);
+        titleStrip(g, grainArea_.reduced(14, kPanelPadY), "GRAIN CLOUD", "granular texture");
+        paintBuffer(g);
+    }
 
     panel(paramsArea_);
     titleStrip(g, paramsArea_.reduced(14, kPanelPadY), "PARAMETERS", "drag a value to set");
@@ -346,32 +349,44 @@ void NimbusUI::layoutRow(juce::Rectangle<int> row, const std::vector<int>& indic
     }
 }
 
+void NimbusUI::setCloudShown(bool shown) {
+    if (shown == cloudShown_)
+        return;
+    cloudShown_ = shown;
+    resized();
+    repaint();
+}
+
+int NimbusUI::preferredWidth() const {
+    return 2 * kPanelGap + kParamsPanelW + kPanelGap + kCtrlPanelW +
+           (cloudShown_ ? kPanelGap + kCloudPanelW : 0);
+}
+
 void NimbusUI::resized() {
     // Padded at the sides only: the header above and the slot's edge below frame the panels.
     auto r = getLocalBounds().reduced(kPanelGap, 0);
 
-    paramsArea_ = r.removeFromBottom(juce::jmin(kMaxParamsH, (r.getHeight() - kPanelGap) / 2));
-    r.removeFromBottom(kPanelGap);
-    auto top = r;
+    paramsArea_ = r.removeFromLeft(kParamsPanelW);
+    r.removeFromLeft(kPanelGap);
+    ctrlArea_ = r.removeFromLeft(kCtrlPanelW);
+    r.removeFromLeft(kPanelGap);
+    grainArea_ = cloudShown_ ? r : juce::Rectangle<int>();
 
-    // Top row: GRAIN CLOUD (left) | FREEZE + PLAYBACK MODE controls (right).
-    grainArea_ = top.removeFromLeft(top.getWidth() / 2 - kPanelGap / 2);
-    top.removeFromLeft(kPanelGap);
-    ctrlArea_ = top;
-
-    {
+    bufferVizArea_ = {};
+    if (cloudShown_) {
         auto a = grainArea_.reduced(12, kPanelPadY);
         a.removeFromTop(kTitleH);
         bufferVizArea_ = a;
     }
 
-    // PARAMETERS: Position/Size/Pitch/Density/Texture, then the blend routes.
+    // PARAMETERS: Position/Size/Pitch/Density/Texture, then the blend routes, centred.
     {
         auto a =
             paramsArea_.reduced(12, kPanelPadY).withTrimmedBottom(kPanelPadBottom - kPanelPadY);
         a.removeFromTop(kTitleH);
         constexpr int kBlendLabelH = 12 + 2;
         const int rowH = juce::jmin(kMaxRowH, (a.getHeight() - 4 - kBlendLabelH) / 2);
+        a = a.withSizeKeepingCentre(a.getWidth(), 2 * rowH + 4 + kBlendLabelH);
         layoutRow(a.removeFromTop(rowH), {kPosition, kDensity, kSize, kTexture, kPitch});
         a.removeFromTop(4);
         blendLabelRect_ = a.removeFromTop(12);

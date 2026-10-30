@@ -12,7 +12,7 @@ namespace magda::daw::ui {
 
 /**
  * @brief The Test Tone's body: the waveform row, the noise colour and Transport Only, then
- *        Frequency over Level (#3164).
+ *        Frequency beside Level (#3164, #3201).
  *
  * Rows are sized for the control style. The faceplate and the param grid both place from this,
  * over the same bounds.
@@ -50,11 +50,10 @@ struct ToneGeneratorGeometry {
         g.transportOnly = options;
         area.removeFromTop(kSpace);
 
-        const int height = cellHeight(style);
-        for (auto& cell : g.cells) {
-            cell = area.removeFromTop(juce::jmin(height, area.getHeight()));
-            area.removeFromTop(kSpace);
-        }
+        auto row = area.removeFromTop(juce::jmin(cellHeight(style), area.getHeight()));
+        g.cells[0] = row.removeFromLeft((row.getWidth() - kSpace) / 2);
+        row.removeFromLeft(kSpace);
+        g.cells[1] = row;
         return g;
     }
 };

@@ -614,6 +614,18 @@ void ParamSlotComponent::setOverlayOnly(bool overlayOnly) {
     repaint();
 }
 
+void ParamSlotComponent::setCompactText(bool compact) {
+    if (compactText_ == compact)
+        return;
+    compactText_ = compact;
+    applyControlStyleToWidgets();
+    repaint();
+}
+
+juce::Font ParamSlotComponent::textValueFont() const {
+    return FontManager::getInstance().getUIFontMedium(compactText_ ? 12.0f : 13.5f);
+}
+
 void ParamSlotComponent::setControlStyle(ParamControlStyle style) {
     if (style_ == style)
         return;
@@ -633,11 +645,11 @@ void ParamSlotComponent::applyControlStyleToWidgets() {
     valueSlider_.setJustification(knobs     ? juce::Justification::centred
                                   : sliders ? juce::Justification::centredRight
                                             : juce::Justification::centredLeft);
-    valueSlider_.setFont(style_ == ParamControlStyle::Text ? fonts.getUIFontMedium(13.5f)
+    valueSlider_.setFont(style_ == ParamControlStyle::Text ? textValueFont()
                                                            : fonts.getMonoFont(11.0f));
     valueSlider_.setTextColour(ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
 
-    nameLabel_.setFont(fonts.getUIFont(knobs ? 10.0f : 10.5f));
+    nameLabel_.setFont(fonts.getUIFont(knobs ? 10.0f : compactText_ ? 9.5f : 10.5f));
     nameLabel_.setColour(juce::Label::textColourId,
                          ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
     nameLabel_.setBorderSize({});
@@ -1163,7 +1175,7 @@ void ParamSlotComponent::paintBooleanValue(juce::Graphics& g) const {
     auto& fonts = FontManager::getInstance();
     const bool text = style_ == ParamControlStyle::Text;
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
-    g.setFont(text ? fonts.getUIFontMedium(13.5f) : fonts.getMonoFont(11.0f));
+    g.setFont(text ? textValueFont() : fonts.getMonoFont(11.0f));
     const auto value =
         boolToggle_->getToggleState() ? juce::String("on") : juce::String::fromUTF8("\xe2\x80\x93");
     g.drawText(value, valueArea_,

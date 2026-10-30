@@ -19,11 +19,9 @@ namespace magda::daw::ui {
  * @brief Custom faceplate for Halo (magda_rings), the resonator ported from
  *        Mutable Instruments Rings.
  *
- * Layout follows the design mockup:
- *
- *   RESONATOR     [modal-response spectrum]            modal / partials / poly
- *   PARAMETERS    Structure Brightness Damping Position / Chord Pitch Fine Level
- *   RES. MODEL    six model buttons + polyphony (1 / 2 / 4 voices)
+ * Three full-height panels side by side (#3201): PARAMETERS, Structure Brightness Damping
+ * Position over Chord Pitch Fine Level; RESONATOR MODEL, six model buttons and the polyphony
+ * (1 / 2 / 4 voices); and RESONATOR, the modal-response spectrum, which the sidebar can hide.
  *
  * The continuous controls are LinkableTextSliders carrying their param index, so
  * mod/macro/automation/MIDI-Learn linking is wired by the standard
@@ -40,12 +38,18 @@ class HaloUI : public juce::Component {
 
     std::function<void(int paramIndex, float value)> onParameterChanged;
 
+    /// Show or hide the RESONATOR spectrum; the device's width follows preferredWidth().
+    void setSpectrumShown(bool shown);
+    int preferredWidth() const;
+
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
     void lookAndFeelChanged() override;
 
   private:
+    bool spectrumShown_ = true;
+
     // Param indices — must match MutableRingsPlugin::ParamIndex.
     enum Param {
         kStructure = 0,

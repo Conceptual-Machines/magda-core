@@ -99,6 +99,12 @@ struct CompiledPresentationSpec {
     /// strips) opt out of the global `BASE_SLOT_WIDTH` and request a
     /// wider host slot so cells don't truncate their labels.
     int preferredSlotWidth = 0;
+    /// When > 0, added to the slot width while the device's visualisation shows; the sidebar's
+    /// visualisation toggle then appears for it (#3201).
+    int vizSlotWidth = 0;
+    /// When > 0, the part of preferredSlotWidth the controls take; the sidebar's parameters
+    /// toggle then hides them and the visualisation takes the body (#3201).
+    int controlsSlotWidth = 0;
     /// When true, the param grid fills cells top-to-bottom first
     /// (paramIndex N at grid position (row, col) → row = N % numRows,
     /// col = N / numRows). Default false = row-major, matching every

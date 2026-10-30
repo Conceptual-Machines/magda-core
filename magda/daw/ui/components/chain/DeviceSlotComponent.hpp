@@ -69,6 +69,7 @@ class DeviceSlotComponent : public NodeComponent,
     static constexpr int PAGINATION_HEIGHT = 18;
     static constexpr int HEADER_BAR_HEIGHT = 28;
     static constexpr int SIDE_STRIP_WIDTH = 40;
+    static constexpr int POWER_STRIP_WIDTH = 32;  // a strip with no meter, power alone
     static constexpr int SIDEBAR_WIDTH = 32;
     /// A faceplate stands beside the parameters at the multiband rack's width.
     static constexpr int FACEPLATE_WIDTH = 380;
@@ -84,11 +85,6 @@ class DeviceSlotComponent : public NodeComponent,
 
     // Override to update param slots when path is set
     void setNodePath(const magda::ChainNodePath& path) override;
-
-    /// Whether the slot sits at the shorter height of a rack or the drum grid (#3165).
-    void setCompactParamRows(bool compact) {
-        paramGrid_->setCompactRows(compact);
-    }
 
     // Update device data
     void updateFromDevice(const magda::DeviceInfo& device);
@@ -123,6 +119,8 @@ class DeviceSlotComponent : public NodeComponent,
         return true;
     }
     juce::Rectangle<int> getHeaderInnerArea(juce::Rectangle<int> header) const override {
+        if (drumGridHeaderWidth_ > 0)
+            header.setWidth(drumGridHeaderWidth_);
         return header.reduced(10, 0);
     }
     juce::Point<int> getHeaderButtonSize() const override {
@@ -130,9 +128,6 @@ class DeviceSlotComponent : public NodeComponent,
     }
     int getHeaderButtonGap() const override {
         return 4;
-    }
-    juce::Component* getHeaderDeleteButton() override {
-        return closeButton_.get();
     }
     void paintNodeFrame(juce::Graphics& g, juce::Rectangle<int> bounds, int headerHeight) override;
     juce::Component* getHeaderPresetButton() override {
@@ -154,6 +149,12 @@ class DeviceSlotComponent : public NodeComponent,
 
     int getMeterWidth() const override {
         return 0;  // Meter is positioned in content area only, not the full height
+    }
+    int getShellStripWidth() const override {
+        return collapsed_ ? 0 : sideStripWidth();
+    }
+    void resizedShellStrip(juce::Rectangle<int> strip) override {
+        sideStripArea_ = strip;
     }
     int getCollapsedMeterWidth() const override {
         return METER_STRIP_WIDTH;
@@ -269,13 +270,16 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<magda::SvgButton> uiButton_;
     std::unique_ptr<magda::SvgButton> learnButton_;
     std::unique_ptr<magda::SvgButton> onButton_;
-    std::unique_ptr<magda::SvgButton> closeButton_;
     DeviceSlotHeaderSeparators headerSeparators_;
     void styleDeviceHeaderButtons();
 
     // v1 shell rows: sidebar, side strip and header MIDI LED, in this component's coordinates;
     // empty when not shown.
     juce::Rectangle<int> sidebarArea_, sideStripArea_, midiLedArea_;
+    /// The header's width over a Drum Grid's pads and mix, whose pad chain stands beside it at
+    /// full height; 0 spans the slot.
+    int drumGridHeaderWidth_ = 0;
+    void layoutDrumGridChainColumn();
     std::unique_ptr<juce::ArrowButton> pagePrevButton_, pageNextButton_;
     juce::Label pageLabel_;
     magda::SegmentedChoice voiceModeChoice_;
@@ -283,6 +287,8 @@ class DeviceSlotComponent : public NodeComponent,
     void refreshVoiceModeChoice();
     device_shell::MidiLed midiLed_;
     int sideStripWidth() const;
+    /// Peak meter and gain fader, or a MIDI utility's note strip, under the strip's power.
+    bool hasMeterStrip() const;
     void layoutSideStrip(juce::Rectangle<int> strip);
     /** @brief Places the MIDI LED against the header's right-hand buttons; returns what is
      * left for the name (#3141). */
@@ -305,10 +311,19 @@ class DeviceSlotComponent : public NodeComponent,
     /// A step sequencer's header switches: its time bend beside the controls, and its faceplate
     /// lent to the arrangement's track area (ExpandedFaceplate) with a note left in its place.
     std::unique_ptr<magda::SvgButton> timeBendToggle_, zonesToggle_, expandToggle_;
+    std::unique_ptr<magda::SvgButton> oscPanelToggle_, matrixToggle_, vizToggle_, outputToggle_;
     std::unique_ptr<magda::SvgButton> padPanelToggle_, padChainToggle_;
     juce::Label lentNote_;
     void toggleTimeBend();
     void toggleZones();
+    /// A synth's first panel (@p oscPanel) or FM's matrix, on or off (#3201).
+    void toggleSynthPanel(bool oscPanel);
+    void toggleViz();
+    /// A device whose controls the sidebar can hide behind its visualisation (#3201): a compiled
+    /// one that asks for it, or a struck instrument.
+    bool hidesControls() const;
+    void toggleControls();
+    void toggleOutput();
     /// The Drum Grid's pad mix panel (@p panel) or its pad chain, on or off (#3144).
     void togglePadView(bool panel);
     void toggleFaceplateExpanded();

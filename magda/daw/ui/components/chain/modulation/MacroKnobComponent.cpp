@@ -279,13 +279,13 @@ void MacroKnobComponent::paint(juce::Graphics& g) {
                knob.getCentreX() + std::sin(valueAngle) * pointer,
                knob.getCentreY() - std::cos(valueAngle) * pointer, 1.5f);
 
-    // Beside the knob, the value (a dash until linked); the link count left of its corner button.
+    // Under the knob, the value (a dash until linked); the link count left of its corner button.
     auto& fonts = FontManager::getInstance();
     if (!linked) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
         g.setFont(fonts.getMonoFont(10.5f));
         g.drawText(juce::String::fromUTF8("\xe2\x80\x93"), valueArea(),
-                   juce::Justification::centredLeft, false);
+                   juce::Justification::centred, false);
     }
     if (linked) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
@@ -331,16 +331,21 @@ void MacroKnobComponent::resized() {
                                                     : ActiveTheme::DEVICE_DIM2));
 }
 
-// The knob takes the card's height on its left; the value sits beside it.
+// The knob centred over the value row, as large as the card leaves it (#3201).
 juce::Rectangle<int> MacroKnobComponent::getKnobBounds() const {
     auto inner = getLocalBounds().reduced(6);
-    return inner.removeFromLeft(inner.getHeight());
+    inner.removeFromBottom(VALUE_SLIDER_HEIGHT + 2);
+    const int size = juce::jmin(inner.getWidth(), inner.getHeight());
+    return inner.withSizeKeepingCentre(size, size);
 }
 
+// The foot row, kept clear of the link button on both sides so the value centres.
 juce::Rectangle<int> MacroKnobComponent::valueArea() const {
-    auto inner = getLocalBounds().reduced(6);
-    inner.removeFromLeft(inner.getHeight() + 6);
-    return inner.withSizeKeepingCentre(inner.getWidth(), VALUE_SLIDER_HEIGHT);
+    const int linkWidth = LINK_BUTTON_HEIGHT + 4;
+    return getLocalBounds()
+        .reduced(6)
+        .removeFromBottom(VALUE_SLIDER_HEIGHT)
+        .reduced(linkWidth - 2, 0);
 }
 
 void MacroKnobComponent::mouseDown(const juce::MouseEvent& e) {

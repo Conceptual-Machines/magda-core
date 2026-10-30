@@ -12,8 +12,8 @@ namespace magda::daw::ui {
 /**
  * @brief Base class for paginated control panels (macros, mods, etc.)
  *
- * A v1 side panel: a header with the title and `‹ 1/2 › +`, a grid of cards, and a footer
- * line. Right-clicking the header offers to remove the last page.
+ * A v1 side panel: a header with the title and `‹ 1/2 › +` over a grid of cards, four across
+ * and two down (#3201). Right-clicking the header offers to remove the last page.
  */
 class PagedControlPanel : public juce::Component {
   public:
@@ -64,7 +64,6 @@ class PagedControlPanel : public juce::Component {
     void mouseDown(const juce::MouseEvent& e) override;
 
     static constexpr int HEADER_HEIGHT = 28;
-    static constexpr int FOOTER_HEIGHT = 26;
 
   protected:
     // Subclasses must implement these
@@ -72,11 +71,6 @@ class PagedControlPanel : public juce::Component {
     virtual juce::Component* getItemComponent(int index) = 0;
     virtual juce::String getPanelTitle() const = 0;
     virtual juce::Colour getTitleColour() const = 0;
-
-    /// The footer line, e.g. "4 of 16 mapped"; empty draws no footer text.
-    virtual juce::String getFooterText() const {
-        return {};
-    }
 
     // Called when page changes - subclasses can update item visibility
     virtual void onPageChanged();
@@ -96,7 +90,7 @@ class PagedControlPanel : public juce::Component {
 
     // Grid configuration - subclasses can override
     virtual int getGridColumns() const {
-        return 2;
+        return 4;
     }
 
     static constexpr int GRID_PADDING = 10;
@@ -104,7 +98,6 @@ class PagedControlPanel : public juce::Component {
 
   private:
     juce::Rectangle<int> headerArea() const;
-    juce::Rectangle<int> footerArea() const;
     juce::Rectangle<int> gridArea() const;
 
     /// The header's clickable glyphs, right to left: + › 1/2 ‹.

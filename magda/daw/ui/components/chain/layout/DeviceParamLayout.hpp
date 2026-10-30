@@ -85,6 +85,10 @@ class DeviceParamLayout {
     }
     /// The style the cells draw in, for a layout that sizes its own cells to it.
     virtual void setControlStyle(ParamControlStyle /*style*/) {}
+    /// Whether text cells use the smaller fonts, for layouts of narrow cells (#3201).
+    virtual bool compactText() const {
+        return false;
+    }
     /// Most columns a reflowing grid wraps at.
     virtual int maxColumns() const {
         return 2;

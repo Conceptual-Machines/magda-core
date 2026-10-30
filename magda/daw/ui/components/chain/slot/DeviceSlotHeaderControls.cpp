@@ -131,15 +131,9 @@ DeviceSlotHeaderSeparators layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& 
         return spec.side == HeaderControlSide::Right && spec.expandedVisible &&
                !livesOutsideExpandedHeader(spec.id);
     };
-    bool separatorTaken = false;
-    for (auto& spec : specs | std::views::reverse | std::views::filter(placedRight)) {
-        if (!separatorTaken && spec.component != nullptr && spec.component->isVisible()) {
-            headerArea.setRight(headerArea.getRight() + metrics.gap);
-            separators.right = takeSeparator(headerArea, false, metrics);
-            separatorTaken = true;
-        }
+    // No separator on the right: power and delete, which it set apart, left the header (#3201).
+    for (auto& spec : specs | std::views::reverse | std::views::filter(placedRight))
         placeRight(headerArea, spec.component, metrics);
-    }
     return separators;
 }
 

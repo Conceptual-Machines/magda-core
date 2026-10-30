@@ -26,9 +26,9 @@ namespace magda::daw::ui {
 /**
  * @brief Custom UI for the compiled Poly Synth (magda_polysynth), in the v1 faceplate style.
  *
- * Three panels: OSC (a row per oscillator) with VOICE (unison and the performance
- * controls) as tabs, the two filters as tabs with their routing, and the amp and filter
- * envelopes as tabs. Values
+ * Three panels: OSC (a row per oscillator) and VOICE (unison, the performance controls and the
+ * output) as tabs (#3201), the two filters as tabs with their routing, and the amp and filter
+ * envelopes as tabs. The sidebar can hide the first panel. Values
  * sit in text tiles; every slot keeps a LinkableTextSlider, hidden where a segmented
  * choice, combo or toggle shows it, so linking reaches all of them.
  */
@@ -49,6 +49,10 @@ class PolySynthUI : public juce::Component, private juce::Timer {
     void setLivePlugin(magda::daw::audio::compiled::MagdaPolySynthCompiledPlugin* plugin);
 
     std::function<void(int paramIndex, float value)> onParameterChanged;
+
+    /// Show or hide the OSC panel; the device's width follows preferredWidth() (#3201).
+    void setOscPanelShown(bool shown);
+    int preferredWidth() const;
 
     void lookAndFeelChanged() override;
     void paint(juce::Graphics& g) override;
@@ -157,6 +161,13 @@ class PolySynthUI : public juce::Component, private juce::Timer {
     int selectedFilter_ = 0;
     bool showFilterEnvelope_ = false;
     bool showVoiceTab_ = false;
+    bool oscShown_ = true;
+    bool showsOsc() const {
+        return oscShown_ && !showVoiceTab_;
+    }
+    bool showsVoice() const {
+        return oscShown_ && showVoiceTab_;
+    }
     std::array<bool, kNumOscillators> oscReset_{};
     std::array<bool, kNumOscillators> oscEnabled_{true, true, true, true};
 
@@ -168,7 +179,10 @@ class PolySynthUI : public juce::Component, private juce::Timer {
     juce::Rectangle<int> oscPanel_, filterPanel_, envelopePanel_, voicesTile_, voiceModeTile_;
     std::array<juce::Rectangle<int>, kNumOscillators> waveTiles_, enableDots_, resetTiles_;
     std::array<juce::Rectangle<int>, kNumFilters> filterTabs_, filterDots_;
-    std::array<juce::Rectangle<int>, 2> oscTabs_, envelopeTabs_;
+    std::array<juce::Rectangle<int>, 2> envelopeTabs_, oscTabs_;
+    void layoutVoicePanel();
+    /// LVL, CRS, FINE and RST over the oscillator columns, in a row under the tabs.
+    std::array<juce::Rectangle<int>, kOscSlotCount> oscColumnHeads_;
     juce::Rectangle<int> polesCaption_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PolySynthUI)
