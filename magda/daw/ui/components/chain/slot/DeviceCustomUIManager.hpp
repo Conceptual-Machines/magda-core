@@ -210,10 +210,10 @@ class DeviceCustomUIManager {
     void setSequencerTimeBendShown(bool shown);
     /// The sampler's zone list beside its faceplate (#3098).
     void setSamplerZonesShown(bool shown);
-    /// A synth's first panel (FM's OPS, Poly Synth's OSC) and FM's matrix (#3201).
-    void setSynthPanelsShown(bool oscPanelShown, bool matrixShown);
-    /// Halo's RESONATOR spectrum (#3201).
-    void setHaloSpectrumShown(bool shown);
+    /// The faceplate panels the sidebar hides (#3201): the first panel (FM's OPS, Poly Synth's
+    /// OSC, Materia's VOICE), FM's matrix, and the visualisation (Halo's spectrum, Nimbus's grain
+    /// cloud, Materia's modal response).
+    void setFaceplatePanelsShown(const magda::DeviceInfo& device);
     void setDrumGridViewsShown(bool panelShown, bool chainShown);
     bool hasSamplerUI() const {
         return samplerUI_ != nullptr;
@@ -226,6 +226,12 @@ class DeviceCustomUIManager {
     }
     bool hasHaloUI() const {
         return haloUI_ != nullptr;
+    }
+    bool hasNimbusUI() const {
+        return nimbusUI_ != nullptr;
+    }
+    bool hasMateriaUI() const {
+        return materiaUI_ != nullptr;
     }
     StepSequencerUI* getStepSequencerUI() const {
         return stepSequencerUI_.get();

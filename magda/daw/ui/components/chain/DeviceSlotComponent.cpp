@@ -539,11 +539,11 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     matrixToggle_->setTooltip("Show the matrix");
     matrixToggle_->onClick = [this]() { toggleSynthPanel(false); };
     addChildComponent(*matrixToggle_);
-    spectrumToggle_ = std::make_unique<magda::SvgButton>(
-        "Spectrum", BinaryData::iconspectrumboldm_svg, BinaryData::iconspectrumboldm_svgSize);
-    spectrumToggle_->setTooltip("Show the resonator spectrum");
-    spectrumToggle_->onClick = [this]() { toggleSpectrum(); };
-    addChildComponent(*spectrumToggle_);
+    vizToggle_ = std::make_unique<magda::SvgButton>("Spectrum", BinaryData::iconspectrumboldm_svg,
+                                                    BinaryData::iconspectrumboldm_svgSize);
+    vizToggle_->setTooltip("Show the resonator spectrum");
+    vizToggle_->onClick = [this]() { toggleViz(); };
+    addChildComponent(*vizToggle_);
     padPanelToggle_ = std::make_unique<magda::SvgButton>(
         "PadPanel", BinaryData::iconpadpanelboldm_svg, BinaryData::iconpadpanelboldm_svgSize);
     padPanelToggle_->setTooltip("Show the pad panel");
@@ -809,9 +809,11 @@ std::vector<juce::Component*> DeviceSlotComponent::sidebarButtons() const {
     add(faceplateToggle_.get(), hasFaceplate());
     add(timeBendToggle_.get(), isSequencerDevice(traits_));
     add(zonesToggle_.get(), customUI_.hasSamplerUI());
-    add(oscPanelToggle_.get(), customUI_.hasFMUI() || customUI_.hasPolySynthUI());
+    add(oscPanelToggle_.get(),
+        customUI_.hasFMUI() || customUI_.hasPolySynthUI() || customUI_.hasMateriaUI());
     add(matrixToggle_.get(), customUI_.hasFMUI());
-    add(spectrumToggle_.get(), customUI_.hasHaloUI());
+    add(vizToggle_.get(),
+        customUI_.hasHaloUI() || customUI_.hasNimbusUI() || customUI_.hasMateriaUI());
     add(padPanelToggle_.get(), customUI_.getDrumGridUI() != nullptr);
     add(padChainToggle_.get(), customUI_.getDrumGridUI() != nullptr);
     return buttons;
@@ -835,7 +837,7 @@ void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
     const bool shown = !bar.isEmpty();
     for (auto* toggle : {paramsToggle_.get(), faceplateToggle_.get(), timeBendToggle_.get(),
                          zonesToggle_.get(), oscPanelToggle_.get(), matrixToggle_.get(),
-                         spectrumToggle_.get(), padPanelToggle_.get(), padChainToggle_.get()})
+                         vizToggle_.get(), padPanelToggle_.get(), padChainToggle_.get()})
         toggle->setVisible(false);
     const bool paged = shown && sidebarPaged();
     for (auto* arrow : {pagePrevButton_.get(), pageNextButton_.get()})
@@ -851,10 +853,14 @@ void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
     timeBendToggle_->setToggleState(device_.timeBendShown, juce::dontSendNotification);
     zonesToggle_->setToggleState(device_.zonesShown, juce::dontSendNotification);
     oscPanelToggle_->setToggleState(device_.oscPanelShown, juce::dontSendNotification);
-    oscPanelToggle_->setTooltip(customUI_.hasFMUI() ? "Show the operators"
-                                                    : "Show the oscillators");
+    oscPanelToggle_->setTooltip(customUI_.hasFMUI()        ? "Show the operators"
+                                : customUI_.hasMateriaUI() ? "Show the voice"
+                                                           : "Show the oscillators");
     matrixToggle_->setToggleState(device_.matrixShown, juce::dontSendNotification);
-    spectrumToggle_->setToggleState(device_.spectrumShown, juce::dontSendNotification);
+    vizToggle_->setToggleState(device_.vizShown, juce::dontSendNotification);
+    vizToggle_->setTooltip(customUI_.hasHaloUI()     ? "Show the resonator spectrum"
+                           : customUI_.hasNimbusUI() ? "Show the grain cloud"
+                                                     : "Show the modal response");
     padPanelToggle_->setToggleState(device_.padPanelShown, juce::dontSendNotification);
     padChainToggle_->setToggleState(device_.padChainShown, juce::dontSendNotification);
 
@@ -1089,17 +1095,17 @@ void DeviceSlotComponent::toggleSynthPanel(bool oscPanel) {
         live->oscPanelShown = device_.oscPanelShown;
         live->matrixShown = device_.matrixShown;
     }
-    customUI_.setSynthPanelsShown(device_.oscPanelShown, device_.matrixShown);
+    customUI_.setFaceplatePanelsShown(device_);
     resized();
     if (onDeviceLayoutChanged)
         onDeviceLayoutChanged();
 }
 
-void DeviceSlotComponent::toggleSpectrum() {
-    device_.spectrumShown = !device_.spectrumShown;
+void DeviceSlotComponent::toggleViz() {
+    device_.vizShown = !device_.vizShown;
     if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_))
-        live->spectrumShown = device_.spectrumShown;
-    customUI_.setHaloSpectrumShown(device_.spectrumShown);
+        live->vizShown = device_.vizShown;
+    customUI_.setFaceplatePanelsShown(device_);
     resized();
     if (onDeviceLayoutChanged)
         onDeviceLayoutChanged();
@@ -1220,7 +1226,7 @@ void DeviceSlotComponent::styleDeviceHeaderButtons() {
     style(zonesToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(oscPanelToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(matrixToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
-    style(spectrumToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
+    style(vizToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(padPanelToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(padChainToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(expandToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
@@ -1643,8 +1649,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
         updateDeviceSlotInlineUi(device_, compiledPanel_.get(), customUI_);
         customUI_.setSequencerTimeBendShown(device_.timeBendShown);
         customUI_.setSamplerZonesShown(device_.zonesShown);
-        customUI_.setSynthPanelsShown(device_.oscPanelShown, device_.matrixShown);
-        customUI_.setHaloSpectrumShown(device_.spectrumShown);
+        customUI_.setFaceplatePanelsShown(device_);
         customUI_.setDrumGridViewsShown(device_.padPanelShown, device_.padChainShown);
         reclaimExpandedFaceplate();
     }

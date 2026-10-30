@@ -19,9 +19,10 @@ namespace magda::daw::ui {
  * @brief Custom faceplate for Materia (magda_elements), the modal-synthesis
  *        voice ported from Mutable Instruments Elements.
  *
- * Three full-height panels side by side (#3201): VOICE, its six value boxes in pairs (contour,
- * pitch, output); EXCITER, the blend pad beside the Bow / Blow / Strike columns; RESONATOR, the
- * modal response over Geometry / Brightness / Damping / Position / Space.
+ * Four full-height panels side by side (#3201): VOICE, its six value boxes in pairs (contour,
+ * pitch, output); EXCITER, the blend pad beside the Bow / Blow / Strike columns; RESONATOR,
+ * Geometry / Brightness / Damping / Position / Space; and the MODAL RESPONSE. The sidebar can
+ * hide VOICE and the MODAL RESPONSE.
  *
  * Every control is a LinkableTextSlider carrying its param index via
  * setParamIndex(), so mod/macro/automation/MIDI-Learn linking is wired by the
@@ -41,6 +42,10 @@ class MateriaUI : public juce::Component {
     std::vector<LinkableTextSlider*> getLinkableSliders();
 
     std::function<void(int paramIndex, float value)> onParameterChanged;
+
+    /// Show or hide VOICE and the MODAL RESPONSE; the device's width follows preferredWidth().
+    void setPanelsShown(bool voiceShown, bool responseShown);
+    int preferredWidth() const;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -91,7 +96,9 @@ class MateriaUI : public juce::Component {
     std::array<Control, kNumParams> controls_;
 
     // Section rectangles, cached in resized() for painted titles/placeholders.
-    juce::Rectangle<int> voiceArea_, exciterArea_, resonatorArea_;
+    juce::Rectangle<int> voiceArea_, exciterArea_, resonatorArea_, responseArea_;
+    bool voiceShown_ = true;
+    bool responseShown_ = true;
     // Zone bands (captions + controls) for segment dividers + labels.
     juce::Rectangle<int> exciterColsArea_;
     juce::Rectangle<int> blendArea_, bowCol_, blowCol_, strikeCol_;

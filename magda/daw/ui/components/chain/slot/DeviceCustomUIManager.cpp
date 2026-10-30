@@ -516,11 +516,11 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     if (fmUI_)
         return fmUI_->preferredWidth();
     if (materiaUI_)
-        return 960;  // VOICE | EXCITER | RESONATOR
+        return materiaUI_->preferredWidth();
     if (haloUI_)
         return haloUI_->preferredWidth();
     if (nimbusUI_)
-        return 720;  // grain cloud + PARAMETERS | mode controls
+        return nimbusUI_->preferredWidth();
     if (struckUI_)
         return struckUI_->preferredContentWidth();  // body panel + EXCITER | RESONATOR
     if (sidechainUI_)
@@ -827,16 +827,17 @@ void DeviceCustomUIManager::setSamplerZonesShown(bool shown) {
         samplerUI_->setZonesShown(shown);
 }
 
-void DeviceCustomUIManager::setHaloSpectrumShown(bool shown) {
-    if (haloUI_)
-        haloUI_->setSpectrumShown(shown);
-}
-
-void DeviceCustomUIManager::setSynthPanelsShown(bool oscPanelShown, bool matrixShown) {
+void DeviceCustomUIManager::setFaceplatePanelsShown(const magda::DeviceInfo& device) {
     if (fmUI_)
-        fmUI_->setPanelsShown(oscPanelShown, matrixShown);
+        fmUI_->setPanelsShown(device.oscPanelShown, device.matrixShown);
     if (polySynthUI_)
-        polySynthUI_->setOscPanelShown(oscPanelShown);
+        polySynthUI_->setOscPanelShown(device.oscPanelShown);
+    if (materiaUI_)
+        materiaUI_->setPanelsShown(device.oscPanelShown, device.vizShown);
+    if (haloUI_)
+        haloUI_->setSpectrumShown(device.vizShown);
+    if (nimbusUI_)
+        nimbusUI_->setCloudShown(device.vizShown);
 }
 
 void DeviceCustomUIManager::setSequencerTimeBendShown(bool shown) {

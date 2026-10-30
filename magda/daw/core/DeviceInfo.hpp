@@ -355,8 +355,9 @@ struct DeviceInfo {
     /// modulation matrix (#3201).
     bool oscPanelShown = true;
     bool matrixShown = true;
-    /// Whether Halo's faceplate shows its RESONATOR spectrum (#3201).
-    bool spectrumShown = true;
+    /// Whether a faceplate shows its visualisation panel: Halo's spectrum, Nimbus's grain cloud
+    /// (#3201).
+    bool vizShown = true;
     /// Whether a Drum Grid shows its pad mix panel and its pad chain (#3144).
     bool padPanelShown = true;
     bool padChainShown = true;
