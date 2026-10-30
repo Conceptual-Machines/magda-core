@@ -37,8 +37,6 @@ struct ParamCell {
     int span = 1;
     /// Shown in place of the parameter's own name, where context already says the rest.
     juce::String label;
-    /// Drawn as a small value chip nested in another cell, such as a decay's curve (#3201).
-    bool chip = false;
 };
 
 /**

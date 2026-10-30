@@ -117,7 +117,6 @@ void applyFilled(ParamSlotComponent& slot, const magda::ParameterInfo& param, co
     slot.setParamIndex(cell.targetParamIndex);
     slot.setParameterInfo(param);
     slot.setParamName(cell.label.isNotEmpty() ? cell.label : param.name);
-    slot.setChip(cell.chip);
     slot.setParamValue(param.currentValue);
     slot.setShowEmptyText(false);
     slot.setEnabled(cell.enabled);

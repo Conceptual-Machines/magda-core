@@ -66,8 +66,6 @@ class ParamSlotComponent : public juce::Component,
     void setControlStyle(ParamControlStyle style);
     /// Smaller name and value fonts in the Text style, for narrow cells (#3201).
     void setCompactText(bool compact);
-    /// A small value chip nested in another cell, with a curve glyph and no name (#3201).
-    void setChip(bool chip);
     /// The shortest cell that still shows its name, value and mod row in @p style: 13px name over
     /// a 14px value in Text and Sliders, a 24px knob in Knobs, each in 10px of padding (#3201).
     static constexpr int minimumHeight(ParamControlStyle style) {
@@ -329,9 +327,6 @@ class ParamSlotComponent : public juce::Component,
     bool overlayOnly_ = false;
     ParamControlStyle style_ = ParamControlStyle::Text;
     bool compactText_ = false;
-    bool chip_ = false;
-    /// A chip has room for whole numbers only: "-12", not "-12.0".
-    void applyChipFormatter();
     /// The Text style's value font, compact or not.
     juce::Font textValueFont() const;
     juce::Rectangle<int> tileArea_, knobArea_, barArea_, valueArea_;

@@ -28,7 +28,7 @@ struct DrumVoiceSection {
     int attackSlot = -1;
     int decaySlot = -1;
     int curveSlot = -1;
-    int columns = 2;
+    int columns = 3;
 };
 
 /// The layers of @p pluginId.
@@ -41,16 +41,12 @@ std::vector<DrumVoiceSection> drumVoiceSections(const juce::String& pluginId);
 struct DrumVoiceGeometry {
     juce::Rectangle<int> plot;                 ///< Empty when there is no width beside the cells.
     std::vector<juce::Rectangle<int>> titles;  ///< One tab per section, in a row.
-    /// One per slot, sections in order, each section's in the same area under the tabs; a curve
-    /// slot's is the chip in its decay cell.
+    /// One per slot, sections in order, each section's in the same area under the tabs.
     std::vector<juce::Rectangle<int>> cells;
 
     static constexpr int kSpace = 8;
     static constexpr int kTitleHeight = 22;
     static constexpr int kCellWidth = 88;
-    /// The curve's chip, nested at the top right of its decay cell.
-    static constexpr int kChipWidth = 42;
-    static constexpr int kChipHeight = 16;
     static constexpr int kCellGap = 4;
     /// The plot's width when shown: the slot widens by this for it.
     static constexpr int kPlotWidth = 240;
@@ -96,7 +92,6 @@ class DrumVoiceLayout final : public DeviceParamLayout {
   private:
     std::vector<DrumVoiceSection> sections_;
     std::vector<int> slots_;
-    std::vector<int> curveSlots_;
     std::vector<int> sectionOfCell_;
     ParamControlStyle style_ = ParamControlStyle::Text;
 };

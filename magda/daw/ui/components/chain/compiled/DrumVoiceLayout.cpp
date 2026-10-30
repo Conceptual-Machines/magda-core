@@ -18,9 +18,8 @@ std::vector<DrumVoiceSection> voiceLayers(const juce::String& pluginId) {
                  .slots = {4, 5, 6, 7, 8, 9, 12},
                  .attackSlot = 7,
                  .decaySlot = 8,
-                 .curveSlot = 12,
-                 .columns = 3},
-                {.title = "Click", .slots = {10, 11}, .columns = 1}};
+                 .curveSlot = 12},
+                {.title = "Click", .slots = {10, 11}}};
     if (pluginId.equalsIgnoreCase("magda_snare"))
         return {
             {.title = "Transient", .slots = {0, 1, 2, 3, 4, 17}, .decaySlot = 3, .curveSlot = 17},
@@ -32,11 +31,10 @@ std::vector<DrumVoiceSection> voiceLayers(const juce::String& pluginId) {
             {.title = "Rattle",
              .slots = {10, 11, 12, 13, 14, 15, 18},
              .decaySlot = 14,
-             .curveSlot = 18,
-             .columns = 3}};
+             .curveSlot = 18}};
     if (pluginId.equalsIgnoreCase("magda_clap"))
         return {{.title = "Flam", .slots = {0, 1, 2, 3, 7}, .decaySlot = 2, .curveSlot = 7},
-                {.title = "Shape", .slots = {4, 5, 6}, .columns = 1}};
+                {.title = "Shape", .slots = {4, 5, 6}}};
     if (pluginId.equalsIgnoreCase("magda_hat"))
         return {{.title = "Ring", .slots = {0, 1, 2, 3, 7}, .decaySlot = 3, .curveSlot = 7},
                 {.title = "Noise", .slots = {4, 5, 9, 10, 6, 8}, .decaySlot = 6, .curveSlot = 8}};
@@ -50,15 +48,9 @@ std::vector<DrumVoiceSection> voiceLayers(const juce::String& pluginId) {
     return {};
 }
 
-// The curve rides in its decay cell, so it takes no grid position.
-int gridCountOf(const DrumVoiceSection& section) {
-    const auto count = static_cast<int>(section.slots.size());
-    return section.curveSlot >= 0 ? count - 1 : count;
-}
-
 int rowsOf(const DrumVoiceSection& section) {
     const int columns = std::max(1, section.columns);
-    return (gridCountOf(section) + columns - 1) / columns;
+    return (static_cast<int>(section.slots.size()) + columns - 1) / columns;
 }
 
 /// "body_snap_time" -> "Snap time": the layer's title already names the rest.
@@ -127,21 +119,11 @@ DrumVoiceGeometry DrumVoiceGeometry::of(juce::Rectangle<int> bounds, ParamContro
         const int rows = rowsOf(section);
         const int available = columns.getHeight() - (rows - 1) * kCellGap;
         const int cellH = std::min(cellHeight(style), std::max(24, available / rows));
-        int position = 0;
-        juce::Rectangle<int> decayCell;
-        for (const int slot : section.slots) {
-            if (slot == section.curveSlot) {
-                g.cells.emplace_back(decayCell.getRight() - 6 - kChipWidth, decayCell.getY() + 5,
-                                     kChipWidth, kChipHeight);
-                continue;
-            }
-            const int col = position % section.columns;
-            const int row = position / section.columns;
-            ++position;
+        for (int i = 0; i < static_cast<int>(section.slots.size()); ++i) {
+            const int col = i % section.columns;
+            const int row = i / section.columns;
             g.cells.emplace_back(columns.getX() + col * (kCellWidth + kCellGap),
                                  columns.getY() + row * (cellH + kCellGap), kCellWidth, cellH);
-            if (slot == section.decaySlot)
-                decayCell = g.cells.back();
         }
     }
     return g;
@@ -153,8 +135,6 @@ DrumVoiceLayout::DrumVoiceLayout(const juce::String& pluginId)
         const auto& section = sections_[i];
         slots_.insert(slots_.end(), section.slots.begin(), section.slots.end());
         sectionOfCell_.insert(sectionOfCell_.end(), section.slots.size(), static_cast<int>(i));
-        if (section.curveSlot >= 0)
-            curveSlots_.push_back(section.curveSlot);
     }
 }
 
@@ -183,8 +163,8 @@ ParamCell DrumVoiceLayout::cellFor(const magda::DeviceInfo& device, int cellInde
         cell.mode = ParamCell::Mode::Filled;
         cell.paramArrayIndex = k;
         cell.targetParamIndex = slot;
-        cell.label = roleLabel(param.name);
-        cell.chip = std::ranges::find(curveSlots_, slot) != curveSlots_.end();
+        const auto& section = sections_[static_cast<size_t>(page)];
+        cell.label = slot == section.curveSlot ? juce::String("Curve") : roleLabel(param.name);
         return cell;
     }
     return cell;
