@@ -255,6 +255,12 @@ class StubPlugin final : public juce::AudioPluginInstance {
     }
 
     void prepareToPlay(double rate, int blockSize) override {
+        // JUCE's VST3 host skips setupProcessing when already active at these details.
+        if (prepareCount > 0 && juce::approximatelyEqual(getSampleRate(), rate) &&
+            getBlockSize() == blockSize)
+            return;
+
+        setRateAndBufferSizeDetails(rate, blockSize);
         preparedRate = rate;
         preparedBlockSize = blockSize;
         ++prepareCount;
@@ -1688,6 +1694,21 @@ TEST_CASE("A second prepare at the same settings does not prepare the plugin aga
     device.prepare(contextFor(2, 128));
     CHECK(raw->prepareCount == 2);
     CHECK(raw->preparedBlockSize == 128);
+}
+
+TEST_CASE("A re-prepare at a new rate and block size reaches a VST3 plugin",
+          "[engine][external]") {
+    auto plugin = std::make_unique<StubPlugin>();
+    auto* raw = plugin.get();
+
+    adapter::EngineExternalDevice device(std::move(plugin), externalDevice(), false);
+    device.prepare({.sampleRate = 48000.0, .maxBlockSize = 480, .numChannels = 2});
+
+    // A render borrowing the live instance: 512-sample blocks at the export rate.
+    device.prepare({.sampleRate = 44100.0, .maxBlockSize = 512, .numChannels = 2});
+    CHECK(raw->prepareCount == 2);
+    CHECK(raw->preparedRate == 44100.0);
+    CHECK(raw->preparedBlockSize == 512);
 }
 
 TEST_CASE("A multi-out plugin's further pairs reach the ports opened for them",
