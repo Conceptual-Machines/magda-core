@@ -276,8 +276,16 @@ jobs:
           exit 1
         fi
 
+        # Stapling fetches the ticket from Apple's CDN, which drops connections now and then (Error 68)
         echo "Stapling notarization ticket..."
-        xcrun stapler staple "$DMG_NAME"
+        for attempt in 1 2 3 4 5; do
+          xcrun stapler staple "$DMG_NAME" && break
+          if [ "$attempt" -eq 5 ]; then
+            exit 1
+          fi
+          echo "Staple attempt $attempt failed, retrying in 30s..."
+          sleep 30
+        done
 
     - name: Generate checksum
       env:
@@ -549,8 +557,16 @@ jobs:
           exit 1
         fi
 
+        # Stapling fetches the ticket from Apple's CDN, which drops connections now and then (Error 68)
         echo "Stapling notarization ticket..."
-        xcrun stapler staple "$DMG_NAME"
+        for attempt in 1 2 3 4 5; do
+          xcrun stapler staple "$DMG_NAME" && break
+          if [ "$attempt" -eq 5 ]; then
+            exit 1
+          fi
+          echo "Staple attempt $attempt failed, retrying in 30s..."
+          sleep 30
+        done
 
     - name: Generate checksum
       env:
