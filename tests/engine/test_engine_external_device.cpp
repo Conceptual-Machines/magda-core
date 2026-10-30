@@ -1694,8 +1694,7 @@ TEST_CASE("A second prepare at the same settings does not prepare the plugin aga
     CHECK(raw->preparedBlockSize == 128);
 }
 
-TEST_CASE("A re-prepare at a new rate and block size reaches a VST3 plugin",
-          "[engine][external]") {
+TEST_CASE("A re-prepare at a new rate and block size reaches a VST3 plugin", "[engine][external]") {
     auto plugin = std::make_unique<StubPlugin>();
     auto* raw = plugin.get();
 
