@@ -4,6 +4,7 @@
 #include "AboutDialog.hpp"
 
 #include "BinaryData.h"
+#include "Mascot.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
 #include "extensions/Extension.hpp"
@@ -25,14 +26,7 @@ const juce::String kConceptualMachinesCopyright("(C) 2026 Conceptual Machines");
 class AboutDialog::ContentComponent : public juce::Component {
   public:
     explicit ContentComponent(juce::String engineName) : engineName_(std::move(engineName)) {
-        // Load the SVG logo
-        logo_ = juce::Drawable::createFromSVGString(
-            juce::String::fromUTF8(BinaryData::magdalisa_svg, BinaryData::magdalisa_svgSize));
-        if (logo_) {
-            // Recolor the SVG to match theme
-            logo_->replaceColour(juce::Colour(0xFF000000),
-                                 ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-        }
+        addAndMakeVisible(mascot_);
 
         // Load Conceptual Machines badge
         conceptualMachinesBadge_ = juce::Drawable::createFromSVGString(juce::String::fromUTF8(
@@ -87,13 +81,7 @@ class AboutDialog::ContentComponent : public juce::Component {
 
         auto bounds = getLocalBounds();
 
-        // Draw logo centered in upper portion
-        if (logo_) {
-            auto logoBounds = bounds.removeFromTop(200).reduced(40, 20);
-            logo_->drawWithin(g, logoBounds.toFloat(), juce::RectanglePlacement::centred, 1.0f);
-        } else {
-            bounds.removeFromTop(200);
-        }
+        bounds.removeFromTop(200);  // mascot
 
         // Title (drawn by titleLink_ button)
         auto& fm = FontManager::getInstance();
@@ -177,42 +165,32 @@ class AboutDialog::ContentComponent : public juce::Component {
             faustLogo_->drawWithin(g, centred.removeFromLeft(faustLogoW).toFloat(),
                                    juce::RectanglePlacement::centred, 1.0f);
 
-        // Conceptual Machines badge sits under the attribution row.
-        creditsArea.removeFromTop(6);
-        if (conceptualMachinesBadge_) {
-            auto badgeArea = creditsArea.removeFromTop(42).withSizeKeepingCentre(38, 38);
+        // Conceptual Machines badge and copyright, at the foot of the box.
+        auto footer = footerArea();
+        auto badgeArea = footer.removeFromTop(42).withSizeKeepingCentre(38, 38);
+        if (conceptualMachinesBadge_)
             conceptualMachinesBadge_->drawWithin(g, badgeArea.toFloat(),
                                                  juce::RectanglePlacement::centred, 1.0f);
-        }
         g.setFont(fm.getUIFont(9.0f));
         g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-        g.drawText(kConceptualMachinesCopyright, creditsArea.removeFromTop(16),
+        g.drawText(kConceptualMachinesCopyright, footer.removeFromTop(16),
                    juce::Justification::centred);
     }
 
     void resized() override {
+        mascot_.setBounds(getLocalBounds().removeFromTop(200).reduced(40, 20));
         if (titleLink_) {
             auto bounds = getLocalBounds();
             bounds.removeFromTop(200);  // skip logo area
             titleLink_->setBounds(bounds.removeFromTop(40));
         }
-        if (conceptualMachinesLink_) {
-            auto bounds = getLocalBounds();
-            bounds.removeFromTop(200);  // logo
-            bounds.removeFromTop(40);   // title
-            bounds.removeFromTop(24);   // subtitle
-            bounds.removeFromTop(20);   // version
-            bounds.removeFromTop(10);   // credits top gap
-            auto creditsArea = bounds.reduced(10, 0);
-            creditsArea.removeFromTop(6);   // divider padding
-            creditsArea.removeFromTop(20);  // attribution row
-            creditsArea.removeFromTop(6);
-            conceptualMachinesLink_->setBounds(
-                creditsArea.removeFromTop(58).withSizeKeepingCentre(170, 58));
-        }
+
+        auto footer = footerArea();
+        auto badgeAndCopyright = footer.removeFromTop(58);
+        if (conceptualMachinesLink_)
+            conceptualMachinesLink_->setBounds(badgeAndCopyright.withSizeKeepingCentre(170, 58));
         if (licenseLink_)
-            licenseLink_->setBounds(
-                getLocalBounds().withTop(384).withHeight(16));  // under the copyright
+            licenseLink_->setBounds(footer);
     }
 
     void mouseDown(const juce::MouseEvent&) override {
@@ -230,8 +208,14 @@ class AboutDialog::ContentComponent : public juce::Component {
     }
 
   private:
+    /** @brief The badge, copyright and licence, kept to the bottom of the box. */
+    juce::Rectangle<int> footerArea() const {
+        auto bounds = getLocalBounds().withTrimmedBottom(12);
+        return bounds.removeFromBottom(42 + 16 + 16);
+    }
+
     const juce::String engineName_;
-    std::unique_ptr<juce::Drawable> logo_;
+    Mascot mascot_;
     std::unique_ptr<juce::Drawable> conceptualMachinesBadge_;
     std::unique_ptr<juce::Drawable> juceLogo_;
     std::unique_ptr<juce::Drawable> faustLogo_;

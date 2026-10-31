@@ -4,6 +4,7 @@
 #include "SplashScreen.hpp"
 
 #include "BinaryData.h"
+#include "Mascot.hpp"
 #include "core/StringTable.hpp"
 #include "extensions/Extension.hpp"
 #include "magda.hpp"
@@ -15,6 +16,9 @@ namespace magda {
 namespace {
 const juce::URL kConceptualMachinesUrl("https://conceptualmachines.co.uk");
 const juce::String kConceptualMachinesCopyright("(C) 2026 Conceptual Machines");
+
+/// Height of the band at the top of the splash that the mascot sits in.
+constexpr int kMascotBand = 200;
 }  // namespace
 
 // =============================================================================
@@ -24,15 +28,8 @@ const juce::String kConceptualMachinesCopyright("(C) 2026 Conceptual Machines");
 class SplashScreen::ContentComponent : public juce::Component {
   public:
     ContentComponent() {
+        addAndMakeVisible(mascot_);
         setSize(450, 450);
-
-        // Load the SVG logo
-        logo_ = juce::Drawable::createFromSVGString(
-            juce::String::fromUTF8(BinaryData::magdalisa_svg, BinaryData::magdalisa_svgSize));
-        if (logo_) {
-            logo_->replaceColour(juce::Colour(0xFF000000),
-                                 ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-        }
 
         // Load Conceptual Machines badge
         conceptualMachinesBadge_ = juce::Drawable::createFromSVGString(juce::String::fromUTF8(
@@ -69,13 +66,7 @@ class SplashScreen::ContentComponent : public juce::Component {
         g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 8.0f, 1.0f);
 
-        // Draw logo centered in upper portion
-        if (logo_) {
-            auto logoBounds = bounds.removeFromTop(200).reduced(40, 20);
-            logo_->drawWithin(g, logoBounds.toFloat(), juce::RectanglePlacement::centred, 1.0f);
-        } else {
-            bounds.removeFromTop(200);
-        }
+        bounds.removeFromTop(kMascotBand);
 
         // Title
         auto& fm = FontManager::getInstance();
@@ -184,6 +175,10 @@ class SplashScreen::ContentComponent : public juce::Component {
         }
     }
 
+    void resized() override {
+        mascot_.setBounds(getLocalBounds().removeFromTop(kMascotBand).reduced(40, 20));
+    }
+
     void setStatus(const juce::String& text) {
         statusText_ = text;
         repaint();
@@ -200,7 +195,7 @@ class SplashScreen::ContentComponent : public juce::Component {
     }
 
   private:
-    std::unique_ptr<juce::Drawable> logo_;
+    Mascot mascot_;
     std::unique_ptr<juce::Drawable> conceptualMachinesBadge_;
     std::unique_ptr<juce::Drawable> juceLogo_;
     std::unique_ptr<juce::Drawable> faustLogo_;
