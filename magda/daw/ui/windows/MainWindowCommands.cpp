@@ -182,6 +182,7 @@ void MainWindow::MainComponent::getAllCommands(juce::Array<juce::CommandID>& com
         // View
         toggleArrangeSession, cycleViewForward, cycleViewBackward, uiScaleUp, uiScaleDown,
         togglePianoRollFullscreen, zoomIn, zoomOut, showLiveView, showArrangeView, showMixView,
+        showToolPalette,
         // Help
         about,
         // Settings
@@ -623,6 +624,11 @@ void MainWindow::MainComponent::getCommandInfo(juce::CommandID commandID,
         case zoomOut:
             result.setInfo("Zoom Out", "Zoom the arrangement out", "View", 0);
             result.addDefaultKeypress('g', 0);
+            break;
+        case showToolPalette:
+            result.setInfo("Show Tools", "Open the arrangement's edit tools at the mouse", "View",
+                           0);
+            result.addDefaultKeypress('t', 0);
             break;
 
         // Help
@@ -2160,6 +2166,9 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
             mainView->getTimelineController().dispatch(
                 ZoomStepEvent{info.commandID == zoomIn ? kZoomStepFactor : 1.0 / kZoomStepFactor});
             return true;
+
+        case showToolPalette:
+            return mainView != nullptr && mainView->showToolPalette();
 
         default:
             // Command-backed application/menu actions share the same callback

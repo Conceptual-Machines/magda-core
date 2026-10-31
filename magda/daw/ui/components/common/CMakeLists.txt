@@ -5,6 +5,7 @@ target_sources(magda_daw_app PRIVATE
     SvgButton.cpp
     EditTool.cpp
     EditToolbar.cpp
+    EditToolPalette.cpp
     EditorRail.cpp
     SegmentedChoice.cpp
     MagdaAlertWindow.cpp
@@ -31,6 +32,7 @@ target_sources(magda_daw_app PRIVATE
     AiSoundDesignerIcon.hpp
     EditTool.hpp
     EditToolbar.hpp
+    EditToolPalette.hpp
     EditorRail.hpp
     MidiActivityLed.hpp
     IconSelector.hpp

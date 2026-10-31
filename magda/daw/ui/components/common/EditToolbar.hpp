@@ -8,6 +8,7 @@
 #include <array>
 #include <functional>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "EditTool.hpp"
@@ -74,6 +75,9 @@ class Row {
     bool wellHasItem_ = false;
 };
 }  // namespace edit_toolbar
+
+/** @brief The icon a tool's button draws, as BinaryData and its size. */
+std::pair<const char*, int> editToolIcon(EditTool tool);
 
 /** @brief The five tool buttons in their well, bound to one surface's EditToolState. */
 class EditToolButtons : public juce::Component, private juce::ChangeListener {

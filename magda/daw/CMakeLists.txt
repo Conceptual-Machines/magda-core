@@ -198,6 +198,9 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/toolbar/density_small.svg
     ../../assets/icons/toolbar/density_medium.svg
     ../../assets/icons/toolbar/density_large.svg
+    ../../assets/icons/toolbar/track_height_compact.svg
+    ../../assets/icons/toolbar/track_height_medium.svg
+    ../../assets/icons/toolbar/track_height_large.svg
     ../../assets/icons/toolbar/zoom_out_map.svg
     ../../assets/icons/toolbar/fit_width.svg
     ../../assets/icons/toolbar/fit_loop.svg

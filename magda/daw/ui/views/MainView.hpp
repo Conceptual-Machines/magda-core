@@ -28,7 +28,7 @@ namespace magda {
 
 // Forward declaration
 class AudioEngine;
-class ArrangementToolbar;
+class CurrentEditToolButton;
 struct ProjectInfo;
 class SongNavigatorPanel;
 class MasterAutomationHeaderPanel;
@@ -139,6 +139,8 @@ class MainView : public juce::Component,
 
     // Keyboard handling
     bool keyPressed(const juce::KeyPress& key) override;
+    /** @brief Opens the edit tools at the mouse; false while the arrangement is not showing. */
+    bool showToolPalette();
 
     // Mouse handling for zoom
     void mouseDown(const juce::MouseEvent& event) override;
@@ -266,8 +268,9 @@ class MainView : public juce::Component,
 
     struct ArrangementLayout {
         bool swapped = false;
-        juce::Rectangle<int> toolbarArea;
         juce::Rectangle<int> cornerArea;
+        // The ruler-height block atop the vertical scrollbar's slot.
+        juce::Rectangle<int> trackHeightButtonsArea;
         juce::Rectangle<int> markerLaneArea;
         juce::Rectangle<int> timelineArea;
         juce::Rectangle<int> trackHeadersArea;
@@ -349,14 +352,18 @@ class MainView : public juce::Component,
     // Audio engine reference for metering
     AudioEngine* audioEngine_ = nullptr;
 
-    std::unique_ptr<ArrangementToolbar> toolbar_;
-    // Corner toolbar buttons (above track headers); the zoom and ruler ones live in toolbar_
+    // Corner buttons, above the track headers
+    std::unique_ptr<CurrentEditToolButton> editToolButton;
     std::unique_ptr<SvgButton> zoomFitButton;
     std::unique_ptr<SvgButton> zoomSelButton;
     std::unique_ptr<SvgButton> markerLaneToggleButton;
+    // Atop the vertical scrollbar; a right-click edits their heights. The click that follows a
+    // right-click must not apply one.
     std::unique_ptr<SvgButton> trackSmallButton;
     std::unique_ptr<SvgButton> trackMediumButton;
     std::unique_ptr<SvgButton> trackLargeButton;
+    bool trackHeightRightClicked_ = false;
+    std::unique_ptr<juce::MouseListener> trackHeightRightClick_;
     std::unique_ptr<SvgButton> zoomLoopButton;
     std::unique_ptr<SvgButton> secondsRulerToggleButton;
     std::unique_ptr<SvgButton> ioToggleButton;

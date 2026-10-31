@@ -107,6 +107,29 @@ Row& Row::closeWell() {
 
 }  // namespace edit_toolbar
 
+std::pair<const char*, int> editToolIcon(EditTool tool) {
+    switch (tool) {
+        case EditTool::Pointer:
+        case EditTool::Line:  // the arrow
+            return {BinaryData::mepointer_svg, BinaryData::mepointer_svgSize};
+        case EditTool::Pencil:
+            return {BinaryData::mepencil_svg, BinaryData::mepencil_svgSize};
+        case EditTool::Slice:
+            return {BinaryData::meslice_svg, BinaryData::meslice_svgSize};
+        case EditTool::Glue:
+            return {BinaryData::meglue_svg, BinaryData::meglue_svgSize};
+        case EditTool::Erase:
+            return {BinaryData::meerase_svg, BinaryData::meerase_svgSize};
+        case EditTool::Flat:
+            return {BinaryData::meflat_svg, BinaryData::meflat_svgSize};
+        case EditTool::Marker:
+            return {BinaryData::memarker_svg, BinaryData::memarker_svgSize};
+        case EditTool::Label:
+            return {BinaryData::melabel_svg, BinaryData::melabel_svgSize};
+    }
+    return {BinaryData::mepointer_svg, BinaryData::mepointer_svgSize};
+}
+
 namespace {
 
 std::vector<std::pair<EditTool, const char*>> allTools(const std::array<const char*, 5>& tooltips) {
@@ -127,21 +150,10 @@ EditToolButtons::EditToolButtons(EditToolState& state,
     : state_(state) {
     static constexpr std::array<const char*, 9> kNames{
         "Pointer", "Pencil", "Slice", "Glue", "Erase", "Line", "Flat", "Marker", "Label"};
-    const std::array<std::pair<const char*, int>, 9> icons{{
-        {BinaryData::mepointer_svg, BinaryData::mepointer_svgSize},
-        {BinaryData::mepencil_svg, BinaryData::mepencil_svgSize},
-        {BinaryData::meslice_svg, BinaryData::meslice_svgSize},
-        {BinaryData::meglue_svg, BinaryData::meglue_svgSize},
-        {BinaryData::meerase_svg, BinaryData::meerase_svgSize},
-        {BinaryData::mepointer_svg, BinaryData::mepointer_svgSize},  // Line: the arrow
-        {BinaryData::meflat_svg, BinaryData::meflat_svgSize},
-        {BinaryData::memarker_svg, BinaryData::memarker_svgSize},
-        {BinaryData::melabel_svg, BinaryData::melabel_svgSize},
-    }};
     for (const auto& [tool, tooltip] : tools) {
-        const auto i = static_cast<size_t>(tool);
-        auto button = std::make_unique<SvgButton>(kNames[i], icons[i].first,
-                                                  static_cast<size_t>(icons[i].second));
+        const auto [svg, svgSize] = editToolIcon(tool);
+        auto button = std::make_unique<SvgButton>(kNames[static_cast<size_t>(tool)], svg,
+                                                  static_cast<size_t>(svgSize));
         button->setTooltip(tooltip);
         edit_toolbar::styleButton(*button);
         button->onClick = [this, tool]() { state_.setTool(tool); };
