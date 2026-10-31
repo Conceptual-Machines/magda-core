@@ -114,6 +114,12 @@ class BarsBeatsTicksLabel : public juce::Component {
     // Whether any segment is currently being dragged
     bool isDragging() const;
 
+    /** The value as the segments show it, e.g. "1.1.000". */
+    juce::String getDisplayText() const;
+
+    /// Shown over every segment, which take the mouse from this label.
+    std::function<juce::String()> tooltip;
+
     // Callback when value changes
     std::function<void()> onValueChange;
 
@@ -176,7 +182,7 @@ class BarsBeatsTicksLabel : public juce::Component {
     // =========================================================================
     // SegmentLabel — private inner class
     // =========================================================================
-    class SegmentLabel : public juce::Component {
+    class SegmentLabel : public juce::Component, public juce::TooltipClient {
       public:
         SegmentLabel(BarsBeatsTicksLabel& owner, SegmentType type);
         ~SegmentLabel() override;
@@ -185,6 +191,7 @@ class BarsBeatsTicksLabel : public juce::Component {
         int getDisplayValue() const {
             return displayValue_;
         }
+        juce::String formatDisplay() const;
 
         void paint(juce::Graphics& g) override;
         void mouseDown(const juce::MouseEvent& e) override;
@@ -196,6 +203,10 @@ class BarsBeatsTicksLabel : public juce::Component {
 
         bool isDragging() const {
             return isDragging_;
+        }
+
+        juce::String getTooltip() override {
+            return owner_.tooltip ? owner_.tooltip() : juce::String();
         }
 
       private:
@@ -212,7 +223,6 @@ class BarsBeatsTicksLabel : public juce::Component {
         bool isEditing_ = false;
         std::unique_ptr<juce::TextEditor> editor_;
 
-        juce::String formatDisplay() const;
         void startEditing();
         void finishEditing();
         void cancelEditing();

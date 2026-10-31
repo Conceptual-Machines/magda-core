@@ -353,12 +353,12 @@ class Config {
         uiDensityScale = std::clamp(scale, 0.6, 1.4);
     }
 
-    // Transport bar arrangement: "anchored", "memory" or "justified".
+    // Transport bar style: "boxed" or "strip".
     const std::string& getTransportStyle() const {
         return transportStyle;
     }
     void setTransportStyle(std::string style) {
-        transportStyle = style.empty() ? "anchored" : std::move(style);
+        transportStyle = style.empty() ? "boxed" : std::move(style);
     }
 
     // Device parameter controls: "text", "knobs" or "sliders". A plugin's
@@ -1711,7 +1711,7 @@ class Config {
     // UI spacing density multiplier (1.0 = normal). Clamped to [0.6, 1.4].
     double uiDensityScale = 1.0;
 
-    std::string transportStyle = "anchored";
+    std::string transportStyle = "boxed";
     std::string deviceControlStyle = "text";
     std::string trackColourStyle = "spine";
     bool showTrackIORouting = true;
