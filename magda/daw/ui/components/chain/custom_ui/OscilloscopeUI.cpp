@@ -16,7 +16,6 @@
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
-#include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
@@ -32,33 +31,35 @@ OscilloscopeUI::OscilloscopeUI() {
 
     timeLabel_.setText("Time", juce::dontSendNotification);
     timeLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    timeLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
+    timeLabel_.setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
     timeLabel_.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(timeLabel_);
 
-    timeSlider_.setSliderStyle(juce::Slider::LinearHorizontal);
     timeSlider_.setRange(1.0, 5000.0, 0.0);
-    timeSlider_.setSkewFactorFromMidPoint(50.0);  // log-ish: low end usable across 1-5000 ms
-    // Own value readout (themed font, clean formatting) instead of the slider's
-    // built-in text box, which uses the default font and shows raw decimals.
-    timeSlider_.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    timeSlider_.setColour(juce::Slider::backgroundColourId,
-                          ActiveTheme::getColour(ActiveTheme::SURFACE));
-    timeSlider_.setColour(juce::Slider::trackColourId,
-                          ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
-    timeSlider_.setColour(juce::Slider::thumbColourId,
-                          ActiveTheme::getColour(ActiveTheme::CONTROL_SLIDER_THUMB));
-    timeSlider_.onValueChange = [this] {
-        updateTimeReadout();
+    timeSlider_.setSkewForCentre(50.0);  // log-ish: low end usable across 1-5000 ms
+    timeSlider_.setShowFillIndicator(false);
+    timeSlider_.setFont(FontManager::getInstance().getUIFont(10.0f));
+    timeSlider_.setTextColour(ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
+    timeSlider_.setValueFormatter([](double ms) {
+        return ms >= 1000.0 ? juce::String(ms / 1000.0, 2) + " s"
+                            : juce::String(juce::roundToInt(ms)) + " ms";
+    });
+    timeSlider_.setValueParser([](const juce::String& text) {
+        const auto t = text.trim().toLowerCase();
+        const auto value = t.getDoubleValue();
+        return t.endsWith("s") && !t.endsWith("ms") ? value * 1000.0 : value;
+    });
+    timeSlider_.onValueChanged = [this](double ms) {
         if (telemetry_ != nullptr) {
             // The device during the drag, the document at the end of it: a
             // values publish per frame is what committing every tick would cost.
-            telemetry_->setTimebaseMs(static_cast<float>(timeSlider_.getValue()));
+            telemetry_->setTimebaseMs(static_cast<float>(ms));
             applyTimebase();
             repaint();
         }
-        // A wheel or keyboard change never ends a drag, so it commits here.
-        if (!timeSlider_.isMouseButtonDown())
+        // A typed value never ends a drag, so it commits here.
+        if (!juce::ModifierKeys::currentModifiers.isAnyMouseButtonDown())
             commitSettings();
     };
     // Persist as the global last-used default on release (not per drag tick).
@@ -73,29 +74,16 @@ OscilloscopeUI::OscilloscopeUI() {
     };
     addAndMakeVisible(timeSlider_);
 
-    timeValueLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    timeValueLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
-    timeValueLabel_.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(timeValueLabel_);
-    updateTimeReadout();
-
     colourLabel_.setText("Color", juce::dontSendNotification);
     colourLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    colourLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
+    colourLabel_.setColour(juce::Label::textColourId,
+                           ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
     colourLabel_.setJustificationType(juce::Justification::centredRight);
     addChildComponent(colourLabel_);  // only shown in the stacked compact layout
 
-    colourCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
-    colourCombo_.setColour(juce::ComboBox::backgroundColourId,
-                           ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
-    colourCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
-    colourCombo_.setColour(juce::ComboBox::outlineColourId,
-                           ActiveTheme::getColour(ActiveTheme::BORDER));
-    for (int i = 0; i < kAnalyzerColourCount; ++i)
-        colourCombo_.addItem(kAnalyzerColourNames[i], i + 1);
-    colourCombo_.onChange = [this] {
+    colourDots_.onChange = [this](int index) {
         if (telemetry_ != nullptr)
-            telemetry_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
+            telemetry_->setTraceColourIndex(index);
         commitSettings();
 
         // The last-used colour, for the next analyser added: the header's
@@ -103,11 +91,11 @@ OscilloscopeUI::OscilloscopeUI() {
         if (!persistGlobalDefaults_)
             return;
         auto d = Config::getInstance().getOscilloscopeDefaults();
-        d.traceColour = colourCombo_.getSelectedId() - 1;
+        d.traceColour = index;
         Config::getInstance().setOscilloscopeDefaults(d);
         Config::getInstance().save();
     };
-    addAndMakeVisible(colourCombo_);
+    addAndMakeVisible(colourDots_);
 
     popoutButton_ = std::make_unique<magda::SvgButton>("Pop out", BinaryData::open_in_new_svg,
                                                        BinaryData::open_in_new_svgSize);
@@ -128,7 +116,6 @@ OscilloscopeUI::OscilloscopeUI() {
 
 OscilloscopeUI::~OscilloscopeUI() {
     stopTimer();
-    colourCombo_.setLookAndFeel(nullptr);
 }
 
 std::vector<juce::Component*> OscilloscopeUI::headerControls() {
@@ -155,22 +142,11 @@ void OscilloscopeUI::syncDocked() {
 
 void OscilloscopeUI::lookAndFeelChanged() {
     // Re-apply cached theme colours after a live theme switch.
-    timeLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    colourLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
-    timeValueLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
-
-    timeSlider_.setColour(juce::Slider::backgroundColourId,
-                          ActiveTheme::getColour(ActiveTheme::SURFACE));
-    timeSlider_.setColour(juce::Slider::trackColourId,
-                          ActiveTheme::getColour(ActiveTheme::CONTROL_VALUE_FILL));
-    timeSlider_.setColour(juce::Slider::thumbColourId,
-                          ActiveTheme::getColour(ActiveTheme::CONTROL_SLIDER_THUMB));
-
-    colourCombo_.setColour(juce::ComboBox::backgroundColourId,
-                           ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.1f));
-    colourCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
-    colourCombo_.setColour(juce::ComboBox::outlineColourId,
-                           ActiveTheme::getColour(ActiveTheme::BORDER));
+    timeLabel_.setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+    colourLabel_.setColour(juce::Label::textColourId,
+                           ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+    timeSlider_.setTextColour(ActiveTheme::getColour(ActiveTheme::DEVICE_VALUE_TEXT));
 
     if (popoutButton_)
         daw::ui::node_header::applyHeaderIconStyle(
@@ -195,9 +171,8 @@ void OscilloscopeUI::refreshSettingsFromSource() {
         return;
 
     timeSlider_.setValue(telemetry_->timebaseMs(), juce::dontSendNotification);
-    updateTimeReadout();
     applyTimebase();
-    colourCombo_.setSelectedId(telemetry_->traceColourIndex() + 1, juce::dontSendNotification);
+    colourDots_.setSelectedIndex(telemetry_->traceColourIndex());
     repaint();
 }
 
@@ -209,7 +184,7 @@ void OscilloscopeUI::commitSettings() {
 
     juce::NamedValueSet settings;
     settings.set("timebaseMs", static_cast<float>(timeSlider_.getValue()));
-    settings.set("traceColour", colourCombo_.getSelectedId() - 1);
+    settings.set("traceColour", colourDots_.getSelectedIndex());
     onSettingsEdited(settings);
 }
 
@@ -272,8 +247,7 @@ void OscilloscopeUI::updateControlVisibility() {
     const bool stacked = compact_ && showControls();
     timeLabel_.setVisible(full || stacked);
     timeSlider_.setVisible(full || stacked);
-    timeValueLabel_.setVisible(full);  // numeric readout only fits the full editor
-    colourCombo_.setVisible(full || stacked);
+    colourDots_.setVisible(full || stacked);
     colourLabel_.setVisible(stacked);  // the stacked layout labels the colour combo
     if (popoutButton_)
         popoutButton_->setVisible(compact_);  // lives in the strip, compact only
@@ -317,17 +291,9 @@ void OscilloscopeUI::advanceControlsFade() {
 void OscilloscopeUI::applyControlsAlpha() {
     const float alpha = controlsToggle() ? controlsAlpha_ : 1.0f;
     timeLabel_.setAlpha(alpha);
-    timeValueLabel_.setAlpha(alpha);
     timeSlider_.setAlpha(alpha);
     colourLabel_.setAlpha(alpha);
-    colourCombo_.setAlpha(alpha);
-}
-
-void OscilloscopeUI::updateTimeReadout() {
-    const double ms = timeSlider_.getValue();
-    const juce::String text = ms >= 1000.0 ? juce::String(ms / 1000.0, 2) + " s"
-                                           : juce::String(juce::roundToInt(ms)) + " ms";
-    timeValueLabel_.setText(text, juce::dontSendNotification);
+    colourDots_.setAlpha(alpha);
 }
 
 void OscilloscopeUI::applyTimebase() {
@@ -363,7 +329,7 @@ void OscilloscopeUI::resized() {
             timeSlider_.setBounds(timeRow.reduced(4, 2));
             auto colourRow = controls.removeFromTop(kStackRowH);
             colourLabel_.setBounds(colourRow.removeFromLeft(kStackLabelW));
-            colourCombo_.setBounds(colourRow.reduced(2, 1));
+            colourDots_.setBounds(colourRow.reduced(2, 1));
         }
         return;
     }
@@ -373,9 +339,8 @@ void OscilloscopeUI::resized() {
     // Docked, the row lies over the trace's foot while the gear shows it.
     auto controls = docked() ? controlsRow() : getLocalBounds().removeFromBottom(kControlRowH);
     timeLabel_.setBounds(controls.removeFromLeft(40));
-    colourCombo_.setBounds(controls.removeFromRight(72).reduced(2, 2));
-    timeValueLabel_.setBounds(controls.removeFromRight(54));
-    timeSlider_.setBounds(controls.reduced(4, 2));
+    colourDots_.setBounds(controls.removeFromRight(colourDots_.getPreferredWidth() + 8));
+    timeSlider_.setBounds(controls.removeFromLeft(72).reduced(4, 2));
 }
 
 juce::Rectangle<int> OscilloscopeUI::controlsRow() const {
@@ -454,7 +419,7 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
     }
     auto area = bounds.toFloat().reduced(4.0f);
 
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG));
     g.fillRoundedRectangle(area, 4.0f);
 
     const float midY = area.getCentreY();
@@ -468,18 +433,18 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
         const float amp = std::pow(10.0f, dbfs / 20.0f) * 0.9f;  // 0.9 = trace headroom
         const float yTop = midY - amp * halfH;
         const float yBot = midY + amp * halfH;
-        g.setColour(ActiveTheme::getColour(ActiveTheme::GRID_LINE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_GRID));
         g.drawHorizontalLine(static_cast<int>(yTop), area.getX(), area.getRight());
         g.drawHorizontalLine(static_cast<int>(yBot), area.getX(), area.getRight());
         if (!compact_) {
-            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
             g.drawText(juce::String(static_cast<int>(dbfs)),
                        juce::Rectangle<float>(area.getX() + 2.0f, yTop - 6.0f, 28.0f, 12.0f),
                        juce::Justification::centredLeft);
         }
     }
     // Centre line (0 reference / silence).
-    g.setColour(ActiveTheme::getColour(ActiveTheme::GRID_LINE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_GRID));
     g.drawHorizontalLine(static_cast<int>(midY), area.getX(), area.getRight());
 
     drawTrace(g, area);
@@ -487,7 +452,7 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
     if (docked() && showControls()) {
         // A backdrop so the docked control row reads over the trace.
         g.setColour(
-            ActiveTheme::getColour(ActiveTheme::BACKGROUND).withAlpha(0.9f * controlsAlpha_));
+            ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG).withAlpha(0.9f * controlsAlpha_));
         g.fillRoundedRectangle(controlsRow().toFloat().expanded(2.0f, 3.0f), 4.0f);
     }
 
@@ -496,14 +461,14 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
         auto strip = getLocalBounds();
         strip.removeFromBottom(expandedControlsHeight());
         strip = strip.removeFromBottom(kChevronStripH);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_PANEL));
         g.fillRect(strip);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
         g.drawHorizontalLine(strip.getY(), static_cast<float>(strip.getX()),
                              static_cast<float>(strip.getRight()));
         // Chevron points down to open (controls below) and up to collapse.
         drawAnalyzerExpandChevron(g, chevronRect_, controlsExpanded_,
-                                  ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+                                  ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
         // Pop-out is the SvgButton (open_in_new) positioned in the strip.
     }
 }
