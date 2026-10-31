@@ -1060,13 +1060,8 @@ void NodeComponent::paintModPanel(juce::Graphics& g, juce::Rectangle<int> panelA
     g.drawText("MOD", panelArea.removeFromTop(16), juce::Justification::centred);
 }
 
-void NodeComponent::paintExtraLeftPanel(juce::Graphics& g, juce::Rectangle<int> panelArea) {
-    // Draw modulator editor panel header if visible
-    if (modulatorEditorVisible_ && modulatorEditorPanel_) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).darker(0.2f));
-        g.setFont(FontManager::getInstance().getUIFontBold(9.0f));
-        g.drawText("MOD EDIT", panelArea.removeFromTop(16), juce::Justification::centred);
-    }
+void NodeComponent::paintExtraLeftPanel(juce::Graphics& /*g*/, juce::Rectangle<int> /*panelArea*/) {
+    // The modulator editor paints its own tab row.
 }
 
 void NodeComponent::paintParamPanel(juce::Graphics& g, juce::Rectangle<int> panelArea) {
@@ -1140,7 +1135,6 @@ void NodeComponent::resizedModPanel(juce::Rectangle<int> panelArea) {
 void NodeComponent::resizedExtraLeftPanel(juce::Rectangle<int> panelArea) {
     // Layout modulator editor panel if visible
     if (modulatorEditorVisible_ && modulatorEditorPanel_) {
-        panelArea.removeFromTop(16);  // Skip header
         modulatorEditorPanel_->setBounds(panelArea);
         modulatorEditorPanel_->setVisible(true);
     } else if (modulatorEditorPanel_) {

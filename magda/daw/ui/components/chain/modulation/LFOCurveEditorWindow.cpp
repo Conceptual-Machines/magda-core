@@ -4,11 +4,10 @@
 #include "modulation/LFOCurveEditorWindow.hpp"
 
 #include "core/PresetManager.hpp"
+#include "ui/components/common/DeviceControls.hpp"
 #include "ui/components/common/MagdaAlertWindow.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
-#include "ui/themes/SmallButtonLookAndFeel.hpp"
-#include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 #include "ui/windows/FloatingWindows.hpp"
 
 namespace magda::daw::ui {
@@ -25,6 +24,7 @@ LFOCurveEditorContent::LFOCurveEditorContent(magda::ModInfo* modInfo,
     curveEditor_.setName("popupLFO");
     curveEditor_.setModInfo(modInfo);
     curveEditor_.setCurveColour(ActiveTheme::ACCENT_ATTENTION);
+    curveEditor_.setDeviceStyle(true);
     curveEditor_.onWaveformChanged = std::move(onWaveformChanged);
     curveEditor_.onDragPreview = std::move(onDragPreview);
     addAndMakeVisible(curveEditor_);
@@ -36,15 +36,8 @@ LFOCurveEditorContent::LFOCurveEditorContent(magda::ModInfo* modInfo,
 void LFOCurveEditorContent::setupControls() {
     // Sync toggle button
     syncToggle_.setButtonText("Free");
-    syncToggle_.setColour(juce::TextButton::buttonColourId,
-                          ActiveTheme::getColour(ActiveTheme::SURFACE));
-    syncToggle_.setColour(juce::TextButton::buttonOnColourId,
-                          ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
-    syncToggle_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
-    syncToggle_.setColour(juce::TextButton::textColourOnId,
-                          ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     syncToggle_.setClickingTogglesState(true);
-    syncToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    syncToggle_.setLookAndFeel(&DeviceControlLookAndFeel::getInstance());
     syncToggle_.onClick = [this]() {
         bool synced = syncToggle_.getToggleState();
         syncToggle_.setButtonText(synced ? "Sync" : "Free");
@@ -62,8 +55,7 @@ void LFOCurveEditorContent::setupControls() {
     // Rate slider (Hz)
     rateSlider_.setRange(0.01, 20.0, 0.01);
     rateSlider_.setValue(1.0, juce::dontSendNotification);
-    rateSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    rateSlider_.setShowFillIndicator(false);
+    device_controls::styleValue(rateSlider_);
     rateSlider_.onValueChanged = [this](double value) {
         if (modInfo_) {
             modInfo_->rate = static_cast<float>(value);
@@ -83,12 +75,7 @@ void LFOCurveEditorContent::setupControls() {
     syncDivisionCombo_.addItem("1/32", static_cast<int>(magda::SyncDivision::ThirtySecond) + 100);
     syncDivisionCombo_.setSelectedId(static_cast<int>(magda::SyncDivision::Quarter) + 100,
                                      juce::dontSendNotification);
-    syncDivisionCombo_.setColour(juce::ComboBox::backgroundColourId,
-                                 ActiveTheme::getColour(ActiveTheme::SURFACE));
-    syncDivisionCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
-    syncDivisionCombo_.setColour(juce::ComboBox::outlineColourId,
-                                 ActiveTheme::getColour(ActiveTheme::BORDER));
-    syncDivisionCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
+    syncDivisionCombo_.setLookAndFeel(&DeviceControlLookAndFeel::getInstance());
     syncDivisionCombo_.onChange = [this]() {
         int id = syncDivisionCombo_.getSelectedId();
         if (id >= 100) {
@@ -105,16 +92,8 @@ void LFOCurveEditorContent::setupControls() {
 
     // Loop/One-shot toggle
     loopOneShotToggle_.setButtonText("Loop");
-    loopOneShotToggle_.setColour(juce::TextButton::buttonColourId,
-                                 ActiveTheme::getColour(ActiveTheme::SURFACE));
-    loopOneShotToggle_.setColour(juce::TextButton::buttonOnColourId,
-                                 ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
-    loopOneShotToggle_.setColour(juce::TextButton::textColourOffId,
-                                 ActiveTheme::getSecondaryTextColour());
-    loopOneShotToggle_.setColour(juce::TextButton::textColourOnId,
-                                 ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     loopOneShotToggle_.setClickingTogglesState(true);
-    loopOneShotToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    loopOneShotToggle_.setLookAndFeel(&DeviceControlLookAndFeel::getInstance());
     loopOneShotToggle_.onClick = [this]() {
         bool oneShot = loopOneShotToggle_.getToggleState();
         loopOneShotToggle_.setButtonText(oneShot ? "1-Shot" : "Loop");
@@ -129,15 +108,8 @@ void LFOCurveEditorContent::setupControls() {
 
     // MSEG toggle (loop region)
     msegToggle_.setButtonText("MSEG");
-    msegToggle_.setColour(juce::TextButton::buttonColourId,
-                          ActiveTheme::getColour(ActiveTheme::SURFACE));
-    msegToggle_.setColour(juce::TextButton::buttonOnColourId,
-                          ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
-    msegToggle_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
-    msegToggle_.setColour(juce::TextButton::textColourOnId,
-                          ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     msegToggle_.setClickingTogglesState(true);
-    msegToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    msegToggle_.setLookAndFeel(&DeviceControlLookAndFeel::getInstance());
     msegToggle_.onClick = [this]() {
         bool useLoop = msegToggle_.getToggleState();
         curveEditor_.setShowLoopRegion(useLoop);
@@ -152,12 +124,7 @@ void LFOCurveEditorContent::setupControls() {
 
     // Preset selector
     presetCombo_.setTextWhenNothingSelected("Preset");
-    presetCombo_.setColour(juce::ComboBox::backgroundColourId,
-                           ActiveTheme::getColour(ActiveTheme::SURFACE));
-    presetCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
-    presetCombo_.setColour(juce::ComboBox::outlineColourId,
-                           ActiveTheme::getColour(ActiveTheme::BORDER));
-    presetCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
+    presetCombo_.setLookAndFeel(&DeviceControlLookAndFeel::getInstance());
     presetCombo_.onChange = [this]() {
         int id = presetCombo_.getSelectedId();
         if (id >= USER_PRESET_ID_BASE) {
@@ -185,8 +152,8 @@ void LFOCurveEditorContent::setupControls() {
     // Save preset button
     savePresetButton_ = std::make_unique<magda::SvgButton>("Save Preset", BinaryData::save_svg,
                                                            BinaryData::save_svgSize);
-    savePresetButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
-    savePresetButton_->setHoverColor(ActiveTheme::getTextColour());
+    savePresetButton_->setNormalColor(ActiveTheme::DEVICE_DIM);
+    savePresetButton_->setHoverColor(ActiveTheme::DEVICE_TEXT);
     savePresetButton_->setTooltip("Save curve preset");
     savePresetButton_->onClick = [this]() { showSaveCurvePresetDialog(); };
     addAndMakeVisible(savePresetButton_.get());
@@ -194,8 +161,8 @@ void LFOCurveEditorContent::setupControls() {
     // Reset button
     resetButton_ = std::make_unique<magda::SvgButton>("Reset Curve", BinaryData::refresh_svg,
                                                       BinaryData::refresh_svgSize);
-    resetButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
-    resetButton_->setHoverColor(ActiveTheme::getTextColour());
+    resetButton_->setNormalColor(ActiveTheme::DEVICE_DIM);
+    resetButton_->setHoverColor(ActiveTheme::DEVICE_TEXT);
     resetButton_->setTooltip("Reset curve");
     resetButton_->onClick = [this]() {
         currentUserCurvePreset_.clear();
@@ -206,9 +173,10 @@ void LFOCurveEditorContent::setupControls() {
     addAndMakeVisible(resetButton_.get());
 
     // Grid label
-    gridLabel_.setText("Grid:", juce::dontSendNotification);
-    gridLabel_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    gridLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
+    gridLabel_.setText("GRID", juce::dontSendNotification);
+    gridLabel_.setFont(device_controls::labelFont(9.0f));
+    gridLabel_.setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
     addAndMakeVisible(gridLabel_);
 
     // Grid X divisions
@@ -218,12 +186,7 @@ void LFOCurveEditorContent::setupControls() {
     gridXCombo_.addItem("16", 16);
     gridXCombo_.addItem("32", 32);
     gridXCombo_.setSelectedId(4, juce::dontSendNotification);
-    gridXCombo_.setColour(juce::ComboBox::backgroundColourId,
-                          ActiveTheme::getColour(ActiveTheme::SURFACE));
-    gridXCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
-    gridXCombo_.setColour(juce::ComboBox::outlineColourId,
-                          ActiveTheme::getColour(ActiveTheme::BORDER));
-    gridXCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
+    gridXCombo_.setLookAndFeel(&DeviceControlLookAndFeel::getInstance());
     gridXCombo_.onChange = [this]() {
         curveEditor_.setGridDivisionsX(gridXCombo_.getSelectedId());
     };
@@ -235,12 +198,7 @@ void LFOCurveEditorContent::setupControls() {
     gridYCombo_.addItem("8", 8);
     gridYCombo_.addItem("16", 16);
     gridYCombo_.setSelectedId(4, juce::dontSendNotification);
-    gridYCombo_.setColour(juce::ComboBox::backgroundColourId,
-                          ActiveTheme::getColour(ActiveTheme::SURFACE));
-    gridYCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
-    gridYCombo_.setColour(juce::ComboBox::outlineColourId,
-                          ActiveTheme::getColour(ActiveTheme::BORDER));
-    gridYCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
+    gridYCombo_.setLookAndFeel(&DeviceControlLookAndFeel::getInstance());
     gridYCombo_.onChange = [this]() {
         curveEditor_.setGridDivisionsY(gridYCombo_.getSelectedId());
     };
@@ -248,51 +206,33 @@ void LFOCurveEditorContent::setupControls() {
 
     // Snap X toggle
     snapXToggle_.setButtonText("X");
-    snapXToggle_.setColour(juce::TextButton::buttonColourId,
-                           ActiveTheme::getColour(ActiveTheme::SURFACE));
-    snapXToggle_.setColour(juce::TextButton::buttonOnColourId,
-                           ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
-    snapXToggle_.setColour(juce::TextButton::textColourOffId,
-                           ActiveTheme::getSecondaryTextColour());
-    snapXToggle_.setColour(juce::TextButton::textColourOnId,
-                           ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     snapXToggle_.setClickingTogglesState(true);
-    snapXToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    snapXToggle_.setLookAndFeel(&DeviceControlLookAndFeel::getInstance());
     snapXToggle_.onClick = [this]() { curveEditor_.setSnapX(snapXToggle_.getToggleState()); };
     addAndMakeVisible(snapXToggle_);
 
     // Snap Y toggle
     snapYToggle_.setButtonText("Y");
-    snapYToggle_.setColour(juce::TextButton::buttonColourId,
-                           ActiveTheme::getColour(ActiveTheme::SURFACE));
-    snapYToggle_.setColour(juce::TextButton::buttonOnColourId,
-                           ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
-    snapYToggle_.setColour(juce::TextButton::textColourOffId,
-                           ActiveTheme::getSecondaryTextColour());
-    snapYToggle_.setColour(juce::TextButton::textColourOnId,
-                           ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     snapYToggle_.setClickingTogglesState(true);
-    snapYToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    snapYToggle_.setLookAndFeel(&DeviceControlLookAndFeel::getInstance());
     snapYToggle_.onClick = [this]() { curveEditor_.setSnapY(snapYToggle_.getToggleState()); };
     addAndMakeVisible(snapYToggle_);
 
     // Loop-marker snap toggle (snaps loop points to the X grid)
     loopSnapToggle_.setButtonText("Lp");
-    loopSnapToggle_.setColour(juce::TextButton::buttonColourId,
-                              ActiveTheme::getColour(ActiveTheme::SURFACE));
-    loopSnapToggle_.setColour(juce::TextButton::buttonOnColourId,
-                              ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
-    loopSnapToggle_.setColour(juce::TextButton::textColourOffId,
-                              ActiveTheme::getSecondaryTextColour());
-    loopSnapToggle_.setColour(juce::TextButton::textColourOnId,
-                              ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     loopSnapToggle_.setClickingTogglesState(true);
     loopSnapToggle_.setToggleState(curveEditor_.getSnapLoop(), juce::dontSendNotification);
-    loopSnapToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    loopSnapToggle_.setLookAndFeel(&DeviceControlLookAndFeel::getInstance());
     loopSnapToggle_.onClick = [this]() {
         curveEditor_.setSnapLoop(loopSnapToggle_.getToggleState());
     };
     addAndMakeVisible(loopSnapToggle_);
+}
+
+void LFOCurveEditorContent::setModInfo(magda::ModInfo* modInfo) {
+    modInfo_ = modInfo;
+    curveEditor_.setModInfo(modInfo);
+    updateControlsFromModInfo();
 }
 
 void LFOCurveEditorContent::updateControlsFromModInfo() {
@@ -448,23 +388,27 @@ void LFOCurveEditorContent::saveCurvePreset(const juce::String& presetName) {
     rebuildPresetCombo(currentUserCurvePreset_);
 }
 
+void LFOCurveEditorContent::lookAndFeelChanged() {
+    // Re-apply cached theme colours after a live theme switch.
+    gridLabel_.setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+}
+
 void LFOCurveEditorContent::paint(juce::Graphics& g) {
-    // Header background
-    auto headerBounds = getLocalBounds().removeFromTop(HEADER_HEIGHT);
-    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    g.fillRect(headerBounds);
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::DEVICE_BG));
 
-    // Header bottom border
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
+    // Header and footer strips, ruled off from the curve.
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_HEAD));
+    g.fillRect(getLocalBounds().removeFromTop(HEADER_HEIGHT));
+    g.fillRect(getLocalBounds().removeFromBottom(FOOTER_HEIGHT));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
     g.drawHorizontalLine(HEADER_HEIGHT - 1, 0.0f, static_cast<float>(getWidth()));
-
-    // Footer background
-    auto footerBounds = getLocalBounds().removeFromBottom(FOOTER_HEIGHT);
-    g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
-    g.fillRect(footerBounds);
-
-    // Footer top border
     g.drawHorizontalLine(getHeight() - FOOTER_HEIGHT, 0.0f, static_cast<float>(getWidth()));
+
+    device_controls::paintGraph(
+        g, curveEditor_.getBounds().reduced(curveEditor_.getPadding()).toFloat());
+    if (rateSlider_.isVisible())
+        device_controls::paintField(g, rateSlider_.getBounds().toFloat());
 }
 
 void LFOCurveEditorContent::resized() {
@@ -519,12 +463,8 @@ void LFOCurveEditorContent::resized() {
     footer.removeFromLeft(4);
     loopSnapToggle_.setBounds(footer.removeFromLeft(snapWidth));
 
-    // Curve editor takes remaining space (between header and footer)
-    // Only expand horizontally, not vertically (to avoid overlapping header/footer)
-    int padding = curveEditor_.getPadding();
-    auto editorBounds =
-        bounds.withX(bounds.getX() - padding).withWidth(bounds.getWidth() + padding * 2);
-    curveEditor_.setBounds(editorBounds);
+    // Curve editor takes the space between header and footer; its padding frames the graph.
+    curveEditor_.setBounds(bounds);
 
     // Bring preset combo to front to ensure it's not hidden
     presetCombo_.toFront(false);
@@ -537,7 +477,7 @@ void LFOCurveEditorContent::resized() {
 LFOCurveEditorWindow::LFOCurveEditorWindow(magda::ModInfo* modInfo,
                                            std::function<void()> onWaveformChanged,
                                            std::function<void()> onDragPreview)
-    : DocumentWindow("LFO Curve Editor", ActiveTheme::getColour(ActiveTheme::BACKGROUND),
+    : DocumentWindow("LFO Curve Editor", ActiveTheme::getColour(ActiveTheme::DEVICE_BG),
                      DocumentWindow::closeButton),
       content_(modInfo, std::move(onWaveformChanged), std::move(onDragPreview)) {
     // Wire up callbacks
@@ -584,7 +524,7 @@ void LFOCurveEditorWindow::closeButtonPressed() {
 
 void LFOCurveEditorWindow::lookAndFeelChanged() {
     juce::DocumentWindow::lookAndFeelChanged();
-    setBackgroundColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+    setBackgroundColour(ActiveTheme::getColour(ActiveTheme::DEVICE_BG));
 }
 
 }  // namespace magda::daw::ui

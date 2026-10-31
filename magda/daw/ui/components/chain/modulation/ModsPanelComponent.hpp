@@ -32,15 +32,12 @@ class AddModButton : public juce::Component {
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseEnter(const juce::MouseEvent& e) override;
     void mouseExit(const juce::MouseEvent& e) override;
-    void mouseMove(const juce::MouseEvent& e) override;
 
-    /// The first empty slot, which shows its label and shortcuts without a hover.
+    /// The next free slot: the only one that shows its label and takes a click.
     void setPrimary(bool primary);
 
   private:
     void showAddMenu();
-    /// The shortcut rectangles, LFO ENV RND FOL, along the bottom of a primary slot.
-    juce::Rectangle<int> shortcutBounds(int index) const;
 
     bool primary_ = false;
 };

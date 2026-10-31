@@ -298,6 +298,14 @@ void LFOCurveEditor::apply(const sdk::CurveEditorResponse& response) {
 
 juce::Colour LFOCurveEditor::roleColour(sdk::display::ColourRole role) const {
     using Role = sdk::display::ColourRole;
+    if (deviceStyle_) {
+        if (role == Role::Background)
+            return juce::Colours::transparentBlack;
+        if (role == Role::TextBright)
+            return ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT);
+        if (role == Role::Guide)
+            return ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_GRID);
+    }
     if (role == Role::Background)
         return ActiveTheme::getColour(ActiveTheme::CURVE_BACKGROUND);
     if (role == Role::Curve)

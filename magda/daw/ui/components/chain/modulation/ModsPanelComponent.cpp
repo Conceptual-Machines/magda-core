@@ -3,80 +3,38 @@
 
 #include "modulation/ModsPanelComponent.hpp"
 
-#include <array>
-
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
 // AddModButton implementation
-AddModButton::AddModButton() = default;
-
-namespace {
-constexpr std::array<const char*, 4> kShortcutNames{"LFO", "ENV", "RND", "FOL"};
-constexpr int kLabelHeight = 14;
-constexpr std::array<magda::ModType, 4> kShortcutTypes{
-    magda::ModType::LFO, magda::ModType::Envelope, magda::ModType::Random,
-    magda::ModType::Follower};
-}  // namespace
+AddModButton::AddModButton() {
+    setInterceptsMouseClicks(false, false);
+}
 
 void AddModButton::setPrimary(bool primary) {
     if (primary_ != primary) {
         primary_ = primary;
+        // Mods fill the slots in order, so only the next free one takes a click.
+        setInterceptsMouseClicks(primary_, false);
         repaint();
     }
 }
 
-// Two by two under the label, to fit a card a quarter of the panel wide (#3201).
-juce::Rectangle<int> AddModButton::shortcutBounds(int index) const {
-    auto grid = getLocalBounds().reduced(4, 4).withTrimmedTop(kLabelHeight);
-    const int width = grid.getWidth() / 2;
-    const int height = grid.getHeight() / 2;
-    return {grid.getX() + (index % 2) * width, grid.getY() + (index / 2) * height, width, height};
-}
-
 void AddModButton::paint(juce::Graphics& g) {
-    auto& fonts = FontManager::getInstance();
-    const bool hovered = isMouseOver(true);
-    if (!primary_ && !hovered)
-        return;
-
-    const auto dim = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2);
-    const auto text = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM);
-    auto label = getLocalBounds().reduced(4, 4);
-    if (primary_)
-        label = label.withHeight(kLabelHeight);
-    g.setColour(hovered ? text : dim);
-    g.setFont(fonts.getUIFont(10.5f));
-    g.drawText("+ Add mod", label, juce::Justification::centred);
-
     if (!primary_)
         return;
-    g.setFont(fonts.getMonoFont(9.0f).withExtraKerningFactor(0.06f));
-    for (int i = 0; i < static_cast<int>(kShortcutNames.size()); ++i) {
-        const auto area = shortcutBounds(i);
-        const bool over = hovered && area.contains(getMouseXYRelative());
-        g.setColour(over ? ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION) : dim);
-        g.drawText(kShortcutNames[static_cast<std::size_t>(i)], area, juce::Justification::centred);
-    }
+    const bool hovered = isMouseOver(true);
+
+    g.setColour(
+        ActiveTheme::getColour(hovered ? ActiveTheme::DEVICE_DIM : ActiveTheme::DEVICE_DIM2));
+    g.setFont(FontManager::getInstance().getUIFont(10.5f));
+    g.drawText("+ Add mod", getLocalBounds().reduced(4, 4), juce::Justification::centred);
 }
 
-void AddModButton::mouseDown(const juce::MouseEvent& e) {
-    if (primary_) {
-        for (int i = 0; i < static_cast<int>(kShortcutNames.size()); ++i) {
-            if (shortcutBounds(i).contains(e.getPosition())) {
-                if (onAddMod)
-                    onAddMod(kShortcutTypes[static_cast<std::size_t>(i)], magda::LFOWaveform::Sine);
-                return;
-            }
-        }
-    }
+void AddModButton::mouseDown(const juce::MouseEvent& /*e*/) {
     showAddMenu();
-}
-
-void AddModButton::mouseMove(const juce::MouseEvent&) {
-    repaint();
 }
 
 void AddModButton::showAddMenu() {

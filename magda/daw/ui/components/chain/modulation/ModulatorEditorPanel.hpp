@@ -17,6 +17,8 @@
 #include "core/controllers/MidiLearnCoordinator.hpp"
 #include "ui/components/chain/modulation/LFOCurveEditor.hpp"
 #include "ui/components/chain/modulation/LFOCurveEditorWindow.hpp"
+#include "ui/components/common/DeviceControls.hpp"
+#include "ui/components/common/SegmentedChoice.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/TextSlider.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -52,20 +54,25 @@ class WaveformDisplay : public juce::Component, private juce::Timer {
     void paint(juce::Graphics& g) override {
         // Always refetch through the getter when one is set — the raw mod_
         // pointer may dangle after a vector reallocation.
+        device_controls::paintGraph(g, getLocalBounds().toFloat());
         const magda::ModInfo* mod = modGetter_ ? modGetter_() : mod_;
         if (!mod) {
             return;
         }
 
-        auto bounds = getLocalBounds().toFloat();
+        auto bounds = getLocalBounds().toFloat().reduced(4.0f, 0.0f);
         const float width = bounds.getWidth();
         const float height = bounds.getHeight();
         const float centerY = height * 0.5f;
+        const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
+
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_GRID));
+        g.drawHorizontalLine(juce::roundToInt(centerY), bounds.getX(), bounds.getRight());
 
         // Draw phase offset indicator line (vertical dashed line at offset position)
         if (mod->phaseOffset > 0.001f) {
             float offsetX = bounds.getX() + mod->phaseOffset * width;
-            g.setColour(juce::Colours::orange.withAlpha(0.3f));
+            g.setColour(accent.withAlpha(0.3f));
             // Draw dashed line
             const float dashLength = 3.0f;
             for (float y = bounds.getY(); y < bounds.getBottom(); y += dashLength * 2) {
@@ -96,7 +103,7 @@ class WaveformDisplay : public juce::Component, private juce::Timer {
         }
 
         // Draw the waveform line
-        g.setColour(juce::Colours::orange.withAlpha(0.7f));
+        g.setColour(accent.withAlpha(0.7f));
         g.strokePath(waveformPath, juce::PathStrokeType(1.5f));
 
         // Draw current phase indicator (dot) - use actual phase position
@@ -104,7 +111,7 @@ class WaveformDisplay : public juce::Component, private juce::Timer {
         float currentValue = mod->value;
         float currentY = centerY + (0.5f - currentValue) * (height - 8.0f);
 
-        g.setColour(juce::Colours::orange);
+        g.setColour(accent);
         g.fillEllipse(displayX - 4.0f, currentY - 4.0f, 8.0f, 8.0f);
 
         // Draw trigger indicator dot in top-right corner
@@ -122,10 +129,10 @@ class WaveformDisplay : public juce::Component, private juce::Timer {
         }
 
         if (triggerHoldFrames_ > 0) {
-            g.setColour(juce::Colours::orange);
+            g.setColour(accent);
             g.fillEllipse(triggerDotBounds);
         } else {
-            g.setColour(juce::Colours::orange.withAlpha(0.3f));
+            g.setColour(accent.withAlpha(0.3f));
             g.drawEllipse(triggerDotBounds, 1.0f);
         }
     }
@@ -169,11 +176,12 @@ class EnvelopeDisplay : public juce::Component, private juce::Timer {
     }
 
     void paint(juce::Graphics& g) override {
+        device_controls::paintGraph(g, getLocalBounds().toFloat());
         const magda::ModInfo* mod = modGetter_ ? modGetter_() : mod_;
         if (!mod)
             return;
 
-        auto bounds = getLocalBounds().toFloat().reduced(2.0f);
+        auto bounds = getLocalBounds().toFloat().reduced(4.0f, 3.0f);
         const float w = bounds.getWidth();
         const float top = bounds.getY();
         const float bottom = bounds.getBottom();
@@ -209,11 +217,11 @@ class EnvelopeDisplay : public juce::Component, private juce::Timer {
         path.lineTo(xS, sustainY);
         appendCurve(path, xS, sustainY, xR, bottom, mod->envReleaseCurve);
 
-        g.setColour(juce::Colours::orange.withAlpha(0.7f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.7f));
         g.strokePath(path, juce::PathStrokeType(1.5f));
 
         // Stage breakpoint markers
-        g.setColour(juce::Colours::orange.withAlpha(0.25f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.25f));
         for (float x : {xA, xD, xS}) {
             for (float y = top; y < bottom; y += 4.0f)
                 g.drawLine(x, y, x, juce::jmin(y + 2.0f, bottom), 1.0f);
@@ -245,14 +253,14 @@ class EnvelopeDisplay : public juce::Component, private juce::Timer {
                 break;
         }
         if (mod->envStage != 0) {
-            g.setColour(juce::Colours::orange);
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
             g.fillEllipse(dotX - 3.0f, yAt(v) - 3.0f, 6.0f, 6.0f);
         }
 
         // Active-stage label
         static const char* kStageNames[] = {"Idle", "Attack", "Decay", "Sustain", "Release"};
         const int s = juce::jlimit(0, 4, mod->envStage);
-        g.setColour(juce::Colours::orange.withAlpha(0.6f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.6f));
         g.setFont(FontManager::getInstance().getUIFont(8.0f));
         g.drawText(kStageNames[s], bounds.toNearestInt().removeFromTop(12),
                    juce::Justification::topRight);
@@ -306,11 +314,12 @@ class RandomDisplay : public juce::Component, private juce::Timer {
     }
 
     void paint(juce::Graphics& g) override {
+        device_controls::paintGraph(g, getLocalBounds().toFloat());
         const magda::ModInfo* mod = modGetter_ ? modGetter_() : mod_;
         if (!mod)
             return;
 
-        auto bounds = getLocalBounds().toFloat().reduced(2.0f);
+        auto bounds = getLocalBounds().toFloat().reduced(4.0f, 3.0f);
         const float w = bounds.getWidth();
         const float h = bounds.getHeight();
         const float x0 = bounds.getX();
@@ -329,12 +338,12 @@ class RandomDisplay : public juce::Component, private juce::Timer {
             else
                 path.lineTo(x, y);
         }
-        g.setColour(juce::Colours::orange.withAlpha(0.7f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.7f));
         g.strokePath(path, juce::PathStrokeType(1.5f));
 
         // Current value dot on the right edge.
         const float v = juce::jlimit(0.0f, 1.0f, mod->value);
-        g.setColour(juce::Colours::orange);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
         g.fillEllipse(bounds.getRight() - 4.0f, bottom - v * h - 3.0f, 6.0f, 6.0f);
     }
 
@@ -398,22 +407,11 @@ class ModMatrixContent : public juce::Component {
 };
 
 /**
- * @brief Panel for editing modulator settings
+ * @brief Panel for editing the selected modulator.
  *
- * Shows when a mod is selected from the mods panel.
- * Displays type selector, rate control, and target info.
- *
- * Layout:
- * +------------------+
- * |    MOD NAME      |  <- Header with mod name
- * +------------------+
- * | Type: [LFO   v]  |  <- Type selector
- * +------------------+
- * |   Rate: 1.0 Hz   |  <- Rate slider
- * +------------------+
- * | Target: Device   |  <- Target info
- * |   Param Name     |
- * +------------------+
+ * Two tabs share its header row: the mod's name, over its controls, and Links, over the
+ * parameters it drives. The controls fit the 200px device height; extra height goes to the
+ * display.
  */
 class ModulatorEditorPanel : public juce::Component,
                              public magda::LinkModeManagerListener,
@@ -481,6 +479,7 @@ class ModulatorEditorPanel : public juce::Component,
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
+    void mouseDoubleClick(const juce::MouseEvent& e) override;
 
     // LinkModeManagerListener — drives the link-mode click-to-link flow on
     // the rate slider, mirroring how ParamSlotComponent participates in
@@ -500,6 +499,8 @@ class ModulatorEditorPanel : public juce::Component,
 
     // Preferred width for this panel
     static constexpr int PREFERRED_WIDTH = 150;
+    /// The tab row, the height of the mods panel's header beside it.
+    static constexpr int TAB_HEIGHT = 28;
 
   private:
     int selectedModIndex_ = -1;
@@ -532,10 +533,16 @@ class ModulatorEditorPanel : public juce::Component,
     juce::Label linkModeAmountLabel_;
     const magda::ModInfo* liveModPtr_ = nullptr;  // Pointer to live mod for waveform animation
     std::function<const magda::ModInfo*()> liveModGetter_;  // Safe getter for timer callback
+    /// The live mod for the curve editors to write into, fetched now: liveModPtr_ dangles once
+    /// the mods vector reallocates.
+    magda::ModInfo* liveModForEditing();
 
     // UI Components
-    juce::Label nameLabel_;
-    juce::ComboBox waveformCombo_;  // LFO shape selector (Sine, Triangle, etc.)
+    juce::Label nameLabel_;         // shown over the name tab while renaming
+    juce::Component controlsPage_;  // the controls tab, at the panel's own coordinates
+    bool linksShown_ = false;
+    juce::Rectangle<int> triggerCaption_;
+    magda::SegmentedChoice waveformChoice_;  // LFO shape (Sine, Triangle, ...)
     WaveformDisplay waveformDisplay_;
     magda::LFOCurveEditor curveEditor_;                        // Custom waveform editor
     std::unique_ptr<magda::SvgButton> curveEditorButton_;      // Button to open external editor
@@ -566,7 +573,7 @@ class ModulatorEditorPanel : public juce::Component,
 
     // Random modulator controls (shown only when currentMod_.type == Random)
     RandomDisplay randomDisplay_;
-    juce::ComboBox randomTypeCombo_;  // Random / Noise distribution
+    magda::SegmentedChoice randomTypeChoice_;  // Random / Noise distribution
     TextSlider randomShapeSlider_{TextSlider::Format::Decimal};
     TextSlider randomSmoothSlider_{TextSlider::Format::Decimal};
     TextSlider randomStepDepthSlider_{TextSlider::Format::Decimal};
@@ -578,6 +585,13 @@ class ModulatorEditorPanel : public juce::Component,
     void onNameLabelEdited();
     void updateModMatrix();
     void timerCallback() override;
+
+    /// The name tab (0) or the Links tab (1), sized to its text.
+    juce::Rectangle<int> tabBounds(int index) const;
+    juce::String tabText(int index) const;
+    void showLinks(bool links);
+    void showTab();
+    void layoutControls(juce::Rectangle<int> area);
 
     // Mod matrix
     juce::Viewport modMatrixViewport_;
