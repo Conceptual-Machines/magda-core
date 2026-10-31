@@ -812,6 +812,9 @@ MediaExplorerContent::MediaExplorerContent() {
             dbBrowser_->setQueryText(searchTerm_);
         }
     };
+    // Picked up now so the initial applyView() queries the library with an inherited term.
+    searchBox_.shareSearchTerm();
+    searchTerm_ = searchBox_.getText();
     addAndMakeVisible(searchBox_);
 
     // Setup type filter buttons with icons (issue #768).
@@ -1922,7 +1925,10 @@ void MediaExplorerContent::resized() {
 }
 
 void MediaExplorerContent::onActivated() {
-    // Resume audio if needed
+    // The term may have changed in the plugin browser, and Library search otherwise waits for
+    // Return (#3217). setQueryText skips an unchanged term.
+    if (dbBrowser_ != nullptr && inLibraryMode())
+        dbBrowser_->setQueryText(searchTerm_);
 }
 
 void MediaExplorerContent::onDeactivated() {
