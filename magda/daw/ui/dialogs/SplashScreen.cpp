@@ -159,17 +159,17 @@ class SplashScreen::ContentComponent : public juce::Component {
             faustLogo_->drawWithin(g, centred.removeFromLeft(faustLogoW).toFloat(),
                                    juce::RectanglePlacement::centred, 1.0f);
 
-        // Conceptual Machines badge sits under the attribution row.
-        creditsArea.removeFromTop(6);
+        // Conceptual Machines badge and copyright, at the foot of the splash as in the About box.
+        auto footer = getLocalBounds().withTrimmedBottom(12);
+        footer = footer.removeFromBottom(42 + 16);
         if (conceptualMachinesBadge_) {
-            auto linkArea = creditsArea.removeFromTop(56).withSizeKeepingCentre(170, 56);
-            auto badgeArea = linkArea.removeFromTop(38).withSizeKeepingCentre(36, 36);
+            badgeBounds_ = footer.withSizeKeepingCentre(170, footer.getHeight());
+            auto badgeArea = footer.removeFromTop(42).withSizeKeepingCentre(38, 38);
             conceptualMachinesBadge_->drawWithin(g, badgeArea.toFloat(),
                                                  juce::RectanglePlacement::centred, 1.0f);
             g.setFont(fm.getUIFont(9.0f));
             g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-            g.drawText(kConceptualMachinesCopyright, linkArea, juce::Justification::centred);
-            badgeBounds_ = badgeArea.getUnion(linkArea);
+            g.drawText(kConceptualMachinesCopyright, footer, juce::Justification::centred);
         } else {
             badgeBounds_ = {};
         }
