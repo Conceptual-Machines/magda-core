@@ -28,6 +28,7 @@
 #include "custom_ui/FaustCustomUIRegistry.hpp"
 #include "custom_ui/FaustMeterPanel.hpp"
 #include "custom_ui/FaustUI.hpp"
+#include "custom_ui/PolyStepSequencerUI.hpp"
 #include "custom_ui/StepSequencerUI.hpp"
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
 #include "drum_grid/DrumGridUI.hpp"
@@ -211,7 +212,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
 
     refreshDeviceTraits(device);
 
-    drum_grid_slot::applySlotName(*this, traits_.isDrumGrid, device.name);
+    applyTitle();
     setBypassed(device.bypassed);
 
     // Restore panel visibility from device state
@@ -564,6 +565,16 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     padChainToggle_->setTooltip("Show the pad's chain");
     padChainToggle_->onClick = [this]() { togglePadView(false); };
     addChildComponent(*padChainToggle_);
+    leftPanelToggle_ = std::make_unique<magda::SvgButton>(
+        "LeftPanel", BinaryData::iconpadpanelboldm_svg, BinaryData::iconpadpanelboldm_svgSize);
+    leftPanelToggle_->setTooltip("Show the band");
+    leftPanelToggle_->onClick = [this]() { toggleSidePanel(true); };
+    addChildComponent(*leftPanelToggle_);
+    rightPanelToggle_ = std::make_unique<magda::SvgButton>(
+        "RightPanel", BinaryData::iconpadchainboldm_svg, BinaryData::iconpadchainboldm_svgSize);
+    rightPanelToggle_->setTooltip("Show the global controls");
+    rightPanelToggle_->onClick = [this]() { toggleSidePanel(false); };
+    addChildComponent(*rightPanelToggle_);
     expandToggle_ = std::make_unique<magda::SvgButton>("Expand", BinaryData::enter_fs_svg,
                                                        BinaryData::enter_fs_svgSize);
     expandToggle_->setTooltip("Expand the faceplate into the arrangement");
@@ -792,9 +803,35 @@ juce::Rectangle<int> DeviceSlotComponent::layoutHeaderControls(juce::Rectangle<i
     if (area.isEmpty())
         return area;
 
-    expandToggle_->setToggleState(faceplateLent(), juce::dontSendNotification);
+    expandToggle_->setToggleState(expandableLent(), juce::dontSendNotification);
     midiLedArea_ = area.removeFromRight(7).withSizeKeepingCentre(7, 7);
     area.removeFromRight(getHeaderButtonGap());
+
+    // An analyzer's gear and overlay picker, or Faust's Save / Load / Edit, sit before the light
+    // rather than in rows of their own.
+    auto headerControls = customUI_.getHeaderControls();
+    if (faustUI_ != nullptr)
+        headerControls = faustUI_->headerControls();
+    for (auto* control : headerControls) {
+        const bool button = dynamic_cast<juce::Button*>(control) != nullptr;
+        const auto size =
+            button ? getHeaderButtonSize() : juce::Point<int>{150, getHeaderButtonSize().y + 4};
+        if (auto* owner = control->getParentComponent(); owner != this) {
+            addChildComponent(*control);
+            if (owner != nullptr)
+                owner->resized();
+            if (auto* svg = dynamic_cast<magda::SvgButton*>(control))
+                node_header::applyDeviceIconStyle(
+                    *svg, node_header::DeviceIcon::Toggle, juce::Colour(0xFFB3B3B3),
+                    ActiveTheme::DEVICE_BLUE, static_cast<float>(getHeaderButtonSize().y));
+        }
+        const bool shown = !collapsed_ && area.getWidth() > size.x + 80;
+        control->setVisible(shown);
+        if (shown) {
+            control->setBounds(area.removeFromRight(size.x).withSizeKeepingCentre(size.x, size.y));
+            area.removeFromRight(getHeaderButtonGap() * (button ? 1 : 2));
+        }
+    }
 
     // The voice switch follows the modulation group on the left, in the header rather than a
     // footer, so the body keeps its height (#3144). Left out when the name would have no room.
@@ -816,8 +853,9 @@ std::vector<juce::Component*> DeviceSlotComponent::sidebarButtons() const {
             buttons.push_back(button);
     };
     add(paramsToggle_.get(), hasFaceplate() || hidesControls());
-    add(faceplateToggle_.get(), hasFaceplate());
-    add(timeBendToggle_.get(), isSequencerDevice(traits_));
+    // The Arpeggiator's faceplate is its time bend, so the time bend toggle shows it.
+    add(faceplateToggle_.get(), hasFaceplate() && !traits_.isArpeggiator);
+    add(timeBendToggle_.get(), isSequencerDevice(traits_) || traits_.isArpeggiator);
     add(zonesToggle_.get(), customUI_.hasSamplerUI());
     add(oscPanelToggle_.get(),
         customUI_.hasFMUI() || customUI_.hasPolySynthUI() || customUI_.hasMateriaUI());
@@ -829,6 +867,9 @@ std::vector<juce::Component*> DeviceSlotComponent::sidebarButtons() const {
     add(outputToggle_.get(), customUI_.hasImpulseResponseUI());
     add(padPanelToggle_.get(), customUI_.getDrumGridUI() != nullptr);
     add(padChainToggle_.get(), customUI_.getDrumGridUI() != nullptr);
+    const auto* spec = traits_.compiledPresentation;
+    add(leftPanelToggle_.get(), spec != nullptr && spec->leftPanelWidth > 0);
+    add(rightPanelToggle_.get(), spec != nullptr && spec->rightPanelWidth > 0);
     return buttons;
 }
 
@@ -848,10 +889,10 @@ int DeviceSlotComponent::sidebarWidth() const {
 
 void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
     const bool shown = !bar.isEmpty();
-    for (auto* toggle :
-         {paramsToggle_.get(), faceplateToggle_.get(), timeBendToggle_.get(), zonesToggle_.get(),
-          oscPanelToggle_.get(), matrixToggle_.get(), vizToggle_.get(), outputToggle_.get(),
-          padPanelToggle_.get(), padChainToggle_.get()})
+    for (auto* toggle : {paramsToggle_.get(), faceplateToggle_.get(), timeBendToggle_.get(),
+                         zonesToggle_.get(), oscPanelToggle_.get(), matrixToggle_.get(),
+                         vizToggle_.get(), outputToggle_.get(), padPanelToggle_.get(),
+                         padChainToggle_.get(), leftPanelToggle_.get(), rightPanelToggle_.get()})
         toggle->setVisible(false);
     const bool paged = shown && sidebarPaged();
     for (auto* arrow : {pagePrevButton_.get(), pageNextButton_.get()})
@@ -880,6 +921,8 @@ void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
                                                       : "Show the stereo field");
     padPanelToggle_->setToggleState(device_.padPanelShown, juce::dontSendNotification);
     padChainToggle_->setToggleState(device_.padChainShown, juce::dontSendNotification);
+    leftPanelToggle_->setToggleState(device_.paramsShown, juce::dontSendNotification);
+    rightPanelToggle_->setToggleState(device_.outputShown, juce::dontSendNotification);
 
     auto area = bar.reduced(0, 6);
     const auto size = getHeaderButtonSize();
@@ -911,13 +954,21 @@ bool DeviceSlotComponent::faceplateUnderGrid() const {
 }
 
 bool DeviceSlotComponent::faceplateShown() const {
-    return !hasFaceplate() || device_.faceplateShown;
+    return !hasFaceplate() || faceplateState();
+}
+
+bool& DeviceSlotComponent::faceplateState() {
+    return traits_.isArpeggiator ? device_.timeBendShown : device_.faceplateShown;
+}
+
+bool DeviceSlotComponent::faceplateState() const {
+    return traits_.isArpeggiator ? device_.timeBendShown : device_.faceplateShown;
 }
 
 bool DeviceSlotComponent::paramsShown() const {
     if (hidesControls())
         return device_.paramsShown || !device_.vizShown;
-    return !hasFaceplate() || device_.paramsShown || !device_.faceplateShown;
+    return !hasFaceplate() || device_.paramsShown || !faceplateState();
 }
 
 bool DeviceSlotComponent::hidesControls() const {
@@ -942,7 +993,7 @@ void DeviceSlotComponent::toggleControls() {
 std::vector<int> DeviceSlotComponent::resolveFaceplateStripSlots() const {
     const auto* spec = traits_.compiledPresentation;
     if (spec == nullptr || spec->createPanel == nullptr || spec->columnMajorGrid ||
-        spec->createLayout != nullptr)
+        spec->createLayout != nullptr || spec->keepsSlotsInGrid)
         return {};
     // The spec's list, else every control the grid would draw as a dropdown.
     std::vector<int> candidates(spec->faceplateSlots.begin(), spec->faceplateSlots.end());
@@ -1093,12 +1144,13 @@ int DeviceSlotComponent::faceplateWidth() const {
 }
 
 void DeviceSlotComponent::toggleDeviceView(bool faceplate) {
-    auto& shown = faceplate ? device_.faceplateShown : device_.paramsShown;
-    const bool other = faceplate ? device_.paramsShown : device_.faceplateShown;
+    auto& shown = faceplate ? faceplateState() : device_.paramsShown;
+    const bool other = faceplate ? device_.paramsShown : faceplateState();
     if (!(shown && !other))  // One of the two always shows.
         shown = !shown;
     if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
         live->faceplateShown = device_.faceplateShown;
+        live->timeBendShown = device_.timeBendShown;
         live->paramsShown = device_.paramsShown;
     }
     resized();
@@ -1107,6 +1159,10 @@ void DeviceSlotComponent::toggleDeviceView(bool faceplate) {
 }
 
 void DeviceSlotComponent::toggleTimeBend() {
+    if (traits_.isArpeggiator) {
+        toggleDeviceView(true);
+        return;
+    }
     device_.timeBendShown = !device_.timeBendShown;
     if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_))
         live->timeBendShown = device_.timeBendShown;
@@ -1149,6 +1205,21 @@ void DeviceSlotComponent::toggleOutput() {
         onDeviceLayoutChanged();
 }
 
+void DeviceSlotComponent::toggleSidePanel(bool left) {
+    auto& shown = left ? device_.paramsShown : device_.outputShown;
+    shown = !shown;
+    if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
+        live->paramsShown = device_.paramsShown;
+        live->outputShown = device_.outputShown;
+    }
+    if (compiledPanel_ != nullptr)
+        compiledPanel_->updateFromDevice(device_);
+    updateParameterSlots();
+    resized();
+    if (onDeviceLayoutChanged)
+        onDeviceLayoutChanged();
+}
+
 void DeviceSlotComponent::toggleViz() {
     if (hidesControls() && device_.vizShown && !device_.paramsShown)
         return;  // One of the two always shows.
@@ -1179,15 +1250,30 @@ bool DeviceSlotComponent::faceplateLent() const {
     return faceplate != nullptr && magda::ExpandedFaceplate::getInstance().holds(*faceplate);
 }
 
-void DeviceSlotComponent::toggleFaceplateExpanded() {
-    if (faceplateLent())
-        magda::ExpandedFaceplate::getInstance().collapse();
-    else
-        lendFaceplate();
+juce::Component* DeviceSlotComponent::expandableUI() const {
+    if (auto* custom = customUI_.getExpandableUI())
+        return custom;
+    if (compiledPanel_ == nullptr)
+        return nullptr;
+    auto* lent = compiledPanel_->lentPart();
+    return lent != nullptr ? lent : compiledPanel_->expandablePart();
 }
 
-void DeviceSlotComponent::lendFaceplate() {
-    auto* faceplate = customUI_.getActiveUI();
+bool DeviceSlotComponent::expandableLent() const {
+    const auto* expandable = expandableUI();
+    return expandable != nullptr && magda::ExpandedFaceplate::getInstance().holds(*expandable);
+}
+
+void DeviceSlotComponent::toggleFaceplateExpanded(juce::Component* part) {
+    auto& expanded = magda::ExpandedFaceplate::getInstance();
+    if (part != nullptr ? expanded.holds(*part) : expandableLent())
+        expanded.collapse();
+    else
+        lendFaceplate(part);
+}
+
+void DeviceSlotComponent::lendFaceplate(juce::Component* part) {
+    auto* faceplate = part != nullptr ? part : expandableUI();
     if (faceplate == nullptr)
         return;
     auto title = device_.name;
@@ -1199,13 +1285,25 @@ void DeviceSlotComponent::lendFaceplate() {
             if (safe != nullptr)
                 safe->faceplateReturned();
         });
+    // A part lent out leaves the rest of the faceplate to lay itself out without it.
+    if (auto* active = customUI_.getActiveUI(); active != nullptr && active != faceplate) {
+        active->resized();
+        active->repaint();
+    }
+    if (compiledPanel_ != nullptr) {
+        compiledPanel_->component().resized();
+        compiledPanel_->component().repaint();
+    }
     resized();
     if (onDeviceLayoutChanged)
         onDeviceLayoutChanged();
 }
 
 void DeviceSlotComponent::faceplateReturned() {
-    if (auto* faceplate = customUI_.getActiveUI())
+    if (compiledPanel_ != nullptr && compiledPanel_->lentPart() == nullptr)
+        compiledPanel_->expandablePartReturned();
+    if (auto* faceplate = customUI_.getActiveUI();
+        faceplate != nullptr && !customUI_.expandablePartReturned())
         addChildComponent(*faceplate);
     resized();
     repaint();
@@ -1214,7 +1312,7 @@ void DeviceSlotComponent::faceplateReturned() {
 }
 
 void DeviceSlotComponent::reclaimExpandedFaceplate() {
-    if (nodePath_.isValid() && customUI_.getActiveUI() != nullptr && !faceplateLent() &&
+    if (nodePath_.isValid() && expandableUI() != nullptr && !expandableLent() &&
         magda::ExpandedFaceplate::getInstance().isPendingFor(nodePath_))
         lendFaceplate();
 }
@@ -1280,6 +1378,8 @@ void DeviceSlotComponent::styleDeviceHeaderButtons() {
     style(outputToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(padPanelToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(padChainToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
+    style(leftPanelToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
+    style(rightPanelToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     style(expandToggle_.get(), DeviceIcon::Toggle, ActiveTheme::DEVICE_BLUE);
     if (stepRecordButton_)
         stepRecordButton_->setNormalColor(ActiveTheme::STEP_RECORD);
@@ -1309,7 +1409,7 @@ void DeviceSlotComponent::lookAndFeelChanged() {
 }
 
 DeviceSlotComponent::~DeviceSlotComponent() {
-    if (const auto* faceplate = customUI_.getActiveUI())
+    if (const auto* faceplate = expandableUI())
         magda::ExpandedFaceplate::getInstance().release(*faceplate);
     magda::TrackManager::getInstance().removeListener(this);
     magda::AutomationManager::getInstance().removeListener(this);
@@ -1556,6 +1656,17 @@ int DeviceSlotComponent::getMinimumWidth() const {
            sideStripWidth() + sidebarWidth();
 }
 
+int DeviceSlotComponent::getIdealHeight() const {
+    const int contentHeight = customUI_.getPreferredContentHeight();
+    if (collapsed_ || expandableLent() || contentHeight <= 0)
+        return 0;
+    // What the slot puts around its custom UI, measured once it has been laid out.
+    const auto* ui = customUI_.getActiveUI();
+    const int chrome = ui != nullptr && ui->getHeight() > 0 ? getHeight() - ui->getHeight()
+                                                            : HEADER_BAR_HEIGHT + 4;
+    return chrome + contentHeight;
+}
+
 int DeviceSlotComponent::getPreferredWidth() const {
     // Side strip and sidebar are added to content width (not via getMeterWidth since they are
     // content-area only)
@@ -1660,7 +1771,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     adoptParameterList();
     refreshDeviceTraits(device);
     syncModMacroControlsAvailability();
-    drum_grid_slot::applySlotName(*this, traits_.isDrumGrid, device.name);
+    applyTitle();
     setBypassed(device.bypassed);
     onButton_->setToggleState(!device.bypassed, juce::dontSendNotification);
     onButton_->setActive(!device.bypassed);
@@ -1870,7 +1981,9 @@ void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> c
                                             .stepRecording = stepRecording};
     const auto subtitle = deviceSlotSubtitle(state);
     setHeaderSubtitle(subtitle.text, subtitle.colour);
-    paintDeviceSlotContent(g, contentArea, state, 0, paginationRowHeight(), faustHeaderHeight());
+    paintDeviceSlotContent(g, contentArea, state, 0, paginationRowHeight(), 0);
+    if (faustUI_ != nullptr && paramGrid_ != nullptr && paramGrid_->isVisible())
+        faustUI_->paintWatermark(g, paramGrid_->getBounds().toFloat());
 }
 
 int DeviceSlotComponent::paginationRowHeight() const {
@@ -1880,10 +1993,8 @@ int DeviceSlotComponent::paginationRowHeight() const {
 }
 
 int DeviceSlotComponent::faustHeaderHeight() const {
-    // FaustUI grows a credit strip for patches that declare metadata, so the
-    // carve is not a constant. Falls back to the bare header when there is no
-    // Faust UI (the painter runs for non-Faust devices too).
-    return faustUI_ != nullptr ? faustUI_->getDesiredHeight() : FaustUI::kHeaderHeight;
+    // Only a compile error takes a strip, over the foot of the body.
+    return faustUI_ != nullptr ? faustUI_->errorHeight() : 0;
 }
 
 void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
@@ -1957,6 +2068,7 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
          .compiledPanelBandRows = faceplateBandRows(),
          .compiledPanelStackedFraction = faceplateStackedFraction(),
          .compiledPanelUnderGrid = faceplateUnderGrid(),
+         .compiledPanelOverlayOpen = compiledPanel_ == nullptr || compiledPanel_->overlayOpen(),
          .compiledPanelShown = faceplateShown(),
          .paramGridShown = paramsShown(),
          .compiledPanelWantsFullBody = compiledPanel_ != nullptr && compiledPanel_->wantsFullBody(),
@@ -2450,6 +2562,19 @@ void DeviceSlotComponent::createCustomUI() {
     if (createdKind == DeviceSlotInlineUiKind::Custom) {
         updateDeviceSlotInlineUi(device_, compiledPanel_.get(), customUI_);
     }
+    if (faustUI_ != nullptr)
+        faustUI_->setOnIdentityChanged(
+            [this](const juce::String& name, const juce::String& credits) {
+                faustTitle_ = name;
+                getNameLabel().setTooltip(credits);
+                applyTitle();
+            });
+
+    const auto expand = [this](juce::Component& part) { toggleFaceplateExpanded(&part); };
+    if (auto* sequencer = customUI_.getStepSequencerUI())
+        sequencer->onExpandClicked = expand;
+    if (auto* sequencer = customUI_.getPolyStepSequencerUI())
+        sequencer->onExpandClicked = expand;
 
     applyMidiOnlyDeviceHeaderVisibility(traits_, device_, modButton_.get(), macroButton_.get());
 }
@@ -2464,6 +2589,11 @@ void DeviceSlotComponent::detachInlineUiFromLivePlugin() {
     if (faustMeterPanel_ != nullptr)
         faustMeterPanel_->setMeterSource(nullptr);
     customUI_.detachFromLivePlugin();
+}
+
+void DeviceSlotComponent::applyTitle() {
+    drum_grid_slot::applySlotName(*this, traits_.isDrumGrid,
+                                  faustTitle_.isNotEmpty() ? faustTitle_ : device_.name);
 }
 
 void DeviceSlotComponent::bindFaustHeader() {
@@ -2488,6 +2618,8 @@ void DeviceSlotComponent::setupCustomUILinking() {
     if (compiledPanel_ != nullptr) {
         compiledPanel_->setLinkContextProvider(
             [this]() { return std::optional{resolveCurveLinkContext()}; });
+        compiledPanel_->setOnExpandRequested(
+            [this](juce::Component& part) { toggleFaceplateExpanded(&part); });
         compiledPanel_->setOnPageRequested([this](int page) {
             if (paramGrid_ != nullptr && paramGrid_->onPageSelected)
                 paramGrid_->onPageSelected(page);
@@ -2541,7 +2673,9 @@ int DeviceSlotComponent::getDynamicSlotWidth() const {
         traits_.compiledPresentation->preferredSlotWidth > 0)
         return traits_.compiledPresentation->preferredSlotWidth -
                (paramsShown() ? 0 : traits_.compiledPresentation->controlsSlotWidth) +
-               (device_.vizShown ? traits_.compiledPresentation->vizSlotWidth : 0);
+               (device_.vizShown ? traits_.compiledPresentation->vizSlotWidth : 0) -
+               (device_.paramsShown ? 0 : traits_.compiledPresentation->leftPanelWidth) -
+               (device_.outputShown ? 0 : traits_.compiledPresentation->rightPanelWidth);
     // 64px cells with the grid's 6px gaps and 10px padding: a curated grid's own columns beside
     // its faceplate, else eight; a faceplate that takes the whole body keeps the eight.
     constexpr int kCell = 64;

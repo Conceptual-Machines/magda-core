@@ -7,6 +7,7 @@
 
 #include "audio/plugins/compiled/MagdaPitchCompiledPlugin.hpp"
 #include "ui/themes/ActiveTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -117,6 +118,7 @@ void CompiledPitchEditorView::paint(juce::Graphics& g) {
     }
 
     const float shift = pitchSemis_ + fineCents_ / 100.0f;
+    g.setFont(FontManager::getInstance().getMonoFont(10.0f));
     auto drawDot = [&](float semis, float alpha, const juce::String& tag) {
         const float x = semisToX(semis, plot);
         g.setColour(accent.withAlpha(alpha));

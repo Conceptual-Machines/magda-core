@@ -11,6 +11,7 @@
 #include "DisplayListGraphics.hpp"
 #include "magda/sdk/curveedit/CurveEditor.hpp"
 #include "magda/sdk/display/DisplayList.hpp"
+#include "music/GrooveLibrary.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SdkColourRoles.hpp"
@@ -71,6 +72,46 @@ void styleLabel(juce::Label& label, const juce::String& text) {
     label.setFont(FontManager::getInstance().getUIFont(9.0f));
     label.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     label.setJustificationType(juce::Justification::centredRight);
+}
+
+/// A fixed-strength copy such as "Swing 1/4 35%": AMOUNT scales the full groove instead.
+bool isStrengthCopy(const juce::String& name) {
+    const auto last = name.fromLastOccurrenceOf(" ", false, false);
+    return last.endsWithChar('%') && last.dropLastCharacters(1).containsOnly("0123456789");
+}
+
+/// Groove names grouped by the family their name starts with; the rest are Custom.
+std::vector<std::pair<juce::String, juce::StringArray>> grooveFamilies() {
+    static const std::pair<const char*, const char*> kFamilies[] = {{"Swing", "Swing"},
+                                                                    {"Swing", "Basic"},
+                                                                    {"Push Swing", "PushSwing"},
+                                                                    {"Pull Swing", "PullSwing"},
+                                                                    {"Push Snare", "PushSnare"},
+                                                                    {"Pull Snare", "PullSnare"},
+                                                                    {"Timing", "Slow"},
+                                                                    {"Timing", "Fast"},
+                                                                    {"Random", "random"},
+                                                                    {"Random", "Random"},
+                                                                    {"Random", "New"}};
+    std::vector<std::pair<juce::String, juce::StringArray>> families;
+    const auto add = [&families](const juce::String& family, const juce::String& name) {
+        for (auto& [heading, names] : families)
+            if (heading == family) {
+                names.add(name);
+                return;
+            }
+        families.push_back({family, juce::StringArray{name}});
+    };
+    for (const auto& name : magda::GrooveLibrary::getInstance().names()) {
+        if (isStrengthCopy(name))
+            continue;
+        const auto* found = std::ranges::find_if(kFamilies, [&name](const auto& family) {
+            return name.startsWithIgnoreCase(family.second);
+        });
+        add(found != std::end(kFamilies) ? juce::String(found->first) : juce::String("Custom"),
+            name);
+    }
+    return families;
 }
 
 }  // namespace
@@ -339,6 +380,25 @@ TimeBendEditor::TimeBendEditor()
     };
     addAndMakeVisible(snapButton_);
 
+    grooveButton_.setTooltip("Load a groove's curve; AMOUNT sets how much is heard");
+    grooveButton_.onClick = [this] {
+        showGrooveMenu(
+            grooveButton_, [safe = juce::Component::SafePointer(this)](const auto& name) {
+                if (safe == nullptr)
+                    return;
+                auto after = safe->bend_;
+                if (name.isEmpty())
+                    after.on = false;
+                else if (auto loaded =
+                             magda::GrooveLibrary::getInstance().bend(name, safe->beatsPerBar_))
+                    after = *loaded;
+                else
+                    return;
+                safe->commit(after);
+            });
+    };
+    addChildComponent(grooveButton_);
+
     shapeButton_.setTooltip("Start from a shape");
     shapeButton_.onClick = [this] { showShapeMenu(); };
     addAndMakeVisible(shapeButton_);
@@ -392,7 +452,7 @@ TimeBendEditor::TimeBendEditor()
 }
 
 TimeBendEditor::~TimeBendEditor() {
-    for (juce::TextButton* button : {&shapeButton_, &gridButton_, &snapButton_})
+    for (juce::TextButton* button : {&shapeButton_, &gridButton_, &snapButton_, &grooveButton_})
         button->setLookAndFeel(nullptr);
     for (auto& button : spanButtons_)
         button.setLookAndFeel(nullptr);
@@ -455,6 +515,32 @@ void TimeBendEditor::setShowsAmountAndCycles(bool shows) {
     resized();
 }
 
+void TimeBendEditor::setHeaderAccessory(juce::Component* accessory) {
+    accessory_ = accessory;
+    if (accessory_ != nullptr)
+        addAndMakeVisible(*accessory_);
+    resized();
+}
+
+void TimeBendEditor::setShowsGrooves(bool shows) {
+    showsGrooves_ = shows;
+    grooveButton_.setVisible(shows);
+    resized();
+}
+
+void TimeBendEditor::showGrooveMenu(juce::Component& target,
+                                    std::function<void(const juce::String&)> onPick) {
+    juce::PopupMenu menu;
+    menu.addItem("None", [onPick] { onPick({}); });
+    for (const auto& [family, names] : grooveFamilies()) {
+        juce::PopupMenu sub;
+        for (const auto& name : names)
+            sub.addItem(name, [onPick, name] { onPick(name); });
+        menu.addSubMenu(family, sub);
+    }
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&target));
+}
+
 void TimeBendEditor::commit(const TimeBend& after) {
     auto sanitised = after;
     sanitised.sanitise();
@@ -507,7 +593,9 @@ void TimeBendEditor::paint(juce::Graphics& g) {
 }
 
 bool TimeBendEditor::headerWraps() const {
-    return showsAmountAndCycles_ && getWidth() < kOneRowWidth;
+    return showsAmountAndCycles_ &&
+           getWidth() < kOneRowWidth + (showsGrooves_ ? 72 : 0) +
+                            (accessory_ != nullptr && accessory_->isVisible() ? 32 : 0);
 }
 
 void TimeBendEditor::resized() {
@@ -533,10 +621,21 @@ void TimeBendEditor::resized() {
     gridButton_.setBounds(header.removeFromLeft(44));
     header.removeFromLeft(2);
     snapButton_.setBounds(header.removeFromLeft(40));
+    if (showsGrooves_ && !headerWraps()) {
+        header.removeFromLeft(kGap * 2);
+        grooveButton_.setBounds(header.removeFromLeft(64));
+    }
 
+    if (accessory_ != nullptr && accessory_->isVisible()) {
+        auto& row = headerWraps() ? values : header;
+        accessory_->setBounds(row.removeFromRight(kHeaderHeight).withSizeKeepingCentre(18, 18));
+        row.removeFromRight(kGap * 3);
+    }
     if (showsAmountAndCycles_) {
         if (!headerWraps())
             values = header;
+        if (showsGrooves_ && headerWraps())
+            grooveButton_.setBounds(values.removeFromLeft(64));
         cycles_.setBounds(values.removeFromRight(34));
         cyclesLabel_.setBounds(values.removeFromRight(44));
         values.removeFromRight(kGap);
@@ -548,7 +647,7 @@ void TimeBendEditor::resized() {
 }
 
 void TimeBendEditor::lookAndFeelChanged() {
-    for (juce::TextButton* button : {&shapeButton_, &gridButton_, &snapButton_})
+    for (juce::TextButton* button : {&shapeButton_, &gridButton_, &snapButton_, &grooveButton_})
         styleChip(*button);
     styleLabel(spanLabel_, "SPAN");
     powerButton_.setNormalColor(ActiveTheme::getSecondaryTextColour());

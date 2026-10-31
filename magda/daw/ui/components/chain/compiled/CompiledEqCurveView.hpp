@@ -56,6 +56,14 @@ class CompiledEqCurveView final : public juce::Component,
     void setOnPageRequested(std::function<void(int)> cb) override {
         onPageRequested_ = std::move(cb);
     }
+    bool overlayOpen() const override {
+        return editorOpen_ || curveLent();
+    }
+    juce::Component* expandablePart() override {
+        return &curve_;
+    }
+    juce::Component* lentPart() const override;
+    void expandablePartReturned() override;
     int preferredHeight() const override {
         return getPreferredHeight();
     }
@@ -68,6 +76,7 @@ class CompiledEqCurveView final : public juce::Component,
     void paint(juce::Graphics& g) override;
     void resized() override;
     void mouseDown(const juce::MouseEvent& e) override;
+    bool keyPressed(const juce::KeyPress& key) override;
     void mouseDoubleClick(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
@@ -76,6 +85,59 @@ class CompiledEqCurveView final : public juce::Component,
     void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
 
   private:
+    /// The plot and the band chips: a child of their own, so the arrangement can take them while
+    /// the band editor stays in the device (#3205). Paint and mouse are the view's.
+    class Curve : public juce::Component {
+      public:
+        explicit Curve(CompiledEqCurveView& owner) : owner_(owner) {}
+        void paint(juce::Graphics& g) override {
+            owner_.paintCurve(g);
+        }
+        void resized() override {
+            owner_.layoutCurve();
+        }
+        void mouseDown(const juce::MouseEvent& e) override {
+            owner_.mouseDown(e);
+        }
+        void mouseDoubleClick(const juce::MouseEvent& e) override {
+            owner_.mouseDoubleClick(e);
+        }
+        void mouseDrag(const juce::MouseEvent& e) override {
+            owner_.mouseDrag(e);
+        }
+        void mouseUp(const juce::MouseEvent& e) override {
+            owner_.mouseUp(e);
+        }
+        void mouseMove(const juce::MouseEvent& e) override {
+            owner_.mouseMove(e);
+        }
+        void mouseExit(const juce::MouseEvent& e) override {
+            owner_.mouseExit(e);
+        }
+        void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override {
+            owner_.mouseWheelMove(e, w);
+        }
+
+      private:
+        CompiledEqCurveView& owner_;
+    };
+
+    /// The band editor's backdrop, above the curve when it lies over the plot.
+    class EditorBackdrop : public juce::Component {
+      public:
+        explicit EditorBackdrop(CompiledEqCurveView& owner) : owner_(owner) {}
+        void paint(juce::Graphics& g) override {
+            g.setOrigin(-getPosition());
+            owner_.paintEditor(g);
+        }
+        void mouseDown(const juce::MouseEvent& e) override {
+            owner_.editorClicked(e.getEventRelativeTo(&owner_).getPosition());
+        }
+
+      private:
+        CompiledEqCurveView& owner_;
+    };
+
     using Plugin = magda::daw::audio::compiled::MagdaEqCompiledPlugin;
     using BandType = Plugin::BandType;
     using BandSnapshot = Plugin::BandSnapshot;
@@ -95,6 +157,13 @@ class CompiledEqCurveView final : public juce::Component,
     /// Show @p band in the editor and turn the knobs to it.
     void selectBand(int band);
     void syncTypeChoice();
+    void paintCurve(juce::Graphics& g);
+    /// The plot and chips inside the curve, from the editor's geometry or, lent, its own bounds.
+    void layoutCurve();
+    void editorClicked(juce::Point<int> position);
+    bool curveLent() const;
+    /// Repaints the view and the curve, which is not its child while lent.
+    void redraw();
     void paintChips(juce::Graphics& g);
     void paintEditor(juce::Graphics& g);
     /** @brief The selected band's frequency as a note and cents. */
@@ -120,11 +189,19 @@ class CompiledEqCurveView final : public juce::Component,
     std::function<void(int)> onPageRequested_;
 
     std::function<void()> onLayoutChanged_;
+    /// Short of room for the editor below the chips, it lies over the plot while this is set.
+    bool editorOpen_ = false;
+    void setEditorOpen(bool open);
 
     std::shared_ptr<magda::daw::audio::compiled::MagdaEqCompiledPlugin> compiledPlugin_;
     magda::DeviceInfo deviceSnapshot_;
 
+    /// In the curve's own coordinates.
     juce::Rectangle<float> plotArea_;
+    juce::Rectangle<int> chipsArea_;
+
+    Curve curve_{*this};
+    EditorBackdrop editorBackdrop_{*this};
 
     SpectrumOverlay spectrum_;
 

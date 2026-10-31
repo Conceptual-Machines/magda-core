@@ -24,7 +24,9 @@ namespace magda::daw::ui {
 class FaustDeviceLayout final : public DeviceParamLayout {
   public:
     static constexpr int kCellsPerRow = 8;
-    static constexpr int kRows = 4;
+    /// Two rows: the 200px chain gives each room to read, and patches with a custom view show
+    /// that beneath (#3205).
+    static constexpr int kRows = 2;
     static constexpr int kCellCount = kCellsPerRow * kRows;
 
     int cellCount() const override {

@@ -66,6 +66,10 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     int compactExtraHeight() const;
     std::function<void()> onControlsExpandedChanged;
 
+    /// The controls' gear, for a host to place in its header; taken, it fades the control row in
+    /// over the trace (#3205).
+    std::vector<juce::Component*> headerControls();
+
     void lookAndFeelChanged() override;
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -88,7 +92,15 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     void openPopout();  // open/re-show the full analyzer in a floating window
     void drawTrace(juce::Graphics& g, juce::Rectangle<float> area);
     bool showControls() const {
-        return !compact_ || controlsExpanded_ || controlsFadeActive_;
+        return (!compact_ && !docked()) || controlsExpanded_ || controlsFadeActive_;
+    }
+    bool docked() const;
+    void syncDocked();
+    bool dockedApplied_ = false;
+    juce::Rectangle<int> controlsRow() const;
+    /// Compact, or docked in a slot header: the controls come and go.
+    bool controlsToggle() const {
+        return compact_ || docked();
     }
 
     bool compact_ = false;
@@ -124,6 +136,7 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     // Pop-out button (same open_in_new icon as the plugin rows), shown in the
     // strip in compact mode.
     std::unique_ptr<magda::SvgButton> popoutButton_;
+    std::unique_ptr<magda::SvgButton> settingsButton_;
 
     // Floating full-size analyzer, lazily created on first pop-out. Owned here,
     // so it dies with this component (well before app/JUCE shutdown). popoutUI_

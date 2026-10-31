@@ -43,6 +43,11 @@ class ArpeggiatorTimeBendPanel final : public juce::Component,
         std::function<std::optional<ParamLinkContext>()> provider) override {
         linkContextProvider_ = std::move(provider);
     }
+    void setOnExpandRequested(std::function<void(juce::Component& part)> cb) override {
+        onExpandRequested_ = std::move(cb);
+    }
+    juce::Component* lentPart() const override;
+    void expandablePartReturned() override;
     int preferredHeight() const override {
         return 220;
     }
@@ -62,7 +67,9 @@ class ArpeggiatorTimeBendPanel final : public juce::Component,
     std::function<std::optional<ParamLinkContext>()> linkContextProvider_;
     magda::ChainNodePath devicePath_;
 
+    std::function<void(juce::Component&)> onExpandRequested_;
     TimeBendEditor bend_;
+    std::unique_ptr<magda::SvgButton> expandButton_;
     magda::DraggableValueLabel quantize_{magda::DraggableValueLabel::Format::Percentage};
     magda::DraggableValueLabel subdivision_{magda::DraggableValueLabel::Format::Integer};
     juce::Rectangle<int> header_;

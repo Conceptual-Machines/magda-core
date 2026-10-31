@@ -8,6 +8,7 @@
 
 #include "audio/plugins/compiled/MagdaFreqShiftCompiledPlugin.hpp"
 #include "ui/themes/ActiveTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -133,7 +134,7 @@ void CompiledFreqShiftCurveView::paint(juce::Graphics& g) {
     const juce::String sign = shiftHz_ > 0.0f ? "+" : "";
     const juce::String shiftLabel = sign + juce::String(shiftHz_, 1) + " Hz";
     g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.9f));
-    g.setFont(18.0f);
+    g.setFont(FontManager::getInstance().getMonoFont(18.0f));
     g.drawText(shiftLabel,
                juce::Rectangle<float>(plot.getX(), plot.getY() + 4.0f, plot.getWidth(), 22.0f)
                    .toNearestInt(),
@@ -144,7 +145,7 @@ void CompiledFreqShiftCurveView::paint(juce::Graphics& g) {
                                   : shiftHz_ > 0.0f ? juce::String::fromUTF8("\xe2\x96\xb2 UP")
                                                     : juce::String::fromUTF8("\xe2\x96\xbc DOWN");
     g.setColour(dimText);
-    g.setFont(10.0f);
+    g.setFont(FontManager::getInstance().getMonoFont(10.0f));
     g.drawText(dirLabel,
                juce::Rectangle<float>(plot.getX(), plot.getY() + 26.0f, plot.getWidth(), 12.0f)
                    .toNearestInt(),
@@ -161,7 +162,7 @@ void CompiledFreqShiftCurveView::paint(juce::Graphics& g) {
     g.drawHorizontalLine(static_cast<int>(std::round(axisY)), strip.getX(), strip.getRight());
 
     // Decade tick labels.
-    g.setFont(9.0f);
+    g.setFont(FontManager::getInstance().getMonoFont(9.0f));
     g.setColour(dimText);
     for (float labelHz : {500.0f, 1000.0f, 1500.0f}) {
         const float x = hzToX(labelHz, strip);

@@ -1827,9 +1827,12 @@ void TrackChainContent::layoutChainContent() {
 }
 
 HeightRange TrackChainContent::getHeightRange() const {
-    // One height for every device; the scrollbar sits in the bottom inset.
-    const int height = NODE_HEIGHT + 2 * CONTENT_INSET;
-    return {height, height};
+    // Every device is usable at NODE_HEIGHT; the ideal grows to the tallest one that gains from
+    // more (#3205). The scrollbar sits in the bottom inset.
+    int ideal = NODE_HEIGHT;
+    for (const auto& node : nodeComponents_)
+        ideal = juce::jmax(ideal, node->getIdealHeight());
+    return {NODE_HEIGHT + 2 * CONTENT_INSET, ideal + 2 * CONTENT_INSET};
 }
 
 juce::Rectangle<int> TrackChainContent::emptyDropTargetBounds() const {

@@ -548,6 +548,46 @@ int DeviceCustomUIManager::getPreferredContentWidth(int drumGridFallback) const 
     return 0;
 }
 
+std::vector<juce::Component*> DeviceCustomUIManager::getHeaderControls() const {
+    if (oscilloscopeUI_ != nullptr)
+        return oscilloscopeUI_->headerControls();
+    if (spectrumAnalyzerUI_ == nullptr)
+        return {};
+    auto controls = spectrumAnalyzerUI_->headerControls();
+    return {controls[1], controls[0]};
+}
+
+juce::Component* DeviceCustomUIManager::getExpandableUI() const {
+    // The sequencers lend their steps or their time bend, whichever is out.
+    if (stepSequencerUI_) {
+        auto* lent = stepSequencerUI_->lentPart();
+        return lent != nullptr ? lent : &stepSequencerUI_->expandablePart();
+    }
+    if (polyStepSequencerUI_) {
+        auto* lent = polyStepSequencerUI_->lentPart();
+        return lent != nullptr ? lent : &polyStepSequencerUI_->expandablePart();
+    }
+    return getActiveUI();
+}
+
+bool DeviceCustomUIManager::expandablePartReturned() {
+    if (stepSequencerUI_)
+        stepSequencerUI_->expandablePartReturned();
+    else if (polyStepSequencerUI_)
+        polyStepSequencerUI_->expandablePartReturned();
+    else
+        return false;
+    return true;
+}
+
+int DeviceCustomUIManager::getPreferredContentHeight() const {
+    if (stepSequencerUI_)
+        return StepSequencerUI::preferredHeight();
+    if (polyStepSequencerUI_)
+        return PolyStepSequencerUI::preferredHeight();
+    return 0;
+}
+
 std::shared_ptr<daw::audio::MagdaDevice> DeviceCustomUIManager::liveDevice() const {
     if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine())
         return audioEngine->renderedDevice(devicePath_);

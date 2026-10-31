@@ -45,11 +45,11 @@ juce::Rectangle<int> CompiledFaustDeviceLayout::cellBounds(int cell, juce::Recta
 }
 
 int CompiledFaustDeviceLayout::totalPages(const magda::DeviceInfo&) const {
-    return 1;
+    return paged() ? pageNames_.size() : 1;
 }
 
 ParamCell CompiledFaustDeviceLayout::cellFor(const magda::DeviceInfo& device, int cellIndex,
-                                             int) const {
+                                             int currentPage) const {
     ParamCell cell;
     if (cellIndex < 0 || cellIndex >= cellCount_) {
         cell.mode = ParamCell::Mode::Hidden;
@@ -63,7 +63,15 @@ ParamCell CompiledFaustDeviceLayout::cellFor(const magda::DeviceInfo& device, in
     // at paramIndex (col * numRows + row), so consecutive paramIndex values
     // run top-to-bottom instead of left-to-right. Used by the 8-band EQ so
     // each band's {Type, Freq, Gain, Q} forms a vertical strip.
-    int paramSlotIdx = knobSlots_.empty() ? cellIndex : knobSlots_[static_cast<size_t>(cellIndex)];
+    // Paged, the page is a row of the knob list.
+    const int listIndex =
+        paged() ? juce::jlimit(0, pageNames_.size() - 1, currentPage) * cellsPerRow_ + cellIndex
+                : cellIndex;
+    if (!knobSlots_.empty() && listIndex >= static_cast<int>(knobSlots_.size())) {
+        cell.mode = ParamCell::Mode::Hidden;
+        return cell;
+    }
+    int paramSlotIdx = knobSlots_.empty() ? cellIndex : knobSlots_[static_cast<size_t>(listIndex)];
     if (paramSlotIdx < 0) {  // A gap that starts the next group on a row of its own.
         cell.mode = ParamCell::Mode::Hidden;
         return cell;

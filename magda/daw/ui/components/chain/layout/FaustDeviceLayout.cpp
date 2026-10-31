@@ -13,7 +13,7 @@ namespace magda::daw::ui {
 namespace {
 
 // Linear scan for the param whose pool slot index matches `poolIdx`.
-// Faust devices typically have ≤32 active params per page, so a linear
+// Faust devices typically have ≤16 active params per page, so a linear
 // search is cheap; if that ever changes, this is the obvious place to
 // swap in a lookup table.
 int findParamArrayIndex(const magda::DeviceInfo& device, int poolIdx) {

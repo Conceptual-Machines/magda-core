@@ -121,7 +121,9 @@ HeaderControlVisibility getHeaderControlVisibility(const DeviceSlotTraits& trait
     visibility.stepRecord = visibility.random;
     // The Drum Grid plays its pads and emits no MIDI of its own.
     visibility.midiThru = supportsMidiSourceToggle(device) && !traits.isDrumGrid;
-    visibility.expand = traits.expandsFaceplate;
+    // The sequencers carry theirs beside the steps (#3205).
+    visibility.expand =
+        traits.expandsFaceplate && !traits.isStepSequencer && !traits.isPolyStepSequencer;
     // A device that only sets level and image (the Utility) has no processing to solo.
     const auto* presentation = traits.compiledPresentation;
     visibility.delta = device.deviceType == magda::DeviceType::Effect &&

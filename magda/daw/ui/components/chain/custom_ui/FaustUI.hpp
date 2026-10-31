@@ -5,7 +5,9 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
 #include <memory>
+#include <vector>
 
 #include "audio/plugins/FaustPatchInfo.hpp"
 #include "core/ChainNodePath.hpp"
@@ -24,41 +26,24 @@ namespace magda::daw::ui {
 class FaustCustomView;
 
 /**
- * @brief Bespoke header strip shared by runtime Faust effects and instruments.
+ * @brief The runtime Faust device's own controls, without a band of its own (#3205).
  *
- * Three bands separated by single vertical rules:
- *
- *     FAUST logo | patch name over its metadata | Save / Load / Edit
- *
- * This component renders that strip and *only* that strip. The
- * device's parameter widgets are rendered by the standard
- * DeviceSlotComponent::paramGrid_, driven by the ParameterInfo the
- * loaded patch declares on the model. Sharing the grid with every
- * other device gives Faust mod/macro/automation/MIDI Learn
- * drag-and-drop for free.
- *
- * Load and Edit-recompile go through faust_edits::loadSource, which
- * puts the patch on the model and rebuilds the slot against it.
- *
- * Fixed-height layout: the host carves `kHeaderHeight` from the top
- * of the content area for this strip, and gives the rest to
- * paramGrid_.
+ * Save / Load / Edit go in the slot's header, the patch name becomes the slot's title with its
+ * credits in the tooltip, and the logo is a watermark behind the grid. This component is the
+ * strip a compile error shows in, over the foot of the body. Parameters are the slot's grid.
  */
 class FaustUI : public juce::Component {
   public:
-    static constexpr int kHeaderHeight = 36;
+    static constexpr int kErrorHeight = 16;
 
-    /// Second text row in the identity band, carrying `author | version |
-    /// license` under the patch name. Present only for patches that declare
-    /// that metadata.
-    static constexpr int kMetaRowHeight = 12;
+    /// The error strip's height: 0 unless the last load or edit left an error.
+    int errorHeight() const;
 
-    /// Total height the host should carve for this component. Collapses to
-    /// `kHeaderHeight` for patches that declare no metadata, so an
-    /// unannotated .dsp gives up no grid space.
-    int getDesiredHeight() const {
-        return kHeaderHeight + (showMetaRow_ ? kMetaRowHeight : 0);
-    }
+    /// Save / Load / Edit, right to left, for the slot's header.
+    std::vector<juce::Component*> headerControls();
+    /// Called with the patch name and its credits whenever the loaded patch changes, and at once.
+    void setOnIdentityChanged(std::function<void(const juce::String&, const juce::String&)> cb);
+    void paintWatermark(juce::Graphics& g, juce::Rectangle<float> area) const;
 
     FaustUI();
     ~FaustUI() override;
@@ -98,27 +83,16 @@ class FaustUI : public juce::Component {
     bool tryLoad(const juce::String& name, const juce::String& source);
 
     void refreshNameLabel();
+    void setError(const juce::String& error);
 
     std::shared_ptr<magda::daw::audio::MagdaDevice> device_;
     magda::daw::audio::IFaustEditorModel* plugin_ = nullptr;
     ChainNodePath devicePath_;
 
     std::unique_ptr<juce::Drawable> logo_;
-    juce::Rectangle<float> logoBounds_;
-
-    // Band geometry, recomputed in resized(). The rules are painted at these
-    // x positions so the icons and the text block share their grid.
-    int logoRuleX_ = 0;
-    int actionRuleX_ = 0;
-
-    juce::Label nameLabel_;
-    juce::Rectangle<int> metaBounds_;
-
-    // Identity state, refreshed whenever the loaded DSP changes. `metaText_`
-    // is the one-line credit under the name; the full description goes to the
-    // name tooltip, since it is prose and does not fit a 12px row.
-    bool showMetaRow_ = false;
-    juce::String metaText_;
+    juce::String patchName_;
+    juce::String patchTooltip_;
+    std::function<void(const juce::String&, const juce::String&)> onIdentityChanged_;
     juce::Label errorLabel_;
     std::unique_ptr<magda::SvgButton> saveButton_;
     std::unique_ptr<magda::SvgButton> loadButton_;

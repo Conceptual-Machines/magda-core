@@ -8,6 +8,7 @@
 
 #include "audio/plugins/compiled/MagdaModCompiledPlugin.hpp"
 #include "ui/themes/ActiveTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -230,7 +231,7 @@ void CompiledModCurveView::paint(juce::Graphics& g) {
 
     // Mode badge.
     const char* modeLabel = mode_ == 1 ? "VIBRATO" : mode_ == 2 ? "AUTOPAN" : "TREMOLO";
-    g.setFont(11.0f);
+    g.setFont(FontManager::getInstance().getMonoFont(11.0f));
     g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.75f));
     g.drawText(
         modeLabel,

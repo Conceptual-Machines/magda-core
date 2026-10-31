@@ -58,6 +58,7 @@ struct DeviceSlotContentBodyControls {
     float compiledPanelStackedFraction = 0.0f;
     // Set, faceplate and grid share the whole body and the grid places its own knobs on top.
     bool compiledPanelUnderGrid = false;
+    bool compiledPanelOverlayOpen = true;
     bool compiledPanelShown = true;
     bool paramGridShown = true;
     // When true, hide the param grid entirely and give the compiled panel

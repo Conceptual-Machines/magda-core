@@ -45,6 +45,17 @@ class TimeBendEditor : public juce::Component {
     /** @brief Hides the AMOUNT and CYCLES sliders, for a host that shows them as parameters. */
     void setShowsAmountAndCycles(bool shows);
 
+    /** @brief Shows a GROOVE menu that loads a groove's curve, for a host with no menu of its own.
+     */
+    void setShowsGrooves(bool shows);
+
+    /// Places @p accessory at the end of the header, for a host's own button such as expand.
+    void setHeaderAccessory(juce::Component* accessory);
+
+    /// The groove library by family under @p target, "None" first; @p onPick gets the name.
+    static void showGrooveMenu(juce::Component& target,
+                               std::function<void(const juce::String& name)> onPick);
+
     /// The curve as a gesture moves it; nothing is committed yet.
     std::function<void(const sdk::sequencer::TimeBend&)> onPreview;
     /// One edit, done: the bend before it and after.
@@ -76,6 +87,8 @@ class TimeBendEditor : public juce::Component {
 
     sdk::sequencer::TimeBend bend_;
     bool showsAmountAndCycles_ = true;
+    bool showsGrooves_ = false;
+    juce::Component* accessory_ = nullptr;
 
     magda::SvgButton powerButton_;
     juce::TextButton shapeButton_{"SHAPE"};
@@ -83,6 +96,7 @@ class TimeBendEditor : public juce::Component {
     juce::Label spanLabel_;
     juce::TextButton gridButton_{"1/16"};
     juce::TextButton snapButton_{"SNAP"};
+    juce::TextButton grooveButton_{"GROOVE"};
     bool snap_ = true;
     double cycleBeats_ = 4.0;
     double beatsPerBar_ = 4.0;

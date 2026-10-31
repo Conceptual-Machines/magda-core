@@ -107,6 +107,9 @@ class SvgButton : public juce::Button, private ConfigListener {
         normalBackgroundColorRole_ = ActiveTheme::findPaletteRole(color);
         hasNormalBackgroundColor = true;
     }
+    juce::Colour getOriginalColor() const {
+        return hasOriginalColor ? originalColor : juce::Colour(0xFFB3B3B3);
+    }
     void setOriginalColor(juce::Colour color) {
         originalColor = color;
         hasOriginalColor = true;

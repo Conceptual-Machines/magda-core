@@ -40,14 +40,9 @@ FaustUI::FaustUI() {
     if (logo_)
         ActiveTheme::applyToSvgIcon(*logo_);
 
-    nameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
-    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
-    nameLabel_.setJustificationType(juce::Justification::centredLeft);
-    addAndMakeVisible(nameLabel_);
-
     errorLabel_.setFont(FontManager::getInstance().getMonoFont(9.0f));
     errorLabel_.setColour(juce::Label::textColourId, juce::Colours::red);
-    errorLabel_.setJustificationType(juce::Justification::centredRight);
+    errorLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(errorLabel_);
 
     loadButton_ = std::make_unique<magda::SvgButton>("Load DSP", BinaryData::folderopen_svg,
@@ -55,21 +50,24 @@ FaustUI::FaustUI() {
     loadButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     loadButton_->setIconPadding(1.5f);
     loadButton_->onClick = [this] { showLoadMenu(); };
-    addAndMakeVisible(*loadButton_);
+    addChildComponent(*loadButton_);  // the slot's header shows it
 
     saveButton_ = std::make_unique<magda::SvgButton>("Save DSP", BinaryData::save_svg,
                                                      BinaryData::save_svgSize);
     saveButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     saveButton_->setIconPadding(3.0f);  // floppy glyph is denser; pad more to match Load/Edit
     saveButton_->onClick = [this] { saveDspToFile(); };
-    addAndMakeVisible(*saveButton_);
+    addChildComponent(*saveButton_);  // the slot's header shows it
 
     editButton_ = std::make_unique<magda::SvgButton>("Edit DSP", BinaryData::code_blocks_svg,
                                                      BinaryData::code_blocks_svgSize);
     editButton_->setOriginalColor(juce::Colour(0xFFE3E3E3));
+    loadButton_->setTooltip("Load a Faust patch");
+    saveButton_->setTooltip("Save the patch's source");
+    editButton_->setTooltip("Edit the patch's source");
     editButton_->setIconPadding(1.5f);
     editButton_->onClick = [this] { showCodeEditor(); };
-    addAndMakeVisible(*editButton_);
+    addChildComponent(*editButton_);  // the slot's header shows it
 }
 
 FaustUI::~FaustUI() = default;
@@ -110,56 +108,55 @@ juce::String describePatch(const juce::String& name,
     return lines.joinIntoString("\n");
 }
 
-// One-line credit for the meta row. Description is deliberately left out
-// It is prose and belongs in the tooltip, not a 12px row.
-juce::String creditLine(const magda::daw::audio::FaustPatchInfo& info) {
-    juce::StringArray parts;
-    if (info.author.isNotEmpty())
-        parts.add(info.author);
-    if (info.version.isNotEmpty())
-        parts.add("v" + info.version);
-    if (info.license.isNotEmpty())
-        parts.add(info.license);
-    return parts.joinIntoString("  |  ");
-}
-
 }  // namespace
 
 void FaustUI::refreshNameLabel() {
-    const bool wasShowingMetaRow = showMetaRow_;
+    patchName_ = plugin_ != nullptr ? plugin_->getDspName() : juce::String();
+    patchTooltip_ =
+        plugin_ != nullptr ? describePatch(patchName_, plugin_->getPatchInfo()) : juce::String();
+    if (onIdentityChanged_)
+        onIdentityChanged_(patchName_, patchTooltip_);
+}
 
-    if (plugin_ == nullptr) {
-        nameLabel_.setText({}, juce::dontSendNotification);
-        nameLabel_.setTooltip({});
-        showMetaRow_ = false;
-        metaText_ = {};
-    } else {
-        const auto name = plugin_->getDspName();
-        const auto info = plugin_->getPatchInfo();
-        nameLabel_.setText(name, juce::dontSendNotification);
-        nameLabel_.setTooltip(describePatch(name, info));
-        metaText_ = creditLine(info);
-        showMetaRow_ = !info.isEmpty();
-    }
+void FaustUI::setOnIdentityChanged(
+    std::function<void(const juce::String&, const juce::String&)> cb) {
+    onIdentityChanged_ = std::move(cb);
+    refreshNameLabel();
+}
 
-    // The meta row changes this component's desired height, so the parent has
-    // to re-carve. Without this the row would only appear after some
-    // unrelated resize.
-    if (showMetaRow_ != wasShowingMetaRow) {
-        if (auto* parent = getParentComponent())
-            parent->resized();
-    }
-    resized();
-    repaint();
+std::vector<juce::Component*> FaustUI::headerControls() {
+    return {editButton_.get(), loadButton_.get(), saveButton_.get()};
+}
+
+int FaustUI::errorHeight() const {
+    return errorLabel_.getText().isNotEmpty() ? kErrorHeight : 0;
+}
+
+void FaustUI::setError(const juce::String& error) {
+    if (error == errorLabel_.getText())
+        return;
+    setError(error);
+    errorLabel_.setTooltip(error);
+    // The strip comes and goes with the error, so the slot re-carves.
+    if (auto* parent = getParentComponent())
+        parent->resized();
+}
+
+void FaustUI::paintWatermark(juce::Graphics& g, juce::Rectangle<float> area) const {
+    if (logo_ == nullptr)
+        return;
+    const auto mark = area.withSizeKeepingCentre(juce::jmin(area.getWidth() * 0.5f, 220.0f),
+                                                 juce::jmin(area.getHeight() * 0.5f, 60.0f));
+    logo_->drawWithin(g, mark, juce::RectanglePlacement::centred, 0.06f);
 }
 
 bool FaustUI::tryLoad(const juce::String& name, const juce::String& source) {
     juce::String err;
     if (!faust_edits::loadSource(devicePath_, name, source, err)) {
-        errorLabel_.setText(err, juce::dontSendNotification);
+        setError(err);
         return false;
     }
-    errorLabel_.setText({}, juce::dontSendNotification);
+    setError({});
     refreshNameLabel();
 
     // Surface any pool diagnostics (overflow / duplicate idx) in the
@@ -167,7 +164,7 @@ bool FaustUI::tryLoad(const juce::String& name, const juce::String& source) {
     if (plugin_ != nullptr) {
         const auto& diagnostics = plugin_->getLastRebindDiagnostics();
         if (!diagnostics.empty())
-            errorLabel_.setText(diagnostics.front(), juce::dontSendNotification);
+            setError(diagnostics.front());
     }
     return true;
 }
@@ -331,93 +328,19 @@ void FaustUI::showCodeEditor() {
             // `declare magda_view` line does.
             if (!faust_edits::loadSource(devicePath_, editedName, src, err))
                 return false;
-            errorLabel_.setText({}, juce::dontSendNotification);
+            setError({});
             refreshNameLabel();
             return true;
         });
 }
 
 void FaustUI::paint(juce::Graphics& g) {
-    const auto bounds = getLocalBounds();
-
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.05f));
-    g.fillRect(bounds);
-
-    if (logo_) {
-        logo_->drawWithin(g, logoBounds_,
-                          juce::RectanglePlacement::xLeft | juce::RectanglePlacement::yMid, 0.7f);
-    }
-
-    // Single vertical rules between the three bands. Full height, so the
-    // strip reads as columns rather than a boxed name with loose icons.
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-    g.drawVerticalLine(logoRuleX_, static_cast<float>(bounds.getY()),
-                       static_cast<float>(bounds.getBottom()));
-    g.drawVerticalLine(actionRuleX_, static_cast<float>(bounds.getY()),
-                       static_cast<float>(bounds.getBottom()));
-
-    // Second identity row: the credit line under the patch name it describes.
-    if (showMetaRow_ && metaText_.isNotEmpty() && !metaBounds_.isEmpty()) {
-        g.setColour(ActiveTheme::getSecondaryTextColour());
-        g.setFont(FontManager::getInstance().getUIFont(9.0f));
-        g.drawText(metaText_, metaBounds_, juce::Justification::centredLeft, true);
-    }
-
-    // Re-set the colour: the meta row above leaves the text colour behind.
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-    g.drawHorizontalLine(bounds.getBottom() - 1, static_cast<float>(bounds.getX()),
-                         static_cast<float>(bounds.getRight()));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).withAlpha(0.92f));
+    g.fillRect(getLocalBounds());
 }
 
 void FaustUI::resized() {
-    constexpr int kBandPadding = 8;
-    constexpr int kLogoBandWidth = 84;
-    constexpr int kIconSize = 16;
-    constexpr int kIconGap = 6;
-    constexpr int kActionBandWidth = 2 * kBandPadding + 3 * kIconSize + 2 * kIconGap;
-    constexpr int kNameRowHeight = 16;
-
-    auto bounds = getLocalBounds();
-
-    // Band 1: logo. Vertically centred over the whole strip, so it stays put
-    // when the meta row appears.
-    auto logoBand = bounds.removeFromLeft(kLogoBandWidth);
-    logoBounds_ = logoBand.reduced(kBandPadding, 8).toFloat();
-
-    logoRuleX_ = bounds.getX();
-    bounds.removeFromLeft(1);
-
-    // Band 3: Save / Load / Edit, left to right, on a fixed cell grid so the
-    // icons line up with the rule instead of floating on button metrics.
-    auto actionBand = bounds.removeFromRight(kActionBandWidth);
-    actionRuleX_ = actionBand.getX();
-    bounds.removeFromRight(1);
-
-    auto iconRow = actionBand.reduced(kBandPadding, 0);
-    auto placeIcon = [&iconRow](magda::SvgButton& button) {
-        button.setBounds(
-            iconRow.removeFromLeft(kIconSize).withSizeKeepingCentre(kIconSize, kIconSize));
-        iconRow.removeFromLeft(kIconGap);
-    };
-    placeIcon(*saveButton_);
-    placeIcon(*loadButton_);
-    placeIcon(*editButton_);
-
-    // Band 2: patch name over its metadata. The two rows are centred as one
-    // block, so a patch without metadata centres its name instead of leaving
-    // a gap where the second row would have been.
-    auto identityBand = bounds.reduced(kBandPadding, 4);
-
-    if (errorLabel_.getText().isNotEmpty()) {
-        const int errWidth = juce::jmin(identityBand.getWidth() / 2, 200);
-        errorLabel_.setBounds(identityBand.removeFromRight(errWidth));
-        identityBand.removeFromRight(4);
-    }
-
-    const int blockHeight = kNameRowHeight + (showMetaRow_ ? kMetaRowHeight : 0);
-    auto textBlock = identityBand.withSizeKeepingCentre(identityBand.getWidth(), blockHeight);
-    nameLabel_.setBounds(textBlock.removeFromTop(kNameRowHeight));
-    metaBounds_ = showMetaRow_ ? textBlock : juce::Rectangle<int>{};
+    errorLabel_.setBounds(getLocalBounds().reduced(8, 0));
 }
 
 void FaustUI::lookAndFeelChanged() {
@@ -425,7 +348,6 @@ void FaustUI::lookAndFeelChanged() {
         logo_->replaceColour(juce::Colour(0xFFD9D9D9), ActiveTheme::getSecondaryTextColour());
         ActiveTheme::applyToSvgIcon(*logo_);
     }
-    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
 }
 
 }  // namespace magda::daw::ui

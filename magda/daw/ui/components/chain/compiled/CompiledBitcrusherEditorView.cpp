@@ -7,6 +7,7 @@
 
 #include "audio/plugins/compiled/MagdaBitcrusherCompiledPlugin.hpp"
 #include "ui/themes/ActiveTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -119,6 +120,7 @@ void CompiledBitcrusherEditorView::paint(juce::Graphics& g) {
 
     // Rate readout top-right.
     g.setColour(textColour.withAlpha(0.55f));
+    g.setFont(FontManager::getInstance().getMonoFont(10.0f));
     g.drawFittedText(formatRate(rateHz_),
                      juce::Rectangle<int>(static_cast<int>(plot.getRight()) - 80,
                                           static_cast<int>(plot.getY()) + 2, 76, 14),

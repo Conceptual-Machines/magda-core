@@ -8,6 +8,7 @@
 
 #include "audio/plugins/compiled/MagdaReverbCompiledPlugin.hpp"
 #include "ui/themes/ActiveTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -197,6 +198,7 @@ void CompiledReverbCurveView::paint(juce::Graphics& g) {
     }
 
     // Engine label, top-right.
+    g.setFont(FontManager::getInstance().getMonoFont(10.0f));
     g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.55f));
     g.drawFittedText(engineLabelFor(engine_),
                      juce::Rectangle<int>(static_cast<int>(plotArea_.getRight()) - 60,

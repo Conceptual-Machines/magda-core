@@ -69,6 +69,24 @@ class CompiledDevicePanel {
     /// them through this rather than keeping a context, whose pointers a chain
     /// rebuild frees.
     virtual void setLinkContextProvider(std::function<std::optional<ParamLinkContext>()>) {}
+
+    /// Called with the part of the panel an expand button asks to lend to the arrangement.
+    virtual void setOnExpandRequested(std::function<void(juce::Component& part)>) {}
+    /// The part the header's expand button lends, for a spec with expandsFromHeader.
+    virtual juce::Component* expandablePart() {
+        return nullptr;
+    }
+    /// The part out in the arrangement, or null.
+    virtual juce::Component* lentPart() const {
+        return nullptr;
+    }
+    /// A lent part is back.
+    virtual void expandablePartReturned() {}
+
+    /// Whether the panel's overlaid editor is open; a grid placing its own cells lays out by it.
+    virtual bool overlayOpen() const {
+        return true;
+    }
 };
 
 /**
@@ -105,6 +123,10 @@ struct CompiledPresentationSpec {
     /// When > 0, the part of preferredSlotWidth the controls take; the sidebar's parameters
     /// toggle then hides them and the visualisation takes the body (#3201).
     int controlsSlotWidth = 0;
+    /// When > 0, the widths of the panels either side of an always-shown centre; the sidebar's
+    /// panel and chain toggles hide them, as on the multiband rack (#3205).
+    int leftPanelWidth = 0;
+    int rightPanelWidth = 0;
     /// When true, the param grid fills cells top-to-bottom first
     /// (paramIndex N at grid position (row, col) → row = N % numRows,
     /// col = N / numRows). Default false = row-major, matching every
@@ -121,10 +143,16 @@ struct CompiledPresentationSpec {
     std::span<const std::pair<int, const char*>> knobLabels;
     /// Most knob columns beside the faceplate; 0 takes the default of two.
     int knobColumns = 0;
+    /// Set, each row of knobColumns knobSlots is a tab of its own, named here in order (#3205).
+    std::span<const char* const> knobPageNames;
     /// The faceplate's width beside the knobs; 0 takes the default.
     int faceplateWidth = 0;
     /// Discrete slots shown in a strip across the top of the faceplate.
     std::span<const int> faceplateSlots;
+    /// Set, no strip: the discrete slots stay with the knobs, for a faceplate that is one panel.
+    bool keepsSlotsInGrid = false;
+    /// Set, the header's expand button lends the panel's expandablePart() to the arrangement.
+    bool expandsFromHeader = false;
     /// Set, the faceplate sits under these band knobs, one row, each band's in its third, low
     /// to high; knobSlots stand in a column on the left.
     std::span<const int> bandSlots;

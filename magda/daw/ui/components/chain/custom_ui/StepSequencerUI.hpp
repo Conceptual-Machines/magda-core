@@ -23,7 +23,8 @@ namespace magda::daw::ui {
  * @brief 303-style step sequencer UI.
  *
  * The steps on the left: their notes over a keyboard that sets the selected step's note, then a
- * row each for gate, tie, glide and accent. The control column on the right holds the slots, the
+ * row each for gate, tie, glide and accent. Too short for the keyboard, a step's box opens one in
+ * a popup instead (#3205). The control column on the right holds the slots, the
  * pattern's length and the time bend.
  *
  * Written against the model (#2299/#2313): slot values arrive through
@@ -71,6 +72,20 @@ class StepSequencerUI : public juce::Component, private juce::Timer {
     void setTimeBendShown(bool shown);
     /// The steps at their usual size beside the controls as they show now.
     int preferredWidth() const;
+    /// Tall enough for the keyboard at its full height.
+    static int preferredHeight();
+
+    /// The keyboard alone, a piano roll once lent: what expanding into the arrangement lends
+    /// (#3205).
+    juce::Component& expandablePart() {
+        return keyboard_;
+    }
+    /// The part out in the arrangement, the steps or the time bend; null when neither is.
+    juce::Component* lentPart() const;
+    /// An expand button was clicked for @p part; only one part is out at a time.
+    std::function<void(juce::Component& part)> onExpandClicked;
+    /// A part is back from the arrangement.
+    void expandablePartReturned();
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -82,14 +97,24 @@ class StepSequencerUI : public juce::Component, private juce::Timer {
     daw::audio::StepSequencerPlugin* device_ = nullptr;
     step_pattern::MonoPattern pattern_;
 
-    sequencer_faceplate::SequencerControlPanel panel_;
-    LinkableTextSlider velocity_;
-    LinkableTextSlider accentVelocity_;
+    sequencer_faceplate::SettingsStrip strip_;
+    TimeBendEditor timeBend_;
+    std::unique_ptr<magda::SvgButton> bendExpandButton_ = sequencer_faceplate::makeExpandButton();
+    bool timeBendShown_ = true;
+    bool timeBendLent() const;
+    /// Shown, and not out in the arrangement.
+    bool timeBendInFaceplate() const;
+    // Settings, not slots: edited from the right-click menu.
+    double quantize_ = 0.0;
+    int quantizeSub_ = 16;
+    std::unique_ptr<magda::SvgButton> expandButton_ = sequencer_faceplate::makeExpandButton();
+    // Set from the step menu.
+    int velocity_ = 90;
+    int accentVelocity_ = 120;
 
     // --- State ---
     int selectedStep_ = 0;       // Currently selected step for editing
     int currentPlayStep_ = -1;   // Step being played (for highlight)
-    int keyboardBaseNote_ = 48;  // Current keyboard base note (shifts with octave arrows)
     int dragSourceStep_ = -1;    // Source step for shift+drag copy
     int dragTargetStep_ = -1;    // Current drag target (for visual feedback)
     bool wasRecording_ = false;  // Previous recording state (for header repaint)
@@ -105,42 +130,73 @@ class StepSequencerUI : public juce::Component, private juce::Timer {
         patternGesture_ = nextPatternGesture_.fetch_add(1);
     }
 
-    static constexpr int NOTE_ROW_HEIGHT = 28;
-    static constexpr int OCTAVE_BUTTON_HEIGHT = 22;
-    static constexpr int MIN_KEYBOARD_HEIGHT = 36;
+    static constexpr int MIN_KEYBOARD_HEIGHT = 48;
     static constexpr int MAX_KEYBOARD_HEIGHT = 84;
-    static constexpr int MIN_BASE_NOTE = 0;
-    static constexpr int MAX_BASE_NOTE = 96;
 
-    /// Octaves the keyboard shows at its width.
-    int keyboardOctaves() const;
-    int keyboardNoteCount() const {
-        return keyboardOctaves() * 12;
-    }
+    /** The keys that set the selected step's note, with their octave buttons in the gutter. Lent
+     *  to the arrangement, a piano roll of the whole pattern instead, one note per step (#3205). */
+    class NoteEditor : public juce::Component {
+      public:
+        explicit NoteEditor(StepSequencerUI& owner) : owner_(owner) {}
+
+        void paint(juce::Graphics& g) override;
+        void resized() override;
+        void mouseDown(const juce::MouseEvent& e) override;
+        void mouseWheelMove(const juce::MouseEvent& e,
+                            const juce::MouseWheelDetails& wheel) override;
+
+      private:
+        static constexpr int OCTAVE_BUTTON_HEIGHT = 22;
+        /// In the arrangement the keys stop growing here.
+        static constexpr int MAX_KEYS_HEIGHT = 160;
+        static constexpr int STRIP_WIDTH = 20;
+        static constexpr int BUTTON_BOX_HEIGHT = 44;
+        static constexpr int MIN_VISIBLE_NOTES = 12;
+        static constexpr int MAX_VISIBLE_NOTES = 48;
+
+        StepSequencerUI& owner_;
+        int baseNote_ = 48;
+        int lowNote_ = 48;
+        int visibleNotes_ = 24;
+        juce::Rectangle<int> labelArea_, downArea_, upArea_, keysArea_;
+        juce::Rectangle<int> rollUpArea_, rollDownArea_, zoomInArea_, zoomOutArea_, pianoArea_,
+            cellArea_;
+
+        bool showsRoll() const;
+        int octaves() const;
+        void drawOctaveButtons(juce::Graphics& g);
+        void paintRoll(juce::Graphics& g);
+        void rollMouseDown(const juce::MouseEvent& e);
+        void shiftWindow(int semitones);
+        void zoomBy(int deltaNotes);
+    };
+
+    NoteEditor keyboard_{*this};
+
+    bool keyboardLent() const;
+    /// Repaints the faceplate and the keyboard, which may be lent to the arrangement.
+    void redraw();
 
     void drawNoteRow(juce::Graphics& g);
-    void drawKeyboard(juce::Graphics& g);
-    void drawOctaveButtons(juce::Graphics& g);
 
-    int getKeyboardNoteAtPosition(juce::Point<int> pos) const;
     void toggleStepFlag(const juce::MouseEvent& e);
+    void setStepNote(int stepIndex, int note);
+    void openNotePicker(int stepIndex);
 
     // --- Layout bounds (computed in resized, used in paint/mouseDown) ---
     juce::Rectangle<int> rulerArea_;
     juce::Rectangle<int> noteArea_;
-    juce::Rectangle<int> keyboardArea_;
-    juce::Rectangle<int> octaveLabelArea_;
-    juce::Rectangle<int> octaveDownArea_;
-    juce::Rectangle<int> octaveUpArea_;
     juce::Rectangle<int> gateArea_;
     juce::Rectangle<int> tieArea_;
     juce::Rectangle<int> glideArea_;
     juce::Rectangle<int> accentArea_;
-    int dividerX_ = 0;
+    int dividerX_ = -1;
 
     void sendChange(int paramIndex, float value);
     void settingsEdited();
     /// Sends a bend edit on: AMOUNT and CYCLES as slots, the rest as settings.
+    /// Quantize and its grid, and for the mono sequencer the two velocities.
+    void showSettingsMenu();
     void timeBendEdited(const sdk::sequencer::TimeBend& before,
                         const sdk::sequencer::TimeBend& after);
     void syncSettingsFromDevice();

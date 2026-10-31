@@ -204,8 +204,12 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
                                  DeviceSlotContentBodyControls controls, int faustHeaderHeight) {
     const bool runtimeFaust = traits.isFaust || traits.isFaustInstrument;
     if (runtimeFaust && controls.faustHeader != nullptr) {
-        controls.faustHeader->setBounds(contentArea.removeFromTop(faustHeaderHeight));
-        controls.faustHeader->setVisible(true);
+        // The header is the error strip now, over the body's foot while there is an error.
+        controls.faustHeader->setBounds(
+            contentArea.withTop(contentArea.getBottom() - faustHeaderHeight));
+        controls.faustHeader->setVisible(faustHeaderHeight > 0);
+        if (faustHeaderHeight > 0)
+            controls.faustHeader->toFront(false);
 
         if (controls.faustCustomView != nullptr) {
             const int bodyHeight = juce::jmax(0, contentArea.getHeight());
@@ -278,6 +282,7 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
         if (controls.compiledPanelUnderGrid && controls.paramGrid != nullptr) {
             controls.compiledPanel->setVisible(true);
             controls.compiledPanel->setBounds(contentArea);
+            controls.paramGrid->setFaceplateBelowShown(controls.compiledPanelOverlayOpen);
             layoutParamGrid(controls.paramGrid, contentArea);
             controls.paramGrid->setVisible(controls.paramGridShown);
             controls.paramGrid->toFront(false);

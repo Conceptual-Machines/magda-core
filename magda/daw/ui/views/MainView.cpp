@@ -1270,8 +1270,8 @@ void MainView::resized() {
     trackHeadersPanel->refreshHeaderSideLayout();
     trackContentViewport->setBounds(arrangementLayout.trackContentArea);
     if (faceplateHost_ != nullptr && faceplateHost_->isShowing()) {
-        // Over the grid and the playhead, which mark time the faceplate does not show.
-        faceplateHost_->setBounds(trackAreaBounds(arrangementLayout));
+        // The whole arrangement, toolbar and timeline too: none of it applies to a faceplate.
+        faceplateHost_->setBounds(getLocalBounds());
         faceplateHost_->toFront(false);
     }
     if (modeContent_) {

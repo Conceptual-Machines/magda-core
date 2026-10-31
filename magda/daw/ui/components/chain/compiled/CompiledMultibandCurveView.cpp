@@ -76,7 +76,11 @@ void CompiledMultibandCurveView::setCompiledPlugin(
 }
 
 void CompiledMultibandCurveView::updateFromDevice(const magda::DeviceInfo& device) {
+    const bool panelsMoved = device.paramsShown != deviceSnapshot_.paramsShown ||
+                             device.outputShown != deviceSnapshot_.outputShown;
     deviceSnapshot_ = device;
+    if (panelsMoved)
+        resized();
     resampleFromPlugin();
     repaint();
 }
@@ -776,7 +780,8 @@ void CompiledMultibandCurveView::paintGraph(juce::Graphics& g) {
 }
 
 void CompiledMultibandCurveView::resized() {
-    geometry_ = MultibandEditorGeometry::of(getLocalBounds());
+    geometry_ = MultibandEditorGeometry::of(getLocalBounds(), deviceSnapshot_.paramsShown,
+                                            deviceSnapshot_.outputShown);
     plotArea_ = geometry_.plot.toFloat();
 }
 
@@ -846,6 +851,15 @@ void CompiledMultibandCurveView::paintTabs(juce::Graphics& g) {
 
 void CompiledMultibandCurveView::paintEditor(juce::Graphics& g) {
     static constexpr const char* kNames[] = {"LOW BAND", "MID BAND", "HIGH BAND"};
+    if (!geometry_.globals.isEmpty()) {
+        // The divider before the whole-device column.
+        const auto globals = geometry_.globals.toFloat();
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
+        g.fillRect(juce::Rectangle<float>(globals.getX() - 13.0f, globals.getY() + 8.0f, 1.0f,
+                                          globals.getHeight() - 16.0f));
+    }
+    if (geometry_.editor.isEmpty())
+        return;
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_WELL));
     g.fillRoundedRectangle(geometry_.editor.toFloat(), 4.0f);
 
@@ -858,12 +872,6 @@ void CompiledMultibandCurveView::paintEditor(juce::Graphics& g) {
     g.setFont(
         FontManager::getInstance().getMonoFont(11.0f).boldened().withExtraKerningFactor(0.08f));
     g.drawText(kNames[selectedBand_], title, juce::Justification::centredLeft, false);
-
-    // The divider before the whole-device column.
-    const auto globals = geometry_.globals.toFloat();
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
-    g.fillRect(juce::Rectangle<float>(globals.getX() - 13.0f, globals.getY() + 8.0f, 1.0f,
-                                      globals.getHeight() - 16.0f));
 }
 
 const CompiledPresentationSpec& getMagdaMultibandPresentation() {
@@ -877,6 +885,8 @@ const CompiledPresentationSpec& getMagdaMultibandPresentation() {
         },
         // The graph, a band's ten knobs beside it, and the whole-device column.
         .preferredSlotWidth = 1040,
+        .leftPanelWidth = MultibandEditorGeometry::kEditorSlotWidth,
+        .rightPanelWidth = MultibandEditorGeometry::kGlobalsSlotWidth,
         .mixSlot = MB::kMixSlot,
         .createLayout = []() -> std::unique_ptr<DeviceParamLayout> {
             return std::make_unique<CompiledMultibandBandLayout>();

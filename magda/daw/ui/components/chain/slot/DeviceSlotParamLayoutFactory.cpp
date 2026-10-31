@@ -29,7 +29,7 @@ std::unique_ptr<DeviceParamLayout> createDeviceSlotParamLayout(const DeviceSlotT
         return std::make_unique<CompiledFaustDeviceLayout>(
             spec->layoutCellCount, spec->layoutCellsPerRow, spec->columnMajorGrid,
             spec->isParameterEnabled, knobs, excludedSlots, spec->knobColumns, leading,
-            spec->knobLabels);
+            spec->knobLabels, spec->knobPageNames);
     }
 
     return std::make_unique<StandardDeviceLayout>();
