@@ -442,6 +442,7 @@ PluginBrowserContent::PluginBrowserContent() {
 
     // Setup search box
     searchBox_.onTextChange = [this]() { filterBySearch(searchBox_.getText()); };
+    searchBox_.shareSearchTerm();
     addAndMakeVisible(searchBox_);
 
     // Setup view mode selector, opening on the grouping the user last chose
@@ -663,7 +664,8 @@ void PluginBrowserContent::refreshPluginList() {
     loadFavorites();
     loadAliases();
     loadFolders();
-    rebuildTree();
+    // The shared term may have been typed in the media browser before this list arrived.
+    filterBySearch(searchBox_.getText());
 }
 
 void PluginBrowserContent::rebuildTree() {

@@ -17,6 +17,7 @@
 #include "../../themes/CursorManager.hpp"
 #include "../../utils/SelectionPolicy.hpp"
 #include "../../utils/TimelineUtils.hpp"
+#include "../../views/ArrangementViewportPolicy.hpp"
 #include "../automation/AutomationLaneComponent.hpp"
 #include "../clips/ClipComponent.hpp"
 #include "../common/EditTool.hpp"
@@ -658,7 +659,7 @@ void TrackContentPanel::resized() {
     int timelineWidth =
         static_cast<int>(std::round(beats * currentZoom)) + LayoutConfig::TIMELINE_LEFT_PADDING;
     int contentWidth = juce::jmax(timelineWidth, minWidth_);
-    int contentHeight = juce::jmax(getTotalTracksHeight(), minHeight_);
+    int contentHeight = arrangement_viewport::panelHeight(getTotalTracksHeight(), minHeight_);
 
     setSize(contentWidth, contentHeight);
 

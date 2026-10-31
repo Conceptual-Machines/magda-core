@@ -59,7 +59,7 @@ MasterInspectorView::MasterInspectorView() {
     addAndMakeVisible(summaryLabel_);
 
     muteButton_ = magda::makeMasterSpeakerButton();
-    muteButton_->setIconPadding(8.0f);
+    muteButton_->setIconPadding(5.0f);
     muteButton_->setTooltip("Mute master");
     muteButton_->onClick = [this]() {
         magda::UndoManager::getInstance().executeCommand(
@@ -337,7 +337,9 @@ void MasterInspectorView::layoutSections() {
     // Header: swatch, name and summary, mute.
     auto header = bounds.removeFromTop(64).reduced(kPad, 12);
     headerArea_ = header;
-    muteButton_->setBounds(header.removeFromRight(34).withSizeKeepingCentre(34, 30));
+    // 22px, as the track inspector's master glyph; the gap keeps the summary off it.
+    muteButton_->setBounds(header.removeFromRight(22).withSizeKeepingCentre(22, 22));
+    header.removeFromRight(8);
     header.removeFromLeft(14);
     nameLabel_.setBounds(header.removeFromTop(22));
     summaryLabel_.setBounds(header);

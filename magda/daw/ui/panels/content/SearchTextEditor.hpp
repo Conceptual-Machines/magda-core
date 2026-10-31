@@ -5,6 +5,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <memory>
+
 namespace magda::daw::ui {
 
 /**
@@ -20,12 +22,23 @@ class SearchTextEditor : public juce::TextEditor {
     /** @brief Focuses the field on Cmd+F; the owning panel calls this from keyPressed. */
     bool handleFocusShortcut(const juce::KeyPress& key);
 
+    /**
+     * @brief Joins the one search term shared by every field that calls this, so typing in
+     * either browser updates the other and switching keeps the term (#3217).
+     */
+    void shareSearchTerm();
+
     void mouseDown(const juce::MouseEvent& event) override;
     void paintOverChildren(juce::Graphics& g) override;
     void lookAndFeelChanged() override;
 
   private:
+    struct SharedTerm {
+        juce::Value text;
+    };
+
     juce::String placeholder_;
+    std::unique_ptr<juce::SharedResourcePointer<SharedTerm>> sharedTerm_;
 
     void applyThemeColours();
 };

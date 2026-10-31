@@ -1816,7 +1816,7 @@ void MainView::updateVerticalZoomScrollBar() {
     rangeHeight = juce::jlimit(0.01, 1.0, rangeHeight);
 
     // getTotalTracksHeight already includes verticalZoom.
-    int scaledContentHeight = totalContentHeight;
+    int scaledContentHeight = arrangement_viewport::scrollHeight(totalContentHeight);
 
     // Calculate scroll position as fraction
     double scrollFraction =

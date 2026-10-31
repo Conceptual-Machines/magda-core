@@ -24,6 +24,11 @@ bool SearchTextEditor::handleFocusShortcut(const juce::KeyPress& key) {
     return true;
 }
 
+void SearchTextEditor::shareSearchTerm() {
+    sharedTerm_ = std::make_unique<juce::SharedResourcePointer<SharedTerm>>();
+    getTextValue().referTo((*sharedTerm_)->text);
+}
+
 void SearchTextEditor::mouseDown(const juce::MouseEvent& event) {
     juce::TextEditor::mouseDown(event);
     if (!event.mods.isPopupMenu() && getText().isNotEmpty())
