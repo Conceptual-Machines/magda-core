@@ -29,9 +29,10 @@ DeviceSlotTraits makeDeviceSlotTraits(const juce::String& pluginId) {
     traits.isAISupported = agentCapabilities.supportsDeviceAI();
     traits.isSoundDesignSupported = agentCapabilities.supportsSoundDesign();
     traits.compiledPresentation = findCompiledPresentation(pluginId);
-    if (traits.compiledPresentation != nullptr)
+    if (traits.compiledPresentation != nullptr) {
         traits.mixSlot = traits.compiledPresentation->mixSlot;
-    else if (const auto* spec = audio::findInternalPluginSpec(pluginId))
+        traits.expandsFaceplate |= traits.compiledPresentation->expandsFromHeader;
+    } else if (const auto* spec = audio::findInternalPluginSpec(pluginId))
         traits.mixSlot = spec->mixParamIndex;
     return traits;
 }

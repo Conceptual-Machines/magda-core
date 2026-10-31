@@ -8,6 +8,7 @@
 
 #include "audio/plugins/compiled/MagdaChorusCompiledPlugin.hpp"
 #include "ui/themes/ActiveTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -204,7 +205,7 @@ void CompiledChorusCurveView::paint(juce::Graphics& g) {
 
     // Voice-count badge.
     const juce::String voiceLabel = juce::String(voices_) + (voices_ == 1 ? " VOICE" : " VOICES");
-    g.setFont(11.0f);
+    g.setFont(FontManager::getInstance().getMonoFont(11.0f));
     g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.75f));
     g.drawText(
         voiceLabel,

@@ -114,7 +114,10 @@ class ParamHostComponent : public juce::Component, private magda::ConfigListener
 
     /// Whether a faceplate-below layout's faceplate shows, which decides where its cells go.
     void setFaceplateBelowShown(bool shown) {
+        if (shown == faceplateBelowShown_)
+            return;
         faceplateBelowShown_ = shown;
+        resized();
     }
 
     /// Pin the row height instead of dividing the bounds by getRowCount().

@@ -53,6 +53,9 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     // overlay (#1400): a dropdown picks another track, whose spectrum is drawn
     // over this one with the clashing frequency zones shaded.
     void setTrackId(magda::TrackId trackId);
+    /// The overlay picker and the controls' gear, for a host to place in its header. Taken, the
+    /// picker's row goes and the gear fades the control row in over the plot (#3205).
+    std::vector<juce::Component*> headerControls();
 
     // Compact mode hides the control row (FFT/slope/speed/colour) and uses the
     // full bounds for the plot — used by the mini visualizer on the mixer.
@@ -86,6 +89,12 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
 
     void timerCallback() override;
     void updateTimerState();
+    bool overlayHosted() const {
+        return overlayCombo_.getParentComponent() != this;
+    }
+    void layoutControlRow(juce::Rectangle<int> row);
+    void syncDocked();
+    bool dockedApplied_ = false;
     void refreshOverlayList();                       // rebuild combo items from the track list
     void selectOverlayTrack(magda::TrackId target);  // change selection + arm/disarm analysis
     void releaseMeasurementArming();                 // undo only what this UI armed
@@ -108,7 +117,11 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     void applyControlsAlpha();
     void openPopout();  // open/re-show the full analyzer in a floating window
     bool showControls() const {
-        return !compact_ || controlsExpanded_ || controlsFadeActive_;
+        return (!compact_ && !overlayHosted()) || controlsExpanded_ || controlsFadeActive_;
+    }
+    /// Compact, or docked in a slot header: the controls come and go.
+    bool controlsToggle() const {
+        return compact_ || overlayHosted();
     }
 
     bool compact_ = false;
@@ -169,6 +182,7 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     // Pop-out button (same open_in_new icon as the plugin rows), shown in the
     // strip in compact mode.
     std::unique_ptr<magda::SvgButton> popoutButton_;
+    std::unique_ptr<magda::SvgButton> settingsButton_;
 
     // Floating full-size analyzer, lazily created on first pop-out. Owned here,
     // so it dies with this component. popoutUI_ is a non-owning view for

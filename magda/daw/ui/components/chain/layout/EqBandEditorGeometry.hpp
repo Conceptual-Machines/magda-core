@@ -27,6 +27,7 @@ struct EqBandEditorGeometry {
     juce::Rectangle<int> divider;          ///< The 1px rule before Output.
     juce::Rectangle<int> controlsDivider;  ///< The 1px rule between the filter and its values.
     juce::Rectangle<int> output;
+    juce::Rectangle<int> close;  ///< Over the plot only: the editor's close button.
 
     static constexpr int kSpace = 8;
     static constexpr int kChipHeight = 26;
@@ -34,19 +35,39 @@ struct EqBandEditorGeometry {
     static constexpr int kCellHeight = 48;  ///< ParamSlotComponent's text tile at its minimum.
     static constexpr int kEditorHeight = kCellHeight + 2 * kSpace;
     static constexpr int kTypesHeight = 28;
+    /// The plot's own minimum, 90px, under the editor and the chips (#3205).
+    static constexpr int kInlineMinHeight =
+        2 * kSpace + kEditorHeight + kSpace + kChipHeight + kSpace + 90;
+
+    /// Shorter than kInlineMinHeight, the editor lies over the plot's foot, and only while open.
+    static bool overlaysEditor(juce::Rectangle<int> bounds) {
+        return bounds.getHeight() < kInlineMinHeight;
+    }
 
     /** @brief Lays out @p bounds, with the type and slope strips at their preferred widths. */
     static EqBandEditorGeometry of(juce::Rectangle<int> bounds, int typesWidth = 0,
-                                   int slopeWidth = 0) {
+                                   int slopeWidth = 0, bool editorOpen = true) {
         EqBandEditorGeometry g;
         auto area = bounds.reduced(kSpace);
-        g.editor = area.removeFromBottom(kEditorHeight);
-        area.removeFromBottom(kSpace);
-        g.chips = area.removeFromBottom(kChipHeight);
-        area.removeFromBottom(kSpace);
-        g.plot = area;
+        const bool overlay = overlaysEditor(bounds);
+        if (overlay) {
+            g.chips = area.removeFromBottom(kChipHeight);
+            area.removeFromBottom(kSpace);
+            g.plot = area;
+            if (!editorOpen)
+                return g;
+            g.editor = area.removeFromBottom(kEditorHeight);
+        } else {
+            g.editor = area.removeFromBottom(kEditorHeight);
+            area.removeFromBottom(kSpace);
+            g.chips = area.removeFromBottom(kChipHeight);
+            area.removeFromBottom(kSpace);
+            g.plot = area;
+        }
 
         auto row = g.editor.reduced(kSpace);
+        if (overlay)
+            g.close = row.removeFromRight(16).removeFromTop(16);
         const auto cell = [&row] { return row.removeFromRight(kCellWidth); };
         g.output = cell();
         g.divider = row.removeFromRight(2 * kSpace + 1).withSizeKeepingCentre(1, kCellHeight);
@@ -73,6 +94,8 @@ struct EqBandEditorGeometry {
 
     /** @brief Knob @p index: Freq, Gain and Q, then Output. */
     juce::Rectangle<int> knob(int index) const {
+        if (editor.isEmpty())
+            return {};
         if (index >= 3)
             return output;
         return knobs.withWidth(kCellWidth).translated(index * (kCellWidth + kSpace), 0);

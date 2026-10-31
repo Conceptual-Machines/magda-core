@@ -8,6 +8,7 @@
 
 #include "audio/plugins/compiled/MagdaRingModCompiledPlugin.hpp"
 #include "ui/themes/ActiveTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -222,7 +223,7 @@ void CompiledRingModCurveView::paint(juce::Graphics& g) {
             const juce::String freqLabel =
                 freqDisp >= 1000.0f ? juce::String(freqDisp / 1000.0f, 2) + " kHz"
                                     : juce::String(freqDisp, freqDisp >= 100.0f ? 0 : 1) + " Hz";
-            g.setFont(11.0f);
+            g.setFont(FontManager::getInstance().getMonoFont(11.0f));
             g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.85f));
             g.drawText(freqLabel,
                        juce::Rectangle<float>(spectrumStrip.getX() + 4.0f, spectrumStrip.getY(),
@@ -240,7 +241,7 @@ void CompiledRingModCurveView::paint(juce::Graphics& g) {
                        juce::Justification::centredRight);
         } else {
             // Sidechain mode: the oscillator settings don't apply. Just say so.
-            g.setFont(11.0f);
+            g.setFont(FontManager::getInstance().getMonoFont(11.0f));
             g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.85f));
             g.drawText("CARRIER: SIDECHAIN", spectrumStrip.toNearestInt(),
                        juce::Justification::centred);
@@ -258,7 +259,7 @@ void CompiledRingModCurveView::paint(juce::Graphics& g) {
     if (sidechainMode) {
         // No waveform to preview — the carrier IS the host-routed audio bus.
         // Just show a centred label so the panel doesn't read as "broken".
-        g.setFont(13.0f);
+        g.setFont(FontManager::getInstance().getMonoFont(13.0f));
         g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.55f));
         g.drawText(juce::String::fromUTF8("CARRIER \xe2\x86\x90 SIDECHAIN INPUT"),
                    plot.withSizeKeepingCentre(plot.getWidth(), 20.0f).toNearestInt(),

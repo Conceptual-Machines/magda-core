@@ -379,6 +379,8 @@ const CompiledPresentationSpec& getMagdaCompressorPresentation() {
         Comp::kMakeupSlot,    Comp::kOutputSlot,       -1,               //
         Comp::kLinkSlot,      Comp::kSidechainHpfSlot, Comp::kFbffSlot,
     };
+    // A tab per row, so one row of knobs fits the 200px chain (#3205).
+    static constexpr const char* kKnobPages[] = {"Curve", "Timing", "Level", "Detector"};
     static const CompiledPresentationSpec kSpec{
         .pluginId = magda::daw::audio::compiled::MagdaCompressorCompiledPlugin::xmlTypeName,
         .layoutCellCount = 15,
@@ -388,6 +390,7 @@ const CompiledPresentationSpec& getMagdaCompressorPresentation() {
         },
         .knobSlots = kKnobSlots,
         .knobColumns = 3,
+        .knobPageNames = kKnobPages,
         .faceplateWidth = 420,  // Room for its four choices across the top.
         .mixSlot = magda::daw::audio::compiled::MagdaCompressorCompiledPlugin::kMixSlot,
     };

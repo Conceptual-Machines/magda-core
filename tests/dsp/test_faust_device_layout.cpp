@@ -83,12 +83,12 @@ TEST_CASE("FaustDeviceLayout names ungrouped and oversized pages", "[faust][layo
     REQUIRE(layout.pageName(ungrouped, 0) == "Params");
 
     DeviceInfo oversized;
-    for (int i = 0; i < 33; ++i)
+    for (int i = 0; i <= FaustDeviceLayout::kCellCount; ++i)
         oversized.parameters.push_back(param(i, "Bank"));
     REQUIRE(layout.totalPages(oversized) == 2);
     REQUIRE(layout.pageName(oversized, 0) == "Bank 1/2");
     REQUIRE(layout.pageName(oversized, 1) == "Bank 2/2");
-    REQUIRE(layout.cellFor(oversized, 0, 1).targetParamIndex == 32);
+    REQUIRE(layout.cellFor(oversized, 0, 1).targetParamIndex == FaustDeviceLayout::kCellCount);
 }
 
 TEST_CASE("FaustDeviceLayout invalidates cached pages when parameter structure changes",

@@ -55,10 +55,12 @@ class CompiledMultibandBandLayout final : public DeviceParamLayout {
             "Above", "Ratio",  "Below",   "Ratio", "Range",
             "Limit", "Attack", "Release", "Input", "Gain"};
 
+        ParamCell cell;
+        if (!(cellIndex < kBandKnobs ? device.paramsShown : device.outputShown))
+            return cell;  // Its side panel is hidden.
         const int band = juce::jlimit(0, 2, currentPage);
         const int slot = cellIndex < kBandKnobs ? kBandSlots[band][cellIndex]
                                                 : kGlobalSlots[cellIndex - kBandKnobs];
-        ParamCell cell;
         for (int k = 0; k < static_cast<int>(device.parameters.size()); ++k) {
             if (device.parameters[static_cast<size_t>(k)].paramIndex != slot)
                 continue;

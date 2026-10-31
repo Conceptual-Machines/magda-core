@@ -4,6 +4,8 @@
 #include "compiled/ArpeggiatorTimeBendPanel.hpp"
 
 #include "core/DeviceStateCommands.hpp"
+#include "custom_ui/SequencerFaceplate.hpp"
+#include "ui/state/ExpandedFaceplate.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -14,6 +16,8 @@ namespace {
 constexpr int kRowHeight = 24;
 constexpr int kGap = 8;
 constexpr int kTileHeight = 52;  ///< The grid's text tile, so the settings read as its cells.
+/// The title and the settings stacked left, so the curve has the full height.
+constexpr int kColumnWidth = 96;
 
 void styleField(magda::DraggableValueLabel& field) {
     field.setFont(FontManager::getInstance().getUIFontMedium(16.0f));
@@ -30,6 +34,12 @@ ArpeggiatorTimeBendPanel::ArpeggiatorTimeBendPanel() {
     bend_.setShowsAmountAndCycles(false);
     bend_.onCommit = [this](const auto&, const auto&) { settingsEdited(); };
     addAndMakeVisible(bend_);
+    expandButton_ = sequencer_faceplate::makeExpandButton();
+    expandButton_->onClick = [this] {
+        if (onExpandRequested_)
+            onExpandRequested_(bend_);
+    };
+    bend_.setHeaderAccessory(expandButton_.get());
 
     quantize_.setRange(0.0, 1.0, 0.0);
     quantize_.setTooltip("Pull bent notes back toward the subdivision grid");
@@ -94,6 +104,18 @@ void ArpeggiatorTimeBendPanel::settingsEdited() {
     magda::writeDeviceSettings(devicePath_, settings);
 }
 
+juce::Component* ArpeggiatorTimeBendPanel::lentPart() const {
+    const auto& expanded = magda::ExpandedFaceplate::getInstance();
+    return expanded.holds(bend_) ? expanded.faceplate() : nullptr;
+}
+
+void ArpeggiatorTimeBendPanel::expandablePartReturned() {
+    if (bend_.getParentComponent() != this)
+        addAndMakeVisible(bend_);
+    resized();
+    repaint();
+}
+
 void ArpeggiatorTimeBendPanel::timerCallback() {
     // The modulated amount, the cycle the walk is in and the steps it holds, from process().
     auto bend = bend_.getBend();
@@ -133,18 +155,23 @@ void ArpeggiatorTimeBendPanel::paint(juce::Graphics& g) {
 }
 
 void ArpeggiatorTimeBendPanel::resized() {
+    // Out in the arrangement, the host's own button closes it.
+    if (const bool lent = lentPart() != nullptr; expandButton_->isVisible() == lent) {
+        expandButton_->setVisible(!lent);
+        bend_.resized();
+    }
+
     auto area = getLocalBounds();
-    header_ = area.removeFromTop(kRowHeight);
-    area.removeFromTop(4);
+    auto column = area.removeFromLeft(kColumnWidth);
+    area.removeFromLeft(kGap);
+    if (bend_.getParentComponent() == this)
+        bend_.setBounds(area);
 
-    auto tiles = area.removeFromBottom(kTileHeight);
-    area.removeFromBottom(kGap);
-    bend_.setBounds(area);
-
-    const int width = (tiles.getWidth() - kGap) / 2;
+    header_ = column.removeFromTop(kRowHeight);
+    column.removeFromTop(4);
     const auto place = [&](juce::Rectangle<int>& tile, juce::Component& field) {
-        tile = tiles.removeFromLeft(width);
-        tiles.removeFromLeft(kGap);
+        tile = column.removeFromTop(juce::jmin(kTileHeight, (column.getHeight() - kGap) / 2));
+        column.removeFromTop(kGap);
         field.setBounds(tile.reduced(8, 6).withTrimmedTop(16));
     };
     place(quantizeTile_, quantize_);
@@ -181,6 +208,8 @@ const CompiledPresentationSpec& getArpeggiatorPresentation() {
         .knobSlots = kKnobSlots,
         .knobLabels = kKnobLabels,
         .faceplateWidth = 420,
+        // The faceplate is the time bend alone, shown and hidden by its own toggle.
+        .keepsSlotsInGrid = true,
     };
     return kSpec;
 }

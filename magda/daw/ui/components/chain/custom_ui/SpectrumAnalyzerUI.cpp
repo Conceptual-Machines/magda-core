@@ -155,7 +155,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     overlayLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
     overlayLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(overlayLabel_);
-    overlayCombo_.addItem("Off", 1);
+    overlayCombo_.addItem("No overlay", 1);
     overlayCombo_.setSelectedId(1, juce::dontSendNotification);
     overlayCombo_.onChange = [this] {
         const int id = overlayCombo_.getSelectedId();
@@ -166,6 +166,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
         selectOverlayTrack(target);
     };
     styleCombo(overlayCombo_);
+    overlayCombo_.setTooltip("Overlay another track's spectrum");
 
     popoutButton_ = std::make_unique<magda::SvgButton>("Pop out", BinaryData::open_in_new_svg,
                                                        BinaryData::open_in_new_svgSize);
@@ -173,6 +174,13 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
                                                ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
     popoutButton_->onClick = [this] { openPopout(); };
     addChildComponent(*popoutButton_);  // shown only in compact mode
+
+    settingsButton_ = std::make_unique<magda::SvgButton>("Settings", BinaryData::settings_nobg_svg,
+                                                         BinaryData::settings_nobg_svgSize);
+    settingsButton_->setTooltip("Show the analyzer's settings");
+    settingsButton_->onClick = [this] { setControlsExpanded(!controlsExpanded_); };
+    settingsButton_->setClickingTogglesState(true);
+    addChildComponent(*settingsButton_);  // only a host's header shows it
 
     rebuildFft(11);
     updateTimerState();
@@ -328,7 +336,7 @@ void SpectrumAnalyzerUI::refreshOverlayList() {
     overlayItems_ = items;
 
     overlayCombo_.clear(juce::dontSendNotification);
-    overlayCombo_.addItem("Off", 1);
+    overlayCombo_.addItem("No overlay", 1);
     int selId = 1;
     for (int i = 0; i < static_cast<int>(items.size()); ++i) {
         const auto* info = tm.getTrack(items[static_cast<size_t>(i)]);
@@ -446,9 +454,11 @@ void SpectrumAnalyzerUI::setPersistGlobalDefaults(bool persist) {
 }
 
 void SpectrumAnalyzerUI::setControlsExpanded(bool expanded) {
-    if (!compact_ || controlsExpanded_ == expanded)
+    if (!controlsToggle() || controlsExpanded_ == expanded)
         return;
     controlsExpanded_ = expanded;
+    if (settingsButton_)
+        settingsButton_->setToggleState(expanded, juce::dontSendNotification);
     startControlsFade(expanded);
     updateControlVisibility();
     resized();
@@ -484,7 +494,7 @@ void SpectrumAnalyzerUI::updateControlVisibility() {
         popoutButton_->setVisible(compact_);  // lives in the strip, compact only
     // The masking overlay picker is a full-editor / pop-out feature only; the
     // compact mixer visualizer has no room for it.
-    overlayLabel_.setVisible(!compact_);
+    overlayLabel_.setVisible(!compact_ && !overlayHosted());
     overlayCombo_.setVisible(!compact_);
     applyControlsAlpha();
 }
@@ -524,7 +534,7 @@ void SpectrumAnalyzerUI::advanceControlsFade() {
 }
 
 void SpectrumAnalyzerUI::applyControlsAlpha() {
-    const float alpha = compact_ ? controlsAlpha_ : 1.0f;
+    const float alpha = controlsToggle() ? controlsAlpha_ : 1.0f;
     fftLabel_.setAlpha(alpha);
     fftCombo_.setAlpha(alpha);
     slopeLabel_.setAlpha(alpha);
@@ -540,6 +550,7 @@ int SpectrumAnalyzerUI::compactExtraHeight() const {
 }
 
 void SpectrumAnalyzerUI::resized() {
+    syncDocked();
     if (compact_) {
         auto area = getLocalBounds();
         const int controlsHeight = expandedControlsHeight();
@@ -569,13 +580,20 @@ void SpectrumAnalyzerUI::resized() {
     chevronRect_ = juce::Rectangle<int>();
     popoutRect_ = juce::Rectangle<int>();
 
+    // Docked, the row lies over the plot's foot while the gear shows it.
+    if (overlayHosted())
+        return layoutControlRow(
+            plotArea().toNearestInt().reduced(4).removeFromBottom(kControlRowH));
+
     // Top row: masking overlay picker.
     auto overlayRow = getLocalBounds().removeFromTop(kOverlayRowH);
     overlayRow.removeFromLeft(4);
     overlayLabel_.setBounds(overlayRow.removeFromLeft(48));
     overlayCombo_.setBounds(overlayRow.removeFromLeft(150).reduced(2, 1));
+    layoutControlRow(getLocalBounds().removeFromBottom(kControlRowH));
+}
 
-    auto controls = getLocalBounds().removeFromBottom(kControlRowH);
+void SpectrumAnalyzerUI::layoutControlRow(juce::Rectangle<int> controls) {
     auto cell = [&controls](int labelW, int comboW) {
         controls.removeFromLeft(4);
         auto label = controls.removeFromLeft(labelW);
@@ -594,6 +612,24 @@ void SpectrumAnalyzerUI::resized() {
     auto [colL, colC] = cell(34, 70);
     colourLabel_.setBounds(colL);
     colourCombo_.setBounds(colC.reduced(2, 1));
+}
+
+std::vector<juce::Component*> SpectrumAnalyzerUI::headerControls() {
+    return {&overlayCombo_, settingsButton_.get()};
+}
+
+void SpectrumAnalyzerUI::syncDocked() {
+    // Reparenting the picker tells this component nothing, so each layout checks where it is.
+    if (overlayHosted() == dockedApplied_)
+        return;
+    dockedApplied_ = overlayHosted();
+    if (!dockedApplied_ && !compact_) {
+        controlsExpanded_ = false;
+        controlsFadeActive_ = false;
+        controlsAlpha_ = 1.0f;
+    }
+    updateControlVisibility();
+    repaint();
 }
 
 void SpectrumAnalyzerUI::mouseDown(const juce::MouseEvent& e) {
@@ -681,8 +717,10 @@ float SpectrumAnalyzerUI::dbToY(float db, juce::Rectangle<float> area) {
 juce::Rectangle<float> SpectrumAnalyzerUI::plotArea() const {
     auto a = getLocalBounds();
     if (!compact_) {
-        a.removeFromTop(kOverlayRowH);  // overlay picker row
-        a.removeFromBottom(kControlRowH);
+        if (!overlayHosted()) {
+            a.removeFromTop(kOverlayRowH);  // overlay picker row
+            a.removeFromBottom(kControlRowH);
+        }
     } else {
         a.removeFromBottom(expandedControlsHeight());
         a.removeFromBottom(kChevronStripH);  // chevron/pop-out strip
@@ -813,6 +851,14 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         g.drawText(txt, box, juce::Justification::centredLeft);
+    }
+
+    if (overlayHosted() && showControls()) {
+        // A backdrop so the docked control row reads over the spectrum.
+        const auto row = plot.reduced(2.0f).removeFromBottom(kControlRowH + 6.0f);
+        g.setColour(
+            ActiveTheme::getColour(ActiveTheme::BACKGROUND).withAlpha(0.9f * controlsAlpha_));
+        g.fillRoundedRectangle(row, 4.0f);
     }
 
     drawChevron();

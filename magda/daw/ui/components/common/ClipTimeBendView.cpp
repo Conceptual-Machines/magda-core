@@ -3,8 +3,6 @@
 
 #include "ui/components/common/ClipTimeBendView.hpp"
 
-#include <map>
-
 #include "core/MidiNoteCommands.hpp"
 #include "music/GrooveLibrary.hpp"
 #include "project/ProjectManager.hpp"
@@ -20,46 +18,6 @@ constexpr int kGap = 4;
 
 double beatsPerBar() {
     return magda::ProjectManager::getInstance().getCurrentProjectInfo().beatsPerBar();
-}
-
-/// A fixed-strength copy such as "Swing 1/4 35%": AMOUNT scales the full groove instead.
-bool isStrengthCopy(const juce::String& name) {
-    const auto last = name.fromLastOccurrenceOf(" ", false, false);
-    return last.endsWithChar('%') && last.dropLastCharacters(1).containsOnly("0123456789");
-}
-
-/// Groove names grouped by the family their name starts with; the rest are Custom.
-std::vector<std::pair<juce::String, juce::StringArray>> grooveFamilies() {
-    static const std::pair<const char*, const char*> kFamilies[] = {{"Swing", "Swing"},
-                                                                    {"Swing", "Basic"},
-                                                                    {"Push Swing", "PushSwing"},
-                                                                    {"Pull Swing", "PullSwing"},
-                                                                    {"Push Snare", "PushSnare"},
-                                                                    {"Pull Snare", "PullSnare"},
-                                                                    {"Timing", "Slow"},
-                                                                    {"Timing", "Fast"},
-                                                                    {"Random", "random"},
-                                                                    {"Random", "Random"},
-                                                                    {"Random", "New"}};
-    std::vector<std::pair<juce::String, juce::StringArray>> families;
-    const auto add = [&families](const juce::String& family, const juce::String& name) {
-        for (auto& [heading, names] : families)
-            if (heading == family) {
-                names.add(name);
-                return;
-            }
-        families.push_back({family, juce::StringArray{name}});
-    };
-    for (const auto& name : magda::GrooveLibrary::getInstance().names()) {
-        if (isStrengthCopy(name))
-            continue;
-        const auto* found = std::ranges::find_if(kFamilies, [&name](const auto& family) {
-            return name.startsWithIgnoreCase(family.second);
-        });
-        add(found != std::end(kFamilies) ? juce::String(found->first) : juce::String("Custom"),
-            name);
-    }
-    return families;
 }
 
 }  // namespace
@@ -124,15 +82,8 @@ void ClipTimeBendView::clipPropertyChanged(magda::ClipId clipId) {
 }
 
 void ClipTimeBendView::showGrooveMenu() {
-    juce::PopupMenu menu;
-    menu.addItem("None", [this] { loadGroove({}); });
-    for (const auto& [family, names] : grooveFamilies()) {
-        juce::PopupMenu sub;
-        for (const auto& name : names)
-            sub.addItem(name, [this, name] { loadGroove(name); });
-        menu.addSubMenu(family, sub);
-    }
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&grooveButton_));
+    TimeBendEditor::showGrooveMenu(grooveButton_,
+                                   [this](const juce::String& name) { loadGroove(name); });
 }
 
 void ClipTimeBendView::loadGroove(const juce::String& name) {

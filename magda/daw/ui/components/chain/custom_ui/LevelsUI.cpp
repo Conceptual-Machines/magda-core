@@ -6,6 +6,7 @@
 #include <magda/sdk/analysis/TrackMeasurer.hpp>
 
 #include "ui/themes/ActiveTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
@@ -108,6 +109,7 @@ void LevelsUI::timerCallback() {
 }
 
 void LevelsUI::paint(juce::Graphics& g) {
+    auto& fonts = FontManager::getInstance();
     using DT = magda::ActiveTheme;
     auto bounds = getLocalBounds().toFloat().reduced(2.0f);
     g.setColour(DT::getColour(DT::BACKGROUND));
@@ -131,16 +133,16 @@ void LevelsUI::paint(juce::Graphics& g) {
                         juce::Colour valueColour, float rowH) {
         auto row = col.removeFromTop(rowH);
         g.setColour(dim);
-        g.setFont(10.0f);
+        g.setFont(fonts.getUIFont(10.0f));
         g.drawText(label, row.removeFromTop(12.0f), juce::Justification::topLeft);
         g.setColour(valueColour);
-        g.setFont(juce::Font(juce::FontOptions(18.0f, juce::Font::bold)));
+        g.setFont(fonts.getMonoFont(18.0f).boldened());
         auto valueArea = row.removeFromTop(20.0f);
         g.drawText(value, valueArea.withTrimmedRight(unit.isEmpty() ? 0.0f : 26.0f),
                    juce::Justification::bottomLeft);
         if (!unit.isEmpty()) {
             g.setColour(dim);
-            g.setFont(9.0f);
+            g.setFont(fonts.getMonoFont(9.0f));
             g.drawText(unit, valueArea.removeFromRight(26.0f), juce::Justification::bottomLeft);
         }
     };
@@ -149,7 +151,7 @@ void LevelsUI::paint(juce::Graphics& g) {
 
     // Column 1: loudness.
     g.setColour(DT::getColour(DT::ACCENT_INFO));
-    g.setFont(9.0f);
+    g.setFont(fonts.getMonoFont(9.0f));
     g.drawText("LOUDNESS", loudCol.removeFromTop(11.0f), juce::Justification::topLeft);
     valueRow(loudCol, "Integrated", fmtLufs(s.integratedLufs), "LUFS", primary, rowH);
     valueRow(loudCol, "Short-term", fmtLufs(s.shortTermLufs), "LUFS", primary, rowH * 0.8f);
@@ -158,7 +160,7 @@ void LevelsUI::paint(juce::Graphics& g) {
 
     // Column 2: peak + dynamics.
     g.setColour(DT::getColour(DT::ACCENT_INFO));
-    g.setFont(9.0f);
+    g.setFont(fonts.getMonoFont(9.0f));
     g.drawText("PEAK / DYNAMICS", dynCol.removeFromTop(11.0f), juce::Justification::topLeft);
     const float tp = s.truePeakValid ? s.truePeakDb : s.samplePeakDb;
     valueRow(dynCol, s.truePeakValid ? "True peak" : "Sample peak", fmtDb(tp), "dB",
@@ -172,12 +174,12 @@ void LevelsUI::paint(juce::Graphics& g) {
 
     // Column 3: stereo (correlation bar + width).
     g.setColour(DT::getColour(DT::ACCENT_INFO));
-    g.setFont(9.0f);
+    g.setFont(fonts.getMonoFont(9.0f));
     g.drawText("STEREO", stereoCol.removeFromTop(11.0f), juce::Justification::topLeft);
 
     // Correlation meter: -1 .. +1, centre line.
     g.setColour(dim);
-    g.setFont(10.0f);
+    g.setFont(fonts.getUIFont(10.0f));
     g.drawText("Correlation", stereoCol.removeFromTop(12.0f), juce::Justification::topLeft);
     auto corrBar = stereoCol.removeFromTop(10.0f);
     g.setColour(DT::getColour(DT::SURFACE));
@@ -196,17 +198,17 @@ void LevelsUI::paint(juce::Graphics& g) {
     g.setColour(dim.withAlpha(0.6f));
     g.drawVerticalLine(static_cast<int>(midX), corrBar.getY(), corrBar.getBottom());
     g.setColour(primary);
-    g.setFont(11.0f);
+    g.setFont(fonts.getMonoFont(11.0f));
     g.drawText(juce::String(corr, 2), stereoCol.removeFromTop(14.0f),
                juce::Justification::topRight);
 
     // Width 0..1.
     g.setColour(dim);
-    g.setFont(10.0f);
+    g.setFont(fonts.getUIFont(10.0f));
     auto widthLabelRow = stereoCol.removeFromTop(12.0f);
     g.drawText("Width", widthLabelRow, juce::Justification::topLeft);
     g.setColour(primary);
-    g.setFont(11.0f);
+    g.setFont(fonts.getMonoFont(11.0f));
     g.drawText(juce::String(s.width, 2), widthLabelRow, juce::Justification::topRight);
     auto widthBar = stereoCol.removeFromTop(8.0f);
     g.setColour(DT::getColour(DT::SURFACE));
@@ -217,7 +219,7 @@ void LevelsUI::paint(juce::Graphics& g) {
 
     if (!s.valid) {
         g.setColour(dim.withAlpha(0.7f));
-        g.setFont(11.0f);
+        g.setFont(fonts.getUIFont(11.0f));
         g.drawText("no signal", bounds, juce::Justification::centredBottom);
     }
 }

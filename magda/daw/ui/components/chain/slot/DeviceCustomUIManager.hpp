@@ -142,6 +142,14 @@ class DeviceCustomUIManager {
 
     /** Returns the single active custom UI component, or nullptr if none. */
     juce::Component* getActiveUI() const;
+    /// What expanding into the arrangement lends: the sequencers' keyboard or grid alone, the
+    /// whole faceplate for the rest (#3205).
+    juce::Component* getExpandableUI() const;
+    /// Controls the custom UI shows in the slot's header, right to left: an analyzer's gear and
+    /// the spectrum's overlay picker.
+    std::vector<juce::Component*> getHeaderControls() const;
+    /// Takes back a part getExpandableUI() lent; false when it was the whole faceplate.
+    bool expandablePartReturned();
 
     /**
      * Returns the linkable sliders for the currently active custom UI.
@@ -165,6 +173,8 @@ class DeviceCustomUIManager {
 
     /** Preferred content width for layout calculations (matches old per-type if-chains). */
     int getPreferredContentWidth(int drumGridFallback = 0) const;
+    /** The height a faceplate that gains from more room is designed for, 0 for the rest. */
+    int getPreferredContentHeight() const;
 
     std::shared_ptr<magda::DeviceUiContext> getDeviceUiContext() const {
         return deviceUiContext_;

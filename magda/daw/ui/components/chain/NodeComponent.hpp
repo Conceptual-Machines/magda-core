@@ -161,6 +161,11 @@ class NodeComponent : public juce::Component,
         return 0;
     }
 
+    /** @brief The height this node is designed for, or 0 when the chain's minimum serves. */
+    virtual int getIdealHeight() const {
+        return 0;
+    }
+
     // Virtual method for subclasses to report their preferred width
     virtual int getPreferredWidth() const {
         if (collapsed_) {

@@ -8,6 +8,7 @@
 
 #include "audio/plugins/compiled/MagdaPhaserCompiledPlugin.hpp"
 #include "ui/themes/ActiveTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -345,7 +346,7 @@ void CompiledPhaserCurveView::paint(juce::Graphics& g) {
         const auto text = hz >= 1000.0f ? juce::String(hz / 1000.0f, 2) + " kHz"
                                         : juce::String(static_cast<int>(std::round(hz))) + " Hz";
         g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-        g.setFont(11.0f);
+        g.setFont(FontManager::getInstance().getMonoFont(11.0f));
         const int textW = 64;
         const int textH = 14;
         const float lx =

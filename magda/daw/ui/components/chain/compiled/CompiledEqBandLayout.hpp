@@ -30,8 +30,9 @@ class CompiledEqBandLayout final : public DeviceParamLayout {
     bool placesOwnCells() const override {
         return true;
     }
-    juce::Rectangle<int> cellBounds(int cell, juce::Rectangle<int> area, bool) const override {
-        return EqBandEditorGeometry::of(area).knob(cell);
+    juce::Rectangle<int> cellBounds(int cell, juce::Rectangle<int> area,
+                                    bool editorShown) const override {
+        return EqBandEditorGeometry::of(area, 0, 0, editorShown).knob(cell);
     }
 
     ParamCell cellFor(const magda::DeviceInfo& device, int cellIndex,

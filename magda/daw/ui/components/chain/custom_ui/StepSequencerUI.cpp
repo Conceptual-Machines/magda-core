@@ -3,6 +3,9 @@
 
 #include "custom_ui/StepSequencerUI.hpp"
 
+#include "core/GestureRouter.hpp"
+#include "ui/state/ExpandedFaceplate.hpp"
+
 namespace magda::daw::ui {
 
 using SeqPlugin = daw::audio::StepSequencerPlugin;
@@ -11,9 +14,6 @@ namespace sf = sequencer_faceplate;
 std::atomic<int> StepSequencerUI::nextPatternGesture_{magda::kNoStepPatternGesture + 1};
 
 namespace {
-
-const bool kIsBlack[] = {false, true,  false, true,  false, false,
-                         true,  false, true,  false, true,  false};
 
 juce::Rectangle<int> columnsOf(juce::Rectangle<int> row) {
     return row.withTrimmedLeft(sf::kGutterWidth);
@@ -26,61 +26,46 @@ juce::Rectangle<int> columnsOf(juce::Rectangle<int> row) {
 // =============================================================================
 
 StepSequencerUI::StepSequencerUI() {
-    panel_.rate.onValueChanged = [this](double value) {
+    strip_.rate.onValueChanged = [this](double value) {
         sendChange(SeqPlugin::kRate, static_cast<float>(juce::roundToInt(value)));
     };
-    panel_.steps.onValueChanged = [this](double value) {
+    strip_.steps.onValueChanged = [this](double value) {
         const int steps = juce::jlimit(1, SeqPlugin::MAX_STEPS, juce::roundToInt(value));
         // How many steps play is part of the pattern, so it is a pattern edit. A drag coalesces
         // into one undo entry; a typed or clicked value stays discrete (#2335).
         editPattern(
             "Set Step Count", [steps](step_pattern::MonoPattern& p) { p.length = steps; },
-            panel_.steps.isBeingDragged() ? magda::StepPatternGesture::Continuous
+            strip_.steps.isBeingDragged() ? magda::StepPatternGesture::Continuous
                                           : magda::StepPatternGesture::Discrete);
-        repaint();
+        redraw();
     };
-    panel_.steps.getSlider().onDragEnd = [this] { endPatternGesture(); };
-    panel_.swing.onValueChanged = [this](double value) {
-        sendChange(SeqPlugin::kSwing, static_cast<float>(value));
-    };
-    panel_.gate.onValueChanged = [this](double value) {
+    strip_.steps.getSlider().onDragEnd = [this] { endPatternGesture(); };
+    strip_.gate.onValueChanged = [this](double value) {
         sendChange(SeqPlugin::kGateLength, static_cast<float>(value));
     };
-    panel_.direction.onChange = [this] {
-        sendChange(SeqPlugin::kDirection, static_cast<float>(panel_.direction.getSelectedId() - 1));
+    strip_.direction.onChange = [this](int index) {
+        sendChange(SeqPlugin::kDirection, static_cast<float>(index));
     };
-    panel_.quantize.onValueChanged = [this](double) { settingsEdited(); };
-    panel_.subdivision.onValueChanged = [this](double) { settingsEdited(); };
 
-    panel_.bendAmount.onValueChanged = [this](double value) {
-        auto bend = panel_.timeBend.getBend();
-        bend.amount = static_cast<float>(value);
-        panel_.timeBend.setBend(bend);
-        sendChange(SeqPlugin::kBendAmount, bend.amount);
+    timeBend_.setShowsGrooves(true);
+    bendExpandButton_->onClick = [this] {
+        if (onExpandClicked)
+            onExpandClicked(timeBend_);
     };
-    panel_.bendCycles.onValueChanged = [this](double value) {
-        auto bend = panel_.timeBend.getBend();
-        bend.cycles = juce::roundToInt(value);
-        panel_.timeBend.setBend(bend);
-        sendChange(SeqPlugin::kBendCycles, static_cast<float>(bend.cycles));
-    };
-    panel_.timeBend.onCommit = [this](const auto& before, const auto& after) {
+    timeBend_.setHeaderAccessory(bendExpandButton_.get());
+    timeBend_.onCommit = [this](const auto& before, const auto& after) {
         timeBendEdited(before, after);
     };
 
-    for (auto [slider, slot] : {std::pair{&velocity_, SeqPlugin::kNormalVelocity},
-                                std::pair{&accentVelocity_, SeqPlugin::kAccentVelocity}}) {
-        slider->setRange(1.0, 127.0, 1.0);
-        slider->setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
-        slider->setValueParser([](const juce::String& t) { return t.trim().getDoubleValue(); });
-        slider->onValueChanged = [this, slot](double value) {
-            sendChange(slot, static_cast<float>(juce::roundToInt(value)));
-        };
-        sf::styleTileValue(*slider);
-    }
-    panel_.addExtraTile("Velocity", velocity_);
-    panel_.addExtraTile("Accent", accentVelocity_);
-    addAndMakeVisible(panel_);
+    strip_.setInterceptsMouseClicks(false, true);
+    addAndMakeVisible(strip_);
+    addAndMakeVisible(timeBend_);
+    addChildComponent(keyboard_);
+    expandButton_->onClick = [this] {
+        if (onExpandClicked)
+            onExpandClicked(expandablePart());
+    };
+    addAndMakeVisible(*expandButton_);
 
     // MIDI thru, step record and pattern randomize live in the device-slot header.
 }
@@ -114,29 +99,22 @@ void StepSequencerUI::updateFromParameters(const std::vector<magda::ParameterInf
         return fallback;
     };
 
-    panel_.rate.setValue(static_cast<double>(display(SeqPlugin::kRate, 7.0f)),
+    strip_.rate.setValue(static_cast<double>(display(SeqPlugin::kRate, 7.0f)),
                          juce::dontSendNotification);
-    panel_.direction.setSelectedId(juce::roundToInt(display(SeqPlugin::kDirection, 0.0f)) + 1,
-                                   juce::dontSendNotification);
-    panel_.swing.setValue(static_cast<double>(display(SeqPlugin::kSwing, 0.0f)),
-                          juce::dontSendNotification);
-    panel_.gate.setValue(static_cast<double>(display(SeqPlugin::kGateLength, 0.8f)),
+    strip_.direction.setSelectedIndex(juce::roundToInt(display(SeqPlugin::kDirection, 0.0f)));
+    strip_.gate.setValue(static_cast<double>(display(SeqPlugin::kGateLength, 0.8f)),
                          juce::dontSendNotification);
 
-    velocity_.setValue(static_cast<double>(display(SeqPlugin::kNormalVelocity, 90.0f)),
-                       juce::dontSendNotification);
-    accentVelocity_.setValue(static_cast<double>(display(SeqPlugin::kAccentVelocity, 120.0f)),
-                             juce::dontSendNotification);
+    velocity_ = juce::roundToInt(display(SeqPlugin::kNormalVelocity, 90.0f));
+    accentVelocity_ = juce::roundToInt(display(SeqPlugin::kAccentVelocity, 120.0f));
 
-    auto bend = panel_.timeBend.getBend();
+    auto bend = timeBend_.getBend();
     bend.amount = display(SeqPlugin::kBendAmount, 1.0f);
     bend.cycles = juce::roundToInt(display(SeqPlugin::kBendCycles, 1.0f));
-    panel_.timeBend.setBend(bend);
-    panel_.bendAmount.setValue(bend.amount, juce::dontSendNotification);
-    panel_.bendCycles.setValue(bend.cycles, juce::dontSendNotification);
+    timeBend_.setBend(bend);
 
     syncSettingsFromDevice();
-    repaint();
+    redraw();
 }
 
 void StepSequencerUI::setPattern(const step_pattern::MonoPattern& pattern) {
@@ -148,10 +126,10 @@ void StepSequencerUI::setPattern(const step_pattern::MonoPattern& pattern) {
 
     pattern_ = pattern;
     const int steps = pattern_.playingLength();
-    panel_.steps.setValue(static_cast<double>(steps), juce::dontSendNotification);
+    strip_.steps.setValue(static_cast<double>(steps), juce::dontSendNotification);
 
     if (changed)
-        repaint();
+        redraw();
 }
 
 void StepSequencerUI::syncSettingsFromDevice() {
@@ -159,14 +137,11 @@ void StepSequencerUI::syncSettingsFromDevice() {
         return;
 
     auto bend = device_->timeBend.current();
-    bend.amount = panel_.timeBend.getBend().amount;
-    bend.cycles = panel_.timeBend.getBend().cycles;
-    panel_.timeBend.setBend(bend);
-    panel_.quantize.setValue(static_cast<double>(device_->quantize.load(std::memory_order_relaxed)),
-                             juce::dontSendNotification);
-    panel_.subdivision.setValue(
-        static_cast<double>(device_->quantizeSub.load(std::memory_order_relaxed)),
-        juce::dontSendNotification);
+    bend.amount = timeBend_.getBend().amount;
+    bend.cycles = timeBend_.getBend().cycles;
+    timeBend_.setBend(bend);
+    quantize_ = static_cast<double>(device_->quantize.load(std::memory_order_relaxed));
+    quantizeSub_ = device_->quantizeSub.load(std::memory_order_relaxed);
 }
 
 void StepSequencerUI::sendChange(int paramIndex, float value) {
@@ -184,9 +159,9 @@ void StepSequencerUI::settingsEdited() {
     using IDs = daw::audio::StepSequencerPlugin::SettingIDs;
     juce::NamedValueSet settings;
     settings.set(daw::audio::DeviceTimeBend::settingId,
-                 juce::String(sdk::sequencer::timeBendToText(panel_.timeBend.getBend())));
-    settings.set(IDs::quantize, static_cast<float>(panel_.quantize.getValue()));
-    settings.set(IDs::quantizeSub, juce::roundToInt(panel_.subdivision.getValue()));
+                 juce::String(sdk::sequencer::timeBendToText(timeBend_.getBend())));
+    settings.set(IDs::quantize, static_cast<float>(quantize_));
+    settings.set(IDs::quantizeSub, quantizeSub_);
     onSettingsEdited(settings);
 }
 
@@ -240,10 +215,10 @@ void StepSequencerUI::timerCallback() {
     // without decoding the model's document 30 times a second. setPattern()
     // early-outs when nothing moved.
     setPattern(device_->pattern());
-    panel_.timeBend.setPlayheadPhase(device_->bendPhase_.load(std::memory_order_relaxed));
-    panel_.timeBend.setCycle(device_->bendCycleBeats_.load(std::memory_order_relaxed),
-                             device_->bendBeatsPerBar_.load(std::memory_order_relaxed));
-    panel_.timeBend.setDefaultDivision(device_->bendStepBeats_.load(std::memory_order_relaxed));
+    timeBend_.setPlayheadPhase(device_->bendPhase_.load(std::memory_order_relaxed));
+    timeBend_.setCycle(device_->bendCycleBeats_.load(std::memory_order_relaxed),
+                       device_->bendBeatsPerBar_.load(std::memory_order_relaxed));
+    timeBend_.setDefaultDivision(device_->bendStepBeats_.load(std::memory_order_relaxed));
 
     const int numSteps = pattern_.playingLength();
     int step = device_->currentPlayStep_.load(std::memory_order_relaxed);
@@ -271,40 +246,92 @@ void StepSequencerUI::timerCallback() {
             parent->repaint();
     }
     if (needsRepaint)
-        repaint();
+        redraw();
 }
 
 // =============================================================================
 // Layout
 // =============================================================================
 
-int StepSequencerUI::keyboardOctaves() const {
-    return juce::jlimit(2, 4, columnsOf(keyboardArea_).getWidth() / 150);
+bool StepSequencerUI::keyboardLent() const {
+    return magda::ExpandedFaceplate::getInstance().holds(keyboard_);
+}
+
+void StepSequencerUI::redraw() {
+    repaint();
+    keyboard_.repaint();
+}
+
+void StepSequencerUI::expandablePartReturned() {
+    if (keyboard_.getParentComponent() != this)
+        addChildComponent(keyboard_);
+    if (timeBend_.getParentComponent() != this) {
+        addChildComponent(timeBend_);
+        timeBend_.setVisible(timeBendShown_);
+    }
+    resized();
+    redraw();
+}
+
+bool StepSequencerUI::timeBendLent() const {
+    return magda::ExpandedFaceplate::getInstance().holds(timeBend_);
+}
+
+bool StepSequencerUI::timeBendInFaceplate() const {
+    return timeBendShown_ && !timeBendLent();
+}
+
+juce::Component* StepSequencerUI::lentPart() const {
+    const auto& expanded = magda::ExpandedFaceplate::getInstance();
+    if (expanded.holds(keyboard_))
+        return expanded.faceplate();
+    return expanded.holds(timeBend_) ? expanded.faceplate() : nullptr;
 }
 
 void StepSequencerUI::setTimeBendShown(bool shown) {
-    if (shown == panel_.showsTimeBend())
+    if (shown == timeBendShown_)
         return;
-    panel_.setShowsTimeBend(shown);
+    timeBendShown_ = shown;
+    if (!timeBendLent())
+        timeBend_.setVisible(shown);
     resized();
-    repaint();
+    redraw();
 }
 
 int StepSequencerUI::preferredWidth() const {
-    return 2 * sf::kInsetX + sf::kStepsWidth + sf::kStepsGap + panel_.preferredWidth();
+    return 2 * sf::kInsetX + sf::kStepsWidth +
+           (timeBendInFaceplate() ? sf::kStepsGap + sf::kTimeBendWidth : 0);
+}
+
+int StepSequencerUI::preferredHeight() {
+    return 2 * sf::kInsetY + sf::SettingsStrip::kHeight + sf::kRowGap + sf::kRulerHeight + 2 +
+           sf::kNoteRowHeight + sf::kRowGap + MAX_KEYBOARD_HEIGHT +
+           4 * (sf::kToggleRowHeight + sf::kRowGap);
 }
 
 void StepSequencerUI::resized() {
     auto bounds = getLocalBounds().reduced(sf::kInsetX, sf::kInsetY);
 
-    panel_.setBounds(bounds.removeFromRight(panel_.preferredWidth()));
-    bounds.removeFromRight(sf::kStepsGap);
-    dividerX_ = bounds.getRight() + sf::kStepsGap / 2;
+    // Out in the arrangement, the host's own button closes it.
+    if (bendExpandButton_->isVisible() == timeBendLent()) {
+        bendExpandButton_->setVisible(!timeBendLent());
+        timeBend_.resized();
+    }
+    if (timeBendInFaceplate()) {
+        timeBend_.setBounds(bounds.removeFromRight(sf::kTimeBendWidth));
+        bounds.removeFromRight(sf::kStepsGap);
+    }
+    dividerX_ = timeBendInFaceplate() ? bounds.getRight() + sf::kStepsGap / 2 : -1;
+
+    strip_.setBounds(bounds.removeFromTop(sf::SettingsStrip::kHeight));
+    bounds.removeFromTop(sf::kRowGap);
 
     rulerArea_ = bounds.removeFromTop(sf::kRulerHeight);
+    expandButton_->setBounds(sf::expandButtonBounds(rulerArea_));
+    expandButton_->setToggleState(keyboardLent(), juce::dontSendNotification);
     bounds.removeFromTop(2);
-    noteArea_ = bounds.removeFromTop(NOTE_ROW_HEIGHT);
-    bounds.removeFromTop(sf::kRowGap + 3);
+    noteArea_ = bounds.removeFromTop(sf::kNoteRowHeight);
+    bounds.removeFromTop(sf::kRowGap);
 
     const auto toggleRow = [&bounds] {
         auto row = bounds.removeFromBottom(sf::kToggleRowHeight);
@@ -315,20 +342,15 @@ void StepSequencerUI::resized() {
     glideArea_ = toggleRow();
     tieArea_ = toggleRow();
     gateArea_ = toggleRow();
-    bounds.removeFromBottom(3);
 
-    const int keyboardH =
-        juce::jlimit(MIN_KEYBOARD_HEIGHT, MAX_KEYBOARD_HEIGHT, bounds.getHeight());
-    keyboardArea_ = bounds.removeFromTop(keyboardH);
-
-    auto gutter = keyboardArea_.withWidth(sf::kGutterWidth - 6);
-    octaveLabelArea_ = gutter.removeFromTop(18);
-    auto buttons = gutter.removeFromTop(OCTAVE_BUTTON_HEIGHT).withTrimmedLeft(4);
-    octaveDownArea_ = buttons.removeFromLeft(buttons.getWidth() / 2);
-    octaveUpArea_ = buttons;
-
-    // A narrower keyboard shows fewer octaves; keep the one it shows inside MIDI.
-    keyboardBaseNote_ = juce::jlimit(MIN_BASE_NOTE, 128 - keyboardNoteCount(), keyboardBaseNote_);
+    // Lent to the arrangement, or short of room for a playable keyboard, the note boxes stand in.
+    if (keyboardLent())
+        return;
+    const bool fits = bounds.getHeight() >= MIN_KEYBOARD_HEIGHT;
+    keyboard_.setVisible(fits);
+    if (fits)
+        keyboard_.setBounds(
+            bounds.removeFromTop(juce::jmin(MAX_KEYBOARD_HEIGHT, bounds.getHeight())));
 }
 
 // =============================================================================
@@ -336,20 +358,16 @@ void StepSequencerUI::resized() {
 // =============================================================================
 
 void StepSequencerUI::paint(juce::Graphics& g) {
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
-    g.drawVerticalLine(dividerX_, 0.0f, static_cast<float>(getHeight()));
+    if (dividerX_ >= 0) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
+        g.drawVerticalLine(dividerX_, 0.0f, static_cast<float>(getHeight()));
+    }
 
     const int count = pattern_.playingLength();
     sf::drawRuler(g, columnsOf(rulerArea_), count, currentPlayStep_);
 
     sf::drawRowLabel(g, noteArea_.withWidth(sf::kGutterWidth), "Note");
     drawNoteRow(g);
-
-    g.setFont(FontManager::getInstance().getUIFont(12.0f));
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
-    g.drawText("Octave", octaveLabelArea_.withTrimmedRight(2), juce::Justification::centredRight);
-    drawOctaveButtons(g);
-    drawKeyboard(g);
 
     const auto& steps = pattern_;
     const auto row = [&](juce::Rectangle<int> area, const char* label, magda::ColourRole role,
@@ -368,100 +386,81 @@ void StepSequencerUI::paint(juce::Graphics& g) {
 void StepSequencerUI::drawNoteRow(juce::Graphics& g) {
     const auto columns = columnsOf(noteArea_);
     const int count = pattern_.playingLength();
-    const auto green = ActiveTheme::getColour(ActiveTheme::DEVICE_GREEN);
     const float colW = static_cast<float>(columns.getWidth()) / static_cast<float>(count);
     g.setFont(FontManager::getInstance().getMonoFont(colW < 30.0f ? 9.5f : 11.5f));
 
     for (int i = 0; i < count; ++i) {
         const auto& step = pattern_.step(i);
-        const auto cell = sf::cellBounds(columns, i, count);
-
-        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD));
-        g.fillRoundedRectangle(cell, 4.0f);
-        if (i == currentPlayStep_) {
-            g.setColour(green.withAlpha(0.14f));
-            g.fillRoundedRectangle(cell, 4.0f);
-        }
-
-        auto border = ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER);
-        float thickness = 1.0f;
-        if (i == dragTargetStep_ && dragSourceStep_ >= 0 && i != dragSourceStep_) {
-            border = ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE);
-            thickness = 1.5f;
-        } else if (i == selectedStep_) {
-            border = green;
-            thickness = 1.5f;
-        }
-        g.setColour(border);
-        g.drawRoundedRectangle(cell.reduced(thickness * 0.5f), 4.0f, thickness);
-
         // A rest reads as a dot; a tie carries the note before it, so it is dimmed.
-        const bool sounds = step.gate && !step.tie;
-        g.setColour(ActiveTheme::getColour(sounds ? ActiveTheme::DEVICE_VALUE_TEXT
-                                                  : ActiveTheme::DEVICE_DIM2));
-        g.drawText(step.gate ? sf::noteName(step.noteNumber + step.octaveShift * 12)
-                             : juce::String::fromUTF8("\xc2\xb7"),
-                   cell.toNearestInt(), juce::Justification::centred, false);
+        sf::drawNoteCell(
+            g, sf::cellBounds(columns, i, count),
+            {.text = step.gate ? sf::noteName(step.noteNumber + step.octaveShift * 12)
+                               : juce::String::fromUTF8("\xc2\xb7"),
+             .sounds = step.gate && !step.tie,
+             .playing = i == currentPlayStep_,
+             .selected = i == selectedStep_,
+             .dropTarget = i == dragTargetStep_ && dragSourceStep_ >= 0 && i != dragSourceStep_});
     }
 }
 
-void StepSequencerUI::drawKeyboard(juce::Graphics& g) {
-    const auto area = columnsOf(keyboardArea_).toFloat();
-    if (area.isEmpty())
+// =============================================================================
+// Note editor: the keyboard, or a piano roll in the arrangement
+// =============================================================================
+
+bool StepSequencerUI::NoteEditor::showsRoll() const {
+    return magda::ExpandedFaceplate::getInstance().holds(*this);
+}
+
+int StepSequencerUI::NoteEditor::octaves() const {
+    return juce::jlimit(2, 6, keysArea_.getWidth() / 150);
+}
+
+void StepSequencerUI::NoteEditor::resized() {
+    auto area = getLocalBounds();
+    if (showsRoll()) {
+        auto strip = area.removeFromLeft(STRIP_WIDTH);
+        area.removeFromLeft(4);
+        pianoArea_ = area.removeFromLeft(sf::kGutterWidth - STRIP_WIDTH - 8);
+        area.removeFromLeft(4);
+        cellArea_ = area;
+        auto shiftBox = strip.removeFromTop(BUTTON_BOX_HEIGHT);
+        rollUpArea_ = shiftBox.removeFromTop(BUTTON_BOX_HEIGHT / 2);
+        rollDownArea_ = shiftBox;
+        auto zoomBox = strip.removeFromBottom(BUTTON_BOX_HEIGHT);
+        zoomInArea_ = zoomBox.removeFromTop(BUTTON_BOX_HEIGHT / 2);
+        zoomOutArea_ = zoomBox;
         return;
-
-    const int numNotes = keyboardNoteCount();
-    const float whiteW = area.getWidth() / static_cast<float>(keyboardOctaves() * 7);
-    const float blackW = whiteW * 0.62f;
-    const float blackH = area.getHeight() * 0.6f;
-    const auto& selected = pattern_.step(selectedStep_);
-    const int selectedNote = selected.noteNumber + selected.octaveShift * 12;
-    const auto green = ActiveTheme::getColour(ActiveTheme::DEVICE_GREEN);
-
-    juce::Path outline;
-    outline.addRoundedRectangle(area, 5.0f);
-    juce::Graphics::ScopedSaveState clip(g);
-    g.reduceClipRegion(outline);
-
-    g.setFont(FontManager::getInstance().getMonoFont(9.5f));
-    int whiteIdx = 0;
-    for (int n = 0; n < numNotes; ++n) {
-        if (kIsBlack[n % 12])
-            continue;
-        const int note = keyboardBaseNote_ + n;
-        const juce::Rectangle<float> key{area.getX() + whiteIdx * whiteW, area.getY(), whiteW,
-                                         area.getHeight()};
-        const bool lit = note == selectedNote;
-        g.setColour(lit ? green : sf::kWhiteKey);
-        g.fillRect(key);
-        g.setColour(sf::kBlackKey.withAlpha(0.35f));
-        g.drawVerticalLine(juce::roundToInt(key.getRight()), key.getY(), key.getBottom());
-        if (n % 12 == 0 || lit) {
-            g.setColour(lit ? sf::kWhiteKey : sf::kBlackKey.withAlpha(0.6f));
-            g.drawText(sf::noteName(note), key.reduced(3.0f, 3.0f).toNearestInt(),
-                       juce::Justification::bottomLeft, false);
-        }
-        ++whiteIdx;
     }
 
-    whiteIdx = 0;
-    for (int n = 0; n < numNotes; ++n) {
-        if (!kIsBlack[n % 12]) {
-            ++whiteIdx;
-            continue;
-        }
-        const juce::Rectangle<float> key{area.getX() + whiteIdx * whiteW - blackW / 2.0f,
-                                         area.getY(), blackW, blackH};
-        g.setColour(keyboardBaseNote_ + n == selectedNote ? green : sf::kBlackKey);
-        g.fillRoundedRectangle(key.withTrimmedTop(-3.0f), 3.0f);
-    }
+    auto gutter = area.removeFromLeft(sf::kGutterWidth).withTrimmedRight(6);
+    labelArea_ = gutter.removeFromTop(18);
+    auto buttons = gutter.removeFromTop(OCTAVE_BUTTON_HEIGHT).withTrimmedLeft(4);
+    downArea_ = buttons.removeFromLeft(buttons.getWidth() / 2);
+    upArea_ = buttons;
+    keysArea_ = area.removeFromTop(juce::jmin(MAX_KEYS_HEIGHT, area.getHeight()));
 
-    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
-    g.strokePath(outline, juce::PathStrokeType(1.0f));
+    // A narrower keyboard shows fewer octaves; keep the ones it shows inside MIDI.
+    baseNote_ = juce::jlimit(0, 128 - octaves() * 12, baseNote_);
 }
 
-void StepSequencerUI::drawOctaveButtons(juce::Graphics& g) {
-    const auto box = octaveDownArea_.getUnion(octaveUpArea_).toFloat();
+void StepSequencerUI::NoteEditor::paint(juce::Graphics& g) {
+    if (showsRoll()) {
+        paintRoll(g);
+        return;
+    }
+    g.setFont(FontManager::getInstance().getUIFont(12.0f));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+    g.drawText("Octave", labelArea_.withTrimmedRight(2), juce::Justification::centredRight);
+    drawOctaveButtons(g);
+
+    const auto& selected = owner_.pattern_.step(owner_.selectedStep_);
+    const int selectedNote = selected.noteNumber + selected.octaveShift * 12;
+    sf::drawKeyboard(g, keysArea_.toFloat(), baseNote_, octaves(),
+                     [selectedNote](int note) { return note == selectedNote; });
+}
+
+void StepSequencerUI::NoteEditor::drawOctaveButtons(juce::Graphics& g) {
+    const auto box = downArea_.getUnion(upArea_).toFloat();
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_WELL));
     g.fillRoundedRectangle(box, 4.0f);
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_FIELD_BORDER));
@@ -475,8 +474,169 @@ void StepSequencerUI::drawOctaveButtons(juce::Graphics& g) {
         if (plus)
             g.drawLine(c.x, c.y - 4.0f, c.x, c.y + 4.0f, 1.4f);
     };
-    glyph(octaveDownArea_, keyboardBaseNote_ > MIN_BASE_NOTE, false);
-    glyph(octaveUpArea_, keyboardBaseNote_ + keyboardNoteCount() + 12 <= 128, true);
+    glyph(downArea_, baseNote_ > 0, false);
+    glyph(upArea_, baseNote_ + octaves() * 12 + 12 <= 128, true);
+}
+
+void StepSequencerUI::NoteEditor::mouseDown(const juce::MouseEvent& e) {
+    if (showsRoll()) {
+        rollMouseDown(e);
+        return;
+    }
+    const auto pos = e.getPosition();
+    if (downArea_.contains(pos) || upArea_.contains(pos)) {
+        const int next = baseNote_ + (upArea_.contains(pos) ? 12 : -12);
+        if (next >= 0 && next + octaves() * 12 <= 128) {
+            baseNote_ = next;
+            repaint();
+        }
+        return;
+    }
+    if (keysArea_.contains(pos))
+        owner_.setStepNote(owner_.selectedStep_, sf::keyboardNoteAt(keysArea_.toFloat(), baseNote_,
+                                                                    octaves(), pos.toFloat()));
+}
+
+void StepSequencerUI::NoteEditor::paintRoll(juce::Graphics& g) {
+    if (cellArea_.isEmpty())
+        return;
+
+    sf::drawButtonPair(g, rollUpArea_.getUnion(rollDownArea_), sf::Glyph::Up,
+                       lowNote_ < 128 - visibleNotes_, sf::Glyph::Down, lowNote_ > 0);
+    sf::drawButtonPair(g, zoomInArea_.getUnion(zoomOutArea_), sf::Glyph::Plus,
+                       visibleNotes_ > MIN_VISIBLE_NOTES, sf::Glyph::Minus,
+                       visibleNotes_ < MAX_VISIBLE_NOTES);
+
+    const auto& pattern = owner_.pattern_;
+    const int count = pattern.playingLength();
+    const float rowH = static_cast<float>(cellArea_.getHeight()) / visibleNotes_;
+    const float colW = static_cast<float>(cellArea_.getWidth()) / static_cast<float>(count);
+    const auto noteOfRow = [this](int row) { return lowNote_ + (visibleNotes_ - 1 - row); };
+
+    g.setFont(FontManager::getInstance().getMonoFont(juce::jlimit(7.0f, 9.5f, rowH)));
+    for (int row = 0; row < visibleNotes_; ++row) {
+        const int note = noteOfRow(row);
+        const juce::Rectangle<float> key{static_cast<float>(pianoArea_.getX()),
+                                         pianoArea_.getY() + row * rowH,
+                                         static_cast<float>(pianoArea_.getWidth()), rowH};
+        g.setColour(sf::isBlackKey(note) ? sf::kBlackKey : sf::kWhiteKey);
+        g.fillRect(key.reduced(0.0f, 0.5f));
+        if (note % 12 == 0) {
+            g.setColour(sf::kBlackKey.withAlpha(0.7f));
+            g.drawText(sf::noteName(note), key.withTrimmedLeft(3.0f).toNearestInt(),
+                       juce::Justification::centredLeft, false);
+        }
+    }
+
+    sf::drawGridFloor(
+        g, cellArea_, count, visibleNotes_, [&](int row) { return sf::isBlackKey(noteOfRow(row)); },
+        [&pattern](int i) { return !pattern.step(i).gate; });
+
+    const auto green = ActiveTheme::getColour(ActiveTheme::DEVICE_GREEN);
+    g.setColour(green.withAlpha(0.08f));
+    g.fillRect(juce::Rectangle<float>(cellArea_.getX() + owner_.selectedStep_ * colW,
+                                      static_cast<float>(cellArea_.getY()), colW,
+                                      static_cast<float>(cellArea_.getHeight())));
+
+    // Each note as a bar running on through the gated ties that hold it.
+    const float barH = juce::jmax(3.0f, rowH - 4.0f);
+    for (int i = 0; i < count; ++i) {
+        const auto& step = pattern.step(i);
+        if (!step.gate || (step.tie && i > 0))
+            continue;
+        int end = i + 1;
+        while (end < count && pattern.step(end).tie && pattern.step(end).gate)
+            ++end;
+        const int row = visibleNotes_ - 1 - (step.noteNumber + step.octaveShift * 12 - lowNote_);
+        if (row < 0 || row >= visibleNotes_)
+            continue;
+        sf::drawNoteBar(g,
+                        {cellArea_.getX() + i * colW + 2.0f,
+                         cellArea_.getY() + row * rowH + (rowH - barH) / 2, (end - i) * colW - 4.0f,
+                         barH},
+                        step.accent ? 127 : 90, true);
+    }
+
+    sf::drawPlayhead(g, cellArea_, count, owner_.currentPlayStep_);
+}
+
+void StepSequencerUI::NoteEditor::rollMouseDown(const juce::MouseEvent& e) {
+    const auto pos = e.getPosition();
+    if (zoomInArea_.contains(pos) || zoomOutArea_.contains(pos)) {
+        zoomBy(zoomInArea_.contains(pos) ? -2 : 2);
+        return;
+    }
+    if (rollUpArea_.contains(pos) || rollDownArea_.contains(pos)) {
+        shiftWindow(rollUpArea_.contains(pos) ? 12 : -12);
+        return;
+    }
+    if (!cellArea_.contains(pos))
+        return;
+
+    const int step = sf::stepAt(pos.x, cellArea_, owner_.pattern_.playingLength());
+    const int note =
+        lowNote_ + visibleNotes_ - 1 -
+        (pos.y - cellArea_.getY()) * visibleNotes_ / juce::jmax(1, cellArea_.getHeight());
+    if (step < 0 || note < 0 || note > 127)
+        return;
+
+    owner_.selectedStep_ = step;
+    if (e.mods.isPopupMenu()) {
+        owner_.showStepContextMenu(step);
+        owner_.redraw();
+        return;
+    }
+
+    // A step holds one note: clicking it again rests the step, anywhere else moves it there.
+    const auto& held = owner_.pattern_.step(step);
+    if (held.gate && held.noteNumber + held.octaveShift * 12 == note) {
+        owner_.editPattern("Toggle Step Gate", [step](step_pattern::MonoPattern& p) {
+            p.steps[static_cast<size_t>(step)].gate = false;
+        });
+    } else {
+        owner_.editPattern("Set Step Note", [step, note](step_pattern::MonoPattern& p) {
+            auto& target = p.steps[static_cast<size_t>(step)];
+            target.noteNumber = note;
+            target.octaveShift = 0;
+            target.gate = true;
+        });
+    }
+    owner_.redraw();
+}
+
+void StepSequencerUI::NoteEditor::mouseWheelMove(const juce::MouseEvent& e,
+                                                 const juce::MouseWheelDetails& wheel) {
+    if (!showsRoll()) {
+        juce::Component::mouseWheelMove(e, wheel);
+        return;
+    }
+    const auto gesture = magda::GestureRouter::getInstance().resolve(
+        magda::GestureContext::StepSequencer, wheel, e.mods, e.getPosition());
+    const int steps = magda::quantizedGestureStep(gesture.magnitude);
+    if (gesture.type == magda::GestureActionType::ZoomVertical)
+        zoomBy(-2 * steps);
+    else if (gesture.type == magda::GestureActionType::ScrollVertical)
+        shiftWindow(2 * steps);
+    else
+        juce::Component::mouseWheelMove(e, wheel);
+}
+
+void StepSequencerUI::NoteEditor::shiftWindow(int semitones) {
+    const int next = juce::jlimit(0, 128 - visibleNotes_, lowNote_ + semitones);
+    if (next != lowNote_) {
+        lowNote_ = next;
+        repaint();
+    }
+}
+
+void StepSequencerUI::NoteEditor::zoomBy(int deltaNotes) {
+    const int next = juce::jlimit(MIN_VISIBLE_NOTES, MAX_VISIBLE_NOTES, visibleNotes_ + deltaNotes);
+    if (next == visibleNotes_)
+        return;
+    const int centre = lowNote_ + visibleNotes_ / 2;
+    visibleNotes_ = next;
+    lowNote_ = juce::jlimit(0, 128 - visibleNotes_, centre - visibleNotes_ / 2);
+    repaint();
 }
 
 // =============================================================================
@@ -486,6 +646,12 @@ void StepSequencerUI::drawOctaveButtons(juce::Graphics& g) {
 void StepSequencerUI::mouseDown(const juce::MouseEvent& e) {
     const auto pos = e.getPosition();
     const int count = pattern_.playingLength();
+
+    // Over the steps' settings row or ruler, the menu holds the settings that have no box.
+    if (e.mods.isPopupMenu() && pos.y < rulerArea_.getBottom()) {
+        showSettingsMenu();
+        return;
+    }
 
     // Step boxes: select, menu on right-click, shift+drag to copy.
     if (columnsOf(noteArea_).contains(pos)) {
@@ -498,32 +664,10 @@ void StepSequencerUI::mouseDown(const juce::MouseEvent& e) {
         } else if (e.mods.isShiftDown()) {
             dragSourceStep_ = step;
             dragTargetStep_ = step;
+        } else if (!keyboard_.isVisible() && !keyboardLent()) {
+            openNotePicker(step);
         }
-        repaint();
-        return;
-    }
-
-    if (octaveDownArea_.contains(pos) || octaveUpArea_.contains(pos)) {
-        const int shift = octaveUpArea_.contains(pos) ? 12 : -12;
-        const int next = keyboardBaseNote_ + shift;
-        if (next >= MIN_BASE_NOTE && next + keyboardNoteCount() <= 128) {
-            keyboardBaseNote_ = next;
-            repaint();
-        }
-        return;
-    }
-
-    if (columnsOf(keyboardArea_).contains(pos)) {
-        const int note = getKeyboardNoteAtPosition(pos);
-        if (note >= 0 && note <= 127) {
-            const int target = selectedStep_;
-            editPattern("Set Step Note", [target, note](step_pattern::MonoPattern& p) {
-                auto& step = p.steps[static_cast<size_t>(target)];
-                step.noteNumber = note;
-                step.octaveShift = 0;
-            });
-            repaint();
-        }
+        redraw();
         return;
     }
 
@@ -565,7 +709,7 @@ void StepSequencerUI::toggleStepFlag(const juce::MouseEvent& e) {
     } else {
         return;
     }
-    repaint();
+    redraw();
 }
 
 void StepSequencerUI::mouseDrag(const juce::MouseEvent& e) {
@@ -575,7 +719,7 @@ void StepSequencerUI::mouseDrag(const juce::MouseEvent& e) {
     const int step = sf::stepAt(e.x, columnsOf(noteArea_), pattern_.playingLength());
     if (step >= 0 && step != dragTargetStep_) {
         dragTargetStep_ = step;
-        repaint();
+        redraw();
     }
 }
 
@@ -593,40 +737,39 @@ void StepSequencerUI::mouseUp(const juce::MouseEvent&) {
 
     dragSourceStep_ = -1;
     dragTargetStep_ = -1;
-    repaint();
+    redraw();
 }
 
-int StepSequencerUI::getKeyboardNoteAtPosition(juce::Point<int> pos) const {
-    const auto area = columnsOf(keyboardArea_).toFloat();
-    const float whiteW = area.getWidth() / static_cast<float>(keyboardOctaves() * 7);
-    const float blackW = whiteW * 0.62f;
-    const float blackH = area.getHeight() * 0.6f;
-    const auto point = pos.toFloat();
+void StepSequencerUI::setStepNote(int stepIndex, int note) {
+    if (note < 0 || note > 127)
+        return;
+    editPattern("Set Step Note", [stepIndex, note](step_pattern::MonoPattern& p) {
+        auto& step = p.steps[static_cast<size_t>(stepIndex)];
+        step.noteNumber = note;
+        step.octaveShift = 0;
+    });
+    redraw();
+}
 
-    // Black keys sit over the white ones, so they are hit first.
-    int whiteIdx = 0;
-    for (int n = 0; n < keyboardNoteCount(); ++n) {
-        if (!kIsBlack[n % 12]) {
-            ++whiteIdx;
-            continue;
-        }
-        const juce::Rectangle<float> key{area.getX() + whiteIdx * whiteW - blackW / 2.0f,
-                                         area.getY(), blackW, blackH};
-        if (key.contains(point))
-            return keyboardBaseNote_ + n;
-    }
-
-    whiteIdx = 0;
-    for (int n = 0; n < keyboardNoteCount(); ++n) {
-        if (kIsBlack[n % 12])
-            continue;
-        const juce::Rectangle<float> key{area.getX() + whiteIdx * whiteW, area.getY(), whiteW,
-                                         area.getHeight()};
-        if (key.contains(point))
-            return keyboardBaseNote_ + n;
-        ++whiteIdx;
-    }
-    return -1;
+void StepSequencerUI::openNotePicker(int stepIndex) {
+    juce::Component::SafePointer<StepSequencerUI> self(this);
+    const auto& step = pattern_.step(stepIndex);
+    auto picker = std::make_unique<sf::NotePicker>(
+        step.noteNumber + step.octaveShift * 12,
+        [self, stepIndex](int note) {
+            if (self == nullptr)
+                return false;
+            const auto& held = self->pattern_.step(stepIndex);
+            return held.noteNumber + held.octaveShift * 12 == note;
+        },
+        [self, stepIndex](int note) {
+            if (self != nullptr)
+                self->setStepNote(stepIndex, note);
+        });
+    sf::NotePicker::show(
+        *this,
+        sf::cellBounds(columnsOf(noteArea_), stepIndex, pattern_.playingLength()).toNearestInt(),
+        std::move(picker));
 }
 
 // =============================================================================
@@ -678,20 +821,77 @@ void StepSequencerUI::showStepContextMenu(int stepIndex) {
             default:
                 return;
         }
-        safeThis->repaint();
+        safeThis->redraw();
     });
+}
+
+// =============================================================================
+// Settings menu
+// =============================================================================
+
+void StepSequencerUI::showSettingsMenu() {
+    using Safe = juce::Component::SafePointer<StepSequencerUI>;
+    juce::PopupMenu menu;
+    menu.addCustomItem(1, std::make_unique<sf::ValueMenuItem>(
+                              "Quantize", [safe = Safe(this)](LinkableTextSlider& box) {
+                                  box.setRange(0.0, 1.0, 0.01);
+                                  box.setValueFormatter([](double v) {
+                                      return juce::String(juce::roundToInt(v * 100.0)) + "%";
+                                  });
+                                  box.setValueParser([](const juce::String& t) {
+                                      return t.trimCharactersAtEnd("%").getDoubleValue() / 100.0;
+                                  });
+                                  box.setValue(safe->quantize_, juce::dontSendNotification);
+                                  box.onValueChanged = [safe](double v) {
+                                      if (safe == nullptr)
+                                          return;
+                                      safe->quantize_ = v;
+                                      safe->settingsEdited();
+                                  };
+                              }));
+    menu.addCustomItem(
+        2, std::make_unique<sf::ValueMenuItem>("Quantize Sub", [safe = Safe(this)](
+                                                                   LinkableTextSlider& box) {
+            box.setRange(16, 512, 16);
+            box.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
+            box.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
+            box.setValue(safe->quantizeSub_, juce::dontSendNotification);
+            box.onValueChanged = [safe](double v) {
+                if (safe == nullptr)
+                    return;
+                safe->quantizeSub_ = juce::roundToInt(v);
+                safe->settingsEdited();
+            };
+        }));
+    const auto velocityItem = [this](const juce::String& caption, int& value, int slot) {
+        return std::make_unique<sf::ValueMenuItem>(
+            caption, [safe = juce::Component::SafePointer(this), &value, slot](auto& box) {
+                box.setRange(1.0, 127.0, 1.0);
+                box.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
+                box.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
+                box.setValue(value, juce::dontSendNotification);
+                box.onValueChanged = [safe, &value, slot](double v) {
+                    if (safe == nullptr)
+                        return;
+                    value = juce::roundToInt(v);
+                    safe->sendChange(slot, static_cast<float>(value));
+                };
+            });
+    };
+    menu.addSeparator();
+    menu.addCustomItem(3, velocityItem("Velocity", velocity_, SeqPlugin::kNormalVelocity));
+    menu.addCustomItem(
+        4, velocityItem("Accent Velocity", accentVelocity_, SeqPlugin::kAccentVelocity));
+    menu.showMenuAsync(juce::PopupMenu::Options());
 }
 
 std::vector<LinkableTextSlider*> StepSequencerUI::getLinkableSliders() {
     magda::ChainNodePath dummy;
     const std::pair<LinkableTextSlider*, int> linked[] = {
-        {&panel_.rate, SeqPlugin::kRate},
-        {&panel_.swing, SeqPlugin::kSwing},
-        {&panel_.gate, SeqPlugin::kGateLength},
-        {&accentVelocity_, SeqPlugin::kAccentVelocity},
-        {&velocity_, SeqPlugin::kNormalVelocity},
-        {&panel_.bendAmount, SeqPlugin::kBendAmount},
-        {&panel_.bendCycles, SeqPlugin::kBendCycles}};
+        {&strip_.rate, SeqPlugin::kRate},
+        {&strip_.gate, SeqPlugin::kGateLength},
+        {&timeBend_.amountSlider(), SeqPlugin::kBendAmount},
+        {&timeBend_.cyclesSlider(), SeqPlugin::kBendCycles}};
     std::vector<LinkableTextSlider*> sliders;
     for (const auto& [slider, slot] : linked) {
         slider->setLinkContext(magda::INVALID_DEVICE_ID, slot, dummy);

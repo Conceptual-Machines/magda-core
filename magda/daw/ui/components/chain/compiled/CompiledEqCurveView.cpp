@@ -12,6 +12,7 @@
 #include "compiled/CompiledEqBandLayout.hpp"
 #include "core/GestureRouter.hpp"
 #include "layout/DeviceShellPainter.hpp"
+#include "ui/state/ExpandedFaceplate.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -217,14 +218,18 @@ juce::String compactFrequency(float hz) {
 }  // namespace
 
 CompiledEqCurveView::CompiledEqCurveView(juce::String /*pluginId*/) {
-    setInterceptsMouseClicks(true, true);
+    // The curve and the editor's backdrop take the clicks; the view only holds them.
+    setInterceptsMouseClicks(false, true);
+    setWantsKeyboardFocus(true);
+    addAndMakeVisible(curve_);
+    addAndMakeVisible(editorBackdrop_);
     typeChoice_.setOptions({"LC", "LS", "Bell", "Notch", "HS", "HC"});
     typeChoice_.onChange = [this](int index) {
         const auto current = bands_[static_cast<size_t>(selectedBand_)].type;
         setBandType(selectedBand_,
                     withSlope(kShapeOrder[static_cast<size_t>(index)], isSteep(current)));
         syncTypeChoice();
-        repaint();
+        redraw();
     };
     addAndMakeVisible(typeChoice_);
 
@@ -232,7 +237,7 @@ CompiledEqCurveView::CompiledEqCurveView(juce::String /*pluginId*/) {
     slopeChoice_.onChange = [this](int index) {
         const auto current = bands_[static_cast<size_t>(selectedBand_)].type;
         setBandType(selectedBand_, withSlope(shapeOf(current), index == 1));
-        repaint();
+        redraw();
     };
     addChildComponent(slopeChoice_);
 
@@ -262,7 +267,7 @@ CompiledEqCurveView::CompiledEqCurveView(juce::String /*pluginId*/) {
         const float freq = juce::jlimit(kFreqMinHz, kFreqMaxHz, *hz);
         bands_[static_cast<size_t>(selectedBand_)].freq = freq;
         writeBandParam(selectedBand_, Plugin::kBandFreqOffset, freq);
-        repaint();
+        redraw();
     };
     addAndMakeVisible(noteInput_);
     startTimer(kPollMs);
@@ -285,7 +290,7 @@ void CompiledEqCurveView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDev
 void CompiledEqCurveView::updateFromDevice(const magda::DeviceInfo& device) {
     deviceSnapshot_ = device;
     resampleFromDevice();
-    repaint();
+    redraw();
 }
 
 void CompiledEqCurveView::resampleFromDevice() {
@@ -325,13 +330,24 @@ void CompiledEqCurveView::timerCallback() {
                          compiledPlugin_->getPostSpectrumTapBuffer());
         syncTypeChoice();
     }
-    repaint();
+    redraw();
 }
 
 void CompiledEqCurveView::resized() {
+    // Lent, the editor always shows, where it would stand beside the curve.
     geometry_ = EqBandEditorGeometry::of(getLocalBounds(), typeChoice_.getPreferredWidth(),
-                                         slopeChoice_.getPreferredWidth());
-    plotArea_ = geometry_.plot.toFloat();
+                                         slopeChoice_.getPreferredWidth(), overlayOpen());
+    const bool editorShown = !geometry_.editor.isEmpty();
+    for (juce::Component* control :
+         std::initializer_list<juce::Component*>{&typeChoice_, &noteInput_})
+        control->setVisible(editorShown);
+    slopeChoice_.setVisible(editorShown && isCut(bands_[static_cast<size_t>(selectedBand_)].type));
+    editorBackdrop_.setBounds(geometry_.editor);
+    editorBackdrop_.setVisible(editorShown);
+    if (!curveLent()) {
+        curve_.setBounds(geometry_.plot.getUnion(geometry_.chips));
+        layoutCurve();
+    }
     typeChoice_.setBounds(geometry_.types);
     slopeChoice_.setBounds(geometry_.slope);
     noteInput_.setBounds(geometry_.noteValue);
@@ -344,7 +360,7 @@ void CompiledEqCurveView::selectBand(int band) {
     syncTypeChoice();
     if (onPageRequested_)
         onPageRequested_(band);
-    repaint();
+    redraw();
 }
 
 void CompiledEqCurveView::syncTypeChoice() {
@@ -352,13 +368,13 @@ void CompiledEqCurveView::syncTypeChoice() {
     for (int i = 0; i < static_cast<int>(kShapeOrder.size()); ++i)
         if (kShapeOrder[static_cast<size_t>(i)] == shapeOf(type))
             typeChoice_.setSelectedIndex(i);
-    slopeChoice_.setVisible(isCut(type));
+    slopeChoice_.setVisible(!geometry_.editor.isEmpty() && isCut(type));
     slopeChoice_.setSelectedIndex(isSteep(type) ? 1 : 0);
 }
 
 juce::Rectangle<float> CompiledEqCurveView::chipBounds(int band) const {
     constexpr auto kGap = static_cast<float>(EqBandEditorGeometry::kSpace);
-    const auto row = geometry_.chips.toFloat();
+    const auto row = chipsArea_.toFloat();
     const float width = (row.getWidth() - kGap * (Plugin::kBandCount - 1)) / Plugin::kBandCount;
     return {row.getX() + static_cast<float>(band) * (width + kGap), row.getY(), width,
             row.getHeight()};
@@ -377,6 +393,18 @@ juce::Rectangle<float> CompiledEqCurveView::chipDotBounds(int band) const {
 }
 
 void CompiledEqCurveView::paint(juce::Graphics& g) {
+    if (!curveLent())
+        return;
+    // Where the plot was, above the editor when it lies over the plot.
+    auto vacated = geometry_.plot;
+    if (vacated.intersects(geometry_.editor))
+        vacated.setBottom(geometry_.editor.getY());
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+    g.setFont(FontManager::getInstance().getUIFont(12.0f));
+    g.drawText("The curve is in the arrangement", vacated, juce::Justification::centred, false);
+}
+
+void CompiledEqCurveView::paintCurve(juce::Graphics& g) {
     auto& fonts = FontManager::getInstance();
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG));
     g.fillRoundedRectangle(plotArea_, 4.0f);
@@ -477,7 +505,6 @@ void CompiledEqCurveView::paint(juce::Graphics& g) {
     }
 
     paintChips(g);
-    paintEditor(g);
 }
 
 void CompiledEqCurveView::paintChips(juce::Graphics& g) {
@@ -511,7 +538,68 @@ void CompiledEqCurveView::paintChips(juce::Graphics& g) {
     }
 }
 
+void CompiledEqCurveView::layoutCurve() {
+    if (curveLent()) {
+        auto area = curve_.getLocalBounds().reduced(EqBandEditorGeometry::kSpace);
+        chipsArea_ = area.removeFromBottom(EqBandEditorGeometry::kChipHeight);
+        area.removeFromBottom(EqBandEditorGeometry::kSpace);
+        plotArea_ = area.toFloat();
+    } else {
+        const auto origin = curve_.getPosition();
+        plotArea_ = geometry_.plot.translated(-origin.x, -origin.y).toFloat();
+        chipsArea_ = geometry_.chips.translated(-origin.x, -origin.y);
+    }
+}
+
+void CompiledEqCurveView::editorClicked(juce::Point<int> position) {
+    if (!curveLent() && geometry_.close.contains(position))
+        setEditorOpen(false);
+}
+
+bool CompiledEqCurveView::curveLent() const {
+    return magda::ExpandedFaceplate::getInstance().holds(curve_);
+}
+
+juce::Component* CompiledEqCurveView::lentPart() const {
+    return curveLent() ? const_cast<Curve*>(&curve_) : nullptr;
+}
+
+void CompiledEqCurveView::expandablePartReturned() {
+    if (curve_.getParentComponent() != this) {
+        addAndMakeVisible(curve_);
+        curve_.toBack();
+    }
+    resized();
+    redraw();
+}
+
+void CompiledEqCurveView::redraw() {
+    repaint();
+    curve_.repaint();
+}
+
+void CompiledEqCurveView::setEditorOpen(bool open) {
+    if (open == editorOpen_)
+        return;
+    editorOpen_ = open;
+    if (open)
+        grabKeyboardFocus();
+    resized();
+    redraw();
+    if (onLayoutChanged_)
+        onLayoutChanged_();
+}
+
+bool CompiledEqCurveView::keyPressed(const juce::KeyPress& key) {
+    if (key != juce::KeyPress::escapeKey || !editorOpen_)
+        return false;
+    setEditorOpen(false);
+    return true;
+}
+
 void CompiledEqCurveView::paintEditor(juce::Graphics& g) {
+    if (geometry_.editor.isEmpty())
+        return;
     const auto editor = geometry_.editor.toFloat();
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_WELL));
     g.fillRoundedRectangle(editor, 4.0f);
@@ -521,6 +609,13 @@ void CompiledEqCurveView::paintEditor(juce::Graphics& g) {
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
     g.fillRect(geometry_.controlsDivider);
     g.fillRect(geometry_.divider);
+
+    if (!geometry_.close.isEmpty() && !curveLent()) {
+        const auto cross = geometry_.close.toFloat().reduced(4.0f);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+        g.drawLine({cross.getTopLeft(), cross.getBottomRight()}, 1.5f);
+        g.drawLine({cross.getBottomLeft(), cross.getTopRight()}, 1.5f);
+    }
 }
 
 void CompiledEqCurveView::paintNoteTile(juce::Graphics& g, float freqHz) {
@@ -613,9 +708,9 @@ void CompiledEqCurveView::mouseMove(const juce::MouseEvent& e) {
     const int picked = findBandAt(e.position);
     if (picked != hoveredBand_) {
         hoveredBand_ = picked;
-        setMouseCursor(picked == -1 ? juce::MouseCursor::NormalCursor
-                                    : juce::MouseCursor::DraggingHandCursor);
-        repaint();
+        curve_.setMouseCursor(picked == -1 ? juce::MouseCursor::NormalCursor
+                                           : juce::MouseCursor::DraggingHandCursor);
+        redraw();
     }
 }
 
@@ -628,19 +723,25 @@ void CompiledEqCurveView::mouseExit(const juce::MouseEvent&) {
         needsRepaint = true;
     }
     if (needsRepaint) {
-        setMouseCursor(juce::MouseCursor::NormalCursor);
-        repaint();
+        curve_.setMouseCursor(juce::MouseCursor::NormalCursor);
+        redraw();
     }
 }
 
 void CompiledEqCurveView::mouseDown(const juce::MouseEvent& e) {
     if (const int chip = chipAt(e.position); chip >= 0) {
-        selectBand(chip);
         // The chip's dot is the band's on/off switch.
         if (chipDotBounds(chip).expanded(6.0f).contains(e.position)) {
+            selectBand(chip);
             setBandEnabled(chip, !bands_[static_cast<size_t>(chip)].enabled);
-            repaint();
+            redraw();
+            return;
         }
+        // Too short for the editor under the chips, a chip opens it over the plot (#3205).
+        const bool reopen = chip != selectedBand_ || !editorOpen_;
+        selectBand(chip);
+        if (!curveLent() && EqBandEditorGeometry::overlaysEditor(getLocalBounds()))
+            setEditorOpen(reopen);
         return;
     }
 
@@ -657,8 +758,8 @@ void CompiledEqCurveView::mouseDown(const juce::MouseEvent& e) {
 
     draggedBand_ = picked;
     hoveredBand_ = picked;
-    setMouseCursor(juce::MouseCursor::DraggingHandCursor);
-    repaint();
+    curve_.setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+    redraw();
 }
 
 void CompiledEqCurveView::mouseDoubleClick(const juce::MouseEvent& e) {
@@ -668,7 +769,7 @@ void CompiledEqCurveView::mouseDoubleClick(const juce::MouseEvent& e) {
 
     setBandEnabled(picked, !bands_[picked].enabled);
     hoveredBand_ = picked;
-    repaint();
+    redraw();
 }
 
 void CompiledEqCurveView::mouseDrag(const juce::MouseEvent& e) {
@@ -689,15 +790,15 @@ void CompiledEqCurveView::mouseDrag(const juce::MouseEvent& e) {
     bands_[draggedBand_].freq = newFreq;
     if (bandGainAffectsCurve(band.type))
         bands_[draggedBand_].gainDb = juce::jlimit(-kGainAxisDb, kGainAxisDb, yToDb(e.position.y));
-    repaint();
+    redraw();
 }
 
 void CompiledEqCurveView::mouseUp(const juce::MouseEvent& e) {
     draggedBand_ = -1;
     hoveredBand_ = findBandAt(e.position);
-    setMouseCursor(hoveredBand_ == -1 ? juce::MouseCursor::NormalCursor
-                                      : juce::MouseCursor::DraggingHandCursor);
-    repaint();
+    curve_.setMouseCursor(hoveredBand_ == -1 ? juce::MouseCursor::NormalCursor
+                                             : juce::MouseCursor::DraggingHandCursor);
+    redraw();
 }
 
 void CompiledEqCurveView::mouseWheelMove(const juce::MouseEvent& e,
@@ -738,7 +839,7 @@ void CompiledEqCurveView::mouseWheelMove(const juce::MouseEvent& e,
 
     bands_[band].q = newQ;
     writeBandParam(band, Plugin::kBandQOffset, newQ);
-    repaint();
+    redraw();
 }
 
 void CompiledEqCurveView::showBandTypeMenu(int band) {
@@ -769,7 +870,7 @@ void CompiledEqCurveView::showBandTypeMenu(int band) {
                            if (self == nullptr || chosen <= 0)
                                return;
                            self->setBandType(band, static_cast<BandType>(chosen - 1));
-                           self->repaint();
+                           self->redraw();
                        });
 }
 
@@ -789,6 +890,8 @@ const CompiledPresentationSpec& getMagdaEqPresentation() {
         // The curve, a chip per band, and one band's controls at a time.
         .preferredSlotWidth = 724,
         .columnMajorGrid = true,
+        // The header's button lends the curve; the band editor stays (#3205).
+        .expandsFromHeader = true,
         .createLayout = []() -> std::unique_ptr<DeviceParamLayout> {
             return std::make_unique<CompiledEqBandLayout>();
         },

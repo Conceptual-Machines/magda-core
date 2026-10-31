@@ -8,6 +8,7 @@
 
 #include "audio/plugins/compiled/MagdaFlangerCompiledPlugin.hpp"
 #include "ui/themes/ActiveTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -233,7 +234,7 @@ void CompiledFlangerCurveView::paint(juce::Graphics& g) {
 
     // Delay readout (current LFO position translated to ms).
     const juce::String delayLabel = juce::String(delayMs, 2) + " ms";
-    g.setFont(11.0f);
+    g.setFont(FontManager::getInstance().getMonoFont(11.0f));
     g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.75f));
     g.drawText(
         delayLabel,

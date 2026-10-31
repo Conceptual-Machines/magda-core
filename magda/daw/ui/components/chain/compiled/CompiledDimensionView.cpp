@@ -7,6 +7,7 @@
 
 #include "audio/plugins/compiled/MagdaDimensionCompiledPlugin.hpp"
 #include "ui/themes/ActiveTheme.hpp"
+#include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 
@@ -110,6 +111,7 @@ void CompiledDimensionView::paint(juce::Graphics& g) {
 
     // Engine label, top-right corner — same convention as the Reverb view.
     g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY).withAlpha(0.55f));
+    g.setFont(FontManager::getInstance().getMonoFont(10.0f));
     g.drawFittedText(engineLabel(engine_),
                      juce::Rectangle<int>(static_cast<int>(plot.getRight()) - 80,
                                           static_cast<int>(plot.getY()) + 2, 76, 14),

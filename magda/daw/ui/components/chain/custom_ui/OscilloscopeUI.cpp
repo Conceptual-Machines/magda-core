@@ -116,12 +116,41 @@ OscilloscopeUI::OscilloscopeUI() {
     popoutButton_->onClick = [this] { openPopout(); };
     addChildComponent(*popoutButton_);  // shown only in compact mode
 
+    settingsButton_ = std::make_unique<magda::SvgButton>("Settings", BinaryData::settings_nobg_svg,
+                                                         BinaryData::settings_nobg_svgSize);
+    settingsButton_->setTooltip("Show the scope's settings");
+    settingsButton_->onClick = [this] { setControlsExpanded(!controlsExpanded_); };
+    settingsButton_->setClickingTogglesState(true);
+    addChildComponent(*settingsButton_);  // only a host's header shows it
+
     updateTimerState();
 }
 
 OscilloscopeUI::~OscilloscopeUI() {
     stopTimer();
     colourCombo_.setLookAndFeel(nullptr);
+}
+
+std::vector<juce::Component*> OscilloscopeUI::headerControls() {
+    return {settingsButton_.get()};
+}
+
+bool OscilloscopeUI::docked() const {
+    return settingsButton_ != nullptr && settingsButton_->getParentComponent() != this;
+}
+
+void OscilloscopeUI::syncDocked() {
+    // Reparenting the gear tells this component nothing, so each layout checks where it is.
+    if (docked() == dockedApplied_)
+        return;
+    dockedApplied_ = docked();
+    if (!dockedApplied_ && !compact_) {
+        controlsExpanded_ = false;
+        controlsFadeActive_ = false;
+        controlsAlpha_ = 1.0f;
+    }
+    updateControlVisibility();
+    repaint();
 }
 
 void OscilloscopeUI::lookAndFeelChanged() {
@@ -213,9 +242,11 @@ void OscilloscopeUI::setPersistGlobalDefaults(bool persist) {
 }
 
 void OscilloscopeUI::setControlsExpanded(bool expanded) {
-    if (!compact_ || controlsExpanded_ == expanded)
+    if (!controlsToggle() || controlsExpanded_ == expanded)
         return;
     controlsExpanded_ = expanded;
+    if (settingsButton_)
+        settingsButton_->setToggleState(expanded, juce::dontSendNotification);
     startControlsFade(expanded);
     updateControlVisibility();
     resized();
@@ -237,7 +268,7 @@ int OscilloscopeUI::expandedControlsHeight() const {
 }
 
 void OscilloscopeUI::updateControlVisibility() {
-    const bool full = !compact_;
+    const bool full = !compact_ && showControls();
     const bool stacked = compact_ && showControls();
     timeLabel_.setVisible(full || stacked);
     timeSlider_.setVisible(full || stacked);
@@ -284,8 +315,9 @@ void OscilloscopeUI::advanceControlsFade() {
 }
 
 void OscilloscopeUI::applyControlsAlpha() {
-    const float alpha = compact_ ? controlsAlpha_ : 1.0f;
+    const float alpha = controlsToggle() ? controlsAlpha_ : 1.0f;
     timeLabel_.setAlpha(alpha);
+    timeValueLabel_.setAlpha(alpha);
     timeSlider_.setAlpha(alpha);
     colourLabel_.setAlpha(alpha);
     colourCombo_.setAlpha(alpha);
@@ -311,6 +343,7 @@ int OscilloscopeUI::compactExtraHeight() const {
 }
 
 void OscilloscopeUI::resized() {
+    syncDocked();
     if (compact_) {
         auto area = getLocalBounds();
         // Stacked controls (when expanded) sit at the very bottom.
@@ -337,11 +370,16 @@ void OscilloscopeUI::resized() {
 
     chevronRect_ = juce::Rectangle<int>();
     popoutRect_ = juce::Rectangle<int>();
-    auto controls = getLocalBounds().removeFromBottom(kControlRowH);
+    // Docked, the row lies over the trace's foot while the gear shows it.
+    auto controls = docked() ? controlsRow() : getLocalBounds().removeFromBottom(kControlRowH);
     timeLabel_.setBounds(controls.removeFromLeft(40));
     colourCombo_.setBounds(controls.removeFromRight(72).reduced(2, 2));
     timeValueLabel_.setBounds(controls.removeFromRight(54));
     timeSlider_.setBounds(controls.reduced(4, 2));
+}
+
+juce::Rectangle<int> OscilloscopeUI::controlsRow() const {
+    return getLocalBounds().reduced(8).removeFromBottom(kControlRowH);
 }
 
 void OscilloscopeUI::mouseDown(const juce::MouseEvent& e) {
@@ -408,7 +446,8 @@ void OscilloscopeUI::updateTimerState() {
 void OscilloscopeUI::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds();
     if (!compact_) {
-        bounds.removeFromBottom(kControlRowH);
+        if (!docked())
+            bounds.removeFromBottom(kControlRowH);
     } else {
         bounds.removeFromBottom(expandedControlsHeight());
         bounds.removeFromBottom(kChevronStripH);  // reserve the chevron/pop-out strip
@@ -422,9 +461,10 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
     const float halfH = area.getHeight() * 0.5f;
 
     // dBFS amplitude reference lines (symmetric about the centre) + labels on the
-    // left. The trace stays linear; these just mark levels (0 dBFS = full scale).
+    // left. The trace stays linear; these just mark levels (0 dBFS = full scale), at steps that
+    // land evenly on it rather than bunching at the centre.
     g.setFont(FontManager::getInstance().getUIFont(9.0f));
-    for (float dbfs : {0.0f, -6.0f, -12.0f, -18.0f}) {
+    for (float dbfs : {0.0f, -3.0f, -6.0f, -12.0f}) {
         const float amp = std::pow(10.0f, dbfs / 20.0f) * 0.9f;  // 0.9 = trace headroom
         const float yTop = midY - amp * halfH;
         const float yBot = midY + amp * halfH;
@@ -443,6 +483,13 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
     g.drawHorizontalLine(static_cast<int>(midY), area.getX(), area.getRight());
 
     drawTrace(g, area);
+
+    if (docked() && showControls()) {
+        // A backdrop so the docked control row reads over the trace.
+        g.setColour(
+            ActiveTheme::getColour(ActiveTheme::BACKGROUND).withAlpha(0.9f * controlsAlpha_));
+        g.fillRoundedRectangle(controlsRow().toFloat().expanded(2.0f, 3.0f), 4.0f);
+    }
 
     // Chevron/pop-out strip directly below the waveform.
     if (compact_) {

@@ -70,13 +70,13 @@ juce::Image createChainNodeDragImage(const juce::String& label, int itemCount) {
     auto textArea = image.getBounds().reduced(12, 6);
     textArea.removeFromLeft(6);
     g.setColour(juce::Colours::white.withAlpha(0.95f));
-    g.setFont(juce::Font(juce::FontOptions(12.0f).withStyle("Bold")));
+    g.setFont(FontManager::getInstance().getUIFont(12.0f).boldened());
     g.drawFittedText(label.isNotEmpty() ? label : "Chain Item", textArea.removeFromTop(17),
                      juce::Justification::centredLeft, 1);
 
     const auto detail = itemCount == 1 ? "1 item" : juce::String(itemCount) + " items";
     g.setColour(juce::Colours::white.withAlpha(0.68f));
-    g.setFont(juce::Font(juce::FontOptions(10.0f)));
+    g.setFont(FontManager::getInstance().getUIFont(10.0f));
     g.drawFittedText(detail, textArea, juce::Justification::centredLeft, 1);
 
     return image;

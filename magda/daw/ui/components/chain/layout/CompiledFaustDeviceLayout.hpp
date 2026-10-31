@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <map>
 #include <span>
 #include <utility>
@@ -37,7 +38,8 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
                               std::span<const int> knobSlots = {},
                               std::span<const int> excludedSlots = {}, int maxColumns = 0,
                               int leadingColumnCells = 0,
-                              std::span<const std::pair<int, const char*>> knobLabels = {})
+                              std::span<const std::pair<int, const char*>> knobLabels = {},
+                              std::span<const char* const> pageNames = {})
         : maxColumns_(maxColumns > 0 ? maxColumns : 2),
           leadingColumnCells_(leadingColumnCells),
           columnMajor_(columnMajor),
@@ -45,14 +47,25 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
           knobSlots_(knobSlots.begin(), knobSlots.end()) {
         for (const auto& [slot, label] : knobLabels)
             labels_[slot] = label;
+        for (const auto* name : pageNames)
+            pageNames_.add(name);
         // Slots the device shows elsewhere (its mix, its faceplate strip) leave the grid.
         if (knobSlots_.empty() && !excludedSlots.empty())
             for (int slot = 0; slot < cellCount; ++slot)
                 knobSlots_.push_back(slot);
-        for (const int excluded : excludedSlots)
-            std::erase(knobSlots_, excluded);
-        cellCount_ = knobSlots_.empty() ? cellCount : static_cast<int>(knobSlots_.size());
-        cellsPerRow_ = knobSlots_.empty() ? cellsPerRow : static_cast<int>(knobSlots_.size());
+        // Paged, an excluded slot leaves a gap so the rows that are pages keep their places.
+        for (const int excluded : excludedSlots) {
+            if (paged())
+                std::ranges::replace(knobSlots_, excluded, -1);
+            else
+                std::erase(knobSlots_, excluded);
+        }
+        cellCount_ = paged()              ? maxColumns_
+                     : knobSlots_.empty() ? cellCount
+                                          : static_cast<int>(knobSlots_.size());
+        cellsPerRow_ = paged()              ? maxColumns_
+                       : knobSlots_.empty() ? cellsPerRow
+                                            : static_cast<int>(knobSlots_.size());
     }
 
     int cellCount() const override {
@@ -62,7 +75,7 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
         return cellsPerRow_;
     }
     bool reflowsForControlStyle() const override {
-        return !columnMajor_ && leadingColumnCells_ == 0;
+        return !columnMajor_ && leadingColumnCells_ == 0 && !paged();
     }
     /// A faceplate-below device: its first cells in the left column, the rest over the faceplate.
     bool placesOwnCells() const override {
@@ -78,14 +91,25 @@ class CompiledFaustDeviceLayout final : public DeviceParamLayout {
         return columnMajor_ ? 0 : styleRows;
     }
     bool wantsPagination() const override {
-        return false;
+        return paged();
+    }
+    bool wantsPageTabs() const override {
+        return paged();
+    }
+    juce::String pageName(const magda::DeviceInfo&, int pageIndex) const override {
+        return pageNames_[pageIndex];
     }
     int totalPages(const magda::DeviceInfo& device) const override;
     ParamCell cellFor(const magda::DeviceInfo& device, int cellIndex,
                       int currentPage) const override;
 
   private:
+    bool paged() const {
+        return !pageNames_.isEmpty();
+    }
+
     std::map<int, juce::String> labels_;
+    juce::StringArray pageNames_;
     int cellCount_ = 0;
     int cellsPerRow_ = 0;
     int maxColumns_ = 2;

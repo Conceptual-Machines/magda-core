@@ -80,6 +80,7 @@ class DeviceSlotComponent : public NodeComponent,
         return device_.id;
     }
     int getPreferredWidth() const override;
+    int getIdealHeight() const override;
     void setAvailableWidth(int width) override;
     int getMinimumWidth() const override;
 
@@ -306,6 +307,9 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<magda::SvgButton> paramsToggle_, faceplateToggle_;
     bool hasFaceplate() const;
     bool faceplateShown() const;
+    /// The shown flag the faceplate toggle drives: the time bend's for the Arpeggiator.
+    bool& faceplateState();
+    bool faceplateState() const;
     bool paramsShown() const;
     void toggleDeviceView(bool faceplate);
     /// A step sequencer's header switches: its time bend beside the controls, and its faceplate
@@ -313,6 +317,10 @@ class DeviceSlotComponent : public NodeComponent,
     std::unique_ptr<magda::SvgButton> timeBendToggle_, zonesToggle_, expandToggle_;
     std::unique_ptr<magda::SvgButton> oscPanelToggle_, matrixToggle_, vizToggle_, outputToggle_;
     std::unique_ptr<magda::SvgButton> padPanelToggle_, padChainToggle_;
+    /// The side panels of a spec with leftPanelWidth / rightPanelWidth, kept in paramsShown and
+    /// outputShown.
+    std::unique_ptr<magda::SvgButton> leftPanelToggle_, rightPanelToggle_;
+    void toggleSidePanel(bool left);
     juce::Label lentNote_;
     void toggleTimeBend();
     void toggleZones();
@@ -326,10 +334,15 @@ class DeviceSlotComponent : public NodeComponent,
     void toggleOutput();
     /// The Drum Grid's pad mix panel (@p panel) or its pad chain, on or off (#3144).
     void togglePadView(bool panel);
-    void toggleFaceplateExpanded();
-    void lendFaceplate();
+    /// Lends @p part, or the faceplate's default expandable, or takes it back if it is out.
+    void toggleFaceplateExpanded(juce::Component* part = nullptr);
+    void lendFaceplate(juce::Component* part = nullptr);
     void faceplateReturned();
     bool faceplateLent() const;
+    /// The faceplate or the part of it the arrangement holds.
+    /// What expanding lends: a custom faceplate or its part, else a compiled panel's part.
+    juce::Component* expandableUI() const;
+    bool expandableLent() const;
     /// Lends the faceplate again when this slot replaces one whose faceplate was out.
     void reclaimExpandedFaceplate();
     /// The faceplate's width: its spec's, or the default.
@@ -474,6 +487,9 @@ class DeviceSlotComponent : public NodeComponent,
     void createCustomUI();
     void detachInlineUiFromLivePlugin();
     void bindFaustHeader();
+    /// The device's name, or a runtime Faust device's patch name (#3205).
+    void applyTitle();
+    juce::String faustTitle_;
     void refreshInlinePluginBindings();
     void setupCustomUILinking();
     /// The device's mods and macros as they stand now, for its faceplate.
