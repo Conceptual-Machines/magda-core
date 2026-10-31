@@ -516,7 +516,10 @@ void MainView::setupComponents() {
 
     setupCornerButton(masterSmallButton, "MasterCompact", BinaryData::track_height_compact_svg,
                       BinaryData::track_height_compact_svgSize);
-    masterSmallButton->onClick = [this]() { setMasterStripHeight(COMPACT_MASTER_STRIP_HEIGHT); };
+    masterSmallButton->onClick = [this]() {
+        setMasterStripHeight(masterCompact() ? MIN_MASTER_STRIP_HEIGHT
+                                             : COMPACT_MASTER_STRIP_HEIGHT);
+    };
     masterSmallButton->setTooltip("Compact master: peak meter only");
     setupCornerButton(masterMediumButton, "MasterMedium", BinaryData::track_height_medium_svg,
                       BinaryData::track_height_medium_svgSize);
@@ -1198,12 +1201,18 @@ void MainView::resized() {
         masterContentPanel->setCompact(masterCompact());
         masterHeaderPanel->setBounds(arrangementLayout.masterHeaderArea);
         masterContentPanel->setBounds(arrangementLayout.masterContentArea);
-        auto stack = arrangementLayout.masterHeightButtonsArea;
-        const int button = juce::jmin(16, stack.getWidth() - 2, stack.getHeight() / 3);
-        stack = stack.withSizeKeepingCentre(button, button * 3);
+        // Compact has room for one button: its own three dots, which lead back to medium.
+        const auto area = arrangementLayout.masterHeightButtonsArea;
+        const int button = juce::jmin(16, area.getWidth() - 2);
+        const bool compact = masterCompact();
+        masterMediumButton->setVisible(masterMediumButton->isVisible() && !compact);
+        masterLargeButton->setVisible(masterLargeButton->isVisible() && !compact);
+        auto stack = area.withSizeKeepingCentre(button, area.getHeight())
+                         .withTrimmedTop(compact ? (area.getHeight() - button) / 2 : 4);
         for (auto* each :
              {masterSmallButton.get(), masterMediumButton.get(), masterLargeButton.get()})
-            each->setBounds(stack.removeFromTop(button));
+            if (each->isVisible())
+                each->setBounds(stack.removeFromTop(button));
     } else {
         // Clear stale bounds when the master strip is hidden: otherwise the song
         // map / master header keep their previous-view bounds and can leave a
