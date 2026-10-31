@@ -4,6 +4,7 @@
 #include "SplashScreen.hpp"
 
 #include "BinaryData.h"
+#include "Mascot.hpp"
 #include "core/StringTable.hpp"
 #include "extensions/Extension.hpp"
 #include "magda.hpp"
@@ -15,6 +16,9 @@ namespace magda {
 namespace {
 const juce::URL kConceptualMachinesUrl("https://conceptualmachines.co.uk");
 const juce::String kConceptualMachinesCopyright("(C) 2026 Conceptual Machines");
+
+/// Height of the band at the top of the splash that the mascot sits in.
+constexpr int kMascotBand = 200;
 }  // namespace
 
 // =============================================================================
@@ -24,15 +28,8 @@ const juce::String kConceptualMachinesCopyright("(C) 2026 Conceptual Machines");
 class SplashScreen::ContentComponent : public juce::Component {
   public:
     ContentComponent() {
+        addAndMakeVisible(mascot_);
         setSize(450, 450);
-
-        // Load the SVG logo
-        logo_ = juce::Drawable::createFromSVGString(
-            juce::String::fromUTF8(BinaryData::magdalisa_svg, BinaryData::magdalisa_svgSize));
-        if (logo_) {
-            logo_->replaceColour(juce::Colour(0xFF000000),
-                                 ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-        }
 
         // Load Conceptual Machines badge
         conceptualMachinesBadge_ = juce::Drawable::createFromSVGString(juce::String::fromUTF8(
@@ -69,13 +66,7 @@ class SplashScreen::ContentComponent : public juce::Component {
         g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 8.0f, 1.0f);
 
-        // Draw logo centered in upper portion
-        if (logo_) {
-            auto logoBounds = bounds.removeFromTop(200).reduced(40, 20);
-            logo_->drawWithin(g, logoBounds.toFloat(), juce::RectanglePlacement::centred, 1.0f);
-        } else {
-            bounds.removeFromTop(200);
-        }
+        bounds.removeFromTop(kMascotBand);
 
         // Title
         auto& fm = FontManager::getInstance();
@@ -168,20 +159,24 @@ class SplashScreen::ContentComponent : public juce::Component {
             faustLogo_->drawWithin(g, centred.removeFromLeft(faustLogoW).toFloat(),
                                    juce::RectanglePlacement::centred, 1.0f);
 
-        // Conceptual Machines badge sits under the attribution row.
-        creditsArea.removeFromTop(6);
+        // Conceptual Machines badge and copyright, at the foot of the splash as in the About box.
+        auto footer = getLocalBounds().withTrimmedBottom(12);
+        footer = footer.removeFromBottom(42 + 16);
         if (conceptualMachinesBadge_) {
-            auto linkArea = creditsArea.removeFromTop(56).withSizeKeepingCentre(170, 56);
-            auto badgeArea = linkArea.removeFromTop(38).withSizeKeepingCentre(36, 36);
+            badgeBounds_ = footer.withSizeKeepingCentre(170, footer.getHeight());
+            auto badgeArea = footer.removeFromTop(42).withSizeKeepingCentre(38, 38);
             conceptualMachinesBadge_->drawWithin(g, badgeArea.toFloat(),
                                                  juce::RectanglePlacement::centred, 1.0f);
             g.setFont(fm.getUIFont(9.0f));
             g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-            g.drawText(kConceptualMachinesCopyright, linkArea, juce::Justification::centred);
-            badgeBounds_ = badgeArea.getUnion(linkArea);
+            g.drawText(kConceptualMachinesCopyright, footer, juce::Justification::centred);
         } else {
             badgeBounds_ = {};
         }
+    }
+
+    void resized() override {
+        mascot_.setBounds(getLocalBounds().removeFromTop(kMascotBand).reduced(40, 20));
     }
 
     void setStatus(const juce::String& text) {
@@ -200,7 +195,7 @@ class SplashScreen::ContentComponent : public juce::Component {
     }
 
   private:
-    std::unique_ptr<juce::Drawable> logo_;
+    Mascot mascot_;
     std::unique_ptr<juce::Drawable> conceptualMachinesBadge_;
     std::unique_ptr<juce::Drawable> juceLogo_;
     std::unique_ptr<juce::Drawable> faustLogo_;
