@@ -369,8 +369,9 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
                 if (tc == nullptr)
                     return;
                 // The other edge stays where it is when it is on the right side
-                // of the click, otherwise it sits a bar away.
-                const auto& punch = tc->getState().punch;
+                // of the click, otherwise it sits a bar away. Setting a range
+                // with neither toggle on arms both, so the other one is put back.
+                const auto punch = tc->getState().punch;
                 const double bar = safeThis->getBeatsPerBar();
                 if (result == IdAddMarker) {
                     tc->dispatch(AddMarkerBeatsEvent{beats});
@@ -379,12 +380,14 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
                         punch.isValid() && punch.endBeats > beats ? punch.endBeats : beats + bar;
                     tc->dispatch(SetPunchRegionBeatsEvent{beats, end});
                     tc->dispatch(SetPunchInEnabledEvent{true});
+                    tc->dispatch(SetPunchOutEnabledEvent{punch.punchOutEnabled});
                 } else if (result == IdPunchOut) {
                     const double start = punch.isValid() && punch.startBeats < beats
                                              ? punch.startBeats
                                              : juce::jmax(0.0, beats - bar);
                     tc->dispatch(SetPunchRegionBeatsEvent{start, beats});
                     tc->dispatch(SetPunchOutEnabledEvent{true});
+                    tc->dispatch(SetPunchInEnabledEvent{punch.punchInEnabled});
                 }
             });
         return;
