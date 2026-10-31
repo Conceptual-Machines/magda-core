@@ -23,10 +23,9 @@ inline constexpr const char* kSnapCaption = "SNAP";
 // resolve their own font publish theirs instead (BarsBeatsTicksLabel,
 // GridDivisionButton, SmallButtonLookAndFeel), and the measurement reads it
 // from them.
-inline constexpr float kHeadlineFontSize = 16.0f;          // BPM
-inline constexpr float kHeadlineTimecodeFontSize = 18.0f;  // the playhead on its own
-inline constexpr float kRowTimecodeFontSize = 12.0f;       // punch and range readouts
-inline constexpr float kReadoutFontSize = 14.0f;           // time signature
+inline constexpr float kRowTimecodeFontSize = 12.0f;  // the range readouts and the punch popup
+// BPM, time signature and playhead, the same size as the ranges.
+inline constexpr float kHeadlineFontSize = kRowTimecodeFontSize;
 inline constexpr float kMemoryCaptionFontSize = 8.0f;
 inline constexpr float kMemoryTimeFontSize = 11.0f;
 inline constexpr float kCpuTitleFontSize = 8.0f;

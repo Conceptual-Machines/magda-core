@@ -34,6 +34,8 @@ class SongNavigatorPanel : public juce::Component,
 
     /** Connect to the centralized timeline state. */
     void setController(TimelineController* controller);
+    /** @brief Compact drops the bar ruler and draws every track on one line. */
+    void setCompact(bool compact);
 
     void paint(juce::Graphics& g) override;
     void mouseDown(const juce::MouseEvent& event) override;
@@ -68,7 +70,12 @@ class SongNavigatorPanel : public juce::Component,
     void panToStartBeat(double startBeats);
     void zoomToVisibleRange(double startBeats, double lengthBeats);
 
+    int rulerHeight() const {
+        return compact_ ? 0 : kRulerHeight;
+    }
+
     TimelineController* controller_ = nullptr;
+    bool compact_ = false;
 
     DragMode dragMode_ = DragMode::None;
     double dragGrabOffsetBeats_ = 0.0;  // mouse-beat minus window-start-beat at grab

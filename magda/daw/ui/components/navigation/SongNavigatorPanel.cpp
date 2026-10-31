@@ -23,6 +23,13 @@ SongNavigatorPanel::~SongNavigatorPanel() {
     }
 }
 
+void SongNavigatorPanel::setCompact(bool compact) {
+    if (compact_ == compact)
+        return;
+    compact_ = compact;
+    repaint();
+}
+
 void SongNavigatorPanel::setController(TimelineController* controller) {
     if (controller_) {
         controller_->removeListener(this);
@@ -95,9 +102,9 @@ juce::Rectangle<float> SongNavigatorPanel::getViewportBox() const {
     const int left = beatToX(startBeats);
     const int right = beatToX(endBeats);
     // Span the lanes area only - start below the ruler band, like the playhead.
-    return {static_cast<float>(left), static_cast<float>(kRulerHeight),
+    return {static_cast<float>(left), static_cast<float>(rulerHeight()),
             static_cast<float>(juce::jmax(2, right - left)),
-            static_cast<float>(getHeight() - kRulerHeight)};
+            static_cast<float>(getHeight() - rulerHeight())};
 }
 
 // ===== Painting =====
@@ -117,7 +124,7 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
     // ruler above, which has a different zoom).
     const double beatsPerBar = controller_ ? controller_->getState().tempo.beatsPerBar() : 4.0;
     const double totalBars = totalBeats() / beatsPerBar;
-    {
+    if (!compact_) {
         // Pick a "nice" bar step so labels stay readable (~one per 70px).
         const int maxLabels = juce::jmax(1, getWidth() / 70);
         const double rawStep = totalBars / maxLabels;
@@ -165,11 +172,11 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
     // then holds several tracks' clips stacked together).
     bool hasContent = false;
     if (numTracks > 0) {
-        const int lanesTop = kRulerHeight + kVInset;
+        const int lanesTop = rulerHeight() + kVInset;
         const int availableHeight = juce::jmax(1, getHeight() - lanesTop - kVInset);
         const int minLaneHeight = 3;
         const int maxLanes = juce::jmax(1, availableHeight / minLaneHeight);
-        const int numLanes = juce::jmin(numTracks, maxLanes);
+        const int numLanes = compact_ ? 1 : juce::jmin(numTracks, maxLanes);
         const float laneHeight = static_cast<float>(availableHeight) / static_cast<float>(numLanes);
 
         for (int i = 0; i < numTracks; ++i) {
@@ -213,10 +220,10 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
                 continue;
             }
             g.setColour(marker.colour.withAlpha(0.85f));
-            g.drawVerticalLine(mx, static_cast<float>(kRulerHeight),
+            g.drawVerticalLine(mx, static_cast<float>(rulerHeight()),
                                static_cast<float>(getHeight()));
             // Flag tick at the top of the content area (not in the ruler header).
-            g.fillRect(mx, kRulerHeight, 4, 4);
+            g.fillRect(mx, rulerHeight(), 4, 4);
         }
     }
 
@@ -225,7 +232,7 @@ void SongNavigatorPanel::paint(juce::Graphics& g) {
         const double playBeats = controller_->getState().playhead.playbackPositionBeats;
         const int px = beatToX(playBeats);
         g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION).withAlpha(0.9f));
-        g.drawVerticalLine(px, static_cast<float>(kRulerHeight), static_cast<float>(getHeight()));
+        g.drawVerticalLine(px, static_cast<float>(rulerHeight()), static_cast<float>(getHeight()));
     }
 
     // Viewport rectangle marking the currently-visible window. Hidden when the

@@ -220,6 +220,17 @@ class MainView : public juce::Component,
     static constexpr int AUX_ROW_HEIGHT = 30;
     static constexpr int MIN_MASTER_STRIP_HEIGHT = 84;
     static constexpr int MAX_MASTER_STRIP_HEIGHT = 150;
+    // Compact shows only the peak meter and a one-line song preview; a drag below the full
+    // header's minimum snaps to it.
+    static constexpr int COMPACT_MASTER_STRIP_HEIGHT = 24;
+    bool masterCompact() const {
+        return masterStripHeight < MIN_MASTER_STRIP_HEIGHT;
+    }
+    void setMasterStripHeight(int height);
+    // Compact / medium / large, stacked beside the master row under the vertical scrollbar.
+    std::unique_ptr<SvgButton> masterSmallButton;
+    std::unique_ptr<SvgButton> masterMediumButton;
+    std::unique_ptr<SvgButton> masterLargeButton;
 
     // Cached state from controller for quick access
     // These are updated when TimelineStateListener callbacks are called
@@ -282,6 +293,7 @@ class MainView : public juce::Component,
         juce::Rectangle<int> horizontalScrollBarRowArea;
         juce::Rectangle<int> masterHeaderArea;
         juce::Rectangle<int> masterContentArea;
+        juce::Rectangle<int> masterHeightButtonsArea;
         juce::Rectangle<int> masterAutomationHeaderArea;
         juce::Rectangle<int> masterAutomationContentArea;
         juce::Rectangle<int> auxHeadersArea;
@@ -458,6 +470,8 @@ class MainView::MasterHeaderPanel : public juce::Component,
 
     // Meter level updates (for audio engine integration)
     void setPeakLevels(float leftPeak, float rightPeak);
+    /** @brief Compact shows the peak meter alone. */
+    void setCompact(bool compact);
 
   private:
     // Opens the master automation menu (mirrors the per-track automation
@@ -472,6 +486,7 @@ class MainView::MasterHeaderPanel : public juce::Component,
     float peakValue_ = 0.0f;
 
     std::unique_ptr<LevelMeter> peakMeter;  // Horizontal stereo peak meter
+    bool compact_ = false;
 
     void setupControls();
     void updateAutomationButtonState();

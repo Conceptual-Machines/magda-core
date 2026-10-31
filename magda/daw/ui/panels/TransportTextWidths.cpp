@@ -56,7 +56,6 @@ TextWidths measureTextWidths(int barDigits, int numerator) {
     // font size or family moves the layout with it instead of overflowing it.
     // The sizes come from the widgets themselves wherever they own one.
     const auto headlineFont = fonts.getUIFont(kHeadlineFontSize);
-    const auto readoutFont = fonts.getUIFont(kReadoutFontSize);
     const auto memoryCaptionFont = fonts.getUIFont(kMemoryCaptionFontSize);
     const auto memoryTimeFont = fonts.getUIFont(kMemoryTimeFontSize);
     const auto bannerFont = fonts.getUIFont(kBannerFontSize).boldened();
@@ -76,10 +75,10 @@ TextWidths measureTextWidths(int barDigits, int numerator) {
                                                            fontSize);
     };
     text.timecodeBox = timecodeWidth(kRowTimecodeFontSize);
-    text.headlineTimecodeBox = timecodeWidth(kHeadlineTimecodeFontSize);
+    text.headlineTimecodeBox = timecodeWidth(kHeadlineFontSize);
     text.tempo = widthOf(headlineFont, juce::String(MAX_VALID_BPM, 2));
-    text.timeSigNumerator = widthOf(readoutFont, juce::String(MAX_TIME_SIGNATURE_VALUE) + "/");
-    text.timeSigDenominator = widthOf(readoutFont, juce::String(MAX_TIME_SIGNATURE_VALUE));
+    text.timeSigNumerator = widthOf(headlineFont, juce::String(MAX_TIME_SIGNATURE_VALUE) + "/");
+    text.timeSigDenominator = widthOf(headlineFont, juce::String(MAX_TIME_SIGNATURE_VALUE));
     text.cpuTitle = widthOf(cpuTitleFont, tr("transport.cpu.cpu"));
     // The readout gains a second number once the peak runs ahead of the average,
     // so measure every digit-count combination it can reach rather than just

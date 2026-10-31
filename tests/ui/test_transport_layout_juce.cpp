@@ -43,7 +43,7 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
                    " gridDivision=" + juce::String(text.gridDivision) + " gridToggle=" +
                    juce::String(text.gridToggle) + " banner=" + juce::String(text.banner));
         expect(text.timecodeBox > 0);
-        expect(text.headlineTimecodeBox > text.timecodeBox);
+        expect(text.headlineTimecodeBox >= text.timecodeBox);
         expect(text.clock > 0);
         expect(text.tempo > 0);
         expect(text.timeSigNumerator > 0);

@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "../../magda/daw/ui/components/chain/layout/FaustDeviceLayout.hpp"
+#include "../../magda/daw/ui/components/chain/layout/VoiceModeParam.hpp"
 #include "../../magda/daw/ui/components/chain/slot/DeviceSlotParamLayoutFactory.hpp"
 #include "../../magda/daw/ui/components/chain/slot/DeviceSlotTraits.hpp"
 
@@ -220,4 +221,20 @@ TEST_CASE("FaustDeviceLayout invalidates cached pages when a width changes", "[f
     device.parameters[0].widthCells = 3;
     REQUIRE(layout.cellFor(device, 1, 0).mode == ParamCell::Mode::Hidden);
     REQUIRE(layout.cellFor(device, 3, 0).targetParamIndex == 1);
+}
+
+TEST_CASE("The Faust instrument's voice mode sits on its Voice page, not in the header",
+          "[faust][layout]") {
+    FaustDeviceLayout layout;
+    DeviceInfo device;
+    auto voiceMode = param(2048, "Voice", 3);
+    voiceMode.name = "Voice Mode";
+    voiceMode.choices = {"Poly", "Mono", "Legato"};
+    device.parameters = {param(0, "Simple Synth"), voiceMode, param(2049, "Voice")};
+
+    REQUIRE(layout.totalPages(device) == 2);
+    REQUIRE(layout.pageName(device, 1) == "Voice");
+    REQUIRE(layout.cellFor(device, 0, 1).targetParamIndex == 2048);
+    REQUIRE(layout.cellFor(device, 3, 1).targetParamIndex == 2049);
+    REQUIRE(faceplateShowsVoiceMode("faust-instrument"));
 }

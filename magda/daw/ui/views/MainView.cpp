@@ -513,6 +513,19 @@ void MainView::setupComponents() {
         }
     };
     trackHeightRightClick_ = std::make_unique<RightClick>(*this);
+
+    setupCornerButton(masterSmallButton, "MasterCompact", BinaryData::track_height_compact_svg,
+                      BinaryData::track_height_compact_svgSize);
+    masterSmallButton->onClick = [this]() { setMasterStripHeight(COMPACT_MASTER_STRIP_HEIGHT); };
+    masterSmallButton->setTooltip("Compact master: peak meter only");
+    setupCornerButton(masterMediumButton, "MasterMedium", BinaryData::track_height_medium_svg,
+                      BinaryData::track_height_medium_svgSize);
+    masterMediumButton->onClick = [this]() { setMasterStripHeight(MIN_MASTER_STRIP_HEIGHT); };
+    masterMediumButton->setTooltip("Medium master");
+    setupCornerButton(masterLargeButton, "MasterLarge", BinaryData::track_height_large_svg,
+                      BinaryData::track_height_large_svgSize);
+    masterLargeButton->onClick = [this]() { setMasterStripHeight(MAX_MASTER_STRIP_HEIGHT); };
+    masterLargeButton->setTooltip("Large master");
     for (auto* button : {trackSmallButton.get(), trackMediumButton.get(), trackLargeButton.get()}) {
         button->addMouseListener(trackHeightRightClick_.get(), false);
         button->setTooltip(button->getTooltip() + " (right-click to edit the heights)");
@@ -1079,6 +1092,11 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
     const int horizontalScrollbarHeight = ARRANGEMENT_SCROLLBAR_SIZE;
 
     result.verticalScrollBarArea = zoomColumn.removeFrom(bounds, verticalScrollbarWidth);
+    // The master's size buttons stack in this slot beside the master row.
+    if (masterVisible_)
+        result.masterHeightButtonsArea =
+            result.verticalScrollBarArea.withTrimmedBottom(horizontalScrollbarHeight)
+                .removeFromBottom(masterStripHeight);
 
     result.horizontalScrollBarRowArea = bounds.removeFromBottom(horizontalScrollbarHeight);
     result.horizontalScrollBarArea = result.horizontalScrollBarRowArea;
@@ -1172,9 +1190,20 @@ void MainView::resized() {
                                         arrangementLayout.trackContentArea.getHeight()));
     scrollContainer_->toFront(false);
 
+    for (auto* button :
+         {masterSmallButton.get(), masterMediumButton.get(), masterLargeButton.get()})
+        button->setVisible(masterVisible_ && !trackAreaReplaced());
     if (masterVisible_) {
+        masterHeaderPanel->setCompact(masterCompact());
+        masterContentPanel->setCompact(masterCompact());
         masterHeaderPanel->setBounds(arrangementLayout.masterHeaderArea);
         masterContentPanel->setBounds(arrangementLayout.masterContentArea);
+        auto stack = arrangementLayout.masterHeightButtonsArea;
+        const int button = juce::jmin(16, stack.getWidth() - 2, stack.getHeight() / 3);
+        stack = stack.withSizeKeepingCentre(button, button * 3);
+        for (auto* each :
+             {masterSmallButton.get(), masterMediumButton.get(), masterLargeButton.get()})
+            each->setBounds(stack.removeFromTop(button));
     } else {
         // Clear stale bounds when the master strip is hidden: otherwise the song
         // map / master header keep their previous-view bounds and can leave a
@@ -1468,6 +1497,14 @@ void MainView::syncSnapState() {
 }
 
 // Add keyboard event handler for zoom reset shortcut
+void MainView::setMasterStripHeight(int height) {
+    if (height == masterStripHeight)
+        return;
+    masterStripHeight = height;
+    resized();
+    repaint();
+}
+
 bool MainView::showToolPalette() {
     if (!isShowing())
         return false;
@@ -2034,14 +2071,10 @@ void MainView::mouseDrag(const juce::MouseEvent& event) {
     if (isResizingMasterStrip) {
         // Dragging up (negative deltaY) should increase height
         int deltaY = resizeStartY - event.y;
-        int newHeight = juce::jlimit(MIN_MASTER_STRIP_HEIGHT, MAX_MASTER_STRIP_HEIGHT,
-                                     resizeStartHeight + deltaY);
-
-        if (newHeight != masterStripHeight) {
-            masterStripHeight = newHeight;
-            resized();
-            repaint();
-        }
+        const int dragged = resizeStartHeight + deltaY;
+        setMasterStripHeight(dragged < MIN_MASTER_STRIP_HEIGHT
+                                 ? COMPACT_MASTER_STRIP_HEIGHT
+                                 : juce::jmin(MAX_MASTER_STRIP_HEIGHT, dragged));
     }
 }
 
@@ -2712,6 +2745,9 @@ void MainView::MasterHeaderPanel::paint(juce::Graphics& g) {
     g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(bounds, 1);
 
+    if (compact_)
+        return;
+
     // "Master" label at top
     auto labelArea = bounds.reduced(6, 2).removeFromTop(14);
     g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
@@ -2734,11 +2770,28 @@ void MainView::MasterHeaderPanel::showMasterAutomationMenu(juce::Component* anch
     showAutomationMenu(MASTER_TRACK_ID, anchor);
 }
 
+void MainView::MasterHeaderPanel::setCompact(bool compact) {
+    if (compact_ == compact)
+        return;
+    compact_ = compact;
+    for (juce::Component* c : {static_cast<juce::Component*>(speakerButton.get()),
+                               static_cast<juce::Component*>(automationButton.get()),
+                               static_cast<juce::Component*>(volumeLabel.get()),
+                               static_cast<juce::Component*>(peakValueLabel.get())})
+        c->setVisible(!compact);
+    resized();
+    repaint();
+}
+
 void MainView::MasterHeaderPanel::resized() {
     auto contentArea = getLocalBounds().reduced(2);
     // The hide control now lives in the footer (next to the show toggle), not
     // in the master header.
     hideButton->setVisible(false);
+    if (compact_) {
+        peakMeter->setBounds(contentArea.reduced(6, 4));
+        return;
+    }
     contentArea.removeFromTop(14);  // "Master" label row
     contentArea.removeFromTop(6);   // padding below the label
 

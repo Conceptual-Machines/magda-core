@@ -896,7 +896,7 @@ void TransportPanel::setupTimeDisplayBoxes() {
 
     // Playhead position
     setupBBTLabel(playheadPositionLabel, accentOrange);
-    playheadPositionLabel->setFontSize(transport::kHeadlineTimecodeFontSize);
+    playheadPositionLabel->setFontSize(transport::kHeadlineFontSize);
     playheadPositionLabel->onValueChange = [this]() {
         double beats = playheadPositionLabel->getValue();
         if (onPlayheadEdit)
@@ -1490,8 +1490,8 @@ void TransportPanel::applyThemedLabelFonts() {
     // DraggableValueLabel resolves and caches on setFontSize, so re-setting the
     // same size is what re-fetches it from FontManager.
     tempoLabel->setFontSize(transport::kHeadlineFontSize);
-    timeSigNumeratorLabel->setFontSize(transport::kReadoutFontSize);
-    timeSigDenominatorLabel->setFontSize(transport::kReadoutFontSize);
+    timeSigNumeratorLabel->setFontSize(transport::kHeadlineFontSize);
+    timeSigDenominatorLabel->setFontSize(transport::kHeadlineFontSize);
 }
 
 void TransportPanel::applyThemedLabelColours() {
