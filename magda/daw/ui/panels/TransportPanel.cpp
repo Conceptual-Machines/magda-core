@@ -100,9 +100,6 @@ TransportPanel::TransportPanel() {
     addAndMakeVisible(*captureButton);
     applyToggleColours();
 
-    style_ = transport::styleFromKey(Config::getInstance().getTransportStyle());
-    Config::getInstance().addListener(this);
-
     // CPU usage — caption and load side by side
     cpuTitleLabel = std::make_unique<juce::Label>("cpuTitle", tr("transport.cpu.cpu"));
     cpuTitleLabel->setColour(juce::Label::textColourId,
@@ -156,7 +153,6 @@ TransportPanel::TransportPanel() {
 
 TransportPanel::~TransportPanel() {
     MixAnalysisService::getInstance().removeListener(this);
-    Config::getInstance().removeListener(this);
     for (auto* button : {autoGridButton.get(), snapButton.get()})
         button->setLookAndFeel(nullptr);
 }
@@ -166,14 +162,6 @@ void TransportPanel::toggleMetronome() {
     metronomeButton->setActive(enabled);
     if (onMetronomeToggle)
         onMetronomeToggle(enabled);
-}
-
-void TransportPanel::configChanged() {
-    const auto style = transport::styleFromKey(Config::getInstance().getTransportStyle());
-    if (style == style_)
-        return;
-    style_ = style;
-    resized();
 }
 
 void TransportPanel::styleToggle(juce::TextButton& button, juce::Colour offFill,
@@ -386,8 +374,7 @@ void TransportPanel::paintCpu(juce::Graphics& g) const {
     const auto& l = layout_;
     if (!l.rightClusterVisible)
         return;
-    if (style_ == transport::Style::Boxed)
-        paintFrame(g, l.cpu);
+    paintFrame(g, l.cpu);
     if (currentCpuUsage <= 0.0f)
         return;
 
@@ -408,18 +395,9 @@ void TransportPanel::paintCpu(juce::Graphics& g) const {
 void TransportPanel::paint(juce::Graphics& g) {
     g.fillAll(ActiveTheme::getColour(ActiveTheme::TRANSPORT_BACKGROUND));
     const auto& l = layout_;
-    const auto border = ActiveTheme::getColour(ActiveTheme::TRANSPORT_WELL_BORDER);
-
-    if (style_ == transport::Style::Boxed) {
-        for (const auto& frame : {l.punchFrame, l.tempoFrame, l.cursorFrame, l.selectionFrame,
-                                  l.loopFrame, l.gridFrame, l.memoryFrame})
-            paintFrame(g, frame);
-    } else {
-        g.setColour(border);
-        for (int x : l.dividerXs)
-            g.drawVerticalLine(x, static_cast<float>(l.tempoFrame.getY() + 4),
-                               static_cast<float>(l.tempoFrame.getBottom() - 4));
-    }
+    for (const auto& frame : {l.punchFrame, l.tempoFrame, l.cursorFrame, l.selectionFrame,
+                              l.loopFrame, l.gridFrame, l.memoryFrame})
+        paintFrame(g, frame);
 
     if (!l.clock.isEmpty()) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
@@ -453,7 +431,7 @@ void TransportPanel::resized() {
     layout_ =
         transport::compute(getWidth(), getHeight(),
                            transport::measureTextWidths(timecodeBarDigits_, timeSignatureNumerator),
-                           LayoutConfig::getInstance().densityScale, style_);
+                           LayoutConfig::getInstance().densityScale);
     const auto& l = layout_;
 
     // Visibility first: a dropped section keeps the empty rectangle the layout

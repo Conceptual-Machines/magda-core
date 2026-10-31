@@ -33,22 +33,6 @@ bool Layout::isVisible(Section section) const {
     return true;
 }
 
-const char* styleKey(Style style) {
-    switch (style) {
-        case Style::Boxed:
-            return "boxed";
-        case Style::Strip:
-            return "strip";
-    }
-    return "boxed";
-}
-
-Style styleFromKey(const std::string& key) {
-    if (key == "strip")
-        return Style::Strip;
-    return Style::Boxed;
-}
-
 namespace {
 
 // Spacing tokens at normal density. These scale with the user's spacing
@@ -195,11 +179,6 @@ enum class Group : std::uint8_t {
     Cpu,
     Overflow,
 };
-
-// Groups that are a bare tile; the Strip style draws no hairline beside them.
-bool isTile(Group group) {
-    return group == Group::Buttons || group == Group::Qwerty || group == Group::Overflow;
-}
 
 int buildButtons(Layout& l, const Metrics& m, int x) {
     const int x0 = x;
@@ -389,7 +368,6 @@ int build(Group group, Layout& l, const Metrics& m, int x) {
 // else, so measuring cannot leak a rectangle into the real layout.
 Layout flagsOf(const Layout& l) {
     Layout flags;
-    flags.style = l.style;
     flags.navVisible = l.navVisible;
     flags.loopBackVisible = l.loopBackVisible;
     flags.punchVisible = l.punchVisible;
@@ -489,16 +467,11 @@ void drop(Layout& l, Section section) {
     }
 }
 
-struct Placed {
-    Group group;
-    juce::Range<int> span;
-};
-
 int placeRun(const std::vector<Group>& run, Layout& l, const Metrics& m, int x,
-             std::vector<Placed>& placed) {
+             std::vector<juce::Range<int>>& spans) {
     for (size_t i = 0; i < run.size(); ++i) {
         const int width = build(run[i], l, m, x);
-        placed.push_back({run[i], {x, x + width}});
+        spans.emplace_back(x, x + width);
         x += width;
         if (i + 1 < run.size())
             x += m.groupGap;
@@ -506,20 +479,12 @@ int placeRun(const std::vector<Group>& run, Layout& l, const Metrics& m, int x,
     return x;
 }
 
-// A hairline just before each group, half a packed gap out, unless a tile
-// stands on either side of it.
-void placeDividers(Layout& l, const Metrics& m, const std::vector<Placed>& placed) {
-    for (size_t i = 1; i < placed.size(); ++i)
-        if (!isTile(placed[i - 1].group) && !isTile(placed[i].group))
-            l.dividerXs.push_back(placed[i].span.getStart() - ((m.groupGap + 1) / 2));
-}
-
 // The automation-write banner takes the widest gap between groups, and hides
 // when no gap holds it.
-void placeBanner(Layout& l, const Metrics& m, const std::vector<Placed>& placed) {
+void placeBanner(Layout& l, const Metrics& m, const std::vector<juce::Range<int>>& spans) {
     juce::Range<int> widest;
-    for (size_t i = 1; i < placed.size(); ++i) {
-        const juce::Range<int> gap(placed[i - 1].span.getEnd(), placed[i].span.getStart());
+    for (size_t i = 1; i < spans.size(); ++i) {
+        const juce::Range<int> gap(spans[i - 1].getEnd(), spans[i].getStart());
         if (gap.getLength() > widest.getLength())
             widest = gap;
     }
@@ -534,25 +499,23 @@ void placeBanner(Layout& l, const Metrics& m, const std::vector<Placed>& placed)
 void arrange(Layout& l, const Metrics& m) {
     const auto runs = runsFor(l);
     const int slack = juce::jmax(0, m.width - requiredWidth(l, m));
-    std::vector<Placed> placed;
+    std::vector<juce::Range<int>> spans;
 
-    placeRun(runs.left, l, m, m.edgePad, placed);
+    placeRun(runs.left, l, m, m.edgePad, spans);
     const int centreX = m.edgePad + packedWidth(runs.left, l, m) + m.groupGap + (slack / 2);
-    placeRun(runs.centre, l, m, centreX, placed);
+    placeRun(runs.centre, l, m, centreX, spans);
     const int rightWidth = packedWidth(runs.right, l, m);
-    placeRun(runs.right, l, m, m.width - m.edgePad - rightWidth, placed);
+    placeRun(runs.right, l, m, m.width - m.edgePad - rightWidth, spans);
 
-    placeDividers(l, m, placed);
-    placeBanner(l, m, placed);
+    placeBanner(l, m, spans);
 }
 
 }  // namespace
 
-Layout compute(int width, int height, const TextWidths& text, float densityScale, Style style) {
+Layout compute(int width, int height, const TextWidths& text, float densityScale) {
     const Metrics m = metricsFor(width, height, text, densityScale);
 
     Layout l;
-    l.style = style;
     for (auto section : kDropOrder) {
         if (requiredWidth(l, m) <= width)
             break;

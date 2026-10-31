@@ -353,23 +353,6 @@ class Config {
         uiDensityScale = std::clamp(scale, 0.6, 1.4);
     }
 
-    // Transport bar style: "boxed" or "strip".
-    const std::string& getTransportStyle() const {
-        return transportStyle;
-    }
-    void setTransportStyle(std::string style) {
-        transportStyle = style.empty() ? "boxed" : std::move(style);
-    }
-
-    // Device parameter controls: "text", "knobs" or "sliders". A plugin's
-    // parameter config can override it.
-    const std::string& getDeviceControlStyle() const {
-        return deviceControlStyle;
-    }
-    void setDeviceControlStyle(std::string style) {
-        deviceControlStyle = style.empty() ? "text" : std::move(style);
-    }
-
     // Track header colour: "spine" (a stripe on the outer edge) or "full" (the head bar).
     const std::string& getTrackColourStyle() const {
         return trackColourStyle;
@@ -1711,8 +1694,6 @@ class Config {
     // UI spacing density multiplier (1.0 = normal). Clamped to [0.6, 1.4].
     double uiDensityScale = 1.0;
 
-    std::string transportStyle = "boxed";
-    std::string deviceControlStyle = "text";
     std::string trackColourStyle = "spine";
     bool showTrackIORouting = true;
     std::string muteSoloStyle = "icons";

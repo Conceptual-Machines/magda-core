@@ -17,7 +17,7 @@ enum class ParamControlStyle : std::uint8_t { Text, Knobs, Sliders };
 const char* controlStyleKey(ParamControlStyle style);
 ParamControlStyle controlStyleFromKey(const juce::String& key);
 
-/** The style a device draws with: its plugin's override, else the global one. */
+/** The style a device draws with: its plugin's override, else text fields. */
 ParamControlStyle resolveControlStyle(const juce::String& pluginOverride);
 
 }  // namespace magda::daw::ui

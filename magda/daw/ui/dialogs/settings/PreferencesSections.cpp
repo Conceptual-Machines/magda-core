@@ -15,10 +15,8 @@
 #include "../../../media_db/MediaDbQuery.hpp"
 #include "../../../media_db/PresetDbIndexer.hpp"
 #include "../../../project/ProjectManager.hpp"
-#include "../../components/chain/params/ParamControlStyle.hpp"
 #include "../../components/common/PillSegments.hpp"
 #include "../../components/common/TextSlider.hpp"
-#include "../../panels/TransportLayout.hpp"
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/DialogLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
@@ -749,8 +747,6 @@ class GeneralPage : public juce::Component {
 
 // ---- Appearance tab: Application theme and track colours ------------------
 
-namespace transport = daw::ui::transport;
-
 class AppearancePage : public juce::Component {
   public:
     static constexpr int MAX_PALETTE_SIZE = 16;
@@ -811,21 +807,6 @@ class AppearancePage : public juce::Component {
 
         // How controls across the app draw.
         setupSectionHeader(*this, controlsHeader, trOr("preferences.section.controls", "Controls"));
-        setupComboLabel(*this, transportStyleLabel,
-                        trOr("preferences.transport_style.label", "Transport layout"));
-        styleCombo(transportStyleCombo);
-        transportStyleCombo.addItem(trOr("preferences.transport_style.boxed", "Boxed groups"), 1);
-        transportStyleCombo.addItem(trOr("preferences.transport_style.strip", "Strip"), 2);
-        addAndMakeVisible(transportStyleCombo);
-
-        // Segment order follows ParamControlStyle: Text, Knobs, Sliders.
-        setupComboLabel(*this, deviceControlStyleLabel,
-                        trOr("preferences.device_controls.label", "Device controls"));
-        deviceControlStyle.setOptions({trOr("preferences.device_controls.text", "Text fields"),
-                                       trOr("preferences.device_controls.knobs", "Knobs"),
-                                       trOr("preferences.device_controls.sliders", "Sliders")});
-        addAndMakeVisible(deviceControlStyle);
-
         setupComboLabel(*this, trackColourStyleLabel,
                         trOr("preferences.track_colour_style.label", "Track colour"));
         trackColourStyle.setOptions({trOr("preferences.track_colour_style.spine", "Spine"),
@@ -886,15 +867,14 @@ class AppearancePage : public juce::Component {
 
     void lookAndFeelChanged() override {
         const auto primary = ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY);
-        for (auto* label : {&themeLabel, &scaleLabel, &fontFamilyLabel, &fontScaleLabel,
-                            &densityLabel, &transportStyleLabel, &deviceControlStyleLabel,
-                            &trackColourStyleLabel, &muteSoloStyleLabel, &clipColourModeLabel})
+        for (auto* label :
+             {&themeLabel, &scaleLabel, &fontFamilyLabel, &fontScaleLabel, &densityLabel,
+              &trackColourStyleLabel, &muteSoloStyleLabel, &clipColourModeLabel})
             label->setColour(juce::Label::textColourId, primary);
         for (auto* label :
              {&themeHeader, &scaleHeader, &controlsHeader, &coloursHeader, &clipColourHeader})
             magda::daw::ui::SettingsLookAndFeel::markSectionHeader(*label);
-        for (auto* combo : {&themeCombo, &scaleCombo, &fontFamilyCombo, &transportStyleCombo,
-                            &clipColourModeCombo})
+        for (auto* combo : {&themeCombo, &scaleCombo, &fontFamilyCombo, &clipColourModeCombo})
             styleCombo(*combo);
         for (auto* editor : {&hexEditor_, &nameEditor_})
             setupPaletteEditor(*editor);
@@ -974,11 +954,6 @@ class AppearancePage : public juce::Component {
                                       juce::dontSendNotification);
         fontScaleSlider.setValue(config.getUIFontScale() * 100.0, juce::dontSendNotification);
         densitySlider.setValue(config.getUIDensityScale() * 100.0, juce::dontSendNotification);
-        transportStyleCombo.setSelectedId(
-            static_cast<int>(transport::styleFromKey(config.getTransportStyle())) + 1,
-            juce::dontSendNotification);
-        deviceControlStyle.setSelectedIndex(
-            static_cast<int>(daw::ui::controlStyleFromKey(config.getDeviceControlStyle())));
         trackColourStyle.setSelectedIndex(config.getTrackColourStyle() == "full" ? 1 : 0);
         muteSoloStyle.setSelectedIndex(config.getMuteSoloStyle() == "letters" ? 1 : 0);
 
@@ -994,13 +969,8 @@ class AppearancePage : public juce::Component {
     void applySettings(Config& config) {
         config.setTheme(themeValueForId(themeCombo.getSelectedId()));
         config.setUIDensityScale(densitySlider.getValue() / 100.0);
-        config.setTransportStyle(transport::styleKey(
-            static_cast<transport::Style>(juce::jmax(0, transportStyleCombo.getSelectedId() - 1))));
         config.setTrackColourStyle(trackColourStyle.getSelectedIndex() == 1 ? "full" : "spine");
         config.setMuteSoloStyle(muteSoloStyle.getSelectedIndex() == 1 ? "letters" : "icons");
-        config.setDeviceControlStyle(
-            daw::ui::controlStyleKey(static_cast<daw::ui::ParamControlStyle>(
-                juce::jmax(0, deviceControlStyle.getSelectedIndex()))));
 
         config.setUIScale(juce::jmax(0.0, scaleValueForId(scaleCombo.getSelectedId())));
         config.setUIFontFamily(fontFamilyValueForId(fontFamilyCombo.getSelectedId()));
@@ -1091,8 +1061,6 @@ class AppearancePage : public juce::Component {
 
     void layoutRightColumn(juce::Rectangle<int>& b) {
         controlsHeader.setBounds(b.removeFromTop(kHeaderH));
-        layoutCombo(takeRow(b, kRowH), transportStyleLabel, transportStyleCombo);
-        layoutSegments(takeRow(b, kRowH), deviceControlStyleLabel, deviceControlStyle);
         layoutSegments(takeRow(b, kRowH), trackColourStyleLabel, trackColourStyle);
         layoutSegments(takeRow(b, kRowH), muteSoloStyleLabel, muteSoloStyle);
 
@@ -1424,10 +1392,6 @@ class AppearancePage : public juce::Component {
     magda::daw::ui::TextSlider densitySlider;
 
     juce::Label controlsHeader;
-    juce::Label transportStyleLabel;
-    juce::ComboBox transportStyleCombo;
-    juce::Label deviceControlStyleLabel;
-    magda::daw::ui::PillSegments deviceControlStyle;
     juce::Label trackColourStyleLabel;
     magda::daw::ui::PillSegments trackColourStyle;
     juce::Label muteSoloStyleLabel;

@@ -7,8 +7,6 @@
 
 #include <array>
 #include <cstdint>
-#include <string>
-#include <vector>
 
 namespace magda::daw::ui::transport {
 
@@ -16,7 +14,7 @@ namespace magda::daw::ui::transport {
  *  from the exact fonts that will draw them.
  *
  *  The layout takes these as input instead of measuring them itself so the
- *  arithmetic stays a pure function of (width, height, text, density, style)
+ *  arithmetic stays a pure function of (width, height, text, density)
  *  and can be asserted without a graphics context.
  */
 struct TextWidths {
@@ -34,12 +32,6 @@ struct TextWidths {
     int gridDivision = 0;         // the widest division label on one line, e.g. "1/32."
     int gridToggle = 0;           // the wider of the AUTO / SNAP captions
     int banner = 0;               // "AUTOMATION WRITE"
-};
-
-/** How the groups are told apart; both place them the same way. */
-enum class Style : std::uint8_t {
-    Boxed,  // each group in its own well
-    Strip,  // no wells, a hairline between groups
 };
 
 /** The collapsible sections, in the order they collapse or drop when the panel
@@ -69,8 +61,6 @@ inline constexpr std::array<Section, 10> kDropOrder{
  *  dropped section is left empty, so nothing downstream can read a stale one.
  */
 struct Layout {
-    Style style = Style::Boxed;
-
     bool navVisible = true;
     bool loopBackVisible = true;
     bool punchVisible = true;
@@ -86,11 +76,9 @@ struct Layout {
 
     bool isVisible(Section section) const;
 
-    // Group frames, painted behind their children in the Boxed style.
+    // Group frames, painted behind their children.
     juce::Rectangle<int> punchFrame, tempoFrame, cursorFrame, selectionFrame, loopFrame, gridFrame,
         memoryFrame;
-    // The hairlines between groups in the Strip style.
-    std::vector<int> dividerXs;
 
     juce::Rectangle<int> home, prev, next;
     juce::Rectangle<int> play, stop, record, automationWrite, loop, backToArrangement;
@@ -133,11 +121,6 @@ inline int ledOnlyWidthForHeight(int height) {
  *  fit, then centres the time and tempo groups in the slack. densityScale is
  *  the user's spacing density (LayoutConfig).
  */
-Layout compute(int width, int height, const TextWidths& text, float densityScale,
-               Style style = Style::Boxed);
-
-/** The config word for each style, and back; an unknown word is Boxed. */
-const char* styleKey(Style style);
-Style styleFromKey(const std::string& key);
+Layout compute(int width, int height, const TextWidths& text, float densityScale);
 
 }  // namespace magda::daw::ui::transport

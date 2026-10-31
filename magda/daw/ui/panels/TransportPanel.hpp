@@ -29,8 +29,7 @@ class QwertyMidiKeyboard;
 // the edit (#886) -- playback is blocked then, so the controls shouldn't look live.
 class TransportPanel : public juce::Component,
                        public juce::TooltipClient,
-                       public MixAnalysisService::Listener,
-                       private ConfigListener {
+                       public MixAnalysisService::Listener {
   public:
     TransportPanel();
     ~TransportPanel() override;
@@ -148,9 +147,6 @@ class TransportPanel : public juce::Component,
     juce::String getTooltip() override;
 
   private:
-    // ConfigListener: the transport style lives in the Appearance preferences.
-    void configChanged() override;
-
     void showCountInMenu();
     static juce::String countInModeLabel(int mode);
 
@@ -242,8 +238,6 @@ class TransportPanel : public juce::Component,
     void paintMemory(juce::Graphics& g) const;
     void paintRanges(juce::Graphics& g) const;
     void paintCpu(juce::Graphics& g) const;
-
-    daw::ui::transport::Style style_ = daw::ui::transport::Style::Boxed;
 
     // Where every child sits and which sections survived the last resized().
     // paint() and the overflow menu read it rather than keeping their own copy

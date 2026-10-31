@@ -3,7 +3,7 @@
 
 // Transport bar layout (#2071 / #2074, one row in #3206). The decision about
 // what fits is pure arithmetic over (width, height, measured text, spacing
-// density, style), so it can be asserted without a window. The companion
+// density), so it can be asserted without a window. The companion
 // test_transport_layout_juce.cpp runs the same assertions against the widths
 // the shipped fonts actually produce.
 
@@ -42,15 +42,14 @@ TextWidths nominalText() {
     return text;
 }
 
-constexpr std::array<Style, 2> kStyles{Style::Boxed, Style::Strip};
 constexpr int kWide = 2000;
 
 int defaultTransportHeight() {
     return LayoutConfig::getInstance().transportHeight;
 }
 
-Layout at(int width, Style style = Style::Boxed, float density = 1.0f) {
-    return compute(width, defaultTransportHeight(), nominalText(), density, style);
+Layout at(int width, float density = 1.0f) {
+    return compute(width, defaultTransportHeight(), nominalText(), density);
 }
 
 bool everythingShowing(const Layout& l) {
@@ -93,33 +92,19 @@ std::vector<int> gapsBetween(const std::vector<juce::Rectangle<int>>& groups) {
 
 }  // namespace
 
-TEST_CASE("Style keys round-trip through the config word", "[ui][transport-layout]") {
-    for (auto style : kStyles)
-        REQUIRE(styleFromKey(styleKey(style)) == style);
-    REQUIRE(styleFromKey("") == Style::Boxed);
-    REQUIRE(styleFromKey("nonsense") == Style::Boxed);
-    // The retired multi-row styles.
-    REQUIRE(styleFromKey("anchored") == Style::Boxed);
-    REQUIRE(styleFromKey("justified") == Style::Boxed);
-}
-
 // ---------------------------------------------------------------------------
 // What fits. #2071 was the overflow button showing from the first frame.
 // ---------------------------------------------------------------------------
 
 TEST_CASE("Nothing drops into the overflow menu at the window MAGDA opens at",
           "[ui][transport-layout]") {
-    const auto style = GENERATE(Style::Boxed, Style::Strip);
-    const auto l = at(LayoutConfig::defaultWindowWidth, style);
-    INFO("style " << styleKey(style));
+    const auto l = at(LayoutConfig::defaultWindowWidth);
     REQUIRE(nothingDropped(l));
     REQUIRE(l.overflow.isEmpty());
 }
 
 TEST_CASE("A wide bar shows everything at full size", "[ui][transport-layout]") {
-    const auto style = GENERATE(Style::Boxed, Style::Strip);
-    const auto l = at(kWide, style);
-    INFO("style " << styleKey(style));
+    const auto l = at(kWide);
     REQUIRE(everythingShowing(l));
     REQUIRE_FALSE(l.memoryMeter.isEmpty());
     REQUIRE_FALSE(l.clock.isEmpty());
@@ -129,25 +114,23 @@ TEST_CASE("A wide bar shows everything at full size", "[ui][transport-layout]") 
 
 TEST_CASE("Everything sits on one row", "[ui][transport-layout]") {
     const int height = defaultTransportHeight();
-    for (auto style : kStyles) {
-        const auto l = at(kWide, style);
-        for (const auto& r :
-             {l.play,        l.punchIn,     l.punchOut,         l.link,           l.tempo,
-              l.playhead,    l.clock,       l.selectionCaption, l.selectionStart, l.selectionEnd,
-              l.loopCaption, l.loopStart,   l.loopEnd,          l.gridDivision,   l.autoGrid,
-              l.snap,        l.memoryMeter, l.capture,          l.qwerty,         l.cpuTitle,
-              l.cpuValue}) {
-            REQUIRE(r.getY() >= 0);
-            REQUIRE(r.getBottom() <= height);
-        }
-        REQUIRE(l.selectionStart.getY() == l.loopStart.getY());
-        REQUIRE(l.selectionEnd.getRight() <= l.loopCaption.getX());
-        REQUIRE(l.selectionCaption.getRight() <= l.selectionStart.getX());
-        REQUIRE(l.loopStart.getRight() <= l.loopEnd.getX());
-        REQUIRE(l.autoGrid.getY() == l.snap.getY());
-        REQUIRE(l.playhead.getRight() <= l.clock.getX());
-        REQUIRE(l.cpuTitle.getRight() <= l.cpuValue.getX());
+    const auto l = at(kWide);
+    for (const auto& r :
+         {l.play,        l.punchIn,     l.punchOut,         l.link,           l.tempo,
+          l.playhead,    l.clock,       l.selectionCaption, l.selectionStart, l.selectionEnd,
+          l.loopCaption, l.loopStart,   l.loopEnd,          l.gridDivision,   l.autoGrid,
+          l.snap,        l.memoryMeter, l.capture,          l.qwerty,         l.cpuTitle,
+          l.cpuValue}) {
+        REQUIRE(r.getY() >= 0);
+        REQUIRE(r.getBottom() <= height);
     }
+    REQUIRE(l.selectionStart.getY() == l.loopStart.getY());
+    REQUIRE(l.selectionEnd.getRight() <= l.loopCaption.getX());
+    REQUIRE(l.selectionCaption.getRight() <= l.selectionStart.getX());
+    REQUIRE(l.loopStart.getRight() <= l.loopEnd.getX());
+    REQUIRE(l.autoGrid.getY() == l.snap.getY());
+    REQUIRE(l.playhead.getRight() <= l.clock.getX());
+    REQUIRE(l.cpuTitle.getRight() <= l.cpuValue.getX());
 }
 
 // ---------------------------------------------------------------------------
@@ -156,11 +139,9 @@ TEST_CASE("Everything sits on one row", "[ui][transport-layout]") {
 
 TEST_CASE("Sections collapse and drop in the declared order as the panel narrows",
           "[ui][transport-layout]") {
-    const auto style = GENERATE(Style::Boxed, Style::Strip);
-    INFO("style " << styleKey(style));
     std::vector<Section> dropped;
     for (int width = kWide; width >= 200; --width) {
-        const auto l = at(width, style);
+        const auto l = at(width);
         for (auto section : kDropOrder)
             if (!l.isVisible(section) &&
                 std::find(dropped.begin(), dropped.end(), section) == dropped.end())
@@ -170,11 +151,9 @@ TEST_CASE("Sections collapse and drop in the declared order as the panel narrows
 }
 
 TEST_CASE("A section that is on stays on as the panel widens", "[ui][transport-layout]") {
-    const auto style = GENERATE(Style::Boxed, Style::Strip);
-    INFO("style " << styleKey(style));
-    Layout narrower = at(200, style);
+    Layout narrower = at(200);
     for (int width = 201; width <= kWide; ++width) {
-        const auto wider = at(width, style);
+        const auto wider = at(width);
         INFO("width " << width);
         for (auto section : kDropOrder)
             REQUIRE((wider.isVisible(section) || !narrower.isVisible(section)));
@@ -183,18 +162,16 @@ TEST_CASE("A section that is on stays on as the panel widens", "[ui][transport-l
 }
 
 TEST_CASE("The overflow button stands in for the right-hand cluster", "[ui][transport-layout]") {
-    for (auto style : kStyles)
-        for (int width = 300; width <= kWide; width += 3) {
-            const auto l = at(width, style);
-            INFO("style " << styleKey(style) << " width " << width);
-            REQUIRE(l.overflowVisible == !l.rightClusterVisible);
-            REQUIRE(l.overflow.isEmpty() == l.rightClusterVisible);
-        }
+    for (int width = 300; width <= kWide; width += 3) {
+        const auto l = at(width);
+        INFO("width " << width);
+        REQUIRE(l.overflowVisible == !l.rightClusterVisible);
+        REQUIRE(l.overflow.isEmpty() == l.rightClusterVisible);
+    }
 }
 
 TEST_CASE("A dropped section leaves no rectangle behind", "[ui][transport-layout]") {
-    const auto style = GENERATE(Style::Boxed, Style::Strip);
-    const auto l = at(400, style);
+    const auto l = at(400);
 
     REQUIRE(l.overflowVisible);
     REQUIRE(l.home.isEmpty());
@@ -221,25 +198,24 @@ TEST_CASE("A dropped section leaves no rectangle behind", "[ui][transport-layout
 // ---------------------------------------------------------------------------
 
 TEST_CASE("Collapsed sections keep their controls", "[ui][transport-layout]") {
-    for (auto style : kStyles)
-        for (int width = kWide; width >= 400; --width) {
-            const auto l = at(width, style);
-            INFO("style " << styleKey(style) << " width " << width);
-            if (l.punchVisible) {
-                REQUIRE_FALSE(l.punchIn.isEmpty());
-                REQUIRE_FALSE(l.punchOut.isEmpty());
-            }
-            if (l.selLoopTimesVisible) {
-                REQUIRE_FALSE(l.selectionStart.isEmpty());
-                REQUIRE_FALSE(l.loopStart.isEmpty());
-                REQUIRE(l.selectionEnd.isEmpty() == !l.rangeEndVisible);
-                REQUIRE(l.loopEnd.isEmpty() == !l.rangeEndVisible);
-            }
-            REQUIRE(l.clock.isEmpty() == !l.clockVisible);
-            REQUIRE_FALSE(l.link.isEmpty());
-            const int lettered = link_chip::widthForHeight(l.link.getHeight());
-            REQUIRE((l.link.getWidth() >= lettered) == l.linkLetteringVisible);
+    for (int width = kWide; width >= 400; --width) {
+        const auto l = at(width);
+        INFO("width " << width);
+        if (l.punchVisible) {
+            REQUIRE_FALSE(l.punchIn.isEmpty());
+            REQUIRE_FALSE(l.punchOut.isEmpty());
         }
+        if (l.selLoopTimesVisible) {
+            REQUIRE_FALSE(l.selectionStart.isEmpty());
+            REQUIRE_FALSE(l.loopStart.isEmpty());
+            REQUIRE(l.selectionEnd.isEmpty() == !l.rangeEndVisible);
+            REQUIRE(l.loopEnd.isEmpty() == !l.rangeEndVisible);
+        }
+        REQUIRE(l.clock.isEmpty() == !l.clockVisible);
+        REQUIRE_FALSE(l.link.isEmpty());
+        const int lettered = link_chip::widthForHeight(l.link.getHeight());
+        REQUIRE((l.link.getWidth() >= lettered) == l.linkLetteringVisible);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -247,70 +223,39 @@ TEST_CASE("Collapsed sections keep their controls", "[ui][transport-layout]") {
 // ---------------------------------------------------------------------------
 
 TEST_CASE("Groups never overlap and stay inside the bar", "[ui][transport-layout]") {
-    for (auto style : kStyles)
-        for (int width = 600; width <= kWide; width += 7) {
-            const auto l = at(width, style);
-            INFO("style " << styleKey(style) << " width " << width);
-            const auto groups = groupsOf(l);
-            REQUIRE(groups.front().getX() >= 0);
-            REQUIRE(groups.back().getRight() <= width);
-            for (int gap : gapsBetween(groups))
-                REQUIRE(gap >= 0);
-        }
+    for (int width = 600; width <= kWide; width += 7) {
+        const auto l = at(width);
+        INFO("width " << width);
+        const auto groups = groupsOf(l);
+        REQUIRE(groups.front().getX() >= 0);
+        REQUIRE(groups.back().getRight() <= width);
+        for (int gap : gapsBetween(groups))
+            REQUIRE(gap >= 0);
+    }
 }
 
 TEST_CASE("The automation-write banner sits in a gap", "[ui][transport-layout]") {
-    for (auto style : kStyles)
-        for (int width = 600; width <= 2400; width += 13) {
-            const auto l = at(width, style);
-            INFO("style " << styleKey(style) << " width " << width);
-            if (!l.automationWriteLabelFits) {
-                REQUIRE(l.automationWriteLabel.isEmpty());
-                continue;
-            }
-            REQUIRE(l.automationWriteLabel.getWidth() >= nominalText().banner);
-            for (const auto& group : groupsOf(l))
-                REQUIRE_FALSE(group.intersects(l.automationWriteLabel));
-            for (int x : l.dividerXs)
-                REQUIRE_FALSE(l.automationWriteLabel.getHorizontalRange().contains(x));
+    for (int width = 600; width <= 2400; width += 13) {
+        const auto l = at(width);
+        INFO("width " << width);
+        if (!l.automationWriteLabelFits) {
+            REQUIRE(l.automationWriteLabel.isEmpty());
+            continue;
         }
+        REQUIRE(l.automationWriteLabel.getWidth() >= nominalText().banner);
+        for (const auto& group : groupsOf(l))
+            REQUIRE_FALSE(group.intersects(l.automationWriteLabel));
+    }
 }
 
 TEST_CASE("The time and tempo groups are centred in the slack", "[ui][transport-layout]") {
-    for (auto style : kStyles) {
-        const auto l = at(kWide, style);
-        const int leftEdge = l.punchFrame.getRight();
-        const int centreStart = l.tempoFrame.getX();
-        const int centreEnd = l.loopFrame.getRight();
-        const int rightEdge = l.gridFrame.getX();
-        REQUIRE(std::abs((centreStart - leftEdge) - (rightEdge - centreEnd)) <= 1);
-        REQUIRE(centreStart - leftEdge > 20);
-    }
-}
-
-TEST_CASE("Both styles place every group in the same spot", "[ui][transport-layout]") {
-    for (int width = 600; width <= kWide; width += 50) {
-        const auto boxed = at(width, Style::Boxed);
-        const auto strip = at(width, Style::Strip);
-        REQUIRE(groupsOf(boxed) == groupsOf(strip));
-    }
-}
-
-TEST_CASE("Hairlines sit in the gaps, never beside a tile", "[ui][transport-layout]") {
-    for (int width = 600; width <= kWide; width += 11) {
-        const auto l = at(width, Style::Strip);
-        INFO("width " << width);
-        const auto groups = groupsOf(l);
-        REQUIRE_FALSE(l.dividerXs.empty());
-        for (int x : l.dividerXs) {
-            for (const auto& group : groups)
-                REQUIRE_FALSE(group.getHorizontalRange().contains(x));
-            // The buttons, QWERTY and overflow tiles carry their own edges.
-            for (const auto& tile : {l.play.getUnion(l.automationWrite), l.qwerty, l.overflow})
-                if (!tile.isEmpty())
-                    REQUIRE(std::abs(x - tile.getRight()) > 4);
-        }
-    }
+    const auto l = at(kWide);
+    const int leftEdge = l.punchFrame.getRight();
+    const int centreStart = l.tempoFrame.getX();
+    const int centreEnd = l.loopFrame.getRight();
+    const int rightEdge = l.gridFrame.getX();
+    REQUIRE(std::abs((centreStart - leftEdge) - (rightEdge - centreEnd)) <= 1);
+    REQUIRE(centreStart - leftEdge > 20);
 }
 
 // ---------------------------------------------------------------------------
@@ -318,11 +263,10 @@ TEST_CASE("Hairlines sit in the gaps, never beside a tile", "[ui][transport-layo
 // ---------------------------------------------------------------------------
 
 TEST_CASE("Spacing density moves the layout with it", "[ui][transport-layout]") {
-    const auto style = GENERATE(Style::Boxed, Style::Strip);
-    const auto compact = at(LayoutConfig::defaultWindowWidth, style, 0.6f);
-    const auto normal = at(LayoutConfig::defaultWindowWidth, style, 1.0f);
+    const auto compact = at(LayoutConfig::defaultWindowWidth, 0.6f);
+    const auto normal = at(LayoutConfig::defaultWindowWidth, 1.0f);
     // The widest spacing needs a wider window than the one MAGDA opens at.
-    const auto spacious = at(1400, style, 1.4f);
+    const auto spacious = at(1400, 1.4f);
 
     REQUIRE(nothingDropped(compact));
     REQUIRE(nothingDropped(normal));
@@ -337,8 +281,7 @@ TEST_CASE("Spacing density moves the layout with it", "[ui][transport-layout]") 
 }
 
 TEST_CASE("The Link chip leads the tempo group", "[ui][transport-layout]") {
-    const auto style = GENERATE(Style::Boxed, Style::Strip);
-    const auto l = at(kWide, style);
+    const auto l = at(kWide);
 
     REQUIRE_FALSE(l.link.isEmpty());
     REQUIRE(l.tempoFrame.contains(l.link));

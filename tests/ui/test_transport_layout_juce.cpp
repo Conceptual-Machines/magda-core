@@ -57,11 +57,8 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
         expect(text.banner > 0);
 
         beginTest("Nothing drops into the overflow menu at the window MAGDA opens at");
-        const auto strip = compute(magda::LayoutConfig::defaultWindowWidth, config.transportHeight,
-                                   text, 1.0f, Style::Strip);
-        expect(!strip.overflowVisible, "the overflow button is showing in the strip");
-        const auto l = compute(magda::LayoutConfig::defaultWindowWidth, config.transportHeight,
-                               text, 1.0f, Style::Boxed);
+        const auto l =
+            compute(magda::LayoutConfig::defaultWindowWidth, config.transportHeight, text, 1.0f);
         juce::StringArray collapsed;
         for (auto section : kDropOrder)
             if (!l.isVisible(section))
@@ -77,7 +74,7 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
 
         // The rest of the checks read every readout, so they need a bar wide
         // enough to show them all.
-        const auto wide = compute(2400, config.transportHeight, text, 1.0f, Style::Boxed);
+        const auto wide = compute(2400, config.transportHeight, text, 1.0f);
 
         beginTest("...and at every spacing density the preference offers");
         for (float density : {0.6f, 1.0f, 1.4f}) {
@@ -135,7 +132,7 @@ class TransportLayoutFontsTest final : public juce::UnitTest {
             expect(fitted.timecodeBox > text.timecodeBox, "the box did not grow");
             const auto needed = magda::BarsBeatsTicksLabel::segmentWidthsFor(
                 kTimecodeMaxBeats, 4, 4, true, kRowTimecodeFontSize);
-            const auto grown = compute(2400, config.transportHeight, fitted, 1.0f, Style::Boxed);
+            const auto grown = compute(2400, config.transportHeight, fitted, 1.0f);
             expect(grown.selectionStart.getWidth() >= needed[0] + needed[1] + needed[2],
                    "the box clips the largest position");
         }
