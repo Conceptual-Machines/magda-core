@@ -6,6 +6,7 @@
 #include <BinaryData.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <ranges>
 #include <set>
@@ -1259,18 +1260,27 @@ void MainView::resized() {
         cornerBottomBorderLine = juce::Rectangle<int>(lineX, cornerArea.getBottom() - 1, lineW, 1);
 
         // One row: the I/O toggle at the outer edge, over the I/O column it shows; the rest from
-        // the inner side, the zooms dropping out last-first once a narrow header has no room.
+        // the inner side. On a narrow header the zooms drop out, loop first.
         SideColumn btnSide(!arrangementLayout.swapped);
         SideColumn axisSide(arrangementLayout.swapped);
         ioToggleButton->setBounds(axisSide.removeFrom(row, btnSize));
         axisSide.removeSpacing(row, gap);
+        const std::array<SvgButton*, 7> rowButtons{zoomFitButton.get(),
+                                                   zoomSelButton.get(),
+                                                   zoomLoopButton.get(),
+                                                   markerLaneToggleButton.get(),
+                                                   secondsRulerToggleButton.get(),
+                                                   editToolButton.get(),
+                                                   addTrackButton.get()};
+        const int fitting = (row.getWidth() + gap) / (btnSize + gap);
+        int toDrop = juce::jmax(0, static_cast<int>(rowButtons.size()) - fitting);
+        for (auto* button : {zoomLoopButton.get(), zoomFitButton.get(), zoomSelButton.get()}) {
+            button->setVisible(toDrop <= 0);
+            --toDrop;
+        }
         cornerButtonsRow = {};
-        for (auto* button : {static_cast<SvgButton*>(editToolButton.get()), addTrackButton.get(),
-                             markerLaneToggleButton.get(), secondsRulerToggleButton.get(),
-                             zoomSelButton.get(), zoomFitButton.get(), zoomLoopButton.get()}) {
-            const bool fits = row.getWidth() >= btnSize;
-            button->setVisible(fits);
-            if (!fits)
+        for (auto* button : rowButtons) {
+            if (!button->isVisible())
                 continue;
             button->setBounds(btnSide.removeFrom(row, btnSize));
             btnSide.removeSpacing(row, gap);
