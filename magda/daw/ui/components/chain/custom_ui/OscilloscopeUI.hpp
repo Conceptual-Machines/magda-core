@@ -9,8 +9,10 @@
 #include <memory>
 #include <vector>
 
+#include "AnalyzerColourDots.hpp"
 #include "audio/analysis/ScopeAnalysis.hpp"
 #include "custom_ui/TelemetrySources.hpp"
+#include "ui/components/common/TextSlider.hpp"
 
 namespace magda {
 class SvgButton;
@@ -83,8 +85,7 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
 
     void timerCallback() override;
     void updateTimerState();
-    void applyTimebase();      // recompute span_ from timebase + sample rate
-    void updateTimeReadout();  // format the slider value into the themed value label
+    void applyTimebase();  // recompute span_ from timebase + sample rate
     void updateControlVisibility();
     void startControlsFade(bool expanding);
     void advanceControlsFade();
@@ -123,11 +124,10 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     std::vector<float> columnMins_;
     std::vector<float> columnMaxs_;
 
-    juce::Slider timeSlider_;
+    TextSlider timeSlider_;
     juce::Label timeLabel_;
-    juce::Label timeValueLabel_;
     juce::Label colourLabel_;  // "Color" — only shown in the stacked compact layout
-    juce::ComboBox colourCombo_;
+    AnalyzerColourDots colourDots_;
 
     // Hit areas in the dedicated strip below the waveform (compact mode only).
     juce::Rectangle<int> chevronRect_;  // expand/collapse the controls

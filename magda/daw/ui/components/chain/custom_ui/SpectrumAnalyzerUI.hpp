@@ -11,10 +11,12 @@
 #include <memory>
 #include <vector>
 
+#include "AnalyzerColourDots.hpp"
 #include "audio/analysis/MaskingDetector.hpp"
 #include "audio/analysis/SpectrumAnalysis.hpp"
 #include "core/TypeIds.hpp"
 #include "custom_ui/TelemetrySources.hpp"
+#include "ui/components/common/SegmentedChoice.hpp"
 
 namespace magda {
 class SvgButton;
@@ -93,6 +95,8 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
         return overlayCombo_.getParentComponent() != this;
     }
     void layoutControlRow(juce::Rectangle<int> row);
+    /// The FFT / Slope / Time / Colour captions and controls, which show and fade together.
+    std::vector<juce::Component*> controlRowComponents();
     void syncDocked();
     bool dockedApplied_ = false;
     void refreshOverlayList();                       // rebuild combo items from the track list
@@ -150,7 +154,8 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     static constexpr float kMaxHz = 20000.0f;
     static constexpr float kPeakDecayDb = 0.6f;
 
-    juce::ComboBox fftCombo_, slopeCombo_, speedCombo_, colourCombo_;
+    magda::SegmentedChoice fftChoice_, slopeChoice_, speedChoice_;
+    AnalyzerColourDots colourDots_;
     juce::Label fftLabel_, slopeLabel_, speedLabel_, colourLabel_;
 
     // --- Inter-track masking overlay (#1400) --------------------------------

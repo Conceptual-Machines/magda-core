@@ -42,9 +42,9 @@ LevelsUI::LevelsUI() {
 
     using DT = magda::ActiveTheme;
     resetButton_.setTooltip("Restart integrated loudness, peak hold and PLR");
-    resetButton_.setColour(juce::TextButton::buttonColourId, DT::getColour(DT::SURFACE));
-    resetButton_.setColour(juce::TextButton::textColourOffId, DT::getColour(DT::TEXT_DIM));
-    resetButton_.setColour(juce::ComboBox::outlineColourId, DT::getColour(DT::BORDER));
+    resetButton_.setColour(juce::TextButton::buttonColourId, DT::getColour(DT::DEVICE_PANEL));
+    resetButton_.setColour(juce::TextButton::textColourOffId, DT::getColour(DT::DEVICE_DIM));
+    resetButton_.setColour(juce::ComboBox::outlineColourId, DT::getColour(DT::DEVICE_FRAME_BORDER));
     resetButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
     resetButton_.onClick = [this] { resetMeasurement(); };
     resetButton_.setEnabled(false);  // until a telemetry source is bound
@@ -112,12 +112,12 @@ void LevelsUI::paint(juce::Graphics& g) {
     auto& fonts = FontManager::getInstance();
     using DT = magda::ActiveTheme;
     auto bounds = getLocalBounds().toFloat().reduced(2.0f);
-    g.setColour(DT::getColour(DT::BACKGROUND));
+    g.setColour(DT::getColour(DT::DEVICE_GRAPH_BG));
     g.fillRoundedRectangle(bounds, 4.0f);
 
     const auto& s = snapshot_;
-    const auto dim = DT::getColour(DT::TEXT_DIM);
-    const auto primary = DT::getColour(DT::TEXT_PRIMARY);
+    const auto dim = DT::getColour(DT::DEVICE_DIM);
+    const auto primary = DT::getColour(DT::DEVICE_TEXT);
 
     // Three columns: loudness | dynamics/peak | stereo, above the Reset strip.
     auto area = bounds.reduced(8.0f, 6.0f);
@@ -182,7 +182,7 @@ void LevelsUI::paint(juce::Graphics& g) {
     g.setFont(fonts.getUIFont(10.0f));
     g.drawText("Correlation", stereoCol.removeFromTop(12.0f), juce::Justification::topLeft);
     auto corrBar = stereoCol.removeFromTop(10.0f);
-    g.setColour(DT::getColour(DT::SURFACE));
+    g.setColour(DT::getColour(DT::DEVICE_PANEL));
     g.fillRoundedRectangle(corrBar, 2.0f);
     const float corr = juce::jlimit(-1.0f, 1.0f, s.correlation);
     const float midX = corrBar.getCentreX();
@@ -211,7 +211,7 @@ void LevelsUI::paint(juce::Graphics& g) {
     g.setFont(fonts.getMonoFont(11.0f));
     g.drawText(juce::String(s.width, 2), widthLabelRow, juce::Justification::topRight);
     auto widthBar = stereoCol.removeFromTop(8.0f);
-    g.setColour(DT::getColour(DT::SURFACE));
+    g.setColour(DT::getColour(DT::DEVICE_PANEL));
     g.fillRoundedRectangle(widthBar, 2.0f);
     g.setColour(DT::getColour(DT::ACCENT_PRIMARY_SOFT));
     g.fillRoundedRectangle(

@@ -35,19 +35,19 @@ constexpr float kSpeedOptions[] = {0.15f, 0.4f, 0.8f};       // smoothing (Slow/
 constexpr int kTapReadSamples = 32768;                       // the device's tap ring
 constexpr int kOverlayReadSamples = 16384;  // the track tap's spectrum ring (magda-sdk)
 
-template <typename Range> int nearestId(const Range& options, float value) {
-    int bestId = 1;
+template <typename Range> int nearestIndex(const Range& options, float value) {
+    int best = 0;
     float bestErr = std::numeric_limits<float>::max();
     int i = 0;
     for (float opt : options) {
         const float err = std::abs(opt - value);
         if (err < bestErr) {
             bestErr = err;
-            bestId = i + 1;
+            best = i;
         }
         ++i;
     }
-    return bestId;
+    return best;
 }
 
 // Snapshot the plugin's current settings as the global last-used spectrum
@@ -80,7 +80,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     auto styleLabel = [this](juce::Label& l, const juce::String& text) {
         l.setText(text, juce::dontSendNotification);
         l.setFont(FontManager::getInstance().getUIFont(10.0f));
-        l.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
+        l.setColour(juce::Label::textColourId, ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
         l.setJustificationType(juce::Justification::centredRight);
         addAndMakeVisible(l);
     };
@@ -91,68 +91,54 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     };
 
     styleLabel(fftLabel_, "FFT");
-    fftCombo_.addItem("2048", 1);
-    fftCombo_.addItem("4096", 2);
-    fftCombo_.addItem("8192", 3);
-    fftCombo_.onChange = [this] {
-        const int order = 10 + fftCombo_.getSelectedId();
+    fftChoice_.setOptions({"2k", "4k", "8k"});
+    fftChoice_.onChange = [this](int index) {
+        const int order = 11 + index;
         if (telemetry_ != nullptr)
             telemetry_->setFftOrder(order);
         rebuildFft(order);
         commitSettings();
         persistSpectrumDefaults(telemetry_, persistGlobalDefaults_);
     };
-    styleCombo(fftCombo_);
+    addAndMakeVisible(fftChoice_);
 
     styleLabel(slopeLabel_, "Slope");
-    slopeCombo_.addItem("0 dB/oct", 1);
-    slopeCombo_.addItem("3 dB/oct", 2);
-    slopeCombo_.addItem("4.5 dB/oct", 3);
-    slopeCombo_.addItem("6 dB/oct", 4);
-    slopeCombo_.onChange = [this] {
-        const int idx = slopeCombo_.getSelectedId() - 1;
-        if (idx >= 0 && idx < static_cast<int>(std::size(kSlopeOptions))) {
-            slopeDbPerOct_ = kSlopeOptions[static_cast<size_t>(idx)];
-            if (telemetry_ != nullptr)
-                telemetry_->setSlopeDbPerOct(slopeDbPerOct_);
-            commitSettings();
-            persistSpectrumDefaults(telemetry_, persistGlobalDefaults_);
-        }
-    };
-    styleCombo(slopeCombo_);
-
-    styleLabel(speedLabel_, "Time");
-    speedCombo_.addItem("Slow", 1);
-    speedCombo_.addItem("Med", 2);
-    speedCombo_.addItem("Fast", 3);
-    speedCombo_.onChange = [this] {
-        const int idx = speedCombo_.getSelectedId() - 1;
-        if (idx >= 0 && idx < static_cast<int>(std::size(kSpeedOptions))) {
-            smoothing_ = kSpeedOptions[static_cast<size_t>(idx)];
-            if (telemetry_ != nullptr)
-                telemetry_->setSmoothing(smoothing_);
-            commitSettings();
-            persistSpectrumDefaults(telemetry_, persistGlobalDefaults_);
-        }
-    };
-    styleCombo(speedCombo_);
-
-    styleLabel(colourLabel_, "Color");
-    for (int i = 0; i < kAnalyzerColourCount; ++i)
-        colourCombo_.addItem(kAnalyzerColourNames[i], i + 1);
-    colourCombo_.onChange = [this] {
+    slopeChoice_.setOptions({"0", "3", "4.5", "6"});
+    slopeChoice_.onChange = [this](int index) {
+        slopeDbPerOct_ = kSlopeOptions[static_cast<size_t>(index)];
         if (telemetry_ != nullptr)
-            telemetry_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
+            telemetry_->setSlopeDbPerOct(slopeDbPerOct_);
         commitSettings();
         persistSpectrumDefaults(telemetry_, persistGlobalDefaults_);
     };
-    styleCombo(colourCombo_);
+    addAndMakeVisible(slopeChoice_);
+
+    styleLabel(speedLabel_, "Time");
+    speedChoice_.setOptions({"Slow", "Med", "Fast"});
+    speedChoice_.onChange = [this](int index) {
+        smoothing_ = kSpeedOptions[static_cast<size_t>(index)];
+        if (telemetry_ != nullptr)
+            telemetry_->setSmoothing(smoothing_);
+        commitSettings();
+        persistSpectrumDefaults(telemetry_, persistGlobalDefaults_);
+    };
+    addAndMakeVisible(speedChoice_);
+
+    styleLabel(colourLabel_, "Color");
+    colourDots_.onChange = [this](int index) {
+        if (telemetry_ != nullptr)
+            telemetry_->setTraceColourIndex(index);
+        commitSettings();
+        persistSpectrumDefaults(telemetry_, persistGlobalDefaults_);
+    };
+    addAndMakeVisible(colourDots_);
 
     // Inter-track masking overlay (#1400): pick another track to overlay and
     // shade the clashing frequency zones. Top row, full-editor / pop-out only.
     overlayLabel_.setText("Overlay", juce::dontSendNotification);
     overlayLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    overlayLabel_.setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
+    overlayLabel_.setColour(juce::Label::textColourId,
+                            ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
     overlayLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(overlayLabel_);
     overlayCombo_.addItem("No overlay", 1);
@@ -189,21 +175,17 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
 SpectrumAnalyzerUI::~SpectrumAnalyzerUI() {
     stopTimer();
     releaseMeasurementArming();  // undo any Mix Analysis we switched on for the overlay
-    // Clear the shared LookAndFeel before the combos are destroyed.
-    fftCombo_.setLookAndFeel(nullptr);
-    slopeCombo_.setLookAndFeel(nullptr);
-    speedCombo_.setLookAndFeel(nullptr);
-    colourCombo_.setLookAndFeel(nullptr);
+    // Clear the shared LookAndFeel before the combo is destroyed.
     overlayCombo_.setLookAndFeel(nullptr);
 }
 
 void SpectrumAnalyzerUI::lookAndFeelChanged() {
     // Re-apply cached theme colours after a live theme switch.
     for (auto* label : {&fftLabel_, &slopeLabel_, &speedLabel_, &colourLabel_, &overlayLabel_})
-        label->setColour(juce::Label::textColourId, ActiveTheme::getSecondaryTextColour());
+        label->setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
 
-    for (auto* combo : {&fftCombo_, &slopeCombo_, &speedCombo_, &colourCombo_, &overlayCombo_})
-        applyComboColours(*combo);
+    applyComboColours(overlayCombo_);
 
     if (popoutButton_)
         daw::ui::node_header::applyHeaderIconStyle(
@@ -290,11 +272,10 @@ void SpectrumAnalyzerUI::refreshSettingsFromSource() {
 
     slopeDbPerOct_ = telemetry_->slopeDbPerOct();
     smoothing_ = telemetry_->smoothing();
-    fftCombo_.setSelectedId(juce::jlimit(1, 3, telemetry_->fftOrder() - 10),
-                            juce::dontSendNotification);
-    slopeCombo_.setSelectedId(nearestId(kSlopeOptions, slopeDbPerOct_), juce::dontSendNotification);
-    speedCombo_.setSelectedId(nearestId(kSpeedOptions, smoothing_), juce::dontSendNotification);
-    colourCombo_.setSelectedId(telemetry_->traceColourIndex() + 1, juce::dontSendNotification);
+    fftChoice_.setSelectedIndex(juce::jlimit(0, 2, telemetry_->fftOrder() - 11));
+    slopeChoice_.setSelectedIndex(nearestIndex(kSlopeOptions, slopeDbPerOct_));
+    speedChoice_.setSelectedIndex(nearestIndex(kSpeedOptions, smoothing_));
+    colourDots_.setSelectedIndex(telemetry_->traceColourIndex());
     rebuildFft(telemetry_->fftOrder());
     repaint();
 }
@@ -306,10 +287,10 @@ void SpectrumAnalyzerUI::commitSettings() {
         return;
 
     juce::NamedValueSet settings;
-    settings.set("fftOrder", 10 + fftCombo_.getSelectedId());
+    settings.set("fftOrder", 11 + fftChoice_.getSelectedIndex());
     settings.set("slopeDbPerOct", slopeDbPerOct_);
     settings.set("smoothing", smoothing_);
-    settings.set("traceColour", colourCombo_.getSelectedId() - 1);
+    settings.set("traceColour", colourDots_.getSelectedIndex());
     onSettingsEdited(settings);
 }
 
@@ -482,14 +463,8 @@ int SpectrumAnalyzerUI::expandedControlsHeight() const {
 
 void SpectrumAnalyzerUI::updateControlVisibility() {
     const bool show = showControls();
-    fftLabel_.setVisible(show);
-    fftCombo_.setVisible(show);
-    slopeLabel_.setVisible(show);
-    slopeCombo_.setVisible(show);
-    speedLabel_.setVisible(show);
-    speedCombo_.setVisible(show);
-    colourLabel_.setVisible(show);
-    colourCombo_.setVisible(show);
+    for (juce::Component* c : controlRowComponents())
+        c->setVisible(show);
     if (popoutButton_)
         popoutButton_->setVisible(compact_);  // lives in the strip, compact only
     // The masking overlay picker is a full-editor / pop-out feature only; the
@@ -535,14 +510,8 @@ void SpectrumAnalyzerUI::advanceControlsFade() {
 
 void SpectrumAnalyzerUI::applyControlsAlpha() {
     const float alpha = controlsToggle() ? controlsAlpha_ : 1.0f;
-    fftLabel_.setAlpha(alpha);
-    fftCombo_.setAlpha(alpha);
-    slopeLabel_.setAlpha(alpha);
-    slopeCombo_.setAlpha(alpha);
-    speedLabel_.setAlpha(alpha);
-    speedCombo_.setAlpha(alpha);
-    colourLabel_.setAlpha(alpha);
-    colourCombo_.setAlpha(alpha);
+    for (juce::Component* c : controlRowComponents())
+        c->setAlpha(alpha);
 }
 
 int SpectrumAnalyzerUI::compactExtraHeight() const {
@@ -564,15 +533,16 @@ void SpectrumAnalyzerUI::resized() {
             popoutButton_->setBounds(popoutRect_);
         if (controlsHeight > 0 && showControls()) {
             controls.removeFromTop(2);
-            auto stackRow = [&controls](juce::Label& label, juce::ComboBox& combo) {
+            auto stackRow = [&controls](juce::Label& label, juce::Component& control) {
                 auto row = controls.removeFromTop(kStackRowH);
                 label.setBounds(row.removeFromLeft(kStackLabelW));
-                combo.setBounds(row.reduced(2, 1));
+                control.setBounds(row.reduced(2, 1));
             };
-            stackRow(fftLabel_, fftCombo_);
-            stackRow(slopeLabel_, slopeCombo_);
-            stackRow(speedLabel_, speedCombo_);
-            stackRow(colourLabel_, colourCombo_);
+            slopeLabel_.setText("Slope", juce::dontSendNotification);
+            stackRow(fftLabel_, fftChoice_);
+            stackRow(slopeLabel_, slopeChoice_);
+            stackRow(speedLabel_, speedChoice_);
+            stackRow(colourLabel_, colourDots_);
         }
         return;
     }
@@ -594,24 +564,23 @@ void SpectrumAnalyzerUI::resized() {
 }
 
 void SpectrumAnalyzerUI::layoutControlRow(juce::Rectangle<int> controls) {
-    auto cell = [&controls](int labelW, int comboW) {
+    // Each control at the width its options need, its caption before it.
+    slopeLabel_.setText("Slope dB/oct", juce::dontSendNotification);
+    auto cell = [&controls](juce::Label& label, int labelW, juce::Component& control, int width) {
+        controls.removeFromLeft(6);
+        label.setBounds(controls.removeFromLeft(labelW));
         controls.removeFromLeft(4);
-        auto label = controls.removeFromLeft(labelW);
-        auto combo = controls.removeFromLeft(comboW);
-        return std::pair<juce::Rectangle<int>, juce::Rectangle<int>>{label, combo};
+        control.setBounds(controls.removeFromLeft(width).reduced(0, 1));
     };
-    auto [fftL, fftC] = cell(34, 70);
-    fftLabel_.setBounds(fftL);
-    fftCombo_.setBounds(fftC.reduced(2, 1));
-    auto [slL, slC] = cell(40, 96);
-    slopeLabel_.setBounds(slL);
-    slopeCombo_.setBounds(slC.reduced(2, 1));
-    auto [spL, spC] = cell(34, 64);
-    speedLabel_.setBounds(spL);
-    speedCombo_.setBounds(spC.reduced(2, 1));
-    auto [colL, colC] = cell(34, 70);
-    colourLabel_.setBounds(colL);
-    colourCombo_.setBounds(colC.reduced(2, 1));
+    cell(fftLabel_, 28, fftChoice_, fftChoice_.getPreferredWidth());
+    cell(slopeLabel_, 64, slopeChoice_, slopeChoice_.getPreferredWidth());
+    cell(speedLabel_, 30, speedChoice_, speedChoice_.getPreferredWidth());
+    cell(colourLabel_, 34, colourDots_, colourDots_.getPreferredWidth());
+}
+
+std::vector<juce::Component*> SpectrumAnalyzerUI::controlRowComponents() {
+    return {&fftLabel_,   &fftChoice_,   &slopeLabel_,  &slopeChoice_,
+            &speedLabel_, &speedChoice_, &colourLabel_, &colourDots_};
 }
 
 std::vector<juce::Component*> SpectrumAnalyzerUI::headerControls() {
@@ -731,10 +700,10 @@ juce::Rectangle<float> SpectrumAnalyzerUI::plotArea() const {
 void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
     const auto plot = plotArea();
 
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG));
     g.fillRoundedRectangle(plot, 4.0f);
 
-    g.setColour(ActiveTheme::getColour(ActiveTheme::GRID_LINE));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_GRID));
     for (float f : {100.0f, 1000.0f, 10000.0f})
         g.drawVerticalLine(static_cast<int>(freqToX(f, plot)), plot.getY(), plot.getBottom());
 
@@ -742,10 +711,10 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
     g.setFont(FontManager::getInstance().getUIFont(9.0f));
     for (float db = kMaxDb; db >= kMinDb; db -= 20.0f) {
         const float y = dbToY(db, plot);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::GRID_LINE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_GRID));
         g.drawHorizontalLine(static_cast<int>(y), plot.getX(), plot.getRight());
         if (!compact_) {
-            g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
             const float ly = (db >= kMaxDb - 0.01f) ? y + 1.0f : y - 11.0f;
             g.drawText(juce::String(static_cast<int>(db)),
                        juce::Rectangle<float>(plot.getX() + 2.0f, ly, 30.0f, 11.0f),
@@ -756,7 +725,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
     // Frequency axis labels along the bottom of the plot.
     if (!compact_) {
         g.setFont(FontManager::getInstance().getUIFont(9.0f));
-        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
         auto freqLabel = [&](float f, const juce::String& s) {
             const float x = freqToX(f, plot);
             g.drawText(s, juce::Rectangle<float>(x - 18.0f, plot.getBottom() - 13.0f, 36.0f, 12.0f),
@@ -802,14 +771,14 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         auto strip = getLocalBounds();
         strip.removeFromBottom(expandedControlsHeight());
         strip = strip.removeFromBottom(kChevronStripH);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_PANEL));
         g.fillRect(strip);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
         g.drawHorizontalLine(strip.getY(), static_cast<float>(strip.getX()),
                              static_cast<float>(strip.getRight()));
         // Chevron points down to open (controls below) and up to collapse.
         drawAnalyzerExpandChevron(g, chevronRect_, controlsExpanded_,
-                                  ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
+                                  ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
         // Pop-out is the SvgButton (open_in_new) positioned in the strip.
     };
 
@@ -835,7 +804,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
             0, static_cast<int>(columnDb_.size()) - 1, static_cast<int>(mx - plot.getX())));
         const float db = columnDb_[column];
 
-        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withAlpha(0.6f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM).withAlpha(0.6f));
         g.drawVerticalLine(static_cast<int>(mx), plot.getY(), plot.getBottom());
         g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_INFO));
         g.fillEllipse(mx - 2.5f, dbToY(db, plot) - 2.5f, 5.0f, 5.0f);
@@ -846,10 +815,10 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         const juce::String txt =
             fTxt + "   " + audio::nearestNoteLabel(freq) + "   " + juce::String(db, 1) + " dB";
         auto box = plot.reduced(6.0f, 4.0f).removeFromTop(14.0f).withWidth(210.0f);
-        g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).withAlpha(0.75f));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG).withAlpha(0.75f));
         g.fillRect(box);
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
         g.drawText(txt, box, juce::Justification::centredLeft);
     }
 
@@ -857,7 +826,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         // A backdrop so the docked control row reads over the spectrum.
         const auto row = plot.reduced(2.0f).removeFromBottom(kControlRowH + 6.0f);
         g.setColour(
-            ActiveTheme::getColour(ActiveTheme::BACKGROUND).withAlpha(0.9f * controlsAlpha_));
+            ActiveTheme::getColour(ActiveTheme::DEVICE_GRAPH_BG).withAlpha(0.9f * controlsAlpha_));
         g.fillRoundedRectangle(row, 4.0f);
     }
 

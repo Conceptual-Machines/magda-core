@@ -107,6 +107,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/PolyStepSequencerUI.cpp
     custom_ui/LevelsUI.cpp
     custom_ui/OscilloscopeUI.cpp
+    custom_ui/AnalyzerColourDots.cpp
     custom_ui/SpectrumAnalyzerUI.cpp
     modulation/MacroKnobComponent.cpp
     modulation/MacroPanelComponent.cpp
@@ -224,6 +225,7 @@ target_sources(magda_daw_app PRIVATE
     custom_ui/PolyStepSequencerUI.hpp
     custom_ui/LevelsUI.hpp
     custom_ui/OscilloscopeUI.hpp
+    custom_ui/AnalyzerColourDots.hpp
     custom_ui/SpectrumAnalyzerUI.hpp
     custom_ui/TelemetrySources.hpp
     modulation/DeviceLinkCallbacks.hpp
