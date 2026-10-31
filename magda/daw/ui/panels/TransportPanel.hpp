@@ -15,6 +15,7 @@
 #include "../components/common/SvgButton.hpp"
 #include "AbletonLinkChip.hpp"
 #include "TransportLayout.hpp"
+#include "TransportTextWidths.hpp"
 #include "core/Config.hpp"
 #include "core/MixAnalysisService.hpp"
 #include "core/TempoUtils.hpp"
@@ -29,8 +30,7 @@ class QwertyMidiKeyboard;
 class TransportPanel : public juce::Component,
                        public juce::TooltipClient,
                        public MixAnalysisService::Listener,
-                       private ConfigListener,
-                       private ProjectManagerListener {
+                       private ConfigListener {
   public:
     TransportPanel();
     ~TransportPanel() override;
@@ -123,7 +123,7 @@ class TransportPanel : public juce::Component,
     void setPlaybackState(bool playing);
     void setRecordingState(bool recording);
 
-    // Update arrangement button state based on whether any track is in session mode
+    // Lights back-to-arrangement while any track plays from Session View.
     void setAnyTrackInSessionMode(bool anyInSession);
 
     /** @brief Light the Ableton Link chip while Link is on. */
@@ -150,10 +150,6 @@ class TransportPanel : public juce::Component,
   private:
     // ConfigListener: the transport style lives in the Appearance preferences.
     void configChanged() override;
-    // ProjectManagerListener: the key readout follows the project.
-    void projectOpened(const ProjectInfo& info) override;
-    void projectClosed() override;
-    void projectPropertiesChanged() override;
 
     void showCountInMenu();
     static juce::String countInModeLabel(int mode);
@@ -175,8 +171,6 @@ class TransportPanel : public juce::Component,
 
     // Loop button
     std::unique_ptr<SvgButton> loopButton;
-
-    // Back to arrangement button
     std::unique_ptr<SvgButton> backToArrangementButton;
 
     // QWERTY MIDI keyboard toggle
@@ -192,6 +186,9 @@ class TransportPanel : public juce::Component,
     // Punch in/out button
     std::unique_ptr<SvgButton> punchInButton;
     std::unique_ptr<SvgButton> punchOutButton;
+    // A right-click opens the range popup; the click that follows must not toggle.
+    bool punchRightClicked_ = false;
+    void showPunchRangePopup();
 
     // Playhead position (editable BarsBeatsTicksLabel)
     std::unique_ptr<BarsBeatsTicksLabel> playheadPositionLabel;
@@ -206,10 +203,6 @@ class TransportPanel : public juce::Component,
     // Loop start/end (editable BarsBeatsTicksLabels)
     std::unique_ptr<BarsBeatsTicksLabel> loopStartLabel;
     std::unique_ptr<BarsBeatsTicksLabel> loopEndLabel;
-
-    // Punch start/end (editable BarsBeatsTicksLabels)
-    std::unique_ptr<BarsBeatsTicksLabel> punchStartLabel;
-    std::unique_ptr<BarsBeatsTicksLabel> punchEndLabel;
 
     // Tempo (DraggableValueLabel)
     std::unique_ptr<DraggableValueLabel> tempoLabel;
@@ -235,16 +228,6 @@ class TransportPanel : public juce::Component,
     std::unique_ptr<DraggableValueLabel> timeSigNumeratorLabel;
     std::unique_ptr<DraggableValueLabel> timeSigDenominatorLabel;
 
-    // Project key, shown after the meter; click picks root and quality.
-    class KeyReadout;
-    std::unique_ptr<KeyReadout> keyReadout;
-    void showKeyMenu();
-    void updateKeyReadout();
-
-    // SEL / LOOP chips choose which range the shared rows show.
-    std::unique_ptr<juce::TextButton> selChipButton;
-    std::unique_ptr<juce::TextButton> loopChipButton;
-    bool showLoopRange_ = false;
     void updateRangeVisibility();
 
     // Keeps the latest pass of the rolling master buffer.
@@ -257,9 +240,10 @@ class TransportPanel : public juce::Component,
     void applyToggleColours();
     void paintFrame(juce::Graphics& g, juce::Rectangle<int> area) const;
     void paintMemory(juce::Graphics& g) const;
-    void paintStackCaptions(juce::Graphics& g) const;
+    void paintRanges(juce::Graphics& g) const;
+    void paintCpu(juce::Graphics& g) const;
 
-    daw::ui::transport::Style style_ = daw::ui::transport::Style::Anchored;
+    daw::ui::transport::Style style_ = daw::ui::transport::Style::Boxed;
 
     // Where every child sits and which sections survived the last resized().
     // paint() and the overflow menu read it rather than keeping their own copy
@@ -272,7 +256,10 @@ class TransportPanel : public juce::Component,
     void setupTransportButtons();
     void setupTimeDisplayBoxes();
     void setupTempoAndQuantize();
-    void updatePunchLabelColors();
+    // Re-lays the bar out once a readout's bar number outgrows the digits its
+    // box was measured for, or shrinks back.
+    void refitTimecodes();
+    int timecodeBarDigits_ = daw::ui::transport::kMinTimecodeBarDigits;
     // Applies every themed text colour to the child value labels from the
     // active palette. Shared by initial setup and runtime theme changes.
     void applyThemedLabelColours();
@@ -308,7 +295,7 @@ class TransportPanel : public juce::Component,
     int timeSignatureDenominator = DEFAULT_TIME_SIGNATURE_DENOMINATOR;
     int countInMode_ = 0;  // 0=none, 1=1bar, 2=2bars, 3=2beats, 4=1beat
 
-    // The playhead in seconds, drawn under the headline readout.
+    // The playhead in seconds, drawn beside the headline readout.
     juce::String clockText_ = "0:00.000";
 
     // Cached state for display updates

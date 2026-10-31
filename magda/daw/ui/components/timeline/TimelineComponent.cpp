@@ -343,28 +343,49 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
         parent = parent->getParentComponent();
     }
 
-    // Right-click anywhere on the ruler: add a marker at the clicked position.
+    // Right-click anywhere on the ruler: add a marker or move a punch edge to
+    // the clicked position.
     if (event.mods.isPopupMenu()) {
         double beats = juce::jlimit(0.0, getTimelineLengthBeats(), pixelToBeats(event.x));
         if (snapEnabled)
             beats = snapBeatsToGrid(beats);
 
         // Don't offer Add Marker where one already sits (positions are unique).
-        for (const auto& marker : markers_) {
-            if (std::abs(marker.positionBeats - beats) <= 1e-6)
-                return;
-        }
+        const bool markerHere = std::any_of(markers_.begin(), markers_.end(), [&](const auto& m) {
+            return std::abs(m.positionBeats - beats) <= 1e-6;
+        });
 
+        enum MenuId { IdAddMarker = 1, IdPunchIn, IdPunchOut };
         juce::PopupMenu menu;
-        menu.addItem(1, "Add Marker");
+        if (!markerHere)
+            menu.addItem(IdAddMarker, "Add Marker");
+        menu.addItem(IdPunchIn, "Set Punch In Here");
+        menu.addItem(IdPunchOut, "Set Punch Out Here");
         menu.showMenuAsync(
             juce::PopupMenu::Options().withTargetScreenArea(
                 {event.getScreenX(), event.getScreenY(), 1, 1}),
             [safeThis = juce::Component::SafePointer<TimelineComponent>(this), beats](int result) {
-                if (safeThis == nullptr || result != 1)
+                auto* tc = safeThis != nullptr ? safeThis->getController() : nullptr;
+                if (tc == nullptr)
                     return;
-                if (auto* tc = safeThis->getController())
+                // The other edge stays where it is when it is on the right side
+                // of the click, otherwise it sits a bar away.
+                const auto& punch = tc->getState().punch;
+                const double bar = safeThis->getBeatsPerBar();
+                if (result == IdAddMarker) {
                     tc->dispatch(AddMarkerBeatsEvent{beats});
+                } else if (result == IdPunchIn) {
+                    const double end =
+                        punch.isValid() && punch.endBeats > beats ? punch.endBeats : beats + bar;
+                    tc->dispatch(SetPunchRegionBeatsEvent{beats, end});
+                    tc->dispatch(SetPunchInEnabledEvent{true});
+                } else if (result == IdPunchOut) {
+                    const double start = punch.isValid() && punch.startBeats < beats
+                                             ? punch.startBeats
+                                             : juce::jmax(0.0, beats - bar);
+                    tc->dispatch(SetPunchRegionBeatsEvent{start, beats});
+                    tc->dispatch(SetPunchOutEnabledEvent{true});
+                }
             });
         return;
     }

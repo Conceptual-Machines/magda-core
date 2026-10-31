@@ -3,7 +3,6 @@
 
 #include "TransportLayout.hpp"
 
-#include <algorithm>
 #include <vector>
 
 namespace magda::daw::ui::transport {
@@ -12,6 +11,12 @@ bool Layout::isVisible(Section section) const {
     switch (section) {
         case Section::MemoryMeter:
             return memoryMeterVisible;
+        case Section::Clock:
+            return clockVisible;
+        case Section::LinkLettering:
+            return linkLetteringVisible;
+        case Section::RangeEnd:
+            return rangeEndVisible;
         case Section::RightCluster:
             return rightClusterVisible;
         case Section::Grid:
@@ -30,22 +35,18 @@ bool Layout::isVisible(Section section) const {
 
 const char* styleKey(Style style) {
     switch (style) {
-        case Style::Anchored:
-            return "anchored";
-        case Style::MemoryFill:
-            return "memory";
-        case Style::Justified:
-            return "justified";
+        case Style::Boxed:
+            return "boxed";
+        case Style::Strip:
+            return "strip";
     }
-    return "anchored";
+    return "boxed";
 }
 
 Style styleFromKey(const std::string& key) {
-    if (key == "memory")
-        return Style::MemoryFill;
-    if (key == "justified")
-        return Style::Justified;
-    return Style::Anchored;
+    if (key == "strip")
+        return Style::Strip;
+    return Style::Boxed;
 }
 
 namespace {
@@ -59,27 +60,21 @@ constexpr int kGroupGap = 5;    // between groups when packed
 constexpr int kFramePad = 4;    // inside a group frame, each side
 constexpr int kItemGap = 3;     // between items inside a frame
 constexpr int kCellPad = 3;     // inside a text readout, each side
-constexpr int kChipPad = 4;     // inside a SEL / LOOP / KEEP chip, each side
-constexpr int kDividerPad = 5;  // each side of the line before the key
-constexpr int kDashWidth = 12;  // between start and end in the Justified stack
-constexpr int kCpuPad = 8;      // inside the CPU frame, each side
+constexpr int kJoinWidth = 14;  // the dash or arrow between a start and an end
+constexpr int kCpuPad = 6;      // inside the CPU frame, each side
 constexpr int kAutoWriteGap = 8;
 
 // Geometry that follows the panel height or a glyph relationship rather than
 // the spacing density.
-constexpr int kFrameMargin = 3;        // vertical inset of every group frame
-constexpr int kFrameInsetY = 2;        // rows inside a frame, top and bottom
-constexpr int kMinButtonSize = 20;     //
-constexpr int kMaxButtonSize = 28;     // a taller bar gives the readouts room, not the icons
-constexpr int kButtonPercent = 66;     // icon tiles against the frame height
-constexpr int kClockHeight = 11;       // the seconds line under the headline playhead
-constexpr int kRowGap = 2;             // between stacked readout rows
-constexpr int kTimeSigOverlap = 4;     // the denominator tucks under the numerator's slash
-constexpr int kKeyGap = 3;             // between the key root and its quality
-constexpr int kPunchIconInset = 4;     // punch icons ride the right end of their box
-constexpr int kMemoryDot = 8;          //
-constexpr int kMemoryMeterMin = 56;    // the meter's width before it takes any slack
-constexpr int kCpuHeaderPercent = 30;  // share of the CPU frame taken by the title row
+constexpr int kFrameMargin = 4;      // vertical inset of every group frame
+constexpr int kFrameInsetY = 2;      // the row inside a frame, top and bottom
+constexpr int kChipInsetY = 4;       // chips and toggles, top and bottom of the frame
+constexpr int kMinButtonSize = 20;   //
+constexpr int kMaxButtonSize = 28;   // a taller bar gives the readouts room, not the icons
+constexpr int kButtonPercent = 88;   // icon tiles against the frame height
+constexpr int kTimeSigOverlap = 4;   // the denominator tucks under the numerator's slash
+constexpr int kMemoryDot = 8;        //
+constexpr int kMemoryMeterMin = 56;  //
 
 struct Metrics {
     int width = 0;
@@ -90,12 +85,12 @@ struct Metrics {
     int frameHeight = 0;
     int buttonSize = 0;
     int buttonY = 0;
-    int rowHeight = 0;  // two rows to a frame
-    int rowY1 = 0;
-    int rowY2 = 0;
-    int stackRowHeight = 0;  // three rows to a frame
-    int icon = 0;            // metronome
-    int countInIcon = 0;     // the count-in dot, smaller than the icons beside it
+    int rowY = 0;
+    int rowHeight = 0;
+    int chipY = 0;
+    int chipHeight = 0;
+    int icon = 0;         // metronome
+    int countInIcon = 0;  // the count-in dot, smaller than the icons beside it
     int punchIcon = 0;
 
     // Density-scaled spacing
@@ -104,34 +99,25 @@ struct Metrics {
     int groupGap = 0;
     int framePad = 0;
     int itemGap = 0;
-    int dividerPad = 0;
-    int dashWidth = 0;
+    int joinWidth = 0;
+    int cpuPad = 0;
     int autoWriteGap = 0;
 
     // Measured widths
     int timeBox = 0;
-    int stackBox = 0;
-    int punchBox = 0;
     int headlineBox = 0;
-    int captionColumn = 0;
+    int clock = 0;
     int tempoCell = 0;
-    int linkChipHeight = 0;
-    int linkChip = 0;
     int timeSigNum = 0;
     int timeSigDen = 0;
-    int key = 0;
-    int keyRoot = 0;
-    int chip = 0;
+    int rangeCaption = 0;
     int memoryCaption = 0;
     int memoryTime = 0;
-    int keep = 0;
     int gridDivision = 0;
     int gridToggle = 0;
-    int cpu = 0;
+    int cpuTitle = 0;
+    int cpuValue = 0;
     int banner = 0;
-
-    // Slack the MemoryFill style hands the meter.
-    int memoryMeterExtra = 0;
 };
 
 int scaled(int basePx, float densityScale) {
@@ -148,56 +134,48 @@ Metrics metricsFor(int width, int height, const TextWidths& text, float densityS
     m.buttonSize =
         juce::jlimit(kMinButtonSize, kMaxButtonSize, (m.frameHeight * kButtonPercent) / 100);
     m.buttonY = m.frameY + ((m.frameHeight - m.buttonSize) / 2);
-    m.rowHeight = (m.frameHeight - (2 * kFrameInsetY) - kRowGap) / 2;
-    m.rowY1 = m.frameY + kFrameInsetY;
-    m.rowY2 = m.rowY1 + m.rowHeight + kRowGap;
-    m.stackRowHeight = (m.frameHeight - (2 * kFrameInsetY)) / 3;
-    m.icon = juce::jmax(12, m.rowHeight - 3);
+    m.rowY = m.frameY + kFrameInsetY;
+    m.rowHeight = m.frameHeight - (2 * kFrameInsetY);
+    m.chipY = m.frameY + kChipInsetY;
+    m.chipHeight = m.frameHeight - (2 * kChipInsetY);
+    m.icon = juce::jmax(12, m.rowHeight - 8);
     m.countInIcon = juce::jmax(8, (m.icon * 2) / 3);
-    m.punchIcon = (m.rowHeight / 2) + 2;
+    m.punchIcon = juce::jmax(10, m.rowHeight - 10);
 
     m.edgePad = scaled(kEdgePad, densityScale);
     m.buttonGap = scaled(kButtonGap, densityScale);
     m.groupGap = scaled(kGroupGap, densityScale);
     m.framePad = scaled(kFramePad, densityScale);
     m.itemGap = scaled(kItemGap, densityScale);
-    m.dividerPad = scaled(kDividerPad, densityScale);
-    m.dashWidth = scaled(kDashWidth, densityScale);
+    m.joinWidth = scaled(kJoinWidth, densityScale);
+    m.cpuPad = scaled(kCpuPad, densityScale);
     m.autoWriteGap = scaled(kAutoWriteGap, densityScale);
 
     const int cellPad = scaled(kCellPad, densityScale);
-    const int chipPad = scaled(kChipPad, densityScale);
 
-    // A readout grows by what a decoration over its right end needs beyond
-    // the inset its glyphs keep anyway.
-    const auto grownBy = [&](int inset) { return juce::jmax(0, inset - text.timecodeGlyphInset); };
-    m.timeBox = text.timecodeBox + text.timecodeOverlay;
-    m.stackBox = text.stackTimecodeBox;
-    m.punchBox = text.timecodeBox + grownBy(m.punchIcon + kPunchIconInset);
-    m.headlineBox =
-        juce::jmax(text.headlineTimecodeBox + grownBy(text.timecodeCaption), text.clock);
-    m.captionColumn = text.timecodeCaption;
-
+    m.timeBox = text.timecodeBox;
+    m.headlineBox = text.headlineTimecodeBox;
+    m.clock = text.clock;
     m.tempoCell = text.tempo + (2 * cellPad);
-    m.linkChipHeight = m.rowHeight;
-    m.linkChip = link_chip::widthForHeight(m.linkChipHeight);
     m.timeSigNum = text.timeSigNumerator + (2 * cellPad);
     m.timeSigDen = text.timeSigDenominator + (2 * cellPad);
-    m.keyRoot = text.keyRoot;
-    m.key = text.keyRoot + kKeyGap + text.keyQuality + (2 * cellPad);
-    m.chip = text.rangeChip + (2 * chipPad);
+    m.rangeCaption = text.rangeCaption;
     m.memoryCaption = text.memoryCaption;
     m.memoryTime = text.memoryTime;
-    m.keep = text.keep + (2 * chipPad);
     m.gridDivision = text.gridDivision + (2 * cellPad);
     m.gridToggle = text.gridToggle + (2 * cellPad);
-    m.cpu = juce::jmax(text.cpuTitle, text.cpuValue) + (2 * scaled(kCpuPad, densityScale));
+    m.cpuTitle = text.cpuTitle;
+    m.cpuValue = text.cpuValue;
     m.banner = text.banner;
     return m;
 }
 
 juce::Rectangle<int> frameAt(const Metrics& m, int x, int width) {
     return {x, m.frameY, width, m.frameHeight};
+}
+
+juce::Rectangle<int> centredSquare(const Metrics& m, int x, int size) {
+    return {x, m.frameY + ((m.frameHeight - size) / 2), size, size};
 }
 
 // A group places its children with its left edge at x and returns the width
@@ -209,14 +187,19 @@ enum class Group : std::uint8_t {
     Punch,
     Tempo,
     Cursor,
-    Range,
-    Stack,
+    Selection,
+    Loop,
     Grid,
     Memory,
     Qwerty,
     Cpu,
     Overflow,
 };
+
+// Groups that are a bare tile; the Strip style draws no hairline beside them.
+bool isTile(Group group) {
+    return group == Group::Buttons || group == Group::Qwerty || group == Group::Overflow;
+}
 
 int buildButtons(Layout& l, const Metrics& m, int x) {
     const int x0 = x;
@@ -240,124 +223,117 @@ int buildButtons(Layout& l, const Metrics& m, int x) {
     return x - x0 - m.buttonGap;
 }
 
+// The punch-in and punch-out toggles.
 int buildPunch(Layout& l, const Metrics& m, int x) {
-    const int width = m.framePad + m.punchBox + m.framePad;
-    l.punchFrame = frameAt(m, x, width);
-    const int boxX = x + m.framePad;
-    l.punchStart = {boxX, m.rowY1, m.punchBox, m.rowHeight};
-    l.punchEnd = {boxX, m.rowY2, m.punchBox, m.rowHeight};
-    const int iconX = boxX + m.punchBox - m.punchIcon - kPunchIconInset;
-    const int iconOffset = (m.rowHeight - m.punchIcon) / 2;
-    l.punchIn = {iconX, m.rowY1 + iconOffset, m.punchIcon, m.punchIcon};
-    l.punchOut = {iconX, m.rowY2 + iconOffset, m.punchIcon, m.punchIcon};
-    return width;
+    const int x0 = x;
+    x += m.framePad;
+    l.punchIn = centredSquare(m, x, m.punchIcon);
+    x += m.punchIcon + m.itemGap;
+    l.punchOut = centredSquare(m, x, m.punchIcon);
+    x += m.punchIcon + m.framePad;
+    l.punchFrame = frameAt(m, x0, x - x0);
+    return x - x0;
 }
 
-// The Link chip, then BPM, count-in, meter and metronome on one line,
-// then the key past a divider.
+// The Link chip, then BPM, count-in, meter and metronome.
 int buildTempo(Layout& l, const Metrics& m, int x) {
     const int x0 = x;
-    const int iconY = m.frameY + ((m.frameHeight - m.icon) / 2);
     x += m.framePad;
 
-    l.link = {x, m.frameY + ((m.frameHeight - m.linkChipHeight) / 2), m.linkChip, m.linkChipHeight};
-    x += m.linkChip + m.itemGap;
+    const int linkWidth = l.linkLetteringVisible ? link_chip::widthForHeight(m.chipHeight)
+                                                 : link_chip::ledOnlyWidthForHeight(m.chipHeight);
+    l.link = {x, m.chipY, linkWidth, m.chipHeight};
+    x += linkWidth + m.itemGap;
     l.tempo = {x, m.frameY, m.tempoCell, m.frameHeight};
     x += m.tempoCell + m.itemGap;
-    l.countIn = {x, m.frameY + ((m.frameHeight - m.countInIcon) / 2), m.countInIcon, m.countInIcon};
+    l.countIn = centredSquare(m, x, m.countInIcon);
     x += m.countInIcon + m.itemGap;
     l.timeSigNumerator = {x, m.frameY, m.timeSigNum, m.frameHeight};
     x += m.timeSigNum - kTimeSigOverlap;
     l.timeSigDenominator = {x, m.frameY, m.timeSigDen, m.frameHeight};
     x += m.timeSigDen + m.itemGap;
-    l.metronome = {x, iconY, m.icon, m.icon};
-    x += m.icon + m.dividerPad;
-    l.keyDividerX = x;
-    x += 1 + m.dividerPad;
-    l.key = {x, m.frameY, m.key, m.frameHeight};
-    x += m.key + m.framePad;
+    l.metronome = centredSquare(m, x, m.icon);
+    x += m.icon + m.framePad;
 
     l.tempoFrame = frameAt(m, x0, x - x0);
     return x - x0;
 }
 
-// The playhead alone, at headline size, with CUR over its right end.
+// The playhead at headline size, its seconds clock beside it.
 int buildCursor(Layout& l, const Metrics& m, int x) {
-    const int width = m.framePad + m.headlineBox + m.framePad;
-    l.cursorFrame = frameAt(m, x, width);
-    auto inner = juce::Rectangle<int>(x + m.framePad, m.rowY1, m.headlineBox,
-                                      m.frameHeight - (2 * kFrameInsetY));
-    l.clock = inner.removeFromBottom(kClockHeight);
-    l.playhead = inner;
-    return width;
+    const int x0 = x;
+    x += m.framePad;
+    l.playhead = {x, m.rowY, m.headlineBox, m.rowHeight};
+    x += m.headlineBox;
+    if (l.clockVisible) {
+        x += m.itemGap;
+        l.clock = {x, m.rowY, m.clock, m.rowHeight};
+        x += m.clock;
+    }
+    x += m.framePad;
+    l.cursorFrame = frameAt(m, x0, x - x0);
+    return x - x0;
 }
 
-// SEL / LOOP chips stacked on the left, the start and end of whichever is
-// chosen on the right. Both pairs of readouts take the same rows.
-int buildRange(Layout& l, const Metrics& m, int x) {
-    const int width = m.framePad + m.chip + m.itemGap + m.timeBox + m.framePad;
-    l.rangeFrame = frameAt(m, x, width);
-    const int chipX = x + m.framePad;
-    l.selChip = {chipX, m.rowY1, m.chip, m.rowHeight};
-    l.loopChip = {chipX, m.rowY2, m.chip, m.rowHeight};
-    const int boxX = chipX + m.chip + m.itemGap;
-    l.selectionStart = l.loopStart = {boxX, m.rowY1, m.timeBox, m.rowHeight};
-    l.selectionEnd = l.loopEnd = {boxX, m.rowY2, m.timeBox, m.rowHeight};
-    return width;
+// A caption, then the start and end of the range.
+int buildRange(const Metrics& m, int x, bool endVisible, juce::Rectangle<int>& frame,
+               juce::Rectangle<int>& caption, juce::Rectangle<int>& start,
+               juce::Rectangle<int>& end) {
+    const int x0 = x;
+    x += m.framePad;
+    caption = {x, m.rowY, m.rangeCaption, m.rowHeight};
+    x += m.rangeCaption + m.itemGap;
+    start = {x, m.rowY, m.timeBox, m.rowHeight};
+    x += m.timeBox;
+    if (endVisible) {
+        x += m.joinWidth;
+        end = {x, m.rowY, m.timeBox, m.rowHeight};
+        x += m.timeBox;
+    }
+    x += m.framePad;
+    frame = frameAt(m, x0, x - x0);
+    return x - x0;
 }
 
-// SEL, LOOP and CUR as three lines of caption, start and end.
-int buildStack(Layout& l, const Metrics& m, int x) {
-    const int width = m.framePad + m.captionColumn + m.itemGap + m.stackBox + m.dashWidth +
-                      m.stackBox + m.framePad;
-    l.stackFrame = frameAt(m, x, width);
+int buildSelection(Layout& l, const Metrics& m, int x) {
+    return buildRange(m, x, l.rangeEndVisible, l.selectionFrame, l.selectionCaption,
+                      l.selectionStart, l.selectionEnd);
+}
 
-    const int captionX = x + m.framePad;
-    const int startX = captionX + m.captionColumn + m.itemGap;
-    const int endX = startX + m.stackBox + m.dashWidth;
-    const auto row = [&](int index, juce::Rectangle<int>& caption, juce::Rectangle<int>& start,
-                         juce::Rectangle<int>& end) {
-        const int y = m.rowY1 + (index * m.stackRowHeight);
-        caption = {captionX, y, m.captionColumn, m.stackRowHeight};
-        start = {startX, y, m.stackBox, m.stackRowHeight};
-        end = {endX, y, m.stackBox, m.stackRowHeight};
-    };
-    row(0, l.selCaption, l.selectionStart, l.selectionEnd);
-    row(1, l.loopCaption, l.loopStart, l.loopEnd);
-    row(2, l.cursorCaption, l.playhead, l.editCursor);
-    return width;
+int buildLoop(Layout& l, const Metrics& m, int x) {
+    return buildRange(m, x, l.rangeEndVisible, l.loopFrame, l.loopCaption, l.loopStart, l.loopEnd);
 }
 
 int buildGrid(Layout& l, const Metrics& m, int x) {
-    const int width = m.framePad + m.gridDivision + m.itemGap + m.gridToggle + m.framePad;
-    l.gridFrame = frameAt(m, x, width);
-    const int divisionX = x + m.framePad;
-    l.gridDivision = {divisionX, m.rowY1, m.gridDivision, (m.rowHeight * 2) + kRowGap};
-    const int toggleX = divisionX + m.gridDivision + m.itemGap;
-    l.autoGrid = {toggleX, m.rowY1, m.gridToggle, m.rowHeight};
-    l.snap = {toggleX, m.rowY2, m.gridToggle, m.rowHeight};
-    return width;
+    const int x0 = x;
+    x += m.framePad;
+    l.gridDivision = {x, m.chipY, m.gridDivision, m.chipHeight};
+    x += m.gridDivision + m.itemGap;
+    l.autoGrid = {x, m.chipY, m.gridToggle, m.chipHeight};
+    x += m.gridToggle + m.itemGap;
+    l.snap = {x, m.chipY, m.gridToggle, m.chipHeight};
+    x += m.gridToggle + m.framePad;
+    l.gridFrame = frameAt(m, x0, x - x0);
+    return x - x0;
 }
 
 // The master buffer: a dot, then (while the meter is on) its caption, level
-// history and length, then KEEP.
+// history and length, then the capture button.
 int buildMemory(Layout& l, const Metrics& m, int x) {
     const int x0 = x;
-    const int centreY = m.frameY + (m.frameHeight / 2);
     x += m.framePad;
-    l.memoryDot = {x, centreY - (kMemoryDot / 2), kMemoryDot, kMemoryDot};
+    l.memoryDot = centredSquare(m, x, kMemoryDot);
     x += kMemoryDot + m.itemGap;
     if (l.memoryMeterVisible) {
         l.memoryCaption = {x, m.frameY, m.memoryCaption, m.frameHeight};
         x += m.memoryCaption + m.itemGap;
-        const int meterWidth = kMemoryMeterMin + m.memoryMeterExtra;
-        l.memoryMeter = {x, m.rowY1, meterWidth, m.frameHeight - (2 * kFrameInsetY)};
-        x += meterWidth + m.itemGap;
+        l.memoryMeter = {x, m.rowY, kMemoryMeterMin, m.rowHeight};
+        x += kMemoryMeterMin + m.itemGap;
         l.memoryTime = {x, m.frameY, m.memoryTime, m.frameHeight};
         x += m.memoryTime + m.itemGap;
     }
-    l.keep = {x, centreY - (m.rowHeight / 2), m.keep, m.rowHeight};
-    x += m.keep + m.framePad;
+    l.capture = centredSquare(m, x, m.chipHeight);
+    x += m.chipHeight + m.framePad;
     l.memoryFrame = frameAt(m, x0, x - x0);
     return x - x0;
 }
@@ -367,12 +343,13 @@ int buildQwerty(Layout& l, const Metrics& m, int x) {
     return m.buttonSize;
 }
 
+// The caption and the load side by side.
 int buildCpu(Layout& l, const Metrics& m, int x) {
-    l.cpu = frameAt(m, x, m.cpu);
-    auto inner = l.cpu.reduced(2, kFrameInsetY);
-    l.cpuTitle = inner.removeFromTop((inner.getHeight() * kCpuHeaderPercent) / 100);
-    l.cpuValue = inner;
-    return m.cpu;
+    const int width = m.cpuPad + m.cpuTitle + m.itemGap + m.cpuValue + m.cpuPad;
+    l.cpu = frameAt(m, x, width);
+    l.cpuTitle = {x + m.cpuPad, m.rowY, m.cpuTitle, m.rowHeight};
+    l.cpuValue = {l.cpuTitle.getRight() + m.itemGap, m.rowY, m.cpuValue, m.rowHeight};
+    return width;
 }
 
 int buildOverflow(Layout& l, const Metrics& m, int x) {
@@ -390,10 +367,10 @@ int build(Group group, Layout& l, const Metrics& m, int x) {
             return buildTempo(l, m, x);
         case Group::Cursor:
             return buildCursor(l, m, x);
-        case Group::Range:
-            return buildRange(l, m, x);
-        case Group::Stack:
-            return buildStack(l, m, x);
+        case Group::Selection:
+            return buildSelection(l, m, x);
+        case Group::Loop:
+            return buildLoop(l, m, x);
         case Group::Grid:
             return buildGrid(l, m, x);
         case Group::Memory:
@@ -416,7 +393,10 @@ Layout flagsOf(const Layout& l) {
     flags.navVisible = l.navVisible;
     flags.loopBackVisible = l.loopBackVisible;
     flags.punchVisible = l.punchVisible;
+    flags.linkLetteringVisible = l.linkLetteringVisible;
+    flags.clockVisible = l.clockVisible;
     flags.selLoopTimesVisible = l.selLoopTimesVisible;
+    flags.rangeEndVisible = l.rangeEndVisible;
     flags.gridVisible = l.gridVisible;
     flags.memoryMeterVisible = l.memoryMeterVisible;
     flags.rightClusterVisible = l.rightClusterVisible;
@@ -429,8 +409,8 @@ int measure(Group group, const Layout& l, const Metrics& m) {
     return build(group, scratch, m, 0);
 }
 
-// The surviving groups in three runs: what anchors to the left, what the
-// styles move about in the middle, and what anchors to the right.
+// The surviving groups in three runs: what anchors to the left, the time and
+// tempo groups centred in the slack, and what anchors to the right.
 struct Runs {
     std::vector<Group> left, centre, right;
 };
@@ -442,12 +422,10 @@ Runs runsFor(const Layout& l) {
         runs.left.push_back(Group::Punch);
 
     runs.centre.push_back(Group::Tempo);
-    if (l.style == Style::Justified && l.selLoopTimesVisible) {
-        runs.centre.push_back(Group::Stack);
-    } else {
-        runs.centre.push_back(Group::Cursor);
-        if (l.selLoopTimesVisible)
-            runs.centre.push_back(Group::Range);
+    runs.centre.push_back(Group::Cursor);
+    if (l.selLoopTimesVisible) {
+        runs.centre.push_back(Group::Selection);
+        runs.centre.push_back(Group::Loop);
     }
 
     if (l.gridVisible)
@@ -480,6 +458,15 @@ void drop(Layout& l, Section section) {
         case Section::MemoryMeter:
             l.memoryMeterVisible = false;
             break;
+        case Section::Clock:
+            l.clockVisible = false;
+            break;
+        case Section::LinkLettering:
+            l.linkLetteringVisible = false;
+            break;
+        case Section::RangeEnd:
+            l.rangeEndVisible = false;
+            break;
         case Section::RightCluster:
             l.rightClusterVisible = false;
             l.overflowVisible = true;
@@ -502,28 +489,37 @@ void drop(Layout& l, Section section) {
     }
 }
 
-// Places a run left to right from x with `gap` between groups, recording each
-// group's span so the banner can find the widest gap afterwards.
-int placeRun(const std::vector<Group>& run, Layout& l, const Metrics& m, int x, int gap,
-             std::vector<juce::Range<int>>& spans) {
+struct Placed {
+    Group group;
+    juce::Range<int> span;
+};
+
+int placeRun(const std::vector<Group>& run, Layout& l, const Metrics& m, int x,
+             std::vector<Placed>& placed) {
     for (size_t i = 0; i < run.size(); ++i) {
         const int width = build(run[i], l, m, x);
-        spans.emplace_back(x, x + width);
+        placed.push_back({run[i], {x, x + width}});
         x += width;
         if (i + 1 < run.size())
-            x += gap;
+            x += m.groupGap;
     }
     return x;
 }
 
+// A hairline just before each group, half a packed gap out, unless a tile
+// stands on either side of it.
+void placeDividers(Layout& l, const Metrics& m, const std::vector<Placed>& placed) {
+    for (size_t i = 1; i < placed.size(); ++i)
+        if (!isTile(placed[i - 1].group) && !isTile(placed[i].group))
+            l.dividerXs.push_back(placed[i].span.getStart() - ((m.groupGap + 1) / 2));
+}
+
 // The automation-write banner takes the widest gap between groups, and hides
 // when no gap holds it.
-void placeBanner(Layout& l, const Metrics& m, std::vector<juce::Range<int>> spans) {
-    std::sort(spans.begin(), spans.end(),
-              [](auto a, auto b) { return a.getStart() < b.getStart(); });
+void placeBanner(Layout& l, const Metrics& m, const std::vector<Placed>& placed) {
     juce::Range<int> widest;
-    for (size_t i = 1; i < spans.size(); ++i) {
-        const juce::Range<int> gap(spans[i - 1].getEnd(), spans[i].getStart());
+    for (size_t i = 1; i < placed.size(); ++i) {
+        const juce::Range<int> gap(placed[i - 1].span.getEnd(), placed[i].span.getStart());
         if (gap.getLength() > widest.getLength())
             widest = gap;
     }
@@ -535,63 +531,25 @@ void placeBanner(Layout& l, const Metrics& m, std::vector<juce::Range<int>> span
         l.automationWriteLabel = {inner.getStart(), 0, inner.getLength(), m.height};
 }
 
-void arrange(Layout& l, Metrics& m) {
+void arrange(Layout& l, const Metrics& m) {
     const auto runs = runsFor(l);
     const int slack = juce::jmax(0, m.width - requiredWidth(l, m));
-    std::vector<juce::Range<int>> spans;
+    std::vector<Placed> placed;
 
-    switch (l.style) {
-        case Style::Anchored: {
-            placeRun(runs.left, l, m, m.edgePad, m.groupGap, spans);
-            const int rightWidth = packedWidth(runs.right, l, m);
-            placeRun(runs.right, l, m, m.width - m.edgePad - rightWidth, m.groupGap, spans);
-            const int centreX = m.edgePad + packedWidth(runs.left, l, m) + m.groupGap + (slack / 2);
-            placeRun(runs.centre, l, m, centreX, m.groupGap, spans);
-            break;
-        }
-        case Style::MemoryFill: {
-            // The meter takes the slack while it is showing; otherwise the
-            // slack sits before the right-hand cluster.
-            if (l.rightClusterVisible && l.memoryMeterVisible)
-                m.memoryMeterExtra = slack;
-            std::vector<Group> flow = runs.left;
-            flow.insert(flow.end(), runs.centre.begin(), runs.centre.end());
-            int x = placeRun(flow, l, m, m.edgePad, m.groupGap, spans);
-            x += m.groupGap + (m.memoryMeterExtra > 0 ? 0 : slack);
-            placeRun(runs.right, l, m, x, m.groupGap, spans);
-            break;
-        }
-        case Style::Justified: {
-            // Every group spaced evenly, the qwerty toggle and CPU riding as one.
-            std::vector<Group> all = runs.left;
-            all.insert(all.end(), runs.centre.begin(), runs.centre.end());
-            all.insert(all.end(), runs.right.begin(), runs.right.end());
-            if (l.rightClusterVisible)
-                all.pop_back();
-            const int gaps = juce::jmax(1, static_cast<int>(all.size()) - 1);
-            int x = m.edgePad;
-            for (size_t i = 0; i < all.size(); ++i) {
-                const int width = build(all[i], l, m, x);
-                spans.emplace_back(x, x + width);
-                x += width + m.groupGap + (slack * static_cast<int>(i + 1) / gaps) -
-                     (slack * static_cast<int>(i) / gaps);
-            }
-            if (l.rightClusterVisible) {
-                const int cpuX = m.width - m.edgePad - m.cpu;
-                build(Group::Cpu, l, m, cpuX);
-                spans.back().setEnd(cpuX + m.cpu);
-            }
-            break;
-        }
-    }
+    placeRun(runs.left, l, m, m.edgePad, placed);
+    const int centreX = m.edgePad + packedWidth(runs.left, l, m) + m.groupGap + (slack / 2);
+    placeRun(runs.centre, l, m, centreX, placed);
+    const int rightWidth = packedWidth(runs.right, l, m);
+    placeRun(runs.right, l, m, m.width - m.edgePad - rightWidth, placed);
 
-    placeBanner(l, m, spans);
+    placeDividers(l, m, placed);
+    placeBanner(l, m, placed);
 }
 
 }  // namespace
 
 Layout compute(int width, int height, const TextWidths& text, float densityScale, Style style) {
-    Metrics m = metricsFor(width, height, text, densityScale);
+    const Metrics m = metricsFor(width, height, text, densityScale);
 
     Layout l;
     l.style = style;
@@ -600,9 +558,6 @@ Layout compute(int width, int height, const TextWidths& text, float densityScale
             break;
         drop(l, section);
     }
-
-    l.punchTrailingInset = m.punchIcon + kPunchIconInset;
-    l.cursorTrailingInset = text.timecodeCaption;
     arrange(l, m);
     return l;
 }

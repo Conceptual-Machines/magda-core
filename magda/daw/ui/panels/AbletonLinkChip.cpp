@@ -101,6 +101,10 @@ void AbletonLinkChip::paintButton(juce::Graphics& g, bool highlighted, bool down
     }
     g.fillEllipse(ledBounds);
 
+    // A narrow transport gives the chip only the width of its LED.
+    if (getWidth() < transport::link_chip::widthForHeight(getHeight()))
+        return;
+
     const float letterH = h * kLetteringShare;
     const auto letterBox =
         juce::Rectangle<float>(ledBounds.getRight() + gap, bounds.getCentreY() - (letterH / 2),

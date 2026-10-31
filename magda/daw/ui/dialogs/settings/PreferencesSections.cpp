@@ -814,12 +814,8 @@ class AppearancePage : public juce::Component {
         setupComboLabel(*this, transportStyleLabel,
                         trOr("preferences.transport_style.label", "Transport layout"));
         styleCombo(transportStyleCombo);
-        transportStyleCombo.addItem(trOr("preferences.transport_style.anchored", "Anchored center"),
-                                    1);
-        transportStyleCombo.addItem(
-            trOr("preferences.transport_style.memory", "Memory fills the slack"), 2);
-        transportStyleCombo.addItem(
-            trOr("preferences.transport_style.justified", "Justified groups"), 3);
+        transportStyleCombo.addItem(trOr("preferences.transport_style.boxed", "Boxed groups"), 1);
+        transportStyleCombo.addItem(trOr("preferences.transport_style.strip", "Strip"), 2);
         addAndMakeVisible(transportStyleCombo);
 
         // Segment order follows ParamControlStyle: Text, Knobs, Sliders.
