@@ -4,6 +4,7 @@
 #pragma once
 
 #include <array>
+#include <initializer_list>
 
 #include "TransportLayout.hpp"
 #include "core/TempoUtils.hpp"
@@ -22,41 +23,33 @@ inline constexpr const char* kSnapCaption = "SNAP";
 // resolve their own font publish theirs instead (BarsBeatsTicksLabel,
 // GridDivisionButton, SmallButtonLookAndFeel), and the measurement reads it
 // from them.
-inline constexpr float kHeadlineFontSize = 16.0f;          // BPM
-inline constexpr float kHeadlineTimecodeFontSize = 18.0f;  // the playhead on its own
-inline constexpr float kRowTimecodeFontSize = 12.0f;       // two-row readouts
-inline constexpr float kStackTimecodeFontSize = 10.0f;     // the Justified three-line stack
-inline constexpr float kReadoutFontSize = 14.0f;           // time signature and key root
-inline constexpr float kKeyQualityFontSize = 10.0f;
+inline constexpr float kRowTimecodeFontSize = 12.0f;  // the range readouts and the punch popup
+// BPM, time signature and playhead, the same size as the ranges.
+inline constexpr float kHeadlineFontSize = kRowTimecodeFontSize;
 inline constexpr float kMemoryCaptionFontSize = 8.0f;
 inline constexpr float kMemoryTimeFontSize = 11.0f;
 inline constexpr float kCpuTitleFontSize = 8.0f;
 inline constexpr float kCpuValueFontSize = 11.0f;
 inline constexpr float kBannerFontSize = 10.0f;  // the AUTOMATION WRITE banner
 
-// The group captions drawn over the top-right corner of the timecode boxes,
-// and the size they are drawn at. Here for the same reason as the AUTO / SNAP
-// captions: the string measured and the string drawn are one string.
+// The SEL / LOOP captions: the string measured and the string drawn are one
+// string.
 inline constexpr const char* kSelectionCaption = "SEL";
 inline constexpr const char* kLoopCaption = "LOOP";
-inline constexpr const char* kCursorCaption = "CUR";
-inline constexpr float kTimecodeCaptionFontSize = 7.0f;
+inline constexpr float kRangeCaptionFontSize = 9.0f;
 
 inline constexpr float kClockFontSize = 9.0f;
 inline constexpr const char* kClockWidest = "8:88:88.888";
 
-/** The playhead clock under the headline: m:ss.mmm, with hours once past one. */
+/** The playhead clock beside the headline: m:ss.mmm, with hours once past one. */
 juce::String clockText(double seconds);
 
 inline constexpr const char* kMemoryCaption = "MEM";
-inline constexpr const char* kKeepCaption = "KEEP";
 inline constexpr const char* kMemoryTimeWidest = "88:88 / 88:88";
 
-// Key names by ProjectInfo::keyRoot, and the readout shown when none is set.
+// Key names by ProjectInfo::keyRoot.
 inline constexpr std::array<const char*, 12> kKeyRootNames{"C",  "C#", "D",  "D#", "E",  "F",
                                                            "F#", "G",  "G#", "A",  "A#", "B"};
-inline constexpr const char* kNoKeyText = "--";
-inline constexpr std::array<const char*, 2> kKeyQualityNames{"maj", "min"};
 
 // Every text the automation-write banner can show.
 inline constexpr std::array<const char*, 3> kBannerTexts{"AUTOMATION WRITE", "AUTOMATION TOUCH",
@@ -82,13 +75,23 @@ inline constexpr int kCpuPeakMargin = 2;
  *  it will be asked to draw. */
 juce::String cpuReadoutText(int averagePercent, int peakPercent);
 
+// The fewest bar-number digits the readouts make room for, so the bar re-lays
+// itself out only once a value passes bar 999.
+inline constexpr int kMinTimecodeBarDigits = 3;
+
+/** Digits in the largest one-indexed bar number among `beats`, never fewer than
+ *  kMinTimecodeBarDigits. */
+int timecodeBarDigits(std::initializer_list<double> beats, int numerator, int denominator);
+
 /** Measures the widest string each text-sized section of the transport has to
- *  hold, in the font that section actually draws with.
+ *  hold, in the font that section actually draws with. The timecode readouts
+ *  hold barDigits of bar number and the beat numbers of a numerator-beat bar.
  *
  *  This is the half of the layout that needs a graphics context, kept apart
  *  from TransportLayout so the arithmetic there stays a pure function and can
  *  be asserted without one.
  */
-TextWidths measureTextWidths();
+TextWidths measureTextWidths(int barDigits = kMinTimecodeBarDigits,
+                             int numerator = DEFAULT_TIME_SIGNATURE_NUMERATOR);
 
 }  // namespace magda::daw::ui::transport

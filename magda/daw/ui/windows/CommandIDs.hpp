@@ -97,6 +97,7 @@ enum {
     showLiveView = 0x4009,               // F1 (#2966)
     showArrangeView = 0x400A,            // F2
     showMixView = 0x400B,                // F3
+    showToolPalette = 0x400C,            // T: the arrangement's edit tools at the mouse
 
     // Help menu
     showHelp = 0x5000,

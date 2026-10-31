@@ -6,6 +6,7 @@
 #include <BinaryData.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <ranges>
 #include <set>
@@ -13,7 +14,7 @@
 
 #include "../components/automation/AutomationMenu.hpp"
 #include "../components/automation/MasterAutomationLanes.hpp"
-#include "../components/common/EditToolbar.hpp"
+#include "../components/common/EditToolPalette.hpp"
 #include "../components/common/MasterSpeakerButton.hpp"
 #include "../components/common/SideColumn.hpp"
 #include "../components/mixer/ClickableLabel.hpp"
@@ -22,9 +23,9 @@
 #include "../components/navigation/SongNavigatorPanel.hpp"
 #include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
-#include "ArrangementToolbar.hpp"
 #include "ArrangementViewportPolicy.hpp"
 #include "Config.hpp"
+#include "TrackHeightPresetsPanel.hpp"
 #include "audio/TrackMeters.hpp"
 #include "audio/controllers/ControllerParamWriter.hpp"
 #include "audio/controllers/ControllerRouter.hpp"
@@ -408,18 +409,26 @@ void MainView::setupComponents() {
         });
     // Corner toolbar buttons (above track headers)
     // Zoom icon buttons
-    auto setupCornerButton = [this](std::unique_ptr<SvgButton>& btn, const juce::String& name,
-                                    const char* svgData, size_t svgSize) {
-        btn = std::make_unique<SvgButton>(name, svgData, svgSize);
-        btn->setOriginalColor(juce::Colour(0xFFB3B3B3));
-        btn->setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-        btn->setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-        btn->setPressedColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
-        btn->setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
-        btn->setBorderThickness(1.0f);
-        btn->setWantsKeyboardFocus(false);
-        addAndMakeVisible(*btn);
+    auto styleCornerButton = [this](SvgButton& btn) {
+        btn.setOriginalColor(juce::Colour(0xFFB3B3B3));
+        btn.setNormalColor(ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        btn.setHoverColor(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        btn.setPressedColor(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+        btn.setBorderColor(ActiveTheme::getColour(ActiveTheme::BORDER));
+        btn.setBorderThickness(1.0f);
+        btn.setWantsKeyboardFocus(false);
+        addAndMakeVisible(btn);
     };
+    auto setupCornerButton = [&styleCornerButton](std::unique_ptr<SvgButton>& btn,
+                                                  const juce::String& name, const char* svgData,
+                                                  size_t svgSize) {
+        btn = std::make_unique<SvgButton>(name, svgData, svgSize);
+        styleCornerButton(*btn);
+    };
+
+    editToolButton = std::make_unique<CurrentEditToolButton>(EditToolState::arrangement(),
+                                                             kArrangementToolTooltips);
+    styleCornerButton(*editToolButton);
 
     setupCornerButton(zoomFitButton, "ZoomFit", BinaryData::zoom_out_map_svg,
                       BinaryData::zoom_out_map_svgSize);
@@ -468,28 +477,62 @@ void MainView::setupComponents() {
     };
     zoomLoopButton->setTooltip("Zoom to loop region");
 
-    // S = density_small.svg (4 rows = compact), M = density_medium.svg (3 rows), L =
-    // density_large.svg (2 rows = spacious)
-    setupCornerButton(trackSmallButton, "TrackSmall", BinaryData::density_small_svg,
-                      BinaryData::density_small_svgSize);
+    // Three small dots for compact, two for medium, one big dot for large.
+    setupCornerButton(trackSmallButton, "TrackSmall", BinaryData::track_height_compact_svg,
+                      BinaryData::track_height_compact_svgSize);
     trackSmallButton->onClick = [this]() {
-        setAllTrackHeights(Config::getInstance().getCompactTrackHeight());
+        if (!std::exchange(trackHeightRightClicked_, false))
+            setAllTrackHeights(Config::getInstance().getCompactTrackHeight());
     };
     trackSmallButton->setTooltip("Compact track height");
 
-    setupCornerButton(trackMediumButton, "TrackMedium", BinaryData::density_medium_svg,
-                      BinaryData::density_medium_svgSize);
+    setupCornerButton(trackMediumButton, "TrackMedium", BinaryData::track_height_medium_svg,
+                      BinaryData::track_height_medium_svgSize);
     trackMediumButton->onClick = [this]() {
-        setAllTrackHeights(Config::getInstance().getMediumTrackHeight());
+        if (!std::exchange(trackHeightRightClicked_, false))
+            setAllTrackHeights(Config::getInstance().getMediumTrackHeight());
     };
     trackMediumButton->setTooltip("Medium track height");
 
-    setupCornerButton(trackLargeButton, "TrackLarge", BinaryData::density_large_svg,
-                      BinaryData::density_large_svgSize);
+    setupCornerButton(trackLargeButton, "TrackLarge", BinaryData::track_height_large_svg,
+                      BinaryData::track_height_large_svgSize);
     trackLargeButton->onClick = [this]() {
-        setAllTrackHeights(Config::getInstance().getLargeTrackHeight());
+        if (!std::exchange(trackHeightRightClicked_, false))
+            setAllTrackHeights(Config::getInstance().getLargeTrackHeight());
     };
     trackLargeButton->setTooltip("Large track height");
+
+    // A right-click on any of the three opens their heights for editing.
+    struct RightClick final : juce::MouseListener {
+        MainView& view;
+        explicit RightClick(MainView& v) : view(v) {}
+        void mouseDown(const juce::MouseEvent& e) override {
+            view.trackHeightRightClicked_ = e.mods.isPopupMenu();
+            if (view.trackHeightRightClicked_)
+                showTrackHeightPresets(e.eventComponent->getScreenBounds());
+        }
+    };
+    trackHeightRightClick_ = std::make_unique<RightClick>(*this);
+
+    setupCornerButton(masterSmallButton, "MasterCompact", BinaryData::track_height_compact_svg,
+                      BinaryData::track_height_compact_svgSize);
+    masterSmallButton->onClick = [this]() {
+        setMasterStripHeight(masterCompact() ? MIN_MASTER_STRIP_HEIGHT
+                                             : COMPACT_MASTER_STRIP_HEIGHT);
+    };
+    masterSmallButton->setTooltip("Compact master: peak meter only");
+    setupCornerButton(masterMediumButton, "MasterMedium", BinaryData::track_height_medium_svg,
+                      BinaryData::track_height_medium_svgSize);
+    masterMediumButton->onClick = [this]() { setMasterStripHeight(MIN_MASTER_STRIP_HEIGHT); };
+    masterMediumButton->setTooltip("Medium master");
+    setupCornerButton(masterLargeButton, "MasterLarge", BinaryData::track_height_large_svg,
+                      BinaryData::track_height_large_svgSize);
+    masterLargeButton->onClick = [this]() { setMasterStripHeight(MAX_MASTER_STRIP_HEIGHT); };
+    masterLargeButton->setTooltip("Large master");
+    for (auto* button : {trackSmallButton.get(), trackMediumButton.get(), trackLargeButton.get()}) {
+        button->addMouseListener(trackHeightRightClick_.get(), false);
+        button->setTooltip(button->getTooltip() + " (right-click to edit the heights)");
+    }
 
     setupCornerButton(ioToggleButton, "IOToggle", BinaryData::inputoutput_svg,
                       BinaryData::inputoutput_svgSize);
@@ -526,11 +569,6 @@ void MainView::setupComponents() {
         TrackManager::getInstance().setMasterVisible(
             ViewModeController::getInstance().getViewMode(), !masterVisible_);
     };
-
-    toolbar_ = std::make_unique<ArrangementToolbar>();
-    toolbar_->setViewGroups({{zoomFitButton.get(), zoomSelButton.get(), zoomLoopButton.get()},
-                             {markerLaneToggleButton.get(), secondsRulerToggleButton.get()}});
-    addAndMakeVisible(*toolbar_);
 
     // Set up scroll synchronization
     trackContentViewport->getHorizontalScrollBar().addListener(this);
@@ -1042,7 +1080,6 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
     ArrangementLayout result;
     auto bounds = getLocalBounds();
     auto& layout = LayoutConfig::getInstance();
-    result.toolbarArea = bounds.removeFromTop(edit_toolbar::kHeight);
 
     result.swapped = Config::getInstance().getScrollbarOnLeft();
     SideColumn headerColumn(!result.swapped);
@@ -1058,6 +1095,11 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
     const int horizontalScrollbarHeight = ARRANGEMENT_SCROLLBAR_SIZE;
 
     result.verticalScrollBarArea = zoomColumn.removeFrom(bounds, verticalScrollbarWidth);
+    // The master's size buttons stack in this slot beside the master row.
+    if (masterVisible_)
+        result.masterHeightButtonsArea =
+            result.verticalScrollBarArea.withTrimmedBottom(horizontalScrollbarHeight)
+                .removeFromBottom(masterStripHeight);
 
     result.horizontalScrollBarRowArea = bounds.removeFromBottom(horizontalScrollbarHeight);
     result.horizontalScrollBarArea = result.horizontalScrollBarRowArea;
@@ -1103,7 +1145,8 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
     result.verticalScrollBarArea.removeFromBottom(
         horizontalScrollbarHeight + effectiveMasterHeight + effectiveResizeHandleHeight +
         effectiveAuxHeight + effectiveMasterAutomationHeight);
-    result.verticalScrollBarArea.removeFromTop(getTimelineHeight());
+    result.trackHeightButtonsArea = result.verticalScrollBarArea.removeFromTop(getTimelineHeight())
+                                        .withTrimmedTop(getMarkerLaneHeight());
     if (result.verticalScrollBarArea.getWidth() > 2)
         result.verticalScrollBarArea = result.verticalScrollBarArea.reduced(1, 0);
 
@@ -1149,11 +1192,27 @@ void MainView::resized() {
                                         trackHeadersPanel->getTotalTracksHeight(),
                                         arrangementLayout.trackContentArea.getHeight()));
     scrollContainer_->toFront(false);
-    toolbar_->setBounds(arrangementLayout.toolbarArea);
 
+    for (auto* button :
+         {masterSmallButton.get(), masterMediumButton.get(), masterLargeButton.get()})
+        button->setVisible(masterVisible_ && !trackAreaReplaced());
     if (masterVisible_) {
+        masterHeaderPanel->setCompact(masterCompact());
+        masterContentPanel->setCompact(masterCompact());
         masterHeaderPanel->setBounds(arrangementLayout.masterHeaderArea);
         masterContentPanel->setBounds(arrangementLayout.masterContentArea);
+        // Compact has room for one button: its own three dots, which lead back to medium.
+        const auto area = arrangementLayout.masterHeightButtonsArea;
+        const int button = juce::jmin(16, area.getWidth() - 2);
+        const bool compact = masterCompact();
+        masterMediumButton->setVisible(masterMediumButton->isVisible() && !compact);
+        masterLargeButton->setVisible(masterLargeButton->isVisible() && !compact);
+        auto stack = area.withSizeKeepingCentre(button, area.getHeight())
+                         .withTrimmedTop(compact ? (area.getHeight() - button) / 2 : 4);
+        for (auto* each :
+             {masterSmallButton.get(), masterMediumButton.get(), masterLargeButton.get()})
+            if (each->isVisible())
+                each->setBounds(stack.removeFromTop(button));
     } else {
         // Clear stale bounds when the master strip is hidden: otherwise the song
         // map / master header keep their previous-view bounds and can leave a
@@ -1199,15 +1258,15 @@ void MainView::resized() {
 
     {
         const auto cornerArea = arrangementLayout.cornerArea;
-        const int btnSize = 23;
-        const int gap = 6;
+        const int btnSize = 20;
+        const int gap = 3;
         const int margin = 8;
         const int markerLaneHeight = getMarkerLaneHeight();
         const auto markerCornerArea = cornerArea.withHeight(markerLaneHeight);
         const auto timelineCornerArea = cornerArea.withTrimmedTop(markerLaneHeight);
         auto grid = timelineCornerArea.withTrimmedLeft(margin).withTrimmedRight(margin);
         grid.removeFromTop(juce::jmax(0, (grid.getHeight() - btnSize) / 2));
-        auto botRow = grid.removeFromTop(btnSize);
+        auto row = grid.removeFromTop(btnSize);
 
         // Invalidate old separator line position before updating
         if (!markerLaneSeparatorLine.isEmpty())
@@ -1238,27 +1297,48 @@ void MainView::resized() {
             repaint(cornerBottomBorderLine.expanded(1));
         cornerBottomBorderLine = juce::Rectangle<int>(lineX, cornerArea.getBottom() - 1, lineW, 1);
 
-        // Track-height row: action buttons on the inner side.
+        // One row: the I/O toggle at the outer edge, over the I/O column it shows; the rest from
+        // the inner side. On a narrow header the zooms drop out, loop first.
         SideColumn btnSide(!arrangementLayout.swapped);
         SideColumn axisSide(arrangementLayout.swapped);
-        trackSmallButton->setBounds(btnSide.removeFrom(botRow, btnSize));
-        btnSide.removeSpacing(botRow, gap);
-        trackMediumButton->setBounds(btnSide.removeFrom(botRow, btnSize));
-        btnSide.removeSpacing(botRow, gap);
-        trackLargeButton->setBounds(btnSide.removeFrom(botRow, btnSize));
-        btnSide.removeSpacing(botRow, gap);
-        addTrackButton->setBounds(btnSide.removeFrom(botRow, btnSize));
-        // The I/O toggle sits at the outer edge, over the I/O column it shows.
-        ioToggleButton->setBounds(axisSide.removeFrom(botRow, btnSize));
+        ioToggleButton->setBounds(axisSide.removeFrom(row, btnSize));
+        axisSide.removeSpacing(row, gap);
+        const std::array<SvgButton*, 7> rowButtons{zoomFitButton.get(),
+                                                   zoomSelButton.get(),
+                                                   zoomLoopButton.get(),
+                                                   markerLaneToggleButton.get(),
+                                                   secondsRulerToggleButton.get(),
+                                                   editToolButton.get(),
+                                                   addTrackButton.get()};
+        const int fitting = (row.getWidth() + gap) / (btnSize + gap);
+        int toDrop = juce::jmax(0, static_cast<int>(rowButtons.size()) - fitting);
+        for (auto* button : {zoomLoopButton.get(), zoomFitButton.get(), zoomSelButton.get()}) {
+            button->setVisible(toDrop <= 0);
+            --toDrop;
+        }
+        cornerButtonsRow = {};
+        for (auto* button : rowButtons) {
+            if (!button->isVisible())
+                continue;
+            button->setBounds(btnSide.removeFrom(row, btnSize));
+            btnSide.removeSpacing(row, gap);
+            // The I/O labels give way to these.
+            cornerButtonsRow = cornerButtonsRow.getUnion(button->getBounds());
+        }
 
-        // AUDIO / MIDI labels over the I/O column, in the lower row.
-        repaint(ioLabelsStrip);
-        cornerButtonsRow = trackSmallButton->getBounds().getUnion(addTrackButton->getBounds());
+        // The track heights stack in the block atop the vertical scrollbar, beside the ruler.
+        auto heights = arrangementLayout.trackHeightButtonsArea;
+        const int heightBtn = juce::jmin(heights.getWidth() - 2, heights.getHeight() / 3);
+        heights = heights.withSizeKeepingCentre(heightBtn, heightBtn * 3);
+        for (auto* button :
+             {trackSmallButton.get(), trackMediumButton.get(), trackLargeButton.get()})
+            button->setBounds(heights.removeFromTop(heightBtn));
+
         auto ioStrip = cornerArea;
         ioLabelsStrip = trackHeadersPanel->isIORoutingVisible()
                             ? axisSide.removeFrom(ioStrip, TrackHeadersPanel::IO_COLUMN_WIDTH)
-                                  .withY(botRow.getY())
-                                  .withHeight(botRow.getHeight())
+                                  .withY(row.getY())
+                                  .withHeight(row.getHeight())
                             : juce::Rectangle<int>();
         repaint(ioLabelsStrip);
     }
@@ -1426,6 +1506,23 @@ void MainView::syncSnapState() {
 }
 
 // Add keyboard event handler for zoom reset shortcut
+void MainView::setMasterStripHeight(int height) {
+    if (height == masterStripHeight)
+        return;
+    masterStripHeight = height;
+    resized();
+    repaint();
+}
+
+bool MainView::showToolPalette() {
+    if (!isShowing())
+        return false;
+    const auto mouse = juce::Desktop::getMousePosition();
+    showEditToolPalette(EditToolState::arrangement(), kArrangementToolTooltips,
+                        {mouse.x, mouse.y, 1, 1});
+    return true;
+}
+
 bool MainView::keyPressed(const juce::KeyPress& key) {
     // Check for Ctrl+0 (or Cmd+0 on Mac) to reset zoom to fit timeline
     if (key == juce::KeyPress('0', juce::ModifierKeys::commandModifier, 0)) {
@@ -1983,14 +2080,10 @@ void MainView::mouseDrag(const juce::MouseEvent& event) {
     if (isResizingMasterStrip) {
         // Dragging up (negative deltaY) should increase height
         int deltaY = resizeStartY - event.y;
-        int newHeight = juce::jlimit(MIN_MASTER_STRIP_HEIGHT, MAX_MASTER_STRIP_HEIGHT,
-                                     resizeStartHeight + deltaY);
-
-        if (newHeight != masterStripHeight) {
-            masterStripHeight = newHeight;
-            resized();
-            repaint();
-        }
+        const int dragged = resizeStartHeight + deltaY;
+        setMasterStripHeight(dragged < MIN_MASTER_STRIP_HEIGHT
+                                 ? COMPACT_MASTER_STRIP_HEIGHT
+                                 : juce::jmin(MAX_MASTER_STRIP_HEIGHT, dragged));
     }
 }
 
@@ -2661,6 +2754,9 @@ void MainView::MasterHeaderPanel::paint(juce::Graphics& g) {
     g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
     g.drawRect(bounds, 1);
 
+    if (compact_)
+        return;
+
     // "Master" label at top
     auto labelArea = bounds.reduced(6, 2).removeFromTop(14);
     g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
@@ -2683,11 +2779,28 @@ void MainView::MasterHeaderPanel::showMasterAutomationMenu(juce::Component* anch
     showAutomationMenu(MASTER_TRACK_ID, anchor);
 }
 
+void MainView::MasterHeaderPanel::setCompact(bool compact) {
+    if (compact_ == compact)
+        return;
+    compact_ = compact;
+    for (juce::Component* c : {static_cast<juce::Component*>(speakerButton.get()),
+                               static_cast<juce::Component*>(automationButton.get()),
+                               static_cast<juce::Component*>(volumeLabel.get()),
+                               static_cast<juce::Component*>(peakValueLabel.get())})
+        c->setVisible(!compact);
+    resized();
+    repaint();
+}
+
 void MainView::MasterHeaderPanel::resized() {
     auto contentArea = getLocalBounds().reduced(2);
     // The hide control now lives in the footer (next to the show toggle), not
     // in the master header.
     hideButton->setVisible(false);
+    if (compact_) {
+        peakMeter->setBounds(contentArea.reduced(6, 4));
+        return;
+    }
     contentArea.removeFromTop(14);  // "Master" label row
     contentArea.removeFromTop(6);   // padding below the label
 

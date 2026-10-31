@@ -351,8 +351,7 @@ void SvgButton::paintGlyphText(juce::Graphics& g, bool drawOn, bool highlighted,
             colour = drawOn ? resolveThemeColour(r.active, r.activeRole)
                             : resolveThemeColour(r.inactive, r.inactiveRole);
     g.setColour(colour.withMultipliedAlpha(isEnabled() ? 1.0f : 0.25f));
-    g.setFont(
-        FontManager::getInstance().getMonoFont(juce::jmin(12.0f, getHeight() * 0.7f)).boldened());
+    g.setFont(FontManager::getInstance().getUIFontBold(juce::jmin(12.0f, getHeight() * 0.7f)));
     g.drawText(letterGlyph_, getLocalBounds(), juce::Justification::centred, false);
 }
 

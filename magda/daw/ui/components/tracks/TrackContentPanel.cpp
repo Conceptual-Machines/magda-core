@@ -2513,10 +2513,16 @@ void TrackContentPanel::changeListenerCallback(juce::ChangeBroadcaster*) {
 }
 
 void TrackContentPanel::modifierKeysChanged(const juce::ModifierKeys& modifiers) {
-    juce::ignoreUnused(modifiers);
-    // Pressing/releasing Alt while hovering must swap the pencil cursor
-    // without waiting for a mouse move.
+    // Alt is the pencil while held, as in the MIDI editor; the tool itself swaps so the corner's
+    // tool button follows it. The cursor swaps without waiting for a mouse move.
+    EditToolState::arrangement().setAltHeld(modifiers.isAltDown());
     refreshCursorFromMouse();
+}
+
+void TrackContentPanel::mouseExit(const juce::MouseEvent& event) {
+    // Alt released elsewhere never reaches this panel, so leaving it ends the swap.
+    if (!event.mods.isAltDown())
+        EditToolState::arrangement().setAltHeld(false);
 }
 
 void TrackContentPanel::refreshCursorFromMouse() {

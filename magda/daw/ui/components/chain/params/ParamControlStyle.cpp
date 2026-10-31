@@ -3,8 +3,6 @@
 
 #include "ParamControlStyle.hpp"
 
-#include "core/Config.hpp"
-
 namespace magda::daw::ui {
 
 const char* controlStyleKey(ParamControlStyle style) {
@@ -30,7 +28,7 @@ ParamControlStyle controlStyleFromKey(const juce::String& key) {
 ParamControlStyle resolveControlStyle(const juce::String& pluginOverride) {
     if (pluginOverride.isNotEmpty())
         return controlStyleFromKey(pluginOverride);
-    return controlStyleFromKey(juce::String(Config::getInstance().getDeviceControlStyle()));
+    return ParamControlStyle::Text;
 }
 
 }  // namespace magda::daw::ui

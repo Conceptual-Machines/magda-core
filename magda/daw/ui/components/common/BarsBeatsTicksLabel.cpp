@@ -247,6 +247,11 @@ int BarsBeatsTicksLabel::barsGlyphX() const {
     return barsSegment_->getX() + ((barsSegment_->getWidth() - textWidth) / 2);
 }
 
+juce::String BarsBeatsTicksLabel::getDisplayText() const {
+    return barsSegment_->formatDisplay() + "." + beatsSegment_->formatDisplay() + "." +
+           ticksSegment_->formatDisplay();
+}
+
 bool BarsBeatsTicksLabel::isDragging() const {
     return (barsSegment_ && barsSegment_->isDragging()) ||
            (beatsSegment_ && beatsSegment_->isDragging()) ||

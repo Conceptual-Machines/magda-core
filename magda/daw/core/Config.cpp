@@ -216,8 +216,6 @@ juce::var Config::toVar() const {
     root->setProperty("uiScale", uiScale);
     root->setProperty("theme", toJuceString(theme));
     root->setProperty("uiDensityScale", uiDensityScale);
-    root->setProperty("transportStyle", toJuceString(transportStyle));
-    root->setProperty("deviceControlStyle", toJuceString(deviceControlStyle));
     root->setProperty("trackColourStyle", toJuceString(trackColourStyle));
     root->setProperty("showTrackIORouting", showTrackIORouting);
     root->setProperty("muteSoloStyle", toJuceString(muteSoloStyle));
@@ -675,8 +673,6 @@ void Config::fromVar(const juce::var& parsed) {
     uiScale = getDouble("uiScale", uiScale);
     setTheme(getString("theme", theme));
     setUIDensityScale(getDouble("uiDensityScale", uiDensityScale));
-    setTransportStyle(getString("transportStyle", transportStyle));
-    setDeviceControlStyle(getString("deviceControlStyle", deviceControlStyle));
     setTrackColourStyle(getString("trackColourStyle", trackColourStyle));
     showTrackIORouting = getBool("showTrackIORouting", showTrackIORouting);
     setMuteSoloStyle(getString("muteSoloStyle", muteSoloStyle));

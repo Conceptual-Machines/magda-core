@@ -35,7 +35,18 @@ juce::String clockText(double seconds) {
     return juce::String(mins) + ":" + pad(secs, 2) + "." + pad(ms, 3);
 }
 
-TextWidths measureTextWidths() {
+int timecodeBarDigits(std::initializer_list<double> beats, int numerator, int denominator) {
+    const double barLength = beatsPerBar(numerator, denominator);
+    int digits = kMinTimecodeBarDigits;
+    for (double value : beats) {
+        const auto bar =
+            static_cast<juce::int64>(std::floor(juce::jmax(0.0, value) / barLength)) + 1;
+        digits = juce::jmax(digits, juce::String(bar).length());
+    }
+    return digits;
+}
+
+TextWidths measureTextWidths(int barDigits, int numerator) {
     auto& fonts = FontManager::getInstance();
     const auto widthOf = [](const juce::Font& font, juce::StringRef text) {
         return juce::GlyphArrangement::getStringWidthInt(font, text);
@@ -45,9 +56,6 @@ TextWidths measureTextWidths() {
     // font size or family moves the layout with it instead of overflowing it.
     // The sizes come from the widgets themselves wherever they own one.
     const auto headlineFont = fonts.getUIFont(kHeadlineFontSize);
-    const auto readoutFont = fonts.getUIFont(kReadoutFontSize);
-    const auto keyRootFont = fonts.getUIFontBold(kReadoutFontSize);
-    const auto keyQualityFont = fonts.getUIFont(kKeyQualityFontSize);
     const auto memoryCaptionFont = fonts.getUIFont(kMemoryCaptionFontSize);
     const auto memoryTimeFont = fonts.getUIFont(kMemoryTimeFontSize);
     const auto bannerFont = fonts.getUIFont(kBannerFontSize).boldened();
@@ -56,36 +64,21 @@ TextWidths measureTextWidths() {
         fonts.getUIFontBold(SmallButtonLookAndFeel::getInstance().getFontSize());
     const auto cpuTitleFont = fonts.getUIFont(kCpuTitleFontSize);
     const auto cpuValueFont = fonts.getMonoFont(kCpuValueFontSize);
-    const auto captionFont = fonts.getUIFont(kTimecodeCaptionFontSize);
 
     TextWidths text;
-    // The readout sizes itself: it knows its own segment shares and how large a
-    // bar number the range can reach, which a box drawn around it does not.
-    const auto timecodeWidth = [](float fontSize) {
-        return BarsBeatsTicksLabel::preferredWidthForRange(
-            kTimecodeMaxBeats, MIN_TIME_SIGNATURE_VALUE, MAX_TIME_SIGNATURE_VALUE, true, fontSize);
+    // The readout sizes itself from its own segment shares, here for a value
+    // whose bar number has barDigits digits.
+    const auto lastBarStart =
+        (std::pow(10.0, barDigits) - 2.0) * beatsPerBar(numerator, MAX_TIME_SIGNATURE_VALUE);
+    const auto timecodeWidth = [&](float fontSize) {
+        return BarsBeatsTicksLabel::preferredWidthForRange(lastBarStart, numerator, numerator, true,
+                                                           fontSize);
     };
     text.timecodeBox = timecodeWidth(kRowTimecodeFontSize);
-    text.stackTimecodeBox = timecodeWidth(kStackTimecodeFontSize);
-    text.headlineTimecodeBox = timecodeWidth(kHeadlineTimecodeFontSize);
-    // The selection and loop readouts draw their S / E letter before the digits.
-    const auto overlayFont = fonts.getUIFont(BarsBeatsTicksLabel::kPackedOverlayFontSize);
-    for (const char* letter : {"S", "E"})
-        text.timecodeOverlay = juce::jmax(text.timecodeOverlay, widthOf(overlayFont, letter));
-    text.timecodeOverlay += BarsBeatsTicksLabel::kPackedOverlayGap;
-    // The caption TransportPanel draws over the box's top-right corner. The
-    // layout reserves this much at the end of every readout, and the readout
-    // keeps its digits out of it.
-    for (const char* caption : {kSelectionCaption, kLoopCaption, kCursorCaption})
-        text.timecodeCaption = juce::jmax(text.timecodeCaption, widthOf(captionFont, caption));
-    // The readout's glyphs stop this far inside its edge on their own (the strip
-    // inset plus half a segment's air), so the box only has to grow by what the
-    // caption needs beyond that.
-    text.timecodeGlyphInset =
-        BarsBeatsTicksLabel::kEdgeInset + (BarsBeatsTicksLabel::kSegmentPad / 2);
+    text.headlineTimecodeBox = timecodeWidth(kHeadlineFontSize);
     text.tempo = widthOf(headlineFont, juce::String(MAX_VALID_BPM, 2));
-    text.timeSigNumerator = widthOf(readoutFont, juce::String(MAX_TIME_SIGNATURE_VALUE) + "/");
-    text.timeSigDenominator = widthOf(readoutFont, juce::String(MAX_TIME_SIGNATURE_VALUE));
+    text.timeSigNumerator = widthOf(headlineFont, juce::String(MAX_TIME_SIGNATURE_VALUE) + "/");
+    text.timeSigDenominator = widthOf(headlineFont, juce::String(MAX_TIME_SIGNATURE_VALUE));
     text.cpuTitle = widthOf(cpuTitleFont, tr("transport.cpu.cpu"));
     // The readout gains a second number once the peak runs ahead of the average,
     // so measure every digit-count combination it can reach rather than just
@@ -96,15 +89,9 @@ TextWidths measureTextWidths() {
                 juce::jmax(text.cpuValue, widthOf(cpuValueFont, cpuReadoutText(average, peak)));
     text.gridToggle =
         juce::jmax(widthOf(toggleFont, kAutoGridCaption), widthOf(toggleFont, kSnapCaption));
-    text.rangeChip =
-        juce::jmax(widthOf(toggleFont, kSelectionCaption), widthOf(toggleFont, kLoopCaption));
-    text.keep = widthOf(toggleFont, kKeepCaption);
-
-    text.keyRoot = widthOf(keyRootFont, kNoKeyText);
-    for (const char* root : kKeyRootNames)
-        text.keyRoot = juce::jmax(text.keyRoot, widthOf(keyRootFont, root));
-    for (const char* quality : kKeyQualityNames)
-        text.keyQuality = juce::jmax(text.keyQuality, widthOf(keyQualityFont, quality));
+    const auto rangeCaptionFont = fonts.getUIFontBold(kRangeCaptionFontSize);
+    text.rangeCaption = juce::jmax(widthOf(rangeCaptionFont, kSelectionCaption),
+                                   widthOf(rangeCaptionFont, kLoopCaption));
 
     text.clock = widthOf(fonts.getMonoFont(kClockFontSize), kClockWidest);
     text.memoryCaption = widthOf(memoryCaptionFont, kMemoryCaption);
@@ -112,15 +99,8 @@ TextWidths measureTextWidths() {
     for (const char* banner : kBannerTexts)
         text.banner = juce::jmax(text.banner, widthOf(bannerFont, banner));
 
-    // The division button stacks the numerator over the denominator, so what it
-    // has to hold is the widest single line anywhere in the division table.
-    for (const auto& division : kStandardGridDivisions) {
-        const juce::String label(division.label);
-        const int slash = label.indexOfChar('/');
-        text.gridDivision =
-            juce::jmax(text.gridDivision, widthOf(divisionFont, label.substring(0, slash).trim()),
-                       widthOf(divisionFont, label.substring(slash + 1).trim()));
-    }
+    for (const auto& division : kStandardGridDivisions)
+        text.gridDivision = juce::jmax(text.gridDivision, widthOf(divisionFont, division.label));
     return text;
 }
 
