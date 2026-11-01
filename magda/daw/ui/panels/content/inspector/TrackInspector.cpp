@@ -18,6 +18,7 @@
 #include "../../components/chain/layout/NodeHeaderStyles.hpp"
 #include "../../components/common/ColourSwatch.hpp"
 #include "../../components/mixer/RoutingSyncHelper.hpp"
+#include "../../components/mixer/SendRowControls.hpp"
 #include "../../state/TimelineController.hpp"
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/DialogLookAndFeel.hpp"
@@ -1345,9 +1346,7 @@ void TrackInspector::updateFromSelectedTrack() {
         const auto& sends = track->sends;
         if (sends.size() == sendLevelLabels_.size()) {
             for (size_t i = 0; i < sends.size(); ++i) {
-                float levelDb =
-                    (sends[i].level <= 0.0f) ? -60.0f : 20.0f * std::log10(sends[i].level);
-                sendLevelLabels_[i]->setValue(levelDb, juce::dontSendNotification);
+                magda::setSendLevelLabelValue(*sendLevelLabels_[i], sends[i].level);
             }
         } else {
             rebuildSendsUI();
@@ -1721,75 +1720,11 @@ void TrackInspector::rebuildSendsUI() {
         addAndMakeVisible(*destLabel);
         sendDestLabels_.push_back(std::move(destLabel));
 
-        // Send level label (draggable dB)
-        auto levelLabel = std::make_unique<magda::DraggableValueLabel>(
-            magda::DraggableValueLabel::Format::Decibels);
-        levelLabel->setRange(-60.0, 6.0, 0.0);
-        // A slider box: mono value over a soft fill, with a marker at the level.
-        levelLabel->setFont(FontManager::getInstance().getMonoFont(11.0f));
-        levelLabel->setFillProportionMapper(magda::level_meter_scale::dbFillProportion);
-        levelLabel->setFillColour(
-            ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE).withAlpha(0.28f));
-        levelLabel->setShowFillMarker(true);
-        float levelDb = (send.level <= 0.0f) ? -60.0f : 20.0f * std::log10(send.level);
-        levelLabel->setValue(levelDb, juce::dontSendNotification);
-
-        int busIndex = send.busIndex;
-        magda::TrackId srcId = selectedTrackId_;
-        auto* levelLabelPtr = levelLabel.get();
-        levelLabel->onValueChange = [srcId, busIndex, levelLabelPtr]() {
-            double db = levelLabelPtr->getValue();
-            float gain = (db <= -60.0) ? 0.0f : std::pow(10.0f, static_cast<float>(db) / 20.0f);
-            magda::UndoManager::getInstance().executeCommand(
-                std::make_unique<magda::SetSendLevelCommand>(srcId, busIndex, gain));
-        };
-
-        // Bind automation visual state + right-click menu so the send label
-        // tracks purple/grey like the volume fader and can add/show its lane.
-        magda::AutomationTarget sendTarget;
-        sendTarget.kind = magda::ControlTarget::Kind::SendLevel;
-        sendTarget.devicePath = magda::ChainNodePath::trackLevel(srcId);
-        sendTarget.sendBusIndex = busIndex;
-        levelLabel->setAutomationTarget(sendTarget);
-
-        levelLabel->onRightClick = [srcId, busIndex]() {
-            auto& autoMgr = magda::AutomationManager::getInstance();
-            magda::AutomationTarget target;
-            target.kind = magda::ControlTarget::Kind::SendLevel;
-            target.devicePath = magda::ChainNodePath::trackLevel(srcId);
-            target.sendBusIndex = busIndex;
-
-            auto laneId = autoMgr.getLaneForTarget(target);
-            const bool hasLane = laneId != magda::INVALID_AUTOMATION_LANE_ID;
-
-            juce::PopupMenu menu;
-            menu.addItem(1, hasLane ? "Show Automation Lane" : "Add Automation Lane");
-            if (hasLane)
-                menu.addItem(2, "Delete Automation Lane");
-            menu.showMenuAsync(juce::PopupMenu::Options(), [target](int result) {
-                auto& mgr = magda::AutomationManager::getInstance();
-                if (result == 1) {
-                    auto id = mgr.getOrCreateLane(target, magda::AutomationLaneType::Absolute);
-                    mgr.setLaneVisible(id, true);
-                } else if (result == 2) {
-                    auto id = mgr.getLaneForTarget(target);
-                    if (id != magda::INVALID_AUTOMATION_LANE_ID)
-                        mgr.deleteLane(id);
-                }
-            });
-        };
+        auto levelLabel = magda::makeSendLevelLabel(selectedTrackId_, send.busIndex, send.level);
         addAndMakeVisible(*levelLabel);
         sendLevelLabels_.push_back(std::move(levelLabel));
 
-        // Delete: a ghost cross that only boxes on hover.
-        auto deleteBtn =
-            std::make_unique<juce::TextButton>(juce::String(juce::CharPointer_UTF8("\xc3\x97")));
-        deleteBtn->setLookAndFeel(
-            &magda::daw::ui::node_header::GlyphToggleLookAndFeel::getInstance());
-        deleteBtn->onClick = [srcId, busIndex]() {
-            magda::UndoManager::getInstance().executeCommand(
-                std::make_unique<magda::RemoveSendCommand>(srcId, busIndex));
-        };
+        auto deleteBtn = magda::makeSendRemoveButton(selectedTrackId_, send.busIndex);
         addAndMakeVisible(*deleteBtn);
         sendDeleteButtons_.push_back(std::move(deleteBtn));
     }

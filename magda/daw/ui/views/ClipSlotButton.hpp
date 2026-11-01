@@ -511,7 +511,7 @@ class TrackHeaderButton : public juce::TextButton {
             fill = fill.brighter(0.06f);
         g.fillAll(fill);
 
-        auto content = getLocalBounds().reduced(14, 0);
+        auto content = getLocalBounds().reduced(8, 0);
         if (filled && selected_) {
             g.setColour(swatch.brighter(0.6f));
             g.fillRect(bounds.withTop(bounds.getBottom() - 2.0f));

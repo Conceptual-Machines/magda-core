@@ -23,9 +23,11 @@
 #include "../components/mixer/MiniChainList.hpp"
 #include "../components/mixer/MixerToggleRail.hpp"
 #include "../components/mixer/RoutingSelector.hpp"
+#include "../components/mixer/SendRowControls.hpp"
 #include "../components/navigation/MainViewScrollContainer.hpp"
 #include "../themes/MixerLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
+#include "TrackWidthPresetButtons.hpp"
 #include "audio/MidiBridge.hpp"
 #include "audio/io/AudioIOControl.hpp"
 #include "core/Config.hpp"
@@ -218,7 +220,7 @@ class MixerView : public juce::Component,
         struct SendSlot {
             int busIndex;
             std::unique_ptr<juce::Label> nameLabel;
-            std::unique_ptr<daw::ui::TextSlider> levelSlider;
+            std::unique_ptr<DraggableValueLabel> levelLabel;
             std::unique_ptr<juce::TextButton> removeButton;
         };
         std::vector<std::unique_ptr<SendSlot>> sendSlots_;
@@ -297,6 +299,7 @@ class MixerView : public juce::Component,
     std::vector<std::unique_ptr<ChannelStrip>> auxChannelStrips;
     std::vector<juce::Component*> orderedStrips_;  // flat layout order for channel container
     std::unique_ptr<MasterChannelStrip> masterStrip;
+    std::unique_ptr<TrackWidthPresetButtons> widthPresets_;
 
     // Scrollable area for channels
     std::unique_ptr<WheelForwardingViewport> channelViewport;
@@ -347,6 +350,7 @@ class MixerView : public juce::Component,
     void applyChannelWidthDelta(TrackId clickedId, int deltaX, const juce::ModifierKeys& mods);
     void finishChannelWidthResize(const juce::ModifierKeys& mods);
     void resetChannelWidths(TrackId clickedId, const juce::ModifierKeys& mods);
+    void applyTrackWidthPreset(int width);
     void commitChannelWidthResize();
     static void executeMixerLayoutCommands(const juce::String& description,
                                            std::vector<std::unique_ptr<UndoableCommand>> commands);

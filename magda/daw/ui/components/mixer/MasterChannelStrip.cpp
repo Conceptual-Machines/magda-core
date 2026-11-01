@@ -471,50 +471,6 @@ void MasterChannelStrip::setupControls() {
     miniSpectrumUI_->onControlsExpandedChanged = relayoutOnExpand;
     addAndMakeVisible(*miniSpectrumUI_);
 
-    // Headphone icon (non-interactive, just a label)
-    auto hpIcon = juce::Drawable::createFromImageData(BinaryData::headphones_svg,
-                                                      BinaryData::headphones_svgSize);
-    if (hpIcon)
-        ActiveTheme::applyToSvgIcon(*hpIcon);
-    headphoneIcon_ =
-        std::make_unique<juce::DrawableButton>("Headphones", juce::DrawableButton::ImageFitted);
-    headphoneIcon_->setImages(hpIcon.get());
-    headphoneIcon_->setClickingTogglesState(false);
-    headphoneIcon_->setInterceptsMouseClicks(false, false);
-    headphoneIcon_->setColour(juce::DrawableButton::backgroundColourId,
-                              juce::Colours::transparentBlack);
-    addAndMakeVisible(*headphoneIcon_);
-
-    // Cue volume slider (horizontal)
-    cueVolumeSlider_ = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decibels);
-    cueVolumeSlider_->setOrientation(daw::ui::TextSlider::Orientation::Horizontal);
-    cueVolumeSlider_->setRange(0.0, 1.0, 0.001);
-    cueVolumeSlider_->setValue(0.0, juce::dontSendNotification);  // -inf by default
-    cueVolumeSlider_->setFont(FontManager::getInstance().getUIFont(9.0f));
-
-    cueVolumeSlider_->setValueFormatter([](double pos) -> juce::String {
-        float db = meterPosToDb(static_cast<float>(pos));
-        if (db <= MIN_DB)
-            return "-inf";
-        if (std::abs(db) < 0.05f)
-            db = 0.0f;
-        return {db, 1};
-    });
-
-    cueVolumeSlider_->setValueParser([](const juce::String& text) -> double {
-        auto t = text.trim();
-        if (t.endsWithIgnoreCase("db"))
-            t = t.dropLastCharacters(2).trim();
-        if (t.equalsIgnoreCase("-inf") || t.equalsIgnoreCase("inf"))
-            return 0.0;
-        float db = t.getFloatValue();
-        return static_cast<double>(dbToMeterPos(db));
-    });
-
-    // TODO: Wire to cue bus volume when implemented
-    cueVolumeSlider_->onValueChanged = [](double /*pos*/) {};
-    addAndMakeVisible(*cueVolumeSlider_);
-
     // Speaker on/off button (toggles master mute) — one shared recipe with the
     // inspector / arrange master header.
     speakerButton = magda::makeMasterSpeakerButton();
@@ -584,21 +540,31 @@ void MasterChannelStrip::resized() {
         // Color indicator space (matches channel strip)
         bounds.removeFromTop(6);
 
-        // Title row: [speaker icon] [Master label]
+        // The "Master" label centers vertically in the painted title bar (component y in
+        // [1, labelRowBottom] — see paint()), which is anchored to the component top and so
+        // sits ~6px higher than the padded titleRow.
         auto titleRow = bounds.removeFromTop(24);
-        auto speakerSlot = titleRow.removeFromLeft(20);
-        titleRow.removeFromLeft(2);
-        // Both the speaker and the "Master" label center vertically in the
-        // painted title bar (component y in [1, labelRowBottom] — see paint()),
-        // which is anchored to the component top and so sits ~6px higher than
-        // the padded titleRow.
         constexpr int kTitleBarBottom = 4 + 26;  // labelRowBottom in paint()
-        const int barMidY = (1 + kTitleBarBottom) / 2;
         titleLabel->setBounds(titleRow.withY(1).withHeight(kTitleBarBottom - 1));
-        speakerButton->setBounds(
-            juce::Rectangle<int>(0, 0, 18, 18).withCentre({speakerSlot.getCentreX(), barMidY}));
 
         bounds.removeFromTop(metrics.controlSpacing);
+
+        // Mirror channel-strip layout so the analyzers, handle and fader line up: 2px gap, then
+        // reserve the same sends region (Add Send row + max sends across all tracks) when sends
+        // are visible.
+        bounds.removeFromTop(2);
+
+        if (Config::getInstance().getMixerShowSends()) {
+            const int sendSlotHeight = 18;
+            size_t maxSends = 0;
+            for (const auto& t : TrackManager::getInstance().getTracks())
+                maxSends = std::max(maxSends, t.sends.size());
+            int uniformSendsRegion = sendSlotHeight;
+            if (maxSends > 0)
+                uniformSendsRegion += 1 + static_cast<int>(maxSends) * (sendSlotHeight + 1) - 1;
+            bounds.removeFromTop(uniformSendsRegion);
+            bounds.removeFromTop(6);  // breathing room before the analyzers
+        }
 
         // Mini analyzers, mirrored from ChannelStrip. Rail toggles control
         // visibility; refreshMiniAnalyzers() resolves the live plugin.
@@ -621,24 +587,6 @@ void MasterChannelStrip::resized() {
             miniSpectrumUI_->setVisible(false);
         }
 
-        // Mirror channel-strip layout so the handle and fader line up: 2px
-        // gap, then reserve the same sends region (Add Send row + max sends
-        // across all tracks) when sends are visible, then the fader-top
-        // inset, then the resize handle.
-        bounds.removeFromTop(2);
-
-        if (Config::getInstance().getMixerShowSends()) {
-            const int sendSlotHeight = 18;
-            size_t maxSends = 0;
-            for (const auto& t : TrackManager::getInstance().getTracks())
-                maxSends = std::max(maxSends, t.sends.size());
-            int uniformSendsRegion = sendSlotHeight;
-            if (maxSends > 0)
-                uniformSendsRegion += 1 + static_cast<int>(maxSends) * (sendSlotHeight + 1) - 1;
-            bounds.removeFromTop(uniformSendsRegion);
-            bounds.removeFromTop(6);  // breathing room before handle
-        }
-
         bounds.removeFromTop(effectiveMixerFaderTopInset(MASTER_TRACK_ID));
 
         if (resizeHandle_) {
@@ -646,16 +594,13 @@ void MasterChannelStrip::resized() {
             resizeHandle_->setAlwaysOnTop(true);
         }
 
-        // Cue volume at bottom: [headphone icon] [slider]
+        // Mute at the bottom.
         bounds.removeFromBottom(2);
-        auto cueRow = bounds.removeFromBottom(20);
-        headphoneIcon_->setBounds(cueRow.removeFromLeft(18));
-        cueRow.removeFromLeft(2);
-        cueVolumeSlider_->setBounds(cueRow);
-        bounds.removeFromBottom(2);  // Gap between cue row and readout
+        speakerButton->setBounds(bounds.removeFromBottom(20));
+        bounds.removeFromBottom(2);  // Gap between mute row and readout
 
         // Readout sits just below the fader, with a small breathing strip
-        // beneath it so the number doesn't kiss the cue row.
+        // beneath it so the number doesn't kiss the mute row.
         const int labelHeight = 12;
         const int bottomStrip = 4;
         bounds.removeFromBottom(bottomStrip);
@@ -705,8 +650,6 @@ void MasterChannelStrip::resized() {
         // Hide components not used in horizontal mode
         dbScale_->setBounds(juce::Rectangle<int>());
         resizeHandle_->setBounds(juce::Rectangle<int>());
-        headphoneIcon_->setBounds(juce::Rectangle<int>());
-        cueVolumeSlider_->setBounds(juce::Rectangle<int>());
 
         // Clear vertical layout regions
         faderRegion_ = juce::Rectangle<int>();

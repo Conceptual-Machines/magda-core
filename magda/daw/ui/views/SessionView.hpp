@@ -35,6 +35,7 @@ class MainViewScrollContainer;
 class ClipSlotButton;
 class SessionStopButton;
 class AddSceneCell;
+class TrackWidthPresetButtons;
 
 class SessionView : public juce::Component,
                     public juce::FileDragAndDropTarget,
@@ -126,19 +127,20 @@ class SessionView : public juce::Component,
     // Grid configuration
     static constexpr int DEFAULT_NUM_SCENES = 8;
     static constexpr int GRID_PADDING = 8;
-    static constexpr int TRACK_HEADER_HEIGHT = 42;
+    static constexpr int TRACK_HEADER_HEIGHT = 24;
     static constexpr int SCENE_BUTTON_WIDTH = 120;
-    static constexpr int DEFAULT_CLIP_SLOT_WIDTH = 112;
+    static constexpr int DEFAULT_CLIP_SLOT_WIDTH = 96;
     static constexpr int MIN_TRACK_WIDTH = 60;
     static constexpr int MAX_TRACK_WIDTH = 300;
-    static constexpr int CLIP_SLOT_HEIGHT = 44;
-    static constexpr int CLIP_SLOT_MARGIN = 4;
+    static constexpr int CLIP_SLOT_HEIGHT = 22;
+    static constexpr int CLIP_SLOT_MARGIN = 2;
     static constexpr int TRACK_SEPARATOR_WIDTH = 6;  // the gap between columns
     static constexpr int ROW_GAP = 6;
     static constexpr int STOP_ROW_HEIGHT = 28;
-    static constexpr int MIXER_STRIP_HEIGHT = 88;
+    static constexpr int MIXER_STRIP_HEIGHT = 56;
+    static constexpr int RECORD_MONITOR_ROW_HEIGHT = 26;
     int dragStartTrackWidth_ = DEFAULT_CLIP_SLOT_WIDTH;
-    static constexpr int ADD_SCENE_BUTTON_HEIGHT = 30;
+    static constexpr int ADD_SCENE_BUTTON_HEIGHT = CLIP_SLOT_HEIGHT;
 
     int numScenes_ = DEFAULT_NUM_SCENES;
 
@@ -213,6 +215,7 @@ class SessionView : public juce::Component,
     class MiniSendStrip;
     class SendSectionContainer;
     std::unique_ptr<SendSectionContainer> sendSectionContainer_;
+    juce::Rectangle<int> masterSendCard_;  // The master column's empty card in the sends row
     std::unique_ptr<ResizeHandle> sendResizeHandle_;
     std::vector<std::unique_ptr<juce::Viewport>> trackSendViewports_;
     std::vector<std::unique_ptr<MiniSendStrip>> trackSendStrips_;
@@ -234,6 +237,7 @@ class SessionView : public juce::Component,
     // Master strip (in scene column area of fader row)
     class MiniMasterStrip;
     std::unique_ptr<MiniMasterStrip> masterStrip_;
+    std::unique_ptr<TrackWidthPresetButtons> widthPresets_;
 
     void rebuildTracks();
     /** @brief Places every per-track column component at the current horizontal scroll. */

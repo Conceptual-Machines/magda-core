@@ -32,6 +32,9 @@ class WheelForwardingViewport : public juce::Viewport {
 class MainViewScrollContainer : public juce::Component, private juce::ScrollBar::Listener {
   public:
     enum class Axis { Horizontal, Vertical };
+    static constexpr int HORIZONTAL_BAR_HEIGHT = 14;
+    static constexpr int SLIM_BAR_HEIGHT = 8;  // Session View and Mixer, over the strips' feet
+
     using RangeChangedCallback = std::function<void(double start, double end)>;
     using ViewportScrolledCallback = std::function<void(Axis axis, double rangeStart)>;
     using WheelCallback =

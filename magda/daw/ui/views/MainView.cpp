@@ -562,6 +562,7 @@ void MainView::setupComponents() {
     setupCornerButton(showMasterButton, "ToggleMasterTrack", BinaryData::bottom_open_svg,
                       BinaryData::bottom_open_svgSize);
     showMasterButton->setTooltip("Show master track");
+    showMasterButton->setIconPadding(1.0f);  // A 12px glyph, filling the scrollbar row.
     showMasterButton->setOriginalColor(juce::Colour(0xFFB3B3B3));
     showMasterButton->setNormalColor(ActiveTheme::DEVICE_ICON);
     showMasterButton->setHoverColor(ActiveTheme::DEVICE_ICON_HOVER);
@@ -1092,7 +1093,7 @@ MainView::ArrangementLayout MainView::computeArrangementLayout() const {
     // Scrollbar slots stay reserved while the shared host fades its bars, so view content never
     // shifts as a bar appears or disappears.
     const int verticalScrollbarWidth = ARRANGEMENT_SCROLLBAR_SIZE + 2;
-    const int horizontalScrollbarHeight = ARRANGEMENT_SCROLLBAR_SIZE;
+    const int horizontalScrollbarHeight = MainViewScrollContainer::HORIZONTAL_BAR_HEIGHT;
 
     result.verticalScrollBarArea = zoomColumn.removeFrom(bounds, verticalScrollbarWidth);
     // The master's size buttons stack in this slot beside the master row.
@@ -1228,7 +1229,7 @@ void MainView::resized() {
         masterVisible_ ? BinaryData::bottom_close_svgSize : BinaryData::bottom_open_svgSize);
     showMasterButton->setTooltip(masterVisible_ ? "Hide master track" : "Show master track");
     {
-        const int btnSize = 20;
+        const int btnSize = MainViewScrollContainer::HORIZONTAL_BAR_HEIGHT;
         SideColumn headerColumn(!arrangementLayout.swapped);
         auto restoreArea = arrangementLayout.horizontalScrollBarRowArea;
         auto headerArea = headerColumn.removeFrom(restoreArea, headerColumnWidth());
@@ -2174,7 +2175,7 @@ juce::Rectangle<int> MainView::getMasterResizeHandleArea() const {
     // The horizontal scrollbar row is a fixed-height reservation, so the handle
     // stays put while the bar fades in/out within that slot.
     int effectiveAuxHeight = auxVisible_ ? auxSectionHeight : 0;
-    int horizontalScrollbarHeight = ARRANGEMENT_SCROLLBAR_SIZE;
+    int horizontalScrollbarHeight = MainViewScrollContainer::HORIZONTAL_BAR_HEIGHT;
     int resizeHandleY = getHeight() - horizontalScrollbarHeight - masterStripHeight -
                         MASTER_RESIZE_HANDLE_HEIGHT - effectiveAuxHeight;
     return {0, resizeHandleY, getWidth(), MASTER_RESIZE_HANDLE_HEIGHT};
