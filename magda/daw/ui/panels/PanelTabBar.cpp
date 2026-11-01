@@ -105,13 +105,14 @@ void PanelTabBar::setupCollapseButton() {
         return;
 
     // Initial state is expanded, so show "close" icon
-    const char* svgData = (location_ == PanelLocation::Right) ? BinaryData::left_close_svg
-                                                              : BinaryData::right_close_svg;
-    size_t svgSize = (location_ == PanelLocation::Right) ? BinaryData::left_close_svgSize
-                                                         : BinaryData::right_close_svgSize;
+    const char* svgData = (location_ == PanelLocation::Right)
+                              ? BinaryData::iconpanelleftcloseboldm_svg
+                              : BinaryData::iconpanelrightcloseboldm_svg;
+    size_t svgSize = (location_ == PanelLocation::Right)
+                         ? BinaryData::iconpanelleftcloseboldm_svgSize
+                         : BinaryData::iconpanelrightcloseboldm_svgSize;
 
     collapseButton_ = std::make_unique<magda::SvgButton>("Collapse", svgData, svgSize);
-    collapseButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     collapseButton_->setNormalColor(ActiveTheme::DEVICE_ICON);
     collapseButton_->setHoverColor(ActiveTheme::DEVICE_ICON_HOVER);
     collapseButton_->onClick = [this]() {
@@ -135,12 +136,16 @@ void PanelTabBar::updateCollapseIcon() {
 
     if (location_ == PanelLocation::Right) {
         // LeftPanel: collapsed → "open", expanded → "close"
-        svgData = collapsed_ ? BinaryData::left_open_svg : BinaryData::left_close_svg;
-        svgSize = collapsed_ ? BinaryData::left_open_svgSize : BinaryData::left_close_svgSize;
+        svgData = collapsed_ ? BinaryData::iconpanelleftopenboldm_svg
+                             : BinaryData::iconpanelleftcloseboldm_svg;
+        svgSize = collapsed_ ? BinaryData::iconpanelleftopenboldm_svgSize
+                             : BinaryData::iconpanelleftcloseboldm_svgSize;
     } else if (location_ == PanelLocation::Left) {
         // RightPanel: collapsed → "open", expanded → "close"
-        svgData = collapsed_ ? BinaryData::right_open_svg : BinaryData::right_close_svg;
-        svgSize = collapsed_ ? BinaryData::right_open_svgSize : BinaryData::right_close_svgSize;
+        svgData = collapsed_ ? BinaryData::iconpanelrightopenboldm_svg
+                             : BinaryData::iconpanelrightcloseboldm_svg;
+        svgSize = collapsed_ ? BinaryData::iconpanelrightopenboldm_svgSize
+                             : BinaryData::iconpanelrightcloseboldm_svgSize;
     }
 
     if (svgData)

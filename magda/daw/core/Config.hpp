@@ -736,6 +736,22 @@ class Config {
     void setAbletonLinkEnabled(bool enabled) {
         abletonLinkEnabled = enabled;
     }
+    // Whether play and stop are shared with the session (#3189).
+    bool getAbletonLinkStartStopSync() const {
+        return abletonLinkStartStopSync;
+    }
+    void setAbletonLinkStartStopSync(bool enabled) {
+        abletonLinkStartStopSync = enabled;
+    }
+    // Added to the device's output latency when following the session: higher sounds earlier.
+    int getAbletonLinkLatencyOffsetMs() const {
+        return abletonLinkLatencyOffsetMs;
+    }
+    void setAbletonLinkLatencyOffsetMs(int ms) {
+        abletonLinkLatencyOffsetMs =
+            std::clamp(ms, -kAbletonLinkMaxLatencyOffsetMs, kAbletonLinkMaxLatencyOffsetMs);
+    }
+    static constexpr int kAbletonLinkMaxLatencyOffsetMs = 500;
 
     // OSC control surfaces (issue #1757). Off by default, for the same reason
     // the remote API is: a DAW should not start listening because it was
@@ -1835,6 +1851,8 @@ class Config {
     int oscReceivePort = 9000;
 
     bool abletonLinkEnabled = false;
+    bool abletonLinkStartStopSync = false;
+    int abletonLinkLatencyOffsetMs = 0;
     std::string oscBindAddress = "0.0.0.0";
     int oscFeedbackPort = 9001;
 

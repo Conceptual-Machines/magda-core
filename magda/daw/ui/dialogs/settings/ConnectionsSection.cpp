@@ -1515,7 +1515,7 @@ namespace {
  * whose result needs OK to show is one nobody trusts.
  */
 /**
- * @brief The Ableton Link switch (#929), worded as Ableton's integration guidelines ask:
+ * @brief The Ableton Link settings (#929, #3189), worded as Ableton's integration guidelines ask:
  *        "Ableton Link", then Enabled or Disabled.
  */
 class AbletonLinkPage : public juce::Component, private ConfigListener {
@@ -1531,13 +1531,38 @@ class AbletonLinkPage : public juce::Component, private ConfigListener {
         };
         addAndMakeVisible(enable_);
 
-        blurb_.setJustificationType(juce::Justification::topLeft);
-        blurb_.setBorderSize({});
+        startStopLabel_.setText(tr("connections.link.start_stop"), juce::dontSendNotification);
+        addAndMakeVisible(startStopLabel_);
+
+        startStop_.onClick = [this] {
+            Config::getInstance().setAbletonLinkStartStopSync(startStop_.getToggleState());
+            Config::getInstance().save();
+        };
+        addAndMakeVisible(startStop_);
+
+        offsetLabel_.setText(tr("connections.link.latency_offset"), juce::dontSendNotification);
+        addAndMakeVisible(offsetLabel_);
+
+        // On leaving the field, so typing "-1" on the way to "-12" does not move the audio.
+        offset_.setInputRestrictions(4, "-0123456789");
+        offset_.setJustification(juce::Justification::centred);
+        offset_.onFocusLost = [this] { commitOffset(); };
+        offset_.onReturnKey = [this] { offset_.giveAwayKeyboardFocus(); };
+        addAndMakeVisible(offset_);
+
+        for (auto* blurb : {&blurb_, &optionsBlurb_}) {
+            blurb->setJustificationType(juce::Justification::topLeft);
+            blurb->setBorderSize({});
+            addAndMakeVisible(*blurb);
+        }
         blurb_.setText(
             tr("connections.link.blurb")
                 .replace("{0}", magda::technicalText(magda::TechnicalTextToken::AbletonLink)),
             juce::dontSendNotification);
-        addAndMakeVisible(blurb_);
+        optionsBlurb_.setText(
+            tr("connections.link.options_blurb")
+                .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Magda)),
+            juce::dontSendNotification);
 
         applyTheme();
         configChanged();
@@ -1554,41 +1579,78 @@ class AbletonLinkPage : public juce::Component, private ConfigListener {
 
     void resized() override {
         auto area = getLocalBounds().reduced(0, 8);
-        auto row = area.removeFromTop(kRowHeight);
-        line_ = row.withTop(row.getBottom() - 1);
-        enable_.setBounds(row.removeFromRight(kToggleWidth).reduced(0, 7));
-        title_.setBounds(row);
+        rowLines_.clear();
+        const auto layoutRow = [this, &area](juce::Label& label, juce::Component& control,
+                                             int width) {
+            auto row = area.removeFromTop(kRowHeight);
+            rowLines_.push_back(row.withTop(row.getBottom() - 1));
+            control.setBounds(row.removeFromRight(width).reduced(0, 7));
+            label.setBounds(row);
+        };
+        layoutRow(title_, enable_, kToggleWidth);
+        layoutRow(startStopLabel_, startStop_, kToggleWidth);
+        layoutRow(offsetLabel_, offset_, kOffsetWidth);
         area.removeFromTop(10);
-        blurb_.setBounds(area.removeFromTop(60));
+        blurb_.setBounds(area.removeFromTop(48));
+        optionsBlurb_.setBounds(area.removeFromTop(48));
     }
 
     void paint(juce::Graphics& g) override {
         g.setColour(ActiveTheme::getBorderColour().withMultipliedAlpha(0.6f));
-        g.fillRect(line_);
+        for (const auto& line : rowLines_)
+            g.fillRect(line);
     }
 
   private:
     static constexpr int kRowHeight = 36;
     static constexpr int kToggleWidth = 120;
+    static constexpr int kOffsetWidth = 64;
+
+    static void showSwitch(juce::ToggleButton& button, bool on) {
+        button.setToggleState(on, juce::dontSendNotification);
+        button.setButtonText(tr(on ? "connections.link.enabled" : "connections.link.disabled"));
+    }
 
     void configChanged() override {
-        const bool enabled = Config::getInstance().getAbletonLinkEnabled();
-        enable_.setToggleState(enabled, juce::dontSendNotification);
-        enable_.setButtonText(
-            tr(enabled ? "connections.link.enabled" : "connections.link.disabled"));
+        const auto& config = Config::getInstance();
+        showSwitch(enable_, config.getAbletonLinkEnabled());
+        showSwitch(startStop_, config.getAbletonLinkStartStopSync());
+        if (!offset_.hasKeyboardFocus(false))
+            offset_.setText(juce::String(config.getAbletonLinkLatencyOffsetMs()),
+                            juce::dontSendNotification);
+    }
+
+    /// A number within range, or the stored value put back.
+    void commitOffset() {
+        auto& config = Config::getInstance();
+        if (offset_.getText().containsAnyOf("0123456789")) {
+            config.setAbletonLinkLatencyOffsetMs(offset_.getText().getIntValue());
+            config.save();
+        } else {
+            configChanged();
+        }
     }
 
     void applyTheme() {
-        styleLabel(title_, 13.0f);
-        blurb_.setFont(FontManager::getInstance().getUIFont(12.0f));
-        blurb_.setColour(juce::Label::textColourId,
-                         ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        for (auto* label : {&title_, &startStopLabel_, &offsetLabel_})
+            styleLabel(*label, 13.0f);
+        offset_.applyFontToAllText(FontManager::getInstance().getUIFont(13.0f));
+        for (auto* blurb : {&blurb_, &optionsBlurb_}) {
+            blurb->setFont(FontManager::getInstance().getUIFont(12.0f));
+            blurb->setColour(juce::Label::textColourId,
+                             ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        }
     }
 
     juce::Label title_;
     juce::ToggleButton enable_;
+    juce::Label startStopLabel_;
+    juce::ToggleButton startStop_;
+    juce::Label offsetLabel_;
+    juce::TextEditor offset_;
     juce::Label blurb_;
-    juce::Rectangle<int> line_;
+    juce::Label optionsBlurb_;
+    std::vector<juce::Rectangle<int>> rowLines_;
 };
 
 class ConnectionsSection : public SettingsSection {

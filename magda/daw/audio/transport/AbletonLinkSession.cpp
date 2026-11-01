@@ -37,10 +37,14 @@ AbletonLinkSession::AbletonLinkSession(Hooks hooks)
     // The value is not used: by the time the message thread runs, a later local edit may have
     // replaced it, so the session is read again there.
     impl_->link.setTempoCallback([this](double) { triggerAsyncUpdate(); });
+    impl_->link.setStartStopCallback([this](bool playing) {
+        reportedPlaying_.store(playing);
+        triggerAsyncUpdate();
+    });
 
     Config::getInstance().addListener(this);
     ProjectManager::getInstance().addListener(this);
-    applyEnabled(Config::getInstance().getAbletonLinkEnabled());
+    configChanged();
 }
 
 AbletonLinkSession::~AbletonLinkSession() {
@@ -52,12 +56,16 @@ AbletonLinkSession::~AbletonLinkSession() {
     impl_->link.enable(false);
     impl_->link.setNumPeersCallback([](std::size_t) {});
     impl_->link.setTempoCallback([](double) {});
+    impl_->link.setStartStopCallback([](bool) {});
     impl_.reset();
     cancelPendingUpdate();
 }
 
 void AbletonLinkSession::configChanged() {
-    applyEnabled(Config::getInstance().getAbletonLinkEnabled());
+    const auto& config = Config::getInstance();
+    applyEnabled(config.getAbletonLinkEnabled());
+    applyStartStopSync(config.getAbletonLinkStartStopSync());
+    latencyOffsetMs_.store(config.getAbletonLinkLatencyOffsetMs(), std::memory_order_relaxed);
 }
 
 void AbletonLinkSession::applyEnabled(bool enabled) {
@@ -66,8 +74,11 @@ void AbletonLinkSession::applyEnabled(bool enabled) {
 
     enabled_ = enabled;
     // A session being joined replaces this tempo; with nobody to join, the session starts at it.
-    if (enabled)
+    // Link reports only changes, so a play state left from the last session would hide one.
+    if (enabled) {
         sendProjectTempo();
+        commitPlaying(startStop_.transportPlaying());
+    }
     impl_->link.enable(enabled);
 
     if (!enabled)
@@ -82,8 +93,29 @@ void AbletonLinkSession::applyEnabled(bool enabled) {
         onStateChanged();
 }
 
+void AbletonLinkSession::applyStartStopSync(bool on) {
+    const bool wasOn = impl_->link.isStartStopSyncEnabled();
+    impl_->link.enableStartStopSync(on);
+    // Link keeps this commit local with sync off. Left true, it would hide the next peer's Play.
+    if (wasOn && !on)
+        commitPlaying(false);
+    startStop_.setActive(enabled_ && on);
+}
+
+void AbletonLinkSession::transportChanged(bool playing) {
+    if (startStop_.transportChanged(playing))
+        commitPlaying(playing);
+}
+
+void AbletonLinkSession::commitPlaying(bool playing) {
+    auto state = impl_->link.captureAppSessionState();
+    state.setIsPlaying(playing, impl_->link.clock().micros());
+    impl_->link.commitAppSessionState(state);
+}
+
 void AbletonLinkSession::projectTeardown() {
     replacingProject_ = true;
+    startStop_.transportStoppedForLoad();
 }
 
 void AbletonLinkSession::projectOpened(const ProjectInfo&) {
@@ -103,6 +135,7 @@ void AbletonLinkSession::projectPropertiesChanged() {
 }
 
 void AbletonLinkSession::handleAsyncUpdate() {
+    const auto reported = reportedPlaying_.exchange(std::nullopt);
     if (!enabled_)
         return;
 
@@ -111,8 +144,12 @@ void AbletonLinkSession::handleAsyncUpdate() {
         if (onStateChanged)
             onStateChanged();
     }
-    if (!replacingProject_)
-        takeSessionTempo();
+    if (replacingProject_)
+        return;
+
+    takeSessionTempo();
+    if (reported && startStop_.sessionChanged(*reported) && hooks_.setTransportPlaying)
+        hooks_.setTransportPlaying(*reported);
 }
 
 std::optional<double> AbletonLinkSession::beatAfter(std::chrono::microseconds ahead,
@@ -120,7 +157,8 @@ std::optional<double> AbletonLinkSession::beatAfter(std::chrono::microseconds ah
     if (peers_.load(std::memory_order_relaxed) == 0)
         return std::nullopt;
     const auto state = impl_->link.captureAudioSessionState();
-    return state.beatAtTime(impl_->link.clock().micros() + ahead, quantum);
+    const auto offset = std::chrono::milliseconds(latencyOffsetMs_.load(std::memory_order_relaxed));
+    return state.beatAtTime(impl_->link.clock().micros() + ahead + offset, quantum);
 }
 
 std::optional<double> AbletonLinkSession::barPhase() const {

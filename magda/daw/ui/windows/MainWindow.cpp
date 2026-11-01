@@ -1219,6 +1219,8 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     positionTimer_->onPlayStateChanged = [this](bool playing) {
         if (transportPanel)
             transportPanel->setPlaybackState(playing);
+        if (linkSession_)
+            linkSession_->transportChanged(playing);
     };
     positionTimer_->onPhaseWaitChanged = [this](bool waiting) {
         transportPanel->setAbletonLinkWaiting(waiting);
@@ -1331,6 +1333,14 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
             [this](double bpm) { mainView->getTimelineController().dispatch(SetTempoEvent{bpm}); },
         .followTempoLane = [engine](bool followed) { engine->setTempoLaneFollowed(followed); },
         .setPhaseSource = [engine](PhaseSource* source) { engine->setPhaseSource(source); },
+        .setTransportPlaying =
+            [this](bool playing) {
+                auto& timeline = mainView->getTimelineController();
+                if (playing)
+                    timeline.dispatch(StartPlaybackEvent{});
+                else
+                    timeline.dispatch(StopPlaybackEvent{});
+            },
     });
     linkSession_->onStateChanged = [this] {
         transportPanel->setAbletonLink(linkSession_->isEnabled());

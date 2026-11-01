@@ -520,6 +520,7 @@ target_sources(magda_daw PRIVATE
     TrackMeters.hpp
     transport/TransportStateManager.hpp
     transport/AbletonLinkSession.hpp
+    transport/LinkStartStop.hpp
     midi/MidiActivityMonitor.hpp
     params/ParameterManager.hpp
     WarpMarkerManager.hpp
