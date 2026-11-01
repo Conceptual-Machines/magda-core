@@ -3,12 +3,11 @@
 
 #include "custom_ui/FMUI.hpp"
 
-#include <BinaryData.h>
-
 #include <cmath>
 #include <ranges>
 
 #include "core/RangesHelpers.hpp"
+#include "custom_ui/OscWaveIcons.hpp"
 #include "custom_ui/SamplerTiles.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -40,6 +39,10 @@ constexpr int kOpsPanelW =
 constexpr int kMatrixPanelW = 2 * kPanelPadX + kRowLabelW + 5 * (kCellGap + kSendW);
 constexpr int kFilterPanelW = 404;
 constexpr float kInactiveAlpha = 0.35f;
+// In the order of the operators' wave values.
+constexpr std::array kWaveShapes{osc_wave::Shape::Sine, osc_wave::Shape::Triangle,
+                                 osc_wave::Shape::Saw, osc_wave::Shape::Square,
+                                 osc_wave::Shape::Noise};
 
 juce::Colour colour(magda::ColourRole role) {
     return ActiveTheme::getColour(role);
@@ -139,15 +142,8 @@ FMUI::FMUI() {
     filterCurve_ = std::make_unique<CompiledFilterCurveView>("magda_fm");
     addAndMakeVisible(*filterCurve_);
 
-    const std::array<std::pair<const char*, int>, 5> icons{
-        {{BinaryData::fadmodsine_svg, BinaryData::fadmodsine_svgSize},
-         {BinaryData::fadmodtri_svg, BinaryData::fadmodtri_svgSize},
-         {BinaryData::fadmodsawup_svg, BinaryData::fadmodsawup_svgSize},
-         {BinaryData::fadmodsquare_svg, BinaryData::fadmodsquare_svgSize},
-         {BinaryData::fadmodrandom_svg, BinaryData::fadmodrandom_svgSize}}};
-    for (size_t wave = 0; wave < icons.size(); ++wave)
-        waveIcons_[wave] = juce::Drawable::createFromImageData(
-            icons[wave].first, static_cast<size_t>(icons[wave].second));
+    for (size_t wave = 0; wave < kWaveShapes.size(); ++wave)
+        waveIcons_[wave] = osc_wave::loadIcon(kWaveShapes[wave]);
 
     positionChoice_.setOptions({"Output", "Matrix"});
     positionChoice_.onChange = [this](int index) { setChoiceSlot(kFilterPositionSlot, index); };
@@ -501,19 +497,11 @@ void FMUI::layoutFirstPanel() {
 }
 
 void FMUI::showWaveMenu(int op) {
-    static constexpr const char* kNames[] = {"Sine", "Triangle", "Saw", "Square", "Noise"};
-    juce::PopupMenu menu;
-    for (int wave = 0; wave < 5; ++wave) {
-        auto icon = waveIcons_[static_cast<size_t>(wave)]->createCopy();
-        icon->replaceColour(juce::Colours::black, colour(ActiveTheme::DEVICE_TEXT));
-        menu.addItem(wave + 1, kNames[wave], true, wave == opWave_[static_cast<size_t>(op)],
-                     std::move(icon));
-    }
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(
-                           localAreaToGlobal(waveIconAreas_[static_cast<size_t>(op)])),
-                       [safe = juce::Component::SafePointer(this), op](int result) {
-                           if (safe != nullptr && result > 0)
-                               safe->setChoiceSlot(kWaveBase + op, result - 1);
+    osc_wave::showMenu(*this, waveIconAreas_[static_cast<size_t>(op)],
+                       {kWaveShapes.begin(), kWaveShapes.end()}, opWave_[static_cast<size_t>(op)],
+                       [safe = juce::Component::SafePointer(this), op](int wave) {
+                           if (safe != nullptr)
+                               safe->setChoiceSlot(kWaveBase + op, wave);
                        });
 }
 
@@ -687,12 +675,8 @@ void FMUI::paint(juce::Graphics& g) {
         const float alpha = opEnabled_[i] ? 1.0f : kInactiveAlpha;
         field(waveTiles_[i], alpha);
         field(resetTiles_[i], alpha);
-        if (const auto& icon = waveIcons_[static_cast<size_t>(opWave_[i])]) {
-            auto tinted = icon->createCopy();
-            tinted->replaceColour(juce::Colours::black, colour(ActiveTheme::DEVICE_VALUE_TEXT));
-            tinted->drawWithin(g, waveIconAreas_[i].toFloat().withSizeKeepingCentre(16.0f, 16.0f),
-                               juce::RectanglePlacement::centred, alpha);
-        }
+        if (const auto& icon = waveIcons_[static_cast<size_t>(opWave_[i])])
+            osc_wave::drawIcon(g, *icon, waveIconAreas_[i], alpha);
         const auto box = resetTiles_[i].toFloat().withSizeKeepingCentre(12.0f, 12.0f);
         if (opReset_[i]) {
             g.setColour(colour(ActiveTheme::DEVICE_BLUE).withMultipliedAlpha(alpha));
