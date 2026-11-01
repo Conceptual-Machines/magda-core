@@ -965,10 +965,12 @@ void styleStripToggle(SvgButton& button, ColourRole tint) {
     button.setCornerRadius(6.0f);
 }
 
-/** @brief Pads a toggle so its glyph lands at 14px. */
-void fitStripIcon(SvgButton& button) {
-    const int side = juce::jmin(button.getWidth(), button.getHeight());
-    button.setIconPadding(juce::jmax(2.0f, (static_cast<float>(side) - 14.0f) * 0.5f));
+/** @brief Pads a toggle so its glyph lands at this size; an SVG draws tight to its ink. */
+void fitStripIcon(SvgButton& button, float glyphWidth, float glyphHeight) {
+    const auto padding = juce::jmin(static_cast<float>(button.getWidth()) - glyphWidth,
+                                    static_cast<float>(button.getHeight()) - glyphHeight) *
+                         0.5f;
+    button.setIconPadding(juce::jmax(2.0f, padding));
 }
 
 /** @brief The rounded card a strip control sits on. */
@@ -980,9 +982,10 @@ void paintControlCard(juce::Graphics& g, juce::Rectangle<int> area) {
     g.drawRoundedRectangle(card, 6.0f, 1.0f);
 }
 
-constexpr int kStripPadding = 7;
-constexpr int kStripRow = 34;
-constexpr int kStripGap = 6;
+constexpr int kStripPadding = 4;
+constexpr int kStripRow = 22;
+constexpr int kStripGap = 4;
+constexpr int kStripPanWidth = 34;  // "L100"
 
 }  // namespace
 
@@ -1125,29 +1128,26 @@ class SessionView::MiniChannelStrip : public juce::Component {
     }
 
     void resized() override {
+        static_assert(MIXER_STRIP_HEIGHT == 2 * kStripPadding + 2 * kStripRow + kStripGap);
+        static_assert(RECORD_MONITOR_ROW_HEIGHT == kStripRow + kStripGap);
         auto bounds = getLocalBounds().reduced(kStripPadding);
         if (!fullBar())
             bounds.removeFromLeft(5);
 
         auto topRow = bounds.removeFromTop(kStripRow);
-        panLabel_->setBounds(topRow.removeFromRight(kStripRow));
+        panLabel_->setBounds(topRow.removeFromRight(kStripPanWidth));
         topRow.removeFromRight(kStripGap);
         gainLabel_->setBounds(topRow);
 
         bounds.removeFromTop(kStripGap);
-        auto toggleRow = bounds.removeFromTop(kStripRow);
-        std::vector<SvgButton*> toggles{speakerButton_.get(), soloButton_.get()};
+        layoutTogglePair(bounds.removeFromTop(kStripRow), *speakerButton_, *soloButton_);
+        fitStripIcon(*speakerButton_, 14.0f, 10.0f);
+        fitStripIcon(*soloButton_, 10.0f, 10.0f);
         if (recordButton_->isVisible()) {
-            toggles.push_back(recordButton_.get());
-            toggles.push_back(monitorButton_.get());
-        }
-        const int count = static_cast<int>(toggles.size());
-        const int width = (toggleRow.getWidth() - kStripGap * (count - 1)) / count;
-        for (int i = 0; i < count; ++i) {
-            toggles[static_cast<size_t>(i)]->setBounds(
-                i == count - 1 ? toggleRow : toggleRow.removeFromLeft(width));
-            toggleRow.removeFromLeft(kStripGap);
-            fitStripIcon(*toggles[static_cast<size_t>(i)]);
+            bounds.removeFromTop(kStripGap);
+            layoutTogglePair(bounds.removeFromTop(kStripRow), *recordButton_, *monitorButton_);
+            fitStripIcon(*recordButton_, 10.0f, 10.0f);
+            fitStripIcon(*monitorButton_, 16.0f, 5.5f);
         }
     }
 
@@ -1170,6 +1170,12 @@ class SessionView::MiniChannelStrip : public juce::Component {
   private:
     static bool fullBar() {
         return Config::getInstance().getTrackColourStyle() == "full";
+    }
+
+    static void layoutTogglePair(juce::Rectangle<int> row, SvgButton& left, SvgButton& right) {
+        left.setBounds(row.removeFromLeft((row.getWidth() - kStripGap) / 2));
+        row.removeFromLeft(kStripGap);
+        right.setBounds(row);
     }
 
     void captureMultiTrackBase() {
@@ -1973,8 +1979,10 @@ void SessionView::resized() {
     const int gridWidth = getTotalTracksWidth();
     const int gridHeight = numScenes_ * sceneRowHeight + ADD_SCENE_BUTTON_HEIGHT;
     const int scrollBarThickness = ZoomScrollBar::DEFAULT_THICKNESS;
+    const int mixerStripHeight =
+        MIXER_STRIP_HEIGHT + (recordMonitorVisible_ ? RECORD_MONITOR_ROW_HEIGHT : 0);
     const int fixedRowsHeight = TRACK_HEADER_HEIGHT + ROW_GAP + ROW_GAP + STOP_ROW_HEIGHT +
-                                ROW_GAP + MIXER_STRIP_HEIGHT +
+                                ROW_GAP + mixerStripHeight +
                                 (ioRowVisible_ ? IO_ROW_HEIGHT + ROW_GAP : 0) +
                                 (sendRowVisible_ ? sendSectionHeight_ + 4 + ROW_GAP : 0);
     const int gridHeightWithoutScrollBars = juce::jmax(0, bounds.getHeight() - fixedRowsHeight);
@@ -1996,7 +2004,7 @@ void SessionView::resized() {
         scrollBarRow = bounds.removeFromBottom(scrollBarThickness);
 
     // Bottom up: mixer strips, I/O, sends, stop row.
-    auto mixerRow = bounds.removeFromBottom(MIXER_STRIP_HEIGHT);
+    auto mixerRow = bounds.removeFromBottom(mixerStripHeight);
     if (masterStrip_)
         masterStrip_->setBounds(takeSceneColumn(mixerRow));
     faderContainer->setBounds(mixerRow);
