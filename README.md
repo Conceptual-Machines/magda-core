@@ -101,6 +101,10 @@ make format     # Format code
 make lint       # Run clang-tidy analysis
 ```
 
+To build without embedded local inference, and so without the `third_party/llama.cpp`
+submodule, pass `CMAKE_EXTRA_ARGS="-DMAGDA_LOCAL_LLM=OFF"` on the first configure. The
+Local (Embedded) provider then reports that the build has no local inference.
+
 ## Automated Workflows
 
 The project includes automated GitHub Actions workflows:
