@@ -114,6 +114,7 @@ target_sources(magda_daw_app PRIVATE
     modulation/ModKnobComponent.cpp
     modulation/ModsPanelComponent.cpp
     modulation/ModulatorEditorPanel.cpp
+    modulation/ModulatorTriggerSourceMenu.cpp
     modulation/FollowerEditorPanel.cpp
     modulation/MacroEditorPanel.cpp
     modulation/LFOCurveEditor.cpp
@@ -235,6 +236,7 @@ target_sources(magda_daw_app PRIVATE
     modulation/ModKnobComponent.hpp
     modulation/ModsPanelComponent.hpp
     modulation/ModulatorEditorPanel.hpp
+    modulation/ModulatorTriggerSourceMenu.hpp
     modulation/FollowerEditorPanel.hpp
     modulation/MacroEditorPanel.hpp
     modulation/LFOCurveEditor.hpp

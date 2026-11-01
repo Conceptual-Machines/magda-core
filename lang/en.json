@@ -160,7 +160,9 @@
     "automated_empty": "No automated parameters",
     "latency": "Latency",
     "fx": "FX",
-    "no_fx": "No devices"
+    "no_fx": "No devices",
+    "mods": "Mods",
+    "macros": "Macros"
   },
   "settings": {
     "title": "Settings",

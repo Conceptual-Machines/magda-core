@@ -56,6 +56,9 @@ class PagedControlPanel : public juce::Component {
     std::function<void(int itemsToAdd)> onAddPageRequested;
     std::function<void(int itemsToRemove)> onRemovePageRequested;
 
+    /// Leave the title out of the header, for a host that labels the panel itself.
+    void setTitleShown(bool shown);
+
     // Callback when panel header/background is clicked (for selection)
     std::function<void()> onPanelClicked;
 
@@ -113,6 +116,7 @@ class PagedControlPanel : public juce::Component {
     bool canAddPage_ = false;
     bool canRemovePage_ = false;
     int minPages_ = 2;  // Minimum pages before remove is disabled
+    bool titleShown_ = true;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PagedControlPanel)
 };
