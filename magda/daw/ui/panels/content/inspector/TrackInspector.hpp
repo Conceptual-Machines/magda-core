@@ -35,8 +35,8 @@ namespace magda::daw::ui {
  * - Volume and Pan
  * - Audio/MIDI routing (input/output)
  * - Sends/Receives
- * - Clip count
  * - The track's own mods and macros
+ * - Clip count
  */
 class TrackInspector : public BaseInspector,
                        public magda::TrackManagerListener,

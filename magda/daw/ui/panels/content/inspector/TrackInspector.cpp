@@ -886,11 +886,6 @@ int TrackInspector::layoutSections(int fxListHeight, int height) {
         endSection(open);
     }
 
-    if (modulation_.isVisible()) {
-        modulation_.setBounds(bounds.removeFromTop(modulation_.getPreferredHeight()));
-        endSection(true);
-    }
-
     // Send/Receive section — only lay out if visible
     if (sendsHeader_.isVisible()) {
         sendsHeader_.setBounds(bounds.removeFromTop(CollapsibleSectionHeader::kHeight));
@@ -941,6 +936,11 @@ int TrackInspector::layoutSections(int fxListHeight, int height) {
             }
         }
         endSection(open);
+    }
+
+    if (modulation_.isVisible()) {
+        modulation_.setBounds(bounds.removeFromTop(modulation_.getPreferredHeight()));
+        endSection(true);
     }
 
     // Clips section — only lay out if visible
