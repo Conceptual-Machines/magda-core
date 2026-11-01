@@ -36,6 +36,7 @@
 #include "../themes/SmallButtonLookAndFeel.hpp"
 #include "../utils/SelectionPolicy.hpp"
 #include "ClipSlotButton.hpp"
+#include "TrackWidthPresetButtons.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/Config.hpp"
@@ -1421,6 +1422,13 @@ SessionView::SessionView() {
     masterStrip_->onContextMenu = [this]() { showMixerContextMenu(); };
     addAndMakeVisible(*masterStrip_);
 
+    widthPresets_ = std::make_unique<TrackWidthPresetButtons>();
+    widthPresets_->onWidthChosen = [this](int width) {
+        std::fill(trackColumnWidths_.begin(), trackColumnWidths_.end(), width);
+        resized();
+    };
+    addAndMakeVisible(*widthPresets_);
+
     // Create drag ghost label for file drag preview (added to grid content)
     dragGhostLabel_ = std::make_unique<juce::Label>();
     dragGhostLabel_->setFont(FontManager::getInstance().getUIFontBold(11.0f));
@@ -1997,8 +2005,14 @@ void SessionView::resized() {
 
     // Bottom up: mixer strips, I/O, sends, stop row.
     auto mixerRow = bounds.removeFromBottom(mixerStripHeight);
-    if (masterStrip_)
-        masterStrip_->setBounds(takeSceneColumn(mixerRow));
+    if (masterStrip_) {
+        // The width presets take the bottom gutter and what the master card can spare.
+        const auto masterColumn = takeSceneColumn(mixerRow);
+        masterStrip_->setBounds(
+            masterColumn.withTrimmedBottom(TrackWidthPresetButtons::HEIGHT - GRID_PADDING));
+        widthPresets_->setBounds(masterColumn.getX(), getHeight() - TrackWidthPresetButtons::HEIGHT,
+                                 masterColumn.getWidth(), TrackWidthPresetButtons::HEIGHT);
+    }
     // The strips reach into the bottom gutter, where each draws the foot the bar overlays.
     faderContainer->setBounds(mixerRow.withHeight(mixerRow.getHeight() + GRID_PADDING));
 

@@ -1852,6 +1852,10 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     };
     addAndMakeVisible(*masterStrip);
 
+    widthPresets_ = std::make_unique<TrackWidthPresetButtons>();
+    widthPresets_->onWidthChosen = [this](int width) { applyTrackWidthPreset(width); };
+    addAndMakeVisible(*widthPresets_);
+
     // Channel resize handles are created lazily, one per top-level strip, in
     // layoutChannelResizeHandles().
 
@@ -2367,6 +2371,18 @@ void MixerView::commitChannelWidthResize() {
     executeMixerLayoutCommands("Resize Mixer Channel Width", std::move(commands));
 }
 
+void MixerView::applyTrackWidthPreset(int width) {
+    std::vector<std::unique_ptr<UndoableCommand>> commands;
+    for (auto tid : getLayoutEditTargets(MASTER_TRACK_ID, true)) {
+        const int oldWidth = storedMixerChannelWidth(tid);
+        if (tid != MASTER_TRACK_ID && oldWidth != width)
+            commands.push_back(
+                std::make_unique<SetTrackMixerChannelWidthCommand>(tid, oldWidth, width));
+    }
+    executeMixerLayoutCommands("Set Mixer Channel Widths", std::move(commands));
+    resized();
+}
+
 void MixerView::executeMixerLayoutCommands(const juce::String& description,
                                            std::vector<std::unique_ptr<UndoableCommand>> commands) {
     if (commands.empty())
@@ -2389,8 +2405,11 @@ void MixerView::resized() {
     }
 
     // Master strip on the right (only if visible)
+    widthPresets_->setVisible(masterStrip->isVisible());
     if (masterStrip->isVisible()) {
-        masterStrip->setBounds(bounds.removeFromRight(effectiveMixerChannelWidth(MASTER_TRACK_ID)));
+        auto masterArea = bounds.removeFromRight(effectiveMixerChannelWidth(MASTER_TRACK_ID));
+        widthPresets_->setBounds(masterArea.removeFromBottom(TrackWidthPresetButtons::HEIGHT));
+        masterStrip->setBounds(masterArea);
     }
 
     // Aux channel strips between regular channels and master

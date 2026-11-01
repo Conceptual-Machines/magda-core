@@ -245,6 +245,13 @@ class GeneralPage : public juce::Component {
                         tr("preferences.slider.medium_track_height"), 32.0, 220.0, 1.0);
         setupTextSlider(*this, largeTrackHeightSlider, largeTrackHeightLabel,
                         tr("preferences.slider.large_track_height"), 32.0, 220.0, 1.0);
+        // Range matches the Mixer's MIN / MAX_CHANNEL_WIDTH.
+        setupTextSlider(*this, narrowTrackWidthSlider, narrowTrackWidthLabel,
+                        tr("preferences.slider.narrow_track_width"), 80.0, 180.0, 1.0);
+        setupTextSlider(*this, mediumTrackWidthSlider, mediumTrackWidthLabel,
+                        tr("preferences.slider.medium_track_width"), 80.0, 180.0, 1.0);
+        setupTextSlider(*this, wideTrackWidthSlider, wideTrackWidthLabel,
+                        tr("preferences.slider.wide_track_width"), 80.0, 180.0, 1.0);
 
         setupSectionHeader(*this, behaviorHeader, tr("preferences.section.behavior"));
         setupToggle(*this, confirmTrackDeleteToggle, tr("preferences.toggle.confirm_track_delete"));
@@ -351,6 +358,9 @@ class GeneralPage : public juce::Component {
                                           juce::dontSendNotification);
         mediumTrackHeightSlider.setValue(config.getMediumTrackHeight(), juce::dontSendNotification);
         largeTrackHeightSlider.setValue(config.getLargeTrackHeight(), juce::dontSendNotification);
+        narrowTrackWidthSlider.setValue(config.getNarrowTrackWidth(), juce::dontSendNotification);
+        mediumTrackWidthSlider.setValue(config.getMediumTrackWidth(), juce::dontSendNotification);
+        wideTrackWidthSlider.setValue(config.getWideTrackWidth(), juce::dontSendNotification);
         autoHideScrollbarsToggle.setToggleState(config.getMainViewScrollbarsAutoHide(),
                                                 juce::dontSendNotification);
         confirmTrackDeleteToggle.setToggleState(config.getConfirmTrackDelete(),
@@ -422,6 +432,9 @@ class GeneralPage : public juce::Component {
         config.setCompactTrackHeight(static_cast<int>(compactTrackHeightSlider.getValue()));
         config.setMediumTrackHeight(static_cast<int>(mediumTrackHeightSlider.getValue()));
         config.setLargeTrackHeight(static_cast<int>(largeTrackHeightSlider.getValue()));
+        config.setNarrowTrackWidth(static_cast<int>(narrowTrackWidthSlider.getValue()));
+        config.setMediumTrackWidth(static_cast<int>(mediumTrackWidthSlider.getValue()));
+        config.setWideTrackWidth(static_cast<int>(wideTrackWidthSlider.getValue()));
         config.setConfirmTrackDelete(confirmTrackDeleteToggle.getToggleState());
         config.setAutoMonitorSelectedTrack(autoMonitorToggle.getToggleState());
         config.setDuplicateLoopGrows(duplicateLoopGrowsToggle.getToggleState());
@@ -469,7 +482,7 @@ class GeneralPage : public juce::Component {
                secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
                headerH + 4 + rowH + 4 + rowH + secGap + headerH + 4 + rowH + secGap + headerH + 4 +
                (rowH * 11) + 40 + secGap + headerH + 4 + rowH + 18 + 4 + rowH + padding +
-               3 * (4 + rowH)     // Layout's track-height rows
+               6 * (4 + rowH)     // Layout's track-height and track-width rows
                + 3 * (4 + rowH);  // Engine's capture rows
     }
 
@@ -496,7 +509,7 @@ class GeneralPage : public juce::Component {
         constexpr int secGap = 12;
 
         return padding + headerH + 4 + rowH + 4 + rowH    // Layout
-               + 3 * (4 + rowH)                           // Layout: track-height presets
+               + 6 * (4 + rowH)                           // Layout: height and width presets
                + secGap + headerH + 4 + (rowH * 11) + 40  // Behaviour: 11 toggles, 4px apart
                + padding;
     }
@@ -562,6 +575,12 @@ class GeneralPage : public juce::Component {
         layoutTextSliderRow(bounds, mediumTrackHeightLabel, mediumTrackHeightSlider, rowH, sliderH);
         bounds.removeFromTop(4);
         layoutTextSliderRow(bounds, largeTrackHeightLabel, largeTrackHeightSlider, rowH, sliderH);
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, narrowTrackWidthLabel, narrowTrackWidthSlider, rowH, sliderH);
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, mediumTrackWidthLabel, mediumTrackWidthSlider, rowH, sliderH);
+        bounds.removeFromTop(4);
+        layoutTextSliderRow(bounds, wideTrackWidthLabel, wideTrackWidthSlider, rowH, sliderH);
         bounds.removeFromTop(secGap);
 
         // Behaviour
@@ -676,6 +695,12 @@ class GeneralPage : public juce::Component {
         layoutTextSliderRow(right, mediumTrackHeightLabel, mediumTrackHeightSlider, rowH, sliderH);
         right.removeFromTop(4);
         layoutTextSliderRow(right, largeTrackHeightLabel, largeTrackHeightSlider, rowH, sliderH);
+        right.removeFromTop(4);
+        layoutTextSliderRow(right, narrowTrackWidthLabel, narrowTrackWidthSlider, rowH, sliderH);
+        right.removeFromTop(4);
+        layoutTextSliderRow(right, mediumTrackWidthLabel, mediumTrackWidthSlider, rowH, sliderH);
+        right.removeFromTop(4);
+        layoutTextSliderRow(right, wideTrackWidthLabel, wideTrackWidthSlider, rowH, sliderH);
         right.removeFromTop(secGap);
 
         // Behaviour
@@ -725,6 +750,8 @@ class GeneralPage : public juce::Component {
     juce::Label compactTrackHeightLabel, mediumTrackHeightLabel, largeTrackHeightLabel;
     magda::daw::ui::TextSlider compactTrackHeightSlider, mediumTrackHeightSlider,
         largeTrackHeightSlider;
+    juce::Label narrowTrackWidthLabel, mediumTrackWidthLabel, wideTrackWidthLabel;
+    magda::daw::ui::TextSlider narrowTrackWidthSlider, mediumTrackWidthSlider, wideTrackWidthSlider;
     juce::ToggleButton confirmTrackDeleteToggle, autoMonitorToggle;
     juce::ToggleButton duplicateLoopGrowsToggle;
     juce::ToggleButton showTooltipsToggle;

@@ -91,7 +91,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/general/monitor_off.svg
     ../../assets/icons/general/monitor_on.svg
     ../../assets/BoldMGlyph.svg
-    ../../assets/icons/general/headphones.svg
     ../../assets/icons/general/record-monitor.svg
     ../../assets/icons/general/metronome.svg
     ../../assets/icons/general/ableton_link.svg
@@ -202,6 +201,8 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/toolbar/track_height_compact.svg
     ../../assets/icons/toolbar/track_height_medium.svg
     ../../assets/icons/toolbar/track_height_large.svg
+    ../../assets/icons/toolbar/track_width_narrow.svg
+    ../../assets/icons/toolbar/track_width_medium.svg
     ../../assets/icons/toolbar/zoom_out_map.svg
     ../../assets/icons/toolbar/fit_width.svg
     ../../assets/icons/toolbar/fit_loop.svg

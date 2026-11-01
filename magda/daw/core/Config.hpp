@@ -307,6 +307,28 @@ class Config {
         largeTrackHeight = height;
     }
 
+    // Track-width presets behind the buttons under Session View's and the Mixer's master
+    int getNarrowTrackWidth() const {
+        return narrowTrackWidth;
+    }
+    void setNarrowTrackWidth(int width) {
+        narrowTrackWidth = width;
+    }
+
+    int getMediumTrackWidth() const {
+        return mediumTrackWidth;
+    }
+    void setMediumTrackWidth(int width) {
+        mediumTrackWidth = width;
+    }
+
+    int getWideTrackWidth() const {
+        return wideTrackWidth;
+    }
+    void setWideTrackWidth(int width) {
+        wideTrackWidth = width;
+    }
+
     // Layout Configuration
     bool getScrollbarOnLeft() const {
         return scrollbarOnLeft;
@@ -1681,6 +1703,9 @@ class Config {
     int compactTrackHeight = 34;  // under TrackHeadersPanel::COMPACT_TRACK_HEIGHT
     int mediumTrackHeight = 83;   // TrackHeadersPanel::DEFAULT_TRACK_HEIGHT
     int largeTrackHeight = 126;
+    int narrowTrackWidth = 80;
+    int mediumTrackWidth = 96;
+    int wideTrackWidth = 140;
     bool scrollbarOnLeft = false;               // Scrollbar on right by default
     bool arrangementScrollbarsAutoHide = true;  // Hover-reveal scrollbars by default
 

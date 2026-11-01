@@ -35,6 +35,7 @@ class MainViewScrollContainer;
 class ClipSlotButton;
 class SessionStopButton;
 class AddSceneCell;
+class TrackWidthPresetButtons;
 
 class SessionView : public juce::Component,
                     public juce::FileDragAndDropTarget,
@@ -235,6 +236,7 @@ class SessionView : public juce::Component,
     // Master strip (in scene column area of fader row)
     class MiniMasterStrip;
     std::unique_ptr<MiniMasterStrip> masterStrip_;
+    std::unique_ptr<TrackWidthPresetButtons> widthPresets_;
 
     void rebuildTracks();
     /** @brief Places every per-track column component at the current horizontal scroll. */
