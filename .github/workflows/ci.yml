@@ -1793,10 +1793,10 @@ jobs:
         # starved the tests that wait on their own worker threads past their deadlines.
         $shards = [Math]::Min(16, [Environment]::ProcessorCount)
         Write-Host "$([Environment]::ProcessorCount) cores"
-        # A shard that stopped, not one that is slow: a healthy step is four
-        # minutes on the self-hosted runner and four to six on a hosted one,
-        # the heaviest shard being most of that.
-        $shardTimeoutMinutes = 12
+        # A shard that stopped, not one that is slow. Self-hosted, the step is
+        # about six minutes. Hosted dev runs take 8:30-11:00 depending on the VM,
+        # their heaviest shard reaching 634 s, so 12 min killed healthy shards.
+        $shardTimeoutMinutes = if ($env:RUNNER_ENVIRONMENT -eq 'self-hosted') { 12 } else { 20 }
         # On the self-hosted runner the job is a session-0 service child, and
         # Windows gives such work EcoQoS: reduced clocks, roughly half speed
         # measured on the heaviest shard. The parent owns the child handles,
