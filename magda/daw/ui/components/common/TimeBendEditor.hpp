@@ -19,8 +19,8 @@ namespace magda::daw::ui {
  * (#3044).
  *
  * The curve is a JUCE shell over sdk::CurveEditor; over it go the pattern as written, the curve
- * heard when AMOUNT is below 1, a line per pattern step with a dot wherever the head crosses one,
- * and the playhead. The editor holds no model: the host loads a bend and persists what comes out.
+ * heard when AMOUNT is below 1, a line per pattern step, and the playhead. The editor holds no
+ * model: the host loads a bend and persists what comes out.
  */
 class TimeBendEditor : public juce::Component {
   public:

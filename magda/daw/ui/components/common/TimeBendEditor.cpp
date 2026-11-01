@@ -297,41 +297,15 @@ class TimeBendEditor::Canvas : public juce::Component {
         g.fillPath(dashed);
 
         // The curve heard, once AMOUNT pulls it toward the diagonal.
-        const bool heardDiffers = bend.amount < 0.999f;
-        std::array<double, kCurveSamples + 1> heard{};
-        for (int i = 0; i <= kCurveSamples; ++i)
-            heard[static_cast<size_t>(i)] = bend.read(static_cast<double>(i) / kCurveSamples);
-        if (heardDiffers) {
+        if (bend.amount < 0.999f) {
             juce::Path line;
             for (int i = 0; i <= kCurveSamples; ++i) {
-                const auto p =
-                    toPixel(static_cast<double>(i) / kCurveSamples, heard[static_cast<size_t>(i)]);
+                const double x = static_cast<double>(i) / kCurveSamples;
+                const auto p = toPixel(x, bend.read(x));
                 i == 0 ? line.startNewSubPath(p) : line.lineTo(p);
             }
             g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.55f));
             g.strokePath(line, juce::PathStrokeType(1.5f));
-        }
-
-        // A dot wherever the head crosses a step, which is where that step plays.
-        if (steps_ > 0.0 && steps_ <= 128.0 && bend.on) {
-            g.setColour(ActiveTheme::getColour(ActiveTheme::CURVE_POINT));
-            for (int i = 0; i < kCurveSamples; ++i) {
-                const double ya = heard[static_cast<size_t>(i)] * steps_;
-                const double yb = heard[static_cast<size_t>(i + 1)] * steps_;
-                if (std::abs(yb - ya) < 1.0e-9)
-                    continue;
-                const bool rising = yb > ya;
-                const auto lo = static_cast<int>(std::ceil(std::min(ya, yb)));
-                const auto hi = static_cast<int>(std::floor(std::max(ya, yb)));
-                for (int k = lo; k <= hi; ++k) {
-                    const double kd = k;
-                    if (rising ? !(kd >= ya && kd < yb) : !(kd > yb && kd <= ya))
-                        continue;
-                    const double x = (i + (kd - ya) / (yb - ya)) / kCurveSamples;
-                    const auto p = toPixel(x, kd / steps_);
-                    g.fillEllipse(p.x - 2.0f, p.y - 2.0f, 4.0f, 4.0f);
-                }
-            }
         }
 
         if (playhead_ >= 0.0f) {
