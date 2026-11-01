@@ -695,7 +695,8 @@ void MixerView::ChannelStrip::setupControls() {
                                                                : 0)  // R/Mon row
                 +
                 (Config::getInstance().getMixerShowRouting() ? 2 * (kIoFieldHeight + kIoGap) : 0) +
-                metrics.channelPadding * 2;  // top+bottom padding
+                MainViewScrollContainer::SLIM_BAR_HEIGHT  // foot
+                + metrics.channelPadding * 2;             // top+bottom padding
             // Sends viewport also eats vertical space when visible.
             int sendsHeight = 0;
             if (Config::getInstance().getMixerShowSends()) {
@@ -1204,6 +1205,14 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
             ActiveTheme::getColour(selected ? ActiveTheme::BORDER : ActiveTheme::SEPARATOR));
         g.fillRect(0, groupHeaderHeight, fullBounds.getWidth(), 1);
     }
+
+    // The foot the horizontal scrollbar overlays; the strip's layout stops above it.
+    if (coloured) {
+        g.setColour(swatch);
+        g.fillRect(ownBounds.removeFromBottom(MainViewScrollContainer::SLIM_BAR_HEIGHT)
+                       .reduced(0, 1)
+                       .withTrimmedRight(1));
+    }
 }
 
 void MixerView::ChannelStrip::paintOverChildren(juce::Graphics& g) {
@@ -1249,8 +1258,8 @@ void MixerView::ChannelStrip::resized() {
     if (hasGroupChildren) {
         int channelWidth = preferredChannelWidth();
         const int borderWidth = 2;
-        int childTop = groupHeaderHeight + 1;                    // below separator line
-        int childHeight = getHeight() - childTop - borderWidth;  // above bottom border
+        int childTop = groupHeaderHeight + 1;      // below separator line
+        int childHeight = getHeight() - childTop;  // feet stay level
 
         int childX = channelWidth;
         for (size_t i = 0; i < groupChildren_.size(); ++i) {
@@ -1268,7 +1277,7 @@ void MixerView::ChannelStrip::resized() {
     // For everything else: full width, full height
     int ownWidth = hasGroupChildren ? preferredChannelWidth() : getWidth();
     int ownTop = hasGroupChildren ? groupHeaderHeight : 0;
-    int ownHeight = getHeight() - ownTop;
+    int ownHeight = getHeight() - ownTop - MainViewScrollContainer::SLIM_BAR_HEIGHT;
 
     auto bounds =
         juce::Rectangle<int>(0, ownTop, ownWidth, ownHeight).reduced(metrics.channelPadding);
@@ -2420,15 +2429,13 @@ void MixerView::resized() {
     }
 
     const bool needsHorizontalScrollBar = containerWidth > bounds.getWidth();
-    juce::Rectangle<int> scrollBarBounds;
-    if (needsHorizontalScrollBar) {
-        scrollBarBounds = bounds.removeFromBottom(ZoomScrollBar::DEFAULT_THICKNESS);
-    }
-    scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Horizontal, scrollBarBounds,
-                                    needsHorizontalScrollBar);
+    scrollContainer_->setAxisLayout(
+        MainViewScrollContainer::Axis::Horizontal,
+        bounds.withTop(bounds.getBottom() - MainViewScrollContainer::SLIM_BAR_HEIGHT),
+        needsHorizontalScrollBar);
     scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Vertical, {}, false);
 
-    // Channel viewport takes the remaining space above the shared scrollbar.
+    // Channel viewport takes the full height; the shared scrollbar overlays the strips' feet.
     channelViewport->setBounds(bounds);
 
     int containerHeight = bounds.getHeight();

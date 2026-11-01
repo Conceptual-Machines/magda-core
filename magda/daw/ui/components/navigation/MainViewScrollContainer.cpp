@@ -15,6 +15,7 @@ MainViewScrollContainer::MainViewScrollContainer(ZoomScrollBar::InteractionMode 
         std::make_unique<ZoomScrollBar>(ZoomScrollBar::Orientation::Horizontal, horizontalMode);
     verticalScrollBar_ =
         std::make_unique<ZoomScrollBar>(ZoomScrollBar::Orientation::Vertical, verticalMode);
+    horizontalScrollBar_->setTrackInset(1);
 
     addAndMakeVisible(*horizontalScrollBar_);
     addAndMakeVisible(*verticalScrollBar_);

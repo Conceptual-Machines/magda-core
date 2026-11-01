@@ -1093,7 +1093,10 @@ class SessionView::MiniChannelStrip : public juce::Component {
     std::function<void()> onContextMenu;
 
     void paint(juce::Graphics& g) override {
-        const auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+        auto body = getLocalBounds().toFloat();
+        const auto foot =
+            body.removeFromBottom(static_cast<float>(GRID_PADDING)).reduced(0.0f, 1.0f);
+        const auto bounds = body.reduced(0.5f);
         // A selected track lifts its strip as the arrangement lifts a selected track's body;
         // Full bar adds the light swatch rim.
         const bool selected = SelectionManager::getInstance().isTrackSelected(trackId_);
@@ -1116,6 +1119,11 @@ class SessionView::MiniChannelStrip : public juce::Component {
             g.fillRect(fullBar() ? bounds.withHeight(2.0f) : bounds.withWidth(5.0f));
         }
 
+        if (coloured) {
+            g.setColour(deriveTrackSwatch(trackColour_));
+            g.fillRoundedRectangle(foot, 3.0f);
+        }
+
         paintControlCard(g, gainLabel_->getBounds());
         paintControlCard(g, panLabel_->getBounds());
     }
@@ -1129,7 +1137,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
     void resized() override {
         static_assert(MIXER_STRIP_HEIGHT == 2 * kStripPadding + 2 * kStripRow + kStripGap);
         static_assert(RECORD_MONITOR_ROW_HEIGHT == kStripRow + kStripGap);
-        auto bounds = getLocalBounds().reduced(kStripPadding);
+        auto bounds = getLocalBounds().withTrimmedBottom(GRID_PADDING).reduced(kStripPadding);
         if (!fullBar())
             bounds.removeFromLeft(5);
 
@@ -1970,46 +1978,33 @@ void SessionView::resized() {
             .withTrimmedLeft(TRACK_SEPARATOR_WIDTH);
     };
 
-    // Reserve the shared scrollbars only when their axis overflows. Resolve the two axes
-    // together because adding either 20px bar can make the other one necessary.
     const int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
     const int gridWidth = getTotalTracksWidth();
     const int gridHeight = numScenes_ * sceneRowHeight + ADD_SCENE_BUTTON_HEIGHT;
-    const int scrollBarThickness = ZoomScrollBar::DEFAULT_THICKNESS;
+    const int verticalBarWidth = ZoomScrollBar::DEFAULT_THICKNESS;
     const int mixerStripHeight =
         MIXER_STRIP_HEIGHT + (recordMonitorVisible_ ? RECORD_MONITOR_ROW_HEIGHT : 0);
     const int fixedRowsHeight = TRACK_HEADER_HEIGHT + ROW_GAP + ROW_GAP + STOP_ROW_HEIGHT +
                                 ROW_GAP + mixerStripHeight +
                                 (ioRowVisible_ ? IO_ROW_HEIGHT + ROW_GAP : 0) +
                                 (sendRowVisible_ ? sendSectionHeight_ + 4 + ROW_GAP : 0);
-    const int gridHeightWithoutScrollBars = juce::jmax(0, bounds.getHeight() - fixedRowsHeight);
+    const bool needsVerticalScrollBar =
+        gridHeight > juce::jmax(0, bounds.getHeight() - fixedRowsHeight);
     const int trackAreaWidth =
         juce::jmax(0, bounds.getWidth() - SCENE_BUTTON_WIDTH - TRACK_SEPARATOR_WIDTH);
-    bool needsHorizontalScrollBar = false;
-    bool needsVerticalScrollBar = false;
-    for (int i = 0; i < 2; ++i) {
-        needsHorizontalScrollBar =
-            gridWidth >
-            juce::jmax(0, trackAreaWidth - (needsVerticalScrollBar ? scrollBarThickness : 0));
-        needsVerticalScrollBar =
-            gridHeight > juce::jmax(0, gridHeightWithoutScrollBars -
-                                           (needsHorizontalScrollBar ? scrollBarThickness : 0));
-    }
-
-    juce::Rectangle<int> scrollBarRow;
-    if (needsHorizontalScrollBar)
-        scrollBarRow = bounds.removeFromBottom(scrollBarThickness);
+    const bool needsHorizontalScrollBar =
+        gridWidth > juce::jmax(0, trackAreaWidth - (needsVerticalScrollBar ? verticalBarWidth : 0));
 
     // Bottom up: mixer strips, I/O, sends, stop row.
     auto mixerRow = bounds.removeFromBottom(mixerStripHeight);
     if (masterStrip_)
         masterStrip_->setBounds(takeSceneColumn(mixerRow));
-    faderContainer->setBounds(mixerRow);
+    // The strips reach into the bottom gutter, where each draws the foot the bar overlays.
+    faderContainer->setBounds(mixerRow.withHeight(mixerRow.getHeight() + GRID_PADDING));
 
-    scrollContainer_->setAxisLayout(
-        MainViewScrollContainer::Axis::Horizontal,
-        faderContainer->getBounds().withY(scrollBarRow.getY()).withHeight(scrollBarThickness),
-        needsHorizontalScrollBar);
+    scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Horizontal,
+                                    mixerRow.withY(mixerRow.getBottom()).withHeight(GRID_PADDING),
+                                    needsHorizontalScrollBar);
 
     ioContainer_->setVisible(ioRowVisible_);
     if (ioRowVisible_) {
@@ -2042,7 +2037,7 @@ void SessionView::resized() {
     sceneContainer->setBounds(takeSceneColumn(bounds));
     if (needsVerticalScrollBar) {
         scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Vertical,
-                                        bounds.removeFromRight(scrollBarThickness), true);
+                                        bounds.removeFromRight(verticalBarWidth), true);
     } else {
         scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Vertical, {}, false);
     }

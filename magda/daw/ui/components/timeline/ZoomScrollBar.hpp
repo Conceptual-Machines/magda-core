@@ -43,6 +43,9 @@ class ZoomScrollBar : public juce::Component, private juce::Timer {
     void setAutoHideEnabled(bool enabled);
     void reveal();
 
+    /** @brief Sets the empty space kept on each side of the track, across the bar. */
+    void setTrackInset(int inset);
+
     bool isDragging() const {
         return dragMode != DragMode::None;
     }
@@ -80,6 +83,7 @@ class ZoomScrollBar : public juce::Component, private juce::Timer {
     // Visible range as fraction of total content (0.0 to 1.0)
     double visibleStart = 0.0;
     double visibleEnd = 1.0;
+    int trackInset = 4;
 
     // Drag state
     enum class DragMode { None, Scroll, ResizeStart, ResizeEnd };
