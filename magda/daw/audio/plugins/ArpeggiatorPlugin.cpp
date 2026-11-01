@@ -685,6 +685,15 @@ void ArpeggiatorPlugin::walkSteps(BlockScope& block, const Stretch& stretch) {
             vel = (tick % 4 == 0) ? juce::jmin(127, note.velocity + 30) : note.velocity;
         }
 
+        // The time bend's dynamics scale it as it plays, read at the tick's own grid step,
+        // unswung (#3225).
+        if (const auto& dynamics = block.bend.dynamics) {
+            const auto level =
+                dynamics->level(0, sdk::sequencer::figureStep(static_cast<double>(tick) * stepBeats,
+                                                              block.bendCycleBeats, stepBeats));
+            vel = std::clamp(static_cast<int>(std::lround(vel * level)), 1, 127);
+        }
+
         // Note-on, carrying the provenance of whoever holds the pitch, so a
         // device behind this one reads it the way this one does (#2416).
         const std::uint32_t noteSource = note.liveHolds > 0 ? note.liveSourceId : note.hostSourceId;

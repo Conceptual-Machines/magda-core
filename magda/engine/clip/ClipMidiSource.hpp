@@ -235,8 +235,10 @@ class ClipMidiSource final : public EngineMidiSource {
                        const TrackClipPlayback& track, bool reconcile);
 
     /// Start @p index of @p clip's list at @p timelineBeat; a bent note ends at @p endBeat.
+    /// @p dynamics is the note's time bend dynamics level, which scales its velocity (#3225).
     void startNote(juce::MidiBuffer& out, const BlockInfo& block, const MidiClipPlayback& clip,
-                   std::int32_t index, double timelineBeat, double endBeat = INFINITY);
+                   std::int32_t index, double timelineBeat, double endBeat = INFINITY,
+                   float dynamics = 1.0f);
 
     /// The notes @p clip's bend strikes in timeline [@p from, @p to) of @p pass, in time order,
     /// into @ref bentHits_ (#3044).

@@ -159,7 +159,9 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
                 const auto bpm = tempoMap.bpmAt(clip.placement.startBeat);
                 midi.events = compileMidiEvents(clip, kCurveFloorSeconds * bpm / 60.0);
 
-                if (clip.timeBend.isActive()) {
+                // Dynamics play on a straight curve too (#3225).
+                const auto& dynamics = clip.timeBend.dynamics;
+                if (clip.timeBend.isActive() || (dynamics && dynamics->isActive())) {
                     const auto bar = tempoMap.barsAndBeatsAt(clip.placement.startBeat);
                     midi.bend = clip.timeBend;
                     midi.bendCycleBeats = clip.timeBend.cycleBeats(

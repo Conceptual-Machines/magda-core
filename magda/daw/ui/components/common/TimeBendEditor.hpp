@@ -19,8 +19,9 @@ namespace magda::daw::ui {
  * (#3044).
  *
  * The curve is a JUCE shell over sdk::CurveEditor; over it go the pattern as written, the curve
- * heard when AMOUNT is below 1, a line per pattern step, and the playhead. The editor holds no
- * model: the host loads a bend and persists what comes out.
+ * heard when AMOUNT is below 1, a line per pattern step, and the playhead. DYNAMICS swaps the curve
+ * for a bar per step of the figure (#3225). The editor holds no model: the host loads a bend and
+ * persists what comes out.
  */
 class TimeBendEditor : public juce::Component {
   public:
@@ -36,7 +37,8 @@ class TimeBendEditor : public juce::Component {
     /** @brief The cycle and a bar in beats, for the grid's beat and bar lines. */
     void setCycle(double cycleBeats, double beatsPerBar);
 
-    /** @brief The grid's division in beats until the GRID menu picks one: a device's step. */
+    /** @brief A device's step in beats: the grid's division until the GRID menu picks one, and the
+     * dynamics' step. */
     void setDefaultDivision(double beats);
 
     /** @brief Where the playhead is in the cycle, 0 to 1; negative hides it. */
@@ -76,21 +78,29 @@ class TimeBendEditor : public juce::Component {
 
   private:
     class Canvas;
+    class DynamicsView;
 
     void commit(const sdk::sequencer::TimeBend& after);
     /// Two header rows when the editor is too narrow for one.
     bool headerWraps() const;
+    /// TIME and DYN on the second row, shortened, when even the curve's controls barely fit.
+    bool modeInSecondRow() const;
     void showShapeMenu();
     void showGridMenu();
     void applyGrid();
     void syncControls();
+    void showDynamics(bool shows);
+    void updateVisibility();
 
     sdk::sequencer::TimeBend bend_;
     bool showsAmountAndCycles_ = true;
     bool showsGrooves_ = false;
+    bool showsDynamics_ = false;
     juce::Component* accessory_ = nullptr;
 
     magda::SvgButton powerButton_;
+    juce::TextButton timeButton_{"TIME"};
+    juce::TextButton dynamicsButton_{"DYNAMICS"};
     juce::TextButton shapeButton_{"SHAPE"};
     std::array<juce::TextButton, 3> spanButtons_;
     juce::Label spanLabel_;
@@ -103,11 +113,16 @@ class TimeBendEditor : public juce::Component {
     /// Sixteenths, the grid most parts are written on, until a host or the menu says.
     double division_ = 0.25;
     bool divisionPicked_ = false;
+    /// The dynamics' step: a device's, else sixteenths, as a clip plays them.
+    double dynamicsStep_ = 0.25;
     juce::Label amountLabel_;
     LinkableTextSlider amount_;
     juce::Label cyclesLabel_;
     LinkableTextSlider cycles_;
+    juce::Label dynamicsAmountLabel_;
+    LinkableTextSlider dynamicsAmount_;
     std::unique_ptr<Canvas> canvas_;
+    std::unique_ptr<DynamicsView> dynamicsView_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TimeBendEditor)
 };

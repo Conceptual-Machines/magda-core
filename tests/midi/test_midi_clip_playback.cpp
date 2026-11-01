@@ -1341,6 +1341,31 @@ TEST_CASE("Swing moves a note and leaves a controller alone", "[engine][clip][mi
     CHECK(recorder.hanging().empty());
 }
 
+TEST_CASE("Time bend dynamics scale a note's velocity as it plays, swung or not",
+          "[engine][clip][midi]") {
+    for (const bool swung : {false, true}) {
+        auto clip = makeMidiClip(1, 0.0, 4.0);
+        clip.midiNotes.push_back(note(60, 0.0, 0.2));
+        clip.midiNotes.push_back(note(62, 0.25, 0.2));
+        if (swung)
+            clip.timeBend = swingBend();
+        // A sixteenth grid: the note at 0.25 is step 1.
+        auto& dynamics = clip.timeBend.dynamics.emplace();
+        dynamics.on = true;
+        dynamics.values[0][1] = 0.5f;
+
+        Rig rig;
+        rig.publish({clip});
+        Recorder recorder;
+        rig.roll(0, blockOf(1.0), recorder);
+
+        const auto ons = recorder.noteOns();
+        REQUIRE(ons.size() == 2);
+        CHECK(ons[0].message.getVelocity() == 100);
+        CHECK(ons[1].message.getVelocity() == 50);
+    }
+}
+
 TEST_CASE("Swing is anchored to the project grid, not to the clip", "[engine][clip][midi]") {
     // A clip dragged half a beat does not take its swing with it: the clip's
     // content start is added before grooving and the clip's start subtracted

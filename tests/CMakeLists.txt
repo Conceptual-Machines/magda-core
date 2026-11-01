@@ -889,6 +889,7 @@ target_sources(magda_juce_tests PRIVATE
     # Files dropped straight onto a Drum Grid track (#2172)
     ui/test_drum_grid_file_drop_juce.cpp
     ui/test_multiband_curve_view_juce.cpp
+    ui/test_time_bend_editor_layout_juce.cpp
     # The transport layout against the widths the shipped fonts really produce
     # (#2071). Needs a graphics context, so it lives here rather than in
     # magda_tests, which asserts the same layout as pure arithmetic.
