@@ -1014,10 +1014,11 @@ void ModulatorEditorPanel::updateFromMod() {
         }
     } else {
         // LFO mode - show waveform shape
-        const auto* const shape =
-            std::find(kLfoShapes.begin(), kLfoShapes.end(), currentMod_.waveform);
+        const auto index =
+            std::distance(kLfoShapes.begin(),
+                          std::find(kLfoShapes.begin(), kLfoShapes.end(), currentMod_.waveform));
         waveformChoice_.setSelectedIndex(
-            shape != kLfoShapes.end() ? static_cast<int>(shape - kLfoShapes.begin()) : -1);
+            index < static_cast<std::ptrdiff_t>(kLfoShapes.size()) ? static_cast<int>(index) : -1);
     }
 
     // Tempo sync controls

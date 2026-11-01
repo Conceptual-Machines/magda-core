@@ -10,14 +10,11 @@
 namespace magda {
 
 /**
- * Check GitHub for a newer MAGDA release.
+ * @brief Check GitHub for a newer MAGDA release.
  *
- * Hits https://api.github.com/repos/Conceptual-Machines/magda-core/releases/latest
- * on a background thread, parses the tag_name, compares against the embedded
- * MAGDA_VERSION, and reports the outcome via onResult on the message thread.
- *
- * No authentication is used — the unauthenticated 60 req/hour per-IP limit is
- * plenty since each user checks at most once per 24h.
+ * A stable build asks for the latest stable release; a pre-release build lists
+ * every release, pre-releases included (#3219). The check runs on a background
+ * thread, unauthenticated: 60 req/hour per IP covers one check per 24h.
  */
 class UpdateChecker {
   public:
@@ -26,10 +23,15 @@ class UpdateChecker {
     struct Result {
         bool success = false;          // Network + parse succeeded
         bool updateAvailable = false;  // True when latest > current
-        juce::String currentVersion;   // e.g. "0.4.8"
-        juce::String latestVersion;    // e.g. "0.5.0"
+        juce::String currentVersion;   // e.g. "1.0.0-beta.1"
+        juce::String latestVersion;    // e.g. "1.0.0-beta.2"
         juce::String releaseUrl;       // html_url of the latest release
         juce::String errorMessage;     // Populated when success == false
+    };
+
+    struct Release {
+        juce::String version;  ///< Tag without its leading "v"; empty when none was found.
+        juce::String url;      ///< The release's html_url.
     };
 
     using ResultCallback = std::function<void(const Result&)>;
@@ -50,13 +52,18 @@ class UpdateChecker {
     static void markChecked();
 
     /**
-     * Compare two version strings in major.minor.patch form.
-     * Returns -1 if a < b, 0 if equal, 1 if a > b.
-     * Tolerates leading "v", trailing git-describe suffixes ("-15-g1391223"),
-     * and RC/pre-release tails ("-rc2") which are treated as earlier than
-     * the clean version.
+     * @brief Semver precedence of two versions: -1 if a < b, 0 if equal, 1 if a > b.
+     *
+     * 1.0.0-beta.1 < 1.0.0-beta.2 < 1.0.0. Tolerates a leading "v", build metadata
+     * and a git-describe tail ("-15-g1391223"), which compares equal to its tag.
      */
     static int compareVersions(const juce::String& a, const juce::String& b);
+
+    /** @brief True when @p version carries a pre-release suffix, ignoring a git-describe tail. */
+    static bool isPreRelease(const juce::String& version);
+
+    /** @brief The highest-versioned release in a GitHub response: one release or a list. */
+    static Release newestRelease(const juce::String& json);
 };
 
 }  // namespace magda
