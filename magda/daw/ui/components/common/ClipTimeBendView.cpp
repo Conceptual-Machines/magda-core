@@ -100,8 +100,8 @@ void ClipTimeBendView::loadGroove(const juce::String& name) {
 
 void ClipTimeBendView::resized() {
     auto area = getLocalBounds();
-    auto buttons = area.removeFromBottom(kButtonRow);
-    area.removeFromBottom(kGap);
+    auto buttons = area.removeFromTop(kButtonRow);
+    area.removeFromTop(kGap);
     grooveButton_.setBounds(buttons.removeFromLeft(64));
     bakeButton_.setBounds(buttons.removeFromRight(52));
     editor_.setBounds(area);

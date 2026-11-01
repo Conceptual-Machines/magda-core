@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <algorithm>
+#include <cmath>
 #include <magda/sdk/sequencer/NoteSink.hpp>
 #include <utility>
 
@@ -23,10 +25,13 @@ class DeviceNoteSink : public sdk::sequencer::NoteSink {
     explicit DeviceNoteSink(DeviceMidiOutput& midi) : midi_(midi) {}
 
     void addNoteEvent(const sdk::sequencer::NoteEvent& event) override {
-        auto message = event.isNoteOn
-                           ? juce::MidiMessage::noteOn(1, event.noteNumber,
-                                                       static_cast<juce::uint8>(event.velocity))
-                           : juce::MidiMessage::noteOff(1, event.noteNumber);
+        // A time bend's dynamics scale the velocity as it plays; the step keeps its own (#3225).
+        const auto velocity =
+            std::clamp(static_cast<int>(std::lround(event.velocity * event.dynamics)), 1, 127);
+        auto message =
+            event.isNoteOn
+                ? juce::MidiMessage::noteOn(1, event.noteNumber, static_cast<juce::uint8>(velocity))
+                : juce::MidiMessage::noteOff(1, event.noteNumber);
         message.setTimeStamp(event.timeInBlock);
         midi_.addEvent({std::move(message), 0});
     }

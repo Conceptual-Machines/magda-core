@@ -127,9 +127,25 @@ bool ClipMidiSource::inHole(const MidiClipPlayback& clip, double beat) {
                        });
 }
 
+namespace {
+
+/// A clip's dynamics are drawn on sixteenths, as the time bend editor shows them for a clip.
+constexpr double kClipDynamicsStepBeats = 0.25;
+
+/// The dynamics level of the note written at timeline @p patternBeat: 1 without dynamics.
+float dynamicsAt(const MidiClipPlayback& clip, double patternBeat) {
+    const auto& dynamics = clip.bend.dynamics;
+    if (!dynamics)
+        return 1.0f;
+    return dynamics->level(
+        0, sdk::sequencer::figureStep(patternBeat, clip.bendCycleBeats, kClipDynamicsStepBeats));
+}
+
+}  // namespace
+
 void ClipMidiSource::startNote(juce::MidiBuffer& out, const BlockInfo& block,
                                const MidiClipPlayback& clip, std::int32_t index,
-                               double timelineBeat, double endBeat) {
+                               double timelineBeat, double endBeat, float dynamics) {
     const auto& event = clip.events.events[static_cast<std::size_t>(index)];
 
     if (inHole(clip, timelineBeat))
@@ -164,7 +180,12 @@ void ClipMidiSource::startNote(juce::MidiBuffer& out, const BlockInfo& block,
         active_.owner(channel, note) == clip.clipId)
         endNote(out, block.eventForBeat(timelineBeat), channel, note);
 
-    emit(out, block.eventForBeat(timelineBeat), event);
+    // The dynamics scale the velocity as it plays; the clip keeps the one written.
+    auto struck = event;
+    if (dynamics != 1.0f)
+        struck.data2 = static_cast<std::uint8_t>(
+            std::clamp(static_cast<int>(std::lround(event.data2 * dynamics)), 1, 127));
+    emit(out, block.eventForBeat(timelineBeat), struck);
 
     if (!active_.active(channel, note))
         ++activeCount_;
@@ -231,7 +252,8 @@ void ClipMidiSource::playBentNotes(juce::MidiBuffer& out, const BlockInfo& block
         endBentNotesBefore(out, block, clip.clipId, hit.beat);
         const auto& event = clip.events.events[static_cast<std::size_t>(hit.index)];
         const auto end = std::min(hit.beat + (event.endBeat - event.beat), passEndBeat);
-        startNote(out, block, clip, hit.index, hit.beat, end);
+        startNote(out, block, clip, hit.index, hit.beat, end,
+                  dynamicsAt(clip, pass.timelineOfContentZero + event.beat));
     }
     endBentNotesBefore(out, block, clip.clipId, to);
 }
@@ -272,8 +294,11 @@ void ClipMidiSource::chaseClip(juce::MidiBuffer& out, const BlockInfo& block,
     gatherSounding(clip, pass, timelineBeat);
 
     const bool bent = clip.bend.isActive();
-    for (std::size_t i = 0; i < scratch_.size(); ++i)
-        startNote(out, block, clip, scratch_[i], timelineBeat, bent ? scratchEnds_[i] : INFINITY);
+    for (std::size_t i = 0; i < scratch_.size(); ++i) {
+        const auto written = clip.events.events[static_cast<std::size_t>(scratch_[i])].beat;
+        startNote(out, block, clip, scratch_[i], timelineBeat, bent ? scratchEnds_[i] : INFINITY,
+                  dynamicsAt(clip, pass.timelineOfContentZero + written));
+    }
 
     // Polyphonic aftertouch belongs to a sounding note, so it is chased only
     // after the note-on above and only for notes this clip actually owns.
@@ -430,7 +455,8 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
                     if (timelineBeat >= passEndBeat)
                         continue;
 
-                    startNote(out, block, clip, static_cast<std::int32_t>(i), timelineBeat);
+                    startNote(out, block, clip, static_cast<std::int32_t>(i), timelineBeat,
+                              INFINITY, dynamicsAt(clip, timelineBeat));
                     continue;
                 }
 

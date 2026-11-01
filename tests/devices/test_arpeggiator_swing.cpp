@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include <catch2/catch_test_macros.hpp>
+#include <vector>
 
 #include "devices/ArpeggiatorTestRig.hpp"
 
@@ -60,6 +61,33 @@ TEST_CASE("Arpeggiator plays a step quantize pulls back into an earlier block",
     // steps do not sit on: steps 1 and 2 snap back to 0.2 and 0.4, each across a
     // block boundary. Over 0.683 beats.
     CHECK(countNoteOns(rig, 32, {on(60), on(64), on(67)}) == 3);
+}
+
+TEST_CASE("Arpeggiator's time bend dynamics scale each step's velocity",
+          "[arpeggiator][midi][dynamics]") {
+    Rig rig;
+    rig.setRate(Arp::Rate::Sixteenth);
+
+    magda::sdk::sequencer::TimeBend bend;
+    auto& dynamics = bend.dynamics.emplace();
+    dynamics.on = true;
+    dynamics.values[0][1] = 0.5f;
+    magda::sdk::StateNode state{"device"};
+    state.setString("timeBend", magda::sdk::sequencer::timeBendToText(bend));
+    rig.arp.timeBend.restore(state);
+
+    std::vector<int> velocities;
+    for (int block = 0; block < 32; ++block) {
+        auto midi = rig.run(block * kBlockSeconds, block == 0 ? kChord : kNothing, true, false,
+                            kBlockSeconds);
+        for (int i = 0; i < midi.size(); ++i)
+            if (midi.message(i).isNoteOn())
+                velocities.push_back(midi.message(i).getVelocity());
+    }
+    // The chord was played at 91; the second sixteenth plays at half that.
+    REQUIRE(velocities.size() >= 2);
+    CHECK(velocities[0] == 91);
+    CHECK(velocities[1] == 46);
 }
 
 TEST_CASE("Arpeggiator plays its steps in time order through a bend that holds",

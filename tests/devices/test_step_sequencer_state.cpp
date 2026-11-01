@@ -4,8 +4,10 @@
 #include <juce_data_structures/juce_data_structures.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <vector>
 
 #include "DeviceTestState.hpp"
+#include "magda/daw/audio/plugins/DeviceNoteSink.hpp"
 #include "magda/daw/audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "magda/daw/audio/plugins/StepSequencerPlugin.hpp"
 #include "magda/daw/core/StepPatternState.hpp"
@@ -16,6 +18,29 @@
 // device's own constants.
 
 namespace audio = magda::daw::audio;
+
+TEST_CASE("The sequencers' note sink plays a note-on at its dynamics level",
+          "[stepseq][dynamics]") {
+    struct Collected : magda::sdk::MidiOutput {
+        std::vector<magda::sdk::MidiEvent> events;
+        bool addEvent(const magda::sdk::MidiEvent& event) override {
+            events.push_back(event);
+            return true;
+        }
+        void setAllNotesOff(bool) override {}
+    } collected;
+    audio::DeviceMidiOutput midi{collected, 48000.0};
+    audio::DeviceNoteSink sink{midi};
+
+    sink.addNoteEvent({.noteNumber = 60, .velocity = 100, .isNoteOn = true, .dynamics = 0.25f});
+    sink.addNoteEvent({.noteNumber = 62, .velocity = 100, .isNoteOn = true, .dynamics = 0.0f});
+    sink.addNoteEvent({.noteNumber = 64, .velocity = 90, .isNoteOn = true});
+
+    REQUIRE(collected.events.size() == 3);
+    CHECK(collected.events[0].data2() == 25);
+    CHECK(collected.events[1].data2() == 1);  // never a note-off
+    CHECK(collected.events[2].data2() == 90);
+}
 
 namespace {
 

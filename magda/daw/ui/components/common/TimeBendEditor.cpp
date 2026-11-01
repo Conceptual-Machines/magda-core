@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <vector>
 
 #include "BinaryData.h"
@@ -22,12 +23,18 @@ namespace magda::daw::ui {
 namespace {
 
 using sdk::sequencer::TimeBend;
+using sdk::sequencer::TimeBendDynamics;
 using sdk::sequencer::TimeBendShape;
 
 constexpr int kHeaderHeight = 20;
 /// Narrower than this, AMOUNT and CYCLES move to a second header row.
 constexpr int kOneRowWidth = 500;
 constexpr int kGap = 4;
+constexpr int kTimeWidth = 34;
+constexpr int kDynamicsWidth = 58;
+/// Narrower than this, as a sequencer's faceplate is, TIME and DYN take the second row.
+constexpr int kModeInFirstRowWidth = 384;
+constexpr int kCompactModeWidth = 30;
 constexpr std::array<int, 3> kSpans{1, 2, 4};
 /// The GRID menu: a label and a division in beats.
 constexpr std::array<std::pair<const char*, double>, 7> kDivisions{{{"1/4", 1.0},
@@ -297,41 +304,15 @@ class TimeBendEditor::Canvas : public juce::Component {
         g.fillPath(dashed);
 
         // The curve heard, once AMOUNT pulls it toward the diagonal.
-        const bool heardDiffers = bend.amount < 0.999f;
-        std::array<double, kCurveSamples + 1> heard{};
-        for (int i = 0; i <= kCurveSamples; ++i)
-            heard[static_cast<size_t>(i)] = bend.read(static_cast<double>(i) / kCurveSamples);
-        if (heardDiffers) {
+        if (bend.amount < 0.999f) {
             juce::Path line;
             for (int i = 0; i <= kCurveSamples; ++i) {
-                const auto p =
-                    toPixel(static_cast<double>(i) / kCurveSamples, heard[static_cast<size_t>(i)]);
+                const double x = static_cast<double>(i) / kCurveSamples;
+                const auto p = toPixel(x, bend.read(x));
                 i == 0 ? line.startNewSubPath(p) : line.lineTo(p);
             }
             g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.55f));
             g.strokePath(line, juce::PathStrokeType(1.5f));
-        }
-
-        // A dot wherever the head crosses a step, which is where that step plays.
-        if (steps_ > 0.0 && steps_ <= 128.0 && bend.on) {
-            g.setColour(ActiveTheme::getColour(ActiveTheme::CURVE_POINT));
-            for (int i = 0; i < kCurveSamples; ++i) {
-                const double ya = heard[static_cast<size_t>(i)] * steps_;
-                const double yb = heard[static_cast<size_t>(i + 1)] * steps_;
-                if (std::abs(yb - ya) < 1.0e-9)
-                    continue;
-                const bool rising = yb > ya;
-                const auto lo = static_cast<int>(std::ceil(std::min(ya, yb)));
-                const auto hi = static_cast<int>(std::floor(std::max(ya, yb)));
-                for (int k = lo; k <= hi; ++k) {
-                    const double kd = k;
-                    if (rising ? !(kd >= ya && kd < yb) : !(kd > yb && kd <= ya))
-                        continue;
-                    const double x = (i + (kd - ya) / (yb - ya)) / kCurveSamples;
-                    const auto p = toPixel(x, kd / steps_);
-                    g.fillEllipse(p.x - 2.0f, p.y - 2.0f, 4.0f, 4.0f);
-                }
-            }
         }
 
         if (playhead_ >= 0.0f) {
@@ -350,19 +331,168 @@ class TimeBendEditor::Canvas : public juce::Component {
     float playhead_ = -1.0f;
 };
 
+/** @brief The dynamics: a bar per step of the figure, drawn by dragging across them. */
+class TimeBendEditor::DynamicsView : public juce::Component {
+  public:
+    explicit DynamicsView(TimeBendEditor& owner) : owner_(owner) {}
+
+    void setPlayhead(float phase) {
+        if (phase == playhead_)
+            return;
+        playhead_ = phase;
+        repaint();
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::CURVE_BACKGROUND));
+        const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY);
+        const auto faint = ActiveTheme::getSecondaryTextColour();
+        const auto* dynamics = shown();
+        const int steps = stepCount();
+        for (int k = 0; k < steps; ++k) {
+            const auto bar = barBounds(k, steps);
+            g.setColour(faint.withAlpha(0.08f));
+            g.fillRect(bar);
+            const float value =
+                dynamics != nullptr ? dynamics->values[0][static_cast<size_t>(k)] : 1.0f;
+            g.setColour(accent.withAlpha(dynamics != nullptr ? 0.85f : 0.2f));
+            g.fillRect(bar.withTop(bar.getBottom() - bar.getHeight() * value));
+        }
+        if (dynamics == nullptr) {
+            g.setColour(faint);
+            g.setFont(FontManager::getInstance().getUIFont(10.0f));
+            g.drawText("Draw to add dynamics", field(), juce::Justification::centred);
+        }
+        if (playhead_ >= 0.0f) {
+            const auto area = field();
+            g.setColour(accent.withAlpha(0.8f));
+            g.drawVerticalLine(juce::roundToInt(area.getX() + playhead_ * area.getWidth()),
+                               area.getY(), area.getBottom());
+        }
+    }
+
+    void mouseDown(const juce::MouseEvent& e) override {
+        if (e.mods.isPopupMenu()) {
+            showMenu();
+            return;
+        }
+        editing_ = owner_.bend_.dynamics.value_or(TimeBendDynamics{});
+        lastStep_ = -1;
+        draw(e);
+    }
+
+    void mouseDrag(const juce::MouseEvent& e) override {
+        if (editing_)
+            draw(e);
+    }
+
+    void mouseUp(const juce::MouseEvent&) override {
+        if (!editing_)
+            return;
+        auto after = owner_.bend_;
+        after.dynamics = *editing_;
+        // Drawing the dynamics is asking to hear them, as shaping the curve is.
+        after.dynamics->on = true;
+        editing_.reset();
+        owner_.commit(after);
+    }
+
+  private:
+    int stepCount() const {
+        return sdk::sequencer::figureSteps(owner_.cycleBeats_, owner_.dynamicsStep_);
+    }
+
+    juce::Rectangle<float> field() const {
+        return getLocalBounds().toFloat().reduced(6.0f);
+    }
+
+    juce::Rectangle<float> barBounds(int step, int steps) const {
+        const auto area = field();
+        const float width = area.getWidth() / static_cast<float>(steps);
+        return {area.getX() + static_cast<float>(step) * width + 1.0f, area.getY(),
+                std::max(1.0f, width - 2.0f), area.getHeight()};
+    }
+
+    const TimeBendDynamics* shown() const {
+        if (editing_)
+            return &*editing_;
+        return owner_.bend_.dynamics ? &*owner_.bend_.dynamics : nullptr;
+    }
+
+    /// Sets the bar under the pointer, and those a fast drag skipped; Alt sets them to full.
+    void draw(const juce::MouseEvent& e) {
+        const int steps = stepCount();
+        const auto area = field();
+        if (steps <= 0 || area.isEmpty())
+            return;
+        const int step = std::clamp(
+            static_cast<int>((e.position.x - area.getX()) / area.getWidth() * steps), 0, steps - 1);
+        const float value =
+            e.mods.isAltDown()
+                ? 1.0f
+                : std::clamp(1.0f - (e.position.y - area.getY()) / area.getHeight(), 0.0f, 1.0f);
+        const int from = lastStep_ < 0 ? step : lastStep_;
+        const float fromValue = lastStep_ < 0 ? value : lastValue_;
+        const int direction = step >= from ? 1 : -1;
+        for (int k = from;; k += direction) {
+            const float t = step == from ? 1.0f : static_cast<float>(k - from) / (step - from);
+            editing_->values[0][static_cast<size_t>(k)] = fromValue + t * (value - fromValue);
+            if (k == step)
+                break;
+        }
+        lastStep_ = step;
+        lastValue_ = value;
+        repaint();
+    }
+
+    void showMenu() {
+        if (!owner_.bend_.dynamics)
+            return;
+        juce::PopupMenu menu;
+        menu.addItem("Remove dynamics", [safe = juce::Component::SafePointer(this)] {
+            if (safe == nullptr)
+                return;
+            auto after = safe->owner_.bend_;
+            after.dynamics.reset();
+            safe->owner_.commit(after);
+        });
+        menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this));
+    }
+
+    TimeBendEditor& owner_;
+    std::optional<TimeBendDynamics> editing_;
+    int lastStep_ = -1;
+    float lastValue_ = 1.0f;
+    float playhead_ = -1.0f;
+};
+
 TimeBendEditor::TimeBendEditor()
     : powerButton_("TimeBendOn", BinaryData::power_svg, BinaryData::power_svgSize),
-      canvas_(std::make_unique<Canvas>(*this)) {
+      canvas_(std::make_unique<Canvas>(*this)),
+      dynamicsView_(std::make_unique<DynamicsView>(*this)) {
     setName("TimeBendEditor");
 
     powerButton_.setOriginalColor(juce::Colour(0xFFE6E6E6));
-    powerButton_.setTooltip("Play through the bend");
     powerButton_.onClick = [this] {
         auto after = bend_;
-        after.on = !after.on;
+        if (showsDynamics_) {
+            if (!after.dynamics)
+                after.dynamics.emplace();
+            after.dynamics->on = !(bend_.dynamics && bend_.dynamics->on);
+        } else {
+            after.on = !after.on;
+        }
         commit(after);
     };
     addAndMakeVisible(powerButton_);
+
+    timeButton_.setTooltip("The curve: when each step plays");
+    timeButton_.onClick = [this] { showDynamics(false); };
+    addAndMakeVisible(timeButton_);
+    dynamicsButton_.setTooltip(
+        "The dynamics: how hard each step lands, scaling its velocity as it plays");
+    dynamicsButton_.onClick = [this] { showDynamics(true); };
+    addAndMakeVisible(dynamicsButton_);
 
     spanLabel_.setText("SPAN", juce::dontSendNotification);
     spanLabel_.setTooltip("How long one pass of the curve lasts");
@@ -443,7 +573,24 @@ TimeBendEditor::TimeBendEditor()
     };
     addAndMakeVisible(cycles_);
 
+    styleLabel(dynamicsAmountLabel_, "AMOUNT");
+    addChildComponent(dynamicsAmountLabel_);
+    dynamicsAmount_.setRange(0.0, 1.0, 0.01);
+    dynamicsAmount_.setValueFormatter(
+        [](double v) { return juce::String(juce::roundToInt(v * 100.0)) + "%"; });
+    dynamicsAmount_.setValueParser(
+        [](const juce::String& t) { return t.trimCharactersAtEnd("%").getDoubleValue() / 100.0; });
+    dynamicsAmount_.onValueChanged = [this](double value) {
+        auto after = bend_;
+        if (!after.dynamics)
+            after.dynamics.emplace();
+        after.dynamics->amount = static_cast<float>(value);
+        commit(after);
+    };
+    addChildComponent(dynamicsAmount_);
+
     addAndMakeVisible(*canvas_);
+    addChildComponent(*dynamicsView_);
     canvas_->setSnap(snap_);
     snapButton_.setToggleState(snap_, juce::dontSendNotification);
     applyGrid();
@@ -452,7 +599,8 @@ TimeBendEditor::TimeBendEditor()
 }
 
 TimeBendEditor::~TimeBendEditor() {
-    for (juce::TextButton* button : {&shapeButton_, &gridButton_, &snapButton_, &grooveButton_})
+    for (juce::TextButton* button : {&timeButton_, &dynamicsButton_, &shapeButton_, &gridButton_,
+                                     &snapButton_, &grooveButton_})
         button->setLookAndFeel(nullptr);
     for (auto& button : spanButtons_)
         button.setLookAndFeel(nullptr);
@@ -473,6 +621,10 @@ void TimeBendEditor::setCycle(double cycleBeats, double beatsPerBar) {
 }
 
 void TimeBendEditor::setDefaultDivision(double beats) {
+    if (beats > 0.0 && beats != dynamicsStep_) {
+        dynamicsStep_ = beats;
+        dynamicsView_->repaint();
+    }
     if (divisionPicked_ || beats <= 0.0 || beats == division_)
         return;
     division_ = beats;
@@ -481,6 +633,7 @@ void TimeBendEditor::setDefaultDivision(double beats) {
 
 void TimeBendEditor::applyGrid() {
     canvas_->setGrid(cycleBeats_, beatsPerBar_, division_);
+    dynamicsView_->repaint();
     juce::String label = juce::String(division_, 3);
     for (const auto& [name, beats] : kDivisions)
         if (std::abs(beats - division_) < 1.0e-9)
@@ -505,13 +658,33 @@ void TimeBendEditor::showGridMenu() {
 
 void TimeBendEditor::setPlayheadPhase(float phase) {
     canvas_->setPlayhead(phase);
+    dynamicsView_->setPlayhead(phase);
 }
 
 void TimeBendEditor::setShowsAmountAndCycles(bool shows) {
     showsAmountAndCycles_ = shows;
+    updateVisibility();
+}
+
+void TimeBendEditor::showDynamics(bool shows) {
+    showsDynamics_ = shows;
+    syncControls();
+    updateVisibility();
+}
+
+void TimeBendEditor::updateVisibility() {
+    const bool curve = !showsDynamics_;
+    for (juce::Component* c :
+         std::initializer_list<juce::Component*>{&shapeButton_, &gridButton_, &snapButton_})
+        c->setVisible(curve);
+    grooveButton_.setVisible(showsGrooves_ && curve);
     for (juce::Component* c :
          std::initializer_list<juce::Component*>{&amountLabel_, &amount_, &cyclesLabel_, &cycles_})
-        c->setVisible(shows);
+        c->setVisible(showsAmountAndCycles_ && curve);
+    dynamicsAmountLabel_.setVisible(!curve);
+    dynamicsAmount_.setVisible(!curve);
+    canvas_->setVisible(curve);
+    dynamicsView_->setVisible(!curve);
     resized();
 }
 
@@ -524,8 +697,7 @@ void TimeBendEditor::setHeaderAccessory(juce::Component* accessory) {
 
 void TimeBendEditor::setShowsGrooves(bool shows) {
     showsGrooves_ = shows;
-    grooveButton_.setVisible(shows);
-    resized();
+    updateVisibility();
 }
 
 void TimeBendEditor::showGrooveMenu(juce::Component& target,
@@ -580,7 +752,15 @@ void TimeBendEditor::showShapeMenu() {
 }
 
 void TimeBendEditor::syncControls() {
-    powerButton_.setActive(bend_.on);
+    const bool dynamicsOn = bend_.dynamics && bend_.dynamics->on;
+    powerButton_.setActive(showsDynamics_ ? dynamicsOn : bend_.on);
+    powerButton_.setTooltip(showsDynamics_ ? "Apply the dynamics" : "Play through the bend");
+    timeButton_.setToggleState(!showsDynamics_, juce::dontSendNotification);
+    dynamicsButton_.setToggleState(showsDynamics_, juce::dontSendNotification);
+    dynamicsAmount_.setValue(bend_.dynamics ? bend_.dynamics->amount : 1.0,
+                             juce::dontSendNotification);
+    dynamicsView_->setAlpha(dynamicsOn || !bend_.dynamics ? 1.0f : 0.5f);
+    dynamicsView_->repaint();
     for (size_t i = 0; i < spanButtons_.size(); ++i)
         spanButtons_[i].setToggleState(bend_.bars == kSpans[i], juce::dontSendNotification);
     amount_.setValue(bend_.amount, juce::dontSendNotification);
@@ -592,9 +772,17 @@ void TimeBendEditor::paint(juce::Graphics& g) {
     g.fillAll(ActiveTheme::getColour(ActiveTheme::SURFACE));
 }
 
+bool TimeBendEditor::modeInSecondRow() const {
+    const bool accessoryInRow = accessory_ != nullptr && accessory_->isVisible();
+    return getWidth() < kModeInFirstRowWidth + (accessoryInRow ? 32 : 0);
+}
+
 bool TimeBendEditor::headerWraps() const {
-    return showsAmountAndCycles_ &&
-           getWidth() < kOneRowWidth + (showsGrooves_ ? 72 : 0) +
+    if (modeInSecondRow())
+        return true;
+    return !showsDynamics_ && showsAmountAndCycles_ &&
+           getWidth() < kOneRowWidth + kTimeWidth + kDynamicsWidth + kGap * 2 + 2 +
+                            (showsGrooves_ ? 72 : 0) +
                             (accessory_ != nullptr && accessory_->isVisible() ? 32 : 0);
 }
 
@@ -610,20 +798,33 @@ void TimeBendEditor::resized() {
 
     powerButton_.setBounds(header.removeFromLeft(kHeaderHeight));
     header.removeFromLeft(kGap);
-    shapeButton_.setBounds(header.removeFromLeft(52));
-    header.removeFromLeft(kGap * 2);
+    const bool compact = modeInSecondRow();
+    dynamicsButton_.setButtonText(compact ? "DYN" : "DYNAMICS");
+    amountLabel_.setText(compact ? "AMT" : "AMOUNT", juce::dontSendNotification);
+    cyclesLabel_.setText(compact ? "CYC" : "CYCLES", juce::dontSendNotification);
+    auto& modeRow = compact ? values : header;
+    timeButton_.setBounds(modeRow.removeFromLeft(compact ? kCompactModeWidth : kTimeWidth));
+    modeRow.removeFromLeft(2);
+    dynamicsButton_.setBounds(modeRow.removeFromLeft(compact ? kCompactModeWidth : kDynamicsWidth));
+    modeRow.removeFromLeft(compact ? kGap : kGap * 2);
+    if (!showsDynamics_) {
+        shapeButton_.setBounds(header.removeFromLeft(52));
+        header.removeFromLeft(kGap * 2);
+    }
     spanLabel_.setBounds(header.removeFromLeft(32));
     for (auto& button : spanButtons_) {
         button.setBounds(header.removeFromLeft(22));
         header.removeFromLeft(2);
     }
-    header.removeFromLeft(kGap * 2);
-    gridButton_.setBounds(header.removeFromLeft(44));
-    header.removeFromLeft(2);
-    snapButton_.setBounds(header.removeFromLeft(40));
-    if (showsGrooves_ && !headerWraps()) {
+    if (!showsDynamics_) {
         header.removeFromLeft(kGap * 2);
-        grooveButton_.setBounds(header.removeFromLeft(64));
+        gridButton_.setBounds(header.removeFromLeft(44));
+        header.removeFromLeft(2);
+        snapButton_.setBounds(header.removeFromLeft(40));
+        if (showsGrooves_ && !headerWraps()) {
+            header.removeFromLeft(kGap * 2);
+            grooveButton_.setBounds(header.removeFromLeft(64));
+        }
     }
 
     if (accessory_ != nullptr && accessory_->isVisible()) {
@@ -631,23 +832,29 @@ void TimeBendEditor::resized() {
         accessory_->setBounds(row.removeFromRight(kHeaderHeight).withSizeKeepingCentre(18, 18));
         row.removeFromRight(kGap * 3);
     }
-    if (showsAmountAndCycles_) {
+    if (showsDynamics_) {
+        auto& row = headerWraps() ? values : header;
+        dynamicsAmount_.setBounds(row.removeFromRight(40));
+        dynamicsAmountLabel_.setBounds(row.removeFromRight(48));
+    } else if (showsAmountAndCycles_) {
         if (!headerWraps())
             values = header;
         if (showsGrooves_ && headerWraps())
             grooveButton_.setBounds(values.removeFromLeft(64));
         cycles_.setBounds(values.removeFromRight(34));
-        cyclesLabel_.setBounds(values.removeFromRight(44));
+        cyclesLabel_.setBounds(values.removeFromRight(compact ? 24 : 44));
         values.removeFromRight(kGap);
         amount_.setBounds(values.removeFromRight(40));
-        amountLabel_.setBounds(values.removeFromRight(48));
+        amountLabel_.setBounds(values.removeFromRight(compact ? 26 : 48));
     }
 
     canvas_->setBounds(area);
+    dynamicsView_->setBounds(area);
 }
 
 void TimeBendEditor::lookAndFeelChanged() {
-    for (juce::TextButton* button : {&shapeButton_, &gridButton_, &snapButton_, &grooveButton_})
+    for (juce::TextButton* button : {&timeButton_, &dynamicsButton_, &shapeButton_, &gridButton_,
+                                     &snapButton_, &grooveButton_})
         styleChip(*button);
     styleLabel(spanLabel_, "SPAN");
     powerButton_.setNormalColor(ActiveTheme::getSecondaryTextColour());
@@ -657,6 +864,9 @@ void TimeBendEditor::lookAndFeelChanged() {
         styleChip(button);
     styleLabel(amountLabel_, "AMOUNT");
     styleLabel(cyclesLabel_, "CYCLES");
+    styleLabel(dynamicsAmountLabel_, "AMOUNT");
+    // The short labels are the layout's to choose.
+    resized();
     repaint();
 }
 

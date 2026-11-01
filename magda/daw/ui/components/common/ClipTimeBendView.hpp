@@ -14,7 +14,7 @@
 namespace magda::daw::ui {
 
 /**
- * @brief MIDI clips' time bend, edited live (#3044): the editor, a groove menu and Bake.
+ * @brief MIDI clips' time bend, edited live (#3044): a groove menu and Bake over the editor.
  *
  * Shows the first clip's bend; an edit applies to every clip as one undo step. Follows the clips
  * through ClipManager, so an undo or another view's edit lands here too.
