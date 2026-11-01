@@ -634,6 +634,16 @@ TEST_CASE("Device mod property changes fire deviceModifiersChanged", "[mod][noti
         REQUIRE(spy.lastModifiersTrackId == trackId);
     }
 
+    // The chain and the inspector each show the mods; an add in one has to reach the other
+    // without a devices notification, which rebuilds the chain and closes its open editor.
+    SECTION("addMod fires deviceModifiersChanged, not trackDevicesChanged") {
+        fixture.tm().addMod(devicePath, 1, ModType::LFO, LFOWaveform::Sine);
+
+        REQUIRE(spy.modifiersChangedCount == 1);
+        REQUIRE(spy.lastModifiersTrackId == trackId);
+        REQUIRE(spy.devicesChangedCount == 0);
+    }
+
     SECTION("setModWaveform fires deviceModifiersChanged") {
         fixture.tm().setModWaveform(devicePath, 0, LFOWaveform::Square);
 

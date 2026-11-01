@@ -23,6 +23,7 @@
 #include "modulation/MacroPanelComponent.hpp"
 #include "modulation/ModsPanelComponent.hpp"
 #include "modulation/ModulatorEditorPanel.hpp"
+#include "modulation/ModulatorTriggerSourceMenu.hpp"
 #include "ui/components/common/AiSoundDesignerIcon.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -1681,77 +1682,7 @@ void NodeComponent::initializeModsMacrosPanels() {
         }
     };
     modulatorEditorPanel_->onAdvancedClicked = [this]() {
-        // Try device first, then rack
-        auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
-        auto* rack = device ? nullptr : magda::TrackManager::getInstance().getRackByPath(nodePath_);
-        if (!device && !rack)
-            return;
-
-        const auto& sidechain = device ? device->sidechain : rack->sidechain;
-        const auto& mods = device ? device->mods : rack->mods;
-
-        // Pick sidechain type from the selected modulator. The envelope follower
-        // always sources audio; otherwise it follows the LFO's trigger mode.
-        const bool selValid =
-            selectedModIndex_ >= 0 && selectedModIndex_ < static_cast<int>(mods.size());
-        const bool isFollower = selValid && mods[static_cast<size_t>(selectedModIndex_)].type ==
-                                                magda::ModType::Follower;
-        const bool isAudioMode =
-            isFollower || (selValid && mods[static_cast<size_t>(selectedModIndex_)].triggerMode ==
-                                           magda::LFOTriggerMode::Audio);
-        const auto sidechainType =
-            isAudioMode ? magda::SidechainConfig::Type::Audio : magda::SidechainConfig::Type::MIDI;
-
-        juce::PopupMenu menu;
-
-        bool hasSidechain = sidechain.isActive() && sidechain.type == sidechainType;
-
-        menu.addSectionHeader(isAudioMode ? "Audio Trigger Source" : "MIDI Trigger Source");
-        menu.addItem(1, "Self", true, !hasSidechain);
-        menu.addSeparator();
-
-        struct TrackEntry {
-            magda::TrackId id;
-            juce::String name;
-        };
-        auto trackEntries = std::make_shared<std::vector<TrackEntry>>();
-        int itemId = 10;
-        for (const auto& track : magda::TrackManager::getInstance().getTracks()) {
-            if (track.id == nodePath_.trackId)
-                continue;
-            bool isCurrent = hasSidechain && sidechain.sourceTrackId == track.id;
-            menu.addItem(itemId, track.name, true, isCurrent);
-            trackEntries->push_back({track.id, track.name});
-            itemId++;
-        }
-
-        auto safeThis = juce::Component::SafePointer(this);
-        auto isDeviceTarget = device != nullptr;
-        auto deviceId = device ? device->id : magda::INVALID_DEVICE_ID;
-        auto rackPath = nodePath_;
-        menu.showMenuAsync(juce::PopupMenu::Options(), [safeThis, isDeviceTarget, deviceId,
-                                                        rackPath, trackEntries,
-                                                        sidechainType](int result) {
-            if (!safeThis || result == 0)
-                return;
-            if (result == 1) {
-                if (isDeviceTarget)
-                    magda::TrackManager::getInstance().clearSidechain(deviceId);
-                else
-                    magda::TrackManager::getInstance().clearRackSidechain(rackPath);
-            } else {
-                int index = result - 10;
-                if (index >= 0 && index < static_cast<int>(trackEntries->size())) {
-                    if (isDeviceTarget) {
-                        magda::TrackManager::getInstance().setSidechainSource(
-                            deviceId, (*trackEntries)[index].id, sidechainType);
-                    } else {
-                        magda::TrackManager::getInstance().setRackSidechainSource(
-                            rackPath, (*trackEntries)[index].id, sidechainType);
-                    }
-                }
-            }
-        });
+        showModulatorTriggerSourceMenu(nodePath_, selectedModIndex_);
     };
     // Mod matrix: param name resolver
     modulatorEditorPanel_->setParamNameResolver([this](magda::DeviceId deviceId,

@@ -380,7 +380,9 @@ void TrackManager::addMod(const ChainNodePath& path, int slotIndex, ModType type
     for (int i = slotIndex + 1; i < static_cast<int>(mods.size()); ++i) {
         mods[i].id = i;
     }
-    // Caller handles UI update — notifying here would close the open panel.
+    // Modifiers, not devices: a mods panel open elsewhere (chain or inspector) refreshes in
+    // place, where a devices notification would rebuild the chain and close its open editor.
+    notifyDeviceModifiersChanged(path.trackId);
 }
 
 void TrackManager::removeMod(const ChainNodePath& path, int modIndex) {

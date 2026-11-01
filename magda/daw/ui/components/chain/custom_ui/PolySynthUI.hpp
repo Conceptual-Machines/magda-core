@@ -171,13 +171,17 @@ class PolySynthUI : public juce::Component, private juce::Timer {
     std::array<bool, kNumOscillators> oscReset_{};
     std::array<bool, kNumOscillators> oscEnabled_{true, true, true, true};
 
-    std::array<juce::ComboBox, kNumOscillators> waveBoxes_;
+    std::array<int, kNumOscillators> oscWave_{};
+    std::array<std::unique_ptr<juce::Drawable>, 4> waveIcons_;
+    void showWaveMenu(int osc);
     magda::SegmentedChoice routingChoice_, typeChoice_, polesChoice_, voicesChoice_,
         voiceModeChoice_;
 
     // Painted parts, kept for hit-testing.
-    juce::Rectangle<int> oscPanel_, filterPanel_, envelopePanel_, voicesTile_, voiceModeTile_;
-    std::array<juce::Rectangle<int>, kNumOscillators> waveTiles_, enableDots_, resetTiles_;
+    juce::Rectangle<int> oscPanel_, filterPanel_, envelopePanel_, voicesTile_, voicesCaption_;
+    bool voicesCaptionOnTop_ = false;
+    std::array<juce::Rectangle<int>, kNumOscillators> waveTiles_, waveIconAreas_, enableDots_,
+        resetTiles_;
     std::array<juce::Rectangle<int>, kNumFilters> filterTabs_, filterDots_;
     std::array<juce::Rectangle<int>, 2> envelopeTabs_, oscTabs_;
     void layoutVoicePanel();

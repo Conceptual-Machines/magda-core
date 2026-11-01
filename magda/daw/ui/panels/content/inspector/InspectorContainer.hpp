@@ -24,6 +24,8 @@ namespace magda::daw::ui {
  * - Uses InspectorFactory to create appropriate inspector
  * - Manages inspector lifetime and layout
  * - Shows "No selection" message when nothing is selected
+ * - Scrolls an inspector taller than the panel
+ * - Shows a mod or macro selection as its owner's inspector with that item open
  *
  * This architecture keeps each inspector focused (~200-1000 LOC) and
  * makes it easy to add new inspector types in the future.
@@ -64,6 +66,10 @@ class InspectorContainer : public PanelContent, public magda::SelectionManagerLi
     void chainNodeSelectionChanged(const magda::ChainNodePath& path) override;
     void automationClipSelectionChanged(const magda::AutomationClipSelection& selection) override;
     void automationPointSelectionChanged(const magda::AutomationPointSelection& selection) override;
+    void modSelectionChanged(const magda::ModSelection& selection) override;
+    void macroSelectionChanged(const magda::MacroSelection& selection) override;
+    void modsPanelSelectionChanged(const magda::ModsPanelSelection& selection) override;
+    void macrosPanelSelectionChanged(const magda::MacrosPanelSelection& selection) override;
 
   private:
     // Current inspector (nullptr when no selection)
@@ -73,12 +79,19 @@ class InspectorContainer : public PanelContent, public magda::SelectionManagerLi
     // No selection message
     juce::Label noSelectionLabel_;
 
+    juce::Viewport viewport_;
+    bool layingOut_ = false;
+
     // Shared dependencies passed to inspectors
     magda::TimelineController* timelineController_ = nullptr;
     magda::AudioEngine* audioEngine_ = nullptr;
 
     // Update methods
     void switchToInspector(magda::SelectionType type);
+    void installInspector(magda::SelectionType type);
+    /// Sizes the inspector to the panel, or to its preferred height when that is taller.
+    void layoutInspector();
+    void showModulationSelection();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(InspectorContainer)
 };
