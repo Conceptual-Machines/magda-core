@@ -5,36 +5,31 @@
 
 #include <utility>
 
-#include "core/AutomationInfo.hpp"
-#include "ui/themes/ActiveTheme.hpp"
+#include "ui/components/common/DeviceControls.hpp"
 #include "ui/themes/FontManager.hpp"
-#include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 
+namespace {
+constexpr int kRowH = 18;
+constexpr int kGap = 4;
+
+/** @brief A time short enough for a third of the row: ms, then seconds from one second. */
+juce::String shortTime(const juce::String& tag, double ms) {
+    return tag + " " +
+           (ms < 1000.0 ? juce::String(juce::roundToInt(ms)) + " ms"
+                        : juce::String(ms / 1000.0, 1) + " s");
+}
+}  // namespace
+
 FollowerEditorPanel::FollowerEditorPanel() {
     setInterceptsMouseClicks(true, true);
-
-    // Name label at top (editable)
-    nameLabel_.setFont(FontManager::getInstance().getUIFontBold(10.0f));
-    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
-    nameLabel_.setJustificationType(juce::Justification::centred);
-    nameLabel_.setText("No Mod Selected", juce::dontSendNotification);
-    nameLabel_.setEditable(false, true, false);
-    nameLabel_.onTextChange = [this]() { onNameLabelEdited(); };
-    addAndMakeVisible(nameLabel_);
 
     // Live output display (reuses the generic value-history scroller)
     addAndMakeVisible(followerDisplay_);
 
     // Audio source button (Self / external track) — opens the host picker.
-    // Use the shared small-button look (theme font, tighter corners) to match
-    // the rest of the modulation toolbar.
-    sourceButton_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-    sourceButton_.setColour(juce::TextButton::buttonColourId,
-                            ActiveTheme::getColour(ActiveTheme::SURFACE));
-    sourceButton_.setColour(juce::TextButton::textColourOffId,
-                            ActiveTheme::getSecondaryTextColour());
+    sourceButton_.setLookAndFeel(&DeviceControlLookAndFeel::getInstance());
     sourceButton_.onClick = [this]() {
         if (onSourceClicked)
             onSourceClicked();
@@ -47,10 +42,9 @@ FollowerEditorPanel::FollowerEditorPanel() {
         s.setRange(0.0, 5000.0, 1.0);
         s.setSkewForCentre(250.0);
         s.setValue(def, juce::dontSendNotification);
-        s.setFont(FontManager::getInstance().getUIFont(9.0f));
-        s.setShowFillIndicator(false);
-        s.setValueFormatter(
-            [tag](double v) { return tag + " " + juce::String(juce::roundToInt(v)) + " ms"; });
+        device_controls::styleValue(s);
+        s.setFont(FontManager::getInstance().getUIFontMedium(9.5f));  // three to a row
+        s.setValueFormatter([tag](double v) { return shortTime(tag, v); });
         s.onValueChanged = [this, field](double value) {
             field() = static_cast<float>(value);
             fireFollowerChanged();
@@ -66,8 +60,7 @@ FollowerEditorPanel::FollowerEditorPanel() {
 
     gainSlider_.setRange(-20.0, 20.0, 0.1);
     gainSlider_.setValue(0.0, juce::dontSendNotification);
-    gainSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    gainSlider_.setShowFillIndicator(false);
+    device_controls::styleValue(gainSlider_);
     gainSlider_.setValueFormatter([](double v) { return "Gain " + juce::String(v, 1) + " dB"; });
     gainSlider_.onValueChanged = [this](double value) {
         currentMod_.followerGainDb = static_cast<float>(value);
@@ -81,12 +74,7 @@ FollowerEditorPanel::FollowerEditorPanel() {
     auto setupBandToggle = [this](juce::TextButton& b, const std::function<bool&()>& field,
                                   TextSlider& freq) {
         b.setClickingTogglesState(true);
-        b.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
-        b.setColour(juce::TextButton::buttonColourId, ActiveTheme::getColour(ActiveTheme::SURFACE));
-        b.setColour(juce::TextButton::buttonOnColourId,
-                    ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE));
-        b.setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
-        b.setColour(juce::TextButton::textColourOnId, ActiveTheme::getTextColour());
+        b.setLookAndFeel(&DeviceControlLookAndFeel::getInstance());
         b.onClick = [this, &b, field, &freq]() {
             field() = b.getToggleState();
             freq.setEnabled(b.getToggleState());
@@ -98,9 +86,12 @@ FollowerEditorPanel::FollowerEditorPanel() {
         s.setRange(20.0, 20000.0, 1.0);
         s.setSkewForCentre(1000.0);
         s.setValue(def, juce::dontSendNotification);
-        s.setFont(FontManager::getInstance().getUIFont(9.0f));
-        s.setShowFillIndicator(false);
-        s.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)) + " Hz"; });
+        device_controls::styleValue(s);
+        s.setFont(FontManager::getInstance().getUIFontMedium(9.5f));  // half a row
+        s.setValueFormatter([](double v) {
+            return v < 1000.0 ? juce::String(juce::roundToInt(v)) + " Hz"
+                              : juce::String(v / 1000.0, v < 10000.0 ? 1 : 0) + " kHz";
+        });
         s.onValueChanged = [this, field](double value) {
             field() = static_cast<float>(value);
             fireFollowerChanged();
@@ -117,49 +108,6 @@ FollowerEditorPanel::FollowerEditorPanel() {
         lpFreqSlider_);
     setupFreqSlider(lpFreqSlider_, 2000.0,
                     [this]() -> float& { return currentMod_.followerLpFreq; });
-
-    // Mod matrix (links)
-    modMatrixViewport_.setViewedComponent(&modMatrixContent_, false);
-    modMatrixViewport_.setScrollBarsShown(true, false);
-    addAndMakeVisible(modMatrixViewport_);
-
-    modMatrixContent_.onDeleteLink = [this](magda::ControlTarget target) {
-        if (selectedModIndex_ >= 0 && onModLinkDeleted)
-            onModLinkDeleted(selectedModIndex_, std::move(target));
-    };
-    modMatrixContent_.onToggleBipolar = [this](magda::ControlTarget target, bool bipolar) {
-        if (selectedModIndex_ >= 0 && onModLinkBipolarChanged)
-            onModLinkBipolarChanged(selectedModIndex_, std::move(target), bipolar);
-    };
-    modMatrixContent_.onToggleEnabled = [this](magda::ControlTarget target, bool enabled) {
-        if (selectedModIndex_ >= 0 && onModLinkEnabledChanged)
-            onModLinkEnabledChanged(selectedModIndex_, std::move(target), enabled);
-    };
-    modMatrixContent_.onAmountChanged = [this](magda::ControlTarget target, float amount) {
-        if (selectedModIndex_ >= 0 && onModLinkAmountChanged)
-            onModLinkAmountChanged(selectedModIndex_, std::move(target), amount);
-    };
-}
-
-void FollowerEditorPanel::lookAndFeelChanged() {
-    // Re-apply cached theme colours after a live theme switch.
-    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
-
-    sourceButton_.setColour(juce::TextButton::buttonColourId,
-                            ActiveTheme::getColour(ActiveTheme::SURFACE));
-    sourceButton_.setColour(juce::TextButton::textColourOffId,
-                            ActiveTheme::getSecondaryTextColour());
-
-    for (auto* btn : {&hpEnableButton_, &lpEnableButton_}) {
-        btn->setColour(juce::TextButton::buttonColourId,
-                       ActiveTheme::getColour(ActiveTheme::SURFACE));
-        btn->setColour(juce::TextButton::buttonOnColourId,
-                       ActiveTheme::getColour(ActiveTheme::ACCENT_POSITIVE));
-        btn->setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
-        btn->setColour(juce::TextButton::textColourOnId, ActiveTheme::getTextColour());
-    }
-
-    repaint();
 }
 
 void FollowerEditorPanel::setModInfo(const magda::ModInfo& mod, const magda::ModInfo* liveMod,
@@ -172,7 +120,6 @@ void FollowerEditorPanel::setModInfo(const magda::ModInfo& mod, const magda::Mod
 }
 
 void FollowerEditorPanel::updateFromMod() {
-    nameLabel_.setText(currentMod_.name, juce::dontSendNotification);
     gainSlider_.setValue(currentMod_.followerGainDb, juce::dontSendNotification);
     attackSlider_.setValue(currentMod_.followerAttackMs, juce::dontSendNotification);
     holdSlider_.setValue(currentMod_.followerHoldMs, juce::dontSendNotification);
@@ -183,48 +130,7 @@ void FollowerEditorPanel::updateFromMod() {
     lpEnableButton_.setToggleState(currentMod_.followerLpEnabled, juce::dontSendNotification);
     lpFreqSlider_.setValue(currentMod_.followerLpFreq, juce::dontSendNotification);
     lpFreqSlider_.setEnabled(currentMod_.followerLpEnabled);
-    updateModMatrix();
-    resized();
-}
-
-void FollowerEditorPanel::updateModMatrix() {
-    std::vector<ModMatrixContent::LinkRow> rows;
-    for (const auto& link : currentMod_.links) {
-        if (!link.isValid())
-            continue;
-
-        ModMatrixContent::LinkRow row;
-        row.target = link.target;
-        row.amount = link.amount;
-        row.bipolar = link.bipolar;
-        row.enabled = link.enabled;
-
-        if (link.target.kind == magda::ControlTarget::Kind::ModParam)
-            row.paramName = magda::getDisplayNameForTarget(link.target);
-        else if (paramNameResolver_)
-            row.paramName = paramNameResolver_(link.target.deviceId(), link.target.paramIndex);
-        else
-            row.paramName = "Unresolved parameter";
-
-        rows.push_back(row);
-    }
-    modMatrixContent_.setLinks(rows);
-}
-
-void FollowerEditorPanel::onNameLabelEdited() {
-    if (selectedModIndex_ < 0)
-        return;
-
-    auto newName = nameLabel_.getText().trim();
-    if (newName.isEmpty()) {
-        newName = magda::ModInfo::getDefaultName(selectedModIndex_, currentMod_.type);
-        nameLabel_.setText(newName, juce::dontSendNotification);
-    }
-    if (newName != currentMod_.name) {
-        currentMod_.name = newName;
-        if (onNameChanged)
-            onNameChanged(newName);
-    }
+    repaint();
 }
 
 void FollowerEditorPanel::fireFollowerChanged() {
@@ -232,83 +138,55 @@ void FollowerEditorPanel::fireFollowerChanged() {
         onFollowerChanged(currentMod_);
     }
     followerDisplay_.repaint();
+    repaint();  // a band toggle dims its cutoff's field
 }
 
 void FollowerEditorPanel::paint(juce::Graphics& g) {
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.03f));
-    g.fillRect(getLocalBounds());
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-    g.drawRect(getLocalBounds());
-
-    // Caption flow mirrors resized().
-    auto bounds = getLocalBounds().reduced(6);
-    g.setColour(ActiveTheme::getSecondaryTextColour());
-    g.setFont(FontManager::getInstance().getUIFont(8.0f));
-    bounds.removeFromTop(18 + 6);  // name + gap
-    bounds.removeFromTop(46 + 6);  // display + gap
-    bounds.removeFromTop(18 + 4);  // gain row + gap
-    bounds.removeFromTop(18 + 4);  // attack/hold row + gap
-    bounds.removeFromTop(18 + 4);  // release row + gap
-    bounds.removeFromTop(18 + 4);  // HP row + gap
-    bounds.removeFromTop(18 + 6);  // LP row + gap
-    bounds.removeFromTop(18 + 8);  // source button + gap
-    g.drawText("Links", bounds.removeFromTop(12), juce::Justification::centredLeft);
+    // Value sliders draw no frame of their own; their fields go under them.
+    for (auto* slider : {&gainSlider_, &attackSlider_, &holdSlider_, &releaseSlider_,
+                         &hpFreqSlider_, &lpFreqSlider_})
+        device_controls::paintField(g, slider->getBounds().toFloat(),
+                                    slider->isEnabled() ? 1.0f : 0.4f);
 }
 
 void FollowerEditorPanel::resized() {
-    constexpr int kGap = 4;
-    auto bounds = getLocalBounds().reduced(6);
+    auto area = getLocalBounds();
+    const auto fromBottom = [&area] {
+        const auto row = area.removeFromBottom(kRowH);
+        area.removeFromBottom(kGap);
+        return row;
+    };
 
-    nameLabel_.setBounds(bounds.removeFromTop(18));
-    bounds.removeFromTop(6);
+    sourceButton_.setBounds(fromBottom());
 
-    followerDisplay_.setBounds(bounds.removeFromTop(46));
-    bounds.removeFromTop(6);
-
-    gainSlider_.setBounds(bounds.removeFromTop(18));
-    bounds.removeFromTop(kGap);
-
-    // Attack | Hold two-column row.
+    // HP and LP side by side: the toggle, then its cutoff.
     {
-        auto row = bounds.removeFromTop(18);
-        const int half = (row.getWidth() - kGap) / 2;
-        attackSlider_.setBounds(row.removeFromLeft(half));
+        auto row = fromBottom();
+        auto hp = row.removeFromLeft((row.getWidth() - kGap) / 2);
         row.removeFromLeft(kGap);
-        holdSlider_.setBounds(row);
-    }
-    bounds.removeFromTop(kGap);
-
-    releaseSlider_.setBounds(bounds.removeFromTop(18));
-    bounds.removeFromTop(kGap);
-
-    // HP / LP band-limit rows: toggle on the left, cutoff slider filling the rest.
-    constexpr int kToggleW = 30;
-    {
-        auto row = bounds.removeFromTop(18);
-        hpEnableButton_.setBounds(row.removeFromLeft(kToggleW));
-        row.removeFromLeft(kGap);
-        hpFreqSlider_.setBounds(row);
-    }
-    bounds.removeFromTop(kGap);
-    {
-        auto row = bounds.removeFromTop(18);
+        constexpr int kToggleW = 26;
+        hpEnableButton_.setBounds(hp.removeFromLeft(kToggleW));
+        hp.removeFromLeft(2);
+        hpFreqSlider_.setBounds(hp);
         lpEnableButton_.setBounds(row.removeFromLeft(kToggleW));
-        row.removeFromLeft(kGap);
+        row.removeFromLeft(2);
         lpFreqSlider_.setBounds(row);
     }
-    bounds.removeFromTop(6);
 
-    sourceButton_.setBounds(bounds.removeFromTop(18));
-    bounds.removeFromTop(8);
-
-    bounds.removeFromTop(12);  // "Links" label (painted)
-    if (bounds.getHeight() > 0) {
-        modMatrixViewport_.setBounds(bounds);
-        modMatrixContent_.setSize(
-            bounds.getWidth() - (modMatrixViewport_.isVerticalScrollBarShown() ? 8 : 0),
-            juce::jmax(bounds.getHeight(),
-                       static_cast<int>(currentMod_.links.size()) * ModMatrixContent::ROW_HEIGHT));
+    {
+        auto row = fromBottom();
+        const int third = (row.getWidth() - 2 * kGap) / 3;
+        attackSlider_.setBounds(row.removeFromLeft(third));
+        row.removeFromLeft(kGap);
+        holdSlider_.setBounds(row.removeFromLeft(third));
+        row.removeFromLeft(kGap);
+        releaseSlider_.setBounds(row);
     }
+
+    gainSlider_.setBounds(fromBottom());
+
+    // The display takes whatever height the rows leave.
+    followerDisplay_.setBounds(area);
 }
 
 }  // namespace magda::daw::ui

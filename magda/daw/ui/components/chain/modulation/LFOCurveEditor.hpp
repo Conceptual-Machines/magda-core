@@ -70,6 +70,12 @@ class LFOCurveEditor : public juce::Component, private juce::Timer {
         repaint();
     }
 
+    /// Grid and handles in the device colours, over a graph background its owner paints.
+    void setDeviceStyle(bool deviceStyle) {
+        deviceStyle_ = deviceStyle;
+        repaint();
+    }
+
     void setShowCrosshair(bool show) {
         core_.setShowCrosshair(show);
     }
@@ -141,6 +147,7 @@ class LFOCurveEditor : public juce::Component, private juce::Timer {
 
     sdk::CurveEditor core_;
     sdk::display::DisplayList displayList_;
+    bool deviceStyle_ = false;
 
     ModInfo* modInfo_ = nullptr;
     ChainNodePath undoOwnerPath_;

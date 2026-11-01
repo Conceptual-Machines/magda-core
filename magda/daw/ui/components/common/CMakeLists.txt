@@ -46,6 +46,7 @@ target_sources(magda_daw_app PRIVATE
     DraggableValueLabel.hpp
     GridDivisionMenu.hpp
     BarsBeatsTicksLabel.hpp
+    DeviceControls.hpp
 )
 
 add_subdirectory(curve)

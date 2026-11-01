@@ -25,6 +25,10 @@ class LFOCurveEditorContent : public juce::Component {
 
     void resized() override;
     void paint(juce::Graphics& g) override;
+    void lookAndFeelChanged() override;
+
+    /// Point the editor and the toolbar at @p modInfo, e.g. after the mods vector reallocated.
+    void setModInfo(magda::ModInfo* modInfo);
 
     magda::LFOCurveEditor& getCurveEditor() {
         return curveEditor_;
@@ -103,6 +107,10 @@ class LFOCurveEditorWindow : public juce::DocumentWindow {
     // Get the curve editor for syncing
     magda::LFOCurveEditor& getCurveEditor() {
         return content_.getCurveEditor();
+    }
+
+    void setModInfo(magda::ModInfo* modInfo) {
+        content_.setModInfo(modInfo);
     }
 
     // Callbacks for rate/sync changes

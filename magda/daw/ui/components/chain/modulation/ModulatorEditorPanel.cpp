@@ -3,6 +3,8 @@
 
 #include "modulation/ModulatorEditorPanel.hpp"
 
+#include <algorithm>
+#include <array>
 #include <utility>
 
 #include "BinaryData.h"
@@ -17,10 +19,19 @@
 #include "ui/components/chain/params/ParamLinkResolver.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
-#include "ui/themes/SmallButtonLookAndFeel.hpp"
-#include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+/// The LFO shapes in the waveform choice's order.
+constexpr std::array<magda::LFOWaveform, 5> kLfoShapes{
+    magda::LFOWaveform::Sine, magda::LFOWaveform::Triangle, magda::LFOWaveform::Square,
+    magda::LFOWaveform::Saw, magda::LFOWaveform::ReverseSaw};
+
+constexpr int kRowH = 18;
+constexpr int kGap = 4;
+constexpr int kTabGap = 14;
+}  // namespace
 
 // ============================================================================
 // ModMatrixContent
@@ -48,60 +59,54 @@ bool ModMatrixContent::updateLinkState(const magda::ControlTarget& target, float
 }
 
 void ModMatrixContent::paint(juce::Graphics& g) {
-    auto font = FontManager::getInstance().getUIFont(8.0f);
-    g.setFont(font);
+    auto& fonts = FontManager::getInstance();
+    const auto accent = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
+    const auto dim = ActiveTheme::getColour(ActiveTheme::DEVICE_DIM);
 
     for (int i = 0; i < static_cast<int>(links_.size()); ++i) {
         const auto& link = links_[static_cast<size_t>(i)];
-        int y = i * ROW_HEIGHT;
-        auto rowBounds = juce::Rectangle<int>(0, y, getWidth(), ROW_HEIGHT);
+        const auto rowBounds = juce::Rectangle<int>(0, i * ROW_HEIGHT, getWidth(), ROW_HEIGHT);
 
-        // Alternating row background
-        if (i % 2 == 0) {
-            g.setColour(ActiveTheme::getColour(ActiveTheme::SURFACE).withAlpha(0.3f));
-            g.fillRect(rowBounds);
-        }
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
+        g.fillRect(rowBounds.withTop(rowBounds.getBottom() - 1));
 
         auto remaining = rowBounds.reduced(2, 0);
+        const auto rowTextColour = ActiveTheme::getColour(link.enabled ? ActiveTheme::DEVICE_TEXT
+                                                                       : ActiveTheme::DEVICE_DIM2);
 
-        const auto rowTextColour =
-            link.enabled ? ActiveTheme::getTextColour() : ActiveTheme::getSecondaryTextColour();
-
-        // Delete button (X) on right - 14px
+        // Delete, enable and bipolar zones from the right, as mouseDown reads them.
+        g.setFont(device_controls::labelFont(9.0f));
         auto deleteBounds = remaining.removeFromRight(14);
-        g.setColour(ActiveTheme::getSecondaryTextColour());
+        g.setColour(dim);
         g.drawText("x", deleteBounds, juce::Justification::centred);
         remaining.removeFromRight(2);
 
-        // Enable toggle - 18px
         auto enabledBounds = remaining.removeFromRight(18);
-        g.setColour(link.enabled ? ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION)
-                                 : ActiveTheme::getSecondaryTextColour());
-        g.drawText(link.enabled ? "On" : "Off", enabledBounds, juce::Justification::centred);
+        g.setColour(link.enabled ? accent : dim);
+        g.drawText(link.enabled ? "ON" : "OFF", enabledBounds, juce::Justification::centred, false);
         remaining.removeFromRight(2);
 
-        // Bipolar toggle - 16px
         auto bipolarBounds = remaining.removeFromRight(16);
-        g.setColour(link.enabled && link.bipolar
-                        ? ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION)
-                        : ActiveTheme::getSecondaryTextColour());
-        g.drawText(link.bipolar ? "Bi" : "Un", bipolarBounds, juce::Justification::centred);
+        g.setColour(link.enabled && link.bipolar ? accent : dim);
+        g.drawText(link.bipolar ? "BI" : "UN", bipolarBounds, juce::Justification::centred, false);
         remaining.removeFromRight(2);
 
-        // Amount - 28px
-        auto amountBounds = remaining.removeFromRight(28);
-        int percent = static_cast<int>(link.amount * 100);
-        g.setColour(rowTextColour);
-        g.drawText(juce::String(percent) + "%", amountBounds, juce::Justification::centredRight);
-        remaining.removeFromRight(2);
+        auto amountBounds = remaining.removeFromRight(32);
+        g.setFont(fonts.getMonoFont(9.5f));
+        g.setColour(ActiveTheme::getColour(link.enabled ? ActiveTheme::DEVICE_VALUE_TEXT
+                                                        : ActiveTheme::DEVICE_DIM2));
+        g.drawText(juce::String(static_cast<int>(link.amount * 100)) + "%", amountBounds,
+                   juce::Justification::centredRight, false);
+        remaining.removeFromRight(4);
 
-        // Param name takes remaining space
+        g.setFont(fonts.getUIFont(10.0f));
         g.setColour(rowTextColour);
         g.drawText(link.paramName, remaining, juce::Justification::centredLeft, true);
     }
 
     if (links_.empty()) {
-        g.setColour(ActiveTheme::getSecondaryTextColour());
+        g.setColour(dim);
+        g.setFont(fonts.getUIFont(10.0f));
         g.drawText("No links", getLocalBounds(), juce::Justification::centred);
     }
 }
@@ -181,44 +186,39 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
 
     startTimer(33);  // 30 FPS for waveform animation
 
-    // Name label at top
-    nameLabel_.setFont(FontManager::getInstance().getUIFontBold(10.0f));
-    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
-    nameLabel_.setJustificationType(juce::Justification::centred);
+    // The controls tab: every generator control lives here, at the panel's own coordinates.
+    controlsPage_.setInterceptsMouseClicks(false, true);
+    addAndMakeVisible(controlsPage_);
+
+    // Renaming happens over the name tab; the tab paints the name otherwise.
+    nameLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
+    nameLabel_.setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
     nameLabel_.setText("No Mod Selected", juce::dontSendNotification);
     nameLabel_.setEditable(false, false, false);
     nameLabel_.onTextChange = [this]() { onNameLabelEdited(); };
-    addAndMakeVisible(nameLabel_);
-
-    // Waveform selector (for LFO shapes - hidden when Custom/Curve)
-    waveformCombo_.addItem("Sine", static_cast<int>(magda::LFOWaveform::Sine) + 1);
-    waveformCombo_.addItem("Triangle", static_cast<int>(magda::LFOWaveform::Triangle) + 1);
-    waveformCombo_.addItem("Square", static_cast<int>(magda::LFOWaveform::Square) + 1);
-    waveformCombo_.addItem("Saw", static_cast<int>(magda::LFOWaveform::Saw) + 1);
-    waveformCombo_.addItem("Reverse Saw", static_cast<int>(magda::LFOWaveform::ReverseSaw) + 1);
-    waveformCombo_.setSelectedId(1, juce::dontSendNotification);
-    waveformCombo_.setColour(juce::ComboBox::backgroundColourId,
-                             ActiveTheme::getColour(ActiveTheme::SURFACE));
-    waveformCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
-    waveformCombo_.setColour(juce::ComboBox::outlineColourId,
-                             ActiveTheme::getColour(ActiveTheme::BORDER));
-    waveformCombo_.setJustificationType(juce::Justification::centredLeft);
-    waveformCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
-    waveformCombo_.onChange = [this]() {
-        int id = waveformCombo_.getSelectedId();
-        if (id > 0 && onWaveformChanged) {
-            onWaveformChanged(static_cast<magda::LFOWaveform>(id - 1));
-        }
+    nameLabel_.onEditorHide = [this]() {
+        nameLabel_.setVisible(false);
+        repaint();
     };
-    addAndMakeVisible(waveformCombo_);
+    addChildComponent(nameLabel_);
+
+    waveformChoice_.setOptions({"Sine", "Triangle", "Square", "Saw Up", "Saw Down"});
+    waveformChoice_.onChange = [this](int index) {
+        if (index >= 0 && index < static_cast<int>(kLfoShapes.size()) && onWaveformChanged)
+            onWaveformChanged(kLfoShapes[static_cast<size_t>(index)]);
+    };
+    controlsPage_.addAndMakeVisible(waveformChoice_);
 
     // Waveform display (for standard LFO shapes)
-    addAndMakeVisible(waveformDisplay_);
+    controlsPage_.addAndMakeVisible(waveformDisplay_);
 
     // Curve editor (for curve mode - bezier editing with integrated phase indicator)
     curveEditor_.setName("miniLFO");
     curveEditor_.setVisible(false);
     curveEditor_.setCurveColour(ActiveTheme::ACCENT_ATTENTION);
+    curveEditor_.setDeviceStyle(true);
+    curveEditor_.setPadding(kGap);
     curveEditor_.onWaveformChanged = [this]() {
         DBG("[HardCorner] ModulatorEditorPanel embedded curve onWaveformChanged");
         // Curve points are stored directly in ModInfo by LFOCurveEditor
@@ -243,19 +243,18 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
         }
         repaint();
     };
-    addChildComponent(curveEditor_);
+    controlsPage_.addChildComponent(curveEditor_);
 
     // Button to open external curve editor window
     curveEditorButton_ = std::make_unique<magda::SvgButton>("Edit Curve", BinaryData::curve_svg,
                                                             BinaryData::curve_svgSize);
-    curveEditorButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
-    curveEditorButton_->setHoverColor(ActiveTheme::getTextColour());
-    curveEditorButton_->setActiveColor(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
-    curveEditorButton_->setActiveBackgroundColor(
-        ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+    curveEditorButton_->setNormalColor(ActiveTheme::DEVICE_DIM);
+    curveEditorButton_->setHoverColor(ActiveTheme::DEVICE_TEXT);
+    curveEditorButton_->setActiveColor(ActiveTheme::DEVICE_BG);
+    curveEditorButton_->setActiveBackgroundColor(ActiveTheme::ACCENT_ATTENTION);
     curveEditorButton_->onClick = [this]() {
         if (!curveEditorWindow_) {
-            auto* modInfo = const_cast<magda::ModInfo*>(liveModPtr_ ? liveModPtr_ : &currentMod_);
+            auto* modInfo = liveModForEditing();
             curveEditorWindow_ = std::make_unique<LFOCurveEditorWindow>(
                 modInfo,
                 [this]() {
@@ -330,15 +329,14 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
             curveEditorButton_->setActive(false);
         } else {
             // Re-sync curve data from ModInfo before showing
-            curveEditorWindow_->getCurveEditor().setModInfo(
-                const_cast<magda::ModInfo*>(liveModPtr_ ? liveModPtr_ : &currentMod_));
+            curveEditorWindow_->setModInfo(liveModForEditing());
             curveEditorWindow_->getCurveEditor().setUndoTarget(ownerDevicePath_, selectedModIndex_);
             curveEditorWindow_->setVisible(true);
             curveEditorWindow_->toFront(true);
             curveEditorButton_->setActive(true);
         }
     };
-    addChildComponent(curveEditorButton_.get());
+    controlsPage_.addChildComponent(curveEditorButton_.get());
 
     // Curve preset selector (shown in curve mode below the name)
     curvePresetCombo_.addItem("Triangle", static_cast<int>(magda::CurvePreset::Triangle) + 1);
@@ -349,12 +347,8 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     curvePresetCombo_.addItem("Exp", static_cast<int>(magda::CurvePreset::Exponential) + 1);
     curvePresetCombo_.addItem("Log", static_cast<int>(magda::CurvePreset::Logarithmic) + 1);
     curvePresetCombo_.setTextWhenNothingSelected("Preset");
-    curvePresetCombo_.setColour(juce::ComboBox::backgroundColourId,
-                                ActiveTheme::getColour(ActiveTheme::SURFACE));
-    curvePresetCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
-    curvePresetCombo_.setColour(juce::ComboBox::outlineColourId,
-                                ActiveTheme::getColour(ActiveTheme::BORDER));
-    curvePresetCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
+    curvePresetCombo_.setJustificationType(juce::Justification::centredLeft);
+    curvePresetCombo_.setLookAndFeel(&DeviceControlLookAndFeel::getInstance());
     curvePresetCombo_.onChange = [this]() {
         int id = curvePresetCombo_.getSelectedId();
         if (id > 0) {
@@ -369,29 +363,22 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
             }
         }
     };
-    addChildComponent(curvePresetCombo_);
+    controlsPage_.addChildComponent(curvePresetCombo_);
 
     // Save preset button (shown in curve mode next to preset combo)
     savePresetButton_ = std::make_unique<magda::SvgButton>("Save Preset", BinaryData::save_svg,
                                                            BinaryData::save_svgSize);
-    savePresetButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
-    savePresetButton_->setHoverColor(ActiveTheme::getTextColour());
+    savePresetButton_->setNormalColor(ActiveTheme::DEVICE_DIM);
+    savePresetButton_->setHoverColor(ActiveTheme::DEVICE_TEXT);
     savePresetButton_->onClick = []() {
         // TODO: Show save preset dialog
     };
-    addChildComponent(savePresetButton_.get());
+    controlsPage_.addChildComponent(savePresetButton_.get());
 
-    // Sync toggle button (small square button style)
+    // Sync toggle: lit while the rate follows the tempo.
     syncToggle_.setButtonText("Free");
-    syncToggle_.setColour(juce::TextButton::buttonColourId,
-                          ActiveTheme::getColour(ActiveTheme::SURFACE));
-    syncToggle_.setColour(juce::TextButton::buttonOnColourId,
-                          ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
-    syncToggle_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
-    syncToggle_.setColour(juce::TextButton::textColourOnId,
-                          ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     syncToggle_.setClickingTogglesState(true);
-    syncToggle_.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
+    syncToggle_.setLookAndFeel(&DeviceControlLookAndFeel::getInstance());
     syncToggle_.onClick = [safeThis = juce::Component::SafePointer(this)]() {
         if (!safeThis)
             return;
@@ -408,7 +395,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
         if (safeThis)
             safeThis->resized();  // Re-layout
     };
-    addAndMakeVisible(syncToggle_);
+    controlsPage_.addAndMakeVisible(syncToggle_);
 
     // Sync division stepped slider — N musical divisions, indexed 0..N-1.
     // Stepped (interval=1) so each drag click steps to the next division.
@@ -418,8 +405,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     syncDivisionSlider_.setValue(
         static_cast<double>(syncDivisionToIndex(magda::SyncDivision::Quarter)),
         juce::dontSendNotification);
-    syncDivisionSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    syncDivisionSlider_.setShowFillIndicator(false);
+    device_controls::styleValue(syncDivisionSlider_);
     syncDivisionSlider_.setValueFormatter([](double v) {
         int idx = juce::jlimit(0, kNumDivisions - 1, static_cast<int>(std::round(v)));
         return syncDivisionLabelForIndex(idx);
@@ -433,13 +419,12 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     };
     syncDivisionSlider_.setRightClickEditsText(false);
     syncDivisionSlider_.onRightClicked = [this]() { showRateSliderContextMenu(); };
-    addChildComponent(syncDivisionSlider_);  // Hidden by default (shown when sync enabled)
+    controlsPage_.addChildComponent(syncDivisionSlider_);  // Shown when sync is on
 
     // Rate slider
     rateSlider_.setRange(0.05, 20.0, 0.01);
     rateSlider_.setValue(1.0, juce::dontSendNotification);
-    rateSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    rateSlider_.setShowFillIndicator(false);
+    device_controls::styleValue(rateSlider_);
     rateSlider_.onValueChanged = [this](double value) {
         currentMod_.rate = static_cast<float>(value);
         if (onRateChanged) {
@@ -448,7 +433,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     };
     rateSlider_.setRightClickEditsText(false);
     rateSlider_.onRightClicked = [this]() { showRateSliderContextMenu(); };
-    addAndMakeVisible(rateSlider_);
+    controlsPage_.addAndMakeVisible(rateSlider_);
     updateRateAutomationTarget();
 
     // Trigger mode combo box
@@ -458,13 +443,8 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     triggerModeCombo_.addItem("Audio", static_cast<int>(magda::LFOTriggerMode::Audio) + 1);
     triggerModeCombo_.setSelectedId(static_cast<int>(magda::LFOTriggerMode::Free) + 1,
                                     juce::dontSendNotification);
-    triggerModeCombo_.setColour(juce::ComboBox::backgroundColourId,
-                                ActiveTheme::getColour(ActiveTheme::SURFACE));
-    triggerModeCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
-    triggerModeCombo_.setColour(juce::ComboBox::outlineColourId,
-                                ActiveTheme::getColour(ActiveTheme::BORDER));
     triggerModeCombo_.setJustificationType(juce::Justification::centredLeft);
-    triggerModeCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
+    triggerModeCombo_.setLookAndFeel(&DeviceControlLookAndFeel::getInstance());
     triggerModeCombo_.onChange = [this]() {
         int id = triggerModeCombo_.getSelectedId();
         if (id > 0) {
@@ -484,36 +464,38 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
             }
         }
     };
-    addAndMakeVisible(triggerModeCombo_);
+    controlsPage_.addAndMakeVisible(triggerModeCombo_);
 
     // Audio attack slider (shown only when trigger mode = Audio)
     audioAttackSlider_.setRange(0.1, 500.0, 0.1);
     audioAttackSlider_.setValue(1.0, juce::dontSendNotification);
-    audioAttackSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    audioAttackSlider_.setShowFillIndicator(false);
+    device_controls::styleValue(audioAttackSlider_);
+    audioAttackSlider_.setValueFormatter(
+        [](double v) { return "Atk " + juce::String(v, 1) + " ms"; });
     audioAttackSlider_.onValueChanged = [this](double value) {
         currentMod_.audioAttackMs = static_cast<float>(value);
         if (onAudioAttackChanged) {
             onAudioAttackChanged(currentMod_.audioAttackMs);
         }
     };
-    addChildComponent(audioAttackSlider_);
+    controlsPage_.addChildComponent(audioAttackSlider_);
 
     // Audio release slider (shown only when trigger mode = Audio)
     audioReleaseSlider_.setRange(1.0, 2000.0, 1.0);
     audioReleaseSlider_.setValue(100.0, juce::dontSendNotification);
-    audioReleaseSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    audioReleaseSlider_.setShowFillIndicator(false);
+    device_controls::styleValue(audioReleaseSlider_);
+    audioReleaseSlider_.setValueFormatter(
+        [](double v) { return "Rel " + juce::String(juce::roundToInt(v)) + " ms"; });
     audioReleaseSlider_.onValueChanged = [this](double value) {
         currentMod_.audioReleaseMs = static_cast<float>(value);
         if (onAudioReleaseChanged) {
             onAudioReleaseChanged(currentMod_.audioReleaseMs);
         }
     };
-    addChildComponent(audioReleaseSlider_);
+    controlsPage_.addChildComponent(audioReleaseSlider_);
 
     // ADSR envelope controls (shown only when type == Envelope)
-    addChildComponent(envelopeDisplay_);
+    controlsPage_.addChildComponent(envelopeDisplay_);
 
     // Time sliders fold their label into the value text (e.g. "A 10 ms") so
     // they don't need separate label components or hand-painted captions.
@@ -522,15 +504,14 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
         s.setRange(0.0, 30000.0, 1.0);
         s.setSkewForCentre(500.0);
         s.setValue(def, juce::dontSendNotification);
-        s.setFont(FontManager::getInstance().getUIFont(9.0f));
-        s.setShowFillIndicator(false);
+        device_controls::styleValue(s);
         s.setValueFormatter(
             [tag](double v) { return tag + " " + juce::String(juce::roundToInt(v)) + " ms"; });
         s.onValueChanged = [this, field](double value) {
             field() = static_cast<float>(value);
             fireEnvelopeChanged();
         };
-        addChildComponent(s);
+        controlsPage_.addChildComponent(s);
     };
     setupEnvTimeSlider(envAttackSlider_, "A", 10.0,
                        [this]() -> float& { return currentMod_.envAttackMs; });
@@ -541,27 +522,26 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
 
     envSustainSlider_.setRange(0.0, 1.0, 0.01);
     envSustainSlider_.setValue(0.7, juce::dontSendNotification);
-    envSustainSlider_.setFont(FontManager::getInstance().getUIFont(9.0f));
-    envSustainSlider_.setShowFillIndicator(false);
+    device_controls::styleValue(envSustainSlider_);
     envSustainSlider_.setValueFormatter([](double v) { return "S " + juce::String(v, 2); });
     envSustainSlider_.onValueChanged = [this](double value) {
         currentMod_.envSustain = static_cast<float>(value);
         fireEnvelopeChanged();
     };
-    addChildComponent(envSustainSlider_);
+    controlsPage_.addChildComponent(envSustainSlider_);
 
     auto setupCurveSlider = [this](TextSlider& s, const juce::String& tag,
                                    const std::function<float&()>& field) {
         s.setRange(-0.5, 0.5, 0.01);
         s.setValue(0.0, juce::dontSendNotification);
-        s.setFont(FontManager::getInstance().getUIFont(9.0f));
-        s.setShowFillIndicator(false);
+        device_controls::styleValue(s);
+        s.setFont(FontManager::getInstance().getUIFontMedium(9.5f));  // three to a row
         s.setValueFormatter([tag](double v) { return tag + " " + juce::String(v, 2); });
         s.onValueChanged = [this, field](double value) {
             field() = static_cast<float>(value);
             fireEnvelopeChanged();
         };
-        addChildComponent(s);
+        controlsPage_.addChildComponent(s);
     };
     setupCurveSlider(envAttackCurveSlider_, "A crv",
                      [this]() -> float& { return currentMod_.envAttackCurve; });
@@ -571,39 +551,28 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
                      [this]() -> float& { return currentMod_.envReleaseCurve; });
 
     // Random modulator controls (shown only when type == Random)
-    addChildComponent(randomDisplay_);
+    controlsPage_.addChildComponent(randomDisplay_);
 
-    randomTypeCombo_.addItem("Random", 1);  // id = randomType + 1
-    randomTypeCombo_.addItem("Noise", 2);
-    randomTypeCombo_.setSelectedId(1, juce::dontSendNotification);
-    randomTypeCombo_.setColour(juce::ComboBox::backgroundColourId,
-                               ActiveTheme::getColour(ActiveTheme::SURFACE));
-    randomTypeCombo_.setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
-    randomTypeCombo_.setColour(juce::ComboBox::outlineColourId,
-                               ActiveTheme::getColour(ActiveTheme::BORDER));
-    randomTypeCombo_.setJustificationType(juce::Justification::centredLeft);
-    randomTypeCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
-    randomTypeCombo_.onChange = [this]() {
-        int id = randomTypeCombo_.getSelectedId();
-        if (id > 0) {
-            currentMod_.randomType = id - 1;
-            fireRandomChanged();
-        }
+    randomTypeChoice_.setOptions({"Random", "Noise"});  // index = randomType
+    randomTypeChoice_.setSelectedIndex(0);
+    randomTypeChoice_.onChange = [this](int index) {
+        currentMod_.randomType = index;
+        fireRandomChanged();
     };
-    addChildComponent(randomTypeCombo_);
+    controlsPage_.addChildComponent(randomTypeChoice_);
 
     // Random 0..1 sliders fold their label into the value text (e.g. "Shp 0.50").
     auto setupRandomSlider = [this](TextSlider& s, const juce::String& tag,
                                     const std::function<float&()>& field) {
         s.setRange(0.0, 1.0, 0.01);
-        s.setFont(FontManager::getInstance().getUIFont(9.0f));
-        s.setShowFillIndicator(false);
+        device_controls::styleValue(s);
+        s.setFont(FontManager::getInstance().getUIFontMedium(9.5f));  // three to a row
         s.setValueFormatter([tag](double v) { return tag + " " + juce::String(v, 2); });
         s.onValueChanged = [this, field](double value) {
             field() = static_cast<float>(value);
             fireRandomChanged();
         };
-        addChildComponent(s);
+        controlsPage_.addChildComponent(s);
     };
     setupRandomSlider(randomShapeSlider_, "Shp",
                       [this]() -> float& { return currentMod_.randomShape; });
@@ -615,18 +584,19 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     // Advanced settings button
     advancedButton_ = std::make_unique<magda::SvgButton>("Advanced", BinaryData::settings_nobg_svg,
                                                          BinaryData::settings_nobg_svgSize);
-    advancedButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
-    advancedButton_->setHoverColor(ActiveTheme::getTextColour());
+    advancedButton_->setNormalColor(ActiveTheme::DEVICE_DIM);
+    advancedButton_->setHoverColor(ActiveTheme::DEVICE_TEXT);
     advancedButton_->onClick = [this]() {
         if (onAdvancedClicked)
             onAdvancedClicked();
     };
-    addAndMakeVisible(advancedButton_.get());
+    controlsPage_.addAndMakeVisible(advancedButton_.get());
 
-    // Mod matrix viewport
+    // The Links tab: the link list scrolls when it outgrows the panel.
     modMatrixViewport_.setViewedComponent(&modMatrixContent_, false);
     modMatrixViewport_.setScrollBarsShown(true, false);
-    addAndMakeVisible(modMatrixViewport_);
+    modMatrixViewport_.setScrollBarThickness(6);
+    addChildComponent(modMatrixViewport_);
 
     modMatrixContent_.onDeleteLink = [this](magda::ControlTarget target) {
         if (selectedModIndex_ >= 0 && onModLinkDeleted) {
@@ -650,13 +620,8 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     };
 
     // Embedded envelope-follower editor (its own class — no LFO/trigger/MIDI).
-    // Shown on top in follower mode; forwards its edits + link ops up to our
-    // own callbacks so the host wiring is unchanged apart from onFollowerChanged.
+    // Shown as the controls tab in follower mode; its links are in our Links tab.
     followerEditorPanel_ = std::make_unique<FollowerEditorPanel>();
-    followerEditorPanel_->onNameChanged = [this](juce::String name) {
-        if (onNameChanged)
-            onNameChanged(std::move(name));
-    };
     followerEditorPanel_->onFollowerChanged = [this](const magda::ModInfo& mod) {
         if (onFollowerChanged)
             onFollowerChanged(mod);
@@ -666,26 +631,8 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
         if (onAdvancedClicked)
             onAdvancedClicked();
     };
-    followerEditorPanel_->onModLinkDeleted = [this](int idx, magda::ControlTarget target) {
-        if (onModLinkDeleted)
-            onModLinkDeleted(idx, std::move(target));
-    };
-    followerEditorPanel_->onModLinkBipolarChanged = [this](int idx, magda::ControlTarget target,
-                                                           bool bipolar) {
-        if (onModLinkBipolarChanged)
-            onModLinkBipolarChanged(idx, std::move(target), bipolar);
-    };
-    followerEditorPanel_->onModLinkEnabledChanged = [this](int idx, magda::ControlTarget target,
-                                                           bool enabled) {
-        if (onModLinkEnabledChanged)
-            onModLinkEnabledChanged(idx, std::move(target), enabled);
-    };
-    followerEditorPanel_->onModLinkAmountChanged = [this](int idx, magda::ControlTarget target,
-                                                          float amount) {
-        if (onModLinkAmountChanged)
-            onModLinkAmountChanged(idx, std::move(target), amount);
-    };
     addChildComponent(*followerEditorPanel_);
+    lookAndFeelChanged();
 }
 
 ModulatorEditorPanel::~ModulatorEditorPanel() {
@@ -930,7 +877,7 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
     if (index < 0) {
         nameLabel_.setText("No Mod Selected", juce::dontSendNotification);
         nameLabel_.setEditable(false, false, false);
-        waveformCombo_.setEnabled(false);
+        waveformChoice_.setEnabled(false);
         syncToggle_.setEnabled(false);
         syncDivisionSlider_.setEnabled(false);
         rateSlider_.setEnabled(false);
@@ -939,7 +886,7 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
         audioReleaseSlider_.setEnabled(false);
         advancedButton_->setEnabled(false);
     } else {
-        waveformCombo_.setEnabled(true);
+        waveformChoice_.setEnabled(true);
         syncToggle_.setEnabled(true);
         syncDivisionSlider_.setEnabled(true);
         rateSlider_.setEnabled(true);
@@ -952,8 +899,7 @@ void ModulatorEditorPanel::setSelectedModIndex(int index) {
 }
 
 void ModulatorEditorPanel::setGeneratorControlsVisible(bool v) {
-    nameLabel_.setVisible(v);
-    waveformCombo_.setVisible(v);
+    waveformChoice_.setVisible(v);
     waveformDisplay_.setVisible(v);
     curveEditor_.setVisible(v);
     curveEditorButton_->setVisible(v);
@@ -975,33 +921,29 @@ void ModulatorEditorPanel::setGeneratorControlsVisible(bool v) {
     envDecayCurveSlider_.setVisible(v);
     envReleaseCurveSlider_.setVisible(v);
     randomDisplay_.setVisible(v);
-    randomTypeCombo_.setVisible(v);
+    randomTypeChoice_.setVisible(v);
     randomShapeSlider_.setVisible(v);
     randomSmoothSlider_.setVisible(v);
     randomStepDepthSlider_.setVisible(v);
-    modMatrixViewport_.setVisible(v);
 }
 
 void ModulatorEditorPanel::updateFromMod() {
     // The envelope follower has its own editor; hand off to it and hide our
     // own (generator) controls entirely.
     isFollowerMode_ = (currentMod_.type == magda::ModType::Follower);
+    nameLabel_.setText(currentMod_.name, juce::dontSendNotification);
     if (isFollowerMode_) {
         setGeneratorControlsVisible(false);
-        followerEditorPanel_->setParamNameResolver(paramNameResolver_);
         followerEditorPanel_->setSelectedModIndex(selectedModIndex_);
         followerEditorPanel_->setModInfo(currentMod_, liveModPtr_, liveModGetter_);
-        followerEditorPanel_->setVisible(true);
-        followerEditorPanel_->toFront(false);
+        updateModMatrix();
+        showTab();
         resized();
         return;
     }
-    followerEditorPanel_->setVisible(false);
-    // Re-show the generator controls (the per-mode logic below hides the ones
-    // that don't apply); leaving follower mode restores name + mod matrix.
+    // Re-show the generator controls; the per-mode logic below hides the ones
+    // that don't apply.
     setGeneratorControlsVisible(true);
-
-    nameLabel_.setText(currentMod_.name, juce::dontSendNotification);
 
     isEnvelopeMode_ = (currentMod_.type == magda::ModType::Envelope);
     isRandomMode_ = (currentMod_.type == magda::ModType::Random);
@@ -1032,12 +974,12 @@ void ModulatorEditorPanel::updateFromMod() {
 
     // ---- Random controls ----
     randomDisplay_.setVisible(isRandomMode_);
-    randomTypeCombo_.setVisible(isRandomMode_);
+    randomTypeChoice_.setVisible(isRandomMode_);
     randomShapeSlider_.setVisible(isRandomMode_);
     randomSmoothSlider_.setVisible(isRandomMode_);
     randomStepDepthSlider_.setVisible(isRandomMode_);
     if (isRandomMode_) {
-        randomTypeCombo_.setSelectedId(currentMod_.randomType + 1, juce::dontSendNotification);
+        randomTypeChoice_.setSelectedIndex(currentMod_.randomType);
         randomShapeSlider_.setValue(currentMod_.randomShape, juce::dontSendNotification);
         randomSmoothSlider_.setValue(currentMod_.randomSmooth, juce::dontSendNotification);
         randomStepDepthSlider_.setValue(currentMod_.randomStepDepth, juce::dontSendNotification);
@@ -1046,7 +988,7 @@ void ModulatorEditorPanel::updateFromMod() {
 
     // ---- LFO controls (hidden in envelope/random mode) ----
     // Show/hide appropriate controls based on curve mode
-    waveformCombo_.setVisible(!isCurveMode_ && !isEnvelopeMode_ && !isRandomMode_);
+    waveformChoice_.setVisible(!isCurveMode_ && !isEnvelopeMode_ && !isRandomMode_);
 
     // In curve mode, show the curve editor, edit button, preset selector, and save button
     curveEditor_.setVisible(isCurveMode_);
@@ -1060,20 +1002,22 @@ void ModulatorEditorPanel::updateFromMod() {
 
     if (isCurveMode_) {
         // Pass ModInfo to curve editor for loading/saving curve points
-        auto* modInfo = const_cast<magda::ModInfo*>(liveModPtr_ ? liveModPtr_ : &currentMod_);
+        auto* modInfo = liveModForEditing();
         curveEditor_.setModInfo(modInfo);
         curveEditor_.setUndoTarget(ownerDevicePath_, selectedModIndex_);
         // Mirror the loop region in the inline preview so it's visible without
         // opening the external editor.
         curveEditor_.setShowLoopRegion(currentMod_.useLoopRegion);
         if (curveEditorWindow_ && curveEditorWindow_->isVisible()) {
-            curveEditorWindow_->getCurveEditor().setModInfo(modInfo);
+            curveEditorWindow_->setModInfo(modInfo);
             curveEditorWindow_->getCurveEditor().setUndoTarget(ownerDevicePath_, selectedModIndex_);
         }
     } else {
         // LFO mode - show waveform shape
-        waveformCombo_.setSelectedId(static_cast<int>(currentMod_.waveform) + 1,
-                                     juce::dontSendNotification);
+        const auto* const shape =
+            std::find(kLfoShapes.begin(), kLfoShapes.end(), currentMod_.waveform);
+        waveformChoice_.setSelectedIndex(
+            shape != kLfoShapes.end() ? static_cast<int>(shape - kLfoShapes.begin()) : -1);
     }
 
     // Tempo sync controls
@@ -1109,9 +1053,15 @@ void ModulatorEditorPanel::updateFromMod() {
 
     // Update mod matrix
     updateModMatrix();
+    showTab();
 
     // Update layout since curve/LFO mode affects component positions
     resized();
+}
+
+magda::ModInfo* ModulatorEditorPanel::liveModForEditing() {
+    const auto* live = liveModGetter_ ? liveModGetter_() : liveModPtr_;
+    return const_cast<magda::ModInfo*>(live != nullptr ? live : &currentMod_);
 }
 
 void ModulatorEditorPanel::fireEnvelopeChanged() {
@@ -1146,6 +1096,10 @@ void ModulatorEditorPanel::onNameLabelEdited() {
 }
 
 void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
+    // Everything below marks the rate slider, so nothing while the Links tab hides it.
+    if (!(currentMod_.tempoSync ? syncDivisionSlider_ : rateSlider_).isShowing())
+        return;
+
     // Mapped-binding dot + learn-mode pulse on the visible rate slider, same
     // visual language as LinkableTextSlider uses for plugin params.
     {
@@ -1303,361 +1257,193 @@ void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
 
 void ModulatorEditorPanel::lookAndFeelChanged() {
     // Re-apply cached theme colours after a live theme switch.
-    nameLabel_.setColour(juce::Label::textColourId, ActiveTheme::getTextColour());
-
-    for (auto* combo :
-         {&waveformCombo_, &curvePresetCombo_, &triggerModeCombo_, &randomTypeCombo_}) {
-        combo->setColour(juce::ComboBox::backgroundColourId,
-                         ActiveTheme::getColour(ActiveTheme::SURFACE));
-        combo->setColour(juce::ComboBox::textColourId, ActiveTheme::getTextColour());
-        combo->setColour(juce::ComboBox::outlineColourId,
-                         ActiveTheme::getColour(ActiveTheme::BORDER));
-    }
-
-    syncToggle_.setColour(juce::TextButton::buttonColourId,
-                          ActiveTheme::getColour(ActiveTheme::SURFACE));
-    syncToggle_.setColour(juce::TextButton::buttonOnColourId,
-                          ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
-    syncToggle_.setColour(juce::TextButton::textColourOffId, ActiveTheme::getSecondaryTextColour());
-    syncToggle_.setColour(juce::TextButton::textColourOnId,
-                          ActiveTheme::getColour(ActiveTheme::BACKGROUND));
-
-    if (curveEditorButton_) {
-        curveEditorButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
-        curveEditorButton_->setHoverColor(ActiveTheme::getTextColour());
-        curveEditorButton_->setActiveColor(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
-        curveEditorButton_->setActiveBackgroundColor(
-            ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
-    }
-    if (savePresetButton_) {
-        savePresetButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
-        savePresetButton_->setHoverColor(ActiveTheme::getTextColour());
-    }
-    if (advancedButton_) {
-        advancedButton_->setNormalColor(ActiveTheme::getSecondaryTextColour());
-        advancedButton_->setHoverColor(ActiveTheme::getTextColour());
-    }
-
+    nameLabel_.setColour(juce::Label::textColourId,
+                         ActiveTheme::getColour(ActiveTheme::DEVICE_TEXT));
+    auto& scrollBar = modMatrixViewport_.getVerticalScrollBar();
+    scrollBar.setColour(juce::ScrollBar::thumbColourId,
+                        ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
+    scrollBar.setColour(juce::ScrollBar::trackColourId, juce::Colours::transparentBlack);
     repaint();
 }
 
+juce::String ModulatorEditorPanel::tabText(int index) const {
+    if (index == 0)
+        return nameLabel_.getText().toUpperCase();
+    const auto count = std::count_if(currentMod_.links.begin(), currentMod_.links.end(),
+                                     [](const auto& link) { return link.isValid(); });
+    return count > 0 ? "LINKS " + juce::String(count) : juce::String("LINKS");
+}
+
+juce::Rectangle<int> ModulatorEditorPanel::tabBounds(int index) const {
+    auto row = getLocalBounds().removeFromTop(TAB_HEIGHT).reduced(10, 0);
+    const auto font = device_controls::labelFont();
+    const int linksW = juce::GlyphArrangement::getStringWidthInt(font, tabText(1)) + 1;
+    const int nameW = juce::jmin(juce::GlyphArrangement::getStringWidthInt(font, tabText(0)) + 1,
+                                 row.getWidth() - linksW - kTabGap);
+    const auto name = row.removeFromLeft(juce::jmax(0, nameW));
+    if (index == 0)
+        return name;
+    row.removeFromLeft(kTabGap);
+    return row.removeFromLeft(linksW);
+}
+
+void ModulatorEditorPanel::showLinks(bool links) {
+    if (linksShown_ == links)
+        return;
+    linksShown_ = links;
+    showTab();
+    resized();
+    repaint();
+}
+
+void ModulatorEditorPanel::showTab() {
+    controlsPage_.setVisible(!linksShown_ && !isFollowerMode_);
+    followerEditorPanel_->setVisible(!linksShown_ && isFollowerMode_);
+    modMatrixViewport_.setVisible(linksShown_);
+}
+
 void ModulatorEditorPanel::paint(juce::Graphics& g) {
-    // Background
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND).brighter(0.03f));
-    g.fillRect(getLocalBounds());
+    g.fillAll(ActiveTheme::getColour(ActiveTheme::DEVICE_BG));
+    g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
+    g.fillRect(getLocalBounds().removeFromRight(1));
 
-    // Border
-    g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-    g.drawRect(getLocalBounds());
+    // The name and Links tabs: the shown one lit and underlined, as the faceplates' tabs.
+    g.setFont(device_controls::labelFont());
+    for (int i = 0; i < 2; ++i) {
+        const auto tab = tabBounds(i);
+        const bool selected = (i == 1) == linksShown_;
+        if (i == 1 || !nameLabel_.isVisible()) {
+            g.setColour(ActiveTheme::getColour(selected ? ActiveTheme::DEVICE_TITLE
+                                                        : ActiveTheme::DEVICE_DIM));
+            g.drawText(tabText(i), tab, juce::Justification::centredLeft, true);
+        }
+        if (selected) {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION));
+            g.fillRect(tab.withTop(tab.getBottom() - 2));
+        }
+    }
 
-    // Follower mode: the embedded FollowerEditorPanel paints everything.
-    if (isFollowerMode_)
+    if (linksShown_ || isFollowerMode_)
         return;
 
-    // Section headers
-    auto bounds = getLocalBounds().reduced(6);
-
-    // Envelope mode draws its own caption flow that mirrors the resized() layout.
-    if (isEnvelopeMode_) {
-        g.setColour(ActiveTheme::getSecondaryTextColour());
-        g.setFont(FontManager::getInstance().getUIFont(8.0f));
-        bounds.removeFromTop(18 + 6);  // name + gap
-        bounds.removeFromTop(56 + 6);  // envelope display + gap
-        bounds.removeFromTop(18 + 4);  // attack/decay row + gap
-        bounds.removeFromTop(18 + 4);  // sustain/release row + gap
-        bounds.removeFromTop(18 + 8);  // curve row + gap
-        g.drawText("Trigger", bounds.removeFromTop(12), juce::Justification::centredLeft);
-        bounds.removeFromTop(18);  // trigger row
-        bounds.removeFromTop(8);   // gap before Links
-        g.drawText("Links", bounds.removeFromTop(12), juce::Justification::centredLeft);
-        return;
+    // Value sliders draw no frame of their own; their fields go under them.
+    for (auto* slider :
+         {&rateSlider_, &syncDivisionSlider_, &audioAttackSlider_, &audioReleaseSlider_,
+          &envAttackSlider_, &envDecaySlider_, &envSustainSlider_, &envReleaseSlider_,
+          &envAttackCurveSlider_, &envDecayCurveSlider_, &envReleaseCurveSlider_,
+          &randomShapeSlider_, &randomSmoothSlider_, &randomStepDepthSlider_}) {
+        if (slider->isVisible())
+            device_controls::paintField(g, slider->getBounds().toFloat(),
+                                        slider->isEnabled() ? 1.0f : 0.4f);
     }
+    if (curveEditor_.isVisible())
+        device_controls::paintGraph(
+            g, curveEditor_.getBounds().reduced(curveEditor_.getPadding()).toFloat());
 
-    // Random mode draws its own caption flow that mirrors the resized() layout.
-    if (isRandomMode_) {
-        g.setColour(ActiveTheme::getSecondaryTextColour());
-        g.setFont(FontManager::getInstance().getUIFont(8.0f));
-        bounds.removeFromTop(18 + 6);  // name + gap
-        bounds.removeFromTop(46 + 6);  // random display + gap
-        bounds.removeFromTop(18 + 4);  // type combo + gap
-        bounds.removeFromTop(18 + 4);  // shape/smooth row + gap
-        bounds.removeFromTop(18 + 8);  // step depth row + gap
-        bounds.removeFromTop(18 + 8);  // rate row + gap
-        g.drawText("Trigger", bounds.removeFromTop(12), juce::Justification::centredLeft);
-        bounds.removeFromTop(18);  // trigger row
-        bounds.removeFromTop(8);   // gap before Links
-        g.drawText("Links", bounds.removeFromTop(12), juce::Justification::centredLeft);
-        return;
-    }
-
-    bounds.removeFromTop(18 + 6);  // Skip name label + gap
-
-    // Skip the area below name - different for curve vs LFO mode
-    g.setColour(ActiveTheme::getSecondaryTextColour());
-    g.setFont(FontManager::getInstance().getUIFont(8.0f));
-    if (isCurveMode_) {
-        bounds.removeFromTop(18 + 4);  // Skip preset combo + gap
-    } else {
-        // "Waveform" label (only shown for LFO mode)
-        g.drawText("Waveform", bounds.removeFromTop(10), juce::Justification::centredLeft);
-        bounds.removeFromTop(18 + 4);  // Skip waveform selector + gap
-    }
-    int displayHeight = isCurveMode_ ? 70 : 46;
-    bounds.removeFromTop(displayHeight + 6);  // Skip waveform/curve display + gap
-    bounds.removeFromTop(18 + 8);             // Skip rate row + gap
-
-    // "Trigger" label
-    g.drawText("Trigger", bounds.removeFromTop(12), juce::Justification::centredLeft);
-
-    // Skip trigger row (no dot painted here — waveform display handles the indicator)
-    bounds.removeFromTop(18);
-
-    // "Links" label for mod matrix
-    {
-        auto linkLabelBounds = getLocalBounds().reduced(6);
-        // Skip to same position as resized calculates
-        linkLabelBounds.removeFromTop(18 + 6);  // name + gap
-        if (isCurveMode_) {
-            linkLabelBounds.removeFromTop(18 + 4);  // preset combo + gap
-        } else {
-            linkLabelBounds.removeFromTop(10 + 18 + 4);  // label + waveform + gap
-        }
-        int dh = isCurveMode_ ? 70 : 46;
-        linkLabelBounds.removeFromTop(dh + 6);   // display + gap
-        linkLabelBounds.removeFromTop(18 + 8);   // rate row + gap
-        linkLabelBounds.removeFromTop(12 + 18);  // trigger label + trigger row
-
-        if (audioAttackSlider_.isVisible()) {
-            linkLabelBounds.removeFromTop(6 + 10 + 18 + 4 + 10 + 18);  // audio sliders
-        }
-
-        linkLabelBounds.removeFromTop(8);  // gap before Links label
-        g.setColour(ActiveTheme::getSecondaryTextColour());
-        g.setFont(FontManager::getInstance().getUIFont(8.0f));
-        g.drawText("Links", linkLabelBounds.removeFromTop(12), juce::Justification::centredLeft);
-    }
-
-    // Audio envelope labels (when trigger mode = Audio)
-    if (audioAttackSlider_.isVisible()) {
-        auto labelBounds = getLocalBounds().reduced(6);
-        // Skip to position after trigger row
-        labelBounds.removeFromTop(18 + 6);  // name + gap
-        if (isCurveMode_) {
-            labelBounds.removeFromTop(18 + 4);  // preset combo + gap
-        } else {
-            labelBounds.removeFromTop(10 + 18 + 4);  // label + waveform + gap
-        }
-        int displayHeight = isCurveMode_ ? 70 : 46;
-        labelBounds.removeFromTop(displayHeight + 6);  // display + gap
-        labelBounds.removeFromTop(18 + 8);             // rate row + gap
-        labelBounds.removeFromTop(12 + 18);            // trigger label + trigger row
-        labelBounds.removeFromTop(6);                  // gap
-
-        g.setColour(ActiveTheme::getSecondaryTextColour());
-        g.setFont(FontManager::getInstance().getUIFont(8.0f));
-        g.drawText("Attack (ms)", labelBounds.removeFromTop(10), juce::Justification::centredLeft);
-        labelBounds.removeFromTop(18 + 4);  // slider + gap
-        g.drawText("Release (ms)", labelBounds.removeFromTop(10), juce::Justification::centredLeft);
+    if (!triggerCaption_.isEmpty()) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+        g.setFont(device_controls::labelFont(9.0f));
+        g.drawText("TRIG", triggerCaption_, juce::Justification::centredLeft, false);
     }
 }
 
 void ModulatorEditorPanel::resized() {
-    auto bounds = getLocalBounds().reduced(6);
+    controlsPage_.setBounds(getLocalBounds());
+    const auto content = getLocalBounds()
+                             .withTrimmedTop(TAB_HEIGHT + 4)
+                             .withTrimmedRight(1)
+                             .withTrimmedBottom(6)
+                             .reduced(6, 0);
 
-    if (isFollowerMode_ && followerEditorPanel_) {
-        followerEditorPanel_->setBounds(getLocalBounds());
+    if (linksShown_) {
+        const int rowsH = static_cast<int>(currentMod_.links.size()) * ModMatrixContent::ROW_HEIGHT;
+        const bool scrolls = rowsH > content.getHeight();
+        modMatrixViewport_.setBounds(content);
+        modMatrixContent_.setSize(
+            content.getWidth() - (scrolls ? modMatrixViewport_.getScrollBarThickness() + 2 : 0),
+            juce::jmax(content.getHeight(), rowsH));
+    }
+
+    if (followerEditorPanel_)
+        followerEditorPanel_->setBounds(content);
+
+    triggerCaption_ = {};
+    if (!linksShown_ && !isFollowerMode_)
+        layoutControls(content);
+}
+
+void ModulatorEditorPanel::layoutControls(juce::Rectangle<int> area) {
+    const auto fromTop = [&area] {
+        const auto row = area.removeFromTop(kRowH);
+        area.removeFromTop(kGap);
+        return row;
+    };
+    const auto fromBottom = [&area] {
+        const auto row = area.removeFromBottom(kRowH);
+        area.removeFromBottom(kGap);
+        return row;
+    };
+    const auto columns = [](juce::Rectangle<int> row,
+                            std::initializer_list<juce::Component*> parts) {
+        const int n = static_cast<int>(parts.size());
+        const int width = (row.getWidth() - (n - 1) * kGap) / n;
+        int i = 0;
+        for (auto* part : parts) {
+            part->setBounds(++i == n ? row : row.removeFromLeft(width));
+            row.removeFromLeft(kGap);
+        }
+    };
+
+    // Every generator ends on its trigger: caption, mode, sidechain settings.
+    {
+        auto row = fromBottom();
+        triggerCaption_ = row.removeFromLeft(28);
+        advancedButton_->setBounds(row.removeFromRight(kRowH));
+        row.removeFromRight(kGap);
+        triggerModeCombo_.setBounds(row);
+    }
+
+    // The display takes whatever height the rows leave.
+    if (isEnvelopeMode_) {
+        columns(fromBottom(),
+                {&envAttackCurveSlider_, &envDecayCurveSlider_, &envReleaseCurveSlider_});
+        columns(fromBottom(), {&envSustainSlider_, &envReleaseSlider_});
+        columns(fromBottom(), {&envAttackSlider_, &envDecaySlider_});
+        envelopeDisplay_.setBounds(area);
         return;
     }
 
-    if (isEnvelopeMode_) {
-        constexpr int kGap = 4;
-        nameLabel_.setBounds(bounds.removeFromTop(18));
-        bounds.removeFromTop(6);
-
-        envelopeDisplay_.setBounds(bounds.removeFromTop(56));
-        bounds.removeFromTop(6);
-
-        auto twoCols = [](juce::Rectangle<int> row, TextSlider& a, TextSlider& b) {
-            constexpr int kGap = 4;
-            const int half = (row.getWidth() - kGap) / 2;
-            a.setBounds(row.removeFromLeft(half));
-            row.removeFromLeft(kGap);
-            b.setBounds(row);
-        };
-
-        twoCols(bounds.removeFromTop(18), envAttackSlider_, envDecaySlider_);
-        bounds.removeFromTop(kGap);
-        twoCols(bounds.removeFromTop(18), envSustainSlider_, envReleaseSlider_);
-        bounds.removeFromTop(kGap);
-
-        // Three curve sliders share a row.
-        auto curveRow = bounds.removeFromTop(18);
-        const int third = (curveRow.getWidth() - 2 * kGap) / 3;
-        envAttackCurveSlider_.setBounds(curveRow.removeFromLeft(third));
-        curveRow.removeFromLeft(kGap);
-        envDecayCurveSlider_.setBounds(curveRow.removeFromLeft(third));
-        curveRow.removeFromLeft(kGap);
-        envReleaseCurveSlider_.setBounds(curveRow);
-        bounds.removeFromTop(8);
-
-        // Trigger row (shared with the LFO layout): [dropdown] [advanced]
-        bounds.removeFromTop(12);  // "Trigger" label (painted)
-        auto triggerRow = bounds.removeFromTop(18);
-        advancedButton_->setBounds(triggerRow.removeFromRight(20));
-        triggerRow.removeFromRight(4);
-        triggerModeCombo_.setBounds(triggerRow);
-
-        // Mod matrix takes the rest.
-        bounds.removeFromTop(8);
-        bounds.removeFromTop(12);  // "Links" label
-        if (bounds.getHeight() > 0) {
-            modMatrixViewport_.setBounds(bounds);
-            modMatrixContent_.setSize(
-                bounds.getWidth() - (modMatrixViewport_.isVerticalScrollBarShown() ? 8 : 0),
-                juce::jmax(bounds.getHeight(), static_cast<int>(currentMod_.links.size()) *
-                                                   ModMatrixContent::ROW_HEIGHT));
-        }
-        return;
+    {
+        auto row = fromBottom();
+        syncToggle_.setBounds(row.removeFromLeft(38));
+        row.removeFromLeft(kGap);
+        rateSlider_.setBounds(row);
+        syncDivisionSlider_.setBounds(row);
     }
 
     if (isRandomMode_) {
-        constexpr int kGap = 4;
-        nameLabel_.setBounds(bounds.removeFromTop(18));
-        bounds.removeFromTop(6);
-
-        randomDisplay_.setBounds(bounds.removeFromTop(46));
-        bounds.removeFromTop(6);
-
-        // Distribution type combo.
-        randomTypeCombo_.setBounds(bounds.removeFromTop(18));
-        bounds.removeFromTop(kGap);
-
-        // Shape | Smooth two-column row.
-        {
-            auto row = bounds.removeFromTop(18);
-            const int half = (row.getWidth() - kGap) / 2;
-            randomShapeSlider_.setBounds(row.removeFromLeft(half));
-            row.removeFromLeft(kGap);
-            randomSmoothSlider_.setBounds(row);
-        }
-        bounds.removeFromTop(kGap);
-
-        // Step depth (full width).
-        randomStepDepthSlider_.setBounds(bounds.removeFromTop(18));
-        bounds.removeFromTop(8);
-
-        // Rate row: [Sync] [rate slider / division] (shared with the LFO layout).
-        auto rateRow = bounds.removeFromTop(18);
-        syncToggle_.setBounds(rateRow.removeFromLeft(32));
-        rateRow.removeFromLeft(4);
-        rateSlider_.setBounds(rateRow);
-        syncDivisionSlider_.setBounds(rateRow);
-        bounds.removeFromTop(8);
-
-        // Trigger row: [dropdown] [advanced].
-        bounds.removeFromTop(12);  // "Trigger" label (painted)
-        auto triggerRow = bounds.removeFromTop(18);
-        advancedButton_->setBounds(triggerRow.removeFromRight(20));
-        triggerRow.removeFromRight(4);
-        triggerModeCombo_.setBounds(triggerRow);
-
-        // Mod matrix takes the rest.
-        bounds.removeFromTop(8);
-        bounds.removeFromTop(12);  // "Links" label
-        if (bounds.getHeight() > 0) {
-            modMatrixViewport_.setBounds(bounds);
-            modMatrixContent_.setSize(
-                bounds.getWidth() - (modMatrixViewport_.isVerticalScrollBarShown() ? 8 : 0),
-                juce::jmax(bounds.getHeight(), static_cast<int>(currentMod_.links.size()) *
-                                                   ModMatrixContent::ROW_HEIGHT));
-        }
+        columns(fromBottom(), {&randomShapeSlider_, &randomSmoothSlider_, &randomStepDepthSlider_});
+        randomTypeChoice_.setBounds(fromTop());
+        randomDisplay_.setBounds(area);
         return;
     }
 
-    // Name label at top with curve edit button on right (in curve mode)
-    auto headerRow = bounds.removeFromTop(18);
-    if (isCurveMode_) {
-        int editButtonWidth = 18;
-        curveEditorButton_->setBounds(headerRow.removeFromRight(editButtonWidth));
-        headerRow.removeFromRight(4);  // Gap
-    }
-    nameLabel_.setBounds(headerRow);
-    bounds.removeFromTop(6);
+    if (audioAttackSlider_.isVisible())
+        columns(fromBottom(), {&audioAttackSlider_, &audioReleaseSlider_});
 
     if (isCurveMode_) {
-        // Curve mode: show preset selector + save button below name
-        auto presetRow = bounds.removeFromTop(18);
-        int saveButtonWidth = 18;
-        savePresetButton_->setBounds(presetRow.removeFromRight(saveButtonWidth));
-        presetRow.removeFromRight(4);  // Gap
-        curvePresetCombo_.setBounds(presetRow);
-        bounds.removeFromTop(4);
+        auto row = fromTop();
+        curveEditorButton_->setBounds(row.removeFromRight(kRowH));
+        row.removeFromRight(kGap);
+        savePresetButton_->setBounds(row.removeFromRight(kRowH));
+        row.removeFromRight(kGap);
+        curvePresetCombo_.setBounds(row);
     } else {
-        // LFO mode: show waveform label + selector
-        bounds.removeFromTop(10);  // "Waveform" label
-        waveformCombo_.setBounds(bounds.removeFromTop(18));
-        bounds.removeFromTop(4);
+        waveformChoice_.setBounds(fromTop());
     }
-
-    // Waveform display or curve editor (same area)
-    // Give more height to curve editor since it needs space for editing
-    int displayHeight = isCurveMode_ ? 70 : 46;
-    auto waveformArea = bounds.removeFromTop(displayHeight);
-    waveformDisplay_.setBounds(waveformArea);
-    // Expand curve editor bounds by its padding so the curve content fills the visual area
-    // while dots can extend into the padding without clipping
-    curveEditor_.setBounds(waveformArea.expanded(curveEditor_.getPadding()));
-    bounds.removeFromTop(6);
-
-    // Rate row: [Sync button] [Rate slider/division combo]
-    auto rateRow = bounds.removeFromTop(18);
-
-    // Sync toggle (small square button)
-    int syncToggleWidth = 32;
-    syncToggle_.setBounds(rateRow.removeFromLeft(syncToggleWidth));
-    rateRow.removeFromLeft(4);  // Small gap
-
-    // Rate slider or division combo takes remaining space (same position, shown alternately)
-    rateSlider_.setBounds(rateRow);
-    syncDivisionSlider_.setBounds(rateRow);
-    bounds.removeFromTop(8);
-
-    // Trigger row: [dropdown] [advanced button]
-    bounds.removeFromTop(12);  // "Trigger" label
-    auto triggerRow = bounds.removeFromTop(18);
-
-    // Advanced button on the right
-    int advButtonWidth = 20;
-    advancedButton_->setBounds(triggerRow.removeFromRight(advButtonWidth));
-    triggerRow.removeFromRight(4);  // Gap before advanced
-
-    // Trigger combo takes remaining space
-    triggerModeCombo_.setBounds(triggerRow);
-
-    // Audio attack/release sliders (below trigger row, only when Audio mode)
-    if (audioAttackSlider_.isVisible()) {
-        bounds.removeFromTop(6);
-
-        // "Attack" label + slider
-        bounds.removeFromTop(10);  // Label space
-        audioAttackSlider_.setBounds(bounds.removeFromTop(18));
-        bounds.removeFromTop(4);
-
-        // "Release" label + slider
-        bounds.removeFromTop(10);  // Label space
-        audioReleaseSlider_.setBounds(bounds.removeFromTop(18));
-    }
-
-    // Mod matrix section: takes all remaining space
-    bounds.removeFromTop(8);
-    bounds.removeFromTop(12);  // "Links" label
-    if (bounds.getHeight() > 0) {
-        modMatrixViewport_.setBounds(bounds);
-        modMatrixContent_.setSize(
-            bounds.getWidth() - (modMatrixViewport_.isVerticalScrollBarShown() ? 8 : 0),
-            juce::jmax(bounds.getHeight(),
-                       static_cast<int>(currentMod_.links.size()) * ModMatrixContent::ROW_HEIGHT));
-    }
+    waveformDisplay_.setBounds(area);
+    // Dots on the curve's edge reach into the padding, over the gaps around the graph.
+    curveEditor_.setBounds(area.expanded(curveEditor_.getPadding()));
 }
 
 bool ModulatorEditorPanel::keyPressed(const juce::KeyPress& key) {
@@ -1665,6 +1451,13 @@ bool ModulatorEditorPanel::keyPressed(const juce::KeyPress& key) {
 }
 
 void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& e) {
+    for (int i = 0; i < 2; ++i) {
+        if (tabBounds(i).contains(e.getPosition())) {
+            showLinks(i == 1);
+            return;
+        }
+    }
+
     // While link-mode is active and in scope, the rate sliders below have
     // their click-intercept disabled — so a click that lands on the slider
     // bubbles up here. Treat that click as "begin a link-mode drag", same
@@ -1672,7 +1465,7 @@ void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& e) {
     // sets the link amount, mouseUp finalizes without leaving link mode.
     if (linkModeActiveAndInScope_ && e.mods.isLeftButtonDown()) {
         auto& visibleSlider = currentMod_.tempoSync ? syncDivisionSlider_ : rateSlider_;
-        if (visibleSlider.getBounds().contains(e.getPosition())) {
+        if (visibleSlider.isShowing() && visibleSlider.getBounds().contains(e.getPosition())) {
             // Look up existing link amount on the source side (if any) so we
             // edit in place instead of resetting to a default.
             auto& lmm = magda::LinkModeManager::getInstance();
@@ -1815,6 +1608,14 @@ void ModulatorEditorPanel::mouseUp(const juce::MouseEvent& /*e*/) {
     // Stay in link mode — only the user (link button or ESC) exits.
 }
 
+void ModulatorEditorPanel::mouseDoubleClick(const juce::MouseEvent& e) {
+    if (selectedModIndex_ < 0 || !tabBounds(0).contains(e.getPosition()))
+        return;
+    nameLabel_.setBounds(getLocalBounds().removeFromTop(TAB_HEIGHT).reduced(6, 4));
+    nameLabel_.setVisible(true);
+    nameLabel_.showEditor();
+}
+
 // ============================================================================
 // LinkModeManagerListener
 // ============================================================================
@@ -1933,9 +1734,20 @@ void ModulatorEditorPanel::updateModMatrix() {
     }
 
     modMatrixContent_.setLinks(rows);
+    resized();
 }
 
 void ModulatorEditorPanel::timerCallback() {
+    // The curve editors write into the mod, so they follow it when its vector reallocates.
+    if (isCurveMode_) {
+        auto* live = liveModForEditing();
+        if (curveEditor_.getModInfo() != live) {
+            curveEditor_.setModInfo(live);
+            if (curveEditorWindow_)
+                curveEditorWindow_->setModInfo(live);
+        }
+    }
+
     // Sync mod matrix amounts from live data (handles slider→matrix updates)
     // Use the getter to fetch a fresh pointer — the raw liveModPtr_ can dangle
     // when the mod vector reallocates (mods added/removed).
