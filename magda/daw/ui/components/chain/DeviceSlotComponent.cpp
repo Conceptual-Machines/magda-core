@@ -535,8 +535,9 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     zonesToggle_->setTooltip("Show the zones");
     zonesToggle_->onClick = [this]() { toggleZones(); };
     addChildComponent(*zonesToggle_);
-    oscPanelToggle_ = std::make_unique<magda::SvgButton>("Operators", BinaryData::fadmodsine_svg,
-                                                         BinaryData::fadmodsine_svgSize);
+    // A wave in a circle, a signal source: the bare sine is the Mods button's.
+    oscPanelToggle_ = std::make_unique<magda::SvgButton>("Operators", BinaryData::iconoscboldm_svg,
+                                                         BinaryData::iconoscboldm_svgSize);
     oscPanelToggle_->setTooltip("Show the operators");
     oscPanelToggle_->onClick = [this]() { toggleSynthPanel(true); };
     addChildComponent(*oscPanelToggle_);
