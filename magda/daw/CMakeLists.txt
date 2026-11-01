@@ -283,7 +283,7 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/cloud_providers/deepseek.svg
     ../../assets/icons/cloud_providers/openrouter.svg
     # App logo
-    ../../assets/magda-lisa.svg
+    ../../assets/magda-lisa-splash.svg
     ../../assets/conceptual-machines-badge.svg
     # Curated alias dictionaries (JSON path is reserved for third-party
     # plugin packs; MAGDA-internal plugin aliases live in

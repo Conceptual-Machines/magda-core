@@ -7,6 +7,7 @@ target_sources(magda_daw_app PRIVATE
     ProjectSettingsDialog.cpp
     TrackManagerDialog.cpp
     AboutDialog.cpp
+    Mascot.cpp
     SplashScreen.cpp
     ExportAudioDialog.hpp
     ExportMidiDialog.hpp
@@ -15,6 +16,7 @@ target_sources(magda_daw_app PRIVATE
     ProjectSettingsDialog.hpp
     TrackManagerDialog.hpp
     AboutDialog.hpp
+    Mascot.hpp
     SplashScreen.hpp
 )
 
