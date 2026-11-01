@@ -985,7 +985,6 @@ void paintControlCard(juce::Graphics& g, juce::Rectangle<int> area) {
 constexpr int kStripPadding = 4;
 constexpr int kStripRow = 22;
 constexpr int kStripGap = 4;
-constexpr int kStripPanWidth = 34;  // "L100"
 
 }  // namespace
 
@@ -1134,18 +1133,15 @@ class SessionView::MiniChannelStrip : public juce::Component {
         if (!fullBar())
             bounds.removeFromLeft(5);
 
-        auto topRow = bounds.removeFromTop(kStripRow);
-        panLabel_->setBounds(topRow.removeFromRight(kStripPanWidth));
-        topRow.removeFromRight(kStripGap);
-        gainLabel_->setBounds(topRow);
+        layoutPair(bounds.removeFromTop(kStripRow), *gainLabel_, *panLabel_);
 
         bounds.removeFromTop(kStripGap);
-        layoutTogglePair(bounds.removeFromTop(kStripRow), *speakerButton_, *soloButton_);
+        layoutPair(bounds.removeFromTop(kStripRow), *speakerButton_, *soloButton_);
         fitStripIcon(*speakerButton_, 14.0f, 10.0f);
         fitStripIcon(*soloButton_, 10.0f, 10.0f);
         if (recordButton_->isVisible()) {
             bounds.removeFromTop(kStripGap);
-            layoutTogglePair(bounds.removeFromTop(kStripRow), *recordButton_, *monitorButton_);
+            layoutPair(bounds.removeFromTop(kStripRow), *recordButton_, *monitorButton_);
             fitStripIcon(*recordButton_, 10.0f, 10.0f);
             fitStripIcon(*monitorButton_, 16.0f, 5.5f);
         }
@@ -1172,7 +1168,8 @@ class SessionView::MiniChannelStrip : public juce::Component {
         return Config::getInstance().getTrackColourStyle() == "full";
     }
 
-    static void layoutTogglePair(juce::Rectangle<int> row, SvgButton& left, SvgButton& right) {
+    static void layoutPair(juce::Rectangle<int> row, juce::Component& left,
+                           juce::Component& right) {
         left.setBounds(row.removeFromLeft((row.getWidth() - kStripGap) / 2));
         row.removeFromLeft(kStripGap);
         right.setBounds(row);
