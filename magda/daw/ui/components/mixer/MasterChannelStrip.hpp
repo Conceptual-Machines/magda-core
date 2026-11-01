@@ -68,10 +68,6 @@ class MasterChannelStrip : public juce::Component, public TrackManagerListener {
     std::unique_ptr<daw::ui::TextSlider> volumeSlider;
     std::unique_ptr<magda::SvgButton> speakerButton;  // Speaker on/off toggle
 
-    // Cue/headphone output
-    std::unique_ptr<juce::DrawableButton> headphoneIcon_;
-    std::unique_ptr<daw::ui::TextSlider> cueVolumeSlider_;
-
     std::unique_ptr<LevelMeter> peakMeter;
     std::unique_ptr<ClickableLabel> peakValueLabel;
     float peakValue_ = 0.0f;

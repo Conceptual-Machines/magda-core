@@ -233,6 +233,11 @@ void ZoomScrollBar::setAutoHideEnabled(bool enabled) {
     }
 }
 
+void ZoomScrollBar::setTrackInset(int inset) {
+    trackInset = inset;
+    repaint();
+}
+
 void ZoomScrollBar::reveal() {
     if (!autoHideEnabled)
         return;
@@ -261,11 +266,11 @@ juce::Rectangle<int> ZoomScrollBar::getTrackBounds() const {
     auto bounds = getLocalBounds();
 
     if (orientation == Orientation::Horizontal) {
-        int height = bounds.getHeight() - 8;
+        int height = bounds.getHeight() - 2 * trackInset;
         int yOffset = (bounds.getHeight() - height) / 2;
         return {bounds.getX() + 2, bounds.getY() + yOffset, bounds.getWidth() - 4, height};
     } else {
-        int width = bounds.getWidth() - 8;
+        int width = bounds.getWidth() - 2 * trackInset;
         int xOffset = (bounds.getWidth() - width) / 2;
         return {bounds.getX() + xOffset, bounds.getY() + 2, width, bounds.getHeight() - 4};
     }

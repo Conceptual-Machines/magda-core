@@ -28,6 +28,7 @@
 #include "../components/mixer/LevelMeterScale.hpp"
 #include "../components/mixer/RoutingSelector.hpp"
 #include "../components/mixer/RoutingSyncHelper.hpp"
+#include "../components/mixer/SendRowControls.hpp"
 #include "../components/navigation/MainViewScrollContainer.hpp"
 #include "../panels/state/PanelController.hpp"
 #include "../state/TimelineController.hpp"
@@ -36,6 +37,7 @@
 #include "../themes/SmallButtonLookAndFeel.hpp"
 #include "../utils/SelectionPolicy.hpp"
 #include "ClipSlotButton.hpp"
+#include "TrackWidthPresetButtons.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/Config.hpp"
@@ -573,8 +575,8 @@ class SessionView::MiniSendStrip : public juce::Component {
             for (size_t i = 0; i < slots_.size(); ++i) {
                 auto& slot = slots_[i];
                 const auto& send = track->sends[i];
-                if (slot.levelSlider && !slot.levelSlider->isBeingDragged())
-                    slot.levelSlider->setValue(send.level, juce::dontSendNotification);
+                if (slot.levelLabel && !slot.levelLabel->isDragging())
+                    setSendLevelLabelValue(*slot.levelLabel, send.level);
                 if (slot.nameLabel && send.destTrackId != INVALID_TRACK_ID) {
                     if (auto* destTrack = TrackManager::getInstance().getTrack(send.destTrackId))
                         slot.nameLabel->setText(destTrack->name, juce::dontSendNotification);
@@ -593,7 +595,7 @@ class SessionView::MiniSendStrip : public juce::Component {
     struct SendSlot {
         int busIndex;
         std::unique_ptr<juce::Label> nameLabel;
-        std::unique_ptr<daw::ui::TextSlider> levelSlider;
+        std::unique_ptr<DraggableValueLabel> levelLabel;
         std::unique_ptr<juce::TextButton> removeButton;
     };
 
@@ -603,7 +605,7 @@ class SessionView::MiniSendStrip : public juce::Component {
     void rebuildSlots(const std::vector<SendInfo>& sends) {
         for (auto& slot : slots_) {
             removeChildComponent(slot.nameLabel.get());
-            removeChildComponent(slot.levelSlider.get());
+            removeChildComponent(slot.levelLabel.get());
             removeChildComponent(slot.removeButton.get());
         }
         slots_.clear();
@@ -620,39 +622,16 @@ class SessionView::MiniSendStrip : public juce::Component {
                     destName = destTrack->name;
             }
             slot.nameLabel->setText(destName, juce::dontSendNotification);
-            slot.nameLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
+            slot.nameLabel->setFont(FontManager::getInstance().getUIFont(11.0f));
             slot.nameLabel->setColour(juce::Label::textColourId,
-                                      ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+                                      ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
             slot.nameLabel->setJustificationType(juce::Justification::centredLeft);
             addAndMakeVisible(*slot.nameLabel);
 
-            // Level slider (horizontal, 0-1)
-            slot.levelSlider =
-                std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decimal);
-            slot.levelSlider->setOrientation(daw::ui::TextSlider::Orientation::Horizontal);
-            slot.levelSlider->setRange(0.0, 1.0, 0.01);
-            slot.levelSlider->setValue(send.level, juce::dontSendNotification);
-            slot.levelSlider->setFont(FontManager::getInstance().getUIFont(9.0f));
-            int busIdx = send.busIndex;
-            slot.levelSlider->onValueChanged = [this, busIdx](double val) {
-                UndoManager::getInstance().executeCommand(std::make_unique<SetSendLevelCommand>(
-                    trackId_, busIdx, static_cast<float>(val)));
-            };
-            addAndMakeVisible(*slot.levelSlider);
+            slot.levelLabel = makeSendLevelLabel(trackId_, send.busIndex, send.level);
+            addAndMakeVisible(*slot.levelLabel);
 
-            // Remove button
-            slot.removeButton = std::make_unique<juce::TextButton>("x");
-            slot.removeButton->setConnectedEdges(
-                juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-                juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-            slot.removeButton->setColour(juce::TextButton::buttonColourId,
-                                         ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
-            slot.removeButton->setColour(juce::TextButton::textColourOffId,
-                                         ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-            slot.removeButton->onClick = [this, busIdx]() {
-                UndoManager::getInstance().executeCommand(
-                    std::make_unique<RemoveSendCommand>(trackId_, busIdx));
-            };
+            slot.removeButton = makeSendRemoveButton(trackId_, send.busIndex);
             addAndMakeVisible(*slot.removeButton);
 
             slots_.push_back(std::move(slot));
@@ -669,7 +648,7 @@ class SessionView::MiniSendStrip : public juce::Component {
             slot.nameLabel->setBounds(row.removeFromLeft(row.getWidth() * 40 / 100));
             auto removeArea = row.removeFromRight(16);
             slot.removeButton->setBounds(removeArea);
-            slot.levelSlider->setBounds(row);
+            slot.levelLabel->setBounds(row);
             y += SEND_SLOT_HEIGHT + 1;
         }
         int totalH = juce::jmax(1, y);
@@ -965,10 +944,12 @@ void styleStripToggle(SvgButton& button, ColourRole tint) {
     button.setCornerRadius(6.0f);
 }
 
-/** @brief Pads a toggle so its glyph lands at 14px. */
-void fitStripIcon(SvgButton& button) {
-    const int side = juce::jmin(button.getWidth(), button.getHeight());
-    button.setIconPadding(juce::jmax(2.0f, (static_cast<float>(side) - 14.0f) * 0.5f));
+/** @brief Pads a toggle so its glyph lands at this size; an SVG draws tight to its ink. */
+void fitStripIcon(SvgButton& button, float glyphWidth, float glyphHeight) {
+    const auto padding = juce::jmin(static_cast<float>(button.getWidth()) - glyphWidth,
+                                    static_cast<float>(button.getHeight()) - glyphHeight) *
+                         0.5f;
+    button.setIconPadding(juce::jmax(2.0f, padding));
 }
 
 /** @brief The rounded card a strip control sits on. */
@@ -980,9 +961,9 @@ void paintControlCard(juce::Graphics& g, juce::Rectangle<int> area) {
     g.drawRoundedRectangle(card, 6.0f, 1.0f);
 }
 
-constexpr int kStripPadding = 7;
-constexpr int kStripRow = 34;
-constexpr int kStripGap = 6;
+constexpr int kStripPadding = 4;
+constexpr int kStripRow = 22;
+constexpr int kStripGap = 4;
 
 }  // namespace
 
@@ -1091,7 +1072,10 @@ class SessionView::MiniChannelStrip : public juce::Component {
     std::function<void()> onContextMenu;
 
     void paint(juce::Graphics& g) override {
-        const auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+        auto body = getLocalBounds().toFloat();
+        const auto foot =
+            body.removeFromBottom(static_cast<float>(GRID_PADDING)).reduced(0.0f, 1.0f);
+        const auto bounds = body.reduced(0.5f);
         // A selected track lifts its strip as the arrangement lifts a selected track's body;
         // Full bar adds the light swatch rim.
         const bool selected = SelectionManager::getInstance().isTrackSelected(trackId_);
@@ -1114,6 +1098,11 @@ class SessionView::MiniChannelStrip : public juce::Component {
             g.fillRect(fullBar() ? bounds.withHeight(2.0f) : bounds.withWidth(5.0f));
         }
 
+        if (coloured) {
+            g.setColour(deriveTrackSwatch(trackColour_));
+            g.fillRoundedRectangle(foot, 3.0f);
+        }
+
         paintControlCard(g, gainLabel_->getBounds());
         paintControlCard(g, panLabel_->getBounds());
     }
@@ -1125,29 +1114,23 @@ class SessionView::MiniChannelStrip : public juce::Component {
     }
 
     void resized() override {
-        auto bounds = getLocalBounds().reduced(kStripPadding);
+        static_assert(MIXER_STRIP_HEIGHT == 2 * kStripPadding + 2 * kStripRow + kStripGap);
+        static_assert(RECORD_MONITOR_ROW_HEIGHT == kStripRow + kStripGap);
+        auto bounds = getLocalBounds().withTrimmedBottom(GRID_PADDING).reduced(kStripPadding);
         if (!fullBar())
             bounds.removeFromLeft(5);
 
-        auto topRow = bounds.removeFromTop(kStripRow);
-        panLabel_->setBounds(topRow.removeFromRight(kStripRow));
-        topRow.removeFromRight(kStripGap);
-        gainLabel_->setBounds(topRow);
+        layoutPair(bounds.removeFromTop(kStripRow), *gainLabel_, *panLabel_);
 
         bounds.removeFromTop(kStripGap);
-        auto toggleRow = bounds.removeFromTop(kStripRow);
-        std::vector<SvgButton*> toggles{speakerButton_.get(), soloButton_.get()};
+        layoutPair(bounds.removeFromTop(kStripRow), *speakerButton_, *soloButton_);
+        fitStripIcon(*speakerButton_, 14.0f, 10.0f);
+        fitStripIcon(*soloButton_, 10.0f, 10.0f);
         if (recordButton_->isVisible()) {
-            toggles.push_back(recordButton_.get());
-            toggles.push_back(monitorButton_.get());
-        }
-        const int count = static_cast<int>(toggles.size());
-        const int width = (toggleRow.getWidth() - kStripGap * (count - 1)) / count;
-        for (int i = 0; i < count; ++i) {
-            toggles[static_cast<size_t>(i)]->setBounds(
-                i == count - 1 ? toggleRow : toggleRow.removeFromLeft(width));
-            toggleRow.removeFromLeft(kStripGap);
-            fitStripIcon(*toggles[static_cast<size_t>(i)]);
+            bounds.removeFromTop(kStripGap);
+            layoutPair(bounds.removeFromTop(kStripRow), *recordButton_, *monitorButton_);
+            fitStripIcon(*recordButton_, 10.0f, 10.0f);
+            fitStripIcon(*monitorButton_, 16.0f, 5.5f);
         }
     }
 
@@ -1170,6 +1153,13 @@ class SessionView::MiniChannelStrip : public juce::Component {
   private:
     static bool fullBar() {
         return Config::getInstance().getTrackColourStyle() == "full";
+    }
+
+    static void layoutPair(juce::Rectangle<int> row, juce::Component& left,
+                           juce::Component& right) {
+        left.setBounds(row.removeFromLeft((row.getWidth() - kStripGap) / 2));
+        row.removeFromLeft(kStripGap);
+        right.setBounds(row);
     }
 
     void captureMultiTrackBase() {
@@ -1305,6 +1295,13 @@ SessionView::SessionView() {
         resized();
     };
     addAndMakeVisible(*toggleRail_);
+
+    widthPresets_ = std::make_unique<TrackWidthPresetButtons>();
+    widthPresets_->onWidthChosen = [this](int width) {
+        std::fill(trackColumnWidths_.begin(), trackColumnWidths_.end(), width);
+        resized();
+    };
+    toggleRail_->addAndMakeVisible(*widthPresets_);
 
     // Create header container for clipping
     headerContainer = std::make_unique<HeaderContainer>();
@@ -1852,6 +1849,19 @@ void SessionView::rebuildTracks() {
 
 void SessionView::paint(juce::Graphics& g) {
     g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+
+    if (!masterSendCard_.isEmpty())
+        paintControlCard(g, masterSendCard_);
+
+    // The master's foot, level with the channel strips'.
+    if (masterStrip_) {
+        const auto strip = masterStrip_->getBounds().toFloat();
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SESSION_CONTROL_BORDER));
+        g.drawRoundedRectangle(strip.withY(strip.getBottom())
+                                   .withHeight(static_cast<float>(GRID_PADDING))
+                                   .reduced(0.5f, 1.5f),
+                               3.0f, 1.0f);
+    }
 }
 
 void SessionView::paintOverChildren(juce::Graphics& g) {
@@ -1957,8 +1967,11 @@ void SessionView::resized() {
     scrollContainer_->setBounds(getLocalBounds());
     scrollContainer_->setAutoHideEnabled(Config::getInstance().getMainViewScrollbarsAutoHide());
 
-    if (toggleRail_)
+    if (toggleRail_) {
         toggleRail_->setBounds(bounds.removeFromLeft(SessionToggleRail::RAIL_WIDTH));
+        widthPresets_->setBounds(
+            TrackWidthPresetButtons::boundsInRail(toggleRail_->getLocalBounds()));
+    }
     bounds.reduce(GRID_PADDING, GRID_PADDING);
 
     // Takes the scenes column and its gap off the right of a row.
@@ -1967,44 +1980,33 @@ void SessionView::resized() {
             .withTrimmedLeft(TRACK_SEPARATOR_WIDTH);
     };
 
-    // Reserve the shared scrollbars only when their axis overflows. Resolve the two axes
-    // together because adding either 20px bar can make the other one necessary.
     const int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
     const int gridWidth = getTotalTracksWidth();
     const int gridHeight = numScenes_ * sceneRowHeight + ADD_SCENE_BUTTON_HEIGHT;
-    const int scrollBarThickness = ZoomScrollBar::DEFAULT_THICKNESS;
+    const int verticalBarWidth = ZoomScrollBar::DEFAULT_THICKNESS;
+    const int mixerStripHeight =
+        MIXER_STRIP_HEIGHT + (recordMonitorVisible_ ? RECORD_MONITOR_ROW_HEIGHT : 0);
     const int fixedRowsHeight = TRACK_HEADER_HEIGHT + ROW_GAP + ROW_GAP + STOP_ROW_HEIGHT +
-                                ROW_GAP + MIXER_STRIP_HEIGHT +
+                                ROW_GAP + mixerStripHeight +
                                 (ioRowVisible_ ? IO_ROW_HEIGHT + ROW_GAP : 0) +
                                 (sendRowVisible_ ? sendSectionHeight_ + 4 + ROW_GAP : 0);
-    const int gridHeightWithoutScrollBars = juce::jmax(0, bounds.getHeight() - fixedRowsHeight);
+    const bool needsVerticalScrollBar =
+        gridHeight > juce::jmax(0, bounds.getHeight() - fixedRowsHeight);
     const int trackAreaWidth =
         juce::jmax(0, bounds.getWidth() - SCENE_BUTTON_WIDTH - TRACK_SEPARATOR_WIDTH);
-    bool needsHorizontalScrollBar = false;
-    bool needsVerticalScrollBar = false;
-    for (int i = 0; i < 2; ++i) {
-        needsHorizontalScrollBar =
-            gridWidth >
-            juce::jmax(0, trackAreaWidth - (needsVerticalScrollBar ? scrollBarThickness : 0));
-        needsVerticalScrollBar =
-            gridHeight > juce::jmax(0, gridHeightWithoutScrollBars -
-                                           (needsHorizontalScrollBar ? scrollBarThickness : 0));
-    }
-
-    juce::Rectangle<int> scrollBarRow;
-    if (needsHorizontalScrollBar)
-        scrollBarRow = bounds.removeFromBottom(scrollBarThickness);
+    const bool needsHorizontalScrollBar =
+        gridWidth > juce::jmax(0, trackAreaWidth - (needsVerticalScrollBar ? verticalBarWidth : 0));
 
     // Bottom up: mixer strips, I/O, sends, stop row.
-    auto mixerRow = bounds.removeFromBottom(MIXER_STRIP_HEIGHT);
+    auto mixerRow = bounds.removeFromBottom(mixerStripHeight);
     if (masterStrip_)
         masterStrip_->setBounds(takeSceneColumn(mixerRow));
-    faderContainer->setBounds(mixerRow);
+    // The strips reach into the bottom gutter, where each draws the foot the bar overlays.
+    faderContainer->setBounds(mixerRow.withHeight(mixerRow.getHeight() + GRID_PADDING));
 
-    scrollContainer_->setAxisLayout(
-        MainViewScrollContainer::Axis::Horizontal,
-        faderContainer->getBounds().withY(scrollBarRow.getY()).withHeight(scrollBarThickness),
-        needsHorizontalScrollBar);
+    scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Horizontal,
+                                    mixerRow.withY(mixerRow.getBottom()).withHeight(GRID_PADDING),
+                                    needsHorizontalScrollBar);
 
     ioContainer_->setVisible(ioRowVisible_);
     if (ioRowVisible_) {
@@ -2016,12 +2018,18 @@ void SessionView::resized() {
 
     sendSectionContainer_->setVisible(sendRowVisible_);
     sendResizeHandle_->setVisible(sendRowVisible_);
+    juce::Rectangle<int> masterSendCard;
     if (sendRowVisible_) {
         auto sendRow = bounds.removeFromBottom(sendSectionHeight_);
-        takeSceneColumn(sendRow);
+        masterSendCard = takeSceneColumn(sendRow);
         sendSectionContainer_->setBounds(sendRow);
         sendResizeHandle_->setBounds(bounds.removeFromBottom(4));
         bounds.removeFromBottom(ROW_GAP);
+    }
+
+    if (masterSendCard != masterSendCard_) {
+        masterSendCard_ = masterSendCard;
+        repaint();
     }
 
     auto stopRow = bounds.removeFromBottom(STOP_ROW_HEIGHT);
@@ -2037,7 +2045,7 @@ void SessionView::resized() {
     sceneContainer->setBounds(takeSceneColumn(bounds));
     if (needsVerticalScrollBar) {
         scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Vertical,
-                                        bounds.removeFromRight(scrollBarThickness), true);
+                                        bounds.removeFromRight(verticalBarWidth), true);
     } else {
         scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Vertical, {}, false);
     }

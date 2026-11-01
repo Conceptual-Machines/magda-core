@@ -211,6 +211,9 @@ juce::var Config::toVar() const {
     root->setProperty("compactTrackHeight", compactTrackHeight);
     root->setProperty("mediumTrackHeight", mediumTrackHeight);
     root->setProperty("largeTrackHeight", largeTrackHeight);
+    root->setProperty("narrowTrackWidth", narrowTrackWidth);
+    root->setProperty("mediumTrackWidth", mediumTrackWidth);
+    root->setProperty("wideTrackWidth", wideTrackWidth);
     root->setProperty("scrollbarOnLeft", scrollbarOnLeft);
     root->setProperty("arrangementScrollbarsAutoHide", arrangementScrollbarsAutoHide);
     root->setProperty("uiScale", uiScale);
@@ -667,6 +670,9 @@ void Config::fromVar(const juce::var& parsed) {
         compactTrackHeight = 34;
     mediumTrackHeight = getInt("mediumTrackHeight", mediumTrackHeight);
     largeTrackHeight = getInt("largeTrackHeight", largeTrackHeight);
+    narrowTrackWidth = getInt("narrowTrackWidth", narrowTrackWidth);
+    mediumTrackWidth = getInt("mediumTrackWidth", mediumTrackWidth);
+    wideTrackWidth = getInt("wideTrackWidth", wideTrackWidth);
     scrollbarOnLeft = getBool("scrollbarOnLeft", scrollbarOnLeft);
     arrangementScrollbarsAutoHide =
         getBool("arrangementScrollbarsAutoHide", arrangementScrollbarsAutoHide);
