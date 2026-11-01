@@ -55,13 +55,14 @@ void TabbedPanel::setupExpandButton() {
         return;
 
     // Expand button shown when collapsed → show "open" icon
-    const char* svgData = (location_ == PanelLocation::Right) ? BinaryData::left_open_svg
-                                                              : BinaryData::right_open_svg;
-    size_t svgSize = (location_ == PanelLocation::Right) ? BinaryData::left_open_svgSize
-                                                         : BinaryData::right_open_svgSize;
+    const char* svgData = (location_ == PanelLocation::Right)
+                              ? BinaryData::iconpanelleftopenboldm_svg
+                              : BinaryData::iconpanelrightopenboldm_svg;
+    size_t svgSize = (location_ == PanelLocation::Right)
+                         ? BinaryData::iconpanelleftopenboldm_svgSize
+                         : BinaryData::iconpanelrightopenboldm_svgSize;
 
     expandButton_ = std::make_unique<magda::SvgButton>("Expand", svgData, svgSize);
-    expandButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
     expandButton_->setNormalColor(ActiveTheme::DEVICE_ICON);
     expandButton_->setHoverColor(ActiveTheme::DEVICE_ICON_HOVER);
     expandButton_->onClick = [this]() {

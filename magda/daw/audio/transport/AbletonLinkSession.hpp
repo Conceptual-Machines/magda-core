@@ -9,10 +9,12 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 
 #include "../../core/Config.hpp"
 #include "../../engine/PhaseSource.hpp"
 #include "../../project/ProjectManager.hpp"
+#include "LinkStartStop.hpp"
 
 /**
  * @file AbletonLinkSession.hpp
@@ -41,6 +43,8 @@ class AbletonLinkSession : public PhaseSource,
         std::function<void(bool)> followTempoLane;
         /// The engine's phase source: this session while on, null while off.
         std::function<void(PhaseSource*)> setPhaseSource;
+        /// Start or stop the transport as a play or stop command would.
+        std::function<void(bool)> setTransportPlaying;
     };
 
     explicit AbletonLinkSession(Hooks hooks);
@@ -63,6 +67,9 @@ class AbletonLinkSession : public PhaseSource,
      *         off. Message thread. */
     std::optional<double> barPhase() const;
 
+    /** @brief The transport started or stopped: the session hears it if Start Stop Sync is on. */
+    void transportChanged(bool playing);
+
     /// Called when Link is switched on or off, or the peer count changes.
     std::function<void()> onStateChanged;
 
@@ -74,6 +81,8 @@ class AbletonLinkSession : public PhaseSource,
     void handleAsyncUpdate() override;
 
     void applyEnabled(bool enabled);
+    void applyStartStopSync(bool on);
+    void commitPlaying(bool playing);
     void sendProjectTempo();
     void takeSessionTempo();
 
@@ -87,6 +96,11 @@ class AbletonLinkSession : public PhaseSource,
     /// Written on Link's thread.
     std::atomic<std::size_t> peers_{0};
     std::size_t shownPeers_ = 0;
+    LinkStartStop startStop_;
+    /// Link's last report of the session's play state, not yet acted on. Written on Link's thread.
+    std::atomic<std::optional<bool>> reportedPlaying_;
+    /// Read on the audio thread.
+    std::atomic<int> latencyOffsetMs_{0};
 };
 
 }  // namespace magda

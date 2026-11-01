@@ -242,8 +242,10 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/IO/Output.svg
     ../../assets/icons/IO/multiout.svg
     # Panel open/close icons
-    ../../assets/icons/panels/left_open.svg
-    ../../assets/icons/panels/left_close.svg
+    ../../assets/icons/panels/icon-panel-left-open-boldm.svg
+    ../../assets/icons/panels/icon-panel-left-close-boldm.svg
+    ../../assets/icons/panels/icon-panel-right-open-boldm.svg
+    ../../assets/icons/panels/icon-panel-right-close-boldm.svg
     ../../assets/icons/panels/right_open.svg
     ../../assets/icons/panels/right_close.svg
     ../../assets/icons/panels/bottom_open.svg

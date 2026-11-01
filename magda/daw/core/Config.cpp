@@ -422,6 +422,8 @@ juce::var Config::toVar() const {
     {
         auto* linkObj = new juce::DynamicObject();
         linkObj->setProperty("enabled", abletonLinkEnabled);
+        linkObj->setProperty("startStopSync", abletonLinkStartStopSync);
+        linkObj->setProperty("latencyOffsetMs", abletonLinkLatencyOffsetMs);
         root->setProperty("abletonLink", juce::var(linkObj));
     }
 
@@ -975,8 +977,11 @@ void Config::fromVar(const juce::var& parsed) {
         }
     }
 
-    if (auto* linkObj = obj->getProperty("abletonLink").getDynamicObject())
+    if (auto* linkObj = obj->getProperty("abletonLink").getDynamicObject()) {
         abletonLinkEnabled = linkObj->getProperty("enabled");
+        abletonLinkStartStopSync = linkObj->getProperty("startStopSync");
+        setAbletonLinkLatencyOffsetMs(linkObj->getProperty("latencyOffsetMs"));
+    }
 
     // OSC — absent means the defaults, which open no socket.
     if (obj->hasProperty("osc")) {
