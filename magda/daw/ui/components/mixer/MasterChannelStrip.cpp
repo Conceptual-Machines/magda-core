@@ -549,6 +549,23 @@ void MasterChannelStrip::resized() {
 
         bounds.removeFromTop(metrics.controlSpacing);
 
+        // Mirror channel-strip layout so the analyzers, handle and fader line up: 2px gap, then
+        // reserve the same sends region (Add Send row + max sends across all tracks) when sends
+        // are visible.
+        bounds.removeFromTop(2);
+
+        if (Config::getInstance().getMixerShowSends()) {
+            const int sendSlotHeight = 18;
+            size_t maxSends = 0;
+            for (const auto& t : TrackManager::getInstance().getTracks())
+                maxSends = std::max(maxSends, t.sends.size());
+            int uniformSendsRegion = sendSlotHeight;
+            if (maxSends > 0)
+                uniformSendsRegion += 1 + static_cast<int>(maxSends) * (sendSlotHeight + 1) - 1;
+            bounds.removeFromTop(uniformSendsRegion);
+            bounds.removeFromTop(6);  // breathing room before the analyzers
+        }
+
         // Mini analyzers, mirrored from ChannelStrip. Rail toggles control
         // visibility; refreshMiniAnalyzers() resolves the live plugin.
         constexpr int miniAnalyzerHeight = 64;
@@ -568,24 +585,6 @@ void MasterChannelStrip::resized() {
             bounds.removeFromTop(2);
         } else if (miniSpectrumUI_) {
             miniSpectrumUI_->setVisible(false);
-        }
-
-        // Mirror channel-strip layout so the handle and fader line up: 2px
-        // gap, then reserve the same sends region (Add Send row + max sends
-        // across all tracks) when sends are visible, then the fader-top
-        // inset, then the resize handle.
-        bounds.removeFromTop(2);
-
-        if (Config::getInstance().getMixerShowSends()) {
-            const int sendSlotHeight = 18;
-            size_t maxSends = 0;
-            for (const auto& t : TrackManager::getInstance().getTracks())
-                maxSends = std::max(maxSends, t.sends.size());
-            int uniformSendsRegion = sendSlotHeight;
-            if (maxSends > 0)
-                uniformSendsRegion += 1 + static_cast<int>(maxSends) * (sendSlotHeight + 1) - 1;
-            bounds.removeFromTop(uniformSendsRegion);
-            bounds.removeFromTop(6);  // breathing room before handle
         }
 
         bounds.removeFromTop(effectiveMixerFaderTopInset(MASTER_TRACK_ID));

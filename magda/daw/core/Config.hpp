@@ -307,7 +307,7 @@ class Config {
         largeTrackHeight = height;
     }
 
-    // Track-width presets behind the buttons under Session View's and the Mixer's master
+    // Track-width presets behind the buttons on Session View's and the Mixer's left rail
     int getNarrowTrackWidth() const {
         return narrowTrackWidth;
     }

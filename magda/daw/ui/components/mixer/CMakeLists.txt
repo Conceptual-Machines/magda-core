@@ -8,6 +8,7 @@ target_sources(magda_daw_app PRIVATE
     MixerToggleRail.cpp
     MonitorSelector.cpp
     RoutingSelector.cpp
+    SendRowControls.cpp
     HardwareInputLevels.hpp
     MasterChannelStrip.hpp
     InputTypeSelector.hpp
@@ -20,4 +21,5 @@ target_sources(magda_daw_app PRIVATE
     MixerToggleRail.hpp
     MonitorSelector.hpp
     RoutingSelector.hpp
+    SendRowControls.hpp
 )

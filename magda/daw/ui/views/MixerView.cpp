@@ -79,41 +79,30 @@ class AddSendButton : public juce::Button {
     }
 
     void paintButton(juce::Graphics& g, bool isHighlighted, bool isDown) override {
-        auto bounds = getLocalBounds();
-        constexpr int plusWidth = 16;  // matches send row's delete button width
-        auto plusRect = bounds.removeFromRight(plusWidth);
-
         // A track already at the aux limit cannot take another send. Faded
         // rather than only inert, because a button that looks pressable and
         // does nothing is worse than one that says why.
         const auto opacity = isEnabled() ? 1.0f : 0.35f;
 
-        auto textBg = ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL);
+        const auto box = getLocalBounds().toFloat().reduced(0.5f);
+        auto fill = ActiveTheme::getColour(ActiveTheme::SURFACE);
         if (isDown)
-            textBg = textBg.darker(0.2f);
+            fill = fill.darker(0.2f);
         else if (isHighlighted)
-            textBg = textBg.brighter(0.1f);
-        g.setColour(textBg.withMultipliedAlpha(opacity));
-        g.fillRect(bounds);
+            fill = fill.brighter(0.1f);
+        g.setColour(fill.withMultipliedAlpha(opacity));
+        g.fillRoundedRectangle(box, 4.0f);
+        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withMultipliedAlpha(opacity));
+        g.drawRoundedRectangle(box, 4.0f, 1.0f);
 
-        g.setFont(FontManager::getInstance().getUIFont(10.0f));
+        auto bounds = getLocalBounds();
+        constexpr int plusWidth = 16;  // matches send row's delete button width
+        const auto plusRect = bounds.removeFromRight(plusWidth);
         g.setColour(
             ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY).withMultipliedAlpha(opacity));
+        g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.drawText("Add Send", bounds.reduced(6, 0), juce::Justification::centredLeft);
-
-        // Inverted from the Add Send row: text colour as background, button
-        // background as the "+" glyph colour.
-        auto plusBg = ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY);
-        if (isDown)
-            plusBg = plusBg.darker(0.2f);
-        else if (isHighlighted)
-            plusBg = plusBg.brighter(0.1f);
-        g.setColour(plusBg.withMultipliedAlpha(opacity));
-        g.fillRect(plusRect);
-
         g.setFont(FontManager::getInstance().getUIFont(11.0f));
-        g.setColour(
-            ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL).withMultipliedAlpha(opacity));
         g.drawText("+", plusRect, juce::Justification::centred);
     }
 };
@@ -421,8 +410,8 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncM
             for (size_t i = 0; i < sendSlots_.size(); ++i) {
                 auto& slot = sendSlots_[i];
                 const auto& send = track.sends[i];
-                if (slot->levelSlider && !slot->levelSlider->isBeingDragged())
-                    slot->levelSlider->setValue(send.level, juce::dontSendNotification);
+                if (slot->levelLabel && !slot->levelLabel->isDragging())
+                    setSendLevelLabelValue(*slot->levelLabel, send.level);
                 // Update dest name
                 if (slot->nameLabel && send.destTrackId != INVALID_TRACK_ID) {
                     if (auto* destTrack = TrackManager::getInstance().getTrack(send.destTrackId))
@@ -1068,7 +1057,7 @@ void MixerView::ChannelStrip::rebuildSendSlots(const std::vector<SendInfo>& send
     for (auto& slot : sendSlots_) {
         if (sendContainer_) {
             sendContainer_->removeChildComponent(slot->nameLabel.get());
-            sendContainer_->removeChildComponent(slot->levelSlider.get());
+            sendContainer_->removeChildComponent(slot->levelLabel.get());
             sendContainer_->removeChildComponent(slot->removeButton.get());
         }
     }
@@ -1086,39 +1075,16 @@ void MixerView::ChannelStrip::rebuildSendSlots(const std::vector<SendInfo>& send
                 destName = destTrack->name;
         }
         slot->nameLabel->setText(destName, juce::dontSendNotification);
-        slot->nameLabel->setFont(FontManager::getInstance().getUIFont(9.0f));
+        slot->nameLabel->setFont(FontManager::getInstance().getUIFont(11.0f));
         slot->nameLabel->setColour(juce::Label::textColourId,
-                                   ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+                                   ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
         slot->nameLabel->setJustificationType(juce::Justification::centredLeft);
         sendContainer_->addAndMakeVisible(*slot->nameLabel);
 
-        // Level slider (horizontal, 0-1)
-        slot->levelSlider =
-            std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decimal);
-        slot->levelSlider->setOrientation(daw::ui::TextSlider::Orientation::Horizontal);
-        slot->levelSlider->setRange(0.0, 1.0, 0.01);
-        slot->levelSlider->setValue(send.level, juce::dontSendNotification);
-        slot->levelSlider->setFont(FontManager::getInstance().getUIFont(9.0f));
-        int busIdx = send.busIndex;
-        slot->levelSlider->onValueChanged = [this, busIdx](double val) {
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<SetSendLevelCommand>(trackId_, busIdx, static_cast<float>(val)));
-        };
-        sendContainer_->addAndMakeVisible(*slot->levelSlider);
+        slot->levelLabel = makeSendLevelLabel(trackId_, send.busIndex, send.level);
+        sendContainer_->addAndMakeVisible(*slot->levelLabel);
 
-        // Remove button
-        slot->removeButton = std::make_unique<juce::TextButton>("x");
-        slot->removeButton->setConnectedEdges(
-            juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-            juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-        slot->removeButton->setColour(juce::TextButton::buttonColourId,
-                                      ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
-        slot->removeButton->setColour(juce::TextButton::textColourOffId,
-                                      ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-        slot->removeButton->onClick = [this, busIdx]() {
-            UndoManager::getInstance().executeCommand(
-                std::make_unique<RemoveSendCommand>(trackId_, busIdx));
-        };
+        slot->removeButton = makeSendRemoveButton(trackId_, send.busIndex);
         sendContainer_->addAndMakeVisible(*slot->removeButton);
 
         sendSlots_.push_back(std::move(slot));
@@ -1312,42 +1278,6 @@ void MixerView::ChannelStrip::resized() {
 
     const auto& cfg = Config::getInstance();
 
-    // Mini analyzers (Oscilloscope / Spectrum) sit below the header.
-    // Each takes a fixed compact height when its rail toggle is on.
-    constexpr int miniAnalyzerHeight = 64;
-    // The chord track emits no audio yet, so it never shows the osc / spectrum.
-    // When they're globally enabled it still reserves the same empty space at
-    // the top so its fader stays aligned with the audio channels.
-    const bool isChord = trackType_ == TrackType::Chord;
-    const bool oscEnabled = cfg.getMixerShowOscilloscope();
-    const bool specEnabled = cfg.getMixerShowSpectrum();
-    if (oscEnabled && miniOscilloscopeUI_) {
-        if (isChord) {
-            bounds.removeFromTop(miniAnalyzerHeight + 2);  // empty spacer
-            miniOscilloscopeUI_->setVisible(false);
-        } else {
-            const int h = miniAnalyzerHeight + miniOscilloscopeUI_->compactExtraHeight();
-            miniOscilloscopeUI_->setBounds(bounds.removeFromTop(h));
-            miniOscilloscopeUI_->setVisible(true);
-            bounds.removeFromTop(2);
-        }
-    } else if (miniOscilloscopeUI_) {
-        miniOscilloscopeUI_->setVisible(false);
-    }
-    if (specEnabled && miniSpectrumUI_) {
-        if (isChord) {
-            bounds.removeFromTop(miniAnalyzerHeight + 2);  // empty spacer
-            miniSpectrumUI_->setVisible(false);
-        } else {
-            const int h = miniAnalyzerHeight + miniSpectrumUI_->compactExtraHeight();
-            miniSpectrumUI_->setBounds(bounds.removeFromTop(h));
-            miniSpectrumUI_->setVisible(true);
-            bounds.removeFromTop(2);
-        }
-    } else if (miniSpectrumUI_) {
-        miniSpectrumUI_->setVisible(false);
-    }
-
     // Sends auto-size to their slot count (no user resize). The horizontal
     // handle sits just above the fader and controls faderTopInset — that is
     // the only thing the user can drag.
@@ -1361,7 +1291,7 @@ void MixerView::ChannelStrip::resized() {
             slot->nameLabel->setBounds(row.removeFromLeft(row.getWidth() * 40 / 100));
             auto removeArea = row.removeFromRight(16);
             slot->removeButton->setBounds(removeArea);
-            slot->levelSlider->setBounds(row);
+            slot->levelLabel->setBounds(row);
             totalContentHeight += sendSlotHeight + 1;  // 1px gap
         }
 
@@ -1406,11 +1336,49 @@ void MixerView::ChannelStrip::resized() {
             sendsRegionBottomY_ = -1;
         }
 
-        // Breathing room between the sends area and the resize handle.
+        // Breathing room between the sends area and what follows.
         if (sendsVisible)
             bounds.removeFromTop(6);
+    }
 
-        // Mini FX chain: shown between sends and the fader's top inset.
+    // Mini analyzers (Oscilloscope / Spectrum) sit below the sends.
+    // Each takes a fixed compact height when its rail toggle is on.
+    constexpr int miniAnalyzerHeight = 64;
+    // The chord track emits no audio yet, so it never shows the osc / spectrum.
+    // When they're globally enabled it still reserves the same empty space at
+    // the top so its fader stays aligned with the audio channels.
+    const bool isChord = trackType_ == TrackType::Chord;
+    const bool oscEnabled = cfg.getMixerShowOscilloscope();
+    const bool specEnabled = cfg.getMixerShowSpectrum();
+    if (oscEnabled && miniOscilloscopeUI_) {
+        if (isChord) {
+            bounds.removeFromTop(miniAnalyzerHeight + 2);  // empty spacer
+            miniOscilloscopeUI_->setVisible(false);
+        } else {
+            const int h = miniAnalyzerHeight + miniOscilloscopeUI_->compactExtraHeight();
+            miniOscilloscopeUI_->setBounds(bounds.removeFromTop(h));
+            miniOscilloscopeUI_->setVisible(true);
+            bounds.removeFromTop(2);
+        }
+    } else if (miniOscilloscopeUI_) {
+        miniOscilloscopeUI_->setVisible(false);
+    }
+    if (specEnabled && miniSpectrumUI_) {
+        if (isChord) {
+            bounds.removeFromTop(miniAnalyzerHeight + 2);  // empty spacer
+            miniSpectrumUI_->setVisible(false);
+        } else {
+            const int h = miniAnalyzerHeight + miniSpectrumUI_->compactExtraHeight();
+            miniSpectrumUI_->setBounds(bounds.removeFromTop(h));
+            miniSpectrumUI_->setVisible(true);
+            bounds.removeFromTop(2);
+        }
+    } else if (miniSpectrumUI_) {
+        miniSpectrumUI_->setVisible(false);
+    }
+
+    if (!isMaster_ && sendViewport_) {
+        // Mini FX chain: shown between the analyzers and the fader's top inset.
         // Faders line up across strips by reserving the max total chain
         // block height (sum of preferred heights, accounting for expanded
         // rows) of any visible strip.
@@ -1852,10 +1820,6 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     };
     addAndMakeVisible(*masterStrip);
 
-    widthPresets_ = std::make_unique<TrackWidthPresetButtons>();
-    widthPresets_->onWidthChosen = [this](int width) { applyTrackWidthPreset(width); };
-    addAndMakeVisible(*widthPresets_);
-
     // Channel resize handles are created lazily, one per top-level strip, in
     // layoutChannelResizeHandles().
 
@@ -1867,6 +1831,10 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
         relayoutAllStrips();
     };
     addAndMakeVisible(*toggleRail_);
+
+    widthPresets_ = std::make_unique<TrackWidthPresetButtons>();
+    widthPresets_->onWidthChosen = [this](int width) { applyTrackWidthPreset(width); };
+    toggleRail_->addAndMakeVisible(*widthPresets_);
 
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
@@ -2223,6 +2191,17 @@ void MixerView::paint(juce::Graphics& g) {
     g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     g.fillRect(0, 0, 1, getHeight());
 
+    // The master's foot, level with the channel strips'.
+    if (masterStrip->isVisible()) {
+        const auto strip = masterStrip->getBounds().toFloat();
+        g.setColour(ActiveTheme::getColour(ActiveTheme::SESSION_CONTROL_BORDER));
+        g.drawRoundedRectangle(
+            strip.withY(strip.getBottom())
+                .withHeight(static_cast<float>(MainViewScrollContainer::SLIM_BAR_HEIGHT))
+                .reduced(0.5f, 1.5f),
+            3.0f, 1.0f);
+    }
+
     // Plugin drag overlay
     if (showPluginDropOverlay_) {
         if (dropTargetStripIndex_ >= 0 &&
@@ -2402,14 +2381,15 @@ void MixerView::resized() {
     // Left-edge toggle rail (always visible)
     if (toggleRail_) {
         toggleRail_->setBounds(bounds.removeFromLeft(MixerToggleRail::RAIL_WIDTH));
+        widthPresets_->setBounds(
+            TrackWidthPresetButtons::boundsInRail(toggleRail_->getLocalBounds()));
     }
 
     // Master strip on the right (only if visible)
-    widthPresets_->setVisible(masterStrip->isVisible());
     if (masterStrip->isVisible()) {
-        auto masterArea = bounds.removeFromRight(effectiveMixerChannelWidth(MASTER_TRACK_ID));
-        widthPresets_->setBounds(masterArea.removeFromBottom(TrackWidthPresetButtons::HEIGHT));
-        masterStrip->setBounds(masterArea);
+        // Ends level with the channel strips, above their feet.
+        masterStrip->setBounds(bounds.removeFromRight(effectiveMixerChannelWidth(MASTER_TRACK_ID))
+                                   .withTrimmedBottom(MainViewScrollContainer::SLIM_BAR_HEIGHT));
     }
 
     // Aux channel strips between regular channels and master

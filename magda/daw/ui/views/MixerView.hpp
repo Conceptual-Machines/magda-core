@@ -23,6 +23,7 @@
 #include "../components/mixer/MiniChainList.hpp"
 #include "../components/mixer/MixerToggleRail.hpp"
 #include "../components/mixer/RoutingSelector.hpp"
+#include "../components/mixer/SendRowControls.hpp"
 #include "../components/navigation/MainViewScrollContainer.hpp"
 #include "../themes/MixerLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
@@ -219,7 +220,7 @@ class MixerView : public juce::Component,
         struct SendSlot {
             int busIndex;
             std::unique_ptr<juce::Label> nameLabel;
-            std::unique_ptr<daw::ui::TextSlider> levelSlider;
+            std::unique_ptr<DraggableValueLabel> levelLabel;
             std::unique_ptr<juce::TextButton> removeButton;
         };
         std::vector<std::unique_ptr<SendSlot>> sendSlots_;

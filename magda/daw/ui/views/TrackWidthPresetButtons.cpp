@@ -34,12 +34,12 @@ void TrackWidthPresetButtons::setupButton(size_t index, const juce::String& name
     auto& button = buttons_[index];
     button = std::make_unique<SvgButton>(name, svgData, svgSize);
     button->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    button->setNormalColor(ActiveTheme::TEXT_SECONDARY);
-    button->setHoverColor(ActiveTheme::TEXT_PRIMARY);
+    button->setNormalColor(ActiveTheme::TEXT_DIM);
+    button->setHoverColor(ActiveTheme::TEXT_SECONDARY);
     button->setPressedColor(ActiveTheme::ACCENT_PRIMARY);
     button->setBorderColor(ActiveTheme::BORDER);
     button->setBorderThickness(1.0f);
-    button->setIconPadding(3.0f);
+    button->setIconPadding(5.0f);
     button->setWantsKeyboardFocus(false);
     button->setTooltip(tooltip);
     button->onClick = [this, preset]() {
@@ -50,23 +50,20 @@ void TrackWidthPresetButtons::setupButton(size_t index, const juce::String& name
     addAndMakeVisible(*button);
 }
 
-juce::Rectangle<int> TrackWidthPresetButtons::getBoxBounds() const {
-    return getLocalBounds().withTrimmedTop(2).withTrimmedBottom(1);
-}
-
-void TrackWidthPresetButtons::paint(juce::Graphics& g) {
-    const auto box = getBoxBounds().toFloat().reduced(0.5f);
-    g.setColour(ActiveTheme::getColour(ActiveTheme::SESSION_STOP_ROW));
-    g.fillRoundedRectangle(box, 6.0f);
-    g.setColour(ActiveTheme::getColour(ActiveTheme::SESSION_CONTROL_BORDER));
-    g.drawRoundedRectangle(box, 6.0f, 1.0f);
+juce::Rectangle<int> TrackWidthPresetButtons::boundsInRail(juce::Rectangle<int> rail) {
+    // The rails' bottom group: two 28px buttons, 6px apart, 8px off the edge.
+    constexpr int kBottomGroup = 8 + 28 + 6 + 28;
+    constexpr int kGap = 6;
+    constexpr int kWidth = 28;
+    const int height = BUTTON_HEIGHT * NUM_PRESETS;
+    return {rail.getCentreX() - kWidth / 2, rail.getBottom() - kBottomGroup - kGap - height, kWidth,
+            height};
 }
 
 void TrackWidthPresetButtons::resized() {
-    constexpr int kButtonWidth = 22;
-    auto row = getBoxBounds().reduced(2).removeFromRight(kButtonWidth * 3);
+    auto stack = getLocalBounds();
     for (auto& button : buttons_)
-        button->setBounds(row.removeFromLeft(kButtonWidth));
+        button->setBounds(stack.removeFromTop(BUTTON_HEIGHT));
 }
 
 void TrackWidthPresetButtons::mouseDown(const juce::MouseEvent& event) {
