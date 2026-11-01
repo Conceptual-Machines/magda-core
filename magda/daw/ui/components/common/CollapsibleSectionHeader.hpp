@@ -49,6 +49,12 @@ class CollapsibleSectionHeader : public juce::Component {
         return collapsedStates()[stateKey_];
     }
 
+    /// Fold or unfold from code; onCollapsedChanged is left to the caller.
+    void setCollapsed(bool collapsed) {
+        collapsedStates()[stateKey_] = collapsed;
+        repaint();
+    }
+
     std::function<void()> onCollapsedChanged;
 
     void paint(juce::Graphics& g) override {

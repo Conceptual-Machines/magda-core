@@ -1165,6 +1165,10 @@ void TrackChainContent::initGlobalModsPanel() {
                     ChainNodePath::trackLevel(selectedTrackId_), modIndex, name));
     };
     globalModsPanel_->onModClicked = [this](int modIndex) {
+        // Selected like a device's or rack's mod, so the inspector opens it too.
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::SelectionManager::getInstance().selectMod(
+                ChainNodePath::trackLevel(selectedTrackId_), modIndex);
         if (globalModEditorVisible_ && selectedGlobalModIndex_ == modIndex) {
             hideGlobalModEditor();
         } else {
@@ -1366,6 +1370,9 @@ void TrackChainContent::initGlobalMacrosPanel() {
         }
     };
     globalMacrosPanel_->onMacroClicked = [this](int macroIndex) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::SelectionManager::getInstance().selectMacro(
+                ChainNodePath::trackLevel(selectedTrackId_), macroIndex);
         if (globalMacroEditorVisible_ && selectedGlobalMacroIndex_ == macroIndex) {
             hideGlobalMacroEditor();
         } else {

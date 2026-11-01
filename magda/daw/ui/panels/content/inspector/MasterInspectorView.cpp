@@ -68,7 +68,7 @@ MasterInspectorView::MasterInspectorView() {
     addAndMakeVisible(*muteButton_);
 
     for (auto* header : {&outputHeader_, &fxHeader_, &latencyHeader_}) {
-        header->onCollapsedChanged = [this]() { layoutSections(); };
+        header->onCollapsedChanged = [this]() { resized(); };
         addAndMakeVisible(*header);
     }
 
@@ -106,7 +106,10 @@ MasterInspectorView::MasterInspectorView() {
     fxViewport_.setScrollBarsShown(true, false);
     fxViewport_.setScrollBarThickness(6);
     addChildComponent(fxViewport_);
-    fxList_.onHeightChanged = [this]() { layoutSections(); };
+    fxList_.onHeightChanged = [this]() { resized(); };
+
+    modulation_.onPreferredHeightChanged = [this] { resized(); };
+    addChildComponent(modulation_);
 
     applyColours();
 }
@@ -156,7 +159,7 @@ void MasterInspectorView::refresh() {
                           juce::dontSendNotification);
 
     refreshLatency();
-    layoutSections();
+    resized();
     repaint();
 }
 
@@ -326,13 +329,20 @@ void MasterInspectorView::paintOverChildren(juce::Graphics& g) {
 }
 
 void MasterInspectorView::resized() {
-    layoutSections();
+    // Measured without a height limit and the FX list at its least; taller scrolls the panel.
+    const int preferred = layoutSections(1 << 20, true);
+    layoutSections(getHeight(), false);
+    if (preferred != preferredHeight_) {
+        preferredHeight_ = preferred;
+        if (onPreferredHeightChanged)
+            onPreferredHeightChanged();
+    }
 }
 
-void MasterInspectorView::layoutSections() {
+int MasterInspectorView::layoutSections(int areaHeight, bool fxAtLeast) {
     separatorYs_.clear();
     meterScaleArea_ = latencyTotalArea_ = contributorsArea_ = {};
-    auto bounds = getLocalBounds();
+    auto bounds = juce::Rectangle<int>(getWidth(), areaHeight);
 
     // Header: swatch, name and summary, mute.
     auto header = bounds.removeFromTop(64).reduced(kPad, 12);
@@ -390,8 +400,13 @@ void MasterInspectorView::layoutSections() {
             const int preferred = fxList_.preferredHeight();
             const int least = std::min(preferred, 3 * (magda::MiniChainRow::kCollapsedHeight +
                                                        magda::MiniChainList::kRowGap));
+            const int modulationHeight =
+                modulation_.hasContent() ? 12 + modulation_.getPreferredHeight() : 0;
             const int height =
-                std::clamp(output.getHeight() - kRowGap - latencyHeight, least, preferred);
+                fxAtLeast
+                    ? least
+                    : std::clamp(output.getHeight() - kRowGap - latencyHeight - modulationHeight,
+                                 least, preferred);
             fxViewport_.setBounds(output.removeFromTop(height));
             fxList_.setSize(fxViewport_.getWidth() -
                                 (height < preferred ? fxViewport_.getScrollBarThickness() + 2 : 0),
@@ -413,7 +428,17 @@ void MasterInspectorView::layoutSections() {
         const int rows = juce::jmax(1, static_cast<int>(contributors_.size()));
         contributorsArea_ = output.removeFromTop(rows * kContributorRow + 2);
     }
+
+    // The master's own mods and macros.
+    modulation_.setVisible(modulation_.hasContent());
+    if (modulation_.isVisible()) {
+        output.removeFromTop(6);
+        separatorYs_.push_back(output.getY());
+        output.removeFromTop(6);
+        modulation_.setBounds(output.removeFromTop(modulation_.getPreferredHeight()));
+    }
     repaint();
+    return output.getY() + kPad;
 }
 
 }  // namespace magda::daw::ui

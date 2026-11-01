@@ -5,6 +5,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
+
 namespace magda {
 class TimelineController;
 class AudioEngine;
@@ -57,10 +59,30 @@ class BaseInspector : public juce::Component {
         audioEngine_ = engine;
     }
 
+    /// The height the content needs: 0 fills the panel, more than the panel scrolls it.
+    int getPreferredHeight() const {
+        return preferredHeight_;
+    }
+
+    /// Set by InspectorContainer; fires when getPreferredHeight() changes.
+    std::function<void()> onPreferredHeightChanged;
+
   protected:
+    /// For a layout pass to report the height its content took.
+    void setPreferredHeight(int height) {
+        if (height == preferredHeight_)
+            return;
+        preferredHeight_ = height;
+        if (onPreferredHeightChanged)
+            onPreferredHeightChanged();
+    }
+
     // Shared dependencies available to all inspectors
     magda::TimelineController* timelineController_ = nullptr;
     magda::AudioEngine* audioEngine_ = nullptr;
+
+  private:
+    int preferredHeight_ = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BaseInspector)
 };

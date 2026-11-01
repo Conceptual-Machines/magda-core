@@ -447,6 +447,16 @@ TrackInspector::TrackInspector() {
     addChildComponent(fxViewport_);
     fxList_.onHeightChanged = [this]() { resized(); };
 
+    modulation_.onPreferredHeightChanged = [this] {
+        resized();
+        repaint();
+    };
+    addChildComponent(modulation_);
+    masterView_.onPreferredHeightChanged = [this] {
+        if (masterView_.isVisible())
+            setPreferredHeight(masterView_.getPreferredHeight());
+    };
+
     for (auto* label : {&trackNameLabel_, &trackNameValue_, &noSendsLabel_, &clipCountLabel_,
                         &automatedSectionLabel_, &automatedParamsLabel_, &noFxLabel_}) {
         useLocalizedLabelPainter(*label);
@@ -718,16 +728,20 @@ void TrackInspector::paint(juce::Graphics& g) {
 void TrackInspector::resized() {
     masterView_.setBounds(getLocalBounds());
 
-    // The FX list takes what the other sections leave, and scrolls past that.
+    // The FX list takes what the other sections leave, and scrolls past that. Measured
+    // without a height limit, so the panel can scroll when even its least does not fit.
+    constexpr int kUnlimited = 1 << 20;
     const int fxPreferred = fxList_.preferredHeight();
     const int fxLeast = std::min(
         fxPreferred, 3 * (magda::MiniChainRow::kCollapsedHeight + magda::MiniChainList::kRowGap));
-    const int leftover = layoutSections(0);
-    layoutSections(std::clamp(leftover, fxLeast, fxPreferred));
+    const int others = kUnlimited - layoutSections(0, kUnlimited);
+    layoutSections(std::clamp(getHeight() - others, fxLeast, fxPreferred), getHeight());
+    setPreferredHeight(masterView_.isVisible() ? masterView_.getPreferredHeight()
+                                               : others + (fxViewport_.isVisible() ? fxLeast : 0));
 }
 
-int TrackInspector::layoutSections(int fxListHeight) {
-    auto bounds = getLocalBounds().reduced(8);
+int TrackInspector::layoutSections(int fxListHeight, int height) {
+    auto bounds = juce::Rectangle<int>(getWidth(), height).reduced(8);
     sectionSeparatorYs_.clear();
     const int separatorPadding = 6;
 
@@ -924,6 +938,11 @@ int TrackInspector::layoutSections(int fxListHeight) {
         endSection(open);
     }
 
+    if (modulation_.isVisible()) {
+        modulation_.setBounds(bounds.removeFromTop(modulation_.getPreferredHeight()));
+        endSection(true);
+    }
+
     // Clips section — only lay out if visible
     if (clipsHeader_.isVisible()) {
         clipsHeader_.setBounds(bounds.removeFromTop(CollapsibleSectionHeader::kHeight));
@@ -1043,6 +1062,13 @@ void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
         // getTargets wired in the constructor); no per-mode rewiring needed.
     }
 
+    // The master's own view holds its mods and macros.
+    const bool master = trackId == magda::MASTER_TRACK_ID;
+    modulation_.setOwner(master ? magda::ChainNodePath{}
+                                : magda::ChainNodePath::trackLevel(trackId));
+    if (master)
+        masterView_.modulation().setOwner(magda::ChainNodePath::trackLevel(trackId));
+
     updateFromSelectedTrack();
 }
 
@@ -1051,6 +1077,7 @@ void TrackInspector::setSelectedTracks(const std::unordered_set<magda::TrackId>&
     selectedTrackIds_ = trackIds;
     selectedTrackId_ = magda::INVALID_TRACK_ID;
     syncMasterView();
+    modulation_.setOwner({});
     // Multi-track selection has no single target to mirror, so clear any
     // binding left from single-track mode.
     gainLabel_->clearAutomationTarget();
@@ -1098,6 +1125,8 @@ void TrackInspector::trackDevicesChanged(magda::TrackId trackId) {
 
         syncFxList();
         updateLatency();
+        if (!isMultiTrackMode_)
+            activeModulation().refresh();
 
         // Adding/removing/editing an External Instrument insert changes the
         // read-only mirror on the track MIDI-out / audio-in, so re-apply it.
@@ -1122,6 +1151,20 @@ void TrackInspector::devicePropertyChanged(const magda::ChainNodePath& devicePat
     // An External Instrument's send/return picker changed: re-apply the
     // read-only mirror on this track's MIDI-out / audio-in.
     showTrackControls(true);
+}
+
+void TrackInspector::deviceModifiersChanged(magda::TrackId trackId) {
+    if (!isMultiTrackMode_ && trackId == selectedTrackId_)
+        activeModulation().refresh();
+}
+
+void TrackInspector::modulationNamesChanged(magda::TrackId trackId) {
+    deviceModifiersChanged(trackId);
+}
+
+void TrackInspector::macroValueChanged(magda::TrackId trackId, magda::ChainScope, int, int, float) {
+    if (!isMultiTrackMode_ && trackId == selectedTrackId_)
+        activeModulation().refreshMacroValues();
 }
 
 void TrackInspector::trackSelectionChanged(magda::TrackId trackId) {
@@ -1582,6 +1625,7 @@ void TrackInspector::showTrackControls(bool show) {
     const bool fxOpen = singleTrack && !fxHeader_.isCollapsed();
     noFxLabel_.setVisible(fxOpen && fxList_.isEmpty());
     fxViewport_.setVisible(fxOpen && !fxList_.isEmpty());
+    modulation_.setVisible(singleTrack && modulation_.hasContent());
     if (!show || isMultiTrackMode_) {
         automatedSectionLabel_.setVisible(false);
         automatedParamsLabel_.setVisible(false);

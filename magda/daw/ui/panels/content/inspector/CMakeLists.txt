@@ -7,6 +7,7 @@ target_sources(magda_daw_app PRIVATE
     DeviceInspector.cpp
     InspectorFactory.cpp
     InspectorContainer.cpp
+    ModulationSection.cpp
     BaseInspector.hpp
     TrackInspector.hpp
     ClipInspector.hpp
@@ -15,6 +16,7 @@ target_sources(magda_daw_app PRIVATE
     DeviceInspector.hpp
     InspectorFactory.hpp
     InspectorContainer.hpp
+    ModulationSection.hpp
 )
 
 add_subdirectory(clip)

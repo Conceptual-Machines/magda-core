@@ -5,6 +5,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -13,6 +14,7 @@
 #include "../../../components/common/SvgButton.hpp"
 #include "../../../components/mixer/LevelMeter.hpp"
 #include "../../../components/mixer/MiniChainList.hpp"
+#include "ModulationSection.hpp"
 
 namespace magda {
 class AudioEngine;
@@ -22,8 +24,8 @@ namespace magda::daw::ui {
 
 /**
  * @brief The inspector for the master track: header, Output (volume and live peak meter),
- *        FX (the compact master chain) and Latency (the chain's total and its largest
- *        contributors).
+ *        FX (the compact master chain), Latency (the chain's total and its largest
+ *        contributors) and the master's own mods and macros.
  *
  * Shown by TrackInspector over its own controls while the master is selected.
  */
@@ -38,6 +40,16 @@ class MasterInspectorView : public juce::Component, private juce::Timer {
 
     /// Re-read the master channel and chain: after any master or device change.
     void refresh();
+
+    ModulationSection& modulation() {
+        return modulation_;
+    }
+
+    /// The height the content needs with the FX list at its least.
+    int getPreferredHeight() const {
+        return preferredHeight_;
+    }
+    std::function<void()> onPreferredHeightChanged;
 
     /// Re-entrant from an FX row's own bypass toggle: repaints, never rebuilds.
     void syncBypass(magda::DeviceId deviceId, bool bypassed) {
@@ -59,7 +71,9 @@ class MasterInspectorView : public juce::Component, private juce::Timer {
 
     void timerCallback() override;
     void refreshLatency();
-    void layoutSections();
+    /** Lays the sections out in @p areaHeight, the FX list at its least if @p fxAtLeast;
+     *  returns where the content ends. */
+    int layoutSections(int areaHeight, bool fxAtLeast);
     void applyColours();
 
     magda::AudioEngine* audioEngine_ = nullptr;
@@ -91,6 +105,9 @@ class MasterInspectorView : public juce::Component, private juce::Timer {
     juce::Rectangle<int> latencyTotalArea_;
     juce::Rectangle<int> contributorsArea_;
     std::vector<int> separatorYs_;
+
+    ModulationSection modulation_;
+    int preferredHeight_ = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MasterInspectorView)
 };

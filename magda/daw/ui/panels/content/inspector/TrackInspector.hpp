@@ -17,6 +17,7 @@
 #include "../../mixer/RoutingSelector.hpp"
 #include "BaseInspector.hpp"
 #include "MasterInspectorView.hpp"
+#include "ModulationSection.hpp"
 #include "audio/MidiBridge.hpp"
 #include "audio/io/AudioIOControl.hpp"
 #include "core/AutomationManager.hpp"
@@ -34,6 +35,7 @@ namespace magda::daw::ui {
  * - Volume and Pan
  * - Audio/MIDI routing (input/output)
  * - Sends/Receives
+ * - The track's own mods and macros
  * - Clip count
  */
 class TrackInspector : public BaseInspector,
@@ -66,11 +68,20 @@ class TrackInspector : public BaseInspector,
      */
     void setSelectedTracks(const std::unordered_set<magda::TrackId>& trackIds);
 
+    /// Open a track-level mod or macro (or unfold its section) for a selection of that type.
+    void focusModulation(magda::SelectionType type, int index) {
+        activeModulation().focus(type, index);
+    }
+
     // TrackManagerListener interface
     void tracksChanged() override;
     void trackPropertyChanged(int trackId) override;
     void trackDevicesChanged(magda::TrackId trackId) override;
     void devicePropertyChanged(const magda::ChainNodePath& devicePath) override;
+    void deviceModifiersChanged(magda::TrackId trackId) override;
+    void modulationNamesChanged(magda::TrackId trackId) override;
+    void macroValueChanged(magda::TrackId trackId, magda::ChainScope scope, int ownerId,
+                           int macroIndex, float value) override;
     void trackSelectionChanged(magda::TrackId trackId) override;
     void masterChannelChanged() override;
     void deviceParameterChanged(const magda::ChainNodePath& devicePath, int paramIndex,
@@ -152,6 +163,12 @@ class TrackInspector : public BaseInspector,
     CollapsibleSectionHeader clipsHeader_{"Clips", "trackInspector.clips"};
     bool controlsShown_ = false;
 
+    // The track's own mods and macros; the master's live in masterView_.
+    ModulationSection modulation_;
+    ModulationSection& activeModulation() {
+        return masterView_.isVisible() ? masterView_.modulation() : modulation_;
+    }
+
     /// The master's own layout, shown over everything above while it is selected.
     MasterInspectorView masterView_;
     void syncMasterView();
@@ -189,9 +206,9 @@ class TrackInspector : public BaseInspector,
     void syncFxList();
     void updateLatency();
 
-    /** Lays out every section with the FX list given @p fxListHeight; returns the height
-     *  left over below the last one. */
-    int layoutSections(int fxListHeight);
+    /** Lays out every section in @p height with the FX list given @p fxListHeight; returns
+     *  the height left over below the last one. */
+    int layoutSections(int fxListHeight, int height);
 
     /// Greys the add-send button on a track that is already at the aux limit.
     void updateAddSendEnabled();

@@ -42,6 +42,12 @@ DeviceInspector::DeviceInspector() {
     descriptionValue_.setBaseFont(FontManager::getInstance().getUIFont(12.5f));
     descriptionValue_.setBaseColour(ActiveTheme::getTextColour());
     addChildComponent(descriptionValue_);
+
+    modulation_.onPreferredHeightChanged = [this] {
+        resized();
+        repaint();
+    };
+    addChildComponent(modulation_);
 }
 
 DeviceInspector::~DeviceInspector() {
@@ -67,6 +73,21 @@ void DeviceInspector::trackPropertyChanged(int trackId) {
 void DeviceInspector::trackDevicesChanged(int trackId) {
     if (selectedChainNode_.isValid() && selectedChainNode_.trackId == trackId)
         updateFromSelectedChainNode();
+}
+
+void DeviceInspector::deviceModifiersChanged(magda::TrackId trackId) {
+    if (selectedChainNode_.isValid() && selectedChainNode_.trackId == trackId)
+        modulation_.refresh();
+}
+
+void DeviceInspector::modulationNamesChanged(magda::TrackId trackId) {
+    deviceModifiersChanged(trackId);
+}
+
+void DeviceInspector::macroValueChanged(magda::TrackId trackId, magda::ChainScope, int, int,
+                                        float) {
+    if (selectedChainNode_.isValid() && selectedChainNode_.trackId == trackId)
+        modulation_.refreshMacroValues();
 }
 
 void DeviceInspector::paint(juce::Graphics& g) {
@@ -117,6 +138,11 @@ void DeviceInspector::paint(juce::Graphics& g) {
         g.drawHorizontalLine(factsBounds_.getBottom(), 0.0f, static_cast<float>(getWidth()));
     }
 
+    if (modulationRuleY_ >= 0) {
+        g.setColour(border);
+        g.drawHorizontalLine(modulationRuleY_, 0.0f, static_cast<float>(getWidth()));
+    }
+
     if (!aboutLabelBounds_.isEmpty()) {
         // Same face and colour as the clip and track inspectors' section headings.
         g.setFont(kickerFont());
@@ -126,27 +152,47 @@ void DeviceInspector::paint(juce::Graphics& g) {
 }
 
 void DeviceInspector::resized() {
-    auto bounds = getLocalBounds();
     headerBounds_ = {};
     factsBounds_ = {};
     aboutLabelBounds_ = {};
-    if (!selectedChainNode_.isValid())
+    modulationRuleY_ = -1;
+    modulation_.setVisible(selectedChainNode_.isValid() && modulation_.hasContent());
+    if (!selectedChainNode_.isValid()) {
+        setPreferredHeight(0);
         return;
+    }
 
-    headerBounds_ = bounds.removeFromTop(kPad + kKickerHeight + 4 + kNameHeight + kPad);
-    bounds.removeFromTop(1);
+    // Laid out top-down from y = 0 with no height limit; a taller result scrolls the panel.
+    int y = 0;
+    const auto take = [this, &y](int height) {
+        const juce::Rectangle<int> area(0, y, getWidth(), height);
+        y += height;
+        return area;
+    };
+
+    headerBounds_ = take(kPad + kKickerHeight + 4 + kNameHeight + kPad);
+    take(1);
     if (!facts_.empty()) {
-        factsBounds_ = bounds.removeFromTop(kFactsHeight);
-        bounds.removeFromTop(1);
+        factsBounds_ = take(kFactsHeight);
+        take(1);
+    }
+
+    if (modulation_.isVisible()) {
+        take(8);
+        modulation_.setBounds(take(modulation_.getPreferredHeight()).reduced(kPad, 0));
+        take(8);
+        modulationRuleY_ = y;
+        take(1);
     }
 
     if (descriptionValue_.isVisible()) {
-        auto about = bounds.reduced(kPad);
-        aboutLabelBounds_ = about.removeFromTop(kSectionLabelHeight);
-        about.removeFromTop(8);
-        descriptionValue_.setBounds(
-            about.withHeight(descriptionValue_.getHeightForWidth(about.getWidth()) + 4));
+        const int width = getWidth() - 2 * kPad;
+        aboutLabelBounds_ = {kPad, y + kPad, width, kSectionLabelHeight};
+        descriptionValue_.setBounds(kPad, aboutLabelBounds_.getBottom() + 8, width,
+                                    descriptionValue_.getHeightForWidth(width) + 4);
+        y = descriptionValue_.getBottom() + kPad;
     }
+    setPreferredHeight(y);
 }
 
 void DeviceInspector::setSelectedChainNode(const magda::ChainNodePath& path) {
@@ -222,6 +268,7 @@ void DeviceInspector::updateFromSelectedChainNode() {
     descriptionValue_.setStyledText(description);
     descriptionValue_.setTooltip(stripStyleTags(description));
     descriptionValue_.setVisible(description.isNotEmpty());
+    modulation_.setOwner(selectedChainNode_);
 
     resized();
     repaint();

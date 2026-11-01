@@ -91,6 +91,13 @@ void PagedControlPanel::setMinPages(int minPages) {
         minPages_ = minPages;
 }
 
+void PagedControlPanel::setTitleShown(bool shown) {
+    if (titleShown_ != shown) {
+        titleShown_ = shown;
+        repaint();
+    }
+}
+
 juce::Rectangle<int> PagedControlPanel::headerArea() const {
     return getLocalBounds().removeFromTop(HEADER_HEIGHT);
 }
@@ -136,9 +143,11 @@ void PagedControlPanel::paint(juce::Graphics& g) {
     const auto mono = fonts.getMonoFont(10.0f).withExtraKerningFactor(0.08f);
 
     const auto header = headerArea();
-    g.setColour(getTitleColour());
-    g.setFont(mono);
-    g.drawText(getPanelTitle(), header.reduced(12, 0), juce::Justification::centredLeft, false);
+    if (titleShown_) {
+        g.setColour(getTitleColour());
+        g.setFont(mono);
+        g.drawText(getPanelTitle(), header.reduced(12, 0), juce::Justification::centredLeft, false);
+    }
 
     const int totalPages = getTotalPages();
     g.setFont(fonts.getMonoFont(11.0f));
