@@ -1001,6 +1001,7 @@ target_sources(magda_juce_tests PRIVATE
     # The focused-panel outline (#3157)
     ui/test_panel_focus_tracker_juce.cpp
     ../magda/daw/ui/panels/PanelFocusTracker.cpp
+    ../magda/daw/ui/themes/FocusHighlight.cpp
 )
 
 # Native waveform expectations and host integration regressions.

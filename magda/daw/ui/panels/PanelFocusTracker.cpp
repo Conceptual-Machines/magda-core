@@ -3,7 +3,7 @@
 
 #include "PanelFocusTracker.hpp"
 
-#include "../themes/ActiveTheme.hpp"
+#include "../themes/FocusHighlight.hpp"
 
 namespace magda::daw::ui {
 
@@ -15,24 +15,7 @@ class PanelFocusTracker::Outline : public juce::Component {
     }
 
     void paint(juce::Graphics& g) override {
-        const auto accent = magda::ActiveTheme::getAccentColour();
-        const auto b = getLocalBounds().toFloat().reduced(1.0f);  // glow starts inside the line
-        const auto inner = accent.withAlpha(0.3f);
-        const auto clear = accent.withAlpha(0.0f);
-        // Inner glow: each edge fades from the accent to transparent.
-        const auto edge = [&](juce::Rectangle<float> r, juce::Point<float> from,
-                              juce::Point<float> to) {
-            g.setGradientFill(juce::ColourGradient(inner, from, clear, to, false));
-            g.fillRect(r);
-        };
-        const float w = juce::jmin(kGlow, b.getWidth() / 2.0f, b.getHeight() / 2.0f);
-        edge(b.withHeight(w), b.getTopLeft(), b.getTopLeft().translated(0, w));
-        edge(b.withTop(b.getBottom() - w), b.getBottomLeft(), b.getBottomLeft().translated(0, -w));
-        edge(b.withWidth(w), b.getTopLeft(), b.getTopLeft().translated(w, 0));
-        edge(b.withLeft(b.getRight() - w), b.getTopRight(), b.getTopRight().translated(-w, 0));
-
-        g.setColour(accent);
-        g.drawRect(getLocalBounds(), 1);
+        paintFocusHighlight(g, getLocalBounds(), kGlow);
     }
 
   private:
