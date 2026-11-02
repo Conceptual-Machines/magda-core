@@ -401,6 +401,7 @@ bool PresetManager::loadTrackPresetById(const juce::String& presetId, TrackPrese
             device_param_migrations::applyChoiceGrowths(tracks, nullptr, lanes, clips);
             daw::audio::device_state_hydration::hydrateStagedProject(tracks, nullptr, savedVersion);
             outPreset.track = std::move(tracks.front());
+            outPreset.track.chainPresetName = relativeName;
             outPreset.hasTrackSettings = true;
             return true;
         }
@@ -418,6 +419,7 @@ bool PresetManager::loadTrackPresetById(const juce::String& presetId, TrackPrese
         outPreset.track.audioOutputDevice = "master";
         outPreset.track.midiInputDevice = "all";
         outPreset.track.chain.fxChainElements = std::move(elements);
+        outPreset.track.chainPresetName = relativeName;
         outPreset.hasTrackSettings = false;
         return true;
     }
@@ -578,6 +580,7 @@ bool PresetManager::loadDevicePreset(const juce::String& pluginFolder,
             case device_preset::ReadStatus::Loaded:
                 for (const auto& warning : envelope.warnings)
                     DBG("Device preset " << source.getFullPathName() << ": " << warning);
+                outDevice.presetName = presetRelativePath;
                 return true;
             case device_preset::ReadStatus::FromNewerVersion:
                 lastError_ = "Preset was written by a newer version: " + envelope.error;
@@ -604,6 +607,7 @@ bool PresetManager::loadDevicePreset(const juce::String& pluginFolder,
     namespace hydration = daw::audio::device_state_hydration;
     hydration::completeDeviceParameters(outDevice,
                                         hydration::provenanceFromMagdaVersion(savedVersion));
+    outDevice.presetName = presetRelativePath;
     return true;
 }
 

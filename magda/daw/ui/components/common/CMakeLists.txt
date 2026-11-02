@@ -3,6 +3,7 @@ target_sources(magda_daw_app PRIVATE
     NoteSlicePopup.cpp
     ClipTimeBendView.cpp
     SvgButton.cpp
+    PresetSelector.cpp
     EditTool.cpp
     EditToolbar.cpp
     EditToolPalette.cpp
@@ -29,6 +30,7 @@ target_sources(magda_daw_app PRIVATE
     InternalFileDrag.hpp
     MasterSpeakerButton.hpp
     SvgButton.hpp
+    PresetSelector.hpp
     AiSoundDesignerIcon.hpp
     EditTool.hpp
     EditToolbar.hpp

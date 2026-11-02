@@ -4357,3 +4357,30 @@ TEST_CASE("A track's MIDI channels and MIDI Out to a track survive a save",
     CHECK(plainLoaded.midiInputChannel == 0);
     CHECK(plainLoaded.midiOutputChannel == 0);
 }
+
+TEST_CASE("The preset names a device and a track show survive a roundtrip",
+          "[project][serialization][presets]") {
+    DeviceInfo device;
+    device.name = "Poly Synth";
+    device.presetName = "Bass/808";
+    DeviceInfo loadedDevice;
+    REQUIRE(ProjectSerializer::deserializeDeviceInfo(ProjectSerializer::serializeDeviceInfo(device),
+                                                     loadedDevice));
+    CHECK(loadedDevice.presetName == "Bass/808");
+
+    TrackInfo track;
+    track.type = TrackType::Media;
+    track.chainPresetName = "Vocal Chain";
+    TrackInfo loadedTrack;
+    REQUIRE(ProjectSerializer::deserializeTrackInfo(ProjectSerializer::serializeTrackInfo(track),
+                                                    loadedTrack));
+    CHECK(loadedTrack.chainPresetName == "Vocal Chain");
+
+    // An older project has neither key.
+    DeviceInfo plainDevice;
+    DeviceInfo plainDeviceLoaded;
+    plainDeviceLoaded.presetName = "stale";
+    REQUIRE(ProjectSerializer::deserializeDeviceInfo(
+        ProjectSerializer::serializeDeviceInfo(plainDevice), plainDeviceLoaded));
+    CHECK(plainDeviceLoaded.presetName.isEmpty());
+}

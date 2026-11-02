@@ -94,6 +94,7 @@ DeviceInfo load(const juce::String& folder, const juce::String& name) {
 
 /// A device as JSON, with its saved state read as the document it holds.
 juce::String describe(DeviceInfo device) {
+    device.presetName.clear();  // each format is saved under its own name
     if (device.format == PluginFormat::Internal && device.hasPluginState())
         if (const auto state = daw::audio::normaliseDeviceState(device.pluginState))
             device.pluginState = juce::String::fromUTF8(

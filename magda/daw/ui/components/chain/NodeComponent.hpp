@@ -225,6 +225,11 @@ class NodeComponent : public juce::Component,
         return nullptr;
     }
 
+    /** @brief The width the preset control takes out of the @p available header. */
+    virtual int getHeaderPresetWidth(int /*available*/) const {
+        return getHeaderButtonSize().x;
+    }
+
     /**
      * Override to substitute a different power/bypass button. Defaults to
      * the base's own bypassButton_; subclasses that want a custom-styled

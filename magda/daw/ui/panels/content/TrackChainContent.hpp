@@ -20,6 +20,7 @@
 #include "ui/components/common/ChordAuditionControl.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/MidiActivityLed.hpp"
+#include "ui/components/common/PresetSelector.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/common/ViewportScrollBar.hpp"
 
@@ -152,7 +153,7 @@ class TrackChainContent : public PanelContent,
     std::unique_ptr<magda::SvgButton> macroButton_;        // Toggle global macros panel
     std::unique_ptr<magda::SvgButton> addRackButton_;      // Add rack button
     std::unique_ptr<magda::SvgButton> addMultibandRackButton_;
-    std::unique_ptr<magda::SvgButton> presetButton_;        // MAGDA track-chain presets menu
+    std::unique_ptr<PresetSelector> presetSelector_;        // Track-chain preset box and floppy
     std::unique_ptr<magda::SvgButton> oscToggleButton_;     // Toggle oscilloscope in post-fx
     std::unique_ptr<magda::SvgButton> specToggleButton_;    // Toggle spectrum analyzer in post-fx
     std::unique_ptr<magda::SvgButton> levelsToggleButton_;  // Toggle levels meter in post-fx
@@ -174,16 +175,11 @@ class TrackChainContent : public PanelContent,
   private:
     bool postFxPanelOpen_ = false;  // mirrored panel state, for the button's lit look
 
-    // Currently-loaded chain preset name for the selected track (empty when
-    // none). Cleared on track selection change so each track gets a fresh
-    // "Save" target — we don't track per-track preset state at the model
-    // level, this is purely a UI convenience for the active track.
-    juce::String currentPresetName_;
-
     void showPresetMenu();
     void showSaveTrackPresetDialog();
-    void saveCurrentTrackPreset();
     void loadTrackPresetByName(const juce::String& presetName);
+    void setTrackPresetName(magda::TrackId trackId, const juce::String& presetName);
+    void refreshPresetLabel();
 
     // Header bar controls - RIGHT side (track info)
     TrackTitleLabel trackTitle_;

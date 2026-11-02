@@ -25,23 +25,6 @@ bool isMidiUtility(const DeviceSlotTraits& traits) {
            traits.isStepSequencer || traits.isPolyStepSequencer;
 }
 
-void layoutPluginPresetButton(juce::Rectangle<int> secondHeaderArea, const DeviceSlotTraits& traits,
-                              bool pluginPresetsAvailable, juce::Component* pluginPresetsButton) {
-    if (pluginPresetsButton == nullptr)
-        return;
-
-    const bool eligible = !isMidiUtility(traits);
-    const bool show = eligible && pluginPresetsAvailable;
-    if (!show) {
-        pluginPresetsButton->setVisible(false);
-        return;
-    }
-
-    const int btnWidth = juce::jmin(140, secondHeaderArea.getWidth() / 2);
-    pluginPresetsButton->setBounds(secondHeaderArea.removeFromRight(btnWidth).reduced(2, 3));
-    pluginPresetsButton->setVisible(true);
-}
-
 void layoutMeterStrip(juce::Rectangle<int>& contentArea, const DeviceSlotTraits& traits,
                       DeviceSlotContentFrameControls controls, int meterStripWidth) {
     // Width 0 = no meter strip (e.g. post-FX analysis devices): reserve nothing
@@ -104,7 +87,6 @@ void layoutMeterStrip(juce::Rectangle<int>& contentArea, const DeviceSlotTraits&
 void hideBodyControls(DeviceSlotContentFrameControls controls, bool collapsed) {
     setVisibleIfPresent(controls.paramGrid, false);
     setVisibleIfPresent(controls.gainLabel, false);
-    setVisibleIfPresent(controls.pluginPresetsButton, false);
     setVisibleIfPresent(controls.gainSlider, false);
     setVisibleIfPresent(controls.magdaPresetButton, !collapsed);
     setVisibleIfPresent(controls.activeCustomUI, false);
@@ -160,7 +142,7 @@ int boundedBottomPanelHeight(int preferredHeight, int bodyHeight, int minFractio
 
 bool prepareDeviceSlotContentFrame(juce::Rectangle<int>& contentArea,
                                    const DeviceSlotTraits& traits, const magda::DeviceInfo& device,
-                                   bool collapsed, bool internalDevice, bool pluginPresetsAvailable,
+                                   bool collapsed, bool internalDevice,
                                    DeviceSlotContentFrameControls controls, int meterStripWidth,
                                    int contentHeaderHeight) {
     const bool skipContentHeader = traits.isAnalysis || traits.isFaust ||
@@ -169,13 +151,8 @@ bool prepareDeviceSlotContentFrame(juce::Rectangle<int>& contentArea,
                                     traits.compiledPresentation->layoutCellCount == 0);
 
     if (!collapsed) {
-        if (!skipContentHeader) {
-            auto secondHeaderArea = contentArea.removeFromTop(contentHeaderHeight);
-            layoutPluginPresetButton(secondHeaderArea, traits, pluginPresetsAvailable,
-                                     controls.pluginPresetsButton);
-        } else {
-            setVisibleIfPresent(controls.pluginPresetsButton, false);
-        }
+        if (!skipContentHeader)
+            contentArea.removeFromTop(contentHeaderHeight);
 
         // MIDI devices emit no audio, so they get no peak meter / gain fader /
         // wet-dry mix. Note-strip utilities keep the strip for their MIDI

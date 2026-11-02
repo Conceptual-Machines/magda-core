@@ -806,3 +806,47 @@ TEST_CASE("A chain preset re-keys the pads of a device it carries",
     CHECK(padDevice.id != grid.id);
     CHECK(grid.pads->id == padRackIdFor(grid.id));
 }
+
+TEST_CASE("Applying a device preset names the device, and undoing it restores the name",
+          "[devices][presets]") {
+    RackAudioTestFixture fixture;
+
+    auto trackId = fixture.tm().createTrack("Preset Target");
+
+    DeviceInfo liveTemplate;
+    liveTemplate.name = "4OSC Synth";
+    liveTemplate.format = PluginFormat::Internal;
+    liveTemplate.pluginId = "4osc";
+    liveTemplate.presetName = "Before";
+
+    auto deviceId = fixture.tm().addDeviceToTrack(trackId, liveTemplate);
+    auto path = ChainNodePath::topLevelDevice(trackId, deviceId);
+    const auto before = *fixture.tm().getDeviceInChainByPath(path);
+
+    DeviceInfo preset = liveTemplate;
+    preset.presetName = "Bass/808";
+    REQUIRE(fixture.tm().applyDevicePreset(path, preset));
+    CHECK(fixture.tm().getDeviceInChainByPath(path)->presetName == "Bass/808");
+
+    REQUIRE(fixture.tm().applyDevicePreset(path, before));
+    CHECK(fixture.tm().getDeviceInChainByPath(path)->presetName == "Before");
+}
+
+TEST_CASE("Applying a track preset names the track, and undoing it restores the name",
+          "[devices][presets]") {
+    RackAudioTestFixture fixture;
+
+    auto trackId = fixture.tm().createTrack("Track Preset Target");
+    fixture.tm().getTrack(trackId)->chainPresetName = "Before";
+    const TrackInfo before = *fixture.tm().getTrack(trackId);
+
+    TrackInfo preset;
+    preset.chainPresetName = "Strings/Violin";
+    auto prepared = fixture.tm().prepareTrackPresetState(trackId, preset);
+    REQUIRE(prepared.has_value());
+    REQUIRE(fixture.tm().applyPreparedTrackPreset(trackId, *prepared));
+    CHECK(fixture.tm().getTrack(trackId)->chainPresetName == "Strings/Violin");
+
+    REQUIRE(fixture.tm().applyPreparedTrackPreset(trackId, before));
+    CHECK(fixture.tm().getTrack(trackId)->chainPresetName == "Before");
+}

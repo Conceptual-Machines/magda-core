@@ -23,6 +23,7 @@
 #include "slot/DeviceSlotHeaderControls.hpp"
 #include "slot/DeviceSlotTraits.hpp"
 #include "ui/components/common/DraggableValueLabel.hpp"
+#include "ui/components/common/PresetSelector.hpp"
 #include "ui/components/common/SegmentedChoice.hpp"
 #include "ui/components/common/SvgButton.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
@@ -132,7 +133,10 @@ class DeviceSlotComponent : public NodeComponent,
     }
     void paintNodeFrame(juce::Graphics& g, juce::Rectangle<int> bounds, int headerHeight) override;
     juce::Component* getHeaderPresetButton() override {
-        return stripsAnalysisChrome() ? nullptr : presetButton_.get();
+        return stripsAnalysisChrome() ? nullptr : presetSelector_.get();
+    }
+    int getHeaderPresetWidth(int available) const override {
+        return juce::jmin(presetSelector_->getPreferredWidth(), available / 2);
     }
     juce::Component* getHeaderPowerButton() override {
         return stripsAnalysisChrome() ? nullptr : onButton_.get();
@@ -417,13 +421,8 @@ class DeviceSlotComponent : public NodeComponent,
     magda::LevelMeter levelMeter_;
     magda::MidiNoteStrip midiNoteStrip_;
 
-    // MAGDA preset menu button (lives in top header, replaces gainLabel_ slot)
-    std::unique_ptr<magda::SvgButton> presetButton_;
-    // Plugin preset menu button (second/content header, plugin-hosted only).
-    // Hidden when neither disk presets nor built-in programs are available so
-    // plugins with proprietary preset systems (Vital, Serum 2, etc.) don't
-    // show a dead control.
-    std::unique_ptr<juce::TextButton> presetsButton_;
+    // Preset box and floppy disk, in the top header.
+    std::unique_ptr<PresetSelector> presetSelector_;
     // Vertical gain slider overlaid on the meter
     std::unique_ptr<juce::Slider> gainSlider_;
     // Small rotary at the top of the meter strip that drives an equal-power
@@ -447,19 +446,11 @@ class DeviceSlotComponent : public NodeComponent,
     // Controller indicator state + refresh now live on NodeComponent
     // (the base class) so racks share the same logic.
 
-    // Plugin presets button helpers (disk-scanned .vstpreset / .aupreset).
-    void refreshPresetsButton();             // re-paint label + recompute visibility
+    // Presets: the plug-in's own where it has any, else MAGDA's.
+    void refreshPresetLabel();
     bool hasPluginPresetsAvailable() const;  // loaded external plugin with scanned presets
-    void showPluginPresetMenu();
-    void loadPluginPresetFile(const juce::File& file);
-    void showSavePluginPresetDialog();
-
-    // Plugin preset menu state/actions.
-    PluginDevicePresetPresenter pluginPresetPresenter_;
-
-    // MAGDA preset menu state/actions.
-    MagdaDevicePresetPresenter magdaPresetPresenter_;
     void showPresetMenu();
+    void showSavePresetDialog();
 
     void updateParameterSlots();   // Reload parameter data for current page
     void updateParameterValues();  // Update only parameter values (for polling)

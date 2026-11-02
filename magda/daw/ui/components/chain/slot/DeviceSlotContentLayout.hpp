@@ -14,7 +14,6 @@ class DrumGridUI;
 class ParamHostComponent;
 
 struct DeviceSlotContentFrameControls {
-    juce::Component* pluginPresetsButton = nullptr;
     juce::Component* levelMeter = nullptr;
     juce::Component* midiNoteStrip = nullptr;
     juce::Component* gainSlider = nullptr;
@@ -72,7 +71,7 @@ struct DeviceSlotContentBodyControls {
 
 bool prepareDeviceSlotContentFrame(juce::Rectangle<int>& contentArea,
                                    const DeviceSlotTraits& traits, const magda::DeviceInfo& device,
-                                   bool collapsed, bool internalDevice, bool pluginPresetsAvailable,
+                                   bool collapsed, bool internalDevice,
                                    DeviceSlotContentFrameControls controls, int meterStripWidth,
                                    int contentHeaderHeight);
 

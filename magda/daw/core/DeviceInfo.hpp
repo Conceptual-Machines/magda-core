@@ -344,6 +344,8 @@ struct DeviceInfo {
     bool gainPanelOpen = false;   // Gain panel visible
     bool paramPanelOpen = false;  // Parameter panel visible
     bool aiPanelOpen = false;     // AI sound-design panel visible
+    /// The preset last loaded or saved here, by its path; the device's preset box shows it.
+    juce::String presetName;
     // Which of a faceplate device's two views show; at least one always does.
     bool faceplateShown = true;
     bool paramsShown = true;

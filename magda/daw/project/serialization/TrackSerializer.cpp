@@ -241,6 +241,9 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
     }
     obj->setProperty("trackMacros", juce::var(trackMacrosArray));
 
+    if (track.chainPresetName.isNotEmpty())
+        obj->setProperty("chainPresetName", track.chainPresetName);
+
     // Track-level panel UI state
     obj->setProperty("globalModsPanelOpen", track.globalModsPanelOpen);
     obj->setProperty("globalMacrosPanelOpen", track.globalMacrosPanelOpen);
@@ -454,6 +457,8 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
         }
     }
 
+    outTrack.chainPresetName = obj->getProperty("chainPresetName").toString();
+
     // Track-level panel UI state (backward compatible — defaults if not present)
     if (obj->hasProperty("globalModsPanelOpen"))
         outTrack.globalModsPanelOpen = static_cast<bool>(obj->getProperty("globalModsPanelOpen"));
@@ -534,6 +539,8 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     obj->setProperty("gainPanelOpen", device.gainPanelOpen);
     obj->setProperty("paramPanelOpen", device.paramPanelOpen);
     obj->setProperty("aiPanelOpen", device.aiPanelOpen);
+    if (device.presetName.isNotEmpty())
+        obj->setProperty("presetName", device.presetName);
     obj->setProperty("faceplateShown", device.faceplateShown);
     obj->setProperty("paramsShown", device.paramsShown);
     obj->setProperty("timeBendShown", device.timeBendShown);
@@ -740,6 +747,7 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     outDevice.paramPanelOpen = obj->getProperty("paramPanelOpen");
     if (obj->hasProperty("aiPanelOpen"))
         outDevice.aiPanelOpen = static_cast<bool>(obj->getProperty("aiPanelOpen"));
+    outDevice.presetName = obj->getProperty("presetName").toString();
     if (obj->hasProperty("faceplateShown"))
         outDevice.faceplateShown = static_cast<bool>(obj->getProperty("faceplateShown"));
     if (obj->hasProperty("paramsShown"))
