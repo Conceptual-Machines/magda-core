@@ -23,6 +23,7 @@
 #include "../../../core/TechnicalText.hpp"
 #include "../../../core/TrackCommands.hpp"
 #include "../../../core/TrackPropertyCommands.hpp"
+#include "../../../core/TrackShade.hpp"
 #include "../../../core/UndoManager.hpp"
 #include "../../../engine/AudioEngine.hpp"
 #include "../../../project/ProjectManager.hpp"
@@ -40,6 +41,7 @@
 #include "../mixer/LevelMeterScale.hpp"
 #include "../mixer/RoutingSyncHelper.hpp"
 #include "BinaryData.h"
+#include "TrackSeparatorView.hpp"
 
 namespace magda {
 
@@ -898,6 +900,8 @@ void TrackHeadersPanel::tracksChanged() {
         header->isMultiOut = (track->type == TrackType::MultiOut);
         header->isMaster = (track->type == TrackType::Master);
         header->isChordTrack = (track->type == TrackType::Chord);
+        header->isSeparator = track->isSeparator();
+        header->isGroupTrack = track->isGroup();
         header->policy = TrackControlsPolicy::forTrack(*track);
         header->isCollapsed = track->isCollapsedIn(currentViewMode_);
         header->muted = track->muted;
@@ -914,6 +918,12 @@ void TrackHeadersPanel::tracksChanged() {
 
         // Set up callbacks with track ID (not index)
         setupTrackHeaderWithId(*header, trackId);
+
+        if (header->isSeparator) {
+            addAndMakeVisible(*header->nameLabel);
+            trackHeaders.push_back(std::move(header));
+            return;
+        }
 
         // Add components
         addAndMakeVisible(*header->nameLabel);
@@ -1002,6 +1012,8 @@ void TrackHeadersPanel::tracksChanged() {
     syncAutomationLaneVisibility();
     rebuildLaneHeaderButtons();
 
+    trackShades_ = trackShades(visibleTrackIds_);
+
     updateTrackHeaderLayout();
     updateHeaderSelectionColours();
     repaint();
@@ -1023,6 +1035,11 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
 
     if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
         auto& header = *trackHeaders[index];
+
+        // A new colour can change which neighbours match.
+        if (header.trackColour != track->colour)
+            trackShades_ = trackShades(visibleTrackIds_);
+
         header.name = track->name;
         header.muted = track->muted;
         header.solo = track->soloed;
@@ -1036,6 +1053,10 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
         // Updating height on every property change would reset user's resize
 
         header.nameLabel->setText(track->name, juce::dontSendNotification);
+        if (header.isSeparator) {
+            updateTrackHeaderLayout();
+            repaint();
+        }
         header.muteButton->setToggleState(track->muted, juce::dontSendNotification);
         header.masterMuteButton->setToggleState(track->muted, juce::dontSendNotification);
         header.soloButton->setToggleState(track->soloed, juce::dontSendNotification);
@@ -1140,24 +1161,43 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
         &inputChannelMapping_, &midiInputTrackMapping_, &outputChannelMapping_);
 }
 
+int TrackHeadersPanel::lastRowOfGroup(int groupRow) const {
+    const int level = trackHeaders[static_cast<size_t>(groupRow)]->depth;
+    int lastRow = groupRow;
+    while (lastRow + 1 < static_cast<int>(trackHeaders.size()) &&
+           trackHeaders[static_cast<size_t>(lastRow + 1)]->depth > level)
+        ++lastRow;
+    return lastRow;
+}
+
 void TrackHeadersPanel::paintOverChildren(juce::Graphics& g) {
     // Full bar selection: one light rim in the bar's tone round the whole header, drawn over the
-    // children so the meter on the outer edge sits inside it.
-    if (Config::getInstance().getTrackColourStyle() != "full")
-        return;
+    // children so the meter on the outer edge sits inside it. A selected group's rim takes in
+    // its whole wrapper, in either colour style.
+    const bool fullBar = Config::getInstance().getTrackColourStyle() == "full";
     for (int index : selectedTrackIndices_) {
         if (index < 0 || index >= static_cast<int>(trackHeaders.size()))
             continue;
         const auto& header = *trackHeaders[static_cast<size_t>(index)];
-        if (header.isMaster || header.trackColour == juce::Colour(0xFF444444))
+        if (header.isMaster || header.trackColour == juce::Colour(0xFF444444) ||
+            (!fullBar && !header.isGroupTrack))
             continue;
+
         auto area = getTrackHeaderArea(index);
+        int indent = headerIndent(header);
+        if (header.isGroupTrack) {
+            const int lastRow = lastRowOfGroup(index);
+            area = area.withBottom(getTrackYPosition(lastRow) + getTrackTotalHeight(lastRow));
+            indent = header.depth * INDENT_WIDTH;  // Its strip is part of it.
+        }
         if (!area.intersects(getLocalBounds()))
             continue;
         if (showIORouting_)
             SideColumn(headersOnRight_).removeFrom(area, IO_COLUMN_WIDTH);
-        const auto bgArea = SideColumn(!headersOnRight_).trimmed(area, header.depth * INDENT_WIDTH);
-        g.setColour(deriveTrackSwatch(header.trackColour).brighter(0.6f));
+        const auto bgArea = SideColumn(!headersOnRight_).trimmed(area, indent);
+        g.setColour(
+            deriveShadedTrackSwatch(header.trackColour, shadeOf(trackShades_, header.trackId))
+                .brighter(0.6f));
         g.drawRect(bgArea, 1);
     }
 }
@@ -1177,12 +1217,16 @@ void TrackHeadersPanel::paint(juce::Graphics& g) {
                              selectedTrackIndices_.count(static_cast<int>(i)) > 0);
 
             // Draw resize handle
-            auto resizeArea = getResizeHandleArea(static_cast<int>(i));
-            paintResizeHandle(g, resizeArea);
+            if (!trackHeaders[i]->isSeparator) {
+                auto resizeArea = getResizeHandleArea(static_cast<int>(i));
+                paintResizeHandle(g, resizeArea);
+            }
         }
 
         // Draw automation lane headers for this track
         paintAutomationLaneHeaders(g, static_cast<int>(i));
+
+        paintGroupStrips(g, static_cast<int>(i));
     }
 
     // Draw drag-and-drop feedback on top
@@ -1433,7 +1477,9 @@ int TrackHeadersPanel::getNumTracks() const {
 
 void TrackHeadersPanel::setTrackHeight(int trackIndex, int height) {
     if (trackIndex >= 0 && trackIndex < static_cast<int>(trackHeaders.size())) {
-        height = juce::jlimit(MIN_TRACK_HEIGHT, MAX_TRACK_HEIGHT, height);
+        height = trackHeaders[trackIndex]->isSeparator
+                     ? juce::jlimit(kSeparatorRowHeight, kMaxSeparatorRowHeight, height)
+                     : juce::jlimit(MIN_TRACK_HEIGHT, MAX_TRACK_HEIGHT, height);
         if (trackHeaders[trackIndex]->height == height)
             return;
         trackHeaders[trackIndex]->height = height;
@@ -2027,27 +2073,26 @@ void TrackHeadersPanel::rebuildSendLabels(TrackHeader& header, TrackId trackId) 
 
 void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& header,
                                          juce::Rectangle<int> area, bool isSelected) {
+    if (header.isSeparator) {
+        if (isSelected) {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_ICON_HOVER_BG));
+            g.fillRect(area);
+        }
+        return;
+    }
+
     // Calculate indent
-    int indent = header.depth * INDENT_WIDTH;
+    int indent = headerIndent(header);
     SideColumn outer(!headersOnRight_);  // outer edge: right normally, left when swapped
     // The I/O column sits on the lane side, the same edge updateTrackHeaderLayout carves.
     if (showIORouting_)
         paintIOColumn(g, SideColumn(headersOnRight_).removeFrom(area, IO_COLUMN_WIDTH), isSelected);
 
-    // Draw indent guide lines for nested tracks on outer side
-    if (header.depth > 0) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
-        for (int d = 0; d < header.depth; ++d) {
-            int x = headersOnRight_ ? area.getRight() - d * INDENT_WIDTH - INDENT_WIDTH / 2
-                                    : area.getX() + d * INDENT_WIDTH + INDENT_WIDTH / 2;
-            g.drawLine(x, area.getY(), x, area.getBottom(), 1.0f);
-        }
-    }
-
     // Track colour shows as a spine on the outer edge, or (full bar) as the head's fill.
     const bool fullBar = Config::getInstance().getTrackColourStyle() == "full";
     const bool coloured = !header.isMaster && header.trackColour != juce::Colour(0xFF444444);
-    const auto swatch = deriveTrackSwatch(header.trackColour);
+    const auto swatch =
+        deriveShadedTrackSwatch(header.trackColour, shadeOf(trackShades_, header.trackId));
 
     auto bgArea = outer.trimmed(area, indent);
     const auto bodyColour = isSelected ? ActiveTheme::getColour(ActiveTheme::DEVICE_ICON_HOVER_BG)
@@ -2095,6 +2140,53 @@ void TrackHeadersPanel::paintTrackHeader(juce::Graphics& g, const TrackHeader& h
     if (!header.isMaster && !TrackManager::getInstance().isChainEnabled(header.trackId)) {
         g.setColour(juce::Colours::black.withAlpha(0.35f));
         g.fillRect(bgArea);
+    }
+}
+
+void TrackHeadersPanel::paintGroupStrips(juce::Graphics& g, int trackIndex) {
+    const auto& header = *trackHeaders[static_cast<size_t>(trackIndex)];
+    const auto& trackManager = TrackManager::getInstance();
+    const auto* track = trackManager.getTrack(header.trackId);
+    if (track == nullptr)
+        return;
+
+    const int rowTop = getTrackYPosition(trackIndex);
+    const int rowEnd = rowTop + getTrackTotalHeight(trackIndex);
+    const auto fillStrip = [&](const TrackInfo& group, int level, int top) {
+        const int x =
+            headersOnRight_ ? getWidth() - (level + 1) * INDENT_WIDTH : level * INDENT_WIDTH;
+
+        // One gradient from the group's row to the end of its last track, whichever row this is.
+        const int groupRow = getVisibleHeaderIndex(group.id);
+        const int lastRow = lastRowOfGroup(groupRow);
+        const float startY = static_cast<float>(getTrackYPosition(groupRow));
+        const float endY =
+            static_cast<float>(getTrackYPosition(lastRow) + getTrackTotalHeight(lastRow));
+
+        if (group.colour != juce::Colour(0xFF444444))
+            g.setGradientFill(groupWrapperGradient(
+                deriveShadedTrackSwatch(group.colour, shadeOf(trackShades_, group.id)),
+                {static_cast<float>(x), startY}, {static_cast<float>(x), endY}));
+        else
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER).withAlpha(0.5f));
+        g.fillRect(x, top, INDENT_WIDTH, rowEnd - top);
+    };
+
+    // A group's strip starts beside its own row.
+    if (header.isGroupTrack)
+        fillStrip(*track, header.depth, rowTop);
+    if (trackIndex == 0)
+        return;
+
+    // Its children's reach back to the end of the row above, across its resize handle, so
+    // the rows meet and the strip is one piece down the group.
+    const int top = getTrackHeaderArea(trackIndex - 1).getBottom();
+    for (int level = header.depth - 1; level >= 0 && track->hasParent(); --level) {
+        const auto* parent = trackManager.getTrack(track->parentId);
+        if (parent == nullptr)
+            return;
+        fillStrip(*parent, level, top);
+        track = parent;
     }
 }
 
@@ -2478,6 +2570,18 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
         auto headerArea = getTrackHeaderArea(static_cast<int>(i));
 
         if (!headerArea.isEmpty()) {
+            if (header.isSeparator) {
+                // Not the whole row: the rest of it has to take a drag, and an
+                // unnamed one still needs somewhere to double-click.
+                const int nameWidth =
+                    juce::GlyphArrangement::getStringWidthInt(header.nameLabel->getFont(),
+                                                              header.nameLabel->getText()) +
+                    12;
+                header.nameLabel->setBounds(headerArea.getX() + 4, headerArea.getY(),
+                                            juce::jmax(60, nameWidth), headerArea.getHeight());
+                continue;
+            }
+
             const int trackHeight = headerArea.getHeight();
             // A compact track is its name row alone.
             const bool compact = trackHeight < COMPACT_TRACK_HEIGHT && !header.isMaster;
@@ -2496,7 +2600,7 @@ void TrackHeadersPanel::updateTrackHeaderLayout() {
             auto workArea = fullArea.reduced(4);
 
             // Apply indentation on nesting side based on depth
-            int indent = header.depth * INDENT_WIDTH;
+            int indent = headerIndent(header);
             auto tcpArea = inner.trimmed(workArea, indent);
 
             // Name label in the top (coloured) area
@@ -2747,11 +2851,12 @@ void TrackHeadersPanel::mouseDrag(const juce::MouseEvent& event) {
     if (isResizing && resizingTrackIndex >= 0) {
         // Heights are stored unzoomed, so un-scale the drag to keep the edge under the mouse.
         const int deltaY = juce::roundToInt((event.y - resizeStartY) / verticalZoom);
-        const int newHeight =
-            juce::jlimit(MIN_TRACK_HEIGHT, MAX_TRACK_HEIGHT, resizeStartHeight + deltaY);
-        if (resizeAllTracks_) {
+        // setTrackHeight applies each row's own limits.
+        const int newHeight = resizeStartHeight + deltaY;
+        if (resizeAllTracks_ && !trackHeaders[resizingTrackIndex]->isSeparator) {
             for (int i = 0; i < getNumTracks(); ++i)
-                setTrackHeight(i, newHeight);
+                if (!trackHeaders[i]->isSeparator)
+                    setTrackHeight(i, newHeight);
         } else {
             setTrackHeight(resizingTrackIndex, newHeight);
         }
@@ -2938,6 +3043,11 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
     if (!track)
         return;
 
+    if (track->isSeparator()) {
+        showTrackSeparatorMenu(track->id);
+        return;
+    }
+
     // Stable IDs for menu items. The *Base values are offsets for dynamic
     // entries (move-to-group adds the group trackId, sends add the dest
     // trackId or bus index). Keep static IDs strictly below MoveToGroupBase.
@@ -2956,6 +3066,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
         AddAudioTrack = 12,
         AddGroupTrack = 13,
         AddAuxTrack = 14,
+        AddSeparatorTrack = 15,
 
         MoveToGroupBase = 100,
         AddSendBase = 500,
@@ -2974,6 +3085,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
         addTrackMenu.addItem(AddAudioTrack, "Audio Track");
         addTrackMenu.addItem(AddGroupTrack, "Group Track");
         addTrackMenu.addItem(AddAuxTrack, "Aux Track");
+        addTrackMenu.addItem(AddSeparatorTrack, "Separator");
         menu.addSubMenu("Add Track", addTrackMenu);
         menu.addSeparator();
     }
@@ -3172,6 +3284,10 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
             } else if (result == AddAuxTrack) {
                 UndoManager::getInstance().executeCommand(
                     std::make_unique<CreateTrackCommand>(TrackType::Aux));
+            } else if (result == AddSeparatorTrack) {
+                // A divider belongs where it was asked for, not after everything.
+                UndoManager::getInstance().executeCommand(std::make_unique<CreateTrackCommand>(
+                    TrackType::Separator, juce::String(), trackId));
             } else if (result == DuplicateWithContent) {
                 auto cmd = std::make_unique<DuplicateTrackCommand>(
                     trackId, /*duplicateContent=*/true, /*duplicateDevices=*/true);
@@ -3220,7 +3336,7 @@ void TrackHeadersPanel::showAddTrackContextMenu(juce::Point<int> position) {
 }
 
 void TrackHeadersPanel::showAddTrackMenu(juce::Rectangle<int> screenArea) {
-    enum AddId : int { AddAudio = 1, AddGroup = 2, AddAux = 3, AddChord = 4 };
+    enum AddId : int { AddAudio = 1, AddGroup = 2, AddAux = 3, AddChord = 4, AddSeparator = 5 };
 
     juce::PopupMenu menu;
     menu.addItem(AddAudio, "Add Audio Track");
@@ -3229,16 +3345,21 @@ void TrackHeadersPanel::showAddTrackMenu(juce::Rectangle<int> screenArea) {
     // A project holds one chord track.
     menu.addItem(AddChord, "Add Chord Track",
                  TrackManager::getInstance().getChordTrackId() == INVALID_TRACK_ID);
+    menu.addItem(AddSeparator, "Add Separator");
 
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetScreenArea(screenArea), [](int result) {
         juce::PopupMenu::dismissAllActiveMenus();
+        if (result == AddChord) {
+            addChordTrackFromMenu();
+            return;
+        }
         TrackType type = TrackType::Media;
         if (result == AddGroup)
             type = TrackType::Group;
         else if (result == AddAux)
             type = TrackType::Aux;
-        else if (result == AddChord)
-            type = TrackType::Chord;
+        else if (result == AddSeparator)
+            type = TrackType::Separator;
         else if (result != AddAudio)
             return;
         UndoManager::getInstance().executeCommand(std::make_unique<CreateTrackCommand>(type));
@@ -3282,6 +3403,10 @@ void TrackHeadersPanel::calculateDropTarget(int /*mouseX*/, int mouseY) {
     if (draggedTrackIndex_ < 0 || trackHeaders.empty())
         return;
 
+    // The chord track has the top row whatever the track list says (#3228).
+    if (trackHeaders[draggedTrackIndex_]->isChordTrack)
+        return;
+
     // Iterate through track headers to find drop position
     for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
         auto headerArea = getTrackHeaderArea(i);
@@ -3306,7 +3431,7 @@ void TrackHeadersPanel::calculateDropTarget(int /*mouseX*/, int mouseY) {
             // Top quarter = insert before this track
             if (mouseY < headerTop + quarterHeight) {
                 dropTargetType_ = DropTargetType::BetweenTracks;
-                dropTargetIndex_ = i;
+                dropTargetIndex_ = trackHeaders[i]->isChordTrack ? i + 1 : i;
                 return;
             }
             // Bottom quarter = insert after this track
@@ -3347,6 +3472,11 @@ bool TrackHeadersPanel::canDropIntoGroup(int draggedIndex, int targetGroupIndex)
     if (!trackHeaders[targetGroupIndex]->isGroup)
         return false;
 
+    if (const auto* dragged =
+            TrackManager::getInstance().getTrack(trackHeaders[draggedIndex]->trackId);
+        dragged != nullptr && !dragged->canJoinGroup())
+        return false;
+
     // If dragging a group, can't drop into its own descendants
     const auto& draggedHeader = *trackHeaders[draggedIndex];
     if (draggedHeader.isGroup) {
@@ -3385,6 +3515,11 @@ void TrackHeadersPanel::executeDrop() {
         TrackId draggedTrackId = trackHeaders[draggedTrackIndex_]->trackId;
         tracksToMove.push_back(draggedTrackId);
     }
+
+    std::erase_if(tracksToMove, [&trackManager](TrackId id) {
+        const auto* track = trackManager.getTrack(id);
+        return track != nullptr && track->type == TrackType::Chord;
+    });
 
     if (tracksToMove.empty())
         return;
@@ -3465,7 +3600,7 @@ void TrackHeadersPanel::executeDrop() {
 
             // Update group membership if needed. addTrackToGroup detaches from the
             // current parent first, so a single command covers the reparent.
-            if (track->parentId != targetParentId) {
+            if (track->canJoinGroup() && track->parentId != targetParentId) {
                 if (targetParentId != INVALID_TRACK_ID)
                     undo.executeCommand(
                         std::make_unique<AddTrackToGroupCommand>(trackId, targetParentId));

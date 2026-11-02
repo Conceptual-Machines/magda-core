@@ -7,6 +7,7 @@
 
 #include <cmath>
 
+#include "../components/tracks/ChordFoldControls.hpp"
 #include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/ClipManager.hpp"
@@ -77,6 +78,9 @@ class ClipSlotButton : public juce::TextButton {
     bool hasChildClips = false;       // Any child track has a clip in this scene
     bool childClipIsPlaying = false;  // Any child clip in this scene is playing
 
+    // The track takes no clips and has none to launch: an aux or a pad's channel (#3228).
+    bool isClosedSlot = false;
+
     // Clip slot identity (for drag-and-drop)
     ClipId clipId = INVALID_CLIP_ID;
     TrackId trackId = INVALID_TRACK_ID;
@@ -109,7 +113,7 @@ class ClipSlotButton : public juce::TextButton {
     void mouseDown(const juce::MouseEvent& event) override {
         if (event.mods.isPopupMenu()) {
             juce::PopupMenu menu;
-            if (!isGroupSlot) {
+            if (!isGroupSlot && !isClosedSlot) {
                 if (!hasClip)
                     menu.addItem(1, "Create MIDI Clip");
                 if (hasClip) {
@@ -157,6 +161,9 @@ class ClipSlotButton : public juce::TextButton {
             return;
 
         const int clicks = event.getNumberOfClicks();
+
+        if (isClosedSlot)
+            return;
 
         if (isGroupSlot) {
             // Group slots: single click triggers/stops child clips
@@ -217,6 +224,13 @@ class ClipSlotButton : public juce::TextButton {
         const auto slotFill = ActiveTheme::getColour(ActiveTheme::SESSION_SLOT);
         const auto green = ActiveTheme::getColour(ActiveTheme::SESSION_PLAY);
         const auto red = ActiveTheme::getColour(ActiveTheme::SESSION_RECORD);
+
+        if (isClosedSlot) {
+            g.setColour(ActiveTheme::getColour(ActiveTheme::SESSION_SLOT_BORDER).withAlpha(0.4f));
+            g.drawRoundedRectangle(bounds, kCornerRadius, 1.0f);
+            paintSelection(g, bounds);
+            return;
+        }
 
         auto fill = shouldDrawButtonAsHighlighted && !hasClip
                         ? ActiveTheme::getColour(ActiveTheme::SESSION_SLOT_HOVER)
@@ -407,6 +421,20 @@ class SceneButton : public juce::TextButton {
 /** @brief Track header button with right-click context menu and drag support for SessionView. */
 class TrackHeaderButton : public juce::TextButton {
   public:
+    /** @brief Shows a fold chevron where the MIDI activity dot would be. */
+    void showFoldChevron(std::function<void()> onFold) {
+        foldChevron_ = std::make_unique<FoldChevronButton>(FoldChevronButton::Direction::Left);
+        foldChevron_->setTooltip("Fold the chord track");
+        foldChevron_->onClick = std::move(onFold);
+        addAndMakeVisible(*foldChevron_);
+        resized();
+    }
+
+    void resized() override {
+        if (foldChevron_ != nullptr)
+            foldChevron_->setBounds(getLocalBounds().removeFromRight(22));
+    }
+
     std::function<void()> onDeleteTrack;
     std::function<void()> onGroupSelectedTracks;
     std::function<void()> onUngroupTracks;
@@ -474,6 +502,14 @@ class TrackHeaderButton : public juce::TextButton {
         }
     }
 
+    /** @brief How much darker to draw its colour. See core/TrackShade.hpp. */
+    void setShade(float shade) {
+        if (shade_ != shade) {
+            shade_ = shade;
+            repaint();
+        }
+    }
+
     void setSelected(bool selected) {
         if (selected_ != selected) {
             selected_ = selected;
@@ -495,7 +531,7 @@ class TrackHeaderButton : public juce::TextButton {
         const auto bounds = getLocalBounds().toFloat();
         const bool coloured = trackColour_ != juce::Colour(0xFF444444);
         const bool filled = fullBar_ && coloured;
-        const auto swatch = deriveTrackSwatch(trackColour_);
+        const auto swatch = deriveShadedTrackSwatch(trackColour_, shade_);
 
         juce::Graphics::ScopedSaveState state(g);
         juce::Path outline;
@@ -525,12 +561,14 @@ class TrackHeaderButton : public juce::TextButton {
         const auto dot = juce::Rectangle<float>(kDotSize, kDotSize)
                              .withCentre({static_cast<float>(content.getRight()) - kDotSize * 0.5f,
                                           bounds.getCentreY()});
-        g.setColour(filled ? juce::Colours::white.withAlpha(0.4f)
-                           : ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withAlpha(0.6f));
-        g.fillEllipse(dot);
-        if (midiActivity_ > 0.01f) {
-            g.setColour(juce::Colour(0xFF00FFFF).withAlpha(midiActivity_));
+        if (foldChevron_ == nullptr) {
+            g.setColour(filled ? juce::Colours::white.withAlpha(0.4f)
+                               : ActiveTheme::getColour(ActiveTheme::TEXT_DIM).withAlpha(0.6f));
             g.fillEllipse(dot);
+            if (midiActivity_ > 0.01f) {
+                g.setColour(juce::Colour(0xFF00FFFF).withAlpha(midiActivity_));
+                g.fillEllipse(dot);
+            }
         }
         content.removeFromRight(static_cast<int>(kDotSize) + 8);
 
@@ -545,6 +583,8 @@ class TrackHeaderButton : public juce::TextButton {
     bool fullBar_ = false;
     bool selected_ = false;
     float midiActivity_ = 0.0f;
+    std::unique_ptr<FoldChevronButton> foldChevron_;
+    float shade_ = 0.0f;
 };
 
 /** @brief A track's cell in the stop row, or STOP ALL in the scenes column. */

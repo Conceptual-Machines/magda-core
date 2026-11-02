@@ -88,12 +88,12 @@ class MasterInspectorView : public juce::Component, private juce::Timer {
     magda::LevelMeter meter_;
     juce::Label peakLabel_;
 
-    CollapsibleSectionHeader fxHeader_{"FX", "master.fx"};
+    CollapsibleSectionHeader fxHeader_{"FX", "master.fx", /*startCollapsed=*/true};
     juce::Label noFxLabel_;
     juce::Viewport fxViewport_;
     magda::MiniChainList fxList_;
 
-    CollapsibleSectionHeader latencyHeader_{"Latency", "master.latency"};
+    CollapsibleSectionHeader latencyHeader_{"Latency", "master.latency", /*startCollapsed=*/true};
     double totalMs_ = 0.0;
     int totalSamples_ = 0;
     double sampleRate_ = 0.0;

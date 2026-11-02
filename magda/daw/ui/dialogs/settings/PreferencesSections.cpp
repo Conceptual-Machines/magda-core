@@ -263,6 +263,8 @@ class GeneralPage : public juce::Component {
                     tr("preferences.toggle.open_plugin_window_on_drop"));
         setupToggle(*this, chordPreviewDefaultToggle,
                     tr("preferences.toggle.chord_preview_default"));
+        setupToggle(*this, separatorAfterChordToggle,
+                    tr("preferences.toggle.separator_after_chord"));
         setupToggle(*this, autoCrossfadeDefaultToggle,
                     tr("preferences.toggle.auto_crossfade_default"));
         setupToggle(*this, assumeProjectTempoToggle, tr("preferences.toggle.assume_project_tempo"));
@@ -375,6 +377,8 @@ class GeneralPage : public juce::Component {
                                                     juce::dontSendNotification);
         chordPreviewDefaultToggle.setToggleState(config.getChordPreviewOnByDefault(),
                                                  juce::dontSendNotification);
+        separatorAfterChordToggle.setToggleState(config.getSeparatorAfterChordTrack(),
+                                                 juce::dontSendNotification);
         clipOverlapPlaysBothToggle.setToggleState(config.getClipOverlapPlaysBoth(),
                                                   juce::dontSendNotification);
         assumeProjectTempoToggle.setToggleState(config.getAssumeProjectTempo(),
@@ -442,6 +446,7 @@ class GeneralPage : public juce::Component {
         config.setShowInfoLine(showInfoLineToggle.getToggleState());
         config.setOpenPluginWindowOnDrop(openPluginWindowOnDropToggle.getToggleState());
         config.setChordPreviewOnByDefault(chordPreviewDefaultToggle.getToggleState());
+        config.setSeparatorAfterChordTrack(separatorAfterChordToggle.getToggleState());
         config.setAutoCrossfadeByDefault(autoCrossfadeDefaultToggle.getToggleState());
         config.setAssumeProjectTempo(assumeProjectTempoToggle.getToggleState());
 
@@ -481,7 +486,7 @@ class GeneralPage : public juce::Component {
         return padding + headerH + 4 + (rowH * 3) + 8 + secGap + headerH + 4 + (rowH * 2) + 4 +
                secGap + headerH + 4 + rowH + secGap + headerH + 4 + rowH + 4 + rowH + secGap +
                headerH + 4 + rowH + 4 + rowH + secGap + headerH + 4 + rowH + secGap + headerH + 4 +
-               (rowH * 11) + 40 + secGap + headerH + 4 + rowH + 18 + 4 + rowH + padding +
+               (rowH * 12) + 44 + secGap + headerH + 4 + rowH + 18 + 4 + rowH + padding +
                6 * (4 + rowH)     // Layout's track-height and track-width rows
                + 3 * (4 + rowH);  // Engine's capture rows
     }
@@ -510,7 +515,7 @@ class GeneralPage : public juce::Component {
 
         return padding + headerH + 4 + rowH + 4 + rowH    // Layout
                + 6 * (4 + rowH)                           // Layout: height and width presets
-               + secGap + headerH + 4 + (rowH * 11) + 40  // Behaviour: 11 toggles, 4px apart
+               + secGap + headerH + 4 + (rowH * 12) + 44  // Behaviour: 12 toggles, 4px apart
                + padding;
     }
 
@@ -599,6 +604,8 @@ class GeneralPage : public juce::Component {
         openPluginWindowOnDropToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
         chordPreviewDefaultToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
+        bounds.removeFromTop(4);
+        separatorAfterChordToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
         autoCrossfadeDefaultToggle.setBounds(bounds.removeFromTop(rowH).reduced(0, 4));
         bounds.removeFromTop(4);
@@ -720,6 +727,8 @@ class GeneralPage : public juce::Component {
         right.removeFromTop(4);
         chordPreviewDefaultToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(4);
+        separatorAfterChordToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
+        right.removeFromTop(4);
         autoCrossfadeDefaultToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
         right.removeFromTop(4);
         assumeProjectTempoToggle.setBounds(right.removeFromTop(rowH).reduced(0, 4));
@@ -758,6 +767,7 @@ class GeneralPage : public juce::Component {
     juce::ToggleButton showInfoLineToggle;
     juce::ToggleButton openPluginWindowOnDropToggle;
     juce::ToggleButton chordPreviewDefaultToggle;
+    juce::ToggleButton separatorAfterChordToggle;
     juce::ToggleButton autoCrossfadeDefaultToggle;
     juce::ToggleButton assumeProjectTempoToggle;
     juce::ToggleButton clipOverlapPlaysBothToggle;

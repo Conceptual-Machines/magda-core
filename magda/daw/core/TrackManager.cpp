@@ -328,12 +328,20 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
         track.auxBusIndex = nextAuxBusIndex_++;
 
     // Chord and aux tracks have role-specific defaults (still renameable);
-    // ordinary tracks retain the generic "N Track" name.
-    track.name = !name.isEmpty()            ? name
-                 : type == TrackType::Chord ? juce::String("Chord Track")
+    // ordinary tracks retain the generic "N Track" name. A separator's name is
+    // optional, so it starts without one.
+    track.name = !name.isEmpty()                ? name
+                 : type == TrackType::Chord     ? juce::String("Chord Track")
+                 : type == TrackType::Separator ? juce::String()
                  : type == TrackType::Aux
                      ? juce::String("Aux ") + juce::String(track.auxBusIndex + 1)
                      : generateTrackName();
+
+    if (type == TrackType::Separator) {
+        for (const auto mode : {ViewMode::Live, ViewMode::Arrange, ViewMode::Mix, ViewMode::Master})
+            track.viewSettings.setHeight(mode, kSeparatorRowHeight);
+    }
+
     const auto& projectDefaults = ProjectManager::getInstance().getCurrentProjectInfo().defaults;
     track.colour = juce::Colour(projectDefaults.colourForIndex(static_cast<int>(tracks_.size())));
 
@@ -442,7 +450,7 @@ TrackId TrackManager::groupTracks(const std::vector<TrackId>& trackIds, const ju
     tracksToGroup.reserve(requested.size());
 
     for (const auto& track : tracks_) {
-        if (requested.count(track.id) == 0)
+        if (requested.count(track.id) == 0 || !track.canJoinGroup())
             continue;
 
         bool hasSelectedAncestor = false;
@@ -1061,7 +1069,8 @@ TrackId TrackManager::duplicateTrack(TrackId trackId, bool includeDevices) {
 
     TrackInfo newTrack = *it;
     newTrack.id = nextTrackId_++;
-    newTrack.name = it->name + " Copy";
+    if (it->name.isNotEmpty())
+        newTrack.name = it->name + " Copy";
     newTrack.childIds.clear();  // Don't duplicate children references
 
     // Content-only duplication: strip every device section so the duplicate
@@ -1208,6 +1217,9 @@ void TrackManager::addTrackToGroup(TrackId trackId, TrackId groupId) {
         DBG("addTrackToGroup failed: invalid track or group");
         return;
     }
+
+    if (!track->canJoinGroup())
+        return;
 
     // Prevent adding a group to itself or to its descendants
     if (trackId == groupId)
@@ -2182,6 +2194,8 @@ void TrackManager::seedSidechainModIfMissing(DeviceInfo& dev, const ChainNodePat
 
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device) {
     if (auto* track = getTrack(trackId)) {
+        if (!track->carriesSignal())
+            return INVALID_DEVICE_ID;
         if (!track->canHostInstrument() && device.isInstrument) {
             DBG("Cannot add instrument '" << device.name << "' to track " << trackId
                                           << " (type=" << static_cast<int>(track->type)
@@ -2209,6 +2223,8 @@ DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& devic
 DeviceId TrackManager::addDeviceToTrack(TrackId trackId, const DeviceInfo& device,
                                         int insertIndex) {
     if (auto* track = getTrack(trackId)) {
+        if (!track->carriesSignal())
+            return INVALID_DEVICE_ID;
         if (!track->canHostInstrument() && device.isInstrument) {
             DBG("Cannot add instrument '" << device.name << "' to track " << trackId
                                           << " (type=" << static_cast<int>(track->type)
@@ -2261,7 +2277,7 @@ DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& devi
 DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& device,
                                          int insertIndex) {
     auto* track = getTrack(trackId);
-    if (!track)
+    if (!track || !track->carriesSignal())
         return INVALID_DEVICE_ID;
 
     // Post-fader FX is effects/analysis only — nothing generates sound after
@@ -2348,7 +2364,7 @@ const std::vector<PostFxChainElement>& TrackManager::getMixerAnalysisElements(
 
 DeviceId TrackManager::addDeviceToMixerAnalysis(TrackId trackId, const DeviceInfo& device) {
     auto* track = getTrack(trackId);
-    if (!track)
+    if (!track || !track->carriesSignal())
         return INVALID_DEVICE_ID;
     if (device.isInstrument) {
         DBG("Cannot add instrument to mixer-analysis section");
@@ -2529,6 +2545,8 @@ DeviceInfo* TrackManager::getDevice(TrackId trackId, DeviceId deviceId) {
 
 RackId TrackManager::addRackToTrack(TrackId trackId, const juce::String& name) {
     if (auto* track = getTrack(trackId)) {
+        if (!track->carriesSignal())
+            return INVALID_RACK_ID;
         RackInfo rack;
         rack.id = nextRackId_++;
         rack.name = name.isEmpty() ? ("Rack " + juce::String(rack.id)) : name;
@@ -3333,7 +3351,10 @@ void TrackManager::setTrackCollapsed(TrackId trackId, bool collapsed) {
 
 void TrackManager::setTrackHeight(TrackId trackId, ViewMode mode, int height) {
     if (auto* track = getTrack(trackId)) {
-        track->viewSettings.setHeight(mode, juce::jmax(20, height));
+        track->viewSettings.setHeight(
+            mode, track->isSeparator()
+                      ? juce::jlimit(kSeparatorRowHeight, kMaxSeparatorRowHeight, height)
+                      : juce::jmax(20, height));
         notifyTrackPropertyChanged(trackId);
     }
 }
@@ -3345,8 +3366,9 @@ void TrackManager::setTrackHeight(TrackId trackId, ViewMode mode, int height) {
 std::vector<TrackId> TrackManager::getVisibleTracks(ViewMode mode) const {
     const auto isVisible = [mode](const TrackInfo& track) { return track.isVisibleIn(mode); };
 
-    return tracks_ | std::views::filter(isVisible) | std::views::transform(&TrackInfo::id) |
-           toStd<std::vector<TrackId>>();
+    return withChordTrackFirst(tracks_ | std::views::filter(isVisible) |
+                               std::views::transform(&TrackInfo::id) |
+                               toStd<std::vector<TrackId>>());
 }
 
 std::vector<TrackId> TrackManager::getVisibleTopLevelTracks(ViewMode mode) const {
@@ -3354,8 +3376,16 @@ std::vector<TrackId> TrackManager::getVisibleTopLevelTracks(ViewMode mode) const
         return track.isTopLevel() && track.isVisibleIn(mode);
     };
 
-    return tracks_ | std::views::filter(isVisibleAtTopLevel) |
-           std::views::transform(&TrackInfo::id) | toStd<std::vector<TrackId>>();
+    return withChordTrackFirst(tracks_ | std::views::filter(isVisibleAtTopLevel) |
+                               std::views::transform(&TrackInfo::id) |
+                               toStd<std::vector<TrackId>>());
+}
+
+std::vector<TrackId> TrackManager::withChordTrackFirst(std::vector<TrackId> trackIds) const {
+    const auto chord = std::ranges::find(trackIds, getChordTrackId());
+    if (chord != trackIds.end())
+        std::rotate(trackIds.begin(), chord, std::next(chord));
+    return trackIds;
 }
 
 // ============================================================================

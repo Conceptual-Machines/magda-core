@@ -16,6 +16,7 @@
 
 #include "../project/ProjectManager.hpp"
 #include "ClipOperations.hpp"
+#include "ClipPlacementPolicy.hpp"
 #include "CompSectionMath.hpp"
 #include "Config.hpp"
 #include "GridDivision.hpp"
@@ -3814,6 +3815,12 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
             ++droppedForNoTrack;
             continue;
         }
+
+        // The clipboard outlives the selection it came from, so the target can
+        // be a track this clip may not go on (#3228).
+        if (const auto* track = TrackManager::getInstance().getTrack(newTrackId);
+            track != nullptr && !trackAcceptsClip(*track, clipData))
+            continue;
 
         // Create new clip based on type, using targetView instead of clipData.view
         ClipId newClipId = INVALID_CLIP_ID;

@@ -95,6 +95,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         std::function<void()> onAddGroupTrack;
         std::function<void()> onAddAuxTrack;
         std::function<void()> onAddChordTrack;
+        std::function<void()> onAddSeparatorTrack;
         std::function<void()> onDeleteTrack;
         std::function<void()> onDuplicateTrack;
         std::function<void()> onDuplicateTrackNoContent;
@@ -248,6 +249,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
         AddGroupTrack,
         AddAuxTrack,
         AddChordTrack,
+        AddSeparatorTrack,
         DeleteTrack = 510,
         DuplicateTrack,
         DuplicateTrackNoContent,

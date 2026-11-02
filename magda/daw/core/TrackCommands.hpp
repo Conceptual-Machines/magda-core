@@ -139,6 +139,23 @@ void deleteTracks(const std::vector<TrackId>& trackIds);
 void deleteTracksFromMenu(TrackId clicked);
 
 /**
+ * @brief Moves @p trackIds, as one undo step, to sit before @p beforeId under @p parentId.
+ *
+ * An invalid parent is the top level and an invalid before is the parent's end.
+ * @p beforeId must not be one of the tracks moving.
+ */
+void moveTracksToPlace(const std::vector<TrackId>& trackIds, TrackId parentId, TrackId beforeId);
+
+/**
+ * @brief Add Chord Track from a menu, as one undo step with the separator after it
+ * when Config::getSeparatorAfterChordTrack() asks for one (#3228).
+ */
+void addChordTrackFromMenu();
+
+/** @brief ensureChordTrack() for a gesture that needs one, with the same separator. */
+TrackId ensureChordTrackWithSeparator();
+
+/**
  * @brief Command for deleting a track
  */
 class DeleteTrackCommand : public UndoableCommand {

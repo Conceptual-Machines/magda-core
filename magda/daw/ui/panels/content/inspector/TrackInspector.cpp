@@ -469,6 +469,10 @@ TrackInspector::TrackInspector() {
 }
 
 void TrackInspector::showColourMenu(juce::Component* target) {
+    if (const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+        track != nullptr && track->isSeparator())
+        return;
+
     if ((selectedTrackId_ == magda::INVALID_TRACK_ID && selectedTrackIds_.empty()) ||
         selectedTrackId_ == magda::MASTER_TRACK_ID)
         return;
@@ -536,7 +540,7 @@ void TrackInspector::applyHeaderStyle() {
                             ? nullptr
                             : magda::TrackManager::getInstance().getTrack(selectedTrackId_);
     const bool fullBar = config.getTrackColourStyle() == "full" && track != nullptr &&
-                         track->colour != juce::Colour(0xFF444444);
+                         !track->isSeparator() && track->colour != juce::Colour(0xFF444444);
     if (nameFilled_ != fullBar) {
         nameFilled_ = fullBar;
         resized();
@@ -1564,9 +1568,16 @@ void TrackInspector::showTrackControls(bool show) {
     isChordTrack_ = p.muteStyle == MuteStyle::ChordAudition;
     controlsShown_ = show;
 
+    // A separator has its name and nothing else to inspect (#3228).
+    const auto* selected =
+        isMultiTrackMode_ ? nullptr : magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+    const bool isSeparator = selected != nullptr && selected->isSeparator();
+
     trackNameLabel_.setVisible(show);
     trackNameValue_.setVisible(show);
-    colourSwatch_->setVisible(show && !isMaster);
+    // No colour, no swatch: the name takes its slot, and right-clicking the name picks one.
+    const bool hasColour = static_cast<magda::ColourSwatch*>(colourSwatch_.get())->hasColour();
+    colourSwatch_->setVisible(show && !isMaster && !isSeparator && hasColour);
     masterGlyph_->setVisible(show && isMaster);
 
     muteButton_->setVisible(p.mute && p.muteStyle == MuteStyle::Standard);
@@ -1616,7 +1627,7 @@ void TrackInspector::showTrackControls(bool show) {
         b->setVisible(p.sends);
 
     // Clips / FX are inspector-only extras, not per-type track controls.
-    const bool singleTrack = show && !isMaster && !isMultiTrackMode_;
+    const bool singleTrack = show && !isMaster && !isMultiTrackMode_ && !isSeparator;
     clipsHeader_.setVisible(singleTrack);
     clipCountLabel_.setVisible(singleTrack && !clipsHeader_.isCollapsed());
 
@@ -1625,7 +1636,7 @@ void TrackInspector::showTrackControls(bool show) {
     noFxLabel_.setVisible(fxOpen && fxList_.isEmpty());
     fxViewport_.setVisible(fxOpen && !fxList_.isEmpty());
     modulation_.setVisible(singleTrack && modulation_.hasContent());
-    if (!show || isMultiTrackMode_) {
+    if (!show || isMultiTrackMode_ || isSeparator) {
         automatedSectionLabel_.setVisible(false);
         automatedParamsLabel_.setVisible(false);
     }

@@ -41,22 +41,21 @@ TrackId trackOf(ClipId clipId) {
     return clip ? clip->trackId : INVALID_TRACK_ID;
 }
 
-// Media / Chord / Media / Media, so a plain MIDI clip on the top track has a
-// lane it cannot land on directly beneath it and two it can below that. The
-// chord track takes progressions only, and a clip created here has no chord
-// annotations, so it is refused with the clip in hand rather than by kind.
+// Media / Separator / Media / Media, so a clip on the top track has a lane it
+// cannot land on directly beneath it and two it can below that. The chord track
+// would be the other refusing lane, but it always has the top row (#3228).
 struct DragFixture {
     TimelineController controller;
     TrackContentPanel panel;
     TrackId topTrack = INVALID_TRACK_ID;
-    TrackId chordTrack = INVALID_TRACK_ID;
+    TrackId refusingTrack = INVALID_TRACK_ID;
     TrackId middleTrack = INVALID_TRACK_ID;
     TrackId bottomTrack = INVALID_TRACK_ID;
 
     DragFixture() {
         auto& trackManager = TrackManager::getInstance();
         topTrack = trackManager.createTrack("Top", TrackType::Media);
-        chordTrack = trackManager.createTrack("Chords", TrackType::Chord);
+        refusingTrack = trackManager.createTrack("", TrackType::Separator);
         middleTrack = trackManager.createTrack("Middle", TrackType::Media);
         bottomTrack = trackManager.createTrack("Bottom", TrackType::Media);
 
@@ -147,21 +146,21 @@ class ClipDragTargetsJuceTest final : public juce::UnitTest {
             // usable one either side of it. Without this the case degenerates
             // into clamping at the end of the stack, which is a different rule
             // and would pass while testing nothing.
-            expect(f.laneOf(f.topTrack) < f.laneOf(f.chordTrack) &&
-                       f.laneOf(f.chordTrack) < f.laneOf(f.middleTrack),
-                   "the chord lane should sit between the two media lanes, got " +
+            expect(f.laneOf(f.topTrack) < f.laneOf(f.refusingTrack) &&
+                       f.laneOf(f.refusingTrack) < f.laneOf(f.middleTrack),
+                   "the refusing lane should sit between the two media lanes, got " +
                        juce::String(f.laneOf(f.topTrack)) + "/" +
-                       juce::String(f.laneOf(f.chordTrack)) + "/" +
+                       juce::String(f.laneOf(f.refusingTrack)) + "/" +
                        juce::String(f.laneOf(f.middleTrack)));
 
             // The panel resolves the destination for both the ghost and the
             // commit; a single-clip drag asks it exactly this way.
             f.panel.beginClipDragTargets({clip}, clip);
 
-            // Pointer on the chord lane, which cannot hold a plain MIDI clip.
-            const int delta = f.panel.clipDragSlotDelta(f.centreOfLane(f.laneOf(f.chordTrack)));
+            // Pointer on the lane that cannot hold it.
+            const int delta = f.panel.clipDragSlotDelta(f.centreOfLane(f.laneOf(f.refusingTrack)));
             const TrackId target = f.panel.clipDragTargetTrackId(f.topTrack, delta);
-            expect(target != f.chordTrack, "the chord track must never be a destination");
+            expect(target != f.refusingTrack, "the refusing lane must never be a destination");
             expect(target == f.topTrack,
                    "halfway onto the refusing lane the clip stays on its own track");
 
@@ -169,7 +168,7 @@ class ClipDragTargetsJuceTest final : public juce::UnitTest {
             const int pastDelta =
                 f.panel.clipDragSlotDelta(f.centreOfLane(f.laneOf(f.middleTrack)));
             expect(f.panel.clipDragTargetTrackId(f.topTrack, pastDelta) == f.middleTrack,
-                   "the drag should reach the track below the chord track");
+                   "the drag should reach the track below the refusing lane");
         });
     }
 
@@ -208,8 +207,7 @@ class ClipDragTargetsJuceTest final : public juce::UnitTest {
                                " disagreed with the committed track, pointer on lane " +
                                juce::String(lane));
                 }
-                expect(landed != f.chordTrack,
-                       "a plain MIDI clip must never land on the chord track");
+                expect(landed != f.refusingTrack, "a clip must never land on the refusing lane");
             });
         }
     }
@@ -219,7 +217,7 @@ class ClipDragTargetsJuceTest final : public juce::UnitTest {
 
         magda::test::runWithCleanJuceState([this] {
             DragFixture f;
-            // Two clips two usable lanes apart: top and middle, with the chord
+            // Two clips two usable lanes apart: top and middle, with the refusing
             // lane between them. A delta in raw lane indices would move them by
             // different amounts once one has stepped over and the other has not.
             const ClipId upper = f.addClip(f.topTrack, 0.0);
@@ -280,7 +278,7 @@ class ClipDragTargetsJuceTest final : public juce::UnitTest {
             SelectionManager::getInstance().selectClip(clip);
             f.panel.beginClipDragTargets({clip}, clip);
 
-            // Lanes 1 and 2 both refuse now — the chord track by type, the
+            // Lanes 1 and 2 both refuse now — the separator by type, the
             // middle track by being rendered to audio — so the drag reaches
             // the bottom track or stays put, never either of them.
             for (int lane = 1; lane < 4; ++lane) {

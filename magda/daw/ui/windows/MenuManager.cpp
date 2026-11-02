@@ -395,6 +395,7 @@ juce::PopupMenu MenuManager::getMenuForIndex(int topLevelMenuIndex,
             // Chord track is a singleton - disable once one already exists.
             menu.addItem(AddChordTrack, tr("menu.track.add_chord"),
                          !TrackManager::getInstance().hasChordTrack(), false);
+            menu.addItem(AddSeparatorTrack, tr("menu.track.add_separator"), true, false);
             menu.addSeparator();
             menu.addItem(DeleteTrack, tr("menu.track.delete") + keyHint(CommandIDs::deleteCmd),
                          true, false);
@@ -711,6 +712,10 @@ void MenuManager::menuItemSelected(int menuItemID, int topLevelMenuIndex) {
         case AddChordTrack:
             if (callbacks_.onAddChordTrack)
                 callbacks_.onAddChordTrack();
+            break;
+        case AddSeparatorTrack:
+            if (callbacks_.onAddSeparatorTrack)
+                callbacks_.onAddSeparatorTrack();
             break;
         case DeleteTrack:
             if (callbacks_.onDeleteTrack)

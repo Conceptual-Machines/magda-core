@@ -888,6 +888,8 @@ target_sources(magda_juce_tests PRIVATE
     clips/test_clip_drag_targets_juce.cpp
     # A .mid dropped on the chord track arrives as chords
     ui/test_chord_track_file_drop_juce.cpp
+    # Mods and macros panels and folded inspector sections start hidden
+    ui/test_panel_defaults_juce.cpp
     # Files dropped straight onto a Drum Grid track (#2172)
     ui/test_drum_grid_file_drop_juce.cpp
     ui/test_multiband_curve_view_juce.cpp

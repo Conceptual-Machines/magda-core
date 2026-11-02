@@ -1237,6 +1237,8 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     ResolvedPath resolvePath(const ChainNodePath& path) const;
 
     // Query tracks by view
+    // Both lead with the chord track, for the arrangement's top row (#3228).
+    // getTracks() keeps the order agents and scripts index by.
     std::vector<TrackId> getVisibleTracks(ViewMode mode) const;
     std::vector<TrackId> getVisibleTopLevelTracks(ViewMode mode) const;
 
@@ -1425,6 +1427,8 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     int nextRackId_ = 1;
     int nextChainId_ = 1;
     int nextAuxBusIndex_ = 0;
+
+    std::vector<TrackId> withChordTrackFirst(std::vector<TrackId> trackIds) const;
     // Pad channels a sync removed, for the pad that comes back on an undo.
     pad_channels::Stash padChannelStash_;
     bool syncingPadChannels_ = false;

@@ -2600,11 +2600,12 @@ void MainView::SelectionOverlayComponent::drawRecordingRegion(juce::Graphics& g)
     endX = juce::jmin(getWidth(), endX);
 
     int scrollY = owner.trackContentViewport->getViewPositionY();
-    const auto& tracks = TrackManager::getInstance().getTracks();
+    const auto& rows = owner.trackContentPanel->getVisibleTrackIds();
     const auto& projectDefaults = ProjectManager::getInstance().getCurrentProjectInfo().defaults;
 
-    for (int trackIndex = 0; trackIndex < static_cast<int>(tracks.size()); ++trackIndex) {
-        if (!tracks[trackIndex].recordArmed) {
+    for (int trackIndex = 0; trackIndex < static_cast<int>(rows.size()); ++trackIndex) {
+        const auto* track = TrackManager::getInstance().getTrack(rows[trackIndex]);
+        if (track == nullptr || !track->recordArmed) {
             continue;
         }
 

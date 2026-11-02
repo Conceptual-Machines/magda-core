@@ -57,6 +57,8 @@ juce::String trackTypeName(TrackType type) {
             return "chord";
         case TrackType::Pad:
             return "pad";
+        case TrackType::Separator:
+            return "separator";
     }
     return "audio";
 }

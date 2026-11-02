@@ -19,6 +19,7 @@
 #include "../components/mixer/LevelMeter.hpp"
 #include "../components/mixer/LevelMeterScale.hpp"
 #include "../components/mixer/RoutingSyncHelper.hpp"
+#include "../components/tracks/TrackControlsPolicy.hpp"
 #include "../themes/ActiveTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "../utils/SelectionPolicy.hpp"
@@ -31,6 +32,7 @@
 #include "core/TechnicalText.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackPropertyCommands.hpp"
+#include "core/TrackShade.hpp"
 #include "core/UndoManager.hpp"
 #include "core/ViewModeController.hpp"
 
@@ -114,6 +116,7 @@ constexpr float MAX_DB = level_meter_scale::maxDb;
 constexpr int DEFAULT_CHANNEL_WIDTH = 100;
 constexpr int MIN_CHANNEL_WIDTH = 80;
 constexpr int MAX_CHANNEL_WIDTH = 180;
+constexpr int GROUP_STRIP_HEIGHT = 6;  // Over a group's children. At most the 6px head inset.
 
 // Convert linear gain (0-1) to dB
 float gainToDb(float gain) {
@@ -150,11 +153,67 @@ std::vector<TrackId> getMultiEditTargets(TrackId clickedId, bool isMaster) {
     return {clickedId};
 }
 
+bool canEnterGroup(TrackId trackId, TrackId groupId) {
+    auto& tm = TrackManager::getInstance();
+    const auto* track = tm.getTrack(trackId);
+    const auto* group = tm.getTrack(groupId);
+    if (track == nullptr || group == nullptr || !group->isGroup() || !track->canJoinGroup() ||
+        trackId == groupId)
+        return false;
+    return !std::ranges::contains(tm.getAllDescendants(trackId), groupId);
+}
+
+/** @brief The dragged strip, or the whole selection when it is part of one. */
+std::vector<TrackId> stripsToMove(TrackId draggedId) {
+    auto& selection = SelectionManager::getInstance();
+    if (!selection.isTrackSelected(draggedId) || selection.getSelectedTrackCount() < 2)
+        return {draggedId};
+
+    auto& tm = TrackManager::getInstance();
+    std::vector<TrackId> moving;
+    for (const auto& track : tm.getTracks()) {
+        const auto traits = traitsOf(track.type);
+        if (!selection.isTrackSelected(track.id) || track.type == TrackType::Chord ||
+            traits.sitsBesideMaster || traits.isDeviceOwned)
+            continue;
+
+        // A selected ancestor brings this one along.
+        bool ancestorMoves = false;
+        for (auto id = track.parentId; id != INVALID_TRACK_ID && !ancestorMoves;) {
+            ancestorMoves = selection.isTrackSelected(id);
+            const auto* parent = tm.getTrack(id);
+            id = parent != nullptr ? parent->parentId : INVALID_TRACK_ID;
+        }
+        if (!ancestorMoves)
+            moving.push_back(track.id);
+    }
+    return moving;
+}
+
+class StripDropLine : public juce::Component {
+  public:
+    StripDropLine() {
+        setInterceptsMouseClicks(false, false);
+    }
+    void paint(juce::Graphics& g) override {
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
+    }
+};
+
+int clampMixerChannelWidth(TrackId trackId, int width) {
+    const auto* track = TrackManager::getInstance().getTrack(trackId);
+    return track != nullptr && track->isSeparator()
+               ? juce::jlimit(TrackSeparatorView::WIDTH, TrackSeparatorView::MAX_WIDTH, width)
+               : juce::jlimit(MIN_CHANNEL_WIDTH, MAX_CHANNEL_WIDTH, width);
+}
+
 int effectiveMixerChannelWidth(TrackId trackId) {
     const auto& metrics = MixerMetrics::getInstance();
     if (auto* track = TrackManager::getInstance().getTrack(trackId)) {
         if (track->mixerChannelWidth > 0)
-            return juce::jlimit(MIN_CHANNEL_WIDTH, MAX_CHANNEL_WIDTH, track->mixerChannelWidth);
+            return clampMixerChannelWidth(trackId, track->mixerChannelWidth);
+        if (track->isSeparator())
+            return TrackSeparatorView::WIDTH;
     }
     return juce::jlimit(MIN_CHANNEL_WIDTH, MAX_CHANNEL_WIDTH,
                         metrics.channelWidth > 0 ? metrics.channelWidth : DEFAULT_CHANNEL_WIDTH);
@@ -1037,7 +1096,7 @@ void MixerView::ChannelStrip::showAddSendMenu() {
             existingSendDests.insert(send.destTrackId);
     }
     for (const auto& t : tracks) {
-        if (t.id != trackId_ && t.type != TrackType::Master &&
+        if (t.id != trackId_ && t.type != TrackType::Master && t.carriesSignal() &&
             existingSendDests.find(t.id) == existingSendDests.end()) {
             menu.addItem(t.id, t.name);
         }
@@ -1093,6 +1152,39 @@ void MixerView::ChannelStrip::rebuildSendSlots(const std::vector<SendInfo>& send
     resized();
 }
 
+bool MixerView::ChannelStrip::isNestedInGroup() const {
+    const auto* parent = dynamic_cast<ChannelStrip*>(getParentComponent());
+    return parent != nullptr && !parent->groupChildren_.empty();
+}
+
+int MixerView::ChannelStrip::headHeight() const {
+    // Under a group's strip the head starts lower and ends level with its neighbours'.
+    return isNestedInGroup() ? 30 - GROUP_STRIP_HEIGHT : 30;
+}
+
+bool MixerView::ChannelStrip::isFromNestedStrip(const juce::MouseEvent& event) const {
+    for (const juce::Component* c = event.originalComponent; c != nullptr && c != this;
+         c = c->getParentComponent()) {
+        if (dynamic_cast<const ChannelStrip*>(c) != nullptr)
+            return true;
+    }
+    return false;
+}
+
+void MixerView::ChannelStrip::setShade(float shade) {
+    if (shade_ != shade) {
+        shade_ = shade;
+        repaint();
+    }
+}
+
+void MixerView::ChannelStrip::setGroupDropTarget(bool isTarget) {
+    if (isGroupDropTarget_ != isTarget) {
+        isGroupDropTarget_ = isTarget;
+        repaint();
+    }
+}
+
 void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     auto fullBounds = getLocalBounds();
     bool hasGroupChildren = !groupChildren_.empty();
@@ -1104,7 +1196,16 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     // Selection lifts the body, and the head as Spine does or with a light line on Full bar.
     const bool fullBar = Config::getInstance().getTrackColourStyle() == "full";
     const bool coloured = !isMaster_ && trackColour_ != juce::Colour(0xFF444444);
-    const auto swatch = deriveTrackSwatch(trackColour_);
+    const auto swatch = deriveShadedTrackSwatch(trackColour_, shade_);
+
+    // A group's head and strip share one gradient across the whole group.
+    const auto setHeadFill = [&] {
+        if (hasGroupChildren)
+            g.setGradientFill(groupWrapperGradient(
+                swatch, {0.0f, 0.0f}, {static_cast<float>(fullBounds.getWidth()), 0.0f}));
+        else
+            g.setColour(swatch);
+    };
     g.setColour(ActiveTheme::getColour(selected ? ActiveTheme::DEVICE_ICON_HOVER_BG
                                                 : ActiveTheme::PANEL_BACKGROUND));
     g.fillRect(ownBounds);
@@ -1113,16 +1214,16 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
     g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
     g.fillRect(ownBounds.getRight() - 1, 0, 1, ownBounds.getHeight());
 
-    // Group parents with children colour their banner instead (below).
-    if (!hasGroupChildren) {
-        const auto head = juce::Rectangle<int>(0, 0, ownBounds.getWidth() - 1, 30);
+    {
+        const auto head = juce::Rectangle<int>(0, 0, ownBounds.getWidth(), headHeight());
         if (fullBar && coloured) {
-            g.setColour(swatch);
+            setHeadFill();
             g.fillRect(head);
             if (selected) {
                 g.setColour(swatch.brighter(0.6f));
                 g.fillRect(head.withTop(head.getBottom() - 2));
-                g.drawRect(ownBounds.withTrimmedTop(head.getHeight()).withTrimmedRight(1), 1);
+                if (!hasGroupChildren)
+                    g.drawRect(ownBounds.withTrimmedTop(head.getHeight()).withTrimmedRight(1), 1);
             }
         } else if (selected) {
             g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE2));
@@ -1131,7 +1232,7 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
         g.setColour(ActiveTheme::getColour(ActiveTheme::SEPARATOR));
         g.fillRect(0, head.getBottom(), head.getWidth(), 1);
         if (!fullBar && coloured) {
-            g.setColour(swatch);
+            setHeadFill();
             g.fillRect(0, 0, head.getWidth(), 4);
         }
     }
@@ -1144,44 +1245,39 @@ void MixerView::ChannelStrip::paint(juce::Graphics& g) {
 
     // dB ticks and labels are drawn by the DbScale component
 
-    // Group envelope: header banner + border around the entire group area
+    // The group's own column has a head like any track's; its children get a thin
+    // strip in its colour.
     if (hasGroupChildren) {
-        const int groupHeaderHeight = 4 + 4 + 24 + MixerMetrics::getInstance().controlSpacing;
-
-        const auto banner = juce::Rectangle<int>(0, 0, fullBounds.getWidth(), groupHeaderHeight);
-        if (fullBar && coloured) {
-            g.setColour(swatch);
-            g.fillRect(banner);
-            if (selected) {
-                g.setColour(swatch.brighter(0.6f));
-                g.fillRect(banner.withTop(banner.getBottom() - 2));
-            }
-        } else {
-            g.setColour(ActiveTheme::getColour(selected ? ActiveTheme::DEVICE_LINE2
-                                                        : ActiveTheme::PANEL_BACKGROUND));
-            g.fillRect(banner);
-            if (coloured) {
-                g.setColour(swatch);
-                g.fillRect(banner.withHeight(4));
-            }
-        }
-
-        // Horizontal separator below header (neutral, not the track colour)
-        g.setColour(
-            ActiveTheme::getColour(selected ? ActiveTheme::BORDER : ActiveTheme::SEPARATOR));
-        g.fillRect(0, groupHeaderHeight, fullBounds.getWidth(), 1);
+        if (coloured)
+            setHeadFill();
+        else
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
+        g.fillRect(fullBounds.withTrimmedLeft(ownBounds.getWidth()).withHeight(GROUP_STRIP_HEIGHT));
     }
 
     // The foot the horizontal scrollbar overlays; the strip's layout stops above it.
     if (coloured) {
         g.setColour(swatch);
-        g.fillRect(ownBounds.removeFromBottom(MainViewScrollContainer::SLIM_BAR_HEIGHT)
-                       .reduced(0, 1)
-                       .withTrimmedRight(1));
+        g.fillRect(
+            ownBounds.removeFromBottom(MainViewScrollContainer::SLIM_BAR_HEIGHT).reduced(0, 1));
     }
 }
 
 void MixerView::ChannelStrip::paintOverChildren(juce::Graphics& g) {
+    // A selected group's rim takes in its whole wrapper, children included.
+    if (selected && !groupChildren_.empty()) {
+        g.setColour(deriveShadedTrackSwatch(trackColour_, shade_).brighter(0.6f));
+        g.drawRect(getLocalBounds().withTrimmedBottom(MainViewScrollContainer::SLIM_BAR_HEIGHT), 1);
+    }
+
+    if (isGroupDropTarget_) {
+        const auto colour = ActiveTheme::getColour(ActiveTheme::ACCENT_ATTENTION);
+        g.setColour(colour.withAlpha(0.15f));
+        g.fillRect(getLocalBounds());
+        g.setColour(colour);
+        g.drawRect(getLocalBounds(), 2);
+    }
+
     // Chain power off: dim the strip as a visual cue that the track's insert
     // chain is gated (the fader and mute stay live).
     if (!isMaster_ && !TrackManager::getInstance().isChainEnabled(trackId_)) {
@@ -1189,9 +1285,9 @@ void MixerView::ChannelStrip::paintOverChildren(juce::Graphics& g) {
         g.fillRect(getLocalBounds());
     }
 
-    // The group is indicated by its coloured header banner only; the full-height
-    // coloured envelope border around the children is intentionally omitted so
-    // the colour stays on the top strip rather than the whole group.
+    // The group is indicated by the strip over its children only; the full-height
+    // coloured envelope border around them is intentionally omitted so the colour
+    // stays on the top strip rather than the whole group.
 
     // Skip overlay for child tracks nested inside a group envelope
     if (!isChildTrack_)
@@ -1216,15 +1312,11 @@ void MixerView::ChannelStrip::resized() {
     const auto& metrics = MixerMetrics::getInstance();
     bool hasGroupChildren = !groupChildren_.empty();
 
-    // Group envelope header height: colour bar + padding + label + spacing
-    const int groupHeaderHeight = 4 + 4 + 24 + metrics.controlSpacing;
-
-    // If this is a group strip with children, lay out the shared header banner
-    // across the full width, then position children below it
+    // If this is a group strip with children, position them below their strip
     if (hasGroupChildren) {
         int channelWidth = preferredChannelWidth();
         const int borderWidth = 2;
-        int childTop = groupHeaderHeight + 1;      // below separator line
+        int childTop = GROUP_STRIP_HEIGHT;
         int childHeight = getHeight() - childTop;  // feet stay level
 
         int childX = channelWidth;
@@ -1239,39 +1331,23 @@ void MixerView::ChannelStrip::resized() {
         }
     }
 
-    // For a group with children: own controls in the leftmost column, below the shared header
+    // For a group with children: own controls in the leftmost column
     // For everything else: full width, full height
     int ownWidth = hasGroupChildren ? preferredChannelWidth() : getWidth();
-    int ownTop = hasGroupChildren ? groupHeaderHeight : 0;
-    int ownHeight = getHeight() - ownTop - MainViewScrollContainer::SLIM_BAR_HEIGHT;
+    int ownHeight = getHeight() - MainViewScrollContainer::SLIM_BAR_HEIGHT;
 
-    auto bounds =
-        juce::Rectangle<int>(0, ownTop, ownWidth, ownHeight).reduced(metrics.channelPadding);
+    auto bounds = juce::Rectangle<int>(0, 0, ownWidth, ownHeight).reduced(metrics.channelPadding);
 
-    if (hasGroupChildren) {
-        // Group: label in the header, left-aligned next to expand toggle
-        auto headerBounds =
-            juce::Rectangle<int>(0, 0, ownWidth, groupHeaderHeight).reduced(metrics.channelPadding);
-        headerBounds.removeFromTop(6);  // colour bar space
-        auto titleRow = headerBounds.removeFromTop(24);
-        if (expandToggle_) {
-            expandToggle_->setBounds(titleRow.removeFromLeft(20).withSizeKeepingCentre(18, 18));
-            titleRow.removeFromLeft(2);
-            expandToggle_->toFront(false);
-        }
-        trackLabel->setJustificationType(juce::Justification::centredLeft);
-        trackLabel->setBounds(titleRow);
-        trackLabel->toFront(false);
-    } else {
-        // Non-group: colour bar space + label at top of own bounds
-        bounds.removeFromTop(6);
-        auto titleRow = bounds.removeFromTop(24);
-        if (expandToggle_) {
-            expandToggle_->setBounds(titleRow.removeFromLeft(20).withSizeKeepingCentre(18, 18));
-            titleRow.removeFromLeft(2);
-        }
-        trackLabel->setBounds(titleRow);
+    // Colour bar space + label at top of own bounds. Under a group's strip that space
+    // is the strip, which keeps the name and fader level with the group's own.
+    bounds.removeFromTop(isNestedInGroup() ? 6 - GROUP_STRIP_HEIGHT : 6);
+    auto titleRow = bounds.removeFromTop(24);
+    if (expandToggle_) {
+        expandToggle_->setBounds(titleRow.removeFromLeft(16));
+        expandToggle_->toFront(false);
+        titleRow.removeFromRight(16);  // Keeps the name centred on the strip.
     }
+    trackLabel->setBounds(titleRow);
     bounds.removeFromTop(metrics.controlSpacing);
 
     bool isMultiOut = trackType_ == TrackType::MultiOut;
@@ -1283,6 +1359,7 @@ void MixerView::ChannelStrip::resized() {
     // the only thing the user can drag.
     if (!isMaster_ && sendViewport_) {
         const bool sendsVisible = Config::getInstance().getMixerShowSends();
+        const bool showsSends = TrackControlsPolicy::forType(trackType_).sends;
         const int sendSlotHeight = 18;
         int containerWidth = bounds.getWidth();
         int totalContentHeight = 0;
@@ -1313,7 +1390,7 @@ void MixerView::ChannelStrip::resized() {
 
             if (addSendButton_) {
                 addSendButton_->setBounds(sendsRegion.removeFromTop(sendSlotHeight));
-                addSendButton_->setVisible(true);
+                addSendButton_->setVisible(showsSends);
 
                 // AddSendCommand would be refused past the aux limit, so the
                 // button stops offering it.
@@ -1322,7 +1399,7 @@ void MixerView::ChannelStrip::resized() {
                                            static_cast<int>(track->sends.size()) <
                                                TrackManager::MAX_SENDS_PER_TRACK);
             }
-            if (totalContentHeight > 0) {
+            if (totalContentHeight > 0 && showsSends) {
                 sendsRegion.removeFromTop(1);  // 1px gap matching inter-slot spacing
                 sendViewport_->setBounds(sendsRegion.removeFromTop(totalContentHeight));
                 sendViewport_->setVisible(true);
@@ -1388,9 +1465,9 @@ void MixerView::ChannelStrip::resized() {
                 for (const auto& s : parent->channelStrips)
                     maxChainHeight = std::max(maxChainHeight, s->miniChain_.preferredHeight());
             }
-            const int myHeight = miniChain_.preferredHeight();
+            const int myHeight = isChord ? 0 : miniChain_.preferredHeight();
             miniChain_.setBounds(bounds.removeFromTop(myHeight));
-            miniChain_.setVisible(true);
+            miniChain_.setVisible(!isChord);
             const int pad = maxChainHeight - myHeight;
             if (pad > 0)
                 bounds.removeFromTop(pad);
@@ -1410,71 +1487,13 @@ void MixerView::ChannelStrip::resized() {
     }
 
     // Bottom section (removeFromBottom, so bottommost first):
-    // Omidi | Oaudio
-    // Imidi | Iaudio
     // R     | M
     // M     | S
+    // Pan
+    // Omidi | Oaudio
+    // Imidi | Iaudio
 
-    // Routing selectors (bottommost)
-    if (audioInSelector && audioOutSelector && midiInSelector && midiOutSelector) {
-        if (isChord) {
-            // Chord track: MIDI in/out only (no audio routing).
-            audioInSelector->setVisible(false);
-            audioOutSelector->setVisible(false);
-            const bool showMidi = Config::getInstance().getMixerShowRouting() && !isMultiOut;
-            midiInSelector->setVisible(showMidi);
-            midiOutSelector->setVisible(showMidi);
-            if (showMidi) {
-                bounds.removeFromBottom(kIoGap);
-                midiOutSelector->setBounds(bounds.removeFromBottom(kIoFieldHeight));
-                bounds.removeFromBottom(kIoGap);
-                midiInSelector->setBounds(bounds.removeFromBottom(kIoFieldHeight));
-            }
-        } else if (Config::getInstance().getMixerShowRouting()) {
-            bool showInputs = !isMultiOut;
-            bool showMidi = !isMultiOut;
-
-            audioOutSelector->setVisible(true);
-            audioInSelector->setVisible(showInputs);
-            midiInSelector->setVisible(showMidi);
-            midiOutSelector->setVisible(showMidi);
-
-            bounds.removeFromBottom(kIoGap);
-
-            // Output row: Omidi | Oaudio
-            auto outRow = bounds.removeFromBottom(kIoFieldHeight);
-            if (showMidi) {
-                int halfWidth = (outRow.getWidth() - 2) / 2;
-                midiOutSelector->setBounds(outRow.removeFromLeft(halfWidth));
-                outRow.removeFromLeft(2);
-                audioOutSelector->setBounds(outRow);
-            } else {
-                audioOutSelector->setBounds(outRow);
-            }
-
-            bounds.removeFromBottom(kIoGap);
-
-            // Input row: Imidi | Iaudio
-            auto inRow = bounds.removeFromBottom(kIoFieldHeight);
-            if (showInputs && showMidi) {
-                int halfWidth = (inRow.getWidth() - 2) / 2;
-                midiInSelector->setBounds(inRow.removeFromLeft(halfWidth));
-                inRow.removeFromLeft(2);
-                audioInSelector->setBounds(inRow);
-            } else if (showInputs) {
-                audioInSelector->setBounds(inRow);
-            } else {
-                // Multi-out: no inputs
-            }
-        } else {
-            audioInSelector->setVisible(false);
-            audioOutSelector->setVisible(false);
-            midiInSelector->setVisible(false);
-            midiOutSelector->setVisible(false);
-        }
-    }
-
-    // M/S/R/M buttons — two rows of two above routing
+    // M/S/R/M buttons — two rows of two, at the bottom
     {
         bounds.removeFromBottom(2);
 
@@ -1500,7 +1519,7 @@ void MixerView::ChannelStrip::resized() {
                 recordButton->setVisible(false);
             if (monitorButton)
                 monitorButton->setVisible(false);
-        } else if (isMultiOut || !recordButton) {
+        } else if (!TrackControlsPolicy::forType(trackType_).record || !recordButton) {
             // M/S only — single row
             auto row = bounds.removeFromBottom(metrics.buttonSize);
             int halfWidth = (row.getWidth() - 2) / 2;
@@ -1558,6 +1577,61 @@ void MixerView::ChannelStrip::resized() {
         bounds.removeFromBottom(2);
         panSlider->setBounds(bounds.removeFromBottom(20));
         bounds.removeFromBottom(2);
+    }
+
+    // Routing selectors, above the pan and buttons as Session View has them
+    if (audioInSelector && audioOutSelector && midiInSelector && midiOutSelector) {
+        if (!TrackControlsPolicy::forType(trackType_).anyRouting()) {
+            // No routing on the chord track or an aux (#3228). The rows stay
+            // reserved so the fader ends level with the other strips'.
+            audioInSelector->setVisible(false);
+            audioOutSelector->setVisible(false);
+            midiInSelector->setVisible(false);
+            midiOutSelector->setVisible(false);
+            if (Config::getInstance().getMixerShowRouting())
+                bounds.removeFromBottom(2 * (kIoGap + kIoFieldHeight));
+        } else if (Config::getInstance().getMixerShowRouting()) {
+            bool showInputs = !isMultiOut;
+            bool showMidi = !isMultiOut;
+
+            audioOutSelector->setVisible(true);
+            audioInSelector->setVisible(showInputs);
+            midiInSelector->setVisible(showMidi);
+            midiOutSelector->setVisible(showMidi);
+
+            bounds.removeFromBottom(kIoGap);
+
+            // Output row: Omidi | Oaudio
+            auto outRow = bounds.removeFromBottom(kIoFieldHeight);
+            if (showMidi) {
+                int halfWidth = (outRow.getWidth() - 2) / 2;
+                midiOutSelector->setBounds(outRow.removeFromLeft(halfWidth));
+                outRow.removeFromLeft(2);
+                audioOutSelector->setBounds(outRow);
+            } else {
+                audioOutSelector->setBounds(outRow);
+            }
+
+            bounds.removeFromBottom(kIoGap);
+
+            // Input row: Imidi | Iaudio
+            auto inRow = bounds.removeFromBottom(kIoFieldHeight);
+            if (showInputs && showMidi) {
+                int halfWidth = (inRow.getWidth() - 2) / 2;
+                midiInSelector->setBounds(inRow.removeFromLeft(halfWidth));
+                inRow.removeFromLeft(2);
+                audioInSelector->setBounds(inRow);
+            } else if (showInputs) {
+                audioInSelector->setBounds(inRow);
+            } else {
+                // Multi-out: no inputs
+            }
+        } else {
+            audioInSelector->setVisible(false);
+            audioOutSelector->setVisible(false);
+            midiInSelector->setVisible(false);
+            midiOutSelector->setVisible(false);
+        }
     }
 
     // Readout sits just below the fader. A small breathing strip is left
@@ -1642,7 +1716,7 @@ void MixerView::lookAndFeelChanged() {
 }
 
 void MixerView::configChanged() {
-    for (auto* strips : {&channelStrips, &auxChannelStrips})
+    for (auto* strips : {&channelStrips, &pinnedStrips})
         for (auto& strip : *strips)
             strip->applyLabelColour();
     repaint();
@@ -1674,6 +1748,27 @@ void MixerView::ChannelStrip::applyLabelColour() {
                                        : ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
 }
 
+void MixerView::ChannelStrip::mouseDrag(const juce::MouseEvent& event) {
+    if (!headPressed_ || isFromNestedStrip(event))
+        return;
+    if (!headDragging_ && event.getDistanceFromDragStart() < 5)
+        return;
+    headDragging_ = true;
+    if (onHeadDrag)
+        onHeadDrag(trackId_, event);
+}
+
+void MixerView::ChannelStrip::mouseUp(const juce::MouseEvent& event) {
+    if (!headPressed_ || isFromNestedStrip(event))
+        return;
+    headPressed_ = false;
+    if (headDragging_) {
+        headDragging_ = false;
+        if (onHeadDrop)
+            onHeadDrop(trackId_);
+    }
+}
+
 void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
     // addMouseListener(this, true) makes clicks that land directly on the strip
     // arrive twice: once via the normal virtual and once via the self-listener.
@@ -1691,12 +1786,14 @@ void MixerView::ChannelStrip::mouseDown(const juce::MouseEvent& event) {
     // actually owns the clicked component should act — otherwise shift/cmd
     // selection on a nested strip (e.g. a grouped multi-out channel) resolves to
     // the parent's track id and the child never gets selected.
-    for (juce::Component* c = event.originalComponent; c != nullptr && c != this;
-         c = c->getParentComponent()) {
-        if (dynamic_cast<ChannelStrip*>(c) != nullptr) {
-            return;  // a nested child strip handles its own click
-        }
-    }
+    if (isFromNestedStrip(event))
+        return;  // a nested child strip handles its own click
+
+    headPressed_ = !event.mods.isPopupMenu() && !event.mods.isCommandDown() &&
+                   !event.mods.isShiftDown() &&
+                   (!fromChild || event.originalComponent == trackLabel.get()) &&
+                   event.getEventRelativeTo(this).y < headHeight();
+    headDragging_ = false;
 
     // Clicks on children are forwarded to us via addMouseListener so that
     // Cmd/Shift-click anywhere on the strip can drive multi-selection. A
@@ -1809,8 +1906,8 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     addAndMakeVisible(*scrollContainer_);
 
     // Create aux container (fixed, between channels and master)
-    auxContainer = std::make_unique<juce::Component>();
-    addAndMakeVisible(*auxContainer);
+    pinnedContainer = std::make_unique<juce::Component>();
+    addAndMakeVisible(*pinnedContainer);
 
     // Create master strip (uses shared MasterChannelStrip component)
     masterStrip = std::make_unique<MasterChannelStrip>(MasterChannelStrip::Orientation::Vertical);
@@ -1892,10 +1989,10 @@ MixerView::~MixerView() {
         strip->groupChildren_.clear();
     orderedStrips_.clear();
     channelStrips.clear();
-    auxChannelStrips.clear();
+    pinnedStrips.clear();
     masterStrip.reset();
     debugPanel_.reset();
-    auxContainer.reset();
+    pinnedContainer.reset();
     scrollContainer_.reset();
     channelContainer.reset();
     channelViewport.reset();
@@ -1911,10 +2008,35 @@ void MixerView::rebuildChannelStrips() {
     // Clear existing strips
     orderedStrips_.clear();
     channelStrips.clear();
+    separatorViews_.clear();
+    foldedChordStrip_.reset();
+    stripDropTarget_ = {};
+    if (stripDropLine_ != nullptr)
+        stripDropLine_->setVisible(false);
 
     const auto& tracks = TrackManager::getInstance().getTracks();
 
     for (const auto& track : tracks) {
+        if (track.isSeparator() && track.isVisibleIn(currentViewMode_)) {
+            auto view = std::make_unique<TrackSeparatorView>(track.id);
+            const TrackId separatorId = track.id;
+            view->onDrag = [this, separatorId](const juce::MouseEvent& event) {
+                if (event.getDistanceFromDragStart() >= 5)
+                    updateStripDropTarget(separatorId, event);
+            };
+            view->onRelease = [this, separatorId](const juce::MouseEvent&) {
+                dropDraggedStrip(separatorId);
+            };
+            separatorViews_.push_back(std::move(view));
+            continue;
+        }
+
+        if (track.type == TrackType::Chord && track.isVisibleIn(currentViewMode_) &&
+            track.isCollapsedIn(currentViewMode_)) {
+            foldedChordStrip_ = std::make_unique<FoldedChordStrip>(track.id);
+            continue;
+        }
+
         // Hidden tracks, aux returns (drawn in their own section) and children
         // of a collapsed group are not strips. The rule lives in one place
         // because control surfaces address strips by position and have to agree
@@ -1936,20 +2058,18 @@ void MixerView::rebuildChannelStrips() {
         // Wire up send area resize callback (coalesced relayout of all strips)
         strip->onSendAreaResized = [this]() { relayoutAllStrips(); };
 
+        strip->onHeadDrag = [this](TrackId id, const juce::MouseEvent& event) {
+            updateStripDropTarget(id, event);
+        };
+        strip->onHeadDrop = [this](TrackId id) { dropDraggedStrip(id); };
+
         // Add expand/collapse toggle for tracks with children (groups, DrumGrid, etc.)
         if (track.hasChildren()) {
             bool isCollapsed = track.isCollapsedIn(currentViewMode_);
             TrackId trackId = track.id;
-            strip->expandToggle_ = std::make_unique<juce::TextButton>(
-                isCollapsed ? juce::String::charToString(0x25B6)    // ▶
-                            : juce::String::charToString(0x25BC));  // ▼
-            strip->expandToggle_->setConnectedEdges(
-                juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight |
-                juce::Button::ConnectedOnTop | juce::Button::ConnectedOnBottom);
-            strip->expandToggle_->setColour(juce::TextButton::buttonColourId,
-                                            ActiveTheme::getColour(ActiveTheme::BUTTON_NORMAL));
-            strip->expandToggle_->setColour(juce::TextButton::textColourOffId,
-                                            ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+            strip->expandToggle_ = std::make_unique<FoldChevronButton>(
+                isCollapsed ? FoldChevronButton::Direction::Right
+                            : FoldChevronButton::Direction::Down);
             strip->expandToggle_->onClick = [this, trackId]() {
                 auto* t = TrackManager::getInstance().getTrack(trackId);
                 if (t) {
@@ -1958,6 +2078,15 @@ void MixerView::rebuildChannelStrips() {
                 }
                 rebuildChannelStrips();
             };
+            strip->addAndMakeVisible(*strip->expandToggle_);
+        }
+
+        if (track.type == TrackType::Chord) {
+            const TrackId chordId = track.id;
+            strip->expandToggle_ =
+                std::make_unique<FoldChevronButton>(FoldChevronButton::Direction::Left);
+            strip->expandToggle_->setTooltip("Fold the chord track");
+            strip->expandToggle_->onClick = [chordId]() { setChordTrackFolded(chordId, true); };
             strip->addAndMakeVisible(*strip->expandToggle_);
         }
 
@@ -1974,11 +2103,32 @@ void MixerView::rebuildChannelStrips() {
     for (auto& strip : channelStrips)
         stripByTrackId[strip->getTrackId()] = strip.get();
 
-    for (auto& strip : channelStrips) {
-        int trackId = strip->getTrackId();
-        const auto* trackInfo = TrackManager::getInstance().getTrack(trackId);
-        if (!trackInfo)
+    // In the order everything on screen has them: the chord track first.
+    for (const auto listedId : TrackManager::getInstance().getVisibleTracks(currentViewMode_)) {
+        const auto* trackInfo = TrackManager::getInstance().getTrack(listedId);
+        if (trackInfo == nullptr)
             continue;
+
+        const auto isThisSeparator = [listedId](const auto& view) {
+            return view->getTrackId() == listedId;
+        };
+        if (const auto view = std::ranges::find_if(separatorViews_, isThisSeparator);
+            view != separatorViews_.end()) {
+            channelContainer->addChildComponent(**view);
+            orderedStrips_.push_back(view->get());
+            continue;
+        }
+
+        if (foldedChordStrip_ != nullptr && foldedChordStrip_->getTrackId() == listedId) {
+            channelContainer->addChildComponent(*foldedChordStrip_);
+            orderedStrips_.push_back(foldedChordStrip_.get());
+            continue;
+        }
+
+        const auto stripIt = stripByTrackId.find(listedId);
+        if (stripIt == stripByTrackId.end())
+            continue;
+        auto* strip = stripIt->second;
 
         // --- Nest inside parent group tracks ---
         if (trackInfo->hasParent()) {
@@ -1987,7 +2137,7 @@ void MixerView::rebuildChannelStrips() {
                     auto it = stripByTrackId.find(trackInfo->parentId);
                     if (it != stripByTrackId.end()) {
                         it->second->addChildComponent(*strip);
-                        it->second->groupChildren_.push_back(strip.get());
+                        it->second->groupChildren_.push_back(strip);
                         continue;
                     }
                 }
@@ -1996,7 +2146,20 @@ void MixerView::rebuildChannelStrips() {
 
         // --- Top-level strip ---
         channelContainer->addChildComponent(*strip);
-        orderedStrips_.push_back(strip.get());
+        orderedStrips_.push_back(strip);
+    }
+
+    // A group shows its children in childIds order, as the arrangement does.
+    for (auto& strip : channelStrips) {
+        const auto* group = TrackManager::getInstance().getTrack(strip->getTrackId());
+        if (group == nullptr || strip->groupChildren_.empty())
+            continue;
+        std::ranges::stable_sort(strip->groupChildren_, {}, [group](juce::Component* child) {
+            const auto* nested = dynamic_cast<ChannelStrip*>(child);
+            const auto id = nested != nullptr ? nested->getTrackId() : INVALID_TRACK_ID;
+            return std::ranges::distance(group->childIds.begin(),
+                                         std::ranges::find(group->childIds, id));
+        });
     }
 
     // Now make everything visible.
@@ -2011,12 +2174,13 @@ void MixerView::rebuildChannelStrips() {
             child->setVisible(true);
     }
 
-    // Build aux channel strips separately
-    auxChannelStrips.clear();
-    for (const auto& track : tracks) {
-        if (track.type != TrackType::Aux || !track.isVisibleIn(currentViewMode_))
+    // Build the aux strips separately
+    pinnedStrips.clear();
+    for (const auto pinnedId : pinnedStripOrder(tracks, currentViewMode_)) {
+        const auto* pinned = TrackManager::getInstance().getTrack(pinnedId);
+        if (pinned == nullptr)
             continue;
-        auto strip = std::make_unique<ChannelStrip>(track, audioEngine_, false);
+        auto strip = std::make_unique<ChannelStrip>(*pinned, audioEngine_, false);
         strip->onClicked = [this](int trackId, bool isMaster) {
             for (size_t i = 0; i < channelStrips.size(); ++i) {
                 if (channelStrips[i]->getTrackId() == trackId) {
@@ -2024,23 +2188,24 @@ void MixerView::rebuildChannelStrips() {
                     return;
                 }
             }
-            // Check aux strips — use negative index offset for identification
-            for (const auto& auxChannelStrip : auxChannelStrips) {
-                if (auxChannelStrip->getTrackId() == trackId) {
+            for (const auto& pinnedStrip : pinnedStrips) {
+                if (pinnedStrip->getTrackId() == trackId) {
                     // Select via TrackManager directly
                     SelectionManager::getInstance().selectTrack(trackId);
                     return;
                 }
             }
         };
-        auxContainer->addAndMakeVisible(*strip);
-        auxChannelStrips.push_back(std::move(strip));
+        pinnedContainer->addAndMakeVisible(*strip);
+        pinnedStrips.push_back(std::move(strip));
     }
 
     // Update master strip visibility
     const auto& master = TrackManager::getInstance().getMasterChannel();
     bool masterVisible = master.isVisibleIn(currentViewMode_);
     masterStrip->setVisible(masterVisible);
+
+    updateStripShades();
 
     // Sync selection with TrackManager's current selection
     trackSelectionChanged(TrackManager::getInstance().getSelectedTrack());
@@ -2054,7 +2219,7 @@ void MixerView::rebuildChannelStrips() {
     // the actual plugins to AudioBridge by the time we get here.
     for (auto& strip : channelStrips)
         strip->refreshMiniAnalyzers();
-    for (auto& strip : auxChannelStrips)
+    for (auto& strip : pinnedStrips)
         strip->refreshMiniAnalyzers();
     if (masterStrip)
         masterStrip->refreshMiniAnalyzers();
@@ -2063,7 +2228,7 @@ void MixerView::rebuildChannelStrips() {
         if (auto* self = safeThis.getComponent()) {
             for (auto& strip : self->channelStrips)
                 strip->refreshMiniAnalyzers();
-            for (auto& strip : self->auxChannelStrips)
+            for (auto& strip : self->pinnedStrips)
                 strip->refreshMiniAnalyzers();
             if (self->masterStrip)
                 self->masterStrip->refreshMiniAnalyzers();
@@ -2093,6 +2258,15 @@ void MixerView::trackPropertyChanged(int trackId) {
         return;
     }
 
+    // A new colour can change which neighbours match.
+    const auto hasNewColour = [&](const auto& strips) {
+        return std::ranges::any_of(strips, [&](const auto& strip) {
+            return strip->getTrackId() == trackId && strip->getTrackColour() != track->colour;
+        });
+    };
+    if (hasNewColour(channelStrips) || hasNewColour(pinnedStrips))
+        updateStripShades();
+
     for (auto& strip : channelStrips) {
         if (strip->getTrackId() == trackId) {
             strip->updateFromTrack(*track);
@@ -2100,13 +2274,22 @@ void MixerView::trackPropertyChanged(int trackId) {
         }
     }
 
-    // Check aux strips
-    for (auto& strip : auxChannelStrips) {
+    for (auto& strip : pinnedStrips) {
         if (strip->getTrackId() == trackId) {
             strip->updateFromTrack(*track);
             return;
         }
     }
+
+    for (auto& view : separatorViews_) {
+        if (view->getTrackId() == trackId) {
+            view->repaint();
+            return;
+        }
+    }
+
+    if (foldedChordStrip_ != nullptr && foldedChordStrip_->getTrackId() == trackId)
+        foldedChordStrip_->repaint();
 }
 
 void MixerView::trackDevicesChanged(TrackId trackId) {
@@ -2118,7 +2301,7 @@ void MixerView::trackDevicesChanged(TrackId trackId) {
                 break;
             }
         }
-        for (auto& strip : auxChannelStrips) {
+        for (auto& strip : pinnedStrips) {
             if (strip->getTrackId() == trackId) {
                 strip->updateFromTrack(*track, true);
                 break;
@@ -2162,7 +2345,7 @@ void MixerView::devicePropertyChanged(const ChainNodePath& devicePath) {
             return;
         }
     }
-    for (auto& strip : auxChannelStrips) {
+    for (auto& strip : pinnedStrips) {
         if (strip->getTrackId() == trackId) {
             strip->miniChain_.syncBypass(deviceId, device->bypassed);
             return;
@@ -2236,6 +2419,18 @@ void MixerView::paint(juce::Graphics& g) {
     }
 }
 
+int MixerView::orderedStripWidth(const juce::Component& strip) {
+    if (const auto* channel = dynamic_cast<const ChannelStrip*>(&strip))
+        return getTopLevelStripWidth(*channel);
+    if (const auto* separator = dynamic_cast<const TrackSeparatorView*>(&strip))
+        return effectiveMixerChannelWidth(separator->getTrackId());
+    return FoldedChordStrip::WIDTH;
+}
+
+TrackId MixerView::getSelectedChannelTrackId() const {
+    return selectedIsMaster ? INVALID_TRACK_ID : SelectionManager::getInstance().getSelectedTrack();
+}
+
 int MixerView::getTopLevelStripWidth(const ChannelStrip& strip) {
     int width = strip.preferredChannelWidth();
     for (auto* child : strip.groupChildren_) {
@@ -2248,18 +2443,27 @@ int MixerView::getTopLevelStripWidth(const ChannelStrip& strip) {
 }
 
 std::vector<TrackId> MixerView::getLayoutEditTargets(TrackId clickedId, bool allVisible) const {
+    // A separator's range is its own, so it only ever resizes alone.
+    const auto isSeparator = [](TrackId trackId) {
+        const auto* track = TrackManager::getInstance().getTrack(trackId);
+        return track != nullptr && track->isSeparator();
+    };
+    if (isSeparator(clickedId))
+        return {clickedId};
+
     std::vector<TrackId> targets;
     auto& selection = SelectionManager::getInstance();
     if (!allVisible && selection.isTrackSelected(clickedId) &&
         selection.getSelectedTrackCount() > 1) {
         const auto& selected = selection.getSelectedTracks();
         targets.assign(selected.begin(), selected.end());
+        std::erase_if(targets, isSeparator);
         return targets;
     }
 
     if (allVisible) {
         for (const auto& track : TrackManager::getInstance().getTracks()) {
-            if (track.isVisibleIn(currentViewMode_))
+            if (track.isVisibleIn(currentViewMode_) && !track.isSeparator())
                 targets.push_back(track.id);
         }
         if (TrackManager::getInstance().getMasterChannel().isVisibleIn(currentViewMode_))
@@ -2285,14 +2489,14 @@ void MixerView::applyChannelWidthDelta(TrackId clickedId, int deltaX,
         }
     }
 
-    const int sameWidth = juce::jlimit(MIN_CHANNEL_WIDTH, MAX_CHANNEL_WIDTH,
-                                       channelWidthResizeClickedStartWidth_ + deltaX);
+    const int sameWidth =
+        clampMixerChannelWidth(clickedId, channelWidthResizeClickedStartWidth_ + deltaX);
     auto& tm = TrackManager::getInstance();
 
     for (auto tid : channelWidthResizeTargets_) {
         const int baseWidth = sameValue ? channelWidthResizeClickedStartWidth_
                                         : channelWidthResizeStartEffective_[tid];
-        const int newWidth = juce::jlimit(MIN_CHANNEL_WIDTH, MAX_CHANNEL_WIDTH, baseWidth + deltaX);
+        const int newWidth = clampMixerChannelWidth(tid, baseWidth + deltaX);
         tm.setTrackMixerChannelWidth(tid, sameValue ? sameWidth : newWidth);
     }
 
@@ -2392,22 +2596,23 @@ void MixerView::resized() {
                                    .withTrimmedBottom(MainViewScrollContainer::SLIM_BAR_HEIGHT));
     }
 
-    // Aux channel strips between regular channels and master
-    int numAux = static_cast<int>(auxChannelStrips.size());
-    int auxWidth = 0;
-    for (const auto& strip : auxChannelStrips)
-        auxWidth += strip->preferredChannelWidth();
-    if (auxWidth > 0) {
-        auto auxArea = bounds.removeFromRight(auxWidth);
-        auxContainer->setBounds(auxArea);
-        int auxX = 0;
-        for (int i = 0; i < numAux; ++i) {
-            const int stripWidth = auxChannelStrips[i]->preferredChannelWidth();
-            auxChannelStrips[i]->setBounds(auxX, 0, stripWidth, auxArea.getHeight());
-            auxX += stripWidth;
+    // Aux strips between regular channels and master
+    int numPinned = static_cast<int>(pinnedStrips.size());
+    int pinnedWidth = 0;
+    for (const auto& strip : pinnedStrips)
+        pinnedWidth += strip->preferredChannelWidth();
+    if (pinnedWidth > 0) {
+        auto pinnedArea = bounds.removeFromRight(pinnedWidth);
+        pinnedContainer->setBounds(pinnedArea);
+        int pinnedX = 0;
+        for (int i = 0; i < numPinned; ++i) {
+            const int stripWidth = pinnedStrips[i]->preferredChannelWidth();
+            pinnedStrips[i]->setBounds(pinnedX, 0, stripWidth, pinnedArea.getHeight());
+            pinnedX += stripWidth;
         }
+        bounds.removeFromRight(PINNED_SPACER_WIDTH);
     } else {
-        auxContainer->setBounds(0, 0, 0, 0);
+        pinnedContainer->setBounds(0, 0, 0, 0);
     }
 
     // 1px left border padding (visible when side panel is collapsed)
@@ -2422,8 +2627,7 @@ void MixerView::resized() {
     // Size the channel container — group strips may be wider than channelWidth
     int containerWidth = 0;
     for (auto* strip : orderedStrips_) {
-        auto* cs = dynamic_cast<ChannelStrip*>(strip);
-        int stripWidth = cs ? getTopLevelStripWidth(*cs) : DEFAULT_CHANNEL_WIDTH;
+        int stripWidth = orderedStripWidth(*strip);
         containerWidth += stripWidth;
     }
 
@@ -2443,8 +2647,7 @@ void MixerView::resized() {
     // Position all strips with cumulative x (group strips span multiple columns)
     int xPos = 0;
     for (auto* strip : orderedStrips_) {
-        auto* cs = dynamic_cast<ChannelStrip*>(strip);
-        int stripWidth = cs ? getTopLevelStripWidth(*cs) : DEFAULT_CHANNEL_WIDTH;
+        int stripWidth = orderedStripWidth(*strip);
         strip->setBounds(xPos, 0, stripWidth, containerHeight);
         xPos += stripWidth;
     }
@@ -2484,10 +2687,14 @@ void MixerView::layoutChannelResizeHandles(int containerHeight) {
     constexpr int handleWidth = 8;
     int xPos = 0;
     for (size_t i = 0; i < orderedStrips_.size(); ++i) {
-        auto* cs = dynamic_cast<ChannelStrip*>(orderedStrips_[i]);
-        int stripWidth = cs ? getTopLevelStripWidth(*cs) : DEFAULT_CHANNEL_WIDTH;
-        xPos += stripWidth;
-        channelResizeHandles_[i]->setTargetTrackId(cs ? cs->getTrackId() : INVALID_TRACK_ID);
+        auto* strip = orderedStrips_[i];
+        xPos += orderedStripWidth(*strip);
+        auto* cs = dynamic_cast<ChannelStrip*>(strip);
+        auto* separator = dynamic_cast<TrackSeparatorView*>(strip);
+        channelResizeHandles_[i]->setVisible(cs != nullptr || separator != nullptr);
+        channelResizeHandles_[i]->setTargetTrackId(cs          ? cs->getTrackId()
+                                                   : separator ? separator->getTrackId()
+                                                               : INVALID_TRACK_ID);
         channelResizeHandles_[i]->setBounds(xPos - handleWidth / 2, 0, handleWidth,
                                             containerHeight);
         channelResizeHandles_[i]->toFront(false);
@@ -2500,8 +2707,7 @@ void MixerView::updateStripWidths() {
     // Compute total container width with variable-width group strips
     int containerWidth = 0;
     for (auto* strip : orderedStrips_) {
-        auto* cs = dynamic_cast<ChannelStrip*>(strip);
-        int stripWidth = cs ? getTopLevelStripWidth(*cs) : DEFAULT_CHANNEL_WIDTH;
+        int stripWidth = orderedStripWidth(*strip);
         containerWidth += stripWidth;
     }
     channelContainer->setSize(containerWidth, containerHeight);
@@ -2509,8 +2715,7 @@ void MixerView::updateStripWidths() {
     // Position strips with cumulative x
     int xPos = 0;
     for (auto* strip : orderedStrips_) {
-        auto* cs = dynamic_cast<ChannelStrip*>(strip);
-        int stripWidth = cs ? getTopLevelStripWidth(*cs) : DEFAULT_CHANNEL_WIDTH;
+        int stripWidth = orderedStripWidth(*strip);
         strip->setBounds(xPos, 0, stripWidth, containerHeight);
         xPos += stripWidth;
     }
@@ -2518,18 +2723,171 @@ void MixerView::updateStripWidths() {
     layoutChannelResizeHandles(containerHeight);
 
     // Update aux strips
-    int numAux = static_cast<int>(auxChannelStrips.size());
-    int auxWidth = 0;
-    for (const auto& strip : auxChannelStrips)
-        auxWidth += strip->preferredChannelWidth();
-    if (auxWidth > 0) {
-        int auxX = 0;
-        for (int i = 0; i < numAux; ++i) {
-            const int stripWidth = auxChannelStrips[i]->preferredChannelWidth();
-            auxChannelStrips[i]->setBounds(auxX, 0, stripWidth, auxContainer->getHeight());
-            auxX += stripWidth;
+    int numPinned = static_cast<int>(pinnedStrips.size());
+    int pinnedWidth = 0;
+    for (const auto& strip : pinnedStrips)
+        pinnedWidth += strip->preferredChannelWidth();
+    if (pinnedWidth > 0) {
+        int pinnedX = 0;
+        for (int i = 0; i < numPinned; ++i) {
+            const int stripWidth = pinnedStrips[i]->preferredChannelWidth();
+            pinnedStrips[i]->setBounds(pinnedX, 0, stripWidth, pinnedContainer->getHeight());
+            pinnedX += stripWidth;
         }
     }
+}
+
+std::vector<MixerView::StripColumn> MixerView::stripColumns() const {
+    std::vector<StripColumn> columns;
+    const auto rangeOf = [this](const juce::Component& strip, int width) {
+        const int left = channelContainer->getLocalPoint(&strip, juce::Point<int>()).x;
+        return juce::Range<int>::withStartAndLength(left, width);
+    };
+
+    std::function<void(const ChannelStrip&, TrackId)> addChannel = [&](const ChannelStrip& strip,
+                                                                       TrackId parentId) {
+        const auto* track = TrackManager::getInstance().getTrack(strip.getTrackId());
+        columns.push_back({rangeOf(strip, strip.preferredChannelWidth()), strip.getTrackId(),
+                           parentId, track != nullptr && track->isGroup()});
+        for (auto* child : strip.groupChildren_)
+            if (const auto* nested = dynamic_cast<const ChannelStrip*>(child))
+                addChannel(*nested, strip.getTrackId());
+    };
+
+    for (const auto* strip : orderedStrips_) {
+        if (const auto* channel = dynamic_cast<const ChannelStrip*>(strip))
+            addChannel(*channel, INVALID_TRACK_ID);
+        else if (const auto* separator = dynamic_cast<const TrackSeparatorView*>(strip))
+            columns.push_back({rangeOf(*strip, strip->getWidth()), separator->getTrackId()});
+        else if (const auto* folded = dynamic_cast<const FoldedChordStrip*>(strip))
+            columns.push_back({rangeOf(*strip, strip->getWidth()), folded->getTrackId()});
+    }
+    return columns;
+}
+
+MixerView::StripDropTarget MixerView::findStripDropTarget(TrackId draggedId, int x) const {
+    auto& tm = TrackManager::getInstance();
+    const auto* dragged = tm.getTrack(draggedId);
+    if (dragged == nullptr || dragged->type == TrackType::Chord ||
+        traitsOf(dragged->type).isDeviceOwned)
+        return {};
+
+    const auto columns = stripColumns();
+    if (columns.empty())
+        return {};
+
+    const auto moving = stripsToMove(draggedId);
+    const auto isChord = [&tm](TrackId id) {
+        const auto* track = tm.getTrack(id);
+        return track != nullptr && track->type == TrackType::Chord;
+    };
+
+    // The gap in front of the first column from here on that stays where it is. The
+    // chord track keeps the first place, so nothing lands in front of it.
+    const auto gapAt = [&](TrackId parentId, size_t from, int lineX) -> StripDropTarget {
+        if (parentId != INVALID_TRACK_ID && !canEnterGroup(draggedId, parentId))
+            return {};
+        TrackId beforeId = INVALID_TRACK_ID;
+        for (size_t j = from; j < columns.size() && beforeId == INVALID_TRACK_ID; ++j) {
+            const auto& next = columns[j];
+            if (next.parentId == parentId && !std::ranges::contains(moving, next.trackId) &&
+                !isChord(next.trackId))
+                beforeId = next.trackId;
+        }
+        return {.valid = true, .parentId = parentId, .beforeId = beforeId, .lineX = lineX};
+    };
+
+    if (x >= columns.back().x.getEnd())
+        return gapAt(INVALID_TRACK_ID, columns.size(), columns.back().x.getEnd());
+
+    for (size_t i = 0; i < columns.size(); ++i) {
+        const auto& column = columns[i];
+        if (!column.x.contains(x))
+            continue;
+        if (std::ranges::contains(moving, column.trackId))
+            return {};
+
+        const int quarter = column.x.getLength() / 4;
+        if (x < column.x.getStart() + quarter && !isChord(column.trackId))
+            return gapAt(column.parentId, i, column.x.getStart());
+
+        if (x >= column.x.getEnd() - quarter || isChord(column.trackId)) {
+            // Past a group's own column is in front of its first child.
+            const bool opensGroup = column.isGroup && i + 1 < columns.size() &&
+                                    columns[i + 1].parentId == column.trackId;
+            return gapAt(opensGroup ? column.trackId : column.parentId, i + 1, column.x.getEnd());
+        }
+
+        const TrackId groupId = column.isGroup ? column.trackId : column.parentId;
+        if (groupId != INVALID_TRACK_ID && dragged->parentId != groupId &&
+            canEnterGroup(draggedId, groupId))
+            return {.valid = true, .ontoGroup = true, .parentId = groupId};
+        return {};
+    }
+    return {};
+}
+
+void MixerView::updateStripShades() {
+    std::vector<TrackId> order;
+    for (const auto& column : stripColumns())
+        order.push_back(column.trackId);
+    order.push_back(INVALID_TRACK_ID);  // The gap before the section beside the master.
+    for (const auto& strip : pinnedStrips)
+        order.push_back(strip->getTrackId());
+
+    const auto shades = trackShades(order);
+    for (auto* strips : {&channelStrips, &pinnedStrips})
+        for (auto& strip : *strips)
+            strip->setShade(shadeOf(shades, strip->getTrackId()));
+}
+
+void MixerView::showStripDropTarget(const StripDropTarget& target) {
+    stripDropTarget_ = target;
+
+    const TrackId groupId = target.valid && target.ontoGroup ? target.parentId : INVALID_TRACK_ID;
+    for (auto& strip : channelStrips)
+        strip->setGroupDropTarget(strip->getTrackId() == groupId);
+
+    const bool showLine = target.valid && !target.ontoGroup;
+    if (showLine && stripDropLine_ == nullptr) {
+        stripDropLine_ = std::make_unique<StripDropLine>();
+        channelContainer->addChildComponent(*stripDropLine_);
+    }
+    if (stripDropLine_ != nullptr) {
+        stripDropLine_->setVisible(showLine);
+        if (showLine) {
+            stripDropLine_->setBounds(target.lineX - 2, 0, 4, channelContainer->getHeight());
+            stripDropLine_->toFront(false);
+        }
+    }
+}
+
+void MixerView::updateStripDropTarget(TrackId draggedId, const juce::MouseEvent& event) {
+    const auto inViewport = event.getEventRelativeTo(channelViewport.get()).getPosition();
+    channelViewport->autoScroll(inViewport.x, inViewport.y, 30, 16);
+
+    const int x = event.getEventRelativeTo(channelContainer.get()).x;
+    showStripDropTarget(channelViewport->getViewArea().getHorizontalRange().contains(x)
+                            ? findStripDropTarget(draggedId, x)
+                            : StripDropTarget{});
+}
+
+void MixerView::dropDraggedStrip(TrackId draggedId) {
+    const auto target = stripDropTarget_;
+    showStripDropTarget({});
+    if (!target.valid)
+        return;
+
+    auto moving = stripsToMove(draggedId);
+    if (target.parentId != INVALID_TRACK_ID)
+        std::erase_if(moving,
+                      [&target](TrackId id) { return !canEnterGroup(id, target.parentId); });
+
+    // Deferred: the strips rebuild in response, and the caller is one of them.
+    const TrackId parentId = target.parentId;
+    const TrackId beforeId = target.beforeId;
+    juce::MessageManager::callAsync(
+        [moving, parentId, beforeId] { moveTracksToPlace(moving, parentId, beforeId); });
 }
 
 void MixerView::reconcileAnalysisDevices() {
@@ -2554,7 +2912,7 @@ void MixerView::reconcileAnalysisDevices() {
     };
 
     for (const auto& t : tm.getTracks()) {
-        if (t.type == TrackType::Master)
+        if (t.type == TrackType::Master || !t.carriesSignal())
             continue;
         reconcileOne(t.id, "oscilloscope", "Oscilloscope", wantOsc);
         reconcileOne(t.id, "spectrumanalyzer", "Spectrum Analyzer", wantSpec);
@@ -2575,7 +2933,7 @@ void MixerView::relayoutAllStrips() {
                         strip->resized();
                         strip->repaint();
                     }
-                    for (auto& strip : self->auxChannelStrips) {
+                    for (auto& strip : self->pinnedStrips) {
                         strip->resized();
                         strip->repaint();
                     }
@@ -2608,7 +2966,7 @@ void MixerView::timerCallback() {
     if (isPlaying && !wasPlaying_) {
         for (auto& strip : channelStrips)
             strip->resetPeak();
-        for (auto& strip : auxChannelStrips)
+        for (auto& strip : pinnedStrips)
             strip->resetPeak();
         if (masterStrip)
             masterStrip->resetPeak();
@@ -2619,7 +2977,7 @@ void MixerView::timerCallback() {
     // here: the model's notification ran before the publish (#2663).
     for (auto& strip : channelStrips)
         strip->refreshAnalyserSettings();
-    for (auto& strip : auxChannelStrips)
+    for (auto& strip : pinnedStrips)
         strip->refreshAnalyserSettings();
     if (masterStrip)
         masterStrip->refreshAnalyserSettings();
@@ -2634,7 +2992,7 @@ void MixerView::timerCallback() {
     }
 
     // Update aux channel strip meters
-    for (auto& strip : auxChannelStrips) {
+    for (auto& strip : pinnedStrips) {
         int trackId = strip->getTrackId();
         MeterData data;
         if (drainPeak(meteringBuffer, trackId, data)) {
@@ -2740,7 +3098,7 @@ void MixerView::selectChannel(int index, bool isMaster) {
     for (auto& strip : channelStrips) {
         strip->setSelected(false);
     }
-    for (auto& strip : auxChannelStrips) {
+    for (auto& strip : pinnedStrips) {
         strip->setSelected(false);
     }
 
@@ -2786,7 +3144,7 @@ void MixerView::syncSelectionVisuals() {
     for (auto& strip : channelStrips) {
         strip->setSelected(sel.isTrackSelected(strip->getTrackId()));
     }
-    for (auto& strip : auxChannelStrips) {
+    for (auto& strip : pinnedStrips) {
         strip->setSelected(sel.isTrackSelected(strip->getTrackId()));
     }
     if (masterStrip)

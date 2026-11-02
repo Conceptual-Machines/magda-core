@@ -23,15 +23,24 @@ auto isStripIn(const std::vector<TrackInfo>& tracks, ViewMode mode) {
     return [&tracks, mode](const TrackInfo& track) { return isMixerStrip(track, tracks, mode); };
 }
 
+const TrackInfo* findChordStrip(const std::vector<TrackInfo>& tracks, ViewMode mode) {
+    const auto isChordStrip = [&tracks, mode](const TrackInfo& track) {
+        return track.type == TrackType::Chord && isMixerStrip(track, tracks, mode);
+    };
+    const auto found = std::ranges::find_if(tracks, isChordStrip);
+    return found == tracks.end() ? nullptr : &*found;
+}
+
 }  // namespace
 
 bool isMixerStrip(const TrackInfo& track, const std::vector<TrackInfo>& tracks, ViewMode mode) {
     if (!track.isVisibleIn(mode))
         return false;
 
-    // Aux returns are drawn in their own section beside the channel strips, so
-    // they take no position among them.
-    if (track.type == TrackType::Aux)
+    // Drawn beside the master, or not a channel at all: neither takes a position
+    // among the strips.
+    const auto traits = traitsOf(track.type);
+    if (traits.sitsBesideMaster || !traits.carriesSignal)
         return false;
 
     if (track.hasParent()) {
@@ -44,17 +53,38 @@ bool isMixerStrip(const TrackInfo& track, const std::vector<TrackInfo>& tracks, 
 }
 
 std::vector<TrackId> mixerStripOrder(const std::vector<TrackInfo>& tracks, ViewMode mode) {
-    return tracks | std::views::filter(isStripIn(tracks, mode)) |
-           std::views::transform(&TrackInfo::id) | toStd<std::vector<TrackId>>();
+    auto order = tracks | std::views::filter(isStripIn(tracks, mode)) |
+                 std::views::transform(&TrackInfo::id) | toStd<std::vector<TrackId>>();
+    if (const auto* chord = findChordStrip(tracks, mode)) {
+        const auto found = std::ranges::find(order, chord->id);
+        std::rotate(order.begin(), found, std::next(found));
+    }
+    return order;
+}
+
+std::vector<TrackId> pinnedStripOrder(const std::vector<TrackInfo>& tracks, ViewMode mode) {
+    const auto isPinned = [mode](const TrackInfo& track) {
+        return track.isVisibleIn(mode) && traitsOf(track.type).sitsBesideMaster;
+    };
+    return tracks | std::views::filter(isPinned) | std::views::transform(&TrackInfo::id) |
+           toStd<std::vector<TrackId>>();
 }
 
 TrackId mixerStripAtPosition(const std::vector<TrackInfo>& tracks, ViewMode mode, int position) {
     if (position < 1)
         return INVALID_TRACK_ID;
 
-    // Positions count from 1: the strip at N is the (N - 1)th one along.
-    auto strips = tracks | std::views::filter(isStripIn(tracks, mode));
-    const auto found = std::ranges::next(strips.begin(), position - 1, strips.end());
+    const auto* chord = findChordStrip(tracks, mode);
+    if (chord != nullptr && position == 1)
+        return chord->id;
+
+    // Positions count from 1, and the chord track has the first when there is one.
+    const auto isOtherStrip = [&tracks, mode](const TrackInfo& track) {
+        return track.type != TrackType::Chord && isMixerStrip(track, tracks, mode);
+    };
+    auto strips = tracks | std::views::filter(isOtherStrip);
+    const int stepsAlong = position - (chord != nullptr ? 2 : 1);
+    const auto found = std::ranges::next(strips.begin(), stepsAlong, strips.end());
     return found == strips.end() ? INVALID_TRACK_ID : found->id;
 }
 

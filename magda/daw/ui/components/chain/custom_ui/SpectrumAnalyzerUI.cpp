@@ -306,7 +306,7 @@ void SpectrumAnalyzerUI::refreshOverlayList() {
     std::vector<magda::TrackId> items;
     juce::String sig;
     for (const auto& t : tm.getTracks()) {
-        if (t.id == magda::INVALID_TRACK_ID || t.id == trackId_)
+        if (t.id == magda::INVALID_TRACK_ID || t.id == trackId_ || !t.carriesSignal())
             continue;
         items.push_back(t.id);
         sig << t.id << ":" << t.name << ";";

@@ -10,8 +10,8 @@ The Mixer View provides a channel-strip interface for balancing levels, panning,
 ┌──────────┬──────────┬──────────┬──────────┬─────────┐
 │ Track 1  │ Track 2  │ Track 3  │ Aux 1    │ Master  │
 │          │          │          │          │         │
-│ [Routing]│ [Routing]│ [Routing]│ [Routing]│         │
-│ [Sends]  │ [Sends]  │ [Sends]  │ [Sends]  │         │
+│ [Routing]│ [Routing]│ [Routing]│          │         │
+│ [Sends]  │ [Sends]  │ [Sends]  │          │         │
 │          │          │          │          │         │
 │  ┃  ┃    │  ┃  ┃    │  ┃  ┃    │  ┃  ┃    │  ┃  ┃   │
 │  ┃██┃    │  ┃█ ┃    │  ┃  ┃    │  ┃█ ┃    │  ┃██┃   │
@@ -24,11 +24,12 @@ The Mixer View provides a channel-strip interface for balancing levels, panning,
 ```
 
 - **Channel strips** — One per track, scrollable horizontally
-- **Aux channel strips** — Auxiliary/bus tracks
+- **Chord channel strip** — The [chord track](chord-track.md), always the first strip on the left
+- **Aux channel strips** — Auxiliary/bus tracks, in a fixed section next to the master with a small gap before it
 - **Master channel strip** — Final output, fixed on the right
 - **Resizable width** — Drag the edge of a channel strip to resize
 
-Click a channel strip to select it. Drag plugins onto a channel strip to add them to the track's FX chain.
+Click a channel strip to select it. Drag plugins onto a channel strip to add them to the track's FX chain. Drag a strip by its name to move it: a line shows where it will land between strips, including inside or out of a group, and an outline shows a group it will join.
 
 ## Toggle Rail
 

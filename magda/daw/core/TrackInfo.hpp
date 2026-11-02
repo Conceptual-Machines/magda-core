@@ -234,6 +234,17 @@ struct TrackInfo {
     bool isGroup() const {
         return type == TrackType::Group;
     }
+    bool isSeparator() const {
+        return type == TrackType::Separator;
+    }
+    bool carriesSignal() const {
+        return traitsOf(type).carriesSignal;
+    }
+    // The chord track stays where the views put it (#3228), and a separator has
+    // no signal for a group to sum.
+    bool canJoinGroup() const {
+        return type != TrackType::Chord && carriesSignal();
+    }
     bool isTopLevel() const {
         return parentId == INVALID_TRACK_ID;
     }

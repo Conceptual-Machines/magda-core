@@ -9,8 +9,12 @@
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
+#include "../components/tracks/ChordFoldControls.hpp"
+#include "../components/tracks/TrackSeparatorView.hpp"
 #include "audio/MidiBridge.hpp"
 #include "audio/io/AudioIOControl.hpp"
 #include "core/ClipManager.hpp"
@@ -146,9 +150,56 @@ class SessionView : public juce::Component,
 
     // Per-track column widths
     std::vector<int> trackColumnWidths_;
+    /** @brief A column's left edge in grid content coordinates. A pinned column's moves with the
+        scroll offset, to hold still on screen. */
     int getTrackX(int trackIndex) const;
     int getTotalTracksWidth() const;
     int getTrackIndexAtX(int x) const;
+
+    // The aux columns come last in visibleTrackIds_ and hold still beside the master
+    // while the rest scroll beneath them (#3228).
+    static constexpr int PINNED_SPACER_WIDTH = 16;
+    static constexpr int GROUP_STRIP_HEIGHT = 5;
+    int firstPinnedIndex_ = 0;
+    int scrollingAreaWidth_ = 0;  // Of the grid viewport, what is left of the pinned section
+    bool isPinnedColumn(int trackIndex) const;
+    int getScrollingTracksWidth() const;
+    int getPinnedSectionWidth() const;
+    /** @brief Where a dragged header's section ends: its drop index for "after the last one". */
+    int headerDragSectionEnd() const;
+    /** @brief A strip in the group's colour over its children, in the gutter above the headers. */
+    void paintGroupStrips(juce::Graphics& g);
+    void repaintGroupStrips();
+    /** @brief The last column inside the group at @p column, or that column when it shows none. */
+    int lastColumnOfGroup(int column) const;
+    void paintSelectedGroupRims(juce::Graphics& g);
+    void updateTrackShades();
+    std::unordered_map<TrackId, float> trackShades_;
+    bool isSeparatorColumn(int column) const;
+    bool isFoldedChordColumn(int column) const;
+    /** @brief A separator or the folded chord track: one strip, no per-row controls. */
+    bool isStripOnlyColumn(int column) const;
+    /** @brief Sets every column to a width, but for strip-only ones, which keep their own. */
+    void setAllColumnWidths(int width);
+
+    // Hides the scrolling columns beneath the pinned section, one per row.
+    class PinnedBackdrop;
+    enum PinnedRow { HeaderRow, GridRow, StopRow, SendRow, IORow, FaderRow, NumPinnedRows };
+    std::array<std::unique_ptr<PinnedBackdrop>, NumPinnedRows> pinnedBackdrops_;
+    void layoutPinnedSection();
+    void stackPinnedColumnsOverBackdrops();
+    /** @brief Whether a column shows anything in the routing and send rows. */
+    bool columnHasRoutingRows(int column) const;
+    std::vector<juce::Range<int>> columnCards(int firstIndex, int endIndex, int originX) const;
+    void layoutColumnSlots(int trackIndex);
+
+    // Separator columns: hidden per-row components keep every per-track vector
+    // indexed alike, and this one view runs the height of the rows.
+    std::vector<std::pair<int, std::unique_ptr<TrackSeparatorView>>> separatorViews_;
+
+    std::unique_ptr<FoldedChordStrip> foldedChordStrip_;
+    int foldedChordColumn_ = -1;
+    int chordUnfoldedWidth_ = DEFAULT_CLIP_SLOT_WIDTH;
 
     // Track headers (dynamic based on TrackManager) - TextButton for clickable groups
     std::vector<std::unique_ptr<juce::TextButton>> trackHeaders;

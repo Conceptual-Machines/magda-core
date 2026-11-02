@@ -467,7 +467,11 @@ MoveSessionClipCommand::MoveSessionClipCommand(ClipId clipId, TrackId targetTrac
 
 bool MoveSessionClipCommand::canExecute() const {
     auto* clip = ClipManager::getInstance().getClip(clipId_);
-    return clip && targetTrackId_ != INVALID_TRACK_ID && targetSceneIndex_ >= 0;
+    if (clip == nullptr || targetTrackId_ == INVALID_TRACK_ID || targetSceneIndex_ < 0)
+        return false;
+
+    const auto* track = TrackManager::getInstance().getTrack(targetTrackId_);
+    return track != nullptr && trackAcceptsClip(*track, *clip);
 }
 
 void MoveSessionClipCommand::execute() {
@@ -639,6 +643,9 @@ CreateClipCommand::CreateClipCommand(ClipType type, TrackId trackId, BeatPositio
 bool CreateClipCommand::canExecute() const {
     if (trackId_ == INVALID_TRACK_ID || lengthBeats_ <= 0.0)
         return false;
+    if (const auto* track = TrackManager::getInstance().getTrack(trackId_);
+        track != nullptr && !track->acceptsUserClip(type_))
+        return false;
     if (view_ != ClipView::Session)
         return true;
     return sceneIndex_ >= 0 &&
@@ -723,7 +730,14 @@ std::unique_ptr<DuplicateClipCommand> DuplicateClipCommand::forSessionSlot(ClipI
 }
 
 bool DuplicateClipCommand::canExecute() const {
-    return ClipManager::getInstance().getClip(sourceClipId_) != nullptr;
+    const auto* source = ClipManager::getInstance().getClip(sourceClipId_);
+    if (source == nullptr)
+        return false;
+    if (targetTrackId_ == INVALID_TRACK_ID)
+        return true;
+
+    const auto* track = TrackManager::getInstance().getTrack(targetTrackId_);
+    return track != nullptr && trackAcceptsClip(*track, *source);
 }
 
 void DuplicateClipCommand::execute() {

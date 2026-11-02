@@ -9,6 +9,11 @@
 
 namespace magda {
 
+/// A separator's arrangement row: thin, and only a little resizable.
+/// TrackManager::setTrackHeight floors every height at 20.
+inline constexpr int kSeparatorRowHeight = 20;
+inline constexpr int kMaxSeparatorRowHeight = 48;
+
 /**
  * @brief View-specific settings for a track
  *

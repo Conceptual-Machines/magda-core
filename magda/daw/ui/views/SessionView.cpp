@@ -17,6 +17,7 @@
 
 #include "../../audio/TrackMeters.hpp"
 #include "../../engine/AudioEngine.hpp"
+#include "../components/common/ChordAuditionControl.hpp"
 #include "../components/common/DraggableValueLabel.hpp"
 #include "../components/common/InternalFileDrag.hpp"
 #include "../components/common/MidiActivityLed.hpp"
@@ -30,6 +31,7 @@
 #include "../components/mixer/RoutingSyncHelper.hpp"
 #include "../components/mixer/SendRowControls.hpp"
 #include "../components/navigation/MainViewScrollContainer.hpp"
+#include "../components/tracks/TrackControlsPolicy.hpp"
 #include "../panels/state/PanelController.hpp"
 #include "../state/TimelineController.hpp"
 #include "../themes/ActiveTheme.hpp"
@@ -41,6 +43,7 @@
 #include "core/ClipCommands.hpp"
 #include "core/ClipPropertyCommands.hpp"
 #include "core/Config.hpp"
+#include "core/MixerStripOrder.hpp"
 #include "core/PasteTargetResolver.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/SessionLaunchService.hpp"
@@ -50,6 +53,7 @@
 #include "core/TempoUtils.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackPropertyCommands.hpp"
+#include "core/TrackShade.hpp"
 #include "core/UndoManager.hpp"
 #include "core/ViewModeController.hpp"
 #include "ui/utils/AudioFileTypes.hpp"
@@ -146,16 +150,15 @@ std::vector<TrackId> leafTrackIds(TrackId trackId) {
 }
 
 /** @brief A rounded v1 control card behind each track column of a strip row. */
-void paintColumnCards(juce::Graphics& g, int height, const std::vector<int>& widths, int numTracks,
-                      int gap, int scrollOffset) {
-    int x = -scrollOffset;
-    for (int i = 0; i < numTracks && i < static_cast<int>(widths.size()); ++i) {
-        const auto card = juce::Rectangle<int>(x, 0, widths[i], height).toFloat().reduced(0.5f);
+void paintColumnCards(juce::Graphics& g, int height, const std::vector<juce::Range<int>>& columns) {
+    for (const auto& column : columns) {
+        const auto card = juce::Rectangle<int>(column.getStart(), 0, column.getLength(), height)
+                              .toFloat()
+                              .reduced(0.5f);
         g.setColour(ActiveTheme::getColour(ActiveTheme::SESSION_CONTROL));
         g.fillRoundedRectangle(card, 6.0f);
         g.setColour(ActiveTheme::getColour(ActiveTheme::SESSION_CONTROL_BORDER));
         g.drawRoundedRectangle(card, 6.0f, 1.0f);
-        x += widths[i] + gap;
     }
 }
 
@@ -452,6 +455,23 @@ class SessionView::FaderContainer : public juce::Component {
     int scrollOffset_ = 0;
 };
 
+// Stands between the scrolling columns and the pinned ones in a row (#3228)
+class SessionView::PinnedBackdrop : public juce::Component {
+  public:
+    void setColumnCards(std::vector<juce::Range<int>> cards) {
+        cards_ = std::move(cards);
+        repaint();
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+        paintColumnCards(g, getHeight(), cards_);
+    }
+
+  private:
+    std::vector<juce::Range<int>> cards_;
+};
+
 // Container for the stop row's track buttons
 class SessionView::StopRowContainer : public juce::Component {
   public:
@@ -490,24 +510,17 @@ class SessionView::IOContainer : public juce::Component {
 
     std::function<void()> onContextMenu;
 
-    void setTrackLayout(int numTracks, const std::vector<int>& trackWidths, int separatorWidth,
-                        int scrollOffset) {
-        numTracks_ = numTracks;
-        trackWidths_ = trackWidths;
-        separatorWidth_ = separatorWidth;
-        scrollOffset_ = scrollOffset;
+    void setColumnCards(std::vector<juce::Range<int>> cards) {
+        cards_ = std::move(cards);
         repaint();
     }
 
     void paint(juce::Graphics& g) override {
-        paintColumnCards(g, getHeight(), trackWidths_, numTracks_, separatorWidth_, scrollOffset_);
+        paintColumnCards(g, getHeight(), cards_);
     }
 
   private:
-    int numTracks_ = 0;
-    std::vector<int> trackWidths_;
-    int separatorWidth_ = 3;
-    int scrollOffset_ = 0;
+    std::vector<juce::Range<int>> cards_;
 };
 
 // Container for send section (between stop buttons and IO row)
@@ -524,24 +537,17 @@ class SessionView::SendSectionContainer : public juce::Component {
 
     std::function<void()> onContextMenu;
 
-    void setTrackLayout(int numTracks, const std::vector<int>& trackWidths, int separatorWidth,
-                        int scrollOffset) {
-        numTracks_ = numTracks;
-        trackWidths_ = trackWidths;
-        separatorWidth_ = separatorWidth;
-        scrollOffset_ = scrollOffset;
+    void setColumnCards(std::vector<juce::Range<int>> cards) {
+        cards_ = std::move(cards);
         repaint();
     }
 
     void paint(juce::Graphics& g) override {
-        paintColumnCards(g, getHeight(), trackWidths_, numTracks_, separatorWidth_, scrollOffset_);
+        paintColumnCards(g, getHeight(), cards_);
     }
 
   private:
-    int numTracks_ = 0;
-    std::vector<int> trackWidths_;
-    int separatorWidth_ = 3;
-    int scrollOffset_ = 0;
+    std::vector<juce::Range<int>> cards_;
 };
 
 // Per-track send strip (shows send rows inside a viewport)
@@ -668,7 +674,7 @@ class SessionView::MiniSendStrip : public juce::Component {
                 existingSendDests.insert(send.destTrackId);
         }
         for (const auto& t : tracks) {
-            if (t.id != trackId_ && t.type != TrackType::Master &&
+            if (t.id != trackId_ && t.type != TrackType::Master && t.carriesSignal() &&
                 existingSendDests.find(t.id) == existingSendDests.end()) {
                 sendSubMenu.addItem(1000 + t.id, t.name);
             }
@@ -972,6 +978,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
   public:
     MiniChannelStrip(TrackId trackId, const TrackInfo& track) : trackId_(trackId) {
         trackColour_ = track.colour;
+        policy_ = TrackControlsPolicy::forTrack(track);
 
         gainLabel_ = makeGainLabel();
         gainLabel_->setValue(gainToDb(track.volume), juce::dontSendNotification);
@@ -1056,6 +1063,16 @@ class SessionView::MiniChannelStrip : public juce::Component {
         monitorButton_->getTargets = [this]() { return getMultiEditTargets(trackId_); };
         addAndMakeVisible(*monitorButton_);
 
+        if (policy_.muteStyle == TrackControlsPolicy::MuteStyle::ChordAudition) {
+            chordAudition_ = std::make_unique<ChordAuditionControl>();
+            chordAudition_->getTrackId = [this]() { return trackId_; };
+            chordAudition_->refresh();
+            addAndMakeVisible(*chordAudition_);
+            speakerButton_->setVisible(false);
+        }
+        panLabel_->setVisible(policy_.pan);
+        soloButton_->setVisible(policy_.solo);
+
         // The monitor keeps its own right-click menu.
         const std::array<juce::Component*, 5> menuSources{gainLabel_.get(), panLabel_.get(),
                                                           speakerButton_.get(), soloButton_.get(),
@@ -1084,7 +1101,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
                                                     : ActiveTheme::SESSION_STOP_ROW));
         g.fillRoundedRectangle(bounds, 6.0f);
         g.setColour(selected && fullBar() && coloured
-                        ? deriveTrackSwatch(trackColour_).brighter(0.6f)
+                        ? deriveShadedTrackSwatch(trackColour_, shade_).brighter(0.6f)
                         : ActiveTheme::getColour(ActiveTheme::SESSION_CONTROL_BORDER));
         g.drawRoundedRectangle(bounds, 6.0f, 1.0f);
 
@@ -1094,22 +1111,35 @@ class SessionView::MiniChannelStrip : public juce::Component {
             juce::Path outline;
             outline.addRoundedRectangle(bounds, 6.0f);
             g.reduceClipRegion(outline);
-            g.setColour(deriveTrackSwatch(trackColour_));
+            g.setColour(deriveShadedTrackSwatch(trackColour_, shade_));
             g.fillRect(fullBar() ? bounds.withHeight(2.0f) : bounds.withWidth(5.0f));
         }
 
         if (coloured) {
-            g.setColour(deriveTrackSwatch(trackColour_));
+            g.setColour(deriveShadedTrackSwatch(trackColour_, shade_));
             g.fillRoundedRectangle(foot, 3.0f);
         }
 
         paintControlCard(g, gainLabel_->getBounds());
-        paintControlCard(g, panLabel_->getBounds());
+        if (policy_.pan)
+            paintControlCard(g, panLabel_->getBounds());
+    }
+
+    /** @brief How much darker to draw its colour. See core/TrackShade.hpp. */
+    void setShade(float shade) {
+        if (shade_ != shade) {
+            shade_ = shade;
+            repaint();
+        }
+    }
+
+    juce::Colour getTrackColour() const {
+        return trackColour_;
     }
 
     void setShowRecordMonitor(bool show) {
-        recordButton_->setVisible(show);
-        monitorButton_->setVisible(show);
+        recordButton_->setVisible(show && policy_.record);
+        monitorButton_->setVisible(show && policy_.monitor);
         resized();
     }
 
@@ -1120,12 +1150,21 @@ class SessionView::MiniChannelStrip : public juce::Component {
         if (!fullBar())
             bounds.removeFromLeft(5);
 
-        layoutPair(bounds.removeFromTop(kStripRow), *gainLabel_, *panLabel_);
+        const auto gainRow = bounds.removeFromTop(kStripRow);
+        if (policy_.pan)
+            layoutPair(gainRow, *gainLabel_, *panLabel_);
+        else
+            gainLabel_->setBounds(gainRow);
 
         bounds.removeFromTop(kStripGap);
-        layoutPair(bounds.removeFromTop(kStripRow), *speakerButton_, *soloButton_);
-        fitStripIcon(*speakerButton_, 14.0f, 10.0f);
-        fitStripIcon(*soloButton_, 10.0f, 10.0f);
+        const auto buttonRow = bounds.removeFromTop(kStripRow);
+        if (chordAudition_ != nullptr) {
+            chordAudition_->setBounds(buttonRow);
+        } else {
+            layoutPair(buttonRow, *speakerButton_, *soloButton_);
+            fitStripIcon(*speakerButton_, 14.0f, 10.0f);
+            fitStripIcon(*soloButton_, 10.0f, 10.0f);
+        }
         if (recordButton_->isVisible()) {
             bounds.removeFromTop(kStripGap);
             layoutPair(bounds.removeFromTop(kStripRow), *recordButton_, *monitorButton_);
@@ -1141,6 +1180,8 @@ class SessionView::MiniChannelStrip : public juce::Component {
         soloButton_->setToggleState(track.soloed, juce::dontSendNotification);
         recordButton_->setToggleState(track.recordArmed, juce::dontSendNotification);
         monitorButton_->refresh();
+        if (chordAudition_ != nullptr)
+            chordAudition_->refresh();
         trackColour_ = track.colour;
         resized();
         repaint();
@@ -1217,6 +1258,9 @@ class SessionView::MiniChannelStrip : public juce::Component {
     std::unique_ptr<SvgButton> soloButton_;
     std::unique_ptr<SvgButton> recordButton_;
     std::unique_ptr<MonitorControl> monitorButton_;
+    std::unique_ptr<ChordAuditionControl> chordAudition_;
+    TrackControlsPolicy policy_;
+    float shade_ = 0.0f;
 
     std::unordered_map<TrackId, float> multiTrackBaseVolumes_;
     std::unordered_map<TrackId, float> multiTrackBasePans_;
@@ -1298,7 +1342,7 @@ SessionView::SessionView() {
 
     widthPresets_ = std::make_unique<TrackWidthPresetButtons>();
     widthPresets_->onWidthChosen = [this](int width) {
-        std::fill(trackColumnWidths_.begin(), trackColumnWidths_.end(), width);
+        setAllColumnWidths(width);
         resized();
     };
     toggleRail_->addAndMakeVisible(*widthPresets_);
@@ -1388,6 +1432,18 @@ SessionView::SessionView() {
     addAndMakeVisible(*faderContainer);
 
     stopRowContainer_ = std::make_unique<StopRowContainer>();
+    pinnedBackdrops_[HeaderRow] = std::make_unique<PinnedBackdrop>();
+    pinnedBackdrops_[GridRow] = std::make_unique<PinnedBackdrop>();
+    pinnedBackdrops_[StopRow] = std::make_unique<PinnedBackdrop>();
+    pinnedBackdrops_[SendRow] = std::make_unique<PinnedBackdrop>();
+    pinnedBackdrops_[IORow] = std::make_unique<PinnedBackdrop>();
+    pinnedBackdrops_[FaderRow] = std::make_unique<PinnedBackdrop>();
+    headerContainer->addChildComponent(*pinnedBackdrops_[HeaderRow]);
+    gridContent->addChildComponent(*pinnedBackdrops_[GridRow]);
+    stopRowContainer_->addChildComponent(*pinnedBackdrops_[StopRow]);
+    sendSectionContainer_->addChildComponent(*pinnedBackdrops_[SendRow]);
+    ioContainer_->addChildComponent(*pinnedBackdrops_[IORow]);
+    faderContainer->addChildComponent(*pinnedBackdrops_[FaderRow]);
     addAndMakeVisible(*stopRowContainer_);
     stopAllButton_ = std::make_unique<SessionStopButton>("STOP ALL");
     stopAllButton_->onClick = []() { ClipManager::getInstance().stopAllClips(); };
@@ -1473,7 +1529,19 @@ void SessionView::trackPropertyChanged(int trackId) {
     if (!track)
         return;
 
+    for (auto& [column, view] : separatorViews_) {
+        if (view->getTrackId() == trackId)
+            view->repaint();
+    }
+    if (foldedChordStrip_ != nullptr && foldedChordStrip_->getTrackId() == trackId)
+        foldedChordStrip_->repaint();
+
     const int index = trackIndexOf(trackId);
+
+    // A new colour can change which neighbours match.
+    if (index >= 0 && index < static_cast<int>(trackMiniStrips_.size()) &&
+        trackMiniStrips_[static_cast<size_t>(index)]->getTrackColour() != track->colour)
+        updateTrackShades();
 
     if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
         // Update header text with collapse indicator for groups
@@ -1485,6 +1553,7 @@ void SessionView::trackPropertyChanged(int trackId) {
                          track->name;
         }
         trackHeaders[index]->setButtonText(headerText);
+        static_cast<TrackHeaderButton*>(trackHeaders[index].get())->setTrackColour(track->colour);
 
         // Sync strip state (volume, mute, solo, colour)
         if (index < static_cast<int>(trackMiniStrips_.size())) {
@@ -1530,30 +1599,54 @@ void SessionView::masterChannelChanged() {
     }
 }
 
+bool SessionView::isPinnedColumn(int trackIndex) const {
+    return trackIndex >= firstPinnedIndex_ &&
+           trackIndex < static_cast<int>(trackColumnWidths_.size());
+}
+
 int SessionView::getTrackX(int trackIndex) const {
-    int x = 0;
-    for (int i = 0; i < trackIndex && i < static_cast<int>(trackColumnWidths_.size()); ++i) {
+    const bool pinned = isPinnedColumn(trackIndex);
+    int x = pinned ? trackHeaderScrollOffset + scrollingAreaWidth_ + PINNED_SPACER_WIDTH : 0;
+    for (int i = pinned ? firstPinnedIndex_ : 0;
+         i < trackIndex && i < static_cast<int>(trackColumnWidths_.size()); ++i) {
         x += trackColumnWidths_[i] + TRACK_SEPARATOR_WIDTH;
     }
     return x;
 }
 
-int SessionView::getTotalTracksWidth() const {
+int SessionView::getScrollingTracksWidth() const {
     int total = 0;
-    for (size_t i = 0; i < trackColumnWidths_.size(); ++i) {
-        total += trackColumnWidths_[i];
-        if (i < trackColumnWidths_.size() - 1)
-            total += TRACK_SEPARATOR_WIDTH;
-    }
-    // Add final separator if there are tracks
-    if (!trackColumnWidths_.empty())
-        total += TRACK_SEPARATOR_WIDTH;
+    for (int i = 0; i < firstPinnedIndex_ && i < static_cast<int>(trackColumnWidths_.size()); ++i)
+        total += trackColumnWidths_[i] + TRACK_SEPARATOR_WIDTH;
     return total;
 }
 
+int SessionView::getPinnedSectionWidth() const {
+    if (!isPinnedColumn(firstPinnedIndex_))
+        return 0;
+    int total = PINNED_SPACER_WIDTH;
+    for (int i = firstPinnedIndex_; i < static_cast<int>(trackColumnWidths_.size()); ++i)
+        total += trackColumnWidths_[i] + TRACK_SEPARATOR_WIDTH;
+    return total;
+}
+
+int SessionView::getTotalTracksWidth() const {
+    return getScrollingTracksWidth() + getPinnedSectionWidth();
+}
+
 int SessionView::getTrackIndexAtX(int x) const {
+    // What is under the pinned section is hidden, so the pinned columns answer first.
+    if (isPinnedColumn(firstPinnedIndex_) && x - trackHeaderScrollOffset >= scrollingAreaWidth_) {
+        for (int i = firstPinnedIndex_; i < static_cast<int>(trackColumnWidths_.size()); ++i) {
+            const int left = getTrackX(i);
+            if (x >= left && x < left + trackColumnWidths_[i] + TRACK_SEPARATOR_WIDTH)
+                return i;
+        }
+        return -1;
+    }
+
     int cumX = 0;
-    for (int i = 0; i < static_cast<int>(trackColumnWidths_.size()); ++i) {
+    for (int i = 0; i < firstPinnedIndex_ && i < static_cast<int>(trackColumnWidths_.size()); ++i) {
         cumX += trackColumnWidths_[i] + TRACK_SEPARATOR_WIDTH;
         if (x < cumX)
             return i;
@@ -1561,12 +1654,50 @@ int SessionView::getTrackIndexAtX(int x) const {
     return -1;
 }
 
+int SessionView::headerDragSectionEnd() const {
+    return isPinnedColumn(headerDragIndex_) ? static_cast<int>(visibleTrackIds_.size())
+                                            : firstPinnedIndex_;
+}
+
+bool SessionView::isSeparatorColumn(int column) const {
+    const auto* track =
+        TrackManager::getInstance().getTrack(visibleTrackIds_[static_cast<size_t>(column)]);
+    return track != nullptr && track->isSeparator();
+}
+
+bool SessionView::isFoldedChordColumn(int column) const {
+    const auto* track =
+        TrackManager::getInstance().getTrack(visibleTrackIds_[static_cast<size_t>(column)]);
+    return track != nullptr && track->type == TrackType::Chord &&
+           track->isCollapsedIn(currentViewMode_);
+}
+
+bool SessionView::isStripOnlyColumn(int column) const {
+    return isSeparatorColumn(column) || isFoldedChordColumn(column);
+}
+
+void SessionView::setAllColumnWidths(int width) {
+    for (size_t i = 0; i < trackColumnWidths_.size() && i < visibleTrackIds_.size(); ++i) {
+        if (!isStripOnlyColumn(static_cast<int>(i)))
+            trackColumnWidths_[i] = width;
+    }
+}
+
 void SessionView::rebuildTracks() {
     DBG("SessionView::rebuildTracks begin oldVisibleTracks="
         << formatTrackIds(visibleTrackIds_) << " gridChildren="
         << gridContent->getNumChildComponents() << " sessionClips=" << formatSessionClips());
 
+    // Widths follow the track, not the column: a deleted separator's width must
+    // not pass to whichever track takes its place.
+    std::unordered_map<TrackId, int> oldWidths;
+    for (size_t i = 0; i < visibleTrackIds_.size() && i < trackColumnWidths_.size(); ++i)
+        oldWidths[visibleTrackIds_[i]] = trackColumnWidths_[i];
+
     // Clear existing track headers, clip slots, strips, IO strips, and send strips
+    separatorViews_.clear();
+    foldedChordStrip_.reset();
+    foldedChordColumn_ = -1;
     trackHeaders.clear();
     clipSlots.clear();
     trackMiniStrips_.clear();
@@ -1586,6 +1717,9 @@ void SessionView::rebuildTracks() {
         if (!track || !track->isVisibleIn(currentViewMode_))
             return;
 
+        if (traitsOf(track->type).sitsBesideMaster)
+            return;  // Added below, in the pinned section.
+
         visibleTrackIds_.push_back(trackId);
 
         // Add children if group is not collapsed
@@ -1602,15 +1736,31 @@ void SessionView::rebuildTracks() {
         addTrackRecursive(trackId);
     }
 
+    firstPinnedIndex_ = static_cast<int>(visibleTrackIds_.size());
+    for (const auto trackId : pinnedStripOrder(trackManager.getTracks(), currentViewMode_))
+        visibleTrackIds_.push_back(trackId);
+
     int numTracks = static_cast<int>(visibleTrackIds_.size());
     DBG("SessionView::rebuildTracks visibleTracks=" << formatTrackIds(visibleTrackIds_)
                                                     << " sessionClips=" << formatSessionClips());
 
     // Initialize per-track widths (preserve existing widths where possible)
-    std::vector<int> oldWidths = trackColumnWidths_;
-    trackColumnWidths_.resize(numTracks, DEFAULT_CLIP_SLOT_WIDTH);
-    for (int i = 0; i < numTracks && i < static_cast<int>(oldWidths.size()); ++i) {
-        trackColumnWidths_[i] = oldWidths[i];
+    trackColumnWidths_.assign(static_cast<size_t>(numTracks), DEFAULT_CLIP_SLOT_WIDTH);
+    for (int i = 0; i < numTracks; ++i) {
+        const auto trackId = visibleTrackIds_[static_cast<size_t>(i)];
+        const auto old = oldWidths.find(trackId);
+        const auto* track = trackManager.getTrack(trackId);
+        auto& width = trackColumnWidths_[static_cast<size_t>(i)];
+        if (track != nullptr && track->type == TrackType::Chord) {
+            // Folding keeps the width to come back to.
+            if (old != oldWidths.end() && old->second != FoldedChordStrip::WIDTH)
+                chordUnfoldedWidth_ = old->second;
+            width = isFoldedChordColumn(i) ? FoldedChordStrip::WIDTH : chordUnfoldedWidth_;
+        } else if (old != oldWidths.end()) {
+            width = old->second;
+        } else if (isSeparatorColumn(i)) {
+            width = TrackSeparatorView::WIDTH;
+        }
     }
 
     // Create per-track resize handles
@@ -1623,15 +1773,24 @@ void SessionView::rebuildTracks() {
         };
         // Alt sets every column to the dragged width, as Alt does on the mixer's channels.
         handle->onResize = [this, trackIdx](int delta) {
+            if (isSeparatorColumn(trackIdx)) {
+                trackColumnWidths_[trackIdx] =
+                    juce::jlimit(TrackSeparatorView::WIDTH, TrackSeparatorView::MAX_WIDTH,
+                                 dragStartTrackWidth_ + delta);
+                resized();
+                return;
+            }
+
             const int width =
                 juce::jlimit(MIN_TRACK_WIDTH, MAX_TRACK_WIDTH, dragStartTrackWidth_ + delta);
             if (juce::ModifierKeys::getCurrentModifiers().isAltDown())
-                std::fill(trackColumnWidths_.begin(), trackColumnWidths_.end(), width);
+                setAllColumnWidths(width);
             else
                 trackColumnWidths_[trackIdx] = width;
             resized();
         };
         headerContainer->addAndMakeVisible(*handle);
+        handle->setVisible(!isFoldedChordColumn(i));
         trackResizeHandles_.push_back(std::move(handle));
     }
 
@@ -1758,6 +1917,23 @@ void SessionView::rebuildTracks() {
         };
 
         headerContainer->addAndMakeVisible(*header);
+        if (track->isSeparator()) {
+            header->setVisible(false);
+            auto view = std::make_unique<TrackSeparatorView>(trackId);
+            view->onPress = header->onHeaderMouseDown;
+            view->onDrag = header->onHeaderMouseDrag;
+            view->onRelease = header->onHeaderMouseUp;
+            addAndMakeVisible(*view);
+            separatorViews_.emplace_back(i, std::move(view));
+        }
+        if (isFoldedChordColumn(i)) {
+            header->setVisible(false);
+            foldedChordStrip_ = std::make_unique<FoldedChordStrip>(trackId);
+            foldedChordColumn_ = i;
+            addAndMakeVisible(*foldedChordStrip_);
+        } else if (track->type == TrackType::Chord) {
+            header->showFoldChevron([trackId] { setChordTrackFolded(trackId, true); });
+        }
         trackHeaders.push_back(std::move(header));
     }
 
@@ -1767,12 +1943,16 @@ void SessionView::rebuildTracks() {
         TrackId slotTrackId = visibleTrackIds_[track];
         const auto* slotTrack = trackManager.getTrack(slotTrackId);
         bool isGroup = slotTrack && slotTrack->isGroup();
+        // A group has no clips of its own but launches its children's.
+        bool isClosed = slotTrack && !isGroup && !slotTrack->acceptsAnyUserClip();
+        const bool isStripOnly = isStripOnlyColumn(track);
 
-        for (int scene = 0; scene < numScenes_; ++scene) {
+        for (int scene = 0; !isStripOnly && scene < numScenes_; ++scene) {
             auto slot = std::make_unique<ClipSlotButton>();
 
             slot->setButtonText("");
             slot->isGroupSlot = isGroup;
+            slot->isClosedSlot = isClosed;
             slot->setColour(juce::TextButton::buttonColourId,
                             ActiveTheme::getColour(ActiveTheme::SURFACE));
             slot->setColour(juce::TextButton::textColourOffId,
@@ -1789,6 +1969,7 @@ void SessionView::rebuildTracks() {
         auto addCell = std::make_unique<AddSceneCell>();
         addCell->onClick = [this]() { addScene(); };
         gridContent->addAndMakeVisible(*addCell);
+        addCell->setVisible(!isStripOnly);
         addSceneCells_.push_back(std::move(addCell));
 
         auto stopButton = std::make_unique<SessionStopButton>();
@@ -1797,7 +1978,8 @@ void SessionView::rebuildTracks() {
                 for (auto leafId : leafTrackIds(slotTrackId))
                     audioEngine_->stopSessionTrack(leafId);
         };
-        stopRowContainer_->addAndMakeVisible(*stopButton);
+        stopRowContainer_->addChildComponent(*stopButton);
+        stopButton->setVisible(!isClosed && !isStripOnly);
         trackStopButtons_.push_back(std::move(stopButton));
     }
 
@@ -1812,6 +1994,7 @@ void SessionView::rebuildTracks() {
         strip->onContextMenu = [this]() { showMixerContextMenu(); };
         strip->setShowRecordMonitor(recordMonitorVisible_);
         faderContainer->addAndMakeVisible(*strip);
+        strip->setVisible(!isStripOnlyColumn(i));
         trackMiniStrips_.push_back(std::move(strip));
     }
 
@@ -1820,6 +2003,7 @@ void SessionView::rebuildTracks() {
         TrackId trackId = visibleTrackIds_[i];
         auto ioStrip = std::make_unique<MiniIOStrip>(trackId, audioEngine_);
         ioContainer_->addAndMakeVisible(*ioStrip);
+        ioStrip->setVisible(columnHasRoutingRows(i));
         trackIOStrips_.push_back(std::move(ioStrip));
     }
 
@@ -1831,12 +2015,15 @@ void SessionView::rebuildTracks() {
         viewport->setViewedComponent(strip.get(), false);
         viewport->setScrollBarsShown(true, false);
         sendSectionContainer_->addAndMakeVisible(*viewport);
+        viewport->setVisible(columnHasRoutingRows(i));
         strip->updateFromTrack();
         trackSendViewports_.push_back(std::move(viewport));
         trackSendStrips_.push_back(std::move(strip));
     }
 
+    stackPinnedColumnsOverBackdrops();
     resized();
+    updateTrackShades();
     updateHeaderSelectionVisuals();
 
     // Populate all clip slots with their current clip data
@@ -1847,8 +2034,105 @@ void SessionView::rebuildTracks() {
         << gridContent->getNumChildComponents() << " sessionClips=" << formatSessionClips());
 }
 
+int SessionView::lastColumnOfGroup(int column) const {
+    auto& tm = TrackManager::getInstance();
+    const auto groupId = visibleTrackIds_[static_cast<size_t>(column)];
+    const auto isInside = [&](int candidate) {
+        const auto* track = tm.getTrack(visibleTrackIds_[static_cast<size_t>(candidate)]);
+        while (track != nullptr && track->hasParent()) {
+            if (track->parentId == groupId)
+                return true;
+            track = tm.getTrack(track->parentId);
+        }
+        return false;
+    };
+
+    const int count = juce::jmin(firstPinnedIndex_, static_cast<int>(trackColumnWidths_.size()));
+    int last = column;
+    while (last + 1 < count && isInside(last + 1))
+        ++last;
+    return last;
+}
+
+void SessionView::paintSelectedGroupRims(juce::Graphics& g) {
+    juce::Graphics::ScopedSaveState state(g);
+    const int left = headerContainer->getX();
+    g.reduceClipRegion(left, 0, scrollingAreaWidth_, getHeight());
+
+    auto& selection = SelectionManager::getInstance();
+    const int top = headerContainer->getY() - GROUP_STRIP_HEIGHT - 1;
+    const int bottom = faderContainer->getBottom() - GRID_PADDING;
+    const int count = juce::jmin(firstPinnedIndex_, static_cast<int>(trackColumnWidths_.size()));
+    for (int i = 0; i < count; ++i) {
+        const auto trackId = visibleTrackIds_[static_cast<size_t>(i)];
+        const auto* group = TrackManager::getInstance().getTrack(trackId);
+        if (group == nullptr || !group->isGroup() || !selection.isTrackSelected(trackId) ||
+            group->colour == juce::Colour(0xFF444444))
+            continue;
+
+        const int last = lastColumnOfGroup(i);
+        const int startX = left + getTrackX(i) - trackHeaderScrollOffset;
+        const int endX = left + getTrackX(last) + trackColumnWidths_[static_cast<size_t>(last)] -
+                         trackHeaderScrollOffset;
+        g.setColour(
+            deriveShadedTrackSwatch(group->colour, shadeOf(trackShades_, trackId)).brighter(0.6f));
+        g.drawRect(juce::Rectangle<int>(startX, top, endX - startX, bottom - top).expanded(2, 0),
+                   1);
+    }
+}
+
+void SessionView::paintGroupStrips(juce::Graphics& g) {
+    juce::Graphics::ScopedSaveState state(g);
+    const int left = headerContainer->getX();
+    const int top = headerContainer->getY();
+    g.reduceClipRegion(left, 0, scrollingAreaWidth_, top);
+
+    auto& tm = TrackManager::getInstance();
+    const int count = juce::jmin(firstPinnedIndex_, static_cast<int>(trackColumnWidths_.size()));
+    for (int i = 0; i < count; ++i) {
+        const auto* group = tm.getTrack(visibleTrackIds_[static_cast<size_t>(i)]);
+        if (group == nullptr || !group->isGroup())
+            continue;
+
+        const int last = lastColumnOfGroup(i);
+        if (last == i)
+            continue;
+
+        const int startX = left + getTrackX(i + 1) - trackHeaderScrollOffset;
+        const int endX = left + getTrackX(last) + trackColumnWidths_[static_cast<size_t>(last)] -
+                         trackHeaderScrollOffset;
+        if (group->colour != juce::Colour(0xFF444444))
+            g.setGradientFill(groupWrapperGradient(
+                deriveShadedTrackSwatch(group->colour, shadeOf(trackShades_, group->id)),
+                {static_cast<float>(startX), 0.0f}, {static_cast<float>(endX), 0.0f}));
+        else
+            g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
+        g.fillRect(startX, top - GROUP_STRIP_HEIGHT - 1, endX - startX, GROUP_STRIP_HEIGHT);
+    }
+}
+
+void SessionView::updateTrackShades() {
+    auto order = visibleTrackIds_;
+    if (isPinnedColumn(firstPinnedIndex_))
+        order.insert(order.begin() + firstPinnedIndex_, INVALID_TRACK_ID);
+    trackShades_ = trackShades(order);
+
+    for (size_t i = 0; i < trackHeaders.size() && i < visibleTrackIds_.size(); ++i)
+        static_cast<TrackHeaderButton*>(trackHeaders[i].get())
+            ->setShade(shadeOf(trackShades_, visibleTrackIds_[i]));
+    for (auto& strip : trackMiniStrips_)
+        strip->setShade(shadeOf(trackShades_, strip->getTrackId()));
+
+    repaintGroupStrips();
+}
+
+void SessionView::repaintGroupStrips() {
+    repaint(headerContainer->getX(), 0, headerContainer->getWidth(), headerContainer->getY());
+}
+
 void SessionView::paint(juce::Graphics& g) {
     g.fillAll(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
+    paintGroupStrips(g);
 
     if (!masterSendCard_.isEmpty())
         paintControlCard(g, masterSendCard_);
@@ -1865,6 +2149,8 @@ void SessionView::paint(juce::Graphics& g) {
 }
 
 void SessionView::paintOverChildren(juce::Graphics& g) {
+    paintSelectedGroupRims(g);
+
     // Plugin drag overlay
     if (showPluginDropOverlay_) {
         if (pluginDropTrackIndex_ >= 0 &&
@@ -1884,7 +2170,8 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
         } else {
             // Past last track — show "new track" indicator
             auto vpBounds = gridViewport->getBounds();
-            int lastTrackEnd = vpBounds.getX() + getTotalTracksWidth() - trackHeaderScrollOffset;
+            int lastTrackEnd =
+                vpBounds.getX() + getScrollingTracksWidth() - trackHeaderScrollOffset;
             int indicatorW = DEFAULT_CLIP_SLOT_WIDTH;
             auto indicatorBounds =
                 juce::Rectangle<int>(lastTrackEnd, 0, indicatorW, vpBounds.getBottom());
@@ -1904,7 +2191,7 @@ void SessionView::paintOverChildren(juce::Graphics& g) {
     // File drag "new track" overlay (when dragging audio files past last track)
     if (dragHoverTrackIndex_ == -1 && dragHoverSceneIndex_ >= 0) {
         auto vpBounds = gridViewport->getBounds();
-        int lastTrackEnd = vpBounds.getX() + getTotalTracksWidth() - trackHeaderScrollOffset;
+        int lastTrackEnd = vpBounds.getX() + getScrollingTracksWidth() - trackHeaderScrollOffset;
         int indicatorW = DEFAULT_CLIP_SLOT_WIDTH;
         auto indicatorBounds =
             juce::Rectangle<int>(lastTrackEnd, 0, indicatorW, vpBounds.getBottom());
@@ -1996,6 +2283,7 @@ void SessionView::resized() {
         juce::jmax(0, bounds.getWidth() - SCENE_BUTTON_WIDTH - TRACK_SEPARATOR_WIDTH);
     const bool needsHorizontalScrollBar =
         gridWidth > juce::jmax(0, trackAreaWidth - (needsVerticalScrollBar ? verticalBarWidth : 0));
+    const int pinnedWidth = getPinnedSectionWidth();
 
     // Bottom up: mixer strips, I/O, sends, stop row.
     auto mixerRow = bounds.removeFromBottom(mixerStripHeight);
@@ -2004,9 +2292,10 @@ void SessionView::resized() {
     // The strips reach into the bottom gutter, where each draws the foot the bar overlays.
     faderContainer->setBounds(mixerRow.withHeight(mixerRow.getHeight() + GRID_PADDING));
 
-    scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Horizontal,
-                                    mixerRow.withY(mixerRow.getBottom()).withHeight(GRID_PADDING),
-                                    needsHorizontalScrollBar);
+    scrollContainer_->setAxisLayout(
+        MainViewScrollContainer::Axis::Horizontal,
+        mixerRow.withY(mixerRow.getBottom()).withHeight(GRID_PADDING).withTrimmedRight(pinnedWidth),
+        needsHorizontalScrollBar);
 
     ioContainer_->setVisible(ioRowVisible_);
     if (ioRowVisible_) {
@@ -2050,25 +2339,105 @@ void SessionView::resized() {
         scrollContainer_->setAxisLayout(MainViewScrollContainer::Axis::Vertical, {}, false);
     }
 
+    // Pinned columns sit at the viewport's right edge however few tracks there are,
+    // so the content has to reach that far.
+    scrollingAreaWidth_ = juce::jmax(0, bounds.getWidth() - pinnedWidth);
     gridViewport->setBounds(bounds);
-    gridContent->setSize(gridWidth, gridHeight);
+    gridContent->setSize(juce::jmax(gridWidth, bounds.getWidth()), gridHeight);
     gridContent->setTrackWidths(trackColumnWidths_);
+    trackHeaderScrollOffset = gridViewport->getViewPositionX();
 
     scrollContainer_->syncFromViewport();
     scrollContainer_->toFront(false);
 
-    for (int track = 0; track < static_cast<int>(clipSlots.size()); ++track) {
-        const int trackX = getTrackX(track);
-        const int w = trackColumnWidths_[static_cast<size_t>(track)];
-        for (int scene = 0; scene < static_cast<int>(clipSlots[track].size()); ++scene)
-            clipSlots[track][scene]->setBounds(trackX, scene * sceneRowHeight, w, CLIP_SLOT_HEIGHT);
-        if (track < static_cast<int>(addSceneCells_.size()))
-            addSceneCells_[static_cast<size_t>(track)]->setBounds(
-                trackX, numScenes_ * sceneRowHeight, w, ADD_SCENE_BUTTON_HEIGHT);
-    }
+    for (int track = 0; track < static_cast<int>(clipSlots.size()); ++track)
+        layoutColumnSlots(track);
 
     layoutTrackColumns();
     layoutSceneColumn();
+}
+
+void SessionView::layoutColumnSlots(int track) {
+    const int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
+    const int trackX = getTrackX(track);
+    const int w = trackColumnWidths_[static_cast<size_t>(track)];
+    for (int scene = 0; scene < static_cast<int>(clipSlots[track].size()); ++scene)
+        clipSlots[track][scene]->setBounds(trackX, scene * sceneRowHeight, w, CLIP_SLOT_HEIGHT);
+    if (track < static_cast<int>(addSceneCells_.size()))
+        addSceneCells_[static_cast<size_t>(track)]->setBounds(trackX, numScenes_ * sceneRowHeight,
+                                                              w, ADD_SCENE_BUTTON_HEIGHT);
+}
+
+bool SessionView::columnHasRoutingRows(int column) const {
+    const auto* track =
+        TrackManager::getInstance().getTrack(visibleTrackIds_[static_cast<size_t>(column)]);
+    if (track == nullptr)
+        return false;
+    const auto policy = TrackControlsPolicy::forTrack(*track);
+    return policy.anyRouting() || policy.sends;
+}
+
+std::vector<juce::Range<int>> SessionView::columnCards(int firstIndex, int endIndex,
+                                                       int originX) const {
+    std::vector<juce::Range<int>> cards;
+    for (int i = firstIndex; i < endIndex && i < static_cast<int>(visibleTrackIds_.size()); ++i) {
+        if (!columnHasRoutingRows(i))
+            continue;
+        const int x = getTrackX(i) - originX;
+        cards.emplace_back(x, x + trackColumnWidths_[static_cast<size_t>(i)]);
+    }
+    return cards;
+}
+
+void SessionView::layoutPinnedSection() {
+    const int numTracks = static_cast<int>(trackHeaders.size());
+    const bool hasPinned = firstPinnedIndex_ < numTracks;
+    const int scrolledEdge = trackHeaderScrollOffset + scrollingAreaWidth_;
+
+    const auto place = [&](PinnedRow row, const juce::Component& container, int x) {
+        auto& backdrop = *pinnedBackdrops_[static_cast<size_t>(row)];
+        backdrop.setVisible(hasPinned);
+        if (hasPinned)
+            backdrop.setBounds(x, 0, juce::jmax(0, container.getWidth() - x),
+                               container.getHeight());
+    };
+    place(HeaderRow, *headerContainer, scrollingAreaWidth_);
+    place(GridRow, *gridContent, scrolledEdge);
+    place(StopRow, *stopRowContainer_, scrollingAreaWidth_);
+    place(SendRow, *sendSectionContainer_, scrollingAreaWidth_);
+    place(IORow, *ioContainer_, scrollingAreaWidth_);
+    place(FaderRow, *faderContainer, scrollingAreaWidth_);
+
+    if (!hasPinned)
+        return;
+
+    const auto cards = columnCards(firstPinnedIndex_, numTracks, scrolledEdge);
+    pinnedBackdrops_[SendRow]->setColumnCards(cards);
+    pinnedBackdrops_[IORow]->setColumnCards(cards);
+
+    for (int track = firstPinnedIndex_; track < static_cast<int>(clipSlots.size()); ++track)
+        layoutColumnSlots(track);
+}
+
+void SessionView::stackPinnedColumnsOverBackdrops() {
+    for (auto& backdrop : pinnedBackdrops_)
+        backdrop->toFront(false);
+
+    const auto raise = [](auto& columns, size_t column) {
+        if (column < columns.size())
+            columns[column]->toFront(false);
+    };
+    for (size_t i = static_cast<size_t>(firstPinnedIndex_); i < visibleTrackIds_.size(); ++i) {
+        raise(trackHeaders, i);
+        raise(trackResizeHandles_, i);
+        raise(addSceneCells_, i);
+        raise(trackStopButtons_, i);
+        raise(trackMiniStrips_, i);
+        raise(trackIOStrips_, i);
+        raise(trackSendViewports_, i);
+        for (auto& slot : clipSlots[i])
+            slot->toFront(false);
+    }
 }
 
 void SessionView::layoutTrackColumns() {
@@ -2098,12 +2467,29 @@ void SessionView::layoutTrackColumns() {
         }
     }
 
+    // Separators and the folded chord track run the height of the rows, so they
+    // are this view's children.
+    const auto placeFullHeight = [&](juce::Component& strip, int column) {
+        const int top = headerContainer->getY();
+        const int bottom = faderContainer->getBottom() - GRID_PADDING;
+        const int x = getTrackX(column) - scroll;
+        const int w = trackColumnWidths_[static_cast<size_t>(column)];
+        strip.setBounds(headerContainer->getX() + x, top, w, bottom - top);
+        strip.setVisible(x >= 0 && x + w <= scrollingAreaWidth_);
+    };
+    for (auto& [column, view] : separatorViews_)
+        placeFullHeight(*view, column);
+    if (foldedChordStrip_ != nullptr)
+        placeFullHeight(*foldedChordStrip_, foldedChordColumn_);
+
     headerContainer->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH, scroll);
     faderContainer->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH, scroll);
-    ioContainer_->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH, scroll);
-    sendSectionContainer_->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH,
-                                          scroll);
+    const auto cards = columnCards(0, firstPinnedIndex_, scroll);
+    ioContainer_->setColumnCards(cards);
+    sendSectionContainer_->setColumnCards(cards);
     gridViewport->setTrackLayout(numTracks, trackColumnWidths_, TRACK_SEPARATOR_WIDTH);
+
+    layoutPinnedSection();
 }
 
 void SessionView::layoutSceneColumn() {
@@ -2120,6 +2506,7 @@ void SessionView::viewportScrolled(bool horizontal, double rangeStart) {
     if (horizontal) {
         trackHeaderScrollOffset = gridViewport->getViewPositionX();
         layoutTrackColumns();
+        repaint();  // Group strips and selected rims move with the columns.
     } else {
         sceneButtonScrollOffset = static_cast<int>(rangeStart);
         layoutSceneColumn();
@@ -2272,6 +2659,12 @@ void SessionView::removeSceneAsync(int sceneIndex) {
 }
 
 void SessionView::wireClipSlotCallbacks(ClipSlotButton& slot, int trackIndex, int sceneIndex) {
+    if (slot.isClosedSlot) {
+        slot.onAddScene = [this]() { addScene(); };
+        slot.onRemoveScene = [this]() { removeScene(); };
+        return;
+    }
+
     if (slot.isGroupSlot) {
         // Group slots: play button triggers/stops all descendant clips in this scene
         slot.onPlayButtonClick = [this, trackIndex, sceneIndex]() {
@@ -2703,16 +3096,29 @@ void SessionView::calculateHeaderDropTarget(int mouseX) {
     headerDropType_ = HeaderDropType::None;
     headerDropIndex_ = -1;
     int numTracks = static_cast<int>(visibleTrackIds_.size());
+
+    // The chord track is first whatever the track list says, and a column stays
+    // in the section its type puts it in (#3228).
+    if (headerDragIndex_ < 0 || headerDragIndex_ >= numTracks)
+        return;
+    const auto* dragged = TrackManager::getInstance().getTrack(visibleTrackIds_[headerDragIndex_]);
+    if (dragged != nullptr && dragged->type == TrackType::Chord)
+        return;
+    const bool draggingPinned = isPinnedColumn(headerDragIndex_);
+
     for (int i = 0; i < numTracks; ++i) {
-        if (i == headerDragIndex_)
+        if (i == headerDragIndex_ || isPinnedColumn(i) != draggingPinned)
             continue;
         int x = getTrackX(i);
         int w = trackColumnWidths_[i];
         if (mouseX >= x && mouseX < x + w + TRACK_SEPARATOR_WIDTH) {
             int quarter = w / 4;
             if (mouseX < x + quarter) {
+                const auto* target =
+                    TrackManager::getInstance().getTrack(visibleTrackIds_[static_cast<size_t>(i)]);
                 headerDropType_ = HeaderDropType::BetweenTracks;
-                headerDropIndex_ = i;
+                headerDropIndex_ =
+                    target != nullptr && target->type == TrackType::Chord ? i + 1 : i;
             } else if (mouseX > x + w - quarter) {
                 headerDropType_ = HeaderDropType::BetweenTracks;
                 headerDropIndex_ = i + 1;
@@ -2723,9 +3129,13 @@ void SessionView::calculateHeaderDropTarget(int mouseX) {
             return;
         }
     }
-    if (mouseX > getTotalTracksWidth()) {
+    const int sectionEnd = headerDragSectionEnd();
+    const int sectionRight = draggingPinned || sectionEnd == 0
+                                 ? getTrackX(numTracks - 1) + trackColumnWidths_.back()
+                                 : getScrollingTracksWidth();
+    if (mouseX > sectionRight) {
         headerDropType_ = HeaderDropType::BetweenTracks;
-        headerDropIndex_ = numTracks;
+        headerDropIndex_ = sectionEnd;
     }
 }
 
@@ -2741,6 +3151,8 @@ bool SessionView::canDropIntoGroup(int draggedIndex, int targetIndex) const {
     if (!target || !target->isGroup())
         return false;
     const auto* dragged = tm.getTrack(visibleTrackIds_[draggedIndex]);
+    if (dragged && !dragged->canJoinGroup())
+        return false;
     if (dragged && dragged->isGroup()) {
         auto desc = tm.getAllDescendants(dragged->id);
         if (std::ranges::contains(desc, target->id))
@@ -2758,25 +3170,26 @@ void SessionView::executeHeaderDrop() {
         TrackId groupId = visibleTrackIds_[headerDropIndex_];
         tm.addTrackToGroup(draggedId, groupId);
     } else if (headerDropType_ == HeaderDropType::BetweenTracks && headerDropIndex_ >= 0) {
+        const int sectionEnd = headerDragSectionEnd();
+        const bool atSectionEnd = headerDropIndex_ >= sectionEnd;
         TrackId targetParent = INVALID_TRACK_ID;
-        if (headerDropIndex_ < static_cast<int>(visibleTrackIds_.size())) {
+        if (!atSectionEnd) {
             const auto* t = tm.getTrack(visibleTrackIds_[headerDropIndex_]);
             if (t)
                 targetParent = t->parentId;
-        } else if (!visibleTrackIds_.empty()) {
-            const auto* t = tm.getTrack(visibleTrackIds_.back());
+        } else if (sectionEnd > 0) {
+            const auto* t = tm.getTrack(visibleTrackIds_[sectionEnd - 1]);
             if (t)
                 targetParent = t->parentId;
         }
         const auto* dragged = tm.getTrack(draggedId);
-        if (dragged && dragged->parentId != targetParent) {
+        if (dragged && dragged->canJoinGroup() && dragged->parentId != targetParent) {
             tm.removeTrackFromGroup(draggedId);
             if (targetParent != INVALID_TRACK_ID)
                 tm.addTrackToGroup(draggedId, targetParent);
         }
-        int targetIdx = headerDropIndex_ < static_cast<int>(visibleTrackIds_.size())
-                            ? tm.getTrackIndex(visibleTrackIds_[headerDropIndex_])
-                            : tm.getNumTracks();
+        int targetIdx = !atSectionEnd ? tm.getTrackIndex(visibleTrackIds_[headerDropIndex_])
+                                      : tm.getNumTracks();
         int currentIdx = tm.getTrackIndex(draggedId);
         if (currentIdx < targetIdx)
             targetIdx--;
@@ -2803,8 +3216,10 @@ void SessionView::paintHeaderDragFeedback(juce::Graphics& g) {
 
     if (headerDropType_ == HeaderDropType::BetweenTracks && headerDropIndex_ >= 0) {
         int lineX = 0;
-        if (headerDropIndex_ >= static_cast<int>(visibleTrackIds_.size()))
-            lineX = getTotalTracksWidth() - trackHeaderScrollOffset;
+        const int sectionEnd = headerDragSectionEnd();
+        if (headerDropIndex_ >= sectionEnd && sectionEnd > 0)
+            lineX = getTrackX(sectionEnd - 1) + trackColumnWidths_[sectionEnd - 1] -
+                    trackHeaderScrollOffset;
         else
             lineX = getTrackX(headerDropIndex_) - trackHeaderScrollOffset;
         g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY));
@@ -2973,6 +3388,12 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
     slot->transportIsPlaying = audioEngine_ != nullptr && audioEngine_->isPlaying();
     slot->rowSelected = sceneIndex == selectedScene_;
     slot->isDropTarget = false;
+
+    if (slot->isClosedSlot) {
+        slot->repaint();
+        return;
+    }
+
     slot->stopIsQueued =
         audioEngine_ != nullptr && audioEngine_->isSessionTrackStopPending(trackId);
 
@@ -3387,6 +3808,13 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
     if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size()))
         hoveredTrackId = visibleTrackIds_[trackIndex];
 
+    if (const auto* hoveredTrack = TrackManager::getInstance().getTrack(hoveredTrackId);
+        hoveredTrack != nullptr && !hoveredTrack->acceptsUserClip(ClipType::Audio)) {
+        juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon, "Drop Failed",
+                                               "Audio clips cannot be placed on this track.");
+        return;
+    }
+
     // Drop target decides: empty area → one new track per sample, existing
     // track → stack clips down the scene slots of that track.
     const bool expand = (hoveredTrackId == INVALID_TRACK_ID);
@@ -3499,8 +3927,9 @@ void SessionView::updateDragHighlight(int x, int y) {
         if (dragHoverTrackIndex_ >= 0 && dragHoverSceneIndex_ >= 0 &&
             dragHoverTrackIndex_ < static_cast<int>(clipSlots.size()) &&
             dragHoverSceneIndex_ < static_cast<int>(clipSlots[dragHoverTrackIndex_].size())) {
-            if (auto* slot = static_cast<ClipSlotButton*>(
-                    clipSlots[dragHoverTrackIndex_][dragHoverSceneIndex_].get())) {
+            auto* slot = static_cast<ClipSlotButton*>(
+                clipSlots[dragHoverTrackIndex_][dragHoverSceneIndex_].get());
+            if (slot != nullptr && !slot->isGroupSlot && !slot->isClosedSlot) {
                 slot->isDropTarget = true;
                 slot->repaint();
             }
@@ -3531,6 +3960,14 @@ void SessionView::updateDragGhost(const juce::StringArray& files, int trackIndex
     if (files.isEmpty() || sceneIndex < 0) {
         clearDragGhost();
         return;
+    }
+
+    if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
+        const auto* track = TrackManager::getInstance().getTrack(visibleTrackIds_[trackIndex]);
+        if (track != nullptr && !track->acceptsUserClip(ClipType::Audio)) {
+            clearDragGhost();
+            return;
+        }
     }
 
     // Get first audio file from the list

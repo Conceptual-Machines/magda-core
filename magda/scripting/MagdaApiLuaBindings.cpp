@@ -250,6 +250,8 @@ TrackType parseTrackType(const char* s) {
     if (juce::String(s).equalsIgnoreCase("multi_out") ||
         juce::String(s).equalsIgnoreCase("multiout"))
         return TrackType::MultiOut;
+    if (juce::String(s).equalsIgnoreCase("separator"))
+        return TrackType::Separator;
     return TrackType::Media;
 }
 
@@ -267,6 +269,8 @@ const char* trackTypeToLuaString(TrackType t) {
             return "multi_out";
         case TrackType::Pad:
             return "pad";
+        case TrackType::Separator:
+            return "separator";
     }
     return "audio";
 }

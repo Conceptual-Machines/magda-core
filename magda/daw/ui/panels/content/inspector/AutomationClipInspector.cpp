@@ -52,7 +52,7 @@ AutomationClipInspector::AutomationClipInspector() {
         }
 
         menu.showMenuAsync(
-            juce::PopupMenu::Options().withTargetComponent(colourSwatch_.get()),
+            juce::PopupMenu::Options().withTargetComponent(&titleLabel_),
             [this, palette](int result) {
                 if (result == 0)
                     return;
@@ -80,6 +80,9 @@ AutomationClipInspector::AutomationClipInspector() {
                     std::make_unique<magda::SetAutomationClipColourCommand>(clip->id, newColour));
             });
     };
+    // Right-clicking the name also picks the colour.
+    namePopupListener_.onPopup = [this]() { colourSwatch_->onColourClicked(); };
+    titleLabel_.addMouseListener(&namePopupListener_, false);
     addChildComponent(*colourSwatch_);
 
     // Clip name (double-click to rename) over the lane target and length, as on the clip inspector.
@@ -234,6 +237,11 @@ void AutomationClipInspector::refreshDisplay() {
         colourSwatch_->clearColour();
     else
         colourSwatch_->setColour(clip->colour);
+    // No colour, no spine: the name takes its slot.
+    if (colourSwatch_->isVisible() != colourSwatch_->hasColour()) {
+        colourSwatch_->setVisible(colourSwatch_->hasColour());
+        resized();
+    }
     const auto& project = magda::ProjectManager::getInstance().getCurrentProjectInfo();
 
     juce::StringArray parts{"Automation"};
@@ -274,8 +282,10 @@ void AutomationClipInspector::resized() {
     // Header: colour spine | name over summary.
     {
         auto row = bounds.removeFromTop(kHeaderHeight);
-        colourSwatch_->setBounds(row.removeFromLeft(4).reduced(0, 3));
-        row.removeFromLeft(10);
+        if (colourSwatch_->isVisible()) {
+            colourSwatch_->setBounds(row.removeFromLeft(4).reduced(0, 3));
+            row.removeFromLeft(10);
+        }
         auto text = row.reduced(0, 2);
         titleLabel_.setBounds(text.removeFromTop(20));
         subline_.setBounds(text.removeFromTop(14));

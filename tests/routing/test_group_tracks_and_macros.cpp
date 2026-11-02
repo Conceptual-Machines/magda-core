@@ -5,11 +5,14 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "../../magda/daw/core/AutomationInfo.hpp"
+#include "../../magda/daw/core/Config.hpp"
 #include "../../magda/daw/core/MacroInfo.hpp"
+#include "../../magda/daw/core/MixerStripOrder.hpp"
 #include "../../magda/daw/core/ModInfo.hpp"
 #include "../../magda/daw/core/RackInfo.hpp"
 #include "../../magda/daw/core/TrackCommands.hpp"
 #include "../../magda/daw/core/TrackManager.hpp"
+#include "../../magda/daw/core/TrackShade.hpp"
 #include "../../magda/daw/core/UndoManager.hpp"
 #include "../../magda/daw/project/serialization/ProjectSerializer.hpp"
 
@@ -111,6 +114,201 @@ TEST_CASE("Aux returns get role-specific default names", "[aux][track][naming]")
 // ============================================================================
 // Group Track: Instrument Restriction
 // ============================================================================
+
+TEST_CASE("The chord track leads what is on screen and the track list keeps its order",
+          "[track][placement]") {
+    GroupMacroTestFixture fixture;
+    auto& tm = TrackManager::getInstance();
+    const auto first = tm.createTrack("First", TrackType::Media);
+    const auto chord = tm.createTrack("", TrackType::Chord);
+    const auto second = tm.createTrack("Second", TrackType::Media);
+
+    const std::vector<TrackId> onScreen{chord, first, second};
+    CHECK(tm.getVisibleTracks(ViewMode::Arrange) == onScreen);
+    CHECK(tm.getVisibleTopLevelTracks(ViewMode::Arrange) == onScreen);
+
+    // Agents and scripts address tracks by their index in this one.
+    REQUIRE(tm.getTracks().size() == 3);
+    CHECK(tm.getTracks()[0].id == first);
+    CHECK(tm.getTracks()[1].id == chord);
+    CHECK(tm.getTracks()[2].id == second);
+}
+
+TEST_CASE("The chord track and separators stay out of groups", "[track][placement]") {
+    GroupMacroTestFixture fixture;
+    auto& tm = TrackManager::getInstance();
+    const auto group = tm.createGroupTrack("Group");
+    const auto chord = tm.createTrack("", TrackType::Chord);
+    const auto separator = tm.createTrack("", TrackType::Separator);
+    const auto media = tm.createTrack("Media", TrackType::Media);
+
+    tm.addTrackToGroup(chord, group);
+    tm.addTrackToGroup(separator, group);
+    CHECK_FALSE(tm.getTrack(chord)->hasParent());
+    CHECK_FALSE(tm.getTrack(separator)->hasParent());
+
+    // Grouping a selection takes what it can and leaves the rest where it is.
+    const auto media2 = tm.createTrack("Media 2", TrackType::Media);
+    const auto made = tm.groupTracks({chord, separator, media, media2}, "Made");
+    REQUIRE(made != INVALID_TRACK_ID);
+    CHECK(tm.getTrack(made)->childIds == std::vector<TrackId>{media, media2});
+    CHECK_FALSE(tm.getTrack(chord)->hasParent());
+    CHECK_FALSE(tm.getTrack(separator)->hasParent());
+}
+
+TEST_CASE("Adding a chord track adds a separator right after it, one undo step",
+          "[track][separator][placement]") {
+    GroupMacroTestFixture fixture;
+    auto& tm = TrackManager::getInstance();
+    auto& config = Config::getInstance();
+    const bool oldPreference = config.getSeparatorAfterChordTrack();
+
+    const auto first = tm.createTrack("First", TrackType::Media);
+    const auto second = tm.createTrack("Second", TrackType::Media);
+
+    config.setSeparatorAfterChordTrack(true);
+    addChordTrackFromMenu();
+
+    const auto rows = tm.getVisibleTracks(ViewMode::Arrange);
+    REQUIRE(rows.size() == 4);
+    CHECK(rows[0] == tm.getChordTrackId());
+    CHECK(tm.getTrack(rows[1])->isSeparator());
+    CHECK(rows[2] == first);
+    CHECK(rows[3] == second);
+
+    UndoManager::getInstance().undo();
+    CHECK(tm.getTracks().size() == 2);
+    CHECK_FALSE(tm.hasChordTrack());
+
+    // Off: the chord track alone.
+    config.setSeparatorAfterChordTrack(false);
+    addChordTrackFromMenu();
+    CHECK(tm.getTracks().size() == 3);
+    CHECK(tm.getVisibleTracks(ViewMode::Arrange)[1] == first);
+
+    config.setSeparatorAfterChordTrack(oldPreference);
+}
+
+TEST_CASE("A folded chord track keeps its place in the order", "[track][placement]") {
+    GroupMacroTestFixture fixture;
+    auto& tm = TrackManager::getInstance();
+    const auto media = tm.createTrack("Media", TrackType::Media);
+    const auto chord = tm.createTrack("", TrackType::Chord);
+
+    tm.setTrackCollapsed(chord, true);
+    CHECK(tm.getTrack(chord)->isCollapsedIn(ViewMode::Live));
+    CHECK(tm.getTrack(chord)->isCollapsedIn(ViewMode::Mix));
+
+    // Folding changes how it is drawn, not what a control surface reaches.
+    CHECK(mixerStripOrder(tm.getTracks(), ViewMode::Mix) == std::vector<TrackId>{chord, media});
+    CHECK(mixerStripAtPosition(tm.getTracks(), ViewMode::Mix, 1) == chord);
+}
+
+TEST_CASE("Tracks move into, within and out of a group as one undo step", "[track][placement]") {
+    GroupMacroTestFixture fixture;
+    auto& tm = TrackManager::getInstance();
+    const auto group = tm.createGroupTrack("Group");
+    const auto a = tm.createTrack("A", TrackType::Media);
+    const auto b = tm.createTrack("B", TrackType::Media);
+    const auto c = tm.createTrack("C", TrackType::Media);
+
+    // Into it: the end, then in front of a child.
+    moveTracksToPlace({a}, group, INVALID_TRACK_ID);
+    CHECK(tm.getTrack(group)->childIds == std::vector<TrackId>{a});
+    moveTracksToPlace({b}, group, a);
+    CHECK(tm.getTrack(group)->childIds == std::vector<TrackId>{b, a});
+
+    // Joining and moving in one gesture is one undo.
+    UndoManager::getInstance().undo();
+    CHECK(tm.getTrack(group)->childIds == std::vector<TrackId>{a});
+    CHECK_FALSE(tm.getTrack(b)->hasParent());
+
+    // Within it.
+    moveTracksToPlace({b}, group, a);
+    moveTracksToPlace({b}, group, INVALID_TRACK_ID);
+    CHECK(tm.getTrack(group)->childIds == std::vector<TrackId>{a, b});
+
+    // Out of it, to a place in the top level, routed back to the master.
+    moveTracksToPlace({a}, INVALID_TRACK_ID, c);
+    CHECK_FALSE(tm.getTrack(a)->hasParent());
+    CHECK(tm.getTrack(a)->audioOutputDevice == "master");
+    CHECK(tm.getTrackIndex(a) == tm.getTrackIndex(c) - 1);
+
+    // Several keep their order, whichever way they travel in the list.
+    moveTracksToPlace({a, c}, INVALID_TRACK_ID, group);
+    CHECK(tm.getTrackIndex(a) == 0);
+    CHECK(tm.getTrackIndex(c) == 1);
+    CHECK(tm.getTrackIndex(group) == 2);
+    moveTracksToPlace({a, c}, INVALID_TRACK_ID, INVALID_TRACK_ID);
+    CHECK(tm.getTrackIndex(c) == tm.getNumTracks() - 1);
+    CHECK(tm.getTrackIndex(a) == tm.getNumTracks() - 2);
+}
+
+TEST_CASE("A group goes darker than its tracks, and neighbours of one colour alternate",
+          "[track][placement]") {
+    GroupMacroTestFixture fixture;
+    auto& tm = TrackManager::getInstance();
+    const juce::Colour red(0xFFAA3333);
+    const juce::Colour blue(0xFF3355AA);
+    const auto make = [&tm](juce::Colour colour) {
+        const auto id = tm.createTrack("Track", TrackType::Media);
+        tm.setTrackColour(id, colour);
+        return id;
+    };
+
+    // A run alternates, and a different colour starts over.
+    const auto a = make(red);
+    const auto b = make(red);
+    const auto c = make(red);
+    const auto d = make(blue);
+    const auto e = make(red);
+    CHECK(trackShades({a, b, c, d, e}) == TrackShades{{b, kNeighbourShade}});
+
+    // A gap or a separator ends a run, so neither side needs to differ.
+    CHECK(trackShades({a, INVALID_TRACK_ID, b}).empty());
+    const auto separator = tm.createTrack("", TrackType::Separator);
+    CHECK(trackShades({a, separator, b}).empty());
+
+    // The group darkens, not its first track, which then starts the tracks' own run.
+    const auto group = tm.createGroupTrack("Group");
+    tm.setTrackColour(group, red);
+    const auto first = make(red);
+    const auto second = make(red);
+    const auto third = make(red);
+    tm.addTrackToGroup(first, group);
+    tm.addTrackToGroup(second, group);
+    tm.addTrackToGroup(third, group);
+    CHECK(trackShades({group, first, second, third}) ==
+          TrackShades{{group, kGroupShade}, {second, kNeighbourShade}});
+
+    // Only for a child it is shown with: collapsed, it is an ordinary neighbour.
+    CHECK(trackShades({group}).empty());
+
+    // No child shares its colour, so the group has nothing to stand apart from.
+    const auto blueGroup = tm.createGroupTrack("Blue group");
+    tm.setTrackColour(blueGroup, blue);
+    const auto inside = make(red);
+    tm.addTrackToGroup(inside, blueGroup);
+    CHECK(trackShades({blueGroup, inside}).empty());
+}
+
+TEST_CASE("A separator starts unnamed and takes no devices", "[track][separator]") {
+    GroupMacroTestFixture fixture;
+    auto& tm = TrackManager::getInstance();
+    const auto separator = tm.createTrack("", TrackType::Separator);
+    CHECK(tm.getTrack(separator)->name.isEmpty());
+
+    tm.setTrackName(separator, "Drums");
+    CHECK(tm.getTrack(separator)->name == "Drums");
+
+    DeviceInfo effect;
+    effect.name = "EQ";
+    effect.pluginId = "eq";
+    CHECK(tm.addDeviceToTrack(separator, effect) == INVALID_DEVICE_ID);
+    CHECK(tm.addRackToTrack(separator) == INVALID_RACK_ID);
+    CHECK(tm.addDeviceToPostFx(separator, effect) == INVALID_DEVICE_ID);
+    CHECK(tm.addDeviceToMixerAnalysis(separator, effect) == INVALID_DEVICE_ID);
+}
 
 TEST_CASE("Group track rejects instrument plugins", "[group_track][instrument]") {
     GroupMacroTestFixture fixture;

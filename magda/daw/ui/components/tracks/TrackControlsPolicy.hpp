@@ -109,12 +109,14 @@ struct TrackControlsPolicy {
                 p.mute = true;
                 p.muteStyle = MuteStyle::MasterSpeaker;
                 break;
+            case TrackType::Separator:
+                return hidden();
             case TrackType::Chord:
-                // MIDI-only: drives instrument tracks; the audition control
-                // covers mute/solo/monitor in one.
+                // Volume and the audition control, which covers mute/solo/monitor
+                // in one (#3228).
                 p.mute = true;
                 p.muteStyle = MuteStyle::ChordAudition;
-                p.midiIn = p.midiOut = true;
+                p.meter = false;
                 break;
         }
         return p;

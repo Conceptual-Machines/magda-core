@@ -2338,3 +2338,42 @@ TEST_CASE("FlattenClipStackCommand - only offers itself when there is a stack to
 
     proj.setTempo(originalTempo);
 }
+
+TEST_CASE("No gesture puts a clip on a track that takes none", "[clip][command][session]") {
+    // The arrangement refused these and Session View did not: a clip that landed
+    // on a group or an aux never sounded, because the compiler does not read
+    // their lanes (#3228). Automation clips live on lanes and never come here.
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    const TrackId media = createTrack();
+    const ClipId source = cm.createMidiClip(media, 0.0, 4.0, ClipView::Session);
+    cm.setClipSceneIndex(source, 0);
+
+    for (const auto type : {TrackType::Group, TrackType::Aux}) {
+        INFO("track type " << getTrackTypeName(type));
+        const TrackId closed = createTrack("Closed", type);
+
+        MoveSessionClipCommand move(source, closed, 1);
+        CHECK_FALSE(move.canExecute());
+
+        CHECK_FALSE(DuplicateClipCommand::forSessionSlot(source, closed, 1)->canExecute());
+
+        CreateClipCommand create(ClipType::MIDI, closed, BeatPosition{0.0}, BeatDuration{4.0}, "",
+                                 ClipView::Session, ClipOverlapPolicy::PreserveExisting, 1);
+        CHECK_FALSE(create.canExecute());
+
+        cm.copyToClipboard({source});
+        CHECK(cm.pasteFromClipboardBeats(0.0, closed, ClipView::Session, 1).empty());
+        CHECK(cm.getClipsOnTrack(closed).empty());
+    }
+
+    // The same four still land on a track that does take them.
+    const TrackId other = createTrack("Other");
+    CHECK(MoveSessionClipCommand(source, other, 1).canExecute());
+    CHECK(DuplicateClipCommand::forSessionSlot(source, other, 1)->canExecute());
+    CHECK(CreateClipCommand(ClipType::MIDI, other, BeatPosition{0.0}, BeatDuration{4.0}, "",
+                            ClipView::Session, ClipOverlapPolicy::PreserveExisting, 1)
+              .canExecute());
+    cm.copyToClipboard({source});
+    CHECK(cm.pasteFromClipboardBeats(0.0, other, ClipView::Session, 1).size() == 1);
+}

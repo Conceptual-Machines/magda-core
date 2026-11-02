@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "../../themes/MixerLookAndFeel.hpp"
@@ -179,6 +180,8 @@ class TrackHeadersPanel : public juce::Component,
         bool isMultiOut = false;    // Is this a multi-out child track?
         bool isMaster = false;      // Is this the master track?
         bool isChordTrack = false;  // Is this the singleton chord track?
+        bool isSeparator = false;   // A row with no head: a rule and an optional name (#3228)
+        bool isGroupTrack = false;  // A real group, with a strip beside its own row (#3228)
         bool isCollapsed = false;   // Is group collapsed?
         // Which controls this track type exposes — shared with the inspector
         // so the two views can't drift. Set from TrackControlsPolicy::forTrack.
@@ -355,6 +358,14 @@ class TrackHeadersPanel : public juce::Component,
     void setupTrackHeader(TrackHeader& header, int trackIndex);
     void setupTrackHeaderWithId(TrackHeader& header, int trackId);
     void rebuildSendLabels(TrackHeader& header, TrackId trackId);
+    void paintGroupStrips(juce::Graphics& g, int trackIndex);
+    /** @brief The last row inside the group at @p groupRow, or that row when it shows none. */
+    int lastRowOfGroup(int groupRow) const;
+    /** @brief A row's indent: its depth, plus the strip beside a group's own row. */
+    static int headerIndent(const TrackHeader& header) {
+        return (header.depth + (header.isGroupTrack ? 1 : 0)) * INDENT_WIDTH;
+    }
+    std::unordered_map<TrackId, float> trackShades_;
     void paintTrackHeader(juce::Graphics& g, const TrackHeader& header, juce::Rectangle<int> area,
                           bool isSelected);
     static void paintResizeHandle(juce::Graphics& g, juce::Rectangle<int> area);

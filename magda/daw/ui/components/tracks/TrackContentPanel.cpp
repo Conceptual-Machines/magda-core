@@ -724,7 +724,10 @@ int TrackContentPanel::getNumTracks() const {
 
 void TrackContentPanel::setTrackHeight(int trackIndex, int height) {
     if (trackIndex >= 0 && trackIndex < static_cast<int>(trackLanes.size())) {
-        height = juce::jlimit(MIN_TRACK_HEIGHT, MAX_TRACK_HEIGHT, height);
+        const auto* track = TrackManager::getInstance().getTrack(visibleTrackIds_[trackIndex]);
+        height = track != nullptr && track->isSeparator()
+                     ? juce::jlimit(kSeparatorRowHeight, kMaxSeparatorRowHeight, height)
+                     : juce::jlimit(MIN_TRACK_HEIGHT, MAX_TRACK_HEIGHT, height);
         if (trackLanes[trackIndex]->height == height)
             return;
         trackLanes[trackIndex]->height = height;
@@ -812,6 +815,16 @@ void TrackContentPanel::paintTrackLane(juce::Graphics& g, const TrackLane& /*lan
     auto paintArea = area.getIntersection(g.getClipBounds());
     if (paintArea.isEmpty())
         return;
+
+    if (trackIndex >= 0 && trackIndex < static_cast<int>(visibleTrackIds_.size())) {
+        const auto* separator = TrackManager::getInstance().getTrack(visibleTrackIds_[trackIndex]);
+        if (separator != nullptr && separator->isSeparator()) {
+            g.setColour(ActiveTheme::getColour(isSelected ? ActiveTheme::TRACK_SELECTED
+                                                          : ActiveTheme::BACKGROUND));
+            g.fillRect(paintArea);
+            return;
+        }
+    }
 
     // Background (semi-transparent to let grid show through)
     auto bgColour = isSelected ? ActiveTheme::getColour(ActiveTheme::TRACK_SELECTED)
@@ -3754,7 +3767,7 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
                 if (isProgression && targetTrackId == INVALID_TRACK_ID) {
                     // Progression dropped on empty area: route to the chord
                     // track, creating it if the project doesn't have one yet.
-                    clipTrackId = TrackManager::getInstance().ensureChordTrack();
+                    clipTrackId = ensureChordTrackWithSeparator();
                     if (clipTrackId == INVALID_TRACK_ID)
                         continue;
                 } else if (createNewTracks) {

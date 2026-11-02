@@ -39,6 +39,7 @@
 #include "core/PasteTargetResolver.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TempoUtils.hpp"
+#include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "core/WarpMarkerCommands.hpp"
@@ -144,7 +145,7 @@ void extractChordsToChordTrack(magda::ClipId sourceClipId, bool replace) {
     const double clipLength = std::max(source->placement.lengthBeats, extractEnd);
 
     auto& tm = TrackManager::getInstance();
-    const auto chordTrackId = tm.ensureChordTrack();
+    const auto chordTrackId = ensureChordTrackWithSeparator();
     if (chordTrackId == magda::INVALID_TRACK_ID)
         return;
 

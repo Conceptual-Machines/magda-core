@@ -184,8 +184,8 @@ int sectionHeight(bool open, bool editorOpen) {
 }  // namespace
 
 ModulationSection::ModulationSection()
-    : modsHeader_(tr("inspector.mods"), "inspector.mods"),
-      macrosHeader_(tr("inspector.macros"), "inspector.macros"),
+    : modsHeader_(tr("inspector.mods"), "inspector.mods", /*startCollapsed=*/true),
+      macrosHeader_(tr("inspector.macros"), "inspector.macros", /*startCollapsed=*/true),
       modsPanel_(std::make_unique<ModsPanelComponent>()),
       modEditor_(std::make_unique<ModulatorEditorPanel>()),
       macroPanel_(std::make_unique<MacroPanelComponent>()),

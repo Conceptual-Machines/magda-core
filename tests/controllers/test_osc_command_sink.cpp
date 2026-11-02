@@ -11,6 +11,7 @@
 #include "magda/daw/api/osc_command_sink_live.hpp"
 #include "magda/daw/audio/controllers/ControllerParamWriter.hpp"
 #include "magda/daw/core/ControlTarget.hpp"
+#include "magda/daw/core/MixerStripOrder.hpp"
 
 using namespace magda;
 using namespace magda::osc;
@@ -178,6 +179,48 @@ TEST_CASE("Aux returns take no position among the strips", "[osc][sink]") {
 
     REQUIRE(f.writer->writes.size() == 1);
     REQUIRE(f.writer->writes[0].target.devicePath.trackId == keys);
+}
+
+TEST_CASE("The chord track has the first position and a separator has none", "[osc][sink]") {
+    // A fader lands on the strip the user sees at that position, and the chord
+    // strip is the first one wherever it sits in the track list (#3228).
+    Fixture f;
+    const auto drums = f.addTrack("Drums");
+    const auto chord = f.addTrack("Chords");
+    f.track(chord)->type = TrackType::Chord;
+    const auto separator = f.addTrack("");
+    f.track(separator)->type = TrackType::Separator;
+    const auto keys = f.addTrack("Keys");
+
+    f.apply(OscCommandKind::TrackVolume, 1, 0.5f);
+    f.apply(OscCommandKind::TrackVolume, 2, 0.5f);
+    f.apply(OscCommandKind::TrackVolume, 3, 0.5f);
+    f.apply(OscCommandKind::TrackVolume, 4, 0.5f);
+
+    REQUIRE(f.writer->writes.size() == 3);
+    CHECK(f.writer->writes[0].target.devicePath.trackId == chord);
+    CHECK(f.writer->writes[1].target.devicePath.trackId == drums);
+    CHECK(f.writer->writes[2].target.devicePath.trackId == keys);
+}
+
+TEST_CASE("The section beside the master holds the aux returns and the chord leads the strips",
+          "[osc][sink]") {
+    // Wherever each sits in the track list.
+    Fixture f;
+    const auto drums = f.addTrack("Drums");
+    const auto firstAux = f.addTrack("Reverb");
+    f.track(firstAux)->type = TrackType::Aux;
+    const auto chord = f.addTrack("Chords");
+    f.track(chord)->type = TrackType::Chord;
+    const auto secondAux = f.addTrack("Delay");
+    f.track(secondAux)->type = TrackType::Aux;
+    const auto hiddenAux = f.addTrack("Hidden");
+    f.track(hiddenAux)->type = TrackType::Aux;
+    f.track(hiddenAux)->viewSettings.setVisible(ViewMode::Mix, false);
+
+    const auto& tracks = f.api.tracks_.tracks;
+    CHECK(pinnedStripOrder(tracks, ViewMode::Mix) == std::vector<TrackId>{firstAux, secondAux});
+    CHECK(mixerStripOrder(tracks, ViewMode::Mix) == std::vector<TrackId>{chord, drums});
 }
 
 TEST_CASE("Children of a collapsed group take no position", "[osc][sink]") {

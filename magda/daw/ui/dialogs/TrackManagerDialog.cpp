@@ -128,7 +128,8 @@ class TrackManagerDialog::ContentComponent : public juce::Component,
             // Draw track name with indentation for hierarchy
             g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
             int indent = row.depth * 20;
-            juce::String displayName = track->name;
+            juce::String displayName =
+                track->name.isEmpty() ? juce::String(getTrackTypeName(track->type)) : track->name;
 
             // Add group indicator
             if (track->isGroup()) {

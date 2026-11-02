@@ -551,7 +551,8 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
     // and never reaches a file (CompileOptions::monitorTracks, #2446).
     std::vector<bool> skipped(numTracks, false);
     for (std::size_t i = 0; i < numTracks; ++i)
-        skipped[i] = !options_.monitorTracks && tracks_[i].type == TrackType::Chord;
+        skipped[i] = !tracks_[i].carriesSignal() ||
+                     (!options_.monitorTracks && tracks_[i].type == TrackType::Chord);
 
     // One ordering constraint. Held as a list rather than adjacency because a
     // cycle is resolved by withdrawing a particular edge, and an edge has to be
