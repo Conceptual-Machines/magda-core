@@ -212,6 +212,8 @@ void ClipInspector::updateFromSelectedClip() {
         swatch->clearColour();
     else
         swatch->setColour(clip->colour);
+    // No colour, no spine: the name takes its slot, and right-clicking the name picks one.
+    swatch->setVisible(swatch->hasColour());
     applyHeaderStyle();
 
     clipEnabledToggle_->setActive(clip->enabled);

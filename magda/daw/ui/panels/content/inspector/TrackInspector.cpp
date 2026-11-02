@@ -1575,7 +1575,9 @@ void TrackInspector::showTrackControls(bool show) {
 
     trackNameLabel_.setVisible(show);
     trackNameValue_.setVisible(show);
-    colourSwatch_->setVisible(show && !isMaster && !isSeparator);
+    // No colour, no swatch: the name takes its slot, and right-clicking the name picks one.
+    const bool hasColour = static_cast<magda::ColourSwatch*>(colourSwatch_.get())->hasColour();
+    colourSwatch_->setVisible(show && !isMaster && !isSeparator && hasColour);
     masterGlyph_->setVisible(show && isMaster);
 
     muteButton_->setVisible(p.mute && p.muteStyle == MuteStyle::Standard);

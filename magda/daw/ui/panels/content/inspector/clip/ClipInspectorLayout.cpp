@@ -39,11 +39,11 @@ void ClipInspector::resized() {
     // ---- Header: spine | name over summary | ghost, save, power ------
     {
         auto row = bounds.removeFromTop(kHeaderHeight);
-        if (nameFilled_) {
-            colourSwatch_->setBounds({});
-        } else {
+        if (colourSwatch_->isVisible() && !nameFilled_) {
             colourSwatch_->setBounds(row.removeFromLeft(4).reduced(0, 3));
             row.removeFromLeft(10);
+        } else {
+            colourSwatch_->setBounds({});
         }
 
         auto chip = [&row](juce::Component& c) {

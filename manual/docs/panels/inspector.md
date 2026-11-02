@@ -9,7 +9,7 @@ The Inspector panel is on the right side of the window. It displays context-sens
 Displayed when a track is selected. Shows:
 
 - **Track name** — Click to rename
-- **Track color** — Click the color swatch to choose a custom color, or leave as auto-assigned
+- **Track color** — Right-click the track name, or click the color swatch beside it, to choose a color. A track with no color has no swatch
 - **Volume and pan** — Numeric readouts and controls
 - **Input routing** — Select audio/MIDI input source
 - **Output routing** — Select audio/MIDI output destination
@@ -20,7 +20,7 @@ Displayed when a track is selected. Shows:
 Displayed when a clip is selected. Shows:
 
 - **Clip name** - Click to rename
-- **Clip color** - Click the color swatch to choose a custom color
+- **Clip color** - Right-click the clip name, or click the color swatch beside it, to choose a color. A clip with no color has no swatch
 - **Position** - Start, end, and length on the timeline (beats)
 - **Loop settings** - Loop on/off, loop start, loop end, phase / offset (beats)
 

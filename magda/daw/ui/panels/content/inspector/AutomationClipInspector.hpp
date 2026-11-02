@@ -40,6 +40,15 @@ class AutomationClipInspector : public BaseInspector, private magda::AutomationM
     magda::AutomationClipSelection selection_;
 
     std::unique_ptr<magda::ColourSwatch> colourSwatch_;
+    // Opens the colour menu on a right-click of the name; outlives the label it listens to.
+    struct NamePopupListener : juce::MouseListener {
+        std::function<void()> onPopup;
+        void mouseDown(const juce::MouseEvent& e) override {
+            if (e.mods.isPopupMenu() && onPopup)
+                onPopup();
+        }
+    };
+    NamePopupListener namePopupListener_;
     juce::Label titleLabel_;
     juce::Label subline_;
     juce::Label startLabel_, endLabel_, lengthLabel_;  // column headings
