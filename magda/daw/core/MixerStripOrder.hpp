@@ -20,11 +20,12 @@ namespace magda {
  * "what a mixer strip is" meant an OSC fader could land one strip to the left
  * of the one the user was looking at.
  *
- * Three things keep a track out of the run:
+ * Four things keep a track out of the run:
  *
  *  - it is hidden in this view mode;
- *  - it is an aux, which the mixer renders in its own section rather than
- *    inline with the channel strips;
+ *  - it is an aux, which the mixer holds in its own section beside the master
+ *    rather than inline with the channel strips;
+ *  - it is a separator, which has no strip;
  *  - its parent group is collapsed, so the mixer is not drawing it at all.
  *
  * The master strip is not in here either. It is a separate `TrackInfo` with its
@@ -35,8 +36,13 @@ namespace magda {
 /// list it belongs to, needed to find its parent.
 bool isMixerStrip(const TrackInfo& track, const std::vector<TrackInfo>& tracks, ViewMode mode);
 
-/// Every strip, in mixer order.
+/// Every strip, in mixer order: the chord track first, wherever it sits in the
+/// track list (#3228), then the rest in track-list order.
 std::vector<TrackId> mixerStripOrder(const std::vector<TrackInfo>& tracks, ViewMode mode);
+
+/// The section beside the master that Session View and the Mixer share: the aux
+/// returns, in track-list order.
+std::vector<TrackId> pinnedStripOrder(const std::vector<TrackInfo>& tracks, ViewMode mode);
 
 /**
  * @brief The track at a 1-based position in mixer order.

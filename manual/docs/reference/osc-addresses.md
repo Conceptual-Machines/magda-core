@@ -39,7 +39,7 @@ Turning the socket on, choosing which interfaces answer, and setting the receive
 
 `n`, `m` and `k` are all 1-based, the way surface templates and mixer strips are numbered.
 
-**`n` is a mixer position, not a track ID.** Track IDs survive a reload but go sparse: delete tracks 2 and 3 and the remaining ones are 1, 4 and 5. A template addressing eight strips needs eight dense numbers, so `n` counts positions in the mixer's visible track order instead. A position with no track behind it is ignored, which means a sixteen-strip template on an eight-track project drives the eight that exist rather than failing.
+**`n` is a mixer position, not a track ID.** Track IDs survive a reload but go sparse: delete tracks 2 and 3 and the remaining ones are 1, 4 and 5. A template addressing eight strips needs eight dense numbers, so `n` counts positions in the mixer's visible track order instead. Only the channel strips count, with the chord track first when there is one: aux tracks and separators take no position. A position with no track behind it is ignored, which means a sixteen-strip template on an eight-track project drives the eight that exist rather than failing.
 
 The ceilings are 128 tracks, 8 sends per track, and 16 macros. A number past its ceiling is ignored rather than clamped, so a misconfigured template cannot land a fader on the wrong track.
 

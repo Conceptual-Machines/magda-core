@@ -25,6 +25,8 @@
 #include "../components/mixer/RoutingSelector.hpp"
 #include "../components/mixer/SendRowControls.hpp"
 #include "../components/navigation/MainViewScrollContainer.hpp"
+#include "../components/tracks/ChordFoldControls.hpp"
+#include "../components/tracks/TrackSeparatorView.hpp"
 #include "../themes/MixerLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
 #include "TrackWidthPresetButtons.hpp"
@@ -114,9 +116,8 @@ class MixerView : public juce::Component,
     // Drive strip highlights from SelectionManager (handles both single and
     // multi-selection in one pass). Called from every selection-change event.
     void syncSelectionVisuals();
-    int getSelectedChannel() const {
-        return selectedChannelIndex;
-    }
+    /** @brief The selected strip's track. Strip positions do not index the track list. */
+    TrackId getSelectedChannelTrackId() const;
     bool isSelectedMaster() const {
         return selectedIsMaster;
     }
@@ -135,6 +136,8 @@ class MixerView : public juce::Component,
         void paintOverChildren(juce::Graphics& g) override;
         void resized() final;
         void mouseDown(const juce::MouseEvent& event) override;
+        void mouseDrag(const juce::MouseEvent& event) override;
+        void mouseUp(const juce::MouseEvent& event) override;
         void lookAndFeelChanged() override;
 
         void setMeterLevel(float level);
@@ -168,6 +171,19 @@ class MixerView : public juce::Component,
         // Callback when channel is clicked
         std::function<void(int trackId, bool isMaster)> onClicked;
 
+        // The strip's head dragged over the mixer, then released.
+        std::function<void(TrackId trackId, const juce::MouseEvent& event)> onHeadDrag;
+        std::function<void(TrackId trackId)> onHeadDrop;
+
+        /** @brief Outlines the strip as where a dragged track would land. */
+        void setGroupDropTarget(bool isTarget);
+
+        /** @brief How much darker to draw its colour. See core/TrackShade.hpp. */
+        void setShade(float shade);
+        juce::Colour getTrackColour() const {
+            return trackColour_;
+        }
+
         // Callback when send area is resized (triggers relayout of all strips)
         std::function<void()> onSendAreaResized;
 
@@ -180,6 +196,10 @@ class MixerView : public juce::Component,
         // Dedup for double-delivered mouse events (self mouse listener); see
         // ChannelStrip::mouseDown
         juce::Time lastMouseDownEventTime_;
+        bool headPressed_ = false;
+        bool headDragging_ = false;
+        bool isGroupDropTarget_ = false;
+        float shade_ = 0.0f;
         float meterLevel = 0.0f;
         juce::Colour trackColour_;
         juce::String trackName_;
@@ -255,8 +275,13 @@ class MixerView : public juce::Component,
         class SendResizeHandle;
         std::unique_ptr<SendResizeHandle> sendResizeHandle_;
 
-        // Expand/collapse toggle (for group tracks with children)
-        std::unique_ptr<juce::TextButton> expandToggle_;
+        bool isNestedInGroup() const;
+        int headHeight() const;
+        /** @brief A group listens to its nested strips too, which handle their own mouse. */
+        bool isFromNestedStrip(const juce::MouseEvent& event) const;
+
+        // Expands and collapses a track's children, or folds the chord track
+        std::unique_ptr<FoldChevronButton> expandToggle_;
 
         // Group envelope: child strips nested inside this group strip
         std::vector<juce::Component*> groupChildren_;
@@ -296,7 +321,9 @@ class MixerView : public juce::Component,
 
     // Channel strips (dynamic based on TrackManager)
     std::vector<std::unique_ptr<ChannelStrip>> channelStrips;
-    std::vector<std::unique_ptr<ChannelStrip>> auxChannelStrips;
+    std::vector<std::unique_ptr<ChannelStrip>> pinnedStrips;  // Aux, beside the master
+    std::vector<std::unique_ptr<TrackSeparatorView>> separatorViews_;
+    std::unique_ptr<FoldedChordStrip> foldedChordStrip_;
     std::vector<juce::Component*> orderedStrips_;  // flat layout order for channel container
     std::unique_ptr<MasterChannelStrip> masterStrip;
     std::unique_ptr<TrackWidthPresetButtons> widthPresets_;
@@ -306,8 +333,9 @@ class MixerView : public juce::Component,
     std::unique_ptr<juce::Component> channelContainer;
     std::unique_ptr<MainViewScrollContainer> scrollContainer_;
 
-    // Aux channel container (fixed, not scrollable, between channels and master)
-    std::unique_ptr<juce::Component> auxContainer;
+    // Aux container (fixed, not scrollable, between channels and master)
+    std::unique_ptr<juce::Component> pinnedContainer;
+    static constexpr int PINNED_SPACER_WIDTH = 16;
 
     // Resize handle for channel width
     class ChannelResizeHandle : public juce::Component {
@@ -346,6 +374,7 @@ class MixerView : public juce::Component,
     void wireChannelResizeHandle(ChannelResizeHandle& handle);
     void layoutChannelResizeHandles(int containerHeight);
     static int getTopLevelStripWidth(const ChannelStrip& strip);
+    static int orderedStripWidth(const juce::Component& strip);
     std::vector<TrackId> getLayoutEditTargets(TrackId clickedId, bool allVisible) const;
     void applyChannelWidthDelta(TrackId clickedId, int deltaX, const juce::ModifierKeys& mods);
     void finishChannelWidthResize(const juce::ModifierKeys& mods);
@@ -404,6 +433,30 @@ class MixerView : public juce::Component,
     // Plugin drag-and-drop state
     bool showPluginDropOverlay_ = false;
     int dropTargetStripIndex_ = -1;  // -1 = empty area (new track)
+
+    // Dragging a strip by its head reorders it, or moves it into or out of a group.
+    struct StripDropTarget {
+        bool valid = false;
+        bool ontoGroup = false;               // Outlines the group; otherwise a line at lineX
+        TrackId parentId = INVALID_TRACK_ID;  // The top level when invalid
+        TrackId beforeId = INVALID_TRACK_ID;  // The parent's end when invalid
+        int lineX = 0;                        // In the channel container
+    };
+    struct StripColumn {
+        juce::Range<int> x;  // In the channel container
+        TrackId trackId = INVALID_TRACK_ID;
+        TrackId parentId = INVALID_TRACK_ID;
+        bool isGroup = false;
+    };
+    void updateStripShades();
+    StripDropTarget stripDropTarget_;
+    std::unique_ptr<juce::Component> stripDropLine_;
+    /** @brief Every strip's own column, left to right, nested ones after their group's. */
+    std::vector<StripColumn> stripColumns() const;
+    StripDropTarget findStripDropTarget(TrackId draggedId, int x) const;
+    void showStripDropTarget(const StripDropTarget& target);
+    void updateStripDropTarget(TrackId draggedId, const juce::MouseEvent& event);
+    void dropDraggedStrip(TrackId draggedId);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MixerView)
 };

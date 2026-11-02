@@ -104,11 +104,44 @@ TEST_CASE("Only the Media track takes whatever is aimed at it", "[track][types]"
     // The property the drop, the drag and the nudge each have to agree on. The
     // way they disagreed before was by one of them admitting a type the others
     // refused, so this is stated over every type rather than for one.
-    for (const auto type : {TrackType::Media, TrackType::Group, TrackType::Aux, TrackType::Master,
-                            TrackType::MultiOut, TrackType::Chord}) {
+    for (const auto type :
+         {TrackType::Media, TrackType::Group, TrackType::Aux, TrackType::Master,
+          TrackType::MultiOut, TrackType::Chord, TrackType::Pad, TrackType::Separator}) {
         INFO("track type " << getTrackTypeName(type));
         const bool takesEverything = traitsOf(type).userClips == UserClipAcceptance::Any;
         CHECK(takesEverything == (type == TrackType::Media));
+    }
+}
+
+TEST_CASE("A separator is a place in the track list and nothing else", "[track][types]") {
+    const auto separator = traitsOf(TrackType::Separator);
+
+    // It shows in the arrangement, so it needs a row there.
+    CHECK(separator.occupiesArrangementRow);
+
+    // Everything else a track can be, it is not.
+    CHECK_FALSE(separator.carriesSignal);
+    CHECK_FALSE(separator.isRendered);
+    CHECK_FALSE(separator.hasTimeline);
+    CHECK(separator.userClips == UserClipAcceptance::None);
+    CHECK_FALSE(separator.takesExternalInput);
+    CHECK_FALSE(separator.hostsInstrument);
+    CHECK_FALSE(separator.canHaveChildren);
+    CHECK_FALSE(separator.isSingleton);
+    CHECK_FALSE(separator.isDeviceOwned);
+    CHECK_FALSE(separator.sitsBesideMaster);
+
+    CHECK(trackTypeFromInt(9) == TrackType::Separator);
+}
+
+TEST_CASE("Only aux returns sit beside the master", "[track][types]") {
+    CHECK(traitsOf(TrackType::Aux).sitsBesideMaster);
+
+    for (const auto type : {TrackType::Media, TrackType::Group, TrackType::Master,
+                            TrackType::MultiOut, TrackType::Pad, TrackType::Chord}) {
+        INFO("track type " << getTrackTypeName(type));
+        CHECK_FALSE(traitsOf(type).sitsBesideMaster);
+        CHECK(traitsOf(type).carriesSignal);
     }
 }
 

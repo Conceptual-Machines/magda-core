@@ -8,12 +8,12 @@ A project has a single chord track. Once you have added it, the menu item that c
 
 ## Creating a Chord Track
 
-Choose **Track → Add Chord Track**. The track appears with a simplified header:
+Choose **Track → Add Chord Track**. It takes the top row of the arrangement and the first column on the left in the Session View and the Mixer. A [separator](tracks.md#separators) is added right after it, unless you turn that off in **Preferences**. In the Session View and the Mixer, click the chevron on its header to fold it to a narrow strip, and click the strip to unfold it. The chords keep playing while it is folded. The track appears with a simplified header:
 
-- A **volume** control and a **solo** button.
-- A **chord audition** toggle (the speaker icon) that controls whether the progression sounds during playback.
+- A **volume** control.
+- A **chord audition** toggle (the chord icon) that controls whether the progression sounds during playback.
 
-It has no mute button or level meter — the chord track is a guide, not an audio output.
+It has no mute or solo button, level meter or routing — the chord track is a guide, not an audio output.
 
 ## Editing Chords
 

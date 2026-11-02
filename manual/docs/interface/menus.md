@@ -74,6 +74,7 @@ Each track has a checkbox for each view mode: **Live**, **Arrange**, **Mix**, an
 | Add Group Track | Add a new group track |
 | Add Aux Track | Add a new aux/return track |
 | Add Chord Track | Add the project's [chord track](../chord-track.md) (disabled once one exists) |
+| Add Separator | Add a [separator](../tracks.md#separators) after the selected track |
 | Delete Track | Delete the selected track |
 | Duplicate Track | Duplicate the selected track with clips and FX chain (++ctrl+d++ / ++cmd+d++) |
 | Duplicate Track Without Content | Duplicate track structure and FX chain only, no clips (++ctrl+shift+d++ / ++cmd+shift+d++) |

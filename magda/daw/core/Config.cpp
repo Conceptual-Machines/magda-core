@@ -456,6 +456,7 @@ juce::var Config::toVar() const {
     root->setProperty("stopUpdatesPlayhead", stopUpdatesPlayhead);
     root->setProperty("followPlayhead", followPlayhead);
     root->setProperty("chordPreviewOnByDefault", chordPreviewOnByDefault);
+    root->setProperty("separatorAfterChordTrack", separatorAfterChordTrack);
     root->setProperty("autoCrossfadeByDefault", autoCrossfadeByDefault);
     root->setProperty("assumeProjectTempo", assumeProjectTempo);
     root->setProperty("clipOverlapPlaysBoth", clipOverlapPlaysBoth);
@@ -1012,6 +1013,7 @@ void Config::fromVar(const juce::var& parsed) {
     stopUpdatesPlayhead = getBool("stopUpdatesPlayhead", stopUpdatesPlayhead);
     followPlayhead = getBool("followPlayhead", followPlayhead);
     chordPreviewOnByDefault = getBool("chordPreviewOnByDefault", chordPreviewOnByDefault);
+    separatorAfterChordTrack = getBool("separatorAfterChordTrack", separatorAfterChordTrack);
     autoCrossfadeByDefault = getBool("autoCrossfadeByDefault", autoCrossfadeByDefault);
     assumeProjectTempo = getBool("assumeProjectTempo", assumeProjectTempo);
     clipOverlapPlaysBoth = getBool("clipOverlapPlaysBoth", clipOverlapPlaysBoth);

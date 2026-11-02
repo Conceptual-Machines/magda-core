@@ -747,6 +747,18 @@ class ThemeManager {
 // User colours stay stored verbatim. Only their presentation swatch is
 // normalized, with a slightly deeper target on light surfaces so clips and
 // headers retain contrast without changing hue.
+/** @brief A group's wrapper: its swatch at the group's own end, lifting toward the far end. */
+inline juce::ColourGradient groupWrapperGradient(juce::Colour swatch, juce::Point<float> from,
+                                                 juce::Point<float> to) {
+    return juce::ColourGradient(swatch, from, swatch.brighter(0.3f), to, false);
+}
+
+/** @brief A track's swatch, darkened by what core/TrackShade.hpp gives it. */
+inline juce::Colour deriveShadedTrackSwatch(juce::Colour stored, float shade) {
+    const auto swatch = deriveTrackSwatch(stored);
+    return shade > 0.0f ? swatch.darker(shade) : swatch;
+}
+
 inline juce::Colour deriveTrackSwatch(juce::Colour stored, float alpha) {
     if (stored.getSaturation() < 0.05f)
         return stored.withAlpha(alpha);

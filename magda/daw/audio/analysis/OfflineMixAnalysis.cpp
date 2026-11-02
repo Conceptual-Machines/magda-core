@@ -245,7 +245,7 @@ class AnalysisJob : public juce::Thread {
         // therefore the progress estimate -- is known before rendering starts:
         // one master pass plus one pass per track.
         const auto isAnalysable = [](const TrackInfo& track) {
-            return track.type != TrackType::Chord;
+            return traitsOf(track.type).isRendered;
         };
         const auto stillExists = [](TrackId id) {
             return TrackManager::getInstance().getTrack(id) != nullptr;

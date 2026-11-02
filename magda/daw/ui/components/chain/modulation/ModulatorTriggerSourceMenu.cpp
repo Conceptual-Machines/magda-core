@@ -47,7 +47,7 @@ void showModulatorTriggerSourceMenu(const magda::ChainNodePath& ownerPath, int m
     auto trackEntries = std::make_shared<std::vector<TrackEntry>>();
     int itemId = 10;
     for (const auto& track : tm.getTracks()) {
-        if (track.id == ownerPath.trackId)
+        if (track.id == ownerPath.trackId || !track.carriesSignal())
             continue;
         bool isCurrent = hasSidechain && sidechain.sourceTrackId == track.id;
         menu.addItem(itemId, track.name, true, isCurrent);

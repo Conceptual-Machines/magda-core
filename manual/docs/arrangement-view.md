@@ -24,7 +24,7 @@ The Arrangement View is a traditional DAW timeline for composing, recording, and
 ```
 
 - **Track headers** (left) — Track name, color, mute/solo controls. Resizable width.
-- **Track content** (center) — Clips displayed on the timeline. Scrollable horizontally and vertically.
+- **Track content** (center) — Clips displayed on the timeline. Scrollable horizontally and vertically. The [chord track](chord-track.md), when there is one, is always the top row.
 - **Timeline ruler** (top) — Shows bars, beats, and time markers.
 - **Playhead** — Vertical line showing the current playback position, always on top.
 - **Aux tracks** — Auxiliary/bus tracks in a fixed section above the master.

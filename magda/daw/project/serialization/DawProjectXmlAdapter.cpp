@@ -1072,6 +1072,9 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
     for (const auto& track : document.tracks) {
         if (track.parentId != INVALID_TRACK_ID && tracksById.count(track.parentId) > 0)
             continue;
+        // The format has no such thing, and it would come back as a channel.
+        if (track.isSeparator())
+            continue;
         addTrackElement(*structure, track);
     }
 
@@ -1082,6 +1085,8 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
     rootLanes->setAttribute("timeUnit", "beats");
 
     for (const auto& track : document.tracks) {
+        if (track.isSeparator())
+            continue;
         auto* trackLanes = rootLanes->createNewChildElement("Lanes");
         trackLanes->setAttribute("id", idFor("trackLanes", track.id));
         trackLanes->setAttribute("track", idFor("track", track.id));

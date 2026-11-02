@@ -2060,12 +2060,10 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 }
                 UndoManager::getInstance().endCompoundOperation();
             } else if (mixerView && !mixerView->isSelectedMaster()) {
-                int selectedIndex = mixerView->getSelectedChannel();
-                const auto& tracks = TrackManager::getInstance().getTracks();
-                if (selectedIndex >= 0 && selectedIndex < static_cast<int>(tracks.size())) {
-                    const auto& track = tracks[selectedIndex];
+                const auto selected = mixerView->getSelectedChannelTrackId();
+                if (const auto* track = TrackManager::getInstance().getTrack(selected)) {
                     UndoManager::getInstance().executeCommand(
-                        std::make_unique<SetTrackMuteCommand>(track.id, !track.muted));
+                        std::make_unique<SetTrackMuteCommand>(track->id, !track->muted));
                 }
             }
             return true;
@@ -2083,12 +2081,10 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 }
                 UndoManager::getInstance().endCompoundOperation();
             } else if (mixerView && !mixerView->isSelectedMaster()) {
-                int selectedIndex = mixerView->getSelectedChannel();
-                const auto& tracks = TrackManager::getInstance().getTracks();
-                if (selectedIndex >= 0 && selectedIndex < static_cast<int>(tracks.size())) {
-                    const auto& track = tracks[selectedIndex];
+                const auto selected = mixerView->getSelectedChannelTrackId();
+                if (const auto* track = TrackManager::getInstance().getTrack(selected)) {
                     UndoManager::getInstance().executeCommand(
-                        std::make_unique<SetTrackSoloCommand>(track.id, !track.soloed));
+                        std::make_unique<SetTrackSoloCommand>(track->id, !track->soloed));
                 }
             }
             return true;

@@ -43,6 +43,9 @@ class ArrangementRowAlignmentTest final : public juce::UnitTest {
         testAuxIsTheOnlyTypeWithoutARow();
         testContentColumnGivesNoLaneToAux();
         testAuxDoesNotDisplaceTheTracksBelowIt();
+        testChordTrackLeadsTheRows();
+        testSeparatorHasAThinRow();
+        testWhatEachTypeExposes();
     }
 
   private:
@@ -52,7 +55,7 @@ class ArrangementRowAlignmentTest final : public juce::UnitTest {
         expect(!occupiesArrangementRow(TrackType::Aux), "aux belongs in its own strip");
 
         for (const auto type : {TrackType::Media, TrackType::Group, TrackType::Chord,
-                                TrackType::Master, TrackType::MultiOut}) {
+                                TrackType::Master, TrackType::MultiOut, TrackType::Separator}) {
             expect(occupiesArrangementRow(type),
                    "every non-aux type keeps its row: " + juce::String(static_cast<int>(type)));
         }
@@ -104,6 +107,77 @@ class ArrangementRowAlignmentTest final : public juce::UnitTest {
         // assertion there passes either way. What moves is the track after it.
         expectEquals(withAux.getTrackYPosition(withAux.getNumTracks() - 1), secondRowY,
                      "an aux return between two tracks must not move the lower one");
+    }
+
+    void testWhatEachTypeExposes() {
+        beginTest("Each track type exposes its own controls and no others");
+
+        // #3228: volume and the audition control, nothing else.
+        const auto chord = TrackControlsPolicy::forType(TrackType::Chord);
+        expect(chord.gain && chord.mute, "volume and the audition control");
+        expect(chord.muteStyle == TrackControlsPolicy::MuteStyle::ChordAudition);
+        expect(!chord.pan && !chord.solo && !chord.record && !chord.monitor && !chord.automation);
+        expect(!chord.anyRouting() && !chord.sends && !chord.meter);
+
+        for (const auto type : {TrackType::Aux, TrackType::Group}) {
+            const auto bus = TrackControlsPolicy::forType(type);
+            expect(!bus.record && !bus.monitor, "a bus has no input to record or monitor");
+            expect(bus.gain && bus.pan && bus.mute && bus.solo);
+        }
+
+        const auto aux = TrackControlsPolicy::forType(TrackType::Aux);
+        expect(!aux.anyRouting() && !aux.sends, "an aux return has no routing or sends");
+
+        const auto media = TrackControlsPolicy::forType(TrackType::Media);
+        expect(media.record && media.monitor, "the regular track keeps them");
+        expect(media.anyRouting() && media.sends);
+
+        const auto separator = TrackControlsPolicy::forType(TrackType::Separator);
+        expect(!separator.gain && !separator.mute && !separator.meter, "a separator has none");
+    }
+
+    void testChordTrackLeadsTheRows() {
+        beginTest("The chord track has the top row wherever it sits in the track list");
+
+        test::resetJuceProjectState();
+        auto& trackManager = TrackManager::getInstance();
+        const auto first = trackManager.createTrack("First", TrackType::Media);
+        const auto chord = trackManager.createTrack("", TrackType::Chord);
+        const auto second = trackManager.createTrack("Second", TrackType::Media);
+
+        TrackContentPanel panel;
+        panel.setSize(2000, 400);
+
+        const auto& rows = panel.getVisibleTrackIds();
+        expect(rows == std::vector<TrackId>{chord, first, second}, "chord should lead the rows");
+        expect(trackManager.getTracks().front().id == first, "the track list keeps its order");
+    }
+
+    void testSeparatorHasAThinRow() {
+        beginTest("A separator's row is thin and only a little resizable");
+
+        test::resetJuceProjectState();
+        auto& trackManager = TrackManager::getInstance();
+        trackManager.createTrack("First", TrackType::Media);
+        const auto separator = trackManager.createTrack("", TrackType::Separator);
+
+        TrackContentPanel panel;
+        panel.setSize(2000, 400);
+
+        expectEquals(panel.getNumTracks(), 2, "a separator has a row");
+        expectEquals(panel.getTrackHeight(1), kSeparatorRowHeight, "thin to start with");
+
+        // Row heights above its range are refused, in the model and in the lane.
+        trackManager.setTrackHeight(separator, ViewMode::Arrange, 200);
+        panel.setTrackHeight(1, 200);
+        const auto* track = trackManager.getTrack(separator);
+        expectEquals(track->viewSettings.getHeight(ViewMode::Arrange), kMaxSeparatorRowHeight);
+        expectEquals(panel.getTrackHeight(1), kMaxSeparatorRowHeight);
+
+        // Below a regular track's minimum is its own range.
+        trackManager.setTrackHeight(separator, ViewMode::Arrange, kSeparatorRowHeight);
+        panel.setTrackHeight(1, kSeparatorRowHeight);
+        expectEquals(panel.getTrackHeight(1), kSeparatorRowHeight);
     }
 };
 

@@ -592,6 +592,14 @@ class Config {
         chordPreviewOnByDefault = enabled;
     }
 
+    // Adding a chord track also adds a separator right after it (#3228).
+    bool getSeparatorAfterChordTrack() const {
+        return separatorAfterChordTrack;
+    }
+    void setSeparatorAfterChordTrack(bool enabled) {
+        separatorAfterChordTrack = enabled;
+    }
+
     // BEAT on a clip with no detectable tempo assumes the project tempo instead of waiting
     // for one to be typed. The assumption stays replaceable, as LOOP's is (#3060).
     bool getAssumeProjectTempo() const {
@@ -1777,6 +1785,7 @@ class Config {
 
     // Audition a new chord track's progression on playback by default.
     bool chordPreviewOnByDefault = false;
+    bool separatorAfterChordTrack = true;
 
     // New audio clips get AUTO-XFADE enabled (see #1499).
     bool autoCrossfadeByDefault = true;

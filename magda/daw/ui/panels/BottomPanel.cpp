@@ -1213,6 +1213,11 @@ void BottomPanel::updateContentBasedOnSelection() {
     ClipId selectedClip = clipManager.getSelectedClip();
     TrackId selectedTrack = trackManager.getSelectedTrack();
 
+    // A separator has no chain to show.
+    if (const auto* track = trackManager.getTrack(selectedTrack);
+        track != nullptr && track->isSeparator())
+        selectedTrack = INVALID_TRACK_ID;
+
     // Multi-clip selection bypasses ClipManager's single selection. An
     // all-audio multi-selection opens the waveform editor in multi mode: a
     // placeholder instead of one clip's waveform, plus the properties panel

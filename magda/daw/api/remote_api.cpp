@@ -260,7 +260,7 @@ const juce::var& trackSchema() {
         "properties":{
             "id":{"anyOf":[{"type":"integer","const":-2},
                            {"type":"integer","minimum":0}]},
-            "type":{"type":"string","enum":["audio","group","aux","master","multi_out","chord","pad"]},
+            "type":{"type":"string","enum":["audio","group","aux","master","multi_out","chord","pad","separator"]},
             "name":{"type":"string"},
             "colourArgb":{"type":"integer","minimum":0,"maximum":4294967295},
             "parentId":{"type":["integer","null"]},

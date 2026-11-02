@@ -12,6 +12,8 @@ The Session View is organized as a grid:
 - **Rows** represent scenes
 - Each cell is a **clip slot** that can hold an audio or MIDI clip
 
+The [chord track](chord-track.md) is always the first column on the left. Aux tracks sit in their own section on the right, next to the master, with a small gap between them and your other tracks. They stay put while the other columns scroll.
+
 ```
  Track 1    Track 2    Track 3   │ Scene
 ┌──────────┬──────────┬──────────┼────────┐
@@ -38,6 +40,8 @@ Each cell in the grid is a clip slot. A slot can be empty or contain a clip.
 - **Click** a playing slot to stop it
 - Only one clip per track plays at a time — triggering a new clip in the same column stops the previous one
 - A clip slot has an explicit **play** ▶ and **stop** ■ control on hover for unambiguous launch / stop separate from the clip body click
+
+Not every track takes clips. An aux track's slots stay empty, and a group track's slots launch the clips of the tracks inside it rather than holding any of their own.
 - While recording into a slot, the clip previews in real time — incoming MIDI notes and captured audio peaks draw in the slot as the take happens
 
 ### Selecting Clips

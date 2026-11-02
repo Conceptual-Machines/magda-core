@@ -78,7 +78,7 @@ void showDeviceSlotSidechainMenu(const magda::DeviceInfo& device,
 
     std::vector<TrackEntry> trackEntries;
     for (const auto& track : magda::TrackManager::getInstance().getTracks()) {
-        if (track.id == nodePath.trackId)
+        if (track.id == nodePath.trackId || !track.carriesSignal())
             continue;
         trackEntries.push_back({track.id, track.name});
     }

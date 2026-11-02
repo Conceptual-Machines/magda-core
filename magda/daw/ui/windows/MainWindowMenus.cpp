@@ -1216,25 +1216,22 @@ void MainWindow::setupMenuCallbacks() {
         UndoManager::getInstance().executeCommand(std::move(cmd));
     };
 
-    callbacks.onAddChordTrack = []() {
-        // Chord track is a strict singleton; only create when none exists.
-        if (TrackManager::getInstance().hasChordTrack())
-            return;
-        auto cmd = std::make_unique<CreateTrackCommand>(TrackType::Chord);
-        UndoManager::getInstance().executeCommand(std::move(cmd));
+    callbacks.onAddSeparatorTrack = []() {
+        UndoManager::getInstance().executeCommand(std::make_unique<CreateTrackCommand>(
+            TrackType::Separator, juce::String(),
+            SelectionManager::getInstance().getSelectedTrack()));
     };
+
+    callbacks.onAddChordTrack = []() { addChordTrackFromMenu(); };
 
     callbacks.onShowTrackManager = []() { TrackManagerDialog::show(); };
 
     callbacks.onDeleteTrack = [this]() {
         // Delete the selected track from MixerView
         if (mainComponent && mainComponent->mixerView) {
-            int selectedIndex = mainComponent->mixerView->getSelectedChannel();
-            if (!mainComponent->mixerView->isSelectedMaster() && selectedIndex >= 0) {
-                const auto& tracks = TrackManager::getInstance().getTracks();
-                if (selectedIndex < static_cast<int>(tracks.size()))
-                    deleteTracksFromMenu(tracks[selectedIndex].id);
-            }
+            const auto selected = mainComponent->mixerView->getSelectedChannelTrackId();
+            if (selected != INVALID_TRACK_ID)
+                deleteTracksFromMenu(selected);
         }
     };
 
@@ -1269,14 +1266,10 @@ void MainWindow::setupMenuCallbacks() {
     callbacks.onMuteTrack = [this]() {
         // Toggle mute on the selected track
         if (mainComponent && mainComponent->mixerView) {
-            int selectedIndex = mainComponent->mixerView->getSelectedChannel();
-            if (!mainComponent->mixerView->isSelectedMaster() && selectedIndex >= 0) {
-                const auto& tracks = TrackManager::getInstance().getTracks();
-                if (selectedIndex < static_cast<int>(tracks.size())) {
-                    const auto& track = tracks[selectedIndex];
-                    UndoManager::getInstance().executeCommand(
-                        std::make_unique<SetTrackMuteCommand>(track.id, !track.muted));
-                }
+            const auto selected = mainComponent->mixerView->getSelectedChannelTrackId();
+            if (const auto* track = TrackManager::getInstance().getTrack(selected)) {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<SetTrackMuteCommand>(track->id, !track->muted));
             }
         }
     };
@@ -1284,14 +1277,10 @@ void MainWindow::setupMenuCallbacks() {
     callbacks.onSoloTrack = [this]() {
         // Toggle solo on the selected track
         if (mainComponent && mainComponent->mixerView) {
-            int selectedIndex = mainComponent->mixerView->getSelectedChannel();
-            if (!mainComponent->mixerView->isSelectedMaster() && selectedIndex >= 0) {
-                const auto& tracks = TrackManager::getInstance().getTracks();
-                if (selectedIndex < static_cast<int>(tracks.size())) {
-                    const auto& track = tracks[selectedIndex];
-                    UndoManager::getInstance().executeCommand(
-                        std::make_unique<SetTrackSoloCommand>(track.id, !track.soloed));
-                }
+            const auto selected = mainComponent->mixerView->getSelectedChannelTrackId();
+            if (const auto* track = TrackManager::getInstance().getTrack(selected)) {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<SetTrackSoloCommand>(track->id, !track->soloed));
             }
         }
     };

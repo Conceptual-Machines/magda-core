@@ -835,6 +835,20 @@ TEST_CASE("The chord track is what a plan for a file leaves out", "[engine][plan
         CHECK(op.key.trackId != 9);
 }
 
+TEST_CASE("A separator is in no plan at all", "[engine][plan][compiler]") {
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(9, TrackType::Separator), makeTrack(2)};
+
+    for (const bool monitorTracks : {false, true}) {
+        magda::engine::CompileOptions options;
+        options.monitorTracks = monitorTracks;
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), options);
+        requireWellFormed(plan);
+
+        for (const auto& op : plan.ops)
+            CHECK(op.key.trackId != 9);
+    }
+}
+
 TEST_CASE("The chord track is in a plan for playback", "[engine][plan][compiler]") {
     std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(9, TrackType::Chord)};
 

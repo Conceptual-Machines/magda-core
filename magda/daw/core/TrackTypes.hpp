@@ -33,7 +33,8 @@ enum class TrackType {
     Master = 5,    // Final output
     MultiOut = 6,  // Output track for multi-out instrument pair
     Chord = 7,     // Singleton chord-progression track (monitor-only, excluded from render)
-    Pad = 8        // One Drum Grid pad's mixer channel, a child of the grid's track (#3010)
+    Pad = 8,       // One Drum Grid pad's mixer channel, a child of the grid's track (#3010)
+    Separator = 9  // A divider in the track list, with an optional name (#3228)
 };
 
 /**
@@ -111,6 +112,15 @@ struct TrackTypeTraits {
 
     /// Exists because a device's output pair does, and is destroyed with it.
     bool isDeviceOwned = false;
+
+    /// Has a signal path: a channel strip, a fader, a place in the engine's graph.
+    /// A separator is the one track that is only a place in the list.
+    bool carriesSignal = false;
+
+    /// Held beside the master in Session View and the Mixer, out of the scrolling
+    /// channels: the aux returns. A surface counting strips by position does not
+    /// count these (#3228).
+    bool sitsBesideMaster = false;
 };
 
 /**
@@ -135,6 +145,8 @@ constexpr TrackTypeTraits traitsOf(TrackType type) {
                 .isRendered = true,
                 .isSingleton = false,
                 .isDeviceOwned = false,
+                .carriesSignal = true,
+                .sitsBesideMaster = false,
             };
 
         // Sums the children it owns. A bus: nothing originates here.
@@ -149,6 +161,8 @@ constexpr TrackTypeTraits traitsOf(TrackType type) {
                 .isRendered = true,
                 .isSingleton = false,
                 .isDeviceOwned = false,
+                .carriesSignal = true,
+                .sitsBesideMaster = false,
             };
 
         // Fed by sends. No arrangement row of its own -- aux returns live in
@@ -164,6 +178,8 @@ constexpr TrackTypeTraits traitsOf(TrackType type) {
                 .isRendered = true,
                 .isSingleton = false,
                 .isDeviceOwned = false,
+                .carriesSignal = true,
+                .sitsBesideMaster = true,
             };
 
         // The one output. Takes input like a media track and originates none.
@@ -178,6 +194,8 @@ constexpr TrackTypeTraits traitsOf(TrackType type) {
                 .isRendered = true,
                 .isSingleton = true,
                 .isDeviceOwned = false,
+                .carriesSignal = true,
+                .sitsBesideMaster = false,
             };
 
         // A device's output pair, wearing a lane. MIDI on it plays the parent
@@ -194,6 +212,8 @@ constexpr TrackTypeTraits traitsOf(TrackType type) {
                 .isRendered = true,
                 .isSingleton = false,
                 .isDeviceOwned = true,
+                .carriesSignal = true,
+                .sitsBesideMaster = false,
             };
 
         // Auditions chords and stays out of the mix. Its lane is typed rather
@@ -209,6 +229,8 @@ constexpr TrackTypeTraits traitsOf(TrackType type) {
                 .isRendered = false,
                 .isSingleton = true,
                 .isDeviceOwned = false,
+                .carriesSignal = true,
+                .sitsBesideMaster = false,
             };
 
         // A Drum Grid pad's channel strip. Its audio comes from the pad and its
@@ -224,6 +246,24 @@ constexpr TrackTypeTraits traitsOf(TrackType type) {
                 .isRendered = true,
                 .isSingleton = false,
                 .isDeviceOwned = true,
+                .carriesSignal = true,
+                .sitsBesideMaster = false,
+            };
+
+        // A place in the list and nothing else: no signal, no clips, no strip.
+        case TrackType::Separator:
+            return {
+                .hasTimeline = false,
+                .userClips = UserClipAcceptance::None,
+                .takesExternalInput = false,
+                .hostsInstrument = false,
+                .occupiesArrangementRow = true,
+                .canHaveChildren = false,
+                .isRendered = false,
+                .isSingleton = false,
+                .isDeviceOwned = false,
+                .carriesSignal = false,
+                .sitsBesideMaster = false,
             };
     }
 
@@ -251,6 +291,8 @@ inline const char* getTrackTypeName(TrackType type) {
             return "Chord";
         case TrackType::Pad:
             return "Pad";
+        case TrackType::Separator:
+            return "Separator";
     }
     return "Unknown";
 }
@@ -279,6 +321,8 @@ inline TrackType trackTypeFromInt(int v) {
             return TrackType::Chord;
         case 8:
             return TrackType::Pad;
+        case 9:
+            return TrackType::Separator;
         default:
             return TrackType::Media;
     }

@@ -18,6 +18,7 @@ MAGDA uses a **hybrid track system**: there is no strict distinction between aud
 | **Group** | Bus track that groups multiple child tracks |
 | **Aux** | Auxiliary/send-return track for shared effects |
 | **Chord** | Guide track holding a chord progression — one per project (see [Chord Track](chord-track.md)) |
+| **Separator** | A divider in the track list, with an optional name (see [Separators](#separators)) |
 | **Master** | Final stereo output — one per project |
 
 ## Track Controls
@@ -119,6 +120,12 @@ A common use case is keeping the Arrangement View clean while having full contro
 
 Click a track header to select it. Hold ++shift++ and click another header to extend the selection to a contiguous range; ++cmd++-click (++ctrl++-click on Windows/Linux) to toggle individual tracks in or out of the selection. Most track-level actions — mute, solo, delete, freeze, group — apply to every selected track in one operation.
 
+## Separators
+
+A separator divides up the track list. It has no header, controls, signal or clips: it is a thin row across the arrangement and a vertical line in the Session View and the Mixer.
+
+Choose **Track → Add Separator** to add one after the selected track, then drag it where you want it in the arrangement or the Session View. A separator starts without a name. Double-click it, or right-click it and choose **Rename Separator**, to give it one. Drag its edge to make it a little taller or wider. Separators don't take a position on [control surfaces](reference/osc-addresses.md), and they aren't exported to DAWproject files.
+
 ## Grouping Tracks
 
 Group tracks collect several tracks under a single bus so you can fold them away and control them together. Right-click a track header for the grouping actions:
@@ -128,7 +135,7 @@ Group tracks collect several tracks under a single bus so you can fold them away
 - **Remove from group** — moves a track out of its group, back to the top level.
 - **Move to group** — a submenu listing the existing group tracks; pick one to move the track into it.
 
-Collapse or expand a group's children from the [Track Manager](#track-view-manager) or the group header.
+Collapse or expand a group's children from the [Track Manager](#track-view-manager) or the group header. The chord track and separators can't join a group.
 
 ## Duplicating Tracks
 

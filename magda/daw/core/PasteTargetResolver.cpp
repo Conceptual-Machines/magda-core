@@ -36,14 +36,24 @@ PasteTarget resolvePasteTarget(ViewMode mode, PasteTrackMode trackMode,
     if (selectedTrack != INVALID_TRACK_ID && trackManager.getTrack(selectedTrack) != nullptr)
         return {.trackId = selectedTrack, .ok = true};
 
-    auto visibleTracks = trackManager.getVisibleTracks(mode);
-    if (!visibleTracks.empty())
-        return {.trackId = visibleTracks.front(), .ok = true};
+    // The first that takes anything: the chord track leads the list and only
+    // takes progressions (#3228).
+    const auto firstTakingAnything = [&trackManager](ViewMode viewMode) {
+        for (const auto trackId : trackManager.getVisibleTracks(viewMode)) {
+            const auto* track = trackManager.getTrack(trackId);
+            if (track != nullptr && traitsOf(track->type).userClips == UserClipAcceptance::Any)
+                return trackId;
+        }
+        return INVALID_TRACK_ID;
+    };
+
+    if (const auto trackId = firstTakingAnything(mode); trackId != INVALID_TRACK_ID)
+        return {.trackId = trackId, .ok = true};
 
     if (mode != ViewMode::Arrange) {
-        visibleTracks = trackManager.getVisibleTracks(ViewMode::Arrange);
-        if (!visibleTracks.empty())
-            return {.trackId = visibleTracks.front(), .ok = true};
+        if (const auto trackId = firstTakingAnything(ViewMode::Arrange);
+            trackId != INVALID_TRACK_ID)
+            return {.trackId = trackId, .ok = true};
     }
 
     return {.trackId = INVALID_TRACK_ID, .ok = false};

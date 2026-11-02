@@ -16,9 +16,11 @@
 #include "AutomationManager.hpp"
 #include "ChainWalk.hpp"
 #include "ClipManager.hpp"
+#include "Config.hpp"
 #include "RangesHelpers.hpp"
 #include "SelectionManager.hpp"
 #include "TempoUtils.hpp"
+#include "TrackPropertyCommands.hpp"
 #include "controllers/BindingRegistry.hpp"
 
 namespace magda {
@@ -505,6 +507,8 @@ juce::String CreateTrackCommand::getDescription() const {
             return "Create Aux Track";
         case TrackType::Master:
             return "Create Master Track";
+        case TrackType::Separator:
+            return "Create Separator";
         default:
             return "Create Track";
     }
@@ -676,6 +680,66 @@ void deleteTracks(const std::vector<TrackId>& trackIds) {
         undo.executeCommand(std::make_unique<DeleteTrackCommand>(id));
     if (deletable.size() > 1)
         undo.endCompoundOperation();
+}
+
+void moveTracksToPlace(const std::vector<TrackId>& trackIds, TrackId parentId, TrackId beforeId) {
+    auto& tracks = TrackManager::getInstance();
+    auto& undo = UndoManager::getInstance();
+    CompoundOperationScope scope("Move Tracks");
+
+    for (const auto trackId : trackIds) {
+        const auto* track = tracks.getTrack(trackId);
+        if (track == nullptr)
+            continue;
+
+        if (parentId != INVALID_TRACK_ID) {
+            if (track->parentId != parentId)
+                undo.executeCommand(std::make_unique<AddTrackToGroupCommand>(trackId, parentId));
+            undo.executeCommand(std::make_unique<MoveChildWithinGroupCommand>(trackId, beforeId));
+            continue;
+        }
+
+        if (track->hasParent())
+            undo.executeCommand(std::make_unique<RemoveTrackFromGroupCommand>(trackId));
+
+        int index =
+            beforeId != INVALID_TRACK_ID ? tracks.getTrackIndex(beforeId) : tracks.getNumTracks();
+        if (tracks.getTrackIndex(trackId) < index)
+            --index;
+        undo.executeCommand(std::make_unique<MoveTrackToIndexCommand>(trackId, index));
+    }
+}
+
+// Index 0 of the track list shows second, right after the chord track that leads
+// every view, wherever the chord track itself sits in the list.
+static constexpr int kSeparatorAfterChordIndex = 0;
+
+void addChordTrackFromMenu() {
+    if (TrackManager::getInstance().hasChordTrack())
+        return;
+
+    auto& undo = UndoManager::getInstance();
+    CompoundOperationScope scope("Add Chord Track");
+    undo.executeCommand(std::make_unique<CreateTrackCommand>(TrackType::Chord));
+
+    if (Config::getInstance().getSeparatorAfterChordTrack()) {
+        auto separator = std::make_unique<CreateTrackCommand>(TrackType::Separator);
+        auto* created = separator.get();
+        undo.executeCommand(std::move(separator));
+        undo.executeCommand(std::make_unique<MoveTrackToIndexCommand>(created->getCreatedTrackId(),
+                                                                      kSeparatorAfterChordIndex));
+    }
+}
+
+TrackId ensureChordTrackWithSeparator() {
+    auto& tracks = TrackManager::getInstance();
+    const bool isNew = !tracks.hasChordTrack();
+    const auto chord = tracks.ensureChordTrack();
+    if (isNew && Config::getInstance().getSeparatorAfterChordTrack()) {
+        const auto separator = tracks.createTrack("", TrackType::Separator);
+        tracks.moveTrack(separator, kSeparatorAfterChordIndex);
+    }
+    return chord;
 }
 
 void deleteTracksFromMenu(TrackId clicked) {

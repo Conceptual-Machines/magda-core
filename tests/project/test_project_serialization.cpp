@@ -1643,6 +1643,37 @@ TEST_CASE("Clip enabled state roundtrips and missing property defaults to enable
     REQUIRE(restored->enabled);
 }
 
+TEST_CASE("A separator roundtrips with its name, or without one",
+          "[project][serialization][separator][3228]") {
+    ProjectTestFixture fixture;
+    auto& tracks = TrackManager::getInstance();
+    const auto unnamed = tracks.createTrack("", TrackType::Separator);
+    const auto named = tracks.createTrack("", TrackType::Separator);
+    tracks.setTrackName(named, "Drums");
+    const auto after = tracks.createTrack("After", TrackType::Media);
+
+    ProjectInfo info;
+    info.name = "Separator persistence";
+    const auto json = ProjectSerializer::serializeProject(info);
+    tracks.clearAllTracks();
+
+    ProjectInfo restored;
+    REQUIRE(ProjectSerializer::deserializeProject(json, restored));
+
+    const auto& list = tracks.getTracks();
+    REQUIRE(list.size() == 3);
+    CHECK(list[0].id == unnamed);
+    CHECK(list[1].id == named);
+    CHECK(list[2].id == after);
+
+    CHECK(list[0].isSeparator());
+    CHECK(list[0].name.isEmpty());
+    CHECK(list[0].viewSettings.getHeight(ViewMode::Arrange) == kSeparatorRowHeight);
+    CHECK(list[1].isSeparator());
+    CHECK(list[1].name == "Drums");
+    CHECK(list[2].type == TrackType::Media);
+}
+
 TEST_CASE("Send identity and enabled state roundtrip with legacy defaults",
           "[project][serialization][sends][2837]") {
     ProjectTestFixture fixture;

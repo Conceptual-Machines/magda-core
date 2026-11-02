@@ -86,6 +86,7 @@ static_assert(static_cast<int>(TrackType::Aux) == 4);
 static_assert(static_cast<int>(TrackType::Master) == 5);
 static_assert(static_cast<int>(TrackType::MultiOut) == 6);
 static_assert(static_cast<int>(TrackType::Chord) == 7);
+static_assert(static_cast<int>(TrackType::Separator) == 9);
 
 static_assert(static_cast<int>(InputMonitorMode::Off) == 0);
 static_assert(static_cast<int>(InputMonitorMode::In) == 1);
@@ -296,6 +297,7 @@ std::vector<Pin> allPins() {
         PIN(TrackType, Master, 5),
         PIN(TrackType, MultiOut, 6),
         PIN(TrackType, Chord, 7),
+        PIN(TrackType, Separator, 9),
         PIN(InputMonitorMode, Off, 0),
         PIN(InputMonitorMode, In, 1),
         PIN(InputMonitorMode, Auto, 2),
