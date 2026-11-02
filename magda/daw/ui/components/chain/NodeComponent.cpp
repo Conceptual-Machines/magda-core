@@ -801,11 +801,9 @@ void NodeComponent::layoutHeader(juce::Rectangle<int> headerStrip) {
         resizedHeaderExtra(headerArea);
 
         // The name and then the subtitle keep their text widths, the name up to most of the
-        // header; the preset control follows whichever ends the text (#3201).
+        // header; the preset chevron follows whichever ends the text (#3201).
         auto* preset = getHeaderPresetButton();
-        const int presetWidth = preset != nullptr && preset->isVisible()
-                                    ? getHeaderPresetWidth(headerArea.getWidth())
-                                    : 0;
+        const int presetWidth = preset != nullptr && preset->isVisible() ? buttonSize.x : 0;
         const bool subtitled = headerSubtitle_.getText().isNotEmpty();
         const auto textWidth = [](const juce::Label& label) {
             return juce::roundToInt(

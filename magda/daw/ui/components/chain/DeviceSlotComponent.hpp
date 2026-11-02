@@ -132,12 +132,6 @@ class DeviceSlotComponent : public NodeComponent,
         return 4;
     }
     void paintNodeFrame(juce::Graphics& g, juce::Rectangle<int> bounds, int headerHeight) override;
-    juce::Component* getHeaderPresetButton() override {
-        return stripsAnalysisChrome() ? nullptr : presetSelector_.get();
-    }
-    int getHeaderPresetWidth(int available) const override {
-        return juce::jmin(presetSelector_->getPreferredWidth(), available / 2);
-    }
     juce::Component* getHeaderPowerButton() override {
         return stripsAnalysisChrome() ? nullptr : onButton_.get();
     }

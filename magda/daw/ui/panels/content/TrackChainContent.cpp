@@ -2540,10 +2540,12 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
     placeLeft(*globalModsButton_);
     placeLeft(*addRackButton_);
     placeLeft(*addMultibandRackButton_);
-    presetSelector_->setBounds(area.removeFromLeft(presetSelector_->getPreferredWidth()));
-    area.removeFromLeft(iconGap);
     placeLeft(*gainStagingButton_);
     dividerLeft();
+    if (presetSelector_->isVisible()) {
+        presetSelector_->setBounds(area.removeFromLeft(presetSelector_->getPreferredWidth()));
+        dividerLeft();
+    }
 
     // Right, outermost first: power | gain, pan | MIDI, mute, solo | analysis views.
     if (!isMaster) {

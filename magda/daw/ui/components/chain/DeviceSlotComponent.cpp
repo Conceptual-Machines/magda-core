@@ -705,6 +705,7 @@ void DeviceSlotComponent::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int>
     device_shell::paintFrame(g, bounds, headerHeight,
                              {.headerSeparatorLeft = headerSeparators_.left,
                               .headerSeparatorRouting = headerSeparators_.routing,
+                              .headerSeparatorPreset = headerSeparators_.preset,
                               .sidebar = sidebarArea_,
                               .sideStrip = sideStripArea_,
                               .midiLed = midiLedArea_,
@@ -1348,7 +1349,7 @@ void DeviceSlotComponent::styleDeviceHeaderButtons() {
         auto& save = presetSelector_->getSaveButton();
         style(&save, DeviceIcon::Action, ActiveTheme::PRESET_INDIGO);
         save.setHoverColor(ActiveTheme::PRESET_INDIGO);
-        save.setIconPadding(3.0f);  // the floppy sits well inside its viewBox
+        save.setIconPadding(4.0f);  // the floppy sits well inside its viewBox
     }
     style(multiOutButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_PRIMARY);
     style(randomButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_PRIMARY);
@@ -2094,6 +2095,10 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
          .midiThruButton = midiThruButton_.get()},
         DeviceSlotHeaderMetrics{});
     headerArea = layoutHeaderControls(headerArea);
+    if (presetSelector_->isVisible())
+        headerSeparators_.preset = layoutDeviceSlotHeaderPreset(
+            headerArea, *presetSelector_, presetSelector_->getPreferredWidth(),
+            DeviceSlotHeaderMetrics{});
 }
 
 void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {
