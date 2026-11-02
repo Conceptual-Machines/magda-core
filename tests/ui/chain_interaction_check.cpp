@@ -19,9 +19,14 @@
 #include "ui/components/chain/compiled/CompiledEqBandLayout.hpp"
 #include "ui/components/chain/compiled/CompiledFilterCurveView.hpp"
 #include "ui/components/chain/compiled/CompiledMultibandBandLayout.hpp"
+#include "ui/components/chain/custom_ui/FaustMeterPanel.hpp"
+#include "ui/components/chain/custom_ui/FaustUI.hpp"
 #include "ui/components/chain/layout/CompiledFaustDeviceLayout.hpp"
 #include "ui/components/chain/layout/FaceplateBelowGeometry.hpp"
+#include "ui/components/chain/layout/FaustDeviceLayout.hpp"
 #include "ui/components/chain/layout/StandardDeviceLayout.hpp"
+#include "ui/components/chain/params/ParamControlStyle.hpp"
+#include "ui/components/chain/slot/DeviceSlotContentLayout.hpp"
 #include "ui/components/chain/slot/DeviceSlotSelectionHandling.hpp"
 #include "ui/components/common/SegmentedChoice.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -374,6 +379,63 @@ int main() {
                   juce::StringArray{"Pre", "Post"}, juce::StringArray{"Autogain"}})
                 strip += SegmentedChoice::preferredWidthFor(options) + 8;
             check(strip - 8 <= 420 - 14, "the Compressor's choices overrun its faceplate");
+        }
+        {
+            // A Faust patch's view stands beside the grid in the 172px body (#3213).
+            DeviceInfo patch;
+            for (int index = 0; index < 3; ++index) {
+                ParameterInfo parameter;
+                parameter.paramIndex = index;
+                parameter.name = "Control " + juce::String(index);
+                patch.parameters.push_back(parameter);
+            }
+            ParamHostComponent grid(std::make_unique<FaustDeviceLayout>());
+            grid.updateParameterSlots(patch, 0, {});
+            juce::Component view, meters, errorStrip;
+            DeviceSlotTraits traits;
+            traits.isFaust = true;
+            const juce::Rectangle<int> body(0, 0, 750, 172);
+            const auto layOut = [&](bool gridShown, bool viewShown, int meterHeight) {
+                layoutDeviceSlotContentBody(body, traits, false, false,
+                                            {.faustHeader = &errorStrip,
+                                             .faustCustomView = &view,
+                                             .faustCustomViewWidth = 176,
+                                             .faustCustomViewShown = viewShown,
+                                             .faustMeterPanel = &meters,
+                                             .faustMeterPanelPreferredHeight = meterHeight,
+                                             .paramGridShown = gridShown,
+                                             .paramGrid = &grid},
+                                            0);
+            };
+            const int minimumRow = ParamSlotComponent::minimumHeight(resolveControlStyle({}));
+
+            layOut(true, true, 0);
+            check(view.isVisible() && view.getHeight() == 148, "the view lost the body's height");
+            check(grid.getRight() <= view.getX(), "the view overlaps the grid");
+            check(grid.getSlot(0)->getHeight() >= minimumRow, "the view squeezed the grid's rows");
+
+            layOut(true, true, FaustMeterPanel::kPreferredHeight);
+            check(meters.isVisible() && meters.getRight() <= view.getX(),
+                  "the meters overlap the view");
+            check(grid.getSlot(0)->getHeight() >= minimumRow,
+                  "the meters squeezed the grid's rows");
+
+            layOut(false, true, FaustMeterPanel::kPreferredHeight);
+            check(!grid.isVisible() && !meters.isVisible(), "the hidden grid left its column");
+            check(view.getWidth() == body.getWidth() - 28, "the view alone doesn't take the body");
+
+            layOut(true, false, 0);
+            check(!view.isVisible() && grid.getWidth() == body.getWidth(),
+                  "the hidden view kept its column");
+        }
+        {
+            // A failed load shows in the strip, and the next good one clears it.
+            FaustUI faust;
+            check(faust.errorHeight() == 0, "the error strip shows with no error");
+            faust.setError("line 3: syntax error");
+            check(faust.errorHeight() == FaustUI::kErrorHeight, "the error strip stayed away");
+            faust.setError({});
+            check(faust.errorHeight() == 0, "the error strip didn't clear");
         }
         {
             // A curated device's controls stand in balanced rows of at most two.

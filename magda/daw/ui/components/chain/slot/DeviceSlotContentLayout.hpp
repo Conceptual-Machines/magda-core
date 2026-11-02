@@ -41,8 +41,10 @@ struct DeviceSlotContentFrameControls {
 
 struct DeviceSlotContentBodyControls {
     juce::Component* faustHeader = nullptr;
+    // A patch's own view stands to the right of the grid, at this width (#3213).
     juce::Component* faustCustomView = nullptr;
-    int faustCustomViewPreferredHeight = 0;
+    int faustCustomViewWidth = 0;
+    bool faustCustomViewShown = true;
     // Strip of read-only readouts a runtime Faust patch declares via
     // bargraphs. Null (or zero height) when the patch declares none, in which
     // case the parameter grid keeps the whole body.

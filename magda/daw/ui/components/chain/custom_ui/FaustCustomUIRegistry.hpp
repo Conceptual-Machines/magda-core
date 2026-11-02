@@ -17,31 +17,27 @@ class IFaustEditorModel;
 namespace magda::daw::ui {
 
 /**
- * @brief Base class for per-DSP custom views inside FaustUI.
+ * @brief Base class for per-DSP custom views beside the Faust parameter grid.
  *
- * A custom view sits between FaustUI's header strip and the standard
- * device parameter grid, bound to one Faust device (IFaustEditorModel,
+ * A custom view stands to the right of the device parameter grid at the
+ * body's full height (#3213), bound to one Faust device (IFaustEditorModel,
  * i.e. either the Faust effect or instrument). It reads
  * live parameter values via the plugin's FaustParamPool zones (or the
  * matching AutomatableParameter for thread-safe message-side reads)
  * and renders whatever JUCE the host wants — a transfer-curve plot, an
  * XY pad, a meter cluster, a waveform display, etc.
  *
- * The view does NOT own the plugin and must not outlive it. FaustUI
- * destroys the view when the plugin is unset or replaced.
+ * The view does NOT own the plugin and must not outlive it. The device slot
+ * destroys the view before the plugin is replaced.
  */
 class FaustCustomView : public juce::Component {
   public:
     FaustCustomView() = default;
     ~FaustCustomView() override = default;
 
-    /// Vertical space the view wants under FaustUI's header strip.
-    /// FaustUI carves exactly this many pixels for the view; the
-    /// device's standard parameter grid fills whatever remains. The
-    /// default is reasonable for a small inline plot — override for
-    /// taller layouts.
-    virtual int getPreferredHeight() const {
-        return 88;
+    /** @brief What the slot widens by to show the view: by default a square plot at 200 px. */
+    virtual int getPreferredWidth() const {
+        return 176;
     }
 };
 

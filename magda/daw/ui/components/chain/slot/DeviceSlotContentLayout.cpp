@@ -128,14 +128,15 @@ void layoutParamGrid(ParamHostComponent* paramGrid, juce::Rectangle<int> area) {
 // Below this a vertical bar stops reading as a level.
 constexpr int kMinFaustMeterHeight = 64;
 
-int boundedBottomPanelHeight(int preferredHeight, int bodyHeight, int minFractionNumerator,
-                             int minFractionDenominator) {
-    jassert(minFractionNumerator >= 0);
-    jassert(minFractionDenominator > 0);
-
-    const int minScaledHeight = (bodyHeight * minFractionNumerator) / minFractionDenominator;
-    return juce::jlimit(juce::jmin(preferredHeight, bodyHeight), bodyHeight,
-                        juce::jmax(preferredHeight, minScaledHeight));
+/**
+ * @brief Takes a faceplate's area off @p contentArea: its right @p width beside the grid, else all
+ *        of it. Inset like the parameter grid: 14px at the outer edges, top and foot.
+ */
+juce::Rectangle<int> takeFaceplateArea(juce::Rectangle<int>& contentArea, int width, bool beside) {
+    const auto faceplate =
+        beside ? contentArea.removeFromRight(width) : std::exchange(contentArea, {});
+    return faceplate.withTrimmedTop(10).withTrimmedRight(14).withTrimmedBottom(14).withTrimmedLeft(
+        beside ? 0 : 14);
 }
 
 }  // namespace
@@ -189,16 +190,20 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
             controls.faustHeader->toFront(false);
 
         if (controls.faustCustomView != nullptr) {
-            const int bodyHeight = juce::jmax(0, contentArea.getHeight());
-            const int customHeight =
-                boundedBottomPanelHeight(controls.faustCustomViewPreferredHeight, bodyHeight, 1, 2);
-            controls.faustCustomView->setBounds(contentArea.removeFromBottom(customHeight));
-            controls.faustCustomView->setVisible(true);
+            controls.faustCustomView->setVisible(controls.faustCustomViewShown);
+            if (controls.faustCustomViewShown)
+                controls.faustCustomView->setBounds(takeFaceplateArea(
+                    contentArea, controls.faustCustomViewWidth, controls.paramGridShown));
         }
 
-        // Meters sit under the grid and above any custom view, in a region of
-        // their own: a level needs height, which a cell sized for a knob and
-        // its label cannot give it.
+        if (!controls.paramGridShown) {
+            setVisibleIfPresent(controls.paramGrid, false);
+            setVisibleIfPresent(controls.faustMeterPanel, false);  // They stand under the grid.
+            return;
+        }
+
+        // Meters sit under the grid, in a region of their own: a level needs
+        // height, which a cell sized for a knob and its label cannot give it.
         //
         // The strip takes the rows the grid leaves empty rather than a slice
         // of the body. The grid always fills its bounds with getRowCount()
@@ -285,16 +290,9 @@ void layoutDeviceSlotContentBody(juce::Rectangle<int> contentArea, const DeviceS
             layoutParamGrid(controls.paramGrid, contentArea);
             return;
         }
-        if (controls.compiledPanelShown) {
-            // Inset like the parameter grid: 14px at the outer edges, top and foot.
-            const bool beside = controls.paramGridShown;
-            const auto faceplate = beside ? contentArea.removeFromRight(controls.compiledPanelWidth)
-                                          : std::exchange(contentArea, {});
-            controls.compiledPanel->setBounds(faceplate.withTrimmedTop(10)
-                                                  .withTrimmedRight(14)
-                                                  .withTrimmedBottom(14)
-                                                  .withTrimmedLeft(beside ? 0 : 14));
-        }
+        if (controls.compiledPanelShown)
+            controls.compiledPanel->setBounds(takeFaceplateArea(
+                contentArea, controls.compiledPanelWidth, controls.paramGridShown));
 
         if (controls.paramGridShown)
             layoutParamGrid(controls.paramGrid, contentArea);

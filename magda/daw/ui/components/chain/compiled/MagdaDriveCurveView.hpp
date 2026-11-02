@@ -23,7 +23,7 @@ namespace magda::daw::ui {
  * we only re-render when Drive or Gain change.
  *
  * Registered with FaustCustomUIRegistry against the DSP name
- * "MagdaDrive" (the `declare name "MagdaDrive";` line in the source).
+ * "MagdaDrive" (the `declare magda_view "MagdaDrive";` line in the source).
  *
  * Slot zones are read directly off the message thread for cheap
  * cosmetic display — torn reads are acceptable for a transfer-curve
@@ -34,10 +34,6 @@ class MagdaDriveCurveView : public FaustCustomView, public juce::Timer {
   public:
     explicit MagdaDriveCurveView(magda::daw::audio::IFaustEditorModel& plugin);
     ~MagdaDriveCurveView() override;
-
-    int getPreferredHeight() const override {
-        return 96;
-    }
 
     void paint(juce::Graphics& g) override;
     void timerCallback() override;

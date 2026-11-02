@@ -38,6 +38,8 @@ class FaustUI : public juce::Component {
 
     /// The error strip's height: 0 unless the last load or edit left an error.
     int errorHeight() const;
+    /** @brief Shows @p error in the strip; an empty one takes the strip away. */
+    void setError(const juce::String& error);
 
     /// Save / Load / Edit, right to left, for the slot's header.
     std::vector<juce::Component*> headerControls();
@@ -83,7 +85,6 @@ class FaustUI : public juce::Component {
     bool tryLoad(const juce::String& name, const juce::String& source);
 
     void refreshNameLabel();
-    void setError(const juce::String& error);
 
     std::shared_ptr<magda::daw::audio::MagdaDevice> device_;
     magda::daw::audio::IFaustEditorModel* plugin_ = nullptr;

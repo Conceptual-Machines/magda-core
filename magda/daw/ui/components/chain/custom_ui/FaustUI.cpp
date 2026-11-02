@@ -135,7 +135,7 @@ int FaustUI::errorHeight() const {
 void FaustUI::setError(const juce::String& error) {
     if (error == errorLabel_.getText())
         return;
-    setError(error);
+    errorLabel_.setText(error, juce::dontSendNotification);
     errorLabel_.setTooltip(error);
     // The strip comes and goes with the error, so the slot re-carves.
     if (auto* parent = getParentComponent())

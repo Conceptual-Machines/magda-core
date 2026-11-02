@@ -847,6 +847,7 @@ std::vector<juce::Component*> DeviceSlotComponent::sidebarButtons() const {
     add(matrixToggle_.get(), customUI_.hasFMUI());
     add(vizToggle_.get(), customUI_.hasHaloUI() || customUI_.hasNimbusUI() ||
                               customUI_.hasMateriaUI() || customUI_.hasStruckUI() ||
+                              faustCustomView_ != nullptr ||
                               (traits_.compiledPresentation != nullptr &&
                                traits_.compiledPresentation->vizSlotWidth > 0));
     add(outputToggle_.get(), customUI_.hasImpulseResponseUI());
@@ -899,11 +900,12 @@ void DeviceSlotComponent::layoutSidebar(juce::Rectangle<int> bar) {
     matrixToggle_->setToggleState(device_.matrixShown, juce::dontSendNotification);
     vizToggle_->setToggleState(device_.vizShown, juce::dontSendNotification);
     outputToggle_->setToggleState(device_.outputShown, juce::dontSendNotification);
-    vizToggle_->setTooltip(customUI_.hasHaloUI()      ? "Show the resonator spectrum"
-                           : customUI_.hasNimbusUI()  ? "Show the grain cloud"
-                           : customUI_.hasMateriaUI() ? "Show the modal response"
-                           : customUI_.hasStruckUI()  ? "Show the body"
-                                                      : "Show the stereo field");
+    vizToggle_->setTooltip(customUI_.hasHaloUI()         ? "Show the resonator spectrum"
+                           : customUI_.hasNimbusUI()     ? "Show the grain cloud"
+                           : customUI_.hasMateriaUI()    ? "Show the modal response"
+                           : customUI_.hasStruckUI()     ? "Show the body"
+                           : faustCustomView_ != nullptr ? "Show the patch's view"
+                                                         : "Show the stereo field");
     padPanelToggle_->setToggleState(device_.padPanelShown, juce::dontSendNotification);
     padChainToggle_->setToggleState(device_.padChainShown, juce::dontSendNotification);
     leftPanelToggle_->setToggleState(device_.paramsShown, juce::dontSendNotification);
@@ -957,8 +959,9 @@ bool DeviceSlotComponent::paramsShown() const {
 }
 
 bool DeviceSlotComponent::hidesControls() const {
-    return customUI_.hasStruckUI() || (traits_.compiledPresentation != nullptr &&
-                                       traits_.compiledPresentation->controlsSlotWidth > 0);
+    return customUI_.hasStruckUI() || faustCustomView_ != nullptr ||
+           (traits_.compiledPresentation != nullptr &&
+            traits_.compiledPresentation->controlsSlotWidth > 0);
 }
 
 void DeviceSlotComponent::toggleControls() {
@@ -1676,6 +1679,9 @@ int DeviceSlotComponent::getPreferredWidth() const {
     else if (hasFaceplate() && faceplateStackedFraction() <= 0.0f)
         contentWidth =
             (paramsShown() ? contentWidth : 0) + (faceplateShown() ? faceplateWidth() : 0);
+    if (faustCustomView_ != nullptr)
+        contentWidth = (paramsShown() ? contentWidth : 0) +
+                       (device_.vizShown ? faustCustomView_->getPreferredWidth() : 0);
     return getTotalWidth(contentWidth) + meterExtra;
 }
 
@@ -2031,8 +2037,9 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
         contentArea, traits_, isInternalDevice(), customUI_.hasAnyUI(),
         {.faustHeader = faustUI_.get(),
          .faustCustomView = faustCustomView_.get(),
-         .faustCustomViewPreferredHeight =
-             faustCustomView_ != nullptr ? faustCustomView_->getPreferredHeight() : 0,
+         .faustCustomViewWidth =
+             faustCustomView_ != nullptr ? faustCustomView_->getPreferredWidth() : 0,
+         .faustCustomViewShown = device_.vizShown,
          .faustMeterPanel = faustMeterPanel_.get(),
          .faustMeterPanelPreferredHeight =
              (faustMeterPanel_ != nullptr && !faustMeterPanel_->isEmpty())
@@ -2576,6 +2583,7 @@ void DeviceSlotComponent::applyTitle() {
 }
 
 void DeviceSlotComponent::bindFaustHeader() {
+    const bool hadView = faustCustomView_ != nullptr;
     const auto rebound =
         bindDeviceSlotFaustInlineUi(nodePath_, faustUI_.get(), faustCustomView_, *this,
                                     [this](std::function<float(int)> source) {
@@ -2585,8 +2593,12 @@ void DeviceSlotComponent::bindFaustHeader() {
                                         }
                                         faustMeterPanel_->setMeterSource(std::move(source));
                                     });
-    if (rebound)
-        resized();
+    if (!rebound)
+        return;
+    resized();
+    // A view widens the slot and brings its sidebar toggles.
+    if ((faustCustomView_ != nullptr) != hadView && onDeviceLayoutChanged)
+        onDeviceLayoutChanged();
 }
 
 void DeviceSlotComponent::refreshInlinePluginBindings() {
