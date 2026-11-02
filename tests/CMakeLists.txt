@@ -980,6 +980,7 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/components/common/ValueLabelControl.cpp
     ../magda/daw/ui/components/common/DraggableValueLabel.cpp
     ../magda/daw/ui/components/common/SvgButton.cpp
+    ../magda/daw/ui/components/common/PresetSelector.cpp
     ../magda/daw/ui/components/common/EditTool.cpp
     ../magda/daw/ui/components/common/InternalFileDrag.cpp
     ../magda/daw/ui/themes/CursorManager.cpp
@@ -1000,7 +1001,9 @@ target_sources(magda_juce_tests PRIVATE
     ../magda/daw/ui/components/chain/slot/StepSequencerClipExport.cpp
     # The focused-panel outline (#3157)
     ui/test_panel_focus_tracker_juce.cpp
+    ui/test_preset_selector_juce.cpp
     ../magda/daw/ui/panels/PanelFocusTracker.cpp
+    ../magda/daw/ui/themes/FocusHighlight.cpp
 )
 
 # Native waveform expectations and host integration regressions.

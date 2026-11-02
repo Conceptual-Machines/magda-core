@@ -4,6 +4,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "magda/daw/ui/panels/PanelFocusTracker.hpp"
+#include "magda/daw/ui/themes/FocusHighlight.hpp"
 
 using namespace magda::daw::ui;
 
@@ -56,6 +57,26 @@ class PanelFocusTrackerTests : public juce::UnitTest {
             tracker.update();
             expect(!tracker.getOutline().isVisible());
             expect(tracker.getActiveRegion() == FocusRegion::None);
+        }
+
+        beginTest("The highlight is an accent line fading inward (#3232)");
+        {
+            constexpr int size = 64;
+            constexpr float glow = 6.0f;
+            constexpr float radius = 4.0f;
+            juce::Image image(juce::Image::ARGB, size, size, true);
+            {
+                juce::Graphics g(image);
+                paintFocusHighlight(g, image.getBounds(), glow, radius);
+            }
+
+            const auto alphaAt = [&](int x, int y) { return image.getPixelAt(x, y).getAlpha(); };
+            expectEquals(static_cast<int>(alphaAt(size / 2, 0)), 255, "the line is opaque");
+            expect(alphaAt(size / 2, 1) > alphaAt(size / 2, 3), "the glow fades inward");
+            expect(alphaAt(size / 2, 3) > alphaAt(size / 2, 5), "the glow fades inward");
+            expectEquals(static_cast<int>(alphaAt(size / 2, 8)), 0, "the glow stops at its width");
+            expectEquals(static_cast<int>(alphaAt(size / 2, size / 2)), 0, "the middle is clear");
+            expectEquals(static_cast<int>(alphaAt(0, 0)), 0, "the corner is rounded off");
         }
     }
 };

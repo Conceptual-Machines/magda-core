@@ -12,6 +12,7 @@ magda_sdk_target_juce_display(magda_daw)
 target_sources(magda_daw_app PRIVATE
     FontManager.cpp
     CursorManager.cpp
+    FocusHighlight.cpp
     MixerLookAndFeel.cpp
     StyledText.cpp
     ActiveTheme.hpp
@@ -23,6 +24,7 @@ target_sources(magda_daw_app PRIVATE
     FontManager.hpp
     LocalizedText.hpp
     CursorManager.hpp
+    FocusHighlight.hpp
     MixerLookAndFeel.hpp
     StyledText.hpp
 )

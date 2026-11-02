@@ -26,6 +26,7 @@
 #include "modulation/ModulatorTriggerSourceMenu.hpp"
 #include "ui/components/common/AiSoundDesignerIcon.hpp"
 #include "ui/themes/ActiveTheme.hpp"
+#include "ui/themes/FocusHighlight.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 
@@ -547,10 +548,11 @@ void NodeComponent::paintOverChildren(juce::Graphics& g) {
         }
     }
 
-    // Selection border (over everything including side panels)
+    // Selection highlight (over everything including side panels). The fade reaches
+    // further than a panel's so it still reads over a faceplate (#3232).
     if (selected_) {
-        g.setColour(ActiveTheme::getColour(ActiveTheme::AUTOMATION_SCALE_TEXT));
-        g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(1.0f), 4.0f, 2.0f);
+        constexpr float selectionGlow = 6.0f;
+        paintFocusHighlight(g, getLocalBounds(), selectionGlow, 4.0f);
     }
 }
 

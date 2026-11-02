@@ -137,6 +137,15 @@ DeviceSlotHeaderSeparators layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& 
     return separators;
 }
 
+juce::Rectangle<int> layoutDeviceSlotHeaderPreset(juce::Rectangle<int>& headerArea,
+                                                  juce::Component& preset, int preferredWidth,
+                                                  const DeviceSlotHeaderMetrics& metrics) {
+    const int width = juce::jmin(preferredWidth, headerArea.getWidth() / 2);
+    preset.setBounds(
+        headerArea.removeFromLeft(width).withSizeKeepingCentre(width, metrics.buttonHeight));
+    return takeSeparator(headerArea, true, metrics);
+}
+
 void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
                                        juce::Rectangle<int> collapsedMeterArea,
                                        const DeviceSlotTraits& traits,

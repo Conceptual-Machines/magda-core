@@ -73,6 +73,7 @@ TEST_CASE("Track-chain presets expose stable path-free metadata and retain full 
     PresetManager::TrackPreset loaded;
     REQUIRE(presets.loadTrackPresetById(stableId, loaded));
     REQUIRE(loaded.hasTrackSettings);
+    CHECK(loaded.track.chainPresetName == "Strings/Emotional Violin");
     CHECK(loaded.track.name == "Source Track");
     CHECK(loaded.track.volume == source.volume);
     CHECK(loaded.track.pan == source.pan);
@@ -141,4 +142,17 @@ TEST_CASE("Device presets expose stable path-free metadata", "[presets][device][
     CHECK(loaded.pluginId == source.pluginId);
     CHECK(loaded.pluginState == source.pluginState);
     CHECK_FALSE(presets.loadDevicePresetById(source.name, "device-preset:not-listed", loaded));
+}
+
+TEST_CASE("A loaded device preset is named by its path", "[presets][device]") {
+    PresetDirectoryScope scope;
+    auto& presets = PresetManager::getInstance();
+    auto source = device(3, "Serum", "opaque-state");
+    source.presetName = "the name it had when saved";
+
+    REQUIRE(presets.saveDevicePreset(source, "Bass/Reese 808"));
+
+    DeviceInfo loaded;
+    REQUIRE(presets.loadDevicePreset(source.name, "Bass/Reese 808", loaded));
+    CHECK(loaded.presetName == "Bass/Reese 808");
 }

@@ -650,7 +650,9 @@ class TrackChainContent::ChainContainer : public juce::Component,
                 if (!tracks.applyChainPreset(trackId, std::move(elements))) {
                     showChainPresetErrorAsync("Load Chain Preset Failed",
                                               "Failed to apply preset to track.");
+                    continue;
                 }
+                owner_.setTrackPresetName(trackId, ref->name);
             } else if (ref->kind == magda::PresetManager::PresetRef::Kind::Device) {
                 magda::DeviceInfo device;
                 if (!presets.loadDevicePreset(ref->pluginFolder, ref->name, device)) {
@@ -836,16 +838,14 @@ TrackChainContent::TrackChainContent()
     };
     addChildComponent(*addMultibandRackButton_);
 
-    presetButton_ =
-        std::make_unique<magda::SvgButton>("Presets", BinaryData::iconpresetsroundboldm_svg,
-                                           BinaryData::iconpresetsroundboldm_svgSize);
-    applyChainHeaderIconStyle(*presetButton_, false);
-    presetButton_->setTooltip("MAGDA Track Presets");
-    presetButton_->onClick = [this]() {
-        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-            showPresetMenu();
-    };
-    addChildComponent(*presetButton_);
+    // The header's field height and icon width.
+    presetSelector_ = std::make_unique<PresetSelector>(22, 26);
+    applyChainHeaderIconStyle(presetSelector_->getSaveButton(), false);
+    presetSelector_->getSaveButton().setIconPadding(
+        6.0f);  // the floppy sits well inside its viewBox
+    presetSelector_->onOpenMenu = [this]() { showPresetMenu(); };
+    presetSelector_->onSave = [this]() { showSaveTrackPresetDialog(); };
+    addChildComponent(*presetSelector_);
 
     // Gain-staging pass: start (collect) -> stop (compute + apply) for the selected track.
     // The engaged tint follows the mode: red while collecting, amber while the AI runs.
@@ -1912,10 +1912,6 @@ void TrackChainContent::trackPropertyChanged(int trackId) {
 
 void TrackChainContent::trackSelectionChanged(magda::TrackId trackId) {
     selectedTrackId_ = trackId;
-    // Each track has its own "current preset" affordance — clearing on
-    // selection change ensures the save-overwrite item won't appear with the
-    // previous track's preset name.
-    currentPresetName_.clear();
     updateFromSelectedTrack();
 }
 
@@ -1933,6 +1929,7 @@ void TrackChainContent::trackDevicesChanged(magda::TrackId trackId) {
         const bool chainEnabled = magda::TrackManager::getInstance().isChainEnabled(trackId);
         chainBypassButton_->setToggleState(chainEnabled, juce::dontSendNotification);
         chainBypassButton_->setActive(chainEnabled);
+        refreshPresetLabel();
 
         const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
         const int previousElementCount = static_cast<int>(nodeComponents_.size());
@@ -2362,7 +2359,8 @@ void TrackChainContent::updateFromSelectedTrack() {
             macroButton_->setVisible(showChainTools);
             addRackButton_->setVisible(showChainTools);
             addMultibandRackButton_->setVisible(showChainTools && !isPad);
-            presetButton_->setVisible(showChainTools && !isPad);
+            presetSelector_->setVisible(showChainTools && !isPad);
+            refreshPresetLabel();
             gainStagingButton_->setVisible(showChainTools && !isPad);
             postFxPanelButton_->setVisible(showChainTools);
             oscToggleButton_->setVisible(showChainTools);
@@ -2433,7 +2431,7 @@ void TrackChainContent::populateHeader(juce::Component& headerBar) {
     headerBar.addAndMakeVisible(macroButton_.get());
     headerBar.addAndMakeVisible(addRackButton_.get());
     headerBar.addAndMakeVisible(addMultibandRackButton_.get());
-    headerBar.addAndMakeVisible(presetButton_.get());
+    headerBar.addAndMakeVisible(presetSelector_.get());
     headerBar.addAndMakeVisible(gainStagingButton_.get());
     headerBar.addAndMakeVisible(postFxPanelButton_.get());
     headerBar.addAndMakeVisible(oscToggleButton_.get());
@@ -2443,8 +2441,6 @@ void TrackChainContent::populateHeader(juce::Component& headerBar) {
     headerDividers_.toBack();
     headerBar.addAndMakeVisible(trackTitle_);
     headerBar.addAndMakeVisible(midiLed_);
-    const auto* selTrack = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
-    const bool isMaster = selTrack && selTrack->type == magda::TrackType::Master;
     headerBar.addAndMakeVisible(muteButton_);
     headerBar.addAndMakeVisible(soloButton_);
     headerBar.addChildComponent(*chordSpeakerButton_);
@@ -2466,7 +2462,7 @@ void TrackChainContent::depopulateHeader(juce::Component& /*headerBar*/) {
     addChildComponent(macroButton_.get());
     addChildComponent(addRackButton_.get());
     addChildComponent(addMultibandRackButton_.get());
-    addChildComponent(presetButton_.get());
+    addChildComponent(presetSelector_.get());
     addChildComponent(gainStagingButton_.get());
     addChildComponent(postFxPanelButton_.get());
     addChildComponent(oscToggleButton_.get());
@@ -2542,9 +2538,12 @@ void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
     placeLeft(*globalModsButton_);
     placeLeft(*addRackButton_);
     placeLeft(*addMultibandRackButton_);
-    placeLeft(*presetButton_);
     placeLeft(*gainStagingButton_);
     dividerLeft();
+    if (presetSelector_->isVisible()) {
+        presetSelector_->setBounds(area.removeFromLeft(presetSelector_->getPreferredWidth()));
+        dividerLeft();
+    }
 
     // Right, outermost first: power | gain, pan | MIDI, mute, solo | analysis views.
     if (!isMaster) {
@@ -2582,7 +2581,7 @@ void TrackChainContent::hideHeaderControls() {
     macroButton_->setVisible(false);
     addRackButton_->setVisible(false);
     addMultibandRackButton_->setVisible(false);
-    presetButton_->setVisible(false);
+    presetSelector_->setVisible(false);
     gainStagingButton_->setVisible(false);
     gainStagingLabel_.setVisible(false);
     postFxPanelButton_->setVisible(false);
@@ -3200,8 +3199,6 @@ int TrackChainContent::getScaledWidth(int width) const {
 
 // =============================================================================
 // MAGDA Track-Chain Presets — UI wiring for PresetManager::save/loadChainPreset
-// Mirrors RackComponent's preset menu so the experience matches whether the
-// user is loading a single rack or an entire track FX chain.
 // =============================================================================
 
 namespace {
@@ -3241,45 +3238,42 @@ void buildChainPresetSubmenu(juce::PopupMenu& menu, const juce::File& dir,
 }  // namespace
 
 void TrackChainContent::showPresetMenu() {
+    const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+    if (track == nullptr)
+        return;
+
     auto& pm = magda::PresetManager::getInstance();
 
-    constexpr int kSaveOverwrite = 1;
-    constexpr int kSaveAs = 2;
-    constexpr int kRevealInFinder = 3;
+    constexpr int kRevealInFinder = 1;
     constexpr int kPresetIdBase = 1000;
 
     juce::PopupMenu menu;
     menu.addSectionHeader("MAGDA Track Presets");
 
     juce::StringArray index;
-    buildChainPresetSubmenu(menu, pm.getChainsDirectory(), "", kPresetIdBase, currentPresetName_,
-                            index);
+    buildChainPresetSubmenu(menu, pm.getChainsDirectory(), "", kPresetIdBase,
+                            track->chainPresetName, index);
 
     if (index.isEmpty())
         menu.addItem(kPresetIdBase, "(no presets yet)", /*isActive*/ false);
 
     menu.addSeparator();
-    if (currentPresetName_.isNotEmpty())
-        menu.addItem(kSaveOverwrite, "Save \"" + currentPresetName_ + "\"");
-    menu.addItem(kSaveAs, "Save as MAGDA Track Preset...");
     menu.addItem(kRevealInFinder, "Reveal in Finder");
 
-    const auto indexCopy = index;
+    presetSelector_->setMenuOpen(true);
+    juce::Component::SafePointer<TrackChainContent> self(this);
     menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(presetButton_.get()),
-        [this, indexCopy](int chosen) {
-            if (chosen == 0)
+        juce::PopupMenu::Options().withTargetComponent(&presetSelector_->getBox()),
+        [self, index](int chosen) {
+            if (self == nullptr)
                 return;
-            if (chosen == kSaveAs) {
-                showSaveTrackPresetDialog();
-            } else if (chosen == kSaveOverwrite) {
-                saveCurrentTrackPreset();
-            } else if (chosen == kRevealInFinder) {
+            self->presetSelector_->setMenuOpen(false);
+            if (chosen == kRevealInFinder) {
                 magda::PresetManager::getInstance().getChainsDirectory().revealToUser();
             } else if (chosen >= kPresetIdBase) {
                 const int idx = chosen - kPresetIdBase;
-                if (idx >= 0 && idx < indexCopy.size())
-                    loadTrackPresetByName(indexCopy[idx]);
+                if (idx >= 0 && idx < index.size())
+                    self->loadTrackPresetByName(index[idx]);
             }
         });
 }
@@ -3289,8 +3283,9 @@ void TrackChainContent::showSaveTrackPresetDialog() {
         return;
 
     const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
-    const juce::String defaultName =
-        currentPresetName_.isNotEmpty() ? currentPresetName_ : (track ? track->name : "Track");
+    const juce::String defaultName = track && track->chainPresetName.isNotEmpty()
+                                         ? track->chainPresetName
+                                         : (track ? track->name : "Track");
 
     auto* aw = new magda::MagdaAlertWindow(
         "Save MAGDA Track Preset",
@@ -3326,7 +3321,7 @@ void TrackChainContent::showSaveTrackPresetDialog() {
                     showChainPresetErrorAsync("Save Track Preset Failed", mgr.getLastError());
                     return;
                 }
-                self->currentPresetName_ = name;
+                self->setTrackPresetName(self->selectedTrackId_, name);
             };
 
             if (magda::PresetManager::getInstance().getChainPresets().contains(name)) {
@@ -3347,17 +3342,6 @@ void TrackChainContent::showSaveTrackPresetDialog() {
         }));
 }
 
-void TrackChainContent::saveCurrentTrackPreset() {
-    if (currentPresetName_.isEmpty() || selectedTrackId_ == magda::INVALID_TRACK_ID)
-        return;
-    const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
-    if (track == nullptr)
-        return;
-    auto& pm = magda::PresetManager::getInstance();
-    if (!pm.saveChainPreset(*track, currentPresetName_))
-        showChainPresetErrorAsync("Save Track Preset Failed", pm.getLastError());
-}
-
 void TrackChainContent::loadTrackPresetByName(const juce::String& presetName) {
     if (selectedTrackId_ == magda::INVALID_TRACK_ID)
         return;
@@ -3372,7 +3356,18 @@ void TrackChainContent::loadTrackPresetByName(const juce::String& presetName) {
         showChainPresetErrorAsync("Load Track Preset Failed", "Failed to apply preset to track.");
         return;
     }
-    currentPresetName_ = presetName;
+    setTrackPresetName(selectedTrackId_, presetName);
+}
+
+void TrackChainContent::setTrackPresetName(magda::TrackId trackId, const juce::String& presetName) {
+    if (auto* track = magda::TrackManager::getInstance().getTrack(trackId))
+        track->chainPresetName = presetName;
+    refreshPresetLabel();
+}
+
+void TrackChainContent::refreshPresetLabel() {
+    const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+    presetSelector_->setPresetName(track != nullptr ? track->chainPresetName : juce::String());
 }
 
 }  // namespace magda::daw::ui

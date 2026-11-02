@@ -710,6 +710,7 @@ ApplyDevicePresetResult DeviceApiLive::applyPreset(const ChainNodePath& devicePa
             return {ApplyDevicePresetStatus::LoadFailed, {}};
         }
         prepared = *staged;
+        prepared.presetName = file->getFileNameWithoutExtension();
         if (!tracks.applyDevicePreset(devicePath, before))
             return {ApplyDevicePresetStatus::LoadFailed, {}};
     } else {

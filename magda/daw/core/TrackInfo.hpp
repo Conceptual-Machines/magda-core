@@ -146,6 +146,9 @@ struct TrackInfo {
     ModArray mods = createDefaultMods(0);
     MacroArray macros = createDefaultMacros();
 
+    /// The chain preset last loaded or saved here; the chain header's preset box shows it.
+    juce::String chainPresetName;
+
     // Track-level panel UI state
     bool globalModsPanelOpen = false;
     bool globalMacrosPanelOpen = false;
@@ -197,6 +200,7 @@ struct TrackInfo {
             viewSettings = other.viewSettings;
             mods = other.mods;
             macros = other.macros;
+            chainPresetName = other.chainPresetName;
             globalModsPanelOpen = other.globalModsPanelOpen;
             globalMacrosPanelOpen = other.globalMacrosPanelOpen;
             selectedGlobalModIndex = other.selectedGlobalModIndex;

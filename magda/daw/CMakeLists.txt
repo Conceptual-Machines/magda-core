@@ -133,7 +133,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/trackchain/icon-padchain-boldm.svg
     ../../assets/icons/trackchain/icon-racks-boldm.svg
     ../../assets/icons/trackchain/icon-treeview-boldm.svg
-    ../../assets/icons/trackchain/icon-presets-round-boldm.svg
     ../../assets/icons/trackchain/icon-sends-boldm.svg
     ../../assets/icons/trackchain/icon-inserts-boldm.svg
     ../../assets/icons/trackchain/oscilloscope3.svg

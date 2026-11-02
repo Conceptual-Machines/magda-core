@@ -1987,6 +1987,7 @@ std::optional<DeviceInfo> TrackManager::prepareDevicePresetState(
     prepared.gainDb = presetDevice.gainDb;
     prepared.gainValue = std::pow(10.0f, presetDevice.gainDb / 20.0f);
     prepared.pluginState = stripPresetRuntimePluginState(presetDevice.pluginState);
+    prepared.presetName = presetDevice.presetName;
     retargetPresetLinks(prepared.macros, prepared.mods, presetDevice.id, devicePath);
     return prepared;
 }
@@ -2221,6 +2222,7 @@ std::optional<TrackInfo> TrackManager::prepareTrackPresetState(TrackId trackId,
     prepared.chain.mixerAnalysisElements = live->chain.mixerAnalysisElements;
     prepared.macros = presetTrack.macros;
     prepared.mods = presetTrack.mods;
+    prepared.chainPresetName = presetTrack.chainPresetName;
 
     PresetIdRemap remap;
     remap.trackId = trackId;

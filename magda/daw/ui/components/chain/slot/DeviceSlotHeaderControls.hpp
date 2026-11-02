@@ -44,9 +44,10 @@ struct DeviceSlotHeaderMetrics {
 };
 
 /// Where the expanded header's separators landed; empty when not drawn. @c routing sits
-/// between the modulation and routing buttons on the left.
+/// between the modulation and routing buttons on the left, @c preset between the preset
+/// control and the name.
 struct DeviceSlotHeaderSeparators {
-    juce::Rectangle<int> left, routing;
+    juce::Rectangle<int> left, routing, preset;
 };
 
 /// Delta keeps its visibility here but is placed by the slot's side strip, not the
@@ -57,6 +58,12 @@ DeviceSlotHeaderSeparators layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& 
                                                           bool isInternalDevice,
                                                           DeviceSlotHeaderControls controls,
                                                           const DeviceSlotHeaderMetrics& metrics);
+
+/** @brief Place the preset control just before the name, taking at most half of what is left of
+ *  @p headerArea, and return the separator after it (#3234). */
+juce::Rectangle<int> layoutDeviceSlotHeaderPreset(juce::Rectangle<int>& headerArea,
+                                                  juce::Component& preset, int preferredWidth,
+                                                  const DeviceSlotHeaderMetrics& metrics);
 
 void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
                                        juce::Rectangle<int> collapsedMeterArea,

@@ -314,29 +314,12 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
 
     setupGainMeterControls();
 
-    // ----- MOCK UI (no wiring): MAGDA preset menu button (top header) -----
-    presetButton_ = std::make_unique<magda::SvgButton>("Presets", BinaryData::chevron_down_svg,
-                                                       BinaryData::chevron_down_svgSize);
-    presetButton_->setTooltip("Presets");
-    presetButton_->onClick = [this]() {
-        // Lit while its menu is open.
-        presetButton_->setActive(true);
-        if (!isInternalDevice() && hasPluginPresetsAvailable())
-            showPluginPresetMenu();
-        else
-            showPresetMenu();
-    };
-    addAndMakeVisible(*presetButton_);
-
-    // Plugin presets menu button — opens a hierarchical popup of disk-scanned
-    // presets (.vstpreset / .aupreset). Hidden when neither disk presets nor
-    // built-in programs are available so plugins with proprietary preset
-    // systems (Vital, Serum 2, etc.) don't show a dead control.
-    presetsButton_ = std::make_unique<juce::TextButton>("Presets");
-    presetsButton_->setLookAndFeel(&getPluginPresetsButtonLookAndFeel());
-    presetsButton_->setTooltip("Plugin Presets");
-    presetsButton_->onClick = [this]() { showPluginPresetMenu(); };
-    addChildComponent(*presetsButton_);  // hidden by default; shown by refreshPresetsButton
+    const auto headerButton = DeviceSlotComponent::getHeaderButtonSize();
+    presetSelector_ = std::make_unique<PresetSelector>(headerButton.y, headerButton.x);
+    presetSelector_->onOpenMenu = [this]() { showPresetMenu(); };
+    presetSelector_->onSave = [this]() { showSavePresetDialog(); };
+    presetSelector_->setPresetName(device_.presetName);
+    addAndMakeVisible(*presetSelector_);
 
     // Sidechain button (only visible when plugin supports sidechain)
     scButton_ = std::make_unique<magda::SvgButton>("Sidechain", BinaryData::sidechain_svg,
@@ -722,6 +705,7 @@ void DeviceSlotComponent::paintNodeFrame(juce::Graphics& g, juce::Rectangle<int>
     device_shell::paintFrame(g, bounds, headerHeight,
                              {.headerSeparatorLeft = headerSeparators_.left,
                               .headerSeparatorRouting = headerSeparators_.routing,
+                              .headerSeparatorPreset = headerSeparators_.preset,
                               .sidebar = sidebarArea_,
                               .sideStrip = sideStripArea_,
                               .midiLed = midiLedArea_,
@@ -1361,9 +1345,12 @@ void DeviceSlotComponent::styleDeviceHeaderButtons() {
     style(modButton_.get(), DeviceIcon::Toggle, ActiveTheme::ACCENT_ATTENTION);
     style(aiButton_.get(), DeviceIcon::Toggle, ActiveTheme::ACCENT_PRIMARY);
     style(learnButton_.get(), DeviceIcon::Toggle, ActiveTheme::ACCENT_ATTENTION);
-    style(presetButton_.get(), DeviceIcon::Chevron, ActiveTheme::PRESET_INDIGO);
-    if (presetButton_)
-        presetButton_->setHoverColor(ActiveTheme::PRESET_INDIGO);
+    if (presetSelector_) {
+        auto& save = presetSelector_->getSaveButton();
+        style(&save, DeviceIcon::Action, ActiveTheme::PRESET_INDIGO);
+        save.setHoverColor(ActiveTheme::PRESET_INDIGO);
+        save.setIconPadding(4.0f);  // the floppy sits well inside its viewBox
+    }
     style(multiOutButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_PRIMARY);
     style(randomButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_PRIMARY);
     style(exportClipButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_POSITIVE);
@@ -1615,7 +1602,7 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     // nullptr too, so the header layout skips placing them).
     const bool strip = stripsAnalysisChrome();
     onButton_->setVisible(!strip);
-    presetButton_->setVisible(!strip);
+    presetSelector_->setVisible(!strip);
     levelMeter_.setVisible(!strip);  // peak meter is redundant on an analyzer
 
     syncModMacroControlsAvailability();
@@ -1694,57 +1681,52 @@ int DeviceSlotComponent::getPreferredWidth() const {
 
 void DeviceSlotComponent::showPresetMenu() {
     juce::Component::SafePointer<DeviceSlotComponent> self(this);
-    magdaPresetPresenter_.showMenu(
-        presetButton_.get(), device_, nodePath_,
-        [self](const magda::DeviceInfo& liveDevice) {
-            if (self == nullptr)
-                return;
-            self->updateFromDevice(liveDevice);
-        },
-        [self]() {
-            if (self != nullptr && self->presetButton_)
-                self->presetButton_->setActive(false);
-        });
+    const auto onDismissed = [self]() {
+        if (self != nullptr)
+            self->presetSelector_->setMenuOpen(false);
+    };
+
+    presetSelector_->setMenuOpen(true);
+    auto* target = &presetSelector_->getBox();
+    if (!isInternalDevice() && hasPluginPresetsAvailable()) {
+        magda::daw::ui::showPluginPresetMenu(
+            target, device_, nodePath_, isInternalDevice(),
+            [self]() {
+                if (self != nullptr)
+                    self->refreshPresetLabel();
+            },
+            onDismissed);
+    } else {
+        magda::daw::ui::showMagdaPresetMenu(
+            target, device_, nodePath_,
+            [self](const magda::DeviceInfo& liveDevice) {
+                if (self != nullptr)
+                    self->updateFromDevice(liveDevice);
+            },
+            onDismissed);
+    }
 }
 
-void DeviceSlotComponent::refreshPresetsButton() {
-    if (!presetsButton_)
-        return;
-    presetsButton_->setButtonText(pluginPresetPresenter_.getCurrentPresetLabel());
+void DeviceSlotComponent::showSavePresetDialog() {
+    juce::Component::SafePointer<DeviceSlotComponent> self(this);
+    const auto onSaved = [self]() {
+        if (self != nullptr)
+            self->refreshPresetLabel();
+    };
+    if (!isInternalDevice() && hasPluginPresetsAvailable())
+        magda::daw::ui::showSavePluginPresetDialog(device_, nodePath_, onSaved);
+    else
+        magda::daw::ui::showSaveMagdaPresetDialog(device_, nodePath_, onSaved);
+}
+
+void DeviceSlotComponent::refreshPresetLabel() {
+    if (const auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_))
+        device_.presetName = live->presetName;
+    presetSelector_->setPresetName(device_.presetName);
 }
 
 bool DeviceSlotComponent::hasPluginPresetsAvailable() const {
     return magda::daw::ui::hasPluginPresetsAvailable(device_, isInternalDevice());
-}
-
-void DeviceSlotComponent::showPluginPresetMenu() {
-    juce::Component::SafePointer<DeviceSlotComponent> self(this);
-    pluginPresetPresenter_.showMenu(
-        presetButton_.get(), device_, nodePath_, isInternalDevice(),
-        [self]() {
-            if (self != nullptr)
-                self->refreshPresetsButton();
-        },
-        [self]() {
-            if (self != nullptr && self->presetButton_)
-                self->presetButton_->setActive(false);
-        });
-}
-
-void DeviceSlotComponent::loadPluginPresetFile(const juce::File& file) {
-    juce::Component::SafePointer<DeviceSlotComponent> self(this);
-    pluginPresetPresenter_.loadFile(nodePath_, file, [self]() {
-        if (self != nullptr)
-            self->refreshPresetsButton();
-    });
-}
-
-void DeviceSlotComponent::showSavePluginPresetDialog() {
-    juce::Component::SafePointer<DeviceSlotComponent> self(this);
-    pluginPresetPresenter_.showSaveDialog(device_, nodePath_, [self]() {
-        if (self != nullptr)
-            self->refreshPresetsButton();
-    });
 }
 
 void DeviceSlotComponent::refreshDeviceTraits(const magda::DeviceInfo& device) {
@@ -1755,11 +1737,10 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Detect plugin replacement BEFORE assignment so we can drop a stale
     // MAGDA preset reference (a preset is tied to one plugin).
     if (device.pluginId != device_.pluginId) {
-        magdaPresetPresenter_.clearCurrentPreset();
-        pluginPresetPresenter_.clearCurrentPreset();
         // AI panel output + conversation are plugin-specific too — wipe so we
         // don't show stale results or carry history onto a different plugin.
         if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_)) {
+            live->presetName.clear();
             live->aiPanelOutput.clear();
             live->aiConversation.clear();
         }
@@ -1783,10 +1764,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     refreshMixKnobFromDevice(true);
     refreshVoiceModeChoice();
 
-    // Plugin instance may have just become available (or its program list changed
-    // due to a state restore) — repopulate.
-    if (device_.loadState == magda::DeviceLoadState::Loaded && !isInternalDevice())
-        refreshPresetsButton();
+    refreshPresetLabel();
 
     // Update sidechain button visibility and state
     if (scButton_) {
@@ -2005,12 +1983,9 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     lentNote_.setVisible(false);
     auto* compiledPanelComponent =
         compiledPanel_ != nullptr ? &compiledPanel_->component() : nullptr;
-    const bool pluginPresetsAvailable = !collapsed_ && !traits_.isFaust &&
-                                        !traits_.isFaustInstrument && hasPluginPresetsAvailable();
     // Chord-track devices emit no audio yet, so they show no output meter.
     const auto* slotTrack = magda::TrackManager::getInstance().getTrack(nodePath_.trackId);
     const bool onChordTrack = slotTrack && slotTrack->type == magda::TrackType::Chord;
-    juce::ignoreUnused(pluginPresetsAvailable);
     // The base hands the strip over before this pass, but not when there is none.
     if (getShellStripWidth() == 0)
         sideStripArea_ = {};
@@ -2022,14 +1997,13 @@ void DeviceSlotComponent::resizedContent(juce::Rectangle<int> contentArea) {
     layoutSidebar(sidebarArea_);
 
     if (!prepareDeviceSlotContentFrame(
-            contentArea, traits_, device_, collapsed_, isInternalDevice(), false,
-            {.pluginPresetsButton = presetsButton_.get(),
-             .levelMeter = &levelMeter_,
+            contentArea, traits_, device_, collapsed_, isInternalDevice(),
+            {.levelMeter = &levelMeter_,
              .midiNoteStrip = &midiNoteStrip_,
              .gainSlider = gainSlider_.get(),
              .paramGrid = paramGrid_.get(),
              .gainLabel = &gainLabel_,
-             .magdaPresetButton = stripsAnalysisChrome() ? nullptr : presetButton_.get(),
+             .magdaPresetButton = stripsAnalysisChrome() ? nullptr : presetSelector_.get(),
              .activeCustomUI = activeCustomUI,
              .compiledPanel = compiledPanelComponent,
              .faustHeader = faustUI_.get(),
@@ -2114,13 +2088,17 @@ void DeviceSlotComponent::resizedHeaderExtra(juce::Rectangle<int>& headerArea) {
          .expandButton = expandToggle_.get(),
          .deltaButton = deltaButton_.get(),
          .powerButton = stripsAnalysisChrome() ? nullptr : onButton_.get(),
-         .presetButton = stripsAnalysisChrome() ? nullptr : presetButton_.get(),
+         .presetButton = stripsAnalysisChrome() ? nullptr : presetSelector_.get(),
          .exportClipButton = exportClipButton_.get(),
          .randomButton = randomButton_.get(),
          .stepRecordButton = stepRecordButton_.get(),
          .midiThruButton = midiThruButton_.get()},
         DeviceSlotHeaderMetrics{});
     headerArea = layoutHeaderControls(headerArea);
+    if (presetSelector_->isVisible())
+        headerSeparators_.preset = layoutDeviceSlotHeaderPreset(
+            headerArea, *presetSelector_, presetSelector_->getPreferredWidth(),
+            DeviceSlotHeaderMetrics{});
 }
 
 void DeviceSlotComponent::mouseDrag(const juce::MouseEvent& e) {

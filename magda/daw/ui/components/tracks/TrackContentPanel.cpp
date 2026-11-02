@@ -2595,7 +2595,9 @@ void TrackContentPanel::clipSelectionChanged(ClipId clipId) {
     // Guarded by isShowing(): selection events can arrive while the panel is
     // off-screen (e.g. during undo tear-down, or when another view is active),
     // and grabbing focus on a hidden component fires juce_Component.cpp:2752.
-    if (isShowing())
+    // Selecting a device or track clears the clip selection too, and that must
+    // not pull focus out of the panel it happened in (#3232).
+    if (clipId != INVALID_CLIP_ID && isShowing())
         grabKeyboardFocus();
 
     // Derive selected track from clip so edit cursor draws on the right lane
