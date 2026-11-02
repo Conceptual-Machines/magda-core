@@ -9,13 +9,13 @@
 // NOLINTNEXTLINE(bugprone-reserved-identifier)
 #define _SILENCE_CXX20_OLD_SHARED_PTR_ATOMIC_SUPPORT_DEPRECATION_WARNING
 
-#include "llama_model_manager.hpp"
-
 #include <llama.h>
 
 #include <chrono>
 #include <utility>
 #include <vector>
+
+#include "llama_model_manager.hpp"
 
 namespace magda {
 
