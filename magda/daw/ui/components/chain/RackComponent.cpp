@@ -1165,7 +1165,6 @@ void RackComponent::showPresetMenu() {
     constexpr int kPresetIdBase = 1000;
 
     juce::PopupMenu menu;
-    menu.addSectionHeader("MAGDA Rack Presets");
 
     juce::StringArray index;  // relative paths, indexed by chosen-id - kPresetIdBase
     buildRackPresetSubmenu(menu, pm.getRacksDirectory(), "", kPresetIdBase, currentPresetName_,

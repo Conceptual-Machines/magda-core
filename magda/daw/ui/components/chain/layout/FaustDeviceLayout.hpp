@@ -23,18 +23,22 @@ namespace magda::daw::ui {
  */
 class FaustDeviceLayout final : public DeviceParamLayout {
   public:
+    /// The most columns; a patch beside a custom view takes only those its controls fill (#3213).
     static constexpr int kCellsPerRow = 8;
-    /// Two rows: the 200px chain gives each room to read, with any custom view beside them
-    /// (#3213).
+    /// Two rows: the 200px chain gives each room to read.
     static constexpr int kRows = 2;
     static constexpr int kCellCount = kCellsPerRow * kRows;
 
     int cellCount() const override {
-        return kCellCount;
+        return cellsPerRow_ * kRows;
     }
     int cellsPerRow() const override {
-        return kCellsPerRow;
+        return cellsPerRow_;
     }
+    int maxCellCount() const override {
+        return kCellCount;
+    }
+    bool fitColumns(const magda::DeviceInfo& device, bool fit) override;
     bool wantsPagination() const override {
         return true;
     }
@@ -58,7 +62,7 @@ class FaustDeviceLayout final : public DeviceParamLayout {
 
     struct GroupPage {
         juce::String name;
-        // Exactly kCellCount entries, so a cell index maps straight to a slot.
+        // Exactly cellCount() entries, so a cell index maps straight to a slot.
         std::vector<PageCell> cells;
         int chunkIndex = 0;
         int chunkCount = 1;
@@ -66,6 +70,7 @@ class FaustDeviceLayout final : public DeviceParamLayout {
 
     const std::vector<GroupPage>& pagesFor(const magda::DeviceInfo& device) const;
 
+    int cellsPerRow_ = kCellsPerRow;
     mutable std::uint64_t cachedSignature_ = 0;
     mutable bool cacheValid_ = false;
     mutable std::vector<GroupPage> cachedPages_;

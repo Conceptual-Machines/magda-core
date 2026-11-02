@@ -54,19 +54,12 @@ std::uint64_t pageLayoutSignature(const magda::DeviceInfo& device) {
     return signature;
 }
 
-}  // namespace
+struct Group {
+    juce::String name;
+    std::vector<int> paramArrayIndices;
+};
 
-const std::vector<FaustDeviceLayout::GroupPage>& FaustDeviceLayout::pagesFor(
-    const magda::DeviceInfo& device) const {
-    const auto signature = pageLayoutSignature(device);
-    if (cacheValid_ && signature == cachedSignature_)
-        return cachedPages_;
-
-    struct Group {
-        juce::String name;
-        std::vector<int> paramArrayIndices;
-    };
-
+std::vector<Group> groupsOf(const magda::DeviceInfo& device) {
     std::vector<Group> groups;
     for (int i = 0; i < static_cast<int>(device.parameters.size()); ++i) {
         const auto& param = device.parameters[static_cast<size_t>(i)];
@@ -77,7 +70,59 @@ const std::vector<FaustDeviceLayout::GroupPage>& FaustDeviceLayout::pagesFor(
         else
             it->paramArrayIndices.push_back(i);
     }
+    return groups;
+}
 
+/** @brief Whether @p group's controls fit @p rows rows of @p columns, wrapped as pages wrap them.
+ */
+bool fitsOnOnePage(const magda::DeviceInfo& device, const Group& group, int columns, int rows) {
+    int cursor = 0;
+    for (const int paramArrayIdx : group.paramArrayIndices) {
+        const int width = device.parameters[static_cast<size_t>(paramArrayIdx)].widthCells;
+        const int span = std::max(width, 1);
+        if (span > columns)
+            return false;
+        if ((cursor % columns) + span > columns)
+            cursor += columns - (cursor % columns);
+        if (cursor + span > columns * rows)
+            return false;
+        cursor += span;
+    }
+    return true;
+}
+
+}  // namespace
+
+bool FaustDeviceLayout::fitColumns(const magda::DeviceInfo& device, bool fit) {
+    int columns = kCellsPerRow;
+    if (fit) {
+        // Meters take the second row's height, so a patch with them keeps its controls on one.
+        const int rows = device.meters.empty() ? kRows : 1;
+        const auto groups = groupsOf(device);
+        for (int candidate = 1; candidate < kCellsPerRow; ++candidate) {
+            const bool fits = std::ranges::all_of(groups, [&](const Group& group) {
+                return fitsOnOnePage(device, group, candidate, rows);
+            });
+            if (fits) {
+                columns = candidate;
+                break;
+            }
+        }
+    }
+    if (columns == cellsPerRow_)
+        return false;
+    cellsPerRow_ = columns;
+    cacheValid_ = false;
+    return true;
+}
+
+const std::vector<FaustDeviceLayout::GroupPage>& FaustDeviceLayout::pagesFor(
+    const magda::DeviceInfo& device) const {
+    const auto signature = pageLayoutSignature(device);
+    if (cacheValid_ && signature == cachedSignature_)
+        return cachedPages_;
+
+    auto groups = groupsOf(device);
     if (groups.empty())
         groups.push_back({"Params", {}});
 
@@ -89,24 +134,24 @@ const std::vector<FaustDeviceLayout::GroupPage>& FaustDeviceLayout::pagesFor(
         // than the grid can give gets the whole row, not a broken layout.
         GroupPage page;
         page.name = group.name;
-        page.cells.assign(kCellCount, PageCell{});
+        page.cells.assign(static_cast<size_t>(cellCount()), PageCell{});
         int cursor = 0;
 
         const auto flush = [&]() {
             cachedPages_.push_back(page);
-            page.cells.assign(kCellCount, PageCell{});
+            page.cells.assign(static_cast<size_t>(cellCount()), PageCell{});
             cursor = 0;
         };
 
         for (const int paramArrayIdx : group.paramArrayIndices) {
             const auto& param = device.parameters[static_cast<size_t>(paramArrayIdx)];
-            const int span = std::clamp(param.widthCells, 1, kCellsPerRow);
+            const int span = std::clamp(param.widthCells, 1, cellsPerRow_);
 
             // Never straddle a row boundary: jump to the next row instead.
-            if ((cursor % kCellsPerRow) + span > kCellsPerRow)
-                cursor += kCellsPerRow - (cursor % kCellsPerRow);
+            if ((cursor % cellsPerRow_) + span > cellsPerRow_)
+                cursor += cellsPerRow_ - (cursor % cellsPerRow_);
 
-            if (cursor + span > kCellCount) {
+            if (cursor + span > cellCount()) {
                 flush();
             }
 

@@ -205,6 +205,16 @@ ParamHostComponent::~ParamHostComponent() {
     magda::Config::getInstance().removeListener(this);
 }
 
+bool ParamHostComponent::fitColumnsToControls(const magda::DeviceInfo& device, bool fit) {
+    if (!layout_->fitColumns(device, fit))
+        return false;
+    cellCount_ = layout_->cellCount();
+    cellsPerRow_ = layout_->cellsPerRow();
+    for (int i = 0; i < allocatedCells_; ++i)
+        paramSlots_[i]->setVisible(i < cellCount_);
+    return true;
+}
+
 void ParamHostComponent::updateParameterSlots(
     const magda::DeviceInfo& device, int currentPage,
     const std::function<void(int paramIndex, double value)>& onValueChanged) {

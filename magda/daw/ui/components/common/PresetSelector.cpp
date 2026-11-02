@@ -105,12 +105,23 @@ magda::SvgButton& PresetSelector::getSaveButton() {
     return save_;
 }
 
+void PresetSelector::setTrailingButton(juce::Component* button) {
+    trailing_ = button;
+    if (trailing_ != nullptr)
+        addAndMakeVisible(*trailing_);
+    resized();
+}
+
 int PresetSelector::getPreferredWidth() const {
-    return kBoxWidth + kGap + saveWidth_;
+    return kBoxWidth + kGap + saveWidth_ + (trailing_ != nullptr ? kGap + saveWidth_ : 0);
 }
 
 void PresetSelector::resized() {
     auto area = getLocalBounds();
+    if (trailing_ != nullptr) {
+        trailing_->setBounds(area.removeFromRight(saveWidth_));
+        area.removeFromRight(kGap);
+    }
     save_.setBounds(area.removeFromRight(saveWidth_));
     area.removeFromRight(kGap);
     box_->setBounds(area.withSizeKeepingCentre(area.getWidth(), boxHeight_));

@@ -40,6 +40,9 @@ class PresetSelector : public juce::Component {
 
     magda::SvgButton& getSaveButton();
 
+    /** @brief Stands @p button after the floppy disk, at its size. The caller owns it. */
+    void setTrailingButton(juce::Component* button);
+
     int getPreferredWidth() const;
 
     void resized() override;
@@ -49,6 +52,7 @@ class PresetSelector : public juce::Component {
 
     std::unique_ptr<Box> box_;
     magda::SvgButton save_;
+    juce::Component* trailing_ = nullptr;
     int boxHeight_;
     int saveWidth_;
 

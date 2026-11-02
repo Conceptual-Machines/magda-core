@@ -7,6 +7,7 @@
 #include <ranges>
 #include <span>
 
+#include "../audio/faust/FaustModelEdits.hpp"
 #include "../audio/plugins/DeviceCatalogParameters.hpp"
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/MagdaDevice.hpp"
@@ -1998,6 +1999,7 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
     auto* live = getDeviceInChainByPath(devicePath);
     if (!prepared || live == nullptr)
         return false;
+    const auto previousState = live->pluginState;
     *live = std::move(*prepared);
 
     if (live->format == PluginFormat::Internal) {
@@ -2011,6 +2013,7 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
         // parameter cache while applying it (#2573, #2758).
         PluginService::getInstance().applyPluginStateAt(devicePath);
     }
+    faust_edits::adoptPresetPatch(devicePath, previousState);
 
     // Notify listeners — devicePropertyChanged covers gain/macros/mods refresh
     // via the AudioBridge sync path, then push each parameter individually so

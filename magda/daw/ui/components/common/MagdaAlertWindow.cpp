@@ -67,6 +67,14 @@ int preferredButtonWidth(juce::Button& button) {
 
 }  // namespace
 
+juce::Font alertFieldLabelFont() {
+    return FontManager::getInstance().getUIFont(12.0f);
+}
+
+juce::Font alertTextFont() {
+    return messageFont();
+}
+
 void drawAlertButtonBackground(juce::Graphics& g, juce::Button& button, bool over, bool down) {
     const auto role = MagdaAlertWindow::roleOf(button);
     const auto body = button.getLocalBounds().toFloat().reduced(2.0f);

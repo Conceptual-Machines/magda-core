@@ -79,6 +79,10 @@ class TrackChainContent : public PanelContent,
     void populateHeader(juce::Component& headerBar) override;
     void depopulateHeader(juce::Component& headerBar) override;
     void layoutHeader(juce::Rectangle<int> headerBounds) override;
+    int preferredHeaderHeight() const override;
+
+    /// The header's height while folded to a strip.
+    static constexpr int FOLDED_HEADER_HEIGHT = 10;
 
     // TrackManagerListener
     void tracksChanged() override;
@@ -158,6 +162,19 @@ class TrackChainContent : public PanelContent,
     std::unique_ptr<magda::SvgButton> specToggleButton_;    // Toggle spectrum analyzer in post-fx
     std::unique_ptr<magda::SvgButton> levelsToggleButton_;  // Toggle levels meter in post-fx
     std::unique_ptr<magda::SvgButton> postFxPanelButton_;   // Show/hide the post-fx panel
+    std::unique_ptr<juce::Button> headerFoldButton_;        // Toggled while folded to a strip
+    bool headerFolded_ = false;  // Lags the button while the controls fade out.
+    LambdaTimer headerFadeTimer_;
+    float headerFadeAlpha_ = 1.0f;
+    float headerFadeFromAlpha_ = 1.0f;
+    float headerFadeTargetAlpha_ = 1.0f;
+    double headerFadeStartMs_ = 0.0;
+
+    std::vector<juce::Component*> headerControls();
+    void setHeaderFolded(bool folded);
+    void startHeaderFade(float targetAlpha);
+    void advanceHeaderFade();
+    void finishHeaderFade();
 
     // Add or remove the named analysis device in the selected track's post-fx
     // (osc/spectrum are unique per kind there), then refresh the toggle states.
@@ -170,7 +187,12 @@ class TrackChainContent : public PanelContent,
     // the button, and setPostFxPanelOpen reflects the panel's open state back
     // onto the button.
     std::function<void(bool open)> onPostFxPanelToggled;
+    /// Fires when the header folds or unfolds; BottomPanel lays out again.
+    std::function<void()> onHeaderFoldChanged;
     void setPostFxPanelOpen(bool open);
+    /** @brief The fold strip's right click: the post-FX panel and analyzers its header can't show.
+     */
+    juce::PopupMenu createPostFxMenu();
 
   private:
     bool postFxPanelOpen_ = false;  // mirrored panel state, for the button's lit look

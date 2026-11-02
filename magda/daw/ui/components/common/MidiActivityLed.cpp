@@ -85,8 +85,11 @@ void MidiActivityLed::timerCallback() {
 
 void MidiActivityLed::paint(juce::Graphics& g) {
     auto bounds = getLocalBounds().toFloat();
-    auto labelArea = bounds.removeFromBottom(9.0f);
-    const auto centre = bounds.getCentre().withY(bounds.getBottom() - kLedDiameter / 2.0f - 2.0f);
+    const bool labelled = bounds.getHeight() >= kLedDiameter + 2.0f + 9.0f;
+    const auto labelArea = labelled ? bounds.removeFromBottom(9.0f) : juce::Rectangle<float>();
+    const auto centre =
+        labelled ? bounds.getCentre().withY(bounds.getBottom() - kLedDiameter / 2.0f - 2.0f)
+                 : bounds.getCentre();
     const auto led = juce::Rectangle<float>(kLedDiameter, kLedDiameter).withCentre(centre);
 
     const auto green = ActiveTheme::getColour(ActiveTheme::DEVICE_GREEN);
@@ -98,6 +101,8 @@ void MidiActivityLed::paint(juce::Graphics& g) {
     g.setColour(idle.interpolatedWith(green, level_));
     g.fillEllipse(led);
 
+    if (!labelled)
+        return;
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM2));
     g.setFont(FontManager::getInstance().getMonoFont(7.5f).boldened());
     g.drawText("MIDI", labelArea, juce::Justification::centredTop, false);

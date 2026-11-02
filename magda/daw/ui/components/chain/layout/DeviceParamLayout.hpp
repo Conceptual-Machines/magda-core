@@ -74,6 +74,13 @@ class DeviceParamLayout {
         juce::ignoreUnused(cellsPerRow, rows);
         return false;
     }
+    /**
+     * @brief Narrows the grid to the columns @p device's controls need, or back to full width.
+     * @return true when the shape moved.
+     */
+    virtual bool fitColumns(const magda::DeviceInfo& /*device*/, bool /*fit*/) {
+        return false;
+    }
     /// Curated native layouts keep their cells but take the style's column count.
     /// Set, the layout places each cell itself instead of the host's even grid.
     virtual bool placesOwnCells() const {

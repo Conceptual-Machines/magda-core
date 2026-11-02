@@ -11,9 +11,9 @@
 #include "audio/plugins/IFaustEditorModel.hpp"
 #include "audio/plugins/MagdaDevice.hpp"
 #include "compiled/MagdaDriveCurveView.hpp"
-#include "core/AppPaths.hpp"
+#include "core/PresetManager.hpp"
+#include "core/TrackManager.hpp"
 #include "custom_ui/FaustCodeEditorWindow.hpp"
-#include "ui/components/common/SvgButton.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -44,30 +44,6 @@ FaustUI::FaustUI() {
     errorLabel_.setColour(juce::Label::textColourId, juce::Colours::red);
     errorLabel_.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(errorLabel_);
-
-    loadButton_ = std::make_unique<magda::SvgButton>("Load DSP", BinaryData::folderopen_svg,
-                                                     BinaryData::folderopen_svgSize);
-    loadButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    loadButton_->setIconPadding(1.5f);
-    loadButton_->onClick = [this] { showLoadMenu(); };
-    addChildComponent(*loadButton_);  // the slot's header shows it
-
-    saveButton_ = std::make_unique<magda::SvgButton>("Save DSP", BinaryData::save_svg,
-                                                     BinaryData::save_svgSize);
-    saveButton_->setOriginalColor(juce::Colour(0xFFB3B3B3));
-    saveButton_->setIconPadding(3.0f);  // floppy glyph is denser; pad more to match Load/Edit
-    saveButton_->onClick = [this] { saveDspToFile(); };
-    addChildComponent(*saveButton_);  // the slot's header shows it
-
-    editButton_ = std::make_unique<magda::SvgButton>("Edit DSP", BinaryData::code_blocks_svg,
-                                                     BinaryData::code_blocks_svgSize);
-    editButton_->setOriginalColor(juce::Colour(0xFFE3E3E3));
-    loadButton_->setTooltip("Load a Faust patch");
-    saveButton_->setTooltip("Save the patch's source");
-    editButton_->setTooltip("Edit the patch's source");
-    editButton_->setIconPadding(1.5f);
-    editButton_->onClick = [this] { showCodeEditor(); };
-    addChildComponent(*editButton_);  // the slot's header shows it
 }
 
 FaustUI::~FaustUI() = default;
@@ -79,6 +55,7 @@ void FaustUI::setDevicePath(const ChainNodePath& path) {
 void FaustUI::setDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
     device_ = std::move(device);
     plugin_ = dynamic_cast<magda::daw::audio::IFaustEditorModel*>(device_.get());
+    boundSource_ = plugin_ != nullptr ? plugin_->getDspSource() : juce::String();
     refreshNameLabel();
 }
 
@@ -124,10 +101,6 @@ void FaustUI::setOnIdentityChanged(
     refreshNameLabel();
 }
 
-std::vector<juce::Component*> FaustUI::headerControls() {
-    return {editButton_.get(), loadButton_.get(), saveButton_.get()};
-}
-
 int FaustUI::errorHeight() const {
     return errorLabel_.getText().isNotEmpty() ? kErrorHeight : 0;
 }
@@ -157,6 +130,9 @@ bool FaustUI::tryLoad(const juce::String& name, const juce::String& source) {
         return false;
     }
     setError({});
+    // A .dsp replaces the source and nothing else, so no preset describes the device now.
+    if (auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(devicePath_))
+        live->presetName.clear();
     refreshNameLabel();
 
     // Surface any pool diagnostics (overflow / duplicate idx) in the
@@ -169,92 +145,91 @@ bool FaustUI::tryLoad(const juce::String& name, const juce::String& source) {
     return true;
 }
 
-void FaustUI::showLoadMenu() {
-    if (plugin_ == nullptr)
-        return;
+namespace {
 
-    juce::PopupMenu menu;
-    // Only this device kind's patches: an instrument cannot host an FX patch,
-    // and vice versa. Grouped by the folder each .dsp was discovered in.
-    // getBundledStarterDsps sorts by category, so each run of equal categories
-    // is one submenu, and the ids stay in step with the vector index the
-    // callback resolves.
+/**
+ * @brief Where this kind's own .dsp files live, in the preset tree. Split by kind because an
+ *        instrument patch synthesises against Faust's voice controls and can't load into an effect.
+ */
+juce::File patchLibraryDir(magda::daw::audio::FaustPatchKind kind) {
+    return magda::PresetManager::getPresetsDirectory()
+        .getChildFile("Faust Patches")
+        .getChildFile(kind == magda::daw::audio::FaustPatchKind::Instrument ? "Instruments"
+                                                                            : "Effects");
+}
+
+}  // namespace
+
+void FaustUI::addPatchItems(juce::PopupMenu& menu) {
+    const juce::Component::SafePointer<FaustUI> self(this);
     const auto kind = patchKind();
-    auto starters = magda::daw::audio::getBundledStarterDsps(kind);
-    int id = 1;
+    const auto loaded = plugin_ != nullptr ? plugin_->getDspName() : juce::String();
+
+    // Only this device kind's patches: an instrument cannot host an FX patch,
+    // and vice versa. Grouped by the folder each .dsp was discovered in, which
+    // getBundledStarterDsps sorts by, so each run of equal categories is one submenu.
+    const auto starters = magda::daw::audio::getBundledStarterDsps(kind);
+    juce::PopupMenu builtIn;
     juce::String currentCategory;
     juce::PopupMenu categoryMenu;
-    auto flushCategory = [&menu, &categoryMenu, &currentCategory] {
+    auto flushCategory = [&builtIn, &categoryMenu, &currentCategory] {
         if (currentCategory.isNotEmpty()) {
-            menu.addSubMenu(currentCategory.substring(0, 1).toUpperCase() +
-                                currentCategory.substring(1),
-                            categoryMenu);
+            builtIn.addSubMenu(currentCategory.substring(0, 1).toUpperCase() +
+                                   currentCategory.substring(1),
+                               categoryMenu);
             categoryMenu = juce::PopupMenu();
         }
     };
     for (const auto& s : starters) {
+        if (s.category != currentCategory) {
+            flushCategory();
+            currentCategory = s.category;
+        }
         // A .dsp sitting at the root of the staged folder has no category and
         // is listed at the top level rather than under a submenu.
-        const auto& category = s.category;
-        if (category != currentCategory) {
-            flushCategory();
-            currentCategory = category;
-        }
-        if (category.isEmpty())
-            menu.addItem(id++, s.name);
-        else
-            categoryMenu.addItem(id++, s.name);
+        auto& target = s.category.isEmpty() ? builtIn : categoryMenu;
+        target.addItem(s.name, true, s.name == loaded, [self, name = s.name, source = s.source] {
+            if (self != nullptr)
+                self->tryLoad(name, source);
+        });
     }
     flushCategory();
 
-    // User-saved patches from this kind's library (written by the save
-    // button). Grouped in a submenu so the bundled starters stay tidy.
-    auto savedFiles = userPatchDir(kind).findChildFiles(juce::File::findFiles, false, "*.dsp");
-    savedFiles.sort();
-    const int savedBaseId = id;
-    if (!savedFiles.isEmpty()) {
-        juce::PopupMenu savedMenu;
-        for (const auto& f : savedFiles)
-            savedMenu.addItem(id++, f.getFileNameWithoutExtension());
-        menu.addSeparator();
-        menu.addSubMenu(kind == magda::daw::audio::FaustPatchKind::Instrument ? "My Instruments"
-                                                                              : "My Effects",
-                        savedMenu);
+    juce::PopupMenu patches;
+    if (!starters.empty())
+        patches.addSubMenu("Built-in", builtIn);
+
+    auto saved = patchLibraryDir(kind).findChildFiles(juce::File::findFiles, false, "*.dsp");
+    saved.sort();
+    if (!saved.isEmpty()) {
+        juce::PopupMenu mine;
+        for (const auto& file : saved) {
+            const auto name = file.getFileNameWithoutExtension();
+            mine.addItem(name, true, name == loaded, [self, name, file] {
+                if (self != nullptr)
+                    self->tryLoad(name, file.loadFileAsString());
+            });
+        }
+        patches.addSubMenu("My Patches", mine);
     }
 
-    menu.addSeparator();
-    const int fromFileId = id;
-    menu.addItem(fromFileId, "From file...");
+    patches.addSeparator();
+    patches.addItem("Load .dsp File...", [self] {
+        if (self != nullptr)
+            self->loadFromFile();
+    });
+    patches.addItem("Save .dsp File...", [self] {
+        if (self != nullptr)
+            self->saveDspToFile();
+    });
 
-    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(loadButton_.get()),
-                       [this, starters, savedFiles, savedBaseId, fromFileId](int result) {
-                           if (result <= 0)
-                               return;
-                           if (result == fromFileId) {
-                               loadFromFile();
-                               return;
-                           }
-                           if (result < savedBaseId) {
-                               const int idx = result - 1;
-                               if (idx >= 0 && idx < static_cast<int>(starters.size())) {
-                                   const auto& s = starters[static_cast<size_t>(idx)];
-                                   tryLoad(s.name, s.source);
-                               }
-                               return;
-                           }
-                           const int idx = result - savedBaseId;
-                           if (idx >= 0 && idx < savedFiles.size()) {
-                               const auto file = savedFiles[idx];
-                               if (file.existsAsFile())
-                                   tryLoad(file.getFileNameWithoutExtension(),
-                                           file.loadFileAsString());
-                           }
-                       });
+    menu.addSeparator();
+    menu.addSubMenu("Patches", patches);
 }
 
 void FaustUI::loadFromFile() {
     fileChooser_ = std::make_unique<juce::FileChooser>("Choose a .dsp file",
-                                                       userPatchDir(patchKind()), "*.dsp");
+                                                       patchLibraryDir(patchKind()), "*.dsp");
     fileChooser_->launchAsync(
         juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
         [this](const juce::FileChooser& fc) {
@@ -263,21 +238,6 @@ void FaustUI::loadFromFile() {
                 return;
             tryLoad(file.getFileNameWithoutExtension(), file.loadFileAsString());
         });
-}
-
-magda::daw::audio::FaustPatchKind FaustUI::patchKind() const {
-    return plugin_ != nullptr ? plugin_->getPatchKind() : magda::daw::audio::FaustPatchKind::Effect;
-}
-
-juce::File FaustUI::userPatchDir(magda::daw::audio::FaustPatchKind kind) {
-    // Patches saved before the split all live in FaustEffects, instruments
-    // included. They stay listed under FX rather than being moved: the folder
-    // is the user's, and nothing about an unmoved file breaks.
-    auto dir = magda::paths::dataDir().getChildFile(
-        kind == magda::daw::audio::FaustPatchKind::Instrument ? "FaustInstruments"
-                                                              : "FaustEffects");
-    dir.createDirectory();
-    return dir;
 }
 
 void FaustUI::saveDspToFile() {
@@ -291,8 +251,10 @@ void FaustUI::saveDspToFile() {
     if (name.isEmpty())
         name = kind == magda::daw::audio::FaustPatchKind::Instrument ? "instrument" : "effect";
 
-    fileChooser_ = std::make_unique<juce::FileChooser>(
-        "Save Faust DSP", userPatchDir(kind).getChildFile(name + ".dsp"), "*.dsp");
+    const auto dir = patchLibraryDir(kind);
+    dir.createDirectory();
+    fileChooser_ = std::make_unique<juce::FileChooser>("Save Faust DSP",
+                                                       dir.getChildFile(name + ".dsp"), "*.dsp");
     fileChooser_->launchAsync(juce::FileBrowserComponent::saveMode |
                                   juce::FileBrowserComponent::canSelectFiles |
                                   juce::FileBrowserComponent::warnAboutOverwriting,
@@ -304,6 +266,10 @@ void FaustUI::saveDspToFile() {
                                       file = file.withFileExtension("dsp");
                                   file.replaceWithText(source);
                               });
+}
+
+magda::daw::audio::FaustPatchKind FaustUI::patchKind() const {
+    return plugin_ != nullptr ? plugin_->getPatchKind() : magda::daw::audio::FaustPatchKind::Effect;
 }
 
 void FaustUI::showCodeEditor() {

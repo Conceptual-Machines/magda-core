@@ -24,6 +24,7 @@
 #include "../../themes/SmallButtonLookAndFeel.hpp"
 #include "PluginBrowserContent.hpp"
 #include "core/AutomationInfo.hpp"
+#include "core/Config.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/MacroInfo.hpp"
@@ -729,6 +730,63 @@ float dbToGain(float db) {
 }
 }  // namespace
 
+namespace {
+
+constexpr double kHeaderFadeMs = 150.0;
+constexpr int kHeaderFoldWidth = 22;
+
+juce::String headerFoldTooltip(bool folded) {
+    return folded ? "Show the track chain header" : "Hide the track chain header";
+}
+
+/**
+ * @brief Folds the header to a strip: a chevron at its right end, and while folded the whole strip
+ *        is the button.
+ */
+class HeaderFoldButton final : public juce::Button {
+  public:
+    HeaderFoldButton() : juce::Button("Fold Header") {
+        setClickingTogglesState(true);
+    }
+
+    std::function<void()> onRightClick;
+
+    void mouseDown(const juce::MouseEvent& e) override {
+        if (e.mods.isPopupMenu()) {
+            if (onRightClick)
+                onRightClick();
+            return;
+        }
+        juce::Button::mouseDown(e);
+    }
+
+    void paintButton(juce::Graphics& g, bool over, bool down) override {
+        const bool lit = over || down;
+        if (getToggleState()) {
+            g.fillAll(ActiveTheme::getPanelBackgroundColour().darker(0.3f));
+            if (lit)
+                g.fillAll(ActiveTheme::getColour(ActiveTheme::DEVICE_ICON_HOVER).withAlpha(0.12f));
+            g.setColour(ActiveTheme::getBorderColour());
+            g.fillRect(0, getHeight() - 1, getWidth(), 1);
+        }
+
+        // Stays put between the states, and points where the header will go.
+        const float x = static_cast<float>(getWidth() - kHeaderFoldWidth / 2);
+        const float y = static_cast<float>(getHeight()) * 0.5f;
+        const float tip = getToggleState() ? 2.0f : -2.0f;
+        juce::Path chevron;
+        chevron.startNewSubPath(x - 4.0f, y - tip);
+        chevron.lineTo(x, y + tip);
+        chevron.lineTo(x + 4.0f, y - tip);
+        g.setColour(ActiveTheme::getColour(lit ? ActiveTheme::DEVICE_ICON_HOVER
+                                               : ActiveTheme::DEVICE_ICON));
+        g.strokePath(chevron, juce::PathStrokeType(1.5f, juce::PathStrokeType::curved,
+                                                   juce::PathStrokeType::rounded));
+    }
+};
+
+}  // namespace
+
 TrackChainContent::TrackChainContent()
     : chainViewport_(std::make_unique<ZoomableViewport>(*this)),
       chainContainer_(std::make_unique<ChainContainer>(*this)) {
@@ -904,6 +962,20 @@ TrackChainContent::TrackChainContent()
 
     // Post-FX panel show/hide toggle. The panel itself lives in BottomPanel,
     // which wires onPostFxPanelToggled / setPostFxPanelOpen.
+    auto foldButton = std::make_unique<HeaderFoldButton>();
+    foldButton->onRightClick = [this]() {
+        auto menu = createPostFxMenu();
+        if (menu.getNumItems() > 0)
+            menu.showMenuAsync(juce::PopupMenu::Options());
+    };
+    headerFoldButton_ = std::move(foldButton);
+    headerFolded_ = magda::Config::getInstance().getTrackChainHeaderFolded();
+    headerFoldButton_->setToggleState(headerFolded_, juce::dontSendNotification);
+    headerFoldButton_->setTooltip(headerFoldTooltip(headerFolded_));
+    headerFoldButton_->onClick = [this]() { setHeaderFolded(headerFoldButton_->getToggleState()); };
+    headerFadeTimer_.onTick = [this]() { advanceHeaderFade(); };
+    addChildComponent(headerFoldButton_.get());
+
     postFxPanelButton_ = std::make_unique<magda::SvgButton>("PostFx", BinaryData::postfx_svg,
                                                             BinaryData::postfx_svgSize);
     applyChainHeaderIconStyle(*postFxPanelButton_, false);
@@ -1993,6 +2065,33 @@ void TrackChainContent::setPostFxPanelOpen(bool open) {
         postFxPanelButton_->setActive(open);
 }
 
+juce::PopupMenu TrackChainContent::createPostFxMenu() {
+    juce::PopupMenu menu;
+    auto& tm = magda::TrackManager::getInstance();
+    const auto* track = tm.getTrack(selectedTrackId_);
+    if (track == nullptr || track->type == magda::TrackType::Chord)
+        return menu;
+
+    const juce::Component::SafePointer<TrackChainContent> safe(this);
+    menu.addItem("Post-FX Panel", true, postFxPanelOpen_, [safe]() {
+        if (safe != nullptr && safe->onPostFxPanelToggled)
+            safe->onPostFxPanelToggled(!safe->postFxPanelOpen_);
+    });
+    menu.addSeparator();
+    for (const auto& [pluginId, name] :
+         {std::pair<juce::String, juce::String>{"oscilloscope", "Oscilloscope"},
+          {"spectrumanalyzer", "Spectrum Analyzer"},
+          {"levels", "Levels"}}) {
+        const bool present =
+            tm.findPostFxDevice(selectedTrackId_, pluginId) != magda::INVALID_DEVICE_ID;
+        menu.addItem(name, true, present, [safe, pluginId = pluginId, name = name]() {
+            if (safe != nullptr)
+                safe->togglePostFxAnalysisDevice(pluginId, name);
+        });
+    }
+    return menu;
+}
+
 void TrackChainContent::refreshAnalysisToggles() {
     if (!oscToggleButton_ || !specToggleButton_ || !levelsToggleButton_)
         return;
@@ -2448,6 +2547,7 @@ void TrackChainContent::populateHeader(juce::Component& headerBar) {
     headerBar.addAndMakeVisible(gainField_);
     headerBar.addAndMakeVisible(panField_);
     headerBar.addAndMakeVisible(chainBypassButton_.get());
+    headerBar.addAndMakeVisible(headerFoldButton_.get());
     headerBar.addChildComponent(linkModeLabel_);
     headerBar.addChildComponent(gainStagingLabel_);
 
@@ -2457,6 +2557,7 @@ void TrackChainContent::populateHeader(juce::Component& headerBar) {
 }
 
 void TrackChainContent::depopulateHeader(juce::Component& /*headerBar*/) {
+    finishHeaderFade();
     // Reparent back to this content (hidden)
     addChildComponent(globalModsButton_.get());
     addChildComponent(macroButton_.get());
@@ -2478,11 +2579,110 @@ void TrackChainContent::depopulateHeader(juce::Component& /*headerBar*/) {
     addChildComponent(&gainField_);
     addChildComponent(&panField_);
     addChildComponent(chainBypassButton_.get());
+    addChildComponent(headerFoldButton_.get());
     addChildComponent(&linkModeLabel_);
     addChildComponent(&gainStagingLabel_);
 }
 
+int TrackChainContent::preferredHeaderHeight() const {
+    return headerFolded_ ? FOLDED_HEADER_HEIGHT : 0;
+}
+
+std::vector<juce::Component*> TrackChainContent::headerControls() {
+    return {globalModsButton_.get(),
+            macroButton_.get(),
+            addRackButton_.get(),
+            addMultibandRackButton_.get(),
+            presetSelector_.get(),
+            gainStagingButton_.get(),
+            postFxPanelButton_.get(),
+            oscToggleButton_.get(),
+            specToggleButton_.get(),
+            levelsToggleButton_.get(),
+            &headerDividers_,
+            &trackTitle_,
+            &midiLed_,
+            &muteButton_,
+            &soloButton_,
+            chordSpeakerButton_.get(),
+            &monitorButton_,
+            &gainField_,
+            &panField_,
+            chainBypassButton_.get(),
+            &linkModeLabel_,
+            &gainStagingLabel_};
+}
+
+void TrackChainContent::setHeaderFolded(bool folded) {
+    magda::Config::getInstance().setTrackChainHeaderFolded(folded);
+    headerFoldButton_->setTooltip(headerFoldTooltip(folded));
+
+    // The controls fade out before the header shrinks, and in after it grows.
+    if (folded) {
+        startHeaderFade(0.0f);
+        return;
+    }
+    const bool wasFolded = std::exchange(headerFolded_, false);
+    if (wasFolded) {
+        headerFadeAlpha_ = 0.0f;
+        for (auto* control : headerControls())
+            control->setAlpha(headerFadeAlpha_);
+        if (onHeaderFoldChanged)
+            onHeaderFoldChanged();
+    }
+    startHeaderFade(1.0f);
+}
+
+void TrackChainContent::startHeaderFade(float targetAlpha) {
+    headerFadeFromAlpha_ = headerFadeAlpha_;
+    headerFadeTargetAlpha_ = targetAlpha;
+    headerFadeStartMs_ = juce::Time::getMillisecondCounterHiRes();
+    headerFadeTimer_.startTimerHz(60);
+}
+
+void TrackChainContent::advanceHeaderFade() {
+    const auto elapsed = juce::Time::getMillisecondCounterHiRes() - headerFadeStartMs_;
+    const auto progress = static_cast<float>(juce::jlimit(0.0, 1.0, elapsed / kHeaderFadeMs));
+    if (progress >= 1.0f) {
+        finishHeaderFade();
+        return;
+    }
+    headerFadeAlpha_ =
+        headerFadeFromAlpha_ + (headerFadeTargetAlpha_ - headerFadeFromAlpha_) * progress;
+    for (auto* control : headerControls())
+        control->setAlpha(headerFadeAlpha_);
+}
+
+void TrackChainContent::finishHeaderFade() {
+    if (!headerFadeTimer_.isTimerRunning())
+        return;
+    headerFadeTimer_.stopTimer();
+    const bool fold = headerFadeTargetAlpha_ <= 0.0f;
+    // Folded controls take no room, so they go back to opaque for the next unfold's fade.
+    headerFadeAlpha_ = 1.0f;
+    for (auto* control : headerControls())
+        control->setAlpha(headerFadeAlpha_);
+    if (fold) {
+        headerFolded_ = true;
+        if (onHeaderFoldChanged)
+            onHeaderFoldChanged();
+    }
+}
+
 void TrackChainContent::layoutHeader(juce::Rectangle<int> headerBounds) {
+    if (headerFolded_) {
+        // The controls keep their visibility and take no room, so unfolding just lays them out.
+        for (auto* control : headerControls())
+            control->setBounds({});
+        headerFoldButton_->setBounds(headerBounds);
+        // MIDI stays in sight, over the strip's button; the LED takes no clicks.
+        midiLed_.setBounds(
+            headerBounds.withTrimmedRight(kHeaderFoldWidth).removeFromRight(kHeaderFoldWidth));
+        midiLed_.toFront(false);
+        return;
+    }
+    headerFoldButton_->setBounds(headerBounds.removeFromRight(kHeaderFoldWidth));
+
     if (selectedTrackId_ == magda::INVALID_TRACK_ID)
         return;
 
@@ -3248,7 +3448,6 @@ void TrackChainContent::showPresetMenu() {
     constexpr int kPresetIdBase = 1000;
 
     juce::PopupMenu menu;
-    menu.addSectionHeader("MAGDA Track Presets");
 
     juce::StringArray index;
     buildChainPresetSubmenu(menu, pm.getChainsDirectory(), "", kPresetIdBase,

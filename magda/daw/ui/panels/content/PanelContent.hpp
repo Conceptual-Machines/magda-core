@@ -116,6 +116,11 @@ class PanelContent : public juce::Component {
         juce::ignoreUnused(headerBounds);
     }
 
+    /** @brief The height this content wants its header bar at; 0 takes the panel's own. */
+    virtual int preferredHeaderHeight() const {
+        return 0;
+    }
+
     /**
      * @brief Get the optimal panel height for the current content/device.
      * @param windowHeight Total window height for ratio-based calculations.

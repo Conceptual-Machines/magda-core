@@ -792,12 +792,8 @@ juce::Rectangle<int> DeviceSlotComponent::layoutHeaderControls(juce::Rectangle<i
     midiLedArea_ = area.removeFromRight(7).withSizeKeepingCentre(7, 7);
     area.removeFromRight(getHeaderButtonGap());
 
-    // An analyzer's gear and overlay picker, or Faust's Save / Load / Edit, sit before the light
-    // rather than in rows of their own.
-    auto headerControls = customUI_.getHeaderControls();
-    if (faustUI_ != nullptr)
-        headerControls = faustUI_->headerControls();
-    for (auto* control : headerControls) {
+    // An analyzer's gear and overlay picker sit before the light rather than in rows of their own.
+    for (auto* control : customUI_.getHeaderControls()) {
         const bool button = dynamic_cast<juce::Button*>(control) != nullptr;
         const auto size =
             button ? getHeaderButtonSize() : juce::Point<int>{150, getHeaderButtonSize().y + 4};
@@ -1348,12 +1344,15 @@ void DeviceSlotComponent::styleDeviceHeaderButtons() {
     style(modButton_.get(), DeviceIcon::Toggle, ActiveTheme::ACCENT_ATTENTION);
     style(aiButton_.get(), DeviceIcon::Toggle, ActiveTheme::ACCENT_PRIMARY);
     style(learnButton_.get(), DeviceIcon::Toggle, ActiveTheme::ACCENT_ATTENTION);
-    if (presetSelector_) {
-        auto& save = presetSelector_->getSaveButton();
-        style(&save, DeviceIcon::Action, ActiveTheme::PRESET_INDIGO);
-        save.setHoverColor(ActiveTheme::PRESET_INDIGO);
-        save.setIconPadding(4.0f);  // the floppy sits well inside its viewBox
-    }
+    const auto stylePresetAction = [&style](magda::SvgButton& button) {
+        style(&button, DeviceIcon::Action, ActiveTheme::PRESET_INDIGO);
+        button.setHoverColor(ActiveTheme::PRESET_INDIGO);
+        button.setIconPadding(4.0f);  // these glyphs sit well inside their viewBoxes
+    };
+    if (presetSelector_)
+        stylePresetAction(presetSelector_->getSaveButton());
+    if (faustEditButton_)
+        stylePresetAction(*faustEditButton_);
     style(multiOutButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_PRIMARY);
     style(randomButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_PRIMARY);
     style(exportClipButton_.get(), DeviceIcon::Action, ActiveTheme::ACCENT_POSITIVE);
@@ -1679,60 +1678,61 @@ int DeviceSlotComponent::getPreferredWidth() const {
     else if (hasFaceplate() && faceplateStackedFraction() <= 0.0f)
         contentWidth =
             (paramsShown() ? contentWidth : 0) + (faceplateShown() ? faceplateWidth() : 0);
-    if (faustCustomView_ != nullptr)
-        contentWidth = (paramsShown() ? contentWidth : 0) +
-                       (device_.vizShown ? faustCustomView_->getPreferredWidth() : 0);
+    if (faustCustomView_ != nullptr) {
+        // Keeps the preset box at full width, with room for a short patch name.
+        constexpr int kMinWidth = 410;
+        contentWidth = juce::jmax(
+            kMinWidth, (paramsShown() ? contentWidth : 0) +
+                           (device_.vizShown ? faustCustomView_->getPreferredWidth() : 0));
+    }
     return getTotalWidth(contentWidth) + meterExtra;
 }
 
 void DeviceSlotComponent::showPresetMenu() {
     juce::Component::SafePointer<DeviceSlotComponent> self(this);
-    const auto onDismissed = [self]() {
-        if (self != nullptr)
-            self->presetSelector_->setMenuOpen(false);
-    };
-
     presetSelector_->setMenuOpen(true);
-    auto* target = &presetSelector_->getBox();
-    if (!isInternalDevice() && hasPluginPresetsAvailable()) {
-        magda::daw::ui::showPluginPresetMenu(
-            target, device_, nodePath_, isInternalDevice(),
-            [self]() {
-                if (self != nullptr)
-                    self->refreshPresetLabel();
-            },
-            onDismissed);
-    } else {
-        magda::daw::ui::showMagdaPresetMenu(
-            target, device_, nodePath_,
+    magda::daw::ui::DevicePresetMenuCallbacks callbacks{
+        .onPresetLoaded =
             [self](const magda::DeviceInfo& liveDevice) {
                 if (self != nullptr)
                     self->updateFromDevice(liveDevice);
             },
-            onDismissed);
-    }
+        .onNameChanged =
+            [self]() {
+                if (self != nullptr)
+                    self->refreshPresetLabel();
+            },
+        .onDismissed =
+            [self]() {
+                if (self != nullptr)
+                    self->presetSelector_->setMenuOpen(false);
+            },
+    };
+    if (faustUI_ != nullptr)
+        callbacks.addDeviceItems = [self](juce::PopupMenu& menu) {
+            if (self != nullptr && self->faustUI_ != nullptr)
+                self->faustUI_->addPatchItems(menu);
+        };
+    magda::daw::ui::showDevicePresetMenu(&presetSelector_->getBox(), device_, nodePath_,
+                                         isInternalDevice(), std::move(callbacks));
 }
 
 void DeviceSlotComponent::showSavePresetDialog() {
     juce::Component::SafePointer<DeviceSlotComponent> self(this);
-    const auto onSaved = [self]() {
+    // A Faust preset holds its patch, so with no preset loaded it starts under the patch's name.
+    auto device = device_;
+    if (device.presetName.isEmpty())
+        device.presetName = faustTitle_;
+    magda::daw::ui::showSaveMagdaPresetDialog(device, nodePath_, [self]() {
         if (self != nullptr)
             self->refreshPresetLabel();
-    };
-    if (!isInternalDevice() && hasPluginPresetsAvailable())
-        magda::daw::ui::showSavePluginPresetDialog(device_, nodePath_, onSaved);
-    else
-        magda::daw::ui::showSaveMagdaPresetDialog(device_, nodePath_, onSaved);
+    });
 }
 
 void DeviceSlotComponent::refreshPresetLabel() {
     if (const auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_))
         device_.presetName = live->presetName;
     presetSelector_->setPresetName(device_.presetName);
-}
-
-bool DeviceSlotComponent::hasPluginPresetsAvailable() const {
-    return magda::daw::ui::hasPluginPresetsAvailable(device_, isInternalDevice());
 }
 
 void DeviceSlotComponent::refreshDeviceTraits(const magda::DeviceInfo& device) {
@@ -2362,11 +2362,21 @@ void DeviceSlotComponent::onMacroPageRemoveRequested(int /*itemsToRemove*/) {
 }
 
 void DeviceSlotComponent::updateParameterSlots() {
+    // Beside a custom view the grid takes only the columns its controls fill (#3213).
+    const bool refitted = faustUI_ != nullptr &&
+                          paramGrid_->fitColumnsToControls(device_, faustCustomView_ != nullptr);
+    if (refitted)
+        updateParameterPagination();
     updateDeviceSlotParameterSlots(
         device_, nodePath_, *paramGrid_, compiledPanel_.get(), traits_,
         {.reloadParameterSlots = [this]() { updateParameterSlots(); },
          .updateParamModulation = [this]() { updateParamModulation(); }});
     refreshFaustMeterPanel();
+    if (refitted) {
+        resized();
+        if (onDeviceLayoutChanged)
+            onDeviceLayoutChanged();
+    }
 }
 
 void DeviceSlotComponent::refreshFaustMeterPanel() {
@@ -2548,13 +2558,21 @@ void DeviceSlotComponent::createCustomUI() {
     if (createdKind == DeviceSlotInlineUiKind::Custom) {
         updateDeviceSlotInlineUi(device_, compiledPanel_.get(), customUI_);
     }
-    if (faustUI_ != nullptr)
+    if (faustUI_ != nullptr) {
         faustUI_->setOnIdentityChanged(
             [this](const juce::String& name, const juce::String& credits) {
                 faustTitle_ = name;
                 getNameLabel().setTooltip(credits);
                 applyTitle();
+                refreshPresetLabel();
             });
+        faustEditButton_ = std::make_unique<magda::SvgButton>(
+            "Edit Source", BinaryData::code_blocks_svg, BinaryData::code_blocks_svgSize);
+        faustEditButton_->setTooltip("Edit the patch's source");
+        faustEditButton_->onClick = [this]() { faustUI_->showCodeEditor(); };
+        presetSelector_->setTrailingButton(faustEditButton_.get());
+        styleDeviceHeaderButtons();
+    }
 
     const auto expand = [this](juce::Component& part) { toggleFaceplateExpanded(&part); };
     if (auto* sequencer = customUI_.getStepSequencerUI())
@@ -2595,6 +2613,7 @@ void DeviceSlotComponent::bindFaustHeader() {
                                     });
     if (!rebound)
         return;
+    updateParameterSlots();
     resized();
     // A view widens the slot and brings its sidebar toggles.
     if ((faustCustomView_ != nullptr) != hadView && onDeviceLayoutChanged)
@@ -2667,10 +2686,11 @@ int DeviceSlotComponent::getDynamicSlotWidth() const {
                (device_.vizShown ? traits_.compiledPresentation->vizSlotWidth : 0) -
                (device_.paramsShown ? 0 : traits_.compiledPresentation->leftPanelWidth) -
                (device_.outputShown ? 0 : traits_.compiledPresentation->rightPanelWidth);
-    // 64px cells with the grid's 6px gaps and 10px padding: a curated grid's own columns beside
-    // its faceplate, else eight; a faceplate that takes the whole body keeps the eight.
+    // 64px cells with the grid's 6px gaps and 10px padding: a grid's own columns beside its
+    // faceplate or Faust view, else eight; a faceplate that takes the whole body keeps the eight.
     constexpr int kCell = 64;
-    const int columns = hasFaceplate() && paramGrid_ != nullptr && paramGrid_->getCellsPerRow() > 0
+    const bool ownColumns = hasFaceplate() || faustCustomView_ != nullptr;
+    const int columns = ownColumns && paramGrid_ != nullptr && paramGrid_->getCellsPerRow() > 0
                             ? paramGrid_->getCellsPerRow()
                             : PARAMS_PER_ROW;
     // The debug device's header carries every button, so it gets room for its name too.

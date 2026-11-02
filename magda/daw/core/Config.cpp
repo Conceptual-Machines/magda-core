@@ -215,6 +215,7 @@ juce::var Config::toVar() const {
     root->setProperty("mediumTrackWidth", mediumTrackWidth);
     root->setProperty("wideTrackWidth", wideTrackWidth);
     root->setProperty("scrollbarOnLeft", scrollbarOnLeft);
+    root->setProperty("trackChainHeaderFolded", trackChainHeaderFolded);
     root->setProperty("arrangementScrollbarsAutoHide", arrangementScrollbarsAutoHide);
     root->setProperty("uiScale", uiScale);
     root->setProperty("theme", toJuceString(theme));
@@ -677,6 +678,7 @@ void Config::fromVar(const juce::var& parsed) {
     mediumTrackWidth = getInt("mediumTrackWidth", mediumTrackWidth);
     wideTrackWidth = getInt("wideTrackWidth", wideTrackWidth);
     scrollbarOnLeft = getBool("scrollbarOnLeft", scrollbarOnLeft);
+    trackChainHeaderFolded = getBool("trackChainHeaderFolded", trackChainHeaderFolded);
     arrangementScrollbarsAutoHide =
         getBool("arrangementScrollbarsAutoHide", arrangementScrollbarsAutoHide);
     uiScale = getDouble("uiScale", uiScale);

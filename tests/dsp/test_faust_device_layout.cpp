@@ -223,6 +223,59 @@ TEST_CASE("FaustDeviceLayout invalidates cached pages when a width changes", "[f
     REQUIRE(layout.cellFor(device, 3, 0).targetParamIndex == 1);
 }
 
+TEST_CASE("FaustDeviceLayout fits two rows to a patch's controls beside a view",
+          "[faust][layout][3213]") {
+    const auto fitted = [](std::vector<ParameterInfo> parameters, bool metered = false) {
+        FaustDeviceLayout layout;
+        DeviceInfo device;
+        device.parameters = std::move(parameters);
+        if (metered)
+            device.meters.emplace_back();
+        layout.fitColumns(device, true);
+        return layout.cellsPerRow();
+    };
+    const auto controls = [](int count) {
+        std::vector<ParameterInfo> parameters;
+        for (int index = 0; index < count; ++index)
+            parameters.push_back(param(index));
+        return parameters;
+    };
+
+    CHECK(fitted(controls(1)) == 1);
+    CHECK(fitted(controls(3)) == 2);
+    CHECK(fitted(controls(5)) == 3);
+    CHECK(fitted(controls(16)) == 8);
+    CHECK(fitted(controls(40)) == 8);
+
+    // Meters want the second row's height, so the controls stay on one.
+    CHECK(fitted(controls(3), true) == 3);
+    CHECK(fitted(controls(9), true) == 8);
+
+    // The fullest group decides, and every group keeps to one page.
+    CHECK(fitted({param(0, "A"), param(1, "B"), param(2, "B"), param(3, "B")}) == 2);
+
+    // Widths that wrap badly widen the grid rather than spilling onto a page.
+    CHECK(fitted({param(0, {}, 3), param(1, {}, 2), param(2, {}, 3)}) == 5);
+}
+
+TEST_CASE("FaustDeviceLayout's fitted shape pages and restores", "[faust][layout][3213]") {
+    FaustDeviceLayout layout;
+    DeviceInfo device;
+    device.parameters = {param(0), param(1), param(2)};
+    REQUIRE(layout.totalPages(device) == 1);
+
+    REQUIRE(layout.fitColumns(device, true));
+    CHECK_FALSE(layout.fitColumns(device, true));
+    CHECK(layout.cellCount() == 4);
+    CHECK(layout.maxCellCount() == FaustDeviceLayout::kCellCount);
+    CHECK(layout.totalPages(device) == 1);
+    CHECK(layout.cellFor(device, 2, 0).targetParamIndex == 2);
+
+    REQUIRE(layout.fitColumns(device, false));
+    CHECK(layout.cellsPerRow() == FaustDeviceLayout::kCellsPerRow);
+    CHECK(layout.cellFor(device, 2, 0).targetParamIndex == 2);
+}
+
 TEST_CASE("The Faust instrument's voice mode sits on its Voice page, not in the header",
           "[faust][layout]") {
     FaustDeviceLayout layout;
