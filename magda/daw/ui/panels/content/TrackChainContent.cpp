@@ -2441,8 +2441,6 @@ void TrackChainContent::populateHeader(juce::Component& headerBar) {
     headerDividers_.toBack();
     headerBar.addAndMakeVisible(trackTitle_);
     headerBar.addAndMakeVisible(midiLed_);
-    const auto* selTrack = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
-    const bool isMaster = selTrack && selTrack->type == magda::TrackType::Master;
     headerBar.addAndMakeVisible(muteButton_);
     headerBar.addAndMakeVisible(soloButton_);
     headerBar.addChildComponent(*chordSpeakerButton_);
