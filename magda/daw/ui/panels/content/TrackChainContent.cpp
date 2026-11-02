@@ -842,7 +842,7 @@ TrackChainContent::TrackChainContent()
     presetSelector_ = std::make_unique<PresetSelector>(22, 26);
     applyChainHeaderIconStyle(presetSelector_->getSaveButton(), false);
     presetSelector_->getSaveButton().setIconPadding(
-        5.0f);  // the floppy sits well inside its viewBox
+        6.0f);  // the floppy sits well inside its viewBox
     presetSelector_->onOpenMenu = [this]() { showPresetMenu(); };
     presetSelector_->onSave = [this]() { showSaveTrackPresetDialog(); };
     addChildComponent(*presetSelector_);
