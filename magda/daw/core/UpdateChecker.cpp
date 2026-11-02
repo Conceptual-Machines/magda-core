@@ -5,6 +5,9 @@
 
 #include <juce_core/juce_core.h>
 
+#include <array>
+#include <regex>
+
 #include "Config.hpp"
 #include "magda.hpp"
 
@@ -14,48 +17,55 @@ namespace {
 
 constexpr const char* kLatestReleaseUrl =
     "https://api.github.com/repos/Conceptual-Machines/magda-core/releases/latest";
+constexpr const char* kAllReleasesUrl =
+    "https://api.github.com/repos/Conceptual-Machines/magda-core/releases";
 
 constexpr int64_t kCheckIntervalMs = 24LL * 60LL * 60LL * 1000LL;  // 24 hours
 
-/** Strip leading "v" and trailing git-describe/pre-release suffixes. */
-juce::String normalizeVersion(const juce::String& raw) {
+struct ParsedVersion {
+    std::array<int, 3> core{0, 0, 0};
+    juce::StringArray preRelease;  ///< Dot-separated identifiers; empty for a release.
+};
+
+juce::String withoutLeadingV(const juce::String& raw) {
     auto s = raw.trim();
-    if (s.startsWithIgnoreCase("v"))
-        s = s.substring(1);
-    // Drop anything after the first non-version char (- or +) so
-    // "0.4.8-10-g83eb35e0" becomes "0.4.8" and "0.5.0-rc2" becomes "0.5.0".
-    for (int i = 0; i < s.length(); ++i) {
-        auto c = s[i];
-        if (!juce::CharacterFunctions::isDigit(c) && c != '.') {
-            s = s.substring(0, i);
-            break;
-        }
-    }
-    return s;
+    return s.startsWithIgnoreCase("v") ? s.substring(1) : s;
 }
 
-/** Parse a normalized "a.b.c" into up to three ints; missing components = 0. */
-std::array<int, 3> parseSemver(const juce::String& v) {
+/** @brief Parse "v1.2.3-beta.1+build"; a git-describe tail belongs to the tag before it. */
+ParsedVersion parseVersion(const juce::String& raw) {
+    auto s = withoutLeadingV(raw).upToFirstOccurrenceOf("+", false, false);
+    s = juce::String(std::regex_replace(s.toStdString(), std::regex(R"(-\d+-g[0-9a-f]+$)"), ""));
+
+    ParsedVersion out;
     juce::StringArray parts;
-    parts.addTokens(v, ".", {});
-    std::array<int, 3> out{0, 0, 0};
+    parts.addTokens(s.upToFirstOccurrenceOf("-", false, false), ".", {});
     for (int i = 0; i < 3 && i < parts.size(); ++i)
-        out[static_cast<size_t>(i)] = parts[i].getIntValue();
+        out.core[static_cast<size_t>(i)] = parts[i].getIntValue();
+
+    if (s.containsChar('-'))
+        out.preRelease.addTokens(s.fromFirstOccurrenceOf("-", false, false), ".", {});
     return out;
 }
 
-juce::String extractTagFromJson(const juce::String& body) {
-    auto parsed = juce::JSON::parse(body);
-    if (auto* obj = parsed.getDynamicObject())
-        return obj->getProperty("tag_name").toString();
-    return {};
+template <typename T> int compareValues(T a, T b) {
+    return a < b ? -1 : (b < a ? 1 : 0);
 }
 
-juce::String extractHtmlUrlFromJson(const juce::String& body) {
-    auto parsed = juce::JSON::parse(body);
-    if (auto* obj = parsed.getDynamicObject())
-        return obj->getProperty("html_url").toString();
-    return {};
+/**
+ * @brief Semver order for one pre-release identifier: numeric ones sort first.
+ *
+ * Alphanumeric identifiers compare naturally so rc2 < rc10, where strict semver
+ * puts rc10 first; MAGDA's older tags are rc0, rc1, rc2.
+ */
+int compareIdentifiers(const juce::String& a, const juce::String& b) {
+    const bool aNumeric = a.containsOnly("0123456789");
+    const bool bNumeric = b.containsOnly("0123456789");
+    if (aNumeric && bNumeric)
+        return compareValues(a.getLargeIntValue(), b.getLargeIntValue());
+    if (aNumeric != bNumeric)
+        return aNumeric ? -1 : 1;
+    return compareValues(a.compareNatural(b, true), 0);
 }
 
 class CheckThread : public juce::Thread {
@@ -67,7 +77,8 @@ class CheckThread : public juce::Thread {
         UpdateChecker::Result result;
         result.currentVersion = MAGDA_VERSION;
 
-        juce::URL url(kLatestReleaseUrl);
+        juce::URL url(UpdateChecker::isPreRelease(result.currentVersion) ? kAllReleasesUrl
+                                                                         : kLatestReleaseUrl);
         juce::StringPairArray responseHeaders;
         int statusCode = 0;
 
@@ -92,17 +103,16 @@ class CheckThread : public juce::Thread {
             return;
         }
 
-        auto body = stream->readEntireStreamAsString();
-        auto tag = extractTagFromJson(body);
-        if (tag.isEmpty()) {
+        auto newest = UpdateChecker::newestRelease(stream->readEntireStreamAsString());
+        if (newest.version.isEmpty()) {
             result.errorMessage = "Could not parse latest release tag.";
             dispatch(result);
             return;
         }
 
         result.success = true;
-        result.latestVersion = normalizeVersion(tag);
-        result.releaseUrl = extractHtmlUrlFromJson(body);
+        result.latestVersion = newest.version;
+        result.releaseUrl = newest.url;
         result.updateAvailable =
             UpdateChecker::compareVersions(result.currentVersion, result.latestVersion) < 0;
         dispatch(result);
@@ -160,15 +170,45 @@ void UpdateChecker::markChecked() {
 }
 
 int UpdateChecker::compareVersions(const juce::String& a, const juce::String& b) {
-    auto na = parseSemver(normalizeVersion(a));
-    auto nb = parseSemver(normalizeVersion(b));
-    for (size_t i = 0; i < 3; ++i) {
-        if (na[i] < nb[i])
-            return -1;
-        if (na[i] > nb[i])
-            return 1;
+    auto va = parseVersion(a);
+    auto vb = parseVersion(b);
+    for (size_t i = 0; i < 3; ++i)
+        if (va.core[i] != vb.core[i])
+            return compareValues(va.core[i], vb.core[i]);
+
+    const auto& pa = va.preRelease;
+    const auto& pb = vb.preRelease;
+    if (pa.isEmpty() != pb.isEmpty())
+        return pa.isEmpty() ? 1 : -1;
+    for (int i = 0; i < juce::jmin(pa.size(), pb.size()); ++i)
+        if (auto order = compareIdentifiers(pa[i], pb[i]); order != 0)
+            return order;
+    return compareValues(pa.size(), pb.size());
+}
+
+bool UpdateChecker::isPreRelease(const juce::String& version) {
+    return !parseVersion(version).preRelease.isEmpty();
+}
+
+UpdateChecker::Release UpdateChecker::newestRelease(const juce::String& json) {
+    auto parsed = juce::JSON::parse(json);
+    juce::Array<juce::var> releases;
+    if (auto* list = parsed.getArray())
+        releases = *list;
+    else
+        releases.add(parsed);
+
+    Release newest;
+    for (const auto& release : releases) {
+        auto* obj = release.getDynamicObject();
+        if (obj == nullptr)
+            continue;
+        auto version = withoutLeadingV(obj->getProperty("tag_name").toString());
+        if (version.isNotEmpty() &&
+            (newest.version.isEmpty() || compareVersions(newest.version, version) < 0))
+            newest = {version, obj->getProperty("html_url").toString()};
     }
-    return 0;
+    return newest;
 }
 
 }  // namespace magda
