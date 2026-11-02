@@ -108,9 +108,14 @@ target_link_libraries(magda_agents
     magda_daw
     PRIVATE
     Threads::Threads
-    llama
-    ggml
 )
+
+if(MAGDA_LOCAL_LLM)
+    target_sources(magda_agents PRIVATE llama_model_manager_llama.cpp)
+    target_link_libraries(magda_agents PRIVATE llama ggml)
+else()
+    target_sources(magda_agents PRIVATE llama_model_manager_stub.cpp)
+endif()
 
 # Include directories
 target_include_directories(magda_agents

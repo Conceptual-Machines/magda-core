@@ -808,6 +808,12 @@ add_dependencies(magda_tests magda_mcp_bridge)
 # Add the test to CTest
 add_test(NAME magda_unit_tests COMMAND magda_tests)
 
+# Selects the stub's test in agents/test_llama_model_manager.cpp (#3235).
+if(NOT MAGDA_LOCAL_LLM)
+    set_source_files_properties(agents/test_llama_model_manager.cpp
+        PROPERTIES COMPILE_DEFINITIONS MAGDA_NO_LOCAL_LLM=1)
+endif()
+
 add_test(
     NAME magda_cli_headless_e2e
     COMMAND ${CMAKE_COMMAND}

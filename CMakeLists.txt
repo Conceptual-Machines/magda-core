@@ -209,41 +209,45 @@ add_subdirectory(magda/devices)
 # LLM API client module (juce_core only)
 juce_add_module(${CMAKE_CURRENT_SOURCE_DIR}/third_party/juce-llm/juce_llm)
 
-# llama.cpp — embedded local inference
-set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-if(APPLE)
-    set(GGML_METAL ON CACHE BOOL "" FORCE)
-    set(GGML_METAL_EMBED_LIBRARY ON CACHE BOOL "" FORCE)
-else()
-    set(GGML_METAL OFF CACHE BOOL "" FORCE)
-    # Disable -march=native so the binary runs on CPUs without AVX2/FMA/etc.
-    # Without this, AppImages built on modern CI runners crash with SIGILL
-    # on older CPUs (e.g. pre-Haswell).  Baseline: SSE4.2 + AVX.
-    set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
-    set(GGML_AVX2   OFF CACHE BOOL "" FORCE)
-    set(GGML_FMA    OFF CACHE BOOL "" FORCE)
-    set(GGML_F16C   OFF CACHE BOOL "" FORCE)
-    set(GGML_BMI2   OFF CACHE BOOL "" FORCE)
-endif()
-# Vendored llama.cpp is a C++17 codebase and pins no standard of its own, so it
-# inherits this project's. It does not compile at ours: C++23 clang rejects its
-# explicit specialisations after instantiation, and MSVC its char8_t use. Build
-# it at the standard it targets.
-set(MAGDA_CXX_STANDARD ${CMAKE_CXX_STANDARD})
-set(CMAKE_CXX_STANDARD 17)
-add_subdirectory(third_party/llama.cpp)
-set(CMAKE_CXX_STANDARD ${MAGDA_CXX_STANDARD})
+# llama.cpp — embedded local inference. OFF builds a stub whose model loads fail,
+# so the llama.cpp submodule need not be initialised (#3235).
+option(MAGDA_LOCAL_LLM "Build embedded local inference (llama.cpp)" ON)
+if(MAGDA_LOCAL_LLM)
+    set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    if(APPLE)
+        set(GGML_METAL ON CACHE BOOL "" FORCE)
+        set(GGML_METAL_EMBED_LIBRARY ON CACHE BOOL "" FORCE)
+    else()
+        set(GGML_METAL OFF CACHE BOOL "" FORCE)
+        # Disable -march=native so the binary runs on CPUs without AVX2/FMA/etc.
+        # Without this, AppImages built on modern CI runners crash with SIGILL
+        # on older CPUs (e.g. pre-Haswell).  Baseline: SSE4.2 + AVX.
+        set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+        set(GGML_AVX2   OFF CACHE BOOL "" FORCE)
+        set(GGML_FMA    OFF CACHE BOOL "" FORCE)
+        set(GGML_F16C   OFF CACHE BOOL "" FORCE)
+        set(GGML_BMI2   OFF CACHE BOOL "" FORCE)
+    endif()
+    # Vendored llama.cpp is a C++17 codebase and pins no standard of its own, so it
+    # inherits this project's. It does not compile at ours: C++23 clang rejects its
+    # explicit specialisations after instantiation, and MSVC its char8_t use. Build
+    # it at the standard it targets.
+    set(MAGDA_CXX_STANDARD ${CMAKE_CXX_STANDARD})
+    set(CMAKE_CXX_STANDARD 17)
+    add_subdirectory(third_party/llama.cpp)
+    set(CMAKE_CXX_STANDARD ${MAGDA_CXX_STANDARD})
 
-if(MSVC AND TARGET llama)
-    # Vendored llama.cpp leans on implicit numeric conversions (size_t->int,
-    # double->float, etc.), so MSVC emits ~750 benign C4244/C4267/C4305
-    # warnings from src/ and src/models/. Not our code, not actionable, and the
-    # diagnostic volume slows the build; silence them on the llama target.
-    # C4101 = unreferenced local variable (also upstream, also benign).
-    target_compile_options(llama PRIVATE /wd4244 /wd4267 /wd4305 /wd4101)
+    if(MSVC AND TARGET llama)
+        # Vendored llama.cpp leans on implicit numeric conversions (size_t->int,
+        # double->float, etc.), so MSVC emits ~750 benign C4244/C4267/C4305
+        # warnings from src/ and src/models/. Not our code, not actionable, and the
+        # diagnostic volume slows the build; silence them on the llama target.
+        # C4101 = unreferenced local variable (also upstream, also benign).
+        target_compile_options(llama PRIVATE /wd4244 /wd4267 /wd4305 /wd4101)
+    endif()
 endif()
 
 include(magda/daw/audio/DevicesDependencies.cmake)

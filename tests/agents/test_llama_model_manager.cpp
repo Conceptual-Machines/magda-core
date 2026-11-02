@@ -63,3 +63,20 @@ TEST_CASE("Embedded local AI checks its x86 CPU baseline", "[llama][cpu]") {
     const auto missingAVX = LlamaModelManagerTestAccess::cpuCompatibilityError(true, true, false);
     CHECK(missingAVX.find("AVX") != std::string::npos);
 }
+
+#ifdef MAGDA_NO_LOCAL_LLM
+TEST_CASE("Builds without local inference refuse to load a model", "[llama][issue-3235]") {
+    auto& manager = magda::LlamaModelManager::getInstance();
+    magda::LlamaModelManager::Config config;
+    config.modelPath = "/nonexistent/model.gguf";
+
+    std::string error;
+    CHECK_FALSE(manager.loadModel(config, &error));
+    CHECK(error.find("built without local inference") != std::string::npos);
+    CHECK_FALSE(manager.isLoaded());
+
+    const auto result = manager.infer({});
+    CHECK_FALSE(result.success);
+    CHECK(result.error.find("built without local inference") != std::string::npos);
+}
+#endif
