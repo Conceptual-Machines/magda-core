@@ -153,7 +153,7 @@ class TrackInspector : public BaseInspector,
     juce::Label clipCountLabel_;
 
     // FX section: the compact chain, with the track's latency in its header
-    CollapsibleSectionHeader fxHeader_{"FX", "trackInspector.fx"};
+    CollapsibleSectionHeader fxHeader_{"FX", "trackInspector.fx", /*startCollapsed=*/true};
     juce::Label noFxLabel_;
     juce::Viewport fxViewport_;
     magda::MiniChainList fxList_;

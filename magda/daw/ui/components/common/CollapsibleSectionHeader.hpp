@@ -24,8 +24,12 @@ class CollapsibleSectionHeader : public juce::Component {
   public:
     static constexpr int kHeight = 26;
 
-    CollapsibleSectionHeader(const juce::String& text, juce::String stateKey)
-        : text_(text.toUpperCase()), stateKey_(std::move(stateKey)) {}
+    /// @p startCollapsed applies once per session: a header built later keeps the key's state.
+    CollapsibleSectionHeader(const juce::String& text, juce::String stateKey,
+                             bool startCollapsed = false)
+        : text_(text.toUpperCase()), stateKey_(std::move(stateKey)) {
+        collapsedStates().try_emplace(stateKey_, startCollapsed);
+    }
 
     void setText(const juce::String& text) {
         text_ = text.toUpperCase();

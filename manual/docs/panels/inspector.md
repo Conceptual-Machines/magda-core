@@ -2,6 +2,8 @@
 
 The Inspector panel is on the right side of the window. It displays context-sensitive properties for the currently selected item.
 
+The **FX**, **Latency**, **Mods** and **Macros** sections start folded each time you open MAGDA. Click a section's title to unfold it.
+
 ![Inspector — Audio Clip](../assets/images/panels/inspector-audio.png)
 
 ## Track Inspector
