@@ -395,6 +395,8 @@ void CapturePanel::paint(juce::Graphics& g) {
     else if (meter_.enabled && selection_ && selection_->length() > 0)
         text = clock(static_cast<double>(selection_->length()) / std::max(1.0, meter_.sampleRate)) +
                " selected";
+    else if (meter_.enabled && !meter_.capturing)
+        text = "Capture is off: drag to choose, click MEM to carry on";
     else if (meter_.enabled)
         text = "Drag to choose, double-click for what you just played";
     g.drawFittedText(text, side, juce::Justification::topLeft, 4);

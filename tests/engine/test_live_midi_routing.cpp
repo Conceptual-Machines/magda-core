@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Conceptual Machines
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include <algorithm>
 #include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
@@ -386,4 +387,24 @@ TEST_CASE("An external instrument's own port is not in its track's all route",
     snapshot = routing.resolve({track});
     REQUIRE(snapshot != nullptr);
     CHECK(entryFor(*snapshot, 1).sources.size() == 2);
+}
+
+TEST_CASE("A device's notes stay its own after it is unplugged", "[live-routing][3053]") {
+    host::LiveMidiSources sources;
+    sources.registerAvailableDevices({kKeystep, kPush});
+    const auto push = sources.sourceFor(kPush.identifier);
+    const auto keystep = sources.sourceFor(kKeystep.identifier);
+    const auto qwerty = sources.registerVirtualDevice("qwerty");
+    const auto audition = sources.auditionSourceFor(1);
+
+    sources.registerAvailableDevices({kKeystep});
+
+    const auto routed = sources.deviceSources();
+    CHECK(std::ranges::find(routed, push) == routed.end());
+
+    const auto every = sources.everyDeviceSource();
+    CHECK(every.contains(push));
+    CHECK(every.contains(keystep));
+    CHECK(every.contains(qwerty));
+    CHECK_FALSE(every.contains(audition));
 }

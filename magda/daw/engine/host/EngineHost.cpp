@@ -1322,12 +1322,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     std::vector<HeardNote> heardNotes(KeepRange range) const {
         if (captureHistory_ == nullptr)
             return {};
-        const auto devices = sources_.deviceSources();
+        const auto devices = sources_.everyDeviceSource();
         std::map<std::tuple<int, int, int>, HeardNote> held;
         std::vector<HeardNote> notes;
         for (const auto& event : captureHistory_->midiFrom(range.first)) {
-            if (event.frame >= range.end || event.size < 3 ||
-                std::ranges::find(devices, event.source) == devices.end())
+            if (event.frame >= range.end || event.size < 3 || !devices.contains(event.source))
                 continue;
             const auto status = event.bytes[0] & 0xf0;
             const auto key = std::tuple{event.source, event.bytes[0] & 0x0f, event.bytes[1] & 0x7f};
@@ -3008,6 +3007,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         const auto ringFrames =
             file.out != nullptr ? inMemory : std::min(frames, toFrames(kCaptureMemoryOnlySeconds));
         captureRing_ = std::make_unique<engine::CaptureRing>(kChannels, ringFrames, sampleRate);
+        captureRing_->setPaused(!captureWriting_);
         if (file.out == nullptr) {
             captureHistory_ = std::make_unique<engine::CaptureHistory>(*captureRing_);
             return;
@@ -4044,6 +4044,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     juce::File captureFolder_;
     juce::File captureFolderInUse_;
     std::atomic<int> captureSeconds_{60};
+    bool captureWriting_ = true;
     std::atomic<bool> captureMoved_{false};
 
     std::unique_ptr<engine::EngineSession> session_;
@@ -4193,6 +4194,16 @@ void EngineHost::setCaptureSeconds(int seconds) {
         impl_->captureMoved_.store(true, std::memory_order_relaxed);
         impl_->wantRebuild();
     }
+}
+
+void EngineHost::setCaptureWriting(bool writing) {
+    impl_->captureWriting_ = writing;
+    if (impl_->captureRing_ != nullptr)
+        impl_->captureRing_->setPaused(!writing);
+}
+
+bool EngineHost::hasCaptureHistory() const {
+    return impl_->captureRing_ != nullptr;
 }
 
 void EngineHost::setCaptureFolder(const juce::File& folder) {
@@ -4649,6 +4660,7 @@ RecentCaptureMeter EngineHost::recentCaptureMeter(int slices, int bars, bool wit
         return static_cast<float>(static_cast<double>(frame - windowStart) / capacity);
     };
     RecentCaptureMeter out{.enabled = true,
+                           .capturing = impl_->captureWriting_,
                            .sampleRate = rate,
                            .recordedSeconds = static_cast<double>(meter.writtenFrames) / rate,
                            .capacitySeconds = capacity / rate,

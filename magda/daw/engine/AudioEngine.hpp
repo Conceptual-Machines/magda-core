@@ -160,7 +160,8 @@ struct RecentCaptureResult {
 
 /** @brief The recent-audio buffer as the transport's memory meter shows it (#2311). */
 struct RecentCaptureMeter {
-    bool enabled = false;          ///< the buffer is on
+    bool enabled = false;          ///< the buffer is there to read
+    bool capturing = false;        ///< what is played is going into it
     double sampleRate = 0.0;       ///< what its frames are counted in
     bool available = false;        ///< a played pass is there to keep
     double recordedSeconds = 0.0;  ///< since the buffer started: it moves while it records
