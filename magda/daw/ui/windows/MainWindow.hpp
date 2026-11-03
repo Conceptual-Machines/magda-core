@@ -143,11 +143,14 @@ class MainWindow : public juce::DocumentWindow,
     void setupMenuBar();
     void setupMenuCallbacks();
 
-    // Export helper methods
-    void performExport(const ExportAudioDialog::Settings& settings, AudioEngine* engine);
+    // Export helper methods. selection is the arrangement time selection read when
+    // the dialog opened, invalid when there was none.
+    void performExport(const ExportAudioDialog::Settings& settings, AudioEngine* engine,
+                       BeatRange selection);
     // The actual chooser + render flow, after performExport's pre-checks pass.
-    void launchAudioExport(const ExportAudioDialog::Settings& settings, AudioEngine* engine);
-    void performMidiExport(const ExportMidiDialog::Settings& settings);
+    void launchAudioExport(const ExportAudioDialog::Settings& settings, AudioEngine* engine,
+                           BeatRange selection);
+    void performMidiExport(const ExportMidiDialog::Settings& settings, BeatRange selection);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainWindow)
 };

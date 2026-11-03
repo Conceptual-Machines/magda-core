@@ -187,7 +187,8 @@ class InsertCaptureProgressBox : private juce::Timer {
 
 }  // namespace
 
-void MainWindow::performExport(const ExportAudioDialog::Settings& settings, AudioEngine* engine) {
+void MainWindow::performExport(const ExportAudioDialog::Settings& settings, AudioEngine* engine,
+                               BeatRange selection) {
     if (!engine || !engine->hasActiveEdit()) {
         juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
                                                tr("dialogs.export_audio"),
@@ -195,11 +196,11 @@ void MainWindow::performExport(const ExportAudioDialog::Settings& settings, Audi
         return;
     }
 
-    launchAudioExport(settings, engine);
+    launchAudioExport(settings, engine, selection);
 }
 
-void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
-                                   AudioEngine* engine) {
+void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings, AudioEngine* engine,
+                                   BeatRange selection) {
     // Determine file extension
     juce::String extension = exportExtensionFor(settings.format);
 
@@ -239,7 +240,7 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
                  juce::FileBrowserComponent::warnAboutOverwriting;
 
     fileChooser_->launchAsync(
-        flags, [this, settings, engine, extension](const juce::FileChooser& chooser) {
+        flags, [this, settings, engine, extension, selection](const juce::FileChooser& chooser) {
             auto file = chooser.getResult();
             if (file == juce::File()) {
                 fileChooser_.reset();
@@ -256,7 +257,8 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
             using ExportRange = ExportAudioDialog::ExportRange;
             switch (settings.exportRange) {
                 case ExportRange::TimeSelection:
-                    // TODO: Get actual time selection from SelectionManager when implemented
+                    if (selection.isValid())
+                        requestedRange = selection;
                     break;
 
                 case ExportRange::LoopRegion: {
@@ -389,7 +391,8 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
 // Export MIDI Implementation
 // ============================================================================
 
-void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
+void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings,
+                                   BeatRange selection) {
     DBG("performMidiExport called, format=" << settings.midiFormat);
     auto& clipManager = ClipManager::getInstance();
     auto& trackManager = TrackManager::getInstance();
@@ -421,7 +424,11 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
         }
     }
 
-    if (settings.exportRange == ExportMidiDialog::ExportRange::LoopRegion) {
+    if (settings.exportRange == ExportMidiDialog::ExportRange::TimeSelection &&
+        selection.isValid()) {
+        rangeStartBeats = selection.start.value;
+        rangeEndBeats = selection.end.value;
+    } else if (settings.exportRange == ExportMidiDialog::ExportRange::LoopRegion) {
         auto* engine = mainComponent->getAudioEngine();
         if (engine && engine->hasActiveEdit()) {
             const auto loopRange = engine->getLoopRegionBeats();

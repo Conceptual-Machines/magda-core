@@ -808,7 +808,19 @@ void MainWindow::setupMenuCallbacks() {
         (new CollectFilesProgressWindow(std::move(plan)))->launchThread();
     };
 
-    callbacks.onExportAudio = [this]() {
+    // Read when an export dialog opens (#3211). As for bounce, an automation-only
+    // selection is not an arrangement range.
+    auto exportTimeSelection = [this]() -> BeatRange {
+        if (!mainComponent || !mainComponent->mainView)
+            return {};
+        const auto& selection =
+            mainComponent->mainView->getTimelineController().getState().selection;
+        if (!selection.isVisuallyActive() || selection.automationOnly)
+            return {};
+        return {{selection.startBeats}, {selection.endBeats}};
+    };
+
+    callbacks.onExportAudio = [this, exportTimeSelection]() {
         // Prevent multiple simultaneous exports
         if (fileChooser_ != nullptr) {
             return;  // Export already in progress
@@ -824,30 +836,31 @@ void MainWindow::setupMenuCallbacks() {
 
         // Check if loop region is enabled
         bool hasLoopRegion = engine->isLooping();
-
-        // TODO: Check if time selection exists (will need to implement selection manager)
-        bool hasTimeSelection = false;
+        const auto timeSelection = exportTimeSelection();
 
         // Show export dialog
         ExportAudioDialog::showDialog(
             this,
-            [this, engine](const ExportAudioDialog::Settings& settings) {
-                performExport(settings, engine);
+            [this, engine, timeSelection](const ExportAudioDialog::Settings& settings) {
+                performExport(settings, engine, timeSelection);
             },
-            hasTimeSelection, hasLoopRegion);
+            timeSelection.isValid(), hasLoopRegion);
     };
 
-    callbacks.onExportMidi = [this]() {
+    callbacks.onExportMidi = [this, exportTimeSelection]() {
         if (fileChooser_ != nullptr)
             return;
 
         auto* engine = mainComponent->getAudioEngine();
         bool hasLoopRegion = engine && engine->isLooping();
+        const auto timeSelection = exportTimeSelection();
 
         ExportMidiDialog::showDialog(
             this,
-            [this](const ExportMidiDialog::Settings& settings) { performMidiExport(settings); },
-            false, hasLoopRegion);
+            [this, timeSelection](const ExportMidiDialog::Settings& settings) {
+                performMidiExport(settings, timeSelection);
+            },
+            timeSelection.isValid(), hasLoopRegion);
     };
 
     callbacks.onImportDawProject = [this]() {
