@@ -240,10 +240,13 @@ with {
 filterEnv = adsre(fAtt, fDec, fSus, fRel, gate);
 fcOf(cut, envAmt) = (cut * pow(2.0, envAmt * filterEnv + velFilt * gain + timbreOct)) : max(20.0) : min(20000.0) : smoo;
 
-// A single stage is fi.svf exactly (k = 1/Q, unscaled band-pass).
-svfPoles(type, poles, fc, q) = mf.svfPoles(m, poles, tan(fc * ma.PI / ma.SR), 1.0 / q)
+// A single stage is fi.svf exactly (k = 1/Q, unscaled band-pass). Type and
+// pole changes fade over the smoothing time, so switching mid-note doesn't click.
+svfPoles(type, poles, fc, q) = mf.svfPolesBlend(mode, slope, tan(fc * ma.PI / ma.SR), 1.0 / q)
 with {
     m = ba.selectn(4, int(type), 0, 2, 1, 3);  // menu order -> magda_svf.lib's
+    mode(i) = float(m == i) : smoo;
+    slope(i) = float(int(poles) == i) : smoo;
 };
 
 // Gain staging. The SVF's resonant peak adds up to ~Q of gain near the cutoff,
