@@ -1070,3 +1070,27 @@ TEST_CASE("Without a session there is nothing to measure", "[engine][transport][
     CHECK(std::isnan(clock.phaseError()));
     CHECK(!clock.isWaitingForPhase());
 }
+
+TEST_CASE("A start that joins jumps into a session just past it",
+          "[engine][transport][clock][3190]") {
+    TransportClock clock;
+
+    SECTION("a session ahead is joined where it is") {
+        const auto rendered =
+            advance(clock, playing(0.0), 512, {.beat = 0.1, .quantum = 4.0, .joinsOnStart = true});
+        REQUIRE(rendered.segments.size() == 1);
+        CHECK(rendered.segments[0].block.playing);
+        CHECK(rendered.segments[0].block.beats.start == approx(0.1));
+        CHECK(!clock.isWaitingForPhase());
+    }
+
+    SECTION("a session still behind is waited for") {
+        const auto rendered = advance(clock, playing(0.0), 70000,
+                                      {.beat = 3.9, .quantum = 4.0, .joinsOnStart = true});
+        REQUIRE(rendered.segments.size() == 2);
+        CHECK(rendered.segments[0].waitingForPhase);
+        CHECK(rendered.segments[0].block.numSamples ==
+              static_cast<int>(std::llround(0.1 * kSamplesPerBeat)));
+        CHECK(rendered.segments[1].block.beats.start == approx(0.0));
+    }
+}

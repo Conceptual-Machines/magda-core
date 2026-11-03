@@ -39,6 +39,8 @@ void MidiBridge::useEngine(const void* owner,
         refreshMidiInputs();
         notifyMidiDeviceListChanged();
     });
+    if (const auto clock = clockInputIdentifier())
+        enableMidiInput(*clock);
 }
 
 void MidiBridge::forgetEngine(const void* owner) {
@@ -325,6 +327,8 @@ void MidiBridge::refreshMidiInputs() {
 
     std::vector<juce::String> unplugged;
     std::vector<juce::String> routed;
+    if (const auto clock = clockInputIdentifier(); clock && isAvailable(*clock))
+        routed.push_back(*clock);
     {
         juce::ScopedLock lock(routingLock_);
         for (const auto& [deviceId, input] : activeMidiInputs_)
@@ -349,6 +353,33 @@ void MidiBridge::refreshMidiInputs() {
 
     for (const auto& deviceId : routed)
         enableMidiInput(deviceId);
+}
+
+void MidiBridge::setMidiClockInput(const juce::String& midiDeviceIdOrName,
+                                   MidiClockListener* listener) {
+    {
+        const juce::ScopedLock lock(clockLock_);
+        const auto follows = listener != nullptr && midiDeviceIdOrName.isNotEmpty();
+        clockInput_ = follows ? midiDeviceIdOrName : juce::String();
+        clockListener_ = follows ? listener : nullptr;
+        followsClock_.store(follows, std::memory_order_release);
+    }
+    if (const auto clock = clockInputIdentifier())
+        enableMidiInput(*clock);
+}
+
+std::optional<juce::String> MidiBridge::clockInputIdentifier() const {
+    juce::String input;
+    {
+        const juce::ScopedLock lock(clockLock_);
+        input = clockInput_;
+    }
+    if (input.isEmpty())
+        return std::nullopt;
+    const auto device = midi::resolve(juce::MidiInput::getAvailableDevices(), input);
+    if (!device || !Config::getInstance().isMidiInputActive(device->name))
+        return std::nullopt;
+    return device->identifier;
 }
 
 void MidiBridge::setTrackMidiInput(TrackId trackId, const juce::String& midiDeviceId) {
@@ -416,6 +447,11 @@ void MidiBridge::resetTestState() {
     transportPosition_.store(nullptr, std::memory_order_release);
     onNoteEvent = nullptr;
     onCCEvent = nullptr;
+
+    const juce::ScopedLock clockLock(clockLock_);
+    clockInput_ = {};
+    clockListener_ = nullptr;
+    followsClock_.store(false, std::memory_order_release);
 }
 
 void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
@@ -431,6 +467,16 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
     if (!source) {
         activeCallbacks_.fetch_sub(1, std::memory_order_acq_rel);
         return;
+    }
+
+    const auto clockMessage = message.isMidiClock() || message.isMidiStart() ||
+                              message.isMidiStop() || message.isMidiContinue() ||
+                              message.isSongPositionPointer();
+    if (clockMessage && followsClock_.load(std::memory_order_acquire)) {
+        const juce::ScopedLock lock(clockLock_);
+        if (clockListener_ != nullptr &&
+            midi::matches(clockInput_, source->getIdentifier(), source->getName()))
+            clockListener_->onMidiClock(message);
     }
 
     // Skip MIDI clock and other system messages for activity/routing

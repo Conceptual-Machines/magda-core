@@ -424,6 +424,7 @@ set(TEST_SOURCES
     audio/test_demucs_separator.cpp
     audio/test_spleeter_separator.cpp
     core/test_addressed_parameters.cpp
+    core/test_midi_clock_config.cpp
     core/test_device_parameter_list.cpp
     core/test_device_info_predicates.cpp
     core/test_insert_cc_knobs.cpp
@@ -506,6 +507,9 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES engine/test_transport_clock.cpp)
     # What crosses between the transport and a Link session (#3189).
     list(APPEND TEST_SOURCES engine/test_link_start_stop.cpp)
+    # MIDI clock out with the transport (#3190).
+    list(APPEND TEST_SOURCES engine/test_midi_clock_out.cpp)
+    list(APPEND TEST_SOURCES engine/test_midi_clock_tracker.cpp)
     # The two meanings of a sample offset inside a block (#2336): an event on a
     # sample the block plays, an edge that may be the boundary past its last.
     list(APPEND TEST_SOURCES engine/test_block_samples.cpp)

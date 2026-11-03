@@ -494,6 +494,8 @@ target_sources(magda_daw PRIVATE
     # Phase 1: Pure data managers
     transport/TransportStateManager.cpp
     transport/AbletonLinkSession.cpp
+    transport/MidiClockFollower.cpp
+    transport/MidiClockTracker.cpp
     midi/MidiActivityMonitor.cpp
     params/ParameterManager.cpp
     # Phase 2: Independent features
@@ -520,6 +522,8 @@ target_sources(magda_daw PRIVATE
     TrackMeters.hpp
     transport/TransportStateManager.hpp
     transport/AbletonLinkSession.hpp
+    transport/MidiClockFollower.hpp
+    transport/MidiClockTracker.hpp
     transport/LinkStartStop.hpp
     midi/MidiActivityMonitor.hpp
     params/ParameterManager.hpp

@@ -393,6 +393,9 @@ class EngineHost {
     void setMetronomeEnabled(bool enabled);
     bool isMetronomeEnabled() const;
 
+    /** @brief Send MIDI clock to the outputs @p names names, now or once plugged in (#3190). */
+    void setMidiClockOutputs(std::vector<juce::String> names);
+
     /**
      * @brief What Record rolls in for when it starts the transport, as the
      *        transport panel numbers it: 0 none, 1 one bar, 2 two bars, 3 two

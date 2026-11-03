@@ -13,6 +13,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -47,6 +48,18 @@ struct RawMidiListener {
     //             match via magda::midi::matches without a separate lookup).
     virtual void onRawMidi(const juce::String& deviceId, const juce::String& deviceName,
                            const juce::MidiMessage& msg) = 0;
+};
+
+/**
+ * @brief Hears the clock, Start, Continue, Stop and Song Position of the input followed for MIDI
+ *        clock (#3190).
+ *
+ * Called from the MIDI callback thread, under a lock its replacement waits on: implementations
+ * must not block.
+ */
+struct MidiClockListener {
+    virtual ~MidiClockListener() = default;
+    virtual void onMidiClock(const juce::MidiMessage& msg) = 0;
 };
 
 /// Name of the virtual QWERTY keyboard input.
@@ -321,6 +334,14 @@ class MidiBridge : public juce::MidiInputCallback {
     void removeRawMidiListener(RawMidiListener* listener);
 
     /**
+     * @brief Open @p midiDeviceIdOrName whether or not a track routes it, and pass its clock to
+     *        @p listener; empty or null stops (#3190).
+     *
+     * Returns once the listener it replaces is out of its last call.
+     */
+    void setMidiClockInput(const juce::String& midiDeviceIdOrName, MidiClockListener* listener);
+
+    /**
      * @brief Fan a QWERTY-synthesized note out to the UI layer.
      *
      * Mirrors the physical-MIDI fan-out in handleIncomingMidiMessage:
@@ -418,6 +439,15 @@ class MidiBridge : public juce::MidiInputCallback {
 
     /** @brief Open what a route names once it is plugged in, and close what was unplugged. */
     void refreshMidiInputs();
+
+    /// The MIDI clock input's identifier, if it is plugged in and active.
+    std::optional<juce::String> clockInputIdentifier() const;
+
+    // The input followed for MIDI clock, and who hears it. The listener is called under the lock.
+    juce::String clockInput_;
+    MidiClockListener* clockListener_ = nullptr;
+    std::atomic<bool> followsClock_{false};
+    mutable juce::CriticalSection clockLock_;
 
     // Only while an engine is attached: it registers with a JUCE global that must be let
     // go of on the message thread, and this static outlives the message manager (#2759).

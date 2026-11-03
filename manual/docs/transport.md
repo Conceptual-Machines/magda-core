@@ -72,6 +72,15 @@ Once a count-in is set the circle lights up, and it stays dim while count-in is 
 
 During count-in, the metronome plays but recording does not begin until the count-in period is complete.
 
+## MIDI Clock
+
+MAGDA can drive hardware with MIDI clock, or follow a clock from another device. Both are set in **Settings > Connections > MIDI Clock**.
+
+- **Send clock to** — Tick each MIDI output that should receive clock. While the transport plays, MAGDA sends 24 clocks per beat, with Start, Continue, Stop and Song Position as playback starts, stops, loops and jumps. Clock leaves when the audio it belongs to is heard, so external gear lines up with what comes out of the speakers. A device joins on the next sixteenth note after a start or a jump, since Song Position counts in sixteenths.
+- **Follow clock from** — Pick the MIDI input whose clock MAGDA follows. The project tempo follows the incoming clock, and Start, Stop, Continue and Song Position start, stop and move the transport. Playback stays locked to the clock's beat as it plays.
+
+Only one sync source is followed at a time: choosing a clock input switches Ableton Link off, and switching Ableton Link on stops following the clock. While a clock is followed, tempo automation is ignored, as it is under Link. Sending clock works with either.
+
 ## QWERTY MIDI Keyboard
 
 A small keyboard-icon toggle on the right side of the transport enables the computer-keyboard MIDI input. When on, typing on the QWERTY keyboard sends MIDI notes to the currently selected instrument track.

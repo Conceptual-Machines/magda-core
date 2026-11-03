@@ -24,6 +24,7 @@
 #include "io/RecordingFeed.hpp"
 #include "launch/SessionLauncher.hpp"
 #include "transport/ClickGenerator.hpp"
+#include "transport/MidiClockOut.hpp"
 #include "transport/TransportClock.hpp"
 
 /**
@@ -653,6 +654,8 @@ class EngineSession {
     /// is, a property of the session rather than of any plan, and a plan
     /// swap must not move it.
     TransportClock clock_;
+    /// What the clock ports have been told, which a plan swap leaves alone for the same reason.
+    MidiClockOut midiClock_;
     std::atomic<std::uint64_t> punchOutGeneration_{0};
     bool punchCaptureActive_ = false;
     bool punchCaptureEnded_ = false;

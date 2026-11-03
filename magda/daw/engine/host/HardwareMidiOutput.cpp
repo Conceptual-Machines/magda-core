@@ -94,8 +94,8 @@ MidiEndpoints systemMidiEndpoints() {
         }};
 }
 
-HardwareMidiOutputs::HardwareMidiOutputs(MidiEndpoints endpoints)
-    : juce::Thread("MAGDA insert MIDI"), endpoints_(std::move(endpoints)) {}
+HardwareMidiOutputs::HardwareMidiOutputs(MidiEndpoints endpoints, const juce::String& threadName)
+    : juce::Thread(threadName), endpoints_(std::move(endpoints)) {}
 
 HardwareMidiOutputs::~HardwareMidiOutputs() {
     stopThread(1000);

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 #include "transport/TempoMap.hpp"
@@ -126,6 +127,18 @@ struct PhaseReference {
     double beat = 0.0;
     /// Beats in the cycle whose phase the session shares: one bar.
     double quantum = 4.0;
+    /// A start the session is already past jumps forward into it rather than waiting a bar for
+    /// its phase to come round: a MIDI clock's Start is late by the time it is heard (#3190).
+    bool joinsOnStart = false;
+};
+
+class LiveMidiOutput;
+
+/** @brief The hardware ports MIDI clock leaves through (#3190), each outliving the session. */
+struct ClockOutputs {
+    static constexpr int kMaxPorts = 16;
+    std::array<LiveMidiOutput*, kMaxPorts> ports{};
+    int count = 0;
 };
 
 /** Tempo, loop, metronome and the play request, as one published value. */
@@ -135,6 +148,7 @@ struct TransportSnapshot {
     PunchRange punch;
     ClickSettings click;
     TransportRequest request;
+    ClockOutputs midiClock;
 };
 
 }  // namespace magda::engine

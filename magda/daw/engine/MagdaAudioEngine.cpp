@@ -220,6 +220,11 @@ void MagdaAudioEngine::configChanged() {
         host_->setCaptureFolder(juce::File::isAbsolutePath(folder) ? juce::File(folder)
                                                                    : juce::File());
         host_->setCaptureSeconds(config.getCaptureEnabled() ? config.getCaptureSeconds() : 0);
+
+        std::vector<juce::String> clockOutputs;
+        for (const auto& name : config.getMidiClockOutputs())
+            clockOutputs.emplace_back(juce::String(name));
+        host_->setMidiClockOutputs(std::move(clockOutputs));
     }
 }
 

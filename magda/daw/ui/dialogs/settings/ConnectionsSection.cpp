@@ -17,6 +17,7 @@
 #include "../../../api/remote_api_host.hpp"
 #include "../../../api/remote_audit.hpp"
 #include "../../../api/remote_clients.hpp"
+#include "../../../audio/MidiBridge.hpp"
 #include "../../themes/ActiveTheme.hpp"
 #include "../../themes/DialogLookAndFeel.hpp"
 #include "../../themes/FontManager.hpp"
@@ -1653,6 +1654,200 @@ class AbletonLinkPage : public juce::Component, private ConfigListener {
     std::vector<juce::Rectangle<int>> rowLines_;
 };
 
+/**
+ * @brief Where MIDI clock is sent, and the input whose clock is followed (#3190).
+ *
+ * Rebuilt asynchronously on a Config or device change, so a toggle is never destroyed inside
+ * its own click.
+ */
+class MidiClockPage : public juce::Component,
+                      private ConfigListener,
+                      private MidiBridge::Listener,
+                      private juce::AsyncUpdater {
+  public:
+    MidiClockPage() {
+        followLabel_.setText(tr("connections.midi_clock.follow"), juce::dontSendNotification);
+        addAndMakeVisible(followLabel_);
+        follow_.onChange = [this] { commitFollow(); };
+        addAndMakeVisible(follow_);
+
+        sendHeader_.setText(tr("connections.midi_clock.send"), juce::dontSendNotification);
+        addAndMakeVisible(sendHeader_);
+        noOutputs_.setText(tr("connections.midi_clock.no_outputs"), juce::dontSendNotification);
+        addChildComponent(noOutputs_);
+
+        for (auto* blurb : {&followBlurb_, &sendBlurb_}) {
+            blurb->setJustificationType(juce::Justification::topLeft);
+            blurb->setBorderSize({});
+            addAndMakeVisible(*blurb);
+        }
+        followBlurb_.setText(
+            tr("connections.midi_clock.follow_blurb")
+                .replace("{0}", magda::technicalText(magda::TechnicalTextToken::AbletonLink)),
+            juce::dontSendNotification);
+        sendBlurb_.setText(tr("connections.midi_clock.send_blurb"), juce::dontSendNotification);
+
+        applyTheme();
+        refresh();
+        Config::getInstance().addListener(this);
+        MidiBridge::getInstance().addMidiDeviceListListener(this);
+    }
+
+    ~MidiClockPage() override {
+        MidiBridge::getInstance().removeMidiDeviceListListener(this);
+        Config::getInstance().removeListener(this);
+        cancelPendingUpdate();
+    }
+
+    int preferredHeight() const {
+        const auto rows = std::max<int>(1, static_cast<int>(outputs_.size()));
+        return 16 + kRowHeight + kBlurbHeight + kHeaderHeight + (rows * kRowHeight) + kBlurbHeight;
+    }
+
+    void lookAndFeelChanged() override {
+        applyTheme();
+    }
+
+    void resized() override {
+        auto area = getLocalBounds().reduced(0, 8);
+        rowLines_.clear();
+
+        auto row = area.removeFromTop(kRowHeight);
+        rowLines_.push_back(row.withTop(row.getBottom() - 1));
+        follow_.setBounds(row.removeFromRight(kComboWidth).reduced(0, 6));
+        followLabel_.setBounds(row);
+        followBlurb_.setBounds(area.removeFromTop(kBlurbHeight).withTrimmedTop(8));
+
+        sendHeader_.setBounds(area.removeFromTop(kHeaderHeight));
+        if (outputs_.empty())
+            noOutputs_.setBounds(area.removeFromTop(kRowHeight));
+        for (auto& output : outputs_) {
+            auto line = area.removeFromTop(kRowHeight);
+            rowLines_.push_back(line.withTop(line.getBottom() - 1));
+            output->setBounds(line.reduced(0, 6));
+        }
+        sendBlurb_.setBounds(area.removeFromTop(kBlurbHeight).withTrimmedTop(8));
+    }
+
+    void paint(juce::Graphics& g) override {
+        g.setColour(ActiveTheme::getBorderColour().withMultipliedAlpha(0.6f));
+        for (const auto& line : rowLines_)
+            g.fillRect(line);
+    }
+
+  private:
+    static constexpr int kRowHeight = 36;
+    static constexpr int kHeaderHeight = 28;
+    static constexpr int kBlurbHeight = 56;
+    static constexpr int kComboWidth = 240;
+
+    void configChanged() override {
+        triggerAsyncUpdate();
+    }
+    void midiDeviceListChanged() override {
+        triggerAsyncUpdate();
+    }
+    void handleAsyncUpdate() override {
+        refresh();
+    }
+
+    /// A device the settings name that is not plugged in now keeps its place, marked as such.
+    static juce::String shown(const juce::String& name, bool connected) {
+        return connected ? name : tr("connections.midi_clock.not_connected").replace("{0}", name);
+    }
+
+    void refresh() {
+        const auto& config = Config::getInstance();
+
+        juce::StringArray inputs;
+        for (const auto& device : juce::MidiInput::getAvailableDevices())
+            if (config.isMidiInputActive(device.name))
+                inputs.addIfNotAlreadyThere(device.name);
+        const auto connectedInputs = inputs.size();
+        const juce::String followed(config.getMidiClockInput());
+        if (followed.isNotEmpty() && !inputs.contains(followed, true))
+            inputs.add(followed);
+
+        inputs_ = inputs;
+        follow_.clear(juce::dontSendNotification);
+        follow_.addItem(tr("connections.midi_clock.none"), 1);
+        for (auto index = 0; index < inputs_.size(); ++index)
+            follow_.addItem(shown(inputs_[index], index < connectedInputs), index + 2);
+        const auto selected = inputs_.indexOf(followed, true);
+        follow_.setSelectedId(followed.isEmpty() || selected < 0 ? 1 : selected + 2,
+                              juce::dontSendNotification);
+
+        juce::StringArray outputs;
+        for (const auto& device : juce::MidiOutput::getAvailableDevices())
+            outputs.addIfNotAlreadyThere(device.name);
+        const auto connectedOutputs = outputs.size();
+        juce::StringArray sending;
+        for (const auto& name : config.getMidiClockOutputs())
+            sending.add(juce::String(name));
+        for (const auto& name : sending)
+            outputs.addIfNotAlreadyThere(name, true);
+
+        outputNames_ = outputs;
+        outputs_.clear();
+        for (auto index = 0; index < outputNames_.size(); ++index) {
+            auto toggle = std::make_unique<juce::ToggleButton>(
+                shown(outputNames_[index], index < connectedOutputs));
+            toggle->setToggleState(sending.contains(outputNames_[index], true),
+                                   juce::dontSendNotification);
+            toggle->onClick = [this] { commitOutputs(); };
+            addAndMakeVisible(*toggle);
+            outputs_.push_back(std::move(toggle));
+        }
+        noOutputs_.setVisible(outputs_.empty());
+        applyTheme();
+        resized();
+        repaint();
+    }
+
+    void commitFollow() {
+        const auto index = follow_.getSelectedId() - 2;
+        auto& config = Config::getInstance();
+        config.setMidiClockInput(index >= 0 && index < inputs_.size() ? inputs_[index].toStdString()
+                                                                      : std::string());
+        config.save();
+    }
+
+    void commitOutputs() {
+        std::vector<std::string> names;
+        for (std::size_t index = 0; index < outputs_.size(); ++index)
+            if (outputs_[index]->getToggleState())
+                names.push_back(outputNames_[static_cast<int>(index)].toStdString());
+        auto& config = Config::getInstance();
+        config.setMidiClockOutputs(std::move(names));
+        config.save();
+    }
+
+    void applyTheme() {
+        styleLabel(followLabel_, 13.0f);
+        styleLabel(noOutputs_, 13.0f);
+        daw::ui::SettingsLookAndFeel::markSectionHeader(sendHeader_);
+        for (auto& output : outputs_)
+            output->setColour(juce::ToggleButton::textColourId,
+                              ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
+        for (auto* blurb : {&followBlurb_, &sendBlurb_}) {
+            blurb->setFont(FontManager::getInstance().getUIFont(12.0f));
+            blurb->setColour(juce::Label::textColourId,
+                             ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
+        }
+    }
+
+    juce::Label followLabel_;
+    juce::ComboBox follow_;
+    juce::StringArray inputs_;
+    juce::Label followBlurb_;
+    juce::Label sendHeader_;
+    juce::Label noOutputs_;
+    juce::StringArray outputNames_;
+    std::vector<std::unique_ptr<juce::ToggleButton>> outputs_;
+    juce::Label sendBlurb_;
+    std::vector<juce::Rectangle<int>> rowLines_;
+};
+
 class ConnectionsSection : public SettingsSection {
   public:
     ConnectionsSection() : SettingsSection(SettingsSectionId::Connections) {}
@@ -1678,7 +1873,9 @@ class ConnectionsSection : public SettingsSection {
                  &remoteClientsPage_,
                  {},
                  &remoteClientsPage_.getToolbar()},
-                {magda::technicalText(magda::TechnicalTextToken::AbletonLink), &linkPage_}};
+                {magda::technicalText(magda::TechnicalTextToken::AbletonLink), &linkPage_},
+                {tr("connections.tab.midi_clock"), &midiClockPage_,
+                 [this](int) { return midiClockPage_.preferredHeight(); }, nullptr}};
     }
     bool appliesImmediately() const override {
         return true;
@@ -1693,6 +1890,7 @@ class ConnectionsSection : public SettingsSection {
     OscSurfacesPage oscPage_;
     RemoteClientsPage remoteClientsPage_;
     AbletonLinkPage linkPage_;
+    MidiClockPage midiClockPage_;
 };
 
 }  // namespace
