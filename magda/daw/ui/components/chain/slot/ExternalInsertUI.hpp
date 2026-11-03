@@ -11,7 +11,6 @@
 
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "components/mixer/RoutingSelector.hpp"
-#include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
 #include "layout/DashedAddButton.hpp"
 #include "slot/ExternalInsertLayout.hpp"
@@ -36,7 +35,6 @@ namespace magda::daw::ui {
  */
 class ExternalInsertUI final : public juce::Component,
                                public CompiledDevicePanel,
-                               private magda::ConfigListener,
                                private magda::SelectionManagerListener {
   public:
     ExternalInsertUI();
@@ -53,14 +51,13 @@ class ExternalInsertUI final : public juce::Component,
         onPageRequested_ = std::move(cb);
     }
     int preferredHeight() const override {
-        return 240;
+        return 172;
     }
 
     void paint(juce::Graphics& g) override;
     void resized() override;
 
   private:
-    void configChanged() override;
     void selectionTypeChanged(magda::SelectionType) override {}
     void paramSelectionChanged(const magda::ParamSelection& selection) override;
 
@@ -81,7 +78,6 @@ class ExternalInsertUI final : public juce::Component,
 
     magda::DeviceInfo device_;
     magda::ChainNodePath path_;
-    ParamControlStyle style_ = ParamControlStyle::Text;
     int page_ = 0;
     int selectedParam_ = -1;
     bool learning_ = false;

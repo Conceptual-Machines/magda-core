@@ -234,8 +234,6 @@ ExternalInsertUI::ExternalInsertUI()
     };
     addAndMakeVisible(addKnob_);
 
-    style_ = resolveControlStyle({});
-    magda::Config::getInstance().addListener(this);
     magda::SelectionManager::getInstance().addListener(this);
 }
 
@@ -244,15 +242,6 @@ ExternalInsertUI::~ExternalInsertUI() {
     if (learning_)
         magda::ControllerRouter::getInstance().cancelLearnSession();
     magda::SelectionManager::getInstance().removeListener(this);
-    magda::Config::getInstance().removeListener(this);
-}
-
-void ExternalInsertUI::configChanged() {
-    if (const auto style = resolveControlStyle(device_.controlStyle); style != style_) {
-        style_ = style;
-        resized();
-        repaint();
-    }
 }
 
 void ExternalInsertUI::updateFromDevice(const magda::DeviceInfo& device) {
@@ -260,7 +249,6 @@ void ExternalInsertUI::updateFromDevice(const magda::DeviceInfo& device) {
     page_ = juce::jlimit(0, pageCount() - 1, device.currentParameterPage);
     syncPickers();
     refreshKnobEditor();
-    configChanged();
     resized();
     repaint();
 }
@@ -394,25 +382,26 @@ void ExternalInsertUI::listenForCc() {
 }
 
 void ExternalInsertUI::resized() {
-    const auto g = Geometry::of(getLocalBounds(), style_);
+    const auto g = Geometry::of(getLocalBounds());
+    const int pickerWidth = Geometry::pickerWidth(g.routing.getWidth(), isInstrument());
 
-    const auto layoutRow = [](juce::Rectangle<int> row, juce::Label& label) {
-        label.setBounds(row.removeFromLeft(Geometry::kLabelWidth));
-        return row;
-    };
-
-    auto send = layoutRow(g.rows[0], sendLabel_);
+    auto routing = g.routing;
+    sendLabel_.setBounds(routing.removeFromLeft(Geometry::kSendCaptionWidth));
+    sendSelector_.setBounds(routing.removeFromLeft(pickerWidth));
     channelSelector_.setVisible(isInstrument());
     if (isInstrument()) {
-        channelSelector_.setBounds(send.removeFromRight(64));
-        send.removeFromRight(Geometry::kGap);
+        routing.removeFromLeft(Geometry::kGap);
+        channelSelector_.setBounds(routing.removeFromLeft(Geometry::kChannelWidth));
     }
-    sendSelector_.setBounds(send.withTrimmedRight(isInstrument() ? 0 : 68));
-    returnSelector_.setBounds(layoutRow(g.rows[1], returnLabel_).withTrimmedRight(68));
-    latencyValue_.setBounds(layoutRow(g.rows[2], latencyLabel_).withWidth(90));
+    routing.removeFromLeft(Geometry::kGroupGap);
+    returnLabel_.setBounds(routing.removeFromLeft(Geometry::kReturnCaptionWidth));
+    returnSelector_.setBounds(routing.removeFromLeft(pickerWidth));
+    routing.removeFromLeft(Geometry::kGroupGap);
+    latencyLabel_.setBounds(routing.removeFromLeft(Geometry::kLatencyCaptionWidth));
+    latencyValue_.setBounds(routing);
 
     auto header = g.ccHeader;
-    ccLabel_.setBounds(header.removeFromLeft(Geometry::kLabelWidth));
+    ccLabel_.setBounds(header.removeFromLeft(Geometry::kSendCaptionWidth));
     const bool paged = pageCount() > 1;
     for (auto* component :
          std::initializer_list<juce::Component*>{&prevPage_, &nextPage_, &pageLabel_})
@@ -433,9 +422,9 @@ void ExternalInsertUI::resized() {
     if (isInstrument()) {
         ccTarget_.setBounds(header);
     } else {
-        ccChannelSelector_.setBounds(header.removeFromRight(56));
-        header.removeFromRight(Geometry::kGap);
-        ccPortSelector_.setBounds(header);
+        ccPortSelector_.setBounds(header.removeFromLeft(pickerWidth));
+        header.removeFromLeft(Geometry::kGap);
+        ccChannelSelector_.setBounds(header.removeFromLeft(Geometry::kChannelWidth));
     }
 
     // The add tile follows the last knob, on the last page.
@@ -456,13 +445,13 @@ void ExternalInsertUI::resized() {
 }
 
 void ExternalInsertUI::paint(juce::Graphics& g) {
-    const auto geometry = Geometry::of(getLocalBounds(), style_);
+    const auto geometry = Geometry::of(getLocalBounds());
     auto& fonts = FontManager::getInstance();
 
     // The CC row and everything under it stand apart from the routing above.
     g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_LINE));
-    g.drawHorizontalLine(geometry.ccHeader.getY() - Geometry::kGap, float(geometry.rows[0].getX()),
-                         float(geometry.rows[0].getRight()));
+    g.drawHorizontalLine(geometry.ccHeader.getY() - Geometry::kGap, float(geometry.routing.getX()),
+                         float(geometry.routing.getRight()));
     g.drawHorizontalLine(geometry.status.getY() - 2, float(geometry.status.getX()),
                          float(geometry.status.getRight()));
 
@@ -510,7 +499,6 @@ const CompiledPresentationSpec& getExternalInsertPresentation() {
         .createPanel = [](juce::String) -> std::unique_ptr<CompiledDevicePanel> {
             return std::make_unique<ExternalInsertUI>();
         },
-        .preferredSlotWidth = 460,
         .createLayout = []() -> std::unique_ptr<DeviceParamLayout> {
             return std::make_unique<ExternalInsertLayout>();
         },

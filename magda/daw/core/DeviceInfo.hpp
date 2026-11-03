@@ -246,6 +246,8 @@ struct InsertConfig {
     /// on a removed knob cannot reach a later one.
     int nextCcParamIndex = 0;
 
+    bool operator==(const InsertConfig&) const = default;
+
     /// Whether this device is an insert at all. False for every ordinary
     /// device, which is what keeps the compiler from having to know a plugin id
     /// to recognise one.

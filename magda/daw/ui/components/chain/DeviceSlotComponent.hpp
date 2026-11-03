@@ -227,8 +227,9 @@ class DeviceSlotComponent : public NodeComponent,
     // Timer callback (from juce::Timer) - for UI button state polling
     void timerCallback() override;
 
-    // TrackManagerListener - only implement parameter change notification
+    // TrackManagerListener - parameter changes, and an External Insert's edits
     void tracksChanged() override {}
+    void devicePropertyChanged(const magda::ChainNodePath& devicePath) override;
     void deviceParameterObserved(const magda::ChainNodePath& devicePath, int paramIndex,
                                  float normalised, magda::ObservationSource source) override;
 
