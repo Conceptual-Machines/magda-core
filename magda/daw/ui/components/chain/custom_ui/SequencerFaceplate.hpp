@@ -87,7 +87,7 @@ void drawPlayhead(juce::Graphics& g, juce::Rectangle<int> cells, int count, int 
 /// A hit as a bar across its steps, lit by its velocity; a held tie's own notes only outlined.
 void drawNoteBar(juce::Graphics& g, juce::Rectangle<float> bar, int velocity, bool sounds);
 
-/// Expands the keyboard or grid into the arrangement, from the gutter beside the steps (#3205).
+/// Expands one part of a faceplate into the arrangement (#3205).
 std::unique_ptr<magda::SvgButton> makeExpandButton();
 /// Where it sits: the gutter left of the ruler.
 juce::Rectangle<int> expandButtonBounds(juce::Rectangle<int> ruler);

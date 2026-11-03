@@ -23,6 +23,7 @@
 #include "ui/components/chain/compiled/CompiledMultibandBandLayout.hpp"
 #include "ui/components/chain/custom_ui/FaustMeterPanel.hpp"
 #include "ui/components/chain/custom_ui/FaustUI.hpp"
+#include "ui/components/chain/custom_ui/SamplerUI.hpp"
 #include "ui/components/chain/layout/CompiledFaustDeviceLayout.hpp"
 #include "ui/components/chain/layout/FaceplateBelowGeometry.hpp"
 #include "ui/components/chain/layout/FaustDeviceLayout.hpp"
@@ -34,7 +35,9 @@
 #include "ui/components/common/MidiActivityLed.hpp"
 #include "ui/components/common/SegmentedChoice.hpp"
 #include "ui/panels/content/TrackChainContent.hpp"
+#include "ui/state/ExpandedFaceplate.hpp"
 #include "ui/themes/FontManager.hpp"
+#include "ui/views/ExpandedFaceplateHost.hpp"
 
 using namespace magda;
 using namespace magda::daw::ui;
@@ -66,6 +69,15 @@ void press(juce::Button& target) {
     if (target.getClickingTogglesState())
         target.setToggleState(!target.getToggleState(), juce::dontSendNotification);
     target.onClick();
+}
+SamplerUI* findSamplerUI(juce::Component& root) {
+    for (auto* child : root.getChildren()) {
+        if (auto* sampler = dynamic_cast<SamplerUI*>(child))
+            return sampler;
+        if (auto* nested = findSamplerUI(*child))
+            return nested;
+    }
+    return nullptr;
 }
 void unchanged(NodeComponent& node) {
     check(!node.isCollapsed(), "selection collapsed the node");
@@ -736,6 +748,122 @@ int main() {
             }
             const auto container = rows[0]->getParentComponent();
             check(container->getHeight() >= split->getBottom(), "band list is clipped");
+        }
+        {
+            // The Sampler's waveform goes out alone; the header's button swaps it for the zones.
+            DeviceInfo samplerModel;
+            samplerModel.name = "Sampler";
+            samplerModel.pluginId = "magdasampler";
+            samplerModel.format = PluginFormat::Internal;
+            samplerModel.loadState = DeviceLoadState::Loaded;
+            const auto samplerPath =
+                ChainNodePath::topLevelDevice(track, tracks.addDeviceToTrack(track, samplerModel));
+            auto& expanded = ExpandedFaceplate::getInstance();
+            ExpandedFaceplateHost host;
+            host.setSize(1200, 800);
+            auto slot =
+                std::make_unique<DeviceSlotComponent>(*tracks.getDeviceInChainByPath(samplerPath));
+            slot->setNodePath(samplerPath);
+            slot->setVisible(true);
+            slot->setSize(1400, 400);
+            auto* sampler = findSamplerUI(*slot);
+            check(sampler != nullptr, "the Sampler slot has no faceplate");
+            auto& waveform = sampler->expandablePart();
+            auto& waveformExpand = button(*sampler, "Expand");
+
+            press(waveformExpand);
+            check(expanded.holds(waveform), "the waveform button did not lend the waveform");
+            check(waveform.getParentComponent() == &host && waveform.isVisible(),
+                  "the arrangement does not show the lent waveform");
+            check(sampler->getParentComponent() == slot.get(),
+                  "lending the waveform took the whole faceplate");
+            const auto lentBounds = waveform.getBounds();
+            sampler->resized();
+            check(waveform.getBounds() == lentBounds, "the faceplate laid out the lent waveform");
+
+            SegmentedChoice* tabs = nullptr;
+            for (auto* child : sampler->getChildren())
+                if (auto* choice = dynamic_cast<SegmentedChoice*>(child);
+                    choice != nullptr && choice->isVisible() && choice->getWidth() == 240)
+                    tabs = choice;
+            check(tabs != nullptr, "the Sampler has no tabs");
+            tabs->onChange(3);
+            check(waveform.isVisible() && !waveformExpand.isVisible(),
+                  "an envelope tab hid the lent waveform");
+            tabs->onChange(0);
+            check(waveformExpand.isVisible(), "the Sample tab lost its expand button");
+
+            press(button(*slot, "Expand"));
+            check(expanded.holds(*sampler), "the header button did not swap to the zones");
+            check(waveform.getParentComponent() == sampler && waveform.isVisible(),
+                  "the swap left the waveform out of the faceplate");
+            expanded.collapse();
+            check(sampler->getParentComponent() == slot.get() && sampler->isVisible(),
+                  "the faceplate did not come back");
+
+            press(waveformExpand);
+            press(waveformExpand);
+            check(!expanded.isActive(), "the waveform button did not close its expansion");
+            check(waveform.getParentComponent() == sampler && waveform.isVisible() &&
+                      !waveform.getBounds().isEmpty(),
+                  "the waveform did not come back");
+
+            press(waveformExpand);
+            slot.reset();
+            check(expanded.faceplate() == nullptr, "a deleted Sampler left its waveform out");
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+            check(!expanded.isActive(), "a deleted Sampler's expansion never ended");
+        }
+        {
+            // A stereo file draws in two lanes, as audio clips do: only the left lane lights up
+            // for left-only audio, where the view's own mono wave lights both sides of its centre.
+            const juce::TemporaryFile temporary(".wav");
+            const auto file = temporary.getFile();
+            juce::AudioBuffer<float> audio(2, 44100);
+            audio.clear();
+            for (int i = 0; i < audio.getNumSamples(); ++i)
+                audio.setSample(0, i, 0.9f * std::sin(0.05f * static_cast<float>(i)));
+            {
+                juce::WavAudioFormat wav;
+                std::unique_ptr<juce::AudioFormatWriter> writer(wav.createWriterFor(
+                    file.createOutputStream().release(), 44100.0, 2, 16, {}, 0));
+                check(writer != nullptr, "could not write the test sample");
+                writer->writeFromAudioSampleBuffer(audio, 0, audio.getNumSamples());
+            }
+            auto* thumbnail =
+                AudioThumbnailManager::getInstance().getThumbnail(file.getFullPathName());
+            check(thumbnail != nullptr, "no thumbnail for the test sample");
+            for (int i = 0; i < 200 && !thumbnail->isFullyLoaded(); ++i)
+                juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+
+            SamplerWaveformPane pane;
+            pane.setSize(800, 300);
+            const auto litPixels = [&pane](int fromY, int toY) {
+                const auto shot = pane.createComponentSnapshot(pane.getLocalBounds(), false, 1.0f);
+                const auto background = shot.getPixelAt(400, 20).getBrightness();
+                int lit = 0;
+                for (int y = fromY; y < toY; ++y)
+                    for (int x = 0; x < shot.getWidth(); ++x)
+                        if (std::abs(shot.getPixelAt(x, y).getBrightness() - background) > 0.15f)
+                            ++lit;
+                return lit;
+            };
+            constexpr int kWaveTop = sdk::WaveformView::kRulerHeight;
+            const int waveBottom = pane.getHeight() - sdk::WaveformView::kScrollBarHeight;
+            const int middle = (kWaveTop + waveBottom) / 2;
+
+            pane.setAudio(&audio, 1.0, file.getFullPathName());
+            const int clipLeft = litPixels(kWaveTop + 4, middle - 2);
+            const int clipRight = litPixels(middle + 2, waveBottom - 4);
+            check(clipLeft > 5000, "the clip wave drew nothing for the left channel");
+            check(clipRight * 10 < clipLeft, "the clip wave did not keep the channels apart");
+
+            pane.setAudio(&audio, 1.0);
+            const int viewUpper = litPixels(kWaveTop + 4, middle - 2);
+            const int viewLower = litPixels(middle + 2, waveBottom - 4);
+            check(viewUpper > 1000 && viewLower * 2 > viewUpper,
+                  "a sample with no file lost the view's wave");
+            pane.setAudio(nullptr, 0.0);
         }
         selection.clearSelection();
         tracks.clearAllTracks();

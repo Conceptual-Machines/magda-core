@@ -576,7 +576,7 @@ bool DeviceCustomUIManager::expandablePartReturned() {
     else if (polyStepSequencerUI_)
         polyStepSequencerUI_->expandablePartReturned();
     else
-        return false;
+        return samplerUI_ != nullptr && samplerUI_->expandablePartReturned();
     return true;
 }
 

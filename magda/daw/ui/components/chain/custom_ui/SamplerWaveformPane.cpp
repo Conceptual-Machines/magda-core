@@ -3,7 +3,11 @@
 
 #include "custom_ui/SamplerWaveformPane.hpp"
 
+#include <cmath>
+#include <variant>
+
 #include "DisplayListGraphics.hpp"
+#include "audio/AudioThumbnailManager.hpp"
 #include "core/GestureRouter.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/CursorManager.hpp"
@@ -12,23 +16,86 @@
 
 namespace magda::daw::ui {
 
+namespace {
+
+constexpr int kClipWaveInset = 2;
+// The most a thumbnail's length can differ from the sample's and still be the same audio.
+constexpr double kSameLengthSeconds = 0.01;
+
+template <class... Ts> struct Overloaded : Ts... {
+    using Ts::operator()...;
+};
+template <class... Ts> Overloaded(Ts...) -> Overloaded<Ts...>;
+
+/// The view's frame without its wave, the only paths it draws.
+void copyWithoutWave(const sdk::display::DisplayList& frame, sdk::display::DisplayList& out) {
+    namespace display = sdk::display;
+    out.reset(frame.width(), frame.height());
+    const Overloaded copy{
+        [&](const display::FillRect& c) { out.fillRect(c.rect, c.paint, c.cornerRadius); },
+        [&](const display::StrokeRect& c) {
+            out.strokeRect(c.rect, c.paint, c.lineWidth, c.cornerRadius);
+        },
+        [](const display::FillPath&) {},
+        [](const display::StrokePath&) {},
+        [&](const display::FillEllipse& c) { out.fillEllipse(c.rect, c.paint); },
+        [&](const display::StrokeEllipse& c) { out.strokeEllipse(c.rect, c.paint, c.lineWidth); },
+        [&](const display::Text& c) {
+            out.text(c.text, c.rect, c.colour, c.fontSize, c.justification);
+        },
+        [&](const display::ClipRect& c) { out.clipRect(c.rect); },
+        [&](const display::Save&) { out.save(); },
+        [&](const display::Restore&) { out.restore(); },
+    };
+    for (const auto& command : frame.commands())
+        std::visit(copy, command);
+}
+
+}  // namespace
+
 SamplerWaveformPane::SamplerWaveformPane() {
     view_.setChrome({.ruler = true, .scrollBar = true});
 }
 
-void SamplerWaveformPane::setAudio(const juce::AudioBuffer<float>* buffer, double lengthSeconds) {
+SamplerWaveformPane::~SamplerWaveformPane() {
+    setClipFile({});
+}
+
+void SamplerWaveformPane::setAudio(const juce::AudioBuffer<float>* buffer, double lengthSeconds,
+                                   const juce::String& sourceFile) {
     length_ = lengthSeconds;
     if (buffer == nullptr || buffer->getNumSamples() == 0) {
+        setClipFile({});
         view_.setSource(nullptr, 0.0);
         source_.reset();
         repaint();
         return;
     }
+    setClipFile(sourceFile);
     // The view draws channel 0 and fits the whole sample to the pane.
     source_ = std::make_unique<sdk::BufferWaveformSource>(buffer->getReadPointer(0),
                                                           buffer->getNumSamples());
     view_.setSize(getWidth(), getHeight());
     view_.setSource(source_.get(), length_);
+    repaint();
+}
+
+void SamplerWaveformPane::setClipFile(const juce::String& file) {
+    auto& thumbnails = magda::AudioThumbnailManager::getInstance();
+    if (clipFile_.isNotEmpty())
+        thumbnails.removeThumbnailChangeListener(clipFile_, this);
+    clipFile_.clear();
+    clipWave_ = {};
+    auto* thumbnail = file.isNotEmpty() ? thumbnails.getThumbnail(file) : nullptr;
+    if (thumbnail == nullptr ||
+        std::abs(thumbnail->getTotalLength() - length_) > kSameLengthSeconds)
+        return;
+    clipFile_ = file;
+    thumbnail->addChangeListener(this);
+}
+
+void SamplerWaveformPane::changeListenerCallback(juce::ChangeBroadcaster*) {
+    clipWave_ = {};
     repaint();
 }
 
@@ -40,6 +107,7 @@ void SamplerWaveformPane::setPlayhead(double seconds) {
 }
 
 void SamplerWaveformPane::setGain(float gain) {
+    gain_ = gain;
     view_.setGain(gain);
     if (hasAudio())
         repaint();
@@ -188,7 +256,40 @@ void SamplerWaveformPane::paint(juce::Graphics& g) {
     pullMarkers();
     view_.setPlayhead(length_ > 0.0 ? playhead_ : 0.0);
     view_.render(list_);
-    sdk::juce_host::drawDisplayList(g, list_, sdkRoleColour);
+    if (clipFile_.isEmpty()) {
+        sdk::juce_host::drawDisplayList(g, list_, sdkRoleColour);
+        return;
+    }
+    paintClipWave(g);
+    copyWithoutWave(list_, chromeList_);
+    sdk::juce_host::drawDisplayList(g, chromeList_, sdkRoleColour);
+}
+
+void SamplerWaveformPane::paintClipWave(juce::Graphics& g) {
+    if (view_.pixelsPerSecond() <= 0.0)
+        return;
+    const int top = sdk::WaveformView::kRulerHeight + kClipWaveInset;
+    const int bottom = getHeight() - sdk::WaveformView::kScrollBarHeight - kClipWaveInset;
+    const double start = view_.scrollSeconds();
+    const double end = juce::jmin(length_, start + getWidth() / view_.pixelsPerSecond());
+    const auto area = juce::Rectangle<int>(
+        0, top, juce::roundToInt((end - start) * view_.pixelsPerSecond()), bottom - top);
+    if (area.isEmpty())
+        return;
+
+    const float scale = g.getInternalContext().getPhysicalPixelScaleFactor();
+    const ClipWaveKey key{start, end, area.getWidth(), area.getHeight(), gain_, scale};
+    if (clipWave_.isNull() || key != clipWaveKey_) {
+        clipWaveKey_ = key;
+        clipWave_ = juce::Image(juce::Image::ARGB, juce::roundToInt(area.getWidth() * scale),
+                                juce::roundToInt(area.getHeight() * scale), true);
+        juce::Graphics wave(clipWave_);
+        wave.addTransform(juce::AffineTransform::scale(scale));
+        magda::AudioThumbnailManager::getInstance().drawWaveform(
+            wave, area.withPosition(0, 0), clipFile_, start, end,
+            ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY), gain_, true);
+    }
+    g.drawImage(clipWave_, area.toFloat());
 }
 
 }  // namespace magda::daw::ui

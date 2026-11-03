@@ -256,6 +256,9 @@ class DeviceCustomUIManager {
     PolyStepSequencerUI* getPolyStepSequencerUI() const {
         return polyStepSequencerUI_.get();
     }
+    SamplerUI* getSamplerUI() const {
+        return samplerUI_.get();
+    }
 
   private:
     /// The sampler faceplate from the model's parameter values, which an edit from anywhere
