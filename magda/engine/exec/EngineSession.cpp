@@ -630,6 +630,8 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
                                          segment.countingIn, clickOutput, segment.startSample);
             }
         }
+
+        midiClock_.render(segment, transport->midiClock);
     }
 
     // After the blocks are released, so the ring has room for what the thread renders next.

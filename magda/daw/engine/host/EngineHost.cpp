@@ -736,6 +736,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // is out of here.
         devices_->removeAudioCallback(this);
         stopRecording(true, false);
+        stopClockPorts(clockPorts_);
         BindingRegistry::getInstance().removeListener(this);
         ProjectManager::getInstance().removeListener(this);
         ClipManager::getInstance().removeListener(this);
@@ -1061,6 +1062,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         // A MIDI port an insert sends to may have just arrived or gone (#2279).
         midiOutputs_.devicesChanged();
+        clockMidiOutputs_.devicesChanged();
+        resolveClockPorts();
         if (factory_.holdsInserts()) {
             factory_.rerouteInserts();
             plan_.store(true, std::memory_order_relaxed);
@@ -2463,7 +2466,40 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                     .loop = loop_,
                                     .punch = punch_,
                                     .click = click_,
-                                    .request = request_});
+                                    .request = request_,
+                                    .midiClock = clockPorts_});
+    }
+
+    /** @brief Open the clock ports by name again, after the names or the devices changed. */
+    void resolveClockPorts() {
+        engine::ClockOutputs resolved;
+        for (const auto& name : clockPortNames_) {
+            if (resolved.count == engine::ClockOutputs::kMaxPorts)
+                break;
+            if (auto* port = clockMidiOutputs_.open(name))
+                resolved.ports[static_cast<std::size_t>(resolved.count++)] = port;
+        }
+
+        // A port left out is told to stop, since nothing will send it another clock.
+        auto dropped = clockPorts_;
+        dropped.count = 0;
+        for (auto index = 0; index < clockPorts_.count; ++index) {
+            auto* port = clockPorts_.ports[static_cast<std::size_t>(index)];
+            const auto kept =
+                std::span(resolved.ports.data(), static_cast<std::size_t>(resolved.count));
+            if (std::ranges::find(kept, port) == kept.end())
+                dropped.ports[static_cast<std::size_t>(dropped.count++)] = port;
+        }
+        stopClockPorts(dropped);
+
+        clockPorts_ = resolved;
+        publishTransport();
+    }
+
+    static void stopClockPorts(const engine::ClockOutputs& ports) {
+        for (auto index = 0; index < ports.count; ++index)
+            if (auto* port = ports.ports[static_cast<std::size_t>(index)])
+                port->sendAfterQueued(juce::MidiMessage::midiStop());
     }
 
     /// A play, a stop or a locate. The generation is what makes a snapshot a
@@ -3040,6 +3076,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         const auto resumeAfterRebuild = arrangementRecording_;
         stopRecording(true, false);
 
+        // The clock ports' state goes with the session, and the next one starts stopped.
+        stopClockPorts(clockPorts_);
         sessionCapture_.reset();
         session_.reset();
         voiceThread_.reset();
@@ -3391,7 +3429,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             const auto quantum = phaseQuantum_.load(std::memory_order_relaxed);
             const auto ahead = std::chrono::microseconds(std::llround(samplesAhead * 1.0e6 / rate));
             if (const auto beat = source->beatAfter(ahead, quantum))
-                phase = engine::PhaseReference{.beat = *beat, .quantum = quantum};
+                phase = engine::PhaseReference{
+                    .beat = *beat, .quantum = quantum, .joinsOnStart = source->joinsOnStart()};
         }
         phaseReaders_.fetch_sub(1);
         return phase;
@@ -3440,8 +3479,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                      ? audioIn.getSubBlock(static_cast<std::size_t>(done),
                                                            static_cast<std::size_t>(piece))
                                      : juce::dsp::AudioBlock<const float>{};
-            midiOutputs_.beginBlock(rate > 0.0 ? startedMs + 1000.0 * done / rate : startedMs, rate,
-                                    outputLatency);
+            const auto pieceMs = rate > 0.0 ? startedMs + 1000.0 * done / rate : startedMs;
+            midiOutputs_.beginBlock(pieceMs, rate, outputLatency);
+            clockMidiOutputs_.beginBlock(pieceMs, rate, outputLatency);
             const auto phase = phaseFor(done + outputLatency, rate);
             session_->process(piece, scratch_,
                               done == 0 ? engine::LiveInputBlock{pieceIn, streams}
@@ -3956,6 +3996,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     /// Before the factory and the session, so it outlives every insert holding a port.
     HardwareMidiOutputs midiOutputs_;
+
+    /// Where MIDI clock goes (#3190), by name and as opened. Ports of their own: one queue is
+    /// sent in order, and a clock queued after an insert's later note would wait for it.
+    HardwareMidiOutputs clockMidiOutputs_{systemMidiEndpoints(), "MAGDA MIDI clock"};
+    std::vector<juce::String> clockPortNames_;
+    engine::ClockOutputs clockPorts_;
 
     /// Before the factory and the session for the same reason: a capturing insert the
     /// store destroys tells this it has gone.
@@ -4571,6 +4617,13 @@ void EngineHost::setPunch(double startBeat, double endBeat, bool punchInEnabled,
 EngineHost::PunchState EngineHost::punch() const {
     return {impl_->punch_.startBeat, impl_->punch_.endBeat, impl_->punch_.punchInEnabled,
             impl_->punch_.punchOutEnabled};
+}
+
+void EngineHost::setMidiClockOutputs(std::vector<juce::String> names) {
+    if (names == impl_->clockPortNames_)
+        return;
+    impl_->clockPortNames_ = std::move(names);
+    impl_->resolveClockPorts();
 }
 
 void EngineHost::setMetronomeEnabled(bool enabled) {

@@ -39,6 +39,7 @@ class FooterBar;
 class AudioEngine;
 class QwertyMidiKeyboard;
 class AbletonLinkSession;
+class MidiClockFollower;
 class PlaybackPositionTimer;
 class KeyMappingStore;
 
@@ -260,6 +261,8 @@ class MainWindow::MainComponent : public juce::Component,
     std::unique_ptr<QwertyMidiKeyboard> qwertyKeyboard_;
     /// Reset first in the destructor: its hooks reach the timeline and the engine.
     std::unique_ptr<AbletonLinkSession> linkSession_;
+    /// Reset beside it, for the same reason (#3190).
+    std::unique_ptr<MidiClockFollower> clockFollower_;
 
     // Main layout panels
     std::unique_ptr<LeftPanel> leftPanel;
@@ -307,6 +310,8 @@ class MainWindow::MainComponent : public juce::Component,
     void setupResizeHandles();
     void setupViewModeListener();
     void setupAudioEngineCallbacks(AudioEngine* engine);
+    /// Hand the engine whichever sync source is on, Ableton Link or a MIDI clock (#3190).
+    void applySyncSource();
     void setupLoadingOverlay();
 
     // Layout helpers

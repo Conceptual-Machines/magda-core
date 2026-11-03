@@ -427,6 +427,15 @@ juce::var Config::toVar() const {
         linkObj->setProperty("latencyOffsetMs", abletonLinkLatencyOffsetMs);
         root->setProperty("abletonLink", juce::var(linkObj));
     }
+    {
+        auto* clockObj = new juce::DynamicObject();
+        juce::Array<juce::var> outputs;
+        for (const auto& name : midiClockOutputs)
+            outputs.add(toJuceString(name));
+        clockObj->setProperty("outputs", outputs);
+        clockObj->setProperty("input", toJuceString(midiClockInput));
+        root->setProperty("midiClock", juce::var(clockObj));
+    }
 
     // Recent projects
     juce::Array<juce::var> recentArray;
@@ -984,6 +993,13 @@ void Config::fromVar(const juce::var& parsed) {
         abletonLinkEnabled = linkObj->getProperty("enabled");
         abletonLinkStartStopSync = linkObj->getProperty("startStopSync");
         setAbletonLinkLatencyOffsetMs(linkObj->getProperty("latencyOffsetMs"));
+    }
+    if (auto* clockObj = obj->getProperty("midiClock").getDynamicObject()) {
+        midiClockOutputs.clear();
+        if (const auto* outputs = clockObj->getProperty("outputs").getArray())
+            for (const auto& name : *outputs)
+                midiClockOutputs.push_back(name.toString().toStdString());
+        setMidiClockInput(clockObj->getProperty("input").toString().toStdString());
     }
 
     // OSC — absent means the defaults, which open no socket.

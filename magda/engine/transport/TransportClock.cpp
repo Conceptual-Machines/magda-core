@@ -193,13 +193,19 @@ void ClockCore::followPhase(const TempoMap& tempo, const PhaseReference& phase) 
     const auto secondsPerBeat = 60.0 / tempo.bpmAt(positionBeat_);
 
     // A start rolls when the session reaches the phase the cursor stands at, never more than a
-    // bar later. A count-in keeps its own start, and drift from it is caught below.
+    // bar later; one that joins jumps to a session up to half a bar past it. A count-in keeps its
+    // own start, and drift from it is caught below.
     if (startedNow_ && !countingIn_) {
         const auto wait = wrap(wrap(positionBeat_) - wrap(phase.beat));
+        phaseError_ = std::numeric_limits<double>::quiet_NaN();
+        if (phase.joinsOnStart && wait > quantum / 2.0) {
+            anchorTo(tempo, positionBeat_ + (quantum - wait));
+            phaseWaitLeft_ = 0;
+            return;
+        }
         const auto samples = std::llround(wait * secondsPerBeat * sampleRate_);
         const auto bar = std::llround(quantum * secondsPerBeat * sampleRate_);
         phaseWaitLeft_ = samples >= bar ? 0 : samples;
-        phaseError_ = std::numeric_limits<double>::quiet_NaN();
         return;
     }
 

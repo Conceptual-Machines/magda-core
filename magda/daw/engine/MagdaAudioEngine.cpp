@@ -224,6 +224,11 @@ void MagdaAudioEngine::configChanged() {
         if (capturing || !host_->hasCaptureHistory())
             host_->setCaptureSeconds(capturing ? config.getCaptureSeconds() : 0);
         host_->setCaptureWriting(capturing);
+
+        std::vector<juce::String> clockOutputs;
+        for (const auto& name : config.getMidiClockOutputs())
+            clockOutputs.emplace_back(juce::String(name));
+        host_->setMidiClockOutputs(std::move(clockOutputs));
     }
 }
 

@@ -121,7 +121,8 @@ MidiEndpoints systemMidiEndpoints();
  */
 class HardwareMidiOutputs final : private juce::Thread {
   public:
-    explicit HardwareMidiOutputs(MidiEndpoints endpoints = systemMidiEndpoints());
+    explicit HardwareMidiOutputs(MidiEndpoints endpoints = systemMidiEndpoints(),
+                                 const juce::String& threadName = "MAGDA insert MIDI");
     ~HardwareMidiOutputs() override;
 
     /// The port named @p name, opened or reopened as needed, or null for one the system

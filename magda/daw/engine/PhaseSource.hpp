@@ -13,7 +13,7 @@
 
 namespace magda {
 
-/** @brief A timeline the transport follows: what Ableton Link's session implements. */
+/** @brief A timeline the transport follows: Ableton Link's session, or an incoming MIDI clock. */
 class PhaseSource {
   public:
     virtual ~PhaseSource() = default;
@@ -21,9 +21,14 @@ class PhaseSource {
     /**
      * @brief The session's beat @p ahead from now, in a cycle of @p quantum beats.
      *
-     * Nothing while no other app shares the session. Audio thread, and realtime-safe.
+     * Nothing while there is no session to follow. Audio thread, and realtime-safe.
      */
     virtual std::optional<double> beatAfter(std::chrono::microseconds ahead, double quantum) = 0;
+
+    /// Whether a start joins the session where it already is, not on its next bar (#3190).
+    virtual bool joinsOnStart() const {
+        return false;
+    }
 };
 
 }  // namespace magda

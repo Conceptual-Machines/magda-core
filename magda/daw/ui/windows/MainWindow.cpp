@@ -49,6 +49,7 @@
 #include "audio/midi/QwertyMidiKeyboard.hpp"
 #include "audio/plugins/engine/EngineExternalDevice.hpp"
 #include "audio/transport/AbletonLinkSession.hpp"
+#include "audio/transport/MidiClockFollower.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/Config.hpp"
 #include "core/LinkModeManager.hpp"
@@ -851,9 +852,11 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
         transportPanel->setPlayheadPosition(position);
         // Follow the tempo curve: show the BPM at the playhead, not a static
         // scalar. Walks the tempo map (constant tempo -> unchanged readout).
-        // Not under Ableton Link: the tempo is flat, and the map carries its phase nudges.
+        // Not under a sync source: the tempo is flat, and the map carries its phase nudges.
         const auto* tm = mainView->getTimelineController().tempoMap();
-        if (tm != nullptr && !(linkSession_ && linkSession_->isEnabled()))
+        const auto synced = (linkSession_ && linkSession_->isEnabled()) ||
+                            (clockFollower_ && clockFollower_->isEnabled());
+        if (tm != nullptr && !synced)
             transportPanel->setLiveTempoDisplay(tm->bpmAt(tm->timeToBeat(position)));
     };
     mainView->onTimeSelectionChanged = [this](double start, double end, bool hasTimeSelection) {
@@ -1328,11 +1331,13 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         mainView->getTimelineController().dispatch(SetTempoEvent{bpm});
     };
 
+    // Both sync sources ask rather than tell, so switching from one to the other leaves the
+    // engine with whichever is on, in either order of the two hearing it (#3190).
     linkSession_ = std::make_unique<AbletonLinkSession>(AbletonLinkSession::Hooks{
         .setProjectTempo =
             [this](double bpm) { mainView->getTimelineController().dispatch(SetTempoEvent{bpm}); },
-        .followTempoLane = [engine](bool followed) { engine->setTempoLaneFollowed(followed); },
-        .setPhaseSource = [engine](PhaseSource* source) { engine->setPhaseSource(source); },
+        .followTempoLane = [this](bool) { applySyncSource(); },
+        .setPhaseSource = [this](PhaseSource*) { applySyncSource(); },
         .setTransportPlaying =
             [this](bool playing) {
                 auto& timeline = mainView->getTimelineController();
@@ -1350,6 +1355,25 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     transportPanel->setAbletonLinkPhase([this]() -> std::optional<double> {
         return linkSession_ ? linkSession_->barPhase() : std::nullopt;
     });
+
+    clockFollower_ = std::make_unique<MidiClockFollower>(MidiClockFollower::Hooks{
+        .setProjectTempo =
+            [this](double bpm) { mainView->getTimelineController().dispatch(SetTempoEvent{bpm}); },
+        .playFrom =
+            [this](double beat) {
+                auto& timeline = mainView->getTimelineController();
+                timeline.dispatch(StopPlaybackEvent{});
+                timeline.dispatch(SetEditPositionBeatsEvent{beat});
+                timeline.dispatch(StartPlaybackEvent{});
+            },
+        .stopPlaying = [this] { mainView->getTimelineController().dispatch(StopPlaybackEvent{}); },
+        .locate =
+            [this](double beat) {
+                mainView->getTimelineController().dispatch(SetEditPositionBeatsEvent{beat});
+            },
+    });
+    clockFollower_->onStateChanged = [this] { applySyncSource(); };
+    applySyncSource();
 
     transportPanel->onTimeSignatureChange = [this](int numerator, int denominator) {
         mainView->getTimelineController().dispatch(SetTimeSignatureEvent{numerator, denominator});
@@ -1456,8 +1480,27 @@ void MainWindow::MainComponent::warnAboutLoadFailures() {
         nullptr);
 }
 
+void MainWindow::MainComponent::applySyncSource() {
+    auto* engine = getAudioEngine();
+    if (engine == nullptr)
+        return;
+
+    PhaseSource* source = nullptr;
+    if (linkSession_ && linkSession_->isEnabled())
+        source = linkSession_.get();
+    else if (clockFollower_ && clockFollower_->isEnabled())
+        source = clockFollower_.get();
+    engine->setTempoLaneFollowed(source == nullptr);
+    engine->setPhaseSource(source);
+}
+
 MainWindow::MainComponent::~MainComponent() {
     DBG("    [5d] MainComponent::~MainComponent start");
+    // Link's session lets the engine go itself; the follower is let go of here.
+    if (clockFollower_ != nullptr && clockFollower_->isEnabled())
+        if (auto* engine = getAudioEngine())
+            engine->setPhaseSource(nullptr);
+    clockFollower_.reset();
     linkSession_.reset();
     setSettingsOpener({});
     SettingsWindow::closeIfOpen();

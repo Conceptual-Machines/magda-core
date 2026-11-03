@@ -744,12 +744,15 @@ class Config {
         remoteApiClients = std::move(clients);
     }
 
-    // Ableton Link (#929): per user, off until switched on.
+    // Ableton Link (#929): per user, off until switched on. One sync source at a time, so turning
+    // it on stops following a MIDI clock (#3190).
     bool getAbletonLinkEnabled() const {
         return abletonLinkEnabled;
     }
     void setAbletonLinkEnabled(bool enabled) {
         abletonLinkEnabled = enabled;
+        if (enabled)
+            midiClockInput.clear();
     }
     // Whether play and stop are shared with the session (#3189).
     bool getAbletonLinkStartStopSync() const {
@@ -767,6 +770,23 @@ class Config {
             std::clamp(ms, -kAbletonLinkMaxLatencyOffsetMs, kAbletonLinkMaxLatencyOffsetMs);
     }
     static constexpr int kAbletonLinkMaxLatencyOffsetMs = 500;
+
+    // MIDI clock (#3190), by device name: the outputs sent clock, and the input followed, empty
+    // for none. Following an input turns Ableton Link off.
+    const std::vector<std::string>& getMidiClockOutputs() const {
+        return midiClockOutputs;
+    }
+    void setMidiClockOutputs(std::vector<std::string> names) {
+        midiClockOutputs = std::move(names);
+    }
+    const std::string& getMidiClockInput() const {
+        return midiClockInput;
+    }
+    void setMidiClockInput(std::string name) {
+        midiClockInput = std::move(name);
+        if (!midiClockInput.empty())
+            abletonLinkEnabled = false;
+    }
 
     // OSC control surfaces (issue #1757). Off by default, for the same reason
     // the remote API is: a DAW should not start listening because it was
@@ -1870,6 +1890,8 @@ class Config {
     bool abletonLinkEnabled = false;
     bool abletonLinkStartStopSync = false;
     int abletonLinkLatencyOffsetMs = 0;
+    std::vector<std::string> midiClockOutputs;
+    std::string midiClockInput;
     std::string oscBindAddress = "0.0.0.0";
     int oscFeedbackPort = 9001;
 
