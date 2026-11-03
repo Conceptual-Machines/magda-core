@@ -287,3 +287,16 @@ TEST_CASE("The Link chip leads the tempo group", "[ui][transport-layout]") {
     REQUIRE(l.tempoFrame.contains(l.link));
     REQUIRE(l.link.getRight() < l.tempo.getX());
 }
+
+TEST_CASE("MEM switches from its dot and caption, not its meter", "[ui][transport-layout]") {
+    const auto l = at(kWide);
+    const auto target = memorySwitch(l);
+
+    REQUIRE(target.contains(l.memoryDot.getCentre()));
+    REQUIRE(target.contains(l.memoryCaption.getCentre()));
+    REQUIRE_FALSE(target.intersects(l.memoryMeter));
+    REQUIRE_FALSE(target.intersects(l.memoryTime));
+    REQUIRE_FALSE(target.intersects(l.capture));
+
+    REQUIRE(memorySwitch(at(400)).isEmpty());
+}

@@ -325,7 +325,7 @@ void TransportPanel::paintMemory(juce::Graphics& g) const {
         return juce::String(whole / 60) + ":" + juce::String(whole % 60).paddedLeft('0', 2);
     };
     const auto timeFont = fonts.getUIFont(transport::kMemoryTimeFontSize);
-    const auto held = memory_.enabled ? clock(memory_.keepSeconds) : juce::String("off");
+    const auto held = memory_.capturing ? clock(memory_.keepSeconds) : juce::String("off");
     auto timeArea = l.memoryTime;
     g.setFont(timeFont);
     g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
@@ -335,7 +335,7 @@ void TransportPanel::paintMemory(juce::Graphics& g) const {
     g.setColour(dim);
     // How full the buffer is: climbs to 100% and stays there while it records.
     const auto filled =
-        !memory_.enabled ? juce::String()
+        !memory_.capturing ? juce::String()
         : memory_.capacitySeconds > 0.0
             ? juce::String(juce::roundToInt(
                   100.0 * std::min(1.0, memory_.recordedSeconds / memory_.capacitySeconds))) +
@@ -1625,21 +1625,21 @@ void TransportPanel::setCapturePanelOpen(bool open) {
 }
 
 void TransportPanel::mouseMove(const juce::MouseEvent& e) {
-    setMouseCursor(layout_.memoryFrame.contains(e.getPosition())
+    setMouseCursor(transport::memorySwitch(layout_).contains(e.getPosition())
                        ? juce::MouseCursor::PointingHandCursor
                        : juce::MouseCursor::NormalCursor);
 }
 
 juce::String TransportPanel::getTooltip() {
     const auto mouse = getMouseXYRelative();
-    if (!layout_.memoryFrame.contains(mouse))
+    if (!transport::memorySwitch(layout_).contains(mouse))
         return {};
-    return memory_.enabled ? "Capturing what you play: click to turn off"
-                           : "Capture is off: click to turn on";
+    return memory_.capturing ? "Capturing what you play: click to stop, what you played stays"
+                             : "Capture is off: click to turn on";
 }
 
 void TransportPanel::mouseDown(const juce::MouseEvent& e) {
-    if (e.originalComponent == this && layout_.memoryFrame.contains(e.getPosition())) {
+    if (e.originalComponent == this && transport::memorySwitch(layout_).contains(e.getPosition())) {
         auto& config = Config::getInstance();
         config.setCaptureEnabled(!config.getCaptureEnabled());
         config.save();

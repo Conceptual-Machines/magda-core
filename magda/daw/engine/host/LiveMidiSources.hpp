@@ -106,6 +106,10 @@ class LiveMidiSources {
     /// has been unplugged since.
     std::vector<int> deviceSources() const;
 
+    /// Every id a device or virtual device has held, unplugged since or not: what notes already
+    /// in the capture history were played on (#3053). Never an audition id.
+    std::set<int> everyDeviceSource() const;
+
     /// The identifier of the device @p source reads, or empty (#3053).
     juce::String deviceIdOf(int source) const;
 

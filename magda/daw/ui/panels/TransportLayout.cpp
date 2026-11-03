@@ -525,4 +525,12 @@ Layout compute(int width, int height, const TextWidths& text, float densityScale
     return l;
 }
 
+juce::Rectangle<int> memorySwitch(const Layout& layout) {
+    const auto& frame = layout.memoryFrame;
+    return layout.memoryDot.getUnion(layout.memoryCaption)
+        .withLeft(frame.getX())
+        .withTop(frame.getY())
+        .withBottom(frame.getBottom());
+}
+
 }  // namespace magda::daw::ui::transport

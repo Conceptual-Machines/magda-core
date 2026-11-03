@@ -98,6 +98,12 @@ class CaptureRing {
     /// The latest pass and phrase, unclamped. Any thread.
     CaptureMarks marks() const;
 
+    /// Paused, write() and writeMidi() drop what they are given and what is held stays
+    /// readable; the next frame written follows the last one. Any thread.
+    void setPaused(bool paused) {
+        paused_.store(paused, std::memory_order_relaxed);
+    }
+
     /// Audio thread, once per rendered stretch. A @p block of one channel fills both sides.
     void write(const juce::AudioBuffer<float>& block, BeatRange beats, bool playing);
 
@@ -129,6 +135,7 @@ class CaptureRing {
     std::int64_t gapFrames_;
     std::vector<std::unique_ptr<std::atomic<float>[]>> channels_;
     std::atomic<std::int64_t> written_{0};
+    std::atomic<bool> paused_{false};
 
     // A coarse peak per chunk of frames, for the meter and for finding phrases.
     std::unique_ptr<std::atomic<float>[]> peaks_;

@@ -72,7 +72,7 @@ void CaptureRing::notePhrase(std::int64_t chunkStart, std::int64_t chunkEnd) {
 
 void CaptureRing::write(const juce::AudioBuffer<float>& block, BeatRange beats, bool playing) {
     const auto frames = block.getNumSamples();
-    if (frames <= 0 || block.getNumChannels() <= 0)
+    if (frames <= 0 || block.getNumChannels() <= 0 || paused_.load(std::memory_order_relaxed))
         return;
 
     const auto start = written_.load(std::memory_order_relaxed);
@@ -120,6 +120,8 @@ void CaptureRing::write(const juce::AudioBuffer<float>& block, BeatRange beats, 
 
 void CaptureRing::writeMidi(std::span<const LiveMidiStream> streams, int segmentStart,
                             int numSamples) {
+    if (paused_.load(std::memory_order_relaxed))
+        return;
     const auto base = written_.load(std::memory_order_relaxed);
     auto count = midiCount_.load(std::memory_order_relaxed);
     for (const auto& stream : streams) {
