@@ -183,3 +183,34 @@ TEST_CASE("MIDI the writer has lapped is not handed back", "[engine][capture][30
     CHECK(std::is_sorted(events.begin(), events.end(),
                          [](const auto& a, const auto& b) { return a.frame < b.frame; }));
 }
+
+TEST_CASE("A paused ring keeps what it heard and carries on from there",
+          "[engine][capture][2311]") {
+    CaptureRing ring(2, 1 << 20, kRate);
+    stopped(ring, 2, 0.5f);
+
+    juce::MidiBuffer keyboard;
+    keyboard.addEvent(juce::MidiMessage::noteOn(1, 60, static_cast<juce::uint8>(100)), 10);
+    const std::array<magda::engine::LiveMidiStream, 1> streams{
+        magda::engine::LiveMidiStream{1, &keyboard}};
+    ring.writeMidi(streams, 0, kBlock);
+    stopped(ring, 1, 0.5f);
+
+    ring.setPaused(true);
+    ring.writeMidi(streams, 0, kBlock);
+    stopped(ring, 4, 0.25f);
+
+    CHECK(ring.meter(1).writtenFrames == 3 * kBlock);
+    CHECK(ring.midiFrom(0).size() == 1);
+    juce::AudioBuffer<float> heard;
+    REQUIRE(ring.read(0, 3 * kBlock, heard));
+    CHECK(heard.getSample(0, 3 * kBlock - 1) == 0.5f);
+
+    ring.setPaused(false);
+    stopped(ring, 1, 0.75f);
+
+    CHECK(ring.meter(1).writtenFrames == 4 * kBlock);
+    REQUIRE(ring.read(0, 4 * kBlock, heard));
+    CHECK(heard.getSample(0, 3 * kBlock - 1) == 0.5f);
+    CHECK(heard.getSample(0, 3 * kBlock) == 0.75f);
+}

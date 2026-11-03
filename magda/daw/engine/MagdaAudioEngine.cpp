@@ -219,7 +219,11 @@ void MagdaAudioEngine::configChanged() {
         const juce::String folder(config.getCaptureDir());
         host_->setCaptureFolder(juce::File::isAbsolutePath(folder) ? juce::File(folder)
                                                                    : juce::File());
-        host_->setCaptureSeconds(config.getCaptureEnabled() ? config.getCaptureSeconds() : 0);
+        // Off keeps what was heard; a buffer that was never on takes no room.
+        const auto capturing = config.getCaptureEnabled();
+        if (capturing || !host_->hasCaptureHistory())
+            host_->setCaptureSeconds(capturing ? config.getCaptureSeconds() : 0);
+        host_->setCaptureWriting(capturing);
 
         std::vector<juce::String> clockOutputs;
         for (const auto& name : config.getMidiClockOutputs())

@@ -192,6 +192,15 @@ std::vector<int> LiveMidiSources::deviceSources() const {
     return sources;
 }
 
+std::set<int> LiveMidiSources::everyDeviceSource() const {
+    const juce::ScopedLock held(lock_);
+
+    auto sources = virtual_;
+    for (const auto& [identifier, id] : devices_)
+        sources.insert(id);
+    return sources;
+}
+
 int LiveMidiSources::resolveRoute(const juce::String& midiInputDevice) {
     if (midiInputDevice.isEmpty() || midiInputDevice == "all" ||
         midiInputDevice.startsWith("track:"))

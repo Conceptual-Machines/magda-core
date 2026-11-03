@@ -123,4 +123,7 @@ inline int ledOnlyWidthForHeight(int height) {
  */
 Layout compute(int width, int height, const TextWidths& text, float densityScale);
 
+/// What turns the capture buffer on and off: MEM's dot and caption, not the meter beside them.
+juce::Rectangle<int> memorySwitch(const Layout& layout);
+
 }  // namespace magda::daw::ui::transport

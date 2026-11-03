@@ -116,6 +116,11 @@ class EngineHost {
     /// How much of the master the capture ring keeps (#2311), or none to switch it off. A
     /// change remakes the session once nothing plays or records, like render-ahead.
     void setCaptureSeconds(int seconds);
+    /// Whether what is played goes into the capture ring. Off keeps what it holds, readable and
+    /// importable, with no session rebuild. Message thread.
+    void setCaptureWriting(bool writing);
+    /// A ring is there to read, whether or not it is being written.
+    bool hasCaptureHistory() const;
 
     /// Where the history past the ring goes on disk (#3052); none is the system's temp
     /// folder. A change starts a new history, as setCaptureSeconds does.
