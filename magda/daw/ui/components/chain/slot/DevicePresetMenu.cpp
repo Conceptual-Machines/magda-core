@@ -16,11 +16,13 @@ namespace magda::daw::ui {
 
 namespace {
 
-constexpr int kRevealInFinder = 3;
-constexpr int kPresetIdBase = 1000;
-constexpr int kProgramIdBase = 5000;
+constexpr int kRevealInFinder = 1;
 constexpr int kRevealPluginUserDir = 2;
 constexpr int kRescanPluginPresets = 3;
+constexpr int kSavePluginPreset = 4;
+constexpr int kPresetIdBase = 1000;
+constexpr int kProgramIdBase = 100000;
+constexpr int kPluginPresetIdBase = 200000;
 
 void showPresetErrorAsync(const juce::String& title, const juce::String& message) {
     juce::AlertWindow::showAsync(juce::MessageBoxOptions()
@@ -145,52 +147,6 @@ void loadPluginPresetFile(const magda::ChainNodePath& devicePath, const juce::Fi
 
 }  // namespace
 
-void showMagdaPresetMenu(juce::Component* targetComponent, const magda::DeviceInfo& device,
-                         const magda::ChainNodePath& devicePath,
-                         std::function<void(const magda::DeviceInfo& liveDevice)> onLoaded,
-                         std::function<void()> onDismissed) {
-    auto& presetManager = magda::PresetManager::getInstance();
-
-    juce::PopupMenu menu;
-    menu.addSectionHeader("MAGDA Presets");
-
-    juce::StringArray indexedPresetPaths;
-    buildPresetSubmenu(menu, presetManager.getDevicePluginDirectory(device.name), "", kPresetIdBase,
-                       device.presetName, indexedPresetPaths);
-
-    if (indexedPresetPaths.isEmpty())
-        menu.addItem(kPresetIdBase, "(no presets yet)", false);
-
-    menu.addSeparator();
-    menu.addItem(kRevealInFinder, "Reveal in Finder");
-
-    menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(targetComponent),
-        [pluginFolder = device.name, devicePath, indexedPresetPaths, onLoaded = std::move(onLoaded),
-         onDismissed = std::move(onDismissed)](int chosen) {
-            if (onDismissed)
-                onDismissed();
-            if (chosen == 0)
-                return;
-
-            if (chosen == kRevealInFinder) {
-                auto& presetManager = magda::PresetManager::getInstance();
-                auto dir = presetManager.getDevicePluginDirectory(pluginFolder);
-                if (!dir.exists())
-                    dir = presetManager.getDevicesDirectory();
-                dir.revealToUser();
-                return;
-            }
-
-            if (chosen < kPresetIdBase)
-                return;
-
-            const int idx = chosen - kPresetIdBase;
-            if (idx >= 0 && idx < indexedPresetPaths.size())
-                loadMagdaPreset(pluginFolder, devicePath, indexedPresetPaths[idx], onLoaded);
-        });
-}
-
 void showSaveMagdaPresetDialog(const magda::DeviceInfo& device,
                                const magda::ChainNodePath& devicePath,
                                std::function<void()> onSaved) {
@@ -269,115 +225,7 @@ void showSaveMagdaPresetDialog(const magda::DeviceInfo& device,
         }));
 }
 
-bool hasPluginPresetsAvailable(const magda::DeviceInfo& device, bool isInternalDevice) {
-    if (isInternalDevice || device.loadState != magda::DeviceLoadState::Loaded)
-        return false;
-
-    return !magda::PluginPresetScanner::getInstance().getPresets(device).empty();
-}
-
-void showPluginPresetMenu(juce::Component* targetComponent, const magda::DeviceInfo& device,
-                          const magda::ChainNodePath& devicePath, bool isInternalDevice,
-                          std::function<void()> onSelectionChanged,
-                          std::function<void()> onDismissed) {
-    auto* engine = getAudioEngine();
-    if (engine == nullptr || isInternalDevice) {
-        if (onDismissed)
-            onDismissed();
-        return;
-    }
-
-    auto& scanner = magda::PluginPresetScanner::getInstance();
-    const bool diskPresetsSupported = scanner.getPresetExtension(device).isNotEmpty();
-
-    juce::PopupMenu menu;
-    juce::Array<juce::File> indexedPresetFiles;
-
-    if (diskPresetsSupported) {
-        const auto& tree = scanner.getPresets(device);
-        if (!tree.empty()) {
-            buildPluginPresetSubmenu(menu, tree.roots, kPresetIdBase, indexedPresetFiles,
-                                     device.presetName);
-        } else {
-            menu.addItem(kPresetIdBase, "(no presets installed)", false);
-        }
-    }
-
-    const auto programs = engine->getPluginPrograms(devicePath);
-    const int numPrograms = programs ? programs->names.size() : 0;
-    if (numPrograms > 1) {
-        juce::PopupMenu programsSubmenu;
-        const int currentProgram = programs->current;
-        for (int i = 0; i < numPrograms; ++i) {
-            auto name = programs->names[i];
-            if (name.isEmpty())
-                name = "Program " + juce::String(i + 1);
-            programsSubmenu.addItem(kProgramIdBase + i, name, true, i == currentProgram);
-        }
-
-        if (menu.getNumItems() > 0)
-            menu.addSeparator();
-        menu.addSubMenu("Built-in Programs", programsSubmenu);
-    }
-
-    if (diskPresetsSupported) {
-        menu.addSeparator();
-        const auto userDir = scanner.getUserPresetDirectory(device);
-        menu.addItem(kRevealPluginUserDir, "Reveal User Preset Folder",
-                     !userDir.getFullPathName().isEmpty());
-        menu.addItem(kRescanPluginPresets, "Rescan");
-    } else if (numPrograms <= 1) {
-        menu.addItem(kPresetIdBase, "(no presets or programs available)", false);
-    }
-
-    menu.showMenuAsync(
-        juce::PopupMenu::Options().withTargetComponent(targetComponent),
-        [device, devicePath, indexedPresetFiles, onSelectionChanged = std::move(onSelectionChanged),
-         onDismissed = std::move(onDismissed)](int chosen) {
-            if (onDismissed)
-                onDismissed();
-            if (chosen == 0)
-                return;
-
-            if (chosen == kRevealPluginUserDir) {
-                auto dir = magda::PluginPresetScanner::getInstance().getUserPresetDirectory(device);
-                if (!dir.exists())
-                    dir.createDirectory();
-                if (dir.exists())
-                    dir.revealToUser();
-                return;
-            }
-
-            if (chosen == kRescanPluginPresets) {
-                magda::PluginPresetScanner::getInstance().rescan(device);
-                return;
-            }
-
-            if (chosen >= kProgramIdBase) {
-                const int programIndex = chosen - kProgramIdBase;
-                if (auto* engine = getAudioEngine()) {
-                    if (engine->setPluginCurrentProgram(devicePath, programIndex)) {
-                        const auto selected = engine->getPluginPrograms(devicePath);
-                        auto name = selected && programIndex < selected->names.size()
-                                        ? selected->names[programIndex]
-                                        : juce::String{};
-                        if (name.isEmpty())
-                            name = "Program " + juce::String(programIndex + 1);
-                        rememberPresetName(devicePath, name);
-                        if (onSelectionChanged)
-                            onSelectionChanged();
-                    }
-                }
-                return;
-            }
-
-            if (chosen >= kPresetIdBase) {
-                const int idx = chosen - kPresetIdBase;
-                if (idx >= 0 && idx < indexedPresetFiles.size())
-                    loadPluginPresetFile(devicePath, indexedPresetFiles[idx], onSelectionChanged);
-            }
-        });
-}
+namespace {
 
 void showSavePluginPresetDialog(const magda::DeviceInfo& device,
                                 const magda::ChainNodePath& devicePath,
@@ -453,6 +301,146 @@ void showSavePluginPresetDialog(const magda::DeviceInfo& device,
                 doSave();
             }
         }));
+}
+
+PluginPresetSources pluginPresetSources(const magda::DeviceInfo& device,
+                                        const magda::ChainNodePath& devicePath,
+                                        bool isInternalDevice) {
+    PluginPresetSources sources;
+    if (isInternalDevice || device.loadState != magda::DeviceLoadState::Loaded)
+        return sources;
+
+    auto& scanner = magda::PluginPresetScanner::getInstance();
+    sources.extension = scanner.getPresetExtension(device);
+    if (sources.extension.isNotEmpty())
+        sources.files = scanner.getPresets(device).roots;
+
+    if (auto* engine = getAudioEngine()) {
+        if (const auto programs = engine->getPluginPrograms(devicePath)) {
+            sources.programs = programs->names;
+            sources.currentProgram = programs->current;
+        }
+    }
+    return sources;
+}
+
+juce::String programName(const juce::StringArray& names, int index) {
+    const auto name = names[index];
+    return name.isNotEmpty() ? name : "Program " + juce::String(index + 1);
+}
+
+void selectProgram(const magda::ChainNodePath& devicePath, int index,
+                   const std::function<void()>& onNameChanged) {
+    auto* engine = getAudioEngine();
+    if (engine == nullptr || !engine->setPluginCurrentProgram(devicePath, index))
+        return;
+
+    const auto programs = engine->getPluginPrograms(devicePath);
+    rememberPresetName(devicePath,
+                       programName(programs ? programs->names : juce::StringArray{}, index));
+    if (onNameChanged)
+        onNameChanged();
+}
+
+void revealMagdaPresets(const juce::String& pluginFolder) {
+    auto& presetManager = magda::PresetManager::getInstance();
+    auto dir = presetManager.getDevicePluginDirectory(pluginFolder);
+    if (!dir.exists())
+        dir = presetManager.getDevicesDirectory();
+    dir.revealToUser();
+}
+
+void revealPluginPresets(const magda::DeviceInfo& device) {
+    auto dir = magda::PluginPresetScanner::getInstance().getUserPresetDirectory(device);
+    if (!dir.exists())
+        dir.createDirectory();
+    if (dir.exists())
+        dir.revealToUser();
+}
+
+}  // namespace
+
+DevicePresetMenu buildDevicePresetMenu(
+    const magda::DeviceInfo& device, const PluginPresetSources& plugin,
+    const std::function<void(juce::PopupMenu&)>& addDeviceItems) {
+    DevicePresetMenu result;
+    auto& menu = result.menu;
+
+    buildPresetSubmenu(menu,
+                       magda::PresetManager::getInstance().getDevicePluginDirectory(device.name),
+                       "", kPresetIdBase, device.presetName, result.presetPaths);
+
+    const bool hasProgramMenu = plugin.programs.size() > 1;
+    if (result.presetPaths.isEmpty() && plugin.files.empty() && !hasProgramMenu && !addDeviceItems)
+        menu.addItem(kPresetIdBase, "(no presets yet)", false);
+
+    menu.addSeparator();
+    if (!plugin.files.empty()) {
+        juce::PopupMenu files;
+        buildPluginPresetSubmenu(files, plugin.files, kPluginPresetIdBase, result.pluginFiles,
+                                 device.presetName);
+        menu.addSubMenu("Plugin Presets", files);
+    }
+    if (hasProgramMenu) {
+        juce::PopupMenu programs;
+        for (int i = 0; i < plugin.programs.size(); ++i)
+            programs.addItem(kProgramIdBase + i, programName(plugin.programs, i), true,
+                             i == plugin.currentProgram);
+        menu.addSubMenu("Built-in Programs", programs);
+    }
+
+    if (addDeviceItems)
+        addDeviceItems(menu);
+
+    menu.addSeparator();
+    const bool hasPresetFiles = plugin.extension.isNotEmpty();
+    if (hasPresetFiles)
+        menu.addItem(kSavePluginPreset, "Save as " + plugin.extension + "...");
+    menu.addItem(kRevealInFinder, "Reveal in Finder");
+    if (hasPresetFiles) {
+        const auto userDir = magda::PluginPresetScanner::getUserPresetDirectory(device);
+        menu.addItem(kRevealPluginUserDir, "Reveal Plugin Preset Folder",
+                     !userDir.getFullPathName().isEmpty());
+        menu.addItem(kRescanPluginPresets, "Rescan");
+    }
+    return result;
+}
+
+void showDevicePresetMenu(juce::Component* targetComponent, const magda::DeviceInfo& device,
+                          const magda::ChainNodePath& devicePath, bool isInternalDevice,
+                          DevicePresetMenuCallbacks callbacks) {
+    auto content =
+        buildDevicePresetMenu(device, pluginPresetSources(device, devicePath, isInternalDevice),
+                              callbacks.addDeviceItems);
+
+    content.menu.showMenuAsync(
+        juce::PopupMenu::Options().withTargetComponent(targetComponent),
+        [device, devicePath, presetPaths = content.presetPaths, pluginFiles = content.pluginFiles,
+         callbacks = std::move(callbacks)](int chosen) {
+            if (callbacks.onDismissed)
+                callbacks.onDismissed();
+
+            if (chosen == kRevealInFinder) {
+                revealMagdaPresets(device.name);
+            } else if (chosen == kRevealPluginUserDir) {
+                revealPluginPresets(device);
+            } else if (chosen == kRescanPluginPresets) {
+                magda::PluginPresetScanner::getInstance().rescan(device);
+            } else if (chosen == kSavePluginPreset) {
+                showSavePluginPresetDialog(device, devicePath, callbacks.onNameChanged);
+            } else if (chosen >= kPluginPresetIdBase) {
+                const int index = chosen - kPluginPresetIdBase;
+                if (index < pluginFiles.size())
+                    loadPluginPresetFile(devicePath, pluginFiles[index], callbacks.onNameChanged);
+            } else if (chosen >= kProgramIdBase) {
+                selectProgram(devicePath, chosen - kProgramIdBase, callbacks.onNameChanged);
+            } else if (chosen >= kPresetIdBase) {
+                const int index = chosen - kPresetIdBase;
+                if (index < presetPaths.size())
+                    loadMagdaPreset(device.name, devicePath, presetPaths[index],
+                                    callbacks.onPresetLoaded);
+            }
+        });
 }
 
 }  // namespace magda::daw::ui

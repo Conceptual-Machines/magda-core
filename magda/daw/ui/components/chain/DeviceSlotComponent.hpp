@@ -415,6 +415,8 @@ class DeviceSlotComponent : public NodeComponent,
     magda::LevelMeter levelMeter_;
     magda::MidiNoteStrip midiNoteStrip_;
 
+    // Opens a runtime Faust patch's source, beside the floppy disk.
+    std::unique_ptr<magda::SvgButton> faustEditButton_;
     // Preset box and floppy disk, in the top header.
     std::unique_ptr<PresetSelector> presetSelector_;
     // Vertical gain slider overlaid on the meter
@@ -440,9 +442,7 @@ class DeviceSlotComponent : public NodeComponent,
     // Controller indicator state + refresh now live on NodeComponent
     // (the base class) so racks share the same logic.
 
-    // Presets: the plug-in's own where it has any, else MAGDA's.
     void refreshPresetLabel();
-    bool hasPluginPresetsAvailable() const;  // loaded external plugin with scanned presets
     void showPresetMenu();
     void showSavePresetDialog();
 

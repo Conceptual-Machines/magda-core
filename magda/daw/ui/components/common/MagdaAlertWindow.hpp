@@ -70,6 +70,11 @@ class MagdaAlertWindow : public juce::AlertWindow {
 void drawAlertButtonBackground(juce::Graphics& g, juce::Button& button, bool over, bool down);
 void drawAlertButtonText(juce::Graphics& g, juce::TextButton& button);
 
+/// What JUCE draws an alert's text-field labels in; the look-and-feels' getAlertWindowFont.
+juce::Font alertFieldLabelFont();
+/// What JUCE sets an alert's fields and text blocks in; their getAlertWindowMessageFont.
+juce::Font alertTextFont();
+
 /// Builds the alert JUCE's message boxes show; the look-and-feels' createAlertWindow call this.
 juce::AlertWindow* createMagdaAlertWindow(const juce::String& title, const juce::String& message,
                                           const juce::String& button1, const juce::String& button2,

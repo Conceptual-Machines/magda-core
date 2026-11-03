@@ -14,7 +14,7 @@ namespace magda::daw::ui {
 bool showsLiveMidiActivity(const magda::TrackInfo& track, bool playing);
 
 /** @brief A 7px LED over a small "MIDI" label that flashes green on a live note, holds
- *  briefly, then fades, so fast bursts stay visible. */
+ *  briefly, then fades, so fast bursts stay visible. Too short for the label, it's just the LED. */
 class MidiActivityLed : public juce::Component, private juce::Timer {
   public:
     MidiActivityLed();

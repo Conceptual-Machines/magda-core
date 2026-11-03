@@ -133,4 +133,25 @@ bool loadSource(const ChainNodePath& devicePath, const juce::String& name,
     return true;
 }
 
+void adoptPresetPatch(const ChainNodePath& devicePath, const juce::String& previousState) {
+    const auto* device = TrackManager::getInstance().getDeviceInChainByPath(devicePath);
+    if (device == nullptr || !isRuntimeFaust(*device))
+        return;
+
+    const auto doc = device_state::decode(device->pluginState);
+    if (!doc.has_value())
+        return;
+    const auto source = doc->root.props[daw::audio::kFaustDspSourceProperty].toString();
+    const auto previous = device_state::decode(previousState);
+    if (source.isEmpty() ||
+        (previous.has_value() &&
+         previous->root.props[daw::audio::kFaustDspSourceProperty].toString() == source))
+        return;
+
+    juce::String error;
+    if (!loadSource(devicePath, doc->root.props[daw::audio::kFaustDspNameProperty].toString(),
+                    source, error))
+        DBG("Preset patch did not compile: " << error);
+}
+
 }  // namespace magda::faust_edits

@@ -12,7 +12,10 @@
 #include "magda/daw/audio/faust/FaustModelEdits.hpp"
 #include "magda/daw/audio/plugins/FaustInstrumentPlugin.hpp"
 #include "magda/daw/audio/plugins/FaustPlugin.hpp"
+#include "magda/daw/core/AppPaths.hpp"
+#include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/DeviceState.hpp"
+#include "magda/daw/core/PresetManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 
 using namespace magda;
@@ -29,6 +32,30 @@ process = *(hslider("Gain[idx:0]", 0.5, 0, 2, 0.01));
 constexpr const char* kFilterPatch = R"FAUST(// stdfaust.lib
 process = *(hslider("Gain[idx:0]", 0.5, 0, 4, 0.01)) : *(hslider("Cutoff[idx:1]", 1000, 20, 20000, 1));
 )FAUST";
+
+constexpr const char* kMeteredPatch = R"FAUST(// stdfaust.lib
+process = *(hslider("Gain[idx:0]", 0.5, 0, 2, 0.01)) : hbargraph("Level", 0, 1);
+)FAUST";
+
+struct ScratchPresets {
+    ScratchPresets()
+        : previous(Config::getInstance().getPresetsDir()),
+          directory(juce::File::getSpecialLocation(juce::File::tempDirectory)
+                        .getNonexistentChildFile("magda-faust-presets", {})) {
+        REQUIRE(directory.createDirectory());
+        Config::getInstance().setPresetsDir(directory.getFullPathName().toStdString());
+        paths::resolve();
+    }
+
+    ~ScratchPresets() {
+        Config::getInstance().setPresetsDir(previous);
+        paths::resolve();
+        directory.deleteRecursively();
+    }
+
+    std::string previous;
+    juce::File directory;
+};
 
 ChainNodePath addFaust(const char* pluginId) {
     auto& tracks = TrackManager::getInstance();
@@ -101,6 +128,45 @@ TEST_CASE("A control the next patch still has keeps its value, and a new one sta
     const auto* cutoff = parameterNamed(path, "Cutoff");
     REQUIRE(cutoff != nullptr);
     CHECK(cutoff->currentValue == Approx(1000.0f));
+}
+
+TEST_CASE("A device preset brings back the patch it was saved with", "[faust][devices][3213]") {
+    ScratchPresets scratch;
+    const auto path = addFaust(daw::audio::FaustPlugin::xmlTypeName);
+    auto& tracks = TrackManager::getInstance();
+    auto& presets = PresetManager::getInstance();
+
+    juce::String error;
+    REQUIRE(faust_edits::loadSource(path, "Metered", kMeteredPatch, error));
+    REQUIRE_FALSE(modelDevice(path).meters.empty());
+    tracks.setDeviceParameterValue(path, 0, 1.5f);
+    tracks.getDeviceInChainByPath(path)->macros[0].value = 0.25f;
+
+    REQUIRE(presets.saveDevicePreset(modelDevice(path), "Mine"));
+
+    // A .dsp replaces the source and leaves the macros on the device.
+    REQUIRE(faust_edits::loadSource(path, "Filter", kFilterPatch, error));
+    CHECK(modelDevice(path).macros[0].value == Approx(0.25f));
+    tracks.getDeviceInChainByPath(path)->macros[0].value = 0.75f;
+    REQUIRE(modelDevice(path).meters.empty());
+    REQUIRE(parameterNamed(path, "Cutoff") != nullptr);
+
+    DeviceInfo preset;
+    REQUIRE(presets.loadDevicePreset(modelDevice(path).name, "Mine", preset));
+    REQUIRE(tracks.applyDevicePreset(path, preset));
+
+    const auto doc = device_state::decode(modelDevice(path).pluginState);
+    REQUIRE(doc.has_value());
+    CHECK(doc->root.props[daw::audio::kFaustDspSourceProperty].toString() == kMeteredPatch);
+    CHECK(doc->root.props[daw::audio::kFaustDspNameProperty].toString() == "Metered");
+    CHECK_FALSE(modelDevice(path).meters.empty());
+    CHECK(parameterNamed(path, "Cutoff") == nullptr);
+    const auto* gain = parameterNamed(path, "Gain");
+    REQUIRE(gain != nullptr);
+    CHECK(gain->maxValue == Approx(2.0f));
+    CHECK(gain->currentValue == Approx(1.5f));
+    CHECK(modelDevice(path).macros[0].value == Approx(0.25f));
+    CHECK(modelDevice(path).presetName == "Mine");
 }
 
 TEST_CASE("A patch that does not compile leaves the model as it was", "[faust][devices][2659]") {

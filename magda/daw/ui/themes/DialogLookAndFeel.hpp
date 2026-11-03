@@ -284,6 +284,14 @@ class DialogLookAndFeel : public juce::LookAndFeel_V4 {
                                       numButtons, associatedComponent);
     }
 
+    juce::Font getAlertWindowFont() override {
+        return alertFieldLabelFont();
+    }
+
+    juce::Font getAlertWindowMessageFont() override {
+        return alertTextFont();
+    }
+
     void drawAlertBox(juce::Graphics& g, juce::AlertWindow& alert,
                       const juce::Rectangle<int>& textArea, juce::TextLayout& layout) override {
         if (auto* magdaAlert = dynamic_cast<MagdaAlertWindow*>(&alert))

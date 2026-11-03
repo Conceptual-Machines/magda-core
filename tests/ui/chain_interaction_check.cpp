@@ -10,8 +10,10 @@
 #include <typeinfo>
 
 #include "audio/AudioThumbnailManager.hpp"
+#include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
 #include "core/ClipManager.hpp"
+#include "core/Config.hpp"
 #include "core/ModulatorEngine.hpp"
 #include "core/TrackManager.hpp"
 #include "ui/components/chain/DeviceSlotComponent.hpp"
@@ -19,11 +21,19 @@
 #include "ui/components/chain/compiled/CompiledEqBandLayout.hpp"
 #include "ui/components/chain/compiled/CompiledFilterCurveView.hpp"
 #include "ui/components/chain/compiled/CompiledMultibandBandLayout.hpp"
+#include "ui/components/chain/custom_ui/FaustMeterPanel.hpp"
+#include "ui/components/chain/custom_ui/FaustUI.hpp"
 #include "ui/components/chain/layout/CompiledFaustDeviceLayout.hpp"
 #include "ui/components/chain/layout/FaceplateBelowGeometry.hpp"
+#include "ui/components/chain/layout/FaustDeviceLayout.hpp"
 #include "ui/components/chain/layout/StandardDeviceLayout.hpp"
+#include "ui/components/chain/params/ParamControlStyle.hpp"
+#include "ui/components/chain/slot/DevicePresetMenu.hpp"
+#include "ui/components/chain/slot/DeviceSlotContentLayout.hpp"
 #include "ui/components/chain/slot/DeviceSlotSelectionHandling.hpp"
+#include "ui/components/common/MidiActivityLed.hpp"
 #include "ui/components/common/SegmentedChoice.hpp"
+#include "ui/panels/content/TrackChainContent.hpp"
 #include "ui/themes/FontManager.hpp"
 
 using namespace magda;
@@ -374,6 +384,250 @@ int main() {
                   juce::StringArray{"Pre", "Post"}, juce::StringArray{"Autogain"}})
                 strip += SegmentedChoice::preferredWidthFor(options) + 8;
             check(strip - 8 <= 420 - 14, "the Compressor's choices overrun its faceplate");
+        }
+        {
+            // A Faust patch's view stands beside the grid in the 172px body (#3213).
+            DeviceInfo patch;
+            for (int index = 0; index < 3; ++index) {
+                ParameterInfo parameter;
+                parameter.paramIndex = index;
+                parameter.name = "Control " + juce::String(index);
+                patch.parameters.push_back(parameter);
+            }
+            ParamHostComponent grid(std::make_unique<FaustDeviceLayout>());
+            grid.updateParameterSlots(patch, 0, {});
+            juce::Component view, meters, errorStrip;
+            DeviceSlotTraits traits;
+            traits.isFaust = true;
+            const juce::Rectangle<int> body(0, 0, 750, 172);
+            const auto layOut = [&](bool gridShown, bool viewShown, int meterHeight) {
+                layoutDeviceSlotContentBody(body, traits, false, false,
+                                            {.faustHeader = &errorStrip,
+                                             .faustCustomView = &view,
+                                             .faustCustomViewWidth = 176,
+                                             .faustCustomViewShown = viewShown,
+                                             .faustMeterPanel = &meters,
+                                             .faustMeterPanelPreferredHeight = meterHeight,
+                                             .paramGridShown = gridShown,
+                                             .paramGrid = &grid},
+                                            0);
+            };
+            const int minimumRow = ParamSlotComponent::minimumHeight(resolveControlStyle({}));
+
+            layOut(true, true, 0);
+            check(view.isVisible() && view.getHeight() == 148, "the view lost the body's height");
+            check(grid.getRight() <= view.getX(), "the view overlaps the grid");
+            check(grid.getSlot(0)->getHeight() >= minimumRow, "the view squeezed the grid's rows");
+
+            layOut(true, true, FaustMeterPanel::kPreferredHeight);
+            check(meters.isVisible() && meters.getRight() <= view.getX(),
+                  "the meters overlap the view");
+            check(grid.getSlot(0)->getHeight() >= minimumRow,
+                  "the meters squeezed the grid's rows");
+
+            layOut(false, true, FaustMeterPanel::kPreferredHeight);
+            check(!grid.isVisible() && !meters.isVisible(), "the hidden grid left its column");
+            check(view.getWidth() == body.getWidth() - 28, "the view alone doesn't take the body");
+
+            layOut(true, false, 0);
+            check(!view.isVisible() && grid.getWidth() == body.getWidth(),
+                  "the hidden view kept its column");
+
+            // Beside a view the grid narrows to its controls and hides the cells it left.
+            check(grid.fitColumnsToControls(patch, true), "the grid didn't fit its controls");
+            check(grid.getCellsPerRow() == 2 && grid.getSlotCount() == 4,
+                  "three controls are not a 2 x 2");
+            check(!grid.getSlot(4)->isVisible(), "a cell outside the fitted grid stayed visible");
+            check(grid.fitColumnsToControls(patch, false) && grid.getSlotCount() == 16,
+                  "the grid didn't go back to its full width");
+        }
+        {
+            // A failed load shows in the strip, and the next good one clears it.
+            FaustUI faust;
+            check(faust.errorHeight() == 0, "the error strip shows with no error");
+            faust.setError("line 3: syntax error");
+            check(faust.errorHeight() == FaustUI::kErrorHeight, "the error strip stayed away");
+            faust.setError({});
+            check(faust.errorHeight() == 0, "the error strip didn't clear");
+
+            // Patches load from the preset box.
+            juce::PopupMenu menu;
+            faust.addPatchItems(menu);
+            juce::StringArray items;
+            for (juce::PopupMenu::MenuItemIterator item(menu, true); item.next();)
+                items.add(item.getItem().text);
+            check(items.contains("Patches"), "the preset box lost its Patches submenu");
+            check(items.contains("Load .dsp File..."), "the preset box can't load a .dsp file");
+            check(items.contains("Save .dsp File..."), "the preset box can't save a .dsp file");
+        }
+        {
+            // The track chain's header folds to a strip and comes back with its controls.
+            selection.selectTrack(track);
+            TrackChainContent chain;
+            int foldChanges = 0;
+            chain.onHeaderFoldChanged = [&foldChanges]() { ++foldChanges; };
+            juce::Component bar;
+            bar.setVisible(true);
+            bar.setSize(900, 28);
+            chain.populateHeader(bar);
+            chain.layoutHeader(bar.getLocalBounds());
+            const auto laidOutControls = [&bar]() {
+                int count = 0;
+                for (auto* child : bar.getChildren())
+                    if (child->getName() != "Fold Header" && child->isVisible() &&
+                        !child->getBounds().isEmpty())
+                        ++count;
+                return count;
+            };
+            juce::Button* fold = nullptr;
+            for (auto* child : bar.getChildren())
+                if (child->getName() == "Fold Header")
+                    fold = dynamic_cast<juce::Button*>(child);
+            check(fold != nullptr, "the track chain header has no fold button");
+            check(chain.preferredHeaderHeight() == 0, "the header starts folded");
+            const int controls = laidOutControls();
+            check(controls > 0, "the header has no controls to fold");
+
+            // The controls fade out at full height, and only then does the header shrink.
+            press(*fold);
+            check(chain.preferredHeaderHeight() == 0, "the header shrank before the fade");
+            check(foldChanges == 0, "the panel laid out before the fade");
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(300);
+            check(chain.preferredHeaderHeight() == TrackChainContent::FOLDED_HEADER_HEIGHT,
+                  "the header didn't fold");
+            check(foldChanges == 1, "folding didn't tell the panel to lay out");
+            check(Config::getInstance().getTrackChainHeaderFolded(), "the fold wasn't remembered");
+            bar.setSize(900, TrackChainContent::FOLDED_HEADER_HEIGHT);
+            chain.layoutHeader(bar.getLocalBounds());
+            // Only the MIDI light stays, above the strip's button so it isn't painted over.
+            check(laidOutControls() == 1, "a control stayed on the folded strip");
+            const juce::Component* led = nullptr;
+            for (auto* child : bar.getChildren())
+                if (dynamic_cast<MidiActivityLed*>(child) != nullptr)
+                    led = child;
+            check(led != nullptr && led->isVisible() && !led->getBounds().isEmpty(),
+                  "the folded strip lost the MIDI light");
+            check(bar.getIndexOfChildComponent(led) > bar.getIndexOfChildComponent(fold),
+                  "the strip's button paints over the MIDI light");
+            check(fold->getBounds() == bar.getLocalBounds(), "the strip isn't all button");
+
+            // The header grows at once, and its controls fade in.
+            press(*fold);
+            check(chain.preferredHeaderHeight() == 0, "the header didn't unfold");
+            check(foldChanges == 2, "unfolding didn't tell the panel to lay out");
+            bar.setSize(900, 28);
+            chain.layoutHeader(bar.getLocalBounds());
+            const auto* faded = bar.getChildComponent(0);
+            check(faded->getAlpha() < 1.0f, "the controls didn't start the fade in");
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(300);
+            check(faded->getAlpha() == 1.0f, "the controls didn't finish fading in");
+            check(laidOutControls() == controls, "unfolding lost a control");
+            check(!Config::getInstance().getTrackChainHeaderFolded(), "the unfold wasn't kept");
+
+            // Its right click reaches the post-FX panel and analyzers.
+            const auto postFxItem = [&chain](const juce::String& name) {
+                const auto menu = chain.createPostFxMenu();
+                for (juce::PopupMenu::MenuItemIterator item(menu); item.next();)
+                    if (item.getItem().text == name)
+                        return item.getItem();
+                throw std::runtime_error("the post-FX menu lost an item");
+            };
+            bool panelRequested = false;
+            chain.onPostFxPanelToggled = [&panelRequested](bool open) { panelRequested = open; };
+            check(!postFxItem("Post-FX Panel").isTicked, "the closed panel is ticked");
+            postFxItem("Post-FX Panel").action();
+            check(panelRequested, "the menu didn't ask for the post-FX panel");
+            chain.setPostFxPanelOpen(true);
+            check(postFxItem("Post-FX Panel").isTicked, "the open panel isn't ticked");
+
+            for (const auto& [pluginId, name] :
+                 {std::pair<const char*, const char*>{"oscilloscope", "Oscilloscope"},
+                  {"spectrumanalyzer", "Spectrum Analyzer"},
+                  {"levels", "Levels"}}) {
+                check(!postFxItem(name).isTicked, "a missing analyzer is ticked");
+                postFxItem(name).action();
+                check(tracks.findPostFxDevice(track, pluginId) != INVALID_DEVICE_ID,
+                      "the menu didn't add the analyzer");
+                check(postFxItem(name).isTicked, "a present analyzer isn't ticked");
+                postFxItem(name).action();
+                check(tracks.findPostFxDevice(track, pluginId) == INVALID_DEVICE_ID,
+                      "the menu didn't remove the analyzer");
+            }
+            chain.depopulateHeader(bar);
+            selection.clearSelection();
+        }
+        {
+            // A Faust slot's Edit button stands beside the floppy disk, at its size.
+            DeviceInfo patch;
+            patch.name = "Faust";
+            patch.pluginId = daw::audio::FaustPlugin::xmlTypeName;
+            patch.format = PluginFormat::Internal;
+            patch.loadState = DeviceLoadState::Loaded;
+            DeviceSlotComponent slot(patch);
+            slot.setSize(slot.getPreferredWidth(), 200);
+            std::function<juce::Component*(juce::Component&, const juce::String&)> named =
+                [&named](juce::Component& node, const juce::String& name) -> juce::Component* {
+                for (auto* child : node.getChildren()) {
+                    if (child->getName() == name)
+                        return child;
+                    if (auto* found = named(*child, name))
+                        return found;
+                }
+                return nullptr;
+            };
+            auto* edit = named(slot, "Edit Source");
+            check(edit != nullptr, "a Faust slot lost its Edit button");
+            check(edit->isVisible() && !edit->getBounds().isEmpty(), "Edit is not reachable");
+            // Other panels in the slot have a Save Preset of their own.
+            const auto* save = named(*edit->getParentComponent(), "Save Preset");
+            check(save != nullptr, "Edit doesn't share the floppy disk's selector");
+            check(edit->getX() >= save->getRight() && edit->getWidth() == save->getWidth(),
+                  "Edit doesn't stand beside the floppy disk");
+        }
+        {
+            // Every device opens one preset menu, with a plugin's files and programs in it (#3213).
+            const auto itemsOf = [](const juce::PopupMenu& menu) {
+                juce::StringArray items;
+                for (juce::PopupMenu::MenuItemIterator item(menu, true); item.next();)
+                    items.add(item.getItem().text);
+                return items;
+            };
+            DeviceInfo device;
+            device.name = "Preset menu regression device";
+
+            PluginPresetScanner::Entry preset;
+            preset.name = "Factory Bass";
+            preset.file = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                              .getChildFile("Factory Bass.vstpreset");
+            PluginPresetSources plugin;
+            plugin.files = {preset};
+            plugin.programs = juce::StringArray{"One", ""};
+            plugin.extension = ".vstpreset";
+            const auto hosted = buildDevicePresetMenu(device, plugin, {});
+            const auto hostedItems = itemsOf(hosted.menu);
+            for (const auto* expected :
+                 {"Plugin Presets", "Factory Bass", "Built-in Programs", "One", "Program 2",
+                  "Save as .vstpreset...", "Reveal in Finder", "Reveal Plugin Preset Folder",
+                  "Rescan"})
+                check(hostedItems.contains(expected), "the hosted preset menu lost an item");
+            check(!hostedItems.contains("(no presets yet)"),
+                  "the hosted preset menu says it has no presets");
+            check(hosted.pluginFiles.size() == 1 && hosted.pluginFiles[0] == preset.file,
+                  "a plugin preset doesn't resolve to its file");
+
+            const auto bare = itemsOf(buildDevicePresetMenu(device, {}, {}).menu);
+            check(bare.contains("(no presets yet)") && bare.contains("Reveal in Finder"),
+                  "a device with no presets lost its menu");
+            for (const auto* absent : {"Plugin Presets", "Built-in Programs", "Rescan"})
+                check(!bare.contains(absent), "a device without plugin presets shows their items");
+
+            // A device with its own items to load has something, even with no saved presets.
+            const auto withItems =
+                itemsOf(buildDevicePresetMenu(device, {}, [](juce::PopupMenu& menu) {
+                            menu.addItem("Load .dsp File...", [] {});
+                        }).menu);
+            check(!withItems.contains("(no presets yet)"),
+                  "the preset menu says no presets above the device's own items");
         }
         {
             // A curated device's controls stand in balanced rows of at most two.

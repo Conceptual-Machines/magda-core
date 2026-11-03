@@ -201,14 +201,16 @@ bool bindDeviceSlotFaustInlineUi(
     faustUI->setDevicePath(nodePath);
 
     auto device = getRenderedDevice(nodePath);
-    if (device.get() == faustUI->boundDevice())
+    auto* faustModel = dynamic_cast<daw::audio::IFaustEditorModel*>(device.get());
+    // A preset swaps the patch on the device already rendering it.
+    if (device.get() == faustUI->boundDevice() &&
+        (faustModel == nullptr || faustModel->getDspSource() == faustUI->boundSource()))
         return false;
 
     // The custom view holds the device by reference, so it goes before the device can.
     faustCustomView.reset();
     faustUI->setDevice(device);
 
-    auto* faustModel = dynamic_cast<daw::audio::IFaustEditorModel*>(device.get());
     if (faustModel != nullptr) {
         faustCustomView = FaustCustomUIRegistry::getInstance().create(
             faustModel->getCustomViewName(), *faustModel);

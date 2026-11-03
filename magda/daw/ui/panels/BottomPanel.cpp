@@ -1409,6 +1409,11 @@ void BottomPanel::onContentWillSwitch(daw::ui::PanelContent* outgoing,
     // Populate incoming content's header controls
     if (incoming)
         incoming->populateHeader(*headerBar_);
+    if (auto* chain = dynamic_cast<daw::ui::TrackChainContent*>(incoming))
+        chain->onHeaderFoldChanged = [this]() {
+            resized();
+            repaint();
+        };
 
     // Add MIDI controls if incoming is a MIDI editor
     const bool isMidiEditor =
@@ -1659,6 +1664,9 @@ bool BottomPanel::usesV1Toolbar() const {
 }
 
 int BottomPanel::headerHeight() const {
+    if (const auto* content = getActiveContent();
+        content != nullptr && content->preferredHeaderHeight() > 0)
+        return content->preferredHeaderHeight();
     return usesV1Toolbar() ? kV1ToolbarHeight : HeaderBar::HEIGHT;
 }
 

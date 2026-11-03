@@ -53,6 +53,11 @@ class ParamHostComponent : public juce::Component, private magda::ConfigListener
     int getAllocatedSlotCount() const {
         return allocatedCells_;
     }
+    /**
+     * @brief Narrows the grid to the columns @p device's controls need, or back to full width.
+     * @return true when the shape moved; the owner re-pages, refills and lays out.
+     */
+    bool fitColumnsToControls(const magda::DeviceInfo& device, bool fit);
     /// The control style changed the grid's shape; re-page and refill.
     std::function<void()> onShapeChanged;
 

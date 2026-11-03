@@ -77,8 +77,6 @@ float MagdaDriveCurveView::readSlotValue(const magda::daw::audio::FaustParamSlot
 void MagdaDriveCurveView::paint(juce::Graphics& g) {
     const auto bounds = getLocalBounds();
 
-    // Background — slightly inset from the FaustUI body fill so the
-    // header strip's separator stays visually distinct.
     g.setColour(ActiveTheme::getColour(ActiveTheme::BACKGROUND));
     g.fillRect(bounds);
 
