@@ -166,6 +166,11 @@ int MidiLearnCoordinator::clearMappings(const ControlTarget& target) {
     return removed;
 }
 
+void MidiLearnCoordinator::bindCapture(const ControlTarget& target, const LearnCapture& capture) {
+    clearMappings(target);
+    addBinding(Target{target}, capture);
+}
+
 // ============================================================================
 // onCapture (message thread)
 // ============================================================================
@@ -238,31 +243,7 @@ void MidiLearnCoordinator::onCapture(const LearnCapture& capture) {
             << (owner == ControlTarget::Kind::DeviceMacro ? "macro" : "mod_param") << ")");
     }
 
-    // ---- Build source ----
-    // Prefer port-based addressing (display name is stable across machines).
-    // controllerId stays set only when Learn arrived via a registered scripted
-    // surface; ordinary user gestures don't go through ControllerRegistry.
-    BindingSource source;
-    source.portKey = capture.portName.isNotEmpty() ? capture.portName : capture.portId;
-    source.controllerId = capture.controllerId;
-    source.msgType = capture.msgType;
-    source.channel = 0;  // any channel (lockChannel is false in default config)
-    source.number = capture.number;
-
-    // ---- Build binding ----
-    Binding binding;
-    binding.id = juce::Uuid();
-    binding.source = source;
-    binding.target = target;
-    binding.mode = BindingMode::Absolute;
-    binding.range = BindingRange{0.0f, 1.0f, BindingCurve::Linear};
-
-    // Learn always stores at Project scope. Global-scope bindings are reserved
-    // for future controller templates/scripts that are driven by the hardware
-    // layer, not by user-level "map this knob" gestures.
-    BindingRegistry::getInstance().add(BindingScope::Project, binding);
-
-    DBG("MidiLearnCoordinator: project binding created");
+    const Binding binding = addBinding(target, capture);
 
     // ---- Notify listeners ----
     // For ModParam, the listener-facing paramIndex carries modParamIndex so listeners
@@ -279,6 +260,33 @@ void MidiLearnCoordinator::onCapture(const LearnCapture& capture) {
 // ============================================================================
 // Private helpers
 // ============================================================================
+
+Binding MidiLearnCoordinator::addBinding(const Target& target, const LearnCapture& capture) {
+    // Prefer port-based addressing (display name is stable across machines).
+    // controllerId stays set only when Learn arrived via a registered scripted
+    // surface; ordinary user gestures don't go through ControllerRegistry.
+    BindingSource source;
+    source.portKey = capture.portName.isNotEmpty() ? capture.portName : capture.portId;
+    source.controllerId = capture.controllerId;
+    source.msgType = capture.msgType;
+    source.channel = 0;  // any channel (lockChannel is false in default config)
+    source.number = capture.number;
+
+    Binding binding;
+    binding.id = juce::Uuid();
+    binding.source = source;
+    binding.target = target;
+    binding.mode = BindingMode::Absolute;
+    binding.range = BindingRange{0.0f, 1.0f, BindingCurve::Linear};
+
+    // Learn always stores at Project scope. Global-scope bindings are reserved
+    // for future controller templates/scripts that are driven by the hardware
+    // layer, not by user-level "map this knob" gestures.
+    BindingRegistry::getInstance().add(BindingScope::Project, binding);
+
+    DBG("MidiLearnCoordinator: project binding created");
+    return binding;
+}
 
 void MidiLearnCoordinator::notifyStateChanged(const ChainNodePath& path, int paramIndex,
                                               ControlTarget::Kind owner, bool learning) {

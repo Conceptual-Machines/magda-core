@@ -143,6 +143,13 @@ class MidiLearnCoordinator {
      */
     int clearMappings(const ControlTarget& target);
 
+    /**
+     * @brief Bind `target` to the control `capture` heard, replacing its mappings.
+     *
+     * For a caller that ran its own learn session on the router.
+     */
+    void bindCapture(const ControlTarget& target, const LearnCapture& capture);
+
     // ========================================================================
     // Scope
     // ========================================================================
@@ -165,6 +172,9 @@ class MidiLearnCoordinator {
 
     // Called from router's callAsync (message thread) when a MIDI event is captured.
     void onCapture(const LearnCapture& capture);
+
+    /** @brief Adds the Project binding from `capture`'s control to `target`. */
+    Binding addBinding(const Target& target, const LearnCapture& capture);
 
     void notifyStateChanged(const ChainNodePath& path, int paramIndex, ControlTarget::Kind owner,
                             bool learning);

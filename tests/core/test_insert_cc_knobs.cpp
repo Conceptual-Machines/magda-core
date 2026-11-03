@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "core/InsertCcKnobs.hpp"
+#include "core/ParameterUtils.hpp"
 
 /// @file An External Insert's CC knobs, as the model holds them (#3164).
 
@@ -48,4 +49,17 @@ TEST_CASE("An insert holds at most four pages of knobs", "[core][insert][3164]")
         REQUIRE(insert_cc::addKnob(device) >= 0);
     CHECK(insert_cc::addKnob(device) == -1);
     CHECK(device.insert.ccSlots.size() == insert_cc::kMaxKnobs);
+}
+
+TEST_CASE("An incoming CC lands on the knob's same step", "[core][insert][3164]") {
+    DeviceInfo device;
+    const int paramIndex = insert_cc::addKnob(device);
+    const auto* parameter = device.findParameterByIndex(paramIndex);
+    REQUIRE(parameter != nullptr);
+
+    for (int cc = 0; cc <= 127; ++cc) {
+        const auto model = ParameterUtils::normalizedToModelValue(
+            ParameterNormalizedValue::clamped(static_cast<float>(cc) / 127.0f), *parameter);
+        CHECK(juce::roundToInt(ParameterUtils::modelToRealValue(model, *parameter)) == cc);
+    }
 }

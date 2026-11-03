@@ -14,6 +14,7 @@
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "core/controllers/MidiLearnCoordinator.hpp"
 #include "engine/AudioEngine.hpp"
 #include "themes/ActiveTheme.hpp"
 #include "themes/FontManager.hpp"
@@ -182,6 +183,9 @@ ExternalInsertUI::ExternalInsertUI()
         editKnobs("Set CC Number", [paramIndex, cc = id - 1](magda::DeviceInfo& device) {
             insert_cc::setKnobCc(device, paramIndex, cc);
         });
+        // A control learned for the old number no longer speaks for this knob.
+        magda::MidiLearnCoordinator::getInstance().clearMappings(
+            magda::ControlTarget::pluginParam(path_, paramIndex));
     };
 
     latencyValue_.setEditable(true);
@@ -216,6 +220,8 @@ ExternalInsertUI::ExternalInsertUI()
         editKnobs("Remove CC Knob", [paramIndex](magda::DeviceInfo& device) {
             insert_cc::removeKnob(device, paramIndex);
         });
+        magda::MidiLearnCoordinator::getInstance().clearMappings(
+            magda::ControlTarget::pluginParam(path_, paramIndex));
     };
     for (auto* button : std::initializer_list<juce::Component*>{learnButton_.get(), &prevPage_,
                                                                 &nextPage_, &removeKnob_})
@@ -377,6 +383,9 @@ void ExternalInsertUI::listenForCc() {
             editKnobs("Learn CC Number", [paramIndex, cc = capture.number](magda::DeviceInfo& d) {
                 insert_cc::setKnobCc(d, paramIndex, cc);
             });
+            // The control it heard moves the knob from now on.
+            magda::MidiLearnCoordinator::getInstance().bindCapture(
+                magda::ControlTarget::pluginParam(path_, paramIndex), capture);
             setLearning(false);
         });
 }
