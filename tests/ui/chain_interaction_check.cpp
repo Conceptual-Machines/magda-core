@@ -34,10 +34,12 @@
 #include "ui/components/chain/slot/DeviceSlotSelectionHandling.hpp"
 #include "ui/components/common/MidiActivityLed.hpp"
 #include "ui/components/common/SegmentedChoice.hpp"
+#include "ui/components/mixer/LevelMeter.hpp"
 #include "ui/panels/content/TrackChainContent.hpp"
 #include "ui/state/ExpandedFaceplate.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/views/ExpandedFaceplateHost.hpp"
+#include "ui/views/SessionView.hpp"
 
 using namespace magda;
 using namespace magda::daw::ui;
@@ -864,6 +866,34 @@ int main() {
             check(viewUpper > 1000 && viewLower * 2 > viewUpper,
                   "a sample with no file lost the view's wave");
             pane.setAudio(nullptr, 0.0);
+        }
+        {
+            // Session strips and the master meter left to right, above volume and pan.
+            SessionView session;
+            session.setSize(1400, 800);
+            session.resized();
+            std::function<void(juce::Component&, std::vector<LevelMeter*>&)> findMeters =
+                [&findMeters](juce::Component& root, std::vector<LevelMeter*>& found) {
+                    for (auto* child : root.getChildren()) {
+                        if (auto* meter = dynamic_cast<LevelMeter*>(child))
+                            found.push_back(meter);
+                        findMeters(*child, found);
+                    }
+                };
+            std::vector<LevelMeter*> found;
+            findMeters(session, found);
+            check(found.size() >= 2, "the Session view has no strip or master meters");
+            for (const auto* meter : found) {
+                check(meter->isVisible() && meter->getWidth() > meter->getHeight() &&
+                          meter->getHeight() == 8,
+                      "a Session meter is not a thin horizontal bar");
+                const auto* strip = meter->getParentComponent();
+                bool belowIt = false;
+                for (const auto* sibling : strip->getChildren())
+                    belowIt = belowIt || (sibling != meter &&
+                                          sibling->getBounds().getY() >= meter->getBottom());
+                check(belowIt, "a Session meter is not above its strip's controls");
+            }
         }
         selection.clearSelection();
         tracks.clearAllTracks();
