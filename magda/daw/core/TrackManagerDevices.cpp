@@ -1983,6 +1983,7 @@ std::optional<DeviceInfo> TrackManager::prepareDevicePresetState(
     // Copy state-y fields; preserve identity (id, name, format, fileOrIdentifier,
     // capabilities, sidechain wiring, current track placement).
     prepared.parameters = presetDevice.parameters;
+    prepared.insert = presetDevice.insert;
     prepared.macros = presetDevice.macros;
     prepared.mods = presetDevice.mods;
     prepared.gainDb = presetDevice.gainDb;

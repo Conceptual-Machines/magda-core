@@ -315,8 +315,8 @@ void LFOCurveEditorContent::showSaveCurvePresetDialog() {
     if (defaultName.isEmpty())
         defaultName = "Custom Curve";
 
-    alert->addTextEditor("category", defaultCategory, "Category (optional):");
     alert->addTextEditor("name", defaultName, "Name:");
+    alert->addTextEditor("category", defaultCategory, "Category (optional):");
     alert->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
     alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
 
