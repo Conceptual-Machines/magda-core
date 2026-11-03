@@ -91,6 +91,8 @@ void drawNoteBar(juce::Graphics& g, juce::Rectangle<float> bar, int velocity, bo
 std::unique_ptr<magda::SvgButton> makeExpandButton();
 /// Where it sits: the gutter left of the ruler.
 juce::Rectangle<int> expandButtonBounds(juce::Rectangle<int> ruler);
+/// The time bend's component ID: a slot rebuilt while it was out lends it again by this (#3208).
+inline constexpr const char* kTimeBendPartId = "TimeBend";
 
 /// One step box in a note row.
 void drawNoteCell(juce::Graphics& g, juce::Rectangle<float> cell, const NoteCell& note);

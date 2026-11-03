@@ -1296,10 +1296,21 @@ void DeviceSlotComponent::faceplateReturned() {
         onDeviceLayoutChanged();
 }
 
+juce::Component* DeviceSlotComponent::faceplatePart(const juce::String& id) const {
+    if (id.isEmpty())
+        return nullptr;
+    if (const auto* custom = customUI_.getActiveUI())
+        if (auto* part = custom->findChildWithID(id))
+            return part;
+    return compiledPanel_ != nullptr ? compiledPanel_->component().findChildWithID(id) : nullptr;
+}
+
 void DeviceSlotComponent::reclaimExpandedFaceplate() {
-    if (nodePath_.isValid() && expandableUI() != nullptr && !expandableLent() &&
-        magda::ExpandedFaceplate::getInstance().isPendingFor(nodePath_))
-        lendFaceplate();
+    // Nothing is out while pending. A part with no ID, or one this faceplate lacks, falls back to
+    // the default part.
+    const auto& expanded = magda::ExpandedFaceplate::getInstance();
+    if (nodePath_.isValid() && expanded.isPendingFor(nodePath_))
+        lendFaceplate(faceplatePart(expanded.partId()));
 }
 
 void DeviceSlotComponent::refreshVoiceModeChoice() {

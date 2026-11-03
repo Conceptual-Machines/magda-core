@@ -522,6 +522,8 @@ SamplerUI::SamplerUI() {
     for (auto* label : {&startLabel_, &endLabel_, &loopStartLabel_, &loopEndLabel_})
         label->setVisible(false);
 
+    // A slot rebuilt while the waveform alone was out lends it again by this (#3208).
+    waveformPane_.setComponentID("Waveform");
     waveformPane_.markers = [this] { return sliderMarkers(); };
     waveformPane_.onMarkersMoved = [this](const sdk::WaveformMarkers& markers) {
         markersMoved(markers);

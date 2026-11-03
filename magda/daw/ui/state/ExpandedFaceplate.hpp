@@ -17,7 +17,8 @@ namespace magda {
  *
  * A slot lends its faceplate and has it given back on collapse. Lending another gives the current
  * one back first, so only one is ever out. A slot rebuilt while its faceplate is out lends the new
- * one again (isPendingFor); if none does by the next message-loop pass, the expansion ends.
+ * one again (isPendingFor), the same part by its component ID (partId); if none does by the next
+ * message-loop pass, the expansion ends.
  * Message thread only; broadcasts synchronously on every change.
  */
 class ExpandedFaceplate : public juce::ChangeBroadcaster {
@@ -47,12 +48,17 @@ class ExpandedFaceplate : public juce::ChangeBroadcaster {
     bool isPendingFor(const ChainNodePath& device) const {
         return pending_ && device_ == device;
     }
+    /// The lent part's component ID, kept through a rebuild; empty for a slot's default part.
+    const juce::String& partId() const {
+        return partId_;
+    }
 
   private:
     void clear();
 
     ChainNodePath device_;
     juce::Component::SafePointer<juce::Component> faceplate_;
+    juce::String partId_;
     juce::String title_;
     std::function<void()> giveBack_;
     bool pending_ = false;

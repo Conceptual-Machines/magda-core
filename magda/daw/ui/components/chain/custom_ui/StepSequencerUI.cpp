@@ -48,6 +48,7 @@ StepSequencerUI::StepSequencerUI() {
     };
 
     timeBend_.setShowsGrooves(true);
+    timeBend_.setComponentID(sf::kTimeBendPartId);
     bendExpandButton_->onClick = [this] {
         if (onExpandClicked)
             onExpandClicked(timeBend_);

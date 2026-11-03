@@ -34,6 +34,7 @@
 #include "ui/components/chain/slot/DeviceSlotSelectionHandling.hpp"
 #include "ui/components/common/MidiActivityLed.hpp"
 #include "ui/components/common/SegmentedChoice.hpp"
+#include "ui/components/common/TimeBendEditor.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
 #include "ui/panels/content/TrackChainContent.hpp"
 #include "ui/state/ExpandedFaceplate.hpp"
@@ -72,11 +73,11 @@ void press(juce::Button& target) {
         target.setToggleState(!target.getToggleState(), juce::dontSendNotification);
     target.onClick();
 }
-SamplerUI* findSamplerUI(juce::Component& root) {
+template <typename UI> UI* findUI(juce::Component& root) {
     for (auto* child : root.getChildren()) {
-        if (auto* sampler = dynamic_cast<SamplerUI*>(child))
-            return sampler;
-        if (auto* nested = findSamplerUI(*child))
+        if (auto* ui = dynamic_cast<UI*>(child))
+            return ui;
+        if (auto* nested = findUI<UI>(*child))
             return nested;
     }
     return nullptr;
@@ -768,7 +769,7 @@ int main() {
             slot->setNodePath(samplerPath);
             slot->setVisible(true);
             slot->setSize(1400, 400);
-            auto* sampler = findSamplerUI(*slot);
+            auto* sampler = findUI<SamplerUI>(*slot);
             check(sampler != nullptr, "the Sampler slot has no faceplate");
             auto& waveform = sampler->expandablePart();
             auto& waveformExpand = button(*sampler, "Expand");
@@ -810,11 +811,58 @@ int main() {
                       !waveform.getBounds().isEmpty(),
                   "the waveform did not come back");
 
+            // A rebuild while the waveform is out lends the new one, not the zones (#3208).
             press(waveformExpand);
+            slot.reset();
+            slot =
+                std::make_unique<DeviceSlotComponent>(*tracks.getDeviceInChainByPath(samplerPath));
+            slot->setNodePath(samplerPath);
+            sampler = findUI<SamplerUI>(*slot);
+            check(sampler != nullptr && expanded.holds(sampler->expandablePart()),
+                  "a rebuilt Sampler did not lend its waveform again");
+
             slot.reset();
             check(expanded.faceplate() == nullptr, "a deleted Sampler left its waveform out");
             juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
             check(!expanded.isActive(), "a deleted Sampler's expansion never ended");
+        }
+        for (const auto* pluginId : {"stepsequencer", "polystepsequencer", "arpeggiator"}) {
+            // A slot rebuilt while its time bend is out lends the time bend again, not its steps.
+            const auto fail = [pluginId](const char* message) {
+                return (juce::String(pluginId) + ": " + message).toStdString();
+            };
+            DeviceInfo model;
+            model.name = pluginId;
+            model.pluginId = pluginId;
+            model.format = PluginFormat::Internal;
+            model.loadState = DeviceLoadState::Loaded;
+            const auto path =
+                ChainNodePath::topLevelDevice(track, tracks.addDeviceToTrack(track, model));
+            auto& expanded = ExpandedFaceplate::getInstance();
+            ExpandedFaceplateHost host;
+            host.setSize(1200, 800);
+            const auto build = [&] {
+                auto slot =
+                    std::make_unique<DeviceSlotComponent>(*tracks.getDeviceInChainByPath(path));
+                slot->setNodePath(path);
+                slot->setVisible(true);
+                slot->setSize(1400, 400);
+                return slot;
+            };
+            auto slot = build();
+            auto* bend = findUI<TimeBendEditor>(*slot);
+            check(bend != nullptr, fail("the faceplate has no time bend").c_str());
+            press(button(*bend, "Expand"));
+            check(expanded.holds(*bend), fail("the time bend button did not lend it").c_str());
+
+            slot.reset();
+            slot = build();
+            check(dynamic_cast<TimeBendEditor*>(expanded.faceplate()) != nullptr &&
+                      expanded.faceplate()->getParentComponent() == &host,
+                  fail("the rebuilt slot did not lend its time bend again").c_str());
+            expanded.collapse();
+            check(findUI<TimeBendEditor>(*slot) != nullptr,
+                  fail("the time bend did not come back to the rebuilt faceplate").c_str());
         }
         {
             // A stereo file draws in two lanes, as audio clips do: only the left lane lights up

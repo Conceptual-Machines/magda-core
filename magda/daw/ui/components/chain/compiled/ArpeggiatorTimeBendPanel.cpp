@@ -32,6 +32,7 @@ void styleField(magda::DraggableValueLabel& field) {
 
 ArpeggiatorTimeBendPanel::ArpeggiatorTimeBendPanel() {
     bend_.setShowsAmountAndCycles(false);
+    bend_.setComponentID(sequencer_faceplate::kTimeBendPartId);
     bend_.onCommit = [this](const auto&, const auto&) { settingsEdited(); };
     addAndMakeVisible(bend_);
     expandButton_ = sequencer_faceplate::makeExpandButton();

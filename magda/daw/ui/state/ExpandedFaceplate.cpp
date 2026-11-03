@@ -20,6 +20,7 @@ void ExpandedFaceplate::expand(const ChainNodePath& device, juce::Component& fac
     }
     device_ = device;
     faceplate_ = &faceplate;
+    partId_ = faceplate.getComponentID();
     title_ = title;
     giveBack_ = std::move(giveBack);
     pending_ = false;
@@ -57,6 +58,7 @@ void ExpandedFaceplate::release(const juce::Component& faceplate) {
 void ExpandedFaceplate::clear() {
     device_ = {};
     faceplate_ = nullptr;
+    partId_.clear();
     title_.clear();
     giveBack_ = {};
     pending_ = false;

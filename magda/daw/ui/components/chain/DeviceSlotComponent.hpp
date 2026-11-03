@@ -341,7 +341,9 @@ class DeviceSlotComponent : public NodeComponent,
     /// What expanding lends: a custom faceplate or its part, else a compiled panel's part.
     juce::Component* expandableUI() const;
     bool expandableLent() const;
-    /// Lends the faceplate again when this slot replaces one whose faceplate was out.
+    /// The faceplate's own child with component ID @p id, or null.
+    juce::Component* faceplatePart(const juce::String& id) const;
+    /// Lends the same part again when this slot replaces one whose faceplate was out (#3208).
     void reclaimExpandedFaceplate();
     /// The faceplate's width: its spec's, or the default.
     int faceplateWidth() const;

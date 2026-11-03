@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Only one faceplate is ever out in the arrangement: lending a second gives the first back, and a
-// slot rebuilt while its faceplate is out is asked to lend it again.
+// slot rebuilt while its faceplate is out is asked to lend the same part again.
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -53,6 +53,19 @@ class ExpandedFaceplateTest final : public juce::UnitTest {
         expect(!expanded.isPendingFor(first));
         expect(expanded.holds(b));
         expanded.collapse();
+
+        beginTest("A released part keeps its ID for the rebuilt slot (#3208)");
+        juce::Component part;
+        part.setComponentID("TimeBend");
+        expanded.expand(first, part, "A", {});
+        expectEquals(expanded.partId(), juce::String("TimeBend"));
+        expanded.release(part);
+        expect(expanded.isPendingFor(first));
+        expectEquals(expanded.partId(), juce::String("TimeBend"));
+        expanded.expand(first, a, "A", {});
+        expect(expanded.partId().isEmpty(), "an unnamed part kept the last one's ID");
+        expanded.collapse();
+        expect(expanded.partId().isEmpty());
     }
 };
 
