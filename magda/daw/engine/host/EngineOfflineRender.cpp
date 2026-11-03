@@ -15,6 +15,7 @@
 #include "../../audio/plugin_manager/ExternalPluginState.hpp"
 #include "../../audio/plugins/engine/EngineExternalDevice.hpp"
 #include "../../core/AutomationManager.hpp"
+#include "../../core/TrackAvailability.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../project/ProjectManager.hpp"
 #include "EngineProject.hpp"
@@ -366,7 +367,9 @@ struct OfflineRuntime {
 
   private:
     static engine::RenderPlan compile(const OfflineRenderModel& model) {
-        return engine::compileRenderPlan(model.tracks, model.master, {.deviceMeters = false});
+        engine::CompileOptions options{.deviceMeters = false};
+        options.tracksMissingDevices = tracksHoldingUnregisteredDevices(model.tracks, model.master);
+        return engine::compileRenderPlan(model.tracks, model.master, options);
     }
 
     /**

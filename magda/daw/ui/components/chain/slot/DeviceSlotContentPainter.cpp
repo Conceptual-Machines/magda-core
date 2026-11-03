@@ -3,6 +3,7 @@
 
 #include "slot/DeviceSlotContentPainter.hpp"
 
+#include "core/StringTable.hpp"
 #include "ui/themes/ActiveTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 
@@ -54,7 +55,16 @@ void paintSeparators(juce::Graphics& g, juce::Rectangle<int> contentArea,
 }
 
 bool paintLoadState(juce::Graphics& g, juce::Rectangle<int> contentArea,
-                    magda::DeviceLoadState loadState) {
+                    const DeviceSlotContentPaintState& state) {
+    const auto loadState = state.loadState;
+    if (loadState == magda::DeviceLoadState::Unavailable) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::STATUS_WARNING));
+        g.setFont(FontManager::getInstance().getUIFont(11.0f));
+        g.drawFittedText(tr("devices.unavailable").replace("{0}", state.deviceName),
+                         contentArea.reduced(8), juce::Justification::centred, 4);
+        return true;
+    }
+
     if (loadState == magda::DeviceLoadState::Loading) {
         g.setColour(ActiveTheme::getSecondaryTextColour().withAlpha(0.6f));
         g.setFont(FontManager::getInstance().getUIFont(11.0f));
@@ -78,10 +88,14 @@ void paintDeviceSlotContent(juce::Graphics& g, juce::Rectangle<int> contentArea,
                             const DeviceSlotContentPaintState& state, int meterStripWidth,
                             int paginationHeight, int faustHeaderHeight) {
     paintSeparators(g, contentArea, state, meterStripWidth, paginationHeight, faustHeaderHeight);
-    paintLoadState(g, contentArea, state.loadState);
+    paintLoadState(g, contentArea, state);
 }
 
 DeviceSlotSubtitle deviceSlotSubtitle(const DeviceSlotContentPaintState& state) {
+    if (state.loadState == magda::DeviceLoadState::Unavailable)
+        return {tr("devices.unavailable_subtitle"),
+                ActiveTheme::getColour(ActiveTheme::STATUS_WARNING)};
+
     // Analysis devices (oscilloscope / spectrum) and Faust patches carry their name alone.
     if (skipsContentHeader(state))
         return {};
