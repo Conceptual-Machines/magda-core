@@ -799,3 +799,59 @@ TEST_CASE("An insert's send is handed its CC knobs each block", "[engine][exec][
     REQUIRE(insert.controls.count(0) == 1);
     CHECK(insert.controls[0] == Catch::Approx(96.0f));
 }
+
+TEST_CASE("An automation lane over a CC knob reaches the insert's send", "[engine][insert][3164]") {
+    auto track = makeTrack(1);
+    DeviceInfo fx;
+    fx.id = 7;
+    fx.pluginId = "insert";
+    fx.format = PluginFormat::Internal;
+    fx.insert.sendType = InsertConfig::Endpoint::MIDI;
+    fx.insert.sendDevice = "Some Synth";
+
+    ParameterInfo knob;
+    knob.paramIndex = 0;
+    knob.name = "CC 43";
+    knob.minValue = 0.0f;
+    knob.maxValue = 127.0f;
+    for (int value = 0; value <= 127; ++value)
+        knob.valueTable.emplace_back(value);
+    fx.parameters.push_back(knob);
+    fx.insert.ccSlots.push_back({.paramIndex = 0, .ccNumber = 43});
+    track.chain.fxChainElements.push_back(makeDeviceElement(fx));
+
+    AutomationLaneInfo lane;
+    lane.id = 1;
+    lane.target = ControlTarget::pluginParam(ChainNodePath::topLevelDevice(1, 7), 0);
+    lane.type = AutomationLaneType::Absolute;
+    lane.authorityState = AutomationAuthorityState::Reading;
+    lane.absolutePoints = {AutomationPoint{1, 0.0, 1.0f}, AutomationPoint{2, 8.0, 1.0f}};
+    const std::vector<AutomationLaneInfo> lanes{lane};
+
+    std::vector<TrackInfo> tracks{track};
+    auto master = makeMaster();
+    const auto plan = magda::engine::compileRenderPlan(tracks, master);
+
+    StubInsert insert;
+    PlanBindings bindings;
+    bindings.inserts[DeviceKey{ChainSegment::Fx, 7}] = &insert;
+
+    PlanValues values;
+    const auto problems = magda::engine::resolvePlanValues(plan, tracks, master, values, lanes);
+    CHECK(problems.empty());
+
+    const RenderContext context{44100.0, kBlockSize, 2};
+    PlanExecutor executor;
+    executor.prepare(plan, bindings, context, nullptr, &values);
+    REQUIRE(executor.isPrepared());
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    BlockInfo block;
+    block.numSamples = kBlockSize;
+    block.playing = true;
+    block.continuous = true;
+    executor.process(values, block, output);
+
+    REQUIRE(insert.controls.count(0) == 1);
+    CHECK(insert.controls[0] == Catch::Approx(127.0f));
+}

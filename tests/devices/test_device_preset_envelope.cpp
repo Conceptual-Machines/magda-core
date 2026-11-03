@@ -15,6 +15,7 @@
 #include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/DevicePresetEnvelope.hpp"
 #include "magda/daw/core/DeviceState.hpp"
+#include "magda/daw/core/InsertCcKnobs.hpp"
 #include "magda/daw/core/PresetManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/project/serialization/ProjectSerializer.hpp"
@@ -528,4 +529,54 @@ TEST_CASE("Chain presets stay in the legacy format", "[preset-envelope]") {
     std::vector<ChainElement> loaded;
     REQUIRE(manager.loadChainPreset("Chain", loaded));
     CHECK(loaded.size() == 1);
+}
+
+TEST_CASE("An External Instrument preset brings back its routing and CC knobs",
+          "[preset-envelope][3164]") {
+    ScratchPresets scratch;
+    auto& tracks = TrackManager::getInstance();
+    tracks.clearAllTracks();
+
+    auto saved = internalDevice("insert");
+    saved.name = "External Instrument";
+    saved.isInstrument = true;
+    saved.insert.sendType = InsertConfig::Endpoint::MIDI;
+    saved.insert.sendDevice = "monologue SOUND";
+    saved.insert.returnType = InsertConfig::Endpoint::Audio;
+    saved.insert.returnDevice = "In 2";
+    saved.insert.midiChannel = 3;
+    saved.insert.manualAdjustMs = 4.5;
+    const int cutoff = insert_cc::addKnob(saved);
+    insert_cc::setKnobCc(saved, cutoff, 43);
+    saved.findParameterByIndex(cutoff)->currentValue = 36.0f;
+    REQUIRE(PresetManager::getInstance().saveDevicePreset(saved, "Korg/Monologue"));
+
+    auto fresh = internalDevice("insert");
+    fresh.name = "External Instrument";
+    fresh.isInstrument = true;
+    const auto trackId = tracks.createTrack("Synth", TrackType::Media);
+    const auto deviceId = tracks.addDeviceToTrack(trackId, fresh);
+    const auto path = ChainNodePath::topLevelDevice(trackId, deviceId);
+
+    DeviceInfo preset;
+    REQUIRE(PresetManager::getInstance().loadDevicePreset("External Instrument", "Korg/Monologue",
+                                                          preset));
+    REQUIRE(tracks.applyDevicePreset(path, preset));
+
+    const auto* live = tracks.getDeviceInChainByPath(path);
+    REQUIRE(live != nullptr);
+    CHECK(live->insert == saved.insert);
+    CHECK(live->parameters.size() == live->insert.ccSlots.size());
+    CHECK(live->presetName == "Korg/Monologue");
+    const auto* knob = live->findParameterByIndex(cutoff);
+    REQUIRE(knob != nullptr);
+    CHECK(knob->name == "CC 43");
+    CHECK(knob->maxValue == Catch::Approx(127.0f));
+    CHECK(knob->currentValue == Catch::Approx(36.0f));
+
+    REQUIRE(tracks.applyDevicePreset(path, fresh));
+    CHECK(tracks.getDeviceInChainByPath(path)->insert.ccSlots.empty());
+    CHECK(tracks.getDeviceInChainByPath(path)->parameters.empty());
+
+    tracks.clearAllTracks();
 }

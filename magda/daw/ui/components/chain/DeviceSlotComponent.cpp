@@ -1515,6 +1515,20 @@ void DeviceSlotComponent::deviceParameterObserved(const magda::ChainNodePath& de
         slot->setObservedValue(normalised);
 }
 
+void DeviceSlotComponent::devicePropertyChanged(const magda::ChainNodePath& devicePath) {
+    if (devicePath != nodePath_)
+        return;
+
+    // This also fires per tick of a gain drag, so only a changed insert reloads the slot (#3212).
+    const auto* live = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
+    if (live == nullptr || live->insert == device_.insert)
+        return;
+
+    auto device = *live;
+    device.currentParameterPage = device_.currentParameterPage;  // Only the slot's copy has it.
+    updateFromDevice(device);
+}
+
 void DeviceSlotComponent::deviceParameterChanged(const magda::ChainNodePath& devicePath,
                                                  int paramIndex, float newValue) {
     if (devicePath != nodePath_)

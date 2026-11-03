@@ -15,7 +15,9 @@
 #include "core/ClipManager.hpp"
 #include "core/Config.hpp"
 #include "core/ModulatorEngine.hpp"
+#include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
+#include "core/UndoManager.hpp"
 #include "ui/components/chain/DeviceSlotComponent.hpp"
 #include "ui/components/chain/RackComponent.hpp"
 #include "ui/components/chain/compiled/CompiledEqBandLayout.hpp"
@@ -32,6 +34,7 @@
 #include "ui/components/chain/slot/DevicePresetMenu.hpp"
 #include "ui/components/chain/slot/DeviceSlotContentLayout.hpp"
 #include "ui/components/chain/slot/DeviceSlotSelectionHandling.hpp"
+#include "ui/components/chain/slot/ExternalInsertLayout.hpp"
 #include "ui/components/common/MidiActivityLed.hpp"
 #include "ui/components/common/SegmentedChoice.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
@@ -369,6 +372,85 @@ int main() {
                           !knob.intersects(geometry.slope),
                       "an EQ knob left the band editor");
             }
+        }
+        {
+            // External Insert at the chain's 172 px body: its rows stand clear of each other, and
+            // the knobs fit in every control style (#3212).
+            const juce::Rectangle<int> body(0, 0, 574, 172);
+            const auto geometry = ExternalInsertGeometry::of(body);
+            check(geometry.routing.getBottom() < geometry.ccHeader.getY() &&
+                      geometry.ccHeader.getBottom() <= geometry.cells[0].getY() &&
+                      geometry.cells[0].getBottom() <= geometry.status.getY() &&
+                      body.contains(geometry.routing) && body.contains(geometry.status),
+                  "the External Insert's rows overlap or leave a 172 px body");
+            for (const auto style :
+                 {ParamControlStyle::Knobs, ParamControlStyle::Sliders, ParamControlStyle::Text})
+                check(geometry.cells[0].getHeight() >= ParamSlotComponent::minimumHeight(style),
+                      "an External Insert knob is under its style's minimum at 172 px");
+            check(body.contains(geometry.cells.back()),
+                  "the External Insert's knob row leaves the body");
+            check(ExternalInsertGeometry::pickerWidth(geometry.routing.getWidth(), true) >= 100,
+                  "the External Instrument's routing pickers are too narrow for a port name");
+        }
+        {
+            // An External Insert's slot follows its edits and undo, on the page it is showing
+            // (#3212).
+            DeviceInfo insertModel;
+            insertModel.name = "External FX";
+            insertModel.pluginId = "insert";
+            insertModel.format = PluginFormat::Internal;
+            insertModel.loadState = DeviceLoadState::Loaded;
+            const auto insertPath =
+                ChainNodePath::topLevelDevice(track, tracks.addDeviceToTrack(track, insertModel));
+            DeviceSlotComponent slot(*tracks.getDeviceInChainByPath(insertPath));
+            slot.setNodePath(insertPath);
+            slot.setSize(slot.getPreferredWidth(), 200);
+
+            std::function<int(juce::Component&)> shownKnobs = [&shownKnobs](juce::Component& node) {
+                int shown = dynamic_cast<ParamSlotComponent*>(&node) != nullptr && node.isVisible();
+                for (auto* child : node.getChildren())
+                    shown += shownKnobs(*child);
+                return shown;
+            };
+            std::function<juce::Button*(juce::Component&)> nextPage =
+                [&nextPage](juce::Component& node) -> juce::Button* {
+                for (auto* child : node.getChildren()) {
+                    if (child->getName() == "Next page" &&
+                        dynamic_cast<juce::ArrowButton*>(child) != nullptr)
+                        return static_cast<juce::Button*>(child);
+                    if (auto* found = nextPage(*child))
+                        return found;
+                }
+                return nullptr;
+            };
+            const auto edit = [&insertPath](std::function<void(DeviceInfo&)> change) {
+                UndoManager::getInstance().executeCommand(
+                    std::make_unique<EditInsertCommand>(insertPath, "Edit", std::move(change)));
+            };
+
+            check(shownKnobs(slot) == 0, "a new External Insert shows a knob");
+            edit([](DeviceInfo& device) { insert_cc::addKnob(device); });
+            check(shownKnobs(slot) == 1, "an added CC knob did not reach the slot");
+            UndoManager::getInstance().undo();
+            check(shownKnobs(slot) == 0, "an undone CC knob stayed in the slot");
+
+            edit([](DeviceInfo& device) {
+                for (int knob = 0; knob < insert_cc::kKnobsPerPage + 1; ++knob)
+                    insert_cc::addKnob(device);
+            });
+            check(shownKnobs(slot) == insert_cc::kKnobsPerPage,
+                  "a full page of knobs did not show");
+            auto* next = nextPage(slot);
+            check(next != nullptr && next->onClick != nullptr, "two pages of knobs have no arrow");
+            next->onClick();
+            check(shownKnobs(slot) == 1, "the arrow did not turn to the second page of knobs");
+            edit([](DeviceInfo& device) {
+                insert_cc::setKnobCc(device, device.insert.ccSlots.back().paramIndex, 74);
+            });
+            check(shownKnobs(slot) == 1, "editing a knob on the second page left that page");
+            UndoManager::getInstance().undo();
+            UndoManager::getInstance().undo();
+            check(shownKnobs(slot) == 0, "undoing every knob left one in the slot");
         }
         {
             // Multiband: whole-device knobs in a left column, band knobs above the faceplate.

@@ -808,3 +808,64 @@ TEST_CASE("Config - midiLearnDefaultScope raw getter/setter round-trip", "[midi-
     cfg.setMidiLearnDefaultScopeRaw(1);
     REQUIRE(static_cast<BindingScope>(cfg.getMidiLearnDefaultScopeRaw()) == BindingScope::Project);
 }
+
+// ============================================================================
+// Tests: bindCapture (External Insert CC knobs run their own learn session)
+// ============================================================================
+
+namespace {
+
+struct RecordingWriter : ControllerParamWriter {
+    explicit RecordingWriter(std::vector<std::pair<ControlTarget, float>>& out) : writes(out) {}
+    void write(const ResolveResult& resolved, float value) override {
+        writes.emplace_back(resolved.target, value);
+    }
+    std::vector<std::pair<ControlTarget, float>>& writes;
+};
+
+LearnCapture capturedCc(const juce::String& port, int number) {
+    LearnCapture capture;
+    capture.portName = port;
+    capture.msgType = BindingMsgType::CC;
+    capture.channel = 1;
+    capture.number = number;
+    return capture;
+}
+
+}  // namespace
+
+TEST_CASE("MidiLearnCoordinator - bindCapture lets the learned control move the target",
+          "[midi-learn][coordinator]") {
+    RouterLearnFixture fix;
+    std::vector<std::pair<ControlTarget, float>> writes;
+    ControllerRouter::getInstance().setParamWriter(std::make_unique<RecordingWriter>(writes));
+
+    const auto target = ControlTarget::pluginParam(ChainNodePath::topLevelDevice(1, 2), 5);
+    MidiLearnCoordinator::getInstance().bindCapture(target, capturedCc("monologue KBD/KNOB", 43));
+
+    auto& router = ControllerRouter::getInstance();
+    const auto move = juce::MidiMessage::controllerEvent(1, 43, 127);
+    router.injectMessageForTest("other-port", move, "Launchkey MK3");
+    REQUIRE(writes.empty());
+
+    router.injectMessageForTest("monologue-id", move, "monologue KBD/KNOB");
+    REQUIRE(writes.size() == 1);
+    CHECK(writes[0].first.devicePath == target.devicePath);
+    CHECK(writes[0].first.paramIndex == 5);
+    CHECK(writes[0].second == 1.0f);
+}
+
+TEST_CASE("MidiLearnCoordinator - bindCapture replaces the target's earlier control",
+          "[midi-learn][coordinator]") {
+    RouterLearnFixture fix;
+    const auto target = ControlTarget::pluginParam(ChainNodePath::topLevelDevice(1, 2), 5);
+
+    auto& coordinator = MidiLearnCoordinator::getInstance();
+    coordinator.bindCapture(target, capturedCc("first", 10));
+    coordinator.bindCapture(target, capturedCc("second", 20));
+
+    const auto bindings = BindingRegistry::getInstance().bindings(BindingScope::Project);
+    REQUIRE(bindings.size() == 1);
+    CHECK(bindings[0].source.portKey == "second");
+    CHECK(bindings[0].source.number == 20);
+}
