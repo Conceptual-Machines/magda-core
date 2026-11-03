@@ -141,7 +141,7 @@ class SessionView : public juce::Component,
     static constexpr int TRACK_SEPARATOR_WIDTH = 6;  // the gap between columns
     static constexpr int ROW_GAP = 6;
     static constexpr int STOP_ROW_HEIGHT = 28;
-    static constexpr int MIXER_STRIP_HEIGHT = 56;
+    static constexpr int MIXER_STRIP_HEIGHT = 68;
     static constexpr int RECORD_MONITOR_ROW_HEIGHT = 26;
     int dragStartTrackWidth_ = DEFAULT_CLIP_SLOT_WIDTH;
     static constexpr int ADD_SCENE_BUTTON_HEIGHT = CLIP_SLOT_HEIGHT;

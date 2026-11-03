@@ -35,7 +35,8 @@ namespace magda::daw::ui {
  * recording with its start, end and loop markers and the playhead, the zone's name, root and
  * load button in a strip over it, beside the slice as frame boxes; Pitch, Filter and Amp are
  * that module's envelope with draggable handles beside its tiles.
- * Expanded into the arrangement, it is the zone map over the waveform and the loop switch.
+ * Expanded into the arrangement, it is the zone map over the waveform and the loop switch; the
+ * Sample tab's own button lends the waveform out alone.
  *
  * With a list of zones (#3098) the name, root, markers and loop are the selected zone's and
  * edit it; with one zone they are the sampler's, the markers its parameters.
@@ -107,7 +108,7 @@ class SamplerUI : public juce::Component,
      * @brief Set the waveform thumbnail data for display
      */
     void setWaveformData(const juce::AudioBuffer<float>* buffer, double sampleRate,
-                         double sampleLengthSeconds);
+                         double sampleLengthSeconds, const juce::String& sourceFile = {});
 
     bool hasWaveform() const {
         return waveformPane_.hasAudio();
@@ -146,6 +147,15 @@ class SamplerUI : public juce::Component,
     int preferredWidth() const;
     /// The zone the playhead belongs to, or -1.
     std::function<int()> getPlaybackZone;
+
+    /// The waveform alone, what the Sample tab's expand button lends to the arrangement.
+    juce::Component& expandablePart() {
+        return waveformPane_;
+    }
+    /// The Sample tab's expand button was clicked for @p part.
+    std::function<void(juce::Component& part)> onExpandClicked;
+    /// A loan ended: true when it was the waveform, now back; false for the whole faceplate.
+    bool expandablePartReturned();
 
     void lookAndFeelChanged() override;
     void mouseDown(const juce::MouseEvent& e) override;
@@ -219,6 +229,8 @@ class SamplerUI : public juce::Component,
 
     // The waveform; the sliders stay the markers' source of truth.
     SamplerWaveformPane waveformPane_;
+    std::unique_ptr<magda::SvgButton> waveformExpandButton_;
+    bool waveformLent() const;
     /// The markers as the sliders hold them, the loop's while it is on.
     sdk::WaveformMarkers sliderMarkers() const;
     /// A marker the pane moved, out to its slider (and so to the parameter).

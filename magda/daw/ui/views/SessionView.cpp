@@ -969,11 +969,21 @@ void paintControlCard(juce::Graphics& g, juce::Rectangle<int> area) {
 
 constexpr int kStripPadding = 4;
 constexpr int kStripRow = 22;
+constexpr int kStripMeter = 8;
 constexpr int kStripGap = 4;
 
 }  // namespace
 
-// Track mixer strip under the stop row: gain and pan, then speaker, arm and monitor.
+/// A strip's output meter, left to right. Clicks go through to the strip.
+std::unique_ptr<LevelMeter> makeStripMeter(juce::Component& strip) {
+    auto meter = std::make_unique<LevelMeter>();
+    meter->setOrientation(LevelMeter::Orientation::Horizontal);
+    meter->setInterceptsMouseClicks(false, false);
+    strip.addAndMakeVisible(*meter);
+    return meter;
+}
+
+// Track mixer strip under the stop row: the meter, gain and pan, then speaker, arm and monitor.
 class SessionView::MiniChannelStrip : public juce::Component {
   public:
     MiniChannelStrip(TrackId trackId, const TrackInfo& track) : trackId_(trackId) {
@@ -1144,12 +1154,15 @@ class SessionView::MiniChannelStrip : public juce::Component {
     }
 
     void resized() override {
-        static_assert(MIXER_STRIP_HEIGHT == 2 * kStripPadding + 2 * kStripRow + kStripGap);
+        static_assert(MIXER_STRIP_HEIGHT ==
+                      2 * kStripPadding + kStripMeter + 2 * kStripRow + 2 * kStripGap);
         static_assert(RECORD_MONITOR_ROW_HEIGHT == kStripRow + kStripGap);
         auto bounds = getLocalBounds().withTrimmedBottom(GRID_PADDING).reduced(kStripPadding);
         if (!fullBar())
             bounds.removeFromLeft(5);
 
+        meter_->setBounds(bounds.removeFromTop(kStripMeter));
+        bounds.removeFromTop(kStripGap);
         const auto gainRow = bounds.removeFromTop(kStripRow);
         if (policy_.pan)
             layoutPair(gainRow, *gainLabel_, *panLabel_);
@@ -1171,6 +1184,10 @@ class SessionView::MiniChannelStrip : public juce::Component {
             fitStripIcon(*recordButton_, 10.0f, 10.0f);
             fitStripIcon(*monitorButton_, 16.0f, 5.5f);
         }
+    }
+
+    void setMeterLevels(float left, float right) {
+        meter_->setLevels(left, right);
     }
 
     void updateFromTrack(const TrackInfo& track) {
@@ -1252,6 +1269,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
 
     TrackId trackId_;
     juce::Colour trackColour_;
+    std::unique_ptr<LevelMeter> meter_ = makeStripMeter(*this);
     std::unique_ptr<DraggableValueLabel> gainLabel_;
     std::unique_ptr<DraggableValueLabel> panLabel_;
     std::unique_ptr<SvgButton> speakerButton_;
@@ -1312,6 +1330,12 @@ class SessionView::MiniMasterStrip : public juce::Component {
     void resized() override {
         auto bounds = getLocalBounds().reduced(kStripPadding);
         gainLabel_->setBounds(bounds.removeFromBottom(kStripRow));
+        bounds.removeFromBottom(kStripGap);
+        meter_->setBounds(bounds.removeFromBottom(kStripMeter));
+    }
+
+    void setMeterLevels(float left, float right) {
+        meter_->setLevels(left, right);
     }
 
     void updateVolume(float volume) {
@@ -1319,6 +1343,7 @@ class SessionView::MiniMasterStrip : public juce::Component {
     }
 
   private:
+    std::unique_ptr<LevelMeter> meter_ = makeStripMeter(*this);
     std::unique_ptr<DraggableValueLabel> gainLabel_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MiniMasterStrip)
@@ -3635,6 +3660,15 @@ void SessionView::timerCallback() {
         return;
 
     updateHeaderMidiActivity();
+
+    auto& meters = audioEngine_->meters();
+    for (auto& strip : trackMiniStrips_) {
+        MeterData data;
+        if (drainPeak(meters.session, strip->getTrackId(), data))
+            strip->setMeterLevels(data.peakL, data.peakR);
+    }
+    if (masterStrip_)
+        masterStrip_->setMeterLevels(meters.getMasterPeakL(), meters.getMasterPeakR());
 
     // Update blink state for queued clips — blink on the beat
     {

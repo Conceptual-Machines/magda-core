@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "custom_ui/SamplerTiles.hpp"
+#include "custom_ui/SequencerFaceplate.hpp"
 #include "devices/faust/effects/FilterEngines.hpp"
 #include "sampling/SamplerImport.hpp"
 #include "ui/components/chain/layout/NodeHeaderStyles.hpp"
@@ -530,6 +531,12 @@ SamplerUI::SamplerUI() {
             onLoadSampleRequested();
     };
     addAndMakeVisible(waveformPane_);
+    waveformExpandButton_ = sequencer_faceplate::makeExpandButton();
+    waveformExpandButton_->onClick = [this] {
+        if (onExpandClicked)
+            onExpandClicked(expandablePart());
+    };
+    addAndMakeVisible(*waveformExpandButton_);
     addChildComponent(envelopeView_);
     showView(0);
     lockLoopBoxes();
@@ -627,7 +634,7 @@ void SamplerUI::showSelectedZone() {
         shownAudio_ = zone.audio;
         if (zone.audio != nullptr)
             setWaveformData(&zone.audio->buffer, zone.audio->sourceRate,
-                            zone.audio->lengthSeconds());
+                            zone.audio->lengthSeconds(), zone.settings.source);
         else
             setWaveformData(nullptr, 0.0, 0.0);
     }
@@ -679,6 +686,7 @@ void SamplerUI::showView(int index) {
     for (auto* label : {&attackLabel_, &decayLabel_, &sustainLabel_, &releaseLabel_})
         label->setVisible(view_ != View::Sample);
     loopButton_->setVisible(view_ == View::Sample);
+    waveformExpandButton_->setVisible(view_ == View::Sample);
     resized();
     repaint();
 }
@@ -734,6 +742,20 @@ void SamplerUI::syncFrameBoxes() {
 SamplerUI::~SamplerUI() {
     stopTimer();
     filterTypeBox_.setLookAndFeel(nullptr);
+    magda::ExpandedFaceplate::getInstance().release(waveformPane_);
+}
+
+bool SamplerUI::waveformLent() const {
+    return magda::ExpandedFaceplate::getInstance().holds(waveformPane_);
+}
+
+bool SamplerUI::expandablePartReturned() {
+    if (waveformPane_.getParentComponent() == this)
+        return false;
+    addChildComponent(waveformPane_);
+    resized();
+    repaint();
+    return true;
 }
 
 void SamplerUI::setupLabel(juce::Label& label, const juce::String& text) {
@@ -868,7 +890,7 @@ void SamplerUI::updatePitchEnvelope(float attack, float decay, float sustain, fl
 }
 
 void SamplerUI::setWaveformData(const juce::AudioBuffer<float>* buffer, double sampleRate,
-                                double sampleLengthSeconds) {
+                                double sampleLengthSeconds, const juce::String& sourceFile) {
     if (sampleRate > 0.0)
         sampleRate_ = sampleRate;
 
@@ -890,7 +912,7 @@ void SamplerUI::setWaveformData(const juce::AudioBuffer<float>* buffer, double s
     if (endSlider_.getValue() < 0.001)
         endSlider_.setValue(sampleLengthSeconds, juce::dontSendNotification);
 
-    waveformPane_.setAudio(buffer, sampleLengthSeconds);
+    waveformPane_.setAudio(buffer, sampleLengthSeconds, sourceFile);
 
     if (!isTimerRunning())
         startTimerHz(30);
@@ -1147,6 +1169,14 @@ void SamplerUI::paint(juce::Graphics& g) {
             i == 1 && view_ != View::Sample ? ActiveTheme::DEVICE_BLUE : ActiveTheme::DEVICE_DIM));
         g.drawText(titles[i], sectionTitles_[i], juce::Justification::centredLeft, false);
     }
+
+    if (waveformLent() && !showsEnvelope()) {
+        g.setColour(ActiveTheme::getColour(ActiveTheme::DEVICE_DIM));
+        g.setFont(fonts.getUIFont(12.0f));
+        g.drawText("The waveform is in the arrangement",
+                   waveArea_.withTrimmedTop(sampleStrip_.getHeight()), juce::Justification::centred,
+                   false);
+    }
 }
 
 // The well lights up under a sample being dragged in, whichever view is showing.
@@ -1241,6 +1271,8 @@ void SamplerUI::resized() {
     viewChoice_.setBounds(viewRow.removeFromLeft(240).withSizeKeepingCentre(240, 20));
     viewRow.removeFromLeft(6);
     loopButton_->setBounds(viewRow.removeFromLeft(24).withSizeKeepingCentre(24, 24));
+    waveformExpandButton_->setBounds(viewRow.removeFromLeft(24).withSizeKeepingCentre(22, 18));
+    waveformExpandButton_->setToggleState(waveformLent(), juce::dontSendNotification);
     area.removeFromTop(4);
     waveArea_ = area;
     layoutSampleStrip();
@@ -1330,10 +1362,13 @@ void SamplerUI::resized() {
             break;
     }
 
-    // One plot in the well: the sample under its strip, or the tab's envelope.
-    waveformPane_.setBounds(waveArea_.withTrimmedTop(sampleStrip_.getHeight()));
+    // One plot in the well: the sample under its strip, or the tab's envelope. Out in the
+    // arrangement, the waveform is the host's to place.
+    if (!waveformLent()) {
+        waveformPane_.setBounds(waveArea_.withTrimmedTop(sampleStrip_.getHeight()));
+        waveformPane_.setVisible(!showsEnvelope());
+    }
     envelopeView_.setBounds(waveArea_);
-    waveformPane_.setVisible(!showsEnvelope());
     envelopeView_.setVisible(showsEnvelope());
 }
 

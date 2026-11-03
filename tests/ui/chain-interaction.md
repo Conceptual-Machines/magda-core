@@ -17,7 +17,8 @@ This standalone check uses the actual DeviceSlotComponent, RackComponent and
 PadDeviceSlot classes. It covers first/repeated selection, header/body clicks,
 programmatic selection, modifier clicks, collapsed selection, double-click collapse/expand,
 and preservation of open panels across selection changes. It checks that the
-panel buttons have bounds and are not obscured by other children.
+panel buttons have bounds and are not obscured by other children, and that the
+Sampler's waveform and whole faceplate expand into the arrangement and come back.
 
 The runner builds the app libraries and UI objects needed by the test, then links
 a separate test entry point. It does not link or launch MAGDA. Keep CI idle when

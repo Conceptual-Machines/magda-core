@@ -29,6 +29,7 @@
 #include "custom_ui/FaustMeterPanel.hpp"
 #include "custom_ui/FaustUI.hpp"
 #include "custom_ui/PolyStepSequencerUI.hpp"
+#include "custom_ui/SamplerUI.hpp"
 #include "custom_ui/StepSequencerUI.hpp"
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
 #include "drum_grid/DrumGridUI.hpp"
@@ -2579,6 +2580,8 @@ void DeviceSlotComponent::createCustomUI() {
         sequencer->onExpandClicked = expand;
     if (auto* sequencer = customUI_.getPolyStepSequencerUI())
         sequencer->onExpandClicked = expand;
+    if (auto* sampler = customUI_.getSamplerUI())
+        sampler->onExpandClicked = expand;
 
     applyMidiOnlyDeviceHeaderVisibility(traits_, device_, modButton_.get(), macroButton_.get());
 }

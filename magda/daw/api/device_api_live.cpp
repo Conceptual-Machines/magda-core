@@ -828,14 +828,16 @@ DeviceId DeviceApiLive::addDevice(const ChainNodePath& requestedPath, const juce
         return id;
     }
 
-    // Track-level addresses the main FX chain; anything else must be a chain.
+    // Track-level addresses the main FX chain and the post-fx section its flat
+    // list; anything else must be a chain.
     const auto type = parentPath.getType();
-    if (type != ChainNodeType::Track && type != ChainNodeType::Chain)
+    const bool isPostFxSection = parentPath.isPostFx() && parentPath.steps.size() == 1;
+    if (!isPostFxSection && type != ChainNodeType::Track && type != ChainNodeType::Chain)
         return INVALID_DEVICE_ID;
     if (type == ChainNodeType::Chain &&
         TrackManager::getInstance().getChainByPath(parentPath) == nullptr)
         return INVALID_DEVICE_ID;
-    if (type == ChainNodeType::Track &&
+    if ((type == ChainNodeType::Track || isPostFxSection) &&
         TrackManager::getInstance().getTrack(parentPath.trackId) == nullptr)
         return INVALID_DEVICE_ID;
 

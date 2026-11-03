@@ -3314,7 +3314,8 @@ HandlerResult devicesAdd(MagdaApi& api, const juce::var& input, const RequestCon
         parent = ChainNodePath::trackLevel(trackId);
     } else {
         return HandlerResult::fail(ErrorCode::ValidationFailed,
-                                   "provide trackId (main FX chain) or parentPath (a chain)");
+                                   "provide trackId (main FX chain) or parentPath (a chain or "
+                                   "the post-fx section)");
     }
 
     const auto id = api.devices().addDevice(parent, catalogId, readInt(input, "index", -1));
@@ -3322,8 +3323,9 @@ HandlerResult devicesAdd(MagdaApi& api, const juce::var& input, const RequestCon
         return HandlerResult::fail(ErrorCode::Conflict, "device could not be added");
 
     // The new device's address: a top-level id lives on the path root rather
-    // than as a step; a chain-hosted one extends the chain.
-    const auto devicePath = parent.getType() == ChainNodeType::Track
+    // than as a step; a chain-hosted or post-fx one extends its parent.
+    const auto devicePath = parent.isPostFx() ? ChainNodePath::postFxDevice(parent.trackId, id)
+                            : parent.getType() == ChainNodeType::Track
                                 ? ChainNodePath::topLevelDevice(parent.trackId, id)
                                 : parent.withDevice(id);
     auto* object = new juce::DynamicObject();

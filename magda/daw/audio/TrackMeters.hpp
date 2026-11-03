@@ -36,14 +36,14 @@ inline bool drainPeak(MeteringBuffer& ring, TrackId trackId, MeterData& peak) {
  * @brief Per-track level and MIDI-activity data, fed at frame rate by whichever
  * engine renders.
  *
- * The mixer, the arrangement and recording preview have independent rings: a
+ * The mixer, the arrangement, the session strips and recording preview have independent rings: a
  * read drains one, so two views sharing a ring would split the readings between
  * them, and a hidden view's timer still runs. Remote reads need
  * the latest value even after a long idle period, so they use atomics instead
  * of a ring that stops accepting writes when it fills.
  */
 struct TrackMeters {
-    MeteringBuffer mixer, arrangement, recording;
+    MeteringBuffer mixer, arrangement, session, recording;
     struct LatestLevel {
         std::atomic<float> peakL{0.0f}, peakR{0.0f};
         std::atomic<bool> clipped{false}, available{false};
