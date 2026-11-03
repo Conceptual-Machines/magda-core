@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Conceptual Machines
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+#include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <limits>
@@ -501,6 +502,31 @@ TEST_CASE("Replacement preserves a flat-section slot even for the same plugin ki
     REQUIRE(UndoManager::getInstance().undo());
     REQUIRE(tracks.getMixerAnalysisElements(trackId).size() == 1);
     CHECK(tracks.getMixerAnalysisElements(trackId)[0].device.id == oldId);
+}
+
+TEST_CASE("addDevice reaches the post-fx section as one undo step", "[device-api][add][post-fx]") {
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Post-fx add");
+    DeviceApiLive api;
+    const auto catalog = api.getCatalog();
+    const auto effect = std::ranges::find_if(catalog, [](const DeviceCatalogEntry& entry) {
+        return !entry.isInstrument && entry.catalogId == "magda_utility";
+    });
+    REQUIRE(effect != catalog.end());
+    const auto section = ChainNodePath::postFxSection(trackId);
+    UndoManager::getInstance().clearHistory();
+
+    const auto id = api.addDevice(section, effect->catalogId, -1);
+    REQUIRE(id != INVALID_DEVICE_ID);
+    REQUIRE(tracks.getPostFxChainElements(trackId).size() == 1);
+    CHECK(tracks.getPostFxChainElements(trackId)[0].device.id == id);
+    CHECK(api.getDevice(ChainNodePath::postFxDevice(trackId, id)) != nullptr);
+
+    REQUIRE(UndoManager::getInstance().undo());
+    CHECK(tracks.getPostFxChainElements(trackId).empty());
+
+    CHECK(api.addDevice(ChainNodePath::postFxSection(INVALID_TRACK_ID), effect->catalogId, -1) ==
+          INVALID_DEVICE_ID);
 }
 
 TEST_CASE("A track preset replaces only chain-owned state and remaps stable references",
