@@ -32,6 +32,14 @@ runtime Faust patch declares it in the source, with `declare magda_sidechain
 "audio";`, and the key is the inputs the process function takes past its
 outputs.
 
+A compiled Faust effect offers oversampling by overriding
+`devices::faust::CompiledEffect::maxOversamplingFactor()` (#2276). The base then
+runs the dsp at 2x or 4x the host rate inside a linear-phase halfband pair,
+reads the per-instance factor from the `oversampling` state property (absent is
+off), and reports the largest factor's latency at every factor, off included, so
+changing it never moves the device in time. The factor stops where the dsp rate
+would pass 192 kHz, the ceiling of Faust's `ma.SR`.
+
 ## Public surface
 
 A pack may use:

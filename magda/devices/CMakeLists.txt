@@ -12,6 +12,7 @@ endif()
 
 add_library(magda_portable_devices STATIC
     faust/CompiledEffect.cpp
+    faust/CompiledOversampler.cpp
     faust/FaustMetadataParser.cpp
     faust/effects/Bitcrusher.cpp
     faust/effects/Chorus.cpp
