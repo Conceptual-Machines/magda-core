@@ -665,3 +665,25 @@ TEST_CASE("A rack in a pad's chain compiles as the pad's layers", "[engine][plan
     CHECK(splits.front()->key.rackId == 7);
     CHECK(opsOfKind(plan, OpKind::Device).size() == 2);
 }
+
+TEST_CASE("A disabled pad channel takes its pad out of the grid's mix",
+          "[engine][plan][padrack][3101]") {
+    auto grid = makeTrack(1);
+    grid.chain.fxChainElements.push_back(
+        makeDrumGrid(10, {makePad(0, 36, 36, 60, 101), makePad(1, 38, 38, 60, 102)}));
+    grid.childIds = {2};
+    auto channel = makePadChannel(2, 1, 10, 0);
+    channel.enabled = false;
+
+    const auto plan = magda::engine::compileRenderPlan({grid, channel}, makeMaster(), {});
+
+    CHECK(plan.diagnostics.empty());
+    CHECK(magda::engine::validatePlan(plan).empty());
+    CHECK(findOp(plan, OpRole::TrackFader, 2) == nullptr);
+    CHECK(mainMixInputs(plan) == 1);
+
+    // The pad renders nothing, not just nothing that is heard.
+    const auto devices = opsOfKind(plan, OpKind::Device);
+    CHECK(std::ranges::none_of(devices, [](const auto* op) { return op->key.deviceId == 101; }));
+    CHECK(std::ranges::any_of(devices, [](const auto* op) { return op->key.deviceId == 102; }));
+}

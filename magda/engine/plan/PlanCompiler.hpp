@@ -64,6 +64,10 @@ struct CompileOptions {
     /// instrument, played from previews and keyboards that have to be heard now, and renders at
     /// the callback.
     bool aheadAudioOnly = false;
+
+    /// Tracks holding a device this build does not register (#3101), which render as a disabled
+    /// one does. The host names them: the device catalogs are not the compiler's to read.
+    std::set<TrackId> tracksMissingDevices;
 };
 
 /**

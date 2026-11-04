@@ -1104,7 +1104,7 @@ TrackChainContent::TrackChainContent()
         // Chain power is a real track-level state: it gates every insert-chain
         // device in the engine without touching their own bypassed flags, so
         // per-device bypass survives an off/on cycle (and it works on an empty
-        // chain too). Mirrored by the track inspector's enable switch.
+        // chain too).
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::TrackManager::getInstance().setChainEnabled(selectedTrackId_, active);
         }
@@ -1995,9 +1995,7 @@ void TrackChainContent::trackDevicesChanged(magda::TrackId trackId) {
     }
 
     if (trackId == selectedTrackId_) {
-        // Resync the chain power button — setChainEnabled notifies through
-        // this callback, so the inspector's enable switch and this button
-        // stay mirrored whichever one was pressed.
+        // Resync the chain power button — setChainEnabled notifies through this callback.
         const bool chainEnabled = magda::TrackManager::getInstance().isChainEnabled(trackId);
         chainBypassButton_->setToggleState(chainEnabled, juce::dontSendNotification);
         chainBypassButton_->setActive(chainEnabled);

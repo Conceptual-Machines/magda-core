@@ -123,6 +123,10 @@
     "remove_send": "Remove Send",
     "freeze": "Freeze Track",
     "unfreeze": "Unfreeze Track",
+    "enable": "Enable Track",
+    "disable": "Disable Track",
+    "disabled": "Disabled",
+    "enable_refused": "This track can't be enabled: {0}. Remove or replace it to enable the track.",
     "duplicate": "Duplicate Track",
     "duplicate_no_content": "Duplicate Track Without Content",
     "duplicate_content_only": "Duplicate Track Content Only",
@@ -130,6 +134,11 @@
     "show_io_routing": "Show I/O Routing",
     "hide_io_routing": "Hide I/O Routing",
     "remove_send_label": "Remove Send"
+  },
+  "devices": {
+    "unavailable": "{0} is not available in this build",
+    "unavailable_other": "{0} are not available in this build",
+    "unavailable_subtitle": "NOT IN THIS BUILD"
   },
   "panels": {
     "plugins": "Plugins",

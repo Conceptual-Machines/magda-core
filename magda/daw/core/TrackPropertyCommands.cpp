@@ -3,5 +3,20 @@
 
 #include "TrackPropertyCommands.hpp"
 
-// All command implementations are inline in the header (simple getter/setter pattern).
-// This .cpp ensures the translation unit exists for the build system.
+#include "StringTable.hpp"
+#include "TrackAvailability.hpp"
+
+namespace magda {
+
+juce::String switchTrackEnabled(TrackId trackId, bool enabled) {
+    auto& tracks = TrackManager::getInstance();
+    if (enabled)
+        if (const auto missing = tracks.getUnavailableDeviceNames(trackId); !missing.isEmpty())
+            return tr("tracks.enable_refused").replace("{0}", unavailableDevicesText(missing));
+
+    UndoManager::getInstance().executeCommand(
+        std::make_unique<SetTrackEnabledCommand>(trackId, enabled));
+    return {};
+}
+
+}  // namespace magda

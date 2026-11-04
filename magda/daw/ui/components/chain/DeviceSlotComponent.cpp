@@ -21,6 +21,7 @@
 #include "core/ParameterUtils.hpp"
 #include "core/PluginCapabilities.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/TrackAvailability.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
@@ -193,7 +194,20 @@ void DeviceSlotComponent::refreshMixKnobFromDevice(bool relayoutOnVisibilityChan
                                        [this]() { resized(); });
 }
 
-DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : device_(device) {
+namespace {
+
+/// The slot's own copy, marked when this build does not have the device (#3101).
+magda::DeviceInfo shownDevice(const magda::DeviceInfo& device) {
+    auto shown = device;
+    if (magda::isUnregisteredDevice(device))
+        shown.loadState = magda::DeviceLoadState::Unavailable;
+    return shown;
+}
+
+}  // namespace
+
+DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device)
+    : device_(shownDevice(device)) {
     // Register as TrackManager listener for parameter updates from plugin
     magda::TrackManager::getInstance().addListener(this);
 
@@ -1768,9 +1782,10 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     }
 
     // The body is shown or hidden by layout, which a same-size slot never reruns (#3150).
-    const bool loadStateChanged = device.loadState != device_.loadState;
+    auto shown = shownDevice(device);
+    const bool loadStateChanged = shown.loadState != device_.loadState;
 
-    device_ = device;
+    device_ = std::move(shown);
     adoptParameterList();
     refreshDeviceTraits(device);
     syncModMacroControlsAvailability();
@@ -1972,13 +1987,15 @@ void DeviceSlotComponent::paintOverChildren(juce::Graphics& g) {
 void DeviceSlotComponent::paintContent(juce::Graphics& g, juce::Rectangle<int> contentArea) {
     const auto stepRecording = getSequencerDeviceHeaderState(traits_, customUI_).stepRecording;
 
-    const DeviceSlotContentPaintState state{.traits = traits_,
-                                            .loadState = device_.loadState,
-                                            .collapsed = collapsed_,
-                                            .bypassed = isBypassed(),
-                                            .internalDevice = isInternalDevice(),
-                                            .hasCustomUI = customUI_.hasAnyUI(),
-                                            .stepRecording = stepRecording};
+    const DeviceSlotContentPaintState state{
+        .traits = traits_,
+        .loadState = device_.loadState,
+        .collapsed = collapsed_,
+        .bypassed = isBypassed(),
+        .internalDevice = isInternalDevice(),
+        .hasCustomUI = customUI_.hasAnyUI(),
+        .stepRecording = stepRecording,
+        .deviceName = device_.name.isNotEmpty() ? device_.name : device_.pluginId};
     const auto subtitle = deviceSlotSubtitle(state);
     setHeaderSubtitle(subtitle.text, subtitle.colour);
     paintDeviceSlotContent(g, contentArea, state, 0, paginationRowHeight(), 0);

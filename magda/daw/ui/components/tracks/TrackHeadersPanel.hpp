@@ -190,6 +190,8 @@ class TrackHeadersPanel : public juce::Component,
         bool muted = false;
         bool solo = false;
         bool frozen = false;
+        bool enabled = true;
+        juce::String unavailable;  // The missing devices holding it off (#3101)
         juce::Colour trackColour{0xFF5588AA};
         float volume = 0.8f;
         float pan = 0.0f;
@@ -358,6 +360,8 @@ class TrackHeadersPanel : public juce::Component,
     void setupTrackHeader(TrackHeader& header, int trackIndex);
     void setupTrackHeaderWithId(TrackHeader& header, int trackId);
     void rebuildSendLabels(TrackHeader& header, TrackId trackId);
+    void refreshAvailability(TrackHeader& header);
+    void paintDisabledHeaders(juce::Graphics& g);
     void paintGroupStrips(juce::Graphics& g, int trackIndex);
     /** @brief The last row inside the group at @p groupRow, or that row when it shows none. */
     int lastRowOfGroup(int groupRow) const;

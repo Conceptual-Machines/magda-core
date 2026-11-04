@@ -30,6 +30,7 @@
 #include "core/SelectionManager.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
+#include "core/TrackAvailability.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/TrackShade.hpp"
@@ -430,6 +431,14 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncM
                                       : track.name,
                             juce::dontSendNotification);
     }
+
+    auto& tracks = TrackManager::getInstance();
+    if (const bool disabled = !tracks.isTrackEnabled(track.id); disabled != trackDisabled_) {
+        trackDisabled_ = disabled;
+        repaint();
+    }
+    if (trackLabel)
+        trackLabel->setTooltip(unavailableDevicesText(tracks.getUnavailableDeviceNames(track.id)));
     if (volumeSlider && !volumeSlider->isBeingDragged()) {
         float db = gainToDb(track.volume);
         float faderPos = dbToMeterPos(db);
@@ -1282,6 +1291,12 @@ void MixerView::ChannelStrip::paintOverChildren(juce::Graphics& g) {
     // chain is gated (the fader and mute stay live).
     if (!isMaster_ && !TrackManager::getInstance().isChainEnabled(trackId_)) {
         g.setColour(juce::Colours::black.withAlpha(0.35f));
+        g.fillRect(getLocalBounds());
+    }
+
+    // A disabled track renders nothing; the label's tooltip names a missing device (#3101).
+    if (trackDisabled_) {
+        g.setColour(juce::Colours::black.withAlpha(0.45f));
         g.fillRect(getLocalBounds());
     }
 

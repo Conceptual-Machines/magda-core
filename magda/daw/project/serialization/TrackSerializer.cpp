@@ -143,6 +143,7 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
     obj->setProperty("recordArmed", track.recordArmed);
     obj->setProperty("inputMonitor", static_cast<int>(track.inputMonitor));
     obj->setProperty("frozen", track.frozen);
+    obj->setProperty("enabled", track.enabled);
     obj->setProperty("playbackMode", static_cast<int>(track.playbackMode));
     if (track.mixerChannelWidth > 0)
         obj->setProperty("mixerChannelWidth", track.mixerChannelWidth);
@@ -301,6 +302,8 @@ bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& o
     if (obj->hasProperty("frozen")) {
         outTrack.frozen = static_cast<bool>(obj->getProperty("frozen"));
     }
+    if (obj->hasProperty("enabled"))
+        outTrack.enabled = static_cast<bool>(obj->getProperty("enabled"));
     if (obj->hasProperty("playbackMode")) {
         outTrack.playbackMode =
             static_cast<TrackPlaybackMode>(static_cast<int>(obj->getProperty("playbackMode")));
