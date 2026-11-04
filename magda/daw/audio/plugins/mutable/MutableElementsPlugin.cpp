@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <cstring>
 
+#include "plugins/mutable/MutableRateHarness.hpp"
+
 // Upstream Mutable Instruments DSP (third_party/eurorack, magda::mutable).
 // Compiled with -DTEST (set on the magda_mutable target) so stmlib uses its
 // portable code paths. Walled behind the pimpl so this is the only TU in the
@@ -20,15 +22,16 @@ namespace magda::daw::audio {
 namespace {
 
 constexpr int kBlock = static_cast<int>(elements::kMaxBlockSize);  // 16
-const float kInternalRate = elements::kSampleRate;                 // 32 kHz (runtime const)
+constexpr double kInternalRate = MutableElementsPlugin::kNativeRate;
 
-// 4-point, 3rd-order Hermite (Catmull-Rom) interpolation between x[1] and x[2].
-inline float cubic(const float* x, float t) {
-    const float a = -0.5f * x[0] + 1.5f * x[1] - 1.5f * x[2] + 0.5f * x[3];
-    const float b = x[0] - 2.5f * x[1] + 2.0f * x[2] - 0.5f * x[3];
-    const float c = -0.5f * x[0] + 0.5f * x[2];
-    const float d = x[1];
-    return ((a * t + b) * t + c) * t + d;
+/** @brief @p y, measured at @p x, read at @p at: flat past either end. */
+template <size_t N> double piecewise(const float (&x)[N], const double (&y)[N], float at) {
+    if (at <= x[0])
+        return y[0];
+    for (size_t i = 1; i < N; ++i)
+        if (at <= x[i])
+            return y[i - 1] + (at - x[i - 1]) / (x[i] - x[i - 1]) * (y[i] - y[i - 1]);
+    return y[N - 1];
 }
 
 // Parameter descriptors, in ParamIndex order.
@@ -110,10 +113,10 @@ sdk::ParameterDescriptor slotInfo(int index) {
 }  // namespace
 
 //==============================================================================
-// Impl: the Mutable DSP voice + a streaming 32 kHz -> host resampler + the
-// monophonic MIDI state. Lives entirely on the audio thread once initialised.
+/** @brief The Mutable DSP voice, its rate crossing and the monophonic MIDI state. */
 struct MutableElementsPlugin::Impl {
     Impl() {
+        jassert(static_cast<double>(elements::kSampleRate) == kInternalRate);
         std::memset(silence_, 0, sizeof(silence_));
         // The upstream DSP objects assume zero-initialised BSS (they're statics
         // on the embedded target) and Part::Init() doesn't reset every byte of
@@ -130,16 +133,16 @@ struct MutableElementsPlugin::Impl {
     }
 
     void prepare(double hostRate) {
-        ratio_ = kInternalRate / hostRate;
+        harness_.prepare(hostRate);
         resetVoice();
     }
 
+    int latencySamples() const {
+        return harness_.latencySamples();
+    }
+
     void resetVoice() {
-        primed_ = false;
-        frac_ = 0.0;
-        chunkPos_ = kBlock;
-        std::memset(xL_, 0, sizeof(xL_));
-        std::memset(xR_, 0, sizeof(xR_));
+        harness_.reset();
         heldCount_ = 0;
         gate_ = false;
         strength_ = 0.8f;
@@ -189,59 +192,20 @@ struct MutableElementsPlugin::Impl {
         perf_.modulation = 0.0f;
     }
 
-    // Render n host-rate samples into outL/outR (outR may be null for mono).
+    /** @brief Render @p n host-rate samples, @p outR null for mono. */
     void generate(float* outL, float* outR, int n) {
-        if (!primed_) {
-            for (int j = 0; j < 4; ++j)
-                nextSource(xL_[j], xR_[j]);
-            frac_ = 0.0;
-            primed_ = true;
-        }
-        for (int i = 0; i < n; ++i) {
-            const auto t = static_cast<float>(frac_);
-            outL[i] = cubic(xL_, t);
-            if (outR != nullptr)
-                outR[i] = cubic(xR_, t);
-            frac_ += ratio_;
-            while (frac_ >= 1.0) {
-                frac_ -= 1.0;
-                xL_[0] = xL_[1];
-                xL_[1] = xL_[2];
-                xL_[2] = xL_[3];
-                xR_[0] = xR_[1];
-                xR_[1] = xR_[2];
-                xR_[2] = xR_[3];
-                nextSource(xL_[3], xR_[3]);
-            }
-        }
+        harness_.render(outL, outR, n, [this](float* l, float* r, int frames) {
+            part_.Process(perf_, silence_, silence_, l, r, static_cast<size_t>(frames));
+        });
     }
 
   private:
-    // One 32 kHz stereo sample; refills a 16-sample DSP block as needed.
-    inline void nextSource(float& l, float& r) {
-        if (chunkPos_ >= kBlock) {
-            part_.Process(perf_, silence_, silence_, main_, aux_, static_cast<size_t>(kBlock));
-            chunkPos_ = 0;
-        }
-        l = main_[chunkPos_];
-        r = aux_[chunkPos_];
-        ++chunkPos_;
-    }
-
     elements::Part part_;
     elements::PerformanceState perf_{};
     uint16_t reverbBuffer_[32768];
 
     float silence_[kBlock];
-    float main_[kBlock];
-    float aux_[kBlock];
-    int chunkPos_ = kBlock;
-
-    double ratio_ = kInternalRate / 44100.0;
-    double frac_ = 0.0;
-    float xL_[4]{};
-    float xR_[4]{};
-    bool primed_ = false;
+    MutableRateHarness harness_{kInternalRate, kBlock, MutableRateHarness::Role::Instrument};
 
     std::array<uint8_t, 16> held_{};
     int heldCount_ = 0;
@@ -274,10 +238,43 @@ float MutableElementsPlugin::parameterValue(int index) const {
     return values_[static_cast<size_t>(index)];
 }
 
+double MutableElementsPlugin::tailSecondsFor(float damping, float brightness, float space,
+                                             float levelDb) {
+    // Release to the last sample above -60 dBFS, worst of notes 24 to 108, +25% headroom, which
+    // also covers geometry, position and the exciters (within 8%). The resonator in the space mix
+    // at 0.3, its loudest; brightness 1 rings up to 5x longer than 0.5, and less than 0.5 rings
+    // shorter.
+    constexpr float kDamping[] = {0.0f, 0.5f, 0.6f, 0.7f, 0.8f, 0.85f, 0.9f, 0.95f, 1.0f};
+    constexpr double kDull[] = {0.4, 0.4, 1.2, 2.8, 6.1, 8.9, 12.9, 18.9, 29.4};
+    constexpr double kBright[] = {0.4, 2.9, 6.3, 13.6, 28.7, 41.8, 60.0, 60.0, 60.0};
+
+    // The reverb on its own, at damping 0: it only engages past space 0.6.
+    constexpr float kSpace[] = {0.6f, 0.65f, 0.7f, 0.8f, 0.9f, 1.0f};
+    constexpr double kReverb[] = {0.0, 0.2, 0.8, 1.6, 3.5, 8.1};
+
+    const double dull = piecewise(kDamping, kDull, damping);
+    const double bright = piecewise(kDamping, kBright, damping);
+    // Convex in brightness, measured at 0.62, 0.75 and 0.87, so the line over-declares.
+    double seconds = dull + juce::jlimit(0.0f, 1.0f, 2.0f * brightness - 1.0f) * (bright - dull);
+
+    // Summed, because the reverb rings on what the resonator hands it.
+    seconds += piecewise(kSpace, kReverb, space);
+
+    // Gain lifts the decay over the -60 dBFS line: +12 dB measured up to 1.34x.
+    seconds *= 1.0 + 0.03 * std::max(0.0f, levelDb);
+
+    return juce::jlimit(0.25, kMaxTailSeconds, seconds);
+}
+
 void MutableElementsPlugin::setParameterValue(int index, float value) {
     if (index < 0 || index >= kNumParams)
         return;
     values_[static_cast<size_t>(index)] = juce::jlimit(0.0f, 1.0f, value);
+
+    if (index == kDamping || index == kBrightness || index == kSpace || index == kLevel)
+        tailSeconds_.store(tailSecondsFor(displayValue(kDamping), displayValue(kBrightness),
+                                          displayValue(kSpace), displayValue(kLevel)),
+                           std::memory_order_relaxed);
 }
 
 float MutableElementsPlugin::displayValue(int index) const {
@@ -293,6 +290,10 @@ void MutableElementsPlugin::prepare(const DevicePrepareContext& context) {
 
 void MutableElementsPlugin::reset() {
     impl_->resetVoice();
+}
+
+int MutableElementsPlugin::latencySamples() const {
+    return impl_->latencySamples();
 }
 
 void MutableElementsPlugin::process(DeviceProcessContext& context) {

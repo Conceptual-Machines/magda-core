@@ -22,9 +22,9 @@
 // them per second and all of it speeds up together, which sounds like a
 // different patch rather than like a bug (#2365).
 //
-// The latency: the output lags the input by the grain block plus the resampler
-// windows, and the dry path lags with it, because Clouds mixes dry in itself. A
-// host can only compensate for what the device declares.
+// The latency: the output lags the input by the grain block plus the rate
+// crossing's kernels, and the dry path lags with it, because Clouds mixes dry in
+// itself. A host can only compensate for what the device declares.
 
 namespace {
 
@@ -181,7 +181,7 @@ void makeDryPath(CloudsRig& rig) {
 
 void warmUp(CloudsRig& rig, double rate) {
     // The DSP holds its output at zero until it has cleared its buffers, and
-    // the resampler rings need their window filled.
+    // the resampler needs its window filled.
     juce::AudioBuffer<float> warmup(2, secondsToSamples(0.2, rate));
     warmup.clear();
     rig.render(warmup);
@@ -201,7 +201,7 @@ double spurEnergy(double rate, double inHz, double probeHz) {
 }
 
 /// Bulk delay through the device in samples, by correlating the output against
-/// the input. Not an energy centroid: the band-limiting filters ring, and a
+/// the input. Not an energy centroid: the band-limiting kernel rings, and a
 /// centroid counts that ringing as delay.
 int bulkDelaySamples(double rate, int blockSize) {
     CloudsRig rig(rate, blockSize);
@@ -308,17 +308,13 @@ TEST_CASE("Nimbus declares the priming delay it imposes on the dry path",
     // Every rate the application uses, the 22.05 kHz analysis render included,
     // and block sizes either side of the internal chunk: the delay is a
     // property of the plumbing, not of how the host slices its buffer.
-    //
-    // Checked in seconds, the unit the declaration is in.
     for (double rate : {22050.0, 32000.0, 44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0}) {
-        const double declared = MutableCloudsPlugin::kLatencySeconds * rate;
         for (int blockSize : {16, 128, 512, 2048}) {
+            const int declared = CloudsRig(rate, blockSize).device.latencySamples();
             const int measured = bulkDelaySamples(rate, blockSize);
-            const double errorSeconds = (measured - declared) / rate;
             INFO("rate " << rate << " block " << blockSize << ": declared " << declared
-                         << " samples, measured " << measured << ", out by " << errorSeconds * 1.0e6
-                         << " us");
-            CHECK(std::abs(errorSeconds) <= MutableCloudsPlugin::kLatencySpreadSeconds);
+                         << " samples, measured " << measured);
+            CHECK(std::abs(measured - declared) <= 1);
         }
     }
 }
@@ -335,34 +331,35 @@ TEST_CASE("Nimbus band-limits both crossings of its 32 kHz rate", "[nimbus][clou
 
     SECTION("what folds coming down to 32 kHz") {
         // Undertaken, an 18 kHz tone arrives at 14 kHz louder than it left, and
-        // 20 kHz lands at 12 kHz only 5 dB below a passband reference.
+        // 20 kHz lands at 12 kHz only 5 dB below a passband reference. The
+        // Butterworth took them to 40 and 70 dB, the kernel to 77 and 86 (#2409).
         const double fold18 = belowReference(spurEnergy(rate, 18000.0, 14000.0));
         const double fold20 = belowReference(spurEnergy(rate, 20000.0, 12000.0));
         INFO("18k->14k " << fold18 << " dB down, 20k->12k " << fold20 << " dB down");
-        CHECK(fold18 > 30.0);
-        CHECK(fold20 > 50.0);
+        CHECK(fold18 > 70.0);
+        CHECK(fold20 > 80.0);
     }
 
     SECTION("what images going back up") {
         // The cubic alone leaves a 10 kHz tone's image 17 dB down.
         const double image = belowReference(spurEnergy(rate, 10000.0, 22000.0));
         INFO("10k image at 22k, " << image << " dB down");
-        CHECK(image > 60.0);
+        CHECK(image > 80.0);
     }
 
     SECTION("and the passband survives it") {
-        // The rolloff below the corner is the cubic interpolators', which the
-        // filters are not allowed to add meaningfully to.
-        for (double hz : {1000.0, 5000.0, 10000.0}) {
+        // The cubic and Butterworth cost 1.5 dB at 10 kHz; the kernel is flat
+        // to 14.6 kHz within 0.1 dB.
+        for (double hz : {1000.0, 5000.0, 10000.0, 14000.0}) {
             const double loss = belowReference(spurEnergy(rate, hz, hz));
             INFO(hz << " Hz down " << loss << " dB");
-            CHECK(loss < 2.0);
+            CHECK(loss < 0.1);
         }
     }
 }
 
 TEST_CASE("Nimbus takes a host buffer larger than its own ring", "[nimbus][clouds][resampler]") {
-    // Pushing a whole call before draining any of it made StereoRing::kCap a
+    // Pushing a whole call before draining any of it made the ring's capacity a
     // limit on the host's buffer: at 8192 it overran and dropped input
     // continuously, which is a render that quietly loses level (#2365 review).
     constexpr double rate = 48000.0;
@@ -456,7 +453,7 @@ TEST_CASE("Nimbus renders the same whatever the callback partition",
           "[nimbus][clouds][resampler]") {
     // The dry path in looping delay is the plumbing with nothing random in it,
     // so the same input has one right answer. Callback boundaries decide when
-    // the rings are pushed and drained, and must not decide what comes out.
+    // the resampler is pushed and drained, and must not decide what comes out.
     constexpr double rate = 48000.0;
     const auto input = steadyTone(rate, 440.0, 0.3);
 
@@ -498,7 +495,7 @@ TEST_CASE("Nimbus renders the same whatever the callback partition",
 
 TEST_CASE("Nimbus survives being prepared again at a different rate",
           "[nimbus][clouds][resampler]") {
-    // The filters are designed per rate and the rings hold the old rate's
+    // The kernel is designed per rate and the history holds the old rate's
     // samples, so a re-prepare has to reset both. Same instance throughout.
     MutableCloudsPlugin device;
 

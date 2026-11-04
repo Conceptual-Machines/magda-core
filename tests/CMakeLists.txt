@@ -104,6 +104,8 @@ set(TEST_SOURCES
     devices/test_known_plugin_list_duplicates.cpp
     devices/test_device_parameter_pagination.cpp
     devices/test_mutable_clouds.cpp
+    devices/test_mutable_instruments.cpp
+    devices/test_mutable_rate_harness.cpp
     devices/test_mutable_rings_chord.cpp
     devices/test_arpeggiator_event_time.cpp
     devices/test_arpeggiator_input.cpp

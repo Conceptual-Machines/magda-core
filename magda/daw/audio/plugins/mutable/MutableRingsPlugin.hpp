@@ -4,6 +4,8 @@
 #pragma once
 
 #include <array>
+#include <atomic>
+#include <cmath>
 #include <memory>
 
 #include "core/ParameterUtils.hpp"
@@ -18,8 +20,8 @@ namespace magda::daw::audio {
  * A resonator: switchable modal / sympathetic-string / inharmonic-string / FM
  * voice, with internal polyphony (Rings rotates voices on each strum, so held
  * notes ring on while new ones are played). The DSP is the unmodified upstream
- * code (third_party/eurorack, magda::mutable), run at its native 48 kHz and
- * resampled to the host rate.
+ * code (third_party/eurorack, magda::mutable), run at its native 48 kHz inside a
+ * MutableRateHarness.
  *
  * Driven from MIDI via the internal exciter: each note-on sets the pitch and
  * fires a one-block strum. There is no note-off gate - resonators decay
@@ -68,10 +70,25 @@ class MutableRingsPlugin : public MagdaDevice {
         };
     }
 
-    /// A long resonator and reverb tail.
+    /// The rate the DSP is tuned for, where the harness passes it through.
+    static constexpr double kNativeRate = 48000.0;
+
+    /// Past this the resonator sustains rather than decays: the strings go infinite from damping
+    /// 0.95, and the bright modal bank is still sounding after 62 s at 0.85.
+    static constexpr double kMaxTailSeconds = 60.0;
+
+    /// Off model, damping, brightness and level, not a constant: the ring runs from 20 ms to past
+    /// 50 s, and the tail is read per render.
     std::int64_t tailSamples() const override {
-        return static_cast<std::int64_t>(std::ceil(4.0 * sampleRate_));
+        return static_cast<std::int64_t>(
+            std::ceil(tailSeconds_.load(std::memory_order_relaxed) * sampleRate_));
     }
+
+    /** @brief Seconds from a strum to its last sample above -60 dBFS. */
+    static double tailSecondsFor(int model, float damping, float brightness, float levelDb);
+
+    /// The rate crossing's lookahead, placed at reset (#2409).
+    int latencySamples() const override;
 
     void prepare(const DevicePrepareContext& context) override;
     void reset() override;
@@ -97,6 +114,9 @@ class MutableRingsPlugin : public MagdaDevice {
     std::array<ParameterUtils::ParameterDomain, kNumParams> domains_{};
 
     double sampleRate_ = 44100.0;
+
+    /// setParameterValue writes it, tailSamples() reads it off the message thread.
+    std::atomic<double> tailSeconds_{tailSecondsFor(0, 0.5f, 0.5f, 0.0f)};
 
     /// Rendered here, then added into the host buffer (#2370): the DSP writes
     /// straight into these pointers, so it can't itself sum onto whatever the

@@ -4,6 +4,8 @@
 #pragma once
 
 #include <array>
+#include <atomic>
+#include <cmath>
 #include <memory>
 
 #include "core/ParameterUtils.hpp"
@@ -18,7 +20,7 @@ namespace magda::daw::audio {
  * A modal-synthesis voice: an exciter (bow / blow / strike) drives a
  * modal + string resonator, followed by a stereo space (reverb). The DSP is
  * the unmodified upstream code (third_party/eurorack, magda::mutable), run at
- * its native 32 kHz and resampled to the host rate.
+ * its native 32 kHz inside a MutableRateHarness.
  *
  * Monophonic, like the hardware (one heavy modal bank per voice). MIDI note ->
  * resonator pitch + gate; the internal exciters generate the excitation, so it
@@ -78,10 +80,25 @@ class MutableElementsPlugin : public MagdaDevice {
         };
     }
 
-    /// The space tail rings out well past note-off.
+    /// The rate the DSP is tuned for, where the harness passes it through.
+    static constexpr double kNativeRate = 32000.0;
+
+    /// The most any setting declares: bright and undamped, a note is still above -60 dBFS after
+    /// 62 s.
+    static constexpr double kMaxTailSeconds = 60.0;
+
+    /// Off damping, brightness, space and level, not a constant: the ring runs 0.4 s to past 60 s,
+    /// and the tail is read per render.
     std::int64_t tailSamples() const override {
-        return static_cast<std::int64_t>(std::ceil(3.0 * sampleRate_));
+        return static_cast<std::int64_t>(
+            std::ceil(tailSeconds_.load(std::memory_order_relaxed) * sampleRate_));
     }
+
+    /** @brief Seconds from a note's release to its last sample above -60 dBFS. */
+    static double tailSecondsFor(float damping, float brightness, float space, float levelDb);
+
+    /// The rate crossing's lookahead, placed at reset (#2409).
+    int latencySamples() const override;
 
     void prepare(const DevicePrepareContext& context) override;
     void reset() override;
@@ -110,6 +127,9 @@ class MutableElementsPlugin : public MagdaDevice {
     std::array<ParameterUtils::ParameterDomain, kNumParams> domains_{};
 
     double sampleRate_ = 44100.0;
+
+    /// setParameterValue writes it, tailSamples() reads it off the message thread.
+    std::atomic<double> tailSeconds_{tailSecondsFor(0.7f, 0.5f, 0.3f, 0.0f)};
 
     /// Rendered here, then added into the host buffer (#2370): the DSP writes
     /// straight into these pointers, so it can't itself sum onto whatever the

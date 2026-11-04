@@ -391,6 +391,8 @@ set(_magda_neutral_base_device_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableCloudsPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableElementsPlugin.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableElementsPlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableRateHarness.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableRateHarness.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableRingsPlugin.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableRingsPlugin.hpp"
 )
