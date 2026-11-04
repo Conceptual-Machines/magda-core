@@ -13,6 +13,8 @@
 #include <string>
 #include <vector>
 
+#include "devices/faust/CompiledOversampler.hpp"
+
 // Forward-declared through its own base so this header does not pull in the Faust SDK.
 class dsp;
 
@@ -41,7 +43,8 @@ struct SlotInfo {
  * It harvests every engine's dsp for [idx:N] slots, menus, gates and the project-tempo role, owns
  * the normalized slot values, writes every engine's zones each block, and runs the active engine
  * over the block. A concrete device supplies its dsp factory, slot table, id and names, and calls
- * initEffect() from its constructor.
+ * initEffect() from its constructor. One that offers oversampling runs its dsp at 2x or 4x inside
+ * a halfband pair, per instance, inited at the oversampled rate (#2276).
  */
 class CompiledEffect : public sdk::Device {
   public:
@@ -59,6 +62,35 @@ class CompiledEffect : public sdk::Device {
     sdk::DeviceProperties properties() const override;
     int latencySamples() const override;
     std::int64_t tailSamples() const override;
+
+    /** @brief Reads the oversampling factor. A device that overrides this calls it. */
+    sdk::RestoreResult restoreState(const sdk::StateNode& state) override;
+
+    /**
+     * @brief The largest oversampling factor the device offers: 1 (none), 2 or 4.
+     *
+     * A device that offers one reports its latency at every factor, Off included, so a change
+     * never moves the device in time.
+     */
+    virtual int maxOversamplingFactor() const {
+        return 1;
+    }
+
+    /**
+     * @brief Control. Ask for the dsp to run at @p factor times the host rate, and tell the host.
+     *
+     * The audio thread fades out, re-inits the dsp at the new rate (which clears its state) and
+     * fades back in.
+     */
+    void setOversamplingFactor(int factor);
+    /** @brief The factor last asked for, as state stores it. */
+    int oversamplingFactor() const {
+        return requestedFactor_.load(std::memory_order_relaxed);
+    }
+    /** @brief The factor the dsp runs at, which Faust's 192 kHz ceiling can hold lower. */
+    int runningOversamplingFactor() const {
+        return runningFactor_.load(std::memory_order_relaxed);
+    }
 
     int parameterCount() const override {
         return hostSlotCount();
@@ -225,11 +257,25 @@ class CompiledEffect : public sdk::Device {
         int numOutputs = 0;
     };
 
-    void createEngines(int sampleRate);
+    enum class FactorFade { None, Out, In };
+
+    /** @brief Engines inited at @p factor times @p sampleRate, which stays the device's rate. */
+    void createEngines(int sampleRate, int factor);
     void bindSlots();
     void applyHarvestedGates();
     void buildHostParameters();
     void writeZones(sdk::ProcessContext& context);
+
+    /** @brief @p requested, within what the device offers and Faust runs at @p sampleRate. */
+    int runnableFactor(int requested, int sampleRate) const;
+    void prepareOversampling(int sampleRate, int factor, int maxInputs, int maxOutputs,
+                             int maxBlockSize);
+    /** @brief Audio thread, block start: fade toward a new factor, switching at silence. */
+    void advanceFactorChange();
+    void switchFactor(int factor);
+    void computeOversampled(EngineState& engine, int numSamples, int factor);
+    void alignToReportedLatency(sdk::ProcessContext& context, int numOutputs, int factor);
+    void applyFactorFade(sdk::ProcessContext& context, int channels);
     /// The first engine that declares @p idx: engines of one device agree on a shared control.
     const HarvestedControl* harvestedForIdx(int idx) const;
 
@@ -251,6 +297,20 @@ class CompiledEffect : public sdk::Device {
     void ensureScratch(int inputs, int outputs, int frames);
     std::vector<float*> inPtrs_;
     std::vector<float*> outPtrs_;
+
+    CompiledOversampler oversampler_;
+    LatencyPad latencyPad_;
+    std::vector<const float*> chunkInPtrs_;
+    std::vector<float*> chunkOutPtrs_;
+    std::atomic<int> requestedFactor_{1};
+    std::atomic<int> runningFactor_{1};
+    /// The largest runnable factor's round trip, in base-rate samples; 0 when there is none.
+    std::atomic<int> reportedLatencySamples_{0};
+    int maxEngineOutputs_ = 0;
+    /// Audio thread only, from here down.
+    FactorFade fade_ = FactorFade::None;
+    float fadeGain_ = 1.0f;
+    int fadeLength_ = 1;
 };
 
 }  // namespace magda::devices::faust

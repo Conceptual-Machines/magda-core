@@ -644,6 +644,8 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES dsp/test_filter_spectrum_taps.cpp)
     list(APPEND TEST_SOURCES dsp/test_multiband_upward.cpp)
     list(APPEND TEST_SOURCES dsp/test_eq_slopes.cpp)
+    # The shared oversampling wrapper for compiled effects (#2276)
+    list(APPEND TEST_SOURCES dsp/test_compiled_oversampling.cpp)
     list(APPEND TEST_SOURCES ui/test_magda_alert_window.cpp)
     list(APPEND TEST_SOURCES devices/test_mutable_add_not_replace.cpp)
     list(APPEND TEST_SOURCES devices/test_sampler_relocate.cpp)
