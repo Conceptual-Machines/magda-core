@@ -39,14 +39,6 @@ class SplashScreen::ContentComponent : public juce::Component {
                                                     ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
         }
 
-        // Load JUCE logo
-        juceLogo_ = juce::Drawable::createFromSVGString(
-            juce::String::fromUTF8(BinaryData::fadlogojuce_svg, BinaryData::fadlogojuce_svgSize));
-        if (juceLogo_) {
-            juceLogo_->replaceColour(juce::Colour(0xFF000000),
-                                     ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
-        }
-
         // Load Faust wordmark logo (same SVG used in the Faust device header)
         faustLogo_ = juce::Drawable::createFromSVGString(juce::String::fromUTF8(
             BinaryData::fausttextlogo_svg, BinaryData::fausttextlogo_svgSize));
@@ -104,9 +96,7 @@ class SplashScreen::ContentComponent : public juce::Component {
         auto creditsArea = bounds.reduced(10, 0);
         auto font = fm.getUIFont(10.0f);
         g.setFont(font);
-        int logoSize = 16;
         int gap = 4;
-        int dotGap = 4;
 
         g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
         g.drawHorizontalLine(creditsArea.getY(), static_cast<float>(creditsArea.getX()),
@@ -125,34 +115,16 @@ class SplashScreen::ContentComponent : public juce::Component {
 
         // Credit line is intentionally English-only — brand attributions stay
         // as-shipped in every locale, so these are literals rather than tr keys.
-        const juce::String madeWith = "made with";
-        const juce::String juceName = "JUCE";
         const juce::String dspBy = "DSP by";
 
-        // Faust wordmark SVG viewBox is 160x28. Sized smaller than the round JUCE
-        // icons so the bold all-caps wordmark doesn't visually outweigh them.
+        // Faust wordmark SVG viewBox is 160x28.
         const int faustLogoH = 9;
         const int faustLogoW = faustLogoH * 160 / 28;
 
-        int dotW = measure("|");
-        int madeW = measure(madeWith);
-        int juceW = measure(juceName);
         int dspW = measure(dspBy);
 
-        int totalW =
-            madeW + gap + juceW + gap + logoSize + dotGap + dotW + dotGap + dspW + gap + faustLogoW;
-        auto centred = row.withSizeKeepingCentre(totalW, 20);
+        auto centred = row.withSizeKeepingCentre(dspW + gap + faustLogoW, 20);
 
-        g.drawText(madeWith, centred.removeFromLeft(madeW), juce::Justification::centred);
-        centred.removeFromLeft(gap);
-        g.drawText(juceName, centred.removeFromLeft(juceW), juce::Justification::centred);
-        centred.removeFromLeft(gap);
-        if (juceLogo_)
-            juceLogo_->drawWithin(g, centred.removeFromLeft(logoSize).toFloat(),
-                                  juce::RectanglePlacement::centred, 1.0f);
-        centred.removeFromLeft(dotGap);
-        g.drawText("|", centred.removeFromLeft(dotW), juce::Justification::centred);
-        centred.removeFromLeft(dotGap);
         g.drawText(dspBy, centred.removeFromLeft(dspW), juce::Justification::centred);
         centred.removeFromLeft(gap);
         if (faustLogo_)
@@ -160,7 +132,7 @@ class SplashScreen::ContentComponent : public juce::Component {
                                    juce::RectanglePlacement::centred, 1.0f);
 
         // Conceptual Machines badge and copyright, at the foot of the splash as in the About box.
-        auto footer = getLocalBounds().withTrimmedBottom(12);
+        auto footer = getLocalBounds().withTrimmedBottom(24);
         footer = footer.removeFromBottom(42 + 16);
         if (conceptualMachinesBadge_) {
             badgeBounds_ = footer.withSizeKeepingCentre(170, footer.getHeight());
@@ -197,7 +169,6 @@ class SplashScreen::ContentComponent : public juce::Component {
   private:
     Mascot mascot_;
     std::unique_ptr<juce::Drawable> conceptualMachinesBadge_;
-    std::unique_ptr<juce::Drawable> juceLogo_;
     std::unique_ptr<juce::Drawable> faustLogo_;
     juce::Rectangle<int> badgeBounds_;
     juce::String statusText_;
