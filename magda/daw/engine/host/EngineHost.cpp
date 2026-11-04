@@ -43,6 +43,7 @@
 #include "../../core/MidiNoteCommands.hpp"
 #include "../../core/OpenProjectAddressing.hpp"
 #include "../../core/TempoMap.hpp"
+#include "../../core/TrackAvailability.hpp"
 #include "../../core/TrackCommands.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../core/UndoManager.hpp"
@@ -764,6 +765,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // Live playback is where the chord track is heard and its Chord Engine is built (#2446).
         options.monitorTracks = true;
         options.hardwareOutputs = hardwareOutputs_;
+        options.tracksMissingDevices = tracksHoldingUnregisteredDevices(tracks, master);
         if (sessionRendersAhead_) {
             options.sessionTracks = sessionTracks();
             options.aheadAudioOnly = true;

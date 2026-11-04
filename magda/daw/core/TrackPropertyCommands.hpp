@@ -202,6 +202,37 @@ class SetTrackMuteCommand : public UndoableCommand {
 };
 
 /**
+ * @brief Command for switching a track on or off (#3101)
+ */
+class SetTrackEnabledCommand : public UndoableCommand {
+  public:
+    SetTrackEnabledCommand(TrackId trackId, bool newEnabled)
+        : trackId_(trackId), newEnabled_(newEnabled) {
+        auto* track = TrackManager::getInstance().getTrack(trackId);
+        if (track)
+            oldEnabled_ = track->enabled;
+    }
+
+    void execute() override {
+        TrackManager::getInstance().setTrackEnabled(trackId_, newEnabled_);
+    }
+    void undo() override {
+        TrackManager::getInstance().setTrackEnabled(trackId_, oldEnabled_);
+    }
+    juce::String getDescription() const override {
+        return newEnabled_ ? "Enable Track" : "Disable Track";
+    }
+
+  private:
+    TrackId trackId_;
+    bool oldEnabled_ = true, newEnabled_;
+};
+
+/// Switch a track on or off as an undoable edit. Empty on success; a track held off by a device
+/// this build does not register is refused, and the reason returned (#3101).
+juce::String switchTrackEnabled(TrackId trackId, bool enabled);
+
+/**
  * @brief Command for setting track solo state
  */
 class SetTrackSoloCommand : public UndoableCommand {

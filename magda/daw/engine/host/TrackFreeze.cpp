@@ -7,6 +7,7 @@
 #include <set>
 
 #include "../../core/SourcePool.hpp"
+#include "../../core/TrackAvailability.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../project/ProjectManager.hpp"
 #include "plan/TrackRouting.hpp"
@@ -89,6 +90,10 @@ juce::String freezeRefusal(const std::vector<TrackInfo>& tracks, TrackId trackId
     const auto track = std::ranges::find(tracks, trackId, &TrackInfo::id);
     if (track == tracks.end() || track->type != TrackType::Media)
         return "Only a media track can be frozen";
+
+    // It would freeze to silence, and the file would outlive the device coming back (#3101).
+    if (!track->enabled || !unregisteredDevicesOn(*track).empty())
+        return "A disabled track can't be frozen";
 
     if (const auto output = outputTrackOf(*track);
         output != INVALID_TRACK_ID && output != MASTER_TRACK_ID)

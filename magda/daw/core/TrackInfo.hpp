@@ -93,6 +93,9 @@ struct TrackInfo {
     bool recordArmed = false;
     InputMonitorMode inputMonitor = InputMonitorMode::Off;
     bool frozen = false;  // Track is frozen (rendered to audio, plugins disabled)
+    /// Off renders nothing: no devices, no clips, no output or sends. A track also counts as off
+    /// while it holds a device this build does not register, without this being written (#3101).
+    bool enabled = true;
     TrackPlaybackMode playbackMode = TrackPlaybackMode::Arrangement;
 
     // Mixer UI layout. Zero/negative channel width means "use default"; fader
@@ -183,6 +186,7 @@ struct TrackInfo {
             recordArmed = other.recordArmed;
             inputMonitor = other.inputMonitor;
             frozen = other.frozen;
+            enabled = other.enabled;
             playbackMode = other.playbackMode;
             mixerChannelWidth = other.mixerChannelWidth;
             mixerFaderTopInset = other.mixerFaderTopInset;

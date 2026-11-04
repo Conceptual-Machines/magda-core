@@ -192,6 +192,7 @@ class MixerView : public juce::Component,
         TrackType trackType_;
         bool isMaster_;
         bool isChildTrack_ = false;
+        bool trackDisabled_ = false;  // Off, or held off by a missing device (#3101)
         bool selected = false;
         // Dedup for double-delivered mouse events (self mouse listener); see
         // ChannelStrip::mouseDown

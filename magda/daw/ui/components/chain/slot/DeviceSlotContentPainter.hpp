@@ -24,6 +24,7 @@ struct DeviceSlotContentPaintState {
     bool internalDevice = false;
     bool hasCustomUI = false;
     DeviceSlotStepRecordingPaintState stepRecording;
+    juce::String deviceName;
 };
 
 void paintDeviceSlotContent(juce::Graphics& g, juce::Rectangle<int> contentArea,

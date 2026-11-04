@@ -3222,3 +3222,70 @@ TEST_CASE("A MIDI Out channel moves the plan's fingerprint", "[engine][plan][com
     CHECK(countRole(magda::engine::compileRenderPlan(tracks, makeMaster()),
                     OpRole::MidiOutChannel) == 0);
 }
+
+namespace {
+
+bool plansTrack(const RenderPlan& plan, TrackId trackId) {
+    return std::ranges::any_of(plan.ops,
+                               [trackId](const auto& op) { return op.key.trackId == trackId; });
+}
+
+}  // namespace
+
+TEST_CASE("A disabled track renders nothing, and nothing routed into it goes further",
+          "[engine][plan][compiler][3101]") {
+    // Group 5 holds 1, 2 sends to aux 3, and 4 plays beside them.
+    std::vector<TrackInfo> tracks{makeTrack(5, TrackType::Group), makeTrack(1), makeTrack(2),
+                                  makeTrack(3, TrackType::Aux), makeTrack(4)};
+    tracks[0].childIds = {1};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(50)));
+    tracks[1].parentId = 5;
+    tracks[1].audioOutputDevice = "track:5";
+    tracks[3].auxBusIndex = 0;
+    tracks[3].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(30)));
+    tracks[2].sends.push_back(SendInfo{0, 1.0f, false, 3});
+
+    CompileOptions options;
+    SECTION("switched off") {
+        tracks[0].enabled = false;
+        tracks[3].enabled = false;
+    }
+    SECTION("held off by a device this build does not have") {
+        options.tracksMissingDevices = {5, 3};
+    }
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), options);
+    requireWellFormed(plan);
+    CHECK(plan.diagnostics.empty());
+
+    CHECK_FALSE(plansTrack(plan, 5));
+    CHECK_FALSE(plansTrack(plan, 3));
+
+    // The master hears 2 and 4 and nothing else: not the group's child, not the aux.
+    const auto masterInput = trackInput(plan, MASTER_TRACK_ID);
+    REQUIRE(masterInput != magda::engine::INVALID_OP_ID);
+    std::set<TrackId> heard;
+    const auto& inputs = plan.ops[static_cast<std::size_t>(masterInput)].inputs;
+    for (std::size_t slot = 0; slot < inputs.size(); ++slot)
+        heard.insert(
+            plan.ops[static_cast<std::size_t>(inputOp(plan, masterInput, slot))].key.trackId);
+    CHECK(heard == std::set<TrackId>{2, 4});
+}
+
+TEST_CASE("A master held off by a missing device outputs silence",
+          "[engine][plan][compiler][3101]") {
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    auto master = makeMaster();
+    master.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(90)));
+
+    CompileOptions options;
+    options.tracksMissingDevices = {MASTER_TRACK_ID};
+    const auto plan = magda::engine::compileRenderPlan(tracks, master, options);
+    requireWellFormed(plan);
+
+    REQUIRE(plan.outputOps.size() == 1);
+    const auto feed = inputOp(plan, plan.outputOps.front(), 0);
+    CHECK(plan.ops[static_cast<std::size_t>(feed)].kind == OpKind::MixAudio);
+    CHECK(plan.ops[static_cast<std::size_t>(feed)].inputs.empty());
+    CHECK(countRole(plan, OpRole::DeviceProcess) == 0);
+}

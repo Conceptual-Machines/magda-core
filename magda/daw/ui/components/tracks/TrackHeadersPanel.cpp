@@ -21,6 +21,7 @@
 #include "../../../core/SelectionManager.hpp"
 #include "../../../core/StringTable.hpp"
 #include "../../../core/TechnicalText.hpp"
+#include "../../../core/TrackAvailability.hpp"
 #include "../../../core/TrackCommands.hpp"
 #include "../../../core/TrackPropertyCommands.hpp"
 #include "../../../core/TrackShade.hpp"
@@ -37,6 +38,7 @@
 #include "../chain/ChainNodePathDrag.hpp"
 #include "../common/MasterSpeakerButton.hpp"
 #include "../common/MidiActivityLed.hpp"
+#include "../common/Toast.hpp"
 #include "../mixer/LevelMeter.hpp"
 #include "../mixer/LevelMeterScale.hpp"
 #include "../mixer/RoutingSyncHelper.hpp"
@@ -907,6 +909,7 @@ void TrackHeadersPanel::tracksChanged() {
         header->muted = track->muted;
         header->solo = track->soloed;
         header->frozen = track->frozen;
+        refreshAvailability(*header);
         header->volume = track->volume;
         header->pan = track->pan;
 
@@ -1044,6 +1047,7 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
         header.muted = track->muted;
         header.solo = track->soloed;
         header.frozen = track->frozen;
+        refreshAvailability(header);
         header.volume = track->volume;
         header.pan = track->pan;
 
@@ -1121,6 +1125,7 @@ void TrackHeadersPanel::trackDevicesChanged(TrackId trackId) {
     for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
         if (visibleTrackIds_[i] == trackId && i < trackHeaders.size()) {
             rebuildSendLabels(*trackHeaders[i], trackId);
+            refreshAvailability(*trackHeaders[i]);
             updateTrackHeaderLayout();
             repaint();
             break;
@@ -1170,7 +1175,46 @@ int TrackHeadersPanel::lastRowOfGroup(int groupRow) const {
     return lastRow;
 }
 
+void TrackHeadersPanel::refreshAvailability(TrackHeader& header) {
+    auto& tracks = TrackManager::getInstance();
+    header.enabled = tracks.isTrackEnabled(header.trackId);
+    header.unavailable = unavailableDevicesText(tracks.getUnavailableDeviceNames(header.trackId));
+    if (header.nameLabel != nullptr)
+        header.nameLabel->setTooltip(header.unavailable);
+}
+
+/// Over the controls, so the whole head reads as off; the band says why (#3101).
+void TrackHeadersPanel::paintDisabledHeaders(juce::Graphics& g) {
+    for (size_t i = 0; i < trackHeaders.size(); ++i) {
+        const auto& header = *trackHeaders[i];
+        if (header.enabled || header.isSeparator)
+            continue;
+
+        auto area = getTrackHeaderArea(static_cast<int>(i));
+        if (!area.intersects(getLocalBounds()))
+            continue;
+        if (showIORouting_)
+            SideColumn(headersOnRight_).removeFrom(area, IO_COLUMN_WIDTH);
+        auto bgArea = SideColumn(!headersOnRight_).trimmed(area, headerIndent(header));
+
+        g.setColour(juce::Colours::black.withAlpha(0.35f));
+        g.fillRect(bgArea);
+
+        const bool missing = header.unavailable.isNotEmpty();
+        const auto band = bgArea.removeFromBottom(juce::jmin(16, bgArea.getHeight() / 2));
+        g.setColour(juce::Colours::black.withAlpha(0.6f));
+        g.fillRect(band);
+        g.setColour(ActiveTheme::getColour(missing ? ActiveTheme::STATUS_WARNING
+                                                   : ActiveTheme::TEXT_SECONDARY));
+        g.setFont(FontManager::getInstance().getUIFont(10.0f));
+        g.drawText(missing ? header.unavailable : tr("tracks.disabled"), band.reduced(6, 0),
+                   juce::Justification::centredLeft, true);
+    }
+}
+
 void TrackHeadersPanel::paintOverChildren(juce::Graphics& g) {
+    paintDisabledHeaders(g);
+
     // Full bar selection: one light rim in the bar's tone round the whole header, drawn over the
     // children so the meter on the outer edge sits inside it. A selected group's rim takes in
     // its whole wrapper, in either colour style.
@@ -3061,6 +3105,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
         DuplicateContentOnly = 7,
         ToggleFreeze = 8,
         PreferDrumGrid = 9,
+        ToggleEnabled = 16,
         GroupSelectedTracks = 10,
         UngroupTracks = 11,
         AddAudioTrack = 12,
@@ -3202,6 +3247,10 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
         menu.addItem(ToggleFreeze, track->frozen ? tr("tracks.unfreeze") : tr("tracks.freeze"));
     }
 
+    if (track->carriesSignal() && !header.isMaster)
+        menu.addItem(ToggleEnabled, trackManager.isTrackEnabled(track->id) ? tr("tracks.disable")
+                                                                           : tr("tracks.enable"));
+
     menu.addSeparator();
 
     // Duplicate track (not for the singleton chord track)
@@ -3306,6 +3355,10 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                 auto* t = TrackManager::getInstance().getTrack(trackId);
                 if (t && audioEngine_ != nullptr)
                     audioEngine_->setTrackFrozen(trackId, !t->frozen);
+            } else if (result == ToggleEnabled) {
+                const bool enable = !TrackManager::getInstance().isTrackEnabled(trackId);
+                if (const auto refusal = switchTrackEnabled(trackId, enable); refusal.isNotEmpty())
+                    daw::ui::Toast::showGlobal(refusal, 5000);
             } else if (result == PreferDrumGrid) {
                 if (auto* instrument = TrackManager::getInstance().getPrimaryInstrument(trackId)) {
                     auto& prefs = magda::PluginPreferences::getInstance();
