@@ -22,6 +22,19 @@ with {
     pre2 = pre1 : svf.stage(m, g, kFlat, kFlat);
 };
 
+// svfPoles with weights in place of the mode and pole count: @p mode(i) weighs
+// mode i, @p poles(i) the cascade of i extra stages. Smoothed one-hot weights
+// fade a switch of either instead of stepping the output (#3129).
+svfPolesBlend(mode, poles, g, k, x) =
+    x * poles(0) + enable(pre1, poles(1) + poles(2) > 0.0) * poles(1)
+        + enable(pre2, poles(2) > 0.0) * poles(2)
+    : stage(k, 1.0)
+with {
+    stage(kk, bpGain) = svf.blend(mode(0), mode(1), mode(2), mode(3), g, kk, bpGain);
+    pre1 = x : stage(kFlat, kFlat);
+    pre2 = pre1 : stage(kFlat, kFlat);
+};
+
 // Moog ladder: 4-pole low-pass. Keep @p q just under 1 to stay out of the
 // self-oscillation runaway.
 ladder(q, fc) = ve.moog_vcf_2bn(q, fc);

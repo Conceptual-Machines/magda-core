@@ -26,3 +26,10 @@ with {
 };
 
 unityBp(g, k) = stage(1, g, k, k);
+
+// stage() with each mode's output weighted by @p lp, @p bp, @p hp and @p notch.
+// The modes share one state, so smoothed one-hot weights crossfade a mode change.
+blend(lp, bp, hp, notch, g, k, bpGain) = raw(g, k) : mixer
+with {
+    mixer(v0, v1, v2) = v0 * (hp + notch) + v1 * (bp * bpGain - k * (hp + notch)) + v2 * (lp - hp);
+};
