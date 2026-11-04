@@ -258,8 +258,11 @@ struct InsertConfig {
 
 /**
  * @brief Loading state for a device's underlying plugin
+ *
+ * Unavailable is a MAGDA device this build does not register (#3101). Its slot
+ * marks its own copy; the model never holds it.
  */
-enum class DeviceLoadState { Loaded, Loading, Failed };
+enum class DeviceLoadState { Loaded, Loading, Failed, Unavailable };
 
 /**
  * @brief How a read-only meter asks to be drawn in a grid cell.

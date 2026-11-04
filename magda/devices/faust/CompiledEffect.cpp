@@ -18,6 +18,19 @@ namespace magda::devices::faust {
 
 namespace {
 
+/// Faust's ma.SR stops at 192 kHz (platform.lib), so a dsp inited past it runs as if at 192 kHz.
+constexpr int kMaxDspSampleRate = 192000;
+constexpr double kFactorFadeSeconds = 0.005;
+/// The oversampler's chunk floor, for a host that prepares without a block size.
+constexpr int kMinOversampledBlock = 64;
+/// The bus is stereo: a mono dsp's untouched channel is delayed with the one it writes.
+constexpr int kMinPaddedChannels = 2;
+constexpr const char* kOversamplingKey = "oversampling";
+
+int normalisedFactor(int factor) {
+    return factor >= 4 ? 4 : (factor >= 2 ? 2 : 1);
+}
+
 /// Records every numeric control by the slot its label pins it to, with its menu, gate and role.
 class EffectZoneHarvester : public ::UI {
   public:
@@ -110,7 +123,7 @@ void CompiledEffect::initEffect() {
     // A provisional rate makes the device answerable from construction; prepare() brings the
     // real one. The harvest comes first because slotInfos() reads what the dsp declared.
     constexpr int kProvisionalSampleRate = 44100;
-    createEngines(kProvisionalSampleRate);
+    createEngines(kProvisionalSampleRate, 1);
 
     slotInfo_ = slotInfos();
     applyHarvestedGates();
@@ -118,7 +131,7 @@ void CompiledEffect::initEffect() {
     bindSlots();
 }
 
-void CompiledEffect::createEngines(int sampleRate) {
+void CompiledEffect::createEngines(int sampleRate, int factor) {
     sampleRate_.store(static_cast<double>(sampleRate), std::memory_order_relaxed);
 
     const int count = std::max(0, engineCount());
@@ -131,7 +144,7 @@ void CompiledEffect::createEngines(int sampleRate) {
         if (engine.instance == nullptr)
             continue;
 
-        engine.instance->init(sampleRate);
+        engine.instance->init(sampleRate * factor);
         engine.numInputs = engine.instance->getNumInputs();
         engine.numOutputs = engine.instance->getNumOutputs();
 
@@ -350,7 +363,8 @@ sdk::DeviceProperties CompiledEffect::properties() const {
 
 int CompiledEffect::latencySamples() const {
     // Round half to even, as the host's rounding always has.
-    return static_cast<int>(std::lrint(latencySeconds() * currentSampleRate()));
+    return static_cast<int>(std::lrint(latencySeconds() * currentSampleRate())) +
+           reportedLatencySamples_.load(std::memory_order_relaxed);
 }
 
 std::int64_t CompiledEffect::tailSamples() const {
@@ -374,7 +388,9 @@ void CompiledEffect::ensureScratch(int inputs, int outputs, int frames) {
 }
 
 void CompiledEffect::prepare(const sdk::PrepareContext& context) {
-    createEngines(static_cast<int>(context.sampleRate));
+    const int sampleRate = static_cast<int>(context.sampleRate);
+    const int factor = runnableFactor(requestedFactor_.load(std::memory_order_relaxed), sampleRate);
+    createEngines(sampleRate, factor);
     bindSlots();
 
     int maxInputs = 0;
@@ -385,6 +401,7 @@ void CompiledEffect::prepare(const sdk::PrepareContext& context) {
     }
     scratchFrames_ = 0;
     ensureScratch(maxInputs, maxOutputs, context.maximumBlockSize);
+    prepareOversampling(sampleRate, factor, maxInputs, maxOutputs, context.maximumBlockSize);
 
     onPrepare(context.sampleRate, context.maximumBlockSize);
 }
@@ -396,13 +413,110 @@ void CompiledEffect::release() {
     scratchFrames_ = 0;
     inPtrs_.clear();
     outPtrs_.clear();
+    oversampler_.prepare(0, 0, 0);
+    latencyPad_.prepare(0, 0);
 }
 
 void CompiledEffect::reset() {
     for (auto& engine : engines_)
         if (engine.instance)
             engine.instance->instanceClear();
+    oversampler_.reset();
+    latencyPad_.reset();
     onReset();
+}
+
+sdk::RestoreResult CompiledEffect::restoreState(const sdk::StateNode& state) {
+    if (maxOversamplingFactor() > 1)
+        requestedFactor_.store(
+            normalisedFactor(std::min(state.getInt(kOversamplingKey, 1), maxOversamplingFactor())),
+            std::memory_order_relaxed);
+    return sdk::RestoreResult::success();
+}
+
+void CompiledEffect::setOversamplingFactor(int factor) {
+    if (maxOversamplingFactor() <= 1)
+        return;
+
+    const int clamped = normalisedFactor(std::min(factor, maxOversamplingFactor()));
+    requestedFactor_.store(clamped, std::memory_order_relaxed);
+
+    // The host's document learns a faceplate's choice only from the device, as Eq's toggle does.
+    if (auto* reportTo = host()) {
+        sdk::StateNode state;
+        state.setInt(kOversamplingKey, clamped);
+        reportTo->stateChanged(std::move(state));
+    }
+}
+
+int CompiledEffect::runnableFactor(int requested, int sampleRate) const {
+    int factor = normalisedFactor(std::min(requested, maxOversamplingFactor()));
+    while (factor > 1 && sampleRate * factor > kMaxDspSampleRate)
+        factor /= 2;
+    return factor;
+}
+
+void CompiledEffect::prepareOversampling(int sampleRate, int factor, int maxInputs, int maxOutputs,
+                                         int maxBlockSize) {
+    const int largest = runnableFactor(maxOversamplingFactor(), sampleRate);
+    const int latency = CompiledOversampler::latencySamples(largest);
+    reportedLatencySamples_.store(latency, std::memory_order_relaxed);
+    runningFactor_.store(factor, std::memory_order_relaxed);
+    maxEngineOutputs_ = maxOutputs;
+    fade_ = FactorFade::None;
+    fadeGain_ = 1.0f;
+    fadeLength_ = std::max(1, static_cast<int>(std::lround(sampleRate * kFactorFadeSeconds)));
+
+    if (largest <= 1) {
+        oversampler_.prepare(0, 0, 0);
+        latencyPad_.prepare(0, 0);
+        chunkInPtrs_.clear();
+        chunkOutPtrs_.clear();
+        return;
+    }
+
+    oversampler_.prepare(maxInputs, maxOutputs, std::max(maxBlockSize, kMinOversampledBlock));
+    latencyPad_.prepare(std::max(maxOutputs, kMinPaddedChannels), latency);
+    chunkInPtrs_.assign(static_cast<size_t>(maxInputs), nullptr);
+    chunkOutPtrs_.assign(static_cast<size_t>(maxOutputs), nullptr);
+}
+
+void CompiledEffect::advanceFactorChange() {
+    if (oversampler_.maxBlockSize() == 0)
+        return;
+
+    const int sampleRate = static_cast<int>(currentSampleRate());
+    const int wanted = runnableFactor(requestedFactor_.load(std::memory_order_relaxed), sampleRate);
+    const int running = runningFactor_.load(std::memory_order_relaxed);
+
+    if (fade_ == FactorFade::Out && fadeGain_ <= 0.0f) {
+        if (wanted != running)
+            switchFactor(wanted);
+        fade_ = FactorFade::In;
+        return;
+    }
+
+    if (wanted != running)
+        fade_ = FactorFade::Out;
+    else if (fade_ == FactorFade::Out)
+        fade_ = FactorFade::In;
+}
+
+void CompiledEffect::switchFactor(int factor) {
+    // Not init(): classInit() allocates, and the tables it fills (sine tables in every MAGDA
+    // dsp) do not read the rate. Skipping instanceResetUserInterface() keeps every zone as written.
+    const int dspRate = static_cast<int>(currentSampleRate()) * factor;
+    for (auto& engine : engines_) {
+        if (engine.instance == nullptr)
+            continue;
+        engine.instance->instanceConstants(dspRate);
+        engine.instance->instanceClear();
+    }
+
+    oversampler_.reset();
+    for (int channel = 0; channel < maxEngineOutputs_; ++channel)
+        latencyPad_.reset(channel);
+    runningFactor_.store(factor, std::memory_order_relaxed);
 }
 
 void CompiledEffect::writeZones(sdk::ProcessContext& context) {
@@ -495,7 +609,11 @@ void CompiledEffect::computeEngine(int engineIndex, sdk::ProcessContext& context
                 ? context.audio.channel(channel)
                 : scratchOut_.data() + static_cast<size_t>(channel * scratchFrames_);
 
-    engine.instance->compute(numSamples, inPtrs_.data(), outPtrs_.data());
+    const int factor = runningFactor_.load(std::memory_order_relaxed);
+    if (factor > 1 && oversampler_.maxBlockSize() > 0)
+        computeOversampled(engine, numSamples, factor);
+    else
+        engine.instance->compute(numSamples, inPtrs_.data(), outPtrs_.data());
 
     for (int channel = 0; channel < std::min(hostChannels, numOutputs); ++channel) {
         float* out = context.audio.channel(channel);
@@ -503,11 +621,68 @@ void CompiledEffect::computeEngine(int engineIndex, sdk::ProcessContext& context
             out[i] = sanitise(out[i]);
     }
 
+    alignToReportedLatency(context, numOutputs, factor);
+    applyFactorFade(context, std::min(hostChannels, numOutputs));
+
     // A fixed output width owns exactly that many channels: above them is the dry input, which
     // must not leak around a device asked to replace it.
     if (outputChannelCount() > 0)
         for (int channel = numOutputs; channel < hostChannels; ++channel)
             std::fill_n(context.audio.channel(channel), numSamples, 0.0f);
+}
+
+void CompiledEffect::computeOversampled(EngineState& engine, int numSamples, int factor) {
+    const int chunk = oversampler_.maxBlockSize();
+    for (int offset = 0; offset < numSamples; offset += chunk) {
+        const int count = std::min(chunk, numSamples - offset);
+        for (int channel = 0; channel < engine.numInputs; ++channel)
+            chunkInPtrs_[static_cast<size_t>(channel)] =
+                inPtrs_[static_cast<size_t>(channel)] + offset;
+        for (int channel = 0; channel < engine.numOutputs; ++channel)
+            chunkOutPtrs_[static_cast<size_t>(channel)] =
+                outPtrs_[static_cast<size_t>(channel)] + offset;
+
+        oversampler_.upsample(chunkInPtrs_.data(), engine.numInputs, count, factor);
+        engine.instance->compute(count * factor, oversampler_.inputs(), oversampler_.outputs());
+        oversampler_.downsample(chunkOutPtrs_.data(), engine.numOutputs, count, factor);
+    }
+}
+
+void CompiledEffect::alignToReportedLatency(sdk::ProcessContext& context, int numOutputs,
+                                            int factor) {
+    const int reported = reportedLatencySamples_.load(std::memory_order_relaxed);
+    if (reported <= 0)
+        return;
+
+    // Above numOutputs is the dry input a narrower dsp left alone, unless the device clears it;
+    // it is late by the whole latency, never by the pair's.
+    const int hostChannels = context.audio.numChannels();
+    const int channels =
+        outputChannelCount() > 0 ? std::min(hostChannels, numOutputs) : hostChannels;
+    const int dspDelay = reported - CompiledOversampler::latencySamples(factor);
+    for (int channel = 0; channel < channels; ++channel)
+        latencyPad_.process(channel, context.audio.channel(channel), context.numSamples(),
+                            channel < numOutputs ? dspDelay : reported);
+}
+
+void CompiledEffect::applyFactorFade(sdk::ProcessContext& context, int channels) {
+    if (fade_ == FactorFade::None)
+        return;
+
+    const int numSamples = context.numSamples();
+    const float step = (fade_ == FactorFade::Out ? -1.0f : 1.0f) / static_cast<float>(fadeLength_);
+    for (int channel = 0; channel < channels; ++channel) {
+        float* out = context.audio.channel(channel);
+        float gain = fadeGain_;
+        for (int i = 0; i < numSamples; ++i) {
+            gain = std::clamp(gain + step, 0.0f, 1.0f);
+            out[i] *= gain;
+        }
+    }
+
+    fadeGain_ = std::clamp(fadeGain_ + step * static_cast<float>(numSamples), 0.0f, 1.0f);
+    if (fade_ == FactorFade::In && fadeGain_ >= 1.0f)
+        fade_ = FactorFade::None;
 }
 
 void CompiledEffect::processAudio(sdk::ProcessContext& context) {
@@ -522,6 +697,7 @@ void CompiledEffect::process(sdk::ProcessContext& context) {
         reset();
     wasPlaying_ = context.isPlaying;
 
+    advanceFactorChange();
     writeZones(context);
 
     const int engineIndex = activeEngine();

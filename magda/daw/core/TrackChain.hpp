@@ -69,12 +69,11 @@ struct TrackChain {
      */
     bool postFxPostFader = true;
 
-    // Chain power (the track chain header's power button + the track
-    // inspector's enable switch). When off, every insert-chain device is
-    // gated off in the engine WITHOUT touching the devices' own bypassed
-    // flags, so per-device bypass states survive an off/on cycle. Post-FX
-    // and mixer-analysis devices sit outside the insert chain and are not
-    // gated.
+    // Chain power (the track chain header's power button). When off, every
+    // insert-chain device is gated off in the engine WITHOUT touching the
+    // devices' own bypassed flags, so per-device bypass states survive an
+    // off/on cycle. Post-FX and mixer-analysis devices sit outside the insert
+    // chain and are not gated. The whole track's switch is TrackInfo::enabled.
     bool enabled = true;
 
     // Rail-managed analysis devices (mini Oscilloscope / Spectrum on the

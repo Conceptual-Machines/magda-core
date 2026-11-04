@@ -465,6 +465,16 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setTrackRecordArmed(TrackId trackId, bool armed);
     void setTrackInputMonitor(TrackId trackId, InputMonitorMode mode);
     void setTrackFrozen(TrackId trackId, bool frozen);
+
+    /** @brief Whether the track renders: switched on, and holding no device this build does not
+        register (#3101). */
+    bool isTrackEnabled(TrackId trackId) const;
+    /** @brief Switch a track on or off. Switching on is refused, returning false, while the track
+        holds a device this build does not register. */
+    bool setTrackEnabled(TrackId trackId, bool enabled);
+    /// The names of the devices on @p trackId this build does not register, in chain order.
+    juce::StringArray getUnavailableDeviceNames(TrackId trackId) const;
+
     void setTrackPlaybackMode(TrackId trackId, TrackPlaybackMode mode);
     void setAllTracksPlaybackMode(TrackPlaybackMode mode);
     bool isAnyTrackInSessionMode() const;
@@ -804,10 +814,9 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     ChainInfo* getChainByPath(const ChainNodePath& chainPath);  // Nested-chain lookup
     const ChainInfo* getChainByPath(const ChainNodePath& chainPath) const;
     void setChainOutput(TrackId trackId, RackId rackId, ChainId chainId, int outputIndex);
-    /** @brief Chain power: the state behind the chain header's power button
-        and the track inspector's enable switch. When off, every insert-chain
-        device is gated off in the engine without touching the devices' own
-        bypassed flags. */
+    /** @brief Chain power: the state behind the chain header's power button.
+        When off, every insert-chain device is gated off in the engine without
+        touching the devices' own bypassed flags. */
     bool isChainEnabled(TrackId trackId) const;
     void setChainEnabled(TrackId trackId, bool enabled);
 

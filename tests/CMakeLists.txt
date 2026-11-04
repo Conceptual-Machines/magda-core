@@ -427,6 +427,7 @@ set(TEST_SOURCES
     core/test_midi_clock_config.cpp
     core/test_device_parameter_list.cpp
     core/test_device_info_predicates.cpp
+    core/test_track_availability.cpp
     core/test_insert_cc_knobs.cpp
     core/test_four_osc_translation.cpp
     core/test_ranges_helpers.cpp
@@ -643,6 +644,8 @@ set(TEST_SOURCES
     list(APPEND TEST_SOURCES dsp/test_filter_spectrum_taps.cpp)
     list(APPEND TEST_SOURCES dsp/test_multiband_upward.cpp)
     list(APPEND TEST_SOURCES dsp/test_eq_slopes.cpp)
+    # The shared oversampling wrapper for compiled effects (#2276)
+    list(APPEND TEST_SOURCES dsp/test_compiled_oversampling.cpp)
     list(APPEND TEST_SOURCES ui/test_magda_alert_window.cpp)
     list(APPEND TEST_SOURCES devices/test_mutable_add_not_replace.cpp)
     list(APPEND TEST_SOURCES devices/test_sampler_relocate.cpp)

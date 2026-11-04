@@ -17,6 +17,7 @@
 #include "../../../engine/AudioEngine.hpp"
 #include "../../components/chain/layout/NodeHeaderStyles.hpp"
 #include "../../components/common/ColourSwatch.hpp"
+#include "../../components/common/Toast.hpp"
 #include "../../components/mixer/RoutingSyncHelper.hpp"
 #include "../../components/mixer/SendRowControls.hpp"
 #include "../../state/TimelineController.hpp"
@@ -29,6 +30,7 @@
 #include "core/Config.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
+#include "core/TrackAvailability.hpp"
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "project/ProjectManager.hpp"
@@ -112,6 +114,24 @@ magda::track_controls::Metrics inspectorControlMetrics() {
     m.iconW = 16;
     m.ddGap = 4;
     return m;
+}
+
+/// The enable switch for @p trackId, saying why when a missing device holds it off (#3101).
+void showTrackEnabled(SvgButton& button, magda::TrackId trackId) {
+    auto& tracks = magda::TrackManager::getInstance();
+    button.setToggleState(tracks.isTrackEnabled(trackId), juce::dontSendNotification);
+    const auto missing = magda::unavailableDevicesText(tracks.getUnavailableDeviceNames(trackId));
+    button.setTooltip(missing.isNotEmpty() ? missing : tr("tracks.enable.tooltip"));
+}
+
+/// Switch each of @p trackIds, and say why for any that is refused.
+template <typename TrackIds> void requestTracksEnabled(const TrackIds& trackIds, bool enabled) {
+    juce::StringArray refusals;
+    for (const auto trackId : trackIds)
+        if (const auto refusal = magda::switchTrackEnabled(trackId, enabled); refusal.isNotEmpty())
+            refusals.addIfNotAlreadyThere(refusal);
+    if (!refusals.isEmpty())
+        Toast::showGlobal(refusals.joinIntoString("\n"), 5000);
 }
 }  // namespace
 
@@ -241,8 +261,8 @@ TrackInspector::TrackInspector() {
     enableButton_->setClickingTogglesState(true);
     enableButton_->onClick = [this]() {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-            magda::TrackManager::getInstance().setChainEnabled(selectedTrackId_,
-                                                               enableButton_->getToggleState());
+            requestTracksEnabled(std::vector{selectedTrackId_}, enableButton_->getToggleState());
+            showTrackEnabled(*enableButton_, selectedTrackId_);
         }
     };
     addAndMakeVisible(*enableButton_);
@@ -1004,8 +1024,9 @@ void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
         };
         enableButton_->onClick = [this]() {
             if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
-                magda::TrackManager::getInstance().setChainEnabled(selectedTrackId_,
-                                                                   enableButton_->getToggleState());
+                requestTracksEnabled(std::vector{selectedTrackId_},
+                                     enableButton_->getToggleState());
+                showTrackEnabled(*enableButton_, selectedTrackId_);
             }
         };
         trackNameValue_.setEditable(true);
@@ -1121,12 +1142,8 @@ void TrackInspector::trackDevicesChanged(magda::TrackId trackId) {
     if (trackId == selectedTrackId_) {
         rebuildSendsUI();
 
-        // Resync the enable switch — setChainEnabled notifies through
-        // trackDevicesChanged, so the chain power button and this switch
-        // stay mirrored whichever one was pressed.
-        enableButton_->setToggleState(
-            magda::TrackManager::getInstance().isChainEnabled(selectedTrackId_),
-            juce::dontSendNotification);
+        // Adding, removing or replacing a device can hold the track off or let it go (#3101).
+        showTrackEnabled(*enableButton_, selectedTrackId_);
 
         syncFxList();
         updateLatency();
@@ -1317,9 +1334,7 @@ void TrackInspector::updateFromSelectedTrack() {
         trackNameValue_.setEditable(true);  // re-enable after a master selection
         applyHeaderStyle();
         muteButton_->setToggleState(track->muted, juce::dontSendNotification);
-        enableButton_->setToggleState(
-            magda::TrackManager::getInstance().isChainEnabled(selectedTrackId_),
-            juce::dontSendNotification);
+        showTrackEnabled(*enableButton_, selectedTrackId_);
         chordSpeakerButton_->refresh();
         soloButton_->setToggleState(track->soloed, juce::dontSendNotification);
         recordButton_->setToggleState(track->recordArmed, juce::dontSendNotification);
@@ -1387,8 +1402,8 @@ void TrackInspector::updateFromMultiTrackSelection() {
     // Check button states: "on" only if ALL selected tracks share that state
     const auto trackFor = [&tm](magda::TrackId tid) { return tm.getTrack(tid); };
     const auto stillExists = [](const magda::TrackInfo* track) { return track != nullptr; };
-    const auto chainEnabled = [&tm](const magda::TrackInfo* track) {
-        return tm.isChainEnabled(track->id);
+    const auto trackEnabled = [&tm](const magda::TrackInfo* track) {
+        return tm.isTrackEnabled(track->id);
     };
 
     std::vector<const magda::TrackInfo*> tracks;
@@ -1399,7 +1414,7 @@ void TrackInspector::updateFromMultiTrackSelection() {
     const bool allMuted = std::ranges::all_of(tracks, &magda::TrackInfo::muted);
     const bool allSoloed = std::ranges::all_of(tracks, &magda::TrackInfo::soloed);
     const bool allRecordArmed = std::ranges::all_of(tracks, &magda::TrackInfo::recordArmed);
-    const bool allEnabled = std::ranges::all_of(tracks, chainEnabled);
+    const bool allEnabled = std::ranges::all_of(tracks, trackEnabled);
 
     muteButton_->setToggleState(allMuted, juce::dontSendNotification);
     soloButton_->setToggleState(allSoloed, juce::dontSendNotification);
@@ -1429,10 +1444,15 @@ void TrackInspector::updateFromMultiTrackSelection() {
         }
     };
     enableButton_->onClick = [this]() {
-        bool newState = enableButton_->getToggleState();
-        for (auto tid : selectedTrackIds_) {
-            magda::TrackManager::getInstance().setChainEnabled(tid, newState);
-        }
+        // Locals only once a track switches: its notification rewires this callback.
+        const auto trackIds = selectedTrackIds_;
+        auto& button = *enableButton_;
+        requestTracksEnabled(trackIds, button.getToggleState());
+        auto& tracks = magda::TrackManager::getInstance();
+        button.setToggleState(
+            std::ranges::all_of(trackIds,
+                                [&tracks](auto tid) { return tracks.isTrackEnabled(tid); }),
+            juce::dontSendNotification);
     };
     // monitorButton_ cycles/menus itself; getTargets returns the multi-track
     // selection, so a change applies to all selected tracks at once.

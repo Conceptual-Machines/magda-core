@@ -120,6 +120,12 @@ A common use case is keeping the Arrangement View clean while having full contro
 
 Click a track header to select it. Hold ++shift++ and click another header to extend the selection to a contiguous range; ++cmd++-click (++ctrl++-click on Windows/Linux) to toggle individual tracks in or out of the selection. Most track-level actions — mute, solo, delete, freeze, group — apply to every selected track in one operation.
 
+### Disabling a Track
+
+Right-click a track header and choose **Disable Track**, or use the power switch in the track inspector. A disabled track renders nothing. Its clips, devices, sends and output all fall silent, and anything routed into it stops there. This applies to exports and bounces too. Its header dims and reads *Disabled*. Choose **Enable Track** to bring it back.
+
+A track is also disabled when its chain holds a MAGDA device this copy of MAGDA does not have, for example one from an extension that is not installed, or one from a newer version. Rather than play the chain without it, the track stays silent. Its header names the missing device, and the device's slot reads *Not in this build*. The track can't be enabled until the device is removed or replaced. Until then the device keeps its settings and saves them unchanged, so the project opens as it was in a copy of MAGDA that has it.
+
 ## Separators
 
 A separator divides up the track list. It has no header, controls, signal or clips: it is a thin row across the arrangement and a vertical line in the Session View and the Mixer.

@@ -24,6 +24,7 @@
 #include "RackInfo.hpp"
 #include "RangesHelpers.hpp"
 #include "SelectionManager.hpp"
+#include "TrackAvailability.hpp"
 #include "audio/plugins/DeviceCatalogParameters.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"
 
@@ -1577,6 +1578,34 @@ void TrackManager::setTrackFrozen(TrackId trackId, bool frozen) {
         track->frozen = frozen;
         notifyTrackPropertyChanged(trackId);
     }
+}
+
+bool TrackManager::isTrackEnabled(TrackId trackId) const {
+    const auto* track = getTrack(trackId);
+    return track == nullptr || (track->enabled && unregisteredDevicesOn(*track).empty());
+}
+
+bool TrackManager::setTrackEnabled(TrackId trackId, bool enabled) {
+    auto* track = getTrack(trackId);
+    if (track == nullptr)
+        return false;
+
+    if (enabled && !unregisteredDevicesOn(*track).empty())
+        return false;
+
+    if (track->enabled != enabled) {
+        track->enabled = enabled;
+        notifyTrackPropertyChanged(trackId);
+    }
+    return true;
+}
+
+juce::StringArray TrackManager::getUnavailableDeviceNames(TrackId trackId) const {
+    juce::StringArray names;
+    if (const auto* track = getTrack(trackId))
+        for (const auto* device : unregisteredDevicesOn(*track))
+            names.add(device->name.isNotEmpty() ? device->name : device->pluginId);
+    return names;
 }
 
 void TrackManager::setTrackPlaybackMode(TrackId trackId, TrackPlaybackMode mode) {

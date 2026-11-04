@@ -3135,6 +3135,42 @@ TEST_CASE("DeviceInfo pluginState roundtrip", "[project][serialization][pluginSt
     }
 }
 
+TEST_CASE("A track's enable and a missing device's state survive a round trip",
+          "[project][serialization][track][3101]") {
+    ProjectTestFixture fixture;
+    auto& trackManager = TrackManager::getInstance();
+    auto& projectManager = ProjectManager::getInstance();
+
+    const auto offId = trackManager.createTrack("Off", TrackType::Media);
+    REQUIRE(trackManager.setTrackEnabled(offId, false));
+
+    const auto heldId = trackManager.createTrack("Held", TrackType::Media);
+    DeviceInfo device;
+    device.name = "From A Newer Build";
+    device.pluginId = "from_a_newer_build";
+    device.format = PluginFormat::Internal;
+    device.pluginState = "SGVsbG8gV29ybGQ=";
+    trackManager.addDeviceToTrack(heldId, device);
+
+    auto tempFile = fixture.createTempProjectFile(".mgd");
+    auto actualFile = ProjectTestFixture::wrappedPath(tempFile);
+    REQUIRE(projectManager.saveProjectAs(tempFile));
+    trackManager.clearAllTracks();
+    REQUIRE(projectManager.loadProject(actualFile));
+
+    const auto& tracks = trackManager.getTracks();
+    REQUIRE(tracks.size() == 2);
+    CHECK_FALSE(tracks[0].enabled);
+
+    // Held off, but never written off: a build that has the device opens it as saved.
+    CHECK(tracks[1].enabled);
+    CHECK_FALSE(trackManager.isTrackEnabled(tracks[1].id));
+    REQUIRE(tracks[1].chain.fxChainElements.size() == 1);
+    const auto& restored = getDevice(tracks[1].chain.fxChainElements[0]);
+    CHECK(restored.pluginId == juce::String("from_a_newer_build"));
+    CHECK(restored.pluginState == juce::String("SGVsbG8gV29ybGQ="));
+}
+
 TEST_CASE("TrackInfo persistent runtime seeds roundtrip", "[project][serialization][track]") {
     ProjectTestFixture fixture;
 

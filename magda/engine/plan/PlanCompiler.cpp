@@ -180,6 +180,11 @@ class Compiler {
                std::vector<PortDesc> outputs);
     void diagnose(std::string message);
 
+    /// Neither switched off nor held off by a device this build does not have (#3101).
+    bool renders(const TrackInfo& track) const {
+        return track.enabled && !options_.tracksMissingDevices.contains(track.id);
+    }
+
     const TrackInfo* findTrack(TrackId id) const;
 
     /// The top-level FX device @p deviceId on @p trackId, which is where a
@@ -459,7 +464,8 @@ bool Compiler::multiOutPairIsConnected(const MultiOutTrackLink& link, TrackId re
 
     const auto* source = findTrack(link.sourceTrackId);
     const auto* device = findMultiOutSource(link.sourceTrackId, link.sourceDeviceId);
-    return source != nullptr && source->chain.enabled && device != nullptr && !device->bypassed;
+    return source != nullptr && renders(*source) && source->chain.enabled && device != nullptr &&
+           !device->bypassed;
 }
 
 bool Compiler::carriesClips(const TrackInfo& track) const {
@@ -1577,6 +1583,13 @@ ChainSignal Compiler::emitPadRack(const DeviceInfo& device, const ChainSite& sit
         if (pad.bypassed)
             continue;
 
+        // A disabled pad channel takes its pad with it (#3101).
+        if (const auto* channel = padChannelFor(device.id, pad.id);
+            channel != nullptr && !renders(*channel)) {
+            pendingInputs_.erase(channel->id);
+            continue;
+        }
+
         // A pad plugin's DeviceId arrives when the Drum Grid restores it, so a
         // project that has not been opened since carries none. Two such devices
         // in one pad would key the same op, and a plan that does not validate
@@ -1724,6 +1737,17 @@ ChainSignal Compiler::emitElements(const std::vector<ChainElement>& elements, co
 }
 
 void Compiler::emitTrack(const TrackInfo& track) {
+    // A disabled track renders nothing, and what is routed into it goes no further (#3101).
+    if (!renders(track)) {
+        pendingInputs_.erase(track.id);
+        if (track.id == master_.id) {
+            const OpKey inputKey{track.id,          INVALID_RACK_ID,         INVALID_CHAIN_ID,
+                                 INVALID_DEVICE_ID, OpRole::TrackAudioInput, 0};
+            routeOutput(track, emitMix(inputKey, {}));
+        }
+        return;
+    }
+
     // --- chain head ---
 
     // A multi-out pair arrives through pendingInputs_, put there by the device
