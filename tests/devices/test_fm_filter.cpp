@@ -11,7 +11,7 @@
 #include "TestDeviceMidiBuffer.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaFMCompiledPlugin.hpp"
 
-// FM's filter (#3120).
+// FM's filter (#3120), and its switches mid-note (#3246).
 
 using FM = magda::daw::audio::compiled::MagdaFMCompiledPlugin;
 
@@ -24,15 +24,30 @@ constexpr int kAmpSustainSlot = 26;
 
 using Settings = std::vector<std::pair<int, float>>;
 
-/// The left channel of @p blocks of FM at @p settings, @p notes held from the first block.
-std::vector<float> render(const Settings& settings, const std::vector<int>& notes, int blocks) {
+/// @p slot moves to @p value before block @p block.
+struct Change {
+    int block;
+    int slot;
+    float value;
+};
+
+/// The left channel of @p blocks of FM at @p settings and then @p changes, @p notes held from
+/// the first block.
+std::vector<float> render(const Settings& settings, const std::vector<int>& notes, int blocks,
+                          double rate = kSampleRate, const std::vector<Change>& changes = {}) {
     FM synth;
-    synth.prepare({.sampleRate = kSampleRate, .maximumBlockSize = kBlockSize});
-    for (auto [slot, value] : settings)
+    synth.prepare({.sampleRate = rate, .maximumBlockSize = kBlockSize});
+    auto set = [&synth](int slot, float value) {
         synth.getSlotParameter(slot).setValueFromHost(synth.displayValueToNativeValue(slot, value));
+    };
+    for (auto [slot, value] : settings)
+        set(slot, value);
 
     std::vector<float> out;
     for (int block = 0; block < blocks; ++block) {
+        for (const auto& change : changes)
+            if (change.block == block)
+                set(change.slot, change.value);
         juce::AudioBuffer<float> audio(2, kBlockSize);
         audio.clear();
         magda::test::DeviceMidiBuffer midi, midiOut;
@@ -55,6 +70,19 @@ float rms(const std::vector<float>& samples, size_t from = 0, size_t to = 0) {
     for (size_t i = from; i < to; ++i)
         sum += static_cast<double>(samples[i]) * samples[i];
     return static_cast<float>(std::sqrt(sum / static_cast<double>(to - from)));
+}
+
+/// The largest sample-to-sample step in [@p from, @p to), @p from > 0.
+float largestStep(const std::vector<float>& samples, size_t from, size_t to) {
+    float worst = 0.0f;
+    for (size_t i = from; i < to; ++i)
+        worst = std::max(worst, std::abs(samples[i] - samples[i - 1]));
+    return worst;
+}
+
+Settings with(Settings settings, const Settings& more) {
+    settings.insert(settings.end(), more.begin(), more.end());
+    return settings;
 }
 
 /// A held saw on op 1, the second half measured, through @p filter.
@@ -213,6 +241,69 @@ TEST_CASE("Every path at maximum with full resonance doesn't run away", "[fm][31
             INFO("engine " << engine << " cutoff " << cutoff);
             CHECK(std::all_of(out.begin(), out.end(),
                               [](float s) { return std::isfinite(s) && std::abs(s) <= 1.0f; }));
+        }
+    }
+}
+
+TEST_CASE("Switching filter type, poles, engine or enable mid-note doesn't click", "[fm][3246]") {
+    // As Poly Synth's (#3129): a held sine moves little from one sample to the next, so a step
+    // stands out. Each value holds long enough to settle; its last 50 ms is the settled reference.
+    // Every export rate: an unfaded comb input stepped only at 96 kHz and up.
+    constexpr double kSampleRates[] = {44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0};
+    constexpr double kHold = 0.15;
+    constexpr double kSettled = 0.05;
+    const Settings sine{{4, 0.0f},
+                        {kAmpSustainSlot, 1.0f},
+                        {FM::kFilterEnableSlot, 1.0f},
+                        {FM::kFilterCutoffSlot, 400.0f}};
+    const Settings highpass = with(sine, {{FM::kFilterTypeSlot, 1.0f}});
+    // Every pair of types, every ordered pair of three choices, and both ways twice.
+    const std::vector<float> types{0.0f, 1.0f, 2.0f, 3.0f, 0.0f, 2.0f, 1.0f, 3.0f};
+    const std::vector<float> threes{0.0f, 1.0f, 2.0f, 0.0f, 2.0f, 1.0f, 0.0f};
+    const std::vector<float> onOff{0.0f, 1.0f, 0.0f, 1.0f};
+
+    struct Sweep {
+        Settings settings;
+        int slot;
+        const std::vector<float>& values;
+    };
+    std::vector<Sweep> sweeps{{sine, FM::kFilterTypeSlot, types},
+                              {highpass, FM::kFilterEngineSlot, threes}};
+    for (int type = 0; type < 4; ++type)
+        sweeps.push_back({with(sine, {{FM::kFilterTypeSlot, static_cast<float>(type)}}),
+                          FM::kFilterPolesSlot, threes});
+    // Each engine at the output, and as a matrix node op 1 sends to and is modulated by.
+    for (int engine = 0; engine < 3; ++engine) {
+        const Settings on = with(highpass, {{FM::kFilterEngineSlot, static_cast<float>(engine)}});
+        sweeps.push_back({on, FM::kFilterEnableSlot, onOff});
+        sweeps.push_back({with(on, {{FM::kFilterPositionSlot, 1.0f},
+                                    {FM::kFilterSendBaseSlot, 1.0f},
+                                    {FM::kFilterReturnBaseSlot, 1.0f}}),
+                          FM::kFilterEnableSlot, onOff});
+    }
+
+    for (double rate : kSampleRates) {
+        auto blockAt = [rate](size_t hold) {
+            return static_cast<int>(
+                std::ceil(static_cast<double>(hold) * kHold * rate / kBlockSize));
+        };
+        for (const auto& sweep : sweeps) {
+            std::vector<Change> changes;
+            for (size_t i = 1; i < sweep.values.size(); ++i)
+                changes.push_back({blockAt(i), sweep.slot, sweep.values[i]});
+            const auto samples = render(with(sweep.settings, {{sweep.slot, sweep.values[0]}}), {60},
+                                        blockAt(sweep.values.size()), rate, changes);
+
+            const auto settled = static_cast<size_t>(kSettled * rate);
+            for (size_t i = 1; i < sweep.values.size(); ++i) {
+                const auto from = static_cast<size_t>(blockAt(i)) * kBlockSize;
+                const auto to = static_cast<size_t>(blockAt(i + 1)) * kBlockSize;
+                const float before = largestStep(samples, from - settled, from);
+                const float after = largestStep(samples, to - settled, to);
+                CAPTURE(rate, sweep.slot, sweep.values[i - 1], sweep.values[i], before, after);
+                REQUIRE(after > 0.0f);
+                CHECK(largestStep(samples, from, to) < 2.0f * std::max(before, after));
+            }
         }
     }
 }

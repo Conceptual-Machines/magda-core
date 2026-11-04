@@ -170,31 +170,38 @@ pressureGain = 1.0 + sm(pressure);
 // ============================================================================
 // Filter
 // ============================================================================
-// One control-rate selector picks @p dry or an engine, and only that one runs:
-// smoothing the on/off switch measured twice the idle cost.
-fSel(on) = on * (int(fEngine) + 1);
-filter(sel, dry, x) = ba.selectn(4, sel, dry, enable(svfOut, sel == 1),
-                                 enable(ladderOut, sel == 2), enable(combOut, sel == 3))
+// Smoothed one-hot weights over dry (0) and the SVF, ladder and comb fade an
+// engine or on/off switch (#3246). A path runs while its weight is above zero,
+// which under flush-to-zero is 2 s after it is switched away.
+fW(i) = sm(float(nodeOn * (int(fEngine) + 1) == i));
+fLive = fW(1) + fW(2) + fW(3) > 0.0;
+filter(dry, x) = dry * fW(0) + path(1, svfOut) + path(2, ladderOut) + path(3, combOut)
 with {
+    path(i, y) = enable(y, fW(i) > 0.0) * fW(i);
     r = sm(fRes);
     fEnv = en.adsre(fAtt, fDec, fSus, fRel, gate);
     octs = sm(fEnvAmt) * fEnv + sm(fVel) * gainG + sm(fKey) * log(freqG / 261.63) / log(2.0);
     fc = sm(fCutoff) * pow(2.0, octs) : max(20.0) : min(min(20000.0, ma.SR * 0.45));
     driven = x : mf.drive(sm(fDrive));
+    // Type and poles fade as Poly Synth's do.
+    mode(i) = sm(float(ba.selectn(4, int(fType), 0, 2, 1, 3) == i));
+    slope(i) = sm(float(int(fPoles) == i));
     // Resonance as the Filter device's: SVF Q 0.5..40, ladder q to 0.99, comb feedback to 0.98.
-    svfOut = driven : mf.svfPoles(ba.selectn(4, int(fType), 0, 2, 1, 3), int(fPoles),
-                                  tan(fc * ma.PI / ma.SR), 1.0 / (0.5 * pow(80.0, r)));
+    svfOut = driven : mf.svfPolesBlend(mode, slope, tan(fc * ma.PI / ma.SR),
+                                       1.0 / (0.5 * pow(80.0, r)));
     ladderOut = driven : mf.ladder(r * 0.99, fc);
-    combOut = driven : mf.comb(8192, max(2.0, min(8188.0, ma.SR / fc)),
-                               1.0 - 2.0 * (fComb > 0.5), 0.98 * r);
+    // The comb's input fades too: unfaded, its first echo after a switch is a step.
+    combOut = driven * fW(3) : mf.comb(8192, max(2.0, min(8188.0, ma.SR / fc)),
+                                       1.0 - 2.0 * (fComb > 0.5), 0.98 * r);
 };
 
 // One filter serves both positions. Output filters the operators' mix (#3120);
-// Matrix makes it a fifth node, run only while something is sent to it.
+// Matrix makes it a fifth node, run only while something is sent to it and
+// until it has faded out.
 inMatrix = fPos > 0.5;
 anySend = (fSend(0) + fSend(1) + fSend(2) + fSend(3)) > 0.0;
 nodeOn = (fOn > 0.5) * (anySend | (1 - inMatrix));
-matrixOn = (fOn > 0.5) * inMatrix * anySend;
+matrixOn = inMatrix * fLive;
 
 // dB -> linear gain (floored to silence at -60 dB), smoothed to avoid steps.
 dbGain(db) = sm(db > -59.5) * ba.db2linear(sm(db));
@@ -229,7 +236,7 @@ with {
     ops = op(0) * lvl(0) + op(1) * lvl(1) + op(2) * lvl(2) + op(3) * lvl(3);
     sends = sm(fSend(0)) * y0 + sm(fSend(1)) * y1 + sm(fSend(2)) * y2 + sm(fSend(3)) * y3;
     // The node is the loop's fifth signal; `out` is the voice, after the loop.
-    node = filter(fSel(nodeOn), select2(inMatrix, ops, 0.0),
+    node = filter(select2(inMatrix, ops, 0.0),
                   select2(inMatrix, ops, enable(ma.tanh(sends), matrixOn)));
     out = select2(inMatrix, node, ops + enable(node * dbGain(fLvl), matrixOn));
 };
