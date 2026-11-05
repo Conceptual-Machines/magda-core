@@ -17,7 +17,6 @@
 #include "../components/common/EditToolPalette.hpp"
 #include "../components/common/MasterSpeakerButton.hpp"
 #include "../components/common/SideColumn.hpp"
-#include "../components/mixer/ClickableLabel.hpp"
 #include "../components/mixer/LevelMeter.hpp"
 #include "../components/mixer/LevelMeterScale.hpp"
 #include "../components/navigation/SongNavigatorPanel.hpp"
@@ -35,7 +34,6 @@
 #include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/StringTable.hpp"
-#include "core/TechnicalText.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/TrackPropertyCommands.hpp"
@@ -64,14 +62,6 @@ float dbToGain(float db) {
     if (db <= MIN_DB)
         return 0.0f;
     return std::pow(10.0f, db / 20.0f);
-}
-
-juce::String formatDbValue(float db) {
-    if (db <= MIN_DB)
-        return "-inf";
-    if (std::abs(db) < 0.05f)
-        db = 0.0f;
-    return {db, 1};
 }
 
 // Route through the position-aware tempo facade when wired (message thread);
@@ -2664,7 +2654,7 @@ void MainView::MasterHeaderPanel::setupControls() {
     // Speaker on/off button (toggles master mute) — one shared recipe with the
     // inspector / mixer master strip.
     speakerButton = makeMasterSpeakerButton();
-    speakerButton->setIconPadding(6.0f);  // the track headers' glyph size on a 22px button
+    speakerButton->setIconPadding(4.0f);  // a 10px glyph on the 18px button
     speakerButton->setTooltip("Mute master");
     speakerButton->onClick = [this]() {
         UndoManager::getInstance().executeCommand(
@@ -2687,7 +2677,7 @@ void MainView::MasterHeaderPanel::setupControls() {
     automationButton->setActiveBackgroundColor(ActiveTheme::SURFACE);
     automationButton->setStateColourReplacement(juce::Colour(0xFFB3B3B3), ActiveTheme::ICON_NEUTRAL,
                                                 ActiveTheme::ACCENT_MODULATION);
-    automationButton->setIconPadding(5.0f);  // The track headers' glyph size.
+    automationButton->setIconPadding(3.0f);  // a 12px glyph on the 18px button
     automationButton->onClick = [this]() {
         // Alt/Option-click toggles global show/hide of all automation lanes.
         if (juce::ModifierKeys::getCurrentModifiers().isAltDown()) {
@@ -2728,43 +2718,12 @@ void MainView::MasterHeaderPanel::setupControls() {
     peakMeter = std::make_unique<LevelMeter>();
     peakMeter->setOrientation(LevelMeter::Orientation::Horizontal);
     addAndMakeVisible(*peakMeter);
-
-    peakValueLabel = std::make_unique<ClickableLabel>();
-    peakValueLabel->setText("-inf", juce::dontSendNotification);
-    peakValueLabel->setJustificationType(juce::Justification::centredLeft);
-    peakValueLabel->setFont(FontManager::getInstance().getMonoFont(9.0f));
-    peakValueLabel->setColour(juce::Label::textColourId,
-                              ActiveTheme::getColour(ActiveTheme::TEXT_SECONDARY));
-    peakValueLabel->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
-    peakValueLabel->setColour(juce::Label::outlineColourId, juce::Colours::transparentBlack);
-    peakValueLabel->setTooltip("Click to reset peak");
-    peakValueLabel->onClick = [this]() {
-        peakValue_ = 0.0f;
-        peakValueLabel->setText("-inf", juce::dontSendNotification);
-        if (peakMeter)
-            peakMeter->resetPeak();
-    };
-    addAndMakeVisible(*peakValueLabel);
 }
 
 void MainView::MasterHeaderPanel::paint(juce::Graphics& g) {
-    // Background
     g.fillAll(ActiveTheme::getColour(ActiveTheme::PANEL_BACKGROUND));
-
-    // Border
-    auto bounds = getLocalBounds();
     g.setColour(ActiveTheme::getColour(ActiveTheme::BORDER));
-    g.drawRect(bounds, 1);
-
-    if (compact_)
-        return;
-
-    // "Master" label at top
-    auto labelArea = bounds.reduced(6, 2).removeFromTop(14);
-    g.setColour(ActiveTheme::getColour(ActiveTheme::TEXT_PRIMARY));
-    g.setFont(FontManager::getInstance().getUIFont(11.0f));
-    g.drawText(magda::technicalText(magda::TechnicalTextToken::Master), labelArea,
-               juce::Justification::centredLeft);
+    g.drawRect(getLocalBounds(), 1);
 }
 
 void MainView::MasterHeaderPanel::mouseDown(const juce::MouseEvent& event) {
@@ -2787,8 +2746,7 @@ void MainView::MasterHeaderPanel::setCompact(bool compact) {
     compact_ = compact;
     for (juce::Component* c : {static_cast<juce::Component*>(speakerButton.get()),
                                static_cast<juce::Component*>(automationButton.get()),
-                               static_cast<juce::Component*>(volumeLabel.get()),
-                               static_cast<juce::Component*>(peakValueLabel.get())})
+                               static_cast<juce::Component*>(volumeLabel.get())})
         c->setVisible(!compact);
     resized();
     repaint();
@@ -2803,14 +2761,11 @@ void MainView::MasterHeaderPanel::resized() {
         peakMeter->setBounds(contentArea.reduced(6, 4));
         return;
     }
-    contentArea.removeFromTop(14);  // "Master" label row
-    contentArea.removeFromTop(6);   // padding below the label
-
-    // Two rows sharing a fixed icon column. The value/meter column takes the
-    // remaining width; the peak readout sits below the meter instead of
-    // occupying a separate empty-left column.
-    const int controlH = 22;
-    const int rowGap = 6;
+    // Two rows sharing a fixed icon column; the value/meter column takes the remaining width.
+    // 18px rows, the track headers' control height (headerControlMetrics).
+    const int controlH = 18;
+    const int rowGap = 4;
+    contentArea.removeFromTop(rowGap);
     const int colGap = 6;
     const int iconSize = controlH;
     const int rowLeftInset = 6;
@@ -2835,18 +2790,11 @@ void MainView::MasterHeaderPanel::resized() {
     topMain.removeFromLeft(rowLeftInset);
     meterMain.removeFromLeft(rowLeftInset);
 
-    constexpr int peakReadoutHeight = 10;
-    auto peakMeterBounds = meterMain;
-    auto readoutArea = contentArea.withX(meterMain.getX()).withWidth(meterMain.getWidth());
-    auto peakReadout = readoutArea.removeFromTop(peakReadoutHeight);
-    auto meterIconAligned = meterIcon;
-
     volumeLabel->setBounds(topMain);
     speakerButton->setBounds(topIcon.withSizeKeepingCentre(iconSize, iconSize));
 
-    peakMeter->setBounds(peakMeterBounds);
-    peakValueLabel->setBounds(peakReadout);
-    automationButton->setBounds(meterIconAligned.withSizeKeepingCentre(iconSize, iconSize));
+    peakMeter->setBounds(meterMain);
+    automationButton->setBounds(meterIcon.withSizeKeepingCentre(iconSize, iconSize));
 }
 
 void MainView::MasterHeaderPanel::applyHeaderStyle() {
@@ -2885,15 +2833,8 @@ void MainView::MasterHeaderPanel::updateAutomationButtonState() {
 }
 
 void MainView::MasterHeaderPanel::setPeakLevels(float leftPeak, float rightPeak) {
-    if (peakMeter) {
+    if (peakMeter)
         peakMeter->setLevels(leftPeak, rightPeak);
-
-        const float peakDb = peakMeter->getPeakDb();
-        if (peakDb > gainToDb(peakValue_)) {
-            peakValue_ = dbToGain(peakDb);
-            peakValueLabel->setText(formatDbValue(peakDb), juce::dontSendNotification);
-        }
-    }
 }
 
 // ===== MasterContentPanel Implementation =====
