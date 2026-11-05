@@ -272,7 +272,6 @@ juce_add_binary_data(MagdaAssets
     ../../assets/icons/fontaudio/fad-filter-bandpass.svg
     ../../assets/icons/fontaudio/fad-filter-notch.svg
     # Fontaudio logo icons
-    ../../assets/icons/fontaudio/fad-logo-juce.svg
     # AI icons
     ../../assets/icons/ai/psychology.svg
     ../../assets/icons/ai/ai-sound-designer.svg
