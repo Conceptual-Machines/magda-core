@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <set>
 
 #include "magda/daw/engine/host/EngineProject.hpp"
 #include "magda/daw/engine/host/TrackFreeze.hpp"
@@ -140,6 +141,24 @@ TEST_CASE("A frozen track plays with its fader and nothing before it", "[engine]
     CHECK_FALSE(plansDevice(plan, 10));
     CHECK_FALSE(plansDevice(plan, 30));
     CHECK(plansDevice(plan, 31));
+}
+
+TEST_CASE("A freeze bakes in the chain before the fader and what feeds it",
+          "[engine][freeze][2067]") {
+    using Key = engine::DeviceKey;
+
+    auto tracks = project();
+    std::ranges::find(tracks, 4, &TrackInfo::id)->chain.fxChainElements.emplace_back(device(40));
+    const auto master = track(magda::MASTER_TRACK_ID);
+
+    CHECK(host::devicesBakedInto(tracks, master, 3) ==
+          std::set<Key>{Key{magda::ChainSegment::Fx, 10}, Key{magda::ChainSegment::Fx, 30}});
+
+    SECTION("Post-FX before the fader is in the file too") {
+        std::ranges::find(tracks, 3, &TrackInfo::id)->chain.postFxPostFader = false;
+        CHECK(host::devicesBakedInto(tracks, master, 3)
+                  .contains(Key{magda::ChainSegment::PostFx, 31}));
+    }
 }
 
 TEST_CASE("A frozen track's lane is its file from beat zero", "[engine][freeze][2555]") {

@@ -1963,7 +1963,16 @@ void TrackChainContent::tracksChanged() {
     updateFromSelectedTrack();
 }
 
+void TrackChainContent::syncNodesToFreeze() {
+    const auto frozen = magda::TrackManager::getInstance().isChainFrozen(selectedTrackId_);
+    for (auto& node : nodeComponents_)
+        node->setFrozen(frozen);
+}
+
 void TrackChainContent::trackPropertyChanged(int trackId) {
+    // Any track's: the one freezing may be downstream of the one showing.
+    syncNodesToFreeze();
+
     if (static_cast<magda::TrackId>(trackId) == selectedTrackId_) {
         // Only update header widgets — don't rebuild device components,
         // as the device chain hasn't changed and rebuilding destroys
@@ -2984,13 +2993,10 @@ void TrackChainContent::rebuildNodeComponents() {
 
     // Set frozen + chain-power state on all nodes. Chain power off greys the
     // nodes without touching their own bypass buttons.
-    auto* trackInfo = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
-    bool trackFrozen = trackInfo && trackInfo->frozen;
+    syncNodesToFreeze();
     const bool chainDisabled = !magda::TrackManager::getInstance().isChainEnabled(selectedTrackId_);
-    for (auto& node : nodeComponents_) {
-        node->setFrozen(trackFrozen);
+    for (auto& node : nodeComponents_)
         node->setChainDisabled(chainDisabled);
-    }
 
     // Restore node states (collapsed, expanded chains) for ALL nodes
     restoreNodeStates();

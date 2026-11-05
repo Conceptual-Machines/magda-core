@@ -184,7 +184,9 @@ only when the request says `replace`.
 `tracks.freeze` renders a track offline as a job, without the progress window
 the track menu shows, and on completion the track plays the render in place of
 its devices. An engine that cannot plan the freeze reports the job
-`unsupported` with its reason. `tracks.unfreeze` is an immediate write.
+`unsupported` with its reason. `tracks.unfreeze` is an immediate write. Unless
+the unload preference is off, the freeze closes those devices, so a plugin an
+unfreeze brings back loads after that write has returned.
 
 ### Project lifecycle
 

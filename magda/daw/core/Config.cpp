@@ -164,6 +164,7 @@ juce::var Config::toVar() const {
 
     // Transport
     root->setProperty("openPluginWindowOnDrop", openPluginWindowOnDrop);
+    root->setProperty("unloadPluginsOnFreeze", unloadPluginsOnFreeze);
     root->setProperty("audioEditorSpectrogram", audioEditorSpectrogram);
     root->setProperty("audioEditorTransients", audioEditorTransients);
     root->setProperty("skipFourOscConversionPrompt", skipFourOscConversionPrompt);
@@ -639,6 +640,7 @@ void Config::fromVar(const juce::var& parsed) {
     zoomOutSensitivityShift = getDouble("zoomOutSensitivityShift", zoomOutSensitivityShift);
 
     openPluginWindowOnDrop = getBool("openPluginWindowOnDrop", openPluginWindowOnDrop);
+    unloadPluginsOnFreeze = getBool("unloadPluginsOnFreeze", unloadPluginsOnFreeze);
     audioEditorSpectrogram = getBool("audioEditorSpectrogram", audioEditorSpectrogram);
     audioEditorTransients = getBool("audioEditorTransients", audioEditorTransients);
     skipFourOscConversionPrompt =

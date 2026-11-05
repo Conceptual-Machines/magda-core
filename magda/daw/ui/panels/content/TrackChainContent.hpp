@@ -258,6 +258,9 @@ class TrackChainContent : public PanelContent,
     void syncMuteButton(bool muted);
     void hideHeaderControls();
     void rebuildNodeComponents();
+
+    /** @brief Grey the nodes while a freeze has their devices out of play. */
+    void syncNodesToFreeze();
     int calculateTotalContentWidth() const;
     void layoutChainContent();
     void onAddDeviceClicked();

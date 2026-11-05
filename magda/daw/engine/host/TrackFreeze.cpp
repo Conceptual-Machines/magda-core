@@ -10,6 +10,7 @@
 #include "../../core/TrackAvailability.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../project/ProjectManager.hpp"
+#include "exec/RuntimeStateStore.hpp"
 #include "plan/TrackRouting.hpp"
 
 namespace magda::daw::engine_host {
@@ -174,6 +175,17 @@ std::vector<engine::ClipLane> lanesAsPlayed(std::vector<engine::ClipLane> lanes,
     }
 
     return lanes;
+}
+
+std::set<engine::DeviceKey> devicesBakedInto(const std::vector<TrackInfo>& tracks,
+                                             const TrackInfo& master, TrackId trackId) {
+    auto baked = engine::collectRuntimeStateIds(tracks, master).devices;
+    const auto played =
+        engine::collectRuntimeStateIds(tracksAsPlayed(tracks, {{.trackId = trackId}}), master);
+    for (const auto& key : played.devices)
+        baked.erase(key);
+
+    return baked;
 }
 
 std::vector<FrozenTrack> frozenTracksWithFiles(const std::vector<TrackInfo>& tracks) {

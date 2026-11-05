@@ -185,6 +185,10 @@ SavedStateOutcome applySavedPluginState(juce::AudioPluginInstance& instance,
  */
 std::vector<RestoredParameter> snapshotHostParameters(const juce::AudioPluginInstance& instance);
 
+/** @brief How many of @p restored differ from what @p device saved for them (#2067). */
+int countParametersNotRestored(const DeviceInfo& device,
+                               const std::vector<RestoredParameter>& restored);
+
 /**
  * @brief Write @p restored into @p device's own parameter records.
  *
