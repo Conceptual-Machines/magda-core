@@ -452,6 +452,14 @@ class EngineHost {
     /// Take @p request's finished file as what its track plays once frozen.
     void adoptFreeze(const OfflineRenderRequest& request);
 
+    /**
+     * @brief Let go of the devices a freeze of @p trackId stops playing, at the next plan (#2067).
+     *
+     * Reads each plugin into the model first, and an unfreeze builds them again from it. Message
+     * thread.
+     */
+    void unloadDevicesBakedInto(TrackId trackId);
+
     /// The tempo and signature above as the app's beats<->seconds facade.
     /// Never null, and valid until this host is destroyed.
     const magda::TempoMap* tempoMap() const;

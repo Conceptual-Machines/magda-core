@@ -466,6 +466,10 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setTrackInputMonitor(TrackId trackId, InputMonitorMode mode);
     void setTrackFrozen(TrackId trackId, bool frozen);
 
+    /** @brief Whether @p trackId's chain is out of play: it is frozen, or routes into a track
+        that is (#2067). */
+    bool isChainFrozen(TrackId trackId) const;
+
     /** @brief Whether the track renders: switched on, and holding no device this build does not
         register (#3101). */
     bool isTrackEnabled(TrackId trackId) const;

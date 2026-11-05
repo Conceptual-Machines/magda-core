@@ -4,6 +4,7 @@
 #include "ExternalPluginState.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <map>
 
 #include "../Vst3Preset.hpp"
@@ -304,6 +305,17 @@ std::vector<RestoredParameter> snapshotHostParameters(const juce::AudioPluginIns
             restored.push_back({.paramIndex = index, .value = parameter->getValue()});
 
     return restored;
+}
+
+int countParametersNotRestored(const DeviceInfo& device,
+                               const std::vector<RestoredParameter>& restored) {
+    constexpr auto tolerance = 1.0e-3f;
+    return static_cast<int>(
+        std::ranges::count_if(restored, [&device](const RestoredParameter& parameter) {
+            const auto* saved = modelParameterAt(device, parameter.paramIndex);
+            return saved != nullptr &&
+                   std::abs(parameter.value - normalisedFrom(*saved)) > tolerance;
+        }));
 }
 
 void applyRestoredParameters(DeviceInfo& device, const std::vector<RestoredParameter>& restored) {

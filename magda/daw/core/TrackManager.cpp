@@ -1422,15 +1422,20 @@ std::vector<TrackId> TrackManager::getAllDescendants(TrackId trackId) const {
     return result;
 }
 
+namespace {
+
+/** @brief The track @p route names, or INVALID_TRACK_ID. */
+TrackId routedFrom(const juce::String& route) {
+    return route.startsWith("track:")
+               ? route.fromFirstOccurrenceOf("track:", false, false).getIntValue()
+               : INVALID_TRACK_ID;
+}
+
+}  // namespace
+
 bool TrackManager::wouldCreateInputRoutingCycle(TrackId destTrackId, TrackId sourceTrackId) const {
     if (sourceTrackId == destTrackId)
         return true;
-
-    const auto routedFrom = [](const juce::String& route) {
-        return route.startsWith("track:")
-                   ? route.fromFirstOccurrenceOf("track:", false, false).getIntValue()
-                   : INVALID_TRACK_ID;
-    };
 
     // Upstream from the source over every edge into a track: its audio and MIDI
     // inputs, and each track whose MIDI Out names it (#2209).
@@ -1578,6 +1583,17 @@ void TrackManager::setTrackFrozen(TrackId trackId, bool frozen) {
         track->frozen = frozen;
         notifyTrackPropertyChanged(trackId);
     }
+}
+
+bool TrackManager::isChainFrozen(TrackId trackId) const {
+    std::unordered_set<TrackId> visited;
+    for (const auto* track = getTrack(trackId);
+         track != nullptr && visited.insert(track->id).second;
+         track = getTrack(routedFrom(track->audioOutputDevice)))
+        if (track->frozen)
+            return true;
+
+    return false;
 }
 
 bool TrackManager::isTrackEnabled(TrackId trackId) const {

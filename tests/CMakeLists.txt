@@ -1043,6 +1043,9 @@ target_sources(magda_juce_tests PRIVATE
         # Export, bounce and analysis renders on the native engine, read off disk (#2555).
         engine/test_engine_offline_render_juce.cpp
 
+        # A freeze releasing the devices its file holds, and an unfreeze rebuilding them (#2067).
+        engine/test_freeze_unload_juce.cpp
+
         # What the app's own engine answers with no Edit behind it (#2579).
         engine/test_magda_audio_engine_juce.cpp
 

@@ -838,13 +838,14 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         engine::PlanValues values;
         report("values", resolveValues(*plan, valueTracks, *master, values));
 
-        const auto ids = engine::collectRuntimeStateIds(valueTracks, *master);
+        const auto ids = idsToRetain(valueTracks, *master);
         const auto result = session_->publish(plan, context_, ids, std::move(values));
         report("publish", result.messages);
 
         if (!result.published)
             return false;
 
+        devicesToUnload_.clear();
         livePlan_ = std::move(plan);
         publishedHardwareOutputs_ = hardwareOutputs_;
         publishedTakeKeys_ = ids.takes;
@@ -855,6 +856,15 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         forgetPluginDriverState();
         markRenderedDevices();
         return true;
+    }
+
+    /** @brief What the store keeps past a publish: the model, less what a freeze let go. */
+    engine::RuntimeStateIds idsToRetain(const std::vector<TrackInfo>& tracks,
+                                        const TrackInfo& master) const {
+        auto ids = engine::collectRuntimeStateIds(tracks, master);
+        for (const auto key : devicesToUnload_)
+            ids.devices.erase(key);
+        return ids;
     }
 
     /**
@@ -2573,6 +2583,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     }
 
     void forgetProject() {
+        devicesToUnload_.clear();
         stopRecording(false, false);
         if (session_ != nullptr) {
             // Track and clip IDs restart in the next project. Retire every old
@@ -3968,6 +3979,41 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         });
     }
 
+    /**
+     * @brief Let go of the devices a freeze of @p trackId stops playing, at the next plan (#2067).
+     *
+     * A plugin that cannot be read stays loaded: its instance is the only copy of its state.
+     */
+    void unloadDevicesBakedInto(TrackId trackId) {
+        const auto* master = TrackManager::getInstance().getTrack(MASTER_TRACK_ID);
+        if (session_ == nullptr || master == nullptr)
+            return;
+
+        const auto& tracks = TrackManager::getInstance().getTracks();
+        for (const auto key : devicesBakedInto(tracks, *master, trackId))
+            if (!factory_.isExternalKey(key) || readPluginIntoModel(key))
+                devicesToUnload_.insert(key);
+
+        wantPlan();
+    }
+
+    /** @brief Read @p key's plugin into the model before returning, and say whether it landed. */
+    bool readPluginIntoModel(engine::DeviceKey key) {
+        auto landed = false;
+        const auto asked = plane_.captureState(
+            key, [&landed, request = loader_.request(key)](adapter::CaptureOutcome taken) {
+                if (taken.ok())
+                    landed = adapter::commitCapturedState(request, taken.snapshot(), modelDeviceAt);
+                else
+                    juce::Logger::writeToLog("[engine] kept loaded: " + taken.failure());
+            });
+
+        if (asked)
+            control_->drain();
+
+        return landed;
+    }
+
     /// Devices the model names and no catalog could build. Named rather than
     /// counted, and only when the set changes: a line per publish would bury
     /// everything else.
@@ -4127,6 +4173,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     /// The frozen tracks the plan and the lanes were last published with.
     std::vector<FrozenTrack> frozen_;
+    /// What the next plan publish lets go of, each already readable from the model (#2067).
+    std::set<engine::DeviceKey> devicesToUnload_;
     std::optional<MasterInput> masterInput_;
 
     double bpm_ = 120.0;
@@ -4668,6 +4716,10 @@ EngineHost::FreezePlan EngineHost::planFreeze(TrackId trackId) const {
 
 void EngineHost::adoptFreeze(const OfflineRenderRequest& request) {
     refreshPooledFile(request.destination);
+}
+
+void EngineHost::unloadDevicesBakedInto(TrackId trackId) {
+    impl_->unloadDevicesBakedInto(trackId);
 }
 
 std::unique_ptr<OfflineRenderSession> EngineHost::createOfflineRenderSession(

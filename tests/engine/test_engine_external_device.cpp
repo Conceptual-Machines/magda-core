@@ -4860,3 +4860,25 @@ TEST_CASE("A stereo instrument stays single-out", "[engine][external][multiout]"
     REQUIRE(result.resolvedDevice.has_value());
     CHECK_FALSE(result.resolvedDevice->multiOut.isMultiOut);
 }
+
+TEST_CASE("A parameter a chunk left elsewhere is counted as not restored",
+          "[engine][external][2067]") {
+    const auto parameter = [](int index, float value) {
+        magda::ParameterInfo info;
+        info.paramIndex = index;
+        info.minValue = 0.0f;
+        info.maxValue = 1.0f;
+        info.currentValue = value;
+        return info;
+    };
+
+    magda::DeviceInfo saved;
+    saved.parameters = {parameter(0, 0.25f), parameter(1, 0.75f)};
+
+    CHECK(magda::countParametersNotRestored(saved, {{0, 0.25f}, {1, 0.75f}}) == 0);
+    CHECK(magda::countParametersNotRestored(saved, {{0, 0.25f}, {1, 0.5f}}) == 1);
+    CHECK(magda::countParametersNotRestored(saved, {{0, 0.0f}, {1, 0.5f}}) == 2);
+
+    // A parameter the plugin gained since the project was saved has nothing to differ from.
+    CHECK(magda::countParametersNotRestored(saved, {{2, 0.9f}}) == 0);
+}

@@ -4,6 +4,7 @@
 #pragma once
 
 #include <optional>
+#include <set>
 #include <vector>
 
 #include "../AudioEngine.hpp"
@@ -11,6 +12,7 @@
 #include "core/ClipTypes.hpp"
 #include "core/TrackInfo.hpp"
 #include "exec/RenderContext.hpp"
+#include "plan/RenderPlan.hpp"
 #include "transport/TempoMap.hpp"
 
 /**
@@ -19,8 +21,9 @@
  *
  * The file holds the track's signal up to its fader, with every track routed
  * into it. Live playback compiles the track as a clip on that file with nothing
- * before the fader, and leaves out the tracks feeding it; their devices stay in
- * the store, so an unfreeze carries their state.
+ * before the fader, and leaves out the tracks feeding it. Their devices stay in
+ * the store unless the freeze unloaded them (#2067), and an unfreeze builds those
+ * again from the model.
  */
 
 namespace magda::daw::engine_host {
@@ -63,6 +66,10 @@ std::vector<engine::ClipLane> lanesAsPlayed(std::vector<engine::ClipLane> lanes,
                                             const std::vector<TrackInfo>& tracks,
                                             const std::vector<FrozenTrack>& frozen,
                                             const engine::TempoMap& tempo);
+
+/** @brief The devices a freeze of @p trackId stops playing, every one of which its file holds. */
+std::set<engine::DeviceKey> devicesBakedInto(const std::vector<TrackInfo>& tracks,
+                                             const TrackInfo& master, TrackId trackId);
 
 /** @brief The frozen tracks among @p tracks whose file is on disk, pooling each. Message thread. */
 std::vector<FrozenTrack> frozenTracksWithFiles(const std::vector<TrackInfo>& tracks);

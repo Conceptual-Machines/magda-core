@@ -167,6 +167,13 @@ class Config {
         openPluginWindowOnDrop = open;
     }
 
+    bool getUnloadPluginsOnFreeze() const {
+        return unloadPluginsOnFreeze;
+    }
+    void setUnloadPluginsOnFreeze(bool unload) {
+        unloadPluginsOnFreeze = unload;
+    }
+
     bool getAudioEditorSpectrogram() const {
         return audioEditorSpectrogram;
     }
@@ -1673,6 +1680,8 @@ class Config {
 
     // Open a device's editor window automatically when it is dropped into a chain
     bool openPluginWindowOnDrop = false;
+    // Freezing a track closes the plugins its file already holds (#2067)
+    bool unloadPluginsOnFreeze = true;
     // The audio editor draws a spectrogram instead of the waveform (#3065)
     bool audioEditorSpectrogram = false;
     bool audioEditorTransients = true;

@@ -245,6 +245,13 @@ ExternalDeviceResult adaptExternalPluginInstance(
 
     auto restored = magda::snapshotHostParameters(*instance);
 
+    // Honouring its own chunk is the plugin's job, so one that does not is only named (#2067).
+    if (restoredFrom == magda::SavedStateOutcome::Restored)
+        if (const auto changed = magda::countParametersNotRestored(device, restored); changed > 0)
+            juce::Logger::writeToLog("[engine] external plugin \"" + device.name + "\" restored " +
+                                     juce::String(changed) +
+                                     " parameters to other values than it saved");
+
     return {.device = std::make_unique<EngineExternalDevice>(std::move(instance), resolvedDevice,
                                                              offlineRender),
             .failure = {},

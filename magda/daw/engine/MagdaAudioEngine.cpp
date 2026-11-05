@@ -574,6 +574,8 @@ AudioEngine::TrackFreezePlan MagdaAudioEngine::planTrackFreeze(TrackId trackId) 
 
 void MagdaAudioEngine::adoptTrackFreeze(TrackId trackId, const OfflineRenderRequest& request) {
     host_->adoptFreeze(request);
+    if (Config::getInstance().getUnloadPluginsOnFreeze())
+        host_->unloadDevicesBakedInto(trackId);
     TrackManager::getInstance().setTrackFrozen(trackId, true);
 }
 
