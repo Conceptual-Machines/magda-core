@@ -3,10 +3,12 @@
 
 #include <juce_audio_devices/juce_audio_devices.h>
 
+#include <functional>
 #include <memory>
 
 #include "magda/daw/audio/io/AudioDeviceOpenMark.hpp"
 #include "magda/daw/audio/io/AudioIOService.hpp"
+#include "magda/daw/audio/io/MicrophoneAccess.hpp"
 #include "magda/daw/core/Config.hpp"
 
 /// @file AudioIOService opening only the channels asked for (#2746).
@@ -47,6 +49,8 @@ struct OpenRequest {
     double sampleRate = 0.0;
     int bufferSize = 0;
     int opens = 0;
+    /// Every instance a backend made, which is what a channel probe does too.
+    int created = 0;
     DriverPanel panel;
     /// The AudioDeviceOpenMark file, and whether it was there while the driver opened (#3090).
     juce::File mark;
@@ -92,6 +96,7 @@ class FakeInterface final : public juce::AudioIODevice {
                      .sampleRate = sampleRate,
                      .bufferSize = bufferSize,
                      .opens = request_->opens + 1,
+                     .created = request_->created,
                      .panel = request_->panel,
                      .mark = request_->mark,
                      .marked = request_->mark.existsAsFile()};
@@ -188,6 +193,7 @@ class FakeBackend final : public juce::AudioIODeviceType {
         const auto name = output.isNotEmpty() ? output : input;
         if (!getDeviceNames().contains(name))
             return nullptr;
+        ++request_->created;
         return new FakeInterface(name, getTypeName(), name == "Virtual" ? kVirtualChannels : 2,
                                  request_);
     }
@@ -196,9 +202,31 @@ class FakeBackend final : public juce::AudioIODeviceType {
     std::shared_ptr<OpenRequest> request_;
 };
 
+/** @brief macOS's microphone prompt, answered when a test says so. */
+struct FakePrompt {
+    bool undecided = true;
+    int shown = 0;
+    std::function<void()> answered;
+
+    magda::MicrophoneAccess access() {
+        return {.undecided = [this] { return undecided; },
+                .request =
+                    [this](std::function<void()> then) {
+                        ++shown;
+                        answered = std::move(then);
+                    }};
+    }
+
+    void answer() {
+        undecided = false;
+        answered();
+    }
+};
+
 /** @brief A service on the fake backend, starting from @p saved and no Tracktion settings. */
 struct Rig {
-    explicit Rig(std::optional<magda::AudioIOSettings> saved, juce::File openMark = {}) {
+    explicit Rig(std::optional<magda::AudioIOSettings> saved, juce::File openMark = {},
+                 magda::MicrophoneAccess microphone = {}) {
         magda::Config::getInstance().setAudioIO(std::move(saved));
         request->mark = openMark;
 
@@ -206,8 +234,12 @@ struct Rig {
         // The same interfaces on both, as Windows Audio's shared and exclusive modes have.
         backends.push_back(std::make_unique<FakeBackend>("Fake", request));
         backends.push_back(std::make_unique<FakeBackend>("Fake Exclusive", request));
-        service = std::make_unique<magda::AudioIOService>(
-            std::move(backends), legacySettings.getFile(), std::move(openMark));
+        // The one backend that asks about the microphone.
+        if (microphone.undecided)
+            backends.push_back(std::make_unique<FakeBackend>("CoreAudio", request));
+        service =
+            std::make_unique<magda::AudioIOService>(std::move(backends), legacySettings.getFile(),
+                                                    std::move(openMark), std::move(microphone));
     }
 
     ~Rig() {
@@ -229,6 +261,16 @@ magda::AudioIOSettings savedOn(const std::string& interfaceName, std::vector<int
             .bufferSize = 256,
             .inputChannels = std::move(inputs),
             .outputChannels = std::move(outputs)};
+}
+
+magda::AudioIOSettings onCoreAudio(magda::AudioIOSettings settings) {
+    settings.backend = "CoreAudio";
+    return settings;
+}
+
+void dispatchUntil(const std::function<bool()>& done) {
+    for (auto tick = 0; tick < 200 && !done(); ++tick)
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(5);
 }
 
 }  // namespace
@@ -512,6 +554,160 @@ class AudioIOServiceTest final : public juce::UnitTest {
 
             expect(heard.changes > 0);
             rig.service->removeListener(&heard);
+        }
+
+        beginTest("chosen inputs and an undecided microphone open nothing until it is answered");
+        {
+            FakePrompt prompt;
+            const auto saved = onCoreAudio(savedOn("Virtual", {0, 1}, {0, 1}));
+            Rig rig(saved, {}, prompt.access());
+            rig.service->open();
+
+            expectEquals(prompt.shown, 1);
+            expectEquals(rig.request->created, 0, "coreaudiod blocks on a probe as on an open");
+            expect(!rig.service->isOpen());
+            expect(magda::Config::getInstance().getAudioIO() == saved);
+
+            prompt.answer();
+            dispatchUntil([&] { return rig.service->isOpen(); });
+
+            expect(rig.request->backend == "CoreAudio");
+            expect(rig.request->inputs == channels({0, 1}));
+            expect(rig.request->outputs == channels({0, 1}));
+            expectEquals(prompt.shown, 1);
+        }
+
+        beginTest("a decided microphone opens inputs at once without asking");
+        {
+            FakePrompt prompt;
+            prompt.undecided = false;
+            Rig rig(onCoreAudio(savedOn("Virtual", {0}, {0, 1})), {}, prompt.access());
+            rig.service->open();
+
+            expect(rig.request->inputs == channels({0}));
+            expectEquals(prompt.shown, 0);
+        }
+
+        beginTest("an interface chosen with no input channels on it never asks");
+        {
+            FakePrompt prompt;
+            Rig rig(onCoreAudio(savedOn("Virtual", {}, {0, 1})), {}, prompt.access());
+            rig.service->open();
+
+            expect(rig.request->outputs == channels({0, 1}));
+            expect(rig.request->inputs.isZero());
+            expectEquals(prompt.shown, 0);
+        }
+
+        beginTest("inputs on a backend coreaudiod does not serve do not wait for the microphone");
+        {
+            FakePrompt prompt;
+            Rig rig(savedOn("Virtual", {0}, {0, 1}), {}, prompt.access());
+            rig.service->open();
+
+            expect(rig.request->inputs == channels({0}));
+            expectEquals(prompt.shown, 0);
+        }
+
+        beginTest("an input's channels are not probed for until the microphone is answered");
+        {
+            FakePrompt prompt;
+            Rig rig(std::nullopt, {}, prompt.access());
+            struct Heard final : magda::HardwareChannels::Listener {
+                void hardwareChannelsChanged() override {
+                    ++changes;
+                }
+                int changes = 0;
+            } heard;
+            rig.service->addListener(&heard);
+
+            expect(rig.service->getChannelNames("CoreAudio", "Stereo", true).isEmpty());
+            expect(rig.service->getChannelNames("CoreAudio", "Stereo", true).isEmpty());
+            expectEquals(prompt.shown, 1);
+            expectEquals(rig.request->created, 0);
+            expectEquals(rig.service->getChannelNames("CoreAudio", "Stereo", false).size(), 2,
+                         "outputs have nothing to wait for");
+
+            prompt.answer();
+            dispatchUntil([&] { return heard.changes > 0; });
+
+            expect(heard.changes > 0, "what lists the names hears to list them again");
+            expectEquals(rig.service->getChannelNames("CoreAudio", "Stereo", true).size(), 2);
+            rig.service->removeListener(&heard);
+        }
+
+        beginTest("apply while undecided opens outputs, then the inputs it kept once answered");
+        {
+            FakePrompt prompt;
+            Rig rig(std::nullopt, {}, prompt.access());
+            const auto settings = onCoreAudio(savedOn("Stereo", {0}, {0, 1}));
+
+            expectEquals(rig.service->apply(settings), juce::String());
+            expect(rig.request->outputs == channels({0, 1}));
+            expect(rig.request->inputs.isZero());
+            expect(magda::Config::getInstance().getAudioIO() == settings);
+            expectEquals(prompt.shown, 1);
+
+            prompt.answer();
+            dispatchUntil([&] { return !rig.request->inputs.isZero(); });
+
+            expect(rig.request->inputs == channels({0}));
+            expect(magda::Config::getInstance().getAudioIO() == settings);
+        }
+
+        beginTest("what Tracktion saved waits for the microphone and is still migrated");
+        {
+            FakePrompt prompt;
+            Rig rig(std::nullopt, {}, prompt.access());
+            expect(rig.legacySettings.getFile().replaceWithText(
+                R"(<?xml version="1.0" encoding="UTF-8"?>
+<PROPERTIES>
+  <VALUE name="audio_device_setup">
+    <DEVICESETUP deviceType="CoreAudio" audioOutputDeviceName="Stereo" audioInputDeviceName="Stereo"
+                 audioDeviceRate="48000.0" audioDeviceBufferSize="256"/>
+  </VALUE>
+  <VALUE name="audiosettings_CoreAudio">
+    <AUDIODEVICE outEnabled="11" inEnabled="10" monoChansOut="0" stereoChansIn="0"/>
+  </VALUE>
+</PROPERTIES>
+)"));
+            rig.service->open();
+
+            expectEquals(prompt.shown, 1);
+            expect(!magda::Config::getInstance().getAudioIO().has_value());
+
+            prompt.answer();
+            dispatchUntil([&] { return rig.service->isOpen(); });
+
+            expect(rig.request->inputs == channels({1}));
+            expect(magda::Config::getInstance().getAudioIO() ==
+                   onCoreAudio(savedOn("Stereo", {1}, {0, 1})));
+        }
+
+        beginTest("an answer that leaves the microphone undecided opens anyway, asking only once");
+        {
+            FakePrompt prompt;
+            Rig rig(onCoreAudio(savedOn("Virtual", {0}, {0, 1})), {}, prompt.access());
+            rig.service->open();
+
+            prompt.answered();
+            dispatchUntil([&] { return rig.service->isOpen(); });
+
+            expect(rig.request->inputs == channels({0}));
+            expectEquals(prompt.shown, 1);
+        }
+
+        beginTest("an answer after the service is gone is dropped");
+        {
+            FakePrompt prompt;
+            {
+                Rig rig(onCoreAudio(savedOn("Virtual", {0}, {0, 1})), {}, prompt.access());
+                rig.service->open();
+            }
+
+            prompt.answered();
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(20);
+            expect(!magda::Config::getInstance().getAudioIO().has_value());
         }
     }
 };

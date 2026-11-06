@@ -472,6 +472,7 @@ target_sources(magda_daw PRIVATE
     io/JackAudioBackend.hpp
     io/LegacyAudioSettings.cpp
     io/LegacyAudioSettings.hpp
+    io/MicrophoneAccess.hpp
     AudioThumbnailManager.cpp
     SpectrogramCache.cpp
     WaveformPeakCache.cpp
@@ -532,6 +533,11 @@ target_sources(magda_daw PRIVATE
 )
 
 target_link_libraries(magda_daw PRIVATE Ableton::Link)
+
+if(APPLE)
+    target_sources(magda_daw PRIVATE io/MicrophoneAccess.mm)
+    target_link_libraries(magda_daw PRIVATE "-framework AVFoundation")
+endif()
 
 # The base pack is compiled separately against magda::device_sdk. Enforce both
 # the movable SDK include boundary and complete independence from Tracktion.
