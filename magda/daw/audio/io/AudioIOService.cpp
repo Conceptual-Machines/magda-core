@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <utility>
 
 #include "../../core/AppPaths.hpp"
 #include "AudioDeviceOpenMark.hpp"
@@ -50,13 +51,17 @@ void log(const juce::String& message) {
 }  // namespace
 
 AudioIOService::AudioIOService()
-    : AudioIOService({}, legacySettingsFile(), paths::audioDeviceOpenMarkFile()) {
+    : AudioIOService({}, legacySettingsFile(), paths::audioDeviceOpenMarkFile(),
+                     systemMicrophoneAccess()) {
     jack::addBackend(manager_);
 }
 
 AudioIOService::AudioIOService(std::vector<std::unique_ptr<juce::AudioIODeviceType>> backends,
-                               juce::File legacySettings, juce::File openMark)
-    : legacySettings_(std::move(legacySettings)), openMark_(std::move(openMark)) {
+                               juce::File legacySettings, juce::File openMark,
+                               MicrophoneAccess microphone)
+    : legacySettings_(std::move(legacySettings)),
+      openMark_(std::move(openMark)),
+      microphone_(std::move(microphone)) {
     // Before the first scan: JUCE creates the platform's backends only when it has none.
     for (auto& backend : backends)
         manager_.addAudioDeviceType(std::move(backend));
@@ -77,6 +82,12 @@ void AudioIOService::open() {
     const auto migrating = !recovering && !wanted.has_value();
     if (migrating)
         wanted = readLegacyAudioSettings(legacySettings_);
+
+    if (wanted && !wanted->inputInterface.empty() && !wanted->inputChannels.empty() &&
+        awaitingMicrophone(wanted->backend)) {
+        log("nothing opens until the microphone prompt is answered");
+        return;
+    }
 
     AudioIOSettings fitted;
     {
@@ -223,6 +234,9 @@ juce::StringArray AudioIOService::getChannelNames(const juce::String& backend,
     if (found == nullptr || interfaceName.isEmpty())
         return {};
 
+    if (inputs && awaitingMicrophone(backend))
+        return {};
+
     const std::unique_ptr<juce::AudioIODevice> probe(found->createDevice(
         inputs ? juce::String() : interfaceName, inputs ? interfaceName : juce::String()));
     if (probe == nullptr)
@@ -323,6 +337,28 @@ juce::AudioIODeviceType* AudioIOService::defaultBackend() {
     return nullptr;
 }
 
+bool AudioIOService::awaitingMicrophone(const juce::String& backend) {
+    if (backend != "CoreAudio" || microphoneDecided_)
+        return false;
+
+    if (!microphone_.undecided || !microphone_.undecided()) {
+        microphoneDecided_ = true;
+        return false;
+    }
+
+    if (!std::exchange(microphoneAsked_, true))
+        microphone_.request([alive = alive_, this] {
+            juce::MessageManager::callAsync([alive, this] {
+                if (!*alive)
+                    return;
+                microphoneDecided_ = true;
+                open();
+                notifyChanged();
+            });
+        });
+    return true;
+}
+
 AudioIOSettings AudioIOService::fit(const std::optional<AudioIOSettings>& wanted) {
     auto* savedBackend = wanted ? backendNamed(wanted->backend) : nullptr;
     const auto* saved =
@@ -361,8 +397,9 @@ AudioIOSettings AudioIOService::fit(const std::optional<AudioIOSettings>& wanted
 
     if (saved != nullptr && present(saved->inputInterface, true)) {
         fitted.inputInterface = saved->inputInterface;
-        fitted.inputChannels =
-            within(saved->inputChannels, channelCount(saved->inputInterface, true));
+        if (!saved->inputChannels.empty())
+            fitted.inputChannels =
+                within(saved->inputChannels, channelCount(saved->inputInterface, true));
     }
 
     return fitted;

@@ -58,6 +58,9 @@ class CustomChannelSelector : public juce::Component {
     /** @brief List the chosen interface's channels, ticked where they are chosen. */
     void refresh();
 
+    /** @brief Whether the interface now names other channels than those listed. */
+    bool listIsStale() const;
+
     /** @brief The header and every row, unscrolled. */
     int preferredHeight() const;
 

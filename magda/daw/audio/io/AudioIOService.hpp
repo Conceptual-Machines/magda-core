@@ -17,6 +17,7 @@
 
 #include "../../core/Config.hpp"
 #include "AudioIOControl.hpp"
+#include "MicrophoneAccess.hpp"
 
 namespace magda {
 
@@ -52,7 +53,8 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
      * @p openMark is the AudioDeviceOpenMark file; empty marks nothing.
      */
     AudioIOService(std::vector<std::unique_ptr<juce::AudioIODeviceType>> backends,
-                   juce::File legacySettings, juce::File openMark = {});
+                   juce::File legacySettings, juce::File openMark = {},
+                   MicrophoneAccess microphone = {});
 
     ~AudioIOService() override;
 
@@ -64,7 +66,8 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
      *        and no input.
      *
      * A failure is logged and leaves nothing open, so the app still launches. After a launch
-     * that died opening an interface, the default is opened and saved instead (#3090).
+     * that died opening an interface, the default is opened and saved instead (#3090). With
+     * inputs chosen and the microphone undecided, nothing opens until the prompt is answered.
      */
     void open();
 
@@ -146,6 +149,14 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
     juce::AudioIODeviceType* backendNamed(const juce::String& name);
     juce::AudioIODeviceType* defaultBackend();
 
+    /**
+     * @brief Whether @p backend's inputs have to wait for the microphone prompt, showing it once.
+     *
+     * Until it is answered coreaudiod serves nothing else from this process: every HAL call times
+     * out after 30 s on the calling thread, and a stream opened through that never starts.
+     */
+    bool awaitingMicrophone(const juce::String& backend);
+
     /** @brief @p wanted cut to the interfaces present and the channels they have. */
     AudioIOSettings fit(const std::optional<AudioIOSettings>& wanted);
 
@@ -161,6 +172,9 @@ class AudioIOService : public AudioIOControl, private juce::ChangeListener {
     juce::AudioDeviceManager manager_;
     juce::File legacySettings_;
     juce::File openMark_;
+    MicrophoneAccess microphone_;
+    bool microphoneAsked_ = false;
+    bool microphoneDecided_ = false;
 
     /// Cleared on destruction, so a rate switch finishing late does not open a dead service.
     std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);

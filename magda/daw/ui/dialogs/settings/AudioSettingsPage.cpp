@@ -128,6 +128,10 @@ CustomChannelSelector::CustomChannelSelector(AudioIOControl& audio, bool isInput
 
 CustomChannelSelector::~CustomChannelSelector() {}
 
+bool CustomChannelSelector::listIsStale() const {
+    return audio_.channelNames(audio_.chosen().backend, interfaceName_, isInput_) != driverNames_;
+}
+
 void CustomChannelSelector::refresh() {
     channelToggles_.clear();
 
@@ -653,6 +657,11 @@ void AudioSettingsPage::hardwareChannelsChanged() {
         chosen.outputInterface == listed_.outputInterface) {
         showOpenInterface();
         populateStreamLists();
+        // Inputs have no names to list until the microphone prompt is answered.
+        if (inputChannelSelector_->listIsStale()) {
+            inputChannelSelector_->refresh();
+            resized();
+        }
         hideDeviceRefreshIndicator();
         return;
     }
