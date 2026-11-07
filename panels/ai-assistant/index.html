@@ -1798,28 +1798,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../devices/4osc/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    4OSC Synth
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../devices/drum-grid/" class="md-nav__link">
         
   
@@ -2804,13 +2782,11 @@ groove.set(template="Basic 8th Swing", strength=0.5)
 <p>The chat shows a categorised summary of what changed, plus a one-line apply status. The preset name and category the AI chose become the default values when you save the preset from the device header — just click save and hit Enter.</p>
 <p>Built-in safeguards:</p>
 <ul>
-<li>On 4OSC, a <strong>master-level safety cap</strong> estimates worst-case peak gain from the active oscillator count, distortion drive, and filter resonance, then clamps the master <code>level</code> to keep peaks in a sensible range. The AI's choices are only overridden when they would clip.</li>
 <li>The result is a <strong>starting point</strong>, not a final preset. Tweak by ear before saving.</li>
 </ul>
-<p>For example prompts and recipes, see the <a href="../../devices/4osc/#ai-sound-design-design">4OSC Synth — AI Sound Design</a> section.</p>
 <h2 id="per-device-ai-panel">Per-Device AI Panel<a class="headerlink" href="#per-device-ai-panel" title="Permanent link">&para;</a></h2>
 <p>Sound-design generation is also available without leaving the device chain. Every device slot exposes an <strong>AI</strong> icon in its header — click it to open a docked panel attached to that device.</p>
-<p><img alt="4OSC with the AI panel docked on its left, showing a prompt echo, the model's preset description, an apply status, and a yellow &quot;starting point only&quot; disclaimer." src="../../assets/images/panels/4osc-ai-panel.png" /></p>
+<p><img alt="A synth with the AI panel docked on its left, showing a prompt echo, the model's preset description, an apply status, and a yellow &quot;starting point only&quot; disclaimer." src="../../assets/images/panels/4osc-ai-panel.png" /></p>
 <p>The panel has three rows:</p>
 <ul>
 <li><strong>Output area</strong> — streams the model's response token-by-token, then appends a one-line apply status (<code>→ applied N params, M waves, …</code>). The history persists across slot rebuilds (preset loads, plugin reloads, sidechain edits) — your last result stays put until you clear it.</li>
@@ -2829,10 +2805,6 @@ groove.set(template="Basic 8th Swing", strength=0.5)
 </thead>
 <tbody>
 <tr>
-<td><strong><a href="../../devices/4osc/">4OSC</a></strong></td>
-<td>Waves, filter type, voice mode, FX gates, ADSR, levels</td>
-</tr>
-<tr>
 <td><strong>MAGDA sound generators</strong> — <a href="../../devices/poly-synth/">Poly Synth</a>, <a href="../../devices/fm0/">FM0</a>, <a href="../../devices/physical-models/">Physical Models</a>, <a href="../../devices/mutable/">Mutable ports</a></td>
 <td>Any of the device's own parameters</td>
 </tr>
@@ -2850,7 +2822,7 @@ groove.set(template="Basic 8th Swing", strength=0.5)
 </tr>
 </tbody>
 </table>
-<p>Beyond 4OSC and the sequencers, which keep purpose-written agents, sound design works by <strong>parameter introspection</strong>: the agent reads the device's parameters at runtime — names, units, real-world ranges, and discrete choices — and asks the model for values in those real units (Hz, ms, dB, semitones) rather than in normalised 0–1 terms. That is why it generalises across devices without per-device tuning.</p>
+<p>Beyond the sequencers, which keep purpose-written agents, sound design works by <strong>parameter introspection</strong>: the agent reads the device's parameters at runtime — names, units, real-world ranges, and discrete choices — and asks the model for values in those real units (Hz, ms, dB, semitones) rather than in normalised 0–1 terms. That is why it generalises across devices without per-device tuning.</p>
 <p>The <a href="../../devices/sampler/">Sampler</a>, <a href="../../devices/drum-grid/">Drum Grid</a>, and effects devices have no sound-design agent.</p>
 <h3 id="ai-sound-design-for-third-party-plugins">AI sound design for third-party plugins<a class="headerlink" href="#ai-sound-design-for-third-party-plugins" title="Permanent link">&para;</a></h3>
 <p>Third-party plugins can be designed too, but not automatically: a plugin exposing hundreds of opaque parameters gives the model nothing useful to work with. You choose what it is allowed to touch.</p>

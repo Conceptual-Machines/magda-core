@@ -579,6 +579,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#linux-drivers" class="md-nav__link">
+    <span class="md-ellipsis">
+      Linux Drivers
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#channel-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       Channel Configuration
@@ -1606,28 +1615,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../devices/4osc/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    4OSC Synth
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../devices/drum-grid/" class="md-nav__link">
         
   
@@ -2205,6 +2192,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#linux-drivers" class="md-nav__link">
+    <span class="md-ellipsis">
+      Linux Drivers
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#channel-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       Channel Configuration
@@ -2254,6 +2250,7 @@
 <p>Open audio settings from <strong>Settings &gt; Audio Settings</strong>. The dialog is organised into the sections below.</p>
 <h2 id="audio-device">Audio Device<a class="headerlink" href="#audio-device" title="Permanent link">&para;</a></h2>
 <ul>
+<li><strong>Driver</strong> — The audio system MAGDA talks to (Core Audio on macOS; ASIO, WASAPI or DirectSound on Windows; ALSA or JACK on Linux)</li>
 <li><strong>Output device</strong> — Select your audio interface or built-in output</li>
 <li><strong>Input device</strong> — Select the audio input for recording</li>
 <li><strong>Sample rate</strong> — 44100 Hz and 48000 Hz are common choices</li>
@@ -2266,6 +2263,39 @@
 <div class="admonition note">
 <p class="admonition-title">Silence after changing the sample rate</p>
 <p>Many audio interfaces mute their outputs for a few seconds after a sample rate change while they re-sync their clock, even after the new rate is shown. Anything played in that window is lost, the metronome included, and the same happens with any other app on that interface. Wait a few seconds after switching before you press play or record.</p>
+</div>
+<h2 id="linux-drivers">Linux Drivers<a class="headerlink" href="#linux-drivers" title="Permanent link">&para;</a></h2>
+<p>Most Linux desktops run PipeWire, which accepts JACK, PulseAudio and ALSA clients. Pick the driver for how you want to work:</p>
+<table>
+<thead>
+<tr>
+<th>Driver</th>
+<th>Device</th>
+<th>Use it for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>JACK</strong></td>
+<td>Your interface</td>
+<td>Recording and production. Lowest latency through PipeWire (<code>pipewire-jack</code>) or a JACK server</td>
+</tr>
+<tr>
+<td><strong>ALSA</strong></td>
+<td><strong>Pulseaudio output</strong></td>
+<td>Hearing MAGDA alongside the browser and other apps. Higher latency</td>
+</tr>
+<tr>
+<td><strong>ALSA</strong></td>
+<td>A <code>hw:</code> device</td>
+<td>Direct hardware access. Other apps can't play while MAGDA holds the device</td>
+</tr>
+</tbody>
+</table>
+<p>There is no separate PulseAudio driver: the <strong>Pulseaudio output</strong> device under ALSA goes through PulseAudio, or through <code>pipewire-pulse</code> on PipeWire. It's listed when the ALSA PulseAudio plugin is installed (<code>libasound2-plugins</code> on Debian/Ubuntu, <code>alsa-plugins-pulseaudio</code> on Fedora/Arch).</p>
+<div class="admonition note">
+<p class="admonition-title">64 inputs and outputs under ALSA</p>
+<p>On PipeWire, ALSA's default device can show up as 64 inputs and 64 outputs instead of your interface, and playback may break. Switch the driver to <strong>JACK</strong> to see the real interface.</p>
 </div>
 <h2 id="channel-configuration">Channel Configuration<a class="headerlink" href="#channel-configuration" title="Permanent link">&para;</a></h2>
 <ul>

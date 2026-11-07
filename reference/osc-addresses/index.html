@@ -1527,28 +1527,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../devices/4osc/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    4OSC Synth
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../devices/drum-grid/" class="md-nav__link">
         
   
@@ -2443,7 +2421,7 @@
 </table>
 <h2 id="how-the-numbers-work">How the numbers work<a class="headerlink" href="#how-the-numbers-work" title="Permanent link">&para;</a></h2>
 <p><code>n</code>, <code>m</code> and <code>k</code> are all 1-based, the way surface templates and mixer strips are numbered.</p>
-<p><strong><code>n</code> is a mixer position, not a track ID.</strong> Track IDs survive a reload but go sparse: delete tracks 2 and 3 and the remaining ones are 1, 4 and 5. A template addressing eight strips needs eight dense numbers, so <code>n</code> counts positions in the mixer's visible track order instead. A position with no track behind it is ignored, which means a sixteen-strip template on an eight-track project drives the eight that exist rather than failing.</p>
+<p><strong><code>n</code> is a mixer position, not a track ID.</strong> Track IDs survive a reload but go sparse: delete tracks 2 and 3 and the remaining ones are 1, 4 and 5. A template addressing eight strips needs eight dense numbers, so <code>n</code> counts positions in the mixer's visible track order instead. Only the channel strips count, with the chord track first when there is one: aux tracks and separators take no position. A position with no track behind it is ignored, which means a sixteen-strip template on an eight-track project drives the eight that exist rather than failing.</p>
 <p>The ceilings are 128 tracks, 8 sends per track, and 16 macros. A number past its ceiling is ignored rather than clamped, so a misconfigured template cannot land a fader on the wrong track.</p>
 <h2 id="strict-parsing">Strict parsing<a class="headerlink" href="#strict-parsing" title="Permanent link">&para;</a></h2>
 <p>Addresses are matched exactly. These are all rejected rather than interpreted:</p>

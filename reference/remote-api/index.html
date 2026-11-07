@@ -1527,28 +1527,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../devices/4osc/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    4OSC Synth
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../devices/drum-grid/" class="md-nav__link">
         
   
@@ -3074,7 +3052,7 @@ operations require <code>edit</code>.</p>
 <tr>
 <td><code>engine.renderRange</code></td>
 <td><code>edit</code></td>
-<td>Render a beat/second range to an absolute WAV or FLAC path.</td>
+<td>Render a beat/second range to an absolute WAV, FLAC, Opus or MP3 path (<code>bitrateKbps</code> sets a lossy bitrate; <code>vbrQuality</code>, 0 to 9, encodes MP3 at a LAME VBR level instead).</td>
 </tr>
 <tr>
 <td><code>engine.masterCapture.start</code></td>
@@ -3090,6 +3068,11 @@ operations require <code>edit</code>.</p>
 <td><code>engine.masterCapture.status</code></td>
 <td><code>read</code></td>
 <td>Read capture capability and current activity.</td>
+</tr>
+<tr>
+<td><code>capture.recentMaster</code></td>
+<td><code>edit</code></td>
+<td>Put the master's last bars on a new track where they were heard.</td>
 </tr>
 </tbody>
 </table>
@@ -3253,7 +3236,7 @@ operations require <code>edit</code>.</p>
 <tr>
 <td><code>routing.set</code></td>
 <td><code>edit</code></td>
-<td>Atomically set a track's routes.</td>
+<td>Atomically set a track's routes and MIDI channels.</td>
 </tr>
 <tr>
 <td><code>sends.list</code></td>

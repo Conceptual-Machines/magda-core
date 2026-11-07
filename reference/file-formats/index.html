@@ -1527,28 +1527,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../../devices/4osc/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    4OSC Synth
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../../devices/drum-grid/" class="md-nav__link">
         
   
@@ -2306,7 +2284,7 @@
 
 <h1 id="file-formats">File Formats<a class="headerlink" href="#file-formats" title="Permanent link">&para;</a></h1>
 <h2 id="project-files">Project Files<a class="headerlink" href="#project-files" title="Permanent link">&para;</a></h2>
-<p>MAGDA saves projects in Tracktion Engine's Edit format (<code>.tracktionedit</code>), an XML-based format that stores:</p>
+<p>MAGDA saves projects as <code>.mgd</code> files, which store:</p>
 <ul>
 <li>Track layout and settings</li>
 <li>Clip references and positions</li>
@@ -2314,7 +2292,7 @@
 <li>Automation data</li>
 </ul>
 <h2 id="dawproject-interchange">DAWproject Interchange<a class="headerlink" href="#dawproject-interchange" title="Permanent link">&para;</a></h2>
-<p>MAGDA can import and export the <strong>DAWproject</strong> format (<code>.dawproject</code>), an open interchange format for moving a project between different DAWs. Use <strong>File → Import DAWproject...</strong> to open one, or <strong>File → Export DAWproject...</strong> to write the current project out. It carries tracks, clips, and basic plugin/automation data — use it to hand a session to another DAW that supports the format, and use the native <code>.tracktionedit</code> for full-fidelity MAGDA projects.</p>
+<p>MAGDA can import and export the <strong>DAWproject</strong> format (<code>.dawproject</code>), an open interchange format for moving a project between different DAWs. Use <strong>File → Import DAWproject...</strong> to open one, or <strong>File → Export DAWproject...</strong> to write the current project out. It carries tracks, clips, and basic plugin/automation data — use it to hand a session to another DAW that supports the format, and use the native <code>.mgd</code> for full-fidelity MAGDA projects.</p>
 <p>The archive's <code>metadata.xml</code> carries the song's title and credits, and MAGDA maps the whole set both ways: Title, Artist, Album, Original artist, Composer, Songwriter, Producer, Arranger, Year, Genre, Copyright, Website and Comment. Edit them under <strong>File → Project Settings</strong>. A project with no title of its own exports its project name as the Title, which is what other DAWs look for.</p>
 <p>On import, MAGDA reads each track's output routing, so tracks feeding a group or an aux land on the right destination rather than all defaulting to the master. Track groups are preserved as groups: Bitwig writes group channels with the same role it uses for the project master, and MAGDA distinguishes the two from the project structure instead of turning every group into a master track.</p>
 <h2 id="audio-formats">Audio Formats<a class="headerlink" href="#audio-formats" title="Permanent link">&para;</a></h2>
@@ -2349,13 +2327,18 @@
 <td>No</td>
 </tr>
 <tr>
+<td>Opus</td>
+<td>No</td>
+<td>Yes</td>
+</tr>
+<tr>
 <td>MP3</td>
 <td>Yes, where a platform decoder is available</td>
-<td>No</td>
+<td>Yes</td>
 </tr>
 </tbody>
 </table>
-<p>Audio export offers WAV 16-bit, WAV 24-bit, WAV 32-bit float, and FLAC. MP3 is import-only and MAGDA does not encode MP3 files.</p>
+<p>Audio export offers WAV (16-bit, 24-bit or 32-bit float), FLAC (16-bit or 24-bit), Opus, and MP3; the bit depth is its own choice in the export dialog, shown for WAV and FLAC. An Opus file is always stored at 48 kHz and is encoded at the bitrate chosen in the export dialog (64 to 320 kbps). An MP3 is encoded with LAME, either at a variable bitrate (VBR V0, V2 or V4; V2 is the default) or at a constant 128 to 320 kbps. MP3 holds at most 48 kHz, so an export at 96 or 192 kHz is stored at 48 kHz. Opus and MP3 exports carry the project's title, artist, album, year, genre and comment from Project Settings as tags; WAV and FLAC exports do not.</p>
 <h2 id="midi">MIDI<a class="headerlink" href="#midi" title="Permanent link">&para;</a></h2>
 <p>Standard MIDI files (<code>.mid</code>) can be imported and exported.</p>
 <h2 id="generated-cache-files">Generated Cache Files<a class="headerlink" href="#generated-cache-files" title="Permanent link">&para;</a></h2>

@@ -862,6 +862,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#capturing-what-you-just-heard" class="md-nav__link">
+    <span class="md-ellipsis">
+      Capturing what you just heard
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#selecting-a-take" class="md-nav__link">
     <span class="md-ellipsis">
       Selecting a take
@@ -1604,28 +1613,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../devices/4osc/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    4OSC Synth
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../devices/drum-grid/" class="md-nav__link">
         
   
@@ -2203,6 +2190,15 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#capturing-what-you-just-heard" class="md-nav__link">
+    <span class="md-ellipsis">
+      Capturing what you just heard
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#selecting-a-take" class="md-nav__link">
     <span class="md-ellipsis">
       Selecting a take
@@ -2258,6 +2254,16 @@
 </ol>
 <p>Each pass around the loop is captured as its own take. Nothing is lost between passes, so you can keep playing until you have a take you like.</p>
 <p>A live <strong>Recording...</strong> preview is drawn over the timeline as you record, showing the incoming waveform (audio) or notes (MIDI) growing under the playhead so you can see what was captured before recording stops.</p>
+<h2 id="capturing-what-you-just-heard">Capturing what you just heard<a class="headerlink" href="#capturing-what-you-just-heard" title="Permanent link">&para;</a></h2>
+<p>MAGDA can keep the last few minutes of what you play, so an idea you played without recording is not lost. Click the <strong>MEM</strong> meter in the transport bar to turn it on; it stays on until you click it again. While it is on, it keeps the master output and the notes you play on MIDI devices, whether or not the transport is running.</p>
+<p>The <strong>MEM</strong> meter in the transport bar shows it: the level of what is held, with what you just played drawn bright, how long that is, and how full the buffer is.</p>
+<p>Click the capture button beside it (<span class="keys"><kbd class="key-command">Cmd</kbd><span>+</span><kbd class="key-shift">Shift</kbd><span>+</span><kbd class="key-c">C</kbd></span>, or <strong>Transport &gt; Recent Capture</strong>) to open the capture panel under the transport. It shows the audio and the notes over the whole buffer, oldest at the left, with what you just played already selected:</p>
+<ul>
+<li><strong>With the transport stopped</strong>, that is your last phrase, back to a pause of a few seconds, with a second of tail for the release.</li>
+<li><strong>Along with the transport</strong>, it is the last bars of that pass. A stop or a loop wrap ends a pass.</li>
+</ul>
+<p>Drag across the lanes to select something else (double-click goes back), then press <strong>Import Audio</strong> to put the master audio on a new <strong>Capture Audio</strong> track, or <strong>Import MIDI</strong> to put the notes on a new <strong>Capture MIDI</strong> track. Notes from several MIDI devices go on a track each, named after the device. A stretch the transport played lands at the bars where you heard it; anything else lands at the playhead. The click is never included.</p>
+<p>The <strong>MEM</strong> dot is lit while it is capturing. <strong>Preferences &gt; Engine</strong> has the same switch, and <strong>Capture Buffer</strong> sets how much is kept: 5 minutes by default, up to 30, with what each length costs in memory. <strong>Capture Length</strong> caps what is selected for you, 8 bars by default.</p>
 <h2 id="selecting-a-take">Selecting a take<a class="headerlink" href="#selecting-a-take" title="Permanent link">&para;</a></h2>
 <p>Select the recorded clip and open the <strong>Inspector</strong>. The <strong>Takes</strong> section lists the captured passes:</p>
 <ul>

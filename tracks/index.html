@@ -742,6 +742,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Track-to-Track Routing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#midi-channels" class="md-nav__link">
+    <span class="md-ellipsis">
+      MIDI channels
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -787,8 +802,26 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#disabling-a-track" class="md-nav__link">
+    <span class="md-ellipsis">
+      Disabling a Track
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#separators" class="md-nav__link">
+    <span class="md-ellipsis">
+      Separators
+    </span>
+  </a>
   
 </li>
       
@@ -1712,28 +1745,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../devices/4osc/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    4OSC Synth
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../devices/drum-grid/" class="md-nav__link">
         
   
@@ -2359,6 +2370,21 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Track-to-Track Routing">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#midi-channels" class="md-nav__link">
+    <span class="md-ellipsis">
+      MIDI channels
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -2404,8 +2430,26 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#disabling-a-track" class="md-nav__link">
+    <span class="md-ellipsis">
+      Disabling a Track
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#separators" class="md-nav__link">
+    <span class="md-ellipsis">
+      Separators
+    </span>
+  </a>
   
 </li>
       
@@ -2503,6 +2547,10 @@
 <td>Guide track holding a chord progression — one per project (see <a href="../chord-track/">Chord Track</a>)</td>
 </tr>
 <tr>
+<td><strong>Separator</strong></td>
+<td>A divider in the track list, with an optional name (see <a href="#separators">Separators</a>)</td>
+</tr>
+<tr>
 <td><strong>Master</strong></td>
 <td>Final stereo output — one per project</td>
 </tr>
@@ -2568,7 +2616,14 @@
 </div>
 <h2 id="track-to-track-routing">Track-to-Track Routing<a class="headerlink" href="#track-to-track-routing" title="Permanent link">&para;</a></h2>
 <p>A track can take another track's output as its own input. Every other track appears in the audio-input and MIDI-input selectors, listed after a separator alongside the hardware inputs, in the <a href="../panels/inspector/">Inspector</a>, the track headers, the <a href="../mixer-view/">Mixer</a>, and <a href="../session-view/">Session View</a>.</p>
-<p>From the source side, <strong>MIDI To</strong> routes a track's MIDI output to a single destination track.</p>
+<p>From the source side, <strong>MIDI Out</strong> can name another track instead of a hardware port. Each track has one MIDI Out, but any number of tracks can send to the same track, which still takes its own MIDI input as well.</p>
+<h3 id="midi-channels">MIDI channels<a class="headerlink" href="#midi-channels" title="Permanent link">&para;</a></h3>
+<p>In the Inspector's routing section, the input and output icons beside the selectors open each track's MIDI channel menu. Once a channel is set, the icon lights up and shows its number.</p>
+<ul>
+<li><strong>Input</strong> passes only one channel (1–16) of what the track hears from its MIDI devices, for both monitoring and recording. <em>Any</em> passes them all.</li>
+<li><strong>Output</strong> moves everything the track's MIDI Out sends, to a port or to another track, onto one channel. <em>As is</em> leaves channels alone. A chosen channel puts all of an MPE clip's notes on that one channel.</li>
+</ul>
+<p>Together these drive a multitimbral instrument: give each part its own track, set each track's MIDI Out to the instrument's track and its output channel to the part's channel. A hardware synth works the same way, with each track's MIDI Out on the synth's port.</p>
 <p>Self-routing and feedback loops are detected and blocked. Routings are saved with the project, and input monitoring works normally for an internally-routed track.</p>
 <h2 id="track-view-manager">Track View Manager<a class="headerlink" href="#track-view-manager" title="Permanent link">&para;</a></h2>
 <p>Each of the three views — Session, Arrangement, and Mixer — maintains its own independent track visibility and layout. This means you can show a different set of tracks in each view.</p>
@@ -2595,6 +2650,12 @@
 </ul>
 <h3 id="multi-track-selection">Multi-Track Selection<a class="headerlink" href="#multi-track-selection" title="Permanent link">&para;</a></h3>
 <p>Click a track header to select it. Hold <span class="keys"><kbd class="key-shift">Shift</kbd></span> and click another header to extend the selection to a contiguous range; <span class="keys"><kbd class="key-command">Cmd</kbd></span>-click (<span class="keys"><kbd class="key-control">Ctrl</kbd></span>-click on Windows/Linux) to toggle individual tracks in or out of the selection. Most track-level actions — mute, solo, delete, freeze, group — apply to every selected track in one operation.</p>
+<h3 id="disabling-a-track">Disabling a Track<a class="headerlink" href="#disabling-a-track" title="Permanent link">&para;</a></h3>
+<p>Right-click a track header and choose <strong>Disable Track</strong>, or use the power switch in the track inspector. A disabled track renders nothing. Its clips, devices, sends and output all fall silent, and anything routed into it stops there. This applies to exports and bounces too. Its header dims and reads <em>Disabled</em>. Choose <strong>Enable Track</strong> to bring it back.</p>
+<p>A track is also disabled when its chain holds a MAGDA device this copy of MAGDA does not have, for example one from an extension that is not installed, or one from a newer version. Rather than play the chain without it, the track stays silent. Its header names the missing device, and the device's slot reads <em>Not in this build</em>. The track can't be enabled until the device is removed or replaced. Until then the device keeps its settings and saves them unchanged, so the project opens as it was in a copy of MAGDA that has it.</p>
+<h2 id="separators">Separators<a class="headerlink" href="#separators" title="Permanent link">&para;</a></h2>
+<p>A separator divides up the track list. It has no header, controls, signal or clips: it is a thin row across the arrangement and a vertical line in the Session View and the Mixer.</p>
+<p>Choose <strong>Track → Add Separator</strong> to add one after the selected track, then drag it where you want it in the arrangement or the Session View. A separator starts without a name. Double-click it, or right-click it and choose <strong>Rename Separator</strong>, to give it one. Drag its edge to make it a little taller or wider. Separators don't take a position on <a href="../reference/osc-addresses/">control surfaces</a>, and they aren't exported to DAWproject files.</p>
 <h2 id="grouping-tracks">Grouping Tracks<a class="headerlink" href="#grouping-tracks" title="Permanent link">&para;</a></h2>
 <p>Group tracks collect several tracks under a single bus so you can fold them away and control them together. Right-click a track header for the grouping actions:</p>
 <ul>
@@ -2603,7 +2664,7 @@
 <li><strong>Remove from group</strong> — moves a track out of its group, back to the top level.</li>
 <li><strong>Move to group</strong> — a submenu listing the existing group tracks; pick one to move the track into it.</li>
 </ul>
-<p>Collapse or expand a group's children from the <a href="#track-view-manager">Track Manager</a> or the group header.</p>
+<p>Collapse or expand a group's children from the <a href="#track-view-manager">Track Manager</a> or the group header. The chord track and separators can't join a group.</p>
 <h2 id="duplicating-tracks">Duplicating Tracks<a class="headerlink" href="#duplicating-tracks" title="Permanent link">&para;</a></h2>
 <p>MAGDA offers three duplication modes, available from the <strong>Track</strong> menu, the track header right-click menu, and via keyboard:</p>
 <table>

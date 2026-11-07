@@ -1676,28 +1676,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../devices/4osc/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    4OSC Synth
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../devices/drum-grid/" class="md-nav__link">
         
   
@@ -2402,6 +2380,7 @@
 <li><strong>Rows</strong> represent scenes</li>
 <li>Each cell is a <strong>clip slot</strong> that can hold an audio or MIDI clip</li>
 </ul>
+<p>The <a href="../chord-track/">chord track</a> is always the first column on the left. Aux tracks sit in their own section on the right, next to the master, with a small gap between them and your other tracks. They stay put while the other columns scroll.</p>
 <div class="highlight"><pre><span></span><code> Track 1    Track 2    Track 3   │ Scene
 ┌──────────┬──────────┬──────────┼────────┐
 │ Clip A   │          │ Clip D   │ ► 1    │
@@ -2426,8 +2405,9 @@
 <li><strong>Click</strong> a playing slot to stop it</li>
 <li>Only one clip per track plays at a time — triggering a new clip in the same column stops the previous one</li>
 <li>A clip slot has an explicit <strong>play</strong> ▶ and <strong>stop</strong> ■ control on hover for unambiguous launch / stop separate from the clip body click</li>
-<li>While recording into a slot, the clip previews in real time — incoming MIDI notes and captured audio peaks draw in the slot as the take happens</li>
 </ul>
+<p>Not every track takes clips. An aux track's slots stay empty, and a group track's slots launch the clips of the tracks inside it rather than holding any of their own.
+- While recording into a slot, the clip previews in real time — incoming MIDI notes and captured audio peaks draw in the slot as the take happens</p>
 <h3 id="selecting-clips">Selecting Clips<a class="headerlink" href="#selecting-clips" title="Permanent link">&para;</a></h3>
 <ul>
 <li><strong>Click</strong> a clip slot to select it</li>

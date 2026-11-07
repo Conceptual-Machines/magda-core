@@ -1718,28 +1718,6 @@
   
   
     <li class="md-nav__item">
-      <a href="../devices/4osc/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    4OSC Synth
-    
-  </span>
-  
-
-      </a>
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
       <a href="../devices/drum-grid/" class="md-nav__link">
         
   
@@ -2483,8 +2461,8 @@
 <div class="highlight"><pre><span></span><code>┌──────────┬──────────┬──────────┬──────────┬─────────┐
 │ Track 1  │ Track 2  │ Track 3  │ Aux 1    │ Master  │
 │          │          │          │          │         │
-│ [Routing]│ [Routing]│ [Routing]│ [Routing]│         │
-│ [Sends]  │ [Sends]  │ [Sends]  │ [Sends]  │         │
+│ [Routing]│ [Routing]│ [Routing]│          │         │
+│ [Sends]  │ [Sends]  │ [Sends]  │          │         │
 │          │          │          │          │         │
 │  ┃  ┃    │  ┃  ┃    │  ┃  ┃    │  ┃  ┃    │  ┃  ┃   │
 │  ┃██┃    │  ┃█ ┃    │  ┃  ┃    │  ┃█ ┃    │  ┃██┃   │
@@ -2497,11 +2475,12 @@
 </code></pre></div>
 <ul>
 <li><strong>Channel strips</strong> — One per track, scrollable horizontally</li>
-<li><strong>Aux channel strips</strong> — Auxiliary/bus tracks</li>
+<li><strong>Chord channel strip</strong> — The <a href="../chord-track/">chord track</a>, always the first strip on the left</li>
+<li><strong>Aux channel strips</strong> — Auxiliary/bus tracks, in a fixed section next to the master with a small gap before it</li>
 <li><strong>Master channel strip</strong> — Final output, fixed on the right</li>
 <li><strong>Resizable width</strong> — Drag the edge of a channel strip to resize</li>
 </ul>
-<p>Click a channel strip to select it. Drag plugins onto a channel strip to add them to the track's FX chain.</p>
+<p>Click a channel strip to select it. Drag plugins onto a channel strip to add them to the track's FX chain. Drag a strip by its name to move it: a line shows where it will land between strips, including inside or out of a group, and an outline shows a group it will join.</p>
 <h2 id="toggle-rail">Toggle Rail<a class="headerlink" href="#toggle-rail" title="Permanent link">&para;</a></h2>
 <p>A vertical rail of toggles runs down the left edge of the mixer. Each button shows or hides a row across every channel strip, so you can pare the mixer back to just the controls you need:</p>
 <ul>
