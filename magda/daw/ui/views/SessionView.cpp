@@ -931,7 +931,7 @@ std::unique_ptr<DraggableValueLabel> makeGainLabel() {
     auto label = std::make_unique<DraggableValueLabel>(DraggableValueLabel::Format::Decibels);
     label->setRange(MIN_DB, MAX_DB, 0.0);
     label->setFillProportionMapper(level_meter_scale::dbFillProportion);
-    label->setFillColour(ActiveTheme::getColour(ActiveTheme::SESSION_GAIN_FILL));
+    label->setFillColour(ActiveTheme::SESSION_GAIN_FILL);
     label->setDrawBackground(false);
     label->setDrawBorder(false);
     label->setFont(FontManager::getInstance().getMonoFont(12.0f));

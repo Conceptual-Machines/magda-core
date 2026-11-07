@@ -274,6 +274,11 @@ void DraggableValueLabel::resized() {
     valueControl_.setBounds(getLocalBounds());
 }
 
+void DraggableValueLabel::lookAndFeelChanged() {
+    if (fillColourRole_)
+        setFillColour(*fillColourRole_, fillColourAlpha_);
+}
+
 void DraggableValueLabel::mouseDown(const juce::MouseEvent& e) {
     if (valueControl_.isEditing()) {
         return;

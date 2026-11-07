@@ -56,7 +56,7 @@ std::unique_ptr<DraggableValueLabel> makeSendLevelLabel(TrackId trackId, int bus
     label->setRange(kMinDb, kMaxDb, 0.0);
     label->setFont(FontManager::getInstance().getMonoFont(11.0f));
     label->setFillProportionMapper(level_meter_scale::dbFillProportion);
-    label->setFillColour(ActiveTheme::getColour(ActiveTheme::DEVICE_BLUE).withAlpha(0.28f));
+    label->setFillColour(ActiveTheme::DEVICE_BLUE, 0.28f);
     label->setShowFillMarker(true);
     setSendLevelLabelValue(*label, level);
 
