@@ -97,6 +97,7 @@ setup:
 	@echo "📦 Initializing git submodules..."
 	@git submodule update --init
 	@git -C third_party/faust submodule update --init libraries
+	@git -C third_party/link submodule update --init modules/asio-standalone
 	@$(MAKE) --no-print-directory hooks
 	@echo "✅ Project setup complete!"
 

@@ -1,2 +1,2 @@
-# Disable clang-tidy for third-party code (JUCE, Tracktion Engine, etc.)
+# Disable clang-tidy for third-party code (JUCE, Faust, etc.)
 Checks: '-*'
