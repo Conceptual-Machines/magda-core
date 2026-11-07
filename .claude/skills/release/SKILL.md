@@ -43,6 +43,20 @@ git tag v<VERSION>
 git push origin v<VERSION>
 ```
 
+## Release gate
+
+A pre-push hook (`make hooks`, `scripts/release_gate.py`) refuses a `v*` tag push while local
+work is missing from the tag. It looks at work newer than the previous release: local branches
+whose commits the tag lacks and no PR covers, and worktrees with uncommitted edits. Run it
+before tagging:
+
+```bash
+python3 scripts/release_gate.py --check HEAD
+```
+
+When it reports anything, show the user the list and wait. Set `MAGDA_RELEASE_OK=1` only when
+the user says to push anyway. Never set it on your own.
+
 ## Rules
 
 - **NEVER** merge a feature branch into main as part of a release. Feature branches go through PRs.
