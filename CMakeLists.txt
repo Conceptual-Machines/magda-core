@@ -222,9 +222,11 @@ if(MAGDA_LOCAL_LLM)
         set(GGML_METAL_EMBED_LIBRARY ON CACHE BOOL "" FORCE)
     else()
         set(GGML_METAL OFF CACHE BOOL "" FORCE)
-        # Disable -march=native so the binary runs on CPUs without AVX2/FMA/etc.
-        # Without this, AppImages built on modern CI runners crash with SIGILL
-        # on older CPUs (e.g. pre-Haswell).  Baseline: SSE4.2 + AVX.
+    endif()
+    # Baseline SSE4.2 + AVX instead of -march=native, which tunes to the build machine:
+    # SIGILL on older CPUs, and on an Intel Mac cross-build it resolves to the Apple host.
+    if(NOT APPLE OR CMAKE_OSX_ARCHITECTURES MATCHES "x86_64"
+       OR (NOT CMAKE_OSX_ARCHITECTURES AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64"))
         set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
         set(GGML_AVX2   OFF CACHE BOOL "" FORCE)
         set(GGML_FMA    OFF CACHE BOOL "" FORCE)
