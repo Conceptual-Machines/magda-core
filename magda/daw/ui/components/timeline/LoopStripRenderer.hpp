@@ -26,7 +26,8 @@ inline void draw(juce::Graphics& g, float xStart, float xEnd, int stripTop, int 
         enabled ? ActiveTheme::getColour(ActiveTheme::LOOP_MARKER) : juce::Colour(0xFF808080);
     const auto top = static_cast<float>(stripTop);
     const auto bottom = static_cast<float>(stripTop + stripHeight);
-    const float barBottom = top + juce::jmin(2.0f, bottom - top);
+    const auto barH = static_cast<float>(juce::jmax(2, juce::roundToInt(stripHeight * 0.4f)));
+    const float barBottom = top + juce::jmin(barH, bottom - top);
     // 45-degree wedges, narrowed so both fit inside a short loop.
     const float wedgeW = juce::jmin(bottom - barBottom, (xEnd - xStart) * 0.5f);
 

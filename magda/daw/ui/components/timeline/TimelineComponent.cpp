@@ -1607,16 +1607,16 @@ void TimelineComponent::drawTimeSelection(juce::Graphics& g) {
 
     // Accent-blue strip in the range row (directly beneath the loop). Blue keeps
     // the time selection distinct from the near-white playhead and the green loop
-    // rail above it.
+    // above it.
     const auto rows = rulerRows();
     const int rowH = rows.playheadBottom - rows.playheadTop;
-    const int height = juce::jmax(2, rowH / 3);  // thin bar, vertically centered
+    const int height = juce::jmax(2, rowH / 2);  // half the row, vertically centered
     const int top = rows.playheadTop + (rowH - height) / 2;
     auto selectionArea = getVisibleRect(g, getWidth(), startX, endX, top, height);
     if (selectionArea.isEmpty())
         return;
 
-    // Faint tinted bar between the handles, matching the loop rail's ~38% tint.
+    // Faint tinted bar between the handles.
     g.setColour(ActiveTheme::getColour(ActiveTheme::ACCENT_PRIMARY).withAlpha(0.38f));
     g.fillRoundedRectangle(selectionArea.toFloat(), static_cast<float>(height) / 2.0f);
 
