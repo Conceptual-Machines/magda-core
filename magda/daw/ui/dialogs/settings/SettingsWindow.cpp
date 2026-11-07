@@ -160,29 +160,16 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
         setWantsKeyboardFocus(true);
 
         for (auto& section : createPreferencesSections(contextCommandManager, contextAudioEngine))
-            sections_.push_back(std::move(section));
-        sections_.push_back(createAudioMidiSection(contextAudioEngine));
-        sections_.push_back(createControllersSection());
-        sections_.push_back(createConnectionsSection());
-        sections_.push_back(createPluginsSection());
-        sections_.push_back(createAISection());
-        std::ranges::stable_sort(sections_, {}, [](const auto& s) { return s->getId(); });
-
-        auto& config = Config::getInstance();
-        for (auto& section : sections_) {
-            tabs_.push_back(section->getTabs());
-            for (const auto& tab : tabs_.back())
-                if (tab.toolbar != nullptr)
-                    addChildComponent(*tab.toolbar);
-            section->load(config);
-            section->captureBaseline();
-
-            auto row = std::make_unique<SidebarRow>();
-            row->setTitle(section->getTitle());
-            row->onClick = [this, index = static_cast<int>(rows_.size())] { selectSection(index); };
-            addAndMakeVisible(*row);
-            rows_.push_back(std::move(row));
-        }
+            addSection(std::move(section));
+        // These query MIDI ports and audio drivers, which can be slow on Windows (#3270).
+        deferred_ = {
+            {SettingsSectionId::AudioMidi,
+             [] { return createAudioMidiSection(contextAudioEngine); }},
+            {SettingsSectionId::Controllers, [] { return createControllersSection(); }},
+            {SettingsSectionId::Connections, [] { return createConnectionsSection(); }},
+            {SettingsSectionId::Plugins, [] { return createPluginsSection(); }},
+            {SettingsSectionId::AI, [] { return createAISection(); }},
+        };
 
         searchBox_.setTextToShowWhenEmpty(tr("settings.search"),
                                           ActiveTheme::getColour(ActiveTheme::TEXT_DIM));
@@ -252,6 +239,11 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
         selectSection(0);
         updateCounts();
         startTimerHz(4);
+
+        // Search reads every page's text, so it waits for the last one.
+        searchBox_.setEnabled(false);
+        searchBox_.setAlpha(0.5f);
+        scheduleNextBuild();
     }
 
     ~Panel() override {
@@ -262,6 +254,7 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
     }
 
     void open(SettingsSectionId id, const juce::String& tabName) {
+        buildDeferred(id);
         if (!searchBox_.isEmpty()) {
             searchBox_.clear();
             applyFilter();
@@ -368,8 +361,16 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
 
   private:
     static constexpr int kSidebarWidth = 190;
+    // A gap between builds, so the window paints before the next one runs.
+    static constexpr int kBuildGapMs = 10;
+
+    struct DeferredSection {
+        SettingsSectionId id;
+        std::function<std::unique_ptr<SettingsSection>()> create;
+    };
 
     std::function<void()> close_;
+    std::vector<DeferredSection> deferred_;
     std::vector<std::unique_ptr<SettingsSection>> sections_;
     std::vector<std::vector<SettingsSection::Tab>> tabs_;
     std::vector<std::unique_ptr<SidebarRow>> rows_;
@@ -391,6 +392,58 @@ class SettingsWindow::Panel : public juce::Component, private juce::Timer {
     juce::TextButton okButton_;
     juce::Rectangle<int> sidebarBounds_;
     juce::Rectangle<int> footerBounds_;
+
+    /** @brief Insert @p section in id order, keeping the open section selected. */
+    void addSection(std::unique_ptr<SettingsSection> section) {
+        const auto at = std::ranges::upper_bound(sections_, section->getId(), {},
+                                                 [](const auto& s) { return s->getId(); });
+        const auto index = at - sections_.begin();
+
+        auto tabs = section->getTabs();
+        for (const auto& tab : tabs)
+            if (tab.toolbar != nullptr)
+                addChildComponent(*tab.toolbar);
+        section->load(Config::getInstance());
+        section->captureBaseline();
+
+        auto row = std::make_unique<SidebarRow>();
+        row->setTitle(section->getTitle());
+        row->onClick = [this, target = row.get()] {
+            const auto it =
+                std::ranges::find_if(rows_, [&](const auto& r) { return r.get() == target; });
+            selectSection(static_cast<int>(it - rows_.begin()));
+        };
+        addAndMakeVisible(*row);
+
+        sections_.insert(at, std::move(section));
+        tabs_.insert(tabs_.begin() + index, std::move(tabs));
+        rows_.insert(rows_.begin() + index, std::move(row));
+        if (currentSection_ >= index)
+            ++currentSection_;
+        resized();
+    }
+
+    void buildDeferred(SettingsSectionId id) {
+        const auto it = std::ranges::find(deferred_, id, &DeferredSection::id);
+        if (it == deferred_.end())
+            return;
+        auto create = std::move(it->create);
+        deferred_.erase(it);
+        addSection(create());
+        if (deferred_.empty()) {
+            searchBox_.setEnabled(true);
+            searchBox_.setAlpha(1.0f);
+        }
+    }
+
+    void scheduleNextBuild() {
+        juce::Timer::callAfterDelay(kBuildGapMs, [safe = juce::Component::SafePointer(this)] {
+            if (safe == nullptr || safe->deferred_.empty())
+                return;
+            safe->buildDeferred(safe->deferred_.front().id);
+            safe->scheduleNextBuild();
+        });
+    }
 
     SettingsSection* currentSection() const {
         if (currentSection_ < 0)
