@@ -1312,10 +1312,7 @@ jobs:
         needs.build-macos.result == 'success' &&
         needs.build-windows.result == 'success' &&
         needs.build-linux.result == 'success' &&
-        (
-          needs.build-macos-x86_64.result == 'success' ||
-          needs.build-macos-x86_64.result == 'skipped'
-        )
+        needs.build-macos-x86_64.result == 'success'
       }}
     needs: [build-macos, build-macos-x86_64, build-windows, build-linux]
     runs-on: ubuntu-latest
@@ -1354,34 +1351,16 @@ jobs:
     - name: List artifacts
       run: find . -type f | sort
 
-    - name: Create GitHub Prerelease
-      if: contains(needs.build-macos.outputs.version, '-')
-      uses: softprops/action-gh-release@v3
-      with:
-        tag_name: v${{ needs.build-macos.outputs.version }}
-        name: MAGDA v${{ needs.build-macos.outputs.version }}
-        body: ${{ steps.changelog.outputs.body }}
-        draft: false
-        prerelease: true
-        generate_release_notes: true
-        fail_on_unmatched_files: true
-        files: |
-          macos-release/MAGDA-*-macOS-arm64.dmg
-          macos-release/MAGDA-*-macOS-arm64.dmg.sha256
-          windows-x86_64-release/MAGDA-*-Windows-x86_64-Setup.exe
-          windows-x86_64-release/MAGDA-*-Windows-x86_64-Setup.exe.sha256
-          windows-x86_64-release/MAGDA-*-Windows-x86_64.pdb
-          linux-release/*
-
+    # One step and one file list for betas and stable releases: with two, the
+    # pre-release list missed the Intel DMG when #3258 started building it for betas.
     - name: Create GitHub Release
-      if: ${{ !contains(needs.build-macos.outputs.version, '-') }}
       uses: softprops/action-gh-release@v3
       with:
         tag_name: v${{ needs.build-macos.outputs.version }}
         name: MAGDA v${{ needs.build-macos.outputs.version }}
         body: ${{ steps.changelog.outputs.body }}
         draft: false
-        prerelease: false
+        prerelease: ${{ contains(needs.build-macos.outputs.version, '-') }}
         generate_release_notes: true
         fail_on_unmatched_files: true
         files: |
