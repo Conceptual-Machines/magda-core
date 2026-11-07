@@ -77,8 +77,6 @@ about the document rather than about its quality.
 | --- | --- |
 | [vision.md](product/vision.md) | what MAGDA is and what it is for |
 | [manifesto.md](product/manifesto.md) | the shorter statement of the same |
-| [video-shotlist.md](product/video-shotlist.md) | the showcase shot list |
-| [video-scripts/](product/video-scripts) | scripts for those videos |
 
 ## archive
 

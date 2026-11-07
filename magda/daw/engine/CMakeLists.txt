@@ -90,6 +90,10 @@ target_sources(magda_daw_app PRIVATE
         PUBLIC
         magda_engine
         magda_engine_devices
+        # It calls back into magda_daw (TempoLane, UserAlert). Link-only, so GNU ld
+        # gets magda_daw again after this archive without its usage requirements.
+        PRIVATE
+        $<LINK_ONLY:magda_daw>
     )
 
     # JUCE headers and defines without the modules: the callback is a
