@@ -1,0 +1,6 @@
+#!/bin/sh
+# Installed by `make hooks`: Git LFS's pre-push, then the release gate for v* tags.
+input=$(cat)
+command -v git-lfs >/dev/null 2>&1 || { echo >&2 "git-lfs not found: this repository stores files in Git LFS."; exit 2; }
+printf '%s\n' "$input" | git lfs pre-push "$@" || exit $?
+printf '%s\n' "$input" | python3 "$(dirname "$0")/release_gate.py"

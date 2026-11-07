@@ -33,7 +33,6 @@ struct ProjectInfo;
 class SongNavigatorPanel;
 class MasterAutomationHeaderPanel;
 class MasterAutomationContentPanel;
-class ClickableLabel;
 class LevelMeter;
 
 class MainView : public juce::Component,
@@ -198,7 +197,7 @@ class MainView : public juce::Component,
     void updateModeContent();
     /// Whether something other than the tracks fills the track area.
     bool trackAreaReplaced() const;
-    int masterStripHeight = 84;
+    int masterStripHeight = MIN_MASTER_STRIP_HEIGHT;
 
     // Master automation band: a pinned strip directly above the master strip
     // hosting the master channel's automation lanes (issue #1482). Fixed-width
@@ -218,7 +217,8 @@ class MainView : public juce::Component,
     int auxSectionHeight = 0;
     bool auxVisible_ = false;
     static constexpr int AUX_ROW_HEIGHT = 30;
-    static constexpr int MIN_MASTER_STRIP_HEIGHT = 84;
+    // Two 18px control rows with 4px padding around and between them, plus the 2px border inset.
+    static constexpr int MIN_MASTER_STRIP_HEIGHT = 52;
     static constexpr int MAX_MASTER_STRIP_HEIGHT = 150;
     // Compact shows only the peak meter and a one-line song preview; a drag below the full
     // header's minimum snaps to it.
@@ -482,10 +482,7 @@ class MainView::MasterHeaderPanel : public juce::Component,
     std::unique_ptr<SvgButton> automationButton;       // Show master automation lane
     std::unique_ptr<SvgButton> hideButton;             // Hide master row in this view
     std::unique_ptr<DraggableValueLabel> volumeLabel;  // Volume as draggable dB label
-    std::unique_ptr<ClickableLabel> peakValueLabel;    // Click to reset held peak
-    float peakValue_ = 0.0f;
-
-    std::unique_ptr<LevelMeter> peakMeter;  // Horizontal stereo peak meter
+    std::unique_ptr<LevelMeter> peakMeter;             // Horizontal stereo peak meter
     bool compact_ = false;
 
     void setupControls();
