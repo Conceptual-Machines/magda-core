@@ -35,13 +35,6 @@ target_include_directories(soundtouch SYSTEM PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
-# SoundTouch.cpp defines one extern "C" symbol at global scope, a version printer autoconf
-# calls to prove the library links. The Tracktion fork compiles its own copy of these
-# sources into its unity build, so while both exist that symbol is defined twice and the
-# final link refuses it. Renaming ours through the preprocessor keeps the vendored source
-# free of a symbol-only patch; it can go when the fork does.
-target_compile_definitions(soundtouch PRIVATE soundtouch_ac_test=magda_soundtouch_ac_test)
-
 # Vendored third-party C++; suppress upstream warnings rather than chasing them, the way
 # third_party/sqlite does.
 if(MSVC)

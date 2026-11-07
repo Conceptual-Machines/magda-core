@@ -5,8 +5,7 @@
 #   * standalone  - cmake -S tools/faust_vec_bench -B build-bench
 #                   Builds only the Faust compiler and this benchmark. This is
 #                   what CI uses; the repository root would drag in JUCE,
-#                   Tracktion, llama.cpp and vcpkg for a job that compiles one
-#                   executable.
+#                   llama.cpp and vcpkg for a job that compiles one executable.
 #   * in-tree     - cmake -DMAGDA_BUILD_FAUST_VEC_BENCH=ON ...
 #                   Reuses the `faust` target the main build already declares.
 
