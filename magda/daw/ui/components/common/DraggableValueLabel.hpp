@@ -8,6 +8,7 @@
 #include <functional>
 #include <optional>
 
+#include "../../themes/ActiveTheme.hpp"
 #include "ValueLabelControl.hpp"
 #include "core/AutomationInfo.hpp"
 #include "core/AutomationManager.hpp"
@@ -174,10 +175,18 @@ class DraggableValueLabel : public juce::Component,
         valueControl_.setShowFillMarker(show);
     }
 
-    // Custom fill indicator colour (defaults to the theme value fill if not set)
+    // Custom fill indicator colour (defaults to the theme value fill if not set). Theme
+    // colours take the ColourRole overload, which follows live theme changes.
     void setFillColour(juce::Colour colour) {
+        fillColourRole_.reset();
         customFillColour_ = colour;
         valueControl_.setFillColour(colour);
+    }
+    void setFillColour(ColourRole role, float alpha = 1.0f) {
+        fillColourRole_ = role;
+        fillColourAlpha_ = alpha;
+        customFillColour_ = ActiveTheme::getColour(role).withAlpha(alpha);
+        valueControl_.setFillColour(*customFillColour_);
     }
 
     // Bind this label to an automation target. The label subscribes to
@@ -251,6 +260,7 @@ class DraggableValueLabel : public juce::Component,
     // Component overrides
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void lookAndFeelChanged() override;
     void mouseDown(const juce::MouseEvent& e) override;
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseUp(const juce::MouseEvent& e) override;
@@ -275,6 +285,8 @@ class DraggableValueLabel : public juce::Component,
     bool showText_ = true;
     std::optional<juce::Colour> customTextColour_;
     std::optional<juce::Colour> customFillColour_;
+    std::optional<ColourRole> fillColourRole_;
+    float fillColourAlpha_ = 1.0f;
     bool showFillIndicator_ = true;
     bool drawBackground_ = true;
     bool drawBorder_ = true;
