@@ -792,6 +792,24 @@ jobs:
         if ((Test-Path "$faustDir\lib") -and (Test-Path "$faustDir\bin")) { echo "faust_hit=true" >> $env:GITHUB_OUTPUT }
         if (Test-Path "$mutableDir\lib") { echo "mutable_hit=true" >> $env:GITHUB_OUTPUT }
 
+    # llama.cpp's Vulkan backend. The self-hosted runner keeps the SDK between runs.
+    - name: Install Vulkan SDK
+      shell: powershell
+      env:
+        VULKAN_VERSION: 1.4.357.0
+      run: |
+        $sdk = "C:\VulkanSDK\$env:VULKAN_VERSION"
+        if (-not (Test-Path "$sdk\Bin\glslc.exe")) {
+          $installer = Join-Path $env:RUNNER_TEMP "VulkanSDK-Installer.exe"
+          curl.exe -o $installer -L "https://sdk.lunarg.com/sdk/download/$env:VULKAN_VERSION/windows/vulkansdk-windows-X64-$env:VULKAN_VERSION.exe"
+          & $installer --accept-licenses --default-answer --confirm-command install
+          if (-not (Test-Path "$sdk\Bin\glslc.exe")) {
+            Write-Error "Vulkan SDK install failed: $sdk\Bin\glslc.exe missing"
+            exit 1
+          }
+        }
+        "VULKAN_SDK=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
     - name: Configure CMake
       shell: powershell
       env:
@@ -807,6 +825,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release `
           -DCMAKE_SYSTEM_PROCESSOR=x64 `
           -DMAGDA_BUILD_TESTS=OFF `
+          -DMAGDA_LLM_VULKAN=ON `
           -DMAGDA_FULL_VERSION="$env:VERSION" `
           -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
           -DVCPKG_TARGET_TRIPLET=x64-windows `
@@ -932,7 +951,8 @@ jobs:
         # new vcpkg dep can't silently go missing - then assert the critical ones
         # are present, because a missing DLL is a broken release.
         $dlls = Get-ChildItem -Path $exeDir -Filter *.dll -File
-        foreach ($required in @("onnxruntime.dll", "onnxruntime_providers_shared.dll", "libxml2.dll")) {
+        foreach ($required in @("onnxruntime.dll", "onnxruntime_providers_shared.dll", "libxml2.dll",
+                               "llama.dll", "ggml.dll", "ggml-base.dll", "ggml-vulkan.dll", "ggml-cpu-x64.dll")) {
           if (-not ($dlls | Where-Object { $_.Name -ieq $required })) {
             Write-Error "$required missing next to MAGDA.exe at $exeDir"
             exit 1
@@ -1078,7 +1098,10 @@ jobs:
           libwebkit2gtk-4.1-dev \
           libglu1-mesa-dev \
           mesa-common-dev \
-          libfuse2
+          libfuse2 \
+          glslc \
+          libvulkan-dev \
+          spirv-headers
 
     - name: Install linuxdeploy
       run: |
@@ -1129,6 +1152,7 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_INSTALL_PREFIX=/usr \
           -DMAGDA_BUILD_TESTS=OFF \
+          -DMAGDA_LLM_VULKAN=ON \
           -DMAGDA_FULL_VERSION="$VERSION" \
           -DCMAKE_C_COMPILER_LAUNCHER=sccache \
           -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
@@ -1182,6 +1206,11 @@ jobs:
           echo "::error::magda-mcp not found; the AppImage would ship without it"
           exit 1
         fi
+
+        # llama.cpp loads its CPU and Vulkan backends from the binary's folder;
+        # linuxdeploy bundles the libraries MAGDA links, but not these.
+        cp "$(dirname "$BINARY")"/libggml-cpu-*.so "$(dirname "$BINARY")"/libggml-vulkan.so "$APPDIR/usr/bin/" \
+          || { echo "::error::llama.cpp backends missing next to $BINARY"; exit 1; }
 
         # Localization JSON - StringTable looks for lang/ next to the binary
         cp -r lang "$APPDIR/usr/bin/lang"
