@@ -19,8 +19,8 @@ jobs:
     # Apple Silicon; includes the CLAP semantic-search backend (ORT-only on arm64).
     # macos-15 rather than macos-14: macos-14's Apple Clang predates P0960
     # (parenthesized aggregate initialisation), so C++20 that compiles on every other
-    # leg failed here and only at release time. It also put the two Mac binaries on
-    # different compilers, since the x86_64 job below is already macos-15-intel.
+    # leg failed here and only at release time. The x86_64 job below runs on it too,
+    # so both Mac binaries share a compiler.
     # CMAKE_OSX_DEPLOYMENT_TARGET below still pins what the build supports.
     runs-on: macos-15
     outputs:
@@ -314,17 +314,21 @@ jobs:
         rm -rf build
 
   build-macos-x86_64:
-    # Intel Mac build (MAGDA_HAVE_CLAP=OFF, no semantic search).
-    # macos-15-intel is the last x86_64 runner GitHub offers (available until
-    # Aug 2027). macos-13 was retired in Dec 2025. After macos-15-intel goes
-    # away we will need a self-hosted runner or to drop this build.
-    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.ref_name, '-') }}
-    runs-on: macos-15-intel
+    # Intel Mac build (MAGDA_HAVE_CLAP=OFF, no semantic search), cross-compiled on
+    # Apple Silicon: GitHub's last Intel runner, macos-15-intel, goes in Aug 2027.
+    runs-on: macos-15
     steps:
     - uses: actions/checkout@v7
       with:
         submodules: recursive
         lfs: true
+
+    # The build runs the x86_64 faust compiler it just built to generate the DSP sources.
+    - name: Install Rosetta
+      run: |
+        if ! arch -x86_64 /usr/bin/true 2>/dev/null; then
+          sudo softwareupdate --install-rosetta --agree-to-license
+        fi
 
     - name: Install dependencies
       run: |
@@ -374,8 +378,11 @@ jobs:
       env:
         VERSION: ${{ steps.version.outputs.version }}
       run: |
+        # Makes CMAKE_SYSTEM_PROCESSOR x86_64, so checks keyed on it (the wasmtime
+        # download among them) pick Intel rather than the Apple Silicon host.
         cmake -B build -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_APPLE_SILICON_PROCESSOR=x86_64 \
           -DCMAKE_OSX_ARCHITECTURES="x86_64" \
           -DCMAKE_OSX_DEPLOYMENT_TARGET="11.0" \
           -DMAGDA_BUILD_TESTS=OFF \
