@@ -316,7 +316,6 @@ jobs:
   build-macos-x86_64:
     # Intel Mac build (MAGDA_HAVE_CLAP=OFF, no semantic search), cross-compiled on
     # Apple Silicon: GitHub's last Intel runner, macos-15-intel, goes in Aug 2027.
-    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.ref_name, '-') }}
     runs-on: macos-15
     steps:
     - uses: actions/checkout@v7
