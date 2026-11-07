@@ -12,7 +12,7 @@ Translation pipeline for MAGDA. Source of truth is `lang/en.json`; Crowdin holds
 - `lang/en.json` - English source, the only file edited by hand in this repo for new keys.
 - `lang/{two-letter-code}.json` - per-locale files (e.g. `zh.json`). Auto-managed by the Crowdin sync workflow most of the time; can be edited locally for one-off direct uploads.
 - `crowdin.yml` at repo root - maps source/translation paths and points at project / token env vars.
-- `.github/workflows/crowdin.yml` - GitHub Action that runs on push to `main` / `dev/**` when `lang/en.json` changes, OR on `workflow_dispatch`. Uploads sources, downloads approved translations, opens a PR back into the source branch.
+- `.github/workflows/crowdin.yml` - GitHub Action that runs on push to `main` when `lang/en.json` changes, OR on `workflow_dispatch`. Uploads sources, downloads approved translations, opens a PR back into the source branch.
 
 ## The standing rule
 
@@ -87,7 +87,6 @@ Drop it from `lang/en.json` and push. The Crowdin Sync workflow removes it from 
 
 ## Gotchas
 
-- **Branch trampling**: both `main` and `dev/*` push sources to the same un-branched Crowdin project. Diverging keys between branches can cause Crowdin to delete translations when a branch with fewer keys pushes after one with more. If you're working on a long-lived `dev/*` and adding/removing keys, expect the other branch's translations to churn until they reconverge.
 - **Empty source string**: an empty `en.json` value gives Crowdin nothing to anchor a translation on. Every locale will stay empty regardless of CLI uploads. Always give a source string a non-empty English value.
 - **Brand attributions are not translated**: lines like "powered by Tracktion Engine", "made with JUCE", "DSP by FAUST" are intentionally literal strings in C++ - not `tr()` keys - so they stay English in every locale. Don't add them to `en.json`.
 - **Don't push the token**: `.env` is gitignored; double-check before committing if you've touched it.
