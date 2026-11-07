@@ -9,9 +9,8 @@ on:
     # 'dependabot/**' so Dependabot bumps never auto-start CI (especially the
     # self-hosted macOS/Windows build jobs). Validate a bump on demand via the
     # workflow_dispatch button instead.
-    # 'dev/**' because a merge to a dev branch only lands commits whose PR
-    # already ran the full build; the release PR (dev -> main) runs it again.
-    branches-ignore: [ 'l10n_crowdin_**', 'dependabot/**', 'dev/**' ]
+    # 'main' because a merge only lands commits whose PR already ran the full build.
+    branches-ignore: [ 'l10n_crowdin_**', 'dependabot/**', 'main' ]
     tags-ignore: [ '**' ]
     # Belt-and-suspenders: also skip when a push only touches translation files.
     paths-ignore:
@@ -19,7 +18,7 @@ on:
       - 'manual/**'
       - 'docs/**'
       - '**/*.md'
-  # Release PRs (dev/0.X.0 -> main): main's ruleset only accepts required
+  # PRs into main: main's ruleset only accepts required
   # checks from PR-associated runs, so push-event and workflow_dispatch runs
   # never turn the merge box green. No paths filter: even a lang-only sync
   # merge moving the PR head must still report the required checks.
@@ -48,7 +47,7 @@ env:
   VCPKG_COMMIT: a0b1c8d3a477c1cb4813d8e127a56961707ca42b
 
 jobs:
-  # When a release PR into main is open for this branch, the pull_request run
+  # When a PR into main is open for this branch, the pull_request run
   # owns validation (it is the only event the main ruleset accepts required
   # checks from), so the push run for the same commits stands down instead of
   # duplicating every build on the self-hosted runners. Fails open: any API
@@ -80,10 +79,11 @@ jobs:
         GH_TOKEN: ${{ github.token }}
       run: |
         proceed=true
-        # Crowdin sync PRs only carry lang files; branches-ignore covers their
-        # pushes, but pull_request events cannot filter on the head branch.
+        # Crowdin sync and Dependabot PRs: branches-ignore covers their pushes,
+        # but pull_request events cannot filter on the head branch. Bumps run
+        # through workflow_dispatch.
         case "${{ github.head_ref }}" in
-          l10n_crowdin_*) proceed=false ;;
+          l10n_crowdin_* | dependabot/*) proceed=false ;;
         esac
         if [ "${{ github.event_name }}" = "push" ]; then
           count=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" \
@@ -922,17 +922,16 @@ jobs:
         base="${{ github.event.pull_request.base.sha }}"
 
         case "${{ github.ref_name }}" in
-          main | dev/*) shared=true ;;
-          *)            shared=false ;;
+          main) shared=true ;;
+          *)    shared=false ;;
         esac
 
         if [ -n "$base" ]; then
           # The checkout is depth-1, so the base commit is not in this clone yet.
           git fetch --no-tags --no-recurse-submodules --depth=1 origin "$base"
         elif [ "$shared" = true ]; then
-          # A shared branch. Its commits arrived through PRs that were analysed
-          # on their own branches, and diffing back to where dev left main would
-          # re-analyse an entire release. Range over what this push added.
+          # main. Its commits arrived through PRs that were analysed on their own
+          # branches. Range over what this push added.
           base="${{ github.event.before }}"
           if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
             git fetch --no-tags --no-recurse-submodules --depth=2 origin "${{ github.ref_name }}"
@@ -953,7 +952,7 @@ jobs:
           #
           # HEAD first, and in its own fetch. checkout leaves it a shallow root,
           # and merge-base cannot walk a history that stops at the first commit,
-          # so deepening only main/dev leaves every merge-base below failing and
+          # so deepening only main leaves every merge-base below failing and
           # the branch point unfindable. Adding this branch as another refspec to
           # the fetch below does not deepen HEAD either; it has to be its own
           # invocation.
@@ -961,16 +960,14 @@ jobs:
             "${{ github.ref_name }}"
 
           git fetch --no-tags --no-recurse-submodules --depth=200 origin \
-            '+refs/heads/main:refs/remotes/origin/main' \
-            '+refs/heads/dev/*:refs/remotes/origin/dev/*'
+            '+refs/heads/main:refs/remotes/origin/main'
 
-          # Only the shared branches above. Ranging over every remote ref would
+          # Only main. Ranging over every remote ref would
           # let this branch's own ref win the merge-base, and diffing a branch
           # against itself reports nothing to do.
           best="" best_count=""
           head_sha=$(git rev-parse HEAD)
-          for ref in $(git for-each-ref --format='%(refname)' \
-                         refs/remotes/origin/main refs/remotes/origin/dev); do
+          for ref in $(git for-each-ref --format='%(refname)' refs/remotes/origin/main); do
             mb=$(git merge-base HEAD "$ref" 2>/dev/null) || continue
             # A ref that already contains HEAD gives no useful range.
             [ "$mb" = "$head_sha" ] && continue

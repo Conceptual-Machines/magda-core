@@ -2,7 +2,7 @@ name: Crowdin Sync
 
 on:
   push:
-    branches: [main, 'dev/**']
+    branches: [main]
     paths: ['lang/en.json']
   workflow_dispatch:
 
